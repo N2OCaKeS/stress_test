@@ -128,8 +128,9 @@ POST-CREATE эндпоинты (`POST /servers`, `POST /server-accounts`, `POST 
 | `INVALID_ACTION_FOR_ENTITY` | 422 | grant на неподходящую (entity, action) пару |
 | `UNKNOWN_ENTITY_TYPE` | 422 | неизвестный entity_type в `/permissions/{type}` |
 | `WEAK_PASSWORD` | 422 | пароль не прошёл политику |
-| `ACCOUNT_REQUIRED` | 422 | inventory.sync / users.inventory на неуправляемый сервер без привязанных аккаунтов |
-| `ACCOUNT_NOT_LINKED` | 422 | переданный `account_id` не привязан к серверу (inventory-dispatch) |
+| `PREPARE_REQUIRED` | 409 | inventory.sync / users.inventory / installed-packages на неподготовленный сервер (`is_managed=False`) — сначала prepare |
+| `ACCOUNT_NOT_LINKED` | 404 | prepare account-режим: `account_id` не привязан к этому серверу |
+| `ACCOUNT_HAS_NO_PASSWORD` | 409 | prepare account-режим: у выбранного аккаунта нет сохранённого пароля |
 | `RATE_LIMIT_EXCEEDED` | 429 | per-IP или global rate-limit пробит |
 | `MASS_ROTATION_TOO_LARGE` | 413 | batch превысил `MASS_ROTATION_MAX_SERVERS` |
 | `WORKER_UNREACHABLE` | 503 | dispatch_task: cross-DB engine не отвечает |
@@ -376,11 +377,11 @@ Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `NO_IPMI_CO
 
 ### `POST /servers/{server_id}/installed-packages`
 
-Auth: Bearer + `(server, *, view)`. Live-список через SSH (`dpkg-query` / `rpm -qa`) с shell-glob `pattern` (default `*`). Endpoint в БД ничего не пишет.
+Auth: Bearer + `(server, *, view)`. Live-список через SSH (`dpkg-query` / `rpm -qa`) с shell-glob `pattern` (default `*`). Endpoint в БД ничего не пишет. Требует prepare (`is_managed=True`) — probe идёт по управляющему ключу; неподготовленный сервер — `409 PREPARE_REQUIRED`.
 
 URL vs action_kind: путь kebab-case, `task_kind` / `audit_action` — `installed_packages.list` (snake, namespace для SIEM/registry).
 
-Errors: `INVALID_PATTERN` / `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `WORKER_UNREACHABLE` (503).
+Errors: `INVALID_PATTERN` / `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `PREPARE_REQUIRED` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `WORKER_UNREACHABLE` (503).
 
 ---
 
@@ -388,25 +389,25 @@ Errors: `INVALID_PATTERN` / `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED
 
 ### `POST /servers/{server_id}/inventory/sync` (worker dispatch)
 
-Auth: Bearer + `(server, *, inventory_trigger)`. SSH-сбор hardware-facts (lscpu/lsblk/os-release). Worker postsна `/internal/.../inventory`.
+Auth: Bearer + `(server, *, inventory_trigger)`. SSH-сбор hardware-facts (lscpu/lsblk/os-release). Worker заходит по ключу под управляющим пользователем (`management_user`) и постит на `/internal/.../inventory`.
 
-Query: `account_id?` — аккаунт сервера, под которым worker зайдёт по SSH (self-сессия по паролю). Для управляемого сервера (`is_managed`) игнорируется — вход по ключу под `management_user`. Не передан на неуправляемом — server_service берёт дефолтный привязанный аккаунт (первый с сохранённым паролем, иначе первый привязанный). Привязок нет — `422 ACCOUNT_REQUIRED`; переданный `account_id` не привязан к серверу — `422 ACCOUNT_NOT_LINKED`. Резолв — `worker_dispatch.resolve_inventory_account_id`.
+Требует prepare: сервер обязан быть `is_managed=True` (worker заходит по управляющему ключу). Неподготовленный сервер — `409 PREPARE_REQUIRED`. Путь self-сессии под паролем привязанного аккаунта (`account_id`-резолв до prepare) снят.
 
-Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `ACCOUNT_REQUIRED` / `ACCOUNT_NOT_LINKED` (422), `WORKER_UNREACHABLE` (503).
+Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `PREPARE_REQUIRED` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `WORKER_UNREACHABLE` (503).
 
 ### `POST /servers/{server_id}/users/inventory` (worker dispatch)
 
 Auth: Bearer + `(server, *, inventory_trigger)`. **То же** право, что у hardware-инвентаризации — отдельного `users_inventory_trigger` НЕТ. Worker читает `getent passwd` / sudoers, постит на `/internal/.../users/inventory`, server_service reconcile'ит с `server_accounts`.
 
-Query: `account_id?` — симметрично `inventory/sync` (self-сессия на неуправляемом сервере, иначе дефолтный привязанный аккаунт; managed → вход по ключу).
+Требует prepare (`is_managed=True`) — симметрично `inventory/sync`. Неподготовленный сервер — `409 PREPARE_REQUIRED`.
 
-Errors: симметрично inventory.sync, включая `ACCOUNT_REQUIRED` / `ACCOUNT_NOT_LINKED` (422).
+Errors: симметрично inventory.sync, включая `PREPARE_REQUIRED` (409).
 
 ### `POST /servers/{server_id}/prepare` (worker dispatch)
 
-Auth: Bearer + `(server, *, update)`. Body: bootstrap-логин + base64 пароля. server_service стэшит креды в Redis под TTL, в payload едет ссылка; worker заходит на сервер, заводит управляющего DBOS-пользователя, кладёт ключ. Callback → `is_managed=True`. CRITICAL audit.
+Auth: Bearer + `(server, *, update)`. Body — два взаимоисключающих режима (ровно один): `{account_id}` (server_service резолвит привязанный server_account и расшифровывает его пароль — нужно ещё право `view_password`; account_id не привязан → `404 ACCOUNT_NOT_LINKED`, нет пароля → `409 ACCOUNT_HAS_NO_PASSWORD`) либо ручной `{username_b64, password_b64, ssh_private_key_b64?}` (base64, ssh-ключ опционален). server_service стэшит креды в Redis под TTL, в payload едет ссылка; worker заходит на сервер, заводит управляющего DBOS-пользователя, кладёт ключ. Callback → `is_managed=True`. CRITICAL audit (account-режим дополнительно эмитит `server_account.bootstrap_resolved`).
 
-Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `422` битый base64, `RATE_LIMIT_EXCEEDED` (429), `WORKER_REDIS_UNAVAILABLE` / `WORKER_UNREACHABLE` (503).
+Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403, в т.ч. отсутствие `view_password` в account-режиме), `SERVER_NOT_FOUND` / `ACCOUNT_NOT_LINKED` (404), `SERVER_DECOMMISSIONED` / `ACCOUNT_HAS_NO_PASSWORD` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `422` (битый base64 / нарушение режима / слабый ручной пароль), `RATE_LIMIT_EXCEEDED` (429), `WORKER_REDIS_UNAVAILABLE` / `WORKER_UNREACHABLE` (503).
 
 ---
 

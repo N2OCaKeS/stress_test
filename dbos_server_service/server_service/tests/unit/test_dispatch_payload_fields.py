@@ -73,17 +73,19 @@ class TestServerDispatchPayloadHasSshFields:
         assert p["management_user"] is None
 
     async def test_inventory_sync_payload_ssh_fields(
-        self, client, operator_token_a, make_server, make_account, captured_dispatch,
+        self, client, operator_token_a, make_server, captured_dispatch, db,
     ):
         srv = await make_server(department_id="dep_a")
-        await make_account(server_id=srv.id, login="appuser")
+        srv.is_managed = True
+        srv.management_user = "dbos"
+        await db.flush()
         await client.post(
             f"{BASE}/servers/{srv.id}/inventory/sync", headers=_hdr(operator_token_a),
         )
         p = captured_dispatch[0]["payload"]
         assert p["host"] == srv.hostname
         assert p["ssh_port"] == srv.ssh_port
-        assert p["is_managed"] is False
+        assert p["is_managed"] is True
 
     async def test_managed_server_payload_reflects_management_user(
         self, client, operator_token_a, make_server, captured_dispatch, db,
@@ -113,6 +115,8 @@ class TestServerDispatchPayloadHasSshFields:
             ip_address="10.0.0.42",
             ssh_port=2222,
             department_id="dep_a",
+            is_managed=True,
+            management_user="dbos",
         )
         db.add(srv)
         await db.flush()
@@ -120,21 +124,20 @@ class TestServerDispatchPayloadHasSshFields:
         await client.post(
             f"{BASE}/servers/{srv.id}/inventory/sync", headers=_hdr(operator_token_a),
         )
-        if captured_dispatch:
-            assert captured_dispatch[0]["payload"]["ssh_port"] == 2222
+        assert captured_dispatch[0]["payload"]["ssh_port"] == 2222
 
 
 class TestInstalledPackagesPayloadSshFields:
-    """installed_packages.list payload несёт host/ssh_port + self-сессионный account_id."""
+    """installed_packages.list payload несёт host/ssh_port; сервер обязан быть prepared."""
 
-    async def test_payload_contains_host_ssh_port_and_account(
-        self, client, operator_token_a, make_server, make_account, captured_dispatch,
+    async def test_payload_contains_host_ssh_port(
+        self, client, operator_token_a, make_server, captured_dispatch, db,
     ):
         srv = await make_server(department_id="dep_a")
-        # Неуправляемый сервер: probe заходит под аккаунтом по паролю, как
-        # inventory.sync. Без привязанного аккаунта endpoint вернёт 422
-        # ACCOUNT_REQUIRED (resolve_inventory_account_id).
-        acc = await make_account(server_id=srv.id, login="appuser")
+        # Live-probe идёт по ключу под управляющим пользователем (после prepare).
+        srv.is_managed = True
+        srv.management_user = "dbos"
+        await db.flush()
         await client.post(
             f"{BASE}/servers/{srv.id}/installed-packages",
             headers=_hdr(operator_token_a),
@@ -144,29 +147,31 @@ class TestInstalledPackagesPayloadSshFields:
         assert p["host"] == srv.hostname
         assert p["ssh_port"] == srv.ssh_port
         assert p["pattern"] == "*"
-        # Неуправляемый сервер — worker заходит под аккаунтом по паролю, а не
-        # root'ом; account_id/is_managed обязаны быть в payload.
-        assert p["is_managed"] is False
-        assert p["account_id"] == acc.id
+        # Managed-сервер — вход по ключу, аккаунта в payload нет.
+        assert p["is_managed"] is True
+        assert "account_id" not in p
 
-    async def test_account_required_without_linked_account(
-        self, client, operator_token_a, make_server, captured_dispatch,
+    async def test_prepare_required_without_prepare(
+        self, client, operator_token_a, make_server, make_account, captured_dispatch,
     ):
-        """Неуправляемый сервер без привязанного аккаунта — 422, не SSH под root."""
+        """Неподготовленный сервер — 409 PREPARE_REQUIRED, не SSH."""
         srv = await make_server(department_id="dep_a")
+        await make_account(server_id=srv.id, login="appuser")
         resp = await client.post(
             f"{BASE}/servers/{srv.id}/installed-packages",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 422, resp.text
-        assert resp.json()["error_code"] == "ACCOUNT_REQUIRED"
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error_code"] == "PREPARE_REQUIRED"
         assert captured_dispatch == []
 
     async def test_pattern_propagated_to_payload(
-        self, client, operator_token_a, make_server, make_account, captured_dispatch,
+        self, client, operator_token_a, make_server, captured_dispatch, db,
     ):
         srv = await make_server(department_id="dep_a")
-        await make_account(server_id=srv.id, login="appuser")
+        srv.is_managed = True
+        srv.management_user = "dbos"
+        await db.flush()
         await client.post(
             f"{BASE}/servers/{srv.id}/installed-packages",
             headers=_hdr(operator_token_a),

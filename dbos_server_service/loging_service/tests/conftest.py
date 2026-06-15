@@ -60,6 +60,11 @@ TEST_SERVICE_API_KEYS = {
 # ломала бы их предположения о fixture-сегрегации БД.
 os.environ.setdefault("RETENTION_LOOP_ENABLED", "false")
 
+# Startup-сид дефолтных правил бьётся в module-level `SessionLocal`
+# (default `DATABASE_URL`, не TEST_DATABASE_URL) — как и retention loop.
+# Тесты сеют дефолты через `db`-фикстуру в TEST_DATABASE_URL.
+os.environ.setdefault("SEED_DEFAULT_RULES_ON_STARTUP", "false")
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -148,11 +153,18 @@ def _reset_rate_limiter():
 
 @pytest.fixture()
 def db(TestSessionLocal) -> Session:
-    """Session с чистыми таблицами перед каждым тестом."""
+    """Session с чистыми таблицами перед каждым тестом.
+
+    НЕ сеет дефолтные severity-правила — большинство тестов (кеш, query,
+    retention) ассертят чистый набор правил. Тесты, которым нужны дефолты
+    (severity-резолюция, drop-семантика), берут фикстуру `seeded_db` или
+    вызывают `rule_service.seed_default_rules(db)` явно.
+    """
     from src.services import rule_service
     session = TestSessionLocal()
     session.execute(text(
-        "TRUNCATE TABLE audit_events, audit_rules, service_events, retention_policies RESTART IDENTITY CASCADE"
+        "TRUNCATE TABLE audit_events, audit_rules, service_events, "
+        "retention_policies, seed_state RESTART IDENTITY CASCADE"
     ))
     session.commit()
     rule_service.invalidate_cache()
@@ -160,6 +172,19 @@ def db(TestSessionLocal) -> Session:
         yield session
     finally:
         session.close()
+
+
+@pytest.fixture()
+def seeded_db(db) -> Session:
+    """`db` + засеянные дефолтные severity-правила (`is_default=true`).
+
+    Отражает production-инвариант «дефолты засеяны»: события с известной
+    `(action, status)` парой получают базовый severity и не дропаются
+    drop-семантикой `apply_rules`.
+    """
+    from src.services import rule_service
+    rule_service.seed_default_rules(db)
+    return db
 
 
 # ── DB override helper ────────────────────────────────────────────────────────

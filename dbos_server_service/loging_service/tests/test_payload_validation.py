@@ -193,6 +193,9 @@ class TestIngestStoresAllFields:
             "action": "test.action",
             "status": "success",
             "allowed": True,
+            # Явный severity — иначе action без дефолтного правила дропается
+            # drop-семантикой; этот тест про null-поля, не про severity.
+            "severity": "INFO",
         }
         r = client.post(EVENTS_URL, json=payload,
                         headers=auth_headers | {"X-Service-Identity": "svc"})

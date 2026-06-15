@@ -643,6 +643,135 @@ class TestPrepareDispatch:
         assert len(failures) == 1
         assert failures[0]["details"]["reason"] == "creds_store_unavailable"
 
+    # ── Опциональный SSH-ключ в ручном режиме ─────────────────────────────
+
+    async def test_manual_mode_with_ssh_private_key(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={
+                "username_b64": _b64("bootadmin"),
+                "password_b64": _b64("Boot1234!StrongPwd"),
+                "ssh_private_key_b64": _b64("-----BEGIN KEY-----\nabc\n-----END KEY-----"),
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        call = captured_dispatch[0]
+        assert call["stored_creds"] == {
+            "bootstrap_login": "bootadmin",
+            "bootstrap_password": "Boot1234!StrongPwd",
+            "bootstrap_ssh_private_key": "-----BEGIN KEY-----\nabc\n-----END KEY-----",
+        }
+
+    # ── Валидация режима ──────────────────────────────────────────────────
+
+    async def test_both_modes_422(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        """account_id вместе с ручными полями → 422, ничего не диспатчится."""
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={
+                "account_id": "acc_whatever",
+                "username_b64": _b64("bootadmin"),
+                "password_b64": _b64("Boot1234!StrongPwd"),
+            },
+        )
+        assert_error(resp, 422, "VALIDATION_ERROR")
+        assert captured_dispatch.stored_creds_calls == []
+
+    async def test_no_mode_422(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        """Пустое тело (ни account_id, ни ручных полей) → 422."""
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={},
+        )
+        assert_error(resp, 422, "VALIDATION_ERROR")
+        assert captured_dispatch.stored_creds_calls == []
+
+    # ── Account-режим ─────────────────────────────────────────────────────
+
+    async def test_account_mode_resolves_password(
+        self, client, admin_role_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        """`{account_id}` — server_service сам достаёт пароль аккаунта в Redis."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(
+            server_id=srv.id, login="dbadmin",
+            password="LinkedAcct-Pwd-1!",
+        )
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(admin_role_token_a),
+            json={"account_id": acc.id},
+        )
+        assert resp.status_code == 202, resp.text
+        call = captured_dispatch[0]
+        assert call["task_kind"] == "server.prepare"
+        # Логин и расшифрованный пароль аккаунта ушли в Redis-stash.
+        assert call["stored_creds"] == {
+            "bootstrap_login": "dbadmin",
+            "bootstrap_password": "LinkedAcct-Pwd-1!",
+        }
+        # Пароль не уехал в payload.
+        assert "bootstrap_password" not in call["payload"]
+
+    async def test_account_mode_requires_view_password(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        """operator без `view_password` не может резолвить аккаунт-креды → 403."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="dbadmin")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={"account_id": acc.id},
+        )
+        assert_error(resp, 403, "PERMISSION_DENIED")
+        assert captured_dispatch.stored_creds_calls == []
+
+    async def test_account_mode_not_linked_404(
+        self, client, admin_role_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        """account_id привязан к ДРУГОМУ серверу того же отдела → 404 ACCOUNT_NOT_LINKED."""
+        srv = await make_server(department_id="dep_a")
+        other = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=other.id, login="dbadmin")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(admin_role_token_a),
+            json={"account_id": acc.id},
+        )
+        assert_error(resp, 404, "ACCOUNT_NOT_LINKED")
+        assert captured_dispatch.stored_creds_calls == []
+
+    async def test_account_mode_no_password_409(
+        self, client, admin_role_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        """Привязанный аккаунт без сохранённого пароля → 409 ACCOUNT_HAS_NO_PASSWORD."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="dbadmin", password=None)
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(admin_role_token_a),
+            json={"account_id": acc.id},
+        )
+        assert_error(resp, 409, "ACCOUNT_HAS_NO_PASSWORD")
+        assert captured_dispatch.stored_creds_calls == []
+
 
 # ── Callback: POST /internal/servers/{id}/prepared ───────────────────────────
 

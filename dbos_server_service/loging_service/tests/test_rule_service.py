@@ -150,31 +150,38 @@ class TestResolveDefaultSeverity:
 # ── apply_rules — severity resolution ────────────────────────────────────────
 
 class TestApplyRulesSeverityResolution:
-    def test_assigns_default_severity_when_none(self, db):
+    def test_assigns_default_severity_when_none(self, seeded_db):
         event = _event(severity=None, action="user.login", status="success")
-        result = apply_rules(db, event)
+        result = apply_rules(seeded_db, event)
         assert result is not None
         assert result.severity == "INFO"
 
-    def test_assigns_critical_for_failed_login(self, db):
+    def test_assigns_critical_for_failed_login(self, seeded_db):
         event = _event(severity=None, action="user.login", status="failure", allowed=False)
-        result = apply_rules(db, event)
+        result = apply_rules(seeded_db, event)
         assert result.severity == "CRITICAL"
 
-    def test_explicit_severity_preserved(self, db):
+    def test_explicit_severity_preserved(self, seeded_db):
         event = _event(severity="DEBUG", action="user.login", status="success")
-        result = apply_rules(db, event)
+        result = apply_rules(seeded_db, event)
         assert result.severity == "DEBUG"
 
-    def test_unknown_action_gets_info_for_success(self, db):
+    def test_unknown_action_dropped_for_success(self, seeded_db):
+        # Нет дефолтного правила и нет каталожного severity → drop.
+        # Прежняя heuristic (INFO) убрана: «нет правила = не логируется».
         event = _event(severity=None, action="new_feature.do_thing", status="success")
-        result = apply_rules(db, event)
-        assert result.severity == "INFO"
+        assert apply_rules(seeded_db, event) is None
 
-    def test_unknown_action_gets_warning_for_failure(self, db):
+    def test_unknown_action_dropped_for_failure(self, seeded_db):
         event = _event(severity=None, action="new_feature.do_thing", status="failure", allowed=False)
+        assert apply_rules(seeded_db, event) is None
+
+    def test_unknown_action_with_explicit_severity_kept(self, db):
+        # Явный severity не дропается даже без правила.
+        event = _event(severity="ERROR", action="new_feature.do_thing", status="success")
         result = apply_rules(db, event)
-        assert result.severity == "WARNING"
+        assert result is not None
+        assert result.severity == "ERROR"
 
 
 # ── apply_rules — правила ──────────────────────────────────────────────────────

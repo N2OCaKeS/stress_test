@@ -34,10 +34,9 @@ import type {
  *
  * `pattern` — shell glob (`htop`, `linux-image*`, `*-dev`), по умолчанию `*`.
  *
- * На неуправляемом сервере worker заходит по SSH под аккаунтом сервера
- * (self-сессия по паролю) — передавай `account_id`. Не передан — backend
- * берёт дефолтный привязанный аккаунт; привязок нет → 422 `ACCOUNT_REQUIRED`.
- * Управляемый сервер заходит по ключу, `account_id` игнорируется.
+ * Worker заходит по SSH под управляющим пользователем (`management_user`) —
+ * сервер обязан быть подготовлен (`is_managed`, через prepare), иначе backend
+ * вернёт 409 `PREPARE_REQUIRED`.
  *
  * Внимание: на стандартной Astra-коробке dpkg-список — порядка 2-3 тысяч строк,
  * сам worker применяет cap в 10 000 строк. Сама HTTP-проба быстрая (диспатч
@@ -47,11 +46,10 @@ import type {
 export function installedPackagesProbe(
   serverId: string,
   body?: InstalledPackagesRequest,
-  opts: { account_id?: string } = {},
+  _opts: { account_id?: string } = {},
 ): Promise<InstalledPackagesResult> {
   const query: Record<string, string | undefined> = {};
   if (body?.pattern) query.pattern = body.pattern;
-  if (opts.account_id) query.account_id = opts.account_id;
   return apiPost<InstalledPackagesResult>(
     `/server/v1/servers/${serverId}/installed-packages`,
     undefined,
@@ -65,27 +63,23 @@ export function installedPackagesProbe(
  * `POST /api/server/v1/servers/{server_id}/users/inventory` — диспатч
  * snapshot'а OS-юзеров с сервера через SSH.
  *
- * Backend возвращает `task_id` сразу (HTTP 202). Worker заходит по SSH (под
- * `management_user`'ом, если сервер `is_managed`, иначе под дефолтным
- * аккаунтом сессии), читает `getent passwd` / группы / sudoers, POST'ит
- * результат в `/internal/servers/{id}/users/inventory`, и server_service
- * reconcile'ит снимок с `server_accounts`.
+ * Backend возвращает `task_id` сразу (HTTP 202). Worker заходит по SSH под
+ * управляющим пользователем (`management_user`), читает `getent passwd` /
+ * группы / sudoers, POST'ит результат в `/internal/servers/{id}/users/inventory`,
+ * и server_service reconcile'ит снимок с `server_accounts`.
  *
- * На неуправляемом сервере worker заходит под аккаунтом сервера (self-сессия
- * по паролю) — передавай `account_id`. Не передан — backend берёт дефолтный
- * привязанный аккаунт; привязок нет → 422 `ACCOUNT_REQUIRED`. Управляемый
- * сервер заходит по ключу, `account_id` игнорируется.
+ * Сервер обязан быть подготовлен (`is_managed`, через prepare), иначе backend
+ * вернёт 409 `PREPARE_REQUIRED`.
  *
  * Доступ: `(server, inventory_trigger)`. Cross-dept → 404.
  */
 export function usersInventory(
   serverId: string,
-  opts: { account_id?: string } = {},
+  _opts: { account_id?: string } = {},
 ): Promise<UsersInventoryResult> {
   return apiPost<UsersInventoryResult>(
     `/server/v1/servers/${serverId}/users/inventory`,
     undefined,
-    { query: opts.account_id ? { account_id: opts.account_id } : {} },
   );
 }
 

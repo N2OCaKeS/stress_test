@@ -69,6 +69,10 @@
 | `tokens.role_acl_added` | failure | ERROR | `{ error_code, message, cred_id, dept_id, role_name }`. |
 | `tokens.role_acl_revoked` | success | INFO | `{ cred_id, acl_id, dept_id, role_name }`. |
 | `tokens.role_acl_revoked` | failure | ERROR | `{ error_code, message, cred_id, acl_id }`. |
+| `tokens.user_acl_added` | success | INFO | `{ cred_id, user_id, can_read, can_write }` (target_id = acl_id). |
+| `tokens.user_acl_added` | failure | ERROR | `{ error_code, error_class, user_id }` (target_id = cred_id). |
+| `tokens.user_acl_removed` | success | INFO | `{ cred_id, user_id }` (target_id = acl_id). |
+| `tokens.user_acl_removed` | failure | ERROR | `{ error_code, error_class, cred_id }` (target_id = acl_id). |
 
 ## Owner deleted lifecycle
 

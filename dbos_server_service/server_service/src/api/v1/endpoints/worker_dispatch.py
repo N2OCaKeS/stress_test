@@ -64,7 +64,6 @@ from src.core.exceptions import (
     AppException,
     AuthorizationError,
     ConflictError,
-    DomainValidationError,
     NotFoundError,
     ServiceUnavailableError,
 )
@@ -158,50 +157,34 @@ def _build_account_task_payload(
     return payload
 
 
-async def resolve_inventory_account_id(
-    db: AsyncSession,
-    server,
-    account_id: str | None,
-) -> str | None:
-    """Выбрать аккаунт, под которым worker зайдёт по SSH для inventory-сбора.
+def require_server_prepared(server, *, audit_action: str) -> None:
+    """Гейт «инвентаризация только после prepare».
 
-    Для inventory.sync / users.inventory worker'у нужен либо вход по ключу под
-    управляющим пользователем (`is_managed`), либо пароль конкретного аккаунта
-    сервера (self-сессия). Без `account_id` worker фоллбэчится на root без
-    пароля → SSH_AUTH_FAILED. Резолвим:
-
-      * `server.is_managed` — аккаунт не нужен, вход по ключу. Возвращаем None.
-      * передан `account_id` — проверяем, что он привязан к этому серверу;
-        если нет — 422 ACCOUNT_NOT_LINKED.
-      * `account_id` не передан — берём дефолтный аккаунт сервера: первый
-        привязанный с сохранённым паролем (`password_encrypted IS NOT NULL`),
-        иначе первый привязанный. Нет ни одного — 422 ACCOUNT_REQUIRED.
-
-    Возвращает `account_id` для payload'а (или None для managed-сервера).
+    Действия инвентаризации (`inventory.sync`, `users.inventory`,
+    `installed_packages.list`) ходят на сервер по SSH под управляющим
+    пользователем DBOS — вход по ключу, заведённому prepare-циклом. До
+    prepare ключа нет, заходить нечем: раньше worker фоллбэчился на пароль
+    привязанного аккаунта, теперь этот путь снят. Неподготовленный сервер
+    отбиваем 409 `PREPARE_REQUIRED` с failure-аудитом, чтобы оператор сначала
+    прогнал prepare.
     """
     if server.is_managed:
-        return None
-    linked = await account_repo.list_for_server(db, server.id, limit=500)
-    if account_id is not None:
-        if not any(a.id == account_id for a in linked):
-            raise DomainValidationError(
-                error_code="ACCOUNT_NOT_LINKED",
-                message="account_id is not linked to this server",
-            )
-        return account_id
-    if not linked:
-        raise DomainValidationError(
-            error_code="ACCOUNT_REQUIRED",
-            message=(
-                "Server is not managed and has no linked account; bind a "
-                "server_account (or pass account_id) before inventory"
-            ),
-        )
-    with_password = next(
-        (a for a in linked if a.password_encrypted is not None), None
+        return
+    audit_service.emit(
+        audit_action, target_id=server.id, target_type="server",
+        status="failure", allowed=True,
+        details={
+            "reason": "prepare_required",
+            "department_id": server.department_id,
+        },
     )
-    chosen = with_password or linked[0]
-    return chosen.id
+    raise ConflictError(
+        error_code="PREPARE_REQUIRED",
+        message=(
+            "Server is not prepared for management; run POST "
+            "/servers/{id}/prepare before inventory operations"
+        ),
+    )
 
 
 async def _dispatch_for_server(
@@ -214,9 +197,8 @@ async def _dispatch_for_server(
     audit_action: str,
     task_kind: str,
     require_ipmi: bool,
+    require_prepared: bool = False,
     extra_payload: dict | None = None,
-    resolve_account: bool = False,
-    account_id: str | None = None,
 ) -> dict:
     """Общая логика server-target dispatch'а (power.status / inventory.sync).
 
@@ -235,6 +217,8 @@ async def _dispatch_for_server(
          Унифицирован с `endpoints/ipmi.py::_dispatch_power` (тоже 404
          NO_IPMI_CONTROLLER), чтобы клиент не угадывал по коду, какой именно
          из IPMI-эндпоинтов он дёргает.
+      4.5. ``PREPARE_REQUIRED`` (409) — для inventory-task'ов (`require_prepared`):
+         сбор идёт по SSH под управляющим ключом, до prepare заходить нечем.
       5. ``worker_client.dispatch_task`` + audit-emit на каждой ветке.
 
     ``extra_payload`` мерджится поверх стандартного ``{server_id,
@@ -301,37 +285,22 @@ async def _dispatch_for_server(
                 message="Server has no IPMI controller configured (BMC endpoint/credentials missing)",
             )
 
-    # 4.5. Account-резолв для SSH-сбора под self-сессией (inventory.sync).
-    # На неуправляемом сервере worker'у нужен пароль аккаунта; без `account_id`
-    # он фоллбэчится на root без пароля → SSH_AUTH_FAILED. Managed-сервер
-    # резолвится в None (вход по ключу). Нет аккаунта / не привязан → 422.
-    resolved_account_id: str | None = None
-    if resolve_account:
-        try:
-            resolved_account_id = await resolve_inventory_account_id(
-                db, server, account_id,
-            )
-        except DomainValidationError as exc:
-            audit_service.emit(
-                audit_action, target_id=server_id, target_type="server",
-                status="failure", allowed=True,
-                details={
-                    "reason": exc.error_code.lower(),
-                    "task_kind": task_kind,
-                    "department_id": server.department_id,
-                },
-            )
-            raise
+    # 4.5. Prepare-gate для inventory-task'ов. SSH-сбор идёт под управляющим
+    # ключом (после prepare), self-сессия по паролю аккаунта снята —
+    # неподготовленный сервер отбиваем 409 PREPARE_REQUIRED.
+    if require_prepared:
+        require_server_prepared(server, audit_action=audit_action)
 
     # 5. Dispatch + audit — общая обвязка в `_dispatch.dispatch_server_ssh_task`
     # (базовый payload + dispatch с target_resource_id + ConflictError/
-    # ServiceUnavailableError-audit + commit + success-audit).
+    # ServiceUnavailableError-audit + commit + success-audit). На managed-сервере
+    # worker заходит по ключу — резолвнутый аккаунт всегда None.
     task_id, _ = await dispatch_server_ssh_task(
         db=db, identity=identity, request=request,
         server=server,
         task_kind=task_kind,
         audit_action=audit_action,
-        resolved_account_id=resolved_account_id,
+        resolved_account_id=None,
         extra_payload=extra_payload,
     )
     return {"task_id": task_id, "status": "queued"}
@@ -1025,12 +994,13 @@ async def power_status_dispatch(
     status_code=202,
     description=(
         "Публикует задачу `inventory.sync` в taskiq-broker. Worker идёт на "
-        "сервер по SSH под управляющим пользователем (`management_user`) "
-        "если сервер `is_managed`, иначе под дефолтным аккаунтом сессии — "
-        "снимает OS/kernel/packages/disks и постит facts обратно через "
-        "`submit_inventory_facts` (internal endpoint). Сырые facts остаются "
-        "в `task.result` для диагностики; submit-fail уходит в audit как "
-        "`server.inventory_sync` failure, но сам task остаётся SUCCEEDED.\n\n"
+        "сервер по SSH под управляющим пользователем (`management_user`) — "
+        "сервер обязан быть подготовлен (`is_managed`, через prepare), иначе "
+        "409 PREPARE_REQUIRED. Снимает OS/kernel/packages/disks и постит facts "
+        "обратно через `submit_inventory_facts` (internal endpoint). Сырые "
+        "facts остаются в `task.result` для диагностики; submit-fail уходит в "
+        "audit как `server.inventory_sync` failure, но сам task остаётся "
+        "SUCCEEDED.\n\n"
         "Право `inventory_trigger` шарится с hardware-инвентаризацией и "
         "OS-user инвентаризацией (`POST /servers/{id}/users/inventory`) — "
         "отдельного `users_inventory_trigger` нет."
@@ -1040,8 +1010,7 @@ async def power_status_dispatch(
         400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
         403: {"description": "Нет роли с `inventory_trigger` либо чужой department."},
         404: {"description": "Сервер не найден / чужой dept."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
-        422: {"description": "ACCOUNT_REQUIRED (неуправляемый сервер без привязанных аккаунтов) / ACCOUNT_NOT_LINKED (account_id не привязан к серверу)."},
+        409: {"description": "SERVER_DECOMMISSIONED / PREPARE_REQUIRED (сервер не prepared) / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
         503: {"description": "Worker недоступен."},
     },
 )
@@ -1050,28 +1019,18 @@ async def inventory_sync_dispatch(
     identity: CurrentUserIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    account_id: str | None = Query(
-        default=None,
-        description=(
-            "Аккаунт сервера, под которым worker зайдёт по SSH для сбора "
-            "фактов (self-сессия по паролю). Для управляемого сервера "
-            "игнорируется (вход по ключу). Не передан — server_service берёт "
-            "дефолтный привязанный аккаунт; если привязок нет — 422 "
-            "ACCOUNT_REQUIRED."
-        ),
-    ),
 ) -> ServerTaskDispatchResponse:
     """Ставит `inventory.sync` в очередь worker'а.
 
-    Доступ: `(server, *, inventory_trigger)`.
+    Доступ: `(server, *, inventory_trigger)`. Сервер обязан быть prepared.
 
     Возможные ошибки: 403 PERMISSION_DENIED, 404 SERVER_NOT_FOUND,
-    409 SERVER_DECOMMISSIONED, 409 TASK_IDEMPOTENT_CONFLICT,
-    422 ACCOUNT_REQUIRED / ACCOUNT_NOT_LINKED, 503 WORKER_UNREACHABLE.
+    409 SERVER_DECOMMISSIONED, 409 PREPARE_REQUIRED, 409 TASK_IDEMPOTENT_CONFLICT,
+    503 WORKER_UNREACHABLE.
 
     Связано: `_dispatch_for_server`, `server_worker/src/tasks/inventory.py`.
     """
-    # SSH-сбор не нуждается в BMC — `require_ipmi=False`.
+    # SSH-сбор не нуждается в BMC — `require_ipmi=False`. Требует prepare.
     result = await _dispatch_for_server(
         db=db, identity=identity, request=request,
         server_id=server_id,
@@ -1079,8 +1038,7 @@ async def inventory_sync_dispatch(
         audit_action="server.inventory_sync",
         task_kind="inventory.sync",
         require_ipmi=False,
-        resolve_account=True,
-        account_id=account_id,
+        require_prepared=True,
     )
     return ServerTaskDispatchResponse(**result)
 
@@ -1094,13 +1052,16 @@ async def inventory_sync_dispatch(
     status_code=202,
     summary="Бутстрап управления сервером через worker (202)",
     description=(
-        "Публикует задачу `server.prepare` в taskiq-broker. В теле — bootstrap-"
-        "креды (логин и пароль в base64, симметрия с reveal-картами). "
-        "server_service декодирует их и прокидывает воркеру через cross-DB "
-        "dispatch-канал; воркер заходит на сервер под ними по SSH, заводит "
-        "системного управляющего пользователя DBOS, даёт ему sudo и кладёт "
-        "публичный ключ управления — дальше управление по ключу без исходного "
-        "пароля.\n\n"
+        "Публикует задачу `server.prepare` в taskiq-broker. Два режима выбора "
+        "bootstrap-кред (ровно один): `{account_id}` — server_service сам "
+        "резолвит привязанный к серверу server_account и расшифровывает его "
+        "пароль (+ ssh-ключ, если есть), UI пароль не шлёт; либо ручной "
+        "`{username_b64, password_b64, ssh_private_key_b64?}` (логин/пароль в "
+        "base64, симметрия с reveal-картами). server_service декодирует/резолвит "
+        "креды и прокидывает воркеру через cross-DB dispatch-канал; воркер "
+        "заходит на сервер под ними по SSH, заводит системного управляющего "
+        "пользователя DBOS, даёт ему sudo и кладёт публичный ключ управления — "
+        "дальше управление по ключу без исходного пароля.\n\n"
         "Bootstrap-креды одноразовые и НЕ хранятся персистентно: воркер стирает "
         "их из task-payload сразу после чтения. По завершении воркер POST'ит "
         "callback `/internal/.../prepared` — server_service помечает сервер "
@@ -1113,10 +1074,10 @@ async def inventory_sync_dispatch(
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
         400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
-        403: {"description": "Нет роли с `update` либо чужой department."},
-        404: {"description": "Сервер не найден / чужой dept (скрыто за 404)."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
-        422: {"description": "Битый base64 в username_b64 / password_b64."},
+        403: {"description": "Нет роли с `update` (либо `view_password` в account-режиме) либо чужой department."},
+        404: {"description": "Сервер не найден / чужой dept (скрыто за 404) либо ACCOUNT_NOT_FOUND / ACCOUNT_NOT_LINKED в account-режиме."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT / ACCOUNT_HAS_NO_PASSWORD (account-режим)."},
+        422: {"description": "Битый base64 / нарушение режима (account_id вместе с ручными полями, либо ни того ни другого) / слабый ручной пароль."},
         429: {"description": "RATE_LIMIT_EXCEEDED — per-IP prepare-rate-limit пробит."},
         503: {"description": "Worker недоступен — WORKER_REDIS_UNAVAILABLE (Redis-stash для bootstrap-кред недоступен) или WORKER_UNREACHABLE / WORKER_REDIS_NOT_CONFIGURED (dispatch в taskiq)."},
     },
@@ -1234,16 +1195,60 @@ async def server_prepare_dispatch(
             message="Server is decommissioned and cannot accept worker operations",
         )
 
-    # base64 уже провалидирован схемой; декодируем plaintext для воркера.
+    # Сбор bootstrap-кред. Два режима:
+    #   * account_id — резолвим привязанный аккаунт, расшифровываем его пароль
+    #     (+ ssh-ключ, если есть). UI пароль не присылал;
+    #   * ручной — декодируем base64 из тела (валидность уже проверена схемой).
+    # На любом отказе резолва (нет права / не привязан / нет пароля) выходим
+    # ДО store_prepare_creds — в Redis ничего не кладём.
+    if body.is_account_mode():
+        try:
+            with emit_denied_on_authz_error(
+                audit_action,
+                target_id=server_id,
+                target_type="server",
+                extra_details={
+                    "server_id": server_id,
+                    "denied_on": "account_view_password",
+                    "account_id": body.account_id,
+                },
+                identity=identity,
+            ):
+                resolved = await account_svc.resolve_bootstrap_credentials(
+                    db, identity, body.account_id, server,
+                )
+        except (NotFoundError, ConflictError) as exc:
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={
+                    "reason": exc.error_code.lower(),
+                    "account_id": body.account_id,
+                    "department_id": server.department_id,
+                },
+            )
+            raise
+        bootstrap_creds: dict = {
+            "bootstrap_login": resolved["login"],
+            "bootstrap_password": resolved["password"],
+        }
+        if resolved["ssh_private_key"] is not None:
+            bootstrap_creds["bootstrap_ssh_private_key"] = resolved["ssh_private_key"]
+    else:
+        bootstrap_creds = {
+            "bootstrap_login": body.username(),
+            "bootstrap_password": body.password(),
+        }
+        ssh_private_key = body.ssh_private_key()
+        if ssh_private_key is not None:
+            bootstrap_creds["bootstrap_ssh_private_key"] = ssh_private_key
+
     # Креды НЕ кладём в task-payload (иначе plaintext осел бы в worker-БД).
     # Пишем их в Redis под одноразовый ключ с TTL, в payload — только ссылка.
     # Воркер читает креды по ссылке на каждой попытке, TTL чистит их сам.
     creds_key = worker_client.prepare_creds_key(prepare_creds_id())
     try:
-        await worker_client.store_prepare_creds(
-            creds_key,
-            {"bootstrap_login": body.username(), "bootstrap_password": body.password()},
-        )
+        await worker_client.store_prepare_creds(creds_key, bootstrap_creds)
     except ServiceUnavailableError:
         # Redis отдал свою же категорию ошибки (например WORKER_REDIS_NOT_CONFIGURED) —
         # пробрасываем как есть, только пишем audit-следом.

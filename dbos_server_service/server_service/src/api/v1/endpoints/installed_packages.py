@@ -32,7 +32,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.endpoints._dispatch import dispatch_server_ssh_task
-from src.api.v1.endpoints.worker_dispatch import resolve_inventory_account_id
+from src.api.v1.endpoints.worker_dispatch import require_server_prepared
 from src.core.constants import Action, EntityType, ServerStatus
 from src.core.exceptions import (
     AuthorizationError,
@@ -72,19 +72,21 @@ _MAX_INSTALLED_PACKAGES_ROWS = 10000
     summary="Live-список установленных пакетов через worker (SSH + dpkg/rpm)",
     description=(
         "Публикует задачу `installed_packages.list` в taskiq-broker. Worker идёт "
-        "на сервер по SSH (через default credentials) и выполняет "
-        "`dpkg-query` (Debian/Ubuntu/Astra) либо `rpm -qa` (RHEL) с glob-паттерном. "
-        "Результат — `{packages: [{name, version}, ...]}` — кладётся в `task.result`. "
-        "Endpoint ничего в БД не сохраняет (по дизайну: live truth, БД-кэш не "
-        "выгоден при тысячах пакетов на хост). Pattern — shell glob (`htop`, "
-        "`linux-image*`), не regex. Идемпотентность через `Idempotency-Key`."
+        "на сервер по SSH под управляющим пользователем (после prepare) и "
+        "выполняет `dpkg-query` (Debian/Ubuntu/Astra) либо `rpm -qa` (RHEL) с "
+        "glob-паттерном. Сервер обязан быть подготовлен (`is_managed`), иначе "
+        "409 PREPARE_REQUIRED. Результат — `{packages: [{name, version}, ...]}` "
+        "— кладётся в `task.result`. Endpoint ничего в БД не сохраняет (по "
+        "дизайну: live truth, БД-кэш не выгоден при тысячах пакетов на хост). "
+        "Pattern — shell glob (`htop`, `linux-image*`), не regex. "
+        "Идемпотентность через `Idempotency-Key`."
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
         400: {"description": "INVALID_PATTERN / IDEMPOTENCY_KEY_TOO_LONG."},
         403: {"description": "Нет роли с `view` на server либо чужой department."},
         404: {"description": "Сервер не найден / чужой dept (скрыто за 404)."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
+        409: {"description": "SERVER_DECOMMISSIONED / PREPARE_REQUIRED (сервер не prepared) / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
         503: {"description": "Worker недоступен (WORKER_UNREACHABLE / WORKER_REDIS_NOT_CONFIGURED)."},
     },
 )
@@ -98,24 +100,16 @@ async def list_installed_packages(
         max_length=128,
         description="Shell-glob паттерн (`htop`, `linux-image*`, `*-dev`). По умолчанию `*` — все пакеты.",
     ),
-    account_id: str | None = Query(
-        default=None,
-        description=(
-            "Аккаунт сервера, под которым worker зайдёт по SSH (self-сессия "
-            "по паролю). Для управляемого сервера игнорируется (вход по "
-            "ключу). Не передан — server_service берёт дефолтный привязанный "
-            "аккаунт; привязок нет — 422 ACCOUNT_REQUIRED."
-        ),
-    ),
     db: AsyncSession = Depends(get_db),
 ) -> ServerTaskDispatchResponse:
     """Live-просмотр пакетов через worker.
 
     Доступ: `(server, view)` + dept-isolation сервера. Cross-dept → 404.
+    Сервер обязан быть prepared.
 
     Возможные ошибки: 400 INVALID_PATTERN, 403 PERMISSION_DENIED,
-    404 SERVER_NOT_FOUND, 409 SERVER_DECOMMISSIONED, 409 TASK_IDEMPOTENT_CONFLICT,
-    503 WORKER_UNREACHABLE.
+    404 SERVER_NOT_FOUND, 409 SERVER_DECOMMISSIONED, 409 PREPARE_REQUIRED,
+    409 TASK_IDEMPOTENT_CONFLICT, 503 WORKER_UNREACHABLE.
 
     Связано: `server_worker/src/tasks/installed_packages.py::installed_packages_list`.
     """
@@ -174,36 +168,20 @@ async def list_installed_packages(
             message="Server is decommissioned and cannot accept worker operations",
         )
 
-    # Account-резолв для self-сессии (неуправляемый сервер). Без `account_id`
-    # worker фоллбэчился на root без пароля → SSH_AUTH_FAILED. Managed → None
-    # (вход по ключу). Нет аккаунта / не привязан → 422. Тот же резолвер, что у
-    # inventory.sync / users.inventory.
-    try:
-        resolved_account_id = await resolve_inventory_account_id(
-            db, server, account_id,
-        )
-    except DomainValidationError as exc:
-        audit_service.emit(
-            audit_action, target_id=server_id, target_type="server",
-            status="failure", allowed=True,
-            details={
-                "reason": exc.error_code.lower(),
-                "task_kind": "installed_packages.list",
-                "department_id": server.department_id,
-            },
-        )
-        raise
+    # 3.5. Prepare-gate: live-probe идёт по SSH под управляющим ключом (после
+    # prepare). Неподготовленный сервер → 409 PREPARE_REQUIRED. Тот же гейт,
+    # что у inventory.sync / users.inventory.
+    require_server_prepared(server, audit_action=audit_action)
 
-    # 4. Dispatch + audit — общая обвязка в `_dispatch.dispatch_server_ssh_task`
-    # (базовый SSH-payload + dispatch с target_resource_id + ConflictError/
-    # ServiceUnavailableError-audit + commit + success-audit). `pattern`/
-    # `max_rows` едут доп-payload'ом, `pattern` дублируется в success-details.
+    # 4. Dispatch + audit — общая обвязка в `_dispatch.dispatch_server_ssh_task`.
+    # На managed-сервере worker заходит по ключу — аккаунта в payload нет.
+    # `pattern`/`max_rows` едут доп-payload'ом, `pattern` дублируется в success.
     task_id, _ = await dispatch_server_ssh_task(
         db=db, identity=identity, request=request,
         server=server,
         task_kind="installed_packages.list",
         audit_action=audit_action,
-        resolved_account_id=resolved_account_id,
+        resolved_account_id=None,
         extra_payload={
             "pattern": pattern,
             "max_rows": _MAX_INSTALLED_PACKAGES_ROWS,

@@ -29,7 +29,26 @@ class TestIngestPayload:
         assert body["id"].startswith("log_")
         assert "received_at" in body
 
-    def test_minimal_event_defaults(self, client, auth_headers):
+    def test_minimal_event_with_explicit_severity_stored(self, client, auth_headers):
+        from datetime import datetime, timezone
+
+        payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "service": "config_service",
+            "action": "secret.read",
+            "status": "success",
+            "allowed": True,
+            "severity": "INFO",
+        }
+        # X-Service-Identity должна совпадать с payload.service —
+        # guard SERVICE_IDENTITY_PAYLOAD_MISMATCH режет несовпадение на 403.
+        headers = auth_headers | {"X-Service-Identity": "config_service"}
+        resp = client.post("/api/logging/v1/events", json=payload, headers=headers)
+        assert resp.status_code == 201
+
+    def test_minimal_event_without_rule_dropped(self, client, auth_headers):
+        """Событие без severity для action без дефолтного/managed-правила
+        дропается: «нет правила = не логируется». 204, тело пустое."""
         from datetime import datetime, timezone
 
         payload = {
@@ -39,11 +58,9 @@ class TestIngestPayload:
             "status": "success",
             "allowed": True,
         }
-        # X-Service-Identity должна совпадать с payload.service —
-        # guard SERVICE_IDENTITY_PAYLOAD_MISMATCH режет несовпадение на 403.
         headers = auth_headers | {"X-Service-Identity": "config_service"}
         resp = client.post("/api/logging/v1/events", json=payload, headers=headers)
-        assert resp.status_code == 201
+        assert resp.status_code == 204
 
     def test_all_severity_levels_accepted(self, client, auth_headers):
         for severity in ("TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):

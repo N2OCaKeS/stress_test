@@ -1127,3 +1127,72 @@ async def _reveal_account_password(
             },
         )
     return base64.b64encode(plain.encode()).decode("ascii")
+
+
+async def resolve_bootstrap_credentials(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+    server,
+) -> dict[str, str | None]:
+    """Расшифровать креды привязанного аккаунта для bootstrap-режима prepare.
+
+    Контракт «выбрать аккаунт вместо ручного ввода»: caller указывает
+    `account_id`, server_service сам достаёт логин/пароль (+ приватный SSH-ключ,
+    если он сохранён) и кладёт их в Redis как bootstrap — UI пароль не шлёт.
+
+    Проверки (в порядке безопасности):
+
+    * `view_password` на SERVER_ACCOUNT — то же право, что у reveal'а пароля;
+      кто может посмотреть пароль, тот может им забутстрапить;
+    * аккаунт виден (dept-isolation, иначе 404 ACCOUNT_NOT_FOUND);
+    * аккаунт привязан к этому серверу (иначе 404 ACCOUNT_NOT_LINKED);
+    * у аккаунта есть сохранённый пароль (иначе 409 ACCOUNT_HAS_NO_PASSWORD).
+
+    Возвращает `{"login", "password", "ssh_private_key"}` (ssh_private_key —
+    None, если у аккаунта ключа нет). Эти значения кладёт в Redis-stash
+    вызывающий endpoint; в task-payload едет только ссылка.
+    """
+    await permissions.require_action(
+        db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW_PASSWORD,
+    )
+    account = await _load_account_visible(db, identity, account_id)
+    if server.id not in repo.linked_server_ids(account):
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_LINKED",
+            message="Server account is not linked to this server",
+        )
+    if account.password_encrypted is None:
+        raise ConflictError(
+            error_code="ACCOUNT_HAS_NO_PASSWORD",
+            message=(
+                "Selected account has no stored password; rotate it first or "
+                "use manual bootstrap credentials"
+            ),
+        )
+    password = secrets_service.decrypt(
+        account.password_encrypted,
+        aad=secrets_service.aad_for_server_account_password(account.id),
+    )
+    ssh_private_key: str | None = None
+    if account.ssh_private_key_encrypted is not None:
+        ssh_private_key = secrets_service.decrypt(
+            account.ssh_private_key_encrypted,
+            aad=secrets_service.aad_for_server_account_ssh_key(account.id),
+        )
+    audit_service.emit(
+        "server_account.bootstrap_resolved",
+        target_id=account.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "login": account.login,
+            "server_id": server.id,
+            "department_id": account.department_id,
+            "has_ssh_private_key": ssh_private_key is not None,
+        },
+    )
+    return {
+        "login": account.login,
+        "password": password,
+        "ssh_private_key": ssh_private_key,
+    }

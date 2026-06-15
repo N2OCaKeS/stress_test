@@ -352,6 +352,14 @@ class Settings(BaseSettings):
         default=True, alias="RETENTION_LOOP_ENABLED"
     )
 
+    # Идемпотентный сид дефолтных severity-правил на старте сервиса. Делит
+    # gate с retention loop'ом — оба бьются в module-level `SessionLocal`,
+    # который в тестах смотрит мимо TEST_DATABASE_URL; тесты сеют через
+    # фикстуру и держат флаг выключенным.
+    seed_default_rules_on_startup: bool = Field(
+        default=True, alias="SEED_DEFAULT_RULES_ON_STARTUP"
+    )
+
     @field_validator("service_api_keys", mode="before")
     @classmethod
     def _parse_service_api_keys(cls, v):

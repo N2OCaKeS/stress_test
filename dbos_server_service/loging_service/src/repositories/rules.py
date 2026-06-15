@@ -49,9 +49,12 @@ def get_all(
     db: Session,
     limit: int = 100,
     offset: int = 0,
+    is_default: bool | None = None,
 ) -> tuple[list[AuditRule], int]:
     from sqlalchemy import func
     base = select(AuditRule).where(AuditRule.deleted_at.is_(None))
+    if is_default is not None:
+        base = base.where(AuditRule.is_default == is_default)
     count_stmt = select(func.count()).select_from(base.subquery())
     page_stmt = base.order_by(AuditRule.priority.desc()).offset(offset).limit(limit)
 

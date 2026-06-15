@@ -208,52 +208,124 @@ ServerPowerStatusDispatchResponse = ServerTaskDispatchResponse
 class ServerPrepareRequest(BaseModel):
     """Тело POST /servers/{id}/prepare — bootstrap-креды для онбординга.
 
-    Логин и пароль приходят в base64 (симметрия с reveal-картами, где
-    plaintext отдаётся в `password_b64`). server_service декодирует их на
-    приёме и прокидывает воркеру через internal-канал. Креды одноразовые —
-    они НЕ хранятся: воркер заходит под ними по SSH, заводит управляющего
-    пользователя DBOS и кладёт ему публичный ключ, после чего исходный
-    пароль больше не нужен.
+    Два взаимоисключающих режима выбора bootstrap-кред:
 
-    Bootstrap-пароль валидируется по усиленной политике
+    * **выбор аккаунта** — `{account_id}`. server_service сам резолвит
+      привязанный к серверу `server_account`, расшифровывает его пароль и
+      кладёт в Redis как bootstrap. UI пароль НЕ шлёт — он живёт только в БД
+      в зашифрованном виде. Аккаунт обязан быть привязан к этому серверу и
+      доступен вызывающему (право `view_password`).
+    * **ручной ввод** — `{username_b64, password_b64, ssh_private_key_b64?}`.
+      Логин и пароль приходят в base64 (симметрия с reveal-картами).
+      Опциональный `ssh_private_key_b64` — приватный SSH-ключ bootstrap-
+      аккаунта, если вход на свежий бокс идёт по ключу, а не паролю.
+
+    Ровно один режим: указать `account_id` вместе с ручными полями — 422.
+    Не указать ничего — 422.
+
+    Креды одноразовые — они НЕ хранятся персистентно: воркер заходит под
+    ними по SSH, заводит управляющего пользователя DBOS и кладёт ему
+    публичный ключ, после чего исходные креды больше не нужны.
+
+    Ручной bootstrap-пароль валидируется по усиленной политике
     `core.password_policy.validate_strong_password` — минимум 16 символов,
     буква, цифра и хотя бы один не-алфанумерический символ. Это входная
     точка управления свежим боксом: даже одноразовый кред должен быть
     устойчив к перебору, пока он лежит в Redis под TTL и едет к worker'у
-    по internal-каналу. Управляемые DBOS-аккаунты после онбординга идут
-    под отдельной политикой (`ServerAccountCreate.password_b64`,
-    `PasswordRotateRequest.password`, `IpmiCredentialsRotatedRequest.new_password`).
+    по internal-каналу. Пароль выбранного `server_account` под усиленную
+    политику не гоняется — он уже прошёл политику при создании/ротации
+    учётки. Управляемые DBOS-аккаунты после онбординга идут под отдельной
+    политикой (`ServerAccountCreate.password_b64`, `PasswordRotateRequest`,
+    `IpmiCredentialsRotatedRequest.new_password`).
     """
 
-    username_b64: str = Field(
-        ..., min_length=1,
+    account_id: str | None = Field(
+        default=None,
+        description=(
+            "Привязанный к серверу server_account, чьи креды использовать "
+            "как bootstrap. Взаимоисключающе с username_b64/password_b64."
+        ),
+    )
+    username_b64: str | None = Field(
+        default=None,
         description="Логин bootstrap-аккаунта в base64 (UTF-8 после декода).",
     )
-    password_b64: str = Field(
-        ..., min_length=1,
+    password_b64: str | None = Field(
+        default=None,
         description="Пароль bootstrap-аккаунта в base64 (UTF-8 после декода).",
+    )
+    ssh_private_key_b64: str | None = Field(
+        default=None,
+        description=(
+            "Опциональный приватный SSH-ключ bootstrap-аккаунта в base64 "
+            "(PEM/OpenSSH). Только для ручного режима."
+        ),
     )
 
     @field_validator("username_b64")
     @classmethod
-    def _check_username_b64(cls, value: str) -> str:
+    def _check_username_b64(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
         _decode_b64(value, "username_b64")
         return value
 
     @field_validator("password_b64")
     @classmethod
-    def _check_password_b64(cls, value: str) -> str:
+    def _check_password_b64(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
         plaintext = _decode_b64(value, "password_b64")
         validate_strong_password(plaintext)
         return value
 
+    @field_validator("ssh_private_key_b64")
+    @classmethod
+    def _check_ssh_private_key_b64(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        # Приватный ключ может быть бинарным/не-UTF-8 в теории, но OpenSSH/PEM
+        # ключи — всегда ASCII-текст. Декодируем строго тем же b64-валидатором.
+        _decode_b64(value, "ssh_private_key_b64")
+        return value
+
+    @model_validator(mode="after")
+    def _check_exactly_one_mode(self) -> "ServerPrepareRequest":
+        manual_fields = [self.username_b64, self.password_b64]
+        manual = any(f is not None for f in manual_fields)
+        account = self.account_id is not None
+        if account and (manual or self.ssh_private_key_b64 is not None):
+            raise ValueError(
+                "provide either account_id or manual credentials, not both"
+            )
+        if account:
+            return self
+        # Ручной режим: и логин, и пароль обязательны.
+        if self.username_b64 is None or self.password_b64 is None:
+            raise ValueError(
+                "manual mode requires both username_b64 and password_b64; "
+                "or pass account_id to use a linked server_account"
+            )
+        return self
+
+    def is_account_mode(self) -> bool:
+        return self.account_id is not None
+
     def username(self) -> str:
-        """Декодированный логин (валидность уже проверена валидатором)."""
+        """Декодированный логин ручного режима (валидность уже проверена)."""
+        assert self.username_b64 is not None
         return _decode_b64(self.username_b64, "username_b64")
 
     def password(self) -> str:
-        """Декодированный пароль (валидность уже проверена валидатором)."""
+        """Декодированный пароль ручного режима (валидность уже проверена)."""
+        assert self.password_b64 is not None
         return _decode_b64(self.password_b64, "password_b64")
+
+    def ssh_private_key(self) -> str | None:
+        """Декодированный приватный SSH-ключ ручного режима (или None)."""
+        if self.ssh_private_key_b64 is None:
+            return None
+        return _decode_b64(self.ssh_private_key_b64, "ssh_private_key_b64")
 
 
 class ServerPrepareResponse(BaseModel):

@@ -84,12 +84,24 @@ def _events(captured: list[dict], action: str) -> list[dict]:
 # ── Trigger: POST /servers/{id}/users/inventory ──────────────────────────────
 
 
+async def _prepared(db, srv, management_user="dbos"):
+    """Пометить сервер подготовленным к управлению (после prepare).
+
+    Инвентаризация требует `is_managed=True` — worker заходит по ключу под
+    управляющим пользователем. Без prepare endpoint отдаёт 409 PREPARE_REQUIRED.
+    """
+    srv.is_managed = True
+    srv.management_user = management_user
+    await db.flush()
+    return srv
+
+
 class TestUsersInventoryTrigger:
     async def test_operator_dispatches(
-        self, client, operator_token_a, make_server, make_account, captured_dispatch,
+        self, client, operator_token_a, make_server, captured_dispatch, db,
     ):
         srv = await make_server(department_id="dep_a")
-        acc = await make_account(server_id=srv.id, login="appuser")
+        await _prepared(db, srv)
         resp = await client.post(
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_a),
         )
@@ -99,42 +111,35 @@ class TestUsersInventoryTrigger:
         assert body["status"] == "queued"
         assert len(captured_dispatch) == 1
         assert captured_dispatch[0]["task_kind"] == "users.inventory"
-        # Дефолт-резолв аккаунта пишется не только в payload, но и в колонку.
-        assert captured_dispatch[0]["target_resource_id"] == acc.id
+        # Managed-сервер — вход по ключу, аккаунта в payload нет.
+        assert captured_dispatch[0]["target_resource_id"] is None
         assert captured_dispatch[0]["payload"] == {
             "server_id": srv.id,
             "target_department_id": "dep_a",
             "host": srv.hostname,
             "ssh_port": srv.ssh_port,
-            "is_managed": False,
-            "management_user": None,
-            "account_id": acc.id,
+            "is_managed": True,
+            "management_user": "dbos",
         }
 
-    async def test_explicit_account_persisted_on_task_row(
+    async def test_unprepared_server_returns_prepare_required(
         self, client, operator_token_a, make_server, make_account, captured_dispatch,
     ):
-        """Явный account_id попадает и в payload, и в колонку task-row."""
+        """Неподготовленный сервер → 409 PREPARE_REQUIRED, dispatch не идёт."""
         srv = await make_server(department_id="dep_a")
-        primary = await make_account(server_id=srv.id, login="appuser")
-        other = await make_account(server_id=srv.id, login="otheruser")
+        # Даже с привязанным аккаунтом без prepare инвентаризация не запускается.
+        await make_account(server_id=srv.id, login="appuser")
         resp = await client.post(
-            f"{BASE}/{srv.id}/users/inventory?account_id={other.id}",
-            headers=_hdr(operator_token_a),
+            f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 202, resp.text
-        call = captured_dispatch[0]
-        assert call["target_resource_id"] == other.id
-        assert call["payload"]["account_id"] == other.id
-        assert other.id != primary.id
+        assert_error(resp, 409, "PREPARE_REQUIRED")
+        assert captured_dispatch == []
 
     async def test_managed_server_propagates_session_hints(
         self, client, operator_token_a, make_server, captured_dispatch, db,
     ):
         srv = await make_server(department_id="dep_a")
-        srv.is_managed = True
-        srv.management_user = "dbos"
-        await db.flush()
+        await _prepared(db, srv)
         resp = await client.post(
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_a),
         )
@@ -147,7 +152,7 @@ class TestUsersInventoryTrigger:
         assert call["target_resource_id"] is None
 
     async def test_dispatch_payload_includes_host_and_port(
-        self, client, operator_token_a, make_server, make_account, captured_dispatch,
+        self, client, operator_token_a, make_server, captured_dispatch, db,
     ):
         # Симметрия с `_dispatch_for_server`: dispatch payload должен нести
         # `host`/`ssh_port`, иначе SSH-клиент воркера фоллбэкается на
@@ -156,7 +161,7 @@ class TestUsersInventoryTrigger:
             department_id="dep_a",
             hostname="srv-with-host.example.local",
         )
-        await make_account(server_id=srv.id, login="appuser")
+        await _prepared(db, srv)
         resp = await client.post(
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_a),
         )
@@ -167,9 +172,10 @@ class TestUsersInventoryTrigger:
         assert payload["ssh_port"] == srv.ssh_port
 
     async def test_reader_cannot_trigger(
-        self, client, reader_token_a, make_server, captured_dispatch,
+        self, client, reader_token_a, make_server, captured_dispatch, db,
     ):
         srv = await make_server(department_id="dep_a")
+        await _prepared(db, srv)
         resp = await client.post(
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(reader_token_a),
         )
@@ -177,9 +183,10 @@ class TestUsersInventoryTrigger:
         assert captured_dispatch == []
 
     async def test_cross_dept_returns_404(
-        self, client, operator_token_b, make_server, captured_dispatch,
+        self, client, operator_token_b, make_server, captured_dispatch, db,
     ):
         srv = await make_server(department_id="dep_a")
+        await _prepared(db, srv)
         resp = await client.post(
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_b),
         )
@@ -205,11 +212,11 @@ class TestUsersInventoryTrigger:
         assert captured_dispatch == []
 
     async def test_success_emits_audit(
-        self, client, operator_token_a, make_server, make_account,
-        captured_dispatch, captured_emits,
+        self, client, operator_token_a, make_server,
+        captured_dispatch, captured_emits, db,
     ):
         srv = await make_server(department_id="dep_a")
-        await make_account(server_id=srv.id, login="appuser")
+        await _prepared(db, srv)
         await client.post(
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_a),
         )

@@ -221,6 +221,12 @@ class RuleResponse(BaseModel):
     name: str
     description: str | None
     is_active: bool
+    # `is_default=true` — авто-сидируемое дефолтное правило `(action,status) →
+    # severity`. UI помечает такие строки, чтобы оператор отличал дефолты от
+    # managed-правил. Дефолт можно редактировать и удалять штатными PATCH/
+    # DELETE; удаление означает «у пары нет базового severity» → событие
+    # перестаёт логироваться (drop).
+    is_default: bool = False
     priority: int
     match_service: str | None
     match_action: str | None

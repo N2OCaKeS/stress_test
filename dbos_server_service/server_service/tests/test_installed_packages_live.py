@@ -83,14 +83,21 @@ def captured_dispatch(monkeypatch):
 # ── 1. Success ──────────────────────────────────────────────────────────────
 
 
+async def _prepared(db, srv, management_user="dbos"):
+    """Пометить сервер подготовленным (after prepare): live-probe идёт по ключу."""
+    srv.is_managed = True
+    srv.management_user = management_user
+    await db.flush()
+    return srv
+
+
 class TestDispatchSuccess:
     async def test_operator_dispatches_with_pattern(
-        self, client, operator_token_a, make_server, make_account, captured_dispatch,
+        self, client, operator_token_a, make_server, captured_dispatch, db,
     ):
         srv = await make_server(department_id="dep_a")
-        # Неуправляемый сервер заходит под аккаунтом по паролю (self-сессия) —
-        # без привязанного аккаунта endpoint вернёт 422 ACCOUNT_REQUIRED.
-        acc = await make_account(server_id=srv.id, login="appuser")
+        # Live-probe идёт по ключу под управляющим пользователем (after prepare).
+        await _prepared(db, srv)
         resp = await client.post(
             _url(srv.id),
             headers=_hdr(operator_token_a),
@@ -104,8 +111,8 @@ class TestDispatchSuccess:
         call = captured_dispatch[0]
         assert call["task_kind"] == "installed_packages.list"
         assert call["target_server_id"] == srv.id
-        # Дефолт-резолв аккаунта пишется не только в payload, но и в колонку.
-        assert call["target_resource_id"] == acc.id
+        # Managed-сервер — вход по ключу, аккаунта в payload/колонке нет.
+        assert call["target_resource_id"] is None
         assert call["payload"] == {
             "server_id": srv.id,
             "host": srv.hostname,
@@ -113,37 +120,26 @@ class TestDispatchSuccess:
             "pattern": "linux-image*",
             "max_rows": 10000,
             "target_department_id": "dep_a",
-            "is_managed": False,
-            "management_user": None,
-            "account_id": acc.id,
+            "is_managed": True,
+            "management_user": "dbos",
         }
 
-    async def test_explicit_account_persisted_on_task_row(
+    async def test_prepare_required_without_prepare(
         self, client, operator_token_a, make_server, make_account, captured_dispatch,
     ):
-        """Явный account_id попадает и в payload, и в колонку task-row."""
+        """Неподготовленный сервер — 409 PREPARE_REQUIRED, dispatch не идёт."""
         srv = await make_server(department_id="dep_a")
-        primary = await make_account(server_id=srv.id, login="appuser")
-        other = await make_account(server_id=srv.id, login="otheruser")
-        resp = await client.post(
-            _url(srv.id),
-            headers=_hdr(operator_token_a),
-            params={"account_id": other.id},
-        )
-        assert resp.status_code == 202, resp.text
-        call = captured_dispatch[0]
-        assert call["target_resource_id"] == other.id
-        assert call["payload"]["account_id"] == other.id
-        assert other.id != primary.id
+        await make_account(server_id=srv.id, login="appuser")
+        resp = await client.post(_url(srv.id), headers=_hdr(operator_token_a))
+        assert_error(resp, 409, "PREPARE_REQUIRED")
+        assert captured_dispatch == []
 
     async def test_managed_server_leaves_account_null(
         self, client, operator_token_a, make_server, captured_dispatch, db,
     ):
         """Managed-сервер ходит по ключу — аккаунта нет, колонка остаётся null."""
         srv = await make_server(department_id="dep_a")
-        srv.is_managed = True
-        srv.management_user = "dbos"
-        await db.flush()
+        await _prepared(db, srv)
         resp = await client.post(_url(srv.id), headers=_hdr(operator_token_a))
         assert resp.status_code == 202, resp.text
         call = captured_dispatch[0]
@@ -151,13 +147,13 @@ class TestDispatchSuccess:
         assert "account_id" not in call["payload"]
 
     async def test_default_pattern_is_wildcard(
-        self, client, operator_token_a, make_server, make_account, captured_dispatch,
+        self, client, operator_token_a, make_server, captured_dispatch, db,
     ):
         """Без `?pattern=` query — глобальный `*` (все пакеты). Эмулирует
         кейс «empty result possible» — worker может вернуть пустой массив,
         но dispatch'ер на это не смотрит."""
         srv = await make_server(department_id="dep_a")
-        await make_account(server_id=srv.id, login="appuser")
+        await _prepared(db, srv)
         resp = await client.post(_url(srv.id), headers=_hdr(operator_token_a))
         assert resp.status_code == 202
         assert len(captured_dispatch) == 1
@@ -253,7 +249,7 @@ class TestWorkerSideFailures:
         assert captured_dispatch == []
 
     async def test_worker_unreachable_returns_503(
-        self, client, operator_token_a, make_server, make_account, monkeypatch,
+        self, client, operator_token_a, make_server, monkeypatch, db,
     ):
         from src.core.exceptions import ServiceUnavailableError
 
@@ -268,7 +264,9 @@ class TestWorkerSideFailures:
             fail_dispatch,
         )
         srv = await make_server(department_id="dep_a")
-        await make_account(server_id=srv.id, login="appuser")
+        srv.is_managed = True
+        srv.management_user = "dbos"
+        await db.flush()
         resp = await client.post(
             _url(srv.id),
             headers=_hdr(operator_token_a),

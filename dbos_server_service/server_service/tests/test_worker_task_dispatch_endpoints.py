@@ -198,13 +198,15 @@ class TestPowerStatusDispatch:
 
 
 class TestInventorySyncDispatch:
-    """`inventory.sync` идёт по SSH — IPMI не нужен."""
+    """`inventory.sync` идёт по SSH — IPMI не нужен, но сервер обязан быть prepared."""
 
     async def test_operator_dispatches_without_ipmi(
-        self, client, operator_token_a, make_server, make_account, captured_dispatch,
+        self, client, operator_token_a, make_server, captured_dispatch, db,
     ):
         srv = await make_server(department_id="dep_a")  # без ipmi
-        acc = await make_account(server_id=srv.id, login="appuser")
+        srv.is_managed = True
+        srv.management_user = "dbos"
+        await db.flush()
         resp = await client.post(
             f"{BASE}/servers/{srv.id}/inventory/sync",
             headers=_hdr(operator_token_a),
@@ -214,34 +216,30 @@ class TestInventorySyncDispatch:
         call = captured_dispatch[0]
         assert call["task_kind"] == "inventory.sync"
         assert call["target_server_id"] == srv.id
-        # Дефолт-резолв аккаунта пишется не только в payload, но и в колонку.
-        assert call["target_resource_id"] == acc.id
+        # Managed-сервер — вход по ключу, аккаунта в payload нет.
+        assert call["target_resource_id"] is None
         assert call["payload"] == {
             "server_id": srv.id,
             "host": srv.hostname,
             "ssh_port": srv.ssh_port,
             "target_department_id": "dep_a",
-            "is_managed": False,
-            "management_user": None,
-            "account_id": acc.id,
+            "is_managed": True,
+            "management_user": "dbos",
         }
 
-    async def test_explicit_account_persisted_on_task_row(
+    async def test_unprepared_server_returns_prepare_required(
         self, client, operator_token_a, make_server, make_account, captured_dispatch,
     ):
-        """Явно переданный account_id попадает и в payload, и в колонку."""
+        """Неподготовленный сервер → 409 PREPARE_REQUIRED, dispatch не идёт."""
         srv = await make_server(department_id="dep_a")
-        primary = await make_account(server_id=srv.id, login="appuser")
-        other = await make_account(server_id=srv.id, login="otheruser")
+        # Привязанный аккаунт уже не открывает inventory до prepare.
+        await make_account(server_id=srv.id, login="appuser")
         resp = await client.post(
-            f"{BASE}/servers/{srv.id}/inventory/sync?account_id={other.id}",
+            f"{BASE}/servers/{srv.id}/inventory/sync",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 202, resp.text
-        call = captured_dispatch[0]
-        assert call["target_resource_id"] == other.id
-        assert call["payload"]["account_id"] == other.id
-        assert other.id != primary.id
+        assert_error(resp, 409, "PREPARE_REQUIRED")
+        assert captured_dispatch == []
 
     async def test_managed_server_leaves_account_null(
         self, client, operator_token_a, make_server, captured_dispatch, db,
@@ -261,10 +259,12 @@ class TestInventorySyncDispatch:
         assert "account_id" not in call["payload"]
 
     async def test_reader_cannot_trigger_inventory(
-        self, client, reader_token_a, make_server, captured_dispatch,
+        self, client, reader_token_a, make_server, captured_dispatch, db,
     ):
         """reader не имеет `inventory_trigger` в дефолтных грантах."""
         srv = await make_server(department_id="dep_a")
+        srv.is_managed = True
+        await db.flush()
         resp = await client.post(
             f"{BASE}/servers/{srv.id}/inventory/sync",
             headers=_hdr(reader_token_a),
@@ -497,11 +497,13 @@ class TestDispatchAuditOnSuccess:
         assert ev["details"]["department_id"] == "dep_a"
 
     async def test_inventory_sync_success_audit(
-        self, client, operator_token_a, make_server, make_account,
-        captured_dispatch, captured_emits,
+        self, client, operator_token_a, make_server,
+        captured_dispatch, captured_emits, db,
     ):
         srv = await make_server(department_id="dep_a")
-        await make_account(server_id=srv.id, login="appuser")
+        srv.is_managed = True
+        srv.management_user = "dbos"
+        await db.flush()
         await client.post(
             f"{BASE}/servers/{srv.id}/inventory/sync",
             headers=_hdr(operator_token_a),
@@ -565,8 +567,8 @@ class TestDispatchAuditOnWorkerFailure:
     """
 
     async def test_conflict_emits_failure_for_inventory_sync(
-        self, client, operator_token_a, make_server, make_account,
-        captured_emits, monkeypatch,
+        self, client, operator_token_a, make_server,
+        captured_emits, monkeypatch, db,
     ):
         """Заменил тест conflict-аудита для power.status (тот endpoint больше
         не диспатчит — стал синхронным TCP-пингом). Тестируем тот же контракт
@@ -585,7 +587,9 @@ class TestDispatchAuditOnWorkerFailure:
             boom,
         )
         srv = await make_server(department_id="dep_a")
-        await make_account(server_id=srv.id, login="appuser")
+        srv.is_managed = True
+        srv.management_user = "dbos"
+        await db.flush()
         resp = await client.post(
             f"{BASE}/servers/{srv.id}/inventory/sync",
             headers={**_hdr(operator_token_a), "Idempotency-Key": "is-race"},

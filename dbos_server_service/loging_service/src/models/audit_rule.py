@@ -33,6 +33,18 @@ class AuditRule(Base):
         Integer, nullable=False, default=100, server_default="100"
     )
 
+    # `is_default=true` — авто-сидируемое дефолтное правило `(action, status) →
+    # severity`. Раньше дефолты жили хардкод-таблицей `_DEFAULT_SEVERITY` в
+    # rule_service; теперь это видимые/редактируемые/удаляемые row'и. Дефолт
+    # сидируется как `OVERRIDE_SEVERITY` с `priority=0` (ниже любого managed-
+    # правила) — managed-правила перекрывают его так же, как раньше. Удаление
+    # дефолта означает «у этой пары нет базового severity»: если ни одно
+    # managed-, ни дефолтное правило не назначило severity, событие дропается
+    # (см. apply_rules). server_default зеркалит миграцию (s4t5u6...).
+    is_default: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
     # ── Критерии совпадения (None = любое значение) ───────────────────────────
     match_service: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Поддерживает glob: `user.*`, `http.*`, `user.login`.

@@ -43,6 +43,7 @@ SERVICE_EVENTS = [
     # Бутстрап управления (prepare): dispatch и callback воркера.
     {"action": "server.prepare", "description": "Server management bootstrap dispatched to worker (server.prepare; useradd management user + authorized_keys)", "default_severity": "CRITICAL"},
     {"action": "server.prepared", "description": "Worker confirmed server management bootstrap completed (callback marks is_managed)", "default_severity": "CRITICAL"},
+    {"action": "server_account.bootstrap_resolved", "description": "Linked server account credentials decrypted to bootstrap server.prepare (account-mode prepare instead of manual creds)", "default_severity": "CRITICAL"},
     # Sensitive: показ расшифрованных секретов (internal endpoints для worker'а)
     {"action": "ipmi_controller.view_credentials", "description": "Decrypted IPMI credentials revealed (internal)", "default_severity": "WARNING"},
     {"action": "ipmi_controller.credentials_revealed", "description": "Decrypted IPMI password revealed to user (base64) via GET ipmi card with view_credentials", "default_severity": "CRITICAL"},

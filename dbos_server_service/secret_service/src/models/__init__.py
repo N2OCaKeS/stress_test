@@ -14,11 +14,13 @@ from src.models.reencrypt_outbox import (
     ReencryptOutboxEntry,
 )
 from src.models.role_acl import RoleACL
+from src.models.user_acl import CredentialUserACL
 
 __all__ = [
     "CREDENTIAL_SCOPE_VALUES",
     "CREDENTIAL_STATUS_VALUES",
     "Credential",
+    "CredentialUserACL",
     "DeptGrant",
     "OUTBOX_STATUS_VALUES",
     "ReencryptOutboxEntry",

@@ -145,6 +145,10 @@ Self-audit события: `logging.events_queried`, `logging.rules_read`, `logg
 | `AUDIT_COUNT_STATEMENT_TIMEOUT_MS` | `10000` | `SET LOCAL statement_timeout` для `COUNT(*)` в `GET /events?include_total=true`. На превышении (`57014`) репо возвращает `total=null`, страница рендерится. `0` — выключить guard. |
 | `AUDIT_QUERY_STATEMENT_TIMEOUT_MS` | `30000` | `SET LOCAL statement_timeout` для основного `SELECT ... ORDER BY timestamp DESC OFFSET LIMIT` в `GET /events`. На превышении репо возвращает пустую страницу + warning лог, 200 без 500. `0` — выключить guard. |
 | `RETENTION_LOOP_ENABLED` | `true` | запускать ли фоновый retention-cleanup daemon |
+| `SEED_DEFAULT_RULES_ON_STARTUP` | `true` | идемпотентно засеять дефолтные severity-правила (`audit_rules.is_default=true`) на старте, если маркер `seed_state` пуст. Удалённые админом дефолты не воскресают |
+| `INTROSPECT_TLS_CA_BUNDLE` | `None` | путь к PEM-bundle для проверки TLS-сертификата auth_service при introspect'е (self-signed CA). Переопределяет системный trust store |
+| `RATE_LIMIT_STORAGE_URI` | `None` | slowapi storage backend (например `redis://host:6379/0`). Не задан → fallback `memory://` (dev/test; в K8s с 2+ репликами лимит обходится round-robin'ом) |
+| `RETENTION_CHUNK_SIZE` | `10000` | размер чанка `DELETE` в фоновом retention-sweep — балансирует WAL-amplification и длительность транзакции |
 | `EVENT_TIMESTAMP_SKEW_SECONDS_USER` | `3600` | допустимый дрифт `EventCreate.timestamp` относительно `now()` для `actor_type=user|bot|anonymous|oauth_client`. ±1ч ловит NTP-разъезжание клиентских часов |
 | `EVENT_TIMESTAMP_SKEW_SECONDS_SERVICE` | `86400` | то же окно, но для `actor_type=service`. ±24ч даёт outbox-retry дописать события после длительного outage (рестарт worker'а, внешний downstream) |
 

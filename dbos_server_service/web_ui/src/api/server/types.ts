@@ -188,10 +188,20 @@ export interface ServerDrift {
   truncated: boolean;
 }
 
-/** Тело POST /servers/{id}/prepare — bootstrap-креды в base64. */
+/**
+ * Тело POST /servers/{id}/prepare — bootstrap-креды.
+ *
+ * Два взаимоисключающих режима (ровно один):
+ *  - `{account_id}` — server_service сам резолвит привязанный server_account
+ *    и расшифровывает его пароль; UI пароль не шлёт;
+ *  - ручной `{username_b64, password_b64, ssh_private_key_b64?}` — логин/пароль
+ *    (+ опц. приватный SSH-ключ) в base64.
+ */
 export interface ServerPrepareRequest {
-  username_b64: string;
-  password_b64: string;
+  account_id?: string;
+  username_b64?: string;
+  password_b64?: string;
+  ssh_private_key_b64?: string;
 }
 
 /** Ответ POST /servers/{id}/prepare. */

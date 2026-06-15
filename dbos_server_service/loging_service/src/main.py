@@ -224,6 +224,29 @@ def create_application() -> FastAPI:
                 live_settings.app_env,
             )
 
+        # Идемпотентный сид дефолтных severity-правил. Один раз материализует
+        # `_DEFAULT_SEVERITY` в `audit_rules` (`is_default=true`); повторный
+        # старт видит маркер в `seed_state` и пропускает. Удалённые админом
+        # дефолты не воскресают. Под выключенным флагом (тесты) пропускается —
+        # фикстуры сеют сами. Любая ошибка не валит startup: миграция
+        # `n4o5p6q7r8s9` уже сеет тот же набор для prod/`make seed`, этот вызов
+        # — self-healing для инсталляций на `create_all` без миграций.
+        if live_settings.seed_default_rules_on_startup:
+            try:
+                from src.db.session import SessionLocal
+                from src.services.rule_service import seed_default_rules
+                seed_db = SessionLocal()
+                try:
+                    created = seed_default_rules(seed_db)
+                    if created:
+                        logger.info("seeded %d default severity rules", created)
+                finally:
+                    seed_db.close()
+            except Exception as exc:
+                logger.error(
+                    "default severity rules seed failed: %s", exc, exc_info=True
+                )
+
         # Порядок старта: сначала self-audit outbox, потом retention-thread.
         # Retention эмитит `logging.retention_sweep` через outbox; если
         # outbox упадёт на старте, retention-thread не должен оставаться

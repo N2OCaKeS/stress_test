@@ -45,6 +45,9 @@ SERVICE_EVENTS = [
     # Role ACL
     {"action": "tokens.role_acl_added", "description": "RoleACL added (per-credential role grant within a department)", "default_severity": "INFO"},
     {"action": "tokens.role_acl_revoked", "description": "RoleACL revoked", "default_severity": "INFO"},
+    # User ACL (per-user grant)
+    {"action": "tokens.user_acl_added", "description": "User-ACL added (per-credential grant to a specific user)", "default_severity": "INFO"},
+    {"action": "tokens.user_acl_removed", "description": "User-ACL removed", "default_severity": "INFO"},
     # Owner deleted lifecycle
     {"action": "tokens.owner_user_deleted_block", "description": "Credential auto-blocked because owner user was deleted (grace window starts)", "default_severity": "WARNING"},
     {"action": "tokens.owner_dept_deleted_block", "description": "Credential auto-blocked because owner department was deleted (grace window starts)", "default_severity": "WARNING"},
@@ -81,6 +84,8 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("tokens.dept_recipient_cascade", "success"): "CRITICAL",
     ("tokens.role_acl_added", "success"): "INFO",
     ("tokens.role_acl_revoked", "success"): "INFO",
+    ("tokens.user_acl_added", "success"): "INFO",
+    ("tokens.user_acl_removed", "success"): "INFO",
     ("tokens.owner_user_deleted_block", "success"): "WARNING",
     ("tokens.owner_dept_deleted_block", "success"): "WARNING",
     ("tokens.transfer_ownership", "success"): "CRITICAL",
@@ -103,6 +108,8 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("tokens.dept_recipient_cascade", "failure"): "CRITICAL",
     ("tokens.role_acl_added", "failure"): "ERROR",
     ("tokens.role_acl_revoked", "failure"): "ERROR",
+    ("tokens.user_acl_added", "failure"): "ERROR",
+    ("tokens.user_acl_removed", "failure"): "ERROR",
     ("tokens.transfer_ownership", "failure"): "CRITICAL",
     ("tokens.recover", "failure"): "ERROR",
 }

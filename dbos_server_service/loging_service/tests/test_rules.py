@@ -14,11 +14,22 @@ EVENTS_URL = "/api/logging/v1/events"
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
 class TestRulesCRUD:
-    def test_list_rules_empty(self, admin_client):
-        r = admin_client.get(RULES_URL)
+    def test_list_managed_rules_empty(self, admin_client):
+        # Managed-правил ещё нет (дефолты не сидируются `db`-фикстурой).
+        r = admin_client.get(RULES_URL, params={"is_default": "false"})
         assert r.status_code == 200
         assert r.json()["items"] == []
         assert r.json()["total"] == 0
+
+    def test_list_includes_default_rules(self, admin_client, db):
+        # Сеем дефолты и проверяем, что они видны в списке с пометкой.
+        from src.services.rule_service import seed_default_rules
+        seed_default_rules(db)
+        r = admin_client.get(RULES_URL, params={"is_default": "true"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] > 0
+        assert all(item["is_default"] is True for item in body["items"])
 
     def test_create_rule(self, admin_client):
         r = admin_client.post(RULES_URL, json=make_rule())
@@ -115,7 +126,10 @@ class TestRulesCRUD:
     def test_list_returns_pagination(self, admin_client):
         for i in range(5):
             admin_client.post(RULES_URL, json=make_rule(name=f"r{i}"))
-        body = admin_client.get(RULES_URL, params={"limit": 2}).json()
+        # Фильтруем managed-правила, чтобы засеянные дефолты не сбивали счёт.
+        body = admin_client.get(
+            RULES_URL, params={"limit": 2, "is_default": "false"}
+        ).json()
         assert len(body["items"]) == 2
         assert body["total"] == 5
         assert body["limit"] == 2

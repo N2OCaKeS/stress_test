@@ -29,10 +29,14 @@ emergency transfer/recover для кред'ы с удалённым владею
 здесь — это аварийный override восстановления, не обычный доступ к содержимому.
 
 Все ветки возвращают конкретный reason: `owner_match`, `acl_read`,
-`acl_write`, `dept_admin`, `service_admin`, `blocked`,
-`dept_grant_missing`, `role_not_in_acl`, `acl_missing_can_read`,
-`acl_missing_can_write`, `scope_mismatch`, `not_owner_dept`. Любой
-другой текст в reason — это баг, имейте в виду.
+`acl_write`, `user_acl_read`, `user_acl_write`, `dept_admin`,
+`service_admin`, `blocked`, `dept_grant_missing`, `role_not_in_acl`,
+`acl_missing_can_read`, `acl_missing_can_write`, `scope_mismatch`,
+`not_owner_dept`. Любой другой текст в reason — это баг, имейте в виду.
+
+Прямой per-user grant (`CredentialUserACL`) проверяется до scope-веток и
+короткозамыкает на положительном исходе; его miss'овый reason `no_user_acl`
+наружу не выходит — caller продолжает scope-проверку и вернёт её reason.
 """
 
 from __future__ import annotations
@@ -46,6 +50,7 @@ from src.dependencies.auth import Identity
 from src.models import Credential
 from src.repositories import dept_grants as dept_grants_repo
 from src.repositories import role_acls as role_acls_repo
+from src.repositories import user_acls as user_acls_repo
 
 
 # Все поддерживаемые actions. Список замкнут — caller'ы передают строкой,
@@ -137,6 +142,41 @@ def _has_acl_permission(acls: list, action: Action, identity_roles: list[str]) -
         if not needs_write and acl.can_read:
             return True, "acl_read"
     return False, "acl_missing_can_write" if needs_write else "acl_missing_can_read"
+
+
+async def _check_user_acl(
+    db: AsyncSession,
+    identity: Identity,
+    cred: Credential,
+    action: Action,
+) -> tuple[bool, str]:
+    """Прямой per-user grant на креду.
+
+    Орто­гонален scope/роли: владелец personal-кред'ы (или dep_admin для
+    dept/cross) выдаёт доступ поимённо одному user_id. read/reveal требуют
+    `can_read`, write — `can_write`. Бот сюда не попадает — у него нет
+    user-identity, а user-ACL адресован конкретному пользователю.
+
+    Возвращает `(False, "no_user_acl")`, если записи нет — это не финальный
+    отказ, caller продолжает scope-проверку.
+    """
+    if identity.actor_type != "user" or not identity.user_id:
+        return False, "no_user_acl"
+    acl = await user_acls_repo.find(db, cred.id, identity.user_id)
+    if acl is None:
+        return False, "no_user_acl"
+    # user-ACL покрывает только контентные действия. Управление кред'ой и
+    # её grants (delete/manage_status/grant_acl/grant_dept) остаётся за
+    # владельцем / dep_admin — выдать «право раздавать доступ» поимённо нельзя.
+    if action in {"delete", "manage_status", "grant_acl", "grant_dept"}:
+        return False, "no_user_acl"
+    if action == "write":
+        if acl.can_write:
+            return True, "user_acl_write"
+        return False, "no_user_acl"
+    if acl.can_read:
+        return True, "user_acl_read"
+    return False, "no_user_acl"
 
 
 async def _check_personal(
@@ -312,6 +352,14 @@ async def check_access(
     # а не fallback. Cross-dept привилегий у роли нет.
     if action == "read" and _is_service_admin_for(identity, cred):
         return True, "admin_override"
+
+    # 5b. Прямой per-user grant. Орто­гонален scope: пускает поимённо
+    # выданного пользователя на read/reveal/write независимо от его роли и
+    # департамента. Только положительный исход короткозамыкает — на miss'е
+    # (нет записи / нет нужного флага) продолжаем обычную scope-проверку.
+    user_allowed, user_reason = await _check_user_acl(db, identity, cred, action)
+    if user_allowed:
+        return True, user_reason
 
     # 2. Department service-access проверен выше (require_user_context).
     # 3+4. Scope-зависимая проверка.

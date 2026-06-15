@@ -153,14 +153,9 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
     () => filterAccessibleAccounts(accounts, persona),
     [accounts, persona],
   );
-  const [accountId, setAccountId] = useState<string>("");
-  // prepare собирает bootstrap-креды через модалку с masked-полем пароля,
-  // а не через window.prompt (пароль не светится на экране).
+  // prepare собирает bootstrap-креды через модалку (выбор аккаунта или ручной
+  // ввод с masked-полем пароля), а не через window.prompt.
   const [credsModalOpen, setCredsModalOpen] = useState(false);
-  // account_id шлём только на неуправляемом сервере; на managed worker идёт
-  // по ключу, передавать пусто.
-  const inventoryAccountId =
-    view && !view.is_managed && accountId ? accountId : undefined;
 
   async function run<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
     if (busy) return null;
@@ -183,10 +178,6 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
         server={view}
         allowed={allowBasic}
         busyLabel={busy}
-        accounts={accessibleAccounts}
-        accountId={accountId}
-        onAccountChange={setAccountId}
-        accountsLoading={accountsQ.loading}
         outcome={taskOutcome.tracked}
         onCancelled={taskOutcome.reset}
         onPrepare={() => {
@@ -203,7 +194,7 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
           if (!view) return;
           taskOutcome.reset();
           const res = await run("inventory_sync", () =>
-            inventorySync(view.id, { account_id: inventoryAccountId }),
+            inventorySync(view.id),
           );
           if (res) taskOutcome.track("inventory_sync", res.task_id, res.status);
         }}
@@ -227,7 +218,7 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
           if (!view) return;
           taskOutcome.reset();
           const res = await run("users_inventory", () =>
-            usersInventory(view.id, { account_id: inventoryAccountId }),
+            usersInventory(view.id),
           );
           if (res) taskOutcome.track("users_inventory", res.task_id, res.status);
         }}
@@ -260,14 +251,23 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
       {view && credsModalOpen && (
         <BootstrapCredsModal
           hostname={view.hostname}
+          accounts={accessibleAccounts}
+          accountsLoading={accountsQ.loading}
           onClose={() => setCredsModalOpen(false)}
-          onSubmit={async ({ username, password }) => {
+          onSubmit={async (creds) => {
             taskOutcome.reset();
+            const body =
+              creds.mode === "account"
+                ? { account_id: creds.accountId }
+                : {
+                    username_b64: toBase64(creds.username),
+                    password_b64: toBase64(creds.password),
+                    ...(creds.sshPrivateKey.trim()
+                      ? { ssh_private_key_b64: toBase64(creds.sshPrivateKey) }
+                      : {}),
+                  };
             const res = await run("prepare", () =>
-              prepareServer(view.id, {
-                username_b64: toBase64(username),
-                password_b64: toBase64(password),
-              }),
+              prepareServer(view.id, body),
             );
             setCredsModalOpen(false);
             if (res) taskOutcome.track("prepare", res.task_id, res.status);
@@ -300,10 +300,6 @@ function LifecycleCard({
   server,
   allowed,
   busyLabel,
-  accounts,
-  accountId,
-  onAccountChange,
-  accountsLoading,
   outcome,
   onCancelled,
   onPrepare,
@@ -314,10 +310,6 @@ function LifecycleCard({
   server: Server | undefined;
   allowed: boolean;
   busyLabel: string | null;
-  accounts: ServerAccount[];
-  accountId: string;
-  onAccountChange: (id: string) => void;
-  accountsLoading: boolean;
   outcome: TrackedTask | null;
   onCancelled: () => void;
   onPrepare: () => void;
@@ -326,10 +318,14 @@ function LifecycleCard({
   onUsersInventory: () => Promise<void>;
 }) {
   const disabled = !allowed || busyLabel !== null || !server;
-  // На managed-сервере inventory идёт по ключу — account picker не нужен.
-  // На неуправляемом worker заходит под аккаунтом по паролю: показываем
-  // селектор. Пусто → backend возьмёт дефолтный привязанный аккаунт.
-  const needsAccount = !!server && !server.is_managed && allowed;
+  // Инвентаризация идёт по SSH под управляющим ключом — до prepare заходить
+  // нечем, backend вернёт 409 PREPARE_REQUIRED. Гейтим кнопки и подсказываем,
+  // что сначала надо prepare. OS sync — локальный UPDATE, prepare не требует.
+  const prepared = !!server && server.is_managed;
+  const inventoryDisabled = disabled || !prepared;
+  const prepareHint = prepared
+    ? undefined
+    : "Сначала запустите prepare — инвентаризация ходит по управляющему ключу";
   return (
     <div className="card">
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
@@ -346,33 +342,10 @@ function LifecycleCard({
           </Link>
         )}
       </div>
-      {needsAccount && (
-        <div className="flex items-center gap-2 flex-wrap mb-3">
-          <label className="text-xs text-dim">
-            SSH-аккаунт для inventory
-          </label>
-          <select
-            className="surface-2 border border-token rounded px-2 py-1 text-sm"
-            value={accountId}
-            onChange={(e) => onAccountChange(e.target.value)}
-            disabled={disabled || accountsLoading}
-          >
-            <option value="">— дефолтный аккаунт сервера —</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.login}
-                {a.has_sudo ? " (sudo)" : ""}
-                {a.source === "discovered" ? " · discovered" : ""}
-              </option>
-            ))}
-          </select>
-          <span className="text-[11px] text-dim">
-            {accountsLoading
-              ? "загружаем…"
-              : accounts.length === 0
-                ? "нет привязанных аккаунтов — inventory вернёт 422"
-                : "пусто → первый аккаунт с паролем"}
-          </span>
+      {server && !prepared && (
+        <div className="text-[11px] text-dim italic mb-3">
+          Сервер не подготовлен (нет management-пользователя). Инвентаризация
+          станет доступна после успешного prepare.
         </div>
       )}
       <div className="flex gap-2 flex-wrap">
@@ -391,8 +364,9 @@ function LifecycleCard({
         </button>
         <button
           className="btn flex items-center gap-1"
-          disabled={disabled}
+          disabled={inventoryDisabled}
           onClick={onInventory}
+          title={prepareHint}
         >
           <RefreshCw
             className={`w-4 h-4 ${busyLabel === "inventory_sync" ? "animate-spin" : ""}`}
@@ -411,8 +385,9 @@ function LifecycleCard({
         </button>
         <button
           className="btn flex items-center gap-1"
-          disabled={disabled}
+          disabled={inventoryDisabled}
           onClick={onUsersInventory}
+          title={prepareHint}
         >
           <UserCheck className="w-4 h-4" />
           Users inventory

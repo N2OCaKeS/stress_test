@@ -66,6 +66,12 @@ class _RuleSnapshot:
     # делается на ingest pydantic-моделями и check-constraint'ом.
     effect: _EffectCanonical
     effect_severity: str | None
+    # `is_default=True` — авто-сидируемое дефолтное правило `(action,status) →
+    # severity`. Дефолты задают БАЗОВЫЙ severity (заменяют прежнюю хардкод-
+    # таблицу `_DEFAULT_SEVERITY`); managed-правила (is_default=False)
+    # накладываются поверх и перекрывают. Если ни дефолт, ни managed-правило
+    # не назначили severity — событие дропается (см. `apply_rules`).
+    is_default: bool = False
 
 
 _CANONICAL_EFFECTS = frozenset({"SUPPRESS", "ALLOW", "OVERRIDE_SEVERITY"})
@@ -93,10 +99,15 @@ def _snapshot_rule(rule: AuditRule) -> _RuleSnapshot:
         match_allowed=rule.match_allowed,
         effect=rule.effect,
         effect_severity=rule.effect_severity,
+        is_default=bool(getattr(rule, "is_default", False)),
     )
 
-# Severity по умолчанию для каждой пары (action, status).
-# Переопределяется через правила OVERRIDE_SEVERITY без деплоя.
+# Сид-данные для дефолтных правил severity. ЭТО НЕ рантайм-источник истины:
+# `seed_default_rules` один раз материализует эти пары в таблицу `audit_rules`
+# (`is_default=true`), после чего движок берёт severity ТОЛЬКО из БД. Таблица
+# оставлена как данные сидера (миграция + startup seed) и как контракт для
+# `test_audit_events_md_sync`. Удалённый админом дефолт не воскресает — см.
+# маркер `seed_state`.
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     # HTTP middleware
     ("http.access_denied", "denied"): "CRITICAL",
@@ -268,6 +279,86 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("logging.service_events_registered", "success"): "INFO",
     ("audit.idempotency_conflict", "warning"): "WARNING",
 }
+
+# Ключ в `seed_state`, под которым отмечается «дефолтные severity-правила
+# засеяны». Один раз посеяв набор, повторный старт видит маркер и НЕ
+# пересоздаёт дефолты — удалённые админом дефолты не воскресают.
+DEFAULT_RULES_SEED_KEY = "default_severity_rules"
+
+# Приоритет дефолтных правил. Ниже managed-default (RuleCreate.priority=100),
+# поэтому managed-OVERRIDE всегда перекрывает дефолт.
+_DEFAULT_RULE_PRIORITY = 0
+
+# Префикс имени дефолтного правила: `default:<action>:<status>`. Имя
+# deterministично от пары — повторный сид (если бы маркер потерялся) не
+# плодил бы дубли: UNIQUE на name отбил бы вставку.
+_DEFAULT_RULE_NAME_PREFIX = "default:"
+
+
+def default_rule_name(action: str, status: str) -> str:
+    """Детерминированное имя дефолтного правила для пары `(action, status)`.
+
+    Усекаем до 128 (`audit_rules.name` max_length): пара
+    `action(≤128) + status(≤16)` + префикс не влезает в потолок, поэтому
+    режем хвост. Коллизия двух разных пар в одно имя теоретически возможна
+    только на патологически длинных action'ах (action сам ≤128 по схеме),
+    на реальном наборе `_DEFAULT_SEVERITY` имена уникальны.
+    """
+    return f"{_DEFAULT_RULE_NAME_PREFIX}{action}:{status}"[:128]
+
+
+def seed_default_rules(db: Session) -> int:
+    """Идемпотентно сеет дефолтные severity-правила в `audit_rules`.
+
+    Контракт:
+      * если маркер `seed_state[DEFAULT_RULES_SEED_KEY]` уже стоит — ничего
+        не делает (удалённые админом дефолты НЕ воскресают);
+      * иначе создаёт по одному `is_default=true` OVERRIDE_SEVERITY-правилу
+        на каждую пару из `_DEFAULT_SEVERITY` и ставит маркер;
+      * всё в одной транзакции — либо весь набор + маркер, либо ничего.
+
+    Возвращает число созданных правил (0 — уже сеяли).
+
+    Вызывается на старте сервиса (`main.lifespan`) и из тестовых фикстур.
+    Безопасен под гонку нескольких воркеров: маркер — PK в `seed_state`,
+    параллельная вставка второго воркера упадёт на PK-конфликте, и его
+    `seed_default_rules` откатится, не наплодив дублей (UNIQUE на rule.name
+    ловит вторую попытку даже без маркера).
+    """
+    from datetime import datetime, timezone
+
+    from src.models.audit_rule import AuditRule
+    from src.models.seed_state import SeedState
+    from src.utils.ids import audit_rule_id
+
+    existing = db.get(SeedState, DEFAULT_RULES_SEED_KEY)
+    if existing is not None:
+        return 0
+
+    now = datetime.now(timezone.utc)
+    created = 0
+    for (action, status), severity in _DEFAULT_SEVERITY.items():
+        db.add(
+            AuditRule(
+                id=audit_rule_id(),
+                name=default_rule_name(action, status),
+                description="auto-seeded default severity rule",
+                is_active=True,
+                is_default=True,
+                priority=_DEFAULT_RULE_PRIORITY,
+                match_action=action,
+                match_status=status,
+                effect="OVERRIDE_SEVERITY",
+                effect_severity=severity,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        created += 1
+    db.add(SeedState(key=DEFAULT_RULES_SEED_KEY, seeded_at=now))
+    db.commit()
+    invalidate_cache()
+    return created
 
 
 def action_matches_pattern(action: str, pattern: str) -> bool:
@@ -676,10 +767,26 @@ def _matches(rule: _RuleSnapshot, event: EventCreate) -> bool:
 def apply_rules(db: Session, payload: EventCreate) -> EventCreate | None:
     """Назначает severity и применяет правила к событию.
 
-    1. Если severity не задан — берётся из _DEFAULT_SEVERITY.
-    2. Правила оцениваются по убыванию priority.
-    Возвращает (возможно изменённый) payload для сохранения,
-    или None — если событие должно быть подавлено.
+    Источник дефолтного severity — БД (`audit_rules` с `is_default=true`),
+    а не хардкод. Порядок:
+
+    1. Если severity задан явно — он сохраняется; событие НЕ дропается
+       (caller сам решил severity, это осознанный override).
+    2. Если severity не задан — базовый severity берётся из дефолтного
+       правила, сматчившегося на `(action, status)`. Если дефолт для пары
+       удалён админом (или его никогда не было) и каталог `service_events`
+       тоже молчит — у события нет базового severity.
+    3. Managed-правила (`is_default=false`) оцениваются по убыванию priority
+       поверх базового severity: SUPPRESS дропает, ALLOW фиксирует и
+       обрывает цепочку, OVERRIDE_SEVERITY меняет severity и продолжает.
+       Managed-правила приоритетнее дефолтов — дефолты сидируются с
+       `priority=0`, managed по умолчанию `priority=100`.
+    4. Семантика удаления дефолта: если после шагов 2-3 severity так и не
+       назначен (нет дефолта, нет managed-OVERRIDE/ALLOW) — событие
+       дропается (`return None`). «Нет правила → не логируется».
+
+    Возвращает (возможно изменённый) payload для сохранения, либо None —
+    если событие подавлено или у него нет ни одного применимого правила.
 
     Defence-in-depth: self-audit loging_service всегда обходит правила,
     даже если кто-то по ошибке вызовет `record()` вместо `record_admin_action()`.
@@ -689,41 +796,50 @@ def apply_rules(db: Session, payload: EventCreate) -> EventCreate | None:
     if payload.service == "loging_service":
         return payload  # self-audit never suppressed, never overridden
 
-    # Severity вычисляется в локальной переменной и материализуется в payload
-    # одним `model_copy` в конце. Раньше каждый матч OVERRIDE_SEVERITY делал
-    # `payload.model_copy(...)`, а cold-start ветка ещё одним отдельным
-    # copy'ем выставляла default — на цепочке 5-10 правил каждое событие
-    # порождало 5-10 snapshot'ов под ingest-нагрузкой. Сейчас одна локальная
-    # переменная + один copy на финальном return'е (если что-то поменялось).
     severity = payload.severity
+    explicit = severity is not None
     severity_dirty = False
-    if severity is None:
-        # Передаём session — `_resolve_default_severity` сначала смотрит в
-        # hardcoded `_DEFAULT_SEVERITY`, потом в `service_events`-каталог
-        # (TTL-кешированно), и только потом fallback'ит на heuristic.
-        severity = _resolve_default_severity(payload.action, payload.status, db)
-        severity_dirty = True
 
     # Cold-start семантика: если БД упала и кеш ещё не успел заполниться
     # за всю жизнь процесса, `_cache.get` пробросит исключение наверх — caller
     # увидит 500 и retry через outbox. Это сознательный fail-closed: для
     # audit-журнала consistency важнее availability — событие либо прошло
-    # rule engine как положено, либо упало и переедет на retry. Альтернатива
-    # (fail-open: записать без правил) скрытно протащила бы события, которые
-    # active SUPPRESS-правило должно было бы подавить, — это compliance-дыра.
-    # После первой удачной загрузки кеш отдаёт stale snapshot при последующих
-    # DB-выпадениях (см. `_RuleCache.get` except-ветку), так что окно "500 на
-    # ingest" — только до первого успешного refresh'а.
-    # Правила отсортированы по `priority DESC, id ASC` в `get_active_sorted`
-    # (tiebreaker по `id ASC` гарантирует детерминированный порядок при
-    # равном priority — без него heap-scan мог бы отдать row'и в любом
-    # порядке, и severity на match'е флапала бы между запросами). Первый
-    # OVERRIDE-матч — highest priority + lowest id; эффективно код отдаёт
-    # severity первого OVERRIDE-матча: последующие матчи перетирают severity
-    # тем же значением. Явный break-on-first рассмотрен как micro-opt.
-    # SUPPRESS/ALLOW обрывают цепочку явно сами по своему контракту.
+    # rule engine как положено, либо упало и переедет на retry. После первой
+    # удачной загрузки кеш отдаёт stale snapshot при последующих DB-выпадениях
+    # (см. `_RuleCache.get` except-ветку).
     rules = _cache.get(db)
+
+    # Шаг 1: базовый severity из дефолтного правила. Дефолты сидируются как
+    # OVERRIDE_SEVERITY с `priority=0`; они НЕ участвуют в managed-цепочке
+    # ниже (иначе priority=0 дефолт перетёр бы managed-OVERRIDE по контракту
+    # «последний матч выигрывает»). Берём первый сматчившийся дефолт —
+    # на каждую `(action, status)` сидируется ровно один.
+    if not explicit:
+        for rule in rules:
+            if not rule.is_default:
+                continue
+            if rule.effect == "OVERRIDE_SEVERITY" and rule.effect_severity:
+                if _matches_with_severity(rule, payload, severity):
+                    severity = rule.effect_severity
+                    severity_dirty = True
+                    break
+        if severity is None and db is not None:
+            # Каталог `service_events.default_severity` — тоже БД-источник
+            # (сервисы регистрируют его через `register_events`), не хардкод.
+            # Оставлен как fallback для action'ов, у которых нет дефолтного
+            # правила, но есть зарегистрированный каталожный severity.
+            catalog_severity = _catalog_cache.get(db, payload.action)
+            if catalog_severity is not None:
+                severity = catalog_severity
+                severity_dirty = True
+
+    # Шаг 2: managed-правила поверх базового severity. Отсортированы по
+    # `priority DESC, id ASC` (детерминированный порядок). SUPPRESS/ALLOW
+    # обрывают цепочку; OVERRIDE_SEVERITY перетирает severity и продолжает —
+    # последний матч выигрывает.
     for rule in rules:
+        if rule.is_default:
+            continue
         if not _matches_with_severity(rule, payload, severity):
             continue
         if rule.effect == "SUPPRESS":
@@ -736,6 +852,13 @@ def apply_rules(db: Session, payload: EventCreate) -> EventCreate | None:
             if severity != rule.effect_severity:
                 severity = rule.effect_severity
                 severity_dirty = True
+
+    # Шаг 3: drop-семантика. Severity не задан явно, не назначен ни дефолтом,
+    # ни managed-правилом, ни каталогом — для пары `(action, status)` нет
+    # базового правила, событие не логируется.
+    if severity is None:
+        return None
+
     if severity_dirty:
         return payload.model_copy(update={"severity": severity})
     return payload

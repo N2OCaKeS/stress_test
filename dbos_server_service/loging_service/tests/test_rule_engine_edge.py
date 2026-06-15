@@ -33,7 +33,7 @@ def _event(**kw) -> EventCreate:
 
 def _rule(*, effect="ALLOW", priority=100, match_service=None, match_action=None,
           match_status=None, match_severity=None, match_allowed=None,
-          effect_severity=None) -> AuditRule:
+          effect_severity=None, is_default=False) -> AuditRule:
     r = AuditRule(
         id=audit_rule_id(),
         name="t",
@@ -46,8 +46,19 @@ def _rule(*, effect="ALLOW", priority=100, match_service=None, match_action=None
         match_allowed=match_allowed,
         effect_severity=effect_severity,
         is_active=True,
+        is_default=is_default,
     )
     return r
+
+
+def _default_rule(*, action="user.login", status="success", severity="INFO") -> AuditRule:
+    """Дефолтное правило `(action, status) → severity` — то, чем сидер
+    замещает прежний хардкод `_DEFAULT_SEVERITY`. Базовый severity для drop-
+    семантики `apply_rules`."""
+    return _rule(
+        effect="OVERRIDE_SEVERITY", priority=0, is_default=True,
+        match_action=action, match_status=status, effect_severity=severity,
+    )
 
 
 # ── action_matches_pattern ───────────────────────────────────────────────────
@@ -167,59 +178,107 @@ def cache_stub(monkeypatch):
 
 
 class TestApplyRules:
-    def test_no_rules_event_passes_through_with_default_severity(self, cache_stub):
+    def test_no_rules_event_dropped(self, cache_stub):
+        """Нет ни дефолта, ни managed-правила → drop (нет базового severity)."""
         cache_stub.set_rules()
+        assert rule_service.apply_rules(None, _event()) is None
+
+    def test_default_rule_gives_base_severity(self, cache_stub):
+        """Дефолтное правило задаёт базовый severity — событие логируется."""
+        cache_stub.set_rules(_default_rule(severity="INFO"))
         out = rule_service.apply_rules(None, _event())
         assert out is not None
         assert out.severity == "INFO"
 
+    def test_managed_override_wins_over_default(self, cache_stub):
+        """Managed-OVERRIDE перекрывает базовый severity дефолта."""
+        cache_stub.set_rules(
+            _default_rule(severity="INFO"),
+            _rule(effect="OVERRIDE_SEVERITY", priority=100,
+                  effect_severity="CRITICAL", match_action="user.login"),
+        )
+        out = rule_service.apply_rules(None, _event())
+        assert out is not None
+        assert out.severity == "CRITICAL"
+
     def test_override_severity_applied(self, cache_stub):
-        cache_stub.set_rules(_rule(
-            effect="OVERRIDE_SEVERITY", effect_severity="CRITICAL",
-            match_action="user.login",
-        ))
+        cache_stub.set_rules(
+            _default_rule(severity="INFO"),
+            _rule(effect="OVERRIDE_SEVERITY", effect_severity="CRITICAL",
+                  match_action="user.login"),
+        )
         out = rule_service.apply_rules(None, _event())
         assert out.severity == "CRITICAL"
 
+    def test_managed_override_without_default_still_logs(self, cache_stub):
+        """Managed-OVERRIDE назначает severity даже без дефолта — не drop."""
+        cache_stub.set_rules(_rule(
+            effect="OVERRIDE_SEVERITY", effect_severity="ERROR",
+            match_action="user.login",
+        ))
+        out = rule_service.apply_rules(None, _event())
+        assert out is not None
+        assert out.severity == "ERROR"
+
     def test_suppress_returns_none(self, cache_stub):
-        cache_stub.set_rules(_rule(effect="SUPPRESS", match_action="user.login"))
+        cache_stub.set_rules(
+            _default_rule(severity="INFO"),
+            _rule(effect="SUPPRESS", match_action="user.login"),
+        )
         assert rule_service.apply_rules(None, _event()) is None
 
     def test_allow_returns_event_immediately(self, cache_stub):
         cache_stub.set_rules(
+            _default_rule(severity="INFO"),
             _rule(effect="ALLOW", priority=100, match_action="user.login"),
             _rule(effect="SUPPRESS", priority=50, match_action="user.login"),  # не должно сработать
         )
         out = rule_service.apply_rules(None, _event())
         assert out is not None
 
+    def test_allow_without_default_still_logs(self, cache_stub):
+        """ALLOW при отсутствии дефолта фиксирует событие без drop'а; severity
+        остаётся None (caller-инвариант: ALLOW принимает как есть)."""
+        cache_stub.set_rules(_rule(effect="ALLOW", match_action="user.login"))
+        out = rule_service.apply_rules(None, _event())
+        assert out is not None
+
     def test_override_chain_picks_last_match(self, cache_stub):
         """Цепочка ≥2 OVERRIDE — последний матч даёт финальный severity."""
         cache_stub.set_rules(
-            _rule(effect="OVERRIDE_SEVERITY", effect_severity="WARNING", match_action="user.login"),
-            _rule(effect="OVERRIDE_SEVERITY", effect_severity="CRITICAL", match_action="user.login"),
+            _default_rule(severity="INFO"),
+            _rule(effect="OVERRIDE_SEVERITY", priority=200,
+                  effect_severity="WARNING", match_action="user.login"),
+            _rule(effect="OVERRIDE_SEVERITY", priority=100,
+                  effect_severity="CRITICAL", match_action="user.login"),
         )
         out = rule_service.apply_rules(None, _event())
         assert out.severity == "CRITICAL"
 
     def test_override_with_null_effect_severity_is_ignored(self, cache_stub):
-        cache_stub.set_rules(_rule(
-            effect="OVERRIDE_SEVERITY", effect_severity=None, match_action="user.login",
-        ))
+        cache_stub.set_rules(
+            _default_rule(severity="INFO"),
+            _rule(effect="OVERRIDE_SEVERITY", effect_severity=None,
+                  match_action="user.login"),
+        )
         out = rule_service.apply_rules(None, _event())
-        # default INFO осталось
+        # базовый INFO от дефолта остался
         assert out.severity == "INFO"
 
     def test_explicit_severity_kept_when_no_override(self, cache_stub):
+        """Явный severity не дропается даже без правил — caller сам решил."""
         cache_stub.set_rules()
         out = rule_service.apply_rules(None, _event(severity="ERROR"))
+        assert out is not None
         assert out.severity == "ERROR"
 
     def test_apply_rules_does_not_mutate_input(self, cache_stub):
         """`model_copy` гарантирует, что input event не меняется."""
-        cache_stub.set_rules(_rule(
-            effect="OVERRIDE_SEVERITY", effect_severity="CRITICAL", match_action="user.login",
-        ))
+        cache_stub.set_rules(
+            _default_rule(severity="INFO"),
+            _rule(effect="OVERRIDE_SEVERITY", effect_severity="CRITICAL",
+                  match_action="user.login"),
+        )
         original = _event()
         before_severity = original.severity
         rule_service.apply_rules(None, original)
@@ -227,17 +286,26 @@ class TestApplyRules:
 
     def test_suppress_after_override_still_suppresses(self, cache_stub):
         cache_stub.set_rules(
-            _rule(effect="OVERRIDE_SEVERITY", effect_severity="ERROR", match_action="user.login"),
+            _default_rule(severity="INFO"),
+            _rule(effect="OVERRIDE_SEVERITY", effect_severity="ERROR",
+                  match_action="user.login"),
             _rule(effect="SUPPRESS", match_action="user.login"),
         )
         assert rule_service.apply_rules(None, _event()) is None
 
     def test_non_matching_rules_dont_affect_event(self, cache_stub):
-        cache_stub.set_rules(_rule(
-            effect="SUPPRESS", match_action="bot.token_create",
-        ))
+        cache_stub.set_rules(
+            _default_rule(severity="INFO"),
+            _rule(effect="SUPPRESS", match_action="bot.token_create"),
+        )
         out = rule_service.apply_rules(None, _event())
         assert out is not None and out.severity == "INFO"
+
+    def test_deleted_default_drops_event(self, cache_stub):
+        """Удалённый дефолт (его нет в наборе) → событие дропается."""
+        # Дефолт есть только для bot.*, не для user.login
+        cache_stub.set_rules(_default_rule(action="bot.token_create", severity="WARNING"))
+        assert rule_service.apply_rules(None, _event(action="user.login")) is None
 
 
 # ── defence-in-depth: self-audit loging_service всегда обходит правила ───────

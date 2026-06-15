@@ -137,8 +137,18 @@ def list_rules(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=MAX_QUERY_LIMIT),
     offset: int = Query(default=0, ge=0, le=MAX_QUERY_OFFSET),
+    is_default: bool | None = Query(
+        default=None,
+        description=(
+            "Фильтр по типу правила: `true` — только авто-сидируемые дефолты "
+            "`(action,status)→severity`, `false` — только managed-правила, "
+            "не задан — оба. Дефолты помечены `is_default=true` в ответе."
+        ),
+    ),
 ) -> RuleListResponse:
-    rules, total = rule_repo.get_all(db, limit=limit, offset=offset)
+    rules, total = rule_repo.get_all(
+        db, limit=limit, offset=offset, is_default=is_default
+    )
     return RuleListResponse(
         items=[RuleResponse.model_validate(r) for r in rules],
         total=total,

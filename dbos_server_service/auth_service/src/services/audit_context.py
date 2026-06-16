@@ -35,6 +35,7 @@ class AuditContext:
     actor_id: str | None = None
     username: str | None = None
     department_id: str | None = None
+    department_name: str | None = None
     request_id: str | None = None
     ip_address: str | None = None
     user_agent: str | None = None

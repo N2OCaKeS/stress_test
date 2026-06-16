@@ -109,6 +109,8 @@ class AuditEnvelope:
     enqueued_at: datetime
     actor_ip: str | None = None
     user_agent: str | None = None
+    department_id: str | None = None
+    department_name: str | None = None
     idempotency_key: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
@@ -740,6 +742,8 @@ def make_envelope(
     details: dict,
     actor_ip: str | None = None,
     user_agent: str | None = None,
+    department_id: str | None = None,
+    department_name: str | None = None,
     idempotency_key: str | None = None,
 ) -> AuditEnvelope:
     """Помощник: фиксирует `enqueued_at` и привязывает уникальный dedup-ключ.
@@ -766,6 +770,8 @@ def make_envelope(
         enqueued_at=datetime.now(timezone.utc),
         actor_ip=actor_ip,
         user_agent=user_agent,
+        department_id=department_id,
+        department_name=department_name,
         idempotency_key=idempotency_key or uuid.uuid4().hex,
     )
 
@@ -845,6 +851,8 @@ def write_envelope_to_db(db: Session, envelope: AuditEnvelope) -> Any:
         actor_id=envelope.actor_id,
         actor_type=_resolve_actor_type(envelope.actor_type),
         username=envelope.username,
+        department_id=envelope.department_id,
+        department_name=envelope.department_name,
         status=envelope.emit_status,
         allowed=envelope.allowed,
         request_id=envelope.request_id,

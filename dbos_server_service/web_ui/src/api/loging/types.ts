@@ -42,12 +42,20 @@ export interface EventDetail {
   actor_type: string;
   username: string | null;
   department_id: string | null;
+  /**
+   * Имя отдела на момент события (денормализовано backend'ом рядом с
+   * `department_id`). У старых записей пусто — тогда резолвим имя по id
+   * через карту отделов.
+   */
+  department_name?: string | null;
   target_id: string | null;
   target_type: string | null;
   status: string;
   allowed: boolean;
   severity: string;
   request_id: string | null;
+  actor_ip: string | null;
+  user_agent: string | null;
   details: Record<string, unknown>;
 }
 

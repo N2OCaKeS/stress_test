@@ -459,6 +459,7 @@ _EXPORT_COLUMNS = (
     "actor_type",
     "username",
     "department_id",
+    "department_name",
     "target_id",
     "target_type",
     "status",

@@ -101,6 +101,7 @@ async def emit(
     actor_id: str | None = None,
     actor_type: str = "service",
     department_id: str | None = None,
+    department_name: str | None = None,
     target_id: str | None = None,
     target_type: str | None = None,
     severity: str | None = None,
@@ -143,6 +144,8 @@ async def emit(
         payload["actor_id"] = actor_id
     if department_id is not None:
         payload["department_id"] = department_id
+    if department_name is not None:
+        payload["department_name"] = department_name
     if target_id is not None:
         payload["target_id"] = target_id
     if target_type is not None:

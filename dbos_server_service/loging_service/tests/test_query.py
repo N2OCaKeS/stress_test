@@ -163,6 +163,42 @@ class TestActorIpUserAgent:
         assert item["actor_ip"] == "2001:db8::1"
 
 
+class TestDepartmentName:
+    def test_ingested_name_returned_in_event(self, client, admin_client, auth_headers):
+        _ingest(
+            client,
+            auth_headers,
+            department_id="dep_nt",
+            department_name="Нагрузочное тестирование",
+        )
+        item = admin_client.get("/api/logging/v1/events").json()["items"][0]
+        assert item["department_id"] == "dep_nt"
+        assert item["department_name"] == "Нагрузочное тестирование"
+
+    def test_department_name_default_none(self, client, admin_client, auth_headers):
+        _ingest(client, auth_headers)
+        item = admin_client.get("/api/logging/v1/events").json()["items"][0]
+        assert item["department_name"] is None
+
+    def test_control_bytes_scrubbed(self, client, admin_client, auth_headers):
+        _ingest(client, auth_headers, department_name="Devops\r\nfake row")
+        item = admin_client.get("/api/logging/v1/events").json()["items"][0]
+        assert "\r" not in item["department_name"]
+        assert "\n" not in item["department_name"]
+        assert item["department_name"] == "Devopsfake row"
+
+    def test_filter_still_by_department_id(self, client, admin_client, auth_headers):
+        # Имя — только для отображения; фильтрация остаётся по department_id.
+        _ingest(client, auth_headers, department_id="dep_a", department_name="Alpha")
+        _ingest(client, auth_headers, department_id="dep_b", department_name="Beta")
+        body = admin_client.get(
+            "/api/logging/v1/events",
+            params={"department_id": "dep_a", "include_total": "true"},
+        ).json()
+        assert body["total"] == 1
+        assert body["items"][0]["department_name"] == "Alpha"
+
+
 def _three_points_and_mid(offsets=(-50, -30, -10)):
     """Возвращает (timestamps_to_ingest, фиксированная середина для filter'а).
 

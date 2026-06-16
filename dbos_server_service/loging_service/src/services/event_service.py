@@ -388,6 +388,7 @@ def _emit_query_timeout_audit(
             actor_type=actor_type,
             username=(identity or {}).get("username"),
             department_id=(identity or {}).get("department_id"),
+            department_name=(identity or {}).get("department_name"),
             status="warning",
             allowed=True,
             severity=None,

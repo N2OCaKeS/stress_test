@@ -547,6 +547,8 @@ def create_application() -> FastAPI:
             request_id=request_id,
             actor_ip=actor_ip,
             user_agent=user_agent,
+            department_id=identity.get("department_id") if identity else None,
+            department_name=identity.get("department_name") if identity else None,
             details=details,
         )
         outbox = _audit_outbox

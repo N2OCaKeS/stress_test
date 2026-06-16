@@ -114,6 +114,12 @@ def _validate_request_id(value: str | None) -> None:
 # * `request_id` — трассировочный header, middleware на ретраях может
 #   реассайнить (например, новый attach_request_id в gateway'е), а
 #   retry-семантика не должна зависеть от значения трассировки.
+# * `department_name` — денормализация `department_id` для отображения.
+#   `department_id` в hash уже есть и закрывает identity отдела; имя же
+#   может «съехать» между ретраями, если отдел переименовали в окне между
+#   первым POST'ом и outbox-replay'ем. Включи мы имя — переименование
+#   ломало бы дедуп (тот же логический event получил бы другой hash → 409),
+#   поэтому имя из identity-набора hash'а исключено намеренно.
 _HASH_FIELDS: tuple[str, ...] = (
     "timestamp",
     "service",
@@ -186,6 +192,7 @@ def insert(db: Session, payload: EventCreate, *, commit: bool = True) -> AuditEv
             actor_type=payload.actor_type,
             username=payload.username,
             department_id=payload.department_id,
+            department_name=payload.department_name,
             target_id=payload.target_id,
             target_type=payload.target_type,
             status=payload.status,
@@ -230,6 +237,7 @@ def insert(db: Session, payload: EventCreate, *, commit: bool = True) -> AuditEv
         "actor_type": payload.actor_type,
         "username": payload.username,
         "department_id": payload.department_id,
+        "department_name": payload.department_name,
         "target_id": payload.target_id,
         "target_type": payload.target_type,
         "status": payload.status,

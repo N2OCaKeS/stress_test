@@ -261,6 +261,7 @@ async def get_current_identity(request: Request) -> IdentityContext:
         actor_id=identity.user_id,
         username=identity.username,
         department_id=identity.department_id,
+        department_name=identity.department_name,
         subject_type=identity.subject_type,
     )
     return identity
@@ -365,6 +366,7 @@ async def require_account_admin(request: Request) -> IdentityContext:
         actor_id=identity.user_id,
         username=identity.username,
         department_id=identity.department_id,
+        department_name=identity.department_name,
         subject_type=identity.subject_type,
     )
     return identity

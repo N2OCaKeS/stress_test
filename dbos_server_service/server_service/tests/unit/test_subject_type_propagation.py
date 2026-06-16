@@ -39,6 +39,17 @@ def test_to_identity_extracts_subject_type():
         assert identity.subject_type == st
 
 
+def test_to_identity_extracts_department_name():
+    """`_to_identity` достаёт department_name из introspect-body."""
+    identity = auth_dep._to_identity(_body("user"))
+    assert identity.department_name == "Dept A"
+
+    body = _body("user")
+    del body["department_name"]
+    identity = auth_dep._to_identity(body)
+    assert identity.department_name is None
+
+
 def test_audit_emit_picks_actor_type_from_context(monkeypatch):
     """`emit()` без explicit actor_type → берёт из ctx.subject_type."""
     captured = {}
@@ -177,3 +188,70 @@ async def test_get_current_identity_writes_subject_type_to_context(monkeypatch):
     ctx = audit_context.get_context()
     assert ctx.subject_type == "bot"
     assert ctx.actor_id == "usr_1"
+    assert ctx.department_name == "Dept A"
+
+
+def test_audit_emit_picks_department_name_from_context(monkeypatch):
+    """`emit()` без explicit department_name → берёт из ctx.department_name."""
+    sent = {}
+
+    def fake_post(*args, **kwargs):
+        sent["payload"] = kwargs.get("json")
+
+        class _R:
+            status_code = 200
+
+        return _R()
+
+    monkeypatch.setattr(audit_service.httpx, "post", fake_post)
+    monkeypatch.setattr(
+        audit_service,
+        "get_settings",
+        lambda: type("S", (), {
+            "logging_service_url": "http://logging",
+            "logging_service_api_key": "k",
+        })(),
+    )
+
+    ctx = audit_context.AuditContext(
+        actor_id="usr_1",
+        username="ivanov",
+        department_id="dep_a",
+        department_name="Dept A",
+    )
+    token = audit_context.set_context(ctx)
+    try:
+        audit_service.emit("test.action", target_id="t1")
+    finally:
+        audit_context.reset_context(token)
+
+    assert sent["payload"]["department_name"] == "Dept A"
+    assert sent["payload"]["department_id"] == "dep_a"
+
+
+def test_audit_emit_department_name_none_without_dept(monkeypatch):
+    """Платформенный актор без отдела → department_name=None, без падений."""
+    sent = {}
+
+    def fake_post(*args, **kwargs):
+        sent["payload"] = kwargs.get("json")
+
+        class _R:
+            status_code = 200
+
+        return _R()
+
+    monkeypatch.setattr(audit_service.httpx, "post", fake_post)
+    monkeypatch.setattr(
+        audit_service,
+        "get_settings",
+        lambda: type("S", (), {
+            "logging_service_url": "http://logging",
+            "logging_service_api_key": "k",
+        })(),
+    )
+
+    audit_context._current.set(None)
+    audit_service.emit("anon.action")
+
+    assert sent["payload"]["department_name"] is None

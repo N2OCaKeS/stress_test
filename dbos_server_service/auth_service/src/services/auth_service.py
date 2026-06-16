@@ -430,6 +430,7 @@ async def login(
 
     audit_context.update_context(
         actor_id=user.id, username=user.username, department_id=user.department_id,
+        department_name=dept.name if dept else None,
     )
     # `username` берётся из ctx (`update_context` выше) — это поле верхнего
     # уровня payload'а, не дублируем его в details. `department_id` тоже
@@ -575,8 +576,10 @@ async def refresh(
     access_token = _build_access_token(user, session_id=sess.id)
     await db.commit()
 
+    dept = await DepartmentRepository(db).get_by_id(user.department_id) if user.department_id else None
     audit_context.update_context(
         actor_id=user.id, username=user.username, department_id=user.department_id,
+        department_name=dept.name if dept else None,
     )
     audit_service.emit(
         "user.refresh", user.id, status="success", request_id=request_id,

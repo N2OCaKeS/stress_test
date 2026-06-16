@@ -57,6 +57,12 @@ class AuditEvent(Base):
     # Single-col индекс снят — leading-column composite
     # `ix_audit_events_department_timestamp` покрывает.
     department_id: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    # Имя отдела актора — денормализация `department_id` для отображения,
+    # симметрично паре `actor_id`/`username`. Фильтрация остаётся по
+    # `department_id` (id стабилен при переименовании отдела), имя в WHERE
+    # не участвует и в индексы не входит. Опционально: эмиттеры без
+    # introspect-контекста (lifecycle, фон) оставляют None.
+    department_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     # Над чем. target_id mirrors source-of-truth ID schema, 48 chars cap.
     target_id: Mapped[str | None] = mapped_column(String(48), nullable=True)

@@ -267,6 +267,7 @@ def emit(
     details: dict | None = None,
     request_id: str | None = None,
     department_id: str | None = None,
+    department_name: str | None = None,
     username: str | None = None,
 ) -> None:
     """Эмит audit-события в loging_service (или fallback в локальный лог).
@@ -298,6 +299,7 @@ def emit(
         resolved_actor_type = "user"
     resolved_username = username if username is not None else ctx.username
     resolved_department = department_id if department_id is not None else ctx.department_id
+    resolved_department_name = department_name if department_name is not None else ctx.department_name
     resolved_request_id = request_id if request_id is not None else ctx.request_id
 
     # Маскировка details + автозаполнение ip/ua
@@ -312,6 +314,7 @@ def emit(
         "actor_type": resolved_actor_type,
         "username": resolved_username,
         "department_id": resolved_department,
+        "department_name": resolved_department_name,
         "target_id": target_id,
         "target_type": target_type,
         "status": status,

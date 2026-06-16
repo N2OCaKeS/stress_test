@@ -22,6 +22,7 @@ Severity вычисляется автоматически в `src/services/rule
 | `actor_type` | `Literal["user","bot","service","anonymous","oauth_client"]` | нет (default `"user"`) | Тип actor'а. |
 | `username` | `str` (≤ 128) | нет | Human-readable username для SIEM. |
 | `department_id` | `str` (≤ 48) | нет | ID департамента, к которому относится actor. Используется для dept-scope на чтении. |
+| `department_name` | `str` (≤ 128) | нет | Human-readable имя департамента actor'а (денормализация `department_id` для отображения, симметрично паре `actor_id`/`username`). Control-байты (CR/LF/NUL) скрабятся, TAB сохраняется. Пустая строка → `null`. Фильтрация — по `department_id` (id стабилен), имя в WHERE не участвует. |
 | `target_id` | `str` (≤ 48) | нет | ID объекта, над которым выполнялся action. |
 | `target_type` | `str` (≤ 64) | нет | Тип объекта (`user`, `server`, `rule`, `oauth_client`, …). |
 | `status` | `Literal["success","failure","denied","warning"]` | да | Исход action'а. `warning` — для soft-mode гардов: операция прошла (`allowed=True`), но что-то пахнет (missing header, dept mismatch без strict-fail). |

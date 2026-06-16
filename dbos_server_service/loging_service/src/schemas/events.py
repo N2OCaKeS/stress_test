@@ -103,6 +103,12 @@ class EventCreate(BaseModel):
     actor_type: Literal["user", "bot", "service", "anonymous", "oauth_client"] = Field(default="user")
     username: str | None = Field(default=None, max_length=128, description="Человекочитаемое имя actor'а")
     department_id: str | None = Field(default=None, max_length=48)
+    # Имя отдела актора — денормализация `department_id` для отображения,
+    # симметрично паре `actor_id`/`username`. Строго опционально (None по
+    # умолчанию), чтобы не ломать эмиттеры, которые его не шлют.
+    department_name: str | None = Field(
+        default=None, max_length=128, description="Человекочитаемое имя отдела actor'а"
+    )
 
     target_id: str | None = Field(default=None, max_length=48)
     target_type: str | None = Field(default=None, max_length=64)
@@ -393,6 +399,24 @@ class EventCreate(BaseModel):
         v = v.strip()
         return v or None
 
+    @field_validator("department_name")
+    @classmethod
+    def _department_name_scrub(cls, v: str | None) -> str | None:
+        """`department_name` — free-form имя отдела; скрабим control-байты.
+
+        В отличие от `username` (login-like, узкий charset), имя отдела —
+        человекочитаемая строка с пробелами, кириллицей, дефисами и т.п.,
+        поэтому charset-whitelist тут не подходит. Вместо этого вырезаем
+        CR/LF/NUL и прочие control-символы, которые расщепили бы строку в
+        CSV/SIEM-экспорте, ровно как в `user_agent`. Пустую строку приводим
+        к None.
+        """
+        if v is None:
+            return v
+        v = "".join(ch for ch in v if ch == "\t" or ord(ch) >= 0x20)
+        v = v.strip()
+        return v or None
+
     @field_validator("details")
     @classmethod
     def _details_shadow_keys(cls, v: dict) -> dict:
@@ -548,6 +572,7 @@ class EventDetail(BaseModel):
     actor_type: str
     username: str | None
     department_id: str | None
+    department_name: str | None
     target_id: str | None
     target_type: str | None
     status: str

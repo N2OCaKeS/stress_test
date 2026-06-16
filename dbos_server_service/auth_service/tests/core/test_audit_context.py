@@ -121,6 +121,28 @@ class TestEmitPicksUpContext:
         assert captured[0]["department_id"] == "dep_a"
         assert captured[0]["request_id"] == "req_xyz"
 
+    def test_department_name_from_context(self, monkeypatch):
+        captured = _capture_payload(monkeypatch)
+        audit_context.set_context(AuditContext(
+            actor_id="usr_1", username="ivanov",
+            department_id="dep_a", department_name="Dept A",
+        ))
+        audit_service.emit("user.me", status="success")
+        assert captured[0]["department_name"] == "Dept A"
+        assert captured[0]["department_id"] == "dep_a"
+
+    def test_department_name_none_without_dept(self, monkeypatch):
+        captured = _capture_payload(monkeypatch)
+        audit_service.emit("service.started", actor_type="service")
+        assert captured[0]["department_name"] is None
+
+    def test_explicit_department_name_overrides_context(self, monkeypatch):
+        captured = _capture_payload(monkeypatch)
+        audit_context.set_context(AuditContext(department_name="Ctx Dept"))
+        audit_service.emit("user.create", department_name="Explicit Dept",
+                           status="success")
+        assert captured[0]["department_name"] == "Explicit Dept"
+
     def test_explicit_param_overrides_context(self, monkeypatch):
         captured = _capture_payload(monkeypatch)
         audit_context.set_context(AuditContext(

@@ -75,6 +75,52 @@ async def test_emit_success_posts_payload(configured_audit):
     assert payload["details"]["name"] == "jira_bot"
 
 
+async def test_emit_carries_department_name_from_context(configured_audit):
+    from src.services import audit_context
+
+    captured = []
+
+    async def fake_post(path, json, headers):
+        captured.append(json)
+        return MagicMock(status_code=200, headers={})
+
+    mock_client = MagicMock()
+    mock_client.post = AsyncMock(side_effect=fake_post)
+    ctx = audit_context.AuditContext(
+        actor_id="usr_1", username="alice",
+        department_id="dep_1", department_name="Dept One",
+    )
+    token = audit_context.set_context(ctx)
+    try:
+        with patch.object(audit_service, "_audit_client", mock_client):
+            audit_service.emit("tokens.create", actor_id="usr_1")
+            await _drain_pending()
+    finally:
+        audit_context.reset_context(token)
+
+    assert captured[0]["department_name"] == "Dept One"
+    assert captured[0]["department_id"] == "dep_1"
+
+
+async def test_emit_department_name_none_without_context(configured_audit):
+    from src.services import audit_context
+
+    captured = []
+
+    async def fake_post(path, json, headers):
+        captured.append(json)
+        return MagicMock(status_code=200, headers={})
+
+    mock_client = MagicMock()
+    mock_client.post = AsyncMock(side_effect=fake_post)
+    audit_context._current.set(None)
+    with patch.object(audit_service, "_audit_client", mock_client):
+        audit_service.emit("tokens.create")
+        await _drain_pending()
+
+    assert captured[0]["department_name"] is None
+
+
 async def test_emit_failure_status_picks_failure_severity(configured_audit):
     captured = []
 

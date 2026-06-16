@@ -178,6 +178,7 @@ def emit(
     details: dict | None = None,
     request_id: str | None = None,
     department_id: str | None = None,
+    department_name: str | None = None,
     username: str | None = None,
     severity: str | None = None,
 ) -> None:
@@ -195,6 +196,7 @@ def emit(
     resolved_actor_type = actor_type if actor_type is not None else (ctx.subject_type or "user")
     resolved_username = username if username is not None else ctx.username
     resolved_department = department_id if department_id is not None else ctx.department_id
+    resolved_department_name = department_name if department_name is not None else ctx.department_name
     resolved_request_id = request_id if request_id is not None else ctx.request_id
     resolved_severity = severity if severity is not None else default_severity(action, status)
 
@@ -209,6 +211,7 @@ def emit(
         "actor_type": resolved_actor_type,
         "username": resolved_username,
         "department_id": resolved_department,
+        "department_name": resolved_department_name,
         "target_id": target_id,
         "target_type": target_type,
         "status": status,

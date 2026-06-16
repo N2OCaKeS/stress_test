@@ -421,6 +421,7 @@ def _propagate_identity_to_audit_context(identity: IdentityContext) -> None:
         actor_id=identity.user_id,
         username=identity.username,
         department_id=identity.department_id,
+        department_name=identity.department_name,
     )
 
 

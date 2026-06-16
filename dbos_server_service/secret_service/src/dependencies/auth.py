@@ -85,6 +85,7 @@ class Identity:
         "username",
         "actor_type",
         "department_id",
+        "department_name",
         "allowed_services",
         "service_roles",
         "is_banned",
@@ -98,6 +99,7 @@ class Identity:
         username: str,
         actor_type: str,
         department_id: str | None,
+        department_name: str | None = None,
         allowed_services: list[str],
         service_roles: dict[str, list[str]],
         is_banned: bool,
@@ -107,6 +109,7 @@ class Identity:
         self.username = username
         self.actor_type = actor_type
         self.department_id = department_id
+        self.department_name = department_name
         self.allowed_services = allowed_services
         self.service_roles = service_roles
         self.is_banned = is_banned
@@ -259,6 +262,7 @@ def _to_identity(body: dict) -> Identity:
         # PAT auth_service маппит на subject_type=`user`, отдельного значения нет.
         actor_type=body.get("subject_type") or "user",
         department_id=body.get("department_id"),
+        department_name=body.get("department_name"),
         allowed_services=body.get("allowed_services", []),
         service_roles=body.get("service_roles", {}),
         is_banned=body.get("is_banned", False),
@@ -314,6 +318,7 @@ async def get_identity(request: Request) -> Identity:
         actor_id=identity.user_id,
         username=identity.username,
         department_id=identity.department_id,
+        department_name=identity.department_name,
         subject_type=identity.actor_type,
     )
     return identity

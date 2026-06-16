@@ -31,7 +31,7 @@ import { hasAuditLogAccess } from "@/lib/rbac";
 import { formatMsk, formatMskTime } from "@/lib/datetime";
 import { exportEvents, getEventStats, listEvents } from "@/api/loging/events";
 import { listServices } from "@/api/loging/services";
-import { useDeptLabel, useLabelMaps } from "@/lib/labels";
+import { useDeptLabelOpt, useLabelMaps } from "@/lib/labels";
 import type {
   EventDetail,
   EventStatsQuery,
@@ -418,7 +418,17 @@ export function LogEventsLive() {
             <div className="min-w-0">
               <div className="ev-action truncate">{row.action}</div>
               <div className="ev-meta truncate">
-                {row.service} · {row.username ?? row.actor_id ?? row.actor_type}
+                {row.service} ·{" "}
+                {row.username ? (
+                  <>
+                    {row.username}
+                    {row.actor_id && (
+                      <span className="mono text-dim"> · {row.actor_id}</span>
+                    )}
+                  </>
+                ) : (
+                  <span className="mono">{row.actor_id ?? row.actor_type}</span>
+                )}
               </div>
             </div>
             <span className={`sev ${sevClass(row.severity)}`}>
@@ -692,7 +702,10 @@ function StatsBody({ stats }: { stats: EventStatsResponse }) {
 }
 
 function EventDetailPane({ event }: { event: EventDetail }) {
-  const deptLabel = useDeptLabel(event.department_id);
+  // Имя отдела для старых записей без `department_name`: резолвим по id из
+  // карты отделов; если карта недоступна (роль без списка) — вернётся сам id.
+  const deptResolved = useDeptLabelOpt(event.department_id);
+  const deptName = event.department_name ?? deptResolved;
   return (
     <section className="flex-1 overflow-hidden flex flex-col min-w-0">
       <div className="border-b border-token p-5 flex items-start gap-4">
@@ -726,15 +739,20 @@ function EventDetailPane({ event }: { event: EventDetail }) {
             </div>
           </div>
           <div className="text-sm">
-            <DetailRow label="Username" value={event.username} />
-            <DetailRow label="Actor ID" value={event.actor_id} mono />
+            <DetailRowNameId
+              label="Actor"
+              name={event.username}
+              id={event.actor_id}
+            />
             <DetailRow label="Type" value={event.actor_type} />
-            <DetailRow
+            <DetailRowNameId
               label="Department"
-              value={event.department_id ? deptLabel : null}
-              mono={!event.department_id || deptLabel === event.department_id}
+              name={deptName}
+              id={event.department_id}
             />
             <DetailRow label="Allowed" value={event.allowed ? "yes" : "no"} />
+            <DetailRow label="Actor IP" value={event.actor_ip} mono />
+            <DetailRow label="User-Agent" value={event.user_agent} mono />
           </div>
         </div>
 
@@ -747,9 +765,14 @@ function EventDetailPane({ event }: { event: EventDetail }) {
           </div>
           <div className="text-sm">
             <DetailRow label="Service" value={event.service} />
+            <DetailRow label="Action" value={event.action} mono />
+            <DetailRow label="Status" value={event.status} />
+            <DetailRow label="Severity" value={event.severity} />
             <DetailRow label="Target type" value={event.target_type} />
             <DetailRow label="Target ID" value={event.target_id} mono />
+            <DetailRow label="When (MSK)" value={formatMsk(event.timestamp)} mono />
             <DetailRow label="Received" value={formatMsk(event.received_at)} mono />
+            <DetailRow label="Request ID" value={event.request_id} mono />
           </div>
         </div>
 
@@ -786,6 +809,44 @@ function DetailRow({
       ) : (
         <span className="text-dim">—</span>
       )}
+    </div>
+  );
+}
+
+/**
+ * Строка детали для сущности с парой имя+id (актор, отдел): имя — обычным
+ * шрифтом, сырой id — моноширинно ниже. Если имя не резолвится (равно id или
+ * пусто), показываем только id моноширинно, чтобы не дублировать одно и то же.
+ */
+function DetailRowNameId({
+  label,
+  name,
+  id,
+}: {
+  label: string;
+  name: string | null | undefined;
+  id: string | null | undefined;
+}) {
+  if (!id && !name) {
+    return (
+      <div className="stat-row">
+        <span className="text-dim">{label}</span>
+        <span className="text-dim">—</span>
+      </div>
+    );
+  }
+  const hasName = Boolean(name) && name !== id;
+  return (
+    <div className="stat-row items-start">
+      <span className="text-dim">{label}</span>
+      <span className="text-right flex flex-col items-end">
+        {hasName && <span>{name}</span>}
+        {id && (
+          <span className="mono text-xs text-dim" title={id}>
+            {id}
+          </span>
+        )}
+      </span>
     </div>
   );
 }

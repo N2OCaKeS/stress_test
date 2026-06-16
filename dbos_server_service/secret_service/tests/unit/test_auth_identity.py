@@ -38,6 +38,7 @@ def _introspect_body(**overrides) -> dict:
         "username": "alice",
         "subject_type": "user",
         "department_id": "dep_1",
+        "department_name": "Dept One",
         "allowed_services": ["secret_service"],
         "service_roles": {"secret_service": ["reader"]},
         "is_banned": False,
@@ -90,8 +91,41 @@ async def test_successful_introspect_returns_identity():
     assert identity.username == "alice"
     assert identity.actor_type == "user"
     assert identity.department_id == "dep_1"
+    assert identity.department_name == "Dept One"
     assert identity.allowed_services == ["secret_service"]
     assert identity.service_roles == {"secret_service": ["reader"]}
+
+
+async def test_introspect_propagates_department_name_to_audit_context():
+    """get_identity кладёт department_name в audit_context для emit'ов."""
+    from src.services import audit_context
+
+    body = _introspect_body()
+    mock_client = MagicMock()
+    mock_response = MagicMock(status_code=200)
+    mock_response.json.return_value = body
+    mock_client.post = AsyncMock(return_value=mock_response)
+
+    audit_context._current.set(None)
+    with patch.object(auth_dep, "_introspect_client", mock_client):
+        await auth_dep.get_identity(_mk_request("dbos_pat_abcdefghij1234567890"))
+
+    assert audit_context.get_context().department_name == "Dept One"
+
+
+async def test_introspect_without_department_name_yields_none():
+    """Актор без отдела (platform-admin) → department_name=None, без падений."""
+    body = _introspect_body(department_id=None, platform_role="account_admin")
+    body.pop("department_name", None)
+    mock_client = MagicMock()
+    mock_response = MagicMock(status_code=200)
+    mock_response.json.return_value = body
+    mock_client.post = AsyncMock(return_value=mock_response)
+
+    with patch.object(auth_dep, "_introspect_client", mock_client):
+        identity = await auth_dep.get_identity(_mk_request("dbos_pat_abcdefghij1234567890"))
+
+    assert identity.department_name is None
 
 
 # ── banned / inactive ────────────────────────────────────────────────────────

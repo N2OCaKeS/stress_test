@@ -204,6 +204,14 @@ class TestExport:
         assert len(rows) == 1
         assert rows[0][header.index("service")] == "server_service"
 
+    def test_department_name_column(self, client, admin_client, auth_headers):
+        _ingest(client, auth_headers, department_id="dep_a", department_name="Alpha")
+        r = admin_client.get(EXPORT_URL)
+        header, rows = _parse_csv(r.text)
+        assert "department_name" in header
+        assert rows[0][header.index("department_name")] == "Alpha"
+        assert rows[0][header.index("department_id")] == "dep_a"
+
     def test_details_serialized_inline(self, client, admin_client, auth_headers):
         _ingest(client, auth_headers, details={"k": "v", "n": 1})
         r = admin_client.get(EXPORT_URL)

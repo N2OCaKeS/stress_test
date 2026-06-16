@@ -1,0 +1,5 @@
+# requirements-review.txt -- IMPORT_ONLY candidates needing owner review.
+# These are NOT auto-uploaded to devpi. Ambiguous import->distribution mappings,
+# possible first-party modules, or possible stdlib backports.
+
+psycopg2  # import psycopg2: psycopg2-binary already DECLARED & downloaded; the source 'psycopg2' distribution is a separate artifact - download only if a non-binary build is needed

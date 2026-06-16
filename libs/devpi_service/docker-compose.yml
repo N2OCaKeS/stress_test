@@ -7,11 +7,16 @@ services:
     ports:
       - "3141:3141"
     volumes:
-      - devpi-data:/data
+      - devpi_data:/data
       - /home/u/tokens.json:/git/tokens.json
     env_file:
-      - .env      
+      - .env
     restart: always
-    
+
 volumes:
-  devpi-data:
+  devpi_data:  
+    driver: local
+    driver_opts:
+      type: none
+      device: ${DEVPI_DATA_DIR}
+      o: bind

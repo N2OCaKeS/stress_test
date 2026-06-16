@@ -8,6 +8,7 @@ ENV_FILE="/home/u/folder_git_for_libs/.env"
 DEFAULT_ROOT_PASS="root"
 DEFAULT_TEST_USER="user"
 DEFAULT_TEST_PASS="user"
+DEFAULT_DATA_DIR="/home/partimage/devpi"
 
 SERVICE_NAME="devpi.service"
 
@@ -24,15 +25,20 @@ else
     DEVPI_ADMIN_PASSWORD="$DEFAULT_ROOT_PASS"
     DEVPI_USER="$DEFAULT_TEST_USER"
     DEVPI_PASSWORD="$DEFAULT_TEST_PASS"
+    DEVPI_DATA_DIR="$DEFAULT_DATA_DIR"
 
     cat << EOF > "$ENV_FILE"
 DEVPI_USER=$DEVPI_USER
 DEVPI_PASSWORD=$DEVPI_PASSWORD
 DEVPI_ADMIN_PASSWORD=$DEVPI_ADMIN_PASSWORD
+DEVPI_DATA_DIR=$DEVPI_DATA_DIR
 EOF
 
     echo "$ENV_FILE создан со значениями по умолчанию."
 fi
+
+# Каталог хранения данных devpi на диске хоста (bind mount в docker-compose)
+DEVPI_DATA_DIR="${DEVPI_DATA_DIR:-$DEFAULT_DATA_DIR}"
 
 cp $PROJECT_PATH/Dockerfile.default $PROJECT_PATH/Dockerfile
 # Проверяем наличие Dockerfile
@@ -53,6 +59,10 @@ echo "$PROJECT_PATH/Dockerfile обновлен."
 install() {
     dpkg -s docker.io || sudo apt-get install docker.io -y
     dpkg -s docker-compose || sudo apt-get install docker-compose -y
+
+    # Готовим каталог данных на хосте до подъёма compose
+    echo "Создаём каталог данных devpi: $DEVPI_DATA_DIR"
+    mkdir -p "$DEVPI_DATA_DIR"
 
     if ! systemctl is-active --quiet "$SERVICE_NAME"; then
         sudo tee /etc/systemd/system/"$SERVICE_NAME" > /dev/null << EOF

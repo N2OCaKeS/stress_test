@@ -24,13 +24,27 @@
 | `DEVPI_USER`           | Имя пользователя, создаваемого при инициализации |
 | `DEVPI_PASSWORD`       | Пароль для указанного пользователя               |
 | `DEVPI_ADMIN_PASSWORD` | Пароль для пользователя `root`                   |
+| `DEVPI_DATA_DIR`       | Каталог на диске хоста для данных devpi (bind mount). По умолчанию `/home/partimage/devpi` |
 
 Пример `.env` файла
 ```.env
 DEVPI_USER=user
 DEVPI_PASSWORD=PASSWORD
 DEVPI_ADMIN_PASSWORD=PASSWORD
+DEVPI_DATA_DIR=/home/partimage/devpi
 ```
+
+## Хранение данных
+
+Данные devpi (`serverdir` контейнера — `/data`) хранятся на диске хоста через bind mount,
+а не в именованном docker-томе. Путь задаётся переменной `DEVPI_DATA_DIR`
+(значение по умолчанию — `/home/partimage/devpi`). Каталог создаётся скриптом
+`install_service.sh` перед подъёмом compose.
+
+> ⚠️ Контейнер разворачивается «с нуля»: миграции данных из старого тома не происходит.
+> Смена `DEVPI_DATA_DIR` на новый путь означает **чистый (пустой) деплой** — индекс
+> придётся наполнять заново (см. `bulk_load/` для массовой загрузки и
+> `auto_check_new_version/` для авто-публикации релизов `allta`).
 
 ## Порты
 

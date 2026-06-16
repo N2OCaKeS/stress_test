@@ -26,6 +26,9 @@ JIRA_PRIORITY_ID = os.environ.get("ALLTA_JIRA_PRIORITY_ID") or os.environ.get("J
 _JIRA_SERVICE_USERS_RAW = os.environ.get("ALLTA_JIRA_SERVICE_USERS") or "allta,lib"
 JIRA_SERVICE_USERS = frozenset(s.strip() for s in _JIRA_SERVICE_USERS_RAW.split(",") if s.strip())
 
+DEVPI_URL = (os.environ.get("ALLTA_DEVPI_URL") or os.environ.get("DEVPI_URL") or "https://10.177.103.10:3141").rstrip("/")
+DEVPI_INDEX = (os.environ.get("ALLTA_DEVPI_INDEX") or os.environ.get("DEVPI_INDEX") or "root/release").strip("/")
+
 GIT_REPO_URL = "https://git.astralinux.ru/scm/qa/stress_test.git"
 GIT_DEST_DIR = Path(os.path.expanduser("~/git"))
 

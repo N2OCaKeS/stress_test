@@ -6,6 +6,7 @@ import re
 import sys
 import click
 
+from allta_cli import __version__
 from allta_cli.utils import ui
 from allta_cli.utils import auth as auth_utils
 from allta_cli.commands.tokens import (
@@ -27,6 +28,7 @@ from allta_cli.commands.creds import (
 from allta_cli.commands.ilo import ilo_cmd as ilo_run
 from allta_cli.commands.git import git_clone
 from allta_cli.commands.python import install_python, create_venv
+from allta_cli.commands.python_pkg import python_pkg
 from allta_cli.commands import mc as mc_cmd
 from allta_cli.commands import vm as vm_api
 from allta_cli.commands import vm_local as vm_local_api
@@ -60,6 +62,7 @@ COMMANDS_WITH_AUTH = (
     "server",
     "vm",
     "jira",
+    "python-pkg",
 )
 
 COMMAND_SHORTCUTS = {
@@ -79,6 +82,7 @@ COMMAND_SHORTCUTS = {
     "k": "kernel",
     "ms": "modeswitch",
     "up": "upgrade",
+    "pip": "python-pkg",
 }
 COMMAND_SHORTCUT_NAMES = tuple(COMMAND_SHORTCUTS.keys())
 
@@ -772,7 +776,7 @@ CONTEXT_SETTINGS = dict(
         "  allta upgrade --check                          только показать доступную версию\n"
     ),
 )
-@click.version_option(version="0.1.0", prog_name="allta")
+@click.version_option(__version__, "-v", "--version", prog_name="allta")
 @click.option("-l", "--login", "login_flag", is_flag=True,
               help="Войти без явной сабкоманды (короткая форма).")
 @click.option("-u", "--user", "--username", "--usermane", "top_user",
@@ -1111,6 +1115,44 @@ def venv_cmd(venv_path: str | None):
 
 
 @cli.command(
+    "python-pkg",
+    short_help="Догрузить недостающие pip-пакеты в devpi.",
+    help=(
+        "Находит пакеты, которых ещё нет в индексе devpi (root/release), и докладывает "
+        "их туда вместе с транзитивными зависимостями — чтобы внутренняя сеть пережила "
+        "обрыв интернета.\n\n"
+        "PATH — файл требований (по умолчанию ищется requirements*.txt в текущем каталоге; "
+        "при нескольких предпочитается requirements.txt). Также можно передать имена пакетов "
+        "напрямую (например: allta python-pkg requests==2.31.0 flask).\n\n"
+        "Креды devpi берутся из config-сервиса (credential 'devpi_root'). "
+        "Адрес и индекс настраиваются через ALLTA_DEVPI_URL / ALLTA_DEVPI_INDEX."
+    ),
+)
+@click.argument("targets", nargs=-1, metavar="[PATH | PACKAGE...]")
+@click.option(
+    "--file",
+    "req_file",
+    type=click.Path(dir_okay=False),
+    default=None,
+    show_default=False,
+    help="Явный файл требований (requirements.txt).",
+)
+@with_section("PYTHON-PKG")
+def python_pkg_cli(targets: tuple[str, ...], req_file: str | None):
+    _ensure_authenticated_or_exit()
+    path_arg: str | None = None
+    packages = targets
+    # единственный позиционный аргумент, похожий на файл требований, трактуем как PATH
+    if len(targets) == 1 and not req_file:
+        only = targets[0]
+        if only.endswith(".txt") or "/" in only or os.sep in only:
+            path_arg = only
+            packages = ()
+    rc = python_pkg(path=path_arg, file=req_file, packages=packages)
+    sys.exit(rc)
+
+
+@cli.command(
     "kernel",
     short_help="Установить ядро Linux и сделать его дефолтным в GRUB.",
     help=(
@@ -1235,10 +1277,25 @@ def jira_group(ctx: click.Context):
     show_default=False,
     help="Исполнитель: номер в списке или login. Если не задан — спросит интерактивно.",
 )
+@click.option(
+    "--only",
+    default=None,
+    show_default=False,
+    help=(
+        "Создать только указанные задачи (через запятую): daily, review, planning, retro. "
+        "Без опции — интерактивный выбор."
+    ),
+)
 @click.option("--dry-run", is_flag=True, help="Показать задачи без создания в Jira.")
 @with_section("JIRA SERVICE")
-def jira_service_cmd(sprint_arg: int | None, sprint: int | None, assignee: str | None, dry_run: bool):
-    sys.exit(jira_api.service_cmd(sprint=sprint_arg or sprint, assignee=assignee, dry_run=dry_run))
+def jira_service_cmd(
+    sprint_arg: int | None,
+    sprint: int | None,
+    assignee: str | None,
+    only: str | None,
+    dry_run: bool,
+):
+    sys.exit(jira_api.service_cmd(sprint=sprint_arg or sprint, assignee=assignee, only=only, dry_run=dry_run))
 
 
 @jira_group.command("testcase", short_help="Создать набор задач для тесткейса.")

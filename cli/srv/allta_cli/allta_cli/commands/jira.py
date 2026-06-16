@@ -129,11 +129,26 @@ class JiraClient:
             raise JiraError(f"Jira вернула не-JSON при операции: {context}.") from e
 
 
-def service_cmd(*, sprint: int | None = None, assignee: str | None = None, dry_run: bool = False) -> int:
+def service_cmd(
+    *,
+    sprint: int | None = None,
+    assignee: str | None = None,
+    only: str | None = None,
+    dry_run: bool = False,
+) -> int:
     sprint_number = sprint if sprint is not None else click.prompt("Номер спринта", type=int)
     if sprint_number <= 0:
         ui.err("Номер спринта должен быть положительным числом.")
         return 1
+
+    try:
+        selected_keys = _resolve_service_keys(only, dry_run=dry_run)
+    except click.UsageError as e:
+        ui.err(str(e))
+        return 1
+    if not selected_keys:
+        ui.warn("Не выбрано ни одной задачи.")
+        return 0
 
     creds = _jira_credentials()
     users = _load_jira_users()
@@ -144,7 +159,7 @@ def service_cmd(*, sprint: int | None = None, assignee: str | None = None, dry_r
     else:
         chosen = _prompt_assignee("Исполнитель для service-задач", users, default=default_assignee)
 
-    specs = build_service_tasks(sprint_number=sprint_number, assignee=chosen)
+    specs = build_service_tasks(sprint_number=sprint_number, assignee=chosen, keys=selected_keys)
     return _run_task_batch(specs, dry_run=dry_run, creds=creds)
 
 
@@ -198,13 +213,98 @@ def _load_jira_users() -> list[str]:
     return logins
 
 
-def build_service_tasks(*, sprint_number: int, assignee: str) -> list[JiraTaskSpec]:
-    return [
-        JiraTaskSpec(f"Спринт_{sprint_number}. Daily", SERVICE_COMPONENT, assignee, 2, priority_id=JIRA_PRIORITY_ID),
-        JiraTaskSpec(f"Спринт_{sprint_number - 1}. Review", SERVICE_COMPONENT, assignee, 1, priority_id=JIRA_PRIORITY_ID),
-        JiraTaskSpec(f"Спринт_{sprint_number + 1} Планирование", SERVICE_COMPONENT, assignee, 3, priority_id=JIRA_PRIORITY_ID),
-        JiraTaskSpec(f"Спринт_{sprint_number - 1} Ретроспектива", SERVICE_COMPONENT, assignee, 1, priority_id=JIRA_PRIORITY_ID),
-    ]
+# Стабильные ключи service-задач и порядок их вывода/создания.
+SERVICE_TASK_KEYS: tuple[str, ...] = ("daily", "review", "planning", "retro")
+SERVICE_TASK_LABELS: dict[str, str] = {
+    "daily": "Daily",
+    "review": "Review",
+    "planning": "Планирование",
+    "retro": "Ретроспектива",
+}
+
+
+def _service_task_defs(sprint_number: int) -> dict[str, tuple[str, float | int]]:
+    """Заголовок и story points для каждой service-задачи по ключу."""
+    return {
+        "daily": (f"Спринт_{sprint_number}. Daily", 2),
+        "review": (f"Спринт_{sprint_number - 1}. Review", 1),
+        "planning": (f"Спринт_{sprint_number + 1} Планирование", 3),
+        "retro": (f"Спринт_{sprint_number - 1} Ретроспектива", 1),
+    }
+
+
+def build_service_tasks(
+    *,
+    sprint_number: int,
+    assignee: str,
+    keys: list[str] | None = None,
+) -> list[JiraTaskSpec]:
+    defs = _service_task_defs(sprint_number)
+    chosen = keys if keys is not None else list(SERVICE_TASK_KEYS)
+    specs: list[JiraTaskSpec] = []
+    for key in SERVICE_TASK_KEYS:
+        if key not in chosen:
+            continue
+        summary, story_points = defs[key]
+        specs.append(
+            JiraTaskSpec(summary, SERVICE_COMPONENT, assignee, story_points, priority_id=JIRA_PRIORITY_ID)
+        )
+    return specs
+
+
+def _parse_only_keys(only: str) -> list[str]:
+    selected: list[str] = []
+    unknown: list[str] = []
+    for part in only.replace(",", " ").split():
+        key = part.strip().lower()
+        if not key:
+            continue
+        if key not in SERVICE_TASK_KEYS:
+            unknown.append(part.strip())
+        elif key not in selected:
+            selected.append(key)
+    if unknown:
+        allowed = ", ".join(SERVICE_TASK_KEYS)
+        raise click.UsageError(
+            f"Неизвестные ключи задач: {', '.join(unknown)}. Доступны: {allowed}."
+        )
+    if not selected:
+        raise click.UsageError("В --only не указано ни одной задачи.")
+    return [k for k in SERVICE_TASK_KEYS if k in selected]
+
+
+def _prompt_service_keys() -> list[str]:
+    ui.echo("")
+    ui.echo("Service-задачи:")
+    for i, key in enumerate(SERVICE_TASK_KEYS, start=1):
+        ui.echo(f"  {i}) {SERVICE_TASK_LABELS[key]} ({key})")
+    ui.echo("")
+
+    mode = _prompt_mode("Создать", "Все задачи", "Выбрать задачи")
+    if mode == "all":
+        return list(SERVICE_TASK_KEYS)
+
+    raw = click.prompt("Номера задач через пробел или запятую (например: 1 3)", type=str)
+    indices: list[int] = []
+    for part in raw.replace(",", " ").split():
+        try:
+            n = int(part.strip())
+        except ValueError:
+            continue
+        if 1 <= n <= len(SERVICE_TASK_KEYS) and n not in indices:
+            indices.append(n)
+    if not indices:
+        raise click.UsageError("Не выбрано ни одной задачи.")
+    indices.sort()
+    return [SERVICE_TASK_KEYS[i - 1] for i in indices]
+
+
+def _resolve_service_keys(only: str | None, *, dry_run: bool) -> list[str]:
+    if only is not None:
+        return _parse_only_keys(only)
+    if dry_run:
+        return list(SERVICE_TASK_KEYS)
+    return _prompt_service_keys()
 
 
 def build_testcase_tasks(

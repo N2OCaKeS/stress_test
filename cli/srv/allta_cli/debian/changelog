@@ -1,3 +1,9 @@
+allta (1.0.8) stable; urgency=medium
+
+  * Добавлены команды для загрузки пакетов в devpi
+
+ -- Filippenko Maksim <mfilippenko@astralinux.ru>  Tue, 16 Jun 2026 10:16:06 +0300
+
 allta (1.0.7) stable; urgency=medium
 
   * Исправлена смена ядра и режима

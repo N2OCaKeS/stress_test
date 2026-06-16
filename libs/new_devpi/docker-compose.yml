@@ -6,7 +6,7 @@ services:
     ports:
       - "${DEVPI_PORT:-3141}:3141"
     volumes:
-      - ${DEVPI_DATA_DIR:-/home/partimage/devpi}:/data
+      - ${DEVPI_DATA_DIR:-/home/partimag/devpi}:/data
     env_file:
       - ${DEVPI_ENV_FILE:-/var/allta_services/config/env.devpi}
     restart: always

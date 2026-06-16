@@ -6,13 +6,72 @@ import os
 import configparser
 import json
 import base64
+import ssl
+import urllib.request
+import urllib.error
 
-DEVPI_INDEX_URL = 'http://10.177.103.10:3141/root/release'
+DEVPI_INDEX_URL = os.getenv('DEVPI_INDEX_URL') or (
+    f"http://localhost:{os.getenv('DEVPI_PORT', '3141')}/root/"
+    f"{os.getenv('DEVPI_RELEASE_INDEX', 'release')}"
+)
 PACKAGE_NAME = 'allta'
 BASE_VERSION = os.getenv('DEVPI_BASE_VERSION', '0.0.1')
 
 def cmd(command, cwd=None, env=None):
     subprocess.run(command, shell=True, check=True, cwd=cwd, env=env)
+
+def _verify_tls_enabled():
+    flag = os.getenv('ALLTA_API_VERIFY_TLS', '0').strip().lower()
+    return flag in ('1', 'true', 'yes', 'on')
+
+def fetch_git_token():
+    """Берём git-токен из config_api. Единственный источник: ни файлов, ни env."""
+    base_url = os.getenv('ALLTA_CONFIG_API_URL')
+    api_token = os.getenv('ALLTA_API_TOKEN')
+    token_name = os.getenv('DEVPI_GIT_TOKEN_NAME') or 'git_token'
+
+    if not base_url:
+        raise RuntimeError("❌ Не задан ALLTA_CONFIG_API_URL — неоткуда взять git-токен.")
+    if not api_token:
+        raise RuntimeError("❌ Не задан ALLTA_API_TOKEN — нет авторизации для config_api.")
+
+    url = f"{base_url.rstrip('/')}/api/config/v1/config/tokens/details/{token_name}"
+    request = urllib.request.Request(url, method='GET')
+    request.add_header('Authorization', f'Bearer {api_token}')
+    request.add_header('Accept', 'application/json')
+
+    if _verify_tls_enabled():
+        context = ssl.create_default_context()
+    else:
+        context = ssl._create_unverified_context()
+
+    try:
+        with urllib.request.urlopen(request, context=context, timeout=30) as response:
+            raw = response.read().decode('utf-8')
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(
+            f"❌ config_api вернул ошибку {exc.code} при запросе токена '{token_name}': {exc.reason}"
+        )
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"❌ Не удалось подключиться к config_api ({url}): {exc.reason}")
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"❌ config_api вернул не-JSON ответ: {exc}")
+
+    if not isinstance(data, dict):
+        raise RuntimeError("❌ Неожиданный формат ответа config_api при запросе токена.")
+
+    git_token = data.get('token') or data.get('git_token') or data.get('value')
+    git_username = data.get('username') or data.get('git_username') or data.get('login')
+
+    if not git_token:
+        raise RuntimeError(
+            f"❌ В ответе config_api нет значения токена для '{token_name}'."
+        )
+
+    return git_token, git_username
 
 def get_state_path(base_dir):
     state_path = os.getenv('DEVPI_STATE_FILE')
@@ -59,25 +118,8 @@ def clone_repo(repo_path):
         print(f"Удаляем старый репозиторий: {repo_path}")
         cmd(f'rm -rf {repo_path}')
     print("Клонируем репозиторий...")
-    git_token = None
-    git_username = None
-    token_path = os.getenv('GIT_TOKEN_FILE', 'tokens.json')
-    if os.path.exists(token_path):
-        try:
-            with open(token_path, 'r', encoding='utf-8') as file:
-                data = json.load(file)
-                git_token = data.get('git_token')
-                git_username = data.get('git_username')
-        except json.JSONDecodeError:
-            # поддержка файла с "сырым" токеном без JSON
-            with open(token_path, 'r', encoding='utf-8') as file:
-                git_token = file.read().strip()
-    if not git_token:
-        git_token = os.getenv('GIT_TOKEN')
-    if not git_username:
-        git_username = os.getenv('GIT_USERNAME')
-    if not git_token:
-        raise RuntimeError("❌ Не найден git_token в tokens.json или переменной GIT_TOKEN.")
+
+    git_token, git_username = fetch_git_token()
 
     token = git_token.strip()
     lower_token = token.lower()
@@ -166,15 +208,37 @@ def update_version_in_files(repo_path, version):
         else:
             print("⚠️ В setup.cfg нет секции [metadata] — пропускаем замену.")
 
+def _set_setupcfg_docs(repo_path, enabled):
+    """Управляет сборкой доков через [devpi:upload] with_docs в setup.cfg.
+
+    У devpi upload нет флага --no-docs, поэтому единственный способ не собирать
+    sphinx-доки (которые могут падать и срывать upload) — убрать with_docs из
+    настроек пакета.
+    """
+    cfg_path = os.path.join(repo_path, 'libs', 'allta', 'setup.cfg')
+    if not os.path.exists(cfg_path):
+        return
+    config = configparser.ConfigParser()
+    config.read(cfg_path)
+    if not config.has_section('devpi:upload'):
+        return
+    if enabled:
+        config.set('devpi:upload', 'with_docs', '1')
+    else:
+        config.remove_option('devpi:upload', 'with_docs')
+    with open(cfg_path, 'w', encoding='utf-8') as f:
+        config.write(f)
+
+
 def upload_version(repo_path):
-    password = os.getenv('DEVPI_ADMIN_PASSWORD')
+    password = os.getenv('DEVPI_ROOT_PASSWORD') or os.getenv('DEVPI_ADMIN_PASSWORD')
     if not password:
-        print("❌ Переменная окружения DEVPI_ADMIN_PASSWORD не установлена!")
+        print("❌ Переменная окружения DEVPI_ROOT_PASSWORD не установлена!")
         return
     upload_docs_env = os.getenv('DEVPI_UPLOAD_DOCS', '1').strip().lower()
-    docs_flag = '--with-docs'
-    if upload_docs_env in ('0', 'false', 'no', 'off'):
-        docs_flag = '--no-docs'
+    docs_enabled = upload_docs_env not in ('0', 'false', 'no', 'off')
+    _set_setupcfg_docs(repo_path, docs_enabled)
+    docs_flag = '--with-docs' if docs_enabled else ''
     command = (
         f'devpi use {DEVPI_INDEX_URL} && '
         f'devpi login root --password {password} && '

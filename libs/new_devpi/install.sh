@@ -372,6 +372,8 @@ EOF
 
         sudo systemctl daemon-reexec
         sudo systemctl daemon-reload
+        sudo systemctl enable "$SERVICE_NAME"
+        sudo systemctl restart "$SERVICE_NAME"
     else
         echo "Сервис уже запущен."
     fi

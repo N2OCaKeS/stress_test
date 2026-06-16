@@ -306,9 +306,45 @@ precond() {
     echo "Docker установлен"
 }
 
+sync_version() {
+    # Источник истины — debian/changelog. Версия из верхней записи переносится
+    # в allta_cli/__init__.py (__version__), откуда её берут setup.py и
+    # allta --version.
+    local init_file changelog deb_version code_version tmp
+    init_file="${SCRIPT_DIR}/srv/allta_cli/allta_cli/__init__.py"
+    changelog="${SCRIPT_DIR}/srv/allta_cli/debian/changelog"
+
+    if [ ! -f "${init_file}" ] || [ ! -f "${changelog}" ]; then
+        echo "sync_version: не найден __init__.py или changelog, пропускаю." >&2
+        return 0
+    fi
+
+    deb_version="$(sed -n -E 's/^allta \(([^)]+)\).*/\1/p' "${changelog}" | head -n1)"
+    if [ -z "${deb_version}" ]; then
+        echo "sync_version: не нашёл версию в ${changelog}" >&2
+        return 1
+    fi
+
+    code_version="$(sed -n -E 's/^__version__[[:space:]]*=[[:space:]]*["'\'']([^"'\'']+)["'\''].*/\1/p' "${init_file}" | head -n1)"
+    if [ "${deb_version}" = "${code_version}" ]; then
+        echo "Версия синхронизирована: ${deb_version}"
+        return 0
+    fi
+
+    echo "Синхронизирую __version__: ${code_version:-?} -> ${deb_version}"
+    if grep -qE '^__version__[[:space:]]*=' "${init_file}"; then
+        tmp="$(mktemp)"
+        sed -E "s/^__version__[[:space:]]*=.*/__version__ = \"${deb_version}\"/" "${init_file}" > "${tmp}"
+        mv "${tmp}" "${init_file}"
+    else
+        printf '__version__ = "%s"\n' "${deb_version}" >> "${init_file}"
+    fi
+}
+
 start() {
     local deb_file staged_deb
 
+    sync_version
     ensure_registry_transport
 
     echo "Подтягиваю базовый образ ${PUBLISHED_BASE_IMAGE}..."
@@ -397,6 +433,7 @@ usage() {
     echo "  ./install.sh install"
     echo "  ./install.sh upload <username>"
     echo "  ./install.sh start"
+    echo "  ./install.sh sync"
 }
 
 case "${1:-}" in
@@ -420,6 +457,9 @@ case "${1:-}" in
         ;;
     start)
         start
+        ;;
+    sync)
+        sync_version
         ;;
     *)
         usage

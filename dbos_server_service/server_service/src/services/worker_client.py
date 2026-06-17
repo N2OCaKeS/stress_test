@@ -72,6 +72,19 @@ def dispatch_creds_key(stash_id_value: str) -> str:
     return f"{DISPATCH_CREDS_KEY_PREFIX}{stash_id_value}"
 
 
+# Префикс Redis-ключа для кред интерактивной SSH-консоли. Логин/пароль
+# выбранного server_account'а кладутся под `dbos:console_creds:<ccd_id>` с TTL;
+# worker читает их по ссылке из `start`-control-сообщения и коннектится под
+# аккаунтом (password-auth). Своя scope, чтобы worker-валидатор отличал её от
+# provision-stash'а (`dbos:dispatch_creds:`).
+CONSOLE_CREDS_KEY_PREFIX = "dbos:console_creds:"
+
+
+def console_creds_key(stash_id_value: str) -> str:
+    """Redis-ключ для кред конкретной console-сессии."""
+    return f"{CONSOLE_CREDS_KEY_PREFIX}{stash_id_value}"
+
+
 # ── Интерактивная SSH-консоль: pub/sub каналы console-моста ──────────────
 # worker не держит HTTP/WS-сервера, поэтому транспорт между клиентским
 # WebSocket'ом и удалённым shell'ом — Redis pub/sub. server_service публикует
@@ -950,6 +963,68 @@ async def store_dispatch_creds(stash_key: str, creds: dict) -> None:
         )
     finally:
         await client.aclose()
+
+
+async def store_console_creds(stash_key: str, creds: dict) -> None:
+    """Положить креды console-сессии в Redis под `stash_key` с TTL.
+
+    `creds` — `{"login", "password", "ssh_private_key"}` (resolve через
+    `server_account.resolve_bootstrap_credentials`). В pub/sub-сообщениях и
+    в task-payload'ах едет только ссылка `creds_stash_key`; plaintext пароля
+    нигде, кроме шифрованного Redis-stash'а, не оседает.
+
+    Envelope-шифрование симметрично provision-stash'у: AAD биндится к stash-id
+    (хвост ключа), swap-attack ловится InvalidTag на decrypt'е воркером. TTL —
+    `dispatch_creds_ttl_seconds` (одноразовый short-lived ключ). Незаданный
+    `SERVER_WORKER_REDIS_URL` → `ServiceUnavailableError`.
+    """
+    settings = get_settings()
+    if not settings.server_worker_redis_url:
+        raise ServiceUnavailableError(
+            error_code="WORKER_REDIS_NOT_CONFIGURED",
+            message="SERVER_WORKER_REDIS_URL is not set",
+        )
+    token = encrypt_stash(
+        json.dumps(creds),
+        aad=aad_for_redis_stash(stash_id_from_key(stash_key)),
+    )
+    pooled = _prepare_redis_client
+    if pooled is not None:
+        await pooled.set(
+            stash_key, token, ex=settings.dispatch_creds_ttl_seconds,
+        )
+        return
+    client = aioredis.from_url(settings.server_worker_redis_url)
+    try:
+        await client.set(
+            stash_key, token, ex=settings.dispatch_creds_ttl_seconds,
+        )
+    finally:
+        await client.aclose()
+
+
+async def delete_console_creds(stash_key: str) -> None:
+    """Снять креды console-сессии из Redis (best-effort).
+
+    Зовётся когда WS-сессию не удалось поднять после `store_console_creds` —
+    иначе plaintext пароля висит в Redis до истечения TTL. Ошибки глушим: TTL
+    подчистит ключ сам.
+    """
+    settings = get_settings()
+    if not settings.server_worker_redis_url:
+        return
+    pooled = _prepare_redis_client
+    try:
+        if pooled is not None:
+            await pooled.delete(stash_key)
+            return
+        client = aioredis.from_url(settings.server_worker_redis_url)
+        try:
+            await client.delete(stash_key)
+        finally:
+            await client.aclose()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 async def _dispatch_task_inner(

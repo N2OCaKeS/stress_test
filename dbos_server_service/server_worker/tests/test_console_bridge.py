@@ -178,8 +178,8 @@ async def test_emit_command_audit_redacts_secret():
 @pytest.mark.asyncio
 async def test_accumulate_splits_lines_and_audits():
     session = console_bridge._ConsoleSession(
-        session_id="csn_lines", host="h", port=22, management_user="dbos",
-        key_path="/tmp/k", server_id="srv_lines",
+        session_id="csn_lines", host="h", port=22, login="svc",
+        password="pw", server_id="srv_lines",
     )
     # Две команды через Enter + хвост без Enter (не должен заэмититься).
     session._accumulate_and_audit(b"whoami\nuptime\npartial")
@@ -233,8 +233,8 @@ async def test_session_pumps_input_to_pty_and_output_to_redis(monkeypatch):
     monkeypatch.setattr(console_bridge.redis_pool, "get_pubsub_redis", lambda: redis)
 
     session = console_bridge._ConsoleSession(
-        session_id="csn_pump", host="h", port=22, management_user="dbos",
-        key_path="/tmp/k", server_id="srv_pump",
+        session_id="csn_pump", host="h", port=22, login="svc",
+        password="pw", server_id="srv_pump",
         idle_timeout=0.5, max_lifetime=5.0,
     )
 
@@ -280,8 +280,8 @@ async def test_session_idle_timeout_closes(monkeypatch):
     monkeypatch.setattr(console_bridge.redis_pool, "get_pubsub_redis", lambda: redis)
 
     session = console_bridge._ConsoleSession(
-        session_id="csn_idle", host="h", port=22, management_user="dbos",
-        key_path="/tmp/k", idle_timeout=0.3, max_lifetime=5.0,
+        session_id="csn_idle", host="h", port=22, login="svc",
+        password="pw", idle_timeout=0.3, max_lifetime=5.0,
     )
     reason = await asyncio.wait_for(session.run(), timeout=5.0)
     assert reason == "idle_timeout"
@@ -305,8 +305,8 @@ async def test_session_ssh_error_publishes_error_event(monkeypatch):
     monkeypatch.setattr(console_bridge.redis_pool, "get_pubsub_redis", lambda: redis)
 
     session = console_bridge._ConsoleSession(
-        session_id="csn_err", host="h", port=22, management_user="dbos",
-        key_path="/tmp/k",
+        session_id="csn_err", host="h", port=22, login="svc",
+        password="pw",
     )
     reason = await asyncio.wait_for(session.run(), timeout=5.0)
     assert reason == "error"
@@ -386,6 +386,121 @@ async def test_handle_ctl_stop_signals_session(monkeypatch):
     finally:
         t.cancel()
         console_bridge._ACTIVE_SESSIONS.clear()
+
+
+# ── Креды аккаунта из Redis-stash ─────────────────────────────────────────
+
+
+def test_build_session_requires_creds_stash_key(monkeypatch):
+    from src.clients.ssh import SshError
+
+    # start без `creds_stash_key` — консоль подключаться нечем.
+    with pytest.raises(SshError) as ei:
+        console_bridge._build_session_from_start(
+            "csn_nokey", {"host": "h", "server_id": "srv"},
+        )
+    assert ei.value.error_code == "CONSOLE_CREDS_KEY_MISSING"
+
+
+def test_build_session_carries_stash_key():
+    session = console_bridge._build_session_from_start(
+        "csn_key",
+        {
+            "host": "h", "ssh_port": 2222, "server_id": "srv",
+            "account_id": "acc_1",
+            "creds_stash_key": "dbos:console_creds:ccd_abc",
+        },
+    )
+    assert session.creds_stash_key == "dbos:console_creds:ccd_abc"
+    assert session.port == 2222
+    # login/password ещё не резолвлены — приедут из stash в run().
+    assert session.login == ""
+
+
+@pytest.mark.asyncio
+async def test_resolve_creds_reads_stash_and_connects_under_account(monkeypatch):
+    """Happy-path: креды читаются из stash, SSH-коннект под логином аккаунта."""
+    captured: dict = {}
+
+    async def fake_read(stash_key):
+        captured["read_key"] = stash_key
+        return "svcuser", "svcpass", None
+
+    async def fake_delete(stash_key):
+        captured["deleted_key"] = stash_key
+
+    monkeypatch.setattr(console_bridge, "_read_console_creds", fake_read)
+    monkeypatch.setattr(console_bridge, "_delete_console_creds", fake_delete)
+
+    class _BlockingStdout:
+        async def read(self, n):
+            await asyncio.sleep(3600)
+
+    process = _FakeProcess(out_chunks=[])
+    process.stdout = _BlockingStdout()
+    fake_ssh = _FakeSsh(process)
+
+    def _ssh_factory(**kwargs):
+        captured["ssh_kwargs"] = kwargs
+        return fake_ssh
+
+    monkeypatch.setattr(console_bridge, "SshClient", _ssh_factory)
+    redis = _FakeRedis(_FakePubSub([]))
+    monkeypatch.setattr(console_bridge.redis_pool, "get_redis", lambda: redis)
+    monkeypatch.setattr(console_bridge.redis_pool, "get_pubsub_redis", lambda: redis)
+
+    session = console_bridge._ConsoleSession(
+        session_id="csn_creds", host="h", port=22, login="", password="",
+        creds_stash_key="dbos:console_creds:ccd_x", idle_timeout=0.3, max_lifetime=5.0,
+    )
+    reason = await asyncio.wait_for(session.run(), timeout=5.0)
+
+    # Коннект под логином/паролем аккаунта, не под dbos-ключом.
+    assert captured["ssh_kwargs"]["username"] == "svcuser"
+    assert captured["ssh_kwargs"]["password"] == "svcpass"
+    assert "client_keys" not in captured["ssh_kwargs"]
+    # Stash прочитан и удалён (креды одноразовые).
+    assert captured["read_key"] == "dbos:console_creds:ccd_x"
+    assert captured["deleted_key"] == "dbos:console_creds:ccd_x"
+    assert fake_ssh.connected is True
+    assert reason == "idle_timeout"
+
+
+@pytest.mark.asyncio
+async def test_resolve_creds_missing_stash_errors(monkeypatch):
+    from src.clients.ssh import SshError
+
+    async def fake_read(stash_key):
+        return None, None, None  # ключ исчез / TTL
+
+    async def fake_delete(stash_key):
+        pass
+
+    monkeypatch.setattr(console_bridge, "_read_console_creds", fake_read)
+    monkeypatch.setattr(console_bridge, "_delete_console_creds", fake_delete)
+    redis = _FakeRedis(_FakePubSub([]))
+    monkeypatch.setattr(console_bridge.redis_pool, "get_redis", lambda: redis)
+    monkeypatch.setattr(console_bridge.redis_pool, "get_pubsub_redis", lambda: redis)
+
+    session = console_bridge._ConsoleSession(
+        session_id="csn_nocreds", host="h", port=22, login="", password="",
+        creds_stash_key="dbos:console_creds:ccd_gone",
+    )
+    reason = await asyncio.wait_for(session.run(), timeout=5.0)
+    assert reason == "error"
+    ctl_ch = console_bridge.ctl_channel("csn_nocreds")
+    events = [json.loads(m) for ch, m in redis.published if ch == ctl_ch]
+    assert any(
+        e.get("event") == "error" and e.get("error_code") == "CONSOLE_CREDS_MISSING"
+        for e in events
+    )
+
+
+@pytest.mark.asyncio
+async def test_read_console_creds_rejects_bad_key():
+    # Чужой keyspace (не `dbos:console_creds:`) — reject до чтения Redis.
+    with pytest.raises(ValueError):
+        await console_bridge._read_console_creds("dbos:dispatch_creds:dcd_x")
 
 
 @pytest.mark.asyncio

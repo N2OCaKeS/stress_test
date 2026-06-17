@@ -1,28 +1,40 @@
 """Интерактивная SSH-консоль — WebSocket-мост к серверу через worker.
 
-`WS /api/server/v1/servers/{id}/console/ws` открывает живой PTY-терминал на
-подготовленном (`is_managed`) сервере. server_service здесь — только мост:
-worker не имеет своего HTTP/WS-сервера, поэтому транспорт между клиентским
-WebSocket'ом и удалённым shell'ом идёт через Redis pub/sub (решение владельца).
+`WS /api/server/v1/servers/{id}/console/ws?account_id=<acc>` открывает живой
+PTY-терминал на сервере под ВЫБРАННЫМ server_account'ом. Консоль НЕ требует
+prepare (`is_managed` не проверяется) и НИКОГДА не ходит под управляющим
+dbos-ключом: server_service резолвит логин/пароль аккаунта (как
+`resolve_bootstrap_credentials` у prepare account-режима), кладёт их в Redis-
+stash, а worker коннектится под аккаунтом по password-auth. server_service —
+только мост: worker не имеет своего HTTP/WS-сервера, транспорт между
+клиентским WebSocket'ом и удалённым shell'ом идёт через Redis pub/sub.
 
 Протокол (для UI-клиента):
 
-  1. Клиент открывает WS с `Authorization: Bearer <token>` (subprotocol либо
-     заголовок). server_service делает introspect, проверяет RBAC
-     `(server, console)`, dept-видимость и `is_managed`.
-  2. На отказе — WS закрывается с кодом и причиной (`PREPARE_REQUIRED`,
-     `PERMISSION_DENIED`, ...) ДО accept'а либо сразу после.
+  1. Клиент открывает WS с `Authorization: Bearer <token>` (subprotocol
+     `bearer.<token>` либо заголовок) и обязательным query `account_id=<acc>`.
+     server_service делает introspect, проверяет RBAC `(server, console)`,
+     dept-видимость сервера, затем резолвит креды аккаунта (право
+     `(server_account, view_password)` + аккаунт привязан и виден).
+  2. На отказе — WS закрывается с кодом и причиной ДО accept'а либо сразу
+     после: 4401 нет токена, 4400 нет `account_id`, 4403 нет права console /
+     нет права на креды аккаунта, 4404 сервер/аккаунт не найден или не
+     привязан, 4409 server decommissioned / у аккаунта нет пароля, 4503 Redis
+     недоступен.
   3. После accept'а server_service генерит `session_id` (`csn_<hex>`),
-     публикует `start` в `console:ctl:<sid>` (worker поднимает PTY) и ждёт
-     `{"event":"ready"}`. На `error` — закрывает WS.
+     стэшит креды в Redis под `dbos:console_creds:<ccd_id>`, публикует `start`
+     (с `creds_stash_key`) в `console:ctl:<sid>` (worker поднимает PTY под
+     аккаунтом) и ждёт `{"event":"ready"}`. На `error` — закрывает WS.
   4. Мост: текст/байты из WS → publish `console:in:<sid>`; подписка на
      `console:out:<sid>` → отправка обратно в WS. Кадры в data-каналах —
      `{"data":"<base64>"}` (base64 поверх сырых байт терминала).
   5. На disconnect WS server_service публикует `stop` в `console:ctl:<sid>`.
 
 Аудит: `ssh_console.session_open` (на старте сессии) / `ssh_console.session_close`
-(на закрытии, с reason) эмитит server_service здесь. Per-command аудит
-(`ssh_console.command`) делает worker — сырой ввод видит только он.
+(на закрытии, с reason) эмитит server_service здесь — details несут
+`account_id`/`login`, чтобы trail показывал, под каким аккаунтом шла консоль.
+Per-command аудит (`ssh_console.command`) делает worker — сырой ввод видит
+только он.
 """
 
 import asyncio
@@ -37,20 +49,23 @@ from src.core.exceptions import (
     AppException,
     AuthenticationError,
     AuthorizationError,
+    ConflictError,
     NotFoundError,
 )
 from src.db.session import AsyncSessionLocal
 from src.dependencies import auth as auth_deps
 from src.services import audit_service, permissions, worker_client
 from src.services import server as server_svc
-from src.utils.ids import console_session_id
+from src.services import server_account as account_svc
+from src.utils.ids import console_creds_id, console_session_id
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/servers/{server_id}")
 
-# WebSocket close-коды. 4401/4403/4404/4409 — application-specific (диапазон
-# 4000-4999 свободен по RFC 6455), мапятся на привычные HTTP-семантики.
+# WebSocket close-коды. 4400/4401/4403/4404/4409 — application-specific
+# (диапазон 4000-4999 свободен по RFC 6455), мапятся на привычные HTTP-семантики.
+_WS_CLOSE_BAD_REQUEST = 4400
 _WS_CLOSE_UNAUTHENTICATED = 4401
 _WS_CLOSE_FORBIDDEN = 4403
 _WS_CLOSE_NOT_FOUND = 4404
@@ -105,11 +120,13 @@ async def _authenticate(token: str):
 
 @router.websocket("/console/ws")
 async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
-    """Интерактивная SSH-консоль к серверу через WebSocket + Redis-мост.
+    """Интерактивная SSH-консоль к серверу под выбранным server_account'ом.
 
-    Доступ: `(server, console)`. Сервер обязан быть `is_managed` (прошёл
-    prepare) — иначе close с причиной `PREPARE_REQUIRED`. Department-scope
-    проверяется через `load_visible_server`.
+    Доступ: `(server, console)` + `(server_account, view_password)` на
+    выбранном аккаунте. Сервер НЕ обязан быть prepared — консоль коннектится
+    под кредами аккаунта, не под управляющим ключом. `account_id` берётся из
+    query-параметра (обязателен). Department-scope сервера и аккаунта —
+    `load_visible_server` / resolve бутстрап-кред.
 
     Связано: `server_worker/src/services/console_bridge.py` (PTY + bridge).
     """
@@ -118,8 +135,14 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
         await websocket.close(code=_WS_CLOSE_UNAUTHENTICATED, reason="ACCESS_TOKEN_MISSING")
         return
 
-    # 1. Аутентификация + RBAC + visibility + prepared-gate. Любой отказ —
-    # close с понятной причиной и failure-аудит `ssh_console.session_open`.
+    account_id = websocket.query_params.get("account_id")
+    if not account_id:
+        await websocket.close(code=_WS_CLOSE_BAD_REQUEST, reason="ACCOUNT_ID_REQUIRED")
+        return
+
+    # 1. Аутентификация + RBAC console + visibility сервера + резолв кред
+    # выбранного аккаунта. Любой отказ — close с понятной причиной и
+    # failure/denied-аудит `ssh_console.session_open`.
     try:
         identity = await _authenticate(token)
         async with AsyncSessionLocal() as db:
@@ -127,6 +150,27 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
                 db, identity, EntityType.SERVER, Action.CONSOLE,
             )
             server = await server_svc.load_visible_server(db, identity, server_id)
+
+            # Decommissioned-gate ДО резолва кред — не дёргаем секреты, если
+            # сервер всё равно не примет console-сессию.
+            if server.status == ServerStatus.DECOMMISSIONED:
+                audit_service.emit(
+                    "ssh_console.session_open", target_id=server_id, target_type="server",
+                    status="failure", allowed=True,
+                    details={
+                        "reason": "decommissioned",
+                        "department_id": server.department_id,
+                        "account_id": account_id,
+                    },
+                )
+                await websocket.close(code=_WS_CLOSE_CONFLICT, reason="SERVER_DECOMMISSIONED")
+                return
+
+            # view_password-паритет + аккаунт виден/привязан + есть пароль.
+            # Возвращает {"login", "password", "ssh_private_key"}.
+            creds = await account_svc.resolve_bootstrap_credentials(
+                db, identity, account_id, server,
+            )
     except AuthenticationError as exc:
         await websocket.close(code=_WS_CLOSE_UNAUTHENTICATED, reason=exc.error_code)
         return
@@ -134,44 +178,48 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
         audit_service.emit(
             "ssh_console.session_open", target_id=server_id, target_type="server",
             status="denied", allowed=False,
-            details={"reason": "permission_denied"},
+            details={"reason": "permission_denied", "account_id": account_id},
         )
         await websocket.close(code=_WS_CLOSE_FORBIDDEN, reason=exc.error_code)
         return
-    except NotFoundError:
+    except NotFoundError as exc:
         audit_service.emit(
             "ssh_console.session_open", target_id=server_id, target_type="server",
             status="failure", allowed=True,
-            details={"reason": "not_found_or_cross_dept"},
+            details={"reason": "not_found_or_cross_dept", "account_id": account_id},
         )
-        await websocket.close(code=_WS_CLOSE_NOT_FOUND, reason="SERVER_NOT_FOUND")
+        await websocket.close(code=_WS_CLOSE_NOT_FOUND, reason=exc.error_code)
+        return
+    except ConflictError as exc:
+        # Аккаунт без сохранённого пароля — консоль под ним не поднять.
+        audit_service.emit(
+            "ssh_console.session_open", target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "account_has_no_password", "account_id": account_id},
+        )
+        await websocket.close(code=_WS_CLOSE_CONFLICT, reason=exc.error_code)
         return
     except AppException as exc:
         await websocket.close(code=_WS_CLOSE_UNAVAILABLE, reason=exc.error_code)
         return
 
-    # Decommissioned — не принимает worker-операций.
-    if server.status == ServerStatus.DECOMMISSIONED:
-        audit_service.emit(
-            "ssh_console.session_open", target_id=server_id, target_type="server",
-            status="failure", allowed=True,
-            details={"reason": "decommissioned", "department_id": server.department_id},
-        )
-        await websocket.close(code=_WS_CLOSE_CONFLICT, reason="SERVER_DECOMMISSIONED")
-        return
-
-    # Prepared-gate: console ходит по управляющему ключу, до prepare заходить
-    # нечем — отбиваем PREPARE_REQUIRED (как inventory dispatch'и).
-    if not server.is_managed:
-        audit_service.emit(
-            "ssh_console.session_open", target_id=server_id, target_type="server",
-            status="failure", allowed=True,
-            details={"reason": "prepare_required", "department_id": server.department_id},
-        )
-        await websocket.close(code=_WS_CLOSE_CONFLICT, reason="PREPARE_REQUIRED")
-        return
-
+    # 2. Стэш кред аккаунта в Redis под одноразовым ключом — в pub/sub едет
+    # только ссылка. Redis недоступен → 4503.
     session_id = console_session_id()
+    stash_key = worker_client.console_creds_key(console_creds_id())
+    try:
+        await worker_client.store_console_creds(
+            stash_key,
+            {
+                "login": creds["login"],
+                "password": creds["password"],
+                "ssh_private_key": creds.get("ssh_private_key"),
+            },
+        )
+    except AppException as exc:
+        await websocket.close(code=_WS_CLOSE_UNAVAILABLE, reason=exc.error_code)
+        return
+
     await websocket.accept(
         subprotocol="bearer" if "bearer" in websocket.scope.get("subprotocols", []) else None,
     )
@@ -181,13 +229,14 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
         details={
             "session_id": session_id,
             "department_id": server.department_id,
-            "management_user": server.management_user,
+            "account_id": account_id,
+            "login": creds["login"],
         },
     )
 
     reason = "client_disconnect"
     try:
-        reason = await _bridge(websocket, identity, server, session_id)
+        reason = await _bridge(websocket, identity, server, session_id, stash_key, account_id)
     except WebSocketDisconnect:
         reason = "client_disconnect"
     except Exception:  # noqa: BLE001
@@ -199,6 +248,12 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
             await worker_client.publish_console_control(session_id, {"action": "stop"})
         except Exception:  # noqa: BLE001
             logger.debug("console: stop publish failed", exc_info=True)
+        # Подчистить creds-stash (worker читает его одной операцией и сам DEL'ит;
+        # этот вызов закрывает окно, если worker не успел стартовать).
+        try:
+            await worker_client.delete_console_creds(stash_key)
+        except Exception:  # noqa: BLE001
+            logger.debug("console: creds stash cleanup failed", exc_info=True)
         if websocket.application_state != WebSocketState.DISCONNECTED:
             try:
                 await websocket.close(code=_WS_CLOSE_NORMAL)
@@ -211,11 +266,16 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
                 "session_id": session_id,
                 "reason": reason,
                 "department_id": server.department_id,
+                "account_id": account_id,
+                "login": creds["login"],
             },
         )
 
 
-async def _bridge(websocket: WebSocket, identity, server, session_id: str) -> str:
+async def _bridge(
+    websocket: WebSocket, identity, server, session_id: str,
+    creds_stash_key: str, account_id: str,
+) -> str:
     """Запустить PTY у worker'а и мостить WS ↔ Redis. Возвращает reason закрытия.
 
     Шаги: publish `start` → ждать `ready` на control-канале (с таймаутом) →
@@ -231,14 +291,16 @@ async def _bridge(websocket: WebSocket, identity, server, session_id: str) -> st
     pubsub = client.pubsub()
     await pubsub.subscribe(ctl_ch, out_ch)
     try:
-        # Старт PTY на worker'е. management_user / host / port server_service
-        # знает из server-row; пароль аккаунта в console не участвует.
+        # Старт PTY на worker'е. host / port server_service знает из server-row;
+        # логин/пароль аккаунта лежат в Redis-stash, в start едет только ссылка
+        # `creds_stash_key` — worker коннектится под аккаунтом по password-auth.
         await client.publish(ctl_ch, json.dumps({
             "action": "start",
             "server_id": server.id,
             "host": server.hostname,
             "ssh_port": server.ssh_port,
-            "management_user": server.management_user,
+            "creds_stash_key": creds_stash_key,
+            "account_id": account_id,
             "target_department_id": server.department_id,
             "actor_id": identity.user_id,
         }))

@@ -17,9 +17,12 @@ import { getAccessToken } from "@/api/tokenStore";
  * Абсолютный ws(s)-URL консоли для сервера. `API_BASE_URL` обычно `/api`
  * (относительный), поэтому достраиваем схему и host из `window.location` —
  * соединение идёт на тот же origin, который проксирует REST.
+ *
+ * `accountId` — сервисная учётка, под которой бэк откроет PTY. Уходит в
+ * query `account_id`; без него бэк закроет соединение кодом 4400.
  */
-export function consoleWsUrl(serverId: string): string {
-  const path = `${API_BASE_URL}/server/v1/servers/${serverId}/console/ws`;
+export function consoleWsUrl(serverId: string, accountId: string): string {
+  const path = `${API_BASE_URL}/server/v1/servers/${serverId}/console/ws?account_id=${encodeURIComponent(accountId)}`;
   if (/^https?:\/\//i.test(API_BASE_URL)) {
     return path.replace(/^http/i, "ws");
   }
@@ -58,27 +61,28 @@ export function describeConsoleClose(
   switch (code) {
     case 1000:
       return { message: "Сессия завершена.", normal: true };
+    case 4400:
+      return {
+        message: "Не выбран аккаунт для подключения.",
+        hint: "Выберите сервисную учётку и подключитесь снова.",
+        normal: false,
+      };
     case 4401:
       return {
-        message: "Не передан токен авторизации.",
+        message: "Нет авторизации — токен не передан.",
         hint: "Перезайдите в систему и попробуйте снова.",
         normal: false,
       };
     case 4403:
       return {
-        message: "Нет прав на консоль этого сервера.",
-        hint: "Нужна привилегия console — запросите grant у администратора сервиса или департамента.",
+        message: "Нет прав на консоль или на выбранный аккаунт.",
+        hint: "Нужна привилегия console и доступ к учётке с правом на её креды — запросите grant у администратора сервиса или департамента.",
         normal: false,
       };
     case 4404:
       return {
-        message: "Сервер не найден или принадлежит другому департаменту.",
-        normal: false,
-      };
-    case 4409:
-      return {
-        message: "Сервер не готов к консольным сессиям.",
-        hint: "Сначала выполните Prepare на вкладке «Управление» — без него управляющего доступа к серверу нет.",
+        message: "Сервер или аккаунт не найден.",
+        hint: "Возможно, ресурс удалён или принадлежит другому департаменту.",
         normal: false,
       };
     case 4503:

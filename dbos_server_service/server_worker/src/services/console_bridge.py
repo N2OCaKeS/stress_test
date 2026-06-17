@@ -15,10 +15,11 @@ Redis pub/sub. server_service на connect генерит `session_id`, публ
 
 Жизненный цикл сессии (`_ConsoleSession`):
 
-  start → SSH connect под управляющим ключом (managed-сервер) →
+  start → прочитать креды аккаунта из Redis-stash (по `creds_stash_key` из
+  start-сообщения) → SSH connect под логином аккаунта (password-auth) →
   `open_pty` (invoke_shell) → две задачи-помпы (in→pty, pty→out) +
-  watchdog idle/max-lifetime → teardown гарантированно закрывает
-  SSH-канал и снимает подписки.
+  watchdog idle/max-lifetime → teardown гарантированно закрывает SSH-канал и
+  снимает подписки.
 
 Логирование. Worker разбирает ввод по строкам (Enter) и эмитит
 `ssh_console.command` через audit-outbox (тот же at-least-once путь, что
@@ -27,10 +28,12 @@ Redis pub/sub. server_service на connect генерит `session_id`, публ
 per-command аудите, который виден только ему (server_service сырой ввод
 не получает).
 
-Worker мастер-ключа SSH-аккаунтов не держит: console ходит исключительно
-под управляющим ключом (`SSH_MANAGEMENT_PRIVATE_KEY_PATH`), сервер обязан
-быть подготовлен. Это сознательная граница — пароль аккаунта в console-
-поток не попадает.
+Консоль подключается под ВЫБРАННЫМ server_account, не под управляющим dbos.
+server_service резолвит логин/пароль аккаунта и кладёт их в Redis-stash
+(`dbos:console_creds:<ccd_id>`, envelope-шифрование, AAD по stash-id); worker
+читает их одной операцией, коннектится по password-auth и тут же удаляет
+ключ. Prepare для консоли не требуется — управляющий ключ в этот поток не
+вовлечён.
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -47,6 +51,11 @@ from src.core.config import get_settings
 from src.db.session import AsyncSessionLocal
 from src.repositories import task as task_repo
 from src.services import redis_pool
+from src.services.redis_stash_crypto import (
+    aad_for_redis_stash,
+    decrypt_stash,
+    stash_id_from_key,
+)
 from src.utils.redaction import redact_error_message
 
 logger = logging.getLogger(__name__)
@@ -78,6 +87,13 @@ def out_channel(session_id: str) -> str:
     return f"{OUT_CHANNEL_PREFIX}{session_id}"
 
 
+# Формат `creds_stash_key` из start-сообщения. Жёсткий guard: reject всё, что
+# не `dbos:console_creds:<id>`, иначе атакующий с контролем над control-каналом
+# мог бы заставить воркер прочитать чужой keyspace (тот же приём, что у
+# provision-stash в tasks/users.py).
+_CONSOLE_CREDS_KEY_RE = re.compile(r"^dbos:console_creds:[A-Za-z0-9_\-]{1,128}$")
+
+
 def _validate_session_id(session_id: str) -> bool:
     """session_id должен быть безопасным для Redis-ключа/канала.
 
@@ -90,6 +106,41 @@ def _validate_session_id(session_id: str) -> bool:
         and 1 <= len(session_id) <= 64
         and all(c.isalnum() or c in "_-" for c in session_id)
     )
+
+
+async def _read_console_creds(stash_key: str) -> tuple[str | None, str | None, str | None]:
+    """Прочитать креды console-сессии, положенные server_service'ом.
+
+    Возвращает `(login, password, ssh_private_key)`. Ключа нет (TTL истёк /
+    Redis-restart) → все None — caller fail'ит сессию с `CONSOLE_CREDS_MISSING`.
+    Stash лежит как envelope-token под общим master-ключом; decrypt с AAD от
+    stash-id — битый / swap'нутый token поднимет `AppException` (сессия FAILED
+    с понятным error_code, без silent-fallback).
+    """
+    if not isinstance(stash_key, str) or not _CONSOLE_CREDS_KEY_RE.fullmatch(stash_key):
+        raise ValueError("invalid creds_stash_key format")
+    client = redis_pool.get_redis()
+    raw = await client.get(stash_key)
+    if raw is None:
+        return None, None, None
+    text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    plaintext = decrypt_stash(text, aad=aad_for_redis_stash(stash_id_from_key(stash_key)))
+    try:
+        data = json.loads(plaintext)
+    except (ValueError, TypeError):
+        return None, None, None
+    if not isinstance(data, dict):
+        return None, None, None
+    return data.get("login"), data.get("password"), data.get("ssh_private_key")
+
+
+async def _delete_console_creds(stash_key: str) -> None:
+    """Снять creds-stash из Redis (best-effort) — креды одноразовые."""
+    try:
+        client = redis_pool.get_redis()
+        await client.delete(stash_key)
+    except Exception:  # noqa: BLE001
+        logger.debug("console: creds stash delete failed", exc_info=True)
 
 
 async def _emit_command_audit(
@@ -155,11 +206,12 @@ class _ConsoleSession:
     session_id: str
     host: str
     port: int
-    management_user: str
-    key_path: str
+    login: str
+    password: str
     server_id: str | None = None
     department_id: str | None = None
     actor_id: str | None = None
+    creds_stash_key: str | None = None
     idle_timeout: float = 900.0
     max_lifetime: float = 3600.0
     max_command_length: int = 8192
@@ -181,12 +233,12 @@ class _ConsoleSession:
         self._last_input_at = time.monotonic()
         reason = "error"
         try:
+            await self._resolve_creds()
             self._ssh = SshClient(
                 host=self.host,
-                username=self.management_user,
-                password=None,
+                username=self.login,
+                password=self.password,
                 port=self.port,
-                client_keys=[self.key_path],
             )
             await self._ssh.connect()
             self._process = await self._ssh.open_pty()
@@ -213,6 +265,37 @@ class _ConsoleSession:
         finally:
             await self._teardown(reason)
         return reason
+
+    async def _resolve_creds(self) -> None:
+        """Прочитать логин/пароль аккаунта из Redis-stash и сразу удалить ключ.
+
+        Креды одноразовые: после чтения ключ DEL'ится (даже если что-то
+        дальше упадёт — TTL подчистит). Нет ключа (TTL/Redis-restart) →
+        `SshError(CONSOLE_CREDS_MISSING)`; нет пароля у аккаунта →
+        `SshError(CONSOLE_PASSWORD_MISSING)`. `_build_session_from_start` уже
+        гарантировал, что `creds_stash_key` задан.
+        """
+        if not self.creds_stash_key:
+            return
+        stash_key = self.creds_stash_key
+        try:
+            login, password, _ssh_key = await _read_console_creds(stash_key)
+        finally:
+            await _delete_console_creds(stash_key)
+        if login is None or password is None:
+            raise SshError(
+                error_code="CONSOLE_CREDS_MISSING",
+                host=self.host,
+                message="console credentials are missing or expired in stash",
+            )
+        if not password:
+            raise SshError(
+                error_code="CONSOLE_PASSWORD_MISSING",
+                host=self.host,
+                message="selected account has no password for console",
+            )
+        self.login = login
+        self.password = password
 
     async def _pump(self) -> str:
         """Запустить помпы in→pty, pty→out и watchdog; ждать первого финиша."""
@@ -403,23 +486,26 @@ def _decode_frame(raw) -> bytes | None:
 def _build_session_from_start(session_id: str, msg: dict) -> _ConsoleSession:
     """Собрать `_ConsoleSession` из `start`-control-сообщения.
 
-    Поднимает `SshError(SSH_MANAGEMENT_KEY_MISSING)` если управляющий ключ
-    не сконфигурирован — console работает только по ключу на managed-сервере.
+    Поднимает `SshError(CONSOLE_CREDS_KEY_MISSING)` если в start нет ссылки на
+    creds-stash — консоль коннектится под кредами выбранного аккаунта, без
+    `creds_stash_key` подключаться нечем. Сами креды читаются из Redis-stash
+    уже внутри `run()` (см. `_resolve_creds`) — здесь только валидируем ссылку.
     """
     settings = get_settings()
-    key_path = settings.ssh_management_private_key_path
-    if not key_path:
+    creds_stash_key = msg.get("creds_stash_key")
+    if not creds_stash_key:
         raise SshError(
-            error_code="SSH_MANAGEMENT_KEY_MISSING",
+            error_code="CONSOLE_CREDS_KEY_MISSING",
             host=str(msg.get("host") or ""),
-            message="server is managed but SSH_MANAGEMENT_PRIVATE_KEY_PATH is not configured",
+            message="start message has no creds_stash_key",
         )
     return _ConsoleSession(
         session_id=session_id,
         host=str(msg.get("host") or msg.get("server_id") or ""),
         port=int(msg.get("ssh_port") or 22),
-        management_user=str(msg.get("management_user") or settings.ssh_management_user),
-        key_path=key_path,
+        login="",
+        password="",
+        creds_stash_key=str(creds_stash_key),
         server_id=msg.get("server_id"),
         department_id=msg.get("target_department_id") or msg.get("department_id"),
         actor_id=msg.get("actor_id"),

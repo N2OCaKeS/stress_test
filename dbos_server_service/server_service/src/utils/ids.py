@@ -81,3 +81,14 @@ def console_session_id() -> str:
     валидирует его POSIX-набором перед подпиской — `csn_<hex>` проходит.
     """
     return _new_id("csn_")
+
+
+def console_creds_id() -> str:
+    """`ccd_<uuid>` — id одноразового Redis-ключа кред console-сессии.
+
+    Логин/пароль выбранного server_account кладутся в Redis под
+    `dbos:console_creds:<ccd_id>` с TTL; в `start`-control-сообщении едет
+    только ссылка на ключ. Plaintext пароля в pub/sub-сообщениях и в
+    task-payload'ах не светится.
+    """
+    return _new_id("ccd_")

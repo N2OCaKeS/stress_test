@@ -1,15 +1,17 @@
 /**
  * Console-вкладка карточки сервера — интерактивный терминал поверх xterm.js.
  *
- * Соединение: WebSocket на `/api/server/v1/servers/{id}/console/ws`. Токен
- * передаётся subprotocol'ом `bearer.<token>` (см. `@/api/server/console`),
- * потому что браузерный WS не шлёт заголовков. После connect бэк сам поднимает
- * PTY и шлёт `ready`; ввод терминала уходит ws.send(text), вывод приходит
- * binary-кадрами и пишется в xterm как есть.
+ * Соединение: WebSocket на
+ * `/api/server/v1/servers/{id}/console/ws?account_id=<acc>`. Консоль
+ * открывается под выбранной сервисной учёткой — её id уходит в query
+ * `account_id`, а access-токен передаётся subprotocol'ом `bearer.<token>`
+ * (см. `@/api/server/console`), потому что браузерный WS не шлёт заголовков.
+ * После connect бэк сам поднимает PTY под этим аккаунтом; ввод терминала
+ * уходит ws.send(text), вывод приходит binary-кадрами и пишется в xterm как
+ * есть.
  *
- * Гейтинг: вкладка показывает picker аккаунтов (как и раньше — для UX-выбора,
- * под кем заходить), но подключение разрешено только для managed-сервера
- * (`is_managed`), не decommissioned. Близкие причины отказа бэка маппятся на
+ * Prepare для консоли не требуется — заходим напрямую под выбранным
+ * аккаунтом. Обязателен лишь выбор учётки; причины отказа бэка маппятся на
  * понятный баннер по close-коду.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -72,17 +74,6 @@ export function ConsoleTab({ serverId, server }: Props) {
   const selectedAccount =
     accessible.find((a) => a.id === selectedAccountId) ?? null;
 
-  // Подключаться можно только к управляемому (prepared) и не списанному
-  // серверу — иначе бэк закроет 4409. Гейтим заранее и подсказываем про
-  // Prepare, чтобы не ловить close-код вслепую.
-  const decommissioned = server?.status === "decommissioned";
-  const prepared = !!server?.is_managed;
-  const gateReason = decommissioned
-    ? "Сервер списан (decommissioned)."
-    : !prepared
-      ? "Сервер не подготовлен."
-      : "";
-
   return (
     <div className="p-5 flex flex-col gap-4 max-w-7xl">
       <div>
@@ -95,7 +86,7 @@ export function ConsoleTab({ serverId, server }: Props) {
           <span className="mono">
             {server?.display_name ?? server?.hostname ?? serverId}
           </span>{" "}
-          под одной из доступных вам сервисных учёток.
+          под выбранной сервисной учёткой. Команды сессии логируются в аудит.
         </div>
       </div>
 
@@ -136,13 +127,15 @@ export function ConsoleTab({ serverId, server }: Props) {
 
       {accessible.length > 0 && (
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-dim text-xs">Аккаунт</span>
+          <span className="text-dim text-xs">
+            Аккаунт для подключения (обязательно)
+          </span>
           <select
             className="surface-2 border border-token rounded px-2 py-1"
             value={selectedAccountId}
             onChange={(e) => setSelectedAccountId(e.target.value)}
           >
-            <option value="">— выберите —</option>
+            <option value="">— выберите учётку —</option>
             {accessible.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.login}
@@ -151,25 +144,14 @@ export function ConsoleTab({ serverId, server }: Props) {
               </option>
             ))}
           </select>
+          <span className="text-dim text-xs">
+            Сессия откроется под этим аккаунтом. Подготовка (Prepare) для
+            консоли не требуется.
+          </span>
         </label>
       )}
 
-      {accessible.length > 0 && gateReason && (
-        <div className="alert flex items-start gap-2">
-          <Lock className="w-4 h-4 mt-0.5 text-dim" />
-          <div className="flex-1 text-xs text-dim">
-            {gateReason}{" "}
-            {!prepared && !decommissioned && (
-              <>
-                Консоль ходит по управляющему доступу — сначала выполните
-                Prepare на вкладке «Управление».
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {accessible.length > 0 && !gateReason && (
+      {accessible.length > 0 && (
         <ConsoleSession serverId={serverId} account={selectedAccount} />
       )}
     </div>
@@ -263,7 +245,7 @@ function ConsoleSession({
 
   const connect = useCallback(() => {
     const term = termRef.current;
-    if (!term) return;
+    if (!term || !account) return;
     // Перед новым подключением убираем прошлый сокет/подписку.
     inputDisposeRef.current?.();
     inputDisposeRef.current = null;
@@ -277,7 +259,10 @@ function ConsoleSession({
 
     let ws: WebSocket;
     try {
-      ws = new WebSocket(consoleWsUrl(serverId), consoleWsProtocols());
+      ws = new WebSocket(
+        consoleWsUrl(serverId, account.id),
+        consoleWsProtocols(),
+      );
     } catch {
       setState("closed");
       setCloseInfo({
@@ -331,7 +316,7 @@ function ConsoleSession({
       // «connecting», если соединение упало до open.
       if (state === "connecting") setState("closed");
     };
-  }, [serverId, state]);
+  }, [serverId, account, state]);
 
   const connected = state === "open" || state === "connecting";
 

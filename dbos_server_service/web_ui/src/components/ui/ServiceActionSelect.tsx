@@ -123,7 +123,6 @@ export function ServiceActionSelect({
           {actionOptions.map((a) => (
             <option key={a.action} value={a.action}>
               {a.action}
-              {a.default_severity ? ` · ${a.default_severity}` : ""}
             </option>
           ))}
         </select>

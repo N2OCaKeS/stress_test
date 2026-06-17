@@ -621,6 +621,32 @@ export interface TaskRead {
   result?: Record<string, unknown> | null;
 }
 
+/**
+ * Одно расхождение поля в `result.diffs` ревизии пользователей
+ * (`users/inventory`): `expected` — что в БД, `found` — что реально на боксе.
+ */
+export interface RevisionFieldDiff<T> {
+  expected: T;
+  found: T;
+}
+
+/**
+ * Расхождение по одному привязанному аккаунту в `task.result.diffs`.
+ *
+ * Присылаются только аккаунты, у которых хотя бы одно поле разошлось; набор
+ * `fields` несёт лишь разошедшиеся поля. Незнакомые OS-юзеры (discovered) сюда
+ * не попадают — это отдельный сценарий.
+ */
+export interface RevisionAccountDiff {
+  account_id: string;
+  login: string;
+  fields: {
+    has_sudo?: RevisionFieldDiff<boolean>;
+    unix_groups?: RevisionFieldDiff<string[]>;
+    shell?: RevisionFieldDiff<string | null>;
+  };
+}
+
 /** Параметры фильтрации `GET /tasks`. */
 export interface ListTasksQuery {
   status?: TaskStatus | "";

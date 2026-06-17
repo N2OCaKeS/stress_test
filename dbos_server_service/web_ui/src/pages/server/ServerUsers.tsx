@@ -42,6 +42,7 @@ import {
   Power,
   Unlink,
   Link2,
+  ScanSearch,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
@@ -55,8 +56,16 @@ import { formatMskShort } from "@/lib/datetime";
 import { useServerMap, useUserLabel } from "@/lib/labels";
 import { listServers } from "@/api/server/servers";
 import * as accountsApi from "@/api/server/accounts";
+import { usersInventory } from "@/api/server/misc";
+import { useTaskOutcome } from "@/api/server/useTaskOutcome";
+import { RevisionDiffModal } from "@/pages/server/RevisionDiffModal";
 import { isServerZoneBlocked } from "@/lib/rbac";
-import type { Server, ServerAccount, ServerAccountUpdateRequest } from "@/api/server/types";
+import type {
+  RevisionAccountDiff,
+  Server,
+  ServerAccount,
+  ServerAccountUpdateRequest,
+} from "@/api/server/types";
 
 // Аккаунтов и серверов на отдел немного — одной страницы с запасом хватает,
 // клиентский поиск/сорт идут по загруженному набору. Кап честно отражается в
@@ -447,12 +456,68 @@ function AccountWorkzone({
   const linkedUserLabel = useUserLabel(account.linked_user_id);
   const createdByLabel = useUserLabel(account.created_by);
 
-  // Смена выбранного аккаунта — сбрасываем локальное состояние зоны (edit-режим
-  // и предыдущую ошибку), чтобы не тащить их на другой аккаунт.
+  // Ревизия атрибутов: триггерим users/inventory по серверу, поллим задачу.
+  // result.diffs показываем в модалке. Если задача успела закрыться быстро —
+  // открываем модалку сразу; если долго — висит кликабельное уведомление.
+  const revision = useTaskOutcome();
+  // server_id, по которому запущена текущая ревизия — нужен для adopt_from_host.
+  const [revisionServer, setRevisionServer] = useState<string | null>(null);
+  // Модалку открываем явно: либо сразу (быстрый таск), либо по клику на нотис.
+  const [revisionModalOpen, setRevisionModalOpen] = useState(false);
+  // Авто-открытие срабатывает один раз на задачу — чтобы повторный поллинг-tick
+  // не переоткрывал закрытую вручную модалку.
+  const [autoOpenedTask, setAutoOpenedTask] = useState<string | null>(null);
+
+  // Смена выбранного аккаунта — сбрасываем локальное состояние зоны (edit-режим,
+  // предыдущую ошибку и трек ревизии), чтобы не тащить их на другой аккаунт.
   useEffect(() => {
     setEditing(false);
     setErr(null);
+    setRevisionServer(null);
+    setRevisionModalOpen(false);
+    setAutoOpenedTask(null);
+    revision.reset();
+    // revision.reset стабилен (useCallback) — в deps только смена аккаунта.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account.id]);
+
+  const revisionDiffs = useMemo<RevisionAccountDiff[]>(() => {
+    const result = revision.tracked?.result;
+    if (!result || typeof result !== "object") return [];
+    const raw = (result as { diffs?: unknown }).diffs;
+    return Array.isArray(raw) ? (raw as RevisionAccountDiff[]) : [];
+  }, [revision.tracked?.result]);
+
+  const revisionDone =
+    revision.tracked != null &&
+    !revision.tracked.polling &&
+    revision.tracked.status === "succeeded";
+
+  // Быстрая ревизия: как только задача закрылась успешно — открываем модалку
+  // автоматически (одноразово). Долгая — пользователь сам кликнет нотис.
+  useEffect(() => {
+    if (!revisionDone || revision.tracked == null) return;
+    if (autoOpenedTask === revision.tracked.taskId) return;
+    setAutoOpenedTask(revision.tracked.taskId);
+    setRevisionModalOpen(true);
+  }, [revisionDone, revision.tracked, autoOpenedTask]);
+
+  async function handleRevision(serverId: string) {
+    if (!canOperate) return;
+    revision.reset();
+    setRevisionModalOpen(false);
+    setAutoOpenedTask(null);
+    setRevisionServer(serverId);
+    try {
+      const res = await usersInventory(serverId);
+      revision.track("revision", res.task_id, res.status);
+      toast.info(`Ревизия запущена (${serverName(serverId)})`);
+    } catch (e) {
+      const msg = handleDispatchError(e);
+      setRevisionServer(null);
+      toast.error(msg);
+    }
+  }
 
   async function handleRotate() {
     if (pending || !canOperate) return;
@@ -531,10 +596,59 @@ function AccountWorkzone({
           )}
           <span className="badge">{account.source}</span>
         </div>
+
+        {/* Управляющие кнопки — наверху, чтобы не скроллить за ними. */}
+        {!editing && (
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              className="btn btn-sm btn-primary flex items-center gap-1"
+              disabled={pending || !canManage}
+              title={canManage ? undefined : "Нет прав на редактирование"}
+              onClick={() => setEditing(true)}
+            >
+              <Edit3 className="w-4 h-4" /> Редактировать
+            </button>
+            <button
+              className="btn btn-sm flex items-center gap-1"
+              disabled={pending || !canOperate}
+              title={canOperate ? "Ротировать пароль в БД" : "Нет прав"}
+              onClick={handleRotate}
+              type="button"
+            >
+              <RotateCw className="w-4 h-4" /> Ротировать (БД)
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-danger flex items-center gap-1"
+              disabled={pending || !canManage}
+              title={canManage ? undefined : "Нет прав на удаление"}
+              onClick={handleDelete}
+            >
+              <Trash2 className="w-4 h-4" /> Удалить
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-4 max-w-3xl">
         {err && <div className="alert-danger text-sm">{err}</div>}
+
+        {/* Долгая ревизия: уведомление со статусом; по клику (когда готово) —
+            открыть модалку diff. Быстрая открывает модалку сама. */}
+        {revision.tracked && (
+          <RevisionNotice
+            tracked={revision.tracked}
+            diffCount={revisionDiffs.length}
+            serverName={revisionServer ? serverName(revisionServer) : ""}
+            onOpen={() => setRevisionModalOpen(true)}
+            onDismiss={() => {
+              revision.reset();
+              setRevisionServer(null);
+              setAutoOpenedTask(null);
+            }}
+          />
+        )}
 
         {editing ? (
           <AccountEditForm
@@ -665,24 +779,10 @@ function AccountWorkzone({
               canReveal={canReveal}
             />
 
-            <div className="card">
-              <div className="text-xs uppercase text-dim mb-2 flex items-center gap-2">
-                <KeyRound className="w-3 h-3" /> Ротация пароля
-              </div>
-              <div className="text-xs text-dim mb-3">
-                Генерирует новый пароль в БД (apply на серверы — отдельно, через
-                worker-rotate на вкладке сервера). Plaintext клиенту не
-                возвращается.
-              </div>
-              <button
-                className="btn flex items-center gap-1"
-                disabled={pending || !canOperate}
-                title={canOperate ? "Ротировать пароль в БД" : "Нет прав"}
-                onClick={handleRotate}
-                type="button"
-              >
-                <RotateCw className="w-4 h-4" /> Ротировать (БД)
-              </button>
+            <div className="text-[11px] text-dim italic">
+              Ротация генерирует новый пароль в БД (apply на серверы — отдельно,
+              через worker-rotate на вкладке сервера). Plaintext клиенту не
+              возвращается.
             </div>
 
             <ServersSection
@@ -691,32 +791,88 @@ function AccountWorkzone({
               serverName={serverName}
               allServers={allServers}
               onChanged={onChanged}
+              onRevision={handleRevision}
+              revisionBusyServer={
+                revision.tracked?.polling ? revisionServer : null
+              }
             />
-
-            <div className="flex items-center gap-2 border-t border-token pt-4">
-              <button
-                type="button"
-                className="btn btn-danger flex items-center gap-1 mr-auto"
-                disabled={pending || !canManage}
-                title={canManage ? undefined : "Нет прав на удаление"}
-                onClick={handleDelete}
-              >
-                <Trash2 className="w-4 h-4" /> Удалить
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary flex items-center gap-1"
-                disabled={pending || !canManage}
-                title={canManage ? undefined : "Нет прав на редактирование"}
-                onClick={() => setEditing(true)}
-              >
-                <Edit3 className="w-4 h-4" /> Редактировать
-              </button>
-            </div>
           </>
         )}
       </div>
+
+      {revisionServer && (
+        <RevisionDiffModal
+          open={revisionModalOpen}
+          serverId={revisionServer}
+          serverName={serverName(revisionServer)}
+          diffs={revisionDiffs}
+          onClose={() => setRevisionModalOpen(false)}
+          onApplied={onChanged}
+        />
+      )}
     </section>
+  );
+}
+
+/**
+ * Уведомление о ходе ревизии в рабочей зоне. Пока задача поллится — «запущена»,
+ * по завершении — кликабельный итог (открыть модалку diff) либо ошибка.
+ */
+function RevisionNotice({
+  tracked,
+  diffCount,
+  serverName,
+  onOpen,
+  onDismiss,
+}: {
+  tracked: NonNullable<ReturnType<typeof useTaskOutcome>["tracked"]>;
+  diffCount: number;
+  serverName: string;
+  onOpen: () => void;
+  onDismiss: () => void;
+}) {
+  const where = serverName ? ` (${serverName})` : "";
+  if (tracked.polling) {
+    return (
+      <div className="alert text-sm flex items-center gap-2" role="status">
+        <RotateCw className="w-4 h-4 animate-spin shrink-0" />
+        <span className="flex-1">Ревизия запущена{where} — ждём результат…</span>
+      </div>
+    );
+  }
+  if (tracked.error || tracked.status === "failed") {
+    return (
+      <div className="alert-danger text-sm flex items-start gap-2">
+        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+        <span className="flex-1">
+          Ревизия{where} не удалась: {tracked.error ?? "задача завершилась ошибкой"}
+        </span>
+        <button type="button" className="btn btn-sm" onClick={onDismiss}>
+          Скрыть
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="alert text-sm flex items-center gap-2 flex-wrap" role="status">
+      <ScanSearch className="w-4 h-4 shrink-0 text-accent" />
+      <span className="flex-1">
+        Ревизия{where} готова:{" "}
+        {diffCount > 0
+          ? `расхождений — ${diffCount}`
+          : "расхождений нет"}
+      </span>
+      <button
+        type="button"
+        className="btn btn-sm btn-primary"
+        onClick={onOpen}
+      >
+        Открыть
+      </button>
+      <button type="button" className="btn btn-sm" onClick={onDismiss}>
+        Скрыть
+      </button>
+    </div>
   );
 }
 
@@ -790,12 +946,18 @@ function ServersSection({
   serverName,
   allServers,
   onChanged,
+  onRevision,
+  revisionBusyServer,
 }: {
   account: ServerAccount;
   canOperate: boolean;
   serverName: (id: string) => string;
   allServers: Server[];
   onChanged: () => void;
+  /** Запуск ревизии (users/inventory) по конкретному серверу. */
+  onRevision: (serverId: string) => void;
+  /** Сервер, по которому ревизия сейчас крутится (или null). */
+  revisionBusyServer: string | null;
 }) {
   const toast = useToast();
   const { confirm } = useConfirm();
@@ -972,6 +1134,21 @@ function ServersSection({
                 >
                   {presence.label}
                 </span>
+                <button
+                  className="btn btn-sm flex items-center gap-1"
+                  disabled={disabled || revisionBusyServer === sid}
+                  title={
+                    noPrivReason ??
+                    "Сверить атрибуты OS-юзера с БД (users/inventory)"
+                  }
+                  onClick={() => onRevision(sid)}
+                  type="button"
+                >
+                  <ScanSearch
+                    className={`w-3.5 h-3.5 ${revisionBusyServer === sid ? "animate-spin" : ""}`}
+                  />{" "}
+                  Ревизия
+                </button>
                 <button
                   className="btn btn-sm flex items-center gap-1"
                   disabled={disabled}

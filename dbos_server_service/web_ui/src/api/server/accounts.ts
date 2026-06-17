@@ -249,6 +249,43 @@ export function unbindAccountServer(
 }
 
 // ---------------------------------------------------------------------------
+// Ревизия атрибутов: применить найденное на боксе значение в БД
+// ---------------------------------------------------------------------------
+
+/**
+ * Тело `POST /server-accounts/{id}/adopt_from_host`.
+ *
+ * Шлём только те поля, расхождение по которым оператор подтвердил в модалке
+ * ревизии — со значениями из `found` (то, что реально на боксе). `server_id`
+ * обязателен: ревизия привязана к конкретному серверу. Пустое тело без полей
+ * backend отбивает 422 `NO_FIELDS_TO_ADOPT`.
+ */
+export interface AdoptFromHostRequest {
+  server_id: string;
+  has_sudo?: boolean;
+  unix_groups?: string[];
+  shell?: string | null;
+}
+
+/**
+ * Подтянуть в БД атрибуты OS-пользователя, найденные на сервере ревизией
+ * (`users/inventory`). Возвращает обновлённую карточку аккаунта (как
+ * `getAccount`).
+ *
+ * Ошибки: 403 PERMISSION_DENIED, 404 ACCOUNT_NOT_FOUND, 422
+ * NO_FIELDS_TO_ADOPT / невалидные unix_groups.
+ */
+export function adoptFromHost(
+  accountId: string,
+  body: AdoptFromHostRequest,
+): Promise<ServerAccount> {
+  return apiPost<ServerAccount>(
+    `${BASE}/server-accounts/${accountId}/adopt_from_host`,
+    body,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Provisioning dispatch (per-server OS-user lifecycle)
 // ---------------------------------------------------------------------------
 

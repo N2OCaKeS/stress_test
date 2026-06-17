@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { PersonaProvider } from "@/contexts/PersonaContext";
@@ -17,12 +17,28 @@ vi.mock("@/api/server/servers", () => ({
 
 const listAccountsMock = vi.fn(() => new Promise(() => {}));
 const getAccountMock = vi.fn(() => new Promise(() => {}));
+const adoptFromHostMock = vi.fn(() => new Promise(() => {}));
 vi.mock("@/api/server/accounts", () => ({
   get listAccounts() {
     return listAccountsMock;
   },
   get getAccount() {
     return getAccountMock;
+  },
+  get adoptFromHost() {
+    return adoptFromHostMock;
+  },
+}));
+
+// Ревизия дёргает users/inventory (misc) и поллит задачу через getTask.
+const usersInventoryMock = vi.fn(() => new Promise(() => {}));
+const getTaskMock = vi.fn(() => new Promise(() => {}));
+vi.mock("@/api/server/misc", () => ({
+  get usersInventory() {
+    return usersInventoryMock;
+  },
+  get getTask() {
+    return getTaskMock;
   },
 }));
 
@@ -80,10 +96,29 @@ describe("ServerUsers (fleet account list)", () => {
     listServersMock.mockReset();
     listAccountsMock.mockReset();
     getAccountMock.mockReset();
+    adoptFromHostMock.mockReset();
+    usersInventoryMock.mockReset();
+    getTaskMock.mockReset();
     listServersMock.mockReturnValue(new Promise(() => {}));
     listAccountsMock.mockReturnValue(new Promise(() => {}));
     getAccountMock.mockReturnValue(new Promise(() => {}));
+    adoptFromHostMock.mockReturnValue(new Promise(() => {}));
+    usersInventoryMock.mockReturnValue(new Promise(() => {}));
+    getTaskMock.mockReturnValue(new Promise(() => {}));
   });
+
+  function selectAccount() {
+    listServersMock.mockResolvedValue({
+      items: [{ id: "srv1", display_name: "alpha", hostname: "alpha.local" }],
+      total: 1,
+    });
+    listAccountsMock.mockResolvedValue({
+      items: [FAKE_ACCOUNT],
+      total: 1,
+      limit: 200,
+      offset: 0,
+    });
+  }
 
   it("рендерится и показывает loading state, пока грузятся серверы", () => {
     renderPage();
@@ -111,13 +146,12 @@ describe("ServerUsers (fleet account list)", () => {
     const loginCell = await screen.findByText("dbos-svc");
     fireEvent.click(loginCell);
 
-    // Правая рабочая зона показывает профиль и инлайн-действия.
+    // Правая рабочая зона показывает управляющие кнопки наверху.
     await waitFor(() => {
-      expect(screen.getByText(/Ротация пароля/)).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Редактировать/ }),
+      ).toBeInTheDocument();
     });
-    expect(
-      screen.getByRole("button", { name: /Редактировать/ }),
-    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Удалить/ })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Ротировать \(БД\)/ }),
@@ -135,5 +169,63 @@ describe("ServerUsers (fleet account list)", () => {
     expect(
       screen.getByRole("button", { name: /Привязать/ }),
     ).toBeInTheDocument();
+  });
+
+  it("показывает кнопку «Ревизия» у сервера в секции", async () => {
+    selectAccount();
+    renderPage();
+
+    fireEvent.click(await screen.findByText("dbos-svc"));
+    expect(
+      await screen.findByRole("button", { name: /Ревизия/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("открывает модалку diff с было/стало и чекбоксами по завершении ревизии", async () => {
+    selectAccount();
+    usersInventoryMock.mockResolvedValue({ task_id: "tsk1", status: "queued" });
+    // Первый же поллинг возвращает succeeded с расхождениями — модалка
+    // открывается автоматически (быстрый таск).
+    getTaskMock.mockResolvedValue({
+      id: "tsk1",
+      kind: "users.inventory",
+      status: "succeeded",
+      created_at: "2026-01-01T00:00:00Z",
+      retry_count: 0,
+      result: {
+        diffs: [
+          {
+            account_id: "acc1",
+            login: "dbos-svc",
+            fields: {
+              has_sudo: { expected: false, found: true },
+              unix_groups: { expected: ["postgres"], found: ["wheel"] },
+              shell: { expected: "/bin/bash", found: "/bin/sh" },
+            },
+          },
+        ],
+      },
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByText("dbos-svc"));
+    fireEvent.click(await screen.findByRole("button", { name: /Ревизия/ }));
+
+    // Модалка с заголовком и кнопкой применения.
+    const dialog = await screen.findByRole("dialog");
+    const d = within(dialog);
+    expect(
+      d.getByRole("button", { name: /Применить к БД/ }),
+    ).toBeInTheDocument();
+
+    // Было → стало для shell (внутри модалки).
+    expect(d.getByText("/bin/bash")).toBeInTheDocument();
+    expect(d.getByText("/bin/sh")).toBeInTheDocument();
+
+    // Чекбоксы по полям присутствуют и по умолчанию отмечены.
+    const sudoCheck = d.getByLabelText(/Применить has_sudo/);
+    expect((sudoCheck as HTMLInputElement).checked).toBe(true);
+    expect(d.getByLabelText(/Применить unix_groups/)).toBeInTheDocument();
+    expect(d.getByLabelText(/Применить shell/)).toBeInTheDocument();
   });
 });

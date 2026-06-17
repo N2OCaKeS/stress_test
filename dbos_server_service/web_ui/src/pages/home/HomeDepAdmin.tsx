@@ -377,35 +377,37 @@ export function HomeDepAdmin() {
           </div>
         </div>
 
-        {/* Recent activity */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold">Активность в депе</h3>
-            <Link to="/log" className="text-xs text-accent">
-              Открыть полный лог →
-            </Link>
-          </div>
-          <div className="text-sm">
-            {SAMPLE_ACTIVITY.map((row) => (
-              <div key={row.req} className="activity-row">
-                <span className="text-xs text-dim mono">{row.ts}</span>
-                <div className="min-w-0">
-                  <div className="truncate">
-                    <b>{row.actor}</b>{" "}
-                    <span className="text-dim">{row.action}</span>{" "}
-                    <span className="mono">{row.target}</span>
+        {/* Recent activity — только при доступе к чтению аудита. */}
+        {canAudit && (
+          <div className="card">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">Активность в депе</h3>
+              <Link to="/log" className="text-xs text-accent">
+                Открыть полный лог →
+              </Link>
+            </div>
+            <div className="text-sm">
+              {SAMPLE_ACTIVITY.map((row) => (
+                <div key={row.req} className="activity-row">
+                  <span className="text-xs text-dim mono">{row.ts}</span>
+                  <div className="min-w-0">
+                    <div className="truncate">
+                      <b>{row.actor}</b>{" "}
+                      <span className="text-dim">{row.action}</span>{" "}
+                      <span className="mono">{row.target}</span>
+                    </div>
+                    <div className="text-[11px] text-dim mono truncate">
+                      {row.req}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-dim mono truncate">
-                    {row.req}
-                  </div>
+                  <span className={`badge badge-${row.badgeKind}`}>
+                    {row.badge}
+                  </span>
                 </div>
-                <span className={`badge badge-${row.badgeKind}`}>
-                  {row.badge}
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       {/* Tip footer */}

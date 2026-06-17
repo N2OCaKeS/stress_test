@@ -106,21 +106,22 @@ export function isDeptScopedAuditReader(persona: Persona): boolean {
 /**
  * True если персоне доступно чтение журнала аудита (`/log`). loging_service
  * пускает на read платформенные роли `loging_admin` / `loging_reader` /
- * `loging_reader_dep` / `account_admin` (в каноне UI — `logging_admin` /
- * `logging_reader` / `logging_reader_dep` / `account_admin`).
- * `loging_reader_dep` — dept-scoped, видит только свой отдел (scope режет
- * backend). `account_admin` ограничен чтением: правила и retention
- * остаются за `logging_admin` (см. `hasAuditMutateAccess`). Сервис-роль
- * `loging_service.admin` у dep_admin сюда не годится — backend всё равно
- * ответит 403 INSUFFICIENT_ROLE, поэтому гейтим по platform-роли, а не по
- * `accessible_services`.
+ * `loging_reader_dep` / `account_admin` / `department_admin` (в каноне UI —
+ * `logging_admin` / `logging_reader` / `logging_reader_dep` / `account_admin` /
+ * `dep_admin`). `loging_reader_dep` и `dep_admin` — dept-scoped, видят только
+ * свой отдел (scope режет backend). `account_admin` и `dep_admin` ограничены
+ * чтением: правила и retention остаются за `logging_admin` (см.
+ * `hasAuditMutateAccess`). Гейтим по platform-роли, а не по
+ * `accessible_services`: сервис-роль `loging_service.admin` без подходящей
+ * platform-роли read всё равно не открывает.
  */
 export function hasAuditLogAccess(persona: Persona): boolean {
   return (
     persona.platform_role === "logging_admin" ||
     persona.platform_role === "logging_reader" ||
     persona.platform_role === "logging_reader_dep" ||
-    persona.platform_role === "account_admin"
+    persona.platform_role === "account_admin" ||
+    persona.platform_role === "dep_admin"
   );
 }
 

@@ -120,13 +120,31 @@ class TestStats:
         assert client.get(STATS_URL).status_code == 401
 
     def test_non_loging_role_forbidden(self, client):
-        ctx = _mock_reader("department_admin")
+        ctx = _mock_reader(None, service_roles={"config_service": ["reader"]},
+                           department_id="dep_a")
         try:
             r = client.get(STATS_URL, headers={"Authorization": "Bearer t"})
         finally:
             ctx.stop()
         assert r.status_code == 403
         assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
+
+    def test_department_admin_scoped_to_own_department(self, client, auth_headers):
+        """department_admin: stats считаются только по своему отделу."""
+        _ingest(client, auth_headers, department_id="dep_a")
+        _ingest(client, auth_headers, department_id="dep_a")
+        _ingest(client, auth_headers, department_id="dep_b")
+        ctx = _mock_reader("department_admin", department_id="dep_a")
+        try:
+            body = client.get(
+                STATS_URL,
+                headers={"Authorization": "Bearer t"},
+                params={"department_id": "dep_b"},
+            ).json()
+        finally:
+            ctx.stop()
+        # Запросил dep_b, scope форснул dep_a.
+        assert body["total"] == 2
 
 
 class TestStatsDeptScope:
@@ -242,13 +260,32 @@ class TestExport:
         assert client.get(EXPORT_URL).status_code == 401
 
     def test_non_loging_role_forbidden(self, client):
-        ctx = _mock_reader("department_admin", department_id="dep_a")
+        ctx = _mock_reader(None, service_roles={"config_service": ["reader"]},
+                           department_id="dep_a")
         try:
             r = client.get(EXPORT_URL, headers={"Authorization": "Bearer t"})
         finally:
             ctx.stop()
         assert r.status_code == 403
         assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
+
+    def test_department_admin_export_only_own_department(self, client, auth_headers):
+        """department_admin: экспорт содержит только события своего отдела."""
+        _ingest(client, auth_headers, department_id="dep_a", action="user.login")
+        _ingest(client, auth_headers, department_id="dep_b", action="user.logout")
+        ctx = _mock_reader("department_admin", department_id="dep_a")
+        try:
+            r = client.get(
+                EXPORT_URL,
+                headers={"Authorization": "Bearer t"},
+                params={"department_id": "dep_b"},
+            )
+        finally:
+            ctx.stop()
+        assert r.status_code == 200
+        header, rows = _parse_csv(r.text)
+        assert len(rows) == 1
+        assert rows[0][header.index("department_id")] == "dep_a"
 
     def test_dept_scoped_export_only_own_department(self, client, auth_headers):
         """loging_reader_dep: экспорт содержит только события своего отдела."""

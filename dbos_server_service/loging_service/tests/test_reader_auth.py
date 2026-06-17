@@ -1,11 +1,13 @@
 """Тесты: require_reader — кто допущен к чтению audit'а.
 
-К чтению audit'а допускаются `loging_admin`, `loging_reader` и
-`account_admin` — все три платформенные роли глобальные (cross-dept).
+К чтению audit'а допускаются пять платформенных ролей. Три cross-dept
+(`loging_admin`, `loging_reader`, `account_admin`) видят журнал целиком;
 `account_admin` ограничен чтением (правила/retention остаются за
-`loging_admin`). `department_admin` / service-роли в `loging_service`
-возвращают 403 INSUFFICIENT_ROLE — dep_admin'у нужен явно выданный
-`loging_reader`, чтобы читать журнал своего отдела.
+`loging_admin`). Две dept-scoped (`loging_reader_dep`, `department_admin`)
+читают аудит строго своего отдела — переданный `department_id`
+перекрывается отделом из identity, отсутствие отдела → 403 (fail-closed).
+Service-роли в `loging_service` и пользователи без платформенной роли
+возвращают 403 INSUFFICIENT_ROLE.
 """
 
 import httpx
@@ -229,15 +231,59 @@ class TestDeptScopedReader:
         assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 
 
-# ── deny: department_admin / service-роли ─────────────────────────────────────
+# ── department_admin — жёсткий dept-scope (как loging_reader_dep) ─────────────
 
 
-class TestDeniedReaders:
-    def test_department_admin_returns_403(self, client):
-        """department_admin к чтению audit'а НЕ допускается. Если dep_admin'у
-        нужен read его отдела — ему выдаётся отдельная `loging_reader`."""
+class TestDeptAdminScopedReader:
+    """department_admin читает аудит ТОЛЬКО своего отдела — тот же жёсткий
+    dept-scope, что и у `loging_reader_dep`."""
+
+    def test_sees_only_own_department(self, client, auth_headers):
+        _ingest(client, auth_headers, department_id="dep_a")
+        _ingest(client, auth_headers, department_id="dep_a")
+        _ingest(client, auth_headers, department_id="dep_b")
         p = _mock_identity(client, {"user_id": "u1", "username": "da",
-                                     "platform_role": "department_admin", "department_id": "dep_a"})
+                                     "platform_role": "department_admin",
+                                     "department_id": "dep_a"})
+        try:
+            r = client.get(
+                EVENTS_URL,
+                headers={"Authorization": "Bearer t"},
+                params={"include_total": "true"},
+            )
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 2
+        assert {item["department_id"] for item in body["items"]} == {"dep_a"}
+
+    def test_cannot_read_other_department_via_query_override(self, client, auth_headers):
+        """Чужой `?department_id=` перекрывается своим отделом."""
+        _ingest(client, auth_headers, department_id="dep_a")
+        _ingest(client, auth_headers, department_id="dep_b")
+        p = _mock_identity(client, {"user_id": "u1", "username": "da",
+                                     "platform_role": "department_admin",
+                                     "department_id": "dep_a"})
+        try:
+            r = client.get(
+                EVENTS_URL,
+                headers={"Authorization": "Bearer t"},
+                params={"department_id": "dep_b", "include_total": "true"},
+            )
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 1
+        assert body["items"][0]["department_id"] == "dep_a"
+
+    def test_no_department_in_identity_returns_403(self, client, auth_headers):
+        """fail-closed: department_admin без department_id → 403, а не весь журнал."""
+        _ingest(client, auth_headers, department_id="dep_a")
+        p = _mock_identity(client, {"user_id": "u1", "username": "da",
+                                     "platform_role": "department_admin",
+                                     "department_id": None})
         try:
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer t"})
         finally:
@@ -245,6 +291,74 @@ class TestDeniedReaders:
         assert r.status_code == 403
         assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 
+    def test_stats_scoped_to_own_department(self, client, auth_headers):
+        _ingest(client, auth_headers, department_id="dep_a")
+        _ingest(client, auth_headers, department_id="dep_b")
+        p = _mock_identity(client, {"user_id": "u1", "username": "da",
+                                     "platform_role": "department_admin",
+                                     "department_id": "dep_a"})
+        try:
+            r = client.get(
+                "/api/logging/v1/events/stats",
+                headers={"Authorization": "Bearer t"},
+                params={"department_id": "dep_b"},
+            )
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        # Запросил dep_b, scope форснул dep_a — считает только своё.
+        assert r.json()["total"] == 1
+
+    def test_export_scoped_to_own_department(self, client, auth_headers):
+        _ingest(client, auth_headers, department_id="dep_a")
+        _ingest(client, auth_headers, department_id="dep_b")
+        p = _mock_identity(client, {"user_id": "u1", "username": "da",
+                                     "platform_role": "department_admin",
+                                     "department_id": "dep_a"})
+        try:
+            r = client.get(
+                "/api/logging/v1/events/export",
+                headers={"Authorization": "Bearer t"},
+                params={"department_id": "dep_b"},
+            )
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        body = r.text.splitlines()
+        # Header + ровно одна строка своего отдела (dep_b отфильтрован scope'ом).
+        assert len(body) == 2
+        assert "dep_a" in body[1]
+        assert "dep_b" not in body[1]
+
+    def test_rules_returns_403(self, client):
+        """department_admin НЕ управляет правилами → require_admin отбивает 403."""
+        p = _mock_identity(client, {"user_id": "u1", "username": "da",
+                                     "platform_role": "department_admin",
+                                     "department_id": "dep_a"})
+        try:
+            r = client.get(RULES_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
+
+    def test_retention_returns_403(self, client):
+        """department_admin НЕ управляет retention → require_admin отбивает 403."""
+        p = _mock_identity(client, {"user_id": "u1", "username": "da",
+                                     "platform_role": "department_admin",
+                                     "department_id": "dep_a"})
+        try:
+            r = client.get(RETENTION_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
+
+
+# ── deny: service-роли / без роли ─────────────────────────────────────────────
+
+
+class TestDeniedReaders:
     def test_loging_service_role_reader_returns_403(self, client):
         """Service-роль `reader` в loging_service больше не пускается:
         чтение требует именно платформенной `loging_reader` / `loging_admin`."""

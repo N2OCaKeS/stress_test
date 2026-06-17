@@ -66,8 +66,9 @@ class _OkSession:
 class TestLogingReaderCrossDept:
     """`loging_reader` теперь global-read: запрос любого `department_id`
     проходит как обычный фильтр, никакого 403 DEPARTMENT_SCOPE_VIOLATION
-    больше нет. `account_admin` / `department_admin` отдельно отбиваются
-    `INSUFFICIENT_ROLE` в `require_reader`.
+    больше нет. `loging_reader_dep` / `department_admin` — наоборот,
+    dept-scoped: их `department_id` форсится из identity (см.
+    `_scoped_department_id`).
     """
 
     def test_loging_reader_can_query_other_department(

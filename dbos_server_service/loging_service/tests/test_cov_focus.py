@@ -603,14 +603,13 @@ class TestRateLimitKeyFunction:
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestReaderAllowlist:
-    """К чтению audit'а допускаются `loging_admin`, `loging_reader` и
-    `account_admin`.
+    """К чтению audit'а допускаются пять платформенных ролей.
 
-    Все три — глобальные read (никакого dept-scope), все могут не иметь
-    `department_id`. `account_admin` ограничен чтением (правила/retention
-    остаются за `loging_admin`). `department_admin` отбивается
-    `INSUFFICIENT_ROLE` — если dep_admin'у нужен read его отдела, ему
-    отдельно выдаётся платформенная `loging_reader`.
+    Три cross-dept (`loging_admin`, `loging_reader`, `account_admin`) —
+    глобальные read без dept-scope, могут не иметь `department_id`.
+    `account_admin` ограничен чтением (правила/retention за `loging_admin`).
+    Две dept-scoped (`loging_reader_dep`, `department_admin`) читают аудит
+    строго своего отдела — обязан быть `department_id` в identity.
     """
 
     def test_loging_reader_with_dept_id_passes(self, client, mock_introspect):
@@ -635,13 +634,24 @@ class TestReaderAllowlist:
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
         assert r.status_code == 200
 
-    def test_department_admin_returns_403_insufficient_role(self, client, mock_introspect):
-        """department_admin к чтению аудита НЕ допускается."""
+    def test_department_admin_with_dept_id_passes(self, client, mock_introspect):
+        """department_admin — dept-scoped reader: читает аудит своего отдела."""
         EVENTS_URL = "/api/logging/v1/events"
         with mock_introspect(json_body={
             "active": True, "subject_type": "user",
             "sub": "usr_da", "username": "da",
             "platform_role": "department_admin", "department_id": "dep_a",
+        }):
+            r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
+        assert r.status_code == 200
+
+    def test_department_admin_without_dept_id_returns_403(self, client, mock_introspect):
+        """fail-closed: department_admin без department_id → 403, а не весь журнал."""
+        EVENTS_URL = "/api/logging/v1/events"
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user",
+            "sub": "usr_da", "username": "da",
+            "platform_role": "department_admin", "department_id": None,
         }):
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
         assert r.status_code == 403

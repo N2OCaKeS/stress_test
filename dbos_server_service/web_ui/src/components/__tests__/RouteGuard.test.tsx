@@ -95,7 +95,9 @@ describe("RouteGuard — direct-URL RBAC per persona", () => {
     });
   });
 
-  // alice — dep_admin: всё кроме logging, плюс admin.
+  // alice — dep_admin: server/secret/worker своего отдела + read журнала аудита
+  // (dept-scoped, backend режет выдачу её отделом), плюс admin. Правила/retention
+  // журнала закрыты — это logging_admin-only.
   describe("dep_admin (alice)", () => {
     it("secret → granted", () => {
       renderGuard("alice", { service: "secret" });
@@ -113,8 +115,12 @@ describe("RouteGuard — direct-URL RBAC per persona", () => {
       renderGuard("alice", { service: "worker" });
       expectGranted();
     });
-    it("logging → denied (нет в accessible_services)", () => {
+    it("logging → granted (dep_admin читает аудит своего отдела)", () => {
       renderGuard("alice", { service: "logging" });
+      expectGranted();
+    });
+    it("logging mutation → denied (правила/retention только logging_admin)", () => {
+      renderGuard("alice", { service: "logging", logMutation: true });
       expectDenied();
     });
     it("requireAdmin → granted", () => {

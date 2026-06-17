@@ -33,6 +33,9 @@ describe("Home dispatcher", () => {
     renderHome();
     expect(screen.getByText(/Привет, alice/)).toBeInTheDocument();
     expect(screen.getByText(/Departament/)).toBeInTheDocument();
+    // dep_admin читает аудит своего отдела → блок логов на home виден.
+    expect(screen.getByText(/Активность в депе/)).toBeInTheDocument();
+    expect(screen.getByText(/Открыть полный лог/)).toBeInTheDocument();
   });
 
   it("renders HomeLoggingAdmin for carol", () => {

@@ -23,7 +23,7 @@ export const PERSONAS: Persona[] = [
     dept_id: "core",
     platform_role: "dep_admin",
     service_roles: {},
-    accessible_services: ["auth", "secret", "server", "worker", "config"],
+    accessible_services: ["auth", "secret", "server", "worker", "logging", "config"],
     has_admin: true,
     tagline: "dep_admin одного отдела.",
   },

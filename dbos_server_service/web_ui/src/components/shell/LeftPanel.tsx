@@ -114,10 +114,10 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
     // worker — часть server-зоны; задачи под «Серверами» (/server/tasks),
     // отдельного чипа нет. auth/config тоже без чипа.
     .filter((s) => s !== "auth" && s !== "config" && s !== "worker")
-    // Audit log виден только носителю platform-роли logging_admin/logging_reader.
-    // dep_admin с сервис-ролью loging_service.admin получает `logging` в
-    // accessible_services, но backend режет ему /events и /rules на 403 — чип
-    // вёл бы в тупик, поэтому скрываем.
+    // Audit log виден тем, у кого есть read-доступ к журналу: logging_admin /
+    // logging_reader / logging_reader_dep / account_admin / dep_admin. У
+    // dept-scoped ролей (включая dep_admin) backend режет выдачу своим отделом,
+    // но раздел рабочий. Прочим персонам чип вёл бы в 403 — скрываем.
     .filter((s) => s !== "logging" || hasAuditLogAccess(persona))
     // Servers тоже гейтим по реальному доступу к server-зоне (вкл. подпункт
     // «Задачи»). У отдела подключён server_service, поэтому обычный

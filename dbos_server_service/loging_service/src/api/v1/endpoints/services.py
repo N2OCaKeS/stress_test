@@ -86,9 +86,11 @@ def _register_events_rate_limit_key(request: Request) -> str:
         "Список заведомо короткий (десятки сервисов на платформе), поэтому "
         "пагинации нет: `has_more=False`, `limit`/`offset` всегда `null`, "
         "`total = len(items)`.\n\n"
-        "**Доступ:** `loging_admin` или `loging_reader` — обе роли видят "
-        "агрегат cross-dept целиком. `account_admin` / `department_admin` "
-        "к чтению audit'а не допускаются.\n\n"
+        "**Доступ:** как `GET /events` — любая из пяти read-ролей "
+        "(`loging_admin` / `loging_reader` / `account_admin` / "
+        "`loging_reader_dep` / `department_admin`). Агрегат GROUP BY service "
+        "отдаётся cross-dept целиком (реестр имён сервисов, не пер-dept "
+        "данные событий).\n\n"
         "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
         "**Связано:** `GET /services/{service}/events` — каталог action'ов "
         "конкретного сервиса; `GET /events` — собственно события."
@@ -114,11 +116,13 @@ def list_services(
     identity: ReaderIdentity,
     db: Session = Depends(get_db),
 ) -> ServiceListResponse:
-    # Read-роли (`loging_admin` / `loging_reader`) обе глобальные — агрегат
-    # GROUP BY service отдаётся cross-dept без фильтра. Историческая
-    # dept-scoped семантика для `loging_reader` / `department_admin` снята:
-    # `department_admin` к loging_service не допускается, а `loging_reader`
-    # теперь global-read (см. `dependencies/auth.py::require_reader`).
+    # Реестр имён сервисов — глобальный GROUP BY service агрегат без
+    # dept-фильтра для всех read-ролей (включая dept-scoped
+    # `loging_reader_dep` / `department_admin`). Это не пер-dept данные
+    # событий, а список сервисов, когда-либо писавших в журнал; dept-scope
+    # здесь не применяется — симметрично тому, как dept-scoped reader всё
+    # равно видит общий реестр. Пер-dept ограничение живёт на
+    # `/events` / `/stats` / `/export` (см. `_scoped_department_id`).
     rows = events_repo.list_services(db)
     items = [
         ServiceInfo(service=r.service, event_count=r.event_count, last_event_at=r.last_event_at)

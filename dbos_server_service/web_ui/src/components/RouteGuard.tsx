@@ -45,10 +45,10 @@ export function RouteGuard({ service, requireAdmin, logMutation, children }: Pro
     (!auth || !auth.user);
 
   // /log* (service === "logging") гейтится не по accessible_services, а по
-  // platform-роли: backend loging_service пускает к событиям/правилам/retention
-  // только loging_admin/loging_reader. Сервис-роль loging_service.admin (её
-  // несёт dep_admin) кладёт `logging` в accessible_services, но backend всё
-  // равно вернёт 403 — поэтому такой персоне раздел недоступен.
+  // platform-роли: read журнала (`hasAuditLogAccess`) открыт logging_admin /
+  // logging_reader / logging_reader_dep / account_admin / dep_admin (dept-scoped
+  // роли видят только свой отдел). Правила/retention (`logMutation`) — строже,
+  // только logging_admin (`hasAuditMutateAccess`).
   // Зонные сервисы гейтим теми же хелперами, что и nav-чипы, чтобы у роли без
   // реального доступа раздел не просто упирался в BlockedPane, а вообще не
   // открывался (redirect на /home). logging — по platform-роли; server/worker

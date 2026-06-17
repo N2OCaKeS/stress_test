@@ -18,6 +18,7 @@ export function BotRoleAssign({
   departmentId,
   allowedServices,
   alreadyAssigned,
+  currentRoles,
   disabled,
   reason,
   onAssign,
@@ -26,6 +27,13 @@ export function BotRoleAssign({
   allowedServices: ServiceName[];
   /** service_name'ы, по которым у бота уже есть назначения — чтобы подсветить replace. */
   alreadyAssigned: Set<string>;
+  /**
+   * Текущие роли по сервисам (service_name → role_name[]). На старте формы и
+   * при смене сервиса этими ролями предзаполняется мультивыбор, чтобы было
+   * видно, что уже выдано, а сохранение работало как правка, а не как
+   * случайная замена «с нуля».
+   */
+  currentRoles?: Record<string, string[]>;
   disabled: boolean;
   reason?: string;
   onAssign: (service: ServiceName, roles: string[]) => void;
@@ -46,13 +54,20 @@ export function BotRoleAssign({
     { enabled: !!departmentId && !!service },
   );
 
-  // При смене сервиса — сбрасываем выбор ролей.
+  // При смене сервиса подставляем текущие роли этого сервиса как стартовый
+  // выбор — пользователь видит, что уже выдано, и снимает/добавляет галочки.
   useEffect(() => {
-    setSelected(new Set());
-  }, [service]);
+    setSelected(new Set(currentRoles?.[service] ?? []));
+  }, [service, currentRoles]);
 
   const roles = catalogQ.data ?? [];
   const isReplace = service && alreadyAssigned.has(service);
+  const current = currentRoles?.[service] ?? [];
+  const currentSet = new Set(current);
+  // Изменился ли набор относительно текущего — чтобы не слать no-op replace.
+  const dirty =
+    selected.size !== currentSet.size ||
+    Array.from(selected).some((r) => !currentSet.has(r));
 
   const toggle = (name: string) => {
     setSelected((prev) => {
@@ -121,13 +136,18 @@ export function BotRoleAssign({
         <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 surface-2 rounded border border-token">
           {roles.map((r) => {
             const on = selected.has(r.role_name);
+            const isCurrent = currentSet.has(r.role_name);
             return (
               <label
                 key={r.role_name}
                 className={`flex items-center gap-1 text-xs cursor-pointer px-2 py-1 rounded border ${
                   on ? "border-accent" : "border-token"
                 }`}
-                title={r.description ?? r.role_name}
+                title={
+                  isCurrent
+                    ? `Сейчас выдана. ${r.description ?? r.role_name}`
+                    : (r.description ?? r.role_name)
+                }
               >
                 <input
                   type="checkbox"
@@ -136,6 +156,9 @@ export function BotRoleAssign({
                   onChange={() => toggle(r.role_name)}
                 />
                 <span className="mono">{r.role_name}</span>
+                {isCurrent && (
+                  <span className="badge badge-accent text-[10px]">сейчас</span>
+                )}
                 {r.is_system && (
                   <span className="badge text-[10px]">system</span>
                 )}
@@ -145,18 +168,29 @@ export function BotRoleAssign({
         </div>
       )}
 
+      {isReplace && (
+        <div className="text-[11px] text-dim">
+          Сохранение заменит весь набор ролей по сервису{" "}
+          <span className="mono">{service}</span> на отмеченный — снятые галочки
+          будут отозваны.
+        </div>
+      )}
+
       <div className="flex justify-end">
         <button
           className="btn btn-primary flex items-center gap-1"
-          disabled={disabled || !service || selected.size === 0}
-          title={reason}
+          disabled={disabled || !service || (isReplace ? !dirty : selected.size === 0)}
+          title={
+            isReplace && !dirty
+              ? "Набор ролей не изменился"
+              : reason
+          }
           onClick={() => {
             onAssign(service as ServiceName, Array.from(selected));
-            setSelected(new Set());
           }}
         >
           <ShieldCheck className="w-4 h-4" />
-          {isReplace ? "Replace roles" : "Assign roles"}
+          {isReplace ? "Сохранить роли" : "Назначить роли"}
         </button>
       </div>
     </div>

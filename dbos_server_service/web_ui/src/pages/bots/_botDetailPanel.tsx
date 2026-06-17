@@ -19,7 +19,9 @@ import { ApiError, apiErrMsg } from "@/api/client";
 import { usePersona } from "@/contexts/PersonaContext";
 import { botMutationCaps } from "@/lib/rbac";
 import { formatMskDate, mskDateOffset } from "@/lib/datetime";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { BotRolesPanel } from "@/components/bot/BotRolesPanel";
+import { useUserLabel } from "@/lib/labels";
 import type {
   Bot as BotItem,
   BotTokenCreateResponse,
@@ -46,6 +48,7 @@ export function BotDetailFullPanel({
   onChanged: () => void;
 }) {
   const { persona } = usePersona();
+  const confirm = useConfirm();
   const caps = botMutationCaps(persona, bot.department_id ?? null);
   const canEdit = caps.rotateToken || caps.revokeToken || caps.manageRoles;
 
@@ -141,7 +144,7 @@ export function BotDetailFullPanel({
             {bot.created_by && (
               <span className="flex items-center gap-1">
                 <User className="w-3 h-3" /> created_by{" "}
-                <span className="mono">{bot.created_by}</span>
+                <CreatedByInline userId={bot.created_by} />
               </span>
             )}
             <span className="flex items-center gap-1">
@@ -234,7 +237,8 @@ export function BotDetailFullPanel({
               </button>
             </div>
             <div className="text-[11px] text-dim mt-1">
-              Hash хранится в БД, чистый токен — только сейчас.
+              В БД хранится только хэш, чистый токен — только сейчас. Повторно
+              посмотреть его нельзя: при утере ротируйте.
             </div>
           </div>
         )}
@@ -264,7 +268,13 @@ export function BotDetailFullPanel({
               />
               <StatRow
                 k="created_by"
-                v={<span className="mono">{bot.created_by ?? "—"}</span>}
+                v={
+                  bot.created_by ? (
+                    <CreatedByInline userId={bot.created_by} />
+                  ) : (
+                    <span className="mono">—</span>
+                  )
+                }
               />
             </div>
           </div>
@@ -378,11 +388,23 @@ export function BotDetailFullPanel({
                           className="btn btn-sm btn-danger"
                           disabled={!caps.revokeToken || pending || revoked}
                           title={caps.revokeToken ? undefined : caps.reason}
-                          onClick={() =>
+                          onClick={async () => {
+                            const ok = await confirm.confirm({
+                              title: "Отозвать токен",
+                              message: (
+                                <span className="text-sm">
+                                  Токен «{t.name}» сразу перестанет работать.
+                                  Действие необратимо.
+                                </span>
+                              ),
+                              danger: true,
+                              confirmLabel: "Отозвать",
+                            });
+                            if (!ok) return;
                             run(() =>
                               botsApi.revokeBotToken(bot.id, t.token_id),
-                            )
-                          }
+                            );
+                          }}
                         >
                           revoke
                         </button>
@@ -441,12 +463,31 @@ export function BotDetailFullPanel({
                       ? "Выпустить токен"
                       : "Выпустить новый — старые активные будут отозваны"
                 }
-                onClick={() =>
+                onClick={async () => {
+                  const name =
+                    tokenName.trim() || (activeTokens[0]?.name ?? "");
+                  if (!name) return;
+                  if (activeTokens.length > 0) {
+                    const ok = await confirm.confirm({
+                      title: "Ротировать токен",
+                      message: (
+                        <div className="text-sm flex flex-col gap-2">
+                          <span>
+                            Будет выпущен новый токен «{name}», а текущий сразу
+                            перестанет работать — всё, что им ходит, нужно
+                            перенастроить.
+                          </span>
+                          <span className="text-dim text-xs">
+                            Новый токен покажем один раз; повторно посмотреть его
+                            нельзя — при утере ротируйте ещё раз.
+                          </span>
+                        </div>
+                      ),
+                      confirmLabel: "Ротировать",
+                    });
+                    if (!ok) return;
+                  }
                   run(async () => {
-                    const name =
-                      tokenName.trim() ||
-                      (activeTokens[0]?.name ?? "");
-                    if (!name) return;
                     const res =
                       activeTokens.length === 0
                         ? await botsApi.issueBotToken(bot.id, {
@@ -459,8 +500,8 @@ export function BotDetailFullPanel({
                           });
                     setIssued(res);
                     setTokenName("");
-                  })
-                }
+                  });
+                }}
               >
                 {activeTokens.length === 0 ? (
                   <>
@@ -492,9 +533,20 @@ export function BotDetailFullPanel({
             canManage={caps.manageRoles}
             reason={caps.reason}
             pending={pending}
-            onRevoke={(service) =>
-              run(() => botsApi.revokeBotRoles(bot.id, service))
-            }
+            onRevoke={async (service) => {
+              const ok = await confirm.confirm({
+                title: "Отозвать роли",
+                message: (
+                  <span className="text-sm">
+                    Снять все роли бота по сервису «{service}»?
+                  </span>
+                ),
+                danger: true,
+                confirmLabel: "Отозвать",
+              });
+              if (!ok) return;
+              run(() => botsApi.revokeBotRoles(bot.id, service));
+            }}
             onAssign={(service, list) =>
               run(() =>
                 botsApi.assignBotRoles(bot.id, {
@@ -508,6 +560,11 @@ export function BotDetailFullPanel({
       </div>
     </>
   );
+}
+
+function CreatedByInline({ userId }: { userId: string }) {
+  const label = useUserLabel(userId);
+  return <span className="mono">{label}</span>;
 }
 
 function StatRow({ k, v }: { k: string; v: React.ReactNode }) {

@@ -45,6 +45,11 @@ export function BotRolesPanel({
     () => roles.filter((r) => !allowedSet.has(r.service_name)),
     [roles, allowedSet],
   );
+  const currentRoles = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const r of roles) map[r.service_name] = r.roles;
+    return map;
+  }, [roles]);
 
   return (
     <>
@@ -125,6 +130,7 @@ export function BotRolesPanel({
           departmentId={departmentId}
           allowedServices={allowedServices}
           alreadyAssigned={new Set(roles.map((r) => r.service_name))}
+          currentRoles={currentRoles}
           disabled={!canManage || pending}
           reason={canManage ? undefined : reason}
           onAssign={onAssign}

@@ -69,6 +69,9 @@ const Patterns = lazy(() =>
 const WikiExamples = lazy(() =>
   import("@/pages/wiki/WikiExamples").then((m) => ({ default: m.WikiExamples }))
 );
+const OsCatalog = lazy(() =>
+  import("@/pages/os/OsCatalog").then((m) => ({ default: m.OsCatalog }))
+);
 
 // Редирект, сохраняющий query-строку (legacy /worker?server_id=… → новый
 // раздел задач под «Серверами»). Navigate сам по себе query не переносит.
@@ -241,6 +244,14 @@ export function App() {
               element={
                 <RouteGuard>
                   <WikiExamples />
+                </RouteGuard>
+              }
+            />
+            <Route
+              path="/os"
+              element={
+                <RouteGuard>
+                  <OsCatalog />
                 </RouteGuard>
               }
             />

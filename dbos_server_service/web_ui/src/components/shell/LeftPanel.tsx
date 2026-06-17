@@ -17,6 +17,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   BookOpen,
+  HardDrive,
   type LucideIcon,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
@@ -147,7 +148,7 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
   // подкатегории (/log/rules) загорается и родитель (/log), и соседи с общим
   // префиксом. Собираем все рендеримые ссылки, выбираем ту, чей `to` — самый
   // длинный матч к текущему пути (точное равенство или префикс `to + "/"`).
-  const navLinks = ["/home", "/wiki", "/me", "/admin"];
+  const navLinks = ["/home", "/wiki", "/os", "/me", "/admin"];
   for (const chip of chips) {
     navLinks.push(chip.to);
     for (const s of chip.subItems ?? []) navLinks.push(s.to);
@@ -191,6 +192,14 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
         >
           <BookOpen className="w-5 h-5 text-accent shrink-0" />
           {!collapsed && <div className="flex-1 text-sm">Wiki</div>}
+        </Link>
+        <Link
+          to="/os"
+          title={collapsed ? "ОС — каталог версий" : undefined}
+          className={`chip ${isActive("/os") ? "active" : ""} ${collapsed ? "justify-center" : ""}`}
+        >
+          <HardDrive className="w-5 h-5 text-accent shrink-0" />
+          {!collapsed && <div className="flex-1 text-sm">ОС</div>}
         </Link>
       </nav>
 

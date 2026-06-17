@@ -606,7 +606,8 @@ function BotLiveData({
                 </button>
               </div>
               <div className="text-xs text-dim mt-1">
-                Сохраните токен сейчас — он показывается один раз и в БД хранится только хэш.
+                Сохраните токен сейчас — он показывается один раз, в БД хранится
+                только хэш. Повторно посмотреть его нельзя: при утере ротируйте.
               </div>
             </div>
           )}
@@ -878,9 +879,28 @@ function BotLiveData({
                         title={
                           newExpInvalid
                             ? "Срок действия обязателен и не должен превышать 6 месяцев"
-                            : "Выпустить новый токен — старый будет автоматически отозван"
+                            : "Выпустить новый токен — старый сразу перестанет работать"
                         }
-                        onClick={() =>
+                        onClick={async () => {
+                          const ok = await confirm.confirm({
+                            title: "Ротировать токен",
+                            message: (
+                              <div className="text-sm flex flex-col gap-2">
+                                <span>
+                                  Будет выпущен новый токен «
+                                  {newName.trim() || active[0].name}», а текущий
+                                  («{active[0].name}») сразу перестанет работать —
+                                  всё, что им ходит, нужно перенастроить.
+                                </span>
+                                <span className="text-dim text-xs">
+                                  Новый токен покажем один раз. Повторно посмотреть
+                                  его нельзя — при утере просто ротируйте ещё раз.
+                                </span>
+                              </div>
+                            ),
+                            confirmLabel: "Ротировать",
+                          });
+                          if (!ok) return;
                           run(async () => {
                             const name = newName.trim() || active[0].name;
                             const res = await botsApi.rotateBotToken(botId, {
@@ -889,22 +909,40 @@ function BotLiveData({
                             });
                             setIssued(res);
                             setNewName("");
-                          })
-                        }
+                          });
+                        }}
                       >
-                        <KeyRound className="w-4 h-4" /> Rotate
+                        <KeyRound className="w-4 h-4" /> Ротировать
                       </button>
                       <button
                         className="btn btn-danger flex items-center gap-1"
                         disabled={!caps.revokeToken || pending}
                         title="Отозвать токен без замены"
-                        onClick={() =>
+                        onClick={async () => {
+                          const ok = await confirm.confirm({
+                            title: "Отозвать токен",
+                            message: (
+                              <div className="text-sm flex flex-col gap-2">
+                                <span>
+                                  Токен «{active[0].name}» сразу перестанет
+                                  работать, замена не выпускается. Бот останется
+                                  без активного токена.
+                                </span>
+                                <span className="text-dim text-xs">
+                                  Если нужна замена — используйте «Ротировать».
+                                </span>
+                              </div>
+                            ),
+                            danger: true,
+                            confirmLabel: "Отозвать",
+                          });
+                          if (!ok) return;
                           run(() =>
                             botsApi.revokeBotToken(botId, active[0].token_id),
-                          )
-                        }
+                          );
+                        }}
                       >
-                        <Trash2 className="w-4 h-4" /> Revoke
+                        <Trash2 className="w-4 h-4" /> Отозвать
                       </button>
                     </div>
                   </>
@@ -947,11 +985,23 @@ function BotLiveData({
                               <button
                                 className="btn btn-sm btn-danger"
                                 disabled={!caps.revokeToken || pending}
-                                onClick={() =>
+                                onClick={async () => {
+                                  const ok = await confirm.confirm({
+                                    title: "Отозвать токен",
+                                    message: (
+                                      <span className="text-sm">
+                                        Токен «{t.name}» сразу перестанет
+                                        работать. Действие необратимо.
+                                      </span>
+                                    ),
+                                    danger: true,
+                                    confirmLabel: "Отозвать",
+                                  });
+                                  if (!ok) return;
                                   run(() =>
                                     botsApi.revokeBotToken(botId, t.token_id),
-                                  )
-                                }
+                                  );
+                                }}
                               >
                                 revoke
                               </button>
@@ -1019,11 +1069,23 @@ function BotLiveData({
                         <button
                           className="btn btn-sm btn-danger"
                           disabled={!caps.manageRoles || pending}
-                          onClick={() =>
+                          onClick={async () => {
+                            const ok = await confirm.confirm({
+                              title: "Отозвать роли",
+                              message: (
+                                <span className="text-sm">
+                                  Снять все роли бота по сервису «
+                                  {r.service_name}» ({r.roles.join(", ")})?
+                                </span>
+                              ),
+                              danger: true,
+                              confirmLabel: "Отозвать",
+                            });
+                            if (!ok) return;
                             run(() =>
                               botsApi.revokeBotRoles(botId, r.service_name),
-                            )
-                          }
+                            );
+                          }}
                         >
                           revoke
                         </button>
@@ -1039,6 +1101,9 @@ function BotLiveData({
               alreadyAssigned={
                 new Set((rolesQ.data ?? []).map((r) => r.service_name))
               }
+              currentRoles={Object.fromEntries(
+                (rolesQ.data ?? []).map((r) => [r.service_name, r.roles]),
+              )}
               disabled={!caps.manageRoles || pending}
               reason={caps.manageRoles ? undefined : caps.reason}
               onAssign={(service, list) =>

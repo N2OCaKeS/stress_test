@@ -13,9 +13,10 @@
  * Средняя панель — список аккаунтов с поиском/фильтром по серверу и сортом;
  * выбор строки кладёт `?id=<accountId>` в URL. Правая рабочая зона — карточка
  * выбранного аккаунта с управлением: reveal пароля, edit (PATCH
- * has_sudo/unix_groups/shell), ротация пароля (только БД) и удаление.
- * Per-server provision/deprovision сюда не выносим — это привязано к
- * конкретному серверу и живёт на вкладке «Аккаунты» карточки.
+ * has_sudo/unix_groups/shell), ротация пароля (только БД), удаление и секция
+ * «Серверы аккаунта» — per-server provision (useradd) / update_on_host /
+ * deprovision (userdel) / bind / unbind по каждому привязанному серверу.
+ * Те же операции доступны и на вкладке «Аккаунты» карточки сервера.
  *
  * account_admin / logging_* отрезаны от server-зоны backend'ом
  * (`PLATFORM_ADMIN_BUSINESS_DATA_DENIED`) — для них BlockedPane вместо мёртвой
@@ -38,6 +39,9 @@ import {
   RotateCw,
   ShieldCheck,
   Server as ServerIcon,
+  Power,
+  Unlink,
+  Link2,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
@@ -52,7 +56,7 @@ import { useServerMap, useUserLabel } from "@/lib/labels";
 import { listServers } from "@/api/server/servers";
 import * as accountsApi from "@/api/server/accounts";
 import { isServerZoneBlocked } from "@/lib/rbac";
-import type { ServerAccount, ServerAccountUpdateRequest } from "@/api/server/types";
+import type { Server, ServerAccount, ServerAccountUpdateRequest } from "@/api/server/types";
 
 // Аккаунтов и серверов на отдел немного — одной страницы с запасом хватает,
 // клиентский поиск/сорт идут по загруженному набору. Кап честно отражается в
@@ -348,6 +352,7 @@ export function ServerUsers() {
           canOperate={canOperate}
           canManage={canManage}
           serverName={serverName}
+          allServers={servers}
           onChanged={() => accountsQ.refetch()}
           onDeleted={() => {
             selectId(null);
@@ -408,10 +413,11 @@ function AccountRow({
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
- * Рабочая зона одного аккаунта fleet-вида. Provision/deprovision на конкретный
- * бокс сюда не входит (нет single-server контекста) — только server-agnostic
- * операции: правка атрибутов (PATCH), ротация пароля в БД и hard-delete.
- * Финальные 403 приходят с backend'а; UI-гейты — первичный визуальный слой.
+ * Рабочая зона одного аккаунта fleet-вида. Server-agnostic операции — правка
+ * атрибутов (PATCH), ротация пароля в БД и hard-delete — плюс секция «Серверы
+ * аккаунта»: per-server provision/update_on_host/deprovision/unbind и привязка
+ * нового сервера. Финальные 403/404/409/503 приходят с backend'а; UI-гейты —
+ * первичный визуальный слой.
  */
 function AccountWorkzone({
   account,
@@ -419,6 +425,7 @@ function AccountWorkzone({
   canOperate,
   canManage,
   serverName,
+  allServers,
   onChanged,
   onDeleted,
 }: {
@@ -427,6 +434,7 @@ function AccountWorkzone({
   canOperate: boolean;
   canManage: boolean;
   serverName: (id: string) => string;
+  allServers: Server[];
   onChanged: () => void;
   onDeleted: () => void;
 }) {
@@ -677,6 +685,14 @@ function AccountWorkzone({
               </button>
             </div>
 
+            <ServersSection
+              account={account}
+              canOperate={canOperate}
+              serverName={serverName}
+              allServers={allServers}
+              onChanged={onChanged}
+            />
+
             <div className="flex items-center gap-2 border-t border-token pt-4">
               <button
                 type="button"
@@ -716,6 +732,335 @@ function handleActionError(e: unknown): string {
     return "Аккаунт не найден (возможно, уже удалён).";
   }
   return apiErrMsg(e, "Операция не удалась");
+}
+
+/**
+ * Дружелюбное сообщение по ошибке per-server dispatch'а. Сверх общих 403/404
+ * раскрывает 409 (конфликт — login занят / нет пароля у discovered / нечего
+ * отвязывать) и 503 (worker недоступен).
+ */
+function handleDispatchError(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 403) return "Недостаточно прав для этой операции.";
+    if (e.status === 404) return "Аккаунт или сервер не найдены.";
+    if (e.status === 409) {
+      return apiErrMsg(
+        e,
+        "Конфликт: login занят, нет пароля у discovered-аккаунта или нечего отвязывать.",
+      );
+    }
+    if (e.status === 503) {
+      return "Worker недоступен — задача не поставлена. Повторите позже.";
+    }
+  }
+  return apiErrMsg(e, "Операция не удалась");
+}
+
+/**
+ * Presence-бэйдж сервера в секции «Серверы аккаунта». В fleet-вьюхе нет
+ * отдельного флага «present_on_host», поэтому presence выводим из тех же
+ * признаков, что и `provisionBadge` на вкладке сервера: привязка
+ * (`server_ids`) + managed/discovered-without-password.
+ */
+function presenceBadge(
+  a: ServerAccount,
+  serverId: string,
+): { label: string; kind: "ok" | "warn" | "danger" | "" } {
+  const linked = a.server_ids.includes(serverId);
+  if (!linked) return { label: "не привязан", kind: "danger" };
+  if (a.source === "discovered" && !a.password_rotated_at) {
+    return { label: "discovered", kind: "warn" };
+  }
+  return { label: "привязан", kind: "ok" };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Серверы аккаунта — per-server provision/update/deprovision/unbind + bind
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Секция управления присутствием аккаунта на конкретных боксах. Edit-форма выше
+ * меняет атрибуты в БД с авто-fan-out'ом `update_on_host`; здесь — точечный
+ * lifecycle OS-юзера на каждом сервере (`useradd`/`usermod`/`userdel`), отвязка
+ * связки и привязка нового сервера отдела.
+ */
+function ServersSection({
+  account,
+  canOperate,
+  serverName,
+  allServers,
+  onChanged,
+}: {
+  account: ServerAccount;
+  canOperate: boolean;
+  serverName: (id: string) => string;
+  allServers: Server[];
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  // Pending держим по конкретному серверу — чтобы не гасить кнопки всех строк
+  // на время одной операции.
+  const [busyServer, setBusyServer] = useState<string | null>(null);
+  const [bindTarget, setBindTarget] = useState("");
+  const [binding, setBinding] = useState(false);
+
+  // Discovered-аккаунт без сохранённого пароля backend отбивает на provision
+  // (ACCOUNT_HAS_NO_PASSWORD) — provision уйдёт только с force_password.
+  const discoveredNoPassword =
+    account.source === "discovered" && !account.password_rotated_at;
+
+  // Серверы отдела, к которым аккаунт ещё не привязан — кандидаты на bind.
+  const bindCandidates = useMemo(
+    () => allServers.filter((s) => !account.server_ids.includes(s.id)),
+    [allServers, account.server_ids],
+  );
+
+  async function runOn(
+    serverId: string,
+    fn: () => Promise<unknown>,
+    ok: string,
+  ) {
+    if (busyServer) return;
+    setBusyServer(serverId);
+    try {
+      await fn();
+      toast.success(ok);
+      onChanged();
+    } catch (e) {
+      toast.error(handleDispatchError(e));
+    } finally {
+      setBusyServer(null);
+    }
+  }
+
+  async function handleProvision(serverId: string) {
+    if (!canOperate) return;
+    let force = false;
+    if (discoveredNoPassword) {
+      // Без пароля useradd не уедет — спрашиваем подтверждение на генерацию.
+      if (
+        !(await confirm({
+          title: "Provision discovered-аккаунта",
+          message: `У ${account.login} нет сохранённого пароля (discovered). Сгенерировать новый и применить на боксе через chpasswd (force_password)?`,
+          confirmLabel: "Provision + force_password",
+        }))
+      )
+        return;
+      force = true;
+    }
+    void runOn(
+      serverId,
+      () =>
+        accountsApi.provisionOnHost(serverId, account.id, {
+          force_password: force,
+        }),
+      `Provision-task поставлен в очередь (${serverName(serverId)})`,
+    );
+  }
+
+  async function handleDeprovision(serverId: string) {
+    if (!canOperate) return;
+    const { ok, removeHome } = await confirmDeprovision(serverId);
+    if (!ok) return;
+    void runOn(
+      serverId,
+      () =>
+        accountsApi.deprovisionOnHost(serverId, account.id, {
+          remove_home: removeHome,
+        }),
+      `Deprovision-task поставлен в очередь (${serverName(serverId)})`,
+    );
+  }
+
+  // remove_home выбирается без отдельного чекбокса: ConfirmDialog не несёт
+  // boolean-опции, поэтому разводим на два варианта подтверждения.
+  async function confirmDeprovision(
+    serverId: string,
+  ): Promise<{ ok: boolean; removeHome: boolean }> {
+    const removeHome = await confirm({
+      title: "Deprovision",
+      message: `Удалить OS-пользователя ${account.login} с сервера ${serverName(serverId)}?\n\nУдалить и home-каталог (userdel --remove)? «Отмена» снесёт только учётку, дальше будет ещё одно подтверждение.`,
+      confirmLabel: "Удалить вместе с home",
+      cancelLabel: "Только учётку",
+      danger: true,
+    });
+    if (removeHome) return { ok: true, removeHome: true };
+    // Пользователь выбрал «только учётку» — подтверждаем сам факт удаления.
+    const justUser = await confirm({
+      title: "Deprovision",
+      message: `Удалить OS-пользователя ${account.login} с сервера ${serverName(serverId)} без удаления home?`,
+      confirmLabel: "Deprovision",
+      danger: true,
+    });
+    return { ok: justUser, removeHome: false };
+  }
+
+  async function handleUnbind(serverId: string) {
+    if (!canOperate) return;
+    if (account.server_ids.length <= 1) {
+      toast.error("Нельзя отвязать последний сервер аккаунта.");
+      return;
+    }
+    if (
+      !(await confirm({
+        title: "Отвязать сервер",
+        message: `Отвязать аккаунт ${account.login} от ${serverName(serverId)}? Связка снимется, OS-юзер на боксе останется (для удаления — Deprovision).`,
+        confirmLabel: "Отвязать",
+        danger: true,
+      }))
+    )
+      return;
+    void runOn(
+      serverId,
+      () => accountsApi.unbindAccountServer(account.id, serverId),
+      `Аккаунт отвязан от ${serverName(serverId)}`,
+    );
+  }
+
+  async function handleBind() {
+    if (!canOperate || !bindTarget || binding) return;
+    setBinding(true);
+    try {
+      await accountsApi.bindAccountServers(account.id, {
+        server_ids: [bindTarget],
+      });
+      toast.success(`Аккаунт привязан к ${serverName(bindTarget)}`);
+      setBindTarget("");
+      onChanged();
+    } catch (e) {
+      toast.error(handleDispatchError(e));
+    } finally {
+      setBinding(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="text-xs uppercase text-dim mb-2 flex items-center gap-2">
+        <ServerIcon className="w-3 h-3" /> Серверы аккаунта
+      </div>
+      <div className="text-xs text-dim mb-3">
+        Per-server lifecycle OS-юзера: Provision (`useradd`), Update on host
+        (`usermod`), Deprovision (`userdel`), Unbind (снять связку без удаления
+        на боксе). Атрибуты (sudo/группы/shell) меняются через «Редактировать» с
+        авто-рассылкой на привязанные серверы.
+      </div>
+
+      {account.server_ids.length === 0 ? (
+        <div className="text-xs text-dim italic mb-3">
+          Аккаунт ни к одному серверу не привязан.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2 mb-3">
+          {account.server_ids.map((sid) => {
+            const presence = presenceBadge(account, sid);
+            const busy = busyServer === sid;
+            const disabled = busy || !!busyServer || !canOperate;
+            const noPrivReason = canOperate ? undefined : "Нет прав";
+            return (
+              <div
+                key={sid}
+                className="border border-token rounded px-3 py-2 flex items-center gap-2 flex-wrap"
+              >
+                <ServerIcon className="w-4 h-4 text-dim shrink-0" />
+                <span className="text-sm mono flex-1 min-w-[140px] truncate">
+                  {serverName(sid)}
+                </span>
+                <span
+                  className={`badge${presence.kind ? ` badge-${presence.kind}` : ""}`}
+                >
+                  {presence.label}
+                </span>
+                <button
+                  className="btn btn-sm flex items-center gap-1"
+                  disabled={disabled}
+                  title={
+                    noPrivReason ??
+                    (discoveredNoPassword
+                      ? "useradd (запросит force_password)"
+                      : "useradd на боксе")
+                  }
+                  onClick={() => handleProvision(sid)}
+                  type="button"
+                >
+                  <Power className="w-3.5 h-3.5" /> Provision
+                </button>
+                <button
+                  className="btn btn-sm flex items-center gap-1"
+                  disabled={disabled}
+                  title={noPrivReason ?? "usermod синхронизирует атрибуты"}
+                  onClick={() =>
+                    runOn(
+                      sid,
+                      () => accountsApi.updateOnHost(sid, account.id),
+                      `Update-on-host-task поставлен в очередь (${serverName(sid)})`,
+                    )
+                  }
+                  type="button"
+                >
+                  <RotateCw className="w-3.5 h-3.5" /> Update on host
+                </button>
+                <button
+                  className="btn btn-sm btn-danger flex items-center gap-1"
+                  disabled={disabled}
+                  title={noPrivReason ?? "userdel на боксе"}
+                  onClick={() => handleDeprovision(sid)}
+                  type="button"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Deprovision
+                </button>
+                <button
+                  className="btn btn-sm btn-danger flex items-center gap-1"
+                  disabled={disabled || account.server_ids.length <= 1}
+                  title={
+                    noPrivReason ??
+                    (account.server_ids.length <= 1
+                      ? "Нельзя отвязать последний сервер"
+                      : "Снять связку (OS-юзер остаётся)")
+                  }
+                  onClick={() => handleUnbind(sid)}
+                  type="button"
+                >
+                  <Unlink className="w-3.5 h-3.5" /> Unbind
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="border-t border-token pt-3 flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-dim">Привязать сервер:</span>
+        <select
+          className="surface-2 border border-token rounded px-2 py-1 text-sm flex-1 min-w-[160px]"
+          value={bindTarget}
+          disabled={!canOperate || binding || bindCandidates.length === 0}
+          onChange={(e) => setBindTarget(e.target.value)}
+        >
+          <option value="">
+            {bindCandidates.length === 0
+              ? "— нет доступных серверов —"
+              : "— выберите сервер —"}
+          </option>
+          {bindCandidates.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.display_name || s.hostname}
+            </option>
+          ))}
+        </select>
+        <button
+          className="btn btn-sm btn-primary flex items-center gap-1"
+          disabled={!canOperate || binding || !bindTarget}
+          title={canOperate ? "Привязать аккаунт к серверу" : "Нет прав"}
+          onClick={handleBind}
+          type="button"
+        >
+          <Link2 className="w-3.5 h-3.5" /> {binding ? "Привязываем…" : "Привязать"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function StatRow({ k, v }: { k: string; v: React.ReactNode }) {

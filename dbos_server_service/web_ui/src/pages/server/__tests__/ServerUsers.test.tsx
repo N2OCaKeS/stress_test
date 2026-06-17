@@ -122,5 +122,18 @@ describe("ServerUsers (fleet account list)", () => {
     expect(
       screen.getByRole("button", { name: /Ротировать \(БД\)/ }),
     ).toBeInTheDocument();
+
+    // Секция «Серверы аккаунта» с per-server provision/deprovision.
+    expect(screen.getByText(/Серверы аккаунта/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Provision/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Deprovision/ }),
+    ).toBeInTheDocument();
+    // Кнопка привязки сервера тоже на месте.
+    expect(
+      screen.getByRole("button", { name: /Привязать/ }),
+    ).toBeInTheDocument();
   });
 });

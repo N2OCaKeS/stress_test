@@ -294,6 +294,28 @@ spec:
           port: 8080
 
 ---
+# web-ui (SPA) принимает HTTP от Traefik (kube-system) на catch-all /.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-ui-ingress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: web-ui
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8080
+
+---
 # ────────────────────────────────────────────────────────────────────────────
 # secret-service: вход от ingress-контроллера и от соседей по namespace
 # (server_service, server_worker и auth_service дёргают /internal/* для

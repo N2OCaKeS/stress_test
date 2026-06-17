@@ -13,6 +13,8 @@
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
 import type {
   CursorPaginatedResponse,
+  IgnoredLogin,
+  ImportUnknownUserRequest,
   OffsetPaginatedResponse,
   ServerAccount,
   ServerAccountCreateRequest,
@@ -354,5 +356,58 @@ export function deprovisionOnHost(
     `${BASE}/server-accounts/${accountId}/deprovision`,
     undefined,
     { query: { server_id: serverId, ...options } },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Discovery: импорт незнакомого OS-юзера в БД
+// ---------------------------------------------------------------------------
+
+/**
+ * Завести найденного ревизией OS-юзера в БД как discovered-аккаунт
+ * (`present_on_server=true`). `source` по умолчанию `discovered`.
+ *
+ * Ошибки: 403 PERMISSION_DENIED, 404 SERVER_NOT_FOUND, 409 ACCOUNT_DUPLICATE
+ * (login уже заведён на этом сервере).
+ */
+export function importUnknownUser(
+  body: ImportUnknownUserRequest,
+): Promise<ServerAccount> {
+  return apiPost<ServerAccount>(`${BASE}/server-accounts/import`, {
+    source: "discovered",
+    ...body,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Ignore-list (на отдел): логины, которые ревизия не считает незнакомыми
+// ---------------------------------------------------------------------------
+
+/**
+ * Ignore-list отдела. Гейтится `manage_ignored_logins` — без права 403.
+ */
+export function listIgnoredLogins(): Promise<IgnoredLogin[]> {
+  return apiGet<IgnoredLogin[]>(`${BASE}/server-accounts/ignored-logins`);
+}
+
+/**
+ * Добавить логин в ignore-list. 409 IGNORED_LOGIN_DUPLICATE, если уже есть.
+ */
+export function addIgnoredLogin(body: {
+  login: string;
+  reason?: string | null;
+}): Promise<IgnoredLogin> {
+  return apiPost<IgnoredLogin>(
+    `${BASE}/server-accounts/ignored-logins`,
+    body,
+  );
+}
+
+/**
+ * Снять логин с ignore-list. 404 IGNORED_LOGIN_NOT_FOUND, если записи нет.
+ */
+export function removeIgnoredLogin(login: string): Promise<void> {
+  return apiDelete<void>(
+    `${BASE}/server-accounts/ignored-logins/${encodeURIComponent(login)}`,
   );
 }

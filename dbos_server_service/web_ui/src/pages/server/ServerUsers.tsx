@@ -62,6 +62,8 @@ import * as accountsApi from "@/api/server/accounts";
 import { usersInventory } from "@/api/server/misc";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { RevisionDiffModal } from "@/pages/server/RevisionDiffModal";
+import { OsUsersDiscoveryModal } from "@/pages/server/OsUsersDiscoveryModal";
+import { IgnoredLoginsModal } from "@/pages/server/IgnoredLoginsModal";
 import { isServerZoneBlocked } from "@/lib/rbac";
 import type {
   RevisionAccountDiff,
@@ -173,6 +175,8 @@ export function ServerUsers() {
   const [sort, setSort] = useState<SortMode>("login");
   const [serverFilter, setServerFilter] = useState<string>("all");
   const [creating, setCreating] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const [ignoreListOpen, setIgnoreListOpen] = useState(false);
 
   const serversQ = useQuery(
     () => listServers({ limit: SERVER_LIMIT }),
@@ -270,6 +274,26 @@ export function ServerUsers() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          {canOperate && (
+            <button
+              type="button"
+              className="btn btn-sm flex items-center gap-1 shrink-0"
+              onClick={() => setDiscovering(true)}
+              title="Найти OS-юзеров на сервере (discovery)"
+            >
+              <ScanSearch className="w-3.5 h-3.5" /> Поиск на ОС
+            </button>
+          )}
+          {canManage && (
+            <button
+              type="button"
+              className="btn btn-sm flex items-center gap-1 shrink-0"
+              onClick={() => setIgnoreListOpen(true)}
+              title="Ignore-лист отдела (manage_ignored_logins)"
+            >
+              <EyeOff className="w-3.5 h-3.5" /> Игнор-лист
+            </button>
+          )}
           {canManage && (
             <button
               type="button"
@@ -408,6 +432,20 @@ export function ServerUsers() {
             selectId(a.id);
           }}
         />
+      )}
+
+      {discovering && (
+        <OsUsersDiscoveryModal
+          servers={servers}
+          serverName={serverName}
+          onClose={() => setDiscovering(false)}
+          onImported={() => accountsQ.refetch()}
+          onIgnored={() => {}}
+        />
+      )}
+
+      {ignoreListOpen && (
+        <IgnoredLoginsModal onClose={() => setIgnoreListOpen(false)} />
       )}
     </Shell>
   );

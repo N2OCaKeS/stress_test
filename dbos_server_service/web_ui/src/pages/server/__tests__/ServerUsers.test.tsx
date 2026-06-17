@@ -19,6 +19,10 @@ const listAccountsMock = vi.fn(() => new Promise(() => {}));
 const getAccountMock = vi.fn(() => new Promise(() => {}));
 const adoptFromHostMock = vi.fn(() => new Promise(() => {}));
 const createAccountMock = vi.fn((_input?: unknown) => new Promise(() => {}));
+const importUnknownUserMock = vi.fn((_b?: unknown) => new Promise(() => {}));
+const listIgnoredLoginsMock = vi.fn(() => new Promise(() => {}));
+const addIgnoredLoginMock = vi.fn((_b?: unknown) => new Promise(() => {}));
+const removeIgnoredLoginMock = vi.fn((_l?: unknown) => new Promise(() => {}));
 vi.mock("@/api/server/accounts", () => ({
   get listAccounts() {
     return listAccountsMock;
@@ -31,6 +35,18 @@ vi.mock("@/api/server/accounts", () => ({
   },
   get createAccount() {
     return createAccountMock;
+  },
+  get importUnknownUser() {
+    return importUnknownUserMock;
+  },
+  get listIgnoredLogins() {
+    return listIgnoredLoginsMock;
+  },
+  get addIgnoredLogin() {
+    return addIgnoredLoginMock;
+  },
+  get removeIgnoredLogin() {
+    return removeIgnoredLoginMock;
   },
 }));
 
@@ -102,6 +118,10 @@ describe("ServerUsers (fleet account list)", () => {
     getAccountMock.mockReset();
     adoptFromHostMock.mockReset();
     createAccountMock.mockReset();
+    importUnknownUserMock.mockReset();
+    listIgnoredLoginsMock.mockReset();
+    addIgnoredLoginMock.mockReset();
+    removeIgnoredLoginMock.mockReset();
     usersInventoryMock.mockReset();
     getTaskMock.mockReset();
     listServersMock.mockReturnValue(new Promise(() => {}));
@@ -109,6 +129,10 @@ describe("ServerUsers (fleet account list)", () => {
     getAccountMock.mockReturnValue(new Promise(() => {}));
     adoptFromHostMock.mockReturnValue(new Promise(() => {}));
     createAccountMock.mockReturnValue(new Promise(() => {}));
+    importUnknownUserMock.mockReturnValue(new Promise(() => {}));
+    listIgnoredLoginsMock.mockReturnValue(new Promise(() => {}));
+    addIgnoredLoginMock.mockReturnValue(new Promise(() => {}));
+    removeIgnoredLoginMock.mockReturnValue(new Promise(() => {}));
     usersInventoryMock.mockReturnValue(new Promise(() => {}));
     getTaskMock.mockReturnValue(new Promise(() => {}));
   });
@@ -270,5 +294,77 @@ describe("ServerUsers (fleet account list)", () => {
     });
     const arg = createAccountMock.mock.calls[0][0];
     expect(arg).toMatchObject({ login: "new-svc", server_ids: ["srv1"] });
+  });
+
+  it("показывает кнопки «Поиск на ОС» и «Игнор-лист» для оператора/менеджера", async () => {
+    selectAccount();
+    renderPage();
+    // alice (dep_admin) — canOperate + canManage.
+    expect(
+      await screen.findByRole("button", { name: /Поиск на ОС/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Игнор-лист/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("discovery-модалка рендерит unknown_users с режимами add/ignore после скана", async () => {
+    selectAccount();
+    usersInventoryMock.mockResolvedValue({ task_id: "tsk9", status: "queued" });
+    getTaskMock.mockResolvedValue({
+      id: "tsk9",
+      kind: "users.inventory",
+      status: "succeeded",
+      created_at: "2026-01-01T00:00:00Z",
+      retry_count: 0,
+      result: {
+        unknown_users: [
+          {
+            login: "ghost",
+            uid: 1500,
+            has_sudo: true,
+            unix_groups: ["wheel"],
+            shell: "/bin/bash",
+          },
+        ],
+        diffs: [],
+      },
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Поиск на ОС/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    const d = within(dialog);
+    fireEvent.click(d.getByRole("button", { name: /Сканировать/ }));
+
+    // Незнакомый юзер появился с режимами выбора.
+    expect(await d.findByText("ghost")).toBeInTheDocument();
+    expect(d.getByLabelText(/Добавить ghost/)).toBeInTheDocument();
+    expect(d.getByLabelText(/Игнорировать ghost/)).toBeInTheDocument();
+  });
+
+  it("ignore-модалка рендерит список из listIgnoredLogins", async () => {
+    selectAccount();
+    listIgnoredLoginsMock.mockResolvedValue([
+      {
+        id: "ig1",
+        department_id: "dep1",
+        login: "backup-svc",
+        reason: "вендорский",
+        created_by: null,
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Игнор-лист/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    const d = within(dialog);
+    expect(await d.findByText("backup-svc")).toBeInTheDocument();
+    expect(
+      d.getByRole("button", { name: /Снять игнор/ }),
+    ).toBeInTheDocument();
   });
 });

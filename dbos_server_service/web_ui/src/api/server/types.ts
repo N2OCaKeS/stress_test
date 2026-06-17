@@ -556,6 +556,46 @@ export interface UsersInventoryResult {
 }
 
 /**
+ * OS-юзер, найденный на боксе ревизией, но не привязанный ни к одному
+ * server_account'у и не попавший в ignore-list (системные по UID backend
+ * отфильтровывает сам). Приезжает в `task.result.unknown_users`.
+ */
+export interface UnknownUser {
+  login: string;
+  uid: number;
+  has_sudo: boolean;
+  unix_groups: string[];
+  shell: string | null;
+}
+
+/**
+ * Тело `POST /server-accounts/import` — завести найденного на боксе юзера в БД
+ * как discovered-аккаунт (`present_on_server=true`). `source` по умолчанию
+ * `discovered`.
+ */
+export interface ImportUnknownUserRequest {
+  server_id: string;
+  login: string;
+  has_sudo?: boolean;
+  unix_groups?: string[];
+  shell?: string | null;
+  source?: ServerAccountSource;
+}
+
+/**
+ * Запись ignore-list отдела (`GET/POST /server-accounts/ignored-logins`).
+ * Логины из этого списка ревизия не показывает как незнакомые.
+ */
+export interface IgnoredLogin {
+  id: string;
+  department_id: string;
+  login: string;
+  reason: string | null;
+  created_by: string | null;
+  created_at: Iso8601;
+}
+
+/**
  * Статус worker-task'и (`tasks.status`).
  *
  * `queued`/`running` — нетерминальные (cancelable); `succeeded`/`failed`/

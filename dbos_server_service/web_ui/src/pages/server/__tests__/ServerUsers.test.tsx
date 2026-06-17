@@ -18,6 +18,7 @@ vi.mock("@/api/server/servers", () => ({
 const listAccountsMock = vi.fn(() => new Promise(() => {}));
 const getAccountMock = vi.fn(() => new Promise(() => {}));
 const adoptFromHostMock = vi.fn(() => new Promise(() => {}));
+const createAccountMock = vi.fn((_input?: unknown) => new Promise(() => {}));
 vi.mock("@/api/server/accounts", () => ({
   get listAccounts() {
     return listAccountsMock;
@@ -27,6 +28,9 @@ vi.mock("@/api/server/accounts", () => ({
   },
   get adoptFromHost() {
     return adoptFromHostMock;
+  },
+  get createAccount() {
+    return createAccountMock;
   },
 }));
 
@@ -97,12 +101,14 @@ describe("ServerUsers (fleet account list)", () => {
     listAccountsMock.mockReset();
     getAccountMock.mockReset();
     adoptFromHostMock.mockReset();
+    createAccountMock.mockReset();
     usersInventoryMock.mockReset();
     getTaskMock.mockReset();
     listServersMock.mockReturnValue(new Promise(() => {}));
     listAccountsMock.mockReturnValue(new Promise(() => {}));
     getAccountMock.mockReturnValue(new Promise(() => {}));
     adoptFromHostMock.mockReturnValue(new Promise(() => {}));
+    createAccountMock.mockReturnValue(new Promise(() => {}));
     usersInventoryMock.mockReturnValue(new Promise(() => {}));
     getTaskMock.mockReturnValue(new Promise(() => {}));
   });
@@ -227,5 +233,42 @@ describe("ServerUsers (fleet account list)", () => {
     expect((sudoCheck as HTMLInputElement).checked).toBe(true);
     expect(d.getByLabelText(/Применить unix_groups/)).toBeInTheDocument();
     expect(d.getByLabelText(/Применить shell/)).toBeInTheDocument();
+  });
+
+  it("показывает кнопку «Создать пользователя» для canManage-персоны (dep_admin)", async () => {
+    selectAccount();
+    renderPage();
+    // alice (dep_admin) — дефолтная persona, у неё canManage.
+    expect(
+      await screen.findByRole("button", { name: /Создать пользователя/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("открывает форму создания и сабмит зовёт createAccount", async () => {
+    selectAccount();
+    createAccountMock.mockResolvedValue({ ...FAKE_ACCOUNT, id: "acc2", login: "new-svc" });
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Создать пользователя/ }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    const d = within(dialog);
+
+    // login
+    fireEvent.change(d.getByPlaceholderText("dbos-svc"), {
+      target: { value: "new-svc" },
+    });
+    // выбрать сервер (чекбокс)
+    fireEvent.click(d.getByRole("checkbox", { name: /alpha/ }));
+    // сабмит (в модалке только submit-кнопка «Создать»)
+    fireEvent.click(d.getByRole("button", { name: /Создать/ }));
+
+    await waitFor(() => {
+      expect(createAccountMock).toHaveBeenCalledTimes(1);
+    });
+    const arg = createAccountMock.mock.calls[0][0];
+    expect(arg).toMatchObject({ login: "new-svc", server_ids: ["srv1"] });
   });
 });

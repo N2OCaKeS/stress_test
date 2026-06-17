@@ -25,6 +25,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   Search,
   Users,
@@ -43,6 +44,8 @@ import {
   Unlink,
   Link2,
   ScanSearch,
+  Plus,
+  X,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
@@ -74,8 +77,18 @@ const SERVER_LIMIT = 200;
 const ACCOUNTS_PER_SERVER = 200;
 
 // Зеркало `server_service/src/schemas/server_account.py`:
+//   login — `^[A-Za-z0-9._\-]+$`, 1..128 символов.
 //   unix_groups — POSIX group name `^[a-z_][a-z0-9_-]{0,31}$`.
+const LOGIN_RE = /^[A-Za-z0-9._-]+$/;
 const POSIX_GROUP_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
+
+function validateLogin(value: string): string | null {
+  if (value.length > 128) return "login: максимум 128 символов";
+  if (!LOGIN_RE.test(value)) {
+    return "login: допустимы латиница, цифры и символы . _ -";
+  }
+  return null;
+}
 
 function validateUnixGroups(groups: string[]): string | null {
   for (const g of groups) {
@@ -136,6 +149,7 @@ async function loadAllAccounts(serverIds: string[]): Promise<AggregatedAccounts>
 
 export function ServerUsers() {
   const { persona } = usePersona();
+  const toast = useToast();
   const zoneBlocked = isServerZoneBlocked(persona);
   const [params, setParams] = useSearchParams();
 
@@ -158,6 +172,7 @@ export function ServerUsers() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("login");
   const [serverFilter, setServerFilter] = useState<string>("all");
+  const [creating, setCreating] = useState(false);
 
   const serversQ = useQuery(
     () => listServers({ limit: SERVER_LIMIT }),
@@ -255,6 +270,16 @@ export function ServerUsers() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          {canManage && (
+            <button
+              type="button"
+              className="btn btn-sm btn-primary flex items-center gap-1 shrink-0"
+              onClick={() => setCreating(true)}
+              title="Создать новый server_account"
+            >
+              <Plus className="w-3.5 h-3.5" /> Создать пользователя
+            </button>
+          )}
         </div>
         <div className="mt-2 flex items-center gap-2 text-xs text-dim flex-wrap">
           <span>Сервер:</span>
@@ -371,8 +396,247 @@ export function ServerUsers() {
       ) : (
         <EmptyPane hasAny={allAccounts.length > 0} />
       )}
+
+      {creating && (
+        <AccountCreateModal
+          servers={servers}
+          onClose={() => setCreating(false)}
+          onCreated={(a) => {
+            setCreating(false);
+            toast.success(`Аккаунт ${a.login} создан`);
+            accountsQ.refetch();
+            selectId(a.id);
+          }}
+        />
+      )}
     </Shell>
   );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Создание аккаунта — модалка (флотовый список → удобнее оверлей, чем inline)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Форма заведения нового server_account во fleet-вьюхе. В отличие от вкладки
+ * сервера, где сервер один и подставляется автоматически, тут можно сразу
+ * привязать аккаунт к нескольким серверам отдела (чекбоксы, минимум один).
+ * Создаёт только запись в БД — provision (useradd) на боксы делается отдельно
+ * кнопкой в секции «Серверы аккаунта».
+ */
+function AccountCreateModal({
+  servers,
+  onClose,
+  onCreated,
+}: {
+  servers: Server[];
+  onClose: () => void;
+  onCreated: (account: ServerAccount) => void;
+}) {
+  const [login, setLogin] = useState("");
+  const [serverIds, setServerIds] = useState<string[]>([]);
+  const [hasSudo, setHasSudo] = useState(false);
+  const [groups, setGroups] = useState("");
+  const [shell, setShell] = useState("");
+  const [password, setPassword] = useState("");
+  const [pending, setPending] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function toggleServer(id: string) {
+    setServerIds((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
+    );
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (pending) return;
+    const loginValue = login.trim();
+    if (!loginValue) {
+      setErr("Укажите login.");
+      return;
+    }
+    if (serverIds.length === 0) {
+      setErr("Выберите хотя бы один сервер.");
+      return;
+    }
+    const unixGroups = groups
+      .split(",")
+      .map((g) => g.trim())
+      .filter(Boolean);
+    const validationErr =
+      validateLogin(loginValue) ?? validateUnixGroups(unixGroups);
+    if (validationErr) {
+      setErr(validationErr);
+      return;
+    }
+    setErr(null);
+    setPending(true);
+    try {
+      const created = await accountsApi.createAccount({
+        login: loginValue,
+        server_ids: serverIds,
+        has_sudo: hasSudo,
+        unix_groups: unixGroups,
+        shell: shell.trim() || null,
+        password: password.trim() || null,
+      });
+      onCreated(created);
+    } catch (e) {
+      setErr(handleCreateError(e));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Dialog.Root open modal onOpenChange={(o) => !o && !pending && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="modal-overlay" />
+        <Dialog.Content
+          className="modal-content"
+          onInteractOutside={(e) => pending && e.preventDefault()}
+          onEscapeKeyDown={(e) => pending && e.preventDefault()}
+        >
+          <div className="modal-header">
+            <Plus className="w-5 h-5 text-accent" />
+            <Dialog.Title className="text-base font-semibold">
+              Создать пользователя
+            </Dialog.Title>
+          </div>
+
+          <form onSubmit={submit}>
+            <div className="modal-body flex flex-col gap-3">
+              <Dialog.Description className="text-sm text-dim">
+                Заводит server_account в БД и привязывает к выбранным серверам.
+                OS-юзер на боксах не создаётся — для этого Provision в секции
+                «Серверы аккаунта».
+              </Dialog.Description>
+
+              {err && <div className="alert-danger text-sm">{err}</div>}
+
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="field-label">login *</span>
+                <input
+                  className="field-input mono"
+                  value={login}
+                  onChange={(e) => setLogin(e.target.value)}
+                  required
+                  maxLength={128}
+                  placeholder="dbos-svc"
+                />
+              </label>
+
+              <div className="flex flex-col gap-1 text-sm">
+                <span className="field-label flex items-center gap-1">
+                  <ServerIcon className="w-3.5 h-3.5" /> Серверы *
+                </span>
+                {servers.length === 0 ? (
+                  <div className="text-xs text-dim py-2">
+                    Нет доступных серверов отдела.
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto border border-token rounded p-2">
+                    {servers.map((s) => (
+                      <label
+                        key={s.id}
+                        className="inline-flex items-center gap-2 text-sm py-0.5"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={serverIds.includes(s.id)}
+                          onChange={() => toggleServer(s.id)}
+                        />
+                        <span className="mono truncate">
+                          {s.display_name || s.hostname}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={hasSudo}
+                  onChange={(e) => setHasSudo(e.target.checked)}
+                />
+                <span>выдать sudo (has_sudo)</span>
+              </label>
+
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="field-label">
+                  unix_groups <span className="italic">csv: docker, wheel</span>
+                </span>
+                <input
+                  className="field-input mono"
+                  value={groups}
+                  onChange={(e) => setGroups(e.target.value)}
+                  placeholder="docker, wheel"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="field-label">shell</span>
+                <input
+                  className="field-input mono"
+                  value={shell}
+                  onChange={(e) => setShell(e.target.value)}
+                  placeholder="/bin/bash"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="field-label">password</span>
+                <input
+                  className="field-input mono"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="пусто — backend сгенерирует сам"
+                  autoComplete="new-password"
+                />
+              </label>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn flex items-center gap-1"
+                onClick={onClose}
+                disabled={pending}
+              >
+                <X className="w-4 h-4" /> Отмена
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary flex items-center gap-1"
+                disabled={pending || !login.trim() || serverIds.length === 0}
+              >
+                <Plus className="w-4 h-4" />
+                {pending ? "Создаём…" : "Создать"}
+              </button>
+            </div>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+/**
+ * Сообщение по ошибке создания: 403 — нет прав, 409 — login уже занят на одном
+ * из серверов, остальное — общий envelope (включая 400/422 валидации).
+ */
+function handleCreateError(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 403) return "Недостаточно прав для создания аккаунта.";
+    if (e.status === 409) {
+      return apiErrMsg(e, "Конфликт: login уже занят на одном из серверов.");
+    }
+  }
+  return apiErrMsg(e, "Создание не удалось");
 }
 
 // ───────────────────────────────────────────────────────────────────────────

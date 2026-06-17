@@ -8,6 +8,10 @@ import {
   Copy,
   RefreshCw,
   AlertTriangle,
+  Search,
+  Plus,
+  X,
+  ArrowLeft,
 } from "lucide-react";
 import {
   generateInitialPassword,
@@ -18,7 +22,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { isPlatformWideAdmin } from "@/lib/rbac";
 import { useDeptLabel } from "@/lib/labels";
 import { DEPTS as MOCK_DEPTS, USERS as MOCK_USERS, type MockUser } from "@/mocks/auth";
-import { InlineEditor, FormRow, useInlineState } from "./_inline";
+import { FormRow, useInlineState } from "./_inline";
 import { UserBackendView } from "./_servicesUsersView";
 import {
   createUser,
@@ -153,6 +157,7 @@ export function ServicesUsers() {
   const [limit] = useState(50);
   const [offset, setOffset] = useState(0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
+  const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("username_asc");
   const [groupBy, setGroupBy] = useState<GroupKey>("none");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -203,12 +208,22 @@ export function ServicesUsers() {
     return (usersQ.data?.items ?? []).map(adaptApi);
   }, [mockMode, persona.platform_role, persona.dept_id, usersQ.data]);
 
-  // Client-side status filter on top of API-level filter — mock-режим тоже
-  // должен реагировать на dropdown.
+  // Client-side status filter + текстовый поиск по username/email поверх
+  // API-фильтра. mock-режим реагирует на оба контрола; в live-режиме поиск
+  // тоже клиентский (по загруженной странице) — backend не даёт q-параметра.
   const filtered = useMemo(() => {
-    if (!statusFilter) return allItems;
-    return allItems.filter((u) => u.status === statusFilter);
-  }, [allItems, statusFilter]);
+    const q = search.trim().toLowerCase();
+    let arr = allItems;
+    if (statusFilter) arr = arr.filter((u) => u.status === statusFilter);
+    if (q) {
+      arr = arr.filter(
+        (u) =>
+          u.username.toLowerCase().includes(q) ||
+          (u.email ?? "").toLowerCase().includes(q),
+      );
+    }
+    return arr;
+  }, [allItems, statusFilter, search]);
 
   const sorted = useMemo(() => sortUsers(filtered, sortKey), [filtered, sortKey]);
 
@@ -279,85 +294,254 @@ export function ServicesUsers() {
     setCollapsed((cur) => ({ ...cur, [k]: !cur[k] }));
   }
 
+  // Текущий выбор / режим читаем из URL (?id / ?action) — те же хелперы, что у
+  // прочих admin-разделов, чтобы deep-link на пользователя и RBAC-гейт «руками
+  // дописанного ?action=edit» работали как раньше.
+  const { id: selectedId, mode: rawMode, select, startCreate, startEdit, close } =
+    useInlineState();
+  // RBAC-гейт: read-only персона не должна попасть в create/edit даже через
+  // прямой URL. Совпадает с логикой InlineEditor.
+  const gated = !canEdit && (rawMode === "new" || rawMode === "edit");
+  const mode = gated ? "list" : rawMode;
+  const selected = useMemo(
+    () => (selectedId ? items.find((u) => u.id === selectedId) : undefined),
+    [selectedId, items],
+  );
+
   return (
-    <InlineEditor
-      title="Пользователи · auth_service"
-      icon={UsersIcon}
-      hint="CRUD аккаунтов, reset password, lockout/ban, revoke sessions"
-      items={items}
-      loading={!mockMode && usersQ.loading}
-      error={!mockMode && usersQ.error ? usersQ.error.message : null}
-      onRetry={() => usersQ.refetch()}
-      getId={(u) => u.id}
-      canEdit={canEdit}
-      readonlyNote={!canEdit ? "Просмотр без права изменения" : undefined}
-      emptyHint="Выберите пользователя слева, чтобы увидеть детали и действия."
-      listHeader={
-        <div className="flex flex-col gap-2">
-          <div className="text-[11px] text-dim">
-            {mockMode
-              ? "mock-режим — данные из src/mocks/auth.ts"
-              : usersQ.loading && items.length === 0
-                ? "загрузка…"
-                : `показано ${items.length} из ${total}`}
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="border-b border-token px-5 py-4 shrink-0 flex items-center gap-3">
+        <UsersIcon className="w-5 h-5 text-accent" />
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-semibold leading-tight">
+            Пользователи · auth_service
+          </h1>
+          <div className="text-xs text-dim">
+            CRUD аккаунтов, reset password, lockout/ban, revoke sessions
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-[11px]">
-            <label className="flex items-center gap-1">
-              <span className="text-dim">сорт.</span>
-              <select
-                className="input input-sm"
-                value={sortKey}
-                onChange={(e) => setSortKey(e.target.value as SortKey)}
-              >
-                <option value="username_asc">username ↑</option>
-                <option value="username_desc">username ↓</option>
-                <option value="status">статус</option>
-                <option value="created_desc">создан ↓</option>
-                <option value="created_asc">создан ↑</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-1">
-              <span className="text-dim">группа</span>
-              <select
-                className="input input-sm"
-                value={groupBy}
-                onChange={(e) => setGroupBy(e.target.value as GroupKey)}
-              >
-                <option value="none">—</option>
-                <option value="department">по отделу</option>
-                <option value="platform_role">по platform_role</option>
-                <option value="status">по статусу</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-1">
-              <span className="text-dim">статус</span>
-              <select
-                className="input input-sm"
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value as StatusFilter);
-                  setOffset(0);
-                }}
-              >
-                <option value="">все</option>
-                <option value="active">только active</option>
-                <option value="blocked">только blocked</option>
-                <option value="banned">только banned</option>
-              </select>
-            </label>
-          </div>
-          {sortScopeTruncated && (
-            <div className="alert-warn text-[11px]" role="status">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-              <span>
-                Сортировка и группировка применены к загруженной странице
-                ({allItems.length} из {total}). Чтобы упорядочить всех —
-                сузьте фильтр или листайте страницы.
-              </span>
+        </div>
+        <div className="text-xs text-dim mr-2">
+          {!mockMode && usersQ.loading && items.length === 0
+            ? "…"
+            : `${items.length} записей`}
+        </div>
+        {canEdit && (
+          <button
+            className="btn btn-primary flex items-center gap-1"
+            onClick={startCreate}
+          >
+            <Plus className="w-4 h-4" /> Создать
+          </button>
+        )}
+      </div>
+
+      {!canEdit && (
+        <div className="readonly-bar shrink-0">
+          <span className="ro-label">read-only</span>
+          <span>Просмотр без права изменения</span>
+        </div>
+      )}
+
+      {/* Body — master (list + filters) | detail (workzone) */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* Master panel */}
+        <aside className="w-[340px] shrink-0 border-r border-token surface flex flex-col min-h-0">
+          {/* Filters */}
+          <div className="px-3 py-2 border-b border-token shrink-0 flex flex-col gap-2">
+            <div className="input-wrap">
+              <input
+                type="text"
+                className="input pr-8"
+                placeholder="Поиск по username / email…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              {search ? (
+                <button
+                  className="input-icon"
+                  title="Очистить"
+                  onClick={() => setSearch("")}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              ) : (
+                <Search className="input-icon w-4 h-4" />
+              )}
             </div>
-          )}
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <label className="flex items-center gap-1">
+                <span className="text-dim">сорт.</span>
+                <select
+                  className="input input-sm"
+                  value={sortKey}
+                  onChange={(e) => setSortKey(e.target.value as SortKey)}
+                >
+                  <option value="username_asc">username ↑</option>
+                  <option value="username_desc">username ↓</option>
+                  <option value="status">статус</option>
+                  <option value="created_desc">создан ↓</option>
+                  <option value="created_asc">создан ↑</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-1">
+                <span className="text-dim">группа</span>
+                <select
+                  className="input input-sm"
+                  value={groupBy}
+                  onChange={(e) => setGroupBy(e.target.value as GroupKey)}
+                >
+                  <option value="none">—</option>
+                  <option value="department">по отделу</option>
+                  <option value="platform_role">по platform_role</option>
+                  <option value="status">по статусу</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-1">
+                <span className="text-dim">статус</span>
+                <select
+                  className="input input-sm"
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value as StatusFilter);
+                    setOffset(0);
+                  }}
+                >
+                  <option value="">все</option>
+                  <option value="active">только active</option>
+                  <option value="blocked">только blocked</option>
+                  <option value="banned">только banned</option>
+                </select>
+              </label>
+            </div>
+            <div className="text-[11px] text-dim">
+              {mockMode
+                ? "mock-режим — данные из src/mocks/auth.ts"
+                : usersQ.loading && items.length === 0
+                  ? "загрузка…"
+                  : `показано ${items.length} из ${total}`}
+            </div>
+            {sortScopeTruncated && (
+              <div className="alert-warn text-[11px]" role="status">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Сортировка, группировка и поиск применены к загруженной
+                  странице ({allItems.length} из {total}). Чтобы охватить всех —
+                  сузьте фильтр по статусу или листайте страницы.
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Rows */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-0.5">
+            {!mockMode && usersQ.loading && items.length === 0 ? (
+              <div className="text-xs text-dim px-3 py-6 text-center">
+                Загрузка…
+              </div>
+            ) : !mockMode && usersQ.error ? (
+              <div className="alert-danger text-xs m-1 flex items-center justify-between gap-2">
+                <span>{usersQ.error.message}</span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => usersQ.refetch()}
+                >
+                  Повторить
+                </button>
+              </div>
+            ) : items.length === 0 ? (
+              <div className="text-xs text-dim px-3 py-6 text-center">
+                {search || statusFilter
+                  ? "Нет пользователей под фильтр."
+                  : "Список пуст."}
+              </div>
+            ) : null}
+            {items.map((item) => {
+              const groupHeaderKey = firstInGroup.get(item.id);
+              const isGroupCollapsed =
+                groupHeaderKey !== undefined && collapsed[groupHeaderKey];
+              const active = item.id === selectedId;
+              return (
+                <div key={item.id}>
+                  {groupHeaderKey !== undefined && (
+                    <button
+                      className="w-full text-left px-2 py-1 text-[11px] uppercase tracking-wider text-dim flex items-center gap-1 hover:text-accent"
+                      onClick={() => toggleGroup(groupHeaderKey)}
+                    >
+                      {collapsed[groupHeaderKey] ? (
+                        <ChevronRight className="w-3 h-3" />
+                      ) : (
+                        <ChevronDown className="w-3 h-3" />
+                      )}
+                      <span>{groupHeaderKey}</span>
+                      <span className="text-dim">
+                        · {groupSizes.get(groupHeaderKey) ?? 0}
+                      </span>
+                    </button>
+                  )}
+                  {!isGroupCollapsed && (
+                    <div
+                      className={`cred-row text-left ${active ? "active" : ""} cursor-pointer`}
+                      onClick={() => select(item.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          select(item.id);
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        {item.platform_role ? (
+                          <UserCog className="w-4 h-4 text-accent" />
+                        ) : (
+                          <User className="w-4 h-4 text-dim" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm truncate flex items-center gap-2">
+                            <span>{item.username}</span>
+                            {item.platform_role && (
+                              <span className="badge badge-accent">
+                                {item.platform_role}
+                              </span>
+                            )}
+                            {item.must_change_password && (
+                              <span
+                                className="badge badge-warn"
+                                title="must_change_password"
+                              >
+                                pwd!
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-dim truncate">
+                            {item.dept_name ?? item.dept_id ?? "platform"} ·{" "}
+                            {item.email ?? "—"}
+                          </div>
+                        </div>
+                        <span
+                          className={`badge badge-${item.status === "active" ? "ok" : item.status === "blocked" ? "warn" : "danger"}`}
+                        >
+                          {item.status}
+                        </span>
+                        {/* per-row Ban/Unban нет — деструктив только из правой
+                            панели после двойного подтверждения, чтобы не
+                            отстреливать юзеров случайным кликом по списку. */}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Pagination footer */}
           {!mockMode && (
-            <div className="flex items-center gap-2 text-[11px]">
+            <div className="px-3 py-2 border-t border-token shrink-0 flex items-center gap-2 text-[11px]">
+              <span className="text-dim">
+                {offset}-{offset + allItems.length} из {total}
+              </span>
               <div className="ml-auto flex items-center gap-1">
                 <button
                   className="btn btn-sm"
@@ -366,9 +550,6 @@ export function ServicesUsers() {
                 >
                   ←
                 </button>
-                <span>
-                  {offset}-{offset + allItems.length}
-                </span>
                 <button
                   className="btn btn-sm"
                   disabled={offset + allItems.length >= total}
@@ -379,105 +560,21 @@ export function ServicesUsers() {
               </div>
             </div>
           )}
-        </div>
-      }
-      renderRow={({ item, active, onSelect }) => {
-        const groupHeaderKey = firstInGroup.get(item.id);
-        const isGroupCollapsed =
-          groupHeaderKey !== undefined && collapsed[groupHeaderKey];
-        return (
-          <>
-            {groupHeaderKey !== undefined && (
-              <button
-                className="w-full text-left px-2 py-1 text-[11px] uppercase tracking-wider text-dim flex items-center gap-1 hover:text-accent"
-                onClick={() => toggleGroup(groupHeaderKey)}
-              >
-                {collapsed[groupHeaderKey] ? (
-                  <ChevronRight className="w-3 h-3" />
-                ) : (
-                  <ChevronDown className="w-3 h-3" />
-                )}
-                <span>{groupHeaderKey}</span>
-                <span className="text-dim">· {groupSizes.get(groupHeaderKey) ?? 0}</span>
-              </button>
-            )}
-            {isGroupCollapsed ? null : (
-            <div
-              className={`cred-row text-left ${active ? "active" : ""} cursor-pointer`}
-              onClick={onSelect}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onSelect();
-                }
-              }}
-            >
-              <div className="flex items-center gap-2">
-                {item.platform_role ? (
-                  <UserCog className="w-4 h-4 text-accent" />
-                ) : (
-                  <User className="w-4 h-4 text-dim" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm truncate flex items-center gap-2">
-                    <span>{item.username}</span>
-                    {item.platform_role && (
-                      <span className="badge badge-accent">{item.platform_role}</span>
-                    )}
-                    {item.must_change_password && (
-                      <span className="badge badge-warn" title="must_change_password">
-                        pwd!
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[11px] text-dim truncate">
-                    {item.dept_name ?? item.dept_id ?? "platform"} · {item.email ?? "—"}
-                  </div>
-                </div>
-                <span
-                  className={`badge badge-${item.status === "active" ? "ok" : item.status === "blocked" ? "warn" : "danger"}`}
+        </aside>
+
+        {/* Workzone — детально выбранного юзера / форма создания / форма правки */}
+        <section className="flex-1 min-w-0 min-h-0 overflow-y-auto">
+          {mode === "new" && canEdit ? (
+            <div className="p-5 flex flex-col gap-4 min-h-full">
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  className="btn btn-ghost flex items-center gap-1"
+                  onClick={close}
                 >
-                  {item.status}
-                </span>
-                {/* per-row Ban/Unban убран — банить и удалять только из
-                    workzone справа после двойного подтверждения, чтобы не
-                    отстреливать юзеров случайным кликом в списке. */}
+                  <ArrowLeft className="w-4 h-4" /> Назад
+                </button>
+                <div className="text-sm text-dim">Новый пользователь</div>
               </div>
-            </div>
-            )}
-          </>
-        );
-      }}
-      renderDetail={(u, { editing, onClose }) => {
-        if (editing)
-          return (
-            <UserForm
-              initial={u}
-              depts={depts}
-              canEdit={canEdit}
-              lockedDeptId={scopeDeptId}
-              mockMode={mockMode}
-              onDone={() => {
-                refetchAll();
-                onClose();
-              }}
-              mode="edit"
-            />
-          );
-        return (
-          <ServicesUserDetailPane
-            user={u}
-            canEdit={canEdit}
-            refetchAll={refetchAll}
-            detailSignal={detailSignal}
-          />
-        );
-      }}
-      renderCreate={
-        canEdit
-          ? (onClose) => (
               <UserForm
                 depts={depts}
                 canEdit
@@ -485,14 +582,70 @@ export function ServicesUsers() {
                 mockMode={mockMode}
                 onDone={() => {
                   refetchAll();
-                  onClose();
+                  close();
                 }}
                 mode="new"
               />
-            )
-          : undefined
-      }
-    />
+            </div>
+          ) : selected && mode === "edit" && canEdit ? (
+            <div className="p-5 flex flex-col gap-4 min-h-full">
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  className="btn btn-ghost flex items-center gap-1"
+                  onClick={() => select(selected.id)}
+                >
+                  <ArrowLeft className="w-4 h-4" /> К пользователю
+                </button>
+                <div className="text-sm text-dim truncate">
+                  Редактирование · {selected.username}
+                </div>
+              </div>
+              <UserForm
+                initial={selected}
+                depts={depts}
+                canEdit={canEdit}
+                lockedDeptId={scopeDeptId}
+                mockMode={mockMode}
+                onDone={() => {
+                  refetchAll();
+                  select(selected.id);
+                }}
+                mode="edit"
+              />
+            </div>
+          ) : selected ? (
+            <div className="p-5 min-h-full">
+              <ServicesUserDetailPane
+                key={selected.id}
+                user={selected}
+                canEdit={canEdit}
+                refetchAll={refetchAll}
+                detailSignal={detailSignal}
+                onEdit={() => startEdit(selected.id)}
+              />
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center p-8">
+              <div className="empty-card max-w-md">
+                <UsersIcon className="w-10 h-10 mx-auto text-dim mb-3" />
+                <div className="text-sm text-dim">
+                  Выберите пользователя слева, чтобы увидеть профиль, роли,
+                  сессии и действия.
+                </div>
+                {canEdit && (
+                  <button
+                    className="btn btn-primary mt-4 inline-flex items-center gap-1"
+                    onClick={startCreate}
+                  >
+                    <Plus className="w-4 h-4" /> Создать
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
   );
 }
 
@@ -505,13 +658,14 @@ function ServicesUserDetailPane({
   canEdit,
   refetchAll,
   detailSignal,
+  onEdit,
 }: {
   user: UiUser;
   canEdit: boolean;
   refetchAll: () => void;
   detailSignal: number;
+  onEdit: () => void;
 }) {
-  const { startEdit } = useInlineState();
   return (
     <UserBackendView
       userId={user.id}
@@ -519,7 +673,7 @@ function ServicesUserDetailPane({
       fallbackDeptId={user.dept_id}
       refetchListSignal={detailSignal}
       onChanged={refetchAll}
-      onStartEdit={canEdit ? () => startEdit(user.id) : undefined}
+      onStartEdit={canEdit ? onEdit : undefined}
     />
   );
 }

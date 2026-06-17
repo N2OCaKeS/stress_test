@@ -1,10 +1,12 @@
 """Use cases для OS-версий — глобальный каталог.
 
-Read (list + get по id + get по имени) публичный: без identity, без
-проверки прав и без аудита — каталог ОС открыт на чтение всем.
-Запись (create/update/delete) остаётся под матрицей прав. Удаление
-версии, на которую ссылается хоть один сервер (`servers.os_version_id`),
-отбивается IntegrityError от FK ondelete=RESTRICT → 409 OS_VERSION_IN_USE.
+Read (list + get по id + get по имени) не требует прав и не аудитится —
+каталог ОС открыт на чтение любому аутентифицированному актору (сам факт
+аутентификации проверяется на endpoint-уровне зависимостью
+`AuthenticatedIdentity`). Запись (create/update/delete) остаётся под
+матрицей прав. Удаление версии, на которую ссылается хоть один сервер
+(`servers.os_version_id`), отбивается IntegrityError от FK
+ondelete=RESTRICT → 409 OS_VERSION_IN_USE.
 """
 
 import logging
@@ -78,7 +80,7 @@ async def get_os_version(
     db: AsyncSession,
     os_version_id: str,
 ) -> OsVersion:
-    """SELECT OS-версии по PK. Публичный read — без auth и без аудита."""
+    """SELECT OS-версии по PK. Read без проверки прав и без аудита."""
     obj = await repo.get_by_id(db, os_version_id)
     if obj is None:
         raise NotFoundError(
@@ -92,7 +94,7 @@ async def get_os_version_by_name(
     db: AsyncSession,
     name: str,
 ) -> OsVersion:
-    """SELECT OS-версии по UNIQUE name. Публичный read — без auth и без аудита."""
+    """SELECT OS-версии по UNIQUE name. Read без проверки прав и без аудита."""
     obj = await repo.get_by_name(db, name)
     if obj is None:
         raise NotFoundError(
@@ -146,7 +148,7 @@ async def list_os_versions(
     limit: int,
     offset: int,
 ) -> tuple[list[OsVersion], int]:
-    """List + count полного каталога. Публичный read — без auth и без аудита."""
+    """List + count полного каталога. Read без проверки прав и без аудита."""
     items = await repo.list_all(db, limit=limit, offset=offset)
     total = await repo.count_all(db)
     return items, total

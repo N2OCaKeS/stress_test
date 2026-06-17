@@ -97,13 +97,11 @@ SERVICE_EVENTS = [
     # action: dispatch'ер `POST /servers/{id}/installed-packages` + worker-task
     # `installed_packages.list` (обе стороны эмитят с одинаковым action-name).
     {"action": "installed_packages.list", "description": "Installed packages live-listed via worker (SSH dpkg-query/rpm -qa)", "default_severity": "INFO"},
-    # OS versions — глобальный каталог. Чтение публичное; authenticated read
-    # без аудита, anonymous read эмитит INFO для SIEM-видимости enumeration'а.
+    # OS versions — глобальный каталог. Чтение доступно любому
+    # аутентифицированному актору, без аудита; пишутся только мутации.
     {"action": "os_version.create", "description": "OS version catalog entry created", "default_severity": "INFO"},
     {"action": "os_version.update", "description": "OS version updated", "default_severity": "INFO"},
     {"action": "os_version.delete", "description": "OS version deleted", "default_severity": "WARNING"},
-    {"action": "os_version.list_anonymous", "description": "Public OS-version list read without bearer token (enumeration trail for SIEM)", "default_severity": "INFO"},
-    {"action": "os_version.view_anonymous", "description": "Public OS-version card read without bearer token (enumeration trail for SIEM)", "default_severity": "INFO"},
     {"action": "os.unknown_observed", "description": "Inventory callback принёс os_version, не прошедший whitelist KNOWN_OS_PREFIXES. Запись в os_versions НЕ создаётся, server.os_version_id остаётся прежним", "default_severity": "WARNING"},
     # Worker-dispatch endpoints (см. endpoints/worker_dispatch.py).
     {"action": "server.inventory_sync", "description": "Inventory-sync (SSH-probe) dispatched to worker", "default_severity": "INFO"},

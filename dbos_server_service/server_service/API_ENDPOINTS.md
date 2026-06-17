@@ -90,7 +90,6 @@ POST-CREATE эндпоинты (`POST /servers`, `POST /server-accounts`, `POST 
 | `POST /server-accounts/{id}/rotate_password` | `ACCOUNT_ROTATE_PASSWORD_RATE_LIMIT` | 10/min |
 | `POST /server-accounts/{id}/rotate` | `MASS_ROTATE_DISPATCH_RATE_LIMIT` | 5/min |
 | `POST /servers/{id}/prepare` | `SERVER_PREPARE_RATE_LIMIT` | 3/min |
-| `GET /os-versions*` (anonymous) | `OS_VERSIONS_ANON_RATE_LIMIT` | 100/min |
 | `/internal/secrets/reencrypt_outbox/{seed,pending}` | `WORKER_POOL_RATE_LIMIT` | 60/min |
 
 Превышение → `429 RATE_LIMIT_EXCEEDED` с `Retry-After`.
@@ -413,17 +412,19 @@ Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403, в т.ч. о
 
 ## OS versions (`/os-versions`)
 
-Глобальный каталог без dept-привязки. Чтение публичное (rate-limit'нутое `OS_VERSIONS_ANON_RATE_LIMIT`), запись — под матрицей.
+Глобальный каталог без dept-привязки. Чтение доступно любому аутентифицированному актору (токен обязателен, без проверки доступа департамента к server_service), запись — под матрицей.
 
 ### `GET /os-versions`
 
-Auth: public. Cursor / offset пагинация. INFO audit `os_version.list_anonymous` для anonymous.
+Auth: Bearer (любой аутентифицированный актор, включая платформенные роли). Cursor / offset пагинация.
+
+Errors: `ACCESS_TOKEN_MISSING` (401), `INVALID_CURSOR` (400).
 
 ### `GET /os-versions/by-name/{name}`
 
-Auth: public. Карточка по UNIQUE-имени.
+Auth: Bearer (любой аутентифицированный актор). Карточка по UNIQUE-имени.
 
-Errors: `OS_VERSION_NOT_FOUND` (404).
+Errors: `ACCESS_TOKEN_MISSING` (401), `OS_VERSION_NOT_FOUND` (404).
 
 ### `POST /os-versions`
 
@@ -433,9 +434,9 @@ Errors: `PERMISSION_DENIED` (403), `OS_VERSION_DUPLICATE` (409).
 
 ### `GET /os-versions/{os_version_id}`
 
-Auth: public. Карточка по id.
+Auth: Bearer (любой аутентифицированный актор). Карточка по id.
 
-Errors: `OS_VERSION_NOT_FOUND` (404).
+Errors: `ACCESS_TOKEN_MISSING` (401), `OS_VERSION_NOT_FOUND` (404).
 
 ### `PATCH /os-versions/{os_version_id}`
 

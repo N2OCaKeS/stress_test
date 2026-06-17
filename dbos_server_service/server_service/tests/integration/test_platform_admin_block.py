@@ -448,6 +448,140 @@ class TestAccountAdminPureBlocking:
         assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
 
 
+# ── 11b. os-versions read открыт платформенным ролям, запись — нет ──────────
+
+
+class TestOsVersionsReadExemptForPlatformAdmins:
+    """Каталог OS-версий — глобальный справочник, не бизнес-данные отдела.
+
+    GET-чтение каталога открыто всем, включая платформенные роли
+    ``account_admin`` / ``loging_admin``: guard их на этих путях не отбивает.
+    Но исключение строго для GET — POST/PATCH/DELETE остаются под матрицей
+    прав, у платформенных ролей действия ``os_version.*`` нет. И прочие
+    business-эндпоинты по-прежнему 403.
+    """
+
+    OSV = f"{BASE}/os-versions"
+
+    async def test_account_admin_can_list_os_versions(
+        self, client, account_admin_token, admin_role_token_a,
+    ):
+        """``account_admin`` → 200 на GET /os-versions (раньше резал guard)."""
+        await client.post(
+            self.OSV, headers=_hdr(admin_role_token_a),
+            json={"name": "astra-guard-list", "description": "x"},
+        )
+        resp = await client.get(self.OSV, headers=_hdr(account_admin_token))
+        assert resp.status_code == 200
+        assert resp.json()["total"] >= 1
+
+    async def test_loging_admin_can_list_os_versions(
+        self, client, loging_admin_token,
+    ):
+        """``loging_admin`` → 200 на GET /os-versions."""
+        resp = await client.get(self.OSV, headers=_hdr(loging_admin_token))
+        assert resp.status_code == 200
+
+    async def test_account_admin_can_get_os_version_by_id(
+        self, client, account_admin_token, admin_role_token_a,
+    ):
+        """``account_admin`` → 200 на GET /os-versions/{id}."""
+        created = await client.post(
+            self.OSV, headers=_hdr(admin_role_token_a),
+            json={"name": "astra-guard-get", "description": "x"},
+        )
+        ov_id = created.json()["id"]
+        resp = await client.get(f"{self.OSV}/{ov_id}", headers=_hdr(account_admin_token))
+        assert resp.status_code == 200
+        assert resp.json()["id"] == ov_id
+
+    async def test_account_admin_can_get_os_version_by_name(
+        self, client, account_admin_token, admin_role_token_a,
+    ):
+        """``account_admin`` → 200 на GET /os-versions/by-name/{name}."""
+        await client.post(
+            self.OSV, headers=_hdr(admin_role_token_a),
+            json={"name": "astra-guard-byname", "description": "x"},
+        )
+        resp = await client.get(
+            f"{self.OSV}/by-name/astra-guard-byname",
+            headers=_hdr(account_admin_token),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "astra-guard-byname"
+
+    async def test_os_versions_read_emits_no_block_audit(
+        self, client, account_admin_token, captured_emits,
+    ):
+        """Чтение каталога платформенной ролью не эмитит ``http.platform_admin_blocked``."""
+        resp = await client.get(self.OSV, headers=_hdr(account_admin_token))
+        assert resp.status_code == 200
+        assert _events(captured_emits, "http.platform_admin_blocked") == []
+
+    async def test_account_admin_still_blocked_on_business(
+        self, client, account_admin_token,
+    ):
+        """Regression: os-versions exempt не открывает прочие business-эндпоинты."""
+        resp = await client.get(f"{BASE}/servers", headers=_hdr(account_admin_token))
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
+
+    async def test_loging_admin_still_blocked_on_business(
+        self, client, loging_admin_token,
+    ):
+        resp = await client.get(f"{BASE}/permissions", headers=_hdr(loging_admin_token))
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
+
+    async def test_account_admin_cannot_create_os_version(
+        self, client, account_admin_token,
+    ):
+        """Запись каталога платформенной ролью отбивается guard'ом (POST не exempt)."""
+        resp = await client.post(
+            self.OSV, headers=_hdr(account_admin_token),
+            json={"name": "astra-guard-write", "description": "x"},
+        )
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
+
+    async def test_account_admin_cannot_update_os_version(
+        self, client, account_admin_token, admin_role_token_a,
+    ):
+        """PATCH каталога платформенной ролью отбивается guard'ом."""
+        created = await client.post(
+            self.OSV, headers=_hdr(admin_role_token_a),
+            json={"name": "astra-guard-patch", "description": "x"},
+        )
+        ov_id = created.json()["id"]
+        resp = await client.patch(
+            f"{self.OSV}/{ov_id}", headers=_hdr(account_admin_token),
+            json={"description": "y"},
+        )
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
+
+    async def test_account_admin_cannot_delete_os_version(
+        self, client, account_admin_token, admin_role_token_a,
+    ):
+        """DELETE каталога платформенной ролью отбивается guard'ом."""
+        created = await client.post(
+            self.OSV, headers=_hdr(admin_role_token_a),
+            json={"name": "astra-guard-delete", "description": "x"},
+        )
+        ov_id = created.json()["id"]
+        resp = await client.delete(
+            f"{self.OSV}/{ov_id}", headers=_hdr(account_admin_token),
+        )
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
+
+    async def test_normal_user_still_reads_catalog(
+        self, client, reader_token_a, admin_role_token_a,
+    ):
+        """Regression: обычный user/reader по-прежнему читает каталог."""
+        await client.post(
+            self.OSV, headers=_hdr(admin_role_token_a),
+            json={"name": "astra-guard-user-read", "description": "x"},
+        )
+        resp = await client.get(self.OSV, headers=_hdr(reader_token_a))
+        assert resp.status_code == 200
+
+
 # ── 11. Неизвестный platform_role (rolling deploy) → 503, не 500 ────────────
 
 

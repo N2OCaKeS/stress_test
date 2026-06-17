@@ -8,7 +8,8 @@
 * Cursor row_id regex — граница 63/64/65 и всего по одному символу
 * Audit emit для outbox lifecycle (seed/done/failed/cleanup) —
   все четыре действия ни разу не проверялись на факт передачи правильных details
-* os_version.list_anonymous cursor-mode — emit в cursor-path не покрыт
+* os-versions read — требует аутентификации (аноним → 401), cursor-path
+  без аудита для аутентифицированного актора
 """
 
 from __future__ import annotations
@@ -611,7 +612,7 @@ class TestOutboxDoneAuditEmit:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# os_version.list_anonymous — cursor-path audit emit (не покрыт до этого файла)
+# os-versions read — требует аутентификации, без аудита на чтении
 # ─────────────────────────────────────────────────────────────────────────────
 
 BASE_OS = "/api/server/v1/os-versions"
@@ -624,72 +625,34 @@ def captured_os_emits(monkeypatch):
     def fake_emit(action, actor_id=None, **kwargs):
         captured.append({"action": action, "actor_id": actor_id, **kwargs})
 
+    # os_versions endpoint делает `from src.services import audit_service` и
+    # зовёт `audit_service.emit` — патчим emit на самом модуле, ссылка общая.
     import src.services.audit_service as audit_mod
     monkeypatch.setattr(audit_mod, "emit", fake_emit)
-    # os_versions endpoint делает `from src.services import audit_service`
-    # — оба пути покрываем.
-    monkeypatch.setattr(
-        "src.api.v1.endpoints.os_versions.audit_service.emit", fake_emit,
-    )
     return captured
 
 
-class TestOsVersionAnonCursorAudit:
-    """Anonymous cursor-mode list должен тоже эмитировать os_version.list_anonymous."""
+class TestOsVersionReadAuth:
+    """Чтение каталога требует токен; на чтении аудит не пишется."""
 
-    async def test_anon_cursor_mode_emits_audit(self, client, captured_os_emits):
-        """?cursor=true без токена — emit os_version.list_anonymous с has_more."""
+    async def test_anon_cursor_mode_rejected_401(self, client, captured_os_emits):
+        """?cursor=true без токена → 401 ACCESS_TOKEN_MISSING, без audit-emit."""
         resp = await client.get(f"{BASE_OS}?cursor=true")
-        assert resp.status_code == 200
-        events = [e for e in captured_os_emits if e["action"] == "os_version.list_anonymous"]
-        assert len(events) == 1
-        ev = events[0]
-        assert ev["status"] == "success"
-        assert ev["details"]["caller_type"] == "anonymous"
-        assert "page_size" in ev["details"]
-        assert "has_more" in ev["details"]
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
+        os_events = [e for e in captured_os_emits if e["action"].startswith("os_version")]
+        assert os_events == []
 
-    async def test_anon_cursor_mode_with_after_token_emits_audit(
-        self, client, admin_role_token_a, captured_os_emits,
-    ):
-        """?after=<token> без токена авторизации — cursor-path, emit os_version.list_anonymous."""
-        # Засеваем 3 версии — limit=1 точно оставит next_cursor.
-        for i in range(3):
-            resp = await client.post(
-                BASE_OS,
-                headers=_hdr(admin_role_token_a),
-                json={"name": f"osv-cursor-anon-{i}"},
-            )
-            assert resp.status_code in (200, 201), resp.text
-
-        first_page = await client.get(f"{BASE_OS}?cursor=true&limit=1")
-        assert first_page.status_code == 200
-        body = first_page.json()
-        next_cursor = body.get("next_cursor")
-        # Раньше тут стоял defensive-skip; при 3 строках в БД с limit=1
-        # next_cursor обязан быть. Если пропал — это регресс cursor-формата.
-        assert next_cursor is not None, body
-
-        captured_os_emits.clear()
-        resp = await client.get(f"{BASE_OS}?after={next_cursor}")
-        assert resp.status_code == 200
-        events = [e for e in captured_os_emits if e["action"] == "os_version.list_anonymous"]
-        assert len(events) == 1
-
-    async def test_anon_legacy_offset_mode_emits_audit(self, client, captured_os_emits):
-        """Offset-mode без токена — emit c total, без has_more."""
+    async def test_anon_legacy_offset_mode_rejected_401(self, client, captured_os_emits):
+        """Offset-mode без токена → 401, без audit-emit."""
         resp = await client.get(f"{BASE_OS}?limit=5&offset=0")
-        assert resp.status_code == 200
-        events = [e for e in captured_os_emits if e["action"] == "os_version.list_anonymous"]
-        assert len(events) == 1
-        ev = events[0]
-        assert "total" in ev["details"]
-        assert ev["details"]["caller_type"] == "anonymous"
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
+        os_events = [e for e in captured_os_emits if e["action"].startswith("os_version")]
+        assert os_events == []
 
     async def test_authenticated_cursor_mode_no_audit(
         self, client, no_role_token_a, captured_os_emits,
     ):
-        """Authenticated cursor-mode — аудит НЕ эмитируется."""
+        """Authenticated cursor-mode — 200, аудит НЕ эмитируется."""
         resp = await client.get(
             f"{BASE_OS}?cursor=true",
             headers=_hdr(no_role_token_a),
@@ -698,11 +661,40 @@ class TestOsVersionAnonCursorAudit:
         os_events = [e for e in captured_os_emits if e["action"].startswith("os_version")]
         assert os_events == []
 
-    async def test_anon_cursor_invalid_after_returns_400_no_audit(
-        self, client, captured_os_emits,
+    async def test_authenticated_cursor_after_token_no_audit(
+        self, client, admin_role_token_a, no_role_token_a, captured_os_emits,
     ):
-        """Невалидный cursor → 400 INVALID_CURSOR без audit-emit."""
-        resp = await client.get(f"{BASE_OS}?after=notvalidbase64!!!")
+        """?after=<token> с токеном — cursor-path 200, без audit-emit."""
+        for i in range(3):
+            resp = await client.post(
+                BASE_OS,
+                headers=_hdr(admin_role_token_a),
+                json={"name": f"osv-cursor-auth-{i}"},
+            )
+            assert resp.status_code in (200, 201), resp.text
+
+        first_page = await client.get(
+            f"{BASE_OS}?cursor=true&limit=1", headers=_hdr(no_role_token_a),
+        )
+        assert first_page.status_code == 200
+        next_cursor = first_page.json().get("next_cursor")
+        assert next_cursor is not None, first_page.json()
+
+        captured_os_emits.clear()
+        resp = await client.get(
+            f"{BASE_OS}?after={next_cursor}", headers=_hdr(no_role_token_a),
+        )
+        assert resp.status_code == 200
+        os_events = [e for e in captured_os_emits if e["action"].startswith("os_version")]
+        assert os_events == []
+
+    async def test_authenticated_invalid_cursor_returns_400(
+        self, client, no_role_token_a, captured_os_emits,
+    ):
+        """Невалидный cursor у аутентифицированного → 400 INVALID_CURSOR, без emit."""
+        resp = await client.get(
+            f"{BASE_OS}?after=notvalidbase64!!!", headers=_hdr(no_role_token_a),
+        )
         assert_error(resp, 400, "INVALID_CURSOR")
-        events = [e for e in captured_os_emits if e["action"] == "os_version.list_anonymous"]
-        assert events == []
+        os_events = [e for e in captured_os_emits if e["action"].startswith("os_version")]
+        assert os_events == []

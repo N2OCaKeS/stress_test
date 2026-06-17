@@ -383,17 +383,6 @@ class Settings(BaseSettings):
             "/ready) исключены из ограничения."
         ),
     )
-    os_versions_anon_rate_limit: str = Field(
-        default="100/minute",
-        alias="OS_VERSIONS_ANON_RATE_LIMIT",
-        description=(
-            "Per-IP rate-limit на анонимные GET /os-versions* (синтаксис "
-            "slowapi). Каталог публичный — без этого лимита анонимный сканер "
-            "выкачивает имена/версии и шумит в audit "
-            "`os_version.list_anonymous`/`view_anonymous`. Лимит применяется "
-            "поверх `global_rate_limit`; authenticated read под глобальным."
-        ),
-    )
     ipmi_verify_max_age_seconds: int = Field(
         default=60,
         ge=1,

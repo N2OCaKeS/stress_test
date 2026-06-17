@@ -233,7 +233,8 @@ class TestOsVersionsCursor:
             )
             assert resp.status_code == 201
         resp = await client.get(
-            OS_VERSIONS, params={"cursor": "true", "limit": 2},
+            OS_VERSIONS, headers=_hdr(admin_role_token_a),
+            params={"cursor": "true", "limit": 2},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -241,8 +242,10 @@ class TestOsVersionsCursor:
         assert "has_more" in body
         assert len(body["items"]) == 2
 
-    async def test_invalid_cursor_returns_400(self, client):
-        resp = await client.get(OS_VERSIONS, params={"after": "###"})
+    async def test_invalid_cursor_returns_400(self, client, admin_role_token_a):
+        resp = await client.get(
+            OS_VERSIONS, headers=_hdr(admin_role_token_a), params={"after": "###"},
+        )
         assert_error(resp, 400, "INVALID_CURSOR")
 
     async def test_walk_collects_created_items(
@@ -265,7 +268,9 @@ class TestOsVersionsCursor:
             elif first:
                 params["cursor"] = "true"
             first = False
-            resp = await client.get(OS_VERSIONS, params=params)
+            resp = await client.get(
+                OS_VERSIONS, headers=_hdr(admin_role_token_a), params=params,
+            )
             assert resp.status_code == 200
             body = resp.json()
             seen.extend(i["id"] for i in body["items"])

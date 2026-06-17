@@ -43,6 +43,11 @@ global bypass матрицы — это нарушало модель: platform-
 * ``/api/server/v1/ready`` — readiness probe (SELECT 1 + JSON), без JWT.
 * ``/openapi.json`` / ``/docs`` / ``/redoc`` — публичный Swagger в dev/test
   (в production они отключены через ``settings.app_env``, см. ``main.py``).
+* ``GET /api/server/v1/os-versions*`` — каталог OS-версий это глобальный
+  справочник (имена версий, репозитории), а не бизнес-данные отдела;
+  чтение публичное. Исключение только для GET — запись остаётся под
+  матрицей прав. Платформенные роли теперь могут читать каталог, но не
+  трогать прочие server-эндпоинты.
 * Запросы без Authorization-header'а — проходят дальше (Bearer-валидация
   на уровне ``Depends(get_current_identity)`` отобьёт их 401, либо
   endpoint анонимный).
@@ -147,6 +152,31 @@ _DOCS_PREFIXES: tuple[str, ...] = ("/docs/", "/redoc/")
 # `/admin/encryption/...` пути роутятся только сюда.
 _ADMIN_ENCRYPTION_PREFIX = "/api/server/v1/admin/encryption"
 
+# Каталог OS-версий — глобальный справочник (имена версий, репозитории), а не
+# бизнес-данные отдела. Чтение каталога публичное (см. endpoints/os_versions.py),
+# поэтому платформенным ролям его тоже не за что отбивать. Исключение строго для
+# GET-чтения: list (`/os-versions`), карточка по id (`/os-versions/{id}`) и
+# по имени (`/os-versions/by-name/{name}`). POST/PATCH/DELETE сюда не попадают —
+# запись остаётся под обычной проверкой матрицы прав (action `(os_version,*,...)`,
+# которого у платформенных ролей нет).
+_OS_VERSIONS_PREFIX = "/api/server/v1/os-versions"
+
+
+def _is_os_versions_read(path: str, method: str) -> bool:
+    """True для GET-чтения каталога OS-версий.
+
+    Матчит сам `/os-versions` (list) и любой вложенный сегмент
+    `/os-versions/...` (карточка по id или by-name). Только метод GET —
+    запись (POST/PATCH/DELETE) проходит обычной дорогой через матрицу прав.
+    Граница сегмента обязательна, чтобы посторонний путь с тем же началом
+    (например `/api/server/v1/os-versionsXYZ`) не проскочил.
+    """
+    if method != "GET":
+        return False
+    return path == _OS_VERSIONS_PREFIX or path.startswith(
+        _OS_VERSIONS_PREFIX + "/"
+    )
+
 
 def _is_admin_encryption_path(path: str) -> bool:
     """True для инфраструктурных ручек ротации ключа (`/admin/encryption/*`).
@@ -237,7 +267,8 @@ async def platform_admin_guard(request: Request, call_next):
 
     Алгоритм:
 
-    1. ``_is_public_path(path)`` → пропускаем (health/ready/openapi).
+    1. ``_is_public_path(path)`` или ``_is_os_versions_read(path, method)``
+       → пропускаем (health/ready/openapi + GET-чтение каталога OS-версий).
     2. Нет ``Authorization: Bearer ...`` → пропускаем; ``get_current_identity``
        сам отобьёт 401 если endpoint его требует, а анонимные endpoint'ы
        пройдут как обычно.
@@ -255,7 +286,7 @@ async def platform_admin_guard(request: Request, call_next):
     по generic ``http.access_denied``.
     """
     path = request.url.path
-    if _is_public_path(path):
+    if _is_public_path(path) or _is_os_versions_read(path, request.method):
         return await call_next(request)
 
     token = auth_deps._extract_bearer(request)

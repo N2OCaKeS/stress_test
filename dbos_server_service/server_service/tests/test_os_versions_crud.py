@@ -1,8 +1,10 @@
 """Интеграционные тесты `/api/server/v1/os-versions` (глобальный каталог).
 
 OS-версии — глобальный каталог: dept-isolation НЕ работает.
-Чтение (list / get по id / get по имени) публичное — без токена и без
-аудита. Запись (create/update/delete) — под матрицей прав (seed-миграция).
+Чтение (list / get по id / get по имени) доступно любому аутентифицированному
+актору (токен обязателен, без проверки доступа департамента к server_service);
+аноним без bearer'а → 401. На чтении аудита нет. Запись
+(create/update/delete) — под матрицей прав (seed-миграция).
 """
 
 from __future__ import annotations
@@ -168,43 +170,42 @@ class TestRepositoriesValidation:
         assert_error(resp, 422, "VALIDATION_ERROR")
 
 
-# ── GET (list) — публичный ────────────────────────────────────────────────────
+# ── GET (list) — любой аутентифицированный актор ──────────────────────────────
 
 class TestListOsVersions:
-    async def test_public_list_without_token(self, client, admin_role_token_a):
+    async def test_list_with_token(self, client, admin_role_token_a, no_role_token_a):
         for i in range(3):
             await client.post(
                 BASE, headers=_hdr(admin_role_token_a),
                 json=_payload(name=f"osv-list-{i}"),
             )
-        resp = await client.get(BASE)
+        resp = await client.get(BASE, headers=_hdr(no_role_token_a))
         assert resp.status_code == 200
         assert resp.json()["total"] >= 3
 
-    async def test_pagination(self, client, admin_role_token_a):
+    async def test_pagination(self, client, admin_role_token_a, no_role_token_a):
         for i in range(5):
             await client.post(
                 BASE, headers=_hdr(admin_role_token_a),
                 json=_payload(name=f"osv-page-{i}"),
             )
-        resp = await client.get(BASE, params={"limit": 2, "offset": 0})
+        resp = await client.get(
+            BASE, params={"limit": 2, "offset": 0}, headers=_hdr(no_role_token_a),
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["limit"] == 2
         assert len(body["items"]) == 2
 
     async def test_no_role_token_still_lists(self, client, no_role_token_a):
-        """Носитель токена без ролей читает каталог: read публичный."""
+        """Носитель токена без ролей читает каталог: read открыт всем аутентифицированным."""
         resp = await client.get(BASE, headers=_hdr(no_role_token_a))
         assert resp.status_code == 200
 
-    async def test_anonymous_list_emits_audit(self, client, captured_emits):
-        """Anonymous read оставляет SIEM-trail для enumeration-видимости."""
+    async def test_anonymous_list_rejected_401(self, client):
+        """Аноним без bearer'а → 401 ACCESS_TOKEN_MISSING."""
         resp = await client.get(BASE)
-        assert resp.status_code == 200
-        events = [e for e in captured_emits if e["action"] == "os_version.list_anonymous"]
-        assert len(events) == 1
-        assert events[0]["details"]["caller_type"] == "anonymous"
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_authenticated_list_emits_no_audit(
         self, client, no_role_token_a, captured_emits,
@@ -216,19 +217,19 @@ class TestListOsVersions:
         assert os_events == []
 
 
-# ── GET /{id} — публичный ─────────────────────────────────────────────────────
+# ── GET /{id} — любой аутентифицированный актор ───────────────────────────────
 
 class TestGetOsVersion:
-    async def test_public_get_without_token(self, client, admin_role_token_a):
+    async def test_get_with_token(self, client, admin_role_token_a, no_role_token_a):
         created = await client.post(
             BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-get-1"),
         )
         ov_id = created.json()["id"]
-        resp = await client.get(f"{BASE}/{ov_id}")
+        resp = await client.get(f"{BASE}/{ov_id}", headers=_hdr(no_role_token_a))
         assert resp.status_code == 200
         assert resp.json()["id"] == ov_id
 
-    async def test_get_returns_repositories(self, client, admin_role_token_a):
+    async def test_get_returns_repositories(self, client, admin_role_token_a, no_role_token_a):
         repos = ["https://repo.example.org/astra/main"]
         created = await client.post(
             BASE,
@@ -236,30 +237,22 @@ class TestGetOsVersion:
             json=_payload(name="osv-get-repos", repositories=repos),
         )
         ov_id = created.json()["id"]
-        resp = await client.get(f"{BASE}/{ov_id}")
+        resp = await client.get(f"{BASE}/{ov_id}", headers=_hdr(no_role_token_a))
         assert resp.status_code == 200
         assert resp.json()["repositories"] == repos
 
-    async def test_nonexistent_returns_404(self, client):
-        resp = await client.get(f"{BASE}/osv_ghost")
+    async def test_nonexistent_returns_404(self, client, no_role_token_a):
+        resp = await client.get(f"{BASE}/osv_ghost", headers=_hdr(no_role_token_a))
         assert_error(resp, 404, "OS_VERSION_NOT_FOUND")
 
-    async def test_anonymous_get_emits_audit(
-        self, client, admin_role_token_a, captured_emits,
-    ):
-        """Anonymous get эмитит `view_anonymous`."""
+    async def test_anonymous_get_rejected_401(self, client, admin_role_token_a):
+        """Аноним без bearer'а на карточку → 401."""
         created = await client.post(
             BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-get-anon"),
         )
         ov_id = created.json()["id"]
-        captured_emits.clear()
         resp = await client.get(f"{BASE}/{ov_id}")
-        assert resp.status_code == 200
-        events = [e for e in captured_emits if e["action"] == "os_version.view_anonymous"]
-        assert len(events) == 1
-        assert events[0]["target_id"] == ov_id
-        assert events[0]["details"]["caller_type"] == "anonymous"
-        assert events[0]["details"]["lookup"] == "by_id"
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_authenticated_get_emits_no_audit(
         self, client, admin_role_token_a, no_role_token_a, captured_emits,
@@ -275,35 +268,32 @@ class TestGetOsVersion:
         assert os_events == []
 
 
-# ── GET /by-name/{name} — публичный ───────────────────────────────────────────
+# ── GET /by-name/{name} — любой аутентифицированный актор ──────────────────────
 
 class TestGetOsVersionByName:
-    async def test_public_get_by_name(self, client, admin_role_token_a):
+    async def test_get_by_name_with_token(self, client, admin_role_token_a, no_role_token_a):
         await client.post(
             BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-by-name-1"),
         )
-        resp = await client.get(f"{BASE}/by-name/osv-by-name-1")
+        resp = await client.get(
+            f"{BASE}/by-name/osv-by-name-1", headers=_hdr(no_role_token_a),
+        )
         assert resp.status_code == 200
         assert resp.json()["name"] == "osv-by-name-1"
 
-    async def test_by_name_nonexistent_returns_404(self, client):
-        resp = await client.get(f"{BASE}/by-name/ghost-os-name")
+    async def test_by_name_nonexistent_returns_404(self, client, no_role_token_a):
+        resp = await client.get(
+            f"{BASE}/by-name/ghost-os-name", headers=_hdr(no_role_token_a),
+        )
         assert_error(resp, 404, "OS_VERSION_NOT_FOUND")
 
-    async def test_anonymous_by_name_emits_audit(
-        self, client, admin_role_token_a, captured_emits,
-    ):
-        """Anonymous by-name read эмитит `view_anonymous` с lookup=by_name."""
+    async def test_anonymous_by_name_rejected_401(self, client, admin_role_token_a):
+        """Аноним без bearer'а на by-name → 401."""
         await client.post(
             BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-by-name-anon"),
         )
-        captured_emits.clear()
         resp = await client.get(f"{BASE}/by-name/osv-by-name-anon")
-        assert resp.status_code == 200
-        events = [e for e in captured_emits if e["action"] == "os_version.view_anonymous"]
-        assert len(events) == 1
-        assert events[0]["details"]["caller_type"] == "anonymous"
-        assert events[0]["details"]["lookup"] == "by_name"
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_authenticated_by_name_emits_no_audit(
         self, client, admin_role_token_a, no_role_token_a, captured_emits,

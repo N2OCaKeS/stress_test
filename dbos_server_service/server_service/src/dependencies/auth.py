@@ -62,9 +62,11 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "AccountAdminIdentity",
+    "AuthenticatedIdentity",
     "CurrentIdentity",
     "CurrentUserIdentity",
     "SERVICE_NAME",
+    "get_authenticated_identity",
     "get_current_identity",
     "require_account_admin",
     "require_internal_caller",
@@ -268,6 +270,62 @@ async def get_current_identity(request: Request) -> IdentityContext:
 
 
 CurrentIdentity = Annotated[IdentityContext, Depends(get_current_identity)]
+
+
+async def get_authenticated_identity(request: Request) -> IdentityContext:
+    """Resolve identity без проверки доступа департамента к server_service.
+
+    Облегчённый вариант `get_current_identity` для глобального каталога
+    OS-версий: читать его может любой аутентифицированный актор, включая
+    платформенные роли (`account_admin`/`loging_admin`), у которых нет
+    `department_id` и нет server_service в `allowed_services`. Поэтому
+    `SERVICE_ACCESS_DENIED`-гейт здесь намеренно не проверяется.
+
+    Проверяется только:
+      1. Bearer есть (нет → 401 ACCESS_TOKEN_MISSING);
+      2. introspect вернул `active=true` (нет → 401 ACCESS_TOKEN_INVALID);
+      3. актор не забанен.
+
+    Анонимный запрос (без токена) отбивается 401 — каталог открыт всем
+    аутентифицированным, но не анонимам. Запись в каталог по-прежнему идёт
+    через `CurrentUserIdentity` + матрицу прав.
+
+    `platform_admin_guard` middleware на GET `/os-versions*` не блокирует
+    платформенные роли (путь exempt от business-блока), но introspect там
+    не делается — поэтому здесь body берётся из `request.state` если есть,
+    иначе зовём `_introspect` сами.
+    """
+    token = _extract_bearer(request)
+    if token is None:
+        raise AuthenticationError(
+            error_code="ACCESS_TOKEN_MISSING",
+            message="Missing bearer token",
+        )
+    body = getattr(request.state, "introspect_body", None)
+    if body is None:
+        body = await _introspect(token)
+    if not body.get("active"):
+        raise AuthenticationError(
+            error_code="ACCESS_TOKEN_INVALID",
+            message="Token is invalid, expired or revoked",
+        )
+    identity = _to_identity(body)
+    if identity.is_banned:
+        raise AuthenticationError(
+            error_code="USER_BANNED",
+            message="User is banned",
+        )
+    audit_context.update_context(
+        actor_id=identity.user_id,
+        username=identity.username,
+        department_id=identity.department_id,
+        department_name=identity.department_name,
+        subject_type=identity.subject_type,
+    )
+    return identity
+
+
+AuthenticatedIdentity = Annotated[IdentityContext, Depends(get_authenticated_identity)]
 
 
 # ── User-facing guard: отбивает OAuth m2m identity ──────────────────────────

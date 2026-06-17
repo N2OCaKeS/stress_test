@@ -110,7 +110,8 @@ class TestServersCursorExtra:
             assert resp.status_code == 201
 
         r_os = await client.get(
-            OS_VERSIONS, params={"cursor": "true", "limit": 1},
+            OS_VERSIONS, headers=_hdr(admin_role_token_a),
+            params={"cursor": "true", "limit": 1},
         )
         assert r_os.status_code == 200
         alien_cursor = r_os.json()["next_cursor"]

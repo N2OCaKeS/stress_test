@@ -272,7 +272,6 @@ Worker-task'и, зарегистрированные в брокере, с кл�
 | `PREPARE_CREDS_TTL_SECONDS` | TTL bootstrap-кред prepare в Redis (ключ `dbos:prepare_creds:<task_id>`); default 900 |
 | `DISPATCH_CREDS_TTL_SECONDS` | TTL inline-кред provision-таски (`account.provision`) в Redis (`dbos:dispatch_creds:<dcd_id>`); default 900 |
 | `GLOBAL_RATE_LIMIT` | глобальный per-IP rate-limit (slowapi-формат `<count>/<period>`); default `500/minute` |
-| `OS_VERSIONS_ANON_RATE_LIMIT` | per-IP rate-limit для анонимных GET `/os-versions*`; default `100/minute` |
 | `IPMI_ROTATE_PER_SERVER_RATE_LIMIT` | per-IP rate-limit на dispatch ротации IPMI-credentials; default `5/minute` |
 | `IPMI_CREDENTIALS_ROTATE_RATE_LIMIT` | per-IP rate-limit на POST `/servers/{id}/ipmi/credentials/rotate` (прямая ротация без worker'а); default `5/minute` |
 | `SERVER_PREPARE_RATE_LIMIT` | per-IP rate-limit на POST `/servers/{id}/prepare`; default `3/minute` |

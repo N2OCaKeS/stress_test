@@ -204,18 +204,16 @@ Public endpoint'ы, через которые user (обычно admin) запу
 
 ## OS versions — глобальный каталог
 
-Чтение каталога (`list` / `get` по id / по имени) — публичное (без auth).
-Authenticated read'ы не аудитятся (шум на rendering UI), но anonymous read'ы
-эмитят `os_version.list_anonymous` / `os_version.view_anonymous` —
-enumeration-trail для SIEM (с rate-limit'ом для защиты от bot'ов).
+Чтение каталога (`list` / `get` по id / по имени) доступно любому
+аутентифицированному актору (токен обязателен; платформенные роли тоже
+читают) и не аудитятся (шум на rendering UI). Анонимный запрос без bearer'а
+отбивается 401 на endpoint-уровне. Пишутся только мутации каталога.
 
 | action | default_severity | эмитится при | target_type | детали |
 |---|---|---|---|---|
 | `os_version.create` | INFO | INSERT в `os_versions` | `os_version` | `name` |
 | `os_version.update` | INFO | PATCH | `os_version` | поля diff'а |
 | `os_version.delete` | WARNING | DELETE | `os_version` | `name` |
-| `os_version.list_anonymous` | INFO | анонимный (без bearer) GET `/os-versions` — enumeration-trail для SIEM; rate-limit отдельный (`_ANON_LIMIT`) | `os_version` | `caller_type=anonymous`, `page_size`/`total`, `has_more` (keyset) |
-| `os_version.view_anonymous` | INFO | анонимный GET `/os-versions/{id}` или `/os-versions/by-name/{name}` — карточка | `os_version` | `caller_type=anonymous`, `lookup in {by_id, by_name}`, `name` (для by_name) |
 | `os.unknown_observed` | WARNING | inventory-callback от worker'а принёс `os_version`, не прошедший whitelist `KNOWN_OS_PREFIXES` (`core/known_os.py`); запись в `os_versions` НЕ создаётся, `server.os_version_id` остаётся прежним, остальные hardware-поля апдейтятся | `server` | `os_name`, `server_id`, `server_department_id`, `actor_subject_type`, `reason=os_not_in_whitelist` |
 
 ---

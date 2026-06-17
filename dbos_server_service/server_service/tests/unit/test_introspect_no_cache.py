@@ -39,6 +39,7 @@ def _active_body(sub: str = "usr_1") -> dict:
 def _request_with_token(token: str) -> Request:
     scope = {
         "type": "http",
+        "method": "GET",
         "headers": [(b"authorization", b"Bearer " + token.encode())],
         "client": ("127.0.0.1", 0),
     }

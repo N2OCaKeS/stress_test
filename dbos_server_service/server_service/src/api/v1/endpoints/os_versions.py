@@ -1,70 +1,22 @@
 """CRUD каталога OS-версий. Каталог глобальный, без dept-привязки.
 
-Чтение (list / get по id / get по имени) публичное — без auth. Запись
-(create/update/delete) остаётся под матрицей прав. Anonymous-чтение
-эмитит INFO-аудит (`os_version.list_anonymous` / `view_anonymous`) для
-SIEM-видимости enumeration-попыток; поверх глобального rate-limit'а
-повешен отдельный per-IP лимит `OS_VERSIONS_ANON_RATE_LIMIT`
-(`settings.os_versions_anon_rate_limit`, default 100/minute) — на
-authenticated запросы он не распространяется (см. `_anon_rate_limit_key`).
-
-HEAD на этих GET-роутах не регистрируется — FastAPI/Starlette не
-авто-роутят HEAD на GET, и handler с `audit_service.emit` не запускается:
-HEAD-запрос вернёт 405 Method Not Allowed на ASGI-уровне, мимо audit'а.
-Если в будущем потребуется HEAD-эхо для cache-проверок — добавлять
-отдельным `@router.head(...)` с явным skip'ом anonymous-emit'а, иначе
-HEAD-flood даст INFO-flood в SIEM.
+Чтение (list / get по id / get по имени) доступно любому аутентифицированному
+актору — токен обязателен, но проверка доступа департамента к server_service
+здесь не нужна (каталог общий, не бизнес-данные отдела). Анонимный запрос без
+bearer'а отбивается 401. Запись (create/update/delete) остаётся под матрицей
+прав.
 """
 
-from fastapi import APIRouter, Depends, Query, Request
-from slowapi.util import get_remote_address
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import get_settings
-from src.core.limiter import endpoint_limiter
-from src.dependencies.auth import CurrentUserIdentity
+from src.dependencies.auth import AuthenticatedIdentity, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
 from src.schemas.os_version import OsVersionCreate, OsVersionResponse, OsVersionUpdate
-from src.services import audit_service
 from src.services import os_version_service as svc
 
 router = APIRouter(prefix="/os-versions")
-
-_ANON_LIMIT = get_settings().os_versions_anon_rate_limit
-
-
-def _is_anonymous(request: Request) -> bool:
-    """Запрос пришёл без Bearer-токена.
-
-    Authenticated GET тоже разрешён (read публичный), но audit-trail
-    ведём только для anonymous — для них нет identity и нет других
-    маркеров.
-    """
-    auth = request.headers.get("authorization") or ""
-    return not auth.lower().startswith("bearer ")
-
-
-def _anon_rate_limit_key(request: Request) -> str | None:
-    """`key_func` для slowapi: возвращает client-IP только для anonymous.
-
-    Authenticated клиент → `None`. slowapi трактует falsy key как «лимит не
-    применять» (см. `extension.py: if all(args)`), поэтому authenticated
-    read остаётся под одним только глобальным `global_rate_limit`.
-    `exempt_when` тут не годится — slowapi-сигнатура для него — `() -> bool`
-    (без request), а нам нужен contextual check.
-
-    Trade-off (owner-decision): authenticated burst ограничен только
-    глобальным `global_rate_limit` (default 500/minute per IP). Каталог
-    маленький, страница в худшем случае — 500 строк, нагрузка на БД
-    линейная и без join'ов на drift-таблицы. Когда добавится pagination
-    по batch download или матрица распухнет до тысяч строк — вешать
-    отдельный authenticated-limit (cap'ом по identity, не по IP, чтобы
-    NAT'нутые админы не делили бакет).
-    """
-    if _is_anonymous(request):
-        return get_remote_address(request)
-    return None
 
 
 @router.get(
@@ -75,7 +27,8 @@ def _anon_rate_limit_key(request: Request) -> str | None:
     ),
     summary="Список OS-версий в каталоге",
     description=(
-        "Глобальный каталог OS-версий. Публичный read — без авторизации.\n\n"
+        "Глобальный каталог OS-версий. Доступен любому аутентифицированному "
+        "актору (токен обязателен).\n\n"
         "Два режима пагинации: cursor (`cursor=true` или `after=<token>`, "
         "envelope `{items, next_cursor, has_more}`) и legacy offset/limit "
         "(envelope `{items, total, limit, offset}`)."
@@ -83,18 +36,18 @@ def _anon_rate_limit_key(request: Request) -> str | None:
     responses={
         200: {"description": "Страница каталога."},
         400: {"description": "INVALID_CURSOR — `after` не декодируется."},
+        401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
     },
 )
-@endpoint_limiter.limit(_ANON_LIMIT, key_func=_anon_rate_limit_key)
 async def list_os_versions(
-    request: Request,
+    identity: AuthenticatedIdentity,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0, description="DEPRECATED — используйте cursor-пагинацию."),
     after: str | None = Query(default=None, description="Opaque cursor предыдущей страницы."),
     cursor: bool = Query(default=False, description="Включить cursor-envelope."),
 ) -> PaginatedResponse[OsVersionResponse] | CursorPaginatedResponse[OsVersionResponse]:
-    """List OS-версий. Публичный, без авторизации."""
+    """List OS-версий. Любой аутентифицированный актор."""
     if cursor or after is not None:
         from src.utils.cursor import InvalidCursorError, to_bad_request
         try:
@@ -103,26 +56,12 @@ async def list_os_versions(
             )
         except InvalidCursorError as exc:
             raise to_bad_request(exc) from exc
-        if _is_anonymous(request):
-            audit_service.emit(
-                "os_version.list_anonymous",
-                target_type="os_version",
-                status="success", allowed=True,
-                details={"caller_type": "anonymous", "page_size": len(items), "has_more": has_more},
-            )
         return CursorPaginatedResponse[OsVersionResponse](
             items=[OsVersionResponse.model_validate(i) for i in items],
             next_cursor=next_cursor,
             has_more=has_more,
         )
     items, total = await svc.list_os_versions(db, limit=limit, offset=offset)
-    if _is_anonymous(request):
-        audit_service.emit(
-            "os_version.list_anonymous",
-            target_type="os_version",
-            status="success", allowed=True,
-            details={"caller_type": "anonymous", "total": total},
-        )
     return PaginatedResponse[OsVersionResponse](
         items=[OsVersionResponse.model_validate(i) for i in items],
         total=total,
@@ -135,27 +74,19 @@ async def list_os_versions(
     "/by-name/{name}",
     response_model=OsVersionResponse,
     summary="Получить OS-версию по имени",
-    description="Карточка версии по UNIQUE-имени. Публичный read — без авторизации.",
+    description="Карточка версии по UNIQUE-имени. Любой аутентифицированный актор.",
     responses={
+        401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
         404: {"description": "Версия не найдена."},
     },
 )
-@endpoint_limiter.limit(_ANON_LIMIT, key_func=_anon_rate_limit_key)
 async def get_os_version_by_name(
-    request: Request,
     name: str,
+    identity: AuthenticatedIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> OsVersionResponse:
-    """Get OS-версии по имени. Публичный, без авторизации."""
+    """Get OS-версии по имени. Любой аутентифицированный актор."""
     obj = await svc.get_os_version_by_name(db, name)
-    if _is_anonymous(request):
-        audit_service.emit(
-            "os_version.view_anonymous",
-            target_id=obj.id,
-            target_type="os_version",
-            status="success", allowed=True,
-            details={"caller_type": "anonymous", "lookup": "by_name", "name": name},
-        )
     return OsVersionResponse.model_validate(obj)
 
 
@@ -187,27 +118,19 @@ async def create_os_version(
     "/{os_version_id}",
     response_model=OsVersionResponse,
     summary="Получить OS-версию",
-    description="Карточка версии. Публичный read — без авторизации.",
+    description="Карточка версии. Любой аутентифицированный актор.",
     responses={
+        401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
         404: {"description": "Версия не найдена."},
     },
 )
-@endpoint_limiter.limit(_ANON_LIMIT, key_func=_anon_rate_limit_key)
 async def get_os_version(
-    request: Request,
     os_version_id: str,
+    identity: AuthenticatedIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> OsVersionResponse:
-    """Get OS-версии по id. Публичный, без авторизации."""
+    """Get OS-версии по id. Любой аутентифицированный актор."""
     obj = await svc.get_os_version(db, os_version_id)
-    if _is_anonymous(request):
-        audit_service.emit(
-            "os_version.view_anonymous",
-            target_id=obj.id,
-            target_type="os_version",
-            status="success", allowed=True,
-            details={"caller_type": "anonymous", "lookup": "by_id"},
-        )
     return OsVersionResponse.model_validate(obj)
 
 

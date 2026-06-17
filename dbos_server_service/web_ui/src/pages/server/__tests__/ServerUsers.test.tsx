@@ -87,14 +87,14 @@ describe("ServerUsers (fleet account list)", () => {
 
   it("рендерится и показывает loading state, пока грузятся серверы", () => {
     renderPage();
-    expect(screen.getByText(/Пользователи серверов/)).toBeInTheDocument();
+    expect(screen.getByText(/server_service \/ server users/)).toBeInTheDocument();
     expect(
       screen.getByPlaceholderText(/Поиск по 0 аккаунтам/),
     ).toBeInTheDocument();
     expect(screen.getByText(/Загрузка…/)).toBeInTheDocument();
   });
 
-  it("открывает карточку управления по клику на строку аккаунта", async () => {
+  it("показывает рабочую зону аккаунта в правой панели по клику на строку", async () => {
     listServersMock.mockResolvedValue({
       items: [{ id: "srv1", display_name: "alpha", hostname: "alpha.local" }],
       total: 1,
@@ -111,7 +111,7 @@ describe("ServerUsers (fleet account list)", () => {
     const loginCell = await screen.findByText("dbos-svc");
     fireEvent.click(loginCell);
 
-    // Модалка показывает профиль и кнопки управления.
+    // Правая рабочая зона показывает профиль и инлайн-действия.
     await waitFor(() => {
       expect(screen.getByText(/Ротация пароля/)).toBeInTheDocument();
     });

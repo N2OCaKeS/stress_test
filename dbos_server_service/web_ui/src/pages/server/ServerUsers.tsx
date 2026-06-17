@@ -1,5 +1,6 @@
 /**
- * Страница /server/users — сводный список всех server_account'ов отдела.
+ * Страница /server/users — сводный список всех server_account'ов отдела в
+ * 3-панельной раскладке (Shell: left + middle-list + right-workzone).
  *
  * Per-server аккаунты живут на вкладке «Аккаунты» карточки сервера; здесь —
  * единый список «все пользователи разом» по всем доступным серверам. Backend
@@ -9,11 +10,12 @@
  * результат: один аккаунт может быть привязан к нескольким серверам, дубли по
  * `id` объединяются.
  *
- * Список показывает login, серверы (по имени), sudo/группы и reveal пароля.
- * Клик по строке открывает модалку с полной карточкой аккаунта и управлением:
- * детальный просмотр, edit (PATCH has_sudo/unix_groups/shell), ротация пароля
- * (только БД) и удаление. Per-server provision/deprovision сюда не выносим —
- * это привязано к конкретному серверу и живёт на вкладке «Аккаунты» карточки.
+ * Средняя панель — список аккаунтов с поиском/фильтром по серверу и сортом;
+ * выбор строки кладёт `?id=<accountId>` в URL. Правая рабочая зона — карточка
+ * выбранного аккаунта с управлением: reveal пароля, edit (PATCH
+ * has_sudo/unix_groups/shell), ротация пароля (только БД) и удаление.
+ * Per-server provision/deprovision сюда не выносим — это привязано к
+ * конкретному серверу и живёт на вкладке «Аккаунты» карточки.
  *
  * account_admin / logging_* отрезаны от server-зоны backend'ом
  * (`PLATFORM_ADMIN_BUSINESS_DATA_DENIED`) — для них BlockedPane вместо мёртвой
@@ -21,7 +23,7 @@
  * по матрице.
  */
 import { useEffect, useMemo, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { useSearchParams } from "react-router-dom";
 import {
   Search,
   Users,
@@ -122,6 +124,9 @@ async function loadAllAccounts(serverIds: string[]): Promise<AggregatedAccounts>
 export function ServerUsers() {
   const { persona } = usePersona();
   const zoneBlocked = isServerZoneBlocked(persona);
+  const [params, setParams] = useSearchParams();
+
+  const selectedId = params.get("id");
 
   // server.* / dep_admin → reveal по матрице (фактический грант view_password
   // проверяет backend). guest/reader без view_password получат null/403 —
@@ -140,7 +145,6 @@ export function ServerUsers() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("login");
   const [serverFilter, setServerFilter] = useState<string>("all");
-  const [openId, setOpenId] = useState<string | null>(null);
 
   const serversQ = useQuery(
     () => listServers({ limit: SERVER_LIMIT }),
@@ -202,14 +206,21 @@ export function ServerUsers() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allAccounts, search, sort, serverFilter, serverMap]);
 
-  const openAccount = useMemo(
-    () => (openId ? allAccounts.find((a) => a.id === openId) ?? null : null),
-    [openId, allAccounts],
+  const selectedAccount = useMemo(
+    () => (selectedId ? allAccounts.find((a) => a.id === selectedId) ?? null : null),
+    [selectedId, allAccounts],
   );
+
+  function selectId(id: string | null) {
+    const next = new URLSearchParams(params);
+    if (id) next.set("id", id);
+    else next.delete("id");
+    setParams(next, { replace: true });
+  }
 
   if (zoneBlocked) {
     return (
-      <Shell breadcrumb="server_service / users">
+      <Shell breadcrumb="server_service / server users">
         <BlockedPane />
       </Shell>
     );
@@ -220,144 +231,131 @@ export function ServerUsers() {
   const truncatedServers = accountsQ.data?.truncatedServers ?? 0;
   const failedServers = accountsQ.data?.failedServers ?? 0;
 
-  return (
-    <Shell breadcrumb="server_service / users">
-      <section className="flex-1 min-w-0 overflow-hidden flex flex-col">
-        <div className="border-b border-token px-5 py-4 shrink-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Users className="w-6 h-6 text-accent shrink-0" />
-            <div className="flex-1 min-w-0">
-              <h1 className="text-lg font-semibold">Пользователи серверов</h1>
-              <div className="text-xs text-dim">
-                Все server_account'ы отдела по всем серверам. Клик по строке —
-                карточка с управлением; per-server provision — на вкладке
-                «Аккаунты» карточки сервера.
-              </div>
-            </div>
-          </div>
-          <div className="mt-3 flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-2 surface-2 border border-token rounded px-2 py-1 flex-1 min-w-[16rem]">
-              <Search className="w-4 h-4 text-dim shrink-0" />
-              <input
-                className="bg-transparent outline-none flex-1 text-sm"
-                placeholder={`Поиск по ${allAccounts.length} аккаунтам…`}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <label className="text-xs text-dim flex items-center gap-1.5">
-              Сервер:
-              <select
-                className="surface-2 border border-token rounded px-2 py-1"
-                value={serverFilter}
-                onChange={(e) => setServerFilter(e.target.value)}
-              >
-                <option value="all">все серверы</option>
-                {servers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.display_name || s.hostname}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-xs text-dim flex items-center gap-1.5">
-              Сорт:
-              <select
-                className="surface-2 border border-token rounded px-2 py-1"
-                value={sort}
-                onChange={(e) => setSort(e.target.value as SortMode)}
-              >
-                <option value="login">по login</option>
-                <option value="server">по серверу</option>
-                <option value="rotated">по ротации</option>
-              </select>
-            </label>
-          </div>
+  const aside = (
+    <aside className="border-r border-token surface flex flex-col min-h-0">
+      <div className="border-b border-token px-3 py-2 shrink-0">
+        <div className="flex items-center gap-2">
+          <Search className="w-4 h-4 text-dim" />
+          <input
+            className="bg-transparent outline-none flex-1 text-sm"
+            placeholder={`Поиск по ${allAccounts.length} аккаунтам…`}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
-
-        <div className="flex-1 min-h-0 overflow-y-auto p-5">
-          {loading && (
-            <div className="py-10 text-sm text-dim text-center">Загрузка…</div>
-          )}
-
-          {!loading && error != null && (
-            <div className="alert alert-danger flex items-start gap-2 max-w-xl">
-              <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
-              <div className="flex-1 text-sm">
-                <div>
-                  {apiErrMsg(error, "Список пользователей не загрузился")}
-                </div>
-                <button
-                  className="btn btn-ghost mt-2"
-                  onClick={() => {
-                    serversQ.refetch();
-                    accountsQ.refetch();
-                  }}
-                >
-                  Повторить
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!loading && error == null && failedServers > 0 && (
-            <div className="alert alert-warn text-xs max-w-xl mb-3">
+        <div className="mt-2 flex items-center gap-2 text-xs text-dim flex-wrap">
+          <span>Сервер:</span>
+          <select
+            className="surface-2 border border-token rounded px-2 py-0.5"
+            value={serverFilter}
+            onChange={(e) => setServerFilter(e.target.value)}
+          >
+            <option value="all">все серверы</option>
+            {servers.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.display_name || s.hostname}
+              </option>
+            ))}
+          </select>
+          <span>Сорт:</span>
+          <select
+            className="surface-2 border border-token rounded px-2 py-0.5"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortMode)}
+          >
+            <option value="login">по login</option>
+            <option value="server">по серверу</option>
+            <option value="rotated">по ротации</option>
+          </select>
+        </div>
+        {!loading && error == null && failedServers > 0 && (
+          <div className="mt-2 alert-warn text-[11px]" role="status">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>
               Аккаунты {failedServers} сервер(ов) не загрузились (нет доступа
               или сетевой сбой) — список может быть неполным.
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto py-2">
+        {loading && (
+          <div className="px-3 py-6 text-xs text-dim text-center">Загрузка…</div>
+        )}
+        {!loading && error != null && (
+          <div className="m-3 alert alert-danger flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 mt-0.5" />
+            <div className="flex-1 text-xs">
+              <div>{apiErrMsg(error, "Список пользователей не загрузился")}</div>
+              <button
+                className="btn btn-ghost mt-2"
+                onClick={() => {
+                  serversQ.refetch();
+                  accountsQ.refetch();
+                }}
+              >
+                Повторить
+              </button>
             </div>
-          )}
-
-          {!loading && error == null && filtered.length === 0 && (
-            <EmptyPane hasAny={allAccounts.length > 0} />
-          )}
-
-          {!loading && error == null && filtered.length > 0 && (
-            <div className="flex flex-col gap-1.5 max-w-7xl">
-              {filtered.map((a) => (
-                <AccountRow
-                  key={a.id}
-                  account={a}
-                  canReveal={canReveal}
-                  serverName={serverName}
-                  onOpen={() => setOpenId(a.id)}
-                />
-              ))}
-            </div>
-          )}
-
-          {!loading && error == null && (
-            <>
-              <TruncationNotice
-                shown={servers.length}
-                total={serverTotal}
-                className="mt-3 max-w-7xl"
+          </div>
+        )}
+        {!loading && error == null && filtered.length === 0 && (
+          <div className="px-3 py-6 text-xs text-dim text-center">
+            {allAccounts.length > 0
+              ? "Под текущий фильтр аккаунтов нет."
+              : "В отделе нет server_account'ов."}
+          </div>
+        )}
+        {!loading && error == null && filtered.length > 0 && (
+          <div className="px-2 flex flex-col gap-0.5">
+            {filtered.map((a) => (
+              <AccountRow
+                key={a.id}
+                account={a}
+                active={selectedId === a.id}
+                serverName={serverName}
+                onSelect={() => selectId(a.id)}
               />
-              {truncatedServers > 0 && (
-                <div className="text-[11px] text-dim mt-1 max-w-7xl">
-                  На {truncatedServers} сервер(ах) аккаунтов больше лимита —
-                  откройте вкладку «Аккаунты» нужного сервера для полного
-                  списка.
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </section>
+            ))}
+          </div>
+        )}
+        {!loading && error == null && (
+          <>
+            <TruncationNotice
+              shown={servers.length}
+              total={serverTotal}
+              className="mx-3 mt-2"
+            />
+            {truncatedServers > 0 && (
+              <div className="text-[11px] text-dim mt-1 mx-3">
+                На {truncatedServers} сервер(ах) аккаунтов больше лимита —
+                откройте вкладку «Аккаунты» нужного сервера для полного списка.
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </aside>
+  );
 
-      {openAccount && (
-        <AccountManageModal
-          account={openAccount}
+  return (
+    <Shell breadcrumb="server_service / server users" middle={aside}>
+      {selectedAccount ? (
+        <AccountWorkzone
+          account={selectedAccount}
           canReveal={canReveal}
           canOperate={canOperate}
           canManage={canManage}
           serverName={serverName}
-          onClose={() => setOpenId(null)}
           onChanged={() => accountsQ.refetch()}
           onDeleted={() => {
-            setOpenId(null);
+            selectId(null);
             accountsQ.refetch();
           }}
         />
+      ) : (
+        <EmptyPane hasAny={allAccounts.length > 0} />
       )}
     </Shell>
   );
@@ -367,77 +365,60 @@ export function ServerUsers() {
 
 function AccountRow({
   account,
-  canReveal,
+  active,
   serverName,
-  onOpen,
+  onSelect,
 }: {
   account: ServerAccount;
-  canReveal: boolean;
+  active: boolean;
   serverName: (id: string) => string;
-  onOpen: () => void;
+  onSelect: () => void;
 }) {
   return (
-    <div className="cred-row text-left flex-col items-stretch gap-2">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex items-center gap-3 text-left w-full"
-        title="Открыть карточку аккаунта"
-      >
-        <User className="w-4 h-4 text-dim shrink-0" />
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`cred-row text-left ${active ? "active" : ""}`}
+      title="Открыть карточку аккаунта"
+    >
+      <div className="flex items-center gap-2">
+        <User className={`w-4 h-4 ${active ? "text-accent" : "text-dim"}`} />
         <div className="flex-1 min-w-0">
           <div className="text-sm truncate mono">{account.login}</div>
-          <div className="text-[11px] text-dim flex items-center gap-2 flex-wrap">
+          <div className="text-[11px] text-dim flex items-center gap-2">
             <ServerIcon className="w-3 h-3 shrink-0" />
             <span className="truncate">
               {account.server_ids.map(serverName).join(", ") || "—"}
             </span>
           </div>
         </div>
-        <div className="hidden sm:flex items-center gap-1.5 shrink-0">
-          {account.has_sudo && (
-            <span className="badge badge-warn flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3" /> sudo
-            </span>
-          )}
-          {account.unix_groups.slice(0, 3).map((g) => (
-            <span key={g} className="badge mono">
-              {g}
-            </span>
-          ))}
-          {account.unix_groups.length > 3 && (
-            <span className="badge">+{account.unix_groups.length - 3}</span>
-          )}
-          <span className="badge">{account.source}</span>
-        </div>
-        <div className="hidden md:flex flex-col items-end text-[11px] text-dim shrink-0">
-          <span>rotated</span>
-          <span>{formatMskShort(account.password_rotated_at)}</span>
-        </div>
-      </button>
-      <PasswordRevealRow account={account} canReveal={canReveal} />
-    </div>
+        {account.has_sudo && (
+          <span className="badge badge-warn flex items-center gap-1">
+            <ShieldCheck className="w-3 h-3" /> sudo
+          </span>
+        )}
+        <span className="badge">{account.source}</span>
+      </div>
+    </button>
   );
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Manage modal — детальный просмотр + edit / rotate / delete
+// Workzone — детальный просмотр + edit / rotate / delete (правая панель)
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
- * Модалка управления одним аккаунтом fleet-вида. Provision/deprovision на
- * конкретный бокс сюда не входит (нет single-server контекста) — только
- * server-agnostic операции: правка атрибутов (PATCH), ротация пароля в БД и
- * hard-delete. Финальные 403 приходят с backend'а; UI-гейты — первичный
- * визуальный слой.
+ * Рабочая зона одного аккаунта fleet-вида. Provision/deprovision на конкретный
+ * бокс сюда не входит (нет single-server контекста) — только server-agnostic
+ * операции: правка атрибутов (PATCH), ротация пароля в БД и hard-delete.
+ * Финальные 403 приходят с backend'а; UI-гейты — первичный визуальный слой.
  */
-function AccountManageModal({
+function AccountWorkzone({
   account,
   canReveal,
   canOperate,
   canManage,
   serverName,
-  onClose,
   onChanged,
   onDeleted,
 }: {
@@ -446,7 +427,6 @@ function AccountManageModal({
   canOperate: boolean;
   canManage: boolean;
   serverName: (id: string) => string;
-  onClose: () => void;
   onChanged: () => void;
   onDeleted: () => void;
 }) {
@@ -458,6 +438,13 @@ function AccountManageModal({
 
   const linkedUserLabel = useUserLabel(account.linked_user_id);
   const createdByLabel = useUserLabel(account.created_by);
+
+  // Смена выбранного аккаунта — сбрасываем локальное состояние зоны (edit-режим
+  // и предыдущую ошибку), чтобы не тащить их на другой аккаунт.
+  useEffect(() => {
+    setEditing(false);
+    setErr(null);
+  }, [account.id]);
 
   async function handleRotate() {
     if (pending || !canOperate) return;
@@ -514,187 +501,183 @@ function AccountManageModal({
   }
 
   return (
-    <Dialog.Root open onOpenChange={(next) => !next && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content
-          className="modal-content"
-          style={{ maxWidth: "44rem", width: "92vw" }}
-          aria-describedby={undefined}
-        >
-          <div className="modal-header">
-            <User className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold mono flex-1">
+    <section className="flex-1 min-w-0 overflow-hidden flex flex-col">
+      <div className="border-b border-token px-5 py-4 shrink-0">
+        <div className="flex items-center gap-3 flex-wrap">
+          <User className="w-5 h-5 text-accent shrink-0" />
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-semibold mono truncate">
               {account.login}
-            </Dialog.Title>
-            {account.has_sudo && (
-              <span className="badge badge-warn flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" /> sudo
-              </span>
-            )}
-            {!account.is_active && (
-              <span className="badge badge-warn">inactive</span>
-            )}
-            <span className="badge">{account.source}</span>
+            </h1>
+            <div className="text-[11px] text-dim truncate">
+              {account.server_ids.map(serverName).join(", ") || "—"}
+            </div>
           </div>
+          {account.has_sudo && (
+            <span className="badge badge-warn flex items-center gap-1">
+              <ShieldCheck className="w-3 h-3" /> sudo
+            </span>
+          )}
+          {!account.is_active && (
+            <span className="badge badge-warn">inactive</span>
+          )}
+          <span className="badge">{account.source}</span>
+        </div>
+      </div>
 
-          <div className="modal-body flex flex-col gap-4">
-            {err && <div className="alert-danger text-sm">{err}</div>}
+      <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-4 max-w-3xl">
+        {err && <div className="alert-danger text-sm">{err}</div>}
 
-            {editing ? (
-              <AccountEditForm
-                account={account}
-                onCancel={() => setEditing(false)}
-                onSaved={() => {
-                  setEditing(false);
-                  toast.success("Аккаунт обновлён");
-                  onChanged();
-                }}
-                onError={(e) => {
-                  const msg = handleActionError(e);
-                  setErr(msg);
-                  toast.error(msg);
-                }}
+        {editing ? (
+          <AccountEditForm
+            account={account}
+            onCancel={() => setEditing(false)}
+            onSaved={() => {
+              setEditing(false);
+              toast.success("Аккаунт обновлён");
+              onChanged();
+            }}
+            onError={(e) => {
+              const msg = handleActionError(e);
+              setErr(msg);
+              toast.error(msg);
+            }}
+          />
+        ) : (
+          <>
+            <div>
+              <div className="text-xs uppercase text-dim mb-2">Профиль</div>
+              <StatRow
+                k="account_id"
+                v={<span className="mono">{account.id}</span>}
               />
-            ) : (
-              <>
-                <div>
-                  <div className="text-xs uppercase text-dim mb-2">Профиль</div>
-                  <StatRow
-                    k="account_id"
-                    v={<span className="mono">{account.id}</span>}
-                  />
-                  <StatRow
-                    k="login"
-                    v={<span className="mono">{account.login}</span>}
-                  />
-                  <StatRow
-                    k="серверы"
-                    v={
-                      <span className="break-words">
-                        {account.server_ids.map(serverName).join(", ") || "—"}
-                      </span>
-                    }
-                  />
-                  <StatRow k="source" v={account.source} />
-                  <StatRow k="has_sudo" v={account.has_sudo ? "да" : "нет"} />
-                  <StatRow
-                    k="unix_groups"
-                    v={
-                      account.unix_groups.length === 0 ? (
-                        <span className="text-dim italic">—</span>
-                      ) : (
-                        <div className="flex flex-wrap gap-1">
-                          {account.unix_groups.map((g) => (
-                            <span key={g} className="badge mono">
-                              {g}
-                            </span>
-                          ))}
-                        </div>
-                      )
-                    }
-                  />
-                  <StatRow
-                    k="shell"
-                    v={
-                      account.shell ? (
-                        <span className="mono">{account.shell}</span>
-                      ) : (
-                        <span className="text-dim italic">—</span>
-                      )
-                    }
-                  />
-                  <StatRow
-                    k="home_dir"
-                    v={
-                      account.home_dir ? (
-                        <span className="mono">{account.home_dir}</span>
-                      ) : (
-                        <span className="text-dim italic">—</span>
-                      )
-                    }
-                  />
-                  <StatRow
-                    k="linked_user"
-                    v={
-                      account.linked_user_id ? (
-                        <span title={account.linked_user_id}>
-                          {linkedUserLabel}
+              <StatRow
+                k="login"
+                v={<span className="mono">{account.login}</span>}
+              />
+              <StatRow
+                k="серверы"
+                v={
+                  <span className="break-words">
+                    {account.server_ids.map(serverName).join(", ") || "—"}
+                  </span>
+                }
+              />
+              <StatRow k="source" v={account.source} />
+              <StatRow k="has_sudo" v={account.has_sudo ? "да" : "нет"} />
+              <StatRow
+                k="unix_groups"
+                v={
+                  account.unix_groups.length === 0 ? (
+                    <span className="text-dim italic">—</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {account.unix_groups.map((g) => (
+                        <span key={g} className="badge mono">
+                          {g}
                         </span>
-                      ) : (
-                        <span className="text-dim italic">—</span>
-                      )
-                    }
-                  />
-                  <StatRow
-                    k="is_active"
-                    v={account.is_active ? "активен" : "неактивен"}
-                  />
-                  <StatRow
-                    k="created_at"
-                    v={
-                      <span className="mono">
-                        {formatMskShort(account.created_at)}
-                      </span>
-                    }
-                  />
-                  <StatRow
-                    k="updated_at"
-                    v={
-                      <span className="mono">
-                        {formatMskShort(account.updated_at)}
-                      </span>
-                    }
-                  />
-                  <StatRow
-                    k="password_rotated_at"
-                    v={
-                      <span className="mono">
-                        {formatMskShort(account.password_rotated_at)}
-                      </span>
-                    }
-                  />
-                  <StatRow
-                    k="created_by"
-                    v={
-                      account.created_by ? (
-                        <span title={account.created_by}>{createdByLabel}</span>
-                      ) : (
-                        <span className="text-dim italic">system</span>
-                      )
-                    }
-                  />
-                </div>
+                      ))}
+                    </div>
+                  )
+                }
+              />
+              <StatRow
+                k="shell"
+                v={
+                  account.shell ? (
+                    <span className="mono">{account.shell}</span>
+                  ) : (
+                    <span className="text-dim italic">—</span>
+                  )
+                }
+              />
+              <StatRow
+                k="home_dir"
+                v={
+                  account.home_dir ? (
+                    <span className="mono">{account.home_dir}</span>
+                  ) : (
+                    <span className="text-dim italic">—</span>
+                  )
+                }
+              />
+              <StatRow
+                k="linked_user"
+                v={
+                  account.linked_user_id ? (
+                    <span title={account.linked_user_id}>{linkedUserLabel}</span>
+                  ) : (
+                    <span className="text-dim italic">—</span>
+                  )
+                }
+              />
+              <StatRow
+                k="is_active"
+                v={account.is_active ? "активен" : "неактивен"}
+              />
+              <StatRow
+                k="created_at"
+                v={
+                  <span className="mono">
+                    {formatMskShort(account.created_at)}
+                  </span>
+                }
+              />
+              <StatRow
+                k="updated_at"
+                v={
+                  <span className="mono">
+                    {formatMskShort(account.updated_at)}
+                  </span>
+                }
+              />
+              <StatRow
+                k="password_rotated_at"
+                v={
+                  <span className="mono">
+                    {formatMskShort(account.password_rotated_at)}
+                  </span>
+                }
+              />
+              <StatRow
+                k="created_by"
+                v={
+                  account.created_by ? (
+                    <span title={account.created_by}>{createdByLabel}</span>
+                  ) : (
+                    <span className="text-dim italic">system</span>
+                  )
+                }
+              />
+            </div>
 
-                <PasswordRevealCard account={account} canReveal={canReveal} />
+            <PasswordRevealCard
+              key={account.id}
+              account={account}
+              canReveal={canReveal}
+            />
 
-                <div className="card">
-                  <div className="text-xs uppercase text-dim mb-2 flex items-center gap-2">
-                    <KeyRound className="w-3 h-3" /> Ротация пароля
-                  </div>
-                  <div className="text-xs text-dim mb-3">
-                    Генерирует новый пароль в БД (apply на серверы — отдельно,
-                    через worker-rotate на вкладке сервера). Plaintext клиенту
-                    не возвращается.
-                  </div>
-                  <button
-                    className="btn flex items-center gap-1"
-                    disabled={pending || !canOperate}
-                    title={
-                      canOperate ? "Ротировать пароль в БД" : "Нет прав"
-                    }
-                    onClick={handleRotate}
-                    type="button"
-                  >
-                    <RotateCw className="w-4 h-4" /> Ротировать (БД)
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+            <div className="card">
+              <div className="text-xs uppercase text-dim mb-2 flex items-center gap-2">
+                <KeyRound className="w-3 h-3" /> Ротация пароля
+              </div>
+              <div className="text-xs text-dim mb-3">
+                Генерирует новый пароль в БД (apply на серверы — отдельно, через
+                worker-rotate на вкладке сервера). Plaintext клиенту не
+                возвращается.
+              </div>
+              <button
+                className="btn flex items-center gap-1"
+                disabled={pending || !canOperate}
+                title={canOperate ? "Ротировать пароль в БД" : "Нет прав"}
+                onClick={handleRotate}
+                type="button"
+              >
+                <RotateCw className="w-4 h-4" /> Ротировать (БД)
+              </button>
+            </div>
 
-          {!editing && (
-            <div className="modal-footer">
+            <div className="flex items-center gap-2 border-t border-token pt-4">
               <button
                 type="button"
                 className="btn btn-danger flex items-center gap-1 mr-auto"
@@ -703,9 +686,6 @@ function AccountManageModal({
                 onClick={handleDelete}
               >
                 <Trash2 className="w-4 h-4" /> Удалить
-              </button>
-              <button type="button" className="btn" onClick={onClose}>
-                Закрыть
               </button>
               <button
                 type="button"
@@ -717,10 +697,10 @@ function AccountManageModal({
                 <Edit3 className="w-4 h-4" /> Редактировать
               </button>
             </div>
-          )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -868,149 +848,15 @@ function FormRow({
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Password reveal (inline row in list)
+// Password reveal card (в правой рабочей зоне)
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
- * Inline-reveal пароля в строке списка. По клику «показать» дёргает карточку
+ * Reveal-блок пароля в рабочей зоне. По клику «показать» дёргает карточку
  * аккаунта (`getAccount`), декодит `password_b64` → plaintext. `null` →
  * понятная причина (нет view_password либо нет сохранённого пароля), 429 гасит
- * кнопку на retry-окно, 403 — отдельная причина.
- */
-function PasswordRevealRow({
-  account,
-  canReveal,
-}: {
-  account: ServerAccount;
-  canReveal: boolean;
-}) {
-  const toast = useToast();
-  const [plain, setPlain] = useState<string | null>(null);
-  const [reason, setReason] = useState<string | null>(null);
-  const [revealing, setRevealing] = useState(false);
-  const [throttleUntil, setThrottleUntil] = useState(0);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (throttleUntil <= 0) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [throttleUntil]);
-
-  const throttleLeft = Math.max(0, Math.ceil((throttleUntil - now) / 1000));
-  const shown = plain !== null;
-
-  // Discovered-аккаунт без ротации обычно не имеет ciphertext'а в БД — backend
-  // вернёт null даже держателю view_password. Подсказка до запроса.
-  const likelyNoPassword =
-    account.source === "discovered" && !account.password_rotated_at;
-
-  async function handleReveal() {
-    if (revealing || throttleLeft > 0) return;
-    setRevealing(true);
-    setReason(null);
-    try {
-      const fresh = await accountsApi.getAccount(account.id);
-      if (fresh.password_b64 === null) {
-        setReason(
-          likelyNoPassword
-            ? "Нет сохранённого пароля (discovered, без ротации)."
-            : "Скрыт: нет права view_password или пароль отсутствует.",
-        );
-        return;
-      }
-      try {
-        setPlain(fromBase64(fresh.password_b64));
-      } catch {
-        setPlain(fresh.password_b64);
-      }
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 429) {
-        const secs = e.retryAfter ?? 60;
-        setThrottleUntil(Date.now() + secs * 1000);
-        setNow(Date.now());
-        toast.error(`Reveal-лимит: повторите через ${secs} сек`);
-      } else if (e instanceof ApiError && e.status === 403) {
-        setReason("Недостаточно прав: нужен view_password.");
-      } else {
-        toast.error(apiErrMsg(e, "Не удалось получить пароль"));
-      }
-    } finally {
-      setRevealing(false);
-    }
-  }
-
-  async function handleCopy() {
-    if (plain === null || typeof navigator === "undefined" || !navigator.clipboard)
-      return;
-    try {
-      await navigator.clipboard.writeText(plain);
-      toast.success("Пароль скопирован");
-    } catch {
-      toast.error("Буфер обмена недоступен");
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-2 flex-wrap border-t border-token pt-2">
-      <KeyRound className="w-3.5 h-3.5 text-dim shrink-0" />
-      <div
-        className={`mono text-xs flex-1 min-w-[160px] break-all ${shown ? "" : "text-dim"}`}
-      >
-        {shown ? plain : "••••••••••••"}
-      </div>
-      {shown ? (
-        <>
-          <button
-            className="btn btn-sm flex items-center gap-1"
-            onClick={handleCopy}
-            type="button"
-          >
-            <Copy className="w-3.5 h-3.5" /> Копировать
-          </button>
-          <button
-            className="btn btn-sm flex items-center gap-1"
-            onClick={() => setPlain(null)}
-            type="button"
-          >
-            <EyeOff className="w-3.5 h-3.5" /> Скрыть
-          </button>
-        </>
-      ) : (
-        <button
-          className="btn btn-sm flex items-center gap-1"
-          onClick={handleReveal}
-          disabled={!canReveal || revealing || throttleLeft > 0}
-          title={
-            !canReveal
-              ? "Нужна роль server.operator+ (и грант view_password)"
-              : "Раскрыть пароль (CRITICAL audit)"
-          }
-          type="button"
-        >
-          <Eye className="w-3.5 h-3.5" />
-          {revealing
-            ? "Запрашиваем…"
-            : throttleLeft > 0
-              ? `Подождите ${throttleLeft}с`
-              : "Показать"}
-        </button>
-      )}
-      {reason && (
-        <span className="text-[11px] text-dim w-full sm:w-auto">{reason}</span>
-      )}
-    </div>
-  );
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Password reveal card (внутри модалки)
-// ───────────────────────────────────────────────────────────────────────────
-
-/**
- * Reveal-блок пароля в модалке. Тот же поток, что в строке списка, но в
- * card-обёртке. Сбрасывается при смене аккаунта (модалка монтируется заново
- * на каждый openId).
+ * кнопку на retry-окно, 403 — отдельная причина. Сбрасывается при смене
+ * аккаунта (key по account.id монтирует блок заново).
  */
 function PasswordRevealCard({
   account,
@@ -1035,6 +881,8 @@ function PasswordRevealCard({
   const throttleLeft = Math.max(0, Math.ceil((throttleUntil - now) / 1000));
   const shown = plain !== null;
 
+  // Discovered-аккаунт без ротации обычно не имеет ciphertext'а в БД — backend
+  // вернёт null даже держателю view_password. Подсказка до запроса.
   const likelyNoPassword =
     account.source === "discovered" && !account.password_rotated_at;
 
@@ -1146,14 +994,16 @@ function PasswordRevealCard({
 
 function EmptyPane({ hasAny }: { hasAny: boolean }) {
   return (
-    <div className="empty-card max-w-md text-center mx-auto mt-6">
-      <Users className="w-10 h-10 mx-auto text-dim mb-3" />
-      <div className="text-sm text-dim">
-        {hasAny
-          ? "Под текущий фильтр аккаунтов нет."
-          : "В отделе нет server_account'ов. Аккаунты заводятся на вкладке «Аккаунты» карточки сервера."}
+    <section className="flex-1 min-w-0 overflow-hidden flex items-center justify-center">
+      <div className="empty-card max-w-md text-center">
+        <Users className="w-10 h-10 mx-auto text-dim mb-3" />
+        <div className="text-sm text-dim">
+          {hasAny
+            ? "Выберите аккаунт слева для просмотра и управления."
+            : "В отделе нет server_account'ов. Аккаунты заводятся на вкладке «Аккаунты» карточки сервера."}
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 

@@ -34,7 +34,8 @@ import {
   listRules,
   updateRule,
 } from "@/api/loging/rules";
-import { listServiceEvents } from "@/api/loging/services";
+import { HelpTooltip } from "@/components/ui/HelpTooltip";
+import { ServiceActionSelect } from "@/components/ui/ServiceActionSelect";
 import type {
   Rule,
   RuleCreateRequest,
@@ -358,20 +359,6 @@ function RuleForm({
   const [priority, setPriority] = useState(String(rule?.priority ?? 100));
   const [matchService, setMatchService] = useState(rule?.match_service ?? "");
   const [matchAction, setMatchAction] = useState(rule?.match_action ?? "");
-
-  // Каталог зарегистрированных action'ов выбранного сервиса — подсказка для
-  // `match_action`, чтобы не вбивать имя руками (точное `match_action`
-  // валидируется backend'ом по реестру `service_events`). Грузим только когда
-  // указан конкретный сервис; пусто = «любой» → каталога нет.
-  const svc = matchService.trim();
-  const actionsQ = useQuery(
-    () =>
-      svc
-        ? listServiceEvents(svc, { limit: 200 })
-        : Promise.resolve(null),
-    [svc],
-  );
-  const actionOptions = actionsQ.data?.items ?? [];
   const [matchStatus, setMatchStatus] = useState(rule?.match_status ?? "");
   const [matchSeverity, setMatchSeverity] = useState(rule?.match_severity ?? "");
   // tri-state: "" = любой, "true" = только allowed, "false" = только denied.
@@ -432,7 +419,10 @@ function RuleForm({
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <Field label="name *">
+          <Field
+            label="name *"
+            help="Уникальное имя правила (печатные ASCII, до 128 символов)."
+          >
             <input
               className="surface-2 border border-token rounded px-2 py-1 w-full"
               value={name}
@@ -442,7 +432,10 @@ function RuleForm({
               placeholder="suppress-healthchecks"
             />
           </Field>
-          <Field label="description">
+          <Field
+            label="description"
+            help="Произвольное пояснение к правилу. Видно в админ-UI и в CSV-экспорте."
+          >
             <input
               className="surface-2 border border-token rounded px-2 py-1 w-full"
               value={description}
@@ -453,40 +446,17 @@ function RuleForm({
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="match_service">
-              <input
-                className="surface-2 border border-token rounded px-2 py-1 w-full mono text-sm"
-                value={matchService}
-                onChange={(e) => setMatchService(e.target.value)}
-                maxLength={64}
-                placeholder="auth_service"
-              />
-            </Field>
-            <Field label="match_action (glob)">
-              <input
-                className="surface-2 border border-token rounded px-2 py-1 w-full mono text-sm"
-                value={matchAction}
-                onChange={(e) => setMatchAction(e.target.value)}
-                maxLength={128}
-                placeholder="user.*"
-                list={actionOptions.length ? "rule-action-catalog" : undefined}
-              />
-              {actionOptions.length > 0 && (
-                <datalist id="rule-action-catalog">
-                  {actionOptions.map((a) => (
-                    <option key={a.action} value={a.action}>
-                      {a.default_severity ?? ""}
-                    </option>
-                  ))}
-                </datalist>
-              )}
-              {svc && actionsQ.data && actionOptions.length === 0 && (
-                <span className="text-[11px] text-dim mt-0.5">
-                  Для «{svc}» нет зарегистрированных action'ов — используйте glob.
-                </span>
-              )}
-            </Field>
-            <Field label="match_status">
+            <ServiceActionSelect
+              service={matchService}
+              action={matchAction}
+              onServiceChange={setMatchService}
+              onActionChange={setMatchAction}
+              selectClassName="surface-2 border border-token rounded px-2 py-1 w-full mono text-sm"
+            />
+            <Field
+              label="match_status"
+              help="Исход события (success / failure / denied / warning). Пусто — любой исход."
+            >
               <select
                 className="surface-2 border border-token rounded px-2 py-1 w-full"
                 value={matchStatus}
@@ -500,7 +470,10 @@ function RuleForm({
                 ))}
               </select>
             </Field>
-            <Field label="match_severity">
+            <Field
+              label="match_severity"
+              help="Уровень важности события (TRACE…CRITICAL). Пусто — любой уровень."
+            >
               <select
                 className="surface-2 border border-token rounded px-2 py-1 w-full"
                 value={matchSeverity}
@@ -514,7 +487,10 @@ function RuleForm({
                 ))}
               </select>
             </Field>
-            <Field label="match_allowed">
+            <Field
+              label="match_allowed"
+              help="Фильтр по флагу доступа: только разрешённые (allowed) или только отклонённые (denied) события. Пусто — оба."
+            >
               <select
                 className="surface-2 border border-token rounded px-2 py-1 w-full"
                 value={matchAllowed}
@@ -528,7 +504,10 @@ function RuleForm({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="effect *">
+            <Field
+              label="effect *"
+              help="Что сделать с совпавшим событием: SUPPRESS — отбросить, ALLOW — пропустить как есть, OVERRIDE_SEVERITY — переписать уровень важности."
+            >
               <select
                 className="surface-2 border border-token rounded px-2 py-1 w-full"
                 value={effect}
@@ -541,7 +520,10 @@ function RuleForm({
                 ))}
               </select>
             </Field>
-            <Field label={`effect_severity${needsEffectSeverity ? " *" : ""}`}>
+            <Field
+              label={`effect_severity${needsEffectSeverity ? " *" : ""}`}
+              help="Новый уровень важности для эффекта OVERRIDE_SEVERITY. Для остальных эффектов не используется."
+            >
               <select
                 className="surface-2 border border-token rounded px-2 py-1 w-full"
                 value={effectSeverity}
@@ -557,7 +539,10 @@ function RuleForm({
                 ))}
               </select>
             </Field>
-            <Field label="priority">
+            <Field
+              label="priority"
+              help="Порядок применения правил: чем больше число, тем раньше срабатывает правило (1–1000)."
+            >
               <input
                 className="surface-2 border border-token rounded px-2 py-1 w-full"
                 type="number"
@@ -574,6 +559,10 @@ function RuleForm({
                 onChange={(e) => setIsActive(e.target.checked)}
               />
               <span>is_active</span>
+              <HelpTooltip
+                text="Включено ли правило. Неактивное правило хранится, но не применяется к событиям."
+                label="Справка: is_active"
+              />
             </label>
           </div>
 
@@ -601,14 +590,19 @@ function RuleForm({
 
 function Field({
   label,
+  help,
   children,
 }: {
   label: string;
+  help?: string;
   children: React.ReactNode;
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
-      <span className="text-dim text-xs">{label}</span>
+      <span className="text-dim text-xs flex items-center gap-1">
+        {label}
+        {help && <HelpTooltip text={help} label={`Справка: ${label}`} />}
+      </span>
       {children}
     </label>
   );

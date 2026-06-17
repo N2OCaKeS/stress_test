@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, Lock, Plug, Plus, type LucideIcon } from "lucide-react";
+import { HelpTooltip } from "@/components/ui/HelpTooltip";
 
 /**
  * Inline "service not wired to UI" card — used by admin tabs whose backing
@@ -390,15 +391,21 @@ function DetailWrap({
 export function FormRow({
   label,
   hint,
+  help,
   children,
 }: {
   label: string;
   hint?: string;
+  /** Короткая справка, разворачивается из иконки «?» рядом с подписью. */
+  help?: string;
   children: ReactNode;
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
-      <span className="text-dim text-xs">{label}</span>
+      <span className="text-dim text-xs flex items-center gap-1">
+        {label}
+        {help && <HelpTooltip text={help} label={`Справка: ${label}`} />}
+      </span>
       {children}
       {hint && <span className="text-[11px] text-dim">{hint}</span>}
     </label>

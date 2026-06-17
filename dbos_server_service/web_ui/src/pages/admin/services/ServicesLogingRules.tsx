@@ -11,7 +11,8 @@ import {
   listRules,
   updateRule,
 } from "@/api/loging/rules";
-import { listServiceEvents } from "@/api/loging/services";
+import { HelpTooltip } from "@/components/ui/HelpTooltip";
+import { ServiceActionSelect } from "@/components/ui/ServiceActionSelect";
 import type {
   Rule,
   RuleCreateRequest,
@@ -250,16 +251,6 @@ function RuleForm({
   );
   const [submitting, setSubmitting] = useState(false);
 
-  // Каталог зарегистрированных action'ов выбранного сервиса — подсказка для
-  // match_action, грузим только когда указан конкретный сервис.
-  const svc = matchService.trim();
-  const actionsQ = useQuery(
-    () => (svc ? listServiceEvents(svc, { limit: 200 }) : Promise.resolve(null)),
-    [svc],
-    { enabled: !!svc },
-  );
-  const actionOptions = actionsQ.data?.items ?? [];
-
   const needsEffectSeverity = effect === "OVERRIDE_SEVERITY";
 
   async function handleSubmit(e: React.FormEvent) {
@@ -298,7 +289,10 @@ function RuleForm({
         <Filter className="w-4 h-4 text-accent" />
         {initial ? `Edit · ${initial.name}` : "Новое правило"}
       </h3>
-      <FormRow label="name *">
+      <FormRow
+        label="name *"
+        help="Уникальное имя правила (печатные ASCII, до 128 символов)."
+      >
         <input
           className="input"
           value={name}
@@ -308,7 +302,10 @@ function RuleForm({
           placeholder="suppress-healthchecks"
         />
       </FormRow>
-      <FormRow label="description">
+      <FormRow
+        label="description"
+        help="Произвольное пояснение к правилу. Видно в админ-UI и в CSV-экспорте."
+      >
         <input
           className="input"
           value={description}
@@ -318,42 +315,17 @@ function RuleForm({
         />
       </FormRow>
       <div className="grid grid-cols-2 gap-3">
-        <FormRow label="match_service">
-          <input
-            className="input mono"
-            value={matchService}
-            onChange={(e) => setMatchService(e.target.value)}
-            maxLength={64}
-            placeholder="auth_service"
-          />
-        </FormRow>
+        <ServiceActionSelect
+          service={matchService}
+          action={matchAction}
+          onServiceChange={setMatchService}
+          onActionChange={setMatchAction}
+          selectClassName="input mono"
+        />
         <FormRow
-          label="match_action (glob)"
-          hint={
-            svc && actionsQ.data && actionOptions.length === 0
-              ? `Для «${svc}» нет зарегистрированных action'ов — используйте glob.`
-              : undefined
-          }
+          label="match_status"
+          help="Исход события (success / failure / denied / warning). Пусто — любой исход."
         >
-          <input
-            className="input mono"
-            value={matchAction}
-            onChange={(e) => setMatchAction(e.target.value)}
-            maxLength={128}
-            placeholder="user.*"
-            list={actionOptions.length ? "rule-action-catalog" : undefined}
-          />
-          {actionOptions.length > 0 && (
-            <datalist id="rule-action-catalog">
-              {actionOptions.map((a) => (
-                <option key={a.action} value={a.action}>
-                  {a.default_severity ?? ""}
-                </option>
-              ))}
-            </datalist>
-          )}
-        </FormRow>
-        <FormRow label="match_status">
           <select
             className="input"
             value={matchStatus}
@@ -367,7 +339,10 @@ function RuleForm({
             ))}
           </select>
         </FormRow>
-        <FormRow label="match_severity">
+        <FormRow
+          label="match_severity"
+          help="Уровень важности события (TRACE…CRITICAL). Пусто — любой уровень."
+        >
           <select
             className="input"
             value={matchSeverity}
@@ -381,7 +356,10 @@ function RuleForm({
             ))}
           </select>
         </FormRow>
-        <FormRow label="match_allowed">
+        <FormRow
+          label="match_allowed"
+          help="Фильтр по флагу доступа: только разрешённые (allowed) или только отклонённые (denied) события. Пусто — оба."
+        >
           <select
             className="input"
             value={matchAllowed}
@@ -394,7 +372,10 @@ function RuleForm({
         </FormRow>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <FormRow label="effect *">
+        <FormRow
+          label="effect *"
+          help="Что сделать с совпавшим событием: SUPPRESS — отбросить, ALLOW — пропустить как есть, OVERRIDE_SEVERITY — переписать уровень важности."
+        >
           <select
             className="input"
             value={effect}
@@ -407,7 +388,10 @@ function RuleForm({
             ))}
           </select>
         </FormRow>
-        <FormRow label={`effect_severity${needsEffectSeverity ? " *" : ""}`}>
+        <FormRow
+          label={`effect_severity${needsEffectSeverity ? " *" : ""}`}
+          help="Новый уровень важности для эффекта OVERRIDE_SEVERITY. Для остальных эффектов не используется."
+        >
           <select
             className="input"
             value={effectSeverity}
@@ -423,7 +407,10 @@ function RuleForm({
             ))}
           </select>
         </FormRow>
-        <FormRow label="priority">
+        <FormRow
+          label="priority"
+          help="Порядок применения правил: чем больше число, тем раньше срабатывает правило (1–1000)."
+        >
           <input
             className="input"
             type="number"
@@ -440,6 +427,10 @@ function RuleForm({
             onChange={(e) => setIsActive(e.target.checked)}
           />
           <span>is_active</span>
+          <HelpTooltip
+            text="Включено ли правило. Неактивное правило хранится, но не применяется к событиям."
+            label="Справка: is_active"
+          />
         </label>
       </div>
       <div className="mt-2 flex gap-2 justify-end">

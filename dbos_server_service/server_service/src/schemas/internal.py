@@ -184,8 +184,8 @@ class DriftItem(BaseModel):
 
     Зеркалит details emit'а `server_account.drift_detected`:
 
-    * `unknown_login` — на боксе живёт юзер, которого в API нет (создан
-      discovered-аккаунт);
+    * `unknown_login` — на боксе живёт юзер, которого в API нет (discovered
+      больше НЕ создаётся, юзер уходит в `unknown_users`);
     * `attributes` — login совпадает, но атрибуты (has_sudo / unix_groups /
       shell / home_dir) разошлись с БД-истиной; `fields` перечисляет
       разошедшиеся поля;
@@ -206,7 +206,7 @@ class UsersInventoryResultSummary(BaseModel):
     либо клиент агрегирует через `GET /servers/{id}/drift`."""
 
     total_users: int = Field(description="Сколько OS-пользователей пришло в payload (после фильтра системных).")
-    created_discovered: int = Field(description="Сколько discovered-аккаунтов заведено в этом проходе.")
+    created_discovered: int = Field(description="DEPRECATED: всегда 0 — авто-создание discovered убрано (см. unknown_users).")
     drifts: list[DriftItem] = Field(
         default_factory=list,
         description=(
@@ -243,11 +243,28 @@ class AccountAttrDiff(BaseModel):
     )
 
 
+class UnknownUserItem(BaseModel):
+    """Незнакомый OS-пользователь, найденный на боксе.
+
+    Прошёл UID-фильтр воркера, есть на сервере, НЕ привязан ни к одному
+    аккаунту и НЕ в ignore-list'е отдела. Reconcile больше НЕ заводит для
+    него discovered-аккаунт автоматически — отдаёт сюда, чтобы воркер положил
+    в `task.result`, а оператор решил: импортировать (создать аккаунт) либо
+    заигнорить.
+    """
+
+    login: str = Field(description="OS-логин на боксе.")
+    uid: int = Field(description="UID пользователя.")
+    has_sudo: bool = Field(description="Состоит в sudo/admin-группе либо есть запись в sudoers.")
+    unix_groups: list[str] = Field(default_factory=list, description="Список Unix-групп с бокса.")
+    shell: str | None = Field(default=None, description="Login shell.")
+
+
 class UsersInventoryCallbackResponse(BaseModel):
     """Сводка reconcile инвентаризации пользователей."""
 
     ok: bool = True
-    created: int = Field(default=0, description="Сколько discovered-аккаунтов заведено (каждый — drift-сигнал).")
+    created: int = Field(default=0, description="DEPRECATED: всегда 0 — авто-создание discovered убрано. Незнакомые юзеры теперь в `unknown_users`.")
     present: int = Field(default=0, description="Сколько существующих аккаунтов подтверждено на боксе (present_on_server=True).")
     drifted: int = Field(default=0, description="Сколько drift-сигналов поднято: расхождение атрибутов + привязки, отсутствующие на боксе.")
     diffs: list[AccountAttrDiff] = Field(
@@ -257,6 +274,16 @@ class UsersInventoryCallbackResponse(BaseModel):
             "только для существующих привязанных аккаунтов с расхождением "
             "атрибутов. Данные для ручного ревью: БД не перетирается. Worker "
             "кладёт их в `task.result`, UI показывает оператору."
+        ),
+    )
+    unknown_users: list[UnknownUserItem] = Field(
+        default_factory=list,
+        description=(
+            "OS-пользователи, найденные на боксе, но НЕ привязанные ни к "
+            "одному аккаунту и НЕ в ignore-list'е отдела. Reconcile их больше "
+            "НЕ заводит автоматически — оператор решает по карточке сервера: "
+            "импортировать (создать аккаунт) или заигнорить. Worker кладёт "
+            "список в `task.result`."
         ),
     )
     result_summary: UsersInventoryResultSummary | None = Field(

@@ -4,9 +4,10 @@
 * `POST /servers/{id}/users/inventory` (user-trigger) — 202 + task_id,
   permissions/visibility, decommissioned;
 * `POST /internal/servers/{id}/users/inventory` (worker callback) — reconcile:
-  create discovered (drift) / confirm present / warn-on-drift по атрибутам
-  (БД не перетирается) / mark missing (drift); права (worker_bot может,
-  reader нет); discovered-аккаунт без пароля.
+  незнакомый юзер уходит в `unknown_users` (discovered НЕ создаётся, но drift
+  поднимается) / confirm present / warn-on-drift по атрибутам (БД не
+  перетирается) / mark missing (drift) / ignore-list пропускается; права
+  (worker_bot может, reader нет).
 """
 
 from __future__ import annotations
@@ -231,7 +232,7 @@ class TestUsersInventoryTrigger:
 
 @pytest.mark.usefixtures("soft_dept_mode")
 class TestUsersInventoryReconcile:
-    async def test_creates_discovered_account(
+    async def test_unknown_user_not_created_goes_to_unknown_users(
         self, client, worker_bot_token_a, make_server, db, dept_a, captured_emits,
     ):
         srv = await make_server(department_id=dept_a)
@@ -245,10 +246,19 @@ class TestUsersInventoryReconcile:
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["created"] == 1
+        # discovered-аккаунт больше НЕ создаётся автоматически.
+        assert body["created"] == 0
         assert body["present"] == 0
-        # Юзер на боксе без аккаунта в БД — drift-сигнал.
+        # Юзер на боксе без аккаунта в БД — drift-сигнал + попадает в unknown_users.
         assert body["drifted"] == 1
+        assert len(body["unknown_users"]) == 1
+        u = body["unknown_users"][0]
+        assert u["login"] == "ops"
+        assert u["uid"] == 1001
+        assert u["has_sudo"] is True
+        assert u["unix_groups"] == ["sudo"]
+        assert u["shell"] == "/bin/bash"
+
         drift = _events(captured_emits, "server_account.drift_detected")
         assert len(drift) == 1
         assert drift[0]["details"]["drift"] == "unknown_login"
@@ -256,28 +266,17 @@ class TestUsersInventoryReconcile:
         assert drift[0]["status"] == "warning"
 
         await db.commit()
+        # Никакой аккаунт в БД не заведён.
         acc = (await db.execute(
             select(ServerAccount).where(ServerAccount.login == "ops")
-        )).scalar_one()
-        assert acc.source == "discovered"
-        assert acc.password_encrypted is None
-        assert acc.department_id == dept_a
-        assert acc.has_sudo is True
-        link = (await db.execute(
-            select(ServerAccountServer).where(
-                ServerAccountServer.account_id == acc.id,
-                ServerAccountServer.server_id == srv.id,
-            )
-        )).scalar_one()
-        assert link.present_on_server is True
-        assert link.last_inventory_at is not None
+        )).scalar_one_or_none()
+        assert acc is None
 
-    async def test_duplicate_callback_is_idempotent(
+    async def test_repeated_callback_keeps_unknown_user_unknown(
         self, client, worker_bot_token_a, make_server, db, dept_a,
     ):
-        # Worker может повторить callback после HTTP-таймаута — первый завёл
-        # discovered-аккаунт, второй раз приходит тот же payload и должен
-        # пройти без 500 (IntegrityError на uq_server_login).
+        # Повторный callback с тем же незнакомым юзером — он по-прежнему просто
+        # в unknown_users, без создания аккаунта и без 500.
         srv = await make_server(department_id=dept_a)
         payload = {"users": [
             {"login": "dup_user", "uid": 1500, "shell": "/bin/bash",
@@ -288,7 +287,8 @@ class TestUsersInventoryReconcile:
             headers=_hdr(worker_bot_token_a), json=payload,
         )
         assert first.status_code == 200, first.text
-        assert first.json()["created"] == 1
+        assert first.json()["created"] == 0
+        assert len(first.json()["unknown_users"]) == 1
 
         second = await client.post(
             f"{BASE_INT}/servers/{srv.id}/users/inventory",
@@ -296,16 +296,16 @@ class TestUsersInventoryReconcile:
         )
         assert second.status_code == 200, second.text
         body = second.json()
-        # Повтор не создаёт нового аккаунта и не валит 500.
         assert body["created"] == 0
-        assert body["present"] == 1
+        assert body["present"] == 0
+        assert len(body["unknown_users"]) == 1
 
         await db.commit()
         accs = (await db.execute(
             select(ServerAccount).where(ServerAccount.login == "dup_user")
         )).scalars().all()
-        # Один аккаунт в БД — повтор не задвоил строку.
-        assert len(accs) == 1
+        # Аккаунта нет вовсе — авто-создание убрано.
+        assert len(accs) == 0
 
     async def test_attribute_drift_warns_and_keeps_db(
         self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
@@ -401,12 +401,13 @@ class TestUsersInventoryReconcile:
         assert d["fields"]["unix_groups"]["expected"] == ["postgres"]
         assert d["fields"]["unix_groups"]["found"] == ["wheel"]
 
-    async def test_no_drift_returns_empty_diffs(
+    async def test_unknown_login_returns_empty_diffs(
         self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
         captured_emits,
     ):
-        """Discovered-аккаунт (unknown_login) — drift, но не attribute-diff:
-        в `diffs` его быть не должно (там только привязанные с расхождением)."""
+        """Незнакомый юзер (unknown_login) — drift + unknown_users, но не
+        attribute-diff: в `diffs` его быть не должно (там только привязанные
+        аккаунты с расхождением атрибутов)."""
         srv = await make_server(department_id=dept_a)
         payload = {"users": [
             {"login": "ops", "uid": 1001, "shell": "/bin/bash",
@@ -417,7 +418,9 @@ class TestUsersInventoryReconcile:
             headers=_hdr(worker_bot_token_a), json=payload,
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json()["diffs"] == []
+        body = resp.json()
+        assert body["diffs"] == []
+        assert len(body["unknown_users"]) == 1
 
     async def test_matching_attributes_no_drift(
         self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
@@ -499,15 +502,17 @@ class TestUsersInventoryReconcile:
         await make_account(server_id=srv.id, login="gone")
         payload = {"users": [
             {"login": "keep", "uid": 1001},   # present, без drift
-            {"login": "fresh", "uid": 1002},  # discovered → drift
+            {"login": "fresh", "uid": 1002},  # unknown → drift + unknown_users
         ]}
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/users/inventory",
             headers=_hdr(worker_bot_token_a), json=payload,
         )
         body = resp.json()
-        assert body["created"] == 1
+        # discovered-аккаунт не создаётся — fresh уходит в unknown_users.
+        assert body["created"] == 0
         assert body["present"] == 1
+        assert {u["login"] for u in body["unknown_users"]} == {"fresh"}
         # fresh (unknown_login) + gone (missing_on_box) — два drift-сигнала.
         assert body["drifted"] == 2
         drift = _events(captured_emits, "server_account.drift_detected")
@@ -681,51 +686,277 @@ class TestUsersInventoryReconcile:
         assert_error(resp, 422, "VALIDATION_ERROR")
 
 
+ACC_BASE = "/api/server/v1/server-accounts"
+
+
 @pytest.mark.usefixtures("soft_dept_mode")
-class TestDiscoveredAccountNoPassword:
-    async def test_reveal_on_discovered_returns_card_without_password(
-        self, client, worker_bot_token_a, admin_role_token_a, make_server, db, dept_a,
+class TestImportUnknownUser:
+    """Импорт незнакомого юзера из обзора инвентаризации (`unknown_users`)."""
+
+    async def test_import_creates_discovered_account_present_on_server(
+        self, client, admin_role_token_a, make_server, db, dept_a, captured_emits,
     ):
         srv = await make_server(department_id=dept_a)
-        await client.post(
-            f"{BASE_INT}/servers/{srv.id}/users/inventory",
-            headers=_hdr(worker_bot_token_a),
-            json={"users": [{"login": "ops", "uid": 1001}]},
+        resp = await client.post(
+            f"{ACC_BASE}/import",
+            headers=_hdr(admin_role_token_a),
+            json={
+                "server_id": srv.id, "login": "ops",
+                "has_sudo": True, "unix_groups": ["sudo"], "shell": "/bin/bash",
+            },
         )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["login"] == "ops"
+        assert body["source"] == "discovered"
+        assert body["has_sudo"] is True
+        assert body["server_ids"] == [srv.id]
+        assert body["password_b64"] is None
+
         await db.commit()
         acc = (await db.execute(
             select(ServerAccount).where(ServerAccount.login == "ops")
         )).scalar_one()
-        # GET с view_password не должен падать — пароля нет, password_b64 = null.
-        resp = await client.get(
-            f"/api/server/v1/server-accounts/{acc.id}",
+        assert acc.source == "discovered"
+        assert acc.password_encrypted is None
+        assert acc.department_id == dept_a
+        link = (await db.execute(
+            select(ServerAccountServer).where(
+                ServerAccountServer.account_id == acc.id,
+                ServerAccountServer.server_id == srv.id,
+            )
+        )).scalar_one()
+        # Пользователь уже на боксе — связка present.
+        assert link.present_on_server is True
+        assert link.last_inventory_at is not None
+
+        emits = _events(captured_emits, "server_account.imported_from_host")
+        assert any(e["status"] == "success" for e in emits)
+
+    async def test_import_default_source_is_discovered(
+        self, client, admin_role_token_a, make_server, db, dept_a,
+    ):
+        srv = await make_server(department_id=dept_a)
+        resp = await client.post(
+            f"{ACC_BASE}/import",
             headers=_hdr(admin_role_token_a),
+            json={"server_id": srv.id, "login": "deploy"},
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["source"] == "discovered"
+
+    async def test_import_duplicate_login_409(
+        self, client, admin_role_token_a, make_server, make_account, db, dept_a,
+    ):
+        srv = await make_server(department_id=dept_a)
+        await make_account(server_id=srv.id, login="taken")
+        resp = await client.post(
+            f"{ACC_BASE}/import",
+            headers=_hdr(admin_role_token_a),
+            json={"server_id": srv.id, "login": "taken"},
+        )
+        assert_error(resp, 409, "ACCOUNT_DUPLICATE")
+
+    async def test_import_cross_dept_server_404(
+        self, client, operator_token_b, make_server, db, dept_a,
+    ):
+        srv = await make_server(department_id=dept_a)
+        resp = await client.post(
+            f"{ACC_BASE}/import",
+            headers=_hdr(operator_token_b),
+            json={"server_id": srv.id, "login": "ops"},
+        )
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
+
+    async def test_import_reader_cannot(
+        self, client, reader_token_a, make_server, db, dept_a,
+    ):
+        srv = await make_server(department_id=dept_a)
+        resp = await client.post(
+            f"{ACC_BASE}/import",
+            headers=_hdr(reader_token_a),
+            json={"server_id": srv.id, "login": "ops"},
+        )
+        assert_error(resp, 403, "PERMISSION_DENIED")
+
+    async def test_import_sudo_requires_grant_sudo(
+        self, client, operator_token_a, make_server, db, dept_a,
+    ):
+        # operator держит create, но не grant_sudo — has_sudo=True → 403.
+        srv = await make_server(department_id=dept_a)
+        resp = await client.post(
+            f"{ACC_BASE}/import",
+            headers=_hdr(operator_token_a),
+            json={"server_id": srv.id, "login": "ops", "has_sudo": True},
+        )
+        assert_error(resp, 403, "PERMISSION_DENIED")
+
+    async def test_imported_discovered_has_no_password_in_card(
+        self, client, admin_role_token_a, make_server, db, dept_a,
+    ):
+        srv = await make_server(department_id=dept_a)
+        created = await client.post(
+            f"{ACC_BASE}/import",
+            headers=_hdr(admin_role_token_a),
+            json={"server_id": srv.id, "login": "ops"},
+        )
+        acc_id = created.json()["id"]
+        # GET с view_password не падает — пароля нет, password_b64 = null.
+        resp = await client.get(
+            f"{ACC_BASE}/{acc_id}", headers=_hdr(admin_role_token_a),
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["source"] == "discovered"
         assert body["password_b64"] is None
 
-    async def test_internal_fetch_password_on_discovered_returns_empty(
-        self, client, worker_bot_token_a, make_server, db, dept_a,
+
+@pytest.mark.usefixtures("soft_dept_mode")
+class TestIgnoredLoginsCrud:
+    """CRUD ignore-list'а логинов + dept-изоляция + RBAC."""
+
+    async def test_add_list_remove(
+        self, client, admin_role_token_a, dept_a, captured_emits,
+    ):
+        add = await client.post(
+            f"{ACC_BASE}/ignored-logins",
+            headers=_hdr(admin_role_token_a),
+            json={"login": "nobody", "reason": "служебная учётка"},
+        )
+        assert add.status_code == 201, add.text
+        body = add.json()
+        assert body["login"] == "nobody"
+        assert body["reason"] == "служебная учётка"
+        assert body["department_id"] == dept_a
+
+        listing = await client.get(
+            f"{ACC_BASE}/ignored-logins", headers=_hdr(admin_role_token_a),
+        )
+        assert listing.status_code == 200, listing.text
+        logins = [i["login"] for i in listing.json()]
+        assert logins == ["nobody"]
+
+        rm = await client.delete(
+            f"{ACC_BASE}/ignored-logins/nobody",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert rm.status_code == 200, rm.text
+
+        listing2 = await client.get(
+            f"{ACC_BASE}/ignored-logins", headers=_hdr(admin_role_token_a),
+        )
+        assert listing2.json() == []
+
+        added = _events(captured_emits, "server_account.ignored_login_added")
+        removed = _events(captured_emits, "server_account.ignored_login_removed")
+        assert any(e["status"] == "success" for e in added)
+        assert any(e["status"] == "success" for e in removed)
+
+    async def test_duplicate_login_409(
+        self, client, admin_role_token_a, dept_a,
+    ):
+        first = await client.post(
+            f"{ACC_BASE}/ignored-logins",
+            headers=_hdr(admin_role_token_a), json={"login": "svc"},
+        )
+        assert first.status_code == 201
+        second = await client.post(
+            f"{ACC_BASE}/ignored-logins",
+            headers=_hdr(admin_role_token_a), json={"login": "svc"},
+        )
+        assert_error(second, 409, "IGNORED_LOGIN_DUPLICATE")
+
+    async def test_remove_missing_404(
+        self, client, admin_role_token_a, dept_a,
+    ):
+        resp = await client.delete(
+            f"{ACC_BASE}/ignored-logins/ghost",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert_error(resp, 404, "IGNORED_LOGIN_NOT_FOUND")
+
+    async def test_dept_isolation(
+        self, client, admin_role_token_a, admin_token_b, dept_a, dept_b,
+    ):
+        # dep_a добавляет логин — dep_b его не видит.
+        await client.post(
+            f"{ACC_BASE}/ignored-logins",
+            headers=_hdr(admin_role_token_a), json={"login": "only_a"},
+        )
+        b_list = await client.get(
+            f"{ACC_BASE}/ignored-logins", headers=_hdr(admin_token_b),
+        )
+        assert b_list.status_code == 200, b_list.text
+        assert [i["login"] for i in b_list.json()] == []
+
+        # Один и тот же логин в обоих отделах не конфликтует (scope=dept).
+        b_add = await client.post(
+            f"{ACC_BASE}/ignored-logins",
+            headers=_hdr(admin_token_b), json={"login": "only_a"},
+        )
+        assert b_add.status_code == 201, b_add.text
+
+        # dep_b снимает свой — у dep_a остаётся.
+        await client.delete(
+            f"{ACC_BASE}/ignored-logins/only_a", headers=_hdr(admin_token_b),
+        )
+        a_list = await client.get(
+            f"{ACC_BASE}/ignored-logins", headers=_hdr(admin_role_token_a),
+        )
+        assert [i["login"] for i in a_list.json()] == ["only_a"]
+
+    async def test_reader_cannot_manage(
+        self, client, reader_token_a, dept_a,
+    ):
+        add = await client.post(
+            f"{ACC_BASE}/ignored-logins",
+            headers=_hdr(reader_token_a), json={"login": "x"},
+        )
+        assert_error(add, 403, "PERMISSION_DENIED")
+        listing = await client.get(
+            f"{ACC_BASE}/ignored-logins", headers=_hdr(reader_token_a),
+        )
+        assert_error(listing, 403, "PERMISSION_DENIED")
+
+    async def test_operator_can_manage(
+        self, client, operator_token_a, dept_a,
+    ):
+        add = await client.post(
+            f"{ACC_BASE}/ignored-logins",
+            headers=_hdr(operator_token_a), json={"login": "opsvc"},
+        )
+        assert add.status_code == 201, add.text
+
+
+@pytest.mark.usefixtures("soft_dept_mode")
+class TestReconcileRespectsIgnoreList:
+    async def test_ignored_login_skipped_entirely(
+        self, client, worker_bot_token_a, admin_role_token_a, make_server,
+        db, dept_a, captured_emits,
     ):
         srv = await make_server(department_id=dept_a)
-        await client.post(
+        # Заигнорить "monitoring" в отделе.
+        ign = await client.post(
+            f"{ACC_BASE}/ignored-logins",
+            headers=_hdr(admin_role_token_a), json={"login": "monitoring"},
+        )
+        assert ign.status_code == 201, ign.text
+
+        payload = {"users": [
+            {"login": "monitoring", "uid": 1300, "unix_groups": [], "has_sudo": False},
+            {"login": "ops", "uid": 1301, "unix_groups": [], "has_sudo": False},
+        ]}
+        resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/users/inventory",
-            headers=_hdr(worker_bot_token_a),
-            json={"users": [{"login": "ops", "uid": 1001}]},
+            headers=_hdr(worker_bot_token_a), json=payload,
         )
-        await db.commit()
-        acc = (await db.execute(
-            select(ServerAccount).where(ServerAccount.login == "ops")
-        )).scalar_one()
-        resp = await client.get(
-            f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
-            headers=_hdr(worker_bot_token_a),
-        )
-        # Discovered-аккаунт без сохранённого пароля — 200 с пустым password,
-        # login отдаём как есть.
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["login"] == "ops"
-        assert body["password"] == ""
+        # monitoring — заигнорен (не в unknown_users, не дрейфит); ops — нет.
+        assert {u["login"] for u in body["unknown_users"]} == {"ops"}
+        assert body["drifted"] == 1
+        drift_logins = {
+            e["details"]["login"]
+            for e in _events(captured_emits, "server_account.drift_detected")
+        }
+        assert drift_logins == {"ops"}

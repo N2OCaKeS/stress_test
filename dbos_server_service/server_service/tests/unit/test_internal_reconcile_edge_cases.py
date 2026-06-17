@@ -329,30 +329,34 @@ class TestUsersInventoryEdgeCases:
         assert drift[0]["details"]["drift"] == "attributes"
         assert drift[0]["details"]["fields"] == ["shell"]
 
-    async def test_discovered_account_has_server_department(
+    async def test_unknown_login_not_persisted_as_account(
         self, client, worker_bot_token_a, make_server, db, dept_a,
     ):
-        """Discovered-аккаунт наследует department_id от сервера."""
+        """Незнакомый логин аккаунтом в БД не оседает — уходит в unknown_users."""
         from sqlalchemy import select
         from src.models import ServerAccount
 
         srv = await make_server(department_id=dept_a)
 
         BASE_INT = "/api/server/v1/internal"
-        await client.post(
+        resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/users/inventory",
             headers={"Authorization": "Bearer " + worker_bot_token_a},
             json={"users": [{"login": "newuser", "uid": 2000}]},
         )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["created"] == 0
+        assert len(body["unknown_users"]) == 1
+        u = body["unknown_users"][0]
+        assert u["login"] == "newuser"
+        assert u["uid"] == 2000
         await db.commit()
 
         acc = (await db.execute(
             select(ServerAccount).where(ServerAccount.login == "newuser")
         )).scalar_one_or_none()
-        assert acc is not None
-        assert acc.department_id == dept_a
-        assert acc.source == "discovered"
-        assert acc.password_encrypted is None
+        assert acc is None
 
     async def test_no_users_no_linked_no_drift(
         self, client, worker_bot_token_a, make_server, db, dept_a, captured_emits,
@@ -406,9 +410,10 @@ class TestUsersInventoryEdgeCases:
         ]
         assert len(success) == 1
         d = success[0]["details"]
-        assert d["created"] == 1
+        # new_one аккаунтом не заводится — created остаётся нулём.
+        assert d["created"] == 0
         assert d["present"] == 1
-        # new_one создан и сразу дрейф (unknown_login)
+        # new_one — незнакомый логин, дрейф unknown_login всё равно эмитится.
         assert d["drifted"] == 1
         assert d["found"] == 2
         assert d["department_id"] == dept_a

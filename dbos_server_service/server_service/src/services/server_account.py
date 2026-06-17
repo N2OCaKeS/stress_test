@@ -33,18 +33,22 @@ from src.core.exceptions import (
     DomainValidationError,
     NotFoundError,
 )
-from src.models import Server, ServerAccount
+from src.models import Server, ServerAccount, ServerAccountIgnoredLogin
 from src.repositories import server_account as repo
+from src.repositories import server_account_ignored_login as ignored_login_repo
 from src.schemas.identity import IdentityContext
 from src.schemas.server_account import (
+    IgnoredLoginCreate,
     ServerAccountAdoptRequest,
     ServerAccountCreate,
+    ServerAccountImportRequest,
     ServerAccountServersUpdate,
     ServerAccountUpdate,
 )
 from src.services import audit_context, audit_service, permissions, secrets_service
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.services.server import load_visible_server, load_visible_servers
+from src.utils.ids import ignored_login_id
 from src.utils.ids import server_account_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -871,6 +875,226 @@ async def adopt_from_host(
         },
     )
     return obj
+
+
+async def import_from_host(
+    db: AsyncSession,
+    identity: IdentityContext,
+    payload: ServerAccountImportRequest,
+) -> ServerAccount:
+    """Импортировать незнакомый OS-пользователь с бокса в БД новым аккаунтом.
+
+    Право: `(server_account, *, create)` — это обычное создание аккаунта,
+    только из фактов инвентаризации (`unknown_users`), а не из ручного ввода.
+    has_sudo=True дополнительно требует `grant_sudo`, как и в `create_account`.
+
+    Аккаунт сразу привязывается к `server_id` и помечается
+    `present_on_server=True` (пользователь уже на боксе). По умолчанию
+    `source=discovered` без пароля — на боксе он нам неизвестен. Сервер обязан
+    быть в отделе caller'а (иначе 404). Конфликт по (server_id, login) → 409.
+    """
+    with emit_denied_on_authz_error(
+        "server_account.imported_from_host",
+        target_type="server_account",
+        extra_details={"server_id": payload.server_id, "login": payload.login},
+        identity=identity,
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.CREATE
+        )
+
+    servers = await _resolve_same_dept_servers(
+        db, identity, [payload.server_id], "server_account.imported_from_host"
+    )
+    server = servers[0]
+
+    if payload.has_sudo:
+        try:
+            await permissions.require_action(
+                db, identity, EntityType.SERVER_ACCOUNT, Action.GRANT_SUDO
+            )
+        except AuthorizationError:
+            audit_service.emit(
+                "server_account.imported_from_host",
+                target_type="server_account",
+                status="denied", allowed=False,
+                details={
+                    "reason": "grant_sudo_denied",
+                    "server_id": payload.server_id,
+                    "login": payload.login,
+                },
+            )
+            raise
+
+    account_id = new_id()
+    data = {
+        "id": account_id,
+        "department_id": server.department_id,
+        "login": payload.login,
+        "password_encrypted": None,
+        "source": payload.source,
+        "has_sudo": payload.has_sudo,
+        "unix_groups": list(payload.unix_groups),
+        "shell": payload.shell,
+        # `is_active` берётся из дефолта колонки (True).
+        "created_by": identity.user_id,
+    }
+    try:
+        # `create_discovered` ставит present_on_server=True + свежий
+        # last_inventory_at на связке — пользователь уже физически на боксе.
+        obj = await repo.create_discovered(db, data, payload.server_id)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        logger.warning(
+            "IntegrityError на импорте аккаунта: %s", type(exc.orig).__name__
+        )
+        audit_service.emit(
+            "server_account.imported_from_host",
+            target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "duplicate",
+                "server_id": payload.server_id,
+                "login": payload.login,
+            },
+        )
+        raise ConflictError(
+            error_code="ACCOUNT_DUPLICATE",
+            message="Account with this login already exists on this server",
+            details={"hint": "уникальный ключ (server_id, login) на join-таблице"},
+        ) from exc
+    await db.refresh(obj)
+    audit_service.emit(
+        "server_account.imported_from_host",
+        target_id=obj.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "server_id": payload.server_id,
+            "login": obj.login,
+            "has_sudo": obj.has_sudo,
+            "source": obj.source,
+            "department_id": obj.department_id,
+        },
+    )
+    return obj
+
+
+# ── Ignore-list логинов (скоуп — отдел) ──────────────────────────────────────
+
+
+async def list_ignored_logins(
+    db: AsyncSession,
+    identity: IdentityContext,
+) -> list[ServerAccountIgnoredLogin]:
+    """Список игнор-логинов отдела caller'а.
+
+    Право: `(server_account, *, manage_ignored_logins)`. Скоуп — отдел
+    caller'а (dept-изоляция: возвращаются только записи его department_id).
+    """
+    with emit_denied_on_authz_error(
+        "server_account.ignored_logins_listed",
+        target_type="server_account",
+        identity=identity,
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.MANAGE_IGNORED_LOGINS
+        )
+    return await ignored_login_repo.list_for_department(db, identity.department_id)
+
+
+async def add_ignored_login(
+    db: AsyncSession,
+    identity: IdentityContext,
+    payload: IgnoredLoginCreate,
+) -> ServerAccountIgnoredLogin:
+    """Заигнорить логин в отделе caller'а.
+
+    Право: `(server_account, *, manage_ignored_logins)`. UNIQUE(department_id,
+    login) — повторно заигнорить тот же логин → 409. Аудит WARNING.
+    """
+    with emit_denied_on_authz_error(
+        "server_account.ignored_login_added",
+        target_type="server_account",
+        extra_details={"login": payload.login},
+        identity=identity,
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.MANAGE_IGNORED_LOGINS
+        )
+    data = {
+        "id": ignored_login_id(),
+        "department_id": identity.department_id,
+        "login": payload.login,
+        "reason": payload.reason,
+        "created_by": identity.user_id,
+    }
+    try:
+        obj = await ignored_login_repo.create(db, data)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        audit_service.emit(
+            "server_account.ignored_login_added",
+            target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "duplicate", "login": payload.login},
+        )
+        raise ConflictError(
+            error_code="IGNORED_LOGIN_DUPLICATE",
+            message="This login is already ignored in the department",
+        ) from exc
+    await db.refresh(obj)
+    audit_service.emit(
+        "server_account.ignored_login_added",
+        target_id=obj.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "login": obj.login,
+            "department_id": obj.department_id,
+        },
+    )
+    return obj
+
+
+async def remove_ignored_login(
+    db: AsyncSession,
+    identity: IdentityContext,
+    login: str,
+) -> None:
+    """Снять игнор с логина в отделе caller'а.
+
+    Право: `(server_account, *, manage_ignored_logins)`. Если логина нет в
+    списке отдела — 404. Аудит INFO.
+    """
+    with emit_denied_on_authz_error(
+        "server_account.ignored_login_removed",
+        target_type="server_account",
+        extra_details={"login": login},
+        identity=identity,
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.MANAGE_IGNORED_LOGINS
+        )
+    removed = await ignored_login_repo.delete(db, identity.department_id, login)
+    if removed == 0:
+        audit_service.emit(
+            "server_account.ignored_login_removed",
+            target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "not_found", "login": login},
+        )
+        raise NotFoundError(
+            error_code="IGNORED_LOGIN_NOT_FOUND",
+            message="This login is not in the department ignore-list",
+        )
+    await db.commit()
+    audit_service.emit(
+        "server_account.ignored_login_removed",
+        target_type="server_account",
+        status="success", allowed=True,
+        details={"login": login, "department_id": identity.department_id},
+    )
 
 
 async def link_servers(

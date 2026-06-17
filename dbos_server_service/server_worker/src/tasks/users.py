@@ -390,6 +390,10 @@ async def users_inventory(task_id: str) -> None:
         }
         if isinstance(reconcile, dict):
             result["diffs"] = reconcile.get("diffs", [])
+            # Незнакомые юзеры (на боксе есть, в БД не привязаны, не в
+            # ignore-list'е). server_service их больше НЕ заводит автоматически —
+            # отдаёт сюда, оператор решает по карточке сервера (импорт / игнор).
+            result["unknown_users"] = reconcile.get("unknown_users", [])
             result["reconcile_summary"] = {
                 "created": reconcile.get("created"),
                 "present": reconcile.get("present"),

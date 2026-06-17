@@ -7,6 +7,7 @@ from src.models.os_version import OsVersion
 from src.models.server import Server
 from src.models.secrets_outbox import ReencryptOutboxEntry
 from src.models.server_account import ServerAccount, ServerAccountServer
+from src.models.server_account_ignored_login import ServerAccountIgnoredLogin
 from src.models.server_disk import ServerDisk
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "ReencryptOutboxEntry",
     "Server",
     "ServerAccount",
+    "ServerAccountIgnoredLogin",
     "ServerAccountServer",
     "ServerDisk",
 ]

@@ -223,6 +223,81 @@ class ServerAccountAdoptRequest(BaseModel):
         return _validate_unix_groups(value)
 
 
+class ServerAccountImportRequest(BaseModel):
+    """Тело POST /server-accounts/import — импорт незнакомого OS-пользователя.
+
+    Заводит аккаунт из атрибутов, найденных на боксе инвентаризацией (т.е. из
+    `unknown_users` ответа коллбэка). Пароль НЕ задаётся: на боксе его значение
+    нам неизвестно — по умолчанию `source=discovered` без пароля. Аккаунт
+    сразу привязывается к `server_id` и помечается `present_on_server=True`
+    (пользователь уже физически на сервере).
+    """
+
+    server_id: str = Field(
+        ...,
+        min_length=1,
+        description="Сервер, на котором найден пользователь. Аккаунт привязывается к нему.",
+    )
+    login: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._\-]+$",
+        description="OS-логин пользователя (как в getent passwd).",
+    )
+    has_sudo: bool = Field(default=False, description="Состоит ли в sudo/admin-группе (факт с бокса).")
+    unix_groups: list[str] = Field(
+        default_factory=list,
+        max_length=64,
+        description="Unix-группы пользователя (факт с бокса, валидируются POSIX-паттерном).",
+    )
+    shell: str | None = Field(default=None, max_length=64, description="Login shell с бокса.")
+    source: str = Field(
+        default="discovered",
+        pattern=r"^(managed|discovered)$",
+        description=(
+            "Происхождение аккаунта. По умолчанию `discovered` (пароль с бокса "
+            "неизвестен, password_encrypted = NULL). `managed` — если оператор "
+            "собирается завести пароль через rotate_password позже."
+        ),
+    )
+
+    @field_validator("unix_groups")
+    @classmethod
+    def _check_unix_groups(cls, value: list[str]) -> list[str]:
+        return _validate_unix_groups(value)
+
+
+class IgnoredLoginCreate(BaseModel):
+    """Тело POST /server-accounts/ignored-logins — заигнорить логин в отделе."""
+
+    login: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._\-]+$",
+        description="OS-логин, который инвентаризация не должна показывать как незнакомого.",
+    )
+    reason: str | None = Field(
+        default=None,
+        max_length=512,
+        description="Свободный комментарий: зачем логин в игноре.",
+    )
+
+
+class IgnoredLoginResponse(BaseModel):
+    """Карточка одной записи ignore-list'а."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(description="ID записи (prefix ign_).")
+    department_id: str = Field(description="Отдел, в котором действует игнор.")
+    login: str = Field(description="Заигноренный OS-логин.")
+    reason: str | None = Field(default=None, description="Комментарий оператора.")
+    created_by: str | None = Field(default=None, description="user_id, добавивший запись.")
+    created_at: datetime = Field(description="Когда логин заигнорен.")
+
+
 class ServerAccountResponse(BaseModel):
     """Карточка аккаунта в ответе.
 

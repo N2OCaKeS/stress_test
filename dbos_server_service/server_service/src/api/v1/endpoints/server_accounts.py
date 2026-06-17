@@ -23,8 +23,11 @@ from src.models import ServerAccount
 from src.repositories import server_account as account_repo
 from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
 from src.schemas.server_account import (
+    IgnoredLoginCreate,
+    IgnoredLoginResponse,
     ServerAccountAdoptRequest,
     ServerAccountCreate,
+    ServerAccountImportRequest,
     ServerAccountResponse,
     ServerAccountRotateRequest,
     ServerAccountRotateResponse,
@@ -88,6 +91,114 @@ async def create_account(
     """Create-эндпоинт. Доступ: `(server_account, *, create)` (+ `grant_sudo` опц.)."""
     obj = await svc.create_account(db, identity, body)
     return _to_response(obj)
+
+
+@router.post(
+    "/import",
+    response_model=ServerAccountResponse,
+    status_code=201,
+    summary="Импортировать незнакомого OS-пользователя с бокса в БД",
+    description=(
+        "Заводит аккаунт из атрибутов, найденных инвентаризацией (элемент "
+        "`unknown_users` ответа коллбэка): `{server_id, login, has_sudo, "
+        "unix_groups, shell, source}`. Пароль НЕ задаётся — на боксе он "
+        "неизвестен; по умолчанию `source=discovered` (password_encrypted "
+        "NULL). Аккаунт привязывается к `server_id` и помечается "
+        "`present_on_server=True` (пользователь уже на боксе). Гейтится "
+        "`create`; `has_sudo=True` дополнительно требует `grant_sudo`. Аудит: "
+        "`server_account.imported_from_host` (WARNING)."
+    ),
+    responses={
+        201: {"description": "Аккаунт импортирован."},
+        403: {"description": "Нет `create` (или `grant_sudo` при has_sudo=True), либо чужой department."},
+        404: {"description": "Сервер не найден или чужой department."},
+        409: {"description": "ACCOUNT_DUPLICATE — login уже занят на этом сервере."},
+    },
+)
+async def import_account(
+    body: ServerAccountImportRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> ServerAccountResponse:
+    """Import-эндпоинт. Доступ: `(server_account, *, create)` (+ `grant_sudo` опц.)."""
+    obj = await svc.import_from_host(db, identity, body)
+    return _to_response(obj)
+
+
+@router.get(
+    "/ignored-logins",
+    response_model=list[IgnoredLoginResponse],
+    summary="Список игнор-логинов отдела",
+    description=(
+        "Возвращает логины, которые инвентаризация не показывает как "
+        "незнакомых пользователей, в отделе вызывающего (dept-изоляция). "
+        "Гейтится `(server_account, manage_ignored_logins)`."
+    ),
+    responses={
+        200: {"description": "Список игнор-логинов отдела."},
+        403: {"description": "Нет `manage_ignored_logins`."},
+    },
+)
+async def list_ignored_logins(
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> list[IgnoredLoginResponse]:
+    """List ignore-list. Доступ: `(server_account, *, manage_ignored_logins)`."""
+    items = await svc.list_ignored_logins(db, identity)
+    return [IgnoredLoginResponse.model_validate(i) for i in items]
+
+
+@router.post(
+    "/ignored-logins",
+    response_model=IgnoredLoginResponse,
+    status_code=201,
+    summary="Заигнорить логин в отделе",
+    description=(
+        "Добавляет логин в ignore-list отдела: инвентаризация перестаёт "
+        "показывать его как незнакомого пользователя (не в `unknown_users`, "
+        "не дрейфит). Тело: `{login, reason?}`. UNIQUE(department, login) — "
+        "повторный игнор → 409. Гейтится `manage_ignored_logins`. Аудит: "
+        "`server_account.ignored_login_added` (WARNING)."
+    ),
+    responses={
+        201: {"description": "Логин заигнорен."},
+        403: {"description": "Нет `manage_ignored_logins`."},
+        409: {"description": "IGNORED_LOGIN_DUPLICATE — логин уже в игноре."},
+    },
+)
+async def add_ignored_login(
+    body: IgnoredLoginCreate,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> IgnoredLoginResponse:
+    """Add ignore-list. Доступ: `(server_account, *, manage_ignored_logins)`."""
+    obj = await svc.add_ignored_login(db, identity, body)
+    return IgnoredLoginResponse.model_validate(obj)
+
+
+@router.delete(
+    "/ignored-logins/{login}",
+    response_model=OkResponse,
+    summary="Снять игнор с логина в отделе",
+    description=(
+        "Удаляет логин из ignore-list отдела. Если логина нет в списке — 404. "
+        "Гейтится `manage_ignored_logins`. Аудит: "
+        "`server_account.ignored_login_removed` (INFO)."
+    ),
+    responses={
+        200: {"description": "Игнор снят."},
+        403: {"description": "Нет `manage_ignored_logins`."},
+        404: {"description": "IGNORED_LOGIN_NOT_FOUND — логина нет в списке."},
+    },
+)
+async def remove_ignored_login(
+    login: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> OkResponse:
+    """Remove ignore-list. Доступ: `(server_account, *, manage_ignored_logins)`."""
+    await svc.remove_ignored_login(db, identity, login)
+    return OkResponse()
 
 
 @router.get(

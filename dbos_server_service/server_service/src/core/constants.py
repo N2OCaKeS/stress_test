@@ -173,6 +173,10 @@ class Action(StrEnum):
     # (operator/admin), отдельный action нужен, чтобы право принять чужое
     # состояние можно было выдать прицельно.
     ADOPT_FROM_HOST = "adopt_from_host"
+    # Управление ignore-list'ом логинов отдела: добавить/снять логин, который
+    # инвентаризация не должна показывать как незнакомого пользователя. Скоуп —
+    # отдел; уровень update (operator/admin).
+    MANAGE_IGNORED_LOGINS = "manage_ignored_logins"
 
     # Управление permission-матрицей (entity_permissions rows)
     PERMISSION_GRANT = "permission_grant"
@@ -212,6 +216,8 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.PROVISION_ON_HOST,
         # Оператор принимает факт-состояние хоста в БД (пополевно, по drift'у).
         Action.ADOPT_FROM_HOST,
+        # Управление ignore-list'ом незнакомых логинов отдела.
+        Action.MANAGE_IGNORED_LOGINS,
     }),
     # Чтение каталога публичное (без auth) — view-грант осиротел и снят
     # миграцией c1a9f2b7e4d8; под матрицей остаётся только запись.

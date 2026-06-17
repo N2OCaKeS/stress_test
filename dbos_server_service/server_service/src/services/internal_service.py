@@ -48,6 +48,7 @@ from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import os_version as osv_repo
 from src.repositories import server as server_repo
 from src.repositories import server_account as account_repo
+from src.repositories import server_account_ignored_login as ignored_login_repo
 from src.repositories import server_disk as disk_repo
 from src.schemas.identity import IdentityContext
 from src.schemas.internal import (
@@ -58,7 +59,7 @@ from src.schemas.internal import (
 )
 from src.schemas.server import ServerPrepareCallbackRequest
 from src.services import audit_service, metrics, permissions, secrets_service
-from src.utils.ids import os_version_id, server_account_id, server_disk_id
+from src.utils.ids import os_version_id, server_disk_id
 
 logger = logging.getLogger(__name__)
 
@@ -920,9 +921,12 @@ async def receive_users_inventory(
 
     Reconcile (для инвентаризуемого сервера X):
 
-      * найден на X, нет привязанного аккаунта → создать discovered-аккаунт
-        (без пароля, `source=discovered`, `department_id` = dept сервера X),
-        привязать к X; это drift-сигнал (на боксе живёт неуправляемый юзер);
+      * найден на X, нет привязанного аккаунта, НЕ в ignore-list'е отдела →
+        discovered-аккаунт НЕ создаётся; логин уходит в `unknown_users` ответа
+        (оператор решает: импортировать или заигнорить). По-прежнему поднимаем
+        drift-сигнал `unknown_login` (на боксе живёт неуправляемый юзер);
+      * найден на X, но логин в ignore-list'е отдела → пропускаем целиком (не
+        в unknown_users, не дрейфим);
       * есть и там, и в API → пометить связку present + свежий
         `last_inventory_at`; если атрибуты бокса разошлись с БД — drift, поля
         аккаунта НЕ трогаем;
@@ -976,6 +980,11 @@ async def receive_users_inventory(
     # Снимок текущих связок сервера + login'ов, найденных на боксе.
     links = await account_repo.list_links_for_server(db, server_id)
     seen_logins = {item.login for item in payload.users}
+    # Ignore-list отдела сервера: эти логины reconcile полностью пропускает —
+    # ни в unknown_users, ни в drift.
+    ignored_logins = await ignored_login_repo.ignored_logins_for_department(
+        db, server.department_id,
+    )
 
     # Батчим выборки на N юзеров: один SELECT по login'ам, один по account_id'ам
     # их связок. Без батча reconcile делает 2·N запросов и проседает на больших
@@ -990,6 +999,9 @@ async def receive_users_inventory(
     created = 0
     present = 0
     drifted = 0
+    # Незнакомые юзеры (на боксе есть, не привязаны, не в ignore-list'е).
+    # Возвращаем оператору — discovered-аккаунт больше НЕ заводим автоматически.
+    unknown_users: list[dict] = []
     # Дрейф эмитим после commit'а — события best-effort, в транзакцию не входят.
     drift_emits: list[dict] = []
     # Структурированный per-account diff с самими значениями (expected/found)
@@ -998,58 +1010,27 @@ async def receive_users_inventory(
     # для ручного ревью. БД при этом НЕ перетирается — политика warn-on-drift.
     attr_diffs: list[dict] = []
     # Аккумулируем account_id'ы под bulk-апдейты в конце цикла — один UPDATE
-    # на N связок вместо N flush'ей в `mark_link_inventoried`. Гонка-recover
-    # (когда `try_create_discovered` вернул None) идёт точечно — N там маленькое.
+    # на N связок вместо N flush'ей в `mark_link_inventoried`.
     present_account_ids: list[str] = []
     missing_account_ids: list[str] = []
 
     for item in payload.users:
         existing = existing_by_login.get(item.login)
         if existing is None:
-            account_id = server_account_id()
-            created_account = await account_repo.try_create_discovered(
-                db,
-                {
-                    "id": account_id,
-                    "department_id": server.department_id,
-                    "login": item.login,
-                    "password_encrypted": None,
-                    "source": AccountSource.DISCOVERED.value,
-                    "has_sudo": item.has_sudo,
-                    "unix_groups": list(item.unix_groups),
-                    "shell": item.shell,
-                    "home_dir": item.home_dir,
-                    # `is_active` берётся из дефолта колонки — поле пока
-                    # зарезервировано, в выборках не фильтруется.
-                    "created_by": identity.user_id,
-                },
-                server_id,
-            )
-            if created_account is None:
-                # Гонка callback'ов: параллельный воркер уже завёл discovered со
-                # связкой по `uq_server_login`. Подтягиваем существующую запись
-                # и трактуем как present — без задвоения drift'а.
-                existing = await account_repo.get_account_on_server_by_login(
-                    db, server_id, item.login,
-                )
-                if existing is None:
-                    # Конфликт пришёл не по `uq_server_login` — таких сценариев
-                    # быть не должно, но защищаемся явно.
-                    raise RuntimeError(
-                        "try_create_discovered returned None but no existing "
-                        f"link found for server={server_id} login={item.login}"
-                    )
-                # Race-ветка идёт точечно (link уже из чужой транзакции, в
-                # `links_by_account_id` его нет). Случается редко — оставляем
-                # per-call.
-                link = await account_repo.get_link(db, existing.id, server_id)
-                if link is not None:
-                    await account_repo.mark_link_inventoried(
-                        db, link, present=True,
-                    )
-                present += 1
+            # Логин в ignore-list'е отдела — штатная служебная учётка, которую
+            # оператор сознательно прячет. Не дрейфим и в unknown_users не кладём.
+            if item.login in ignored_logins:
                 continue
-            created += 1
+            # Незнакомый юзер: на боксе есть, аккаунта нет, не заигнорен.
+            # discovered-аккаунт НЕ создаём — отдаём оператору в unknown_users,
+            # он сам решит (импорт / игнор). Сигнал drift всё равно поднимаем.
+            unknown_users.append({
+                "login": item.login,
+                "uid": item.uid,
+                "has_sudo": item.has_sudo,
+                "unix_groups": list(item.unix_groups),
+                "shell": item.shell,
+            })
             drifted += 1
             drift_emits.append({
                 "login": item.login,
@@ -1157,6 +1138,7 @@ async def receive_users_inventory(
         "present": present,
         "drifted": drifted,
         "diffs": attr_diffs,
+        "unknown_users": unknown_users,
         "result_summary": {
             "total_users": len(payload.users),
             "created_discovered": created,

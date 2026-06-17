@@ -103,9 +103,9 @@ def reconcile_call_spy(monkeypatch):
     """Счётчики per-юзер запросов reconcile + batch-методов.
 
     `get_account_on_server_by_login` и `get_link` — это per-юзер SELECT'ы
-    старого reconcile'а. После батча они зовутся максимум в race-recover ветке
-    (одновременный воркер уже завёл discovered) — на чистом payload'е должны
-    быть нулями. Batch-методы инкрементятся ровно по одному за вызов.
+    старого reconcile'а. После батча основной цикл их не зовёт вовсе — на любом
+    payload'е должны быть нулями. Batch-методы инкрементятся ровно по одному
+    за вызов.
     """
     from src.repositories import server_account as acc_repo
 
@@ -297,12 +297,15 @@ class TestUsersInventoryReconcileBatch:
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["present"] == 4
-        assert body["created"] == 2
+        # Незнакомые ghost_1/ghost_2 аккаунтами не заводятся — уходят в
+        # unknown_users, created остаётся нулём.
+        assert body["created"] == 0
+        assert {u["login"] for u in body["unknown_users"]} == {
+            "ghost_1", "ghost_2",
+        }
 
         # Reconcile грузит аккаунты по login'ам ОДИН раз и связки по
-        # account_id'ам ОДИН раз. Per-юзер lookup'ы остались только в
-        # race-recover ветке (`try_create_discovered` вернул None), которая
-        # на чистом payload'е не срабатывает.
+        # account_id'ам ОДИН раз; per-юзер lookup'ы в основном цикле не нужны.
         assert reconcile_call_spy["list_accounts_on_server_by_logins"] == 1
         assert reconcile_call_spy["list_links_for_server_by_account_ids"] == 1
         assert reconcile_call_spy["get_account_on_server_by_login"] == 0, (

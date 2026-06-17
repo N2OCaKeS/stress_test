@@ -33,6 +33,11 @@ def ipmi_controller_id() -> str:
     return _new_id("ipm_")
 
 
+def ignored_login_id() -> str:
+    """`ign_<uuid>` — для строк server_account_ignored_login."""
+    return _new_id("ign_")
+
+
 def entity_permission_id() -> str:
     """`prm_<uuid>` — для entity_permissions."""
     return _new_id("prm_")

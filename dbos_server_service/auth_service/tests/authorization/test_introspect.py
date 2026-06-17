@@ -205,6 +205,76 @@ async def test_service_access_includes_roles(client, user_a_token, service_x):
     assert "reader" in resp.json()["service_roles"]
 
 
+# ── audit: token.introspect несёт единый actor-набор для user-событий ─────────
+
+
+async def test_introspect_jwt_audit_carries_username_and_department(
+    client, user_a, dept_a, user_a_token, monkeypatch,
+):
+    """JWT-introspect эмитит token.introspect с непустым username + отделом.
+
+    Раньше top-level username/department_name брались из audit_context запроса
+    (вызывающий s2s-сервис, не субъект токена) и оказывались пустыми.
+    """
+    from src.services import audit_service as audit_mod
+
+    captured: list[dict] = []
+    original = audit_mod.emit
+
+    def _capture(action, actor_id=None, **kw):
+        captured.append({"action": action, "actor_id": actor_id, **kw})
+        return original(action, actor_id, **kw)
+
+    monkeypatch.setattr(audit_mod, "emit", _capture)
+
+    resp = await client.post(INTROSPECT_URL, json={"token": user_a_token})
+    assert resp.status_code == 200
+    assert resp.json()["active"] is True
+
+    intr = [e for e in captured if e["action"] == "token.introspect"]
+    assert intr, captured
+    ev = intr[-1]
+    assert ev["actor_id"] == user_a.id
+    assert ev["username"] == user_a.username
+    assert ev["department_id"] == user_a.department_id
+    assert ev["department_name"] == dept_a.name
+
+
+async def test_introspect_pat_audit_carries_username_and_department(
+    client, user_a, dept_a, user_a_token, monkeypatch,
+):
+    """PAT-introspect эмитит token.introspect с непустым username + отделом."""
+    from src.services import audit_service as audit_mod
+
+    raw = (await client.post(
+        TOKENS_URL,
+        headers={"Authorization": f"Bearer {user_a_token}"},
+        json={"name": "audit_pat", "allowed_services": ["service_x"],
+              "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
+    )).json()["token"]
+
+    captured: list[dict] = []
+    original = audit_mod.emit
+
+    def _capture(action, actor_id=None, **kw):
+        captured.append({"action": action, "actor_id": actor_id, **kw})
+        return original(action, actor_id, **kw)
+
+    monkeypatch.setattr(audit_mod, "emit", _capture)
+
+    resp = await client.post(INTROSPECT_URL, json={"token": raw})
+    assert resp.status_code == 200
+    assert resp.json()["active"] is True
+
+    intr = [e for e in captured if e["action"] == "token.introspect"]
+    assert intr, captured
+    ev = intr[-1]
+    assert ev["actor_id"] == user_a.id
+    assert ev["username"] == user_a.username
+    assert ev["department_id"] == user_a.department_id
+    assert ev["department_name"] == dept_a.name
+
+
 # ── audit status convention: всё, что не success, идёт как `failure` ──────────
 
 

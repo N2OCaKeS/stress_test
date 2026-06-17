@@ -143,10 +143,21 @@ async def introspect(
         # Юзера нет / деактивирован / забанен → токен мёртв, что бы payload
         # ни декларировал.
         if user is None or not user.is_active or user.status != UserStatus.ACTIVE:
+            # Для найденного (но мёртвого) юзера тянем имя/отдел в top-level
+            # поля события — единый набор actor_id+username+department для всех
+            # user-событий. user_not_found — субъект неизвестен, поля None.
+            failed_dept = (
+                await dept_repo.get_by_id(user.department_id)
+                if user is not None and user.department_id
+                else None
+            )
             audit_service.emit(
                 "token.introspect",
                 sub,
                 actor_type="user",
+                username=user.username if user is not None else None,
+                department_id=user.department_id if user is not None else None,
+                department_name=failed_dept.name if failed_dept else None,
                 status="failure",
                 allowed=False,
                 details={
@@ -226,7 +237,9 @@ async def introspect(
             "token.introspect",
             user.id,
             actor_type="user",
+            username=user.username,
             department_id=user.department_id,
+            department_name=dept.name if dept else None,
             status="success",
             allowed=True,
             details=audit_details,
@@ -253,9 +266,24 @@ async def introspect(
     token_repo = TokenRepository(db)
     pat = await token_repo.get_active_by_hash(token_hash)
     if pat is not None:
+        user_repo = UserRepository(db)
         if pat.expires_at and is_expired(pat.expires_at):
+            # Субъект истёкшего PAT — живой юзер (pat.user_id), резолвим его
+            # имя/отдел в top-level поля события, как для остальных user-emit'ов.
+            expired_user = await user_repo.get_by_id(pat.user_id)
+            expired_dept = (
+                await DepartmentRepository(db).get_by_id(expired_user.department_id)
+                if expired_user is not None and expired_user.department_id
+                else None
+            )
             audit_service.emit(
-                "token.introspect", pat.user_id, status="failure", allowed=False,
+                "token.introspect", pat.user_id, actor_type="user",
+                status="failure", allowed=False,
+                username=expired_user.username if expired_user is not None else None,
+                department_id=(
+                    expired_user.department_id if expired_user is not None else None
+                ),
+                department_name=expired_dept.name if expired_dept else None,
                 details={
                     "token_type": "pat",
                     "reason": "expired",
@@ -266,11 +294,15 @@ async def introspect(
                 request_id=request_id,
             )
             return IntrospectResponse(active=False)
-        user_repo = UserRepository(db)
         user = await user_repo.get_by_id(pat.user_id)
         if user is None:
+            # Субъект неизвестен: PAT ссылается на снесённого юзера. Имя/отдел
+            # резолвить не из чего — передаём None явно, иначе emit подставит
+            # username/отдел вызывающего сервиса из audit_context.
             audit_service.emit(
-                "token.introspect", pat.user_id, status="failure", allowed=False,
+                "token.introspect", pat.user_id, actor_type="user",
+                username=None, department_id=None, department_name=None,
+                status="failure", allowed=False,
                 details={
                     "token_type": "pat",
                     "reason": "user_not_found",
@@ -290,8 +322,17 @@ async def introspect(
         # миграция, тест без полного `ban_user`) — режем здесь. Defence in
         # depth.
         if not user.is_active or user.status != UserStatus.ACTIVE:
+            failed_dept = (
+                await DepartmentRepository(db).get_by_id(user.department_id)
+                if user.department_id
+                else None
+            )
             audit_service.emit(
-                "token.introspect", user.id, status="failure", allowed=False,
+                "token.introspect", user.id, actor_type="user", status="failure",
+                allowed=False,
+                username=user.username,
+                department_id=user.department_id,
+                department_name=failed_dept.name if failed_dept else None,
                 details={
                     "token_type": "pat",
                     "reason": (
@@ -346,7 +387,9 @@ async def introspect(
             "token.introspect",
             user.id,
             actor_type="user",
+            username=user.username,
             department_id=user.department_id,
+            department_name=dept.name if dept else None,
             target_id=pat.id,
             target_type="pat",
             status="success",

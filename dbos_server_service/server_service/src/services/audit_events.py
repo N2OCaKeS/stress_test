@@ -80,6 +80,7 @@ SERVICE_EVENTS = [
     {"action": "server_account.view", "description": "Server account viewed", "default_severity": "INFO"},
     {"action": "server_account.list", "description": "Server accounts listed (emitted on denied)", "default_severity": "INFO"},
     {"action": "server_account.update", "description": "Server account updated", "default_severity": "INFO"},
+    {"action": "server_account.adopted_from_host", "description": "Operator adopted observed OS-user state from a specific host into the DB (per-field: has_sudo/unix_groups/shell), DB-only without fan-out to other servers", "default_severity": "WARNING"},
     {"action": "server_account.link_servers", "description": "Server account linked to additional servers", "default_severity": "INFO"},
     {"action": "server_account.unlink_servers", "description": "Server account unlinked from servers", "default_severity": "INFO"},
     {"action": "server_account.delete", "description": "Server account deleted", "default_severity": "CRITICAL"},

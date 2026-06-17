@@ -992,6 +992,11 @@ async def receive_users_inventory(
     drifted = 0
     # Дрейф эмитим после commit'а — события best-effort, в транзакцию не входят.
     drift_emits: list[dict] = []
+    # Структурированный per-account diff с самими значениями (expected/found)
+    # для существующих привязанных аккаунтов с расхождением атрибутов. Уходит
+    # в ответ, чтобы worker положил его в `task.result`, а UI показал оператору
+    # для ручного ревью. БД при этом НЕ перетирается — политика warn-on-drift.
+    attr_diffs: list[dict] = []
     # Аккумулируем account_id'ы под bulk-апдейты в конце цикла — один UPDATE
     # на N связок вместо N flush'ей в `mark_link_inventoried`. Гонка-recover
     # (когда `try_create_discovered` вернул None) идёт точечно — N там маленькое.
@@ -1063,6 +1068,11 @@ async def receive_users_inventory(
                     "drift": "attributes",
                     "fields": sorted(diff.keys()),
                     "diff": diff,
+                })
+                attr_diffs.append({
+                    "account_id": existing.id,
+                    "login": existing.login,
+                    "fields": diff,
                 })
 
     # Привязанные в API, но не найденные на сервере — drift.
@@ -1146,6 +1156,7 @@ async def receive_users_inventory(
         "created": created,
         "present": present,
         "drifted": drifted,
+        "diffs": attr_diffs,
         "result_summary": {
             "total_users": len(payload.users),
             "created_discovered": created,

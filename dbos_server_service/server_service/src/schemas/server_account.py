@@ -184,6 +184,45 @@ class ServerAccountServersUpdate(BaseModel):
         return out
 
 
+class ServerAccountAdoptRequest(BaseModel):
+    """Тело POST /server-accounts/{id}/adopt_from_host.
+
+    Принять факт-состояние OS-пользователя с конкретного сервера в БД. Поля
+    `has_sudo`/`unix_groups`/`shell` опциональны: применяются ТОЛЬКО
+    присутствующие (значения = то, что оператор увидел в diff как `found`).
+    UI шлёт `found`-значения по отмеченным чекбоксам. Обновляется ТОЛЬКО БД —
+    fan-out `update_on_host` на серверы НЕ идёт (хост уже в этом состоянии).
+
+    `server_id` обязателен — аккаунт может жить на нескольких серверах, а
+    adopt привязан к факту с конкретного хоста; сервер обязан быть привязан к
+    аккаунту, иначе 404.
+    """
+
+    server_id: str = Field(
+        ...,
+        min_length=1,
+        description="Сервер, с чьего факт-состояния принимаем поля. Обязан быть привязан к аккаунту.",
+    )
+    has_sudo: bool | None = Field(
+        default=None, description="Принять sudo-флаг с хоста (если отмечен в diff)."
+    )
+    unix_groups: list[str] | None = Field(
+        default=None,
+        max_length=64,
+        description="Принять список групп с хоста (валидируется POSIX-паттерном).",
+    )
+    shell: str | None = Field(
+        default=None, max_length=64, description="Принять shell с хоста."
+    )
+
+    @field_validator("unix_groups")
+    @classmethod
+    def _check_unix_groups(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        return _validate_unix_groups(value)
+
+
 class ServerAccountResponse(BaseModel):
     """Карточка аккаунта в ответе.
 

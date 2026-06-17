@@ -167,6 +167,12 @@ class Action(StrEnum):
     # worker_bot callback после useradd/usermod/userdel на боксе — узкий
     # least-privilege грант, без CRUD над аккаунтами.
     PROVISION_ON_HOST = "provision_on_host"
+    # Принять факт-состояние OS-пользователя с конкретного хоста в БД: оператор
+    # руками выбирает поля из drift'а (`found`-значения) и пишет их в аккаунт.
+    # Обновляет ТОЛЬКО БД, fan-out на серверы не идёт. Уровень — как `update`
+    # (operator/admin), отдельный action нужен, чтобы право принять чужое
+    # состояние можно было выдать прицельно.
+    ADOPT_FROM_HOST = "adopt_from_host"
 
     # Управление permission-матрицей (entity_permissions rows)
     PERMISSION_GRANT = "permission_grant"
@@ -204,6 +210,8 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         # worker_bot подтверждает результат useradd/usermod/userdel на боксе —
         # тоже callback-only, без CRUD.
         Action.PROVISION_ON_HOST,
+        # Оператор принимает факт-состояние хоста в БД (пополевно, по drift'у).
+        Action.ADOPT_FROM_HOST,
     }),
     # Чтение каталога публичное (без auth) — view-грант осиротел и снят
     # миграцией c1a9f2b7e4d8; под матрицей остаётся только запись.

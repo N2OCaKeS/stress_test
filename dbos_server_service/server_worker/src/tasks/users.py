@@ -364,8 +364,13 @@ async def users_inventory(task_id: str) -> None:
         user_count = len(users_payload.get("users", []))
 
         submit_status: str
+        # reconcile-сводка от server_service: counts + структурированный diff
+        # привязанных аккаунтов (`diffs`). Кладём в task.result, чтобы UI
+        # достал её через GET /tasks/{id} и показал оператору для ручного
+        # ревью drift'а. При submit-фейле остаётся None.
+        reconcile: dict | None = None
         try:
-            await server_service_client.submit_users_inventory(
+            reconcile = await server_service_client.submit_users_inventory(
                 server_id, users_payload, target_dept,
             )
             submit_status = "submitted"
@@ -377,12 +382,20 @@ async def users_inventory(task_id: str) -> None:
                 exc.error_code,
             )
             submit_status = f"submit_failed:{exc.error_code}"
-        return {
+        result = {
             "server_id": server_id,
             "users": users_payload.get("users", []),
             "user_count": user_count,
             "submit_status": submit_status,
         }
+        if isinstance(reconcile, dict):
+            result["diffs"] = reconcile.get("diffs", [])
+            result["reconcile_summary"] = {
+                "created": reconcile.get("created"),
+                "present": reconcile.get("present"),
+                "drifted": reconcile.get("drifted"),
+            }
+        return result
 
     await run_task(
         task_id,

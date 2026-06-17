@@ -368,6 +368,57 @@ class TestUsersInventoryReconcile:
         assert link.present_on_server is True
         assert link.last_inventory_at is not None
 
+    async def test_attribute_drift_returns_structured_diffs(
+        self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+        captured_emits,
+    ):
+        """Ответ reconcile несёт per-account `diffs` с expected/found — данные
+        для UI-ревью drift'а. БД при этом НЕ перетирается."""
+        srv = await make_server(department_id=dept_a)
+        acc = await make_account(
+            server_id=srv.id, login="postgres", has_sudo=False,
+            shell="/bin/bash", home_dir="/home/postgres", unix_groups=["postgres"],
+        )
+        payload = {"users": [
+            {"login": "postgres", "uid": 1100, "shell": "/bin/sh",
+             "home_dir": "/var/lib/postgresql", "unix_groups": ["wheel"],
+             "has_sudo": True},
+        ]}
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        diffs = body["diffs"]
+        assert len(diffs) == 1
+        d = diffs[0]
+        assert d["account_id"] == acc.id
+        assert d["login"] == "postgres"
+        assert set(d["fields"]) == {"has_sudo", "unix_groups", "shell"}
+        assert d["fields"]["has_sudo"] == {"expected": False, "found": True}
+        assert d["fields"]["shell"] == {"expected": "/bin/bash", "found": "/bin/sh"}
+        assert d["fields"]["unix_groups"]["expected"] == ["postgres"]
+        assert d["fields"]["unix_groups"]["found"] == ["wheel"]
+
+    async def test_no_drift_returns_empty_diffs(
+        self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+        captured_emits,
+    ):
+        """Discovered-аккаунт (unknown_login) — drift, но не attribute-diff:
+        в `diffs` его быть не должно (там только привязанные с расхождением)."""
+        srv = await make_server(department_id=dept_a)
+        payload = {"users": [
+            {"login": "ops", "uid": 1001, "shell": "/bin/bash",
+             "home_dir": "/home/ops", "unix_groups": [], "has_sudo": False},
+        ]}
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["diffs"] == []
+
     async def test_matching_attributes_no_drift(
         self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
         captured_emits,

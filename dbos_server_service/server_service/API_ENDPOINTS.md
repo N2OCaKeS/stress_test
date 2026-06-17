@@ -254,6 +254,12 @@ Auth: Bearer + `(server_account, *, update)` (+ `grant_sudo` при подъём
 
 Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404).
 
+### `POST /server-accounts/{account_id}/adopt_from_host`
+
+Auth: Bearer + `(server_account, *, adopt_from_host)` (operator/admin). Body: `{server_id, has_sudo?, unix_groups?, shell?}` — оператор принимает факт-состояние OS-пользователя с конкретного хоста в БД (значения = `found` из diff'а инвентаризации). Применяются ТОЛЬКО присутствующие поля. **DB-only**: fan-out `account.update_on_host` НЕ запускается (в отличие от PATCH — хост уже в этом состоянии). `server_id` обязан быть привязан к аккаунту. Возвращает обновлённую карточку. Audit `server_account.adopted_from_host` (WARNING) с `server_id` / `adopted_fields` / `changes` (old→new). adopt не требует отдельного `grant_sudo` (это фиксация уже-существующего состояния, не подъём привилегии через API).
+
+Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404 — нет аккаунта / чужой dept / сервер не привязан), `NO_FIELDS_TO_ADOPT` (422 — ни одно поле не передано), `422` невалидные `unix_groups`.
+
 ### `POST /server-accounts/{account_id}/servers`
 
 Auth: Bearer + `(server_account, *, update)`. Body: `{server_ids: [...]}`. Привязка к доп. серверам своего dept.
@@ -524,7 +530,7 @@ Hardware-facts от worker'а (после `inventory.sync`).
 
 ### `POST /internal/servers/{server_id}/users/inventory`
 
-OS-user inventory от worker'а (после `users.inventory`). server_service reconcile'ит с `server_accounts`: создаёт discovered, обновляет метаданные, эмитит `server_account.drift_detected`.
+OS-user inventory от worker'а (после `users.inventory`). server_service reconcile'ит с `server_accounts`: создаёт discovered, обновляет метаданные, эмитит `server_account.drift_detected`. Ответ несёт `diffs: [{account_id, login, fields: {<имя>: {expected, found}}}]` — структурированный per-account attribute-drift для привязанных аккаунтов (БД не перетирается, данные для ручного ревью через `adopt_from_host`); worker кладёт `diffs` в `task.result`.
 
 ### `POST /internal/servers/{server_id}/accounts/{account_id}/provision_status`
 

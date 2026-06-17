@@ -136,6 +136,38 @@ class TestUsersInventoryHandler:
         payload = submit_calls[0][1]
         assert {u["login"] for u in payload["users"]} == {"ops", "deploy"}
 
+    async def test_reconcile_diffs_land_in_task_result(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """diffs из ответа reconcile должны доехать до task.result, чтобы
+        GET /tasks/{id} отдал структурированный drift для UI."""
+        tid = await make_task(
+            task_kind="users.inventory", target_server_id="srv_u3",
+            payload={"server_id": "srv_u3", "ssh_login": "root"},
+        )
+        conn = _conn_with_users_output()
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        diffs = [{
+            "account_id": "acc_pg", "login": "postgres",
+            "fields": {"has_sudo": {"expected": False, "found": True}},
+        }]
+
+        async def fake_submit(server_id, payload, target_department_id=None):
+            return {"ok": True, "created": 0, "present": 1, "drifted": 1, "diffs": diffs}
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.submit_users_inventory", fake_submit,
+        )
+
+        await users.users_inventory.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["submit_status"] == "submitted"
+        assert t.result["diffs"] == diffs
+        assert t.result["reconcile_summary"] == {
+            "created": 0, "present": 1, "drifted": 1,
+        }
+
     async def test_submit_failure_does_not_fail_task(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):

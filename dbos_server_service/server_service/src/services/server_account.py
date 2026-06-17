@@ -37,6 +37,7 @@ from src.models import Server, ServerAccount
 from src.repositories import server_account as repo
 from src.schemas.identity import IdentityContext
 from src.schemas.server_account import (
+    ServerAccountAdoptRequest,
     ServerAccountCreate,
     ServerAccountServersUpdate,
     ServerAccountUpdate,
@@ -756,6 +757,120 @@ async def update_account(
         },
     )
     return obj, set(changes.keys())
+
+
+# Поля, которые adopt_from_host может принять в БД. Совпадает с
+# `_account_attr_drift` в internal_service: ровно те атрибуты, по которым
+# инвентаризация считает drift и предлагает оператору `found`-значения.
+_ADOPTABLE_FIELDS = ("has_sudo", "unix_groups", "shell")
+
+
+async def adopt_from_host(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+    payload: ServerAccountAdoptRequest,
+) -> ServerAccount:
+    """Принять факт-состояние OS-пользователя с конкретного хоста в БД.
+
+    Право: `(server_account, *, adopt_from_host)` — отдельный grant
+    update-уровня (operator/admin). Оператор инициирует руками, пополевно:
+    в payload едут только те из `has_sudo`/`unix_groups`/`shell`, что он
+    отметил в drift'е, со значениями = `found` (фактом с бокса).
+
+    Отличие от `update_account`: обновляем ТОЛЬКО БД, fan-out
+    `update_on_host` на серверы НЕ запускаем — хост `server_id` уже в этом
+    состоянии, а push разнёс бы drift одного сервера на остальные привязки.
+
+    Аккаунт берётся под row-lock (`_load_account_visible_for_update`),
+    `server_id` обязан быть привязан к аккаунту (иначе 404). Cross-dept
+    аккаунт скрыт за 404. Возвращает обновлённый аккаунт.
+    """
+    with emit_denied_on_authz_error(
+        "server_account.adopted_from_host",
+        target_id=account_id,
+        target_type="server_account",
+        extra_details={"server_id": payload.server_id},
+        identity=identity,
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.ADOPT_FROM_HOST
+        )
+    try:
+        obj = await _load_account_visible_for_update(db, identity, account_id)
+    except NotFoundError:
+        audit_service.emit(
+            "server_account.adopted_from_host",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "not_found_or_cross_dept", "server_id": payload.server_id},
+        )
+        raise
+
+    # server_id обязан быть привязан к аккаунту — adopt привязан к факту с
+    # конкретного хоста. Непривязанный сервер прячем за тем же 404, что и
+    # cross-dept аккаунт (не утекаем, какие серверы держит аккаунт).
+    if not await repo.is_linked(db, account_id, payload.server_id):
+        audit_service.emit(
+            "server_account.adopted_from_host",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "server_not_linked", "server_id": payload.server_id},
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_FOUND",
+            message="Server account not found on this server",
+        )
+
+    raw = payload.model_dump(exclude_unset=True, mode="json")
+    raw.pop("server_id", None)
+    if not raw:
+        # Нечего принимать — ни одно поле не отмечено. Не трогаем БД, но это
+        # клиентская ошибка (запрос без полей), а не no-op success.
+        raise DomainValidationError(
+            error_code="NO_FIELDS_TO_ADOPT",
+            message="At least one of has_sudo/unix_groups/shell must be provided",
+        )
+
+    def _is_changed(field: str, new_value) -> bool:
+        current = getattr(obj, field, None)
+        if field == "unix_groups":
+            return set(current or []) != set(new_value or [])
+        return current != new_value
+
+    # old→new фиксируем по реально изменившимся полям. No-op (оператор принял
+    # значение, которое уже в БД) пишем как success без UPDATE — БД уже в
+    # целевом состоянии.
+    changes: dict = {}
+    old_new: dict = {}
+    for field in _ADOPTABLE_FIELDS:
+        if field not in raw:
+            continue
+        new_value = raw[field]
+        if _is_changed(field, new_value):
+            old_new[field] = {
+                "old": getattr(obj, field, None),
+                "new": new_value,
+            }
+            changes[field] = new_value
+
+    if changes:
+        await repo.update(db, obj, changes)
+        await db.commit()
+        await db.refresh(obj)
+
+    audit_service.emit(
+        "server_account.adopted_from_host",
+        target_id=obj.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "server_id": payload.server_id,
+            "adopted_fields": list(changes.keys()),
+            "changes": old_new,
+            "department_id": obj.department_id,
+        },
+    )
+    return obj
 
 
 async def link_servers(

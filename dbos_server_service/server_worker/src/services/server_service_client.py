@@ -237,8 +237,11 @@ async def submit_users_inventory(
     `users_payload` — `{"users": [{login, uid, shell, home_dir,
     unix_groups, has_sudo}, ...]}` под `UsersInventoryCallbackRequest`.
 
-    Возвращает: `{ok, created, updated, drifted}` от
-    `POST /api/server/v1/internal/servers/{id}/users/inventory`.
+    Возвращает: `{ok, created, present, drifted, diffs, result_summary}` от
+    `POST /api/server/v1/internal/servers/{id}/users/inventory`. `diffs` —
+    структурированный per-account diff (account_id/login/fields с
+    expected/found) для drift'нувших привязок; task'а кладёт его в
+    `task.result`.
 
     Возможные ошибки: `CredentialFetchError` с `error_code`:
       * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).

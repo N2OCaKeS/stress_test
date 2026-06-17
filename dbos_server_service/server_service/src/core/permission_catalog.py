@@ -73,6 +73,10 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
     Action.PROVISION_ON_HOST: (
         "Callback воркера: результат useradd/usermod/userdel на боксе."
     ),
+    Action.ADOPT_FROM_HOST: (
+        "Принять факт-состояние OS-пользователя с конкретного хоста в БД "
+        "(пополевно, по drift'у). Обновляет только БД, без fan-out на серверы."
+    ),
     Action.VIEW_CREDENTIALS: (
         "Доступ к credentials BMC: пароль в GET-карточке и метаданные "
         "controller'а user-facing'ом, плюс расшифрованные creds воркеру "

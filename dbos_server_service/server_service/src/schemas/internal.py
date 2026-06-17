@@ -2,6 +2,7 @@
 
 import re
 from datetime import datetime, timezone
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -215,6 +216,33 @@ class UsersInventoryResultSummary(BaseModel):
     )
 
 
+class AttrDiffValue(BaseModel):
+    """Одно разошедшееся поле: что в БД (`expected`) и что на боксе (`found`).
+
+    Значения отдаём как есть: `has_sudo` — bool, `unix_groups` — list[str],
+    `shell` — str|None. Оператор сверяет и решает, принимать ли `found` в БД
+    через `adopt_from_host`.
+    """
+
+    expected: Any = Field(description="Значение в БД (источник истины).")
+    found: Any = Field(description="Значение, найденное на боксе.")
+
+
+class AccountAttrDiff(BaseModel):
+    """Расхождение атрибутов одного привязанного аккаунта с фактом на боксе.
+
+    Только для существующих (не discovered в этом проходе) привязок, у которых
+    `has_sudo`/`unix_groups`/`shell` разошлись с БД. `fields` — карта
+    `имя_поля → {expected, found}`.
+    """
+
+    account_id: str = Field(description="ID аккаунта.")
+    login: str = Field(description="OS-логин аккаунта.")
+    fields: dict[str, AttrDiffValue] = Field(
+        description="Разошедшиеся поля: has_sudo / unix_groups / shell → {expected, found}.",
+    )
+
+
 class UsersInventoryCallbackResponse(BaseModel):
     """Сводка reconcile инвентаризации пользователей."""
 
@@ -222,6 +250,15 @@ class UsersInventoryCallbackResponse(BaseModel):
     created: int = Field(default=0, description="Сколько discovered-аккаунтов заведено (каждый — drift-сигнал).")
     present: int = Field(default=0, description="Сколько существующих аккаунтов подтверждено на боксе (present_on_server=True).")
     drifted: int = Field(default=0, description="Сколько drift-сигналов поднято: расхождение атрибутов + привязки, отсутствующие на боксе.")
+    diffs: list[AccountAttrDiff] = Field(
+        default_factory=list,
+        description=(
+            "Структурированный per-account diff с значениями (expected/found) — "
+            "только для существующих привязанных аккаунтов с расхождением "
+            "атрибутов. Данные для ручного ревью: БД не перетирается. Worker "
+            "кладёт их в `task.result`, UI показывает оператору."
+        ),
+    )
     result_summary: UsersInventoryResultSummary | None = Field(
         default=None,
         description=(

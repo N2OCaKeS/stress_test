@@ -23,6 +23,7 @@ from src.models import ServerAccount
 from src.repositories import server_account as account_repo
 from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
 from src.schemas.server_account import (
+    ServerAccountAdoptRequest,
     ServerAccountCreate,
     ServerAccountResponse,
     ServerAccountRotateRequest,
@@ -225,6 +226,41 @@ async def update_account(
         await fanout_update_on_host(
             db=db, identity=identity, request=request, account=obj,
         )
+    return _to_response(obj)
+
+
+@router.post(
+    "/{account_id}/adopt_from_host",
+    response_model=ServerAccountResponse,
+    summary="Принять факт-состояние OS-пользователя с хоста в БД (без fan-out)",
+    description=(
+        "Оператор-инициируемое пополевное принятие drift'а: применяет в БД "
+        "только переданные `has_sudo`/`unix_groups`/`shell` (значения = "
+        "`found` из diff'а инвентаризации). Обновляет ТОЛЬКО БД — в отличие "
+        "от PATCH, fan-out `update_on_host` на серверы НЕ идёт: хост уже в "
+        "этом состоянии, а push разнёс бы drift одного сервера на остальные "
+        "привязки. `server_id` обязан быть привязан к аккаунту. Доступ: "
+        "`(server_account, adopt_from_host)` (operator/admin). Аудит: "
+        "`server_account.adopted_from_host` (WARNING)."
+    ),
+    responses={
+        403: {"description": "Нет action `adopt_from_host`."},
+        404: {"description": "Аккаунт не найден / чужой dept / сервер не привязан."},
+        422: {"description": "NO_FIELDS_TO_ADOPT — ни одно поле не передано, либо невалидные unix_groups."},
+    },
+)
+async def adopt_from_host(
+    account_id: str,
+    body: ServerAccountAdoptRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> ServerAccountResponse:
+    """Adopt-эндпоинт. Доступ: `(server_account, *, adopt_from_host)`.
+
+    DB-only: fan-out на серверы намеренно не запускается (см. service-докстринг
+    `adopt_from_host`).
+    """
+    obj = await svc.adopt_from_host(db, identity, account_id, body)
     return _to_response(obj)
 
 

@@ -1383,3 +1383,156 @@ class TestLinkUnlinkServers:
         )
         assert resp_get.status_code == 200
         assert set(resp_get.json()["server_ids"]) == {srv1.id, srv2.id}
+
+
+# ── POST /{id}/adopt_from_host — принять факт-состояние хоста в БД ────────────
+
+class TestAdoptFromHost:
+    """`POST /server-accounts/{id}/adopt_from_host` — DB-only приём drift'а,
+    без fan-out на серверы. Поля применяются пополевно (only-present)."""
+
+    async def test_operator_adopts_fields_db_only_no_dispatch(
+        self, client, operator_token_a, make_server, make_account, db,
+        captured_dispatch,
+    ):
+        from sqlalchemy import select
+
+        from src.models import ServerAccount
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(
+            server_id=srv.id, login="postgres", has_sudo=False,
+            shell="/bin/bash", unix_groups=["postgres"],
+        )
+        resp = await client.post(
+            f"{BASE}/{acc.id}/adopt_from_host",
+            headers=_hdr(operator_token_a),
+            json={
+                "server_id": srv.id,
+                "shell": "/bin/sh",
+                "unix_groups": ["wheel"],
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        # Применены только присутствующие поля; has_sudo не трогали.
+        assert body["shell"] == "/bin/sh"
+        assert body["unix_groups"] == ["wheel"]
+        assert body["has_sudo"] is False
+        # Ключевое отличие от PATCH: на серверы НИЧЕГО не диспатчим.
+        assert captured_dispatch == []
+
+        await db.commit()
+        refreshed = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc.id)
+        )).scalar_one()
+        assert refreshed.shell == "/bin/sh"
+        assert refreshed.unix_groups == ["wheel"]
+        assert refreshed.has_sudo is False
+
+    async def test_adopt_has_sudo_without_grant_sudo_ok(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        """adopt принимает факт с бокса — отдельного grant_sudo не требует
+        (это не подъём привилегии через API, а фиксация уже-существующего
+        состояния хоста). Гейт — только сам action `adopt_from_host`."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", has_sudo=False)
+        resp = await client.post(
+            f"{BASE}/{acc.id}/adopt_from_host",
+            headers=_hdr(operator_token_a),
+            json={"server_id": srv.id, "has_sudo": True},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["has_sudo"] is True
+        assert captured_dispatch == []
+
+    async def test_reader_cannot_adopt(
+        self, client, reader_token_a, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id)
+        resp = await client.post(
+            f"{BASE}/{acc.id}/adopt_from_host",
+            headers=_hdr(reader_token_a),
+            json={"server_id": srv.id, "shell": "/bin/zsh"},
+        )
+        assert_error(resp, 403, "PERMISSION_DENIED")
+
+    async def test_cross_dept_returns_404_hidden(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_b")
+        acc = await make_account(server_id=srv.id)
+        resp = await client.post(
+            f"{BASE}/{acc.id}/adopt_from_host",
+            headers=_hdr(operator_token_a),
+            json={"server_id": srv.id, "shell": "/bin/zsh"},
+        )
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
+
+    async def test_server_not_linked_returns_404(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        other = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="lonely")
+        resp = await client.post(
+            f"{BASE}/{acc.id}/adopt_from_host",
+            headers=_hdr(operator_token_a),
+            json={"server_id": other.id, "shell": "/bin/zsh"},
+        )
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
+
+    async def test_empty_fields_returns_422(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="nofield")
+        resp = await client.post(
+            f"{BASE}/{acc.id}/adopt_from_host",
+            headers=_hdr(operator_token_a),
+            json={"server_id": srv.id},
+        )
+        assert_error(resp, 422, "NO_FIELDS_TO_ADOPT")
+
+    async def test_invalid_unix_groups_rejected(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="badgrp")
+        resp = await client.post(
+            f"{BASE}/{acc.id}/adopt_from_host",
+            headers=_hdr(operator_token_a),
+            json={"server_id": srv.id, "unix_groups": ["Bad Group!"]},
+        )
+        assert resp.status_code == 422
+
+    async def test_audit_records_old_new(
+        self, client, operator_token_a, make_server, make_account, monkeypatch,
+    ):
+        from tests._helpers import make_emit_capture
+
+        captured = make_emit_capture(monkeypatch)
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(
+            server_id=srv.id, login="pg", shell="/bin/bash", has_sudo=False,
+        )
+        resp = await client.post(
+            f"{BASE}/{acc.id}/adopt_from_host",
+            headers=_hdr(operator_token_a),
+            json={"server_id": srv.id, "shell": "/bin/sh", "has_sudo": True},
+        )
+        assert resp.status_code == 200, resp.text
+        adopted = [
+            e for e in captured
+            if e["action"] == "server_account.adopted_from_host"
+            and e.get("status") == "success"
+        ]
+        assert len(adopted) == 1
+        details = adopted[0]["details"]
+        assert details["server_id"] == srv.id
+        assert set(details["adopted_fields"]) == {"shell", "has_sudo"}
+        assert details["changes"]["shell"] == {"old": "/bin/bash", "new": "/bin/sh"}
+        assert details["changes"]["has_sudo"] == {"old": False, "new": True}

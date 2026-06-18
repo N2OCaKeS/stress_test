@@ -220,8 +220,13 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
         await websocket.close(code=_WS_CLOSE_UNAVAILABLE, reason=exc.error_code)
         return
 
+    # Браузер валит handshake (close 1006), если клиент предложил
+    # subprotocol'ы, а сервер не подтвердил ни один из них. Клиент шлёт
+    # `console.v1` (маркер) + `bearer.<token>`; токен мы уже вынули выше, а в
+    # ответ эхо-ним именно `console.v1` — он всегда в списке предложенных.
+    offered = websocket.scope.get("subprotocols", [])
     await websocket.accept(
-        subprotocol="bearer" if "bearer" in websocket.scope.get("subprotocols", []) else None,
+        subprotocol="console.v1" if "console.v1" in offered else None,
     )
     audit_service.emit(
         "ssh_console.session_open", target_id=server_id, target_type="server",

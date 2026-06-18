@@ -370,11 +370,18 @@ async def test_bridge_publishes_input_and_relays_output(monkeypatch, _patch_cons
         {"type": "websocket.receive", "text": "ls -la\n"},
         {"type": "websocket.disconnect"},
     ]
-    ws = FakeWebSocket(headers={"Authorization": "Bearer tok"}, incoming=incoming)
+    ws = FakeWebSocket(
+        headers={"Authorization": "Bearer tok"},
+        subprotocols=["console.v1", "bearer.tok"],
+        incoming=incoming,
+    )
 
     await asyncio.wait_for(console.server_console_ws(ws, "srv_console1"), timeout=5.0)
 
     assert ws.accepted
+    # Сервер обязан подтвердить один из предложенных клиентом subprotocol'ов,
+    # иначе браузер рвёт handshake (close 1006).
+    assert ws.accepted_subprotocol == "console.v1"
     # start опубликован в control.
     start = [m for ch, m in redis.published if ch == ctl_ch and '"start"' in m]
     assert start, "start control message not published"

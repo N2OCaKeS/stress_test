@@ -25,6 +25,7 @@ from src.schemas.users import (
     SessionEntry,
     SessionsListResponse,
     UserGroupWithRolesEntry,
+    UserLabelsResponse,
     UserPermissionsResponse,
     UserResponse,
 )
@@ -246,6 +247,39 @@ async def resolve_username(
         username=target.username,
         department_id=target.department_id,
     )
+
+
+async def resolve_labels(
+    db: AsyncSession,
+    user_ids: list[str],
+) -> UserLabelsResponse:
+    """Батч user_id → username для подстановки имён в UI.
+
+    Зачем:
+        Обратное направление к `resolve_username`: UI получает от backend'а
+        набор user_id (например владельцы/получатели grant'ов на personal-секрет)
+        и должен показать человекочитаемые имена. `GET /users/{id}` закрыт под
+        AnyAdmin, а username — не чувствительные данные, поэтому отдаём их любому
+        залогиненному юзеру.
+
+    Доступ:
+        Любой user-context (gate в эндпоинте — `CurrentUserIdentity`). Scope по
+        отделу НЕ применяется: username сам по себе не раскрывает привилегий, а
+        батч идёт по уже известным id (не enumeration). Ничего, кроме
+        id→username, не возвращаем.
+
+    Возвращает:
+        `UserLabelsResponse` с `labels = {user_id: username}` только для
+        найденных id. Несуществующие id молча пропускаются (UI покажет «—»).
+    """
+    # Дедуп — повторные id в query не должны раздувать IN-список.
+    unique_ids = list(dict.fromkeys(user_ids))
+    if not unique_ids:
+        return UserLabelsResponse(labels={})
+
+    user_repo = UserRepository(db)
+    found = await user_repo.list_by_ids(unique_ids)
+    return UserLabelsResponse(labels={u.id: u.username for u in found})
 
 
 async def create_user(

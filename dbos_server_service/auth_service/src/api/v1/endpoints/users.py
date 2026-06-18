@@ -21,6 +21,7 @@ from src.schemas.users import (
     SelfChangePasswordRequest,
     SessionsListResponse,
     UserCreate,
+    UserLabelsResponse,
     UserPermissionsResponse,
     UserResolveResponse,
     UserResponse,
@@ -520,6 +521,42 @@ async def resolve_user(
         username=username,
         request_id=getattr(request.state, "request_id", None),
     )
+
+
+# `/users/labels` — как и `/resolve`, регистрируется ДО `/{user_id}`, иначе
+# FastAPI съел бы `labels` как литеральный user_id.
+@router.get(
+    "/labels",
+    response_model=UserLabelsResponse,
+    summary="Батч-резолв user_id → username (любой залогиненный юзер)",
+    description=(
+        "Принимает `ids` (CSV из user_id) и возвращает `{user_id: username}` "
+        "только для найденных. Username — не чувствительные данные, поэтому "
+        "доступен любому user-context (не только админам): UI подставляет имя "
+        "вместо id, например в карточке шаринга personal-секрета. "
+        "Несуществующие id молча пропускаются. Лимит — 200 id за запрос."
+    ),
+)
+async def resolve_user_labels(
+    identity: CurrentUserIdentity,
+    ids: str = Query(
+        min_length=1,
+        max_length=8192,
+        description="Список user_id через запятую (например `usr_a,usr_b`).",
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> UserLabelsResponse:
+    """Батч user_id → username.
+
+    Доступ:
+        Любой залогиненный юзер (user-context). m2m отбивается
+        `require_user_context` (403 USER_CONTEXT_REQUIRED). Чувствительные поля
+        не отдаются — только id→username.
+    """
+    user_ids = [i.strip() for i in ids.split(",") if i.strip()]
+    # Защита от слишком большого батча — режем до разумного потолка.
+    user_ids = user_ids[:200]
+    return await user_service.resolve_labels(db=db, user_ids=user_ids)
 
 
 @router.post(

@@ -149,6 +149,18 @@ class UserResolveResponse(BaseModel):
     department_id: str | None = None
 
 
+class UserLabelsResponse(BaseModel):
+    """Ответ `GET /users/labels` — батч-резолв user_id → username.
+
+    `labels` — словарь {user_id: username} только для найденных id; запрошенные,
+    но несуществующие id в ответе отсутствуют. Username не чувствительные данные,
+    поэтому endpoint доступен любому залогиненному юзеру — UI подставляет имя
+    вместо id (например в карточке шаринга personal-секрета).
+    """
+
+    labels: dict[str, str]
+
+
 class AssignRolesRequest(BaseModel):
     """Тело `POST /users/{user_id}/roles` — replace-семантика."""
     service_name: str = Field(description="Сервис, для которого выдаём роли.")

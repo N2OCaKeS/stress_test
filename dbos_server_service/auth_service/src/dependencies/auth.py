@@ -34,6 +34,7 @@ from src.core.security import decode_access_token
 from src.dependencies.db import get_db
 from src.repositories.departments import DepartmentRepository
 from src.repositories.oauth_clients import OAuthClientRepository
+from src.repositories.sessions import SessionRepository
 from src.repositories.users import UserRepository
 from src.schemas.auth import IdentityContext
 from src.services.auth_service import collect_user_permissions
@@ -99,6 +100,19 @@ async def _identity_from_user_jwt(
             error_code="USER_BANNED_OR_INACTIVE",
             message="User is no longer active",
         )
+
+    # JWT, привязанный к refresh-сессии (`sid`), умирает вместе с ней:
+    # logout / revoke одной или всех сессий гасит `is_active` и ставит
+    # `revoked_at`. Без этой проверки access-токен жил бы до конца TTL.
+    # Токены без `sid` (старые / не-сессионные) проверку пропускают.
+    sid = payload.get("sid")
+    if sid is not None:
+        session = await SessionRepository(db).get_by_id(sid)
+        if session is None or not session.is_active or session.revoked_at is not None:
+            raise AuthenticationError(
+                error_code="USER_BANNED_OR_INACTIVE",
+                message="Session is no longer active",
+            )
 
     # OAuth scope-creep guard: пересекаем зафиксированные в JWT scope'ы с
     # live `client.allowed_scopes` (если client удалён / деактивирован —

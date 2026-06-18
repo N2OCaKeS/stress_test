@@ -179,6 +179,42 @@ async def introspect(
             )
             return IntrospectResponse(active=False)
 
+        # Если JWT привязан к refresh-сессии (`sid`), проверяем, что она ещё
+        # жива. Logout / revoke одной или всех сессий гасит `is_active` и
+        # ставит `revoked_at`, но access-JWT этого не знал и пускал до конца
+        # TTL. Старые токены без `sid` (а также oauth_client / pat / bot —
+        # у них своя ревалидация) сюда не попадают.
+        sid = payload.get("sid")
+        if sid is not None:
+            from src.repositories.sessions import SessionRepository
+
+            session = await SessionRepository(db).get_by_id(sid)
+            if session is None or not session.is_active or session.revoked_at is not None:
+                revoked_dept = (
+                    await dept_repo.get_by_id(user.department_id)
+                    if user.department_id
+                    else None
+                )
+                audit_service.emit(
+                    "token.introspect",
+                    sub,
+                    actor_type="user",
+                    username=user.username,
+                    department_id=user.department_id,
+                    department_name=revoked_dept.name if revoked_dept else None,
+                    status="failure",
+                    allowed=False,
+                    details={
+                        "token_type": "jwt",
+                        "reason": "session_revoked",
+                        "username": user.username,
+                        "session_id": sid,
+                        "exp": payload.get("exp"),
+                    },
+                    request_id=request_id,
+                )
+                return IntrospectResponse(active=False)
+
         # Permissions: пересобираем live из БД, не из payload. Для
         # account_admin не отдаём service-grants (зеркало `_build_identity`).
         #

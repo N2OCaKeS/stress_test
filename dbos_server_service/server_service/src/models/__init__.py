@@ -8,6 +8,7 @@ from src.models.server import Server
 from src.models.secrets_outbox import ReencryptOutboxEntry
 from src.models.server_account import ServerAccount, ServerAccountServer
 from src.models.server_account_ignored_login import ServerAccountIgnoredLogin
+from src.models.server_account_user_acl import ServerAccountUserAcl
 from src.models.server_disk import ServerDisk
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "ServerAccount",
     "ServerAccountIgnoredLogin",
     "ServerAccountServer",
+    "ServerAccountUserAcl",
     "ServerDisk",
 ]

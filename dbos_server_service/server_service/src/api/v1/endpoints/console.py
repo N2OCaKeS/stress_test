@@ -14,8 +14,9 @@ stash, а worker коннектится под аккаунтом по password-
   1. Клиент открывает WS с `Authorization: Bearer <token>` (subprotocol
      `bearer.<token>` либо заголовок) и обязательным query `account_id=<acc>`.
      server_service делает introspect, проверяет RBAC `(server, console)`,
-     dept-видимость сервера, затем резолвит креды аккаунта (право
-     `(server_account, view_password)` + аккаунт привязан и виден).
+     dept-видимость сервера, затем резолвит креды аккаунта (per-account грант
+     `console` ЛИБО право `(server_account, view_password)` — роль или грант;
+     аккаунт привязан и виден).
   2. На отказе — WS закрывается с кодом и причиной ДО accept'а либо сразу
      после: 4401 нет токена, 4400 нет `account_id`, 4403 нет права console /
      нет права на креды аккаунта, 4404 сервер/аккаунт не найден или не
@@ -122,8 +123,9 @@ async def _authenticate(token: str):
 async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
     """Интерактивная SSH-консоль к серверу под выбранным server_account'ом.
 
-    Доступ: `(server, console)` + `(server_account, view_password)` на
-    выбранном аккаунте. Сервер НЕ обязан быть prepared — консоль коннектится
+    Доступ: `(server, console)` + на выбранном аккаунте либо per-account грант
+    `console`, либо `(server_account, view_password)` (роль/грант). Сервер НЕ
+    обязан быть prepared — консоль коннектится
     под кредами аккаунта, не под управляющим ключом. `account_id` берётся из
     query-параметра (обязателен). Department-scope сервера и аккаунта —
     `load_visible_server` / resolve бутстрап-кред.
@@ -166,9 +168,10 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
                 await websocket.close(code=_WS_CLOSE_CONFLICT, reason="SERVER_DECOMMISSIONED")
                 return
 
-            # view_password-паритет + аккаунт виден/привязан + есть пароль.
+            # Account-гейт консоли: per-account грант `console` ЛИБО доступ
+            # view_password (роль/грант) + аккаунт виден/привязан + есть пароль.
             # Возвращает {"login", "password", "ssh_private_key"}.
-            creds = await account_svc.resolve_bootstrap_credentials(
+            creds = await account_svc.resolve_console_credentials(
                 db, identity, account_id, server,
             )
     except AuthenticationError as exc:

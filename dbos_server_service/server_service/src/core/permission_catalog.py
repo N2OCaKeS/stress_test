@@ -90,6 +90,18 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
     Action.ROTATE_CREDENTIALS: "Ротация пароля BMC.",
     Action.PERMISSION_GRANT: "Выдать роли действие, добавив строку матрицы.",
     Action.PERMISSION_REVOKE: "Отозвать у роли действие.",
+    Action.MANAGE_ACCOUNT_ACL: (
+        "Управлять прямыми грантами на учётки отдела: выдавать и снимать "
+        "доступ конкретного пользователя к конкретной учётке поверх ролей."
+    ),
+    Action.PROVISION: (
+        "Завести OS-пользователя на сервере (useradd). Грантуется per-account; "
+        "под ролевой матрицей dispatch provision'а гейтится `create`."
+    ),
+    Action.DEPROVISION: (
+        "Удалить OS-пользователя с сервера (userdel). Грантуется per-account; "
+        "под ролевой матрицей dispatch deprovision'а гейтится `delete`."
+    ),
     Action.CANCEL: (
         "Отменить pending/running worker-task'у. Pending пропускается "
         "перед запуском, running доживает текущий stage и не стартует следующий."

@@ -85,6 +85,10 @@ SERVICE_EVENTS = [
     {"action": "server_account.ignored_login_added", "description": "Login added to the department ignore-list — inventory will no longer report it as an unknown OS-user", "default_severity": "WARNING"},
     {"action": "server_account.ignored_login_removed", "description": "Login removed from the department ignore-list — inventory will report it as unknown again if present on a box", "default_severity": "INFO"},
     {"action": "server_account.ignored_logins_listed", "description": "Department ignore-list of OS-user logins listed (emitted on denied)", "default_severity": "INFO"},
+    # Per-account ACL (прямые гранты на учётку поверх ролей)
+    {"action": "server_account.acl_listed", "description": "Direct per-account ACL grants for a server account listed", "default_severity": "INFO"},
+    {"action": "server_account.acl_granted", "description": "Direct per-account ACL grant created/updated for a user on a server account (additive to role matrix; replaces the action set for that user)", "default_severity": "WARNING"},
+    {"action": "server_account.acl_revoked", "description": "Direct per-account ACL grant removed for a user on a server account", "default_severity": "WARNING"},
     {"action": "server_account.link_servers", "description": "Server account linked to additional servers", "default_severity": "INFO"},
     {"action": "server_account.unlink_servers", "description": "Server account unlinked from servers", "default_severity": "INFO"},
     {"action": "server_account.delete", "description": "Server account deleted", "default_severity": "CRITICAL"},

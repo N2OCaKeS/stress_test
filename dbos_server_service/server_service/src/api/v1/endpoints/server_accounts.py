@@ -23,6 +23,8 @@ from src.models import ServerAccount
 from src.repositories import server_account as account_repo
 from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
 from src.schemas.server_account import (
+    AccountAclGrantRequest,
+    AccountAclResponse,
     IgnoredLoginCreate,
     IgnoredLoginResponse,
     ServerAccountAdoptRequest,
@@ -35,6 +37,7 @@ from src.schemas.server_account import (
     ServerAccountUpdate,
 )
 from src.services import server_account as svc
+from src.services import server_account_acl as acl_svc
 
 router = APIRouter(prefix="/server-accounts")
 
@@ -489,3 +492,100 @@ async def rotate_password(
         login=obj.login,
         rotated_at=obj.password_rotated_at,
     )
+
+
+def _acl_to_response(grant) -> AccountAclResponse:
+    """Собрать карточку гранта: boolean-флаги → список действий."""
+    return AccountAclResponse(
+        id=grant.id,
+        account_id=grant.account_id,
+        user_id=grant.user_id,
+        department_id=grant.department_id,
+        actions=acl_svc.acl_to_actions(grant),
+        created_by=grant.created_by,
+        created_at=grant.created_at,
+    )
+
+
+@router.get(
+    "/{account_id}/acl",
+    response_model=list[AccountAclResponse],
+    summary="Список прямых (per-account) грантов на учётку",
+    description=(
+        "Возвращает прямые гранты пользователей на эту учётку (аддитивно к "
+        "ролям). Гейтится `(server_account, manage_account_acl)`. Cross-dept "
+        "учётка скрыта за 404. Аудит: `server_account.acl_listed` (INFO)."
+    ),
+    responses={
+        200: {"description": "Список грантов учётки."},
+        403: {"description": "Нет `manage_account_acl`."},
+        404: {"description": "Учётка не найдена / чужой dept."},
+    },
+)
+async def list_account_acl(
+    account_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> list[AccountAclResponse]:
+    """List ACL. Доступ: `(server_account, manage_account_acl)`."""
+    _account, grants = await acl_svc.list_acl(db, identity, account_id)
+    return [_acl_to_response(g) for g in grants]
+
+
+@router.post(
+    "/{account_id}/acl",
+    response_model=AccountAclResponse,
+    status_code=201,
+    summary="Выдать прямой грант пользователю на учётку",
+    description=(
+        "Создаёт (или перевыдаёт) прямой грант: `{user_id, actions}`. "
+        "`actions` — полный желаемый набор из view, view_password, console, "
+        "update, provision, deprovision, rotate_password, delete, grant_sudo "
+        "(неизвестное → 422). Повторная выдача той же паре (account, user) "
+        "заменяет набор целиком. Грант только расширяет доступ (deny нет). "
+        "user_id обязан быть из отдела учётки (хранится отдел учётки). "
+        "Гейтится `(server_account, manage_account_acl)`. Аудит: "
+        "`server_account.acl_granted` (WARNING)."
+    ),
+    responses={
+        201: {"description": "Грант выдан."},
+        403: {"description": "Нет `manage_account_acl`."},
+        404: {"description": "Учётка не найдена / чужой dept."},
+        422: {"description": "INVALID_ACL_ACTION / INVALID_USER_ID."},
+    },
+)
+async def grant_account_acl(
+    account_id: str,
+    body: AccountAclGrantRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> AccountAclResponse:
+    """Grant ACL. Доступ: `(server_account, manage_account_acl)`."""
+    grant = await acl_svc.grant_acl(db, identity, account_id, body)
+    return _acl_to_response(grant)
+
+
+@router.delete(
+    "/{account_id}/acl/{user_id}",
+    response_model=OkResponse,
+    summary="Снять прямой грант пользователя на учётку",
+    description=(
+        "Удаляет прямой грант пользователя на эту учётку. Если гранта нет — "
+        "404. Гейтится `(server_account, manage_account_acl)`. Аудит: "
+        "`server_account.acl_revoked` (WARNING)."
+    ),
+    responses={
+        200: {"description": "Грант снят."},
+        403: {"description": "Нет `manage_account_acl`."},
+        404: {"description": "Учётка не найдена / чужой dept, либо гранта нет."},
+    },
+)
+async def revoke_account_acl(
+    account_id: str,
+    user_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> OkResponse:
+    """Revoke ACL. Доступ: `(server_account, manage_account_acl)`."""
+    await acl_svc.revoke_acl(db, identity, account_id, user_id)
+    return OkResponse()

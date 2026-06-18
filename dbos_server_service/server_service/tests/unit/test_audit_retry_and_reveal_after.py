@@ -634,10 +634,14 @@ def _sa_view_stubs(monkeypatch):
     async def fake_load(_db, _ident, _id):
         return _Acc()
 
+    async def fake_get_by_id(_db, _id):
+        return _Acc()
+
     monkeypatch.setattr(sa_svc.audit_service, "emit", fake_emit)
     monkeypatch.setattr(sa_svc.permissions, "has_action", fake_has_action)
     monkeypatch.setattr(sa_svc.permissions, "require_action", fake_require)
     monkeypatch.setattr(sa_svc, "_load_account_visible", fake_load)
+    monkeypatch.setattr(sa_svc.repo, "get_by_id", fake_get_by_id)
     return captured
 
 

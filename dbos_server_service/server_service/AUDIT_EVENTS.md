@@ -186,6 +186,9 @@ Public endpoint'ы, через которые user (обычно admin) запу
 | `server_account.link_servers` | INFO | POST `/server-accounts/{id}/servers` — привязка аккаунта к дополнительным серверам | `server_account` | `server_ids`, `department_id`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
 | `server_account.unlink_servers` | INFO | DELETE `/server-accounts/{id}/servers` — отвязка от серверов | `server_account` | `server_ids`, `department_id`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
 | `server_account.delete` | CRITICAL | hard-delete | `server_account` | `server_id`, `login` |
+| `server_account.acl_listed` | INFO | GET `/server-accounts/{id}/acl` — список прямых per-account грантов учётки. Гейт — `(server_account, manage_account_acl)` | `server_account` | success: `department_id`, `count`. denied: `reason=permission_denied`. failure: `reason=not_found_or_cross_dept` |
+| `server_account.acl_granted` | WARNING | POST `/server-accounts/{id}/acl` — выдан/перевыдан прямой грант пользователю на учётку (аддитивно к ролям; набор действий заменяется целиком). Гейт — `(server_account, manage_account_acl)` | `server_account` | success: `target_user_id`, `actions`, `department_id`. denied: `reason=permission_denied`, `target_user_id`. failure: `reason in {not_found_or_cross_dept, invalid_actions, invalid_user_id}` |
+| `server_account.acl_revoked` | WARNING | DELETE `/server-accounts/{id}/acl/{user_id}` — снят прямой грант пользователя на учётку. Гейт — `(server_account, manage_account_acl)` | `server_account` | success: `target_user_id`, `department_id`. denied: `reason=permission_denied`. failure: `reason in {not_found_or_cross_dept, not_found}` |
 
 ---
 

@@ -343,6 +343,53 @@ class ServerAccountResponse(BaseModel):
     created_by: str | None = Field(default=None, description="user_id, создавший аккаунт.")
 
 
+class AccountAclGrantRequest(BaseModel):
+    """Тело POST /server-accounts/{id}/acl — выдать прямой грант пользователю.
+
+    `actions` — набор действий, которые выдаются (полный желаемый набор;
+    повторная выдача той же паре (account, user) заменяет набор целиком).
+    Допустимые значения: view, view_password, console, update, provision,
+    deprovision, rotate_password, delete, grant_sudo. Пустой набор запрещён
+    (для снятия доступа используйте DELETE).
+    """
+
+    user_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="Кому выдаётся грант (usr_/bot_). Обязан быть из отдела учётки.",
+    )
+    actions: list[str] = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Набор грантуемых действий. Допустимо: view, view_password, "
+            "console, update, provision, deprovision, rotate_password, delete, "
+            "grant_sudo. Неизвестное действие → 422."
+        ),
+    )
+
+
+class AccountAclResponse(BaseModel):
+    """Карточка одного per-account гранта в ответе."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(description="ID гранта (prefix aacl_).")
+    account_id: str = Field(description="Учётка, на которую выдан грант.")
+    user_id: str = Field(description="Кому выдан грант (usr_/bot_).")
+    department_id: str = Field(description="Отдел учётки.")
+    actions: list[str] = Field(
+        description=(
+            "Список разрешённых действий (только те, что включены). Порядок "
+            "канонический: view, view_password, console, update, provision, "
+            "deprovision, rotate_password, delete, grant_sudo."
+        )
+    )
+    created_by: str | None = Field(default=None, description="Кто выдал грант.")
+    created_at: datetime = Field(description="Когда грант создан.")
+
+
 class ServerAccountRotateRequest(BaseModel):
     """Тело POST /server-accounts/{id}/rotate_password.
 

@@ -348,40 +348,65 @@ async def _resolve_account_and_server(
     audit_action: str,
     operation: str,
     check_decommissioned: bool = True,
+    acl_action: str | None = None,
 ):
     """Permission + visibility + dept-isolation для пары account+server.
 
     Возвращает `(account, server)`. На любом провале эмитит failure-audit и
-    поднимает исключение. Порядок проверок зеркалит
-    `account_rotate_password_dispatch`: permission ДО visibility (иначе
-    enumeration), затем dept-isolated lookup аккаунта, проверка что
-    `server_id` среди привязанных, decommissioned-gate.
+    поднимает исключение.
+
+    Авторизация аддитивная (роль ИЛИ per-account грант): сначала грузим учётку
+    (per-account грант нельзя проверить, не зная конкретную учётку). Держатель
+    бланкетной роли `action` ведёт себя как раньше — visibility-404 на
+    невидимую цель. Без роли проходит только тот, у кого есть прямой грант
+    `acl_action` на эту видимую учётку (для provision/deprovision ролевой
+    `action` = create/delete, а per-account флаг отдельный — поэтому
+    `acl_action` задаётся явно; по умолчанию совпадает с `action`).
 
     `check_decommissioned=False` отключает финальный decommission-check —
     caller тогда отвечает за `_decommissioned_account_dispatch_guard` после
     своей idempotency-replay-ветки.
     """
-    with emit_denied_on_authz_error(
-        audit_action,
-        target_id=account_id,
-        target_type="server_account",
-        extra_details={"server_id": server_id, "operation": operation},
-        identity=identity,
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, action,
-        )
-
+    acl_action = acl_action or action
+    has_role = await permissions.has_action(
+        db, identity, EntityType.SERVER_ACCOUNT, action,
+    )
     account = await account_repo.get_by_id(db, account_id)
-    if account is None or account.department_id != identity.department_id:
-        audit_service.emit(
-            audit_action, target_id=account_id, target_type="server_account",
-            status="failure", allowed=True,
-            details={"reason": "not_found_or_cross_dept", "operation": operation},
-        )
-        raise NotFoundError(
-            error_code="ACCOUNT_NOT_FOUND", message="Server account not found",
-        )
+    visible = account is not None and account.department_id == identity.department_id
+
+    if has_role:
+        if not visible:
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept", "operation": operation},
+            )
+            raise NotFoundError(
+                error_code="ACCOUNT_NOT_FOUND", message="Server account not found",
+            )
+    else:
+        # Без бланкетной роли — единственный путь это прямой грант на видимую
+        # учётку. Невидимая/чужая/без-гранта → одинаковый 403 (no oracle).
+        if not (
+            visible
+            and await permissions.has_account_action(db, identity, account, acl_action)
+        ):
+            details = {
+                "server_id": server_id,
+                "operation": operation,
+                "reason": "permission_denied",
+            }
+            if getattr(identity, "subject_type", None) is not None:
+                details["subject_type"] = identity.subject_type
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="denied", allowed=False, details=details,
+            )
+            raise AuthorizationError(
+                error_code="PERMISSION_DENIED",
+                message=f"No access to action '{acl_action}' on this server account",
+                details={"entity_type": "server_account", "action": acl_action},
+            )
 
     if server_id not in account_repo.linked_server_ids(account):
         audit_service.emit(
@@ -438,6 +463,7 @@ async def _dispatch_account_on_host(
     operation: str,
     extra_payload: dict | None = None,
     include_home_dir: bool | None = None,
+    acl_action: str | None = None,
 ) -> dict:
     """Per-server update/deprovision OS-пользователя.
 
@@ -449,6 +475,7 @@ async def _dispatch_account_on_host(
     account, server = await _resolve_account_and_server(
         db=db, identity=identity, account_id=account_id, server_id=server_id,
         action=action, audit_action=audit_action, operation=operation,
+        acl_action=acl_action,
     )
 
     idempotency_key = read_idempotency_key(request)
@@ -551,7 +578,7 @@ async def _dispatch_account_provision(
     account, server = await _resolve_account_and_server(
         db=db, identity=identity, account_id=account_id, server_id=server_id,
         action=Action.CREATE, audit_action=audit_action, operation=operation,
-        check_decommissioned=False,
+        check_decommissioned=False, acl_action=Action.PROVISION,
     )
 
     idempotency_key = read_idempotency_key(request)
@@ -1413,32 +1440,43 @@ async def account_rotate_password_dispatch(
     """
     audit_action = "server_account.rotate_password_dispatch"
 
-    # Permission ДО visibility — иначе ошибки enumerable: caller без роли
-    # увидел бы по 403/404 разницу для существующих vs несуществующих
-    # account_id'ов. (Симметрия с server_account.rotate_password в
-    # `services/server_account.py`.)
-    with emit_denied_on_authz_error(
-        audit_action,
-        target_id=account_id,
-        target_type="server_account",
-        identity=identity,
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.ROTATE_PASSWORD,
-        )
-
-    # Visibility-check: аккаунт виден, если его department совпадает с
-    # caller'ом. Любая ambiguity (нет аккаунта, чужой dept) → одинаковая
-    # 404 ACCOUNT_NOT_FOUND, иначе по разнице ответов утечёт enumeration.
+    # Аддитивная авторизация (роль ИЛИ per-account грант на `rotate_password`).
+    # Учётку грузим до решения: per-account грант нельзя проверить, не зная
+    # конкретную учётку. Держатель бланкетной роли видит 404 на невидимую
+    # цель (как раньше); без роли проходит только обладатель прямого гранта на
+    # эту видимую учётку, иначе одинаковый 403 (no existence-oracle).
+    has_role = await permissions.has_action(
+        db, identity, EntityType.SERVER_ACCOUNT, Action.ROTATE_PASSWORD,
+    )
     account = await account_repo.get_by_id(db, account_id)
-    if account is None or account.department_id != identity.department_id:
+    visible = account is not None and account.department_id == identity.department_id
+    if has_role:
+        if not visible:
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept"},
+            )
+            raise NotFoundError(
+                error_code="ACCOUNT_NOT_FOUND", message="Server account not found",
+            )
+    elif not (
+        visible
+        and await permissions.has_account_action(
+            db, identity, account, Action.ROTATE_PASSWORD
+        )
+    ):
+        details = {"reason": "permission_denied"}
+        if getattr(identity, "subject_type", None) is not None:
+            details["subject_type"] = identity.subject_type
         audit_service.emit(
             audit_action, target_id=account_id, target_type="server_account",
-            status="failure", allowed=True,
-            details={"reason": "not_found_or_cross_dept"},
+            status="denied", allowed=False, details=details,
         )
-        raise NotFoundError(
-            error_code="ACCOUNT_NOT_FOUND", message="Server account not found",
+        raise AuthorizationError(
+            error_code="PERMISSION_DENIED",
+            message="No access to action 'rotate_password' on this server account",
+            details={"entity_type": "server_account", "action": "rotate_password"},
         )
 
     linked_ids = account_repo.linked_server_ids(account)
@@ -1822,6 +1860,7 @@ async def account_update_on_host_dispatch(
         db=db, identity=identity, request=request,
         account_id=account_id, server_id=server_id,
         action=Action.UPDATE,
+        acl_action=Action.UPDATE,
         audit_action="server_account.update_on_host",
         task_kind="account.update_on_host",
         operation="update",
@@ -1878,6 +1917,7 @@ async def account_deprovision_dispatch(
         db=db, identity=identity, request=request,
         account_id=account_id, server_id=server_id,
         action=Action.DELETE,
+        acl_action=Action.DEPROVISION,
         audit_action="server_account.deprovision",
         task_kind="account.deprovision",
         operation="deprovision",

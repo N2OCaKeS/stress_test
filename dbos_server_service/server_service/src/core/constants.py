@@ -182,6 +182,18 @@ class Action(StrEnum):
     PERMISSION_GRANT = "permission_grant"
     PERMISSION_REVOKE = "permission_revoke"
 
+    # Управление per-account ACL: выдать/снять/посмотреть прямой грант
+    # конкретному пользователю на конкретную учётку (поверх ролевой матрицы).
+    MANAGE_ACCOUNT_ACL = "manage_account_acl"
+
+    # Provision/deprovision OS-пользователя на боксе. Под ролевой матрицей
+    # dispatch'и provision/deprovision гейтятся `create`/`delete`; для
+    # per-account гранта эти действия выделены отдельными флагами, чтобы право
+    # «завести/снести юзера на хосте» можно было выдать прицельно (`console`
+    # для консоли учётки переиспользует существующий `Action.CONSOLE`).
+    PROVISION = "provision"
+    DEPROVISION = "deprovision"
+
     # Worker-таска: отмена pending/running задачи. Graceful — pending пропадает
     # из dispatch'а через CAS, running доживает текущий stage и не стартует
     # следующий. Force-kill через cancel нет.
@@ -218,6 +230,11 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.ADOPT_FROM_HOST,
         # Управление ignore-list'ом незнакомых логинов отдела.
         Action.MANAGE_IGNORED_LOGINS,
+        # Интерактивная консоль учётки (ролевой путь): держатель видит её и для
+        # per-account гранта, и через роль.
+        Action.CONSOLE,
+        # Управление прямыми (per-account) грантами на учётки отдела.
+        Action.MANAGE_ACCOUNT_ACL,
     }),
     # Чтение каталога публичное (без auth) — view-грант осиротел и снят
     # миграцией c1a9f2b7e4d8; под матрицей остаётся только запись.
@@ -244,3 +261,38 @@ def is_valid_action(entity_type: str, action: str) -> bool:
     """True iff пара (entity_type, action) есть в whitelist'е ENTITY_ACTIONS."""
     allowed = ENTITY_ACTIONS.get(entity_type)
     return allowed is not None and action in allowed
+
+
+# Действия, которые можно выдать прямым per-account грантом на конкретную
+# учётку (поверх ролевой матрицы). Это НЕ совпадает с ENTITY_ACTIONS[
+# SERVER_ACCOUNT]: сюда входят provision/deprovision (которых нет в ролевой
+# матрице server_account — там dispatch гейтится create/delete) и НЕ входят
+# служебные/callback-действия (inventory_submit, provision_on_host,
+# adopt_from_host, manage_ignored_logins, manage_account_acl). Грант хранит
+# подмножество этого набора как boolean-флаги в server_account_user_acl.
+ACCOUNT_ACL_ACTIONS: frozenset[str] = frozenset({
+    Action.VIEW,
+    Action.VIEW_PASSWORD,
+    Action.CONSOLE,
+    Action.UPDATE,
+    Action.PROVISION,
+    Action.DEPROVISION,
+    Action.ROTATE_PASSWORD,
+    Action.DELETE,
+    Action.GRANT_SUDO,
+})
+
+# Маппинг grantable-action → boolean-колонка строки server_account_user_acl.
+# Единый источник истины для модели/сервиса/тестов — порядок схемы ответа
+# (`actions` в API-контракте) задаётся именно отсюда.
+ACCOUNT_ACL_ACTION_COLUMNS: dict[str, str] = {
+    Action.VIEW: "can_view",
+    Action.VIEW_PASSWORD: "can_view_password",
+    Action.CONSOLE: "can_console",
+    Action.UPDATE: "can_update",
+    Action.PROVISION: "can_provision",
+    Action.DEPROVISION: "can_deprovision",
+    Action.ROTATE_PASSWORD: "can_rotate_password",
+    Action.DELETE: "can_delete",
+    Action.GRANT_SUDO: "can_grant_sudo",
+}

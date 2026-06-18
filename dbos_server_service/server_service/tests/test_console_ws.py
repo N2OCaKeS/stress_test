@@ -170,7 +170,7 @@ def _patch_console(monkeypatch):
         return None
 
     monkeypatch.setattr(
-        console.account_svc, "resolve_bootstrap_credentials", fake_resolve,
+        console.account_svc, "resolve_console_credentials", fake_resolve,
     )
     monkeypatch.setattr(console.worker_client, "store_console_creds", fake_store)
     monkeypatch.setattr(console.worker_client, "delete_console_creds", fake_delete)
@@ -241,7 +241,7 @@ async def test_no_creds_permission_closes_4403(monkeypatch, _patch_console):
     monkeypatch.setattr(console.permissions, "require_action", allow)
     monkeypatch.setattr(console.server_svc, "load_visible_server", load)
     monkeypatch.setattr(
-        console.account_svc, "resolve_bootstrap_credentials", resolve_denied,
+        console.account_svc, "resolve_console_credentials", resolve_denied,
     )
     ws = FakeWebSocket(headers={"Authorization": "Bearer tok"})
     await console.server_console_ws(ws, "srv_console1")
@@ -270,7 +270,7 @@ async def test_account_not_found_closes_4404(monkeypatch, _patch_console):
     monkeypatch.setattr(console.permissions, "require_action", allow)
     monkeypatch.setattr(console.server_svc, "load_visible_server", load)
     monkeypatch.setattr(
-        console.account_svc, "resolve_bootstrap_credentials", resolve_notfound,
+        console.account_svc, "resolve_console_credentials", resolve_notfound,
     )
     ws = FakeWebSocket(headers={"Authorization": "Bearer tok"})
     await console.server_console_ws(ws, "srv_console1")
@@ -292,7 +292,7 @@ async def test_account_has_no_password_closes_4409(monkeypatch, _patch_console):
     monkeypatch.setattr(console.permissions, "require_action", allow)
     monkeypatch.setattr(console.server_svc, "load_visible_server", load)
     monkeypatch.setattr(
-        console.account_svc, "resolve_bootstrap_credentials", resolve_no_pw,
+        console.account_svc, "resolve_console_credentials", resolve_no_pw,
     )
     ws = FakeWebSocket(headers={"Authorization": "Bearer tok"})
     await console.server_console_ws(ws, "srv_console1")

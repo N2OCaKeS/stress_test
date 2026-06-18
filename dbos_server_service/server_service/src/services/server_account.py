@@ -130,6 +130,133 @@ def _should_emit_critical_reveal(actor_id: str | None, account_id: str) -> bool:
     return should_emit
 
 
+async def _authorize_account_action(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+    action: str,
+    audit_action: str,
+    *,
+    for_update: bool = False,
+    extra_details: dict | None = None,
+) -> ServerAccount:
+    """Загрузить учётку и авторизовать `action` на ней (роль ИЛИ per-account грант).
+
+    Единая точка для всех account-targeted операций. Решает две задачи разом:
+    permission-check (аддитивная модель `has_account_action`) и visibility.
+
+    Порядок и enumeration-резистентность:
+
+    * Сначала грузим учётку (raw, без dept-фильтра) — per-account грант нельзя
+      проверить, не зная конкретную учётку.
+    * Держатель бланкетной роли отдела ведёт себя как раньше: видит 404 на
+      невидимую (cross-dept / отсутствующую) учётку, иначе проходит.
+    * Caller без бланкетной роли проходит, только если у него есть прямой грант
+      на эту (видимую ему) учётку с этим действием; во всех остальных случаях —
+      одинаковый 403 PERMISSION_DENIED (невидимая учётка, чужой dept,
+      существующая-без-гранта неотличимы — нет existence-oracle'а).
+
+    На provision/deprovision гейтятся отдельными per-account флагами
+    (`provision`/`deprovision`); ролевой путь для них идёт по `create`/`delete`
+    в worker-dispatch'е и сюда не приходит.
+    """
+    has_role = await permissions.has_action(
+        db, identity, EntityType.SERVER_ACCOUNT, action
+    )
+    account = await (
+        repo.get_for_update(db, account_id) if for_update else repo.get_by_id(db, account_id)
+    )
+    visible = account is not None and account.department_id == identity.department_id
+
+    if has_role:
+        # Ролевой путь: поведение как раньше — visibility-404 на невидимую цель.
+        if not visible:
+            audit_service.emit(
+                audit_action,
+                target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept", **(extra_details or {})},
+            )
+            raise NotFoundError(
+                error_code="ACCOUNT_NOT_FOUND", message="Server account not found"
+            )
+        return account
+
+    # Без бланкетной роли — единственный путь это прямой грант на видимую учётку.
+    if visible and await permissions.has_account_action(db, identity, account, action):
+        return account
+
+    # Нет ни роли, ни гранта (или цель невидима) — 403 без раскрытия
+    # существования. denied-аудит зеркалит emit_denied_on_authz_error.
+    details: dict = dict(extra_details) if extra_details else {}
+    details["reason"] = "permission_denied"
+    if identity.subject_type is not None:
+        details.setdefault("subject_type", identity.subject_type)
+    audit_service.emit(
+        audit_action,
+        target_id=account_id, target_type="server_account",
+        status="denied", allowed=False,
+        details=details,
+    )
+    raise AuthorizationError(
+        error_code="PERMISSION_DENIED",
+        message=f"No access to action '{action}' on this server account",
+        details={"entity_type": "server_account", "action": action},
+    )
+
+
+async def _authorize_account_action_any(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+    actions: tuple[str, ...],
+    audit_action: str,
+) -> ServerAccount:
+    """Как `_authorize_account_action`, но проходит при ЛЮБОМ из `actions`.
+
+    Нужно для карточки (`view` ИЛИ `view_password`): держатель только одного
+    из двух не должен ловить лишний denied-аудит на промахе по другому.
+    Семантика visibility/enumeration та же.
+    """
+    account = await repo.get_by_id(db, account_id)
+    visible = account is not None and account.department_id == identity.department_id
+    has_any_role = False
+    for a in actions:
+        if await permissions.has_action(db, identity, EntityType.SERVER_ACCOUNT, a):
+            has_any_role = True
+            break
+    if has_any_role:
+        if not visible:
+            audit_service.emit(
+                audit_action,
+                target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept"},
+            )
+            raise NotFoundError(
+                error_code="ACCOUNT_NOT_FOUND", message="Server account not found"
+            )
+        return account
+    if visible:
+        for a in actions:
+            if await permissions.has_account_action(db, identity, account, a):
+                return account
+    details: dict = {"reason": "permission_denied"}
+    if identity.subject_type is not None:
+        details.setdefault("subject_type", identity.subject_type)
+    audit_service.emit(
+        audit_action,
+        target_id=account_id, target_type="server_account",
+        status="denied", allowed=False,
+        details=details,
+    )
+    raise AuthorizationError(
+        error_code="PERMISSION_DENIED",
+        message="No access to this server account",
+        details={"entity_type": "server_account", "actions": list(actions)},
+    )
+
+
 async def _load_account_visible(
     db: AsyncSession,
     identity: IdentityContext,
@@ -505,30 +632,18 @@ async def get_account(
     при наличии `view_password`, иначе `None`. Раскрытие пароля пишет отдельный
     CRITICAL-аудит `server_account.password_revealed`.
     """
-    has_password_action = await permissions.has_action(
-        db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW_PASSWORD
-    )
-    with emit_denied_on_authz_error(
+    # Карточка доступна по view ИЛИ view_password (ролевой бланк или
+    # per-account грант). Держатель ТОЛЬКО view_password (без view) тоже
+    # открывает карточку — поэтому авторизуем по объединению двух действий
+    # одним вызовом (без преждевременного denied-аудита на первом промахе).
+    account = await _authorize_account_action_any(
+        db, identity, account_id, (Action.VIEW, Action.VIEW_PASSWORD),
         "server_account.view",
-        target_id=account_id,
-        target_type="server_account",
-        identity=identity,
-    ):
-        if not has_password_action:
-            await permissions.require_action(
-                db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
-            )
-    try:
-        account = await _load_account_visible(db, identity, account_id)
-    except NotFoundError:
-        # Visibility-404: caller прошёл VIEW, target невидим → failure+allowed=True.
-        audit_service.emit(
-            "server_account.view",
-            target_id=account_id, target_type="server_account",
-            status="failure", allowed=True,
-            details={"reason": "not_found_or_cross_dept"},
-        )
-        raise
+    )
+
+    has_password_action = await permissions.has_account_action(
+        db, identity, account, Action.VIEW_PASSWORD
+    )
 
     # view-success эмитим ПОСЛЕ reveal'а: при сломанном ciphertext'е SIEM
     # иначе видит success+failure на один зов. Симметрично с
@@ -664,26 +779,10 @@ async def update_account(
     обновлено в БД. Caller использует его, чтобы решать, надо ли пускать
     fanout на серверы (no-op PATCH не должен генерировать `update_on_host`).
     """
-    with emit_denied_on_authz_error(
-        "server_account.update",
-        target_id=account_id,
-        target_type="server_account",
-        identity=identity,
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.UPDATE
-        )
-    try:
-        obj = await _load_account_visible_for_update(db, identity, account_id)
-    except NotFoundError:
-        # Visibility-404: account невидим (cross-dept / нет row), permission уже прошёл.
-        audit_service.emit(
-            "server_account.update",
-            target_id=account_id, target_type="server_account",
-            status="failure", allowed=True,
-            details={"reason": "not_found_or_cross_dept"},
-        )
-        raise
+    obj = await _authorize_account_action(
+        db, identity, account_id, Action.UPDATE, "server_account.update",
+        for_update=True,
+    )
 
     raw_changes = payload.model_dump(exclude_unset=True, mode="json")
     if not raw_changes:
@@ -714,12 +813,12 @@ async def update_account(
     if not changes:
         return obj, set()
 
-    # has_sudo=True или подъём флага — требует GRANT_SUDO. Снятие флага
-    # допустимо обычным UPDATE — это понижение привилегии.
+    # has_sudo=True или подъём флага — требует GRANT_SUDO (роль ИЛИ per-account
+    # грант). Снятие флага допустимо обычным UPDATE — это понижение привилегии.
     if changes.get("has_sudo") is True and not obj.has_sudo:
         try:
-            await permissions.require_action(
-                db, identity, EntityType.SERVER_ACCOUNT, Action.GRANT_SUDO
+            await permissions.require_account_action(
+                db, identity, obj, Action.GRANT_SUDO
             )
         except AuthorizationError:
             audit_service.emit(
@@ -1257,26 +1356,9 @@ async def delete_account(
     account_id: str,
 ) -> None:
     """Hard-delete аккаунта (связки уходят каскадом)."""
-    with emit_denied_on_authz_error(
-        "server_account.delete",
-        target_id=account_id,
-        target_type="server_account",
-        identity=identity,
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.DELETE
-        )
-    try:
-        obj = await _load_account_visible(db, identity, account_id)
-    except NotFoundError:
-        # Visibility-404: account невидим (cross-dept / нет row), permission уже прошёл.
-        audit_service.emit(
-            "server_account.delete",
-            target_id=account_id, target_type="server_account",
-            status="failure", allowed=True,
-            details={"reason": "not_found_or_cross_dept"},
-        )
-        raise
+    obj = await _authorize_account_action(
+        db, identity, account_id, Action.DELETE, "server_account.delete",
+    )
     login = obj.login
     server_ids = repo.linked_server_ids(obj)
     department_id = obj.department_id
@@ -1310,26 +1392,10 @@ async def rotate_password(
     (`ServerAccountRotateRequest`) и сохраняется как есть. Если нет —
     генерируем серверной стороной (`secrets.token_urlsafe(32)`).
     """
-    with emit_denied_on_authz_error(
+    obj = await _authorize_account_action(
+        db, identity, account_id, Action.ROTATE_PASSWORD,
         "server_account.rotate_password",
-        target_id=account_id,
-        target_type="server_account",
-        identity=identity,
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.ROTATE_PASSWORD
-        )
-    try:
-        obj = await _load_account_visible(db, identity, account_id)
-    except NotFoundError:
-        # Visibility-404: account невидим (cross-dept / нет row), permission уже прошёл.
-        audit_service.emit(
-            "server_account.rotate_password",
-            target_id=account_id, target_type="server_account",
-            status="failure", allowed=True,
-            details={"reason": "not_found_or_cross_dept"},
-        )
-        raise
+    )
     plaintext = new_password if new_password is not None else _generate_password()
     encrypted = secrets_service.encrypt(
         plaintext,
@@ -1493,10 +1559,15 @@ async def resolve_bootstrap_credentials(
     None, если у аккаунта ключа нет). Эти значения кладёт в Redis-stash
     вызывающий endpoint; в task-payload едет только ссылка.
     """
-    await permissions.require_action(
-        db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW_PASSWORD,
-    )
     account = await _load_account_visible(db, identity, account_id)
+    if not await permissions.has_account_action(
+        db, identity, account, Action.VIEW_PASSWORD
+    ):
+        raise AuthorizationError(
+            error_code="PERMISSION_DENIED",
+            message="No view_password access to this server account",
+            details={"entity_type": "server_account", "action": "view_password"},
+        )
     if server.id not in repo.linked_server_ids(account):
         raise NotFoundError(
             error_code="ACCOUNT_NOT_LINKED",
@@ -1529,6 +1600,77 @@ async def resolve_bootstrap_credentials(
             "server_id": server.id,
             "department_id": account.department_id,
             "has_ssh_private_key": ssh_private_key is not None,
+        },
+    )
+    return {
+        "login": account.login,
+        "password": password,
+        "ssh_private_key": ssh_private_key,
+    }
+
+
+async def resolve_console_credentials(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+    server,
+) -> dict[str, str | None]:
+    """Расшифровать креды учётки для интерактивной консоли.
+
+    Отличие от `resolve_bootstrap_credentials`: «подключаться к консоли» —
+    отдельное право учётки. Проходит, если у caller'а есть per-account грант
+    `console` на эту учётку ЛИБО доступ `view_password` (роль или грант —
+    кто видит пароль, тот и так может им подключиться). Это делает консоль
+    доступной без бланкетного view_password при наличии узкого console-гранта.
+
+    Остальные проверки (видимость учётки, привязка к серверу, наличие пароля)
+    и форма результата — те же, что у bootstrap-резолва.
+    """
+    account = await _load_account_visible(db, identity, account_id)
+    allowed = await permissions.has_account_action(
+        db, identity, account, Action.CONSOLE,
+    ) or await permissions.has_account_action(
+        db, identity, account, Action.VIEW_PASSWORD,
+    )
+    if not allowed:
+        raise AuthorizationError(
+            error_code="PERMISSION_DENIED",
+            message="No console access to this server account",
+            details={"entity_type": "server_account", "action": "console"},
+        )
+    if server.id not in repo.linked_server_ids(account):
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_LINKED",
+            message="Server account is not linked to this server",
+        )
+    if account.password_encrypted is None:
+        raise ConflictError(
+            error_code="ACCOUNT_HAS_NO_PASSWORD",
+            message=(
+                "Selected account has no stored password; rotate it first or "
+                "use manual bootstrap credentials"
+            ),
+        )
+    password = secrets_service.decrypt(
+        account.password_encrypted,
+        aad=secrets_service.aad_for_server_account_password(account.id),
+    )
+    ssh_private_key: str | None = None
+    if account.ssh_private_key_encrypted is not None:
+        ssh_private_key = secrets_service.decrypt(
+            account.ssh_private_key_encrypted,
+            aad=secrets_service.aad_for_server_account_ssh_key(account.id),
+        )
+    audit_service.emit(
+        "server_account.bootstrap_resolved",
+        target_id=account.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "login": account.login,
+            "server_id": server.id,
+            "department_id": account.department_id,
+            "has_ssh_private_key": ssh_private_key is not None,
+            "via": "console",
         },
     )
     return {

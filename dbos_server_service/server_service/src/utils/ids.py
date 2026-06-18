@@ -38,6 +38,11 @@ def ignored_login_id() -> str:
     return _new_id("ign_")
 
 
+def account_acl_id() -> str:
+    """`aacl_<uuid>` — для строк server_account_user_acl (per-account грант)."""
+    return _new_id("aacl_")
+
+
 def entity_permission_id() -> str:
     """`prm_<uuid>` — для entity_permissions."""
     return _new_id("prm_")

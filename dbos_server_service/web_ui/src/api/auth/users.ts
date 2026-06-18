@@ -187,6 +187,23 @@ export async function getUser(userId: string): Promise<User> {
 }
 
 /**
+ * Батч-резолв `usr_*` → username для любого аутентифицированного юзера (не
+ * только админов): в отличие от `getUser`/`/users/{id}`, этот endpoint не
+ * гейтится правами. Возвращаются только найденные id; отсутствующие молча
+ * пропускаются. Лимит — 200 id за запрос. Пустой список не дёргает сеть.
+ */
+export async function getUserLabels(
+  ids: string[],
+): Promise<Record<string, string>> {
+  if (ids.length === 0) return {};
+  const res = await apiGet<{ labels: Record<string, string> }>(
+    "/auth/v1/users/labels",
+    { query: { ids: ids.join(",") } },
+  );
+  return res.labels;
+}
+
+/**
  * Точечный резолв username → id в видимом scope (свой отдел; account_admin —
  * cross-dept). Для адресации шаринга, когда списки юзеров недоступны.
  * Чужой/несуществующий username → 404 USER_NOT_FOUND (без enumeration).

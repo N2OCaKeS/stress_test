@@ -27,7 +27,7 @@ import {
 import { listDepartments } from "@/api/auth/departments";
 import { listGroups } from "@/api/auth/groups";
 import { listServices } from "@/api/auth/services";
-import { getUser } from "@/api/auth/users";
+import { getUserLabels } from "@/api/auth/users";
 import { listServers } from "@/api/server/servers";
 import { getAccount } from "@/api/server/accounts";
 import { getCredential } from "@/api/secret/credentials";
@@ -293,7 +293,8 @@ export function useServerMap() {
 
 /**
  * Ленивый резолвер «один id → имя» для доменов без дешёвого глобального
- * списка: пользователи (глобальный list гейтится, dep_admin ловит 403),
+ * списка: пользователи (имя берём батч-endpoint'ом `/users/labels`, доступным
+ * любому аутентифицированному, в отличие от гейченного `/users/{id}`),
  * server_account'ы (list требует обязательный `server_id`, общей выдачи нет)
  * и credential'ы. В отличие от dept/group/service/server, грузим точечно по
  * запрошенному id и кэшируем результат.
@@ -305,9 +306,12 @@ export function useServerMap() {
  */
 type IdResolver = (id: string) => Promise<string>;
 
+// Через батч-endpoint `/users/labels`: он доступен любому user-JWT, тогда как
+// `GET /users/{id}` гейтится админскими правами и отдаёт 403 обычному юзеру.
+// Берём один id, фоллбэк на сам id, если имя не нашлось.
 const resolveUserName: IdResolver = async (id) => {
-  const u = await getUser(id);
-  return u.username || id;
+  const labels = await getUserLabels([id]);
+  return labels[id] || id;
 };
 
 const resolveAccountName: IdResolver = async (id) => {

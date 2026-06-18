@@ -58,6 +58,7 @@ import {
   revokeUserAcl,
 } from "@/api/secret/userAcls";
 import { listUsersByDepartment, resolveUser } from "@/api/auth/users";
+import { listServiceRoles } from "@/api/auth/service_roles";
 import type {
   Credential,
   CredentialCreateRequest,
@@ -377,6 +378,10 @@ export function SecretLive() {
           isGuest={isGuestList}
           currentUserId={persona.id}
           isDepAdmin={persona.platform_role === "dep_admin"}
+          canPickUsers={
+            persona.platform_role === "dep_admin" ||
+            persona.platform_role === "account_admin"
+          }
           actorDeptId={persona.dept_id}
           onDelete={handleDelete}
           onChanged={() => listQ.refetch()}
@@ -480,6 +485,7 @@ function DetailPane({
   isGuest,
   currentUserId,
   isDepAdmin,
+  canPickUsers,
   actorDeptId,
   onDelete,
   onChanged,
@@ -489,6 +495,7 @@ function DetailPane({
   isGuest: boolean;
   currentUserId: string;
   isDepAdmin: boolean;
+  canPickUsers: boolean;
   actorDeptId: string | null;
   onDelete: (c: Credential) => void;
   onChanged: () => void;
@@ -1135,7 +1142,9 @@ function DetailPane({
       )}
       {addingUserAcl && (
         <UserAclModal
-          actorDeptId={isDepAdmin ? actorDeptId : null}
+          canPick={canPickUsers}
+          pickerDeptId={cred?.owner_dept_id ?? null}
+          resolveDeptId={actorDeptId}
           onClose={() => setAddingUserAcl(false)}
           onSubmit={handleUserAclAdd}
         />
@@ -1684,7 +1693,7 @@ function TransferModal({
   );
 }
 
-function AclModal({
+export function AclModal({
   isCross,
   actorDeptId,
   onClose,
@@ -1710,6 +1719,29 @@ function AclModal({
   const [canRead, setCanRead] = useState(true);
   const [canWrite, setCanWrite] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Каталог ролей (dept × secret_service). Грузим как deptId определён: для
+  // department он залочен на отдел владельца сразу, для cross — после выбора
+  // recipient-отдела. Если каталог недоступен (403 у сервис-админа без доступа
+  // к ролям) или пуст — откатываемся на ручной ввод имени роли, чтобы не ломать
+  // его сценарий выдачи.
+  const rolesQ = useQuery(
+    () => listServiceRoles(deptId, "secret_service"),
+    [deptId],
+    { enabled: !!deptId },
+  );
+  const roleOptions = rolesQ.data ?? [];
+  const useRoleSelect = !rolesQ.loading && !rolesQ.error && roleOptions.length > 0;
+
+  // Подставляем первую доступную роль, когда подъехал список и текущее значение
+  // в нём отсутствует — иначе select показал бы пункт, не совпадающий со state.
+  useEffect(() => {
+    if (!useRoleSelect) return;
+    if (!roleOptions.some((r) => r.role_name === roleName)) {
+      setRoleName(roleOptions[0]?.role_name ?? "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useRoleSelect, deptId]);
 
   const valid = deptId.trim() && roleName.trim() && (canRead || canWrite);
 
@@ -1761,14 +1793,36 @@ function AclModal({
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">role_name *</span>
-          <input
-            className="surface-2 border border-token rounded px-2 py-1"
-            value={roleName}
-            onChange={(e) => setRoleName(e.target.value)}
-            maxLength={64}
-            required
-            placeholder="reader / operator / …"
-          />
+          {useRoleSelect ? (
+            <select
+              className="surface-2 border border-token rounded px-2 py-1"
+              value={roleName}
+              onChange={(e) => setRoleName(e.target.value)}
+              aria-label="role_name"
+              required
+            >
+              {roleOptions.map((r) => (
+                <option key={r.role_name} value={r.role_name}>
+                  {r.role_name}
+                  {r.description ? ` — ${r.description}` : ""}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className="surface-2 border border-token rounded px-2 py-1"
+              value={roleName}
+              onChange={(e) => setRoleName(e.target.value)}
+              maxLength={64}
+              required
+              placeholder="reader / operator / …"
+            />
+          )}
+          {!useRoleSelect && !!deptId && !rolesQ.loading && (
+            <span className="text-[11px] text-dim">
+              Каталог ролей недоступен — впишите имя роли вручную.
+            </span>
+          )}
         </label>
         <div className="flex items-center gap-4 text-sm">
           <label className="flex items-center gap-2">
@@ -1893,20 +1947,26 @@ function UserAclRow({
 }
 
 /**
- * Выдача user-ACL: ввод по username с резолвом в `usr_*`.
+ * Выдача user-ACL: выбор пользователя с резолвом в `usr_*`.
  *
- * Резолв идёт двумя путями. Если есть список пользователей отдела
- * (`listUsersByDepartment`, гейтится dep_admin/account_admin своим отделом) —
- * сопоставляем username по нему локально и подсказываем datalist'ом. Для
- * владельца personal-кред'ы (обычный юзер) списка нет — резолвим точечно через
- * `GET /users/resolve` (виден свой отдел). Сырой `usr_*` id тоже принимаем.
+ * Два режима. Если у актора есть доступ к списку юзеров отдела
+ * (`canPick` — dep_admin/account_admin, и известен `pickerDeptId`) — показываем
+ * пикер: select со списком username отдела, сразу с готовым `usr_*` id, плюс
+ * поиск по подстроке. Иначе (сервис-админ secret.admin без dep-admin прав)
+ * остаётся ручной ввод username с точечным резолвом через `GET /users/resolve`
+ * (виден свой отдел) — бэкенд list-юзеров такому актору отдаёт 403. Сырой
+ * `usr_*` id принимается в обоих режимах.
  */
-function UserAclModal({
-  actorDeptId,
+export function UserAclModal({
+  canPick,
+  pickerDeptId,
+  resolveDeptId,
   onClose,
   onSubmit,
 }: {
-  actorDeptId: string | null;
+  canPick: boolean;
+  pickerDeptId: string | null;
+  resolveDeptId: string | null;
   onClose: () => void;
   onSubmit: (body: {
     user_id: string;
@@ -1914,31 +1974,40 @@ function UserAclModal({
     can_write: boolean;
   }) => void | Promise<void>;
 }) {
+  const pickEnabled = canPick && !!pickerDeptId;
   const usersQ = useQuery(
-    () => listUsersByDepartment(actorDeptId as string, { limit: 200 }),
-    [actorDeptId],
-    { enabled: !!actorDeptId },
+    () => listUsersByDepartment(pickerDeptId as string, { limit: 200 }),
+    [pickerDeptId],
+    { enabled: pickEnabled },
   );
-  const hasDeptList = !!actorDeptId && (usersQ.data?.items.length ?? 0) > 0;
+  const userItems = usersQ.data?.items ?? [];
+  const usePicker = pickEnabled && !usersQ.loading && !usersQ.error && userItems.length > 0;
 
   const [input, setInput] = useState("");
+  const [filter, setFilter] = useState("");
+  const [selectedId, setSelectedId] = useState("");
   const [canRead, setCanRead] = useState(true);
   const [canWrite, setCanWrite] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [resolveErr, setResolveErr] = useState<string | null>(null);
 
-  const valid = input.trim() && (canRead || canWrite);
+  const filteredUsers = filter.trim()
+    ? userItems.filter((u) =>
+        u.username.toLowerCase().includes(filter.trim().toLowerCase()),
+      )
+    : userItems;
 
-  // username → usr_*: сырой id пропускаем как есть; иначе сперва ищем в
-  // dept-списке (если он есть), затем точечно дёргаем /users/resolve.
+  const valid = usePicker
+    ? !!selectedId && (canRead || canWrite)
+    : input.trim() && (canRead || canWrite);
+
+  // username → usr_*: в режиме пикера id уже выбран. В ручном режиме сырой id
+  // пропускаем как есть, иначе точечно дёргаем /users/resolve.
   async function resolveUserId(): Promise<string | null> {
+    if (usePicker) return selectedId || null;
     const raw = input.trim();
     if (!raw) return null;
     if (raw.startsWith("usr_")) return raw;
-    const match = usersQ.data?.items.find(
-      (u) => u.username.toLowerCase() === raw.toLowerCase(),
-    );
-    if (match) return match.id;
     try {
       const r = await resolveUser(raw);
       return r.user_id;
@@ -1969,39 +2038,69 @@ function UserAclModal({
     }
   }
 
+  // resolveDeptId участвует только в ручном резолве через бэкенд (виден свой
+  // отдел) — отдельный запрос не нужен, но держим параметр явным, чтобы вызов
+  // не зависел от неявного контекста.
+  void resolveDeptId;
+
   return (
     <ModalShell title="Выдать доступ пользователю" onClose={onClose}>
       <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
         <div className="text-xs text-dim">
-          Доступ выдаётся конкретному пользователю в дополнение к ролевым ACL.
-          Введите username — он будет сопоставлен с id (виден ваш отдел). Сырой
-          id (usr_…) тоже принимается.
+          {usePicker
+            ? "Доступ выдаётся конкретному пользователю отдела в дополнение к ролевым ACL. Выберите пользователя из списка."
+            : "Доступ выдаётся конкретному пользователю в дополнение к ролевым ACL. Введите username — он будет сопоставлен с id (виден ваш отдел). Сырой id (usr_…) тоже принимается."}
         </div>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-dim text-xs">username *</span>
-          <input
-            className="surface-2 border border-token rounded px-2 py-1"
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              setResolveErr(null);
-            }}
-            maxLength={64}
-            required
-            list={hasDeptList ? "secret-useracl-users" : undefined}
-            placeholder="username или usr_…"
-          />
-          {hasDeptList && (
-            <datalist id="secret-useracl-users">
-              {(usersQ.data?.items ?? []).map((u) => (
-                <option key={u.id} value={u.username} />
+        {usePicker ? (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">пользователь *</span>
+            <input
+              className="surface-2 border border-token rounded px-2 py-1"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="поиск по username…"
+              aria-label="поиск пользователя"
+            />
+            <select
+              className="surface-2 border border-token rounded px-2 py-1 mt-1"
+              value={selectedId}
+              onChange={(e) => {
+                setSelectedId(e.target.value);
+                setResolveErr(null);
+              }}
+              aria-label="пользователь"
+              required
+              size={Math.min(8, Math.max(3, filteredUsers.length))}
+            >
+              {filteredUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.username}
+                </option>
               ))}
-            </datalist>
-          )}
-          {resolveErr && (
-            <span className="text-[11px] text-danger">{resolveErr}</span>
-          )}
-        </label>
+            </select>
+            {resolveErr && (
+              <span className="text-[11px] text-danger">{resolveErr}</span>
+            )}
+          </label>
+        ) : (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">username *</span>
+            <input
+              className="surface-2 border border-token rounded px-2 py-1"
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setResolveErr(null);
+              }}
+              maxLength={64}
+              required
+              placeholder="username или usr_…"
+            />
+            {resolveErr && (
+              <span className="text-[11px] text-danger">{resolveErr}</span>
+            )}
+          </label>
+        )}
         <div className="flex items-center gap-4 text-sm">
           <label className="flex items-center gap-2">
             <input

@@ -509,6 +509,10 @@ function DetailPane({
   const canManageUserAcl = isPersonal
     ? cred?.owner_user_id === currentUserId
     : isDepAdmin;
+  // RoleACL для личной креды вправе выдавать её владелец (бэкенд авторизует через
+  // grant_acl на собственной креде), а не только dep_admin/operator.
+  const canManageAcl =
+    canManage || (isPersonal && cred?.owner_user_id === currentUserId);
   // Guest без reveal-доступа не нагружаем ACL/grant-листингами (бэк всё равно
   // отобьёт 403), показываем только метаданные.
   const aclQ = useQuery(() => listRoleAcls(credId), [credId], {
@@ -960,7 +964,7 @@ function DetailPane({
               <div className="text-xs uppercase tracking-wider text-dim">
                 RoleACL ({aclQ.data?.items.length ?? 0})
               </div>
-              {canManage && (
+              {canManageAcl && (
                 <button
                   className="btn btn-ghost text-xs flex items-center gap-1"
                   onClick={() => setAddingAcl(true)}
@@ -990,7 +994,7 @@ function DetailPane({
                         {a.can_read ? "r" : "-"}
                         {a.can_write ? "w" : "-"}
                       </span>
-                      {canManage && (
+                      {canManageAcl && (
                         <button
                           className="btn btn-ghost p-1"
                           title="Снять ACL"
@@ -1188,7 +1192,11 @@ function CreatePane({
   const [login, setLogin] = useState("");
   const [secret, setSecret] = useState("");
   const [visibleToDept, setVisibleToDept] = useState(false);
-  const [validFrom, setValidFrom] = useState("");
+  // valid_from по умолчанию — текущее московское время, чтобы свежий секрет был
+  // валиден сразу. Оператор может сдвинуть или очистить поле.
+  const [validFrom, setValidFrom] = useState(() =>
+    isoToLocal(new Date().toISOString()),
+  );
   const [validTo, setValidTo] = useState("");
   const [submitting, setSubmitting] = useState(false);
 

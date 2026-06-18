@@ -357,6 +357,63 @@ export interface ServerAccountUpdateRequest {
   home_dir?: string | null;
 }
 
+// ── per-account ACL (прямые гранты пользователям) ───────────────────────────
+
+/**
+ * Допустимые действия per-account гранта. Точные строки зеркалят backend —
+ * любое другое значение отбивается 422 INVALID_ACL_ACTION.
+ */
+export type AccountAclAction =
+  | "view"
+  | "view_password"
+  | "console"
+  | "update"
+  | "provision"
+  | "deprovision"
+  | "rotate_password"
+  | "delete"
+  | "grant_sudo";
+
+/**
+ * Каталог действий с человекочитаемыми подписями. Порядок — канонический
+ * (как backend возвращает actions в гранте), его же держим в чекбоксах модалки.
+ */
+export const ACCOUNT_ACL_ACTIONS: ReadonlyArray<{
+  action: AccountAclAction;
+  label: string;
+}> = [
+  { action: "view", label: "Видеть" },
+  { action: "view_password", label: "Видеть пароль" },
+  { action: "console", label: "Консоль (работать)" },
+  { action: "update", label: "Изменять" },
+  { action: "provision", label: "Создавать на сервере" },
+  { action: "deprovision", label: "Удалять с сервера" },
+  { action: "rotate_password", label: "Ротация пароля" },
+  { action: "delete", label: "Удалять учётку" },
+  { action: "grant_sudo", label: "Выдавать sudo" },
+];
+
+/** Подпись действия по ключу (fallback — сам ключ). */
+const ACCOUNT_ACL_LABEL = new Map(
+  ACCOUNT_ACL_ACTIONS.map((a) => [a.action, a.label]),
+);
+
+export function accountAclActionLabel(action: string): string {
+  return ACCOUNT_ACL_LABEL.get(action as AccountAclAction) ?? action;
+}
+
+/** Грант доступа к учётке конкретному пользователю/боту (GET/POST /acl). */
+export interface AccountAclGrant {
+  id: string;
+  account_id: string;
+  user_id: string;
+  department_id: string;
+  /** Включённые действия в каноническом порядке. */
+  actions: string[];
+  created_by: string | null;
+  created_at: Iso8601;
+}
+
 // ── os-versions ─────────────────────────────────────────────────────────────
 
 /**

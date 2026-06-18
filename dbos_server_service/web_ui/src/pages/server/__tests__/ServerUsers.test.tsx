@@ -23,6 +23,13 @@ const importUnknownUserMock = vi.fn((_b?: unknown) => new Promise(() => {}));
 const listIgnoredLoginsMock = vi.fn(() => new Promise(() => {}));
 const addIgnoredLoginMock = vi.fn((_b?: unknown) => new Promise(() => {}));
 const removeIgnoredLoginMock = vi.fn((_l?: unknown) => new Promise(() => {}));
+const listAccountAclMock = vi.fn((_id?: unknown) => new Promise(() => {}));
+const addAccountAclMock = vi.fn((_id?: unknown, _b?: unknown) =>
+  new Promise(() => {}),
+);
+const revokeAccountAclMock = vi.fn((_id?: unknown, _u?: unknown) =>
+  new Promise(() => {}),
+);
 vi.mock("@/api/server/accounts", () => ({
   get listAccounts() {
     return listAccountsMock;
@@ -47,6 +54,31 @@ vi.mock("@/api/server/accounts", () => ({
   },
   get removeIgnoredLogin() {
     return removeIgnoredLoginMock;
+  },
+  get listAccountAcl() {
+    return listAccountAclMock;
+  },
+  get addAccountAcl() {
+    return addAccountAclMock;
+  },
+  get revokeAccountAcl() {
+    return revokeAccountAclMock;
+  },
+}));
+
+// Пикер юзеров в модалке ACL тянет список отдела; в smoke-тестах держим pending,
+// чтобы модалка падала в ручной ввод username — selectAccountAndAcl задаёт его
+// явно по необходимости.
+const listUsersByDepartmentMock = vi.fn((_d?: unknown, _p?: unknown) =>
+  new Promise(() => {}),
+);
+const resolveUserMock = vi.fn((_u?: unknown) => new Promise(() => {}));
+vi.mock("@/api/auth/users", () => ({
+  get listUsersByDepartment() {
+    return listUsersByDepartmentMock;
+  },
+  get resolveUser() {
+    return resolveUserMock;
   },
 }));
 
@@ -122,6 +154,11 @@ describe("ServerUsers (fleet account list)", () => {
     listIgnoredLoginsMock.mockReset();
     addIgnoredLoginMock.mockReset();
     removeIgnoredLoginMock.mockReset();
+    listAccountAclMock.mockReset();
+    addAccountAclMock.mockReset();
+    revokeAccountAclMock.mockReset();
+    listUsersByDepartmentMock.mockReset();
+    resolveUserMock.mockReset();
     usersInventoryMock.mockReset();
     getTaskMock.mockReset();
     listServersMock.mockReturnValue(new Promise(() => {}));
@@ -133,6 +170,11 @@ describe("ServerUsers (fleet account list)", () => {
     listIgnoredLoginsMock.mockReturnValue(new Promise(() => {}));
     addIgnoredLoginMock.mockReturnValue(new Promise(() => {}));
     removeIgnoredLoginMock.mockReturnValue(new Promise(() => {}));
+    listAccountAclMock.mockReturnValue(new Promise(() => {}));
+    addAccountAclMock.mockReturnValue(new Promise(() => {}));
+    revokeAccountAclMock.mockReturnValue(new Promise(() => {}));
+    listUsersByDepartmentMock.mockReturnValue(new Promise(() => {}));
+    resolveUserMock.mockReturnValue(new Promise(() => {}));
     usersInventoryMock.mockReturnValue(new Promise(() => {}));
     getTaskMock.mockReturnValue(new Promise(() => {}));
   });
@@ -342,6 +384,94 @@ describe("ServerUsers (fleet account list)", () => {
     expect(await d.findByText("ghost")).toBeInTheDocument();
     expect(d.getByLabelText(/Добавить ghost/)).toBeInTheDocument();
     expect(d.getByLabelText(/Игнорировать ghost/)).toBeInTheDocument();
+  });
+
+  it("секция «Доступ к учётке» видна для canManage и рендерит гранты из listAccountAcl", async () => {
+    selectAccount();
+    listAccountAclMock.mockResolvedValue([
+      {
+        id: "acl1",
+        account_id: "acc1",
+        user_id: "usr_42",
+        department_id: "dep1",
+        actions: ["view", "rotate_password"],
+        created_by: null,
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+
+    renderPage();
+    fireEvent.click(await screen.findByText("dbos-svc"));
+
+    // Секция и её кнопка выдачи.
+    expect(await screen.findByText(/Доступ к учётке/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Выдать доступ/ }),
+    ).toBeInTheDocument();
+
+    // Грант с человекочитаемыми бэйджами действий + кнопка «Снять».
+    expect(await screen.findByText("Видеть")).toBeInTheDocument();
+    expect(screen.getByText("Ротация пароля")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Снять/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("empty-state секции — «Прямых грантов нет»", async () => {
+    selectAccount();
+    listAccountAclMock.mockResolvedValue([]);
+
+    renderPage();
+    fireEvent.click(await screen.findByText("dbos-svc"));
+
+    expect(
+      await screen.findByText(/Прямых грантов нет/),
+    ).toBeInTheDocument();
+  });
+
+  it("модалка выдачи доступа показывает чекбоксы действий и зовёт addAccountAcl", async () => {
+    selectAccount();
+    listAccountAclMock.mockResolvedValue([]);
+    addAccountAclMock.mockResolvedValue({
+      id: "acl2",
+      account_id: "acc1",
+      user_id: "usr_99",
+      department_id: "dep1",
+      actions: ["view"],
+      created_by: null,
+      created_at: "2026-01-01T00:00:00Z",
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByText("dbos-svc"));
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Выдать доступ/ }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    const d = within(dialog);
+
+    // Чекбоксы действий с человекочитаемыми подписями.
+    expect(d.getByLabelText("Видеть")).toBeInTheDocument();
+    expect(d.getByLabelText("Видеть пароль")).toBeInTheDocument();
+    expect(d.getByLabelText("Выдавать sudo")).toBeInTheDocument();
+
+    // Пикер юзеров pending → ручной ввод username (сырой id принимается).
+    fireEvent.change(d.getByPlaceholderText(/username, usr_/), {
+      target: { value: "usr_99" },
+    });
+    // «view» отмечен по умолчанию — сразу выдаём.
+    fireEvent.click(d.getByRole("button", { name: /Выдать/ }));
+
+    await waitFor(() => {
+      expect(addAccountAclMock).toHaveBeenCalledTimes(1);
+    });
+    expect(addAccountAclMock.mock.calls[0][0]).toBe("acc1");
+    expect(addAccountAclMock.mock.calls[0][1]).toMatchObject({
+      user_id: "usr_99",
+      actions: ["view"],
+    });
   });
 
   it("ignore-модалка рендерит список из listIgnoredLogins", async () => {

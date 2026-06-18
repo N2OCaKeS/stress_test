@@ -12,6 +12,8 @@
 
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
 import type {
+  AccountAclAction,
+  AccountAclGrant,
   CursorPaginatedResponse,
   IgnoredLogin,
   ImportUnknownUserRequest,
@@ -377,6 +379,50 @@ export function importUnknownUser(
     source: "discovered",
     ...body,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Per-account ACL: прямые гранты доступа к учётке пользователям/ботам
+// ---------------------------------------------------------------------------
+
+/**
+ * Список прямых грантов учётки. Гранты добавляют доступ поверх ролей отдела;
+ * dep_admin и server.admin видят учётку всегда независимо от грантов.
+ * Гейтится `manage_account_acl` — без права 403, cross-dept учётка → 404.
+ */
+export function listAccountAcl(accountId: string): Promise<AccountAclGrant[]> {
+  return apiGet<AccountAclGrant[]>(
+    `${BASE}/server-accounts/${accountId}/acl`,
+  );
+}
+
+/**
+ * Выдать (или заменить) грант пользователю. Повторный POST на тот же
+ * (account, user) перезаписывает набор действий целиком.
+ *
+ * Ошибки: 422 INVALID_ACL_ACTION / INVALID_USER_ID, 403 (нет
+ * manage_account_acl), 404 (учётка не найдена / cross-dept).
+ */
+export function addAccountAcl(
+  accountId: string,
+  body: { user_id: string; actions: AccountAclAction[] },
+): Promise<AccountAclGrant> {
+  return apiPost<AccountAclGrant>(
+    `${BASE}/server-accounts/${accountId}/acl`,
+    body,
+  );
+}
+
+/**
+ * Снять грант пользователя. Нет гранта → 404 ACL_GRANT_NOT_FOUND.
+ */
+export function revokeAccountAcl(
+  accountId: string,
+  userId: string,
+): Promise<{ ok: boolean }> {
+  return apiDelete<{ ok: boolean }>(
+    `${BASE}/server-accounts/${accountId}/acl/${encodeURIComponent(userId)}`,
+  );
 }
 
 // ---------------------------------------------------------------------------

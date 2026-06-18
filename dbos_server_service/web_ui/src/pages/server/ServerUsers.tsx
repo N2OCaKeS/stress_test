@@ -46,6 +46,8 @@ import {
   ScanSearch,
   Plus,
   X,
+  ShieldPlus,
+  UserPlus,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
@@ -64,12 +66,17 @@ import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { RevisionDiffModal } from "@/pages/server/RevisionDiffModal";
 import { OsUsersDiscoveryModal } from "@/pages/server/OsUsersDiscoveryModal";
 import { IgnoredLoginsModal } from "@/pages/server/IgnoredLoginsModal";
+import { AccountAclModal } from "@/pages/server/AccountAclModal";
 import { isServerZoneBlocked } from "@/lib/rbac";
-import type {
-  RevisionAccountDiff,
-  Server,
-  ServerAccount,
-  ServerAccountUpdateRequest,
+import type { PlatformRole } from "@/types/persona";
+import {
+  accountAclActionLabel,
+  type AccountAclAction,
+  type AccountAclGrant,
+  type RevisionAccountDiff,
+  type Server,
+  type ServerAccount,
+  type ServerAccountUpdateRequest,
 } from "@/api/server/types";
 
 // Аккаунтов и серверов на отдел немного — одной страницы с запасом хватает,
@@ -409,6 +416,7 @@ export function ServerUsers() {
           canReveal={canReveal}
           canOperate={canOperate}
           canManage={canManage}
+          platformRole={persona.platform_role}
           serverName={serverName}
           allServers={servers}
           onChanged={() => accountsQ.refetch()}
@@ -735,6 +743,7 @@ function AccountWorkzone({
   canReveal,
   canOperate,
   canManage,
+  platformRole,
   serverName,
   allServers,
   onChanged,
@@ -744,6 +753,7 @@ function AccountWorkzone({
   canReveal: boolean;
   canOperate: boolean;
   canManage: boolean;
+  platformRole: PlatformRole;
   serverName: (id: string) => string;
   allServers: Server[];
   onChanged: () => void;
@@ -1098,6 +1108,13 @@ function AccountWorkzone({
                 revision.tracked?.polling ? revisionServer : null
               }
             />
+
+            {canManage && (
+              <AccountAclSection
+                account={account}
+                platformRole={platformRole}
+              />
+            )}
           </>
         )}
       </div>
@@ -1538,6 +1555,222 @@ function ServersSection({
           <Link2 className="w-3.5 h-3.5" /> {binding ? "Привязываем…" : "Привязать"}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Доступ к учётке — прямые гранты пользователям (per-account ACL)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Сообщение по ошибке выдачи/снятия гранта. 422 — кривое действие или id, 403 —
+ * нет manage_account_acl, 404 — учётка/грант не найдены.
+ */
+function handleAclError(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 403) {
+      return "Недостаточно прав (нужен manage_account_acl).";
+    }
+    if (e.status === 404) {
+      return "Учётка или грант не найдены (возможно, cross-dept или уже снят).";
+    }
+    if (e.status === 422) {
+      return apiErrMsg(e, "Недопустимое действие или пользователь.");
+    }
+  }
+  return apiErrMsg(e, "Операция не удалась");
+}
+
+/**
+ * Секция прямых грантов доступа к учётке. Гранты добавляют доступ поверх ролей
+ * отдела; dep_admin и server.admin видят все учётки всегда. Список с бэйджами
+ * действий и снятием, кнопка выдачи открывает `AccountAclModal`. Выбор юзера
+ * в модалке гейтит платформенная роль: dep_admin/account_admin берут пикер
+ * отдела, остальные вводят username вручную.
+ */
+function AccountAclSection({
+  account,
+  platformRole,
+}: {
+  account: ServerAccount;
+  platformRole: PlatformRole;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const grantsQ = useQuery(
+    () => accountsApi.listAccountAcl(account.id),
+    [account.id],
+  );
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<AccountAclGrant | null>(null);
+  const [busyUser, setBusyUser] = useState<string | null>(null);
+
+  const canPickUsers =
+    platformRole === "dep_admin" || platformRole === "account_admin";
+
+  const grants = grantsQ.data ?? [];
+
+  function openCreate() {
+    setEditing(null);
+    setModalOpen(true);
+  }
+
+  function openEdit(grant: AccountAclGrant) {
+    setEditing(grant);
+    setModalOpen(true);
+  }
+
+  async function handleSubmit(body: {
+    user_id: string;
+    actions: AccountAclAction[];
+  }) {
+    try {
+      await accountsApi.addAccountAcl(account.id, body);
+      toast.success("Доступ выдан");
+      setModalOpen(false);
+      setEditing(null);
+      grantsQ.refetch();
+    } catch (e) {
+      toast.error(handleAclError(e));
+    }
+  }
+
+  async function handleRevoke(grant: AccountAclGrant) {
+    if (busyUser) return;
+    if (
+      !(await confirm({
+        title: "Снять доступ",
+        message: `Снять прямой грант пользователя для учётки ${account.login}? Доступ по ролям отдела сохранится.`,
+        confirmLabel: "Снять",
+        danger: true,
+      }))
+    )
+      return;
+    setBusyUser(grant.user_id);
+    try {
+      await accountsApi.revokeAccountAcl(account.id, grant.user_id);
+      toast.success("Доступ снят");
+      grantsQ.refetch();
+    } catch (e) {
+      toast.error(handleAclError(e));
+    } finally {
+      setBusyUser(null);
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs uppercase text-dim flex items-center gap-2">
+          <ShieldPlus className="w-3 h-3" /> Доступ к учётке
+        </div>
+        <button
+          type="button"
+          className="btn btn-sm btn-primary flex items-center gap-1"
+          onClick={openCreate}
+        >
+          <UserPlus className="w-3.5 h-3.5" /> Выдать доступ
+        </button>
+      </div>
+      <div className="text-xs text-dim mb-3">
+        Гранты добавляют доступ поверх ролей; dep_admin и server.admin видят все
+        учётки всегда.
+      </div>
+
+      {grantsQ.loading && (
+        <div className="text-xs text-dim">Загрузка…</div>
+      )}
+      {grantsQ.error && (
+        <div className="text-xs text-danger">
+          {apiErrMsg(grantsQ.error, "Гранты не загрузились")}
+        </div>
+      )}
+      {!grantsQ.loading && !grantsQ.error && grants.length === 0 && (
+        <div className="text-xs text-dim italic">
+          Прямых грантов нет — доступ только по ролям отдела.
+        </div>
+      )}
+      {!grantsQ.loading && !grantsQ.error && grants.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {grants.map((g) => (
+            <AccountAclRow
+              key={g.id}
+              grant={g}
+              busy={busyUser === g.user_id || busyUser !== null}
+              onEdit={() => openEdit(g)}
+              onRevoke={() => handleRevoke(g)}
+            />
+          ))}
+        </div>
+      )}
+
+      {modalOpen && (
+        <AccountAclModal
+          canPick={canPickUsers}
+          pickerDeptId={account.department_id}
+          editing={editing}
+          onClose={() => {
+            setModalOpen(false);
+            setEditing(null);
+          }}
+          onSubmit={handleSubmit}
+        />
+      )}
+    </div>
+  );
+}
+
+function AccountAclRow({
+  grant,
+  busy,
+  onEdit,
+  onRevoke,
+}: {
+  grant: AccountAclGrant;
+  busy: boolean;
+  onEdit: () => void;
+  onRevoke: () => void;
+}) {
+  const username = useUserLabel(grant.user_id);
+  return (
+    <div className="border border-token rounded px-3 py-2 flex items-center gap-2 flex-wrap">
+      <User className="w-4 h-4 text-dim shrink-0" />
+      <span
+        className="text-sm flex-1 min-w-[120px] truncate"
+        title={grant.user_id}
+      >
+        {username}
+      </span>
+      <div className="flex flex-wrap gap-1">
+        {grant.actions.length === 0 ? (
+          <span className="text-dim italic text-xs">—</span>
+        ) : (
+          grant.actions.map((a) => (
+            <span key={a} className="badge" title={a}>
+              {accountAclActionLabel(a)}
+            </span>
+          ))
+        )}
+      </div>
+      <button
+        type="button"
+        className="btn btn-sm flex items-center gap-1"
+        disabled={busy}
+        title="Изменить набор действий"
+        onClick={onEdit}
+      >
+        <Edit3 className="w-3.5 h-3.5" /> Изменить
+      </button>
+      <button
+        type="button"
+        className="btn btn-sm btn-danger flex items-center gap-1"
+        disabled={busy}
+        title="Снять прямой грант"
+        onClick={onRevoke}
+      >
+        <X className="w-3.5 h-3.5" /> Снять
+      </button>
     </div>
   );
 }

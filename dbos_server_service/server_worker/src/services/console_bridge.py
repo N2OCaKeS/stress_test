@@ -44,6 +44,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 
 from src.clients.ssh import SshClient, SshError
@@ -70,6 +71,16 @@ OUT_CHANNEL_PREFIX = "console:out:"
 # сессии, спавн `_ConsoleSession` на каждый `start`.
 CTL_PATTERN = f"{CTL_CHANNEL_PREFIX}*"
 
+# Claim сессии за одним worker-процессом. `taskiq worker --workers N` и реплики
+# в k8s поднимают control-listener в каждом процессе, а pub/sub `start`
+# широковещателен → без claim'а на один WS поднялось бы N PTY (двойное эхо
+# ввода и вывода). SETNX гарантирует ровно одного владельца сессии.
+CLAIM_KEY_PREFIX = "console:claim:"
+# sid уникален на сессию, так что утёкший claim никому не мешает; TTL — лишь
+# страховка от лишних ключей, если процесс умрёт, не сняв claim.
+_CLAIM_TTL_SECONDS = 12 * 3600
+_WORKER_INSTANCE_ID = uuid.uuid4().hex
+
 # Сколько байт читаем из PTY за один read — баланс между latency (мелкий
 # буфер = чаще publish) и overhead'ом. 4 KiB хватает на типичный кадр вывода.
 _PTY_READ_BYTES = 4096
@@ -85,6 +96,41 @@ def in_channel(session_id: str) -> str:
 
 def out_channel(session_id: str) -> str:
     return f"{OUT_CHANNEL_PREFIX}{session_id}"
+
+
+def claim_key(session_id: str) -> str:
+    return f"{CLAIM_KEY_PREFIX}{session_id}"
+
+
+async def _claim_session(session_id: str) -> bool:
+    """Застолбить сессию за этим процессом (SETNX). True — мы владелец.
+
+    Если Redis недоступен — спавним (одна, пусть и без межпроцессной защиты,
+    сессия лучше отказа консоли; в пределах процесса дедуп держит
+    `_ACTIVE_SESSIONS`). Но при живом Redis (а pub/sub `start` без него и не
+    доедет) ровно один процесс выигрывает claim.
+    """
+    try:
+        client = redis_pool.get_redis()
+        won = await client.set(
+            claim_key(session_id),
+            _WORKER_INSTANCE_ID,
+            nx=True,
+            ex=_CLAIM_TTL_SECONDS,
+        )
+        return bool(won)
+    except Exception:  # noqa: BLE001
+        logger.debug("console: session claim failed, proceeding", exc_info=True)
+        return True
+
+
+async def _release_session(session_id: str) -> None:
+    """Снять свой claim по завершении сессии (best-effort)."""
+    try:
+        client = redis_pool.get_redis()
+        await client.delete(claim_key(session_id))
+    except Exception:  # noqa: BLE001
+        logger.debug("console: session claim release failed", exc_info=True)
 
 
 # Формат `creds_stash_key` из start-сообщения. Жёсткий guard: reject всё, что
@@ -576,7 +622,10 @@ async def _handle_ctl_message(message: dict) -> None:
         return
     action = msg.get("action")
     if action == "start":
-        _start_session(session_id, msg)
+        # Межпроцессный claim: при `--workers N` / репликах `start` получают
+        # все процессы, спавнить PTY должен ровно один.
+        if await _claim_session(session_id):
+            _start_session(session_id, msg)
     elif action == "stop":
         entry = _ACTIVE_SESSIONS.get(session_id)
         if entry is not None:
@@ -602,6 +651,7 @@ def _start_session(session_id: str, msg: dict) -> None:
             await session.run()
         finally:
             _ACTIVE_SESSIONS.pop(session_id, None)
+            await _release_session(session_id)
 
     task = asyncio.create_task(_runner(), name=f"console-session-{session_id}")
     _ACTIVE_SESSIONS[session_id] = (task, session)

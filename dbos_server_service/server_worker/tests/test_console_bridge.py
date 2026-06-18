@@ -116,12 +116,26 @@ class _FakeRedis:
     def __init__(self, pubsub=None):
         self._pubsub = pubsub or _FakePubSub([])
         self.published: list[tuple[str, str]] = []
+        self.kv: dict[str, str] = {}
 
     def pubsub(self):
         return self._pubsub
 
     async def publish(self, channel, message):
         self.published.append((channel, message))
+
+    async def set(self, key, value, *, nx=False, ex=None):
+        if nx and key in self.kv:
+            return None
+        self.kv[key] = value
+        return True
+
+    async def delete(self, *keys):
+        n = 0
+        for key in keys:
+            if self.kv.pop(key, None) is not None:
+                n += 1
+        return n
 
 
 # ── Audit ─────────────────────────────────────────────────────────────────
@@ -342,6 +356,9 @@ async def test_handle_ctl_start_spawns_session(monkeypatch):
         return s
 
     monkeypatch.setattr(console_bridge, "_build_session_from_start", fake_build)
+    monkeypatch.setattr(
+        console_bridge.redis_pool, "get_redis", lambda: _FakeRedis(),
+    )
     console_bridge._ACTIVE_SESSIONS.clear()
 
     msg = {
@@ -356,6 +373,29 @@ async def test_handle_ctl_start_spawns_session(monkeypatch):
     assert spawned["msg"]["host"] == "h"
     # cleanup
     await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_handle_ctl_start_claim_dedups_double_delivery(monkeypatch):
+    # pub/sub `start` доезжает до всех worker-процессов; claim (SETNX) должен
+    # пустить к спавну ровно один — иначе на один WS два PTY и двойное эхо.
+    redis = _FakeRedis()
+    monkeypatch.setattr(console_bridge.redis_pool, "get_redis", lambda: redis)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        console_bridge, "_start_session", lambda sid, msg: calls.append(sid),
+    )
+    console_bridge._ACTIVE_SESSIONS.clear()
+
+    msg = {
+        "type": "pmessage",
+        "channel": console_bridge.ctl_channel("csn_dup"),
+        "data": json.dumps({"action": "start", "host": "h", "server_id": "srv"}),
+    }
+    await console_bridge._handle_ctl_message(msg)
+    await console_bridge._handle_ctl_message(msg)
+
+    assert calls == ["csn_dup"]
 
 
 @pytest.mark.asyncio

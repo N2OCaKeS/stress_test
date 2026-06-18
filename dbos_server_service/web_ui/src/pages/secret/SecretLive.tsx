@@ -77,19 +77,24 @@ const STATUS_KIND: Record<string, "ok" | "danger"> = {
   blocked: "danger",
 };
 
-/**
- * `<input type="datetime-local">` отдаёт `YYYY-MM-DDTHH:mm` без зоны. Backend
- * валидирует окно валидности в UTC и naive-строку трактует как UTC, поэтому
- * добавляем `:00Z` — иначе локальное время уехало бы на смещение зоны.
- */
+// Поля окна валидности оператор вводит в московском времени (MSK, UTC+3 без
+// перехода на летнее), а backend хранит и сравнивает в UTC. Раньше naive-строку
+// из datetime-local отправляли как UTC (`:00Z`) — введённое «сейчас» по MSK
+// уезжало на +3 часа в будущее, и свежий секрет ловил SECRET_NOT_YET_VALID.
+const MSK_OFFSET = "+03:00";
+
+/** MSK-строка `YYYY-MM-DDTHH:mm` из datetime-local → UTC ISO для backend. */
 function localToIso(local: string): string {
-  return local.length === 16 ? `${local}:00Z` : local;
+  return local.length === 16
+    ? new Date(`${local}:00${MSK_OFFSET}`).toISOString()
+    : local;
 }
 
-/** ISO-таймстамп → значение для `datetime-local` (`YYYY-MM-DDTHH:mm`, UTC). */
+/** UTC ISO от backend → значение для `datetime-local` в MSK (`YYYY-MM-DDTHH:mm`). */
 function isoToLocal(iso: string | null | undefined): string {
   if (!iso) return "";
-  return iso.slice(0, 16);
+  const msk = new Date(new Date(iso).getTime() + 3 * 60 * 60 * 1000);
+  return msk.toISOString().slice(0, 16);
 }
 
 export function SecretLive() {
@@ -784,12 +789,6 @@ function DetailPane({
             <span>
               service: <b>{cred.service}</b>
             </span>
-            {cred.login && (
-              <>
-                <span>·</span>
-                <span>login: {cred.login}</span>
-              </>
-            )}
           </div>
         </div>
         {canManage && (
@@ -837,6 +836,27 @@ function DetailPane({
       </div>
 
       <div className="scroll-block p-5 grid grid-cols-2 gap-5 content-start">
+        {/* Login — нешифруемые метаданные, показываем открыто над секретом */}
+        {cred.login && (
+          <div className="surface border border-token rounded-lg p-4 col-span-2">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs uppercase tracking-wider text-dim">
+                Логин
+              </div>
+              <button
+                className="btn"
+                onClick={() => navigator.clipboard?.writeText(cred.login ?? "")}
+                title="Скопировать логин"
+              >
+                <Copy className="w-4 h-4 inline-block" />
+              </button>
+            </div>
+            <div className="mono text-lg p-3 surface-2 rounded border border-token">
+              {cred.login}
+            </div>
+          </div>
+        )}
+
         {/* Secret value */}
         <div className="surface border border-token rounded-lg p-4 col-span-2">
           <div className="flex items-center justify-between mb-2">
@@ -1184,10 +1204,11 @@ function CreatePane({
   // valid_to обязан быть в будущем и строго позже valid_from — backend
   // отбивает 422; гасим submit заранее, чтобы не ловить ошибку формой.
   const windowInvalid =
-    (validTo !== "" && new Date(validTo).getTime() <= Date.now()) ||
+    (validTo !== "" && new Date(localToIso(validTo)).getTime() <= Date.now()) ||
     (validFrom !== "" &&
       validTo !== "" &&
-      new Date(validTo).getTime() <= new Date(validFrom).getTime());
+      new Date(localToIso(validTo)).getTime() <=
+        new Date(localToIso(validFrom)).getTime());
   const valid =
     name.trim() &&
     service.trim() &&
@@ -1324,7 +1345,7 @@ function CreatePane({
           )}
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-dim text-xs">valid_from (UTC)</span>
+              <span className="text-dim text-xs">valid_from (MSK)</span>
               <input
                 type="datetime-local"
                 className="surface-2 border border-token rounded px-2 py-1"
@@ -1333,7 +1354,7 @@ function CreatePane({
               />
             </label>
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-dim text-xs">valid_to (UTC, в будущем)</span>
+              <span className="text-dim text-xs">valid_to (MSK, в будущем)</span>
               <input
                 type="datetime-local"
                 className="surface-2 border border-token rounded px-2 py-1"
@@ -1473,7 +1494,8 @@ function EditModal({
   const windowInvalid =
     validFrom !== "" &&
     validTo !== "" &&
-    new Date(validTo).getTime() <= new Date(validFrom).getTime();
+    new Date(localToIso(validTo)).getTime() <=
+      new Date(localToIso(validFrom)).getTime();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1532,7 +1554,7 @@ function EditModal({
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">valid_from (UTC)</span>
+            <span className="text-dim text-xs">valid_from (MSK)</span>
             <input
               type="datetime-local"
               className="surface-2 border border-token rounded px-2 py-1"
@@ -1541,7 +1563,7 @@ function EditModal({
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">valid_to (UTC)</span>
+            <span className="text-dim text-xs">valid_to (MSK)</span>
             <input
               type="datetime-local"
               className="surface-2 border border-token rounded px-2 py-1"

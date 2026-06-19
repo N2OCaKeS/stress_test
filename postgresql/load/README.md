@@ -16,7 +16,8 @@ sudo grep menuentry /boot/grub/grub.cfg | grep linux
 sudo mkdir -p /home/u/test/
 sudo chmod -R 777 /home/u/test/
 sudo perf record -g -a ./load2noarch /home/u/test/ 150 20000 5   
-sudo perf script | perl libstackcollapse-perf.pl | perl libflamegraph.pl > 150_20000_5.svg   
+sudo perf script | perl libstackcollapse-perf.pl | perl libflamegraph.pl > 150_20000_5.svg
+sudo perf script --header-only | grep "sample"   
 ```
 
 

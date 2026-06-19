@@ -3,7 +3,7 @@ import json
 import pandas as pd
 from collections import defaultdict
 from libs.libreport import ReportToConfluence
-from libs.libpsb import perf
+from libs.libpsb import perf, build_mrd_dataframe
 from libs.libtable import Report
 from psb_conf import DEFAULT_SCALE_FACTOR, DEFAULT_TRANSACTIONS, DEFAULT_THREADS, \
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, GRAPH_DESCRIPTIONS
@@ -206,6 +206,17 @@ class Public:
                 balance_table = file.read()
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
             html_page = '\n'.join([header_table, head_row, balance_table])
+        
+        # TODO: назвать тест
+        elif self.c_np.startswith('...'):
+            head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
+            with open(f'{REPORT_PATH}/results.json', 'r') as file:
+                report_data = json.load(file)
+
+            df = build_mrd_dataframe(report_data)
+            result_table = df.to_html(index=False)
+
+            html_page = '\n'.join([header_table, head_row, result_table])
         
         elif self.c_np.startswith('PSQL OLAP-hq'):
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'

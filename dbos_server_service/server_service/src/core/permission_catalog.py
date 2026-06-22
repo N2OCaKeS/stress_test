@@ -95,12 +95,12 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
         "доступ конкретного пользователя к конкретной учётке поверх ролей."
     ),
     Action.PROVISION: (
-        "Завести OS-пользователя на сервере (useradd). Грантуется per-account; "
-        "под ролевой матрицей dispatch provision'а гейтится `create`."
+        "Завести OS-пользователя на сервере (useradd). Гейтит dispatch "
+        "provision'а; выдаётся ролью или прямым per-account грантом."
     ),
     Action.DEPROVISION: (
-        "Удалить OS-пользователя с сервера (userdel). Грантуется per-account; "
-        "под ролевой матрицей dispatch deprovision'а гейтится `delete`."
+        "Удалить OS-пользователя с сервера (userdel). Гейтит dispatch "
+        "deprovision'а; выдаётся ролью или прямым per-account грантом."
     ),
     Action.CANCEL: (
         "Отменить pending/running worker-task'у. Pending пропускается "

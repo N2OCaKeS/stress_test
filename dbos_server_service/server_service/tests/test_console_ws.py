@@ -158,9 +158,17 @@ def _patch_console(monkeypatch):
     monkeypatch.setattr(console.audit_service, "emit", fake_emit)
     monkeypatch.setattr(console, "_authenticate", fake_authenticate)
 
+    # По умолчанию у caller'а есть серверный `(server, console)` — тесты под
+    # отказ переопределяют. Серверный console больше не жёсткий require, а
+    # has_action-проверка, чей результат прокидывается в резолвер кред.
+    async def fake_has_action(db, identity, entity_type, action):
+        return True
+
+    monkeypatch.setattr(console.permissions, "has_action", fake_has_action)
+
     # Дефолтный happy-резолв кред + no-op Redis-stash (отдельные тесты
     # переопределяют под свои сценарии).
-    async def fake_resolve(db, identity, account_id, server):
+    async def fake_resolve(db, identity, account_id, server, **kwargs):
         return {"login": "svc", "password": "pw", "ssh_private_key": None}
 
     async def fake_store(stash_key, creds):
@@ -211,10 +219,26 @@ async def test_missing_account_id_closes_4400(monkeypatch, _patch_console):
 
 @pytest.mark.asyncio
 async def test_no_console_permission_closes_4403(monkeypatch, _patch_console):
-    async def deny(*a, **k):
+    """Нет ни серверного `(server, console)`, ни права на учётку → 4403.
+
+    Серверный console больше не жёсткий гейт: его отсутствие проверяет
+    `has_action` (False), после чего авторизацию решает резолвер кред учётки —
+    он и отбивает denied'ом, когда на учётке тоже нет console/view_password.
+    """
+    async def no_server_console(*a, **k):
+        return False
+
+    async def load(*a, **k):
+        return _make_server()
+
+    async def resolve_denied(*a, **k):
         raise AuthorizationError(error_code="PERMISSION_DENIED", message="no")
 
-    monkeypatch.setattr(console.permissions, "require_action", deny)
+    monkeypatch.setattr(console.permissions, "has_action", no_server_console)
+    monkeypatch.setattr(console.server_svc, "load_visible_server", load)
+    monkeypatch.setattr(
+        console.account_svc, "resolve_console_credentials", resolve_denied,
+    )
     ws = FakeWebSocket(headers={"Authorization": "Bearer tok"})
     await console.server_console_ws(ws, "srv_console1")
     assert ws.closed_code == console._WS_CLOSE_FORBIDDEN
@@ -228,9 +252,9 @@ async def test_no_console_permission_closes_4403(monkeypatch, _patch_console):
 
 @pytest.mark.asyncio
 async def test_no_creds_permission_closes_4403(monkeypatch, _patch_console):
-    """Право console есть, но `view_password` на аккаунт — нет → 4403."""
-    async def allow(*a, **k):
-        return None
+    """Нет серверного console и нет права на креды учётки → 4403."""
+    async def no_server_console(*a, **k):
+        return False
 
     async def load(*a, **k):
         return _make_server()
@@ -238,7 +262,7 @@ async def test_no_creds_permission_closes_4403(monkeypatch, _patch_console):
     async def resolve_denied(*a, **k):
         raise AuthorizationError(error_code="PERMISSION_DENIED", message="no creds")
 
-    monkeypatch.setattr(console.permissions, "require_action", allow)
+    monkeypatch.setattr(console.permissions, "has_action", no_server_console)
     monkeypatch.setattr(console.server_svc, "load_visible_server", load)
     monkeypatch.setattr(
         console.account_svc, "resolve_console_credentials", resolve_denied,

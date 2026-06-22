@@ -2,7 +2,7 @@
 
 Покрывает:
 * trigger-dispatch `POST /server-accounts/{id}/provision|update_on_host|
-  deprovision` — 202 + task_id, нужный task_kind, права (create/update/delete),
+  deprovision` — 202 + task_id, нужный task_kind, права (provision/update/deprovision),
   server_id обязателен и должен быть привязан, decommissioned;
 * callback `POST /internal/servers/{id}/accounts/{aid}/provision_status` —
   обновляет `present_on_server`; worker_bot может, reader нет;
@@ -147,7 +147,7 @@ class TestProvisionDispatch:
             f"{BASE}/{acc.id}/deprovision?server_id={srv.id}",
             headers=_hdr(reader_token_a),
         )
-        # reader не имеет delete → 403.
+        # reader не имеет deprovision → 403.
         assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
 

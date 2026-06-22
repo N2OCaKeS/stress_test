@@ -568,6 +568,42 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Unix-группы, добавление в которые эскалирует учётку до sudo — поэтому
+    # добавление любой из них под обычным `update` запрещено, как и has_sudo→true:
+    # требуется action `grant_sudo`. Снятие таких групп / has_sudo→false —
+    # допустимо обычным `update` (понижение привилегии).
+    #
+    # Дефолт: `astra-admin` (GID 1001 на Astra Linux SE даёт sudo), `sudo`
+    # (Debian/Astra sudoer-группа), `wheel` (RHEL/Alpine). Через env:
+    # comma-separated (`sudo,astra-admin,wheel`) или JSON-list
+    # (`SUDO_CONFERRING_GROUPS='["sudo","wheel"]'`).
+    sudo_conferring_groups: frozenset[str] = Field(
+        default=frozenset({"sudo", "astra-admin", "wheel"}),
+        alias="SUDO_CONFERRING_GROUPS",
+    )
+
+    @field_validator("sudo_conferring_groups", mode="before")
+    @classmethod
+    def _parse_sudo_conferring_groups(cls, v):
+        """Поддерживает comma-separated string и JSON-list поверх нативного set/list."""
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return frozenset()
+            if v.startswith("["):
+                import json
+                try:
+                    parsed = json.loads(v)
+                except json.JSONDecodeError:
+                    return frozenset({v})
+                if isinstance(parsed, list):
+                    return frozenset(str(x).strip() for x in parsed if str(x).strip())
+                return frozenset({str(parsed).strip()})
+            return frozenset(item.strip() for item in v.split(",") if item.strip())
+        if isinstance(v, (list, set, tuple)):
+            return frozenset(str(x).strip() for x in v if str(x).strip())
+        return v
+
     # Доверенные IP reverse-proxy (allow-list для X-Forwarded-For / X-Real-IP).
     #
     # Если `request.client.host` НЕ в списке — header игнорируется и в качестве

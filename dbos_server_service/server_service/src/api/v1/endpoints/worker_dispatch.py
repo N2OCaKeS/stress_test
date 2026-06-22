@@ -359,9 +359,9 @@ async def _resolve_account_and_server(
     (per-account грант нельзя проверить, не зная конкретную учётку). Держатель
     бланкетной роли `action` ведёт себя как раньше — visibility-404 на
     невидимую цель. Без роли проходит только тот, у кого есть прямой грант
-    `acl_action` на эту видимую учётку (для provision/deprovision ролевой
-    `action` = create/delete, а per-account флаг отдельный — поэтому
-    `acl_action` задаётся явно; по умолчанию совпадает с `action`).
+    `acl_action` на эту видимую учётку. `acl_action` по умолчанию совпадает с
+    `action`; параметр оставлен на случай, когда ролевой и per-account ключи
+    расходятся.
 
     `check_decommissioned=False` отключает финальный decommission-check —
     caller тогда отвечает за `_decommissioned_account_dispatch_guard` после
@@ -577,7 +577,7 @@ async def _dispatch_account_provision(
     # нет — гарды ниже отбоят как раньше.
     account, server = await _resolve_account_and_server(
         db=db, identity=identity, account_id=account_id, server_id=server_id,
-        action=Action.CREATE, audit_action=audit_action, operation=operation,
+        action=Action.PROVISION, audit_action=audit_action, operation=operation,
         check_decommissioned=False, acl_action=Action.PROVISION,
     )
 
@@ -1054,7 +1054,7 @@ async def recreate_login_orchestrate(
             result = await _dispatch_account_on_host(
                 db=db, identity=identity, request=request,
                 account_id=account.id, server_id=sid,
-                action=Action.DELETE,
+                action=Action.DEPROVISION,
                 acl_action=Action.DEPROVISION,
                 audit_action=audit_dep,
                 task_kind="account.deprovision",
@@ -1946,13 +1946,13 @@ async def account_rotate_password_dispatch(
         "Параметр `server_id` (query) обязателен и должен быть среди привязанных "
         "к аккаунту серверов. Идемпотентно: если пользователь на боксе уже есть "
         "— worker не падает.\n\n"
-        "Триггер гейтится `(server_account, *, create)` — создание OS-пользователя "
-        "на боксе семантически близко к созданию аккаунта."
+        "Триггер гейтится `(server_account, *, provision)` — отдельным "
+        "действием ролевой матрицы (или прямым per-account грантом)."
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
         400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
-        403: {"description": "Нет роли с `create` либо чужой department."},
+        403: {"description": "Нет роли/гранта с `provision` либо чужой department."},
         404: {"description": "Аккаунт не найден / чужой dept, либо server_id не привязан."},
         409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT / ACCOUNT_HAS_NO_PASSWORD (discovered-аккаунт без сохранённого пароля и без `force_password=true`)."},
         503: {"description": "Worker недоступен — WORKER_REDIS_UNAVAILABLE (Redis-stash для provision-кред недоступен) или WORKER_UNREACHABLE / WORKER_REDIS_NOT_CONFIGURED (dispatch в taskiq)."},
@@ -1980,7 +1980,7 @@ async def account_provision_dispatch(
 ) -> AccountProvisionDispatchResponse:
     """Ставит `account.provision` (useradd) в очередь worker'а.
 
-    Доступ: `(server_account, *, create)`. Связано:
+    Доступ: `(server_account, *, provision)`. Связано:
     `server_worker/src/tasks/users.py::account_provision`.
     """
     result = await _dispatch_account_provision(
@@ -2057,12 +2057,13 @@ async def account_update_on_host_dispatch(
         "(query, дефолт false) — удалять ли home-директорию. Идемпотентно: "
         "если пользователя на боксе уже нет — worker не падает. Связку "
         "аккаунт ↔ сервер эта операция НЕ снимает (для отвязки — `/servers`).\n\n"
-        "Триггер гейтится `(server_account, *, delete)`."
+        "Триггер гейтится `(server_account, *, deprovision)` — отдельным "
+        "действием ролевой матрицы (или прямым per-account грантом)."
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
         400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
-        403: {"description": "Нет роли с `delete` либо чужой department."},
+        403: {"description": "Нет роли/гранта с `deprovision` либо чужой department."},
         404: {"description": "Аккаунт не найден / чужой dept, либо server_id не привязан."},
         409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
         503: {"description": "Worker недоступен."},
@@ -2083,13 +2084,13 @@ async def account_deprovision_dispatch(
 ) -> AccountProvisionDispatchResponse:
     """Ставит `account.deprovision` (userdel) в очередь worker'а.
 
-    Доступ: `(server_account, *, delete)`. Связано:
+    Доступ: `(server_account, *, deprovision)`. Связано:
     `server_worker/src/tasks/users.py::account_deprovision`.
     """
     result = await _dispatch_account_on_host(
         db=db, identity=identity, request=request,
         account_id=account_id, server_id=server_id,
-        action=Action.DELETE,
+        action=Action.DEPROVISION,
         acl_action=Action.DEPROVISION,
         audit_action="server_account.deprovision",
         task_kind="account.deprovision",

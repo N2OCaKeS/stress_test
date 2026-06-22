@@ -13,10 +13,10 @@ stash, а worker коннектится под аккаунтом по password-
 
   1. Клиент открывает WS с `Authorization: Bearer <token>` (subprotocol
      `bearer.<token>` либо заголовок) и обязательным query `account_id=<acc>`.
-     server_service делает introspect, проверяет RBAC `(server, console)`,
-     dept-видимость сервера, затем резолвит креды аккаунта (per-account грант
-     `console` ЛИБО право `(server_account, view_password)` — роль или грант;
-     аккаунт привязан и виден).
+     server_service делает introspect, проверяет dept-видимость сервера и
+     право на консоль: ролевой `(server, console)` ЛИБО на учётке право
+     `console`/`view_password` (роль или per-account грант). Кто видит пароль
+     учётки, тот ей и подключается. Аккаунт привязан и виден.
   2. На отказе — WS закрывается с кодом и причиной ДО accept'а либо сразу
      после: 4401 нет токена, 4400 нет `account_id`, 4403 нет права console /
      нет права на креды аккаунта, 4404 сервер/аккаунт не найден или не
@@ -123,8 +123,9 @@ async def _authenticate(token: str):
 async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
     """Интерактивная SSH-консоль к серверу под выбранным server_account'ом.
 
-    Доступ: `(server, console)` + на выбранном аккаунте либо per-account грант
-    `console`, либо `(server_account, view_password)` (роль/грант). Сервер НЕ
+    Доступ: ролевой `(server, console)` ЛИБО на выбранном аккаунте право
+    `console`/`view_password` (роль или per-account грант). Держатель
+    `view_password` подключается без отдельного console-гранта. Сервер НЕ
     обязан быть prepared — консоль коннектится
     под кредами аккаунта, не под управляющим ключом. `account_id` берётся из
     query-параметра (обязателен). Department-scope сервера и аккаунта —
@@ -145,10 +146,17 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
     # 1. Аутентификация + RBAC console + visibility сервера + резолв кред
     # выбранного аккаунта. Любой отказ — close с понятной причиной и
     # failure/denied-аудит `ssh_console.session_open`.
+    #
+    # Доступ к консоли разрешён двумя путями: ролевой грант `(server, console)`
+    # ИЛИ право на учётку (`console`/`view_password`, роль или per-account
+    # грант) — последнее проверяет `resolve_console_credentials`. Поэтому здесь
+    # серверный `console` не требуем жёстко: его отсутствие не отказ, а сигнал
+    # «проверь право на учётке». Кто держит `view_password` на учётке (и так
+    # видит её пароль), тот может ей и подключиться, даже без серверного console.
     try:
         identity = await _authenticate(token)
         async with AsyncSessionLocal() as db:
-            await permissions.require_action(
+            has_server_console = await permissions.has_action(
                 db, identity, EntityType.SERVER, Action.CONSOLE,
             )
             server = await server_svc.load_visible_server(db, identity, server_id)
@@ -168,11 +176,12 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
                 await websocket.close(code=_WS_CLOSE_CONFLICT, reason="SERVER_DECOMMISSIONED")
                 return
 
-            # Account-гейт консоли: per-account грант `console` ЛИБО доступ
-            # view_password (роль/грант) + аккаунт виден/привязан + есть пароль.
-            # Возвращает {"login", "password", "ssh_private_key"}.
+            # Account-гейт консоли: серверный `(server, console)` ИЛИ на учётке
+            # `console`/`view_password` (роль/грант) + аккаунт виден/привязан +
+            # есть пароль. Возвращает {"login", "password", "ssh_private_key"}.
             creds = await account_svc.resolve_console_credentials(
                 db, identity, account_id, server,
+                allow_via_server_console=has_server_console,
             )
     except AuthenticationError as exc:
         await websocket.close(code=_WS_CLOSE_UNAUTHENTICATED, reason=exc.error_code)
@@ -405,7 +414,6 @@ async def _pump_client_to_in(websocket: WebSocket, client, in_ch: str) -> str:
 
 async def _pump_redis_to_ws(websocket: WebSocket, pubsub) -> str:
     """Слушать pubsub: out-кадры → WS (как bytes); ctl `closed`/`error` → стоп."""
-    import base64
     async for message in pubsub.listen():
         if message is None or message.get("type") != "message":
             continue

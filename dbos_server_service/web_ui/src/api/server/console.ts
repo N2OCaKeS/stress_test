@@ -76,7 +76,7 @@ export function describeConsoleClose(
     case 4403:
       return {
         message: "Нет прав на консоль или на выбранный аккаунт.",
-        hint: "Нужна привилегия console и доступ к учётке с правом на её креды — запросите grant у администратора сервиса или департамента.",
+        hint: "Нужен доступ к учётке с правом console или view_password — запросите grant у администратора сервиса или департамента.",
         normal: false,
       };
     case 4404:

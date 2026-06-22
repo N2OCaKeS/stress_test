@@ -235,6 +235,36 @@ class TestCreateAccount:
         assert resp.status_code == 201
         assert resp.json()["has_sudo"] is True
 
+    async def test_create_with_sudo_group_without_grant_denied(
+        self, client, operator_token_a, make_server,
+    ):
+        """Создание учётки сразу в sudo-дающей группе без grant_sudo → 403."""
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            BASE,
+            headers=_hdr(operator_token_a),
+            json={
+                "server_ids": [srv.id], "login": "rooty",
+                "unix_groups": ["astra-admin"],
+            },
+        )
+        assert_error(resp, 403, "SUDO_GROUP_REQUIRES_GRANT_SUDO")
+
+    async def test_admin_creates_with_sudo_group(
+        self, client, admin_role_token_a, make_server,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_role_token_a),
+            json={
+                "server_ids": [srv.id], "login": "rooty",
+                "unix_groups": ["wheel", "docker"],
+            },
+        )
+        assert resp.status_code == 201
+        assert set(resp.json()["unix_groups"]) == {"wheel", "docker"}
+
     async def test_duplicate_login_on_same_server_conflict(
         self, client, admin_token, make_server, make_account,
     ):
@@ -408,11 +438,11 @@ class TestUpdateAccount:
         resp = await client.patch(
             f"{BASE}/{acc.id}",
             headers=_hdr(operator_token_a),
-            json={"unix_groups": ["wheel", "docker"], "shell": "/bin/zsh"},
+            json={"unix_groups": ["staff", "docker"], "shell": "/bin/zsh"},
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["unix_groups"] == ["wheel", "docker"]
+        assert body["unix_groups"] == ["staff", "docker"]
         assert body["shell"] == "/bin/zsh"
 
     async def test_reader_cannot_update(
@@ -491,6 +521,68 @@ class TestUpdateAccount:
         )
         assert resp.status_code == 200
         assert resp.json()["has_sudo"] is False
+
+    async def test_add_sudo_group_without_grant_role_denied(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        """Добавление sudo-дающей группы под обычным update без grant_sudo → 403.
+
+        Закрывает эскалацию через unix_groups: has_sudo остаётся False, но
+        попадание в `sudo`/`astra-admin`/`wheel` даёт sudo на боксе.
+        """
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, has_sudo=False, unix_groups=["docker"])
+        resp = await client.patch(
+            f"{BASE}/{acc.id}",
+            headers=_hdr(operator_token_a),
+            json={"unix_groups": ["docker", "sudo"]},
+        )
+        assert_error(resp, 403, "SUDO_GROUP_REQUIRES_GRANT_SUDO")
+
+    async def test_admin_can_add_sudo_group(
+        self, client, admin_role_token_a, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, has_sudo=False, unix_groups=["docker"])
+        resp = await client.patch(
+            f"{BASE}/{acc.id}",
+            headers=_hdr(admin_role_token_a),
+            json={"unix_groups": ["docker", "wheel"]},
+        )
+        assert resp.status_code == 200
+        assert "wheel" in resp.json()["unix_groups"]
+
+    async def test_operator_can_drop_sudo_group(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        """Снятие sudo-дающей группы — обычный update (понижение), без grant_sudo."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(
+            server_id=srv.id, has_sudo=False, unix_groups=["docker", "astra-admin"],
+        )
+        resp = await client.patch(
+            f"{BASE}/{acc.id}",
+            headers=_hdr(operator_token_a),
+            json={"unix_groups": ["docker"]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["unix_groups"] == ["docker"]
+
+    async def test_keep_existing_sudo_group_no_grant_needed(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        """Сохранение уже имеющейся sudo-группы (не добавление) под update — ok."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(
+            server_id=srv.id, has_sudo=False, unix_groups=["sudo"],
+        )
+        resp = await client.patch(
+            f"{BASE}/{acc.id}",
+            headers=_hdr(operator_token_a),
+            json={"unix_groups": ["sudo", "docker"], "shell": "/bin/bash"},
+        )
+        assert resp.status_code == 200
+        assert set(resp.json()["unix_groups"]) == {"sudo", "docker"}
 
 
 # ── PATCH /{id} fan-out → update_on_host ─────────────────────────────────────

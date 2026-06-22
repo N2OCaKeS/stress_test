@@ -97,7 +97,9 @@ def _to_response(
         "либо генерируется сервером (`secrets.token_urlsafe(32)`). Если "
         "передан — декодируется и проходит политику по plaintext; в любом "
         "случае шифруется через `secrets_service.encrypt()` и в ответ не "
-        "возвращается. `has_sudo=True` требует action `grant_sudo`.\n\n"
+        "возвращается. `has_sudo=True` ИЛИ добавление в `unix_groups` группы "
+        "из набора `SUDO_CONFERRING_GROUPS` (sudo/astra-admin/wheel) требует "
+        "action `grant_sudo`.\n\n"
         "Опциональный SSH-ключ (`ssh_mode`): `generate` — сервер генерит "
         "Ed25519-пару, хранит public + зашифрованный private и возвращает "
         "приватный ключ ОДИН раз в поле `ssh_private_key` (в GET его уже нет); "
@@ -106,7 +108,7 @@ def _to_response(
     ),
     responses={
         201: {"description": "Аккаунт создан."},
-        403: {"description": "Нет роли с `create` (или `grant_sudo` при has_sudo=True), либо чужой department."},
+        403: {"description": "Нет роли с `create` (или `grant_sudo` при has_sudo=True / sudo-группе — `SUDO_GROUP_REQUIRES_GRANT_SUDO`), либо чужой department."},
         404: {"description": "Один из серверов не найден или принадлежит чужому department."},
         409: {"description": "Конфликт по (server_id, login) на одном из серверов."},
     },
@@ -333,8 +335,10 @@ _OS_MANAGED_FIELDS = {"has_sudo", "unix_groups", "shell"}
     description=(
         "Частичное обновление (PATCH). Смена пароля — отдельный endpoint "
         "`/rotate_password`. Привязка/отвязка серверов — `/servers`. Подъём "
-        "`has_sudo=False → True` требует action `grant_sudo` (admin-only). "
-        "Снятие sudo допустимо обычным `update`. При изменении OS-управляемых "
+        "`has_sudo=False → True` ИЛИ добавление в `unix_groups` группы из "
+        "набора `SUDO_CONFERRING_GROUPS` (sudo/astra-admin/wheel) требует "
+        "action `grant_sudo` (иначе 403 `SUDO_GROUP_REQUIRES_GRANT_SUDO`). "
+        "Снятие sudo / такой группы допустимо обычным `update`. При изменении OS-управляемых "
         "атрибутов (`has_sudo`/`unix_groups`/`shell`) правка рассылается "
         "`update_on_host` на все серверы, где аккаунт присутствует.\n\n"
         "Смена `login` через PATCH — только DB-only переименование, допустимое "
@@ -344,7 +348,7 @@ _OS_MANAGED_FIELDS = {"has_sudo", "unix_groups", "shell"}
         "живого логина — через `POST /server-accounts/{id}/recreate_login`."
     ),
     responses={
-        403: {"description": "Нет `update` (или `grant_sudo` при подъёме has_sudo)."},
+        403: {"description": "Нет `update` (или `grant_sudo` при подъёме has_sudo / добавлении sudo-группы — `SUDO_GROUP_REQUIRES_GRANT_SUDO`)."},
         404: {"description": "Аккаунт не найден / чужой dept."},
         409: {"description": "LOGIN_LOCKED (аккаунт present на сервере) / ACCOUNT_DUPLICATE (новый login занят)."},
     },

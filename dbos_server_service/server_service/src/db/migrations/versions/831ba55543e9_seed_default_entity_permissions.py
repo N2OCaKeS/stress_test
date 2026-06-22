@@ -45,6 +45,7 @@ _ALL_ACTIONS: dict[str, list[str]] = {
         "view", "create", "update", "delete",
         "view_password", "rotate_password",
         "grant_sudo",
+        "provision", "deprovision",
     ],
     "os_version": ["view", "create", "update", "delete"],
     "ipmi_controller": [
@@ -70,7 +71,7 @@ _OPERATOR_GRANTS: dict[str, list[str]] = {
         "pxe_boot", "reinstall_start",
         "inventory_trigger", "inventory_submit",
     ],
-    "server_account": ["view", "create", "update", "rotate_password"],
+    "server_account": ["view", "create", "update", "rotate_password", "provision"],
     "ipmi_controller": ["view", "create", "update", "rotate_credentials"],
     "disk": ["view", "create", "update"],
     "os_version": ["view"],

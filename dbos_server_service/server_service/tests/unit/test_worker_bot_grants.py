@@ -185,9 +185,11 @@ class TestWorkerBotIsolation:
 
         После follow-on миграций (`c8e4f6a9b1d2` drop installed_package,
         `a1b2c3d4e5f6` rename service_role → permission, `b6f3a91d27e8` drop
-        cpu_model) baseline сидит 82 строки (раньше было 90).
+        cpu_model) baseline сидел 82 строки. Подъём provision/deprovision до
+        полноценных действий матрицы добавил admin +2 (provision+deprovision)
+        и operator +1 (provision) → 85.
         """
-        assert len(default_seed._grants()) == 82
+        assert len(default_seed._grants()) == 85
 
     def test_worker_bot_grants_strictly_smaller_than_admin(self, worker_bot_seed, default_seed):
         """worker_bot — подмножество admin'а по составу (entity, action),

@@ -186,11 +186,12 @@ class Action(StrEnum):
     # конкретному пользователю на конкретную учётку (поверх ролевой матрицы).
     MANAGE_ACCOUNT_ACL = "manage_account_acl"
 
-    # Provision/deprovision OS-пользователя на боксе. Под ролевой матрицей
-    # dispatch'и provision/deprovision гейтятся `create`/`delete`; для
-    # per-account гранта эти действия выделены отдельными флагами, чтобы право
-    # «завести/снести юзера на хосте» можно было выдать прицельно (`console`
-    # для консоли учётки переиспользует существующий `Action.CONSOLE`).
+    # Provision/deprovision OS-пользователя на боксе — полноценные действия
+    # ролевой матрицы (в `ENTITY_ACTIONS[SERVER_ACCOUNT]`); dispatch'и
+    # provision/deprovision гейтятся именно ими. Те же флаги выдаются и
+    # per-account грантом, чтобы право «завести/снести юзера на хосте» можно
+    # было выдать прицельно (`console` для консоли учётки переиспользует
+    # существующий `Action.CONSOLE`).
     PROVISION = "provision"
     DEPROVISION = "deprovision"
 
@@ -220,6 +221,11 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
         Action.VIEW_PASSWORD, Action.ROTATE_PASSWORD,
         Action.GRANT_SUDO,
+        # Завести / снести OS-пользователя на боксе — полноценные grantable-
+        # действия ролевой матрицы. Dispatch'и provision/deprovision гейтятся
+        # именно ими (а не create/delete, как раньше), UI рисует их из каталога.
+        Action.PROVISION,
+        Action.DEPROVISION,
         # worker_bot пушит результат инвентаризации пользователей обратно
         # через internal callback — узкий least-privilege грант, без CRUD.
         Action.INVENTORY_SUBMIT,
@@ -264,12 +270,12 @@ def is_valid_action(entity_type: str, action: str) -> bool:
 
 
 # Действия, которые можно выдать прямым per-account грантом на конкретную
-# учётку (поверх ролевой матрицы). Это НЕ совпадает с ENTITY_ACTIONS[
-# SERVER_ACCOUNT]: сюда входят provision/deprovision (которых нет в ролевой
-# матрице server_account — там dispatch гейтится create/delete) и НЕ входят
-# служебные/callback-действия (inventory_submit, provision_on_host,
-# adopt_from_host, manage_ignored_logins, manage_account_acl). Грант хранит
-# подмножество этого набора как boolean-флаги в server_account_user_acl.
+# учётку (поверх ролевой матрицы). Это подмножество ENTITY_ACTIONS[
+# SERVER_ACCOUNT]: сюда входят provision/deprovision (они же полноценные
+# действия ролевой матрицы) и НЕ входят служебные/callback-действия
+# (inventory_submit, provision_on_host, adopt_from_host, manage_ignored_logins,
+# manage_account_acl). Грант хранит подмножество этого набора как
+# boolean-флаги в server_account_user_acl.
 ACCOUNT_ACL_ACTIONS: frozenset[str] = frozenset({
     Action.VIEW,
     Action.VIEW_PASSWORD,

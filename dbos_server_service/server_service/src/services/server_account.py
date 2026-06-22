@@ -136,6 +136,50 @@ def _should_emit_critical_reveal(actor_id: str | None, account_id: str) -> bool:
     return should_emit
 
 
+def _added_sudo_groups(
+    current_groups: list[str] | None, new_groups: list[str] | None
+) -> set[str]:
+    """Какие sudo-дающие группы ДОБАВЛЯЮТСЯ относительно текущего состояния.
+
+    Сравниваем именно добавление (new − current), а не наличие: если
+    привилегированная группа уже была у учётки, её сохранение под обычным
+    `update` не должно требовать `grant_sudo`. Снятие группы тем более
+    допустимо (понижение привилегии). Набор групп — из настройки
+    `sudo_conferring_groups`.
+    """
+    conferring = get_settings().sudo_conferring_groups
+    added = set(new_groups or []) - set(current_groups or [])
+    return added & set(conferring)
+
+
+def _grant_sudo_denied_error(sudo_groups: set[str]) -> AuthorizationError:
+    """403, когда подъём sudo (флаг или привилегированная группа) без `grant_sudo`.
+
+    Если триггер — добавление sudo-дающей группы, отдаём отдельный
+    `SUDO_GROUP_REQUIRES_GRANT_SUDO`, чтобы клиент отличал «нельзя в эту
+    группу» от обычного отказа по has_sudo. Только has_sudo→true оставляет
+    привычный `PERMISSION_DENIED`.
+    """
+    if sudo_groups:
+        return AuthorizationError(
+            error_code="SUDO_GROUP_REQUIRES_GRANT_SUDO",
+            message=(
+                "Adding the account to a sudo-conferring group requires the "
+                "grant_sudo action"
+            ),
+            details={
+                "entity_type": "server_account",
+                "action": "grant_sudo",
+                "sudo_groups": sorted(sudo_groups),
+            },
+        )
+    return AuthorizationError(
+        error_code="PERMISSION_DENIED",
+        message="Role does not grant 'grant_sudo' on 'server_account'",
+        details={"entity_type": "server_account", "action": "grant_sudo"},
+    )
+
+
 async def _authorize_account_action(
     db: AsyncSession,
     identity: IdentityContext,
@@ -162,9 +206,8 @@ async def _authorize_account_action(
       одинаковый 403 PERMISSION_DENIED (невидимая учётка, чужой dept,
       существующая-без-гранта неотличимы — нет existence-oracle'а).
 
-    На provision/deprovision гейтятся отдельными per-account флагами
-    (`provision`/`deprovision`); ролевой путь для них идёт по `create`/`delete`
-    в worker-dispatch'е и сюда не приходит.
+    provision/deprovision гейтятся одноимёнными действиями (ролевая матрица
+    ИЛИ per-account флаг) в worker-dispatch'е и сюда не приходят.
     """
     has_role = await permissions.has_action(
         db, identity, EntityType.SERVER_ACCOUNT, action
@@ -556,12 +599,14 @@ async def create_account(
     # из caller'а; load_visible_server уже гарантировал совпадение.
     department_id = identity.department_id
 
-    if payload.has_sudo:
-        try:
-            await permissions.require_action(
-                db, identity, EntityType.SERVER_ACCOUNT, Action.GRANT_SUDO
-            )
-        except AuthorizationError:
+    # has_sudo=True ИЛИ заведение учётки сразу в sudo-дающей группе — эскалация
+    # привилегий, требует `grant_sudo`. На create текущее состояние пустое,
+    # поэтому любая привилегированная группа в payload считается добавлением.
+    sudo_groups = _added_sudo_groups(None, list(payload.unix_groups))
+    if payload.has_sudo or sudo_groups:
+        if not await permissions.has_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.GRANT_SUDO
+        ):
             audit_service.emit(
                 "server_account.create",
                 target_type="server_account",
@@ -570,9 +615,10 @@ async def create_account(
                     "reason": "grant_sudo_denied",
                     "server_ids": payload.server_ids,
                     "login": payload.login,
+                    "sudo_groups": sorted(sudo_groups),
                 },
             )
-            raise
+            raise _grant_sudo_denied_error(sudo_groups)
 
     provided = payload.password()
     plaintext = provided if provided is not None else _generate_password()
@@ -877,24 +923,31 @@ async def update_account(
                 ),
             )
 
-    # has_sudo=True или подъём флага — требует GRANT_SUDO (роль ИЛИ per-account
-    # грант). Снятие флага допустимо обычным UPDATE — это понижение привилегии.
-    if changes.get("has_sudo") is True and not obj.has_sudo:
-        try:
-            await permissions.require_account_action(
-                db, identity, obj, Action.GRANT_SUDO
-            )
-        except AuthorizationError:
-            audit_service.emit(
-                "server_account.update",
-                target_id=account_id, target_type="server_account",
-                status="denied", allowed=False,
-                details={
-                    "reason": "grant_sudo_denied",
-                    "fields": list(changes.keys()),
-                },
-            )
-            raise
+    # Подъём has_sudo=False→true ИЛИ добавление sudo-дающей группы в unix_groups
+    # — эскалация привилегии, требует GRANT_SUDO (роль ИЛИ per-account грант).
+    # Снятие флага / снятие такой группы допустимо обычным UPDATE (понижение).
+    # Группы меняются под обычным `update`, поэтому без этой проверки учётку
+    # можно было закинуть в sudo-группу в обход has_sudo-гейта.
+    raising_sudo = changes.get("has_sudo") is True and not obj.has_sudo
+    added_sudo_groups: set[str] = set()
+    if "unix_groups" in changes:
+        added_sudo_groups = _added_sudo_groups(
+            list(obj.unix_groups), changes["unix_groups"]
+        )
+    if (raising_sudo or added_sudo_groups) and not await permissions.has_account_action(
+        db, identity, obj, Action.GRANT_SUDO
+    ):
+        audit_service.emit(
+            "server_account.update",
+            target_id=account_id, target_type="server_account",
+            status="denied", allowed=False,
+            details={
+                "reason": "grant_sudo_denied",
+                "fields": list(changes.keys()),
+                "sudo_groups": sorted(added_sudo_groups),
+            },
+        )
+        raise _grant_sudo_denied_error(added_sudo_groups)
 
     # Набор реально применяемых полей (для аудита и applied_fields-возврата):
     # changes без login + login отдельно, если он меняется.
@@ -1085,12 +1138,14 @@ async def import_from_host(
     )
     server = servers[0]
 
-    if payload.has_sudo:
-        try:
-            await permissions.require_action(
-                db, identity, EntityType.SERVER_ACCOUNT, Action.GRANT_SUDO
-            )
-        except AuthorizationError:
+    # Импорт фиксирует факт-состояние пользователя с бокса, но завести в БД
+    # запись с sudo (флаг или привилегированная группа) без `grant_sudo`
+    # нельзя — иначе через import можно было бы обойти sudo-гейт.
+    sudo_groups = _added_sudo_groups(None, list(payload.unix_groups))
+    if payload.has_sudo or sudo_groups:
+        if not await permissions.has_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.GRANT_SUDO
+        ):
             audit_service.emit(
                 "server_account.imported_from_host",
                 target_type="server_account",
@@ -1099,9 +1154,10 @@ async def import_from_host(
                     "reason": "grant_sudo_denied",
                     "server_id": payload.server_id,
                     "login": payload.login,
+                    "sudo_groups": sorted(sudo_groups),
                 },
             )
-            raise
+            raise _grant_sudo_denied_error(sudo_groups)
 
     account_id = new_id()
     data = {
@@ -1891,6 +1947,8 @@ async def resolve_console_credentials(
     identity: IdentityContext,
     account_id: str,
     server,
+    *,
+    allow_via_server_console: bool = False,
 ) -> dict[str, str | None]:
     """Расшифровать креды учётки для интерактивной консоли.
 
@@ -1900,14 +1958,23 @@ async def resolve_console_credentials(
     кто видит пароль, тот и так может им подключиться). Это делает консоль
     доступной без бланкетного view_password при наличии узкого console-гранта.
 
+    `allow_via_server_console=True` — caller уже держит ролевой
+    `(server, console)`; он проходит без отдельного права на учётке (сохраняем
+    существующие серверные console-гранты после расширения гейта на
+    `view_password`).
+
     Остальные проверки (видимость учётки, привязка к серверу, наличие пароля)
     и форма результата — те же, что у bootstrap-резолва.
     """
     account = await _load_account_visible(db, identity, account_id)
-    allowed = await permissions.has_account_action(
-        db, identity, account, Action.CONSOLE,
-    ) or await permissions.has_account_action(
-        db, identity, account, Action.VIEW_PASSWORD,
+    allowed = (
+        allow_via_server_console
+        or await permissions.has_account_action(
+            db, identity, account, Action.CONSOLE,
+        )
+        or await permissions.has_account_action(
+            db, identity, account, Action.VIEW_PASSWORD,
+        )
     )
     if not allowed:
         raise AuthorizationError(

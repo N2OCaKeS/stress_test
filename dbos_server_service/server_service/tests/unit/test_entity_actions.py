@@ -6,7 +6,7 @@
   `_ALL_ACTIONS`. После выноса service_role-management в auth_service
   baseline сеет `permission`-entity (view/permission_grant/permission_revoke)
   вместо прежнего `service_role`-entity.
-* Default grants: admin 45, reader 7, operator 31, guest 0; нет дублей;
+* Default grants: admin 47, reader 7, operator 31, guest 0; нет дублей;
   каждый grant проходит `is_valid_action`.
 """
 
@@ -144,7 +144,7 @@ class TestDefaultGrants:
         7 rows) и переезда на permission-entity (3 admin + 1 reader + 1 operator =
         5 rows) общее число уменьшается на 2 относительно legacy-варианта.
         """
-        assert len(seed._grants()) == 82
+        assert len(seed._grants()) == 85
 
     def test_admin_gets_every_action_of_every_entity(self, seed):
         grants = seed._grants()
@@ -158,9 +158,9 @@ class TestDefaultGrants:
 
     def test_admin_total(self, seed):
         admin = [g for g in seed._grants() if g[1] == "admin"]
-        # 17 (server) + 7 (server_account) + 4 (os_version) + 6 (ipmi_controller)
-        # + 4 (cpu_model) + 4 (disk) + 3 (permission) = 45.
-        assert len(admin) == 45
+        # 17 (server) + 9 (server_account) + 4 (os_version) + 6 (ipmi_controller)
+        # + 4 (cpu_model) + 4 (disk) + 3 (permission) = 47.
+        assert len(admin) == 47
 
     def test_reader_only_gets_view(self, seed):
         reader = [g for g in seed._grants() if g[1] == "reader"]

@@ -150,7 +150,7 @@ class TestRebootMarkerSetAfterApply:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.FAILED
         # reset был выдан ровно один раз.
-        assert bmc.power_actions == ["GracefulRestart"]
+        assert bmc.power_actions == ["ForceRestart"]
         # Маркер выставлен — следующий retry пропустит reset.
         assert await power._read_reboot_issued(tid) is True, (
             "после успешного apply маркер должен жить, иначе retry ребутнет снова"
@@ -232,7 +232,7 @@ class TestRebootApplyFailLeavesNoMarker:
 
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
-        assert bmc2.power_actions == ["GracefulRestart"], (
+        assert bmc2.power_actions == ["ForceRestart"], (
             "после фейла apply retry обязан повторить reset"
         )
         assert await power._read_reboot_issued(tid) is False
@@ -259,17 +259,18 @@ class TestRebootHappyPath:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         assert t.result == {"power_state": "on", "rebooted": True}
-        assert bmc.power_actions == ["GracefulRestart"]
+        assert bmc.power_actions == ["ForceRestart"]
         assert await power._read_reboot_issued(tid) is False
 
-    async def test_force_reboot_uses_force_restart(
+    async def test_reboot_ignores_force_payload(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):
-        """`force=true` в payload → ForceRestart, guard работает так же."""
+        """`force` в payload больше не влияет — reboot всегда ForceRestart,
+        guard работает так же."""
         tid = await make_task(
             task_kind="power.reboot",
             target_server_id="srv_force",
-            payload={"server_id": "srv_force", "force": True},
+            payload={"server_id": "srv_force", "force": False},
         )
         await power._delete_reboot_issued(tid)
 

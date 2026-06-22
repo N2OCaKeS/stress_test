@@ -204,7 +204,7 @@ class TestPowerOffRedfishIntegration:
 
 
 class TestPowerRebootRedfishIntegration:
-    async def test_reboot_uses_graceful_restart(
+    async def test_reboot_uses_force_restart(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):
         tid = await make_task(task_kind="power.reboot", target_server_id="srv_1")
@@ -227,7 +227,7 @@ class TestPowerRebootRedfishIntegration:
         monkeypatch.setattr("src.tasks.power._get_bmc", _bmc_factory)
 
         await power.power_reboot.original_func(tid)
-        assert captured_action["body"]["ResetType"] == "GracefulRestart"
+        assert captured_action["body"]["ResetType"] == "ForceRestart"
         t = await fetch_task(tid)
         assert t.result["rebooted"] is True
 

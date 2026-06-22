@@ -169,13 +169,13 @@ class TestPowerOn:
         _patch_power_redfish(monkeypatch, fake)
         await power.power_reboot.original_func(tid)
         assert captured_audit[0]["action"] == "server.power_reboot"
-        assert fake.actions == ["GracefulRestart"]
+        assert fake.actions == ["ForceRestart"]
 
-    async def test_power_reboot_force(self, make_task, fetch_task, captured_audit, monkeypatch):
+    async def test_power_reboot_ignores_force(self, make_task, fetch_task, captured_audit, monkeypatch):
         tid = await make_task(
             task_kind="power.reboot",
             target_server_id="srv_1",
-            payload={"server_id": "srv_1", "force": True},
+            payload={"server_id": "srv_1", "force": False},
         )
         async def fake_fetch(server_id, target_department_id=None):
             return {"endpoint_url": "https://bmc", "username": "u", "password": "p"}

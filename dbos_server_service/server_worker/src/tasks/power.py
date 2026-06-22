@@ -249,12 +249,16 @@ async def power_off(task_id: str) -> None:
 async def power_reboot(task_id: str) -> None:
     """Перезагрузить сервер через BMC.
 
-    Что делает: тянет IPMI-креды → `GracefulRestart` (или `ForceRestart` если
-    `force=true` в payload). Возвращает `{power_state, rebooted: True}`.
+    Что делает: тянет IPMI-креды → всегда `ForceRestart`. Возвращает
+    `{power_state, rebooted: True}`.
+
+    Reboot всегда жёсткий: graceful-вариант полагается на гостевой ACPI-агент,
+    которого на стендах нет. Без него BMC принимает GracefulRestart, но ОС его
+    игнорирует и сервер молча не перезагружается — проверено на iLO/iDRAC.
 
     Параметры: `task_id`. Payload — `server_id`, опционально
-    `target_department_id`, опционально `force: bool` (default false —
-    graceful если ОС жива, force когда явно «hard reset»).
+    `target_department_id`. Поле `force` server_service ещё может слать, но оно
+    больше не влияет на поведение.
 
     Возвращает: `{power_state, rebooted: True}`.
 
@@ -271,7 +275,6 @@ async def power_reboot(task_id: str) -> None:
     async def _impl(payload: dict) -> dict:
         server_id = payload["server_id"]
         target_dept = payload.get("target_department_id")
-        force = bool(payload.get("force", False))
         creds = await server_service_client.fetch_ipmi_credentials(server_id, target_dept)
         host = _extract_bmc_host(creds["endpoint_url"])
         await _breaker.check(host)
@@ -286,9 +289,7 @@ async def power_reboot(task_id: str) -> None:
         try:
             try:
                 if not already_issued:
-                    await dispatch_power_action(
-                        client, "ForceRestart" if force else "GracefulRestart",
-                    )
+                    await dispatch_power_action(client, "ForceRestart")
                     # Маркер ставим сразу после того, как BMC принял reset, но
                     # до get_power_state: если verify/commit упадут и пойдёт
                     # retry, он увидит маркер и не выдаст второй reset.

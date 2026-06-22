@@ -181,18 +181,18 @@ class TestPowerRebootIpmitool:
         _patch_subprocess(monkeypatch, proc_factory)
         await power.power_reboot.original_func(tid)
 
-        # GracefulRestart → reset (ipmitool 2.0 не имеет graceful-reset)
+        # ForceRestart → reset
         assert "reset" in seen_actions
         t = await fetch_task(tid)
         assert t.result["rebooted"] is True
 
-    async def test_reboot_force_uses_reset(
+    async def test_reboot_ignores_force_uses_reset(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):
         tid = await make_task(
             task_kind="power.reboot",
             target_server_id="srv_1",
-            payload={"server_id": "srv_1", "force": True},
+            payload={"server_id": "srv_1", "force": False},
         )
         _force_ipmitool(monkeypatch)
         _patch_creds(monkeypatch, "power")
@@ -210,7 +210,7 @@ class TestPowerRebootIpmitool:
         _patch_subprocess(monkeypatch, proc_factory)
         await power.power_reboot.original_func(tid)
 
-        # ForceRestart тоже мэппится в reset
+        # force в payload игнорируется — всё равно reset
         assert "reset" in seen
 
 

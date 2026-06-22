@@ -960,6 +960,179 @@ async def fanout_update_on_host(
     return tasks
 
 
+async def fanout_provision_for_ssh_key(
+    *,
+    db: AsyncSession,
+    identity,
+    request: Request,
+    account,
+) -> tuple[list[dict], list[dict]]:
+    """Раскатать SSH-ключ на все привязанные сервера через `account.provision`.
+
+    Только `account.provision` кладёт public key в `~/.ssh/authorized_keys`
+    (idempotent useradd → usermod + re-push ключа с force_replace). Воркерский
+    `account.update_on_host` (usermod) ключ НЕ трогает — поэтому fan-out
+    SSH-ключа идёт именно provision'ом. `_dispatch_account_provision` сам
+    достаёт сохранённый в БД ключ через `ensure_provision_credentials` (sticky),
+    так что на бокс уедет ровно то, что только что записал `set_ssh_key`.
+
+    Бьём только по серверам, где аккаунт реально присутствует
+    (`present_on_server=True`) — заводить пользователя на боксе, где его быть
+    не должно, не задача fan-out'а ключа. Best-effort: недоступность воркера /
+    decommissioned на отдельном сервере не валит остальные.
+
+    Возвращает `(tasks, skipped)` — формы `{server_id, task_id}` и
+    `{server_id, reason}`.
+    """
+    audit_action = "server_account.provision"
+    target_links = [
+        link for link in account.server_links if link.present_on_server
+    ]
+    tasks: list[dict] = []
+    skipped: list[dict] = []
+    for link in target_links:
+        try:
+            result = await _dispatch_account_provision(
+                db=db, identity=identity, request=request,
+                account_id=account.id, server_id=link.server_id,
+                audit_action=audit_action,
+                task_kind="account.provision",
+                force_password=False,
+            )
+        except ConflictError as exc:
+            reason = (
+                "decommissioned"
+                if exc.error_code == "SERVER_DECOMMISSIONED"
+                else "idempotent_conflict"
+            )
+            skipped.append({"server_id": link.server_id, "reason": reason})
+            continue
+        except ServiceUnavailableError:
+            skipped.append({"server_id": link.server_id, "reason": "worker_unreachable"})
+            continue
+        except (NotFoundError, AuthorizationError):
+            skipped.append({"server_id": link.server_id, "reason": "not_found_or_cross_dept"})
+            continue
+        tasks.append({"server_id": result["server_id"], "task_id": result["task_id"]})
+    return tasks, skipped
+
+
+async def recreate_login_orchestrate(
+    *,
+    db: AsyncSession,
+    identity,
+    request: Request,
+    account,
+    new_login: str,
+) -> dict:
+    """Оркестрация смены живого логина: deprovision → rename(БД) → provision.
+
+    На каждый привязанный сервер ставится `account.deprovision` под СТАРЫМ
+    логином (снести OS-пользователя), затем логин переименовывается в БД
+    (синхронно с денормализованными копиями на связках), затем на каждый
+    привязанный сервер ставится `account.provision` под НОВЫМ логином (завести
+    заново + доставить пароль/ключ).
+
+    Dispatch'и best-effort на decommissioned/unreachable серверах (они уезжают
+    в `skipped`); rename в БД — обязателен и идёт в своей транзакции. Аудит
+    CRITICAL эмитит вызывающий endpoint.
+
+    Возвращает `{old_login, new_login, deprovision, provision, skipped}`.
+    """
+    old_login = account.login
+    audit_dep = "server_account.deprovision"
+    audit_prov = "server_account.provision"
+    linked_ids = account_repo.linked_server_ids(account)
+
+    deprovision: list[dict] = []
+    provision: list[dict] = []
+    skipped: list[dict] = []
+
+    # 1. deprovision под старым логином на каждом сервере.
+    for sid in linked_ids:
+        try:
+            result = await _dispatch_account_on_host(
+                db=db, identity=identity, request=request,
+                account_id=account.id, server_id=sid,
+                action=Action.DELETE,
+                acl_action=Action.DEPROVISION,
+                audit_action=audit_dep,
+                task_kind="account.deprovision",
+                operation="deprovision",
+                include_home_dir=False,
+            )
+        except ConflictError as exc:
+            reason = (
+                "decommissioned"
+                if exc.error_code == "SERVER_DECOMMISSIONED"
+                else "idempotent_conflict"
+            )
+            skipped.append({"server_id": sid, "reason": f"deprovision_{reason}"})
+            continue
+        except ServiceUnavailableError:
+            skipped.append({"server_id": sid, "reason": "deprovision_worker_unreachable"})
+            continue
+        except (NotFoundError, AuthorizationError):
+            skipped.append({"server_id": sid, "reason": "deprovision_not_found_or_cross_dept"})
+            continue
+        deprovision.append({
+            "server_id": result["server_id"],
+            "operation": "deprovision",
+            "task_id": result["task_id"],
+        })
+
+    # 2. rename в БД (обязательная мутация). Конфликт → 409 ACCOUNT_DUPLICATE.
+    # Перечитываем аккаунт свежим — deprovision-диспатчи коммитили транзакцию,
+    # исходный объект мог проэкспайриться; берём актуальную строку (+links).
+    fresh = await account_repo.get_by_id(db, account.id)
+    if fresh is None:
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_FOUND", message="Server account not found"
+        )
+    account = fresh
+    await account_svc.rename_login_in_db(db, account, new_login)
+    await db.commit()
+    await db.refresh(account)
+
+    # 3. provision под новым логином на каждом сервере.
+    for sid in linked_ids:
+        try:
+            result = await _dispatch_account_provision(
+                db=db, identity=identity, request=request,
+                account_id=account.id, server_id=sid,
+                audit_action=audit_prov,
+                task_kind="account.provision",
+                force_password=False,
+            )
+        except ConflictError as exc:
+            reason = (
+                "decommissioned"
+                if exc.error_code == "SERVER_DECOMMISSIONED"
+                else "idempotent_conflict"
+            )
+            skipped.append({"server_id": sid, "reason": f"provision_{reason}"})
+            continue
+        except ServiceUnavailableError:
+            skipped.append({"server_id": sid, "reason": "provision_worker_unreachable"})
+            continue
+        except (NotFoundError, AuthorizationError):
+            skipped.append({"server_id": sid, "reason": "provision_not_found_or_cross_dept"})
+            continue
+        provision.append({
+            "server_id": result["server_id"],
+            "operation": "provision",
+            "task_id": result["task_id"],
+        })
+
+    return {
+        "old_login": old_login,
+        "new_login": new_login,
+        "deprovision": deprovision,
+        "provision": provision,
+        "skipped": skipped,
+    }
+
+
 # ── /servers/{id}/power/status — live BMC-probe через worker ────────────────
 
 

@@ -475,6 +475,123 @@ class TestGetBmcClientUsesProbeResult:
         assert captured["verify_tls"] is False
         assert "transport" in captured
 
+    async def test_idrac_kind_passes_embedded_system_id(self, monkeypatch):
+        """kind='idrac' → клиент получает system_id='System.Embedded.1' и
+        manager_id='iDRAC.Embedded.1'. Без этого power-операции на iDRAC
+        бьют по `Systems/1` и получают 404."""
+        import src.clients as clients_mod
+
+        async def fake_probe(host: str):
+            return clients_mod.ProbeResult(
+                reachable=True, scheme="https", verify_tls=False,
+            )
+
+        captured: dict = {}
+
+        class FakeRedfish:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            async def aclose(self):
+                pass
+
+        monkeypatch.setattr(clients_mod, "_probe_redfish_cascade", fake_probe)
+        monkeypatch.setattr(clients_mod, "RedfishClient", FakeRedfish)
+
+        await clients_mod.get_bmc_client(
+            host="idrac.example.com", username="u", password="p", kind="idrac",
+        )
+
+        assert captured["system_id"] == "System.Embedded.1"
+        assert captured["manager_id"] == "iDRAC.Embedded.1"
+
+    async def test_ilo_kind_passes_numeric_system_id(self, monkeypatch):
+        """kind='ilo' → system_id='1' (iLO держит систему под `1`)."""
+        import src.clients as clients_mod
+
+        async def fake_probe(host: str):
+            return clients_mod.ProbeResult(
+                reachable=True, scheme="https", verify_tls=False,
+            )
+
+        captured: dict = {}
+
+        class FakeRedfish:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            async def aclose(self):
+                pass
+
+        monkeypatch.setattr(clients_mod, "_probe_redfish_cascade", fake_probe)
+        monkeypatch.setattr(clients_mod, "RedfishClient", FakeRedfish)
+
+        await clients_mod.get_bmc_client(
+            host="ilo.example.com", username="u", password="p", kind="ilo",
+        )
+
+        assert captured["system_id"] == "1"
+        assert captured["manager_id"] == "1"
+
+    async def test_unknown_kind_passes_empty_system_id_for_discovery(
+        self, monkeypatch
+    ):
+        """Неизвестный kind → system_id='' (триггер discovery в клиенте)."""
+        import src.clients as clients_mod
+
+        async def fake_probe(host: str):
+            return clients_mod.ProbeResult(
+                reachable=True, scheme="https", verify_tls=False,
+            )
+
+        captured: dict = {}
+
+        class FakeRedfish:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            async def aclose(self):
+                pass
+
+        monkeypatch.setattr(clients_mod, "_probe_redfish_cascade", fake_probe)
+        monkeypatch.setattr(clients_mod, "RedfishClient", FakeRedfish)
+
+        await clients_mod.get_bmc_client(
+            host="bmc.example.com", username="u", password="p", kind="supermicro",
+        )
+
+        assert captured["system_id"] == ""
+        assert captured["manager_id"] == ""
+
+    async def test_no_kind_omits_system_id_kwarg(self, monkeypatch):
+        """kind не передан → system_id/manager_id kwargs не выставляются,
+        RedfishClient берёт конструкторный default (`1`)."""
+        import src.clients as clients_mod
+
+        async def fake_probe(host: str):
+            return clients_mod.ProbeResult(
+                reachable=True, scheme="https", verify_tls=False,
+            )
+
+        captured: dict = {}
+
+        class FakeRedfish:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            async def aclose(self):
+                pass
+
+        monkeypatch.setattr(clients_mod, "_probe_redfish_cascade", fake_probe)
+        monkeypatch.setattr(clients_mod, "RedfishClient", FakeRedfish)
+
+        await clients_mod.get_bmc_client(
+            host="bmc.example.com", username="u", password="p",
+        )
+
+        assert "system_id" not in captured
+        assert "manager_id" not in captured
+
     async def test_http_branch_builds_http_client(self, monkeypatch):
         """BMC отвечает только по http (legacy) → клиент с http-схемой;
         shared transport НЕ подсовываем (он under https-verify-pool)."""

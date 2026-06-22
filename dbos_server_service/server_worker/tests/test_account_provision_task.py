@@ -253,6 +253,90 @@ class TestProvisionHandlers:
         assert t.status == TaskStatus.SUCCEEDED
         assert submit_calls == [("update", True)]
 
+    async def test_update_on_host_applies_ssh_key_when_present(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """`account.update_on_host` с `ssh_public_key` в payload раскатывает
+        ключ на хост после usermod — путь ротации ключа существующего юзера.
+        """
+        from src.clients.ssh import _MANAGED_KEY_MARKER
+
+        pubkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIROTATED ops@new"
+        tid = await make_task(
+            task_kind="account.update_on_host", target_server_id="srv_uk",
+            payload={
+                "server_id": "srv_uk", "account_id": "acc_uk", "login": "ops",
+                "has_sudo": False, "unix_groups": ["devs"], "shell": "/bin/sh",
+                "ssh_public_key": pubkey,
+            },
+        )
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.fetch_account_password",
+            _fetch_creds("ops"),
+        )
+        # usermod ok → authorized_keys bash ok
+        conn = _conn([
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(server_id, account_id, operation, present, target_department_id=None):
+            return {"ok": True, "present_on_server": present}
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.submit_provision_status", fake_submit,
+        )
+
+        await users.account_update_on_host.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+
+        cmds = [c.args[0] for c in conn.run.await_args_list]
+        assert any("usermod" in c for c in cmds)
+        bash_cmd = next(c for c in cmds if "authorized_keys" in c)
+        # Managed-ротация: фильтр прежних managed-строк + idempotent append.
+        assert f'grep -vF " {_MANAGED_KEY_MARKER}"' in bash_cmd
+        assert "grep -qxF" in bash_cmd and ">>" in bash_cmd
+        # Ключ с маркером ушёл на stdin, не в команду.
+        ak_call = next(
+            c for c in conn.run.await_args_list
+            if "authorized_keys" in (c.args[0] if c.args else "")
+        )
+        assert pubkey not in bash_cmd
+        assert f"{pubkey} {_MANAGED_KEY_MARKER}" in ak_call.kwargs.get("input", "")
+
+    async def test_update_on_host_no_key_skips_authorized_keys(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Без `ssh_public_key` в payload update идёт только через usermod —
+        шаг записи ключа не выполняется (back-compat с текущим dispatch'ем).
+        """
+        tid = await make_task(
+            task_kind="account.update_on_host", target_server_id="srv_nk",
+            payload={
+                "server_id": "srv_nk", "account_id": "acc_nk", "login": "ops",
+                "has_sudo": False, "unix_groups": ["devs"], "shell": "/bin/sh",
+            },
+        )
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.fetch_account_password",
+            _fetch_creds("ops"),
+        )
+        conn = _conn([_run_result("", "", 0)])  # usermod only
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.submit_provision_status", fake_submit,
+        )
+
+        await users.account_update_on_host.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = [c.args[0] for c in conn.run.await_args_list]
+        assert not any("authorized_keys" in c for c in cmds)
+
     async def test_deprovision_submits_present_false(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):

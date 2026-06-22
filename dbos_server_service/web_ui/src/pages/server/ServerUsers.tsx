@@ -48,9 +48,13 @@ import {
   X,
   ShieldPlus,
   UserPlus,
+  KeySquare,
+  Download,
+  AlertTriangle,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { HelpTooltip } from "@/components/ui/HelpTooltip";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -76,7 +80,10 @@ import {
   type RevisionAccountDiff,
   type Server,
   type ServerAccount,
+  type ServerAccountSource,
   type ServerAccountUpdateRequest,
+  type SshKeyMode,
+  type SshKeyResponse,
 } from "@/api/server/types";
 
 // Аккаунтов и серверов на отдел немного — одной страницы с запасом хватает,
@@ -109,6 +116,115 @@ function validateUnixGroups(groups: string[]): string | null {
 }
 
 type SortMode = "login" | "server" | "rotated";
+
+// Подсказки к бейджу происхождения аккаунта.
+const SOURCE_HELP: Record<ServerAccountSource, string> = {
+  managed:
+    "Заведён через систему, пароль известен сервису — можно ротировать и раскатывать на серверы.",
+  discovered:
+    "Найден инвентаризацией на сервере, пароль сервису неизвестен — для применения нужен force/ручная ротация.",
+};
+
+/**
+ * Бейдж происхождения аккаунта (managed/discovered) с подсказкой при
+ * наведении. Подсказку держим в общем `HelpTooltip`, чтобы стиль совпадал с
+ * остальными справками формы.
+ */
+function SourceBadge({ source }: { source: ServerAccountSource }) {
+  const help = SOURCE_HELP[source];
+  return (
+    <span className="badge inline-flex items-center gap-1">
+      {source}
+      {help && <HelpTooltip text={help} label={`Что значит ${source}`} inline />}
+    </span>
+  );
+}
+
+/** Сохранить текст в файл через временный object-URL (download приватного ключа). */
+function downloadText(filename: string, text: string) {
+  if (typeof document === "undefined") return;
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Освобождаем URL чуть позже — синхронный revoke ломает скачивание в части браузеров.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Модалка показа приватного SSH-ключа. Приходит один раз (create generate /
+ * ssh_key / rotate_ssh_key) — даём скачать .pem и закрыть, с предупреждением,
+ * что повторно ключ не покажем.
+ */
+function SshKeyResultModal({
+  login,
+  result,
+  onClose,
+}: {
+  login: string;
+  result: SshKeyResponse;
+  onClose: () => void;
+}) {
+  const priv = result.ssh_private_key ?? "";
+  return (
+    <Dialog.Root open modal onOpenChange={(o) => !o && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="modal-overlay" />
+        <Dialog.Content className="modal-content">
+          <div className="modal-header">
+            <KeySquare className="w-5 h-5 text-accent" />
+            <Dialog.Title className="text-base font-semibold">
+              Приватный SSH-ключ — {login}
+            </Dialog.Title>
+          </div>
+          <div className="modal-body flex flex-col gap-3">
+            <div className="alert-warn text-sm flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>
+                Скачайте ключ сейчас — повторно мы его не покажем. Сервис хранит
+                только публичную часть.
+              </span>
+            </div>
+            {result.ssh_public_key && (
+              <div className="text-xs text-dim mono break-all">
+                public: {result.ssh_public_key}
+              </div>
+            )}
+            <textarea
+              className="field-input mono text-xs h-48 resize-none"
+              readOnly
+              value={priv}
+            />
+          </div>
+          <div className="modal-footer">
+            <button
+              type="button"
+              className="btn flex items-center gap-1"
+              onClick={onClose}
+            >
+              <X className="w-4 h-4" /> Закрыть
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary flex items-center gap-1"
+              disabled={!priv}
+              onClick={() => downloadText(`${login}_id_ed25519.pem`, priv)}
+            >
+              <Download className="w-4 h-4" /> Скачать .pem
+            </button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+/** Режим SSH-ключа в формах create/edit. */
+type SshKeyChoice = "none" | "generate" | "supply";
 
 /**
  * Сводный аккаунт: сам `ServerAccount` плюс факт усечения хотя бы на одном
@@ -485,8 +601,16 @@ function AccountCreateModal({
   const [groups, setGroups] = useState("");
   const [shell, setShell] = useState("");
   const [password, setPassword] = useState("");
+  const [sshChoice, setSshChoice] = useState<SshKeyChoice>("none");
+  const [sshPublicKey, setSshPublicKey] = useState("");
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Сгенерированный приватный ключ + созданный аккаунт держим до показа модалки
+  // ключа; `onCreated` дёргаем только после её закрытия, чтобы не потерять ключ.
+  const [keyResult, setKeyResult] = useState<{
+    account: ServerAccount;
+    key: SshKeyResponse;
+  } | null>(null);
 
   function toggleServer(id: string) {
     setServerIds((prev) =>
@@ -516,6 +640,11 @@ function AccountCreateModal({
       setErr(validationErr);
       return;
     }
+    const pubKey = sshPublicKey.trim();
+    if (sshChoice === "supply" && !pubKey) {
+      setErr("Вставьте публичный SSH-ключ или выберите другой режим.");
+      return;
+    }
     setErr(null);
     setPending(true);
     try {
@@ -526,13 +655,48 @@ function AccountCreateModal({
         unix_groups: unixGroups,
         shell: shell.trim() || null,
         password: password.trim() || null,
+        ...(sshChoice !== "none"
+          ? {
+              ssh_mode: sshChoice,
+              ssh_public_key: sshChoice === "supply" ? pubKey : null,
+            }
+          : {}),
       });
-      onCreated(created);
+      // Сгенерированный приватный ключ показываем один раз; иначе сразу закрываем.
+      if (sshChoice === "generate" && created.ssh_private_key) {
+        setKeyResult({
+          account: created,
+          key: {
+            id: created.id,
+            login: created.login,
+            ssh_public_key: created.ssh_public_key ?? null,
+            ssh_private_key: created.ssh_private_key,
+            tasks: [],
+            skipped: [],
+          },
+        });
+      } else {
+        onCreated(created);
+      }
     } catch (e) {
       setErr(handleCreateError(e));
     } finally {
       setPending(false);
     }
+  }
+
+  if (keyResult) {
+    return (
+      <SshKeyResultModal
+        login={keyResult.account.login}
+        result={keyResult.key}
+        onClose={() => {
+          const acc = keyResult.account;
+          setKeyResult(null);
+          onCreated(acc);
+        }}
+      />
+    );
   }
 
   return (
@@ -644,6 +808,42 @@ function AccountCreateModal({
                   autoComplete="new-password"
                 />
               </label>
+
+              <div className="flex flex-col gap-1 text-sm">
+                <span className="field-label flex items-center gap-1">
+                  <KeySquare className="w-3.5 h-3.5" /> SSH-ключ
+                </span>
+                <div className="flex flex-col gap-0.5 border border-token rounded p-2">
+                  {(
+                    [
+                      ["none", "без ключа"],
+                      ["generate", "сгенерировать (приватный покажем один раз)"],
+                      ["supply", "вставить существующий публичный ключ"],
+                    ] as [SshKeyChoice, string][]
+                  ).map(([value, label]) => (
+                    <label
+                      key={value}
+                      className="inline-flex items-center gap-2 text-sm py-0.5"
+                    >
+                      <input
+                        type="radio"
+                        name="ssh-key-mode"
+                        checked={sshChoice === value}
+                        onChange={() => setSshChoice(value)}
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </div>
+                {sshChoice === "supply" && (
+                  <textarea
+                    className="field-input mono text-xs h-20 resize-none mt-1"
+                    value={sshPublicKey}
+                    onChange={(e) => setSshPublicKey(e.target.value)}
+                    placeholder="ssh-ed25519 AAAA… comment"
+                  />
+                )}
+              </div>
             </div>
 
             <div className="modal-footer">
@@ -721,7 +921,7 @@ function AccountRow({
             <ShieldCheck className="w-3 h-3" /> sudo
           </span>
         )}
-        <span className="badge">{account.source}</span>
+        <SourceBadge source={account.source} />
       </div>
     </button>
   );
@@ -906,7 +1106,7 @@ function AccountWorkzone({
           {!account.is_active && (
             <span className="badge badge-warn">inactive</span>
           )}
-          <span className="badge">{account.source}</span>
+          <SourceBadge source={account.source} />
         </div>
 
         {/* Управляющие кнопки — наверху, чтобы не скроллить за ними. */}
@@ -939,6 +1139,26 @@ function AccountWorkzone({
             >
               <Trash2 className="w-4 h-4" /> Удалить
             </button>
+            {canManage && (
+              <button
+                type="button"
+                className="btn btn-sm flex items-center gap-1"
+                title="Прямые гранты доступа к этой учётке"
+                onClick={() => {
+                  document
+                    .getElementById("account-acl-section")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              >
+                <ShieldPlus className="w-4 h-4" /> Доступ
+                {typeof account.acl_grant_count === "number" &&
+                  account.acl_grant_count > 0 && (
+                    <span className="badge badge-accent">
+                      {account.acl_grant_count}
+                    </span>
+                  )}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -965,6 +1185,7 @@ function AccountWorkzone({
         {editing ? (
           <AccountEditForm
             account={account}
+            canRecreate={canManage}
             onCancel={() => setEditing(false)}
             onSaved={() => {
               setEditing(false);
@@ -1096,6 +1317,12 @@ function AccountWorkzone({
               через worker-rotate на вкладке сервера). Plaintext клиенту не
               возвращается.
             </div>
+
+            <SshKeySection
+              account={account}
+              canOperate={canOperate}
+              onChanged={onChanged}
+            />
 
             <ServersSection
               account={account}
@@ -1660,10 +1887,15 @@ function AccountAclSection({
   }
 
   return (
-    <div className="card">
+    <div className="card" id="account-acl-section">
       <div className="flex items-center justify-between mb-2">
         <div className="text-xs uppercase text-dim flex items-center gap-2">
           <ShieldPlus className="w-3 h-3" /> Доступ к учётке
+          {grants.length > 0 && (
+            <span className="badge badge-accent normal-case">
+              {grants.length}
+            </span>
+          )}
         </div>
         <button
           type="button"
@@ -1674,8 +1906,8 @@ function AccountAclSection({
         </button>
       </div>
       <div className="text-xs text-dim mb-3">
-        Гранты добавляют доступ поверх ролей; dep_admin и server.admin видят все
-        учётки всегда.
+        Точечная выдача доступа к этой конкретной учётке. Гранты добавляют доступ
+        поверх ролей; dep_admin и server.admin видят все учётки всегда.
       </div>
 
       {grantsQ.loading && (
@@ -1790,34 +2022,68 @@ function StatRow({ k, v }: { k: string; v: React.ReactNode }) {
 
 function AccountEditForm({
   account,
+  canRecreate,
   onCancel,
   onSaved,
   onError,
 }: {
   account: ServerAccount;
+  /** dep_admin / server.admin — доступно пересоздание залоченного login. */
+  canRecreate: boolean;
   onCancel: () => void;
   onSaved: () => void;
   onError: (e: unknown) => void;
 }) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const [login, setLoginValue] = useState(account.login);
   const [hasSudo, setHasSudo] = useState(account.has_sudo);
   const [groups, setGroups] = useState(account.unix_groups.join(", "));
   const [shell, setShell] = useState(account.shell ?? "");
+  const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // 409 LOGIN_LOCKED при rename present-аккаунта — поднимаем кнопку пересоздания.
+  const [loginLocked, setLoginLocked] = useState(false);
+
+  const loginChanged = login.trim() !== account.login;
+
+  // Сменить пароль в БД и сразу раскатать на все привязанные серверы.
+  async function applyPasswordChange(plain: string) {
+    await accountsApi.rotateAccountUserInitiated(account.id, {
+      password: plain,
+    });
+    const dispatch = await accountsApi.rotateAccountWorker(account.id);
+    const queued = dispatch.tasks.length;
+    const skipped = dispatch.skipped.length;
+    if (dispatch.partial_failure || skipped > 0) {
+      toast.error(
+        `Пароль сменён в БД; раскатка частична: задач — ${queued}, пропущено — ${skipped}.`,
+      );
+    } else {
+      toast.success(
+        `Пароль сменён и раскатан на ${queued} сервер(ов).`,
+      );
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (pending) return;
+    const loginValue = login.trim();
     const unixGroups = groups
       .split(",")
       .map((g) => g.trim())
       .filter(Boolean);
-    const groupsErr = validateUnixGroups(unixGroups);
-    if (groupsErr) {
-      setErr(groupsErr);
+    const validationErr =
+      (loginChanged ? validateLogin(loginValue) : null) ??
+      validateUnixGroups(unixGroups);
+    if (validationErr) {
+      setErr(validationErr);
       return;
     }
     setErr(null);
+    setLoginLocked(false);
     setPending(true);
     try {
       const body: ServerAccountUpdateRequest = {
@@ -1825,11 +2091,92 @@ function AccountEditForm({
         unix_groups: unixGroups,
         shell: shell.trim() || null,
       };
+      if (loginChanged) body.login = loginValue;
       await accountsApi.updateAccount(account.id, body);
+      const plain = password.trim();
+      if (plain) await applyPasswordChange(plain);
       onSaved();
     } catch (e) {
-      setErr(handleActionError(e));
-      onError(e);
+      // present-аккаунт нельзя переименовать обычным PATCH — backend отдаёт 409
+      // LOGIN_LOCKED; предлагаем destructive-пересоздание отдельной кнопкой.
+      if (
+        loginChanged &&
+        e instanceof ApiError &&
+        e.status === 409 &&
+        (e.errorCode === "LOGIN_LOCKED" ||
+          /LOGIN_LOCKED/i.test(apiErrMsg(e, "")))
+      ) {
+        setLoginLocked(true);
+        setErr(
+          "Логин занят OS-аккаунтом на сервере — обычное переименование невозможно. Доступно пересоздание (destructive).",
+        );
+      } else if (
+        loginChanged &&
+        e instanceof ApiError &&
+        e.status === 409 &&
+        (e.errorCode === "ACCOUNT_DUPLICATE" ||
+          /ACCOUNT_DUPLICATE/i.test(apiErrMsg(e, "")))
+      ) {
+        // Другой аккаунт уже держит этот login на одном из серверов —
+        // пересоздание не поможет, нужен другой login.
+        setErr(
+          "Логин уже занят другим аккаунтом на одном из серверов — выберите другой login.",
+        );
+      } else {
+        setErr(handleActionError(e));
+        onError(e);
+      }
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleRecreate() {
+    if (pending) return;
+    const loginValue = login.trim();
+    if (!canRecreate) {
+      setErr("Недостаточно прав на пересоздание (нужен dep_admin/server.admin).");
+      return;
+    }
+    if (
+      !(await confirm({
+        title: "Пересоздать OS-аккаунт",
+        message: `OS-аккаунт ${account.login} будет УДАЛЁН со всех ${account.server_ids.length} серверов вместе с домашним каталогом $HOME и всеми данными, затем создан заново под логином ${loginValue}. Данные не восстановить.`,
+        confirmLabel: "Пересоздать (удалить $HOME)",
+        danger: true,
+      }))
+    )
+      return;
+    setErr(null);
+    setPending(true);
+    try {
+      // Ответ — сводка диспатча, а не сама карточка: считаем задачи и
+      // перезапрашиваем аккаунт через onSaved (родитель дёргает refetch).
+      const dispatch = await accountsApi.recreateLogin(account.id, {
+        login: loginValue,
+      });
+      const dispatched =
+        dispatch.deprovision.length + dispatch.provision.length;
+      const skipped = dispatch.skipped.length;
+      const plain = password.trim();
+      if (plain) await applyPasswordChange(plain);
+      if (skipped > 0) {
+        toast.error(
+          `OS-аккаунт пересоздаётся под логином ${dispatch.new_login}: задач — ${dispatched}, пропущено — ${skipped}.`,
+        );
+      } else {
+        toast.success(
+          `OS-аккаунт пересоздаётся под логином ${dispatch.new_login}: задач — ${dispatched}.`,
+        );
+      }
+      onSaved();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) {
+        setErr("Недостаточно прав на пересоздание (нужен dep_admin/server.admin).");
+      } else {
+        setErr(handleActionError(e));
+        onError(e);
+      }
     } finally {
       setPending(false);
     }
@@ -1838,14 +2185,53 @@ function AccountEditForm({
   return (
     <form onSubmit={submit} className="flex flex-col gap-3">
       <div className="text-xs uppercase text-dim flex items-center gap-2">
-        <Edit3 className="w-3 h-3" /> Редактирование атрибутов
+        <Edit3 className="w-3 h-3" /> Редактирование
       </div>
       <div className="text-xs text-dim">
-        При изменении backend сам разошлёт `update_on_host` на привязанные
-        серверы. Пароль здесь не меняется (для этого — ротация).
+        При изменении атрибутов backend сам разошлёт `update_on_host` на
+        привязанные серверы. Смена пароля пишется в БД и сразу раскатывается на
+        все привязанные серверы.
       </div>
       {err && <div className="alert-danger text-sm">{err}</div>}
 
+      <FormRow label="login">
+        <input
+          className="input mono"
+          value={login}
+          onChange={(e) => {
+            setLoginValue(e.target.value);
+            setLoginLocked(false);
+          }}
+          maxLength={128}
+          placeholder="dbos-svc"
+        />
+      </FormRow>
+      {loginLocked && (
+        <div className="alert-warn text-sm flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <div>
+              Аккаунт present на серверах — переименование без пересоздания
+              невозможно. Пересоздание удалит OS-аккаунт со всеми данными `$HOME`
+              на всех серверах и создаст заново.
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm btn-danger mt-2 flex items-center gap-1"
+              disabled={pending || !canRecreate}
+              title={
+                canRecreate
+                  ? undefined
+                  : "Нужны права dep_admin / server.admin"
+              }
+              onClick={handleRecreate}
+            >
+              <AlertTriangle className="w-3.5 h-3.5" /> Пересоздать под новым
+              логином
+            </button>
+          </div>
+        </div>
+      )}
       <FormRow label="sudo">
         <label className="inline-flex items-center gap-2 text-sm">
           <input
@@ -1870,6 +2256,19 @@ function AccountEditForm({
           value={shell}
           onChange={(e) => setShell(e.target.value)}
           placeholder="/bin/bash"
+        />
+      </FormRow>
+      <FormRow
+        label="новый пароль"
+        hint="пусто — пароль не меняется; иначе раскатка на все серверы"
+      >
+        <input
+          className="input mono"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="оставьте пустым, чтобы не менять"
+          autoComplete="new-password"
         />
       </FormRow>
       <div className="mt-2 flex gap-2 justify-end">
@@ -2043,6 +2442,198 @@ function PasswordRevealCard({
         )}
       </div>
       {reason && <div className="text-xs text-dim mt-3">{reason}</div>}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// SSH-ключ аккаунта — добавить/заменить + ротация (в правой рабочей зоне)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Управление SSH-ключом аккаунта. Добавить/заменить (`generate`|`supply`) и
+ * ротация при компрометации (`rotate_ssh_key`). Раскатку на привязанные
+ * серверы делает backend. Сгенерированный приватный ключ показываем один раз
+ * через `SshKeyResultModal`.
+ */
+function SshKeySection({
+  account,
+  canOperate,
+  onChanged,
+}: {
+  account: ServerAccount;
+  canOperate: boolean;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  // null — форма закрыта; "add" — добавить/заменить; "rotate" — ротация.
+  const [mode, setMode] = useState<"add" | "rotate" | null>(null);
+  const [choice, setChoice] = useState<SshKeyMode>("generate");
+  const [pubKey, setPubKey] = useState("");
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState<SshKeyResponse | null>(null);
+
+  const hasKey = !!account.ssh_key_fingerprint || !!account.ssh_public_key;
+
+  function reset() {
+    setMode(null);
+    setChoice("generate");
+    setPubKey("");
+  }
+
+  async function submit() {
+    if (pending || !canOperate || !mode) return;
+    const pub = pubKey.trim();
+    if (choice === "supply" && !pub) {
+      toast.error("Вставьте публичный SSH-ключ.");
+      return;
+    }
+    if (mode === "rotate") {
+      const okConfirm = await confirm({
+        title: "Ротация SSH-ключа",
+        message: `Сгенерировать новый SSH-ключ для ${account.login}? После раскатки на серверы старый ключ перестанет работать.`,
+        confirmLabel: "Ротировать",
+        danger: true,
+      });
+      if (!okConfirm) return;
+    }
+    setPending(true);
+    try {
+      // Ротация тела не принимает (всегда новая пара); add/replace шлёт режим
+      // и, при supply, публичный ключ.
+      const res =
+        mode === "rotate"
+          ? await accountsApi.rotateAccountSshKey(account.id)
+          : await accountsApi.setAccountSshKey(account.id, {
+              ssh_mode: choice,
+              ssh_public_key: choice === "supply" ? pub : null,
+            });
+      reset();
+      // Приватный ключ приходит один раз: при generate (add) и всегда при ротации.
+      if (res.ssh_private_key) {
+        setResult(res);
+      } else {
+        toast.success("SSH-ключ сохранён, раскатка на серверы запущена.");
+      }
+      onChanged();
+    } catch (e) {
+      toast.error(handleActionError(e));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="text-xs uppercase text-dim mb-2 flex items-center gap-2">
+        <KeySquare className="w-3 h-3" /> SSH-ключ
+      </div>
+      <div className="text-xs text-dim mb-3">
+        Раскатка ключа на привязанные серверы — автоматически на стороне сервиса.
+        Приватный ключ при генерации показывается один раз.
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <span className="text-sm flex-1 min-w-[160px] break-all">
+          {account.ssh_key_fingerprint ? (
+            <span className="mono text-xs">{account.ssh_key_fingerprint}</span>
+          ) : (
+            <span className="text-dim italic">ключ не выдан</span>
+          )}
+        </span>
+        {mode === null && (
+          <>
+            <button
+              type="button"
+              className="btn btn-sm flex items-center gap-1"
+              disabled={!canOperate}
+              title={canOperate ? undefined : "Нет прав"}
+              onClick={() => setMode("add")}
+            >
+              <KeySquare className="w-3.5 h-3.5" />{" "}
+              {hasKey ? "Заменить ключ" : "Добавить ключ"}
+            </button>
+            {hasKey && (
+              <button
+                type="button"
+                className="btn btn-sm btn-danger flex items-center gap-1"
+                disabled={!canOperate}
+                title={canOperate ? "Кейс компрометации" : "Нет прав"}
+                onClick={() => {
+                  setChoice("generate");
+                  setMode("rotate");
+                }}
+              >
+                <RotateCw className="w-3.5 h-3.5" /> Ротировать
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {mode !== null && (
+        <div className="border-t border-token pt-3 flex flex-col gap-2">
+          <div className="flex flex-col gap-0.5">
+            <label className="inline-flex items-center gap-2 text-sm py-0.5">
+              <input
+                type="radio"
+                name="ssh-section-mode"
+                checked={choice === "generate"}
+                onChange={() => setChoice("generate")}
+              />
+              <span>сгенерировать (приватный покажем один раз)</span>
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm py-0.5">
+              <input
+                type="radio"
+                name="ssh-section-mode"
+                checked={choice === "supply"}
+                onChange={() => setChoice("supply")}
+              />
+              <span>вставить существующий публичный ключ</span>
+            </label>
+          </div>
+          {choice === "supply" && (
+            <textarea
+              className="field-input mono text-xs h-20 resize-none"
+              value={pubKey}
+              onChange={(e) => setPubKey(e.target.value)}
+              placeholder="ssh-ed25519 AAAA… comment"
+            />
+          )}
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={reset}
+              disabled={pending}
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              onClick={submit}
+              disabled={pending}
+            >
+              {pending
+                ? "Применяем…"
+                : mode === "rotate"
+                  ? "Ротировать"
+                  : "Сохранить"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {result && (
+        <SshKeyResultModal
+          login={account.login}
+          result={result}
+          onClose={() => setResult(null)}
+        />
+      )}
     </div>
   );
 }

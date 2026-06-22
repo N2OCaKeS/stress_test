@@ -25,7 +25,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
-from src.core.constants import Action, EntityType
+from src.core.constants import (
+    SERVICE_NAME,
+    Action,
+    EntityType,
+    PlatformRole,
+    ServiceRole,
+)
 from src.core.exceptions import (
     AppException,
     AuthorizationError,
@@ -515,7 +521,7 @@ async def create_account(
     db: AsyncSession,
     identity: IdentityContext,
     payload: ServerAccountCreate,
-) -> ServerAccount:
+) -> tuple[ServerAccount, str | None]:
     """INSERT нового аккаунта + привязка к списку серверов.
 
     Порядок проверок:
@@ -526,6 +532,12 @@ async def create_account(
       4. Шифруем password (переданный или сгенерированный).
       5. INSERT аккаунта + связок. UNIQUE(server_id, login) на join →
          409 ACCOUNT_DUPLICATE (login занят на одном из серверов).
+
+    SSH-ключ опционален (`ssh_mode`): `generate` — генерим Ed25519, храним
+    public + зашифрованный private, и возвращаем приватный ОДИН раз вторым
+    элементом кортежа; `supply` — сохраняем переданный public (private у нас
+    нет). Без ssh_mode ключ не задаётся (догенерится при первом provision'е).
+    Второй элемент кортежа — приватный ключ (только для `generate`), иначе None.
     """
     with emit_denied_on_authz_error(
         "server_account.create",
@@ -569,11 +581,31 @@ async def create_account(
         plaintext,
         aad=secrets_service.aad_for_server_account_password(account_id),
     )
+
+    # SSH-ключ на создании. generate → Ed25519, public + зашифрованный private
+    # (private отдаём один раз в ответе). supply → сохраняем переданный public,
+    # приватного у нас нет. Без ssh_mode оба поля остаются NULL.
+    ssh_public_key: str | None = None
+    ssh_private_key_encrypted: str | None = None
+    generated_private_key: str | None = None
+    if payload.ssh_mode == "generate":
+        private_pem, public_openssh = _generate_ssh_keypair()
+        ssh_public_key = public_openssh
+        ssh_private_key_encrypted = secrets_service.encrypt(
+            private_pem,
+            aad=secrets_service.aad_for_server_account_ssh_key(account_id),
+        )
+        generated_private_key = private_pem
+    elif payload.ssh_mode == "supply":
+        ssh_public_key = payload.ssh_public_key
+
     data = {
         "id": account_id,
         "department_id": department_id,
         "login": payload.login,
         "password_encrypted": encrypted,
+        "ssh_public_key": ssh_public_key,
+        "ssh_private_key_encrypted": ssh_private_key_encrypted,
         "has_sudo": payload.has_sudo,
         "unix_groups": list(payload.unix_groups),
         "linked_user_id": payload.linked_user_id,
@@ -614,9 +646,10 @@ async def create_account(
             "login": obj.login,
             "has_sudo": obj.has_sudo,
             "department_id": department_id,
+            "ssh_mode": payload.ssh_mode,
         },
     )
-    return obj
+    return obj, generated_private_key
 
 
 async def get_account(
@@ -813,6 +846,37 @@ async def update_account(
     if not changes:
         return obj, set()
 
+    # Смена логина — отдельный путь: DB-only rename, допустимый только пока
+    # аккаунта физически нет ни на одном сервере. Вынимаем `login` из общего
+    # `changes` (его двигает `repo.rename_login`, синхронно с денормализованной
+    # копией на связках; обычный `repo.update` тронул бы только строку аккаунта
+    # и разъехался с `uq_server_login`).
+    new_login = changes.pop("login", None)
+    if new_login is not None:
+        present_somewhere = any(
+            link.present_on_server for link in obj.server_links
+        )
+        if present_somewhere:
+            audit_service.emit(
+                "server_account.update",
+                target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": "login_locked",
+                    "old_login": obj.login,
+                    "new_login": new_login,
+                    "department_id": obj.department_id,
+                },
+            )
+            raise ConflictError(
+                error_code="LOGIN_LOCKED",
+                message=(
+                    "Account is present on at least one server; rename via "
+                    "POST /server-accounts/{id}/recreate_login (deprovision → "
+                    "rename → provision) instead of PATCH login"
+                ),
+            )
+
     # has_sudo=True или подъём флага — требует GRANT_SUDO (роль ИЛИ per-account
     # грант). Снятие флага допустимо обычным UPDATE — это понижение привилегии.
     if changes.get("has_sudo") is True and not obj.has_sudo:
@@ -832,8 +896,18 @@ async def update_account(
             )
             raise
 
+    # Набор реально применяемых полей (для аудита и applied_fields-возврата):
+    # changes без login + login отдельно, если он меняется.
+    applied = set(changes.keys())
+    if new_login is not None:
+        applied.add("login")
+    old_login = obj.login
+
     try:
-        await repo.update(db, obj, changes)
+        if changes:
+            await repo.update(db, obj, changes)
+        if new_login is not None:
+            await repo.rename_login(db, obj, new_login)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -842,24 +916,28 @@ async def update_account(
             "server_account.update",
             target_id=account_id, target_type="server_account",
             status="failure", allowed=True,
-            details={"reason": "duplicate", "fields": list(changes.keys())},
+            details={"reason": "duplicate", "fields": list(applied)},
         )
         raise ConflictError(
             error_code="ACCOUNT_DUPLICATE",
             message="Update collides with an existing account",
         ) from exc
     await db.refresh(obj)
+    details = {
+        "fields": list(applied),
+        "changed_fields": list(applied),
+        "department_id": obj.department_id,
+    }
+    if new_login is not None:
+        details["old_login"] = old_login
+        details["new_login"] = new_login
     audit_service.emit(
         "server_account.update",
         target_id=obj.id, target_type="server_account",
         status="success", allowed=True,
-        details={
-            "fields": list(changes.keys()),
-            "changed_fields": list(changes.keys()),
-            "department_id": obj.department_id,
-        },
+        details=details,
     )
-    return obj, set(changes.keys())
+    return obj, applied
 
 
 # Поля, которые adopt_from_host может принять в БД. Совпадает с
@@ -1416,6 +1494,205 @@ async def rotate_password(
         },
     )
     return updated
+
+
+def _is_account_recreate_admin(
+    identity: IdentityContext, account: ServerAccount
+) -> bool:
+    """True, если caller вправе пересоздать логин аккаунта.
+
+    Контракт: только platform `department_admin` своего отдела ИЛИ носитель
+    service-роли `admin` в server_service. Обычный operator/update-грант сюда
+    не проходит — recreate сносит и заводит OS-пользователя заново, это
+    разрушительнее обычного update'а.
+    """
+    if (
+        identity.platform_role == PlatformRole.DEPARTMENT_ADMIN
+        and identity.department_id is not None
+        and identity.department_id == account.department_id
+    ):
+        return True
+    return ServiceRole.ADMIN in identity.roles_for_service(SERVICE_NAME)
+
+
+async def authorize_recreate_login(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+) -> ServerAccount:
+    """Загрузить аккаунт под row-lock + авторизовать recreate_login.
+
+    Доступ — dep_admin отдела аккаунта или service-admin (см.
+    `_is_account_recreate_admin`). Невидимый / чужой / отсутствующий аккаунт
+    скрыт за 404 для держателя доступа; без доступа — 403 без раскрытия
+    существования (как у `_authorize_account_action`).
+    """
+    account = await repo.get_for_update(db, account_id)
+    visible = account is not None and account.department_id == identity.department_id
+
+    if account is not None and _is_account_recreate_admin(identity, account):
+        if not visible:
+            audit_service.emit(
+                "server_account.recreate_login",
+                target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept"},
+            )
+            raise NotFoundError(
+                error_code="ACCOUNT_NOT_FOUND", message="Server account not found"
+            )
+        return account
+
+    details: dict = {"reason": "permission_denied"}
+    if identity.subject_type is not None:
+        details.setdefault("subject_type", identity.subject_type)
+    audit_service.emit(
+        "server_account.recreate_login",
+        target_id=account_id, target_type="server_account",
+        status="denied", allowed=False,
+        details=details,
+    )
+    raise AuthorizationError(
+        error_code="PERMISSION_DENIED",
+        message="Only department admin or service admin can recreate an account login",
+        details={"entity_type": "server_account", "action": "recreate_login"},
+    )
+
+
+async def rename_login_in_db(
+    db: AsyncSession,
+    account: ServerAccount,
+    new_login: str,
+) -> ServerAccount:
+    """Переименовать логин в БД (+ денормализованные копии на связках).
+
+    Вызывается оркестрацией recreate_login между deprovision'ом и provision'ом.
+    Конфликт по (server_id, login) → 409 ACCOUNT_DUPLICATE. commit — на caller'е
+    (он держит её в одной транзакции с остальными мутациями).
+    """
+    try:
+        await repo.rename_login(db, account, new_login)
+    except IntegrityError as exc:
+        await db.rollback()
+        logger.warning(
+            "IntegrityError на переименовании логина %s: %s",
+            account.id, type(exc.orig).__name__,
+        )
+        raise ConflictError(
+            error_code="ACCOUNT_DUPLICATE",
+            message="New login already exists on one of the linked servers",
+            details={"hint": "уникальный ключ (server_id, login) на join-таблице"},
+        ) from exc
+    return account
+
+
+def audit_recreate_login(account: ServerAccount, result: dict) -> None:
+    """CRITICAL-аудит успешной оркестрации recreate_login.
+
+    Зовётся endpoint'ом после deprovision → rename → provision. Сводит в
+    details состав диспатчей: число снесённых/заведённых серверов и пропуски.
+    """
+    audit_service.emit(
+        "server_account.recreate_login",
+        target_id=account.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "old_login": result["old_login"],
+            "new_login": result["new_login"],
+            "deprovision_count": len(result["deprovision"]),
+            "provision_count": len(result["provision"]),
+            "skipped": result["skipped"],
+            "department_id": account.department_id,
+        },
+    )
+
+
+async def set_ssh_key(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+    *,
+    ssh_mode: str,
+    ssh_public_key: str | None,
+) -> tuple[ServerAccount, str, str | None]:
+    """Задать/заменить SSH-ключ аккаунта в БД (без fan-out — его делает endpoint).
+
+    Гейт — `update` (роль ИЛИ per-account грант). `generate` — Ed25519, храним
+    public + зашифрованный private, возвращаем приватный один раз; `supply` —
+    сохраняем переданный public, зашифрованный private сбрасываем (его у нас нет).
+
+    Возвращает `(account, ssh_public_key, private_pem_or_None)`. Приватный
+    ключ непустой только при `generate`.
+    """
+    obj = await _authorize_account_action(
+        db, identity, account_id, Action.UPDATE, "server_account.ssh_key_set",
+        for_update=True,
+    )
+    private_pem: str | None = None
+    if ssh_mode == "generate":
+        private_pem, public_openssh = _generate_ssh_keypair()
+        encrypted = secrets_service.encrypt(
+            private_pem,
+            aad=secrets_service.aad_for_server_account_ssh_key(obj.id),
+        )
+        await repo.update_ssh_key(
+            db, obj, ssh_public_key=public_openssh, ssh_private_key_encrypted=encrypted
+        )
+    else:  # supply — public_key уже провалидирован схемой
+        public_openssh = ssh_public_key  # type: ignore[assignment]
+        await repo.update_ssh_key(
+            db, obj, ssh_public_key=public_openssh, ssh_private_key_encrypted=None
+        )
+    await db.commit()
+    await db.refresh(obj)
+    audit_service.emit(
+        "server_account.ssh_key_set",
+        target_id=obj.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "login": obj.login,
+            "ssh_mode": ssh_mode,
+            "department_id": obj.department_id,
+        },
+    )
+    return obj, public_openssh, private_pem
+
+
+async def rotate_ssh_key(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+) -> tuple[ServerAccount, str, str]:
+    """Перегенерить Ed25519-ключ аккаунта (кейс компрометации) — без fan-out.
+
+    Гейт — `update`. Всегда генерит новую пару, сохраняет public + зашифрованный
+    private, возвращает новый приватный один раз. Аудит CRITICAL (ротация
+    секрета).
+    """
+    obj = await _authorize_account_action(
+        db, identity, account_id, Action.UPDATE, "server_account.ssh_key_rotate",
+        for_update=True,
+    )
+    private_pem, public_openssh = _generate_ssh_keypair()
+    encrypted = secrets_service.encrypt(
+        private_pem,
+        aad=secrets_service.aad_for_server_account_ssh_key(obj.id),
+    )
+    await repo.update_ssh_key(
+        db, obj, ssh_public_key=public_openssh, ssh_private_key_encrypted=encrypted
+    )
+    await db.commit()
+    await db.refresh(obj)
+    audit_service.emit(
+        "server_account.ssh_key_rotate",
+        target_id=obj.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "login": obj.login,
+            "department_id": obj.department_id,
+        },
+    )
+    return obj, public_openssh, private_pem
 
 
 async def _reveal_account_password(

@@ -27,23 +27,30 @@ from src.clients.redfish import (
     RedfishError,
     _extract_redfish_error,
     _sanitize_url,
+    resolve_manager_id,
+    resolve_system_id,
 )
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 
-def _make_client(handler) -> RedfishClient:
+def _make_client(handler, *, system_id: str | None = None) -> RedfishClient:
     """Собрать RedfishClient с подменённым MockTransport.
 
     `handler(request)` — обычный httpx callback `(request) -> Response`.
+    `system_id` — переопределить System-id (по умолчанию конструкторный `1`);
+    пустая строка триггерит discovery через `/redfish/v1/Systems`.
     """
     transport = httpx.MockTransport(handler)
-    client = RedfishClient(
-        host="https://bmc.test",
-        username="root",
-        password="Calvin",
-    )
+    ctor_kwargs: dict = {
+        "host": "https://bmc.test",
+        "username": "root",
+        "password": "Calvin",
+    }
+    if system_id is not None:
+        ctor_kwargs["system_id"] = system_id
+    client = RedfishClient(**ctor_kwargs)
     # Заменяем underlying httpx-инстанс на свой с MockTransport. Это нужно
     # потому что transport нельзя передать в конструктор public API
     # RedfishClient — он намеренно скрыт. Если когда-нибудь конструктор
@@ -133,6 +140,40 @@ class TestExtractRedfishError:
 
     def test_non_object_root(self):
         assert _extract_redfish_error("[]") == (None, None)
+
+
+# ── resolve_manager_id / resolve_system_id ───────────────────────────────────
+
+
+class TestResolveManagerId:
+    def test_idrac(self):
+        assert resolve_manager_id("idrac") == "iDRAC.Embedded.1"
+
+    def test_ilo(self):
+        assert resolve_manager_id("ilo") == "1"
+
+    def test_unknown_kind_empty(self):
+        assert resolve_manager_id("supermicro") == ""
+
+    def test_none_empty(self):
+        assert resolve_manager_id(None) == ""
+
+
+class TestResolveSystemId:
+    def test_idrac_embedded_path(self):
+        # Dell держит ComputerSystem под `System.Embedded.1`, не под `1` —
+        # хардкод `Systems/1` на iDRAC отдавал 404.
+        assert resolve_system_id("idrac") == "System.Embedded.1"
+
+    def test_ilo_numeric(self):
+        assert resolve_system_id("ilo") == "1"
+
+    def test_unknown_kind_empty(self):
+        # Неизвестный kind → discovery через /Systems внутри клиента.
+        assert resolve_system_id("supermicro") == ""
+
+    def test_none_empty(self):
+        assert resolve_system_id(None) == ""
 
 
 # ── RedfishError formatting ──────────────────────────────────────────────────
@@ -258,6 +299,87 @@ class TestGetPowerState:
             assert exc.value.status_code == 429
 
 
+# ── system_id resolution / discovery ─────────────────────────────────────────
+
+
+class TestSystemIdResolution:
+    async def test_idrac_explicit_system_id_path(self):
+        """iDRAC kind → клиент собран с system_id=`System.Embedded.1`,
+        get_power_state бьёт ровно по этому пути (без discovery, без 404)."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/redfish/v1/Systems/System.Embedded.1"
+            return _ok(200, {"PowerState": "On"})
+
+        async with _make_client(handler, system_id="System.Embedded.1") as c:
+            assert await c.get_power_state() == "On"
+
+    async def test_discovery_when_system_id_empty(self):
+        """Пустой system_id → discovery через /redfish/v1/Systems, берём
+        first Member, дальше бьём по нему."""
+        seen: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.url.path)
+            if request.url.path == "/redfish/v1/Systems":
+                return _ok(200, {
+                    "Members": [{"@odata.id": "/redfish/v1/Systems/Self"}],
+                })
+            if request.url.path == "/redfish/v1/Systems/Self":
+                return _ok(200, {"PowerState": "Off"})
+            return _ok(404)
+
+        async with _make_client(handler, system_id="") as c:
+            assert await c.get_power_state() == "Off"
+        assert "/redfish/v1/Systems" in seen
+        assert "/redfish/v1/Systems/Self" in seen
+
+    async def test_discovery_caches_system_id(self):
+        """Повторный вызов не делает второй discovery round-trip —
+        system_id кэшируется в self._system_id."""
+        collection_hits = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal collection_hits
+            if request.url.path == "/redfish/v1/Systems":
+                collection_hits += 1
+                return _ok(200, {
+                    "Members": [{"@odata.id": "/redfish/v1/Systems/1"}],
+                })
+            return _ok(200, {"PowerState": "On"})
+
+        async with _make_client(handler, system_id="") as c:
+            await c.get_power_state()
+            await c.get_power_state()
+        assert collection_hits == 1
+
+    async def test_discovery_empty_collection_raises(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return _ok(200, {"Members": []})
+
+        async with _make_client(handler, system_id="") as c:
+            with pytest.raises(RedfishError, match="Systems collection is empty"):
+                await c.get_power_state()
+
+    async def test_power_action_uses_resolved_system_id(self):
+        """power_action тоже резолвит system_id — Reset идёт по discovered
+        пути, не по хардкоду `Systems/1`."""
+        captured = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/redfish/v1/Systems":
+                return _ok(200, {
+                    "Members": [{"@odata.id": "/redfish/v1/Systems/Self"}],
+                })
+            captured["path"] = request.url.path
+            return _ok(204)
+
+        async with _make_client(handler, system_id="") as c:
+            await c.power_action("ForceOff")
+        assert captured["path"] == (
+            "/redfish/v1/Systems/Self/Actions/ComputerSystem.Reset"
+        )
+
+
 # ── power_action ─────────────────────────────────────────────────────────────
 
 
@@ -329,6 +451,8 @@ class TestRotateUserPassword:
     async def test_patch_accounts(self):
         captured = {}
         def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "GET" and request.url.path == "/redfish/v1/AccountService":
+                return _ok(200, {"Accounts": {"@odata.id": "/redfish/v1/AccountService/Accounts"}})
             captured["method"] = request.method
             captured["path"] = request.url.path
             captured["body"] = json.loads(request.content)
@@ -337,7 +461,7 @@ class TestRotateUserPassword:
         async with _make_client(handler) as c:
             await c.rotate_user_password(2, "NewPass!23")
         assert captured["method"] == "PATCH"
-        assert captured["path"] == "/redfish/v1/Managers/iDRAC.Embedded.1/Accounts/2"
+        assert captured["path"] == "/redfish/v1/AccountService/Accounts/2"
         assert captured["body"] == {"Password": "NewPass!23"}
 
     async def test_401_raises_auth(self):
@@ -379,3 +503,27 @@ class TestLifecycle:
         # client закрыт; повторное использование даёт явный RedfishError
         with pytest.raises(RedfishError, match="closed"):
             await c.get_power_state()
+
+
+class TestAccountsBaseResolution:
+    """Путь к аккаунтам резолвится через AccountService (на iLO под Manager'ом
+    коллекции нет — был 404), с fallback на legacy /Managers/{id}/Accounts."""
+
+    async def test_resolves_from_account_service(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/redfish/v1/AccountService":
+                return _ok(200, {"Accounts": {"@odata.id": "/redfish/v1/AccountService/Accounts"}})
+            return _ok(404, {"error": {"code": "X"}})
+
+        c = _make_client(handler)
+        assert await c._resolve_accounts_base() == "/redfish/v1/AccountService/Accounts"
+
+    async def test_fallback_to_manager_path_when_account_service_missing(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/redfish/v1/AccountService":
+                return httpx.Response(404, json={"error": {"code": "NotFound"}})
+            return _ok(200, {})
+
+        c = _make_client(handler)
+        # default manager_id у конструктора — iDRAC.Embedded.1
+        assert await c._resolve_accounts_base() == "/redfish/v1/Managers/iDRAC.Embedded.1/Accounts"

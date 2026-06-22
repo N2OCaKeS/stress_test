@@ -30,7 +30,11 @@ from typing import Literal, NamedTuple
 import httpx
 
 from src.clients.ipmitool import IpmitoolClient, IpmitoolError
-from src.clients.redfish import RedfishClient, resolve_manager_id
+from src.clients.redfish import (
+    RedfishClient,
+    resolve_manager_id,
+    resolve_system_id,
+)
 from src.core.config import get_settings
 from src.core.exceptions import AppException
 from src.services.http_pool import (
@@ -500,8 +504,10 @@ async def get_bmc_client(
     `ipmi_controllers`-таблице server_service), что Redfish недоступен.
 
     `kind` — тип BMC из `ipmi_controllers.kind`
-    (`idrac`/`ilo`/`ipmi`/`redfish`). Используется для подбора Manager-id
-    Redfish-пути. Если не передан — RedfishClient берёт default (iDRAC).
+    (`idrac`/`ilo`/`ipmi`/`redfish`). Используется для подбора Manager-id и
+    System-id Redfish-пути (у iDRAC система лежит под `System.Embedded.1`, у
+    iLO — под `1`). Если не передан — RedfishClient берёт default (`1`),
+    подходящий большинству one-node iLO/generic-серверов.
 
     До любого сетевого вызова `host` проходит SSRF-guard
     (`ensure_bmc_host_allowed`): резолв в IP + hard-block loopback /
@@ -540,10 +546,13 @@ async def get_bmc_client(
         if probe.scheme == "https":
             kwargs["transport"] = get_bmc_redfish_transport(verify=probe.verify_tls)
         if kind:
-            manager_id = resolve_manager_id(kind)
-            # Пустой '' для generic-kind (ipmi/redfish) → discovery через
-            # /Managers внутри клиента; явный non-empty (idrac/ilo) — прямой path.
-            kwargs["manager_id"] = manager_id
+            # Пустой '' для generic-kind (ipmi/redfish) или неизвестного kind
+            # → discovery через коллекцию внутри клиента; явный non-empty
+            # (idrac/ilo) — прямой path. Manager-id и System-id резолвятся
+            # симметрично: у iDRAC система лежит под `System.Embedded.1`, а не
+            # под `1`, иначе power-операции отдают 404.
+            kwargs["manager_id"] = resolve_manager_id(kind)
+            kwargs["system_id"] = resolve_system_id(kind)
         return RedfishClient(**kwargs)
 
     logger.info("Redfish unavailable on %s; falling back to ipmitool", host)

@@ -604,9 +604,18 @@ async def account_update_on_host(task_id: str) -> None:
     """Синхронизировать атрибуты OS-пользователя на сервере (`usermod`).
 
     Поток: собираем сессию (`_account_creds`) → `ssh_client.modify_user`
-    (usermod groups/sudo/shell) → `submit_provision_status(present=True)`.
+    (usermod groups/sudo/shell) → опционально раскатываем сменившийся
+    SSH-публичный ключ в `~/.ssh/authorized_keys` → `submit_provision_status(present=True)`.
     Пароль не меняется, поэтому на управляемом сервере он не запрашивается
     вовсе — `login` берётся из payload.
+
+    `ssh_public_key` едет в payload, когда у аккаунта сменился (или впервые
+    появился) ключ — server_service кладёт его в payload так же, как для
+    `account.provision`. Поле опционально: пока server_service его не шлёт на
+    update, шаг записи ключа пропускается, остальное поведение не меняется.
+    Запись идемпотентна и помечает наш ключ managed-маркером — ротация
+    заменяет именно его, ручные ключи оператора не трогаются. `force_replace`
+    из payload перезаписывает файл целиком (re-provision после переустановки ОС).
 
     Параметры/payload — как у `account_provision`.
 
@@ -627,6 +636,17 @@ async def account_update_on_host(task_id: str) -> None:
             has_sudo=bool(payload.get("has_sudo")),
             shell=payload.get("shell"),
         )
+        # Смена/первичная установка SSH-ключа на уже заведённом юзере.
+        # provision кладёт ключ при useradd; здесь донесём ротацию ключа на
+        # хост. Если server_service не положил ключ в payload — пропускаем.
+        public_key = payload.get("ssh_public_key")
+        if public_key:
+            await ssh_client.apply_authorized_key(
+                creds, server_id,
+                login=creds["login"],
+                public_key=public_key,
+                force_replace=bool(payload.get("force_replace")),
+            )
         await server_service_client.submit_provision_status(
             server_id, account_id, "update", True, target_dept,
         )

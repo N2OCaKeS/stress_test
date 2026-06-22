@@ -321,6 +321,17 @@ export interface ServerAccount {
    * `password_encrypted` в ответе нет никогда.
    */
   password_b64: string | null;
+  /** Отпечаток публичного SSH-ключа аккаунта (если ключ выдан). */
+  ssh_key_fingerprint?: string | null;
+  /** Публичный SSH-ключ (формат authorized_keys), если выдан. */
+  ssh_public_key?: string | null;
+  /**
+   * Приватный SSH-ключ — приходит ТОЛЬКО в ответе на создание с
+   * `ssh_mode: "generate"`, ровно один раз. В обычных GET его нет.
+   */
+  ssh_private_key?: string | null;
+  /** Число прямых ACL-грантов учётки (если backend отдаёт счётчик). */
+  acl_grant_count?: number | null;
   created_at: Iso8601;
   updated_at: Iso8601;
   created_by: string | null;
@@ -340,6 +351,109 @@ export interface ServerAccountCreateRequest {
   linked_user_id?: string | null;
   shell?: string | null;
   home_dir?: string | null;
+  /**
+   * Режим SSH-ключа при создании.
+   *  - `generate` — backend генерирует пару, приватный ключ возвращает один раз
+   *    в `ssh_private_key` ответа;
+   *  - `supply` — публичный ключ передаётся в `ssh_public_key`, приватный
+   *    остаётся у оператора;
+   *  - `null` / отсутствует — аккаунт заводится без SSH-ключа.
+   */
+  ssh_mode?: "generate" | "supply" | null;
+  /** Публичный ключ для `ssh_mode: "supply"` (формат authorized_keys). */
+  ssh_public_key?: string | null;
+}
+
+/**
+ * Способ выдачи SSH-ключа: сгенерировать новую пару на стороне сервиса либо
+ * принять готовый публичный ключ оператора.
+ */
+export type SshKeyMode = "generate" | "supply";
+
+/**
+ * Тело POST /server-accounts/{id}/ssh_key.
+ *
+ * `generate` — backend создаёт пару, в ответе один раз отдаёт приватный ключ.
+ * `supply` — оператор передаёт готовый публичный ключ, приватный сервису не
+ * известен (поле в ответе пустое). Раскатка на привязанные серверы — на
+ * стороне backend автоматически. `/rotate_ssh_key` тела не принимает (см.
+ * `rotateAccountSshKey`).
+ */
+export interface SshKeyRequest {
+  ssh_mode: SshKeyMode;
+  /** Обязателен для `ssh_mode: "supply"`; формат authorized_keys. */
+  ssh_public_key?: string | null;
+}
+
+/** Один задиспатченный per-server элемент в fan-out ответе SSH-ключа. */
+export interface AccountKeyTask {
+  server_id: string;
+  task_id: string;
+}
+
+/** Сервер, на который раскатка SSH-ключа не поставлена. */
+export interface AccountKeySkipped {
+  server_id: string;
+  reason: string;
+}
+
+/**
+ * Ответ на выдачу/ротацию SSH-ключа (`AccountKeyFanoutResponse`).
+ *
+ * `ssh_private_key` присутствует при `ssh_mode: "generate"` (ssh_key) и всегда
+ * при ротации — РОВНО ОДИН РАЗ, повторно backend его не отдаёт. `tasks` —
+ * задиспатченная раскатка на привязанные серверы, `skipped` — серверы, на
+ * которые задача не поставлена. Поля `fingerprint` backend не возвращает.
+ */
+export interface SshKeyResponse {
+  id: string;
+  login: string;
+  ssh_public_key: string | null;
+  /** Plaintext приватного ключа — только при generate / ротации, один раз. */
+  ssh_private_key?: string | null;
+  tasks: AccountKeyTask[];
+  skipped: AccountKeySkipped[];
+}
+
+/**
+ * Тело POST /server-accounts/{id}/recreate_login.
+ *
+ * Запрашивается, когда обычный PATCH `login` отбит 409 `LOGIN_LOCKED`
+ * (аккаунт уже present на сервере). Backend удаляет OS-аккаунт со всех
+ * привязанных серверов (вместе с `$HOME`) и заводит заново под новым login.
+ */
+export interface RecreateLoginRequest {
+  login: string;
+}
+
+/** Одна задиспатченная per-server операция в сводке recreate_login. */
+export interface RecreateLoginTask {
+  server_id: string;
+  operation: string;
+  task_id: string;
+}
+
+/** Сервер, на который операция recreate_login не поставлена. */
+export interface RecreateLoginSkipped {
+  server_id: string;
+  reason: string;
+}
+
+/**
+ * Ответ POST /server-accounts/{id}/recreate_login (202).
+ *
+ * Сводка диспатча: `deprovision` сносит старый OS-аккаунт (с `$HOME`),
+ * `provision` заводит заново под `new_login`. `skipped` — серверы, на которые
+ * операция не поставлена. Сам аккаунт endpoint не отдаёт — карточку надо
+ * перезапросить отдельно.
+ */
+export interface RecreateLoginDispatch {
+  id: string;
+  old_login: string;
+  new_login: string;
+  deprovision: RecreateLoginTask[];
+  provision: RecreateLoginTask[];
+  skipped: RecreateLoginSkipped[];
 }
 
 /**
@@ -348,8 +462,13 @@ export interface ServerAccountCreateRequest {
  * Пароль сюда не входит — для него отдельный `/rotate_password`. Привязка/
  * отвязка серверов — через `/servers` под-операции. Поля `is_active` тоже
  * нет: backend держит её для GET, но запрещает менять через PATCH.
+ *
+ * `login` — DB-rename: проходит только пока аккаунт нигде не present на
+ * серверах. Если present — backend отбивает 409 `LOGIN_LOCKED`, и
+ * переименование делается через `/recreate_login`.
  */
 export interface ServerAccountUpdateRequest {
+  login?: string | null;
   has_sudo?: boolean | null;
   unix_groups?: string[] | null;
   linked_user_id?: string | null;

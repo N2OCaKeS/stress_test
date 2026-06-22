@@ -120,6 +120,14 @@ _GROUP_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
 # и shell-метасимволов — защита от инъекции.
 _PATH_RE = re.compile(r"^[A-Za-z0-9/._\-]+$")
 
+# Маркер, которым помечаем строки authorized_keys, записанные нами. Кладём
+# его в конец строки как часть key-comment'а: OpenSSH игнорирует всё после
+# base64-payload'а до конца строки, поэтому маркер не ломает разбор ключа, но
+# даёт нам способ найти и заменить именно «свой» ключ при ротации, не трогая
+# строки, добавленные оператором руками. Токен намеренно узкий (буквы/цифры/
+# дефис), без пробелов и shell-метасимволов — он подставляется в bash-фильтр.
+_MANAGED_KEY_MARKER = "dbos-managed-key"
+
 # Whitelist префиксов SSH-public-key, которые принимаем для записи в
 # authorized_keys. Включает классические `ssh-rsa`/`ssh-ed25519`/`ssh-dss`,
 # elliptic-curve ECDSA трёх размеров и FIDO/U2F (`sk-*`). Trailing space — часть
@@ -565,10 +573,16 @@ class SshClient:
     ) -> None:
         """Записать `public_key` в `~/.ssh/authorized_keys` пользователя `login`.
 
+        Ключ помечается managed-маркером (`_MANAGED_KEY_MARKER`) в конце
+        строки: при ротации мы заменяем именно прежнюю managed-строку, не
+        трогая ключи, которые оператор добавил руками. Запись идемпотентна —
+        повторный вызов с тем же ключом ничего не меняет.
+
         `force_replace=True` создаёт `authorized_keys` с нуля одним этим
-        ключом (re-provision после переустановки ОС: старые записи теряют
-        смысл). `force_replace=False` — идемпотентно дописывает ключ, если
-        точного совпадения строки не нашлось через `grep -qxF`.
+        ключом (re-provision после переустановки ОС: всё прежнее содержимое,
+        включая ручные ключи, теряет смысл — бокс переустановлен).
+        `force_replace=False` — заменяет прежний managed-ключ на новый и
+        оставляет остальные строки нетронутыми.
 
         `target_home` — если caller уже знает home аккаунта (пришёл через
         provision payload), Python-guard отобьёт системные пути из
@@ -583,6 +597,7 @@ class SshClient:
             truncate=force_replace,
             error_code="SSH_AUTHORIZED_KEYS_FAILED",
             target_home=target_home,
+            managed=True,
         )
 
     async def _install_authorized_key(
@@ -593,6 +608,7 @@ class SshClient:
         truncate: bool,
         error_code: str,
         target_home: str | None = None,
+        managed: bool = False,
     ) -> None:
         """Общая реализация записи ключа в `~/<user>/.ssh/authorized_keys`.
 
@@ -609,9 +625,20 @@ class SshClient:
 
         Валидирует ключ (single-line, известный prefix), собирает home
         через `getent passwd`, кладёт ключ на stdin (`$(cat)`), правит
-        права 700/600 и chown. На `truncate=True` файл перезаписывается
-        одним ключом; на `truncate=False` — идемпотентный append через
-        `grep -qxF`.
+        права 700/600 и chown.
+
+        Режимы записи:
+
+          * `truncate=True` — файл перезаписывается одним ключом (re-provision
+            после переустановки ОС, всё прежнее содержимое уже невалидно).
+          * `truncate=False, managed=False` — идемпотентный append голого
+            ключа через `grep -qxF` (bootstrap управляющего пользователя:
+            маркер там не нужен, ключ всегда один и тот же).
+          * `truncate=False, managed=True` — ключ записывается с
+            managed-маркером в конце строки. Прежние строки с тем же маркером
+            удаляются перед записью (ротация заменяет именно наш ключ), а
+            строки без маркера — ручные ключи оператора — остаются нетронутыми.
+            Если ровно эта строка уже есть, повторная запись её не дублирует.
         """
         self._validate_login(target_user)
         cmd_label = f"prepare authorized_keys <{target_user}>"
@@ -625,6 +652,13 @@ class SshClient:
         key_line = _validate_ssh_public_key(
             public_key, host=self.host, cmd_label=cmd_label,
         )
+        # В managed-режиме помечаем строку маркером, чтобы при ротации найти и
+        # снести именно её. Маркер — отдельное слово в хвосте строки (часть
+        # key-comment'а с точки зрения OpenSSH). Если ключ уже несёт маркер
+        # (не должно происходить, ключ приходит из server_service без него),
+        # второй раз не клеим.
+        if managed and not truncate and _MANAGED_KEY_MARKER not in key_line:
+            key_line = f"{key_line} {_MANAGED_KEY_MARKER}"
         # Защита от case'а «caller передал системного пользователя» (nobody,
         # daemon, заблокированные сервисные аккаунты). Если caller знает
         # home заранее — отсекаем по списку до отправки команды на хост.
@@ -643,6 +677,26 @@ class SshClient:
         if truncate:
             write_cmd = (
                 'printf "%s\\n" "$key" > "$home/.ssh/authorized_keys"'
+            )
+        elif managed:
+            # Ротация managed-ключа: сносим прежние строки с нашим маркером,
+            # потом дописываем новую. `grep -vF` фильтрует все строки с
+            # маркером во временный файл, который атомарно подменяет оригинал;
+            # строки без маркера (ручные ключи) сохраняются как есть. После
+            # этого — idempotent append: повторная запись того же ключа не
+            # плодит дубль. Файла может не быть (touch создаёт), grep по
+            # отсутствующему маркеру — no-op (вернёт пустой tmp, оригинал без
+            # managed-строк). `|| true` у grep'а — он отдаёт rc=1, когда после
+            # фильтра не осталось строк (например, файл был ровно из нашего
+            # ключа); это штатно, а не ошибка.
+            marker = _MANAGED_KEY_MARKER
+            write_cmd = (
+                'touch "$home/.ssh/authorized_keys"; '
+                'tmp_ak=$(mktemp); '
+                f'grep -vF " {marker}" "$home/.ssh/authorized_keys" > "$tmp_ak" || true; '
+                'mv "$tmp_ak" "$home/.ssh/authorized_keys"; '
+                'grep -qxF "$key" "$home/.ssh/authorized_keys" || '
+                'printf "%s\\n" "$key" >> "$home/.ssh/authorized_keys"'
             )
         else:
             write_cmd = (

@@ -14,7 +14,11 @@ GET карточки доступен по `view` или `view_password`. Дер
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.endpoints.worker_dispatch import fanout_update_on_host
+from src.api.v1.endpoints.worker_dispatch import (
+    fanout_provision_for_ssh_key,
+    fanout_update_on_host,
+    recreate_login_orchestrate,
+)
 from src.core.config import get_settings
 from src.core.limiter import endpoint_limiter, per_account_key
 from src.dependencies.auth import CurrentUserIdentity
@@ -25,15 +29,21 @@ from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedRes
 from src.schemas.server_account import (
     AccountAclGrantRequest,
     AccountAclResponse,
+    AccountKeyFanoutResponse,
+    AccountRecreateLoginResponse,
+    AccountRotateSkipped,
+    AccountRotateTask,
     IgnoredLoginCreate,
     IgnoredLoginResponse,
     ServerAccountAdoptRequest,
     ServerAccountCreate,
     ServerAccountImportRequest,
+    ServerAccountRecreateLoginRequest,
     ServerAccountResponse,
     ServerAccountRotateRequest,
     ServerAccountRotateResponse,
     ServerAccountServersUpdate,
+    ServerAccountSshKeyRequest,
     ServerAccountUpdate,
 )
 from src.services import server_account as svc
@@ -42,8 +52,16 @@ from src.services import server_account_acl as acl_svc
 router = APIRouter(prefix="/server-accounts")
 
 
-def _to_response(obj: ServerAccount, password_b64: str | None = None) -> ServerAccountResponse:
-    """Собрать карточку аккаунта из ORM-объекта + список привязанных серверов."""
+def _to_response(
+    obj: ServerAccount,
+    password_b64: str | None = None,
+    ssh_private_key: str | None = None,
+) -> ServerAccountResponse:
+    """Собрать карточку аккаунта из ORM-объекта + список привязанных серверов.
+
+    `ssh_private_key` непустой только в ответе create (ssh_mode='generate') —
+    приватный ключ отдаётся ровно один раз и в GET-карточке всегда `None`.
+    """
     resp = ServerAccountResponse(
         id=obj.id,
         server_ids=account_repo.linked_server_ids(obj),
@@ -58,6 +76,8 @@ def _to_response(obj: ServerAccount, password_b64: str | None = None) -> ServerA
         is_active=obj.is_active,
         password_rotated_at=obj.password_rotated_at,
         password_b64=password_b64,
+        ssh_public_key=obj.ssh_public_key,
+        ssh_private_key=ssh_private_key,
         created_at=obj.created_at,
         updated_at=obj.updated_at,
         created_by=obj.created_by,
@@ -77,7 +97,12 @@ def _to_response(obj: ServerAccount, password_b64: str | None = None) -> ServerA
         "либо генерируется сервером (`secrets.token_urlsafe(32)`). Если "
         "передан — декодируется и проходит политику по plaintext; в любом "
         "случае шифруется через `secrets_service.encrypt()` и в ответ не "
-        "возвращается. `has_sudo=True` требует action `grant_sudo`."
+        "возвращается. `has_sudo=True` требует action `grant_sudo`.\n\n"
+        "Опциональный SSH-ключ (`ssh_mode`): `generate` — сервер генерит "
+        "Ed25519-пару, хранит public + зашифрованный private и возвращает "
+        "приватный ключ ОДИН раз в поле `ssh_private_key` (в GET его уже нет); "
+        "`supply` — клиент передаёт `ssh_public_key`. Ключ раскатается на боксы "
+        "при provision'е."
     ),
     responses={
         201: {"description": "Аккаунт создан."},
@@ -92,8 +117,8 @@ async def create_account(
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountResponse:
     """Create-эндпоинт. Доступ: `(server_account, *, create)` (+ `grant_sudo` опц.)."""
-    obj = await svc.create_account(db, identity, body)
-    return _to_response(obj)
+    obj, ssh_private_key = await svc.create_account(db, identity, body)
+    return _to_response(obj, ssh_private_key=ssh_private_key)
 
 
 @router.post(
@@ -311,11 +336,17 @@ _OS_MANAGED_FIELDS = {"has_sudo", "unix_groups", "shell"}
         "`has_sudo=False → True` требует action `grant_sudo` (admin-only). "
         "Снятие sudo допустимо обычным `update`. При изменении OS-управляемых "
         "атрибутов (`has_sudo`/`unix_groups`/`shell`) правка рассылается "
-        "`update_on_host` на все серверы, где аккаунт присутствует."
+        "`update_on_host` на все серверы, где аккаунт присутствует.\n\n"
+        "Смена `login` через PATCH — только DB-only переименование, допустимое "
+        "лишь когда аккаунт `present_on_server=false` на ВСЕХ привязанных "
+        "серверах (пере-проверяется уникальность (server_id, login)). Если "
+        "аккаунт присутствует хоть на одном сервере → 409 LOGIN_LOCKED; смена "
+        "живого логина — через `POST /server-accounts/{id}/recreate_login`."
     ),
     responses={
         403: {"description": "Нет `update` (или `grant_sudo` при подъёме has_sudo)."},
         404: {"description": "Аккаунт не найден / чужой dept."},
+        409: {"description": "LOGIN_LOCKED (аккаунт present на сервере) / ACCOUNT_DUPLICATE (новый login занят)."},
     },
 )
 async def update_account(
@@ -491,6 +522,139 @@ async def rotate_password(
         id=obj.id,
         login=obj.login,
         rotated_at=obj.password_rotated_at,
+    )
+
+
+@router.post(
+    "/{account_id}/recreate_login",
+    response_model=AccountRecreateLoginResponse,
+    status_code=202,
+    summary="Сменить живой OS-логин: deprovision → rename → provision",
+    description=(
+        "Меняет логин аккаунта, который физически присутствует на серверах: "
+        "на каждый привязанный сервер ставится `account.deprovision` под старым "
+        "логином, логин переименовывается в БД (синхронно с денормализованными "
+        "копиями на связках), затем на каждый сервер ставится `account.provision` "
+        "под новым логином (с паролем/ключом). Тело: `{login}`.\n\n"
+        "Доступ — ТОЛЬКО platform department_admin отдела аккаунта или "
+        "service-роль `admin`. Обычный operator/update-грант не проходит. "
+        "Аудит CRITICAL. Конфликт нового логина на одном из серверов → 409 "
+        "ACCOUNT_DUPLICATE. Серверы decommissioned / недоступные воркеру "
+        "уезжают в `skipped` (rename в БД при этом всё равно выполняется)."
+    ),
+    responses={
+        202: {"description": "Логин переименован; deprovision/provision-задачи поставлены."},
+        403: {"description": "Не department_admin отдела и не service-admin."},
+        404: {"description": "Аккаунт не найден / чужой dept."},
+        409: {"description": "ACCOUNT_DUPLICATE — новый логин занят на одном из серверов."},
+    },
+)
+async def recreate_login(
+    account_id: str,
+    body: ServerAccountRecreateLoginRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AccountRecreateLoginResponse:
+    """Recreate-login. Доступ: platform dep_admin отдела ИЛИ service-admin. Аудит CRITICAL."""
+    account = await svc.authorize_recreate_login(db, identity, account_id)
+    result = await recreate_login_orchestrate(
+        db=db, identity=identity, request=request,
+        account=account, new_login=body.login,
+    )
+    svc.audit_recreate_login(account, result)
+    return AccountRecreateLoginResponse(
+        id=account.id,
+        old_login=result["old_login"],
+        new_login=result["new_login"],
+        deprovision=result["deprovision"],
+        provision=result["provision"],
+        skipped=[AccountRotateSkipped(**s) for s in result["skipped"]],
+    )
+
+
+@router.post(
+    "/{account_id}/ssh_key",
+    response_model=AccountKeyFanoutResponse,
+    status_code=202,
+    summary="Задать/заменить SSH-ключ аккаунта + раскатать на серверы",
+    description=(
+        "Сохраняет SSH-ключ в БД и сразу диспатчит `account.provision` на все "
+        "серверы, где аккаунт присутствует (`present_on_server=True`) — только "
+        "provision кладёт public key в `~/.ssh/authorized_keys`. Тело: "
+        "`{ssh_mode, ssh_public_key?}`. `generate` — сервер генерит Ed25519 и "
+        "возвращает приватный ключ ОДИН раз (`ssh_private_key`); `supply` — "
+        "клиент передаёт `ssh_public_key` (приватного в ответе нет). Гейтится "
+        "`update`. Аудит `server_account.ssh_key_set`."
+    ),
+    responses={
+        202: {"description": "Ключ записан; provision-fan-out поставлен."},
+        403: {"description": "Нет `update`."},
+        404: {"description": "Аккаунт не найден / чужой dept."},
+        422: {"description": "ssh_mode='supply' без ssh_public_key (или наоборот) / битый ключ."},
+    },
+)
+async def set_ssh_key(
+    account_id: str,
+    body: ServerAccountSshKeyRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AccountKeyFanoutResponse:
+    """Set/replace SSH key. Доступ: `(server_account, *, update)`."""
+    obj, public_key, private_key = await svc.set_ssh_key(
+        db, identity, account_id,
+        ssh_mode=body.ssh_mode, ssh_public_key=body.ssh_public_key,
+    )
+    tasks, skipped = await fanout_provision_for_ssh_key(
+        db=db, identity=identity, request=request, account=obj,
+    )
+    return AccountKeyFanoutResponse(
+        id=obj.id,
+        login=obj.login,
+        ssh_public_key=public_key,
+        ssh_private_key=private_key,
+        tasks=[AccountRotateTask(**t) for t in tasks],
+        skipped=[AccountRotateSkipped(**s) for s in skipped],
+    )
+
+
+@router.post(
+    "/{account_id}/rotate_ssh_key",
+    response_model=AccountKeyFanoutResponse,
+    status_code=202,
+    summary="Перегенерить SSH-ключ (компрометация) + раскатать на серверы",
+    description=(
+        "Генерит новую Ed25519-пару (кейс компрометации старого ключа), "
+        "сохраняет public + зашифрованный private, возвращает новый приватный "
+        "ключ ОДИН раз, и диспатчит `account.provision` на все серверы, где "
+        "аккаунт присутствует (re-push authorized_keys). Гейтится `update`. "
+        "Аудит CRITICAL (`server_account.ssh_key_rotate`)."
+    ),
+    responses={
+        202: {"description": "Ключ перегенерён; provision-fan-out поставлен."},
+        403: {"description": "Нет `update`."},
+        404: {"description": "Аккаунт не найден / чужой dept."},
+    },
+)
+async def rotate_ssh_key(
+    account_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AccountKeyFanoutResponse:
+    """Rotate SSH key. Доступ: `(server_account, *, update)`. Аудит CRITICAL."""
+    obj, public_key, private_key = await svc.rotate_ssh_key(db, identity, account_id)
+    tasks, skipped = await fanout_provision_for_ssh_key(
+        db=db, identity=identity, request=request, account=obj,
+    )
+    return AccountKeyFanoutResponse(
+        id=obj.id,
+        login=obj.login,
+        ssh_public_key=public_key,
+        ssh_private_key=private_key,
+        tasks=[AccountRotateTask(**t) for t in tasks],
+        skipped=[AccountRotateSkipped(**s) for s in skipped],
     )
 
 

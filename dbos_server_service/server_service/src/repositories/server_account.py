@@ -482,6 +482,44 @@ async def set_link_presence(
     return link
 
 
+async def rename_login(
+    db: AsyncSession, account: ServerAccount, new_login: str
+) -> ServerAccount:
+    """Переименовать логин аккаунта + синхронно все денормализованные копии на связках.
+
+    `ServerAccountServer.login` хранит копию логина для constraint
+    `uq_server_login` (один логин на сервер) — её надо двигать вместе с
+    `ServerAccount.login`, иначе join разъедется с аккаунтом. Конфликт по
+    (server_id, login) на любом из привязанных серверов поднимет IntegrityError
+    (uq_server_login) — caller трактует как 409. commit — на caller'е.
+    """
+    account.login = new_login
+    for link in account.server_links:
+        link.login = new_login
+    await db.flush()
+    await db.refresh(account)
+    return account
+
+
+async def update_ssh_key(
+    db: AsyncSession,
+    account: ServerAccount,
+    *,
+    ssh_public_key: str,
+    ssh_private_key_encrypted: str | None,
+) -> ServerAccount:
+    """Записать новый SSH-ключ аккаунта.
+
+    `ssh_private_key_encrypted=None` — режим supply (приватного у нас нет,
+    клиент держит его сам); тогда сбрасываем хранимый зашифрованный private,
+    чтобы public и private не разъезжались. commit — на caller'е.
+    """
+    account.ssh_public_key = ssh_public_key
+    account.ssh_private_key_encrypted = ssh_private_key_encrypted
+    await db.flush()
+    return account
+
+
 async def update_password(
     db: AsyncSession, account: ServerAccount, password_encrypted: str
 ) -> ServerAccount:

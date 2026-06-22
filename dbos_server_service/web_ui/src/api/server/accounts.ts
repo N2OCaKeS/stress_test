@@ -18,9 +18,14 @@ import type {
   IgnoredLogin,
   ImportUnknownUserRequest,
   OffsetPaginatedResponse,
+  RecreateLoginDispatch,
+  RecreateLoginRequest,
   ServerAccount,
   ServerAccountCreateRequest,
   ServerAccountUpdateRequest,
+  SshKeyMode,
+  SshKeyRequest,
+  SshKeyResponse,
 } from "@/api/server/types";
 import { toBase64 } from "@/lib/base64";
 
@@ -87,7 +92,12 @@ export type ServerAccountCreateInput = Omit<
   password?: string | null;
 };
 
-/** Создать аккаунт сразу на нескольких серверах (пароль шифруется at-rest). */
+/**
+ * Создать аккаунт сразу на нескольких серверах (пароль шифруется at-rest).
+ *
+ * При `ssh_mode: "generate"` ответ ОДИН РАЗ несёт `ssh_private_key` —
+ * caller обязан сразу предложить его скачать; повторно backend его не отдаёт.
+ */
 export function createAccount(
   input: ServerAccountCreateInput,
 ): Promise<ServerAccount> {
@@ -122,6 +132,29 @@ export function updateAccount(
   body: ServerAccountUpdateRequest,
 ): Promise<ServerAccount> {
   return apiPatch<ServerAccount>(`${BASE}/server-accounts/${accountId}`, body);
+}
+
+/**
+ * Пересоздать OS-аккаунт под новым login (destructive).
+ *
+ * Запрашивается, когда PATCH `login` отбит 409 `LOGIN_LOCKED` (аккаунт уже
+ * present на сервере и обычный rename невозможен). Backend сносит OS-аккаунт
+ * со всеми данными `$HOME` на всех привязанных серверах и заводит заново.
+ *
+ * Ошибки: 403 (нет dep_admin/service-admin), 404 ACCOUNT_NOT_FOUND, 409
+ * (новый login уже занят).
+ *
+ * Возвращает не саму карточку аккаунта, а сводку диспатча (deprovision/
+ * provision/skipped) — обновлённый аккаунт надо перезапросить отдельно.
+ */
+export function recreateLogin(
+  accountId: string,
+  body: RecreateLoginRequest,
+): Promise<RecreateLoginDispatch> {
+  return apiPost<RecreateLoginDispatch>(
+    `${BASE}/server-accounts/${accountId}/recreate_login`,
+    body,
+  );
 }
 
 /**
@@ -211,6 +244,49 @@ export function rotateAccountWorker(
     { query },
   );
 }
+
+// ---------------------------------------------------------------------------
+// SSH-ключи аккаунта
+// ---------------------------------------------------------------------------
+
+/**
+ * Выдать (или заменить) SSH-ключ аккаунта.
+ *
+ * `ssh_mode: "generate"` — backend генерирует пару и ОДИН РАЗ возвращает
+ * `ssh_private_key`; `ssh_mode: "supply"` — оператор передаёт готовый публичный
+ * ключ (`ssh_public_key`), приватный сервису не известен. Раскатка на
+ * привязанные серверы — на стороне backend автоматически (`tasks`/`skipped`).
+ *
+ * Гейтится `update`. Ошибки: 403, 404 ACCOUNT_NOT_FOUND, 422 (кривой
+ * публичный ключ / отсутствует при `supply`).
+ */
+export function setAccountSshKey(
+  accountId: string,
+  body: SshKeyRequest,
+): Promise<SshKeyResponse> {
+  return apiPost<SshKeyResponse>(
+    `${BASE}/server-accounts/${accountId}/ssh_key`,
+    body,
+  );
+}
+
+/**
+ * Ротировать SSH-ключ аккаунта (кейс компрометации).
+ *
+ * Тела не принимает — backend всегда генерирует новую пару и раскатывает на
+ * привязанные серверы; после раскатки старый ключ перестаёт работать.
+ * Приватный ключ приходит в ответе ОДИН РАЗ.
+ */
+export function rotateAccountSshKey(
+  accountId: string,
+): Promise<SshKeyResponse> {
+  return apiPost<SshKeyResponse>(
+    `${BASE}/server-accounts/${accountId}/rotate_ssh_key`,
+    {},
+  );
+}
+
+export type { SshKeyMode };
 
 // ---------------------------------------------------------------------------
 // Server linking

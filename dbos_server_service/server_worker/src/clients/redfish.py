@@ -65,8 +65,20 @@ KIND_MANAGER_IDS: dict[str, str] = {
 # у HPE iLO — `1`. Caller может передать override. Берём из `KIND_MANAGER_IDS`,
 # чтобы не было дублирующегося литерала на правку при добавлении новых iDRAC.
 _DEFAULT_MANAGER_ID = KIND_MANAGER_IDS["idrac"]
-# Дефолтный System ID. У большинства one-node-серверов это `1` или
-# `System.Embedded.1`. Берём `1` как наиболее переносимый.
+
+# Per-kind System-id маппинг. Dell iDRAC держит ComputerSystem под
+# `System.Embedded.1`, HPE iLO — под `1`. Без этого хардкод `Systems/1`
+# на iDRAC отдаёт 404 (там нет системы с id `1`). Остальные kind оставляют
+# system_id="" — клиент сделает discovery через коллекцию /Systems.
+KIND_SYSTEM_IDS: dict[str, str] = {
+    "idrac": "System.Embedded.1",
+    "ilo": "1",
+}
+
+# Дефолтный System ID для клиента, поднятого без kind (legacy-payload без
+# поля). `1` — наиболее переносимый id для one-node-серверов; iDRAC, у
+# которого система лежит под `System.Embedded.1`, приходит с kind="idrac"
+# и резолвится через KIND_SYSTEM_IDS в get_bmc_client.
 _DEFAULT_SYSTEM_ID = "1"
 
 
@@ -80,6 +92,19 @@ def resolve_manager_id(kind: str | None) -> str:
     if not kind:
         return ""
     return KIND_MANAGER_IDS.get(kind, "")
+
+
+def resolve_system_id(kind: str | None) -> str:
+    """Подобрать System-id Redfish-path по типу BMC (`kind`).
+
+    Симметрично `resolve_manager_id`: пустая строка ('') для generic-kind
+    (ipmi / redfish) или неизвестного значения сигнализирует клиенту, что
+    нужно сделать discovery через коллекцию `/redfish/v1/Systems` перед
+    обращением к ComputerSystem-эндпоинтам.
+    """
+    if not kind:
+        return ""
+    return KIND_SYSTEM_IDS.get(kind, "")
 
 
 class RedfishError(Exception):
@@ -221,6 +246,7 @@ class RedfishClient:
         self._base_url = self._normalize_host(host)
         self._manager_id = manager_id
         self._system_id = system_id
+        self._accounts_base = ""
         # Shared transport — если передан, connection pool разделяется с
         # другими RedfishClient'ами того же verify-уровня (см. http_pool
         # `get_bmc_redfish_transport`). `verify=` тогда задан на транспорте,
@@ -329,6 +355,75 @@ class RedfishClient:
         self._manager_id = manager_id
         return manager_id
 
+    async def _resolve_system_id(self) -> str:
+        """Discovery System-id через коллекцию /redfish/v1/Systems.
+
+        Используется, когда конструктор получил `system_id=""` (generic-kind
+        ipmi / redfish либо неизвестный kind): спрашиваем коллекцию и берём
+        первый элемент. Результат кэшируется в `self._system_id` — повторного
+        round-trip'а для последующих вызовов не будет.
+
+        Любая ошибка (нет Members / пустой массив / non-2xx) → `RedfishError`.
+        """
+        if self._system_id:
+            return self._system_id
+        data = await self._get_json("/redfish/v1/Systems")
+        members = data.get("Members")
+        if not isinstance(members, list) or not members:
+            raise RedfishError(
+                status_code=200,
+                message="Redfish /Systems collection is empty",
+            )
+        first = members[0]
+        if not isinstance(first, dict):
+            raise RedfishError(
+                status_code=200,
+                message="Redfish /Systems Members[0] is not an object",
+            )
+        odata_id = first.get("@odata.id")
+        if not isinstance(odata_id, str) or not odata_id:
+            raise RedfishError(
+                status_code=200,
+                message="Redfish /Systems Members[0] missing @odata.id",
+            )
+        # odata_id выглядит как `/redfish/v1/Systems/System.Embedded.1` —
+        # берём last segment.
+        system_id = odata_id.rstrip("/").rsplit("/", 1)[-1]
+        if not system_id:
+            raise RedfishError(
+                status_code=200,
+                message=f"Cannot extract system_id from {odata_id!r}",
+            )
+        self._system_id = system_id
+        return system_id
+
+    async def _resolve_accounts_base(self) -> str:
+        """Найти коллекцию аккаунтов BMC через AccountService.
+
+        Путь к аккаунтам у вендоров разный: Dell iDRAC отдаёт их и под
+        `/Managers/{id}/Accounts`, а HPE iLO5 держит только под
+        `/redfish/v1/AccountService/Accounts` — под Manager'ом коллекции нет
+        (GET отдаёт 404). Берём канонический путь из `AccountService.Accounts`,
+        он работает на обоих вендорах. Результат кэшируется.
+
+        Если AccountService недоступен или без ссылки `Accounts` — fallback на
+        legacy `/redfish/v1/Managers/{manager_id}/Accounts`.
+        """
+        if self._accounts_base:
+            return self._accounts_base
+        try:
+            svc = await self._get_json("/redfish/v1/AccountService")
+            accounts = svc.get("Accounts")
+            odata_id = accounts.get("@odata.id") if isinstance(accounts, dict) else None
+            if isinstance(odata_id, str) and odata_id:
+                self._accounts_base = odata_id.rstrip("/")
+                return self._accounts_base
+        except RedfishError:
+            pass
+        manager_id = await self._resolve_manager_id()
+        self._accounts_base = f"/redfish/v1/Managers/{manager_id}/Accounts"
+        return self._accounts_base
+
     # ── low-level HTTP helpers ───────────────────────────────────────
 
     async def _request(
@@ -412,13 +507,14 @@ class RedfishClient:
 
         Запрос: `GET /redfish/v1/Systems/{system_id}` → `PowerState`.
         """
-        data = await self._get_json(f"/redfish/v1/Systems/{self._system_id}")
+        system_id = await self._resolve_system_id()
+        data = await self._get_json(f"/redfish/v1/Systems/{system_id}")
         state = data.get("PowerState")
         if not isinstance(state, str):
             raise RedfishError(
                 status_code=200,
                 message=(
-                    f"Redfish Systems/{self._system_id} did not include "
+                    f"Redfish Systems/{system_id} did not include "
                     f"PowerState field"
                 ),
             )
@@ -431,18 +527,21 @@ class RedfishClient:
         long-running, тоже OK (вернётся `@odata.id` на task-ресурс,
         но мы не следим за ним — caller сам опросит `get_power_state()`).
         """
+        system_id = await self._resolve_system_id()
         await self._request(
             "POST",
-            f"/redfish/v1/Systems/{self._system_id}/Actions/ComputerSystem.Reset",
+            f"/redfish/v1/Systems/{system_id}/Actions/ComputerSystem.Reset",
             json_body={"ResetType": action},
         )
 
     async def rotate_user_password(self, user_id: int, new_password: str) -> None:
         """PATCH password на iDRAC user-аккаунте.
 
-        `user_id` — slot account'а на iDRAC (у Dell root обычно 2 или 3,
-        зависит от заводской конфигурации). PATCH идёт на
-        `/Managers/{manager_id}/Accounts/{user_id}` с `{"Password": ...}`.
+        `user_id` — slot account'а (у Dell root обычно 2 или 3, у HPE iLO
+        Administrator — 1; зависит от заводской конфигурации). PATCH идёт на
+        `{accounts_base}/{user_id}` с `{"Password": ...}`, где `accounts_base`
+        резолвится через `AccountService.Accounts` (на iLO Manager-путь не
+        существует, см. `_resolve_accounts_base`).
 
         BMC отвечает 200/204 при успехе; новый пароль вступает в силу
         немедленно — следующий запрос с старым паролем получит 401.
@@ -458,10 +557,10 @@ class RedfishClient:
         server_service. Round-trip к server_service выполняется ПОСЛЕ
         apply+verify, не до и не вместо них.
         """
-        manager_id = await self._resolve_manager_id()
+        base = await self._resolve_accounts_base()
         await self._request(
             "PATCH",
-            f"/redfish/v1/Managers/{manager_id}/Accounts/{user_id}",
+            f"{base}/{user_id}",
             json_body={"Password": new_password},
             expected_status=(200, 204),
         )

@@ -128,6 +128,85 @@ class TestWriteAuthorizedKeyStdinShape:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Managed-маркер: _write_authorized_key помечает ключ и при ротации
+#         заменяет именно managed-строку, ручные ключи не трогает.
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestManagedKeyMarker:
+    """`_write_authorized_key(force_replace=False)` пишет ключ с
+    managed-маркером и сносит прежние managed-строки перед записью.
+
+    Это путь ротации server_account-ключа: смена ключа заменяет наш старый
+    ключ, а ключи, добавленные оператором руками (без маркера), остаются.
+    """
+
+    async def test_managed_append_marks_key_and_strips_old_managed(self):
+        from src.clients.ssh import _MANAGED_KEY_MARKER
+
+        ssh = _client_with_conn([run_result("", "", 0)])
+        await ssh._write_authorized_key(
+            login="deploy",
+            public_key=_PUBKEY,
+            force_replace=False,
+        )
+        call = ssh._conn.run.await_args
+        cmd = call.args[0]
+        stdin = call.kwargs.get("input", "")
+        # Прежние managed-строки фильтруются по маркеру во временный файл.
+        assert f'grep -vF " {_MANAGED_KEY_MARKER}"' in cmd
+        assert "mktemp" in cmd
+        # Затем idempotent append новой managed-строки.
+        assert "grep -qxF" in cmd
+        assert ">>" in cmd
+        # Ключ на stdin несёт маркер; в команде ключа нет.
+        assert _PUBKEY not in cmd
+        assert f"{_PUBKEY} {_MANAGED_KEY_MARKER}" in stdin
+        # Single-line invariant сохраняется.
+        assert "\n" not in cmd and "\r" not in cmd
+
+    async def test_force_replace_truncate_skips_marker(self):
+        """`force_replace=True` (re-provision после reimage) перезаписывает
+        файл голым ключом без маркера — всё прежнее содержимое уже невалидно.
+        """
+        from src.clients.ssh import _MANAGED_KEY_MARKER
+
+        ssh = _client_with_conn([run_result("", "", 0)])
+        await ssh._write_authorized_key(
+            login="deploy",
+            public_key=_PUBKEY,
+            force_replace=True,
+        )
+        call = ssh._conn.run.await_args
+        cmd = call.args[0]
+        stdin = call.kwargs.get("input", "")
+        assert "> \"$home/.ssh/authorized_keys\"" in cmd
+        assert ">>" not in cmd
+        assert "grep -vF" not in cmd
+        assert _MANAGED_KEY_MARKER not in stdin
+
+    async def test_bootstrap_path_does_not_mark(self):
+        """Bootstrap управляющего пользователя (`managed=False`) пишет голый
+        ключ idempotent-append'ом без маркера и без фильтра по маркеру.
+        """
+        from src.clients.ssh import _MANAGED_KEY_MARKER
+
+        ssh = _client_with_conn([run_result("", "", 0)])
+        await ssh._install_authorized_key(
+            target_user="dbos",
+            public_key=_PUBKEY,
+            truncate=False,
+            error_code="SSH_PREPARE_FAILED",
+        )
+        call = ssh._conn.run.await_args
+        cmd = call.args[0]
+        stdin = call.kwargs.get("input", "")
+        assert "grep -vF" not in cmd
+        assert "grep -qxF" in cmd and ">>" in cmd
+        assert _MANAGED_KEY_MARKER not in stdin
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # create_user(home_dir=системный) → Python-guard в
 #         _install_authorized_key срабатывает до SSH-команды auth_keys
 # ══════════════════════════════════════════════════════════════════════════════

@@ -11,10 +11,15 @@ plaintext через `base64.b64encode`, симметрично с reveal-кар
 import re
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.core.b64 import decode_b64
 from src.core.password_policy import validate_password
+
+# Логин OS-аккаунта: тот же паттерн, что в create и worker'ском `_LOGIN_RE`.
+# Вынесен в константу, чтобы create / rename / recreate-схемы держали один
+# источник истины.
+_LOGIN_PATTERN = r"^[A-Za-z0-9._\-]+$"
 
 # POSIX group name: начинается с lowercase / underscore, дальше цифры / `-`,
 # общая длина 32 символа (login.defs default). Те же ограничения дублируются
@@ -30,6 +35,40 @@ def _validate_unix_groups(value: list[str]) -> list[str]:
                 f"unix_groups: '{name}' не соответствует POSIX group name pattern"
             )
     return value
+
+
+# Допустимые ssh-ключи для authorized_keys: префикс типа + base64-тело
+# (+ опциональный комментарий). Финальную валидацию по факту делает воркер
+# (`server_worker/.../ssh.py::_validate_ssh_public_key`) — здесь только
+# защита от мусора и shell-метасимволов в одном поле перед записью в БД.
+_SSH_PUBLIC_KEY_RE = re.compile(
+    r"^(ssh-ed25519|ssh-rsa|ssh-dss|ecdsa-sha2-[a-z0-9-]+|sk-[a-z0-9@.-]+) "
+    r"[A-Za-z0-9+/]+=*( [^\r\n]*)?$"
+)
+
+
+def _validate_ssh_public_key(value: str) -> str:
+    value = value.strip()
+    if "\n" in value or "\r" in value:
+        raise ValueError("ssh_public_key: ключ должен быть одной строкой")
+    if not _SSH_PUBLIC_KEY_RE.match(value):
+        raise ValueError(
+            "ssh_public_key: не похоже на корректный OpenSSH public key "
+            "(ожидается `<type> <base64>[ comment]`)"
+        )
+    return value
+
+
+def _check_ssh_mode_combo(mode: str | None, public_key: str | None) -> None:
+    """Согласованность пары `(ssh_mode, ssh_public_key)`.
+
+    `supply` обязан нести `ssh_public_key`; `generate`/None — наоборот, ключ
+    не принимают (он будет сгенерирован сервером или ключ не задаётся вовсе).
+    """
+    if mode == "supply" and public_key is None:
+        raise ValueError("ssh_mode='supply' требует ssh_public_key")
+    if mode != "supply" and public_key is not None:
+        raise ValueError("ssh_public_key допустим только при ssh_mode='supply'")
 
 
 class ServerAccountCreate(BaseModel):
@@ -52,7 +91,7 @@ class ServerAccountCreate(BaseModel):
         ...,
         min_length=1,
         max_length=128,
-        pattern=r"^[A-Za-z0-9._\-]+$",
+        pattern=_LOGIN_PATTERN,
         description=(
             "Имя OS-аккаунта (root/postgres/...). "
             "Только буквы/цифры/`.`/`_`/`-` — защита от CRLF и shell-инъекций "
@@ -67,6 +106,26 @@ class ServerAccountCreate(BaseModel):
             "— сервер сгенерирует `secrets.token_urlsafe(32)`. Декодируется на "
             "приёме; к раскодированному plaintext применяется политика: "
             "минимум 8 символов, буквы и цифры. Битый base64 → 422."
+        ),
+    )
+    ssh_mode: str | None = Field(
+        default=None,
+        pattern=r"^(generate|supply)$",
+        description=(
+            "Опциональный SSH-ключ для входа под аккаунтом. `generate` — сервер "
+            "генерит Ed25519-пару, хранит public + зашифрованный private и "
+            "возвращает приватный ключ ОДИН раз в ответе создания (поле "
+            "`ssh_private_key`). `supply` — клиент передаёт свой `ssh_public_key` "
+            "(приватный остаётся у клиента, в ответе его нет). None — ключ не "
+            "задаётся (как раньше; ключ догенерится при первом provision'е)."
+        ),
+    )
+    ssh_public_key: str | None = Field(
+        default=None,
+        max_length=8192,
+        description=(
+            "OpenSSH public key (`<type> <base64>[ comment]`) для ssh_mode='supply'. "
+            "Однострочный, валидируется на формат; финальная проверка — на воркере."
         ),
     )
     has_sudo: bool = Field(
@@ -118,6 +177,18 @@ class ServerAccountCreate(BaseModel):
     def _check_unix_groups(cls, value: list[str]) -> list[str]:
         return _validate_unix_groups(value)
 
+    @field_validator("ssh_public_key")
+    @classmethod
+    def _check_ssh_public_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_ssh_public_key(value)
+
+    @model_validator(mode="after")
+    def _check_ssh_combo(self) -> "ServerAccountCreate":
+        _check_ssh_mode_combo(self.ssh_mode, self.ssh_public_key)
+        return self
+
     def password(self) -> str | None:
         """Раскодированный plaintext пароля (или `None`, если не передан).
 
@@ -141,6 +212,21 @@ class ServerAccountUpdate(BaseModel):
     в internal_service и pipeline'ах.
     """
 
+    login: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=_LOGIN_PATTERN,
+        description=(
+            "Сменить OS-логин — только DB-only переименование. Допустимо лишь "
+            "когда аккаунт `present_on_server=false` на ВСЕХ привязанных серверах "
+            "(на боксе ещё нет пользователя): пере-проверяется уникальность "
+            "(server_id, login) по всем привязкам. Если аккаунт присутствует "
+            "хоть на одном сервере → 409 LOGIN_LOCKED; смена живого логина — "
+            "через `POST /server-accounts/{id}/recreate_login` (deprovision → "
+            "rename → provision)."
+        ),
+    )
     has_sudo: bool | None = Field(default=None, description="Сменить sudo-флаг (требует `grant_sudo`).")
     unix_groups: list[str] | None = Field(
         default=None,
@@ -182,6 +268,81 @@ class ServerAccountServersUpdate(BaseModel):
                 seen.add(sid)
                 out.append(sid)
         return out
+
+
+class ServerAccountRecreateLoginRequest(BaseModel):
+    """Тело POST /server-accounts/{id}/recreate_login.
+
+    Сменить живой OS-логин на боксах: deprovision на всех привязанных
+    серверах → переименование в БД → provision заново под новым логином.
+    Доступ — только platform dep_admin отдела аккаунта или service-admin.
+    """
+
+    login: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        pattern=_LOGIN_PATTERN,
+        description="Новый OS-логин. Уникальность (server_id, login) проверяется по всем привязкам.",
+    )
+
+
+class ServerAccountSshKeyRequest(BaseModel):
+    """Тело POST /server-accounts/{id}/ssh_key — задать/заменить SSH-ключ.
+
+    `generate` — сервер генерит Ed25519-пару (приватный возвращается один раз);
+    `supply` — клиент передаёт `ssh_public_key`. После записи в БД ключ сразу
+    раскатывается `update_on_host`-fan-out'ом на все привязанные серверы.
+    """
+
+    ssh_mode: str = Field(
+        ...,
+        pattern=r"^(generate|supply)$",
+        description="`generate` — сгенерить Ed25519; `supply` — взять переданный `ssh_public_key`.",
+    )
+    ssh_public_key: str | None = Field(
+        default=None,
+        max_length=8192,
+        description="OpenSSH public key для ssh_mode='supply'. Однострочный, валидируется на формат.",
+    )
+
+    @field_validator("ssh_public_key")
+    @classmethod
+    def _check_ssh_public_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_ssh_public_key(value)
+
+    @model_validator(mode="after")
+    def _check_ssh_combo(self) -> "ServerAccountSshKeyRequest":
+        _check_ssh_mode_combo(self.ssh_mode, self.ssh_public_key)
+        return self
+
+
+class AccountKeyFanoutResponse(BaseModel):
+    """Ответ ssh_key / rotate_ssh_key — сводка fan-out'а + одноразовый приватный ключ.
+
+    `tasks` — `update_on_host`-задачи, поставленные на серверы, где аккаунт
+    присутствует (форма `{server_id, task_id}` — та же, что у rotate-dispatch'а).
+    `ssh_private_key` присутствует только когда ключ генерировался сервером
+    (`generate` / rotate) и отдаётся один раз; для `supply` он `null`.
+    """
+
+    id: str = Field(description="Account ID.")
+    login: str = Field(description="OS-логин.")
+    ssh_public_key: str = Field(description="Установленный/сгенерированный public key.")
+    ssh_private_key: str | None = Field(
+        default=None,
+        description="Приватный ключ в PEM — один раз, только при генерации сервером. Иначе null.",
+    )
+    tasks: list["AccountRotateTask"] = Field(
+        default_factory=list,
+        description="Поставленные `update_on_host`-задачи (по серверу, где аккаунт present).",
+    )
+    skipped: list["AccountRotateSkipped"] = Field(
+        default_factory=list,
+        description="Серверы, на которые задача не поставлена (decommissioned / не present / worker недоступен).",
+    )
 
 
 class ServerAccountAdoptRequest(BaseModel):
@@ -336,6 +497,19 @@ class ServerAccountResponse(BaseModel):
             "Base64-encoded plaintext-пароль. Присутствует только если "
             "вызывающий держит action `view_password`; иначе `null`. "
             "Декодируется стандартным base64.b64decode перед использованием."
+        ),
+    )
+    ssh_public_key: str | None = Field(
+        default=None,
+        description="OpenSSH public key аккаунта (если задан). Не секрет, отдаётся всем по `view`.",
+    )
+    ssh_private_key: str | None = Field(
+        default=None,
+        description=(
+            "Приватный SSH-ключ в PEM. Отдаётся РОВНО ОДИН РАЗ — в ответе "
+            "create (ssh_mode='generate'), ssh_key и rotate_ssh_key. В GET-"
+            "карточке всегда `null` (приватный ключ хранится зашифрованным и "
+            "наружу повторно не отдаётся)."
         ),
     )
     created_at: datetime = Field(description="Когда аккаунт создан.")
@@ -510,3 +684,38 @@ class AccountProvisionDispatchResponse(BaseModel):
     server_id: str = Field(description="Сервер, на котором применяется операция.")
     task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
     status: str = Field(default="queued", description="Статус постановки в очередь.")
+
+
+class AccountRecreateLoginDispatch(BaseModel):
+    """Один per-server диспатч в сводке recreate_login."""
+
+    server_id: str = Field(description="Сервер, на котором применяется операция.")
+    operation: str = Field(description="deprovision | provision.")
+    task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
+
+
+class AccountRecreateLoginResponse(BaseModel):
+    """Ответ POST /server-accounts/{id}/recreate_login.
+
+    Оркестрация: на каждый привязанный сервер ставится `account.deprovision`
+    под СТАРЫМ логином, логин переименовывается в БД, затем на каждый сервер
+    ставится `account.provision` под НОВЫМ логином. `deprovision`/`provision` —
+    списки поставленных задач (форма `{server_id, operation, task_id}`).
+    `skipped` — серверы, на которые задача не поставлена (decommissioned и т.п.).
+    """
+
+    id: str = Field(description="Account ID.")
+    old_login: str = Field(description="Логин до переименования.")
+    new_login: str = Field(description="Новый логин (уже записан в БД).")
+    deprovision: list[AccountRecreateLoginDispatch] = Field(
+        default_factory=list,
+        description="Поставленные `account.deprovision`-задачи (под старым логином).",
+    )
+    provision: list[AccountRecreateLoginDispatch] = Field(
+        default_factory=list,
+        description="Поставленные `account.provision`-задачи (под новым логином).",
+    )
+    skipped: list["AccountRotateSkipped"] = Field(
+        default_factory=list,
+        description="Серверы, на которые часть диспатчей не поставлена.",
+    )

@@ -334,3 +334,15 @@ class TestBmcRedfishTransport:
         # После shutdown'а слот пустой → следующий get создаёт новый.
         a2 = http_pool.get_bmc_redfish_transport(verify=True)
         assert a2 is not None
+
+    def test_keepalive_disabled(self):
+        """Keep-alive выключен (max_keepalive_connections=0).
+
+        HPE iLO5 закрывает переиспользованный сокет, и каждый второй запрос
+        по тому же соединению падает RemoteProtocolError. Pool обязан брать
+        свежее соединение на каждый запрос, иначе цепочка
+        power_status → action → power_status интермиттентно рвётся.
+        """
+        transport = http_pool.get_bmc_redfish_transport(verify=False)
+        pool = transport._pool
+        assert pool._max_keepalive_connections == 0

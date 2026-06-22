@@ -304,6 +304,37 @@ async def provision_user(
     return {"provisioned": True}
 
 
+async def apply_authorized_key(
+    credentials: dict,
+    server_id: str,
+    *,
+    login: str,
+    public_key: str,
+    force_replace: bool = False,
+) -> dict:
+    """Прописать `public_key` в `~/.ssh/authorized_keys` существующего юзера.
+
+    Используется `account.update_on_host`, когда у аккаунта сменился (или
+    впервые появился) SSH-ключ: provision кладёт ключ при заведении юзера,
+    а update должен донести смену ключа на уже заведённого. Запись
+    идемпотентна и помечает наш ключ managed-маркером — ротация заменяет
+    именно его, ручные ключи оператора не трогаются. `force_replace=True`
+    перезаписывает файл целиком (re-provision после переустановки ОС).
+
+    На управляемом сервере (`credentials['is_managed']`) сессия идёт под
+    управляющим пользователем по ключу с sudo; иначе — под самим аккаунтом.
+    Возврат — `{key_applied: True}`. Ошибки — `SshError`.
+    """
+    logger.info(
+        "ssh authorized_keys %s on %s", login, _extract_host(credentials, server_id),
+    )
+    async with _build_session(credentials, server_id) as ssh:
+        await ssh._write_authorized_key(
+            login, public_key, force_replace=force_replace,
+        )
+    return {"key_applied": True}
+
+
 async def modify_user(
     credentials: dict,
     server_id: str,
@@ -720,6 +751,7 @@ __all__ = [
     "collect_os_users",
     "set_account_password",
     "provision_user",
+    "apply_authorized_key",
     "modify_user",
     "delete_user",
     "bootstrap_management_user",

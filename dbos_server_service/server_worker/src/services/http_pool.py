@@ -156,11 +156,18 @@ def get_bmc_redfish_transport(*, verify: bool) -> httpx.AsyncHTTPTransport:
     Два транспорта: `verify=True` / `verify=False`. RedfishClient остаётся
     per-host (свой `base_url`, свой `auth=(u, p)`), но connection pool —
     общий: при работе с пачкой BMC за один тик worker'а сокеты до одного и
-    того же контроллера переиспользуются.
+    того же контроллера держатся открытыми параллельно.
 
-    Размер пула — общий лимит на все BMC одновременно. Если worker
-    обслуживает большой стенд (десятки BMC параллельно), поднимать через
-    env `BMC_POOL_MAX_CONNECTIONS`.
+    Keep-alive (переиспользование idle-соединений) намеренно выключен:
+    `max_keepalive_connections=0`. HPE iLO5 закрывает переиспользованное
+    соединение на своей стороне, и каждый второй запрос по тому же сокету
+    падает `httpx.RemoteProtocolError` («server disconnected without sending
+    a response»). Цепочка power_status → action → power_status по одному
+    клиенту из-за этого интермиттентно рвалась. С отключённым keep-alive
+    каждый запрос идёт по свежему соединению — handshake-overhead приемлем
+    (power-операции редкие и не batch'евые), а интермиттентные обрывы
+    пропадают. `max_connections` оставляем под env, чтобы параллельная
+    работа с большим стендом упиралась в осознанный лимит, а не в дефолт.
     """
     transport = _bmc_redfish_transports.get(verify)
     if transport is None:
@@ -169,7 +176,7 @@ def get_bmc_redfish_transport(*, verify: bool) -> httpx.AsyncHTTPTransport:
             verify=verify,
             limits=httpx.Limits(
                 max_connections=settings.bmc_pool_max_connections,
-                max_keepalive_connections=settings.bmc_pool_max_keepalive_connections,
+                max_keepalive_connections=0,
             ),
         )
         _bmc_redfish_transports[verify] = transport

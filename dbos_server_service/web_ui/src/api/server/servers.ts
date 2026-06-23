@@ -14,6 +14,8 @@
 
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
 import type {
+  BulkPrepareRequest,
+  BulkPrepareResponse,
   OffsetPaginatedResponse,
   ReasonBody,
   Server,
@@ -147,4 +149,17 @@ export function prepareServer(
     `/server/v1/servers/${id}/prepare`,
     body,
   );
+}
+
+/**
+ * `POST /api/server/v1/servers/prepare/bulk` — массовый prepare.
+ *
+ * Принимает per-server bootstrap-креды (`username_b64` / `password_b64` в
+ * base64, опц. `ssh_private_key_b64`). Возвращает per-server исходы:
+ * `queued` (задача поставлена) либо `skipped` (с `reason`).
+ */
+export function prepareServersBulk(
+  body: BulkPrepareRequest,
+): Promise<BulkPrepareResponse> {
+  return apiPost<BulkPrepareResponse>("/server/v1/servers/prepare/bulk", body);
 }

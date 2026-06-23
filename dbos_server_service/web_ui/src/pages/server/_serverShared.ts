@@ -1,5 +1,24 @@
+import { ApiError, apiErrMsg } from "@/api/client";
 import type { ServerAccount } from "@/api/server/types";
 import type { Persona } from "@/types/persona";
+
+/**
+ * Человекочитаемое сообщение по ошибке деструктивной операции над сервером.
+ *
+ * Бронь сервера (busy-lease) защищает чужую занятую машину: backend отбивает
+ * деструктив (delete и т.п.) кодом 409 `SERVER_RESERVED`. Разворачиваем его в
+ * понятный текст про бронь; остальное отдаём обычным envelope'ом.
+ */
+export function reservedErrorMessage(e: unknown, fallback: string): string {
+  if (
+    e instanceof ApiError &&
+    e.status === 409 &&
+    e.errorCode === "SERVER_RESERVED"
+  ) {
+    return "Сервер забронирован другим пользователем — снимите бронь или дождитесь её снятия, чтобы выполнить операцию.";
+  }
+  return apiErrMsg(e, fallback);
+}
 
 /**
  * Аккаунты сервера, видимые текущей persona — грубый, но честный client-side

@@ -63,7 +63,10 @@ import { FormRow } from "@/pages/admin/services/_inline";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
-import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
+import {
+  filterAccessibleAccounts,
+  reservedErrorMessage,
+} from "@/pages/server/_serverShared";
 import { BootstrapCredsModal } from "./_bootstrapCredsModal";
 import type {
   CursorPaginatedResponse,
@@ -169,7 +172,9 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
       toast.success(`${label}: OK`);
       return res;
     } catch (e) {
-      toast.error(apiErrMsg(e, `${label} не удалось`));
+      // Деструктив на чужой брони → 409 SERVER_RESERVED: показываем понятный
+      // текст про бронь. Прочие ошибки — обычным envelope'ом.
+      toast.error(reservedErrorMessage(e, `${label} не удалось`));
       return null;
     } finally {
       setBusyLocal(null);

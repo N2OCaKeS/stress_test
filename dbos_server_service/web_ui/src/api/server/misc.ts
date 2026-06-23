@@ -13,6 +13,8 @@
 import { apiGet, apiPost } from "@/api/client";
 import { listWithTotal, type PaginatedList } from "@/api/auth/users";
 import type {
+  BulkInstalledPackagesRequest,
+  BulkInstalledPackagesResponse,
   InstalledPackagesRequest,
   InstalledPackagesResult,
   ListTasksQuery,
@@ -54,6 +56,25 @@ export function installedPackagesProbe(
     `/server/v1/servers/${serverId}/installed-packages`,
     undefined,
     { query },
+  );
+}
+
+/**
+ * `POST /api/server/v1/servers/installed-packages/bulk` — массовый запрос
+ * установленных пакетов по набору серверов.
+ *
+ * Backend сразу (HTTP 202) возвращает per-server исходы: для подготовленных
+ * серверов ставит probe-задачу и отдаёт `task_id` (`status: ok`), остальным —
+ * статус-причину (`prepare_required` / `decommissioned` / `not_found` /
+ * `auth_failed`). Список пакетов в `results[].packages` может прийти пустым —
+ * тогда его добирают поллингом `GET /tasks/{task_id}` (как в single-варианте).
+ */
+export function installedPackagesBulk(
+  body: BulkInstalledPackagesRequest,
+): Promise<BulkInstalledPackagesResponse> {
+  return apiPost<BulkInstalledPackagesResponse>(
+    "/server/v1/servers/installed-packages/bulk",
+    body,
   );
 }
 

@@ -32,8 +32,11 @@ function parseIdList(input: string): string[] {
 }
 
 export function SecurityDocker() {
+  // services-блок отдаёт workzone компоненту целиком (main — overflow-hidden),
+  // поэтому страница сама держит скролл и высоту, иначе длинный контент
+  // (registry + token + PEM/JWKS) уезжает за нижнюю кромку без прокрутки.
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex-1 min-h-0 overflow-auto p-6 flex flex-col gap-4">
       <RegistryConfig />
       <TokenIssuer />
       <CertsAndJwks />

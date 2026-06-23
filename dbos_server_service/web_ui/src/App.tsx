@@ -27,6 +27,11 @@ const Server = lazy(() =>
 const ServerUsers = lazy(() =>
   import("@/pages/server/ServerUsers").then((m) => ({ default: m.ServerUsers }))
 );
+const ServerPackages = lazy(() =>
+  import("@/pages/server/ServerPackages").then((m) => ({
+    default: m.ServerPackages,
+  }))
+);
 const Secret = lazy(() =>
   import("@/pages/secret/Secret").then((m) => ({ default: m.Secret }))
 );
@@ -155,6 +160,14 @@ export function App() {
               element={
                 <RouteGuard service="server">
                   <ServerUsers />
+                </RouteGuard>
+              }
+            />
+            <Route
+              path="/server/packages"
+              element={
+                <RouteGuard service="server">
+                  <ServerPackages />
                 </RouteGuard>
               }
             />

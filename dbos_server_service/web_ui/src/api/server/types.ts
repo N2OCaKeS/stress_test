@@ -172,6 +172,40 @@ export interface ServerAcquireRequest {
   purpose?: string | null;
 }
 
+/**
+ * Тело POST /servers/prepare/bulk — массовый prepare.
+ *
+ * Backend ждёт креды per-server: на каждый сервер свой `username_b64` /
+ * `password_b64` (base64 plaintext) и опциональный приватный SSH-ключ.
+ */
+export interface BulkPrepareItem {
+  server_id: string;
+  username_b64: string;
+  password_b64: string;
+  ssh_private_key_b64?: string;
+}
+
+/** Тело POST /servers/prepare/bulk. */
+export interface BulkPrepareRequest {
+  items: BulkPrepareItem[];
+}
+
+/** Один исход per-server в ответе массового prepare. */
+export interface BulkPrepareResult {
+  server_id: string;
+  /** queued — задача поставлена; skipped — пропущен (см. reason). */
+  status: "queued" | "skipped" | (string & {});
+  task_id?: string | null;
+  reason?: string | null;
+}
+
+/** Ответ POST /servers/prepare/bulk (202). */
+export interface BulkPrepareResponse {
+  results: BulkPrepareResult[];
+  queued_count: number;
+  skipped_count: number;
+}
+
 /** Один drift-сигнал из `GET /servers/{id}/drift`. */
 export interface DriftEventItem {
   login: string;
@@ -670,6 +704,58 @@ export interface InstalledPackagesResult {
  */
 export interface InstalledPackagesRequest {
   pattern?: string;
+}
+
+/** Один пакет в результате задачи installed-packages (`task.result.packages`). */
+export interface PackageInfo {
+  name: string;
+  version: string;
+}
+
+/**
+ * Тело `POST /servers/installed-packages/bulk` — массовый запрос пакетов.
+ *
+ * `pattern` — тот же shell-glob, что и в single-варианте; пусто → `*`.
+ */
+export interface BulkInstalledPackagesRequest {
+  server_ids: string[];
+  pattern?: string;
+}
+
+/**
+ * Статус одного сервера в массовом запросе пакетов.
+ *
+ *  - `ok` — задача задиспатчена, пакеты добираются поллингом `task_id`;
+ *  - `prepare_required` — сервер не подготовлен, probe не поставлен;
+ *  - `decommissioned` — сервер выведен из эксплуатации;
+ *  - `not_found` — сервер не найден / вне scope;
+ *  - `auth_failed` — управляющие креды не подошли.
+ */
+export type BulkPackagesServerStatus =
+  | "ok"
+  | "prepare_required"
+  | "decommissioned"
+  | "not_found"
+  | "auth_failed"
+  | (string & {});
+
+/** Один сервер в ответе массового запроса пакетов. */
+export interface BulkPackagesServerResult {
+  server_id: string;
+  hostname: string | null;
+  os_version_id: string | null;
+  status: BulkPackagesServerStatus;
+  task_id: string | null;
+  /** Может прийти пустым — тогда пакеты добираются поллингом `task_id`. */
+  packages: PackageInfo[];
+}
+
+/** Ответ POST /servers/installed-packages/bulk (202). */
+export interface BulkInstalledPackagesResponse {
+  pattern: string;
+  requested: number;
+  dispatched: number;
+  results: BulkPackagesServerResult[];
 }
 
 /**

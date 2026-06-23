@@ -5,7 +5,7 @@
  * return both the `items` and the total count parsed from `X-Total-Count`.
  */
 
-import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
+import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
 import { getAccessToken } from "@/api/tokenStore";
 import type {
   BanRequest,
@@ -232,9 +232,8 @@ export function deleteUser(userId: string, body: UserDeleteRequest): Promise<voi
 // Lifecycle: enable / disable / unlock / ban / unban
 // ---------------------------------------------------------------------------
 
-// auth_service exposes only ban/unban for user lifecycle. enable/disable map
-// to unban/ban respectively. Lockout reset endpoint does not exist server-side
-// — `unlockUser` returns 501 so callers see explicit not-implemented.
+// auth_service exposes ban/unban for user lifecycle plus an explicit unlock
+// for lockout reset. enable/disable map to unban/ban respectively.
 export function enableUser(userId: string): Promise<User> {
   return apiPost<User>(`/auth/v1/users/${userId}/unban`, {});
 }
@@ -246,15 +245,10 @@ export function disableUser(
   return apiPost<User>(`/auth/v1/users/${userId}/ban`, { reason });
 }
 
-export function unlockUser(_userId: string): Promise<User> {
-  return Promise.reject(
-    new ApiError(501, {
-      error: "not_implemented",
-      error_code: "NOT_IMPLEMENTED",
-      message:
-        "auth_service не реализует endpoint для снятия lockout — снимается автоматически по таймауту LOCKOUT_MINUTES",
-    }),
-  );
+// Снимает lockout (сбрасывает failed-attempts и locked_until). Раньше тут была
+// 501-заглушка — endpoint появился на стороне auth_service.
+export function unlockUser(userId: string): Promise<User> {
+  return apiPost<User>(`/auth/v1/users/${userId}/unlock`, {});
 }
 
 export function banUser(userId: string, body: BanRequest): Promise<User> {

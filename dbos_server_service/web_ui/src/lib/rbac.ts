@@ -26,6 +26,18 @@ export function isDepAdmin(persona: Persona): boolean {
 }
 
 /**
+ * True для платформенного админа логирования (`logging_admin`). Только он
+ * управляет правилами severity/suppress, retention и severity-overrides
+ * loging_service'а. `account_admin` и `dep_admin` видят аудит, но не
+ * настраивают логирование; `logging_reader` — только чтение. Источник правды
+ * для гейта всех admin-действий логирования (см. `hasAuditMutateAccess` — это
+ * её роут-зеркало).
+ */
+export function isLogingAdmin(persona: Persona): boolean {
+  return persona.platform_role === "logging_admin";
+}
+
+/**
  * True для платформенных ролей, которым сервисы бизнес-данных отказывают в
  * доступе целиком: `account_admin`, `logging_admin`, `logging_reader`. У этих
  * ролей нет департамента, а server/secret/worker — dept-scoped. server_service

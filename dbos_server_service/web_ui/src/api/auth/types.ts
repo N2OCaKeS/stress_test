@@ -527,3 +527,26 @@ export interface DockerTokenResponse {
   expires_in: number;
   issued_at: Iso8601;
 }
+
+// ---------------------------------------------------------------------------
+// Lockout — locked / failing principals + policy
+// ---------------------------------------------------------------------------
+
+/**
+ * Запись из `GET /users/locked`. `locked_until` присутствует у фактически
+ * залоченных; для failing-записей (с `include_failing=true`) оно null, а
+ * `failed_login_attempts` уже копит к порогу.
+ */
+export interface LockedUser {
+  user_id: string;
+  username: string;
+  department_id: string | null;
+  failed_login_attempts: number;
+  locked_until: Iso8601 | null;
+  is_banned: boolean;
+}
+
+export interface LockoutPolicy {
+  max_failed_attempts: number;
+  lockout_minutes: number;
+}

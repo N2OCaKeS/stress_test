@@ -8,6 +8,7 @@ import {
   LockKeyhole,
   Cog,
   ListChecks,
+  Package,
   ShieldCheck,
   FileText,
   Filter,
@@ -50,6 +51,7 @@ const SERVICE_CATALOG: Record<ServiceName, ServiceChip> = {
     subItems: [
       { to: "/server", icon: Server, label: "Servers" },
       { to: "/server/users", icon: Users, label: "Пользователи" },
+      { to: "/server/packages", icon: Package, label: "Пакеты" },
       { to: "/server/tasks", icon: ListChecks, label: "Задачи" },
     ],
   },

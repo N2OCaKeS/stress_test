@@ -16,6 +16,7 @@ import {
   Plus,
   ArrowLeft,
   AlertCircle,
+  Play,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -29,6 +30,8 @@ import {
   deleteServer,
   listServers,
 } from "@/api/server/servers";
+import { reservedErrorMessage } from "@/pages/server/_serverShared";
+import { BulkPrepareModal } from "@/pages/server/_bulkPrepareModal";
 import { listDepartments } from "@/api/auth/departments";
 import { useDeptLabel } from "@/lib/labels";
 import { isServerZoneBlocked } from "@/lib/rbac";
@@ -80,6 +83,9 @@ export function Server() {
   const [filterDept, setFilterDept] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [filterBusy, setFilterBusy] = useState<string>("");
+  // Мультивыбор серверов для bulk-операций (массовый prepare).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkPrepareOpen, setBulkPrepareOpen] = useState(false);
 
   // server_service возвращает серверы своего отдела (изоляция по identity) и
   // не принимает dept/status/busy как query-фильтры — поэтому тянем страницу
@@ -96,7 +102,7 @@ export function Server() {
     persona.service_roles.server === "admin" ||
     persona.service_roles.server === "operator";
 
-  const items = listQ.data?.items ?? [];
+  const items = useMemo(() => listQ.data?.items ?? [], [listQ.data]);
   // `total` — серверная истина (до клиентского поиска): если она больше, чем
   // влезло в страницу (limit:200), показываем баннер усечения.
   const serverTotal = listQ.data?.total ?? items.length;
@@ -152,6 +158,18 @@ export function Server() {
     next.delete("action");
     setParams(next, { replace: true });
   }
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  const selectedServers = useMemo(
+    () => items.filter((s) => selected.has(s.id)),
+    [items, selected],
+  );
   function startCreate() {
     const next = new URLSearchParams(params);
     next.set("action", "new");
@@ -181,7 +199,7 @@ export function Server() {
       selectId(null);
       listQ.refetch();
     } catch (e) {
-      toast.error(apiErrMsg(e, "Удаление не удалось"));
+      toast.error(reservedErrorMessage(e, "Удаление не удалось"));
     }
   }
 
@@ -284,6 +302,9 @@ export function Server() {
             items={bucket.items}
             selectedId={selectedId}
             onSelect={selectId}
+            selectable={canManage}
+            checkedIds={selected}
+            onToggleChecked={toggleSelected}
           />
         ))}
         {!listQ.loading && !listQ.error && (
@@ -296,7 +317,16 @@ export function Server() {
       </div>
 
       {canManage && (
-        <div className="border-t border-token p-3 shrink-0">
+        <div className="border-t border-token p-3 shrink-0 flex flex-col gap-2">
+          {selected.size > 0 && (
+            <button
+              className="btn w-full flex items-center justify-center gap-2"
+              onClick={() => setBulkPrepareOpen(true)}
+              title="Массовый prepare выбранных серверов"
+            >
+              <Play className="w-4 h-4" /> Подготовить выбранные ({selected.size})
+            </button>
+          )}
           <button
             className="btn btn-primary w-full flex items-center justify-center gap-2"
             onClick={startCreate}
@@ -337,6 +367,17 @@ export function Server() {
         />
       ) : (
         <EmptyPane canCreate={canManage} onCreate={startCreate} />
+      )}
+
+      {bulkPrepareOpen && selectedServers.length > 0 && (
+        <BulkPrepareModal
+          servers={selectedServers}
+          onClose={() => setBulkPrepareOpen(false)}
+          onDone={() => {
+            setSelected(new Set());
+            listQ.refetch();
+          }}
+        />
       )}
     </Shell>
   );
@@ -410,12 +451,18 @@ function ServerGroup({
   items,
   selectedId,
   onSelect,
+  selectable,
+  checkedIds,
+  onToggleChecked,
 }: {
   groupKey: string;
   showHeader: boolean;
   items: Server[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  selectable: boolean;
+  checkedIds: Set<string>;
+  onToggleChecked: (id: string) => void;
 }) {
   const deptLabel = useDeptLabel(showHeader ? groupKey : null);
   return (
@@ -432,6 +479,9 @@ function ServerGroup({
             server={s}
             active={selectedId === s.id}
             onSelect={() => onSelect(s.id)}
+            selectable={selectable}
+            checked={checkedIds.has(s.id)}
+            onToggleChecked={() => onToggleChecked(s.id)}
           />
         ))}
       </div>
@@ -443,10 +493,16 @@ function ServerRow({
   server,
   active,
   onSelect,
+  selectable,
+  checked,
+  onToggleChecked,
 }: {
   server: Server;
   active: boolean;
   onSelect: () => void;
+  selectable: boolean;
+  checked: boolean;
+  onToggleChecked: () => void;
 }) {
   const deptLabel = useDeptLabel(server.department_id);
   const statusKind = STATUS_KIND[server.status];
@@ -459,12 +515,23 @@ function ServerRow({
         : "busy";
   const name = server.display_name ?? server.hostname;
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`cred-row text-left ${active ? "active" : ""}`}
-    >
-      <div className="flex items-center gap-2">
+    <div className={`cred-row text-left flex items-center gap-2 ${active ? "active" : ""}`}>
+      {selectable && (
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onToggleChecked}
+          onClick={(e) => e.stopPropagation()}
+          className="shrink-0"
+          title="Выбрать для массовой операции"
+        />
+      )}
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex-1 min-w-0 text-left"
+      >
+        <div className="flex items-center gap-2">
         <ServerIcon
           className={`w-4 h-4 ${active ? "text-accent" : "text-dim"}`}
         />
@@ -476,12 +543,13 @@ function ServerRow({
             <span className="mono">{server.ip_address}</span>
           </div>
         </div>
-        <span className={`badge${statusKind ? ` badge-${statusKind}` : ""}`}>
-          {STATUS_LABEL[server.status] ?? server.status}
-        </span>
-        <span className={`badge badge-${busyChipKind}`}>{busyChipLabel}</span>
-      </div>
-    </button>
+          <span className={`badge${statusKind ? ` badge-${statusKind}` : ""}`}>
+            {STATUS_LABEL[server.status] ?? server.status}
+          </span>
+          <span className={`badge badge-${busyChipKind}`}>{busyChipLabel}</span>
+        </div>
+      </button>
+    </div>
   );
 }
 

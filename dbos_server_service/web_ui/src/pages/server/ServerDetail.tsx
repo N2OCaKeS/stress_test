@@ -7,12 +7,16 @@
  * параллельно C2..C9 — здесь только маршрутизация вкладок и общий header.
  */
 import { useEffect, useState } from "react";
-import { Server as ServerIcon } from "lucide-react";
+import { Server as ServerIcon, Lock, Unlock } from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
 import { useQuery } from "@/api/auth/useQuery";
-import { getServer } from "@/api/server/servers";
-import { useDeptLabel } from "@/lib/labels";
-import { ApiError } from "@/api/client";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/contexts/ToastContext";
+import { usePersona } from "@/contexts/PersonaContext";
+import { getServer, setBusy, clearBusy } from "@/api/server/servers";
+import { useDeptLabel, useUserLabel } from "@/lib/labels";
+import { isDepAdmin } from "@/lib/rbac";
+import { ApiError, apiErrMsg } from "@/api/client";
 import type { Server, ServerStatus, BusyState } from "@/api/server/types";
 import { OverviewTab } from "./tabs/overview";
 import { HardwareTab } from "./tabs/hardware";
@@ -117,7 +121,7 @@ export function ServerDetail({ serverId, onDeleted }: ServerDetailProps) {
   const current = server ?? q.data;
   return (
     <section className="flex-1 min-w-0 overflow-hidden flex flex-col">
-      <ServerHeader server={current} />
+      <ServerHeader server={current} onServerUpdated={setServer} />
       <Tabs
         active={tab}
         onChange={(id) => setTab(id as TabId)}
@@ -166,7 +170,13 @@ export function ServerDetail({ serverId, onDeleted }: ServerDetailProps) {
   );
 }
 
-function ServerHeader({ server }: { server: Server }) {
+function ServerHeader({
+  server,
+  onServerUpdated,
+}: {
+  server: Server;
+  onServerUpdated: (next: Server) => void;
+}) {
   const deptLabel = useDeptLabel(server.department_id);
   const statusKind = STATUS_KIND[server.status];
   const busyKind = BUSY_KIND[server.busy_state];
@@ -206,7 +216,130 @@ function ServerHeader({ server }: { server: Server }) {
             dept: <b>{deptLabel}</b>
           </span>
         </div>
+        <ReserveControl server={server} onServerUpdated={onServerUpdated} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Бронь сервера на карточке: индикатор «Забронировано: <кто>, <note>» и кнопка
+ * «Забронировать» / «Снять бронь». Под капотом — busy-lease
+ * (`POST/DELETE /servers/{id}/busy`): захват кладёт `busy_state`/`busy_user_id`/
+ * `busy_note`, снятие сбрасывает в `free`. Деструктив на занятом чужом отбивает
+ * backend 409 SERVER_RESERVED — это обрабатывается в местах самих операций.
+ *
+ * Снять чужую бронь может только admin/dep_admin; свою — оператор тоже. Backend
+ * перепроверит, клиентский гейт лишь прячет заведомо лишнюю кнопку.
+ */
+function ReserveControl({
+  server,
+  onServerUpdated,
+}: {
+  server: Server;
+  onServerUpdated: (next: Server) => void;
+}) {
+  const { persona } = usePersona();
+  const toast = useToast();
+  const { prompt, confirm } = useConfirm();
+  const [pending, setPending] = useState(false);
+
+  const reserverLabel = useUserLabel(server.busy_user_id);
+
+  const reserved = server.busy_state !== "free" || !!server.busy_note;
+
+  const serverRole = persona.service_roles.server;
+  const canOperate =
+    isDepAdmin(persona) || serverRole === "admin" || serverRole === "operator";
+  // Снятие брони показываем оператору+; фактическое право (своя/чужая бронь)
+  // проверяет backend — release_busy на чужой лиз отбивает 403/409.
+  const canRelease = canOperate;
+
+  async function handleReserve() {
+    if (pending || !canOperate) return;
+    const { ok, reason } = await prompt({
+      title: "Забронировать сервер",
+      message: `Забронировать ${server.hostname}? Бронь блокирует деструктивные операции других пользователей до её снятия.`,
+      reason: true,
+      reasonLabel: "Примечание (зачем бронь)",
+      reasonPlaceholder: "например, ручной debug-цикл",
+      reasonRequired: true,
+      confirmLabel: "Забронировать",
+    });
+    if (!ok) return;
+    setPending(true);
+    try {
+      const next = await setBusy(server.id, { reason: reason.trim() });
+      onServerUpdated(next);
+      toast.success(`Сервер ${server.hostname} забронирован`);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось забронировать"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleRelease() {
+    if (pending || !canRelease) return;
+    if (
+      !(await confirm({
+        title: "Снять бронь",
+        message: `Снять бронь с ${server.hostname}? Сервер освободится для других.`,
+        confirmLabel: "Снять бронь",
+      }))
+    )
+      return;
+    setPending(true);
+    try {
+      const next = await clearBusy(server.id);
+      onServerUpdated(next);
+      toast.success(`Бронь с ${server.hostname} снята`);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось снять бронь"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 flex items-center gap-3 flex-wrap">
+      {reserved ? (
+        <>
+          <span className="badge badge-warn flex items-center gap-1">
+            <Lock className="w-3.5 h-3.5" />
+            Забронировано
+            {server.busy_user_id && <>: {reserverLabel}</>}
+          </span>
+          {server.busy_note && (
+            <span className="text-xs text-dim truncate max-w-[320px]">
+              {server.busy_note}
+            </span>
+          )}
+          {canRelease && (
+            <button
+              type="button"
+              className="btn btn-sm flex items-center gap-1"
+              onClick={handleRelease}
+              disabled={pending}
+              title="Снять бронь"
+            >
+              <Unlock className="w-3.5 h-3.5" /> Снять бронь
+            </button>
+          )}
+        </>
+      ) : (
+        canOperate && (
+          <button
+            type="button"
+            className="btn btn-sm btn-primary flex items-center gap-1"
+            onClick={handleReserve}
+            disabled={pending}
+            title="Забронировать сервер"
+          >
+            <Lock className="w-3.5 h-3.5" /> Забронировать
+          </button>
+        )
+      )}
     </div>
   );
 }

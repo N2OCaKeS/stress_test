@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, Wrench } from "lucide-react";
+import { Layers, Plus, Trash2, Wrench } from "lucide-react";
 import { ApiError } from "@/api/client";
 import {
   createService,
@@ -9,9 +9,73 @@ import {
 import type { Service } from "@/api/auth/types";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
-import { useLabelsInvalidate } from "@/lib/labels";
+import { useDeptLabel, useLabelsInvalidate } from "@/lib/labels";
+import { isDepAdmin } from "@/lib/rbac";
+
+// dep_admin не управляет платформенным каталогом сервисов — он видит лишь то,
+// что подключено его отделу. Источник — persona.accessible_services (их же
+// гейтит backend). CRUD каталога остаётся за account_admin.
+const SERVICE_LABELS: Record<string, string> = {
+  auth: "auth_service",
+  secret: "secret_service",
+  server: "server_service",
+  worker: "server_worker",
+  logging: "loging_service",
+  config: "config_service",
+};
+
+function DeptServices() {
+  const { persona } = usePersona();
+  const deptLabel = useDeptLabel(persona.dept_id);
+  const services = [...persona.accessible_services].sort();
+
+  return (
+    <div className="flex-1 min-h-0 overflow-auto p-6 flex flex-col gap-4">
+      <div className="text-sm text-dim">
+        Сервисы, подключённые отделу <b>{deptLabel}</b>. Подключение и отключение
+        сервисов отделу — на стороне account_admin; здесь только просмотр того,
+        чем отдел может пользоваться.
+      </div>
+      <div className="card">
+        <h3 className="font-semibold flex items-center gap-2 mb-3">
+          <Wrench className="w-4 h-4 text-accent" /> Доступные сервисы
+        </h3>
+        {services.length === 0 ? (
+          <div className="text-xs text-dim py-4 text-center">
+            Отделу не подключён ни один сервис.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {services.map((s) => (
+              <div key={s} className="cred-row flex items-center gap-3">
+                <Layers className="w-4 h-4 text-accent shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate mono">
+                    {SERVICE_LABELS[s] ?? s}
+                  </div>
+                  <div className="text-[11px] text-dim truncate">{s}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function SecurityServices() {
+  const { persona } = usePersona();
+  // dep_admin получает dept-scoped список подключённых сервисов вместо
+  // платформенного каталога с CRUD. Платформенный каталог с его хуками вынесен
+  // в отдельный компонент, чтобы ранний return не ломал rules-of-hooks.
+  if (isDepAdmin(persona)) {
+    return <DeptServices />;
+  }
+  return <PlatformServicesCatalog />;
+}
+
+function PlatformServicesCatalog() {
   const { persona } = usePersona();
   const canEdit = persona.platform_role === "account_admin";
   const [items, setItems] = useState<Service[]>([]);
@@ -39,7 +103,7 @@ export function SecurityServices() {
   }, [reload]);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex-1 min-h-0 overflow-auto p-6 flex flex-col gap-4">
       {!canEdit && (
         <div className="readonly-bar">
           <span className="ro-label">read-only</span>

@@ -12,7 +12,7 @@ import { Link } from "react-router-dom";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
-import { hasAuditLogAccess, isReadOnlyForCluster } from "@/lib/rbac";
+import { hasAuditLogAccess, isLogingAdmin, isReadOnlyForCluster } from "@/lib/rbac";
 import { formatMsk } from "@/lib/datetime";
 import { useTimeoutRef } from "@/lib/useTimeoutRef";
 import { exportEvents, getEventStats } from "@/api/loging/events";
@@ -44,6 +44,9 @@ export function ClusterAuditOverview() {
   const mockMode = useMockMode();
 
   const canAudit = hasAuditLogAccess(persona);
+  // «Настроить правила» ведёт в админ-логирования — это привилегия только
+  // loging_admin. account_admin / dep_admin видят обзор, но не настройку.
+  const canConfigureRules = isLogingAdmin(persona);
   const [mockToast, setMockToast] = useState<string | null>(null);
   const setMockToastTimeout = useTimeoutRef();
 
@@ -68,7 +71,7 @@ export function ClusterAuditOverview() {
           </span>
         </div>
       )}
-      {!mockMode && (canAudit ? <LiveAudit readonly={readonly} /> : <NoAuditRole />)}
+      {!mockMode && (canAudit ? <LiveAudit canConfigureRules={canConfigureRules} /> : <NoAuditRole />)}
       {mockMode && (
         <>
           <div className="card">
@@ -111,7 +114,7 @@ export function ClusterAuditOverview() {
               >
                 <Download className="w-3.5 h-3.5" /> Экспорт за 24ч
               </button>
-              {!readonly && (
+              {canConfigureRules && (
                 <Link
                   to="/admin/services.loging.rules"
                   className="btn btn-sm flex items-center gap-1"
@@ -182,7 +185,7 @@ function NoAuditRole() {
  * Тянет `GET /events/stats` за 24ч, кнопка «Экспорт за 24ч» дёргает
  * `GET /events/export`.
  */
-function LiveAudit({ readonly }: { readonly: boolean }) {
+function LiveAudit({ canConfigureRules }: { canConfigureRules: boolean }) {
   const statsQ = useQuery<EventStatsResponse>(
     () => getEventStats({ window_hours: 24 }),
     [],
@@ -272,7 +275,7 @@ function LiveAudit({ readonly }: { readonly: boolean }) {
         >
           <Download className="w-3.5 h-3.5" /> {exporting ? "Экспорт…" : "Экспорт за 24ч"}
         </button>
-        {!readonly && (
+        {canConfigureRules && (
           <Link
             to="/admin/services.loging.rules"
             className="btn btn-sm flex items-center gap-1"

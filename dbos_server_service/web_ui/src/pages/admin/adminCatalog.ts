@@ -308,7 +308,11 @@ const STATIC_ITEMS: AdminItem[] = [
     visibleFor: (p) => isDepAdmin(p) || hasSecretServiceAdmin(p),
   },
 
-  // Services block — loging (service-specific pages; roles are dynamic)
+  // Services block — loging (service-specific pages; roles are dynamic).
+  // Администрирование логирования (правила severity/suppress, retention,
+  // severity-overrides) — только платформенный loging_admin. account_admin и
+  // dep_admin видят аудит-обзор, но не настраивают логирование; loging_reader
+  // читает журнал. Backend (require_admin) всё равно ответит остальным 403.
   {
     id: "services.loging.rules",
     label: "Правила алёртов",
@@ -316,7 +320,7 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "loging",
     content: ServicesLogingRules,
-    visibleFor: (p) => isAccountAdmin(p) || isLoggingAdmin(p),
+    visibleFor: (p) => isLoggingAdmin(p),
   },
   {
     id: "services.loging.retention",
@@ -325,7 +329,7 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "loging",
     content: ServicesLogingRetention,
-    visibleFor: (p) => isAccountAdmin(p) || isLoggingAdmin(p),
+    visibleFor: (p) => isLoggingAdmin(p),
   },
 
   // Services block — worker (service-specific pages; roles are dynamic)
@@ -417,9 +421,15 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "Безопасность",
     content: SecurityServiceAccess,
-    visibleFor: (p) => p.has_admin,
+    // Платформенная проверка S2S-доступа: dep_admin'у не нужна и не положена —
+    // он администрирует только свой отдел. Оставляем account_admin и
+    // сервис-админам.
+    visibleFor: (p) => p.has_admin && !isDepAdmin(p),
   },
   {
+    // Платформенный каталог всех сервисов — account_admin / сервис-админы.
+    // dep_admin сюда не попадает: для него ниже отдельный пункт «Доступные
+    // сервисы отдела» (тот же компонент, dept-scoped режим).
     id: "services.security.services",
     label: "Каталог сервисов",
     hint: "список known services",
@@ -427,7 +437,17 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "Безопасность",
     content: SecurityServices,
-    visibleFor: (p) => p.has_admin,
+    visibleFor: (p) => p.has_admin && !isDepAdmin(p),
+  },
+  {
+    id: "services.security.dept_services",
+    label: "Доступные сервисы отдела",
+    hint: "что подключено вашему отделу",
+    icon: Wrench,
+    block: "services",
+    group: "Безопасность",
+    content: SecurityServices,
+    visibleFor: (p) => isDepAdmin(p),
   },
 ];
 

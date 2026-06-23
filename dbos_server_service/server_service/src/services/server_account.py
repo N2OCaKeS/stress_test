@@ -51,7 +51,7 @@ from src.schemas.server_account import (
     ServerAccountServersUpdate,
     ServerAccountUpdate,
 )
-from src.services import audit_context, audit_service, permissions, secrets_service
+from src.services import audit_context, audit_service, permissions, reservation, secrets_service
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.services.server import load_visible_server, load_visible_servers
 from src.utils.ids import ignored_login_id
@@ -304,6 +304,33 @@ async def _authorize_account_action_any(
         message="No access to this server account",
         details={"entity_type": "server_account", "actions": list(actions)},
     )
+
+
+async def _ensure_no_linked_server_reserved(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account: ServerAccount,
+    *,
+    action: str,
+) -> None:
+    """Гейт брони для деструктивных операций над аккаунтом.
+
+    Аккаунт живёт на нескольких серверах; ротация / ssh-ключ / удаление /
+    OS-fanout затрагивают их все. Если хоть один из привязанных серверов
+    забронирован под чужого (и caller не админ) — бросаем 409 SERVER_RESERVED
+    (на первом таком сервере) + WARNING-аудит. Владелец брони и админ проходят.
+
+    Сервера грузим батчем с dept-visibility; невидимые/отсутствующие просто
+    не участвуют (их и так нельзя трогать выше по стеку).
+    """
+    server_ids = repo.linked_server_ids(account)
+    if not server_ids:
+        return
+    servers = await load_visible_servers(db, identity, server_ids)
+    for sid in server_ids:
+        srv = servers.get(sid)
+        if srv is not None:
+            reservation.ensure_not_reserved_for(identity, srv, action=action)
 
 
 async def _load_account_visible(
@@ -896,6 +923,13 @@ async def update_account(
     }
     if not changes:
         return obj, set()
+
+    # Реальная правка аккаунта (часть полей уезжает fan-out'ом на боксы) —
+    # гейтим по брони привязанных серверов. No-op PATCH (changes пуст) до сюда
+    # не доходит, лишнего 409 на «ничего не меняли» не будет.
+    await _ensure_no_linked_server_reserved(
+        db, identity, obj, action="server_account.update",
+    )
 
     # Смена логина — отдельный путь: DB-only rename, допустимый только пока
     # аккаунта физически нет ни на одном сервере. Вынимаем `login` из общего
@@ -1498,6 +1532,9 @@ async def delete_account(
     obj = await _authorize_account_action(
         db, identity, account_id, Action.DELETE, "server_account.delete",
     )
+    await _ensure_no_linked_server_reserved(
+        db, identity, obj, action="server_account.delete",
+    )
     login = obj.login
     server_ids = repo.linked_server_ids(obj)
     department_id = obj.department_id
@@ -1540,6 +1577,11 @@ async def rotate_password(
     obj = await _authorize_account_action(
         db, identity, account_id, Action.ROTATE_PASSWORD,
         "server_account.rotate_password",
+    )
+    # Ротация общего пароля выбивает текущую парольную аутентификацию у того,
+    # кто держит бронь — гейтим так же, как host-мутации.
+    await _ensure_no_linked_server_reserved(
+        db, identity, obj, action="server_account.rotate_password",
     )
     plaintext = new_password if new_password is not None else _generate_password()
     encrypted = secrets_service.encrypt(
@@ -1695,6 +1737,9 @@ async def set_ssh_key(
         db, identity, account_id, Action.UPDATE, "server_account.ssh_key_set",
         for_update=True,
     )
+    await _ensure_no_linked_server_reserved(
+        db, identity, obj, action="server_account.ssh_key_set",
+    )
     private_pem: str | None = None
     if ssh_mode == "generate":
         private_pem, public_openssh = _generate_ssh_keypair()
@@ -1739,6 +1784,9 @@ async def rotate_ssh_key(
     obj = await _authorize_account_action(
         db, identity, account_id, Action.UPDATE, "server_account.ssh_key_rotate",
         for_update=True,
+    )
+    await _ensure_no_linked_server_reserved(
+        db, identity, obj, action="server_account.ssh_key_rotate",
     )
     private_pem, public_openssh = _generate_ssh_keypair()
     encrypted = secrets_service.encrypt(

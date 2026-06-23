@@ -386,6 +386,8 @@ async def bootstrap_management_user(
     *,
     management_user: str,
     public_key: str,
+    management_private_key_path: str | None = None,
+    harden_sshd: bool = False,
 ) -> dict:
     """Онбординг управления: завести управляющего пользователя и положить ключ.
 
@@ -393,6 +395,11 @@ async def bootstrap_management_user(
     port?}`): под ними SSH-сессия password-auth заходит на ещё
     не управляемый сервер. После prepare управление идёт под `management_user`
     по ключу, исходный пароль больше не нужен и нигде не сохраняется.
+
+    Если задан `management_private_key_path`, после установки ключа worker
+    проверяет, что вход под `management_user` по этому ключу реально работает
+    (анти-локаут). `harden_sshd=True` дополнительно выключает парольный SSH и
+    root-login через drop-in — только после успешной проверки ключа.
 
     Idempotent: повторный prepare не падает на уже заведённом юзере / уже
     добавленном ключе. Возврат — `{prepared: True, management_user}`.
@@ -419,7 +426,11 @@ async def bootstrap_management_user(
         password=password,
         port=port,
     ) as ssh:
-        await ssh.bootstrap_management_user(management_user, public_key)
+        await ssh.bootstrap_management_user(
+            management_user, public_key,
+            management_private_key_path=management_private_key_path,
+            harden_sshd=harden_sshd,
+        )
     return {"prepared": True, "management_user": management_user}
 
 

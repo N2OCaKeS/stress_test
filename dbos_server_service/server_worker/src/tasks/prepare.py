@@ -177,6 +177,74 @@ async def _delete_bootstrap_creds(creds_key: str) -> None:
         logger.debug("failed to delete bootstrap creds key", exc_info=True)
 
 
+async def _provision_linked_accounts(
+    server_id: str,
+    management_user: str,
+    *,
+    linked_accounts: list[dict],
+    payload: dict,
+) -> None:
+    """Завести на свежеподготовленном сервере все привязанные аккаунты.
+
+    Каждый элемент `linked_accounts` — это креды одного server_account'а,
+    сложенные server_service'ом в bootstrap-stash рядом с bootstrap-кредами:
+    `{login, password?, ssh_public_key?, ssh_private_key?, has_sudo,
+    unix_groups, shell, home_dir}`. Провизионим под управляющей сессией по
+    ключу (сервер уже managed), переиспользуя обычный `ssh_client.provision_user`
+    — useradd + chpasswd (если есть пароль) + authorized_keys (ключ; нет ключа
+    — provision_user/create_user отрабатывает без него, как в discovered-флоу).
+
+    `force_replace=True`: prepare — это первичная (или после reimage) раскатка,
+    authorized_keys аккаунта приводим к актуальному ключу из server_service,
+    а не дописываем поверх возможного мусора со старого образа.
+
+    Ошибку одного аккаунта НЕ глушим: prepare должен дать оператору честный
+    сигнал, что бокс подготовлен не полностью. Аккаунты без login'а (битый
+    payload) пропускаем — нет смысла тащить их в useradd с None.
+    """
+    if not linked_accounts:
+        return
+    # Управляющая сессия: provision_user сам соберёт ключевую сессию под
+    # management_user, если credentials помечены managed. Для каждого
+    # аккаунта собираем отдельный creds-dict (host/port из payload через
+    # apply_session_hints), чтобы _build_session выбрал key-сессию.
+    for account in linked_accounts:
+        login = account.get("login")
+        if not login:
+            logger.warning(
+                "prepare provision: skipping linked account without login on %s",
+                server_id,
+            )
+            continue
+        # Форсируем management-сессию по ключу под management_user — bootstrap
+        # только что её настроил и проверил. `apply_session_hints` тут не
+        # зовём: в payload prepare сервер на момент dispatch'а ещё
+        # is_managed=false, хинты сбросили бы managed-режим. host/port берём
+        # из payload напрямую (их кладёт server_service для адресации).
+        creds: dict = {
+            "login": login,
+            "is_managed": True,
+            "management_user": management_user,
+        }
+        host = payload.get("host") or payload.get("ssh_host")
+        if host:
+            creds["host"] = host
+        port = payload.get("ssh_port") or payload.get("port")
+        if port:
+            creds["ssh_port"] = port
+        await ssh_client.provision_user(
+            creds, server_id,
+            login=login,
+            new_password=account.get("password"),
+            groups=account.get("unix_groups") or [],
+            has_sudo=bool(account.get("has_sudo")),
+            shell=account.get("shell"),
+            home_dir=account.get("home_dir"),
+            public_key=account.get("ssh_public_key"),
+            force_replace=True,
+        )
+
+
 @broker.task("server.prepare")
 async def server_prepare(task_id: str) -> None:
     """Бутстрап управления: завести управляющего пользователя + положить ключ.
@@ -253,15 +321,32 @@ async def server_prepare(task_id: str) -> None:
             # добавит post-bootstrap step с management-сессией — флаги уже
             # правильные.
             ssh_client.apply_session_hints(creds, payload)
+            # Перед хардингом sshd worker проверяет, что вход по управляющему
+            # ключу реально работает (анти-локаут) — для этого нужен путь к
+            # приватному ключу из конфига. Если ключа в конфиге нет, проверка
+            # и хардинг пропускаются (dev/test без mounted secret).
             await ssh_client.bootstrap_management_user(
                 creds, server_id,
                 management_user=management_user,
                 public_key=public_key,
+                management_private_key_path=settings.ssh_management_private_key_path or None,
+                harden_sshd=settings.ssh_harden_after_prepare,
             )
             # Маркер ставим ДО callback'а — если callback упадёт, retry
             # увидит маркер и пропустит SSH-шаг, даже если TTL bootstrap-
             # кред истёк.
             await _mark_bootstrap_succeeded(task_id)
+
+            # Завести все привязанные к серверу аккаунты сразу на этапе
+            # prepare. Сервер уже фактически управляемый (ключ проверен), поэтому
+            # провизионим под управляющей сессией по ключу. Креды аккаунтов
+            # (password + ssh keypair + атрибуты) server_service кладёт в тот же
+            # Redis-stash, что и bootstrap — в payload едет только ссылка.
+            await _provision_linked_accounts(
+                server_id, management_user,
+                linked_accounts=bootstrap.get("linked_accounts") or [],
+                payload=payload,
+            )
 
         await server_service_client.submit_prepared(
             server_id, management_user, target_dept,

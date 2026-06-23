@@ -595,3 +595,125 @@ class TestScrubPasswordEcho:
             "error for ops: bad", "secret", login=None,
         )
         assert "ops:" in scrubbed
+
+
+class TestBootstrapHardening:
+    """Анти-локаут + sshd-хардинг в `bootstrap_management_user`.
+
+    Когда задан `management_private_key_path`, после установки ключа worker
+    открывает отдельную key-сессию под управляющим пользователем и проверяет
+    её живым `true`. `harden_sshd=True` затем кладёт drop-in и reload'ит sshd —
+    но только при успешной проверке ключа (иначе пароль остаётся включён).
+    """
+
+    _PUBKEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabc dbos"
+
+    def _bootstrap_conn(self):
+        # 5 команд happy-path bootstrap'а (юзера нет): getent, getent,
+        # useradd, sudoers, authorized_keys.
+        return _make_fake_conn(run_results=[
+            _run_result("", "", 2),
+            _run_result("", "", 2),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+        ])
+
+    async def test_key_verify_then_harden_and_reload(self, monkeypatch):
+        bootstrap_conn = self._bootstrap_conn()
+        # verify-сессия: один `true` rc=0.
+        verify_conn = _make_fake_conn(run_results=[_run_result("", "", 0)])
+        # harden-сессия повторно использует bootstrap_conn (тот же SshClient):
+        # дописываем к нему результаты harden (rc=0) + reload (rc=0 на первом
+        # механизме). bootstrap_conn.run уже сконфигурён side_effect-списком,
+        # поэтому добавляем элементы заново через новый conn для harden-шагов.
+        # Проще: первый asyncssh.connect → bootstrap_conn (используется и для
+        # harden/reload), второй connect → verify_conn.
+        bootstrap_conn.run = AsyncMock(side_effect=[
+            _run_result("", "", 2),   # getent (outer)
+            _run_result("", "", 2),   # getent (create_user)
+            _run_result("", "", 0),   # useradd
+            _run_result("", "", 0),   # sudoers
+            _run_result("", "", 0),   # authorized_keys
+            _run_result("", "", 0),   # harden drop-in (sshd -t ok)
+            _run_result("", "", 0),   # reload (systemctl ok)
+        ])
+        connects = [bootstrap_conn, verify_conn]
+        monkeypatch.setattr(
+            asyncssh, "connect",
+            AsyncMock(side_effect=lambda *a, **kw: connects.pop(0)),
+        )
+        async with SshClient("h", "boot", "boot-pwd") as ssh:
+            await ssh.bootstrap_management_user(
+                "dbos", self._PUBKEY,
+                management_private_key_path="/secrets/key",
+                harden_sshd=True,
+            )
+        # verify-сессия выполнила ровно `true`.
+        assert verify_conn.run.await_args_list[0].args[0] == "true"
+        # harden-команда содержит drop-in путь и validate-шаг ($sshd_bin -t).
+        harden_cmd = bootstrap_conn.run.await_args_list[5].args[0]
+        assert "/etc/ssh/sshd_config.d/dbos-dbos.conf" in harden_cmd
+        assert '"$sshd_bin" -t' in harden_cmd
+        # PasswordAuthentication no едет на stdin (не в командную строку).
+        harden_stdin = bootstrap_conn.run.await_args_list[5].kwargs["input"]
+        assert "PasswordAuthentication no" in harden_stdin
+        assert "PermitRootLogin no" in harden_stdin
+
+    async def test_key_verify_failure_blocks_hardening(self, monkeypatch):
+        bootstrap_conn = self._bootstrap_conn()
+        connects = [bootstrap_conn]
+        # verify-коннект падает auth'ом — sshd не должен быть тронут.
+        def _connect(*a, **kw):
+            if connects:
+                return connects.pop(0)
+            raise asyncssh.PermissionDenied("no")
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(side_effect=_connect))
+        async with SshClient("h", "boot", "boot-pwd") as ssh:
+            with pytest.raises(SshError) as ei:
+                await ssh.bootstrap_management_user(
+                    "dbos", self._PUBKEY,
+                    management_private_key_path="/secrets/key",
+                    harden_sshd=True,
+                )
+        assert ei.value.error_code == "SSH_MANAGEMENT_KEY_VERIFY_FAILED"
+        # Только 5 bootstrap-команд — ни harden, ни reload не дёргались.
+        assert bootstrap_conn.run.await_count == 5
+
+    async def test_no_key_path_skips_verify_and_harden(self, monkeypatch):
+        bootstrap_conn = self._bootstrap_conn()
+        monkeypatch.setattr(
+            asyncssh, "connect", AsyncMock(return_value=bootstrap_conn),
+        )
+        async with SshClient("h", "boot", "boot-pwd") as ssh:
+            # Без management_private_key_path verify/harden пропускаются даже
+            # при harden_sshd=True (нельзя выключать пароль вслепую).
+            await ssh.bootstrap_management_user(
+                "dbos", self._PUBKEY, harden_sshd=True,
+            )
+        assert bootstrap_conn.run.await_count == 5
+
+    async def test_harden_validation_failure_raises(self, monkeypatch):
+        bootstrap_conn = self._bootstrap_conn()
+        verify_conn = _make_fake_conn(run_results=[_run_result("", "", 0)])
+        bootstrap_conn.run = AsyncMock(side_effect=[
+            _run_result("", "", 2),
+            _run_result("", "", 2),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+            _run_result("", "bad config", 90),  # sshd -t отбил drop-in
+        ])
+        connects = [bootstrap_conn, verify_conn]
+        monkeypatch.setattr(
+            asyncssh, "connect",
+            AsyncMock(side_effect=lambda *a, **kw: connects.pop(0)),
+        )
+        async with SshClient("h", "boot", "boot-pwd") as ssh:
+            with pytest.raises(SshError) as ei:
+                await ssh.bootstrap_management_user(
+                    "dbos", self._PUBKEY,
+                    management_private_key_path="/secrets/key",
+                    harden_sshd=True,
+                )
+        assert ei.value.error_code == "SSH_HARDEN_FAILED"

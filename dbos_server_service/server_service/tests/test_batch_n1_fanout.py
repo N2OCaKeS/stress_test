@@ -246,10 +246,17 @@ class TestEditFanoutBatchLoad:
             s.id for s in servers
         }
 
-        # `fanout_update_on_host` грузит цели одним батчем.
-        # На сам PATCH (без fan-out'а) обращений к `server.get_by_id` нет.
-        assert repo_call_spy["get_many_by_ids"] == 1, (
-            f"ожидался один батч-load в fan-out'е, "
+        # Два батч-load'а, оба по `id IN (...)`, ни одного per-server SELECT:
+        #   1) гейт брони в `update_account` — `_ensure_no_linked_server_reserved`
+        #      грузит привязанные серверы, чтобы до мутации проверить, не занят
+        #      ли какой-то из них чужой бронёй (это происходит в сервис-слое, до
+        #      commit'а);
+        #   2) сам fan-out (`fanout_update_on_host`) грузит present-серверы уже
+        #      после commit'а, в endpoint-слое, по своему фильтру.
+        # Это разные срезы в разных слоях — не дубль одного запроса; N+1 нет
+        # (оба остаются одиночными `id IN`, а не циклом per-server).
+        assert repo_call_spy["get_many_by_ids"] == 2, (
+            f"ожидались два батч-load'а (reserve-гейт + fan-out), "
             f"фактически {repo_call_spy['get_many_by_ids']}"
         )
         assert repo_call_spy["get_by_id"] == 0

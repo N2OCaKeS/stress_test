@@ -28,7 +28,7 @@ from src.schemas.server import (
     ServerOsVersionUpdate,
     ServerUpdate,
 )
-from src.services import audit_service, permissions, secrets_service
+from src.services import audit_service, permissions, reservation, secrets_service
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.utils.ids import ipmi_controller_id, server_disk_id, server_id as new_id
 
@@ -512,6 +512,10 @@ async def update_server(
             },
         )
         raise
+    # Бронь гейтит правку карточки: занятый сервер меняет только владелец
+    # брони или админ отдела/сервиса. Проверка после visibility — caller уже
+    # прошёл permission и видит сервер; чужому занятому → 409 SERVER_RESERVED.
+    reservation.ensure_not_reserved_for(identity, obj, action="server.update")
     changes = payload.model_dump(exclude_unset=True, mode="json")
     # storage синхронизируется отдельно (full-replace дочерних строк), а не
     # пишется как колонка в `servers`. `None`/не прислано → диски не трогаем.
@@ -611,6 +615,9 @@ async def delete_server(
             },
         )
         raise
+    # Удаление занятого сервера разрешено только владельцу брони или админу —
+    # иначе чужой тест внезапно теряет железо из-под себя.
+    reservation.ensure_not_reserved_for(identity, obj, action="server.delete")
     department_id = obj.department_id
     hostname = obj.hostname
 
@@ -940,6 +947,9 @@ async def update_os_version(
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
+    # os-sync деструктивен (меняет учтённую версию ОС занятого сервера) — тот
+    # же гейт брони, что и на update/delete.
+    reservation.ensure_not_reserved_for(identity, obj, action="server.update_os_version")
     previous = obj.os_version_id
     try:
         await repo.update(db, obj, {

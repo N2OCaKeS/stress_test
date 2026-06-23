@@ -34,6 +34,7 @@ SERVICE_EVENTS = [
     {"action": "server.view_drift", "description": "Aggregated drift summary read for server (queries loging server_account.drift_detected events)", "default_severity": "INFO"},
     {"action": "server.update", "description": "Server record updated", "default_severity": "INFO"},
     {"action": "server.delete", "description": "Server record deleted", "default_severity": "CRITICAL"},
+    {"action": "server.reservation_denied", "description": "Destructive operation blocked because the server is reserved (busy) by another user and caller is neither the reservation owner nor a department/service admin", "default_severity": "WARNING"},
     # Power-cycle (IPMI/iDRAC/iLO/Redfish) — dispatch to server_worker
     {"action": "server.power_on", "description": "Server power-on dispatched to worker", "default_severity": "WARNING"},
     {"action": "server.power_off", "description": "Server power-off dispatched to worker", "default_severity": "WARNING"},

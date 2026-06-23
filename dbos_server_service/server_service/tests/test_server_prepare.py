@@ -719,12 +719,20 @@ class TestPrepareDispatch:
         call = captured_dispatch[0]
         assert call["task_kind"] == "server.prepare"
         # Логин и расшифрованный пароль аккаунта ушли в Redis-stash.
-        assert call["stored_creds"] == {
-            "bootstrap_login": "dbadmin",
-            "bootstrap_password": "LinkedAcct-Pwd-1!",
-        }
+        assert call["stored_creds"]["bootstrap_login"] == "dbadmin"
+        assert call["stored_creds"]["bootstrap_password"] == "LinkedAcct-Pwd-1!"
+        # Привязанный аккаунт уехал в stash полем `linked_accounts` — worker
+        # заведёт его на сервере сразу на этапе prepare.
+        linked = call["stored_creds"]["linked_accounts"]
+        assert len(linked) == 1
+        assert linked[0]["login"] == "dbadmin"
+        assert linked[0]["password"] == "LinkedAcct-Pwd-1!"
+        # Каждый аккаунт несёт свой свежесгенерированный ssh-keypair.
+        assert linked[0]["ssh_public_key"]
+        assert linked[0]["ssh_private_key"]
         # Пароль не уехал в payload.
         assert "bootstrap_password" not in call["payload"]
+        assert "linked_accounts" not in call["payload"]
 
     async def test_account_mode_requires_view_password(
         self, client, operator_token_a, make_server, make_account,

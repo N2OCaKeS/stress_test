@@ -42,7 +42,7 @@ from src.schemas.ipmi_controller import (
     IpmiPowerStatusCachedResponse,
 )
 from src.schemas.server import ServerTaskDispatchResponse
-from src.services import audit_service, permissions, worker_client
+from src.services import audit_service, permissions, reservation, worker_client
 from src.services import ipmi_controller as ipmi_svc
 from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
@@ -140,6 +140,11 @@ async def _dispatch_power(
                 details={"reason": "no_view_permission"},
             )
         raise
+    # Бронь гейтит power-цикл: занятый сервер power-операцией трогает только
+    # владелец брони или админ. Идёт после visibility/permission, ДО проверок
+    # decommissioned/IPMI — чужому занятому сразу 409 SERVER_RESERVED, без
+    # утечки наличия BMC. Эмит WARNING-аудита — внутри ensure_not_reserved_for.
+    reservation.ensure_not_reserved_for(identity, server, action=audit_action)
     if server.status == ServerStatus.DECOMMISSIONED:
         audit_service.emit(
             audit_action, target_id=server_id, target_type="server",

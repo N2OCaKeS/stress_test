@@ -836,6 +836,9 @@ class SshClient:
 
     async def bootstrap_management_user(
         self, management_user: str, public_key: str,
+        *,
+        management_private_key_path: str | None = None,
+        harden_sshd: bool = False,
     ) -> None:
         """Завести управляющего пользователя DBOS и положить ему публичный ключ.
 
@@ -872,6 +875,18 @@ class SshClient:
         ключу. `public_key` — аргумент для безопасной записи через here-doc на
         stdin (не подставляется в командную строку, чтобы спецсимволы ключа /
         комментария не ломали shell).
+
+        5. Если задан `management_private_key_path` — проверяем, что вход под
+           управляющим пользователем по этому ключу реально работает (новый
+           короткий коннект отдельной сессией). Это анти-локаут: пароль и
+           root-login выключаем ТОЛЬКО после подтверждённого входа по ключу.
+        6. Если `harden_sshd=True` и проверка ключа прошла — кладём drop-in
+           `/etc/ssh/sshd_config.d/<management_user>-dbos.conf`
+           (`PubkeyAuthentication yes`, `PasswordAuthentication no`,
+           `PermitRootLogin no`) и перезагружаем sshd. Основной sshd_config не
+           правим. Если drop-in не подключён в основном конфиге (старый
+           `#Include`) — раскомментируем строку Include, иначе snippet
+           проигнорируется.
         """
         self._validate_login(management_user)
         # Pre-валидируем ключ ДО useradd/sudoers (битый ключ — фейл setup'а
@@ -988,6 +1003,173 @@ class SshClient:
             public_key=public_key,
             truncate=False,
             error_code="SSH_PREPARE_FAILED",
+        )
+
+        # 5. Анти-локаут: до того как трогать парольную аутентификацию, на
+        # отдельной сессии убеждаемся, что вход под управляющим пользователем
+        # по его ключу реально проходит. Если ключ не пускает (sshd запускается
+        # не от root, ключ не совпал, home с неверными правами) — НЕ хардим,
+        # бросаем понятную ошибку, оставляя парольный SSH рабочим.
+        if management_private_key_path:
+            await self._verify_management_key_login(
+                management_user, management_private_key_path,
+            )
+
+        # 6. Хардинг sshd через drop-in. Только после подтверждённого входа по
+        # ключу. Без проверки ключа выше (path не задан) хардить нельзя — иначе
+        # рискуем выключить пароль на сервере, куда ключом не зайти.
+        if harden_sshd and management_private_key_path:
+            await self._harden_sshd(management_user)
+
+    async def _verify_management_key_login(
+        self, management_user: str, private_key_path: str,
+    ) -> None:
+        """Открыть короткую key-сессию под управляющим пользователем.
+
+        Анти-локаут перед sshd-хардингом: bootstrap-сессия идёт под одноразовым
+        паролем, а после хардинга парольный вход выключается — поэтому до
+        выключения пароля нужно убедиться, что ключевой вход уже работает.
+        Делаем независимый коннект (новый `SshClient`) с тем же host/port, но
+        под `management_user` и приватным ключом, выполняем дешёвый `true`.
+
+        На любой провал коннекта/команды — `SshError(
+        SSH_MANAGEMENT_KEY_VERIFY_FAILED)` с actionable-сообщением; sshd при
+        этом не тронут, парольный доступ остаётся.
+        """
+        try:
+            async with SshClient(
+                host=self.host,
+                username=management_user,
+                password=None,
+                port=self.port,
+                timeout=self.timeout,
+                client_keys=[private_key_path],
+            ) as verify_ssh:
+                rc, _out, _err = await verify_ssh.run("true")
+        except SshError as exc:
+            raise SshError(
+                error_code="SSH_MANAGEMENT_KEY_VERIFY_FAILED",
+                host=self.host,
+                cmd_sanitized=f"verify key login <{management_user}>",
+                message=(
+                    "key-based login as the management user did not work after "
+                    "bootstrap; refusing to disable password auth (anti-lockout)"
+                ),
+                details={"underlying_error_code": exc.error_code},
+            ) from exc
+        if rc != 0:
+            raise SshError(
+                error_code="SSH_MANAGEMENT_KEY_VERIFY_FAILED",
+                host=self.host,
+                cmd_sanitized=f"verify key login <{management_user}>",
+                returncode=rc,
+                message=(
+                    "management key login session returned non-zero; refusing "
+                    "to disable password auth (anti-lockout)"
+                ),
+            )
+
+    async def _harden_sshd(self, management_user: str) -> None:
+        """Положить hardening drop-in в `/etc/ssh/sshd_config.d/` и reload sshd.
+
+        Снаружи основной `sshd_config` не правим — кладём отдельный snippet
+        `<management_user>-dbos.conf` с `PubkeyAuthentication yes`,
+        `PasswordAuthentication no`, `PermitRootLogin no`. Имя файла берёт
+        управляющего пользователя как уникальный суффикс (он уже прошёл
+        `_validate_login`, поэтому безопасен для подстановки в путь).
+
+        Перед записью убеждаемся, что drop-in вообще подключён: на части
+        дистрибутивов строка `Include /etc/ssh/sshd_config.d/*.conf` в основном
+        конфиге закомментирована — без неё snippet прочитан не будет.
+        Раскомментируем её (idempotent: sed правит только закомментированный
+        вариант).
+
+        Snippet проверяется `sshd -t` ДО reload'а — битый конфиг не катим
+        (иначе sshd не перезапустится и сервер останется без SSH). Reload
+        подбираем по доступному инструменту: `systemctl reload sshd` →
+        `service ssh reload` → `rc-service sshd reload` → `kill -HUP` демона.
+        """
+        # Snippet идёт на stdin `tee`, не в командную строку. Сначала пишем во
+        # временный файл, валидируем `sshd -t` против собранного конфига и
+        # только при успехе перемещаем на место. `management_user` уже прошёл
+        # `_validate_login`, путь безопасен.
+        dropin_path = f"/etc/ssh/sshd_config.d/{management_user}-dbos.conf"
+        snippet = (
+            "# Managed by DBOS prepare. Do not edit by hand.\n"
+            "PubkeyAuthentication yes\n"
+            "PasswordAuthentication no\n"
+            "PermitRootLogin no\n"
+        )
+        # Раскомментировать Include, проверить конфиг, переместить snippet.
+        # `sshd -t` читает основной конфиг (с уже подключённым drop-in каталогом
+        # через временно положенный файл) — кладём snippet во временный путь
+        # ВНУТРИ sshd_config.d, валидируем, при провале сносим его.
+        rc, _out, stderr = await self.run(
+            "bash -c 'set -e; "
+            'mkdir -p /etc/ssh/sshd_config.d; '
+            # Раскомментировать Include, если он закомментирован (idempotent).
+            'if grep -qE "^[[:space:]]*#[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config.d/\\*\\.conf" /etc/ssh/sshd_config; then '
+            'sed -i -E "s|^[[:space:]]*#[[:space:]]*(Include[[:space:]]+/etc/ssh/sshd_config.d/\\*\\.conf)|\\1|" /etc/ssh/sshd_config; '
+            'fi; '
+            f'tmp="{dropin_path}.tmp"; '
+            'cat > "$tmp"; chmod 644 "$tmp"; '
+            # Валидируем собранный конфиг; tmp с расширением .tmp не матчит
+            # *.conf, поэтому в сборку он не попадёт — валидируем целевой,
+            # подменив атомарно и откатив при провале.
+            f'mv "$tmp" {dropin_path}; chmod 644 {dropin_path}; '
+            # Бинарь sshd называется по-разному: `sshd` на Debian/Astra/RHEL,
+            # `sshd.pam` на linuxserver/Alpine-сборках. Берём первый доступный
+            # в PATH или из стандартных каталогов; если ни одного нет — пропускаем
+            # validate (config уже синтаксически наш, валидатора на боксе нет).
+            'sshd_bin=""; '
+            'for c in sshd sshd.pam /usr/sbin/sshd /usr/sbin/sshd.pam; do '
+            'if command -v "$c" >/dev/null 2>&1; then sshd_bin="$c"; break; fi; done; '
+            'if [ -n "$sshd_bin" ]; then '
+            f'if ! "$sshd_bin" -t 2>/tmp/dbos_sshd_test_err; then rm -f {dropin_path}; '
+            'cat /tmp/dbos_sshd_test_err >&2; exit 90; fi; '
+            'fi\'',
+            sudo=True,
+            stdin_payload=snippet,
+        )
+        if rc != 0:
+            raise SshError(
+                error_code="SSH_HARDEN_FAILED",
+                host=self.host,
+                cmd_sanitized=f"harden sshd <{management_user}>",
+                returncode=rc,
+                stderr=stderr.strip(),
+                message=(
+                    "sshd hardening snippet failed validation (sshd -t); "
+                    "password auth left enabled"
+                ),
+            )
+        await self._reload_sshd(management_user)
+
+    async def _reload_sshd(self, management_user: str) -> None:
+        """Перечитать конфиг sshd, перебрав доступные механизмы reload'а.
+
+        Reload (а не restart) не рвёт активные сессии. Пробуем по порядку
+        `systemctl` (systemd), `service` (SysV/Debian), `rc-service`
+        (OpenRC/Alpine), затем fallback на `kill -HUP` мастер-процесса sshd.
+        Первый, вернувший rc=0, выигрывает. Если ни один не сработал — конфиг
+        уже валиден (прошёл `sshd -t`) и применится при следующем старте sshd,
+        поэтому не валим prepare, а пишем warning.
+        """
+        reload_cmds = (
+            "systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null",
+            "service sshd reload 2>/dev/null || service ssh reload 2>/dev/null",
+            "rc-service sshd reload 2>/dev/null",
+            # Fallback: HUP мастер-процессу. pidof покрывает и sshd, и sshd.pam.
+            "bash -c 'pid=$(cat /run/sshd.pid 2>/dev/null || pidof sshd sshd.pam 2>/dev/null | tr \" \" \"\\n\" | head -1); "
+            'if [ -n "$pid" ]; then kill -HUP "$pid"; else exit 1; fi\'',
+        )
+        for cmd in reload_cmds:
+            rc, _out, _err = await self.run(cmd, sudo=True)
+            if rc == 0:
+                return
+        logger.warning(
+            "sshd reload did not succeed on %s after hardening; config is "
+            "valid and will apply on next sshd start", self.host,
         )
 
     async def _sudo_group_membership(self, login: str) -> set[str]:

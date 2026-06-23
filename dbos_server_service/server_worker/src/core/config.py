@@ -596,6 +596,23 @@ class Settings(BaseSettings):
             "they migrate to the management session."
         ),
     )
+    # После того как управляющий пользователь заведён и вход по его ключу
+    # проверен живым коннектом, prepare хардит sshd через drop-in
+    # /etc/ssh/sshd_config.d/*.conf: выключает парольную аутентификацию и
+    # root-login. Анти-локаут: хардинг идёт ТОЛЬКО после успешной проверки
+    # ключа — если она не прошла, sshd не трогаем. Флаг позволяет отключить
+    # хардинг там, где парольный SSH ещё нужен (например, общий бокс с
+    # ручным доступом оператора по паролю).
+    ssh_harden_after_prepare: bool = Field(
+        default=True,
+        description=(
+            "After the management user is created and key-login is verified, "
+            "drop a sshd hardening snippet (PasswordAuthentication no, "
+            "PermitRootLogin no, PubkeyAuthentication yes) into "
+            "/etc/ssh/sshd_config.d/ and reload sshd. Disabled keeps password "
+            "SSH enabled on the box."
+        ),
+    )
 
     # ── Interactive SSH console (WebSocket bridge) ───────────────────────
     # Долгоживущая PTY-сессия: server_service публикует `start` на

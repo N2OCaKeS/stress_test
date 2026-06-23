@@ -769,3 +769,136 @@ class TestReadBootstrapCredsMalformed:
         # на первом символе (не `v`). Оба сигнала — корректные.
         if isinstance(ei.value, AppException):
             assert ei.value.error_code == "STASH_TOKEN_INVALID"
+
+
+# ── Provisioning привязанных аккаунтов на этапе prepare ──────────────────────
+
+
+class TestPrepareProvisionsLinkedAccounts:
+    """После bootstrap'а prepare заводит все привязанные аккаунты под
+    управляющей key-сессией, переиспользуя `ssh_client.provision_user`.
+    Креды аккаунтов приходят в bootstrap-stash полем `linked_accounts`.
+    """
+
+    async def test_provisions_each_linked_account(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        _set_mgmt_env(monkeypatch)
+        _mock_creds(
+            monkeypatch,
+            {
+                "bootstrap_login": "bootadmin",
+                "bootstrap_password": "Boot1234",
+                "linked_accounts": [
+                    {
+                        "account_id": "acc_1", "login": "appuser",
+                        "password": "AppPw123", "ssh_public_key": "ssh-ed25519 AAAA app",
+                        "ssh_private_key": "PEM", "has_sudo": True,
+                        "unix_groups": ["docker"], "shell": "/bin/bash",
+                        "home_dir": "/home/appuser",
+                    },
+                    {
+                        "account_id": "acc_2", "login": "dbuser",
+                        "password": None, "ssh_public_key": "ssh-ed25519 AAAA db",
+                        "ssh_private_key": "PEM2", "has_sudo": False,
+                        "unix_groups": [], "shell": None, "home_dir": None,
+                    },
+                    # Битый аккаунт без login'а — должен быть пропущен.
+                    {"account_id": "acc_bad", "login": None},
+                ],
+            },
+        )
+
+        provision_calls = []
+
+        async def fake_provision(credentials, server_id, **kwargs):
+            provision_calls.append((credentials, server_id, kwargs))
+            return {"provisioned": True}
+
+        monkeypatch.setattr(
+            "src.tasks.prepare.ssh_client.provision_user", fake_provision,
+        )
+
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_prov",
+            payload={
+                "server_id": "srv_prov",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_prov",
+                "host": "10.0.0.9",
+                "ssh_port": 2222,
+            },
+        )
+        conn = _conn(_bootstrap_seq())
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # Два валидных аккаунта заведены, битый пропущен.
+        assert len(provision_calls) == 2
+        logins = {c[2]["login"] for c in provision_calls}
+        assert logins == {"appuser", "dbuser"}
+        for creds, sid, kwargs in provision_calls:
+            assert sid == "srv_prov"
+            # Управляющая key-сессия под management_user.
+            assert creds["is_managed"] is True
+            assert creds["management_user"] == "dbos"
+            assert creds["host"] == "10.0.0.9"
+            assert kwargs["force_replace"] is True
+        # Пароль/ключ прокидываются корректно.
+        by_login = {c[2]["login"]: c[2] for c in provision_calls}
+        assert by_login["appuser"]["new_password"] == "AppPw123"
+        assert by_login["appuser"]["has_sudo"] is True
+        assert by_login["dbuser"]["new_password"] is None
+        assert by_login["dbuser"]["public_key"] == "ssh-ed25519 AAAA db"
+
+        get_settings.cache_clear()
+
+    async def test_no_linked_accounts_is_noop(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        _set_mgmt_env(monkeypatch)
+        _mock_creds(
+            monkeypatch,
+            {"bootstrap_login": "bootadmin", "bootstrap_password": "Boot1234"},
+        )
+        called = []
+
+        async def fake_provision(*a, **kw):
+            called.append(1)
+            return {"provisioned": True}
+
+        monkeypatch.setattr(
+            "src.tasks.prepare.ssh_client.provision_user", fake_provision,
+        )
+
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_noacc",
+            payload={
+                "server_id": "srv_noacc",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_noacc",
+            },
+        )
+        conn = _conn(_bootstrap_seq())
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert called == []
+
+        get_settings.cache_clear()

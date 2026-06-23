@@ -88,6 +88,7 @@ from src.schemas.server_account import (
 from src.services import (
     audit_service,
     permissions,
+    reservation,
     server_account as account_svc,
     worker_client,
 )
@@ -477,6 +478,9 @@ async def _dispatch_account_on_host(
         action=action, audit_action=audit_action, operation=operation,
         acl_action=acl_action,
     )
+    # Бронь: правка/снос OS-пользователя на хосте — деструктив. На занятом
+    # чужим сервере разрешаем только владельцу брони или админу.
+    reservation.ensure_not_reserved_for(identity, server, action=audit_action)
 
     idempotency_key = read_idempotency_key(request)
     payload = _build_account_task_payload(
@@ -580,6 +584,9 @@ async def _dispatch_account_provision(
         action=Action.PROVISION, audit_action=audit_action, operation=operation,
         check_decommissioned=False, acl_action=Action.PROVISION,
     )
+    # Бронь: создание OS-пользователя на хосте — деструктив. На занятом
+    # чужим сервере разрешаем только владельцу брони или админу.
+    reservation.ensure_not_reserved_for(identity, server, action=audit_action)
 
     idempotency_key = read_idempotency_key(request)
     # Pre-check Idempotency-Key до любой generation creds. Если клиент
@@ -1442,6 +1449,33 @@ async def server_prepare_dispatch(
         ssh_private_key = body.ssh_private_key()
         if ssh_private_key is not None:
             bootstrap_creds["bootstrap_ssh_private_key"] = ssh_private_key
+
+    # Привязанные к серверу аккаунты worker должен завести сразу на этапе
+    # prepare. Собираем их креды (password + ssh keypair + управляемые
+    # атрибуты) здесь и кладём в тот же bootstrap-stash — в payload едет
+    # только ссылка, plaintext в worker-БД не оседает. `ensure_provision_credentials`
+    # генерит недостающие секреты (sticky по каждому) и помечает их
+    # pending_apply — callback `submit_prepared` сам по себе их не подтверждает,
+    # но это не хуже обычного provision-dispatch'а: следующий явный provision/
+    # inventory приведёт состояние в актуальное. Discovered-аккаунт без пароля
+    # заводим с ключом и без chpasswd.
+    linked_accounts_payload: list[dict] = []
+    linked_accounts = await account_repo.list_for_server(db, server_id)
+    for acc in linked_accounts:
+        _, acc_creds, _ = await account_svc.ensure_provision_credentials(db, acc)
+        linked_accounts_payload.append({
+            "account_id": acc.id,
+            "login": acc.login,
+            "password": acc_creds["password"],
+            "ssh_public_key": acc_creds["ssh_public_key"],
+            "ssh_private_key": acc_creds["ssh_private_key"],
+            "has_sudo": acc.has_sudo,
+            "unix_groups": list(acc.unix_groups),
+            "shell": acc.shell,
+            "home_dir": acc.home_dir,
+        })
+    if linked_accounts_payload:
+        bootstrap_creds["linked_accounts"] = linked_accounts_payload
 
     # Креды НЕ кладём в task-payload (иначе plaintext осел бы в worker-БД).
     # Пишем их в Redis под одноразовый ключ с TTL, в payload — только ссылка.

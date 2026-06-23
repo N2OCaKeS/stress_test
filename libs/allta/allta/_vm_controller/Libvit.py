@@ -104,14 +104,6 @@ EOF
             system_commands.cmd_with_returncode(
                 "sudo update-alternatives --set ip6tables /usr/sbin/ip6tables-nft"
             )
-            # Настраиваем br_netfilter
-            system_commands.cmd_with_returncode("sudo modprobe br_netfilter")
-            system_commands.cmd_with_returncode(
-                "sudo sysctl -w net.bridge.bridge-nf-call-iptables=1"
-            )
-            system_commands.cmd_with_returncode(
-                "sudo sysctl -w net.bridge.bridge-nf-call-ip6tables=1"
-            )
             # Чистим старые правила
             system_commands.cmd_with_returncode(
                 "sudo iptables-legacy -F FORWARD || true"
@@ -175,6 +167,26 @@ EOF
             print("\n\n\nПерезапускаем сервисы...\n\n\n")
             system_commands.cmd_with_returncode("sudo systemctl restart libvirtd")
             system_commands.cmd_with_returncode("sudo systemctl restart docker")
+
+        print("\n\n\nЗакрепляем сетевой фикс моста на постоянку...\n\n\n")
+        # Бриджевый трафик ВМ не должен ходить через iptables FORWARD: после
+        # автозапуска Docker политика FORWARD становится DROP и режет трафик ВМ,
+        # из-за чего после перезагрузки хоста ВМ теряют интернет. Отключаем
+        # bridge-nf и грузим br_netfilter на раннем старте, чтобы значение из
+        # sysctl.d успело примениться до подъёма Docker. Блок выполняется всегда,
+        # в том числе когда мост br0 уже настроен.
+        system_commands.cmd_with_returncode("sudo modprobe br_netfilter")
+        system_commands.cmd_with_returncode(
+            "echo br_netfilter | sudo tee /etc/modules-load.d/br_netfilter.conf >/dev/null"
+        )
+        system_commands.cmd_with_returncode(
+            "printf 'net.bridge.bridge-nf-call-iptables = 0\\n"
+            "net.bridge.bridge-nf-call-ip6tables = 0\\n' "
+            "| sudo tee /etc/sysctl.d/99-libvirt-bridge.conf >/dev/null"
+        )
+        system_commands.cmd_with_returncode(
+            "sudo sysctl -p /etc/sysctl.d/99-libvirt-bridge.conf"
+        )
         return 0
 
     @classmethod

@@ -647,3 +647,142 @@ class TestTaskGetPerUserScope:
         ]
         resp = await client.get(f"{BASE}/tasks/theirs", headers=_hdr(operator))
         assert resp.status_code == 200, resp.text
+
+
+# ── created_by exposure + filter ───────────────────────────────────────────────
+
+class TestTaskCreatedByField:
+    """`created_by` отдаётся наружу и в листинге, и в detail."""
+
+    async def test_created_by_in_list(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="t", target_server_id=srv.id, created_by="usr_init"),
+        ]
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200, resp.text
+        assert resp.json()[0]["created_by"] == "usr_init"
+
+    async def test_created_by_in_detail(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="d", target_server_id=srv.id, created_by="usr_init"),
+        ]
+        resp = await client.get(f"{BASE}/tasks/d", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["created_by"] == "usr_init"
+
+    async def test_created_by_none_for_infra(
+        self, client, admin_role_token_a, fake_worker_read,
+    ):
+        fake_worker_read["rows"] = [
+            _row(id="infra", target_server_id=None, kind="system.heartbeat"),
+        ]
+        resp = await client.get(
+            f"{BASE}/tasks/infra", headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["created_by"] is None
+
+
+class TestTaskListCreatedByFilter:
+    """`?created_by=` накладывается поверх role-scope, видимость не расширяет."""
+
+    async def test_admin_filter_narrows_to_self(
+        self, client, make_token, dept_a, make_server, fake_worker_read,
+    ):
+        admin = make_token(
+            department_id=dept_a, user_id="usr_admin",
+            service_roles={"server_service": ["admin"]},
+        )
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="mine", target_server_id=srv.id, created_by="usr_admin"),
+            _row(id="theirs", target_server_id=srv.id, created_by="usr_other"),
+        ]
+        resp = await client.get(
+            f"{BASE}/tasks?created_by=usr_admin", headers=_hdr(admin),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["X-Total-Count"] == "1"
+        assert {t["id"] for t in resp.json()} == {"mine"}
+
+    async def test_admin_filter_other_user(
+        self, client, make_token, dept_a, make_server, fake_worker_read,
+    ):
+        """admin вправе видеть все задачи отдела — фильтр по чужому инициатору
+        легитимно сужает выдачу до этого инициатора (панель «задачи отдела»)."""
+        admin = make_token(
+            department_id=dept_a, user_id="usr_admin",
+            service_roles={"server_service": ["admin"]},
+        )
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="mine", target_server_id=srv.id, created_by="usr_admin"),
+            _row(id="theirs", target_server_id=srv.id, created_by="usr_other"),
+        ]
+        resp = await client.get(
+            f"{BASE}/tasks?created_by=usr_other", headers=_hdr(admin),
+        )
+        assert resp.status_code == 200, resp.text
+        assert {t["id"] for t in resp.json()} == {"theirs"}
+
+    async def test_reader_filter_self_ok(
+        self, client, make_token, dept_a, make_server, fake_worker_read,
+    ):
+        reader = make_token(
+            department_id=dept_a, user_id="usr_reader",
+            service_roles={"server_service": ["reader"]},
+        )
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="mine", target_server_id=srv.id, created_by="usr_reader"),
+            _row(id="theirs", target_server_id=srv.id, created_by="usr_other"),
+        ]
+        resp = await client.get(
+            f"{BASE}/tasks?created_by=usr_reader", headers=_hdr(reader),
+        )
+        assert resp.status_code == 200, resp.text
+        assert {t["id"] for t in resp.json()} == {"mine"}
+
+    async def test_reader_filter_other_does_not_widen(
+        self, client, make_token, dept_a, make_server, fake_worker_read,
+    ):
+        """reader, спрашивающий чужой created_by, получает пусто — фильтр не
+        может расширить видимость за пределы своих задач."""
+        reader = make_token(
+            department_id=dept_a, user_id="usr_reader",
+            service_roles={"server_service": ["reader"]},
+        )
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="mine", target_server_id=srv.id, created_by="usr_reader"),
+            _row(id="theirs", target_server_id=srv.id, created_by="usr_other"),
+        ]
+        resp = await client.get(
+            f"{BASE}/tasks?created_by=usr_other", headers=_hdr(reader),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["X-Total-Count"] == "0"
+        assert resp.json() == []
+
+    async def test_no_filter_unchanged(
+        self, client, make_token, dept_a, make_server, fake_worker_read,
+    ):
+        """Без фильтра admin видит все задачи отдела — поведение как прежде."""
+        admin = make_token(
+            department_id=dept_a, user_id="usr_admin",
+            service_roles={"server_service": ["admin"]},
+        )
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="mine", target_server_id=srv.id, created_by="usr_admin"),
+            _row(id="theirs", target_server_id=srv.id, created_by="usr_other"),
+        ]
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(admin))
+        assert resp.status_code == 200, resp.text
+        assert {t["id"] for t in resp.json()} == {"mine", "theirs"}

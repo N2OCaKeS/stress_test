@@ -149,11 +149,12 @@ export function usersInventory(
 export function listTasks(
   query: ListTasksQuery = {},
 ): Promise<PaginatedList<TaskRead>> {
-  const { status, kind, server_id, limit = 50, offset = 0 } = query;
+  const { status, kind, server_id, created_by, limit = 50, offset = 0 } = query;
   return listWithTotal<TaskRead>("/server/v1/tasks", {
     status: status || undefined,
     kind: kind || undefined,
     server_id: server_id || undefined,
+    created_by: created_by || undefined,
     limit,
     offset,
   });

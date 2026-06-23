@@ -992,6 +992,7 @@ export interface ListTasksQuery {
   status?: TaskStatus | "";
   kind?: TaskKind | "";
   server_id?: string;
+  created_by?: string;
   limit?: number;
   offset?: number;
 }

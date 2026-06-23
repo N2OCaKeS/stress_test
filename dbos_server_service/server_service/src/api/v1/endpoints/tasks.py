@@ -109,7 +109,9 @@ router = APIRouter(prefix="/tasks")
         "`list[TaskRead]`, общее число под фильтром — в заголовке "
         "`X-Total-Count`.\n\n"
         "Фильтры: `status` (queued/running/succeeded/failed/cancelled — "
-        "`failed` = DLQ-вьюха в UI), `kind` (task_kind), `server_id`. "
+        "`failed` = DLQ-вьюха в UI), `kind` (task_kind), `server_id`, "
+        "`created_by` (user_id инициатора — накладывается поверх role-scope, "
+        "видимость не расширяет: reader всё равно видит только свои). "
         "Пагинация: `limit` (1..200, default 50) + `offset`.\n\n"
         "Доступ: `(task, view)`. Caller видит только задачи серверов своего "
         "отдела; reader без роли `admin`/`operator` (и не department_admin) "
@@ -130,6 +132,14 @@ async def list_tasks_endpoint(
     status: str | None = Query(default=None, description="Фильтр по статусу задачи."),
     kind: str | None = Query(default=None, description="Фильтр по task_kind."),
     server_id: str | None = Query(default=None, description="Фильтр по target_server_id."),
+    created_by: str | None = Query(
+        default=None,
+        description=(
+            "Фильтр по инициатору (user_id). Накладывается поверх role-scope: "
+            "reader видит только свои, привилегированный caller с этим фильтром "
+            "сужает выдачу до конкретного инициатора."
+        ),
+    ),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0, le=100_000),
 ) -> list[TaskRead]:
@@ -140,7 +150,7 @@ async def list_tasks_endpoint(
     ):
         items, total = await tasks_svc.list_tasks(
             db, identity,
-            status=status, kind=kind, server_id=server_id,
+            status=status, kind=kind, server_id=server_id, created_by=created_by,
             limit=limit, offset=offset,
         )
     response.headers["X-Total-Count"] = str(total)

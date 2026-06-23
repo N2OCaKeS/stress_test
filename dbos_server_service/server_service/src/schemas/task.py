@@ -70,6 +70,13 @@ class TaskRead(BaseModel):
             "None для инфра-задач без сервера."
         ),
     )
+    created_by: str | None = Field(
+        default=None,
+        description=(
+            "user_id инициатора задачи (из dev_server_worker.tasks.created_by). "
+            "None у инфра-задач (heartbeat/sweep/cleanup) и dispatch'ей без актора."
+        ),
+    )
     created_at: datetime = Field(description="enqueued_at — момент постановки задачи.")
     started_at: datetime | None = Field(
         default=None, description="Момент старта исполнения (None пока queued).",

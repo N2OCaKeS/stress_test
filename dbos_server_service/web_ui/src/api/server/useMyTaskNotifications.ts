@@ -1,11 +1,10 @@
 /**
  * Поллинг «моих» worker-task'ей для колокола уведомлений в TopBar.
  *
- * Опрашивает `GET /tasks` раз в ~10 секунд. Backend сам сужает выдачу по роли:
- * reader без admin/operator видит только свои задачи, admin/operator —
- * все задачи отдела. Отдельного `created_by`-фильтра у эндпоинта нет, и в
- * `TaskRead` нет поля автора, поэтому строже «только мои» на клиенте отобрать
- * нечем — берём то, что отдал backend в моём scope'е.
+ * Опрашивает `GET /tasks?created_by=<me>` раз в ~10 секунд — колокол показывает
+ * строго мои задачи при любой роли (фильтр пересекается с role-scope на backend,
+ * видимость не расширяет). Все задачи отдела админ смотрит отдельно — в панели
+ * на главной.
  *
  * Когда задача впервые приходит в терминальном статусе (succeeded/failed/
  * cancelled), которого мы по ней ещё не видели, показываем toast и помечаем
@@ -122,7 +121,7 @@ export function useMyTaskNotifications(): MyTaskNotifications {
     let stopped = false;
 
     const tick = () => {
-      listTasks({ limit: FETCH_LIMIT })
+      listTasks({ limit: FETCH_LIMIT, created_by: userId })
         .then((page) => {
           if (stopped || !aliveRef.current) return;
           const mine = page.items;

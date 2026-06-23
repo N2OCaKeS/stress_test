@@ -38,6 +38,33 @@ from src.services import permissions, worker_client
 # тащим — она нужна только в detail. Здесь оставляем компактное summary.
 _RESULT_SUMMARY_MAX_KEYS = 20
 
+# Sentinel: пересечение role-scope и явного created_by-фильтра пусто — caller
+# просит инициатора, которого role-scope ему видеть не разрешает. Отличается
+# от `None` (фильтра нет) — отдельный объект, чтобы не путать с user_id.
+_EMPTY_SCOPE = object()
+
+
+def _intersect_created_by(scope: str | None, requested: str | None):
+    """Пересечь role-scope-ограничение по инициатору с явным фильтром UI.
+
+    `scope` — что разрешает role-scope: конкретный user_id (reader видит
+    только себя) или `None` (привилегированный caller — без ограничения).
+    `requested` — явный `?created_by=` из запроса (или `None`).
+
+    Возврат:
+    * `None` — ограничения по инициатору нет (оба None);
+    * конкретный user_id — фильтруем по нему;
+    * `_EMPTY_SCOPE` — scope и requested противоречат друг другу (reader
+      спросил чужой created_by) → выборка должна быть пустой.
+    """
+    if requested is None:
+        return scope
+    if scope is None:
+        return requested
+    if scope == requested:
+        return scope
+    return _EMPTY_SCOPE
+
 
 def _summarize_result(result):
     """Усечь `task.result` для листинга.
@@ -124,6 +151,7 @@ def _to_task_read(
         server_hostname=server_hostname,
         account_login=account_login,
         department_id=department_id,
+        created_by=row["created_by"],
         created_at=row["enqueued_at"],
         started_at=row["started_at"],
         finished_at=row["completed_at"],
@@ -140,6 +168,7 @@ async def list_tasks(
     status: str | None,
     kind: str | None,
     server_id: str | None,
+    created_by: str | None,
     limit: int,
     offset: int,
 ) -> tuple[list[TaskRead], int]:
@@ -150,6 +179,13 @@ async def list_tasks(
     одного сервера — но только если он входит в видимый набор (чужой/несущест-
     вующий → пустой результат, без утечки факта существования). Поверх отдела
     непривилегированный reader видит только свои задачи (`created_by`).
+
+    Аргумент `created_by` — опциональный фильтр UI по инициатору. Он
+    НАКЛАДЫВАЕТСЯ поверх role-scope, а не расширяет его: для непривилегированного
+    reader'а role-scope уже пинит выборку на его собственный user_id, и
+    запрос чужого `created_by` пересечётся в пусто (видимость не растёт).
+    Привилегированный caller (admin/operator/dept_admin) с `created_by=<me>`
+    получает строго свои задачи, без аргумента — все задачи отдела как прежде.
     """
     await permissions.require_action(db, identity, EntityType.TASK, Action.VIEW)
     if identity.department_id is None:
@@ -158,7 +194,13 @@ async def list_tasks(
     # Reader без admin/operator-роли (и не dept-admin) видит только то, что
     # поставил сам. Привилегированный caller — все задачи отдела.
     own_only = not _sees_all_dept_tasks(identity)
-    created_by = identity.user_id if own_only else None
+    scope_created_by = identity.user_id if own_only else None
+    # Явный фильтр по инициатору пересекается с role-scope (AND), не заменяет
+    # его: reader, спрашивающий чужой created_by, попадает на конфликт двух
+    # разных значений и получает пусто — фильтр не светит чужие задачи.
+    effective_created_by = _intersect_created_by(scope_created_by, created_by)
+    if effective_created_by is _EMPTY_SCOPE:
+        return [], 0
 
     allowed_ids = await server_repo.list_ids_in_departments(db, [identity.department_id])
     if server_id is not None:
@@ -176,7 +218,7 @@ async def list_tasks(
         task_kind=kind,
         server_ids=scoped_ids,
         include_infra=include_infra,
-        created_by=created_by,
+        created_by=effective_created_by,
         limit=limit,
         offset=offset,
     )

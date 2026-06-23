@@ -843,6 +843,31 @@ export interface UnknownUser {
 }
 
 /**
+ * Аккаунт-кандидат на связку для логина из `unlinked_existing`. Login на
+ * аккаунте не уникален в рамках отдела, поэтому на один найденный логин может
+ * прийтись несколько кандидатов — оператор выбирает нужный.
+ */
+export interface UnlinkedExistingCandidate {
+  account_id: string;
+  /** Department кандидата (= department сервера). */
+  department_id: string;
+  /** Происхождение аккаунта: managed / discovered. */
+  source: ServerAccountSource | string;
+}
+
+/**
+ * OS-логин с бокса, под который в отделе сервера УЖЕ есть аккаунт, но он не
+ * привязан к этому серверу. Reconcile его не создаёт и не линкует — связывание
+ * делает оператор из UI. Приезжает в `task.result.unlinked_existing`.
+ */
+export interface UnlinkedExistingUser {
+  login: string;
+  uid: number;
+  /** Существующие аккаунты отдела с этим login'ом (≥1). */
+  candidates: UnlinkedExistingCandidate[];
+}
+
+/**
  * Тело `POST /server-accounts/import` — завести найденного на боксе юзера в БД
  * как discovered-аккаунт (`present_on_server=true`). `source` по умолчанию
  * `discovered`.

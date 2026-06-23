@@ -25,18 +25,21 @@ import {
   AlertCircle,
   Check,
   Search,
+  Link2,
 } from "lucide-react";
 import { useToast } from "@/contexts/ToastContext";
 import { ApiError, apiErrMsg } from "@/api/client";
 import {
   importUnknownUser,
   addIgnoredLogin,
+  bindAccountServers,
 } from "@/api/server/accounts";
 import { usersInventory } from "@/api/server/misc";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import type {
   Server,
   UnknownUser,
+  UnlinkedExistingUser,
   RevisionAccountDiff,
 } from "@/api/server/types";
 
@@ -59,12 +62,22 @@ function ignoreError(e: unknown): string {
   return apiErrMsg(e, "ошибка ignore-list");
 }
 
+function linkError(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 403) return "нет прав на привязку";
+    if (e.status === 404) return "аккаунт или сервер не найдены";
+    if (e.status === 409) return "login занят на сервере другим аккаунтом";
+  }
+  return apiErrMsg(e, "ошибка привязки");
+}
+
 export function OsUsersDiscoveryModal({
   servers,
   serverName,
   onClose,
   onImported,
   onIgnored,
+  onLinked,
 }: {
   servers: Server[];
   serverName: (id: string) => string;
@@ -73,6 +86,8 @@ export function OsUsersDiscoveryModal({
   onImported: () => void;
   /** После добавления хотя бы одного логина в ignore-list. */
   onIgnored: () => void;
+  /** После привязки существующего аккаунта к серверу — refetch списка аккаунтов. */
+  onLinked?: () => void;
 }) {
   const toast = useToast();
   const scan = useTaskOutcome();
@@ -82,6 +97,10 @@ export function OsUsersDiscoveryModal({
   const [modes, setModes] = useState<Record<string, RowMode>>({});
   const [applying, setApplying] = useState(false);
   const [checkLogin, setCheckLogin] = useState("");
+  // Логины из unlinked_existing, уже привязанные в текущем скане — убираем из секции.
+  const [linkedLogins, setLinkedLogins] = useState<Set<string>>(new Set());
+  // Login, по которому сейчас крутится привязка (блокируем его кнопку).
+  const [linkingLogin, setLinkingLogin] = useState<string | null>(null);
 
   const scanResult = scan.tracked?.result;
 
@@ -97,6 +116,18 @@ export function OsUsersDiscoveryModal({
     return Array.isArray(raw) ? (raw as RevisionAccountDiff[]) : [];
   }, [scanResult]);
 
+  const unlinkedExisting = useMemo<UnlinkedExistingUser[]>(() => {
+    if (!scanResult || typeof scanResult !== "object") return [];
+    const raw = (scanResult as { unlinked_existing?: unknown }).unlinked_existing;
+    return Array.isArray(raw) ? (raw as UnlinkedExistingUser[]) : [];
+  }, [scanResult]);
+
+  // То, что ещё не привязали в текущем скане.
+  const pendingUnlinked = useMemo(
+    () => unlinkedExisting.filter((u) => !linkedLogins.has(u.login)),
+    [unlinkedExisting, linkedLogins],
+  );
+
   const polling = scan.tracked?.polling ?? false;
   const scanDone =
     scan.tracked != null &&
@@ -107,9 +138,10 @@ export function OsUsersDiscoveryModal({
     !scan.tracked.polling &&
     (scan.tracked.status === "failed" || scan.tracked.error != null);
 
-  // Новый скан — режимы строк сбрасываем (логины могли смениться).
+  // Новый скан — режимы строк и привязанные логины сбрасываем (могли смениться).
   useEffect(() => {
     setModes({});
+    setLinkedLogins(new Set());
   }, [scan.tracked?.taskId]);
 
   function setMode(login: string, mode: RowMode) {
@@ -193,6 +225,21 @@ export function OsUsersDiscoveryModal({
       }
       return next;
     });
+  }
+
+  async function handleLink(user: UnlinkedExistingUser, accountId: string) {
+    if (linkingLogin || !scannedServer) return;
+    setLinkingLogin(user.login);
+    try {
+      await bindAccountServers(accountId, { server_ids: [scannedServer] });
+      toast.success(`${user.login}: аккаунт привязан к серверу`);
+      setLinkedLogins((prev) => new Set(prev).add(user.login));
+      onLinked?.();
+    } catch (e) {
+      toast.error(`${user.login}: ${linkError(e)}`);
+    } finally {
+      setLinkingLogin(null);
+    }
   }
 
   // Вердикт по введённому логину относительно последнего скана.
@@ -328,6 +375,32 @@ export function OsUsersDiscoveryModal({
               </div>
             )}
 
+            {/* Существующие аккаунты — связать с сервером */}
+            {scanDone && pendingUnlinked.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <div className="text-xs uppercase text-dim">
+                  Существующие аккаунты — связать с сервером (
+                  {pendingUnlinked.length})
+                </div>
+                <div className="text-xs text-dim">
+                  Логины найдены на сервере, а в отделе уже есть аккаунт под них —
+                  он просто не привязан к этому серверу. Свяжите нужный аккаунт,
+                  чтобы его OS-присутствие учитывалось.
+                </div>
+                <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
+                  {pendingUnlinked.map((u) => (
+                    <UnlinkedExistingRow
+                      key={u.login}
+                      user={u}
+                      busy={linkingLogin === u.login}
+                      disabled={linkingLogin != null}
+                      onLink={(accountId) => handleLink(u, accountId)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Проверка конкретного логина */}
             <div className="card flex flex-col gap-2">
               <div className="text-xs uppercase text-dim flex items-center gap-2">
@@ -443,6 +516,63 @@ function UnknownUserRow({
         />
         Пропустить
       </label>
+    </div>
+  );
+}
+
+function UnlinkedExistingRow({
+  user,
+  busy,
+  disabled,
+  onLink,
+}: {
+  user: UnlinkedExistingUser;
+  busy: boolean;
+  disabled: boolean;
+  onLink: (accountId: string) => void;
+}) {
+  const single = user.candidates.length === 1;
+  const [picked, setPicked] = useState<string>(
+    user.candidates[0]?.account_id ?? "",
+  );
+  const target = single ? user.candidates[0]?.account_id ?? "" : picked;
+
+  return (
+    <div className="border border-token rounded px-3 py-2 flex items-center gap-2 flex-wrap">
+      <div className="flex-1 min-w-[160px]">
+        <div className="text-sm mono">{user.login}</div>
+        <div className="text-[11px] text-dim">
+          uid {user.uid}
+          {single
+            ? ` · аккаунт ${user.candidates[0]?.account_id} (${user.candidates[0]?.source})`
+            : ` · кандидатов: ${user.candidates.length}`}
+        </div>
+      </div>
+      {!single && (
+        <select
+          className="surface-2 border border-token rounded px-2 py-1 text-xs min-w-[160px]"
+          value={picked}
+          disabled={disabled}
+          aria-label={`Аккаунт для ${user.login}`}
+          onChange={(e) => setPicked(e.target.value)}
+        >
+          {user.candidates.map((c) => (
+            <option key={c.account_id} value={c.account_id}>
+              {c.account_id} ({c.source})
+            </option>
+          ))}
+        </select>
+      )}
+      <button
+        type="button"
+        className="btn btn-sm btn-primary flex items-center gap-1"
+        disabled={disabled || !target}
+        aria-label={`Связать ${user.login}`}
+        onClick={() => target && onLink(target)}
+      >
+        <Link2 className={`w-3.5 h-3.5 ${busy ? "animate-spin" : ""}`} />
+        {busy ? "Связываем…" : "Связать"}
+      </button>
     </div>
   );
 }

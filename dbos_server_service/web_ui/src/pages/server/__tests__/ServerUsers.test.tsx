@@ -23,6 +23,10 @@ const importUnknownUserMock = vi.fn((_b?: unknown) => new Promise(() => {}));
 const listIgnoredLoginsMock = vi.fn(() => new Promise(() => {}));
 const addIgnoredLoginMock = vi.fn((_b?: unknown) => new Promise(() => {}));
 const removeIgnoredLoginMock = vi.fn((_l?: unknown) => new Promise(() => {}));
+const revealSshPrivateKeyMock = vi.fn((_id?: unknown) => new Promise(() => {}));
+const bindAccountServersMock = vi.fn(
+  (_id?: unknown, _b?: unknown) => new Promise(() => {}),
+);
 vi.mock("@/api/server/accounts", () => ({
   get listAccounts() {
     return listAccountsMock;
@@ -47,6 +51,12 @@ vi.mock("@/api/server/accounts", () => ({
   },
   get removeIgnoredLogin() {
     return removeIgnoredLoginMock;
+  },
+  get revealAccountSshPrivateKey() {
+    return revealSshPrivateKeyMock;
+  },
+  get bindAccountServers() {
+    return bindAccountServersMock;
   },
 }));
 
@@ -136,6 +146,8 @@ describe("ServerUsers (fleet account list)", () => {
     listIgnoredLoginsMock.mockReset();
     addIgnoredLoginMock.mockReset();
     removeIgnoredLoginMock.mockReset();
+    revealSshPrivateKeyMock.mockReset();
+    bindAccountServersMock.mockReset();
     listUsersByDepartmentMock.mockReset();
     resolveUserMock.mockReset();
     usersInventoryMock.mockReset();
@@ -149,6 +161,8 @@ describe("ServerUsers (fleet account list)", () => {
     listIgnoredLoginsMock.mockReturnValue(new Promise(() => {}));
     addIgnoredLoginMock.mockReturnValue(new Promise(() => {}));
     removeIgnoredLoginMock.mockReturnValue(new Promise(() => {}));
+    revealSshPrivateKeyMock.mockReturnValue(new Promise(() => {}));
+    bindAccountServersMock.mockReturnValue(new Promise(() => {}));
     listUsersByDepartmentMock.mockReturnValue(new Promise(() => {}));
     resolveUserMock.mockReturnValue(new Promise(() => {}));
     usersInventoryMock.mockReturnValue(new Promise(() => {}));
@@ -314,6 +328,47 @@ describe("ServerUsers (fleet account list)", () => {
     expect(arg).toMatchObject({ login: "new-svc", server_ids: ["srv1"] });
   });
 
+  it("показывает fingerprint ключа и скачивает приватный ключ по кнопке", async () => {
+    listServersMock.mockResolvedValue({
+      items: [{ id: "srv1", display_name: "alpha", hostname: "alpha.local" }],
+      total: 1,
+    });
+    listAccountsMock.mockResolvedValue({
+      items: [
+        {
+          ...FAKE_ACCOUNT,
+          ssh_public_key: "ssh-ed25519 AAAAC3Nz key",
+          ssh_key_fingerprint: "SHA256:abc123def",
+        },
+      ],
+      total: 1,
+      limit: 200,
+      offset: 0,
+    });
+    revealSshPrivateKeyMock.mockResolvedValue({
+      id: "acc1",
+      login: "dbos-svc",
+      ssh_private_key: "-----BEGIN OPENSSH PRIVATE KEY-----\nzzz\n-----END-----",
+      ssh_public_key: "ssh-ed25519 AAAAC3Nz key",
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByText("dbos-svc"));
+
+    // Fingerprint виден в секции SSH-ключа.
+    expect(await screen.findByText("SHA256:abc123def")).toBeInTheDocument();
+
+    // Кнопка скачивания приватного ключа есть у держателя view_password (dep_admin).
+    const dl = await screen.findByRole("button", {
+      name: /Скачать приватный ключ/,
+    });
+    fireEvent.click(dl);
+
+    await waitFor(() => {
+      expect(revealSshPrivateKeyMock).toHaveBeenCalledWith("acc1");
+    });
+  });
+
   it("показывает кнопку «Поиск на ОС» для оператора/менеджера", async () => {
     selectAccount();
     renderPage();
@@ -361,5 +416,57 @@ describe("ServerUsers (fleet account list)", () => {
     expect(await d.findByText("ghost")).toBeInTheDocument();
     expect(d.getByLabelText(/Добавить ghost/)).toBeInTheDocument();
     expect(d.getByLabelText(/Игнорировать ghost/)).toBeInTheDocument();
+  });
+
+  it("discovery-модалка рендерит unlinked_existing и клик «Связать» зовёт bindAccountServers", async () => {
+    selectAccount();
+    usersInventoryMock.mockResolvedValue({ task_id: "tsk10", status: "queued" });
+    getTaskMock.mockResolvedValue({
+      id: "tsk10",
+      kind: "users.inventory",
+      status: "succeeded",
+      created_at: "2026-01-01T00:00:00Z",
+      retry_count: 0,
+      result: {
+        unknown_users: [],
+        diffs: [],
+        unlinked_existing: [
+          {
+            login: "svc-old",
+            uid: 1700,
+            candidates: [
+              {
+                account_id: "acc-existing",
+                department_id: "dep1",
+                source: "managed",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    bindAccountServersMock.mockResolvedValue({ ...FAKE_ACCOUNT, id: "acc-existing" });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Поиск на ОС/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    const d = within(dialog);
+    fireEvent.click(d.getByRole("button", { name: /Сканировать/ }));
+
+    // Секция «Существующие аккаунты — связать с сервером» и строка логина.
+    expect(
+      await d.findByText(/Существующие аккаунты — связать с сервером/),
+    ).toBeInTheDocument();
+    expect(d.getByText("svc-old")).toBeInTheDocument();
+
+    // Клик «Связать» дёргает bindAccountServers с server_id отсканированного сервера.
+    fireEvent.click(d.getByRole("button", { name: /Связать svc-old/ }));
+    await waitFor(() => {
+      expect(bindAccountServersMock).toHaveBeenCalledTimes(1);
+    });
+    expect(bindAccountServersMock).toHaveBeenCalledWith("acc-existing", {
+      server_ids: ["srv1"],
+    });
   });
 });

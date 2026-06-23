@@ -284,6 +284,32 @@ export function rotateAccountSshKey(
   );
 }
 
+/** Ответ reveal'а приватного SSH-ключа (`GET .../ssh_private_key`). */
+export interface SshPrivateKeyReveal {
+  id: string;
+  login: string;
+  /** Plaintext приватного ключа в PEM. */
+  ssh_private_key: string;
+  ssh_public_key: string | null;
+}
+
+/**
+ * Скачать (раскрыть) сохранённый приватный SSH-ключ аккаунта.
+ *
+ * Гейтится тем же `view_password`, что и reveal пароля. Доступен только для
+ * сгенерированных сервером ключей — у `supply`-ключа приватной части нет:
+ * 404 `ACCOUNT_NO_SSH_PRIVATE_KEY`. Раскрытие пишет CRITICAL audit и режется
+ * per-IP+account reveal-rate-limit'ом (429). Сломанный ciphertext → 500
+ * `DECRYPT_FAILED`.
+ */
+export function revealAccountSshPrivateKey(
+  accountId: string,
+): Promise<SshPrivateKeyReveal> {
+  return apiGet<SshPrivateKeyReveal>(
+    `${BASE}/server-accounts/${accountId}/ssh_private_key`,
+  );
+}
+
 export type { SshKeyMode };
 
 // ---------------------------------------------------------------------------

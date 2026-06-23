@@ -578,6 +578,7 @@ export function ServerUsers() {
           onClose={() => setDiscovering(false)}
           onImported={() => accountsQ.refetch()}
           onIgnored={() => {}}
+          onLinked={() => accountsQ.refetch()}
         />
       )}
     </Shell>
@@ -1316,6 +1317,7 @@ function AccountWorkzone({
         <SshKeySection
           account={account}
           canOperate={canOperate}
+          canReveal={canReveal}
           onChanged={onChanged}
         />
 
@@ -2392,10 +2394,13 @@ function PasswordRevealCard({
 function SshKeySection({
   account,
   canOperate,
+  canReveal,
   onChanged,
 }: {
   account: ServerAccount;
   canOperate: boolean;
+  /** view_password — держатель может скачать сохранённый приватный ключ. */
+  canReveal: boolean;
   onChanged: () => void;
 }) {
   const toast = useToast();
@@ -2405,9 +2410,38 @@ function SshKeySection({
   const [choice, setChoice] = useState<SshKeyMode>("generate");
   const [pubKey, setPubKey] = useState("");
   const [pending, setPending] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [result, setResult] = useState<SshKeyResponse | null>(null);
 
   const hasKey = !!account.ssh_key_fingerprint || !!account.ssh_public_key;
+
+  // Скачать сохранённый приватный ключ (для сгенерированных сервером пар).
+  // Если ключа в хранилище нет (supply / нет ключа) — backend отдаёт 404,
+  // показываем понятную причину.
+  async function handleDownloadPrivate() {
+    if (downloading || !canReveal) return;
+    setDownloading(true);
+    try {
+      const res = await accountsApi.revealAccountSshPrivateKey(account.id);
+      downloadText(`${account.login}_id_ed25519.pem`, res.ssh_private_key);
+      toast.success("Приватный ключ скачан");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        toast.error(
+          "Приватный ключ недоступен: ключ был передан как публичный (supply) или не выдавался.",
+        );
+      } else if (e instanceof ApiError && e.status === 429) {
+        const secs = e.retryAfter ?? 60;
+        toast.error(`Reveal-лимит: повторите через ${secs} сек`);
+      } else if (e instanceof ApiError && e.status === 403) {
+        toast.error("Недостаточно прав: нужен view_password.");
+      } else {
+        toast.error(apiErrMsg(e, "Не удалось скачать приватный ключ"));
+      }
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   function reset() {
     setMode(null);
@@ -2487,6 +2521,18 @@ function SshKeySection({
               <KeySquare className="w-3.5 h-3.5" />{" "}
               {hasKey ? "Заменить ключ" : "Добавить ключ"}
             </button>
+            {hasKey && canReveal && (
+              <button
+                type="button"
+                className="btn btn-sm flex items-center gap-1"
+                disabled={downloading}
+                title="Скачать сохранённый приватный ключ (.pem). Требует view_password."
+                onClick={handleDownloadPrivate}
+              >
+                <Download className="w-3.5 h-3.5" />{" "}
+                {downloading ? "Скачиваем…" : "Скачать приватный ключ"}
+              </button>
+            )}
             {hasKey && (
               <button
                 type="button"

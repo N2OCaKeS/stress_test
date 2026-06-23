@@ -419,16 +419,6 @@ export function ServerUsers() {
               <EyeOff className="w-3.5 h-3.5" /> Игнор-лист
             </button>
           )}
-          {canManage && (
-            <button
-              type="button"
-              className="btn btn-sm btn-primary flex items-center gap-1 shrink-0"
-              onClick={() => setCreating(true)}
-              title="Создать новый server_account"
-            >
-              <Plus className="w-3.5 h-3.5" /> Создать пользователя
-            </button>
-          )}
         </div>
         <div className="mt-2 flex items-center gap-2 text-xs text-dim flex-wrap">
           <span>Сервер:</span>
@@ -523,6 +513,19 @@ export function ServerUsers() {
           </>
         )}
       </div>
+
+      {canManage && (
+        <div className="border-t border-token p-3 shrink-0">
+          <button
+            type="button"
+            className="btn btn-primary w-full flex items-center justify-center gap-2"
+            onClick={() => setCreating(true)}
+            title="Создать новый server_account"
+          >
+            <Plus className="w-4 h-4" /> Создать пользователя
+          </button>
+        </div>
+      )}
     </aside>
   );
 
@@ -603,7 +606,7 @@ function AccountCreateModal({
   const [groups, setGroups] = useState("");
   const [shell, setShell] = useState("");
   const [password, setPassword] = useState("");
-  const [sshChoice, setSshChoice] = useState<SshKeyChoice>("none");
+  const [sshChoice, setSshChoice] = useState<SshKeyChoice>("generate");
   const [sshPublicKey, setSshPublicKey] = useState("");
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);

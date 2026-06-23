@@ -792,7 +792,7 @@ function RoleEntityCard({
           У сущности нет действий в каталоге.
         </div>
       ) : (
-        <div className="flex flex-col divide-y divide-token border border-token rounded">
+        <div className="flex flex-col divide-y divide-token border border-token rounded overflow-auto max-h-[60vh]">
           {entity.actions.map((a) => {
             const key = `${entity.entity_type}::${role}::${a.action}`;
             const allowed = isAllowed(entity.entity_type, role, a.action);

@@ -260,6 +260,35 @@ class UnknownUserItem(BaseModel):
     shell: str | None = Field(default=None, description="Login shell.")
 
 
+class UnlinkedExistingCandidate(BaseModel):
+    """Один аккаунт-кандидат на связку для логина из `unlinked_existing`.
+
+    Login на ServerAccount не уникален в рамках department'а, поэтому на один
+    обнаруженный логин может прийтись несколько кандидатов — оператор выберет
+    нужный в UI.
+    """
+
+    account_id: str = Field(description="ID существующего аккаунта-кандидата.")
+    department_id: str = Field(description="Department аккаунта (= department сервера).")
+    source: str = Field(description="Происхождение аккаунта: managed / discovered.")
+
+
+class UnlinkedExistingItem(BaseModel):
+    """OS-логин, найденный на боксе, под который в отделе УЖЕ есть аккаунт, но
+    он НЕ привязан к этому серверу.
+
+    Reconcile сюда ничего не линкует и не создаёт — отдаёт оператору, чтобы UI
+    показал модалку «связать существующий аккаунт с сервером». От `unknown_users`
+    отличается тем, что аккаунт-кандидат уже существует.
+    """
+
+    login: str = Field(description="OS-логин на боксе.")
+    uid: int = Field(description="UID пользователя.")
+    candidates: list[UnlinkedExistingCandidate] = Field(
+        description="Существующие аккаунты отдела с этим login'ом (≥1).",
+    )
+
+
 class UsersInventoryCallbackResponse(BaseModel):
     """Сводка reconcile инвентаризации пользователей."""
 
@@ -284,6 +313,15 @@ class UsersInventoryCallbackResponse(BaseModel):
             "НЕ заводит автоматически — оператор решает по карточке сервера: "
             "импортировать (создать аккаунт) или заигнорить. Worker кладёт "
             "список в `task.result`."
+        ),
+    )
+    unlinked_existing: list[UnlinkedExistingItem] = Field(
+        default_factory=list,
+        description=(
+            "OS-логины с бокса, под которые в отделе УЖЕ есть аккаунт, но он "
+            "НЕ привязан к этому серверу. Reconcile НЕ создаёт и НЕ линкует "
+            "автоматически — отдаёт оператору, UI предлагает связать "
+            "существующий аккаунт. Не дрейфит как unknown_login."
         ),
     )
     result_summary: UsersInventoryResultSummary | None = Field(

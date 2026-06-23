@@ -686,6 +686,189 @@ class TestUsersInventoryReconcile:
         assert_error(resp, 422, "VALIDATION_ERROR")
 
 
+@pytest.mark.usefixtures("soft_dept_mode")
+class TestUnlinkedExistingClassification:
+    """Логины с бокса, под которые в отделе уже есть аккаунт, но он не привязан
+    к инвентаризуемому серверу, попадают в отдельную категорию `unlinked_existing`,
+    а не в `unknown_users`. Reconcile ничего не создаёт и не линкует."""
+
+    async def test_existing_unlinked_account_goes_to_unlinked_existing(
+        self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+        captured_emits,
+    ):
+        # Аккаунт "deploy" привязан к ДРУГОМУ серверу того же отдела.
+        other = await make_server(department_id=dept_a, hostname="other.local")
+        acc = await make_account(server_id=other.id, login="deploy")
+        target = await make_server(department_id=dept_a, hostname="target.local")
+        await db.commit()
+
+        payload = {"users": [
+            {"login": "deploy", "uid": 1400, "unix_groups": [], "has_sudo": False},
+        ]}
+        resp = await client.post(
+            f"{BASE_INT}/servers/{target.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        # Не unknown, не present — отдельная категория.
+        assert body["unknown_users"] == []
+        assert body["present"] == 0
+        assert body["created"] == 0
+        # unlinked_existing не дрейфит.
+        assert body["drifted"] == 0
+        assert len(body["unlinked_existing"]) == 1
+        item = body["unlinked_existing"][0]
+        assert item["login"] == "deploy"
+        assert item["uid"] == 1400
+        assert len(item["candidates"]) == 1
+        cand = item["candidates"][0]
+        assert cand["account_id"] == acc.id
+        assert cand["department_id"] == dept_a
+        assert cand["source"] == "managed"
+
+        # Drift unknown_login на этот логин НЕ эмитится.
+        drift_logins = {
+            e["details"]["login"]
+            for e in _events(captured_emits, "server_account.drift_detected")
+        }
+        assert "deploy" not in drift_logins
+
+        await db.commit()
+        # Ничего не создано и не привязано к target.
+        accs = (await db.execute(
+            select(ServerAccount).where(ServerAccount.login == "deploy")
+        )).scalars().all()
+        assert len(accs) == 1
+        links = (await db.execute(
+            select(ServerAccountServer).where(
+                ServerAccountServer.account_id == acc.id,
+                ServerAccountServer.server_id == target.id,
+            )
+        )).scalars().all()
+        assert links == []
+
+    async def test_truly_unknown_login_stays_in_unknown_users(
+        self, client, worker_bot_token_a, make_server, db, dept_a,
+    ):
+        # Под этот login в отделе аккаунта нет вовсе → unknown_users.
+        srv = await make_server(department_id=dept_a)
+        payload = {"users": [
+            {"login": "nobodyhere", "uid": 1401, "unix_groups": [], "has_sudo": False},
+        ]}
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert {u["login"] for u in body["unknown_users"]} == {"nobodyhere"}
+        assert body["unlinked_existing"] == []
+        assert body["drifted"] == 1
+
+    async def test_already_linked_account_in_neither_category(
+        self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+    ):
+        # Аккаунт уже привязан к ЭТОМУ серверу → present, не в unknown и не в
+        # unlinked_existing.
+        srv = await make_server(department_id=dept_a)
+        await make_account(server_id=srv.id, login="app")
+        await db.commit()
+        payload = {"users": [
+            {"login": "app", "uid": 1402, "unix_groups": [], "has_sudo": False},
+        ]}
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["present"] == 1
+        assert body["unknown_users"] == []
+        assert body["unlinked_existing"] == []
+
+    async def test_multiple_candidates_returned_as_list(
+        self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+    ):
+        # Login не уникален в отделе — два аккаунта "svc" на разных серверах.
+        # Оба кандидаты на связку с target → список, без падения.
+        s1 = await make_server(department_id=dept_a, hostname="s1.local")
+        s2 = await make_server(department_id=dept_a, hostname="s2.local")
+        a1 = await make_account(server_id=s1.id, login="svc")
+        a2 = await make_account(server_id=s2.id, login="svc")
+        target = await make_server(department_id=dept_a, hostname="t.local")
+        await db.commit()
+
+        payload = {"users": [
+            {"login": "svc", "uid": 1403, "unix_groups": [], "has_sudo": False},
+        ]}
+        resp = await client.post(
+            f"{BASE_INT}/servers/{target.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["unknown_users"] == []
+        assert len(body["unlinked_existing"]) == 1
+        item = body["unlinked_existing"][0]
+        assert item["login"] == "svc"
+        ids = {c["account_id"] for c in item["candidates"]}
+        assert ids == {a1.id, a2.id}
+
+    async def test_cross_department_account_not_a_candidate(
+        self, client, worker_bot_token_a, make_server, make_account, db,
+        dept_a, dept_b,
+    ):
+        # Аккаунт "shared" живёт в dept_b. Инвентаризуем сервер dept_a с тем же
+        # login'ом → это НЕ кандидат (другой отдел) → unknown_users.
+        srv_b = await make_server(department_id=dept_b, hostname="b.local")
+        await make_account(server_id=srv_b.id, login="shared")
+        target = await make_server(department_id=dept_a, hostname="a.local")
+        await db.commit()
+
+        payload = {"users": [
+            {"login": "shared", "uid": 1404, "unix_groups": [], "has_sudo": False},
+        ]}
+        resp = await client.post(
+            f"{BASE_INT}/servers/{target.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert {u["login"] for u in body["unknown_users"]} == {"shared"}
+        assert body["unlinked_existing"] == []
+        assert body["drifted"] == 1
+
+    async def test_ignored_login_not_in_unlinked_existing(
+        self, client, worker_bot_token_a, admin_role_token_a, make_server,
+        make_account, db, dept_a,
+    ):
+        # Заигнорённый логин пропускается целиком, даже если под него в отделе
+        # есть непривязанный аккаунт.
+        other = await make_server(department_id=dept_a, hostname="o.local")
+        await make_account(server_id=other.id, login="monitoring")
+        target = await make_server(department_id=dept_a, hostname="tt.local")
+        ign = await client.post(
+            f"{ACC_BASE}/ignored-logins",
+            headers=_hdr(admin_role_token_a), json={"login": "monitoring"},
+        )
+        assert ign.status_code == 201, ign.text
+        await db.commit()
+
+        payload = {"users": [
+            {"login": "monitoring", "uid": 1405, "unix_groups": [], "has_sudo": False},
+        ]}
+        resp = await client.post(
+            f"{BASE_INT}/servers/{target.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["unknown_users"] == []
+        assert body["unlinked_existing"] == []
+        assert body["drifted"] == 0
+
+
 ACC_BASE = "/api/server/v1/server-accounts"
 
 

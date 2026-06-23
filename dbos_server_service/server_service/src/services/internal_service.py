@@ -921,10 +921,15 @@ async def receive_users_inventory(
 
     Reconcile (для инвентаризуемого сервера X):
 
-      * найден на X, нет привязанного аккаунта, НЕ в ignore-list'е отдела →
-        discovered-аккаунт НЕ создаётся; логин уходит в `unknown_users` ответа
-        (оператор решает: импортировать или заигнорить). По-прежнему поднимаем
-        drift-сигнал `unknown_login` (на боксе живёт неуправляемый юзер);
+      * найден на X, нет привязанного аккаунта, НЕ в ignore-list'е отдела, но
+        под этот login в ОТДЕЛЕ уже есть аккаунт (просто не привязан к X) →
+        логин уходит в `unlinked_existing` со списком кандидатов; НЕ линкуем и
+        НЕ создаём, drift не поднимаем (оператор свяжет вручную через UI);
+      * найден на X, нет привязанного аккаунта, НЕ в ignore-list'е отдела, и под
+        login аккаунта в отделе вообще нет → discovered-аккаунт НЕ создаётся;
+        логин уходит в `unknown_users` ответа (оператор решает: импортировать
+        или заигнорить). По-прежнему поднимаем drift-сигнал `unknown_login`
+        (на боксе живёт неуправляемый юзер);
       * найден на X, но логин в ignore-list'е отдела → пропускаем целиком (не
         в unknown_users, не дрейфим);
       * есть и там, и в API → пометить связку present + свежий
@@ -989,19 +994,32 @@ async def receive_users_inventory(
     # Батчим выборки на N юзеров: один SELECT по login'ам, один по account_id'ам
     # их связок. Без батча reconcile делает 2·N запросов и проседает на больших
     # инвентаризациях.
+    inventoried_logins = [item.login for item in payload.users]
     existing_by_login = await account_repo.list_accounts_on_server_by_logins(
-        db, server_id, [item.login for item in payload.users],
+        db, server_id, inventoried_logins,
     )
     links_by_account_id = await account_repo.list_links_for_server_by_account_ids(
         db, server_id, [acc.id for acc in existing_by_login.values()],
+    )
+    # Кандидаты на связку: аккаунты этого отдела с тем же login'ом, но НЕ
+    # привязанные к инвентаризуемому серверу. Нужны, чтобы отличить «логин, под
+    # который аккаунт в отделе уже есть» от настоящего unknown. Линковать и
+    # создавать ничего не будем — только классифицируем для ответа.
+    dept_accounts_by_login = await account_repo.list_accounts_in_department_by_logins(
+        db, server.department_id, inventoried_logins,
     )
 
     created = 0
     present = 0
     drifted = 0
-    # Незнакомые юзеры (на боксе есть, не привязаны, не в ignore-list'е).
-    # Возвращаем оператору — discovered-аккаунт больше НЕ заводим автоматически.
+    # Незнакомые юзеры (на боксе есть, не привязаны, не в ignore-list'е,
+    # аккаунта под login в отделе вовсе нет). Возвращаем оператору —
+    # discovered-аккаунт больше НЕ заводим автоматически.
     unknown_users: list[dict] = []
+    # Логины, под которые в отделе УЖЕ есть аккаунт, просто не привязанный к
+    # этому серверу. Inventory сюда ничего не линкует — отдаёт оператору, UI
+    # предложит связать существующий аккаунт с сервером.
+    unlinked_existing: list[dict] = []
     # Дрейф эмитим после commit'а — события best-effort, в транзакцию не входят.
     drift_emits: list[dict] = []
     # Структурированный per-account diff с самими значениями (expected/found)
@@ -1021,7 +1039,27 @@ async def receive_users_inventory(
             # оператор сознательно прячет. Не дрейфим и в unknown_users не кладём.
             if item.login in ignored_logins:
                 continue
-            # Незнакомый юзер: на боксе есть, аккаунта нет, не заигнорен.
+            # На боксе есть, к этому серверу не привязан, не заигнорен.
+            # Если под этот login в отделе УЖЕ есть аккаунт — это не unknown,
+            # а «существующий, но не привязанный»: отдаём отдельной категорией,
+            # чтобы UI предложил связать. Login не уникален в отделе — кандидатов
+            # может быть несколько, отдаём списком, не падаем.
+            candidates = dept_accounts_by_login.get(item.login)
+            if candidates:
+                unlinked_existing.append({
+                    "login": item.login,
+                    "uid": item.uid,
+                    "candidates": [
+                        {
+                            "account_id": acc.id,
+                            "department_id": acc.department_id,
+                            "source": acc.source,
+                        }
+                        for acc in candidates
+                    ],
+                })
+                continue
+            # Настоящий unknown: ни привязки, ни аккаунта под login в отделе.
             # discovered-аккаунт НЕ создаём — отдаём оператору в unknown_users,
             # он сам решит (импорт / игнор). Сигнал drift всё равно поднимаем.
             unknown_users.append({
@@ -1117,6 +1155,8 @@ async def receive_users_inventory(
             "present": present,
             "drifted": drifted,
             "found": len(payload.users),
+            "unknown": len(unknown_users),
+            "unlinked_existing": len(unlinked_existing),
             "department_id": server.department_id,
             "caller_type": identity.subject_type,
         },
@@ -1139,6 +1179,7 @@ async def receive_users_inventory(
         "drifted": drifted,
         "diffs": attr_diffs,
         "unknown_users": unknown_users,
+        "unlinked_existing": unlinked_existing,
         "result_summary": {
             "total_users": len(payload.users),
             "created_discovered": created,

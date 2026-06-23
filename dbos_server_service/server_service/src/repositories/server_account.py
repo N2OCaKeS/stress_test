@@ -345,6 +345,33 @@ async def list_links_for_server_by_account_ids(
     return {link.account_id: link for link in rows}
 
 
+async def list_accounts_in_department_by_logins(
+    db: AsyncSession, department_id: str, logins: list[str]
+) -> dict[str, list[ServerAccount]]:
+    """Аккаунты отдела с указанными login'ами — батчем, без фильтра по серверу.
+
+    Возвращает map ``login → [account, ...]``. В отличие от
+    `list_accounts_on_server_by_logins`, не требует привязки к конкретному
+    серверу: ищет любые аккаунты этого department'а с таким login'ом.
+    Reconcile инвентаризации этим отличает «логин, под которым в отделе уже
+    есть аккаунт, просто не привязанный к этому серверу» от настоящего unknown.
+
+    Login на ServerAccount не уникален в рамках department'а (UNIQUE стоит
+    только на join'е `(server_id, login)`), поэтому значение — список: на один
+    login может прийтись несколько кандидатов.
+    """
+    if not logins:
+        return {}
+    stmt = select(ServerAccount).where(
+        ServerAccount.department_id == department_id,
+        ServerAccount.login.in_(logins),
+    )
+    result: dict[str, list[ServerAccount]] = {}
+    for account in (await db.execute(stmt)).scalars():
+        result.setdefault(account.login, []).append(account)
+    return result
+
+
 async def create_discovered(
     db: AsyncSession, data: dict, server_id: str
 ) -> ServerAccount:

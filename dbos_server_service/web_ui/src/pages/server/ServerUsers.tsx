@@ -75,7 +75,6 @@ import {
   type ServerAccountSource,
   type ServerAccountUpdateRequest,
   type SshKeyMode,
-  type SshKeyResponse,
 } from "@/api/server/types";
 
 // Аккаунтов и серверов на отдел немного — одной страницы с запасом хватает,
@@ -171,74 +170,6 @@ function downloadText(filename: string, text: string) {
   a.remove();
   // Освобождаем URL чуть позже — синхронный revoke ломает скачивание в части браузеров.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-/**
- * Модалка показа приватного SSH-ключа. Приходит один раз (create generate /
- * ssh_key / rotate_ssh_key) — даём скачать .pem и закрыть, с предупреждением,
- * что повторно ключ не покажем.
- */
-function SshKeyResultModal({
-  login,
-  result,
-  onClose,
-}: {
-  login: string;
-  result: SshKeyResponse;
-  onClose: () => void;
-}) {
-  const priv = result.ssh_private_key ?? "";
-  return (
-    <Dialog.Root open modal onOpenChange={(o) => !o && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal-content">
-          <div className="modal-header">
-            <KeySquare className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold">
-              Приватный SSH-ключ — {login}
-            </Dialog.Title>
-          </div>
-          <div className="modal-body flex flex-col gap-3">
-            <div className="alert-warn text-sm flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>
-                Скачайте ключ сейчас — повторно мы его не покажем. Сервис хранит
-                только публичную часть.
-              </span>
-            </div>
-            {result.ssh_public_key && (
-              <div className="text-xs text-dim mono break-all">
-                public: {result.ssh_public_key}
-              </div>
-            )}
-            <textarea
-              className="field-input mono text-xs h-48 resize-none"
-              readOnly
-              value={priv}
-            />
-          </div>
-          <div className="modal-footer">
-            <button
-              type="button"
-              className="btn flex items-center gap-1"
-              onClick={onClose}
-            >
-              <X className="w-4 h-4" /> Закрыть
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary flex items-center gap-1"
-              disabled={!priv}
-              onClick={() => downloadText(`${login}_id_ed25519.pem`, priv)}
-            >
-              <Download className="w-4 h-4" /> Скачать .pem
-            </button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
-  );
 }
 
 /** Режим SSH-ключа в формах create/edit. */
@@ -615,12 +546,7 @@ function AccountCreateModal({
   const [sshPublicKey, setSshPublicKey] = useState("");
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // Сгенерированный приватный ключ + созданный аккаунт держим до показа модалки
-  // ключа; `onCreated` дёргаем только после её закрытия, чтобы не потерять ключ.
-  const [keyResult, setKeyResult] = useState<{
-    account: ServerAccount;
-    key: SshKeyResponse;
-  } | null>(null);
+  const toast = useToast();
 
   function toggleServer(id: string) {
     setServerIds((prev) =>
@@ -675,41 +601,20 @@ function AccountCreateModal({
             }
           : {}),
       });
-      // Сгенерированный приватный ключ показываем один раз; иначе сразу закрываем.
-      if (sshChoice === "generate" && created.ssh_private_key) {
-        setKeyResult({
-          account: created,
-          key: {
-            id: created.id,
-            login: created.login,
-            ssh_public_key: created.ssh_public_key ?? null,
-            ssh_private_key: created.ssh_private_key,
-            tasks: [],
-            skipped: [],
-          },
-        });
-      } else {
-        onCreated(created);
+      // Приватный ключ на экран не выводим — он уже сохранён в хранилище.
+      // Скачать его можно позже кнопкой «Скачать приватный ключ» в карточке
+      // аккаунта (reveal через view_password).
+      if (created.ssh_private_key) {
+        toast.success(
+          "SSH-ключ сохранён. Скачать приватный ключ можно позже кнопкой «Скачать приватный ключ» в карточке аккаунта.",
+        );
       }
+      onCreated(created);
     } catch (e) {
       setErr(handleCreateError(e));
     } finally {
       setPending(false);
     }
-  }
-
-  if (keyResult) {
-    return (
-      <SshKeyResultModal
-        login={keyResult.account.login}
-        result={keyResult.key}
-        onClose={() => {
-          const acc = keyResult.account;
-          setKeyResult(null);
-          onCreated(acc);
-        }}
-      />
-    );
   }
 
   return (
@@ -834,7 +739,7 @@ function AccountCreateModal({
                   {(
                     [
                       ["none", "без ключа"],
-                      ["generate", "сгенерировать (приватный покажем один раз)"],
+                      ["generate", "сгенерировать (скачать приватный ключ потом из карточки)"],
                       ["supply", "вставить существующий публичный ключ"],
                     ] as [SshKeyChoice, string][]
                   ).map(([value, label]) => (

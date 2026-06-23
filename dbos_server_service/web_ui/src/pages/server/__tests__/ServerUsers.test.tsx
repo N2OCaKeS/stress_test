@@ -342,6 +342,49 @@ describe("ServerUsers (fleet account list)", () => {
     expect(arg).toMatchObject({ login: "new-svc", server_ids: ["srv1"] });
   });
 
+  it("создание с генерацией ключа не показывает тело приватного ключа, а тостит про скачивание из карточки", async () => {
+    selectAccount();
+    const PRIVATE_BODY = "-----BEGIN OPENSSH PRIVATE KEY-----\nfresh\n-----END-----";
+    createAccountMock.mockResolvedValue({
+      ...FAKE_ACCOUNT,
+      id: "acc2",
+      login: "new-svc",
+      ssh_public_key: "ssh-ed25519 AAAAC3Nz newkey",
+      ssh_private_key: PRIVATE_BODY,
+    });
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Создать пользователя/ }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    const d = within(dialog);
+    fireEvent.change(d.getByPlaceholderText("dbos-svc"), {
+      target: { value: "new-svc" },
+    });
+    fireEvent.click(d.getByRole("checkbox", { name: /alpha/ }));
+    // Режим SSH «сгенерировать» — дефолтный, отдельно кликать не нужно.
+    fireEvent.click(d.getByRole("button", { name: /Создать/ }));
+
+    await waitFor(() => {
+      expect(createAccountMock).toHaveBeenCalledTimes(1);
+    });
+
+    // Тост направляет за приватным ключом в карточку аккаунта.
+    expect(
+      await screen.findByText(
+        /Скачать приватный ключ можно позже кнопкой .* в карточке аккаунта/,
+      ),
+    ).toBeInTheDocument();
+
+    // Тело приватного ключа нигде не отрендерено.
+    expect(
+      screen.queryByText(/BEGIN OPENSSH PRIVATE KEY/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue(PRIVATE_BODY)).not.toBeInTheDocument();
+  });
+
   it("показывает fingerprint ключа и скачивает приватный ключ по кнопке", async () => {
     listServersMock.mockResolvedValue({
       items: [{ id: "srv1", display_name: "alpha", hostname: "alpha.local" }],

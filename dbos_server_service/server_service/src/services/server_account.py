@@ -13,6 +13,8 @@ Visibility-check (cross-department) скрывает чужие аккаунты
 """
 
 import base64
+import binascii
+import hashlib
 import logging
 import secrets
 import string
@@ -432,6 +434,28 @@ def _generate_ssh_keypair() -> tuple[str, str]:
         format=serialization.PublicFormat.OpenSSH,
     ).decode("ascii")
     return private_pem, public_openssh
+
+
+def ssh_public_key_fingerprint(public_openssh: str | None) -> str | None:
+    """SHA256-отпечаток публичного ключа в формате `SHA256:<base64-без-паддинга>`.
+
+    Тот же формат, что печатает `ssh-keygen -lf` (base64 от sha256 над сырым
+    blob ключа, паддинг `=` отрезан). На вход — строка authorized_keys
+    (`<type> <base64>[ comment]`); берём именно base64-тело, как это делает
+    OpenSSH. Кривой/пустой ключ → `None` (UI просто не покажет отпечаток).
+    """
+    if not public_openssh:
+        return None
+    parts = public_openssh.strip().split()
+    if len(parts) < 2:
+        return None
+    try:
+        blob = base64.b64decode(parts[1], validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    digest = hashlib.sha256(blob).digest()
+    b64 = base64.b64encode(digest).decode("ascii").rstrip("=")
+    return f"SHA256:{b64}"
 
 
 async def ensure_provision_credentials(
@@ -1987,6 +2011,71 @@ def _reveal_previous_password(account: ServerAccount) -> str | None:
     except AppException:
         return None
     return base64.b64encode(plain.encode()).decode("ascii")
+
+
+async def reveal_ssh_private_key(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+) -> tuple[ServerAccount, str]:
+    """Расшифровать приватный SSH-ключ аккаунта для скачивания.
+
+    Гейт — `view_password` (то же право, что у раскрытия пароля: кто видит
+    пароль, видит и приватный ключ). Карточка видима по dept-isolation. Если
+    у аккаунта нет сохранённого приватного ключа (`generate` не делался либо
+    режим `supply`) — 404 ACCOUNT_NO_SSH_PRIVATE_KEY. Раскрытие пишет CRITICAL
+    `server_account.ssh_private_key_revealed`.
+
+    Возвращает `(account, private_pem)`.
+    """
+    account = await _authorize_account_action(
+        db, identity, account_id, Action.VIEW_PASSWORD,
+        "server_account.ssh_private_key_revealed",
+    )
+
+    if account.ssh_private_key_encrypted is None:
+        audit_service.emit(
+            "server_account.ssh_private_key_revealed",
+            target_id=account.id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "no_ssh_private_key_stored",
+                "department_id": account.department_id,
+            },
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_NO_SSH_PRIVATE_KEY",
+            message=(
+                "Account has no stored SSH private key (supply-mode key or none "
+                "set); only generated keys are downloadable"
+            ),
+        )
+
+    aad = secrets_service.aad_for_server_account_ssh_key(account.id)
+    try:
+        private_pem = secrets_service.decrypt(account.ssh_private_key_encrypted, aad=aad)
+    except AppException:
+        audit_service.emit(
+            "server_account.ssh_private_key_revealed",
+            target_id=account.id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "decrypt_failed",
+                "department_id": account.department_id,
+            },
+        )
+        raise
+
+    audit_service.emit(
+        "server_account.ssh_private_key_revealed",
+        target_id=account.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "login": account.login,
+            "department_id": account.department_id,
+        },
+    )
+    return account, private_pem
 
 
 async def resolve_bootstrap_credentials(

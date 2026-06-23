@@ -42,6 +42,7 @@ from src.schemas.server_account import (
     ServerAccountRotateResponse,
     ServerAccountServersUpdate,
     ServerAccountSshKeyRequest,
+    ServerAccountSshPrivateKeyResponse,
     ServerAccountUpdate,
 )
 from src.services import server_account as svc
@@ -79,6 +80,7 @@ def _to_response(
         previous_password_b64=previous_password_b64,
         previous_password_rotated_at=obj.previous_password_rotated_at,
         ssh_public_key=obj.ssh_public_key,
+        ssh_key_fingerprint=svc.ssh_public_key_fingerprint(obj.ssh_public_key),
         ssh_private_key=ssh_private_key,
         created_at=obj.created_at,
         updated_at=obj.updated_at,
@@ -661,4 +663,46 @@ async def rotate_ssh_key(
         ssh_private_key=private_key,
         tasks=[AccountRotateTask(**t) for t in tasks],
         skipped=[AccountRotateSkipped(**s) for s in skipped],
+    )
+
+
+@router.get(
+    "/{account_id}/ssh_private_key",
+    response_model=ServerAccountSshPrivateKeyResponse,
+    summary="Скачать приватный SSH-ключ аккаунта (под view_password)",
+    description=(
+        "Расшифровывает и отдаёт сохранённый приватный SSH-ключ аккаунта "
+        "(`ssh_private_key` в PEM). Гейт — `view_password` (то же право, что у "
+        "раскрытия пароля). Доступен только когда ключ генерировался сервером "
+        "(`ssh_mode='generate'` / rotate_ssh_key) — у `supply`-ключа приватной "
+        "части нет, как и у аккаунта без ключа: 404 ACCOUNT_NO_SSH_PRIVATE_KEY. "
+        "Раскрытие пишет CRITICAL audit `server_account.ssh_private_key_revealed`.\n\n"
+        "Тот же per-IP+account reveal-rate-limit, что у раскрытия пароля "
+        "(`PASSWORD_REVEAL_RATE_LIMIT`, default 10/min) — plaintext-канал нельзя "
+        "скрапить даже до триггера CRITICAL-аудита."
+    ),
+    responses={
+        200: {"description": "Приватный ключ расшифрован и отдан."},
+        403: {"description": "Нет роли с `view_password`."},
+        404: {"description": "Аккаунт не найден / чужой dept, либо нет сохранённого приватного ключа."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP+account reveal-rate-limit пробит."},
+        500: {"description": "DECRYPT_FAILED — сломанный ciphertext приватного ключа."},
+    },
+)
+@endpoint_limiter.limit(
+    get_settings().password_reveal_rate_limit, key_func=per_account_key,
+)
+async def reveal_ssh_private_key(
+    request: Request,
+    account_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> ServerAccountSshPrivateKeyResponse:
+    """Reveal приватного ключа. Доступ: `(server_account, *, view_password)`. Аудит CRITICAL."""
+    obj, private_pem = await svc.reveal_ssh_private_key(db, identity, account_id)
+    return ServerAccountSshPrivateKeyResponse(
+        id=obj.id,
+        login=obj.login,
+        ssh_private_key=private_pem,
+        ssh_public_key=obj.ssh_public_key,
     )

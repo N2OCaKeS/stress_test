@@ -89,6 +89,7 @@ SERVICE_EVENTS = [
     {"action": "server_account.recreate_login", "description": "Account OS-login recreated end-to-end (deprovision under old login → DB rename → provision under new login on all linked servers); access restricted to department_admin/service-admin", "default_severity": "CRITICAL"},
     {"action": "server_account.ssh_key_set", "description": "Account SSH key set/replaced (generate Ed25519 or supply public key); saved to DB and fanned out via account.provision to push authorized_keys", "default_severity": "WARNING"},
     {"action": "server_account.ssh_key_rotate", "description": "Account SSH key regenerated (compromise case): new Ed25519 keypair saved, private returned once, fanned out via account.provision", "default_severity": "CRITICAL"},
+    {"action": "server_account.ssh_private_key_revealed", "description": "Decrypted server account SSH private key revealed to user (PEM) via GET ssh_private_key with view_password. failure: reason in {no_ssh_private_key_stored, decrypt_failed}", "default_severity": "CRITICAL"},
     {"action": "server_account.link_servers", "description": "Server account linked to additional servers", "default_severity": "INFO"},
     {"action": "server_account.unlink_servers", "description": "Server account unlinked from servers", "default_severity": "INFO"},
     {"action": "server_account.delete", "description": "Server account deleted", "default_severity": "CRITICAL"},

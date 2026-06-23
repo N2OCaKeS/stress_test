@@ -521,6 +521,15 @@ class ServerAccountResponse(BaseModel):
         default=None,
         description="OpenSSH public key аккаунта (если задан). Не секрет, отдаётся всем по `view`.",
     )
+    ssh_key_fingerprint: str | None = Field(
+        default=None,
+        description=(
+            "SHA256-отпечаток публичного SSH-ключа (формат `SHA256:<base64>`, "
+            "как у `ssh-keygen -lf`). Считается из `ssh_public_key`; `null`, если "
+            "ключ не задан. Нужен UI, чтобы показывать «ключ есть» без выдачи "
+            "самого ключа."
+        ),
+    )
     ssh_private_key: str | None = Field(
         default=None,
         description=(
@@ -533,6 +542,24 @@ class ServerAccountResponse(BaseModel):
     created_at: datetime = Field(description="Когда аккаунт создан.")
     updated_at: datetime = Field(description="Когда последний раз изменён.")
     created_by: str | None = Field(default=None, description="user_id, создавший аккаунт.")
+
+
+class ServerAccountSshPrivateKeyResponse(BaseModel):
+    """Ответ reveal'а приватного SSH-ключа аккаунта.
+
+    Гейтится тем же `view_password`, что и раскрытие пароля. `ssh_private_key`
+    — PEM-текст приватного ключа (OpenSSH-формат), расшифрованный из
+    `ssh_private_key_encrypted`. `ssh_public_key` отдаётся рядом для удобства
+    скачивания пары. Раскрытие пишет CRITICAL-аудит
+    `server_account.ssh_private_key_revealed`.
+    """
+
+    id: str = Field(description="Account ID.")
+    login: str = Field(description="OS-логин.")
+    ssh_private_key: str = Field(description="Приватный ключ в PEM (OpenSSH-формат).")
+    ssh_public_key: str | None = Field(
+        default=None, description="Публичный ключ той же пары (если есть)."
+    )
 
 
 class ServerAccountRotateRequest(BaseModel):

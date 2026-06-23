@@ -88,14 +88,15 @@ export function SecurityTokens() {
   }, [reload]);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-dim">
-          PAT привязаны к вашему пользователю (`actor_id`). Токен показывается
-          один раз при создании.
-        </div>
+    <div className="flex-1 min-h-0 overflow-auto p-6 flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-sm text-dim leading-relaxed max-w-xl">
+          Персональные токены доступа привязаны к вашему пользователю и
+          подходят для CLI и автоматизации. Сам токен показывается только один
+          раз при создании — сохраните его сразу.
+        </p>
         <button
-          className="btn btn-primary flex items-center gap-1"
+          className="btn btn-primary btn-sm flex items-center gap-1 shrink-0"
           onClick={() => setCreating(true)}
         >
           <Plus className="w-4 h-4" /> Создать PAT

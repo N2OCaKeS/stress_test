@@ -6,19 +6,25 @@
  * без требования server-зоны (платформенным business-data-denied ролям
  * backend всё же ответит 403 — это его решение, мы лишь показываем ошибку).
  *
- * Управление каталогом (create/update/delete) живёт в админке
- * `ServicesOsVersions` под action-матрицей server.admin / dep_admin —
- * здесь его сознательно нет.
+ * Полное управление каталогом (update/delete) остаётся в админке
+ * `ServicesOsVersions` под action-матрицей server.admin / dep_admin. Здесь же
+ * носителю того же права доступна только регистрация новой версии — через ту
+ * же форму `OsVersionForm`, чтобы не плодить дубль логики создания.
  */
 
 import { useMemo, useState } from "react";
-import { HardDrive, Link2, Search } from "lucide-react";
+import { HardDrive, Link2, Search, Plus } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { formatMsk } from "@/lib/datetime";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { ApiError } from "@/api/client";
 import { listOsVersions } from "@/api/server/osVersions";
 import type { OffsetPaginatedResponse, OsVersion } from "@/api/server/types";
+import { usePersona } from "@/contexts/PersonaContext";
+import {
+  OsVersionForm,
+  canManageOsVersions,
+} from "@/pages/admin/services/ServicesOsVersions";
 
 // Сколько версий тянем за один запрос «Загрузить ещё». В проекте каталог
 // небольшой (десятки записей), поэтому шага в полсотни хватает с запасом.
@@ -104,8 +110,11 @@ function OsVersionCard({ version }: { version: OsVersion }) {
 
 function OsCatalogBody() {
   const mockMode = useMockMode();
+  const { persona } = usePersona();
+  const canCreate = canManageOsVersions(persona);
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [search, setSearch] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const listQ = useQuery<OffsetPaginatedResponse<OsVersion>>(
     () => listOsVersions({ limit }),
@@ -145,9 +154,30 @@ function OsCatalogBody() {
           <HardDrive className="w-5 h-5 text-accent" /> Каталог ОС
         </h2>
         <span className="text-[11px] text-dim">
-          версии ОС, зарегистрированные в системе · только просмотр
+          версии ОС, зарегистрированные в системе
+          {canCreate ? "" : " · только просмотр"}
         </span>
+        {canCreate && (
+          <button
+            className="btn btn-primary btn-sm flex items-center gap-1 ml-auto"
+            onClick={() => setCreating(true)}
+            disabled={creating}
+          >
+            <Plus className="w-4 h-4" /> Добавить версию ОС
+          </button>
+        )}
       </div>
+
+      {creating && (
+        <OsVersionForm
+          mockMode={mockMode}
+          onDone={() => {
+            setCreating(false);
+            listQ.refetch();
+          }}
+          onCancel={() => setCreating(false)}
+        />
+      )}
 
       <div className="relative max-w-sm">
         <Search className="w-4 h-4 text-dim absolute left-2.5 top-1/2 -translate-y-1/2" />

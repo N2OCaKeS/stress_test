@@ -42,7 +42,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 // Управление каталогом несёт server.admin (и dep_admin в своём отделе).
 // Зеркалит гейт ServicesServerPermissions — backend режет platform-роли.
-function canManageOsVersions(
+export function canManageOsVersions(
   persona: ReturnType<typeof usePersona>["persona"],
 ): boolean {
   return (
@@ -290,7 +290,7 @@ function OsVersionDetail({
   );
 }
 
-function OsVersionForm({
+export function OsVersionForm({
   mockMode,
   existing,
   onDone,

@@ -203,6 +203,115 @@ async def test_add_acl_not_found(http_client):
     assert resp.status_code == 404
 
 
+# ── UPSERT (PUT) ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_upsert_acl_creates(http_client, dept_cred, adb):
+    payload = {
+        "dept_id": OWNER_DEPT,
+        "role_name": "reader",
+        "can_read": True,
+        "can_write": False,
+    }
+    resp = await http_client.put(
+        f"/api/secret/v1/credentials/{dept_cred.id}/acl", json=payload
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["acl"]["can_read"] is True
+    assert body["acl"]["can_write"] is False
+    assert body["acl"]["role_name"] == "reader"
+
+    rows = await acls_repo.get_for_cred(adb, dept_cred.id)
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_upsert_acl_updates_flags_no_409(http_client, dept_cred, adb):
+    base = {"dept_id": OWNER_DEPT, "role_name": "operator"}
+    r1 = await http_client.put(
+        f"/api/secret/v1/credentials/{dept_cred.id}/acl",
+        json={**base, "can_read": True, "can_write": False},
+    )
+    assert r1.status_code == 200
+    first_id = r1.json()["acl"]["id"]
+
+    # Повторный PUT той же пары не 409'ит, а переписывает флаги поверх строки.
+    r2 = await http_client.put(
+        f"/api/secret/v1/credentials/{dept_cred.id}/acl",
+        json={**base, "can_read": True, "can_write": True},
+    )
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["acl"]["id"] == first_id
+    assert r2.json()["acl"]["can_write"] is True
+
+    rows = await acls_repo.get_for_cred(adb, dept_cred.id)
+    assert len(rows) == 1
+    assert rows[0].can_write is True
+
+
+@pytest.mark.asyncio
+async def test_upsert_acl_both_false_removes_row(http_client, dept_cred, adb):
+    base = {"dept_id": OWNER_DEPT, "role_name": "reader"}
+    r1 = await http_client.put(
+        f"/api/secret/v1/credentials/{dept_cred.id}/acl",
+        json={**base, "can_read": True, "can_write": False},
+    )
+    assert r1.status_code == 200
+
+    # Снимаем оба флага — строка должна исчезнуть, ответ acl=null.
+    r2 = await http_client.put(
+        f"/api/secret/v1/credentials/{dept_cred.id}/acl",
+        json={**base, "can_read": False, "can_write": False},
+    )
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["ok"] is True
+    assert r2.json()["acl"] is None
+
+    rows = await acls_repo.get_for_cred(adb, dept_cred.id)
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_upsert_acl_both_false_idempotent_noop(http_client, dept_cred, adb):
+    # Снять несуществующую строку — идемпотентный no-op, без ошибки.
+    resp = await http_client.put(
+        f"/api/secret/v1/credentials/{dept_cred.id}/acl",
+        json={
+            "dept_id": OWNER_DEPT,
+            "role_name": "guest",
+            "can_read": False,
+            "can_write": False,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["acl"] is None
+    rows = await acls_repo.get_for_cred(adb, dept_cred.id)
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_upsert_acl_cross_dep_without_grant_rejected(
+    http_client, cross_dep_cred
+):
+    _set_identity(_identity(
+        department_id=RECIPIENT_DEPT,
+        platform_role="department_admin",
+    ))
+    resp = await http_client.put(
+        f"/api/secret/v1/credentials/{cross_dep_cred.id}/acl",
+        json={
+            "dept_id": RECIPIENT_DEPT,
+            "role_name": "reader",
+            "can_read": True,
+            "can_write": False,
+        },
+    )
+    assert resp.status_code in (404, 422)
+
+
 # ── LIST ──────────────────────────────────────────────────────────────────
 
 

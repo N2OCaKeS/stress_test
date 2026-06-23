@@ -21,7 +21,7 @@ from src.dependencies.auth import Identity
 from src.models import RoleACL
 from src.repositories import dept_grants as dept_grants_repo
 from src.repositories import role_acls as repo
-from src.schemas.role_acls import RoleACLCreate
+from src.schemas.role_acls import RoleACLCreate, RoleACLUpsert
 from src.services import audit_service
 from src.services.credential_service import load_for_action
 
@@ -62,6 +62,40 @@ def _new_acl_id() -> str:
     return f"acl_{_secrets.token_hex(16)}"
 
 
+async def _check_dept_target(db, identity, cred, dept_id: str) -> None:
+    """Проверить, что ACL для (cred, dept_id) допустим по scope'у.
+
+    personal — только dep владельца; cross_department recipient — только при
+    наличии DeptGrant. Бросает DomainValidationError при нарушении.
+    """
+    # personal: ACL только в dep'е владельца. Иначе non-owner из чужого dep'а
+    # получит ACL'ную дыру в обход cross-dep flow.
+    if cred.scope == "personal":
+        owner_dept = cred.owner_user_dept_id or identity.department_id
+        if dept_id != owner_dept:
+            raise DomainValidationError(
+                error_code="PERSONAL_ACL_OWNER_DEPT_ONLY",
+                message=(
+                    "personal credential ACL must be granted in the owner's "
+                    "department only"
+                ),
+                details={"dept_id": dept_id, "owner_dept_id": owner_dept},
+            )
+
+    # cross_dep: если ACL выдаётся НЕ owner_dep'у — нужен DeptGrant.
+    if cred.scope == "cross_department" and dept_id != cred.owner_dept_id:
+        has_grant = await dept_grants_repo.exists_for(db, cred.id, dept_id)
+        if not has_grant:
+            raise DomainValidationError(
+                error_code="DEPT_GRANT_REQUIRED",
+                message=(
+                    "cross_department credential requires DeptGrant for "
+                    "recipient_dept before issuing RoleACL"
+                ),
+                details={"dept_id": dept_id},
+            )
+
+
 async def add(
     db: AsyncSession,
     identity: Identity,
@@ -75,32 +109,7 @@ async def add(
     try:
         cred = await load_for_action(db, identity, cred_id, "grant_acl")
 
-        # personal: ACL только в dep'е владельца. Иначе non-owner из чужого dep'а
-        # получит ACL'ную дыру в обход cross-dep flow.
-        if cred.scope == "personal":
-            owner_dept = cred.owner_user_dept_id or identity.department_id
-            if payload.dept_id != owner_dept:
-                raise DomainValidationError(
-                    error_code="PERSONAL_ACL_OWNER_DEPT_ONLY",
-                    message=(
-                        "personal credential ACL must be granted in the owner's "
-                        "department only"
-                    ),
-                    details={"dept_id": payload.dept_id, "owner_dept_id": owner_dept},
-                )
-
-        # cross_dep: если ACL выдаётся НЕ owner_dep'у — нужен DeptGrant.
-        if cred.scope == "cross_department" and payload.dept_id != cred.owner_dept_id:
-            has_grant = await dept_grants_repo.exists_for(db, cred.id, payload.dept_id)
-            if not has_grant:
-                raise DomainValidationError(
-                    error_code="DEPT_GRANT_REQUIRED",
-                    message=(
-                        "cross_department credential requires DeptGrant for "
-                        "recipient_dept before issuing RoleACL"
-                    ),
-                    details={"dept_id": payload.dept_id},
-                )
+        await _check_dept_target(db, identity, cred, payload.dept_id)
 
         # Friendly UNIQUE pre-check
         existing = await repo.find(db, cred.id, payload.dept_id, payload.role_name)
@@ -129,6 +138,99 @@ async def add(
                 error_code="ROLE_ACL_DUPLICATE",
                 message="RoleACL conflict (race)",
             ) from exc
+    except Exception as exc:
+        _emit_failure(
+            "tokens.role_acl_added",
+            target_id=cred_id,
+            target_type="credential",
+            exc=exc,
+            extra={
+                "dept_id": payload.dept_id,
+                "role_name": payload.role_name,
+            },
+        )
+        raise
+
+    audit_service.emit(
+        "tokens.role_acl_added",
+        target_id=acl.id,
+        target_type="role_acl",
+        details={
+            "cred_id": cred.id,
+            "dept_id": acl.dept_id,
+            "role_name": acl.role_name,
+            "can_read": acl.can_read,
+            "can_write": acl.can_write,
+        },
+    )
+    return acl
+
+
+async def upsert(
+    db: AsyncSession,
+    identity: Identity,
+    cred_id: str,
+    payload: RoleACLUpsert,
+) -> RoleACL | None:
+    """Идемпотентно задать пару флагов для (cred, dept, role).
+
+    Строки нет — создаём; есть — переписываем флаги; оба флага false — снимаем
+    строку (для UI «нет доступа» = отсутствие записи, как и читает матрица).
+    Возвращает обновлённый/созданный ACL либо None, если строка снята.
+
+    Аудит: создание/обновление → `tokens.role_acl_added`; снятие →
+    `tokens.role_acl_revoked`. На failure-пути эмитим failure-вариант
+    `tokens.role_acl_added` до raise.
+    """
+    both_false = not payload.can_read and not payload.can_write
+    try:
+        cred = await load_for_action(db, identity, cred_id, "grant_acl")
+        await _check_dept_target(db, identity, cred, payload.dept_id)
+
+        existing = await repo.find(db, cred.id, payload.dept_id, payload.role_name)
+
+        if both_false:
+            if existing is None:
+                # Нечего снимать — идемпотентный no-op, событий не пишем.
+                # До этой ветки шли только SELECT'ы (load_for_action /
+                # _check_dept_target / find), ничего не меняли — откатывать
+                # нечего, а лишний rollback рвёт внешнюю транзакцию вызова.
+                return None
+            removed_id = existing.id
+            await repo.delete(db, existing)
+            await db.commit()
+            audit_service.emit(
+                "tokens.role_acl_revoked",
+                target_id=removed_id,
+                target_type="role_acl",
+                details={
+                    "cred_id": cred.id,
+                    "dept_id": payload.dept_id,
+                    "role_name": payload.role_name,
+                },
+            )
+            return None
+
+        if existing is not None:
+            acl = await repo.update_flags(
+                db,
+                existing,
+                can_read=payload.can_read,
+                can_write=payload.can_write,
+            )
+        else:
+            acl = await repo.create(
+                db,
+                id=_new_acl_id(),
+                cred_id=cred.id,
+                dept_id=payload.dept_id,
+                role_name=payload.role_name,
+                can_read=payload.can_read,
+                can_write=payload.can_write,
+                granted_by_user_id=identity.user_id,
+            )
+        await db.commit()
+        await db.refresh(acl)
     except Exception as exc:
         _emit_failure(
             "tokens.role_acl_added",

@@ -9,7 +9,13 @@ from src.dependencies.auth import CurrentIdentity, require_user_context
 from src.dependencies.db import get_db
 from src.models import RoleACL
 from src.schemas.common import OkResponse
-from src.schemas.role_acls import RoleACLCreate, RoleACLList, RoleACLRead
+from src.schemas.role_acls import (
+    RoleACLCreate,
+    RoleACLList,
+    RoleACLRead,
+    RoleACLUpsert,
+    RoleACLUpsertResponse,
+)
 from src.services import role_acl_service
 
 router = APIRouter(prefix="/credentials", tags=["role_acls"])
@@ -45,6 +51,24 @@ async def add_acl(
     require_user_context(identity)
     acl = await role_acl_service.add(db, identity, cred_id, payload)
     return _to_read(acl)
+
+
+@router.put(
+    "/{cred_id}/acl",
+    response_model=RoleACLUpsertResponse,
+    summary="Upsert RoleACL: задать пару (can_read, can_write) для (dept, role)",
+)
+@limiter.limit(get_settings().rate_limit_acl)
+async def upsert_acl(
+    cred_id: str,
+    request: Request,
+    payload: RoleACLUpsert,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> RoleACLUpsertResponse:
+    require_user_context(identity)
+    acl = await role_acl_service.upsert(db, identity, cred_id, payload)
+    return RoleACLUpsertResponse(ok=True, acl=_to_read(acl) if acl else None)
 
 
 @router.get(

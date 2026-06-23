@@ -60,6 +60,16 @@ async def create(db: AsyncSession, **fields) -> RoleACL:
     return obj
 
 
+async def update_flags(
+    db: AsyncSession, acl: RoleACL, *, can_read: bool, can_write: bool
+) -> RoleACL:
+    """Переписать пару флагов существующего ACL. commit — на caller'е."""
+    acl.can_read = can_read
+    acl.can_write = can_write
+    await db.flush()
+    return acl
+
+
 async def delete(db: AsyncSession, acl: RoleACL) -> None:
     """DELETE одного ACL."""
     await db.delete(acl)

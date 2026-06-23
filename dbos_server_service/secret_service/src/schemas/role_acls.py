@@ -16,6 +16,19 @@ class RoleACLCreate(BaseModel):
     can_write: bool = False
 
 
+class RoleACLUpsert(BaseModel):
+    """Тело PUT /credentials/{id}/acl.
+
+    Задаёт желаемую пару флагов для (dept_id, role_name). Идемпотентно:
+    строки нет — создаём, есть — переписываем; оба флага false — снимаем.
+    """
+
+    dept_id: str = Field(min_length=1, max_length=64)
+    role_name: str = Field(min_length=1, max_length=64)
+    can_read: bool = False
+    can_write: bool = False
+
+
 class RoleACLRead(BaseModel):
     id: str
     cred_id: str
@@ -29,3 +42,14 @@ class RoleACLRead(BaseModel):
 
 class RoleACLList(BaseModel):
     items: list[RoleACLRead]
+
+
+class RoleACLUpsertResponse(BaseModel):
+    """Ответ PUT /credentials/{id}/acl.
+
+    `acl` — итоговая строка после апсерта; None, когда оба флага сняты и строка
+    удалена («нет доступа»).
+    """
+
+    ok: bool = True
+    acl: RoleACLRead | None = None

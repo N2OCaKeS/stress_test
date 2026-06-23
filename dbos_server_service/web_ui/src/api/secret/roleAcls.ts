@@ -6,12 +6,14 @@
  *   secret_service/src/schemas/role_acls.py
  */
 
-import { apiDelete, apiGet, apiPost } from "@/api/client";
+import { apiDelete, apiGet, apiPost, apiPut } from "@/api/client";
 import type {
   OkResponse,
   RoleACL,
   RoleACLCreateRequest,
   RoleACLList,
+  RoleACLUpsertRequest,
+  RoleACLUpsertResponse,
 } from "@/api/secret/types";
 
 const BASE = "/secret/v1/credentials";
@@ -32,6 +34,21 @@ export function addRoleAcl(
   body: RoleACLCreateRequest,
 ): Promise<RoleACL> {
   return apiPost<RoleACL>(`${BASE}/${credId}/acl`, body);
+}
+
+/**
+ * `PUT /credentials/{id}/acl` — атомарный upsert RoleACL.
+ *
+ * Задаёт желаемую пару `(can_read, can_write)` для `(dept_id, role_name)`:
+ * строки нет — создаёт, есть — переписывает флаги, оба флага false — снимает
+ * строку. Идемпотентно, без 409 — заменяет связку revoke+re-add для тоггла
+ * ячейки матрицы. `acl` в ответе = null, когда доступ снят.
+ */
+export function upsertRoleAcl(
+  credId: string,
+  body: RoleACLUpsertRequest,
+): Promise<RoleACLUpsertResponse> {
+  return apiPut<RoleACLUpsertResponse>(`${BASE}/${credId}/acl`, body);
 }
 
 /** `DELETE /credentials/{id}/acl/{aclId}` — снять RoleACL. */

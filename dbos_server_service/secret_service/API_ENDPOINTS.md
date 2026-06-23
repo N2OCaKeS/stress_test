@@ -220,6 +220,24 @@ ACL даёт читать (`can_read`) или менять (`can_write`) creds �
 
 > **Порядок проверок:** `grant_acl` сначала проходит `load_for_action` (visibility/access-check). Recipient dep_admin БЕЗ `DeptGrant` не видит cross-dep креду вовсе → отдаётся `404 CREDENTIAL_NOT_FOUND` (visibility-miss маскируется в 404, info-leak protection), а не `422 DEPT_GRANT_REQUIRED`. `422 DEPT_GRANT_REQUIRED` срабатывает позже — когда actor уже имеет доступ к кред'е, но пытается выдать ACL на ещё один dept без `DeptGrant` для него.
 
+### PUT /credentials/{cred_id}/acl
+
+Атомарный upsert `RoleACL`: задать желаемую пару `(can_read, can_write)` для `(dept_id, role_name)`. Идемпотентно, без `409` — заменяет связку `revoke`+`re-add` при тоггле ячейки матрицы.
+
+- строки нет → создаётся (с `granted_by_user_id = actor`);
+- строка есть → флаги переписываются (тот же `id`, `granted_at` сохраняется);
+- оба флага `false` → строка удаляется («нет доступа» = отсутствие записи). Снятие несуществующей строки — идемпотентный no-op.
+
+**Auth / scope-проверки:** те же, что у `POST` (гейт `grant_acl`, `personal` → owner-dep, cross-dep recipient → нужен `DeptGrant`).
+
+**Body (`RoleACLUpsert`):** `dept_id` (str 1..64), `role_name` (str 1..64), `can_read` (bool, default `false`), `can_write` (bool, default `false`).
+
+**Response 200 (`RoleACLUpsertResponse`):** `{ ok: true, acl: RoleACLRead | null }` — `acl` = `null`, когда оба флага сняты и строка удалена.
+
+**Audit:** создание/обновление → `tokens.role_acl_added`; снятие (both-false) → `tokens.role_acl_revoked`.
+
+**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `422 DEPT_GRANT_REQUIRED`, `422 PERSONAL_ACL_OWNER_DEPT_ONLY`.
+
 ### GET /credentials/{cred_id}/acl
 
 Список `RoleACL`.

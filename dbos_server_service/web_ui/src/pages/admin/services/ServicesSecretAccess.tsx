@@ -23,7 +23,7 @@ import {
   getCredential,
   listCredentials,
 } from "@/api/secret/credentials";
-import { addRoleAcl, listRoleAcls, revokeRoleAcl } from "@/api/secret/roleAcls";
+import { listRoleAcls, upsertRoleAcl } from "@/api/secret/roleAcls";
 import {
   addDeptGrant,
   listDeptGrants,
@@ -585,10 +585,9 @@ function OwnerLabel({ cred }: { cred: Credential }) {
 // ───────────────────────────────────────────────────────────────────────────
 // RoleACL-матрица: столбцы — роли отдела, строки — права read/write.
 //
-// Бэкенд хранит RoleACL пер (dept, role) с парой флагов can_read/can_write и
-// не умеет upsert (POST 409'ит дубль, PATCH'а нет). Поэтому смена ячейки —
-// это revoke существующего ACL'я и re-add с пересчитанной парой; если оба
-// флага гаснут — просто revoke.
+// Бэкенд хранит RoleACL пер (dept, role) с парой флагов can_read/can_write.
+// Смена ячейки — атомарный upsert (PUT): один вызов задаёт пересчитанную пару
+// для (dept, role); если оба флага гаснут — backend снимает строку.
 //
 // Для personal/department роли действуют в отделе-владельце (один dept). Для
 // cross_department ACL могут жить в нескольких отделах (owner + recipient'ы с
@@ -733,27 +732,20 @@ function DeptRoleMatrix({
 
       setSaving((m) => ({ ...m, [key]: true }));
       try {
-        // Бэкенд не апсертит: сначала снимаем старый ACL (если был), потом
-        // создаём новый с пересчитанной парой. Если оба флага сняты — только
-        // revoke.
-        if (existing) {
-          await revokeRoleAcl(credId, existing.id);
-        }
-        if (nextRead || nextWrite) {
-          await addRoleAcl(credId, {
-            dept_id: deptId,
-            role_name: role,
-            can_read: nextRead,
-            can_write: nextWrite,
-          });
-        }
+        // Атомарный upsert: один вызов задаёт пересчитанную пару флагов; при
+        // обоих false backend снимает строку.
+        await upsertRoleAcl(credId, {
+          dept_id: deptId,
+          role_name: role,
+          can_read: nextRead,
+          can_write: nextWrite,
+        });
         toast.success(
           `${deptName} / ${role}: ${nextRead ? "r" : "-"}${nextWrite ? "w" : "-"}`,
         );
         onChanged();
       } catch (e) {
         toast.error(apiErrMsg(e, "Не удалось изменить доступ"));
-        // На частичном сбое (revoke прошёл, add упал) перечитываем правду.
         onChanged();
       } finally {
         setSaving((m) => {

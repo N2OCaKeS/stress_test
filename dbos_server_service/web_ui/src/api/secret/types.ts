@@ -154,6 +154,23 @@ export interface RoleACLList {
   items: RoleACL[];
 }
 
+/** `RoleACLUpsert` — тело `PUT /credentials/{id}/acl`. */
+export interface RoleACLUpsertRequest {
+  dept_id: string;
+  role_name: string;
+  can_read?: boolean;
+  can_write?: boolean;
+}
+
+/**
+ * `RoleACLUpsertResponse` — ответ `PUT /credentials/{id}/acl`. `acl` = null,
+ * когда оба флага сняты и строка удалена (доступ снят).
+ */
+export interface RoleACLUpsertResponse {
+  ok: boolean;
+  acl: RoleACL | null;
+}
+
 // ── user ACL ──────────────────────────────────────────────────────────────────
 
 /** `UserACLCreate` — тело `POST /credentials/{id}/user-acl`. */

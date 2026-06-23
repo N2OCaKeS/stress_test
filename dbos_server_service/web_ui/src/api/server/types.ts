@@ -952,6 +952,7 @@ export interface TaskRead {
   server_hostname?: string | null;
   account_login?: string | null;
   department_id?: string | null;
+  created_by?: string | null;
   created_at: Iso8601;
   started_at?: Iso8601 | null;
   finished_at?: Iso8601 | null;

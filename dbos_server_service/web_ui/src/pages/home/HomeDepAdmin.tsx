@@ -29,6 +29,7 @@ import { listGroups, listGroupsByDepartment } from "@/api/auth/groups";
 import { listBots } from "@/api/auth/bots";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { RecentAuditEvents } from "./widgets/RecentAuditEvents";
+import { AllTasksWidget } from "./widgets/AllTasksWidget";
 
 /**
  * Department-admin Home.
@@ -197,6 +198,12 @@ export function HomeDepAdmin() {
               </div>
             )}
             {canAudit && <RecentAuditEvents />}
+          </section>
+        )}
+
+        {canManageGroups && (
+          <section className="mt-4">
+            <AllTasksWidget />
           </section>
         )}
       </HomeShell>

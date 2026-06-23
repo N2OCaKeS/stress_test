@@ -77,6 +77,11 @@ const WikiExamples = lazy(() =>
 const OsCatalog = lazy(() =>
   import("@/pages/os/OsCatalog").then((m) => ({ default: m.OsCatalog }))
 );
+const TaskResultPage = lazy(() =>
+  import("@/pages/tasks/TaskResultPage").then((m) => ({
+    default: m.TaskResultPage,
+  }))
+);
 
 // Редирект, сохраняющий query-строку (legacy /worker?server_id=… → новый
 // раздел задач под «Серверами»). Navigate сам по себе query не переносит.
@@ -184,6 +189,14 @@ export function App() {
               element={
                 <RouteGuard service="server">
                   <WorkerDlq />
+                </RouteGuard>
+              }
+            />
+            <Route
+              path="/tasks/:id"
+              element={
+                <RouteGuard service="server">
+                  <TaskResultPage />
                 </RouteGuard>
               }
             />

@@ -78,3 +78,8 @@ export function useToast(): ToastApi {
   if (!ctx) throw new Error("useToast must be used inside <ToastProvider>");
   return ctx;
 }
+
+/** Как `useToast`, но возвращает `null` вне провайдера вместо исключения. */
+export function useToastOptional(): ToastApi | null {
+  return useContext(ToastContext) ?? null;
+}

@@ -1,5 +1,6 @@
 import { Grid3x3 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 interface TopBarProps {
   breadcrumb?: string;
@@ -17,6 +18,9 @@ export function TopBar({ breadcrumb = "Главная" }: TopBarProps) {
         EMM
       </Link>
       <span className="text-xs text-dim">/ {breadcrumb}</span>
+      <div className="ml-auto flex items-center">
+        <NotificationBell />
+      </div>
     </header>
   );
 }

@@ -92,6 +92,39 @@ AUDIT_SAFE_FIELDS: set[str] = set(_BASE_AUDIT_SAFE_FIELDS)
 # Тот же класс символов заявлен в docstring модуля и в server_service.
 _PATTERN_RE = re.compile(r"^[A-Za-z0-9._\-+*?\[\]]+$")
 
+# Connect-time коды SshClient.connect(), означающие «до сервера дошли, но
+# управляющая SSH-сессия не поднялась»: auth не прошёл, коннект сорвался,
+# handshake завис. На ПОДГОТОВЛЕННОМ (managed) сервере это почти всегда значит,
+# что бокс переустановили (reimage) — управляющий пользователь/ключ на нём
+# пропали, хотя в БД сервер ещё `is_managed=true`. Сырой SSH_AUTH_FAILED с
+# пустыми cmd/stderr оператору ничего не объясняет, поэтому ремапим в один
+# actionable код с понятным текстом.
+_CONNECT_FAILURE_CODES = frozenset(
+    {"SSH_AUTH_FAILED", "SSH_CONNECT_FAILED", "SSH_TIMEOUT"},
+)
+
+
+def _remap_managed_connect_error(exc: SshError) -> SshError:
+    """Превратить connect-фейл управляющей сессии в actionable ошибку.
+
+    Зовётся, когда сервер помечен managed, но `SshClient.connect()` не смог
+    приконнектиться/авторизоваться. Возвращает новый `SshError` со стабильным
+    `error_code="SERVER_MANAGEMENT_AUTH_FAILED"` и человекочитаемым сообщением,
+    подсказывающим оператору, что ОС, скорее всего, переустановлена и нужен
+    повторный prepare. Исходный код и host сохраняем в `details` для
+    диагностики; креды не светим — `SshError.connect()` их в message не кладёт.
+    """
+    return SshError(
+        error_code="SERVER_MANAGEMENT_AUTH_FAILED",
+        host=exc.host,
+        message=(
+            "управляющая SSH-сессия к подготовленному серверу не поднялась "
+            "(возможно, ОС на сервере переустановлена и управляющий "
+            "пользователь/ключ утрачены) — требуется повторный prepare"
+        ),
+        details={"underlying_error_code": exc.error_code},
+    )
+
 
 def _build_command(package_manager: str, pattern: str) -> str:
     """Собрать shell-команду под выбранный package manager.
@@ -369,7 +402,21 @@ async def installed_packages_list(task_id: str) -> None:
         # creds (server_service/payload-hints), теоретически может содержать
         # `\n`. `pattern` уже прошёл `_PATTERN_RE`, безопасен.
         logger.info("installed_packages.list on %r pattern=%s", host, pattern)
-        async with ssh_client.build_session(creds, server_id) as ssh:
+        session = ssh_client.build_session(creds, server_id)
+        try:
+            await session.connect()
+        except SshError as exc:
+            # На managed-сервере connect-фейл (auth/connect/timeout) почти
+            # всегда означает reimage бокса — даём оператору actionable
+            # сообщение вместо сырого SSH_AUTH_FAILED. На неуправляемом
+            # (self-сессия по паролю) оставляем исходную ошибку — там это
+            # просто неверный пароль аккаунта, не повод звать prepare.
+            if is_managed and exc.error_code in _CONNECT_FAILURE_CODES:
+                await session.close()
+                raise _remap_managed_connect_error(exc) from exc
+            await session.close()
+            raise
+        async with session as ssh:
             package_manager = await _detect_package_manager(ssh)
             cmd = _build_command(package_manager, pattern)
             rc, stdout, stderr = await ssh.run(cmd)

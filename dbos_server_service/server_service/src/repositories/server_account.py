@@ -523,8 +523,43 @@ async def update_ssh_key(
 async def update_password(
     db: AsyncSession, account: ServerAccount, password_encrypted: str
 ) -> ServerAccount:
-    """Сменить пароль + проставить `password_rotated_at = now (UTC)`. commit — на caller'е."""
+    """Сменить пароль с удержанием прежнего на время переходного периода.
+
+    Текущий ciphertext переезжает в `previous_password_encrypted` (+ timestamp
+    из старого `password_rotated_at`, либо now, если его не было), затем
+    записывается новый пароль и поднимается `credentials_pending_apply`. Старый
+    пароль остаётся доступным, пока новый не раскатан на все привязанные
+    серверы. commit — на caller'е.
+
+    Если текущего пароля нет (discovered-аккаунт без сохранённого пароля),
+    previous не трогаем — переносить нечего.
+    """
+    now = datetime.now(timezone.utc)
+    if account.password_encrypted is not None:
+        account.previous_password_encrypted = account.password_encrypted
+        account.previous_password_rotated_at = account.password_rotated_at or now
     account.password_encrypted = password_encrypted
-    account.password_rotated_at = datetime.now(timezone.utc)
+    account.password_rotated_at = now
+    account.credentials_pending_apply = True
+    await db.flush()
+    return account
+
+
+async def clear_previous_password(
+    db: AsyncSession, account: ServerAccount
+) -> ServerAccount:
+    """Занулить прежний пароль — переходный период ротации закончен.
+
+    Зовётся, когда новый пароль подтверждён на серверах (снят
+    `credentials_pending_apply`). Идемпотентна: если previous уже пуст —
+    no-op. commit — на caller'е.
+    """
+    if (
+        account.previous_password_encrypted is None
+        and account.previous_password_rotated_at is None
+    ):
+        return account
+    account.previous_password_encrypted = None
+    account.previous_password_rotated_at = None
     await db.flush()
     return account

@@ -499,6 +499,24 @@ class ServerAccountResponse(BaseModel):
             "Декодируется стандартным base64.b64decode перед использованием."
         ),
     )
+    previous_password_b64: str | None = Field(
+        default=None,
+        description=(
+            "Base64-encoded plaintext ПРЕЖНЕГО пароля — удерживается на время "
+            "переходного периода ротации, пока новый пароль не раскатан на все "
+            "привязанные серверы. Оператор может подключаться и старым, и новым "
+            "паролем. Присутствует только при `view_password` И только пока "
+            "переходный период активен; в остальных случаях `null`. "
+            "Декодируется стандартным base64.b64decode."
+        ),
+    )
+    previous_password_rotated_at: datetime | None = Field(
+        default=None,
+        description=(
+            "Когда был установлен прежний (удерживаемый) пароль. `null`, если "
+            "переходного периода нет."
+        ),
+    )
     ssh_public_key: str | None = Field(
         default=None,
         description="OpenSSH public key аккаунта (если задан). Не секрет, отдаётся всем по `view`.",

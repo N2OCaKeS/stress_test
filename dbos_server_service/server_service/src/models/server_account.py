@@ -105,6 +105,17 @@ class ServerAccount(Base):
     # На БД лежит CHECK length(...) < 8192 — двукратный запас от tooling-bug'а.
     password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     password_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Прежний пароль на время переходного периода ротации. Когда пароль меняют
+    # через rotate_password, текущий ciphertext переезжает сюда (тем же envelope
+    # и AAD, что password_encrypted — AAD привязан к id строки, не к колонке).
+    # Это даёт оператору подключаться и старым, и новым паролем, пока новый не
+    # раскатан на все привязанные серверы. Обнуляется, когда переходный период
+    # закончен — первый успешный provision-callback снимает
+    # credentials_pending_apply и заодно зануляет previous.
+    previous_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    previous_password_rotated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # SSH-ключ для входа под аккаунтом. Public — в открытом виде, кладётся в
     # `~/.ssh/authorized_keys` на боксе при provision'е. Private — зашифрован
     # тем же `secrets_service.encrypt()`, что и пароль, по своему AAD; на тот

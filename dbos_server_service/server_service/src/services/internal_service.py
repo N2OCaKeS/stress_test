@@ -1266,6 +1266,11 @@ async def record_provision_status(
     # Deprovision (`present=False`) тоже завершает цикл для своего сервера.
     if account.credentials_pending_apply:
         account.credentials_pending_apply = False
+        # Переходный период ротации завершён: новый пароль доехал хотя бы до
+        # одного сервера группы. Удержанный прежний пароль больше не нужен —
+        # зануляем его вместе со снятием флага (тот же row под FOR UPDATE).
+        account.previous_password_encrypted = None
+        account.previous_password_rotated_at = None
         await db.flush()
     await db.commit()
 

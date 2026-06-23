@@ -232,6 +232,131 @@ class TestProvisionPendingApply:
 
 
 @pytest.mark.asyncio
+class TestPreviousPasswordRetention:
+    """Удержание прежнего пароля на время переходного периода ротации.
+
+    rotate переносит current→previous и поднимает pending_apply; GET с
+    view_password отдаёт оба пароля; без права — оба null; первый
+    provision-callback зануляет previous вместе со снятием pending_apply.
+    """
+
+    async def test_rotate_moves_current_to_previous(
+        self, client, operator_token_a, make_server, make_account, db,
+    ):
+        from src.models import ServerAccount
+        from src.services import secrets_service
+        from sqlalchemy import select
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="old-secret1")
+        await db.commit()
+
+        resp = await client.post(
+            f"{BASE}/{acc.id}/rotate_password",
+            headers=_hdr(operator_token_a),
+            json={"password_b64": __import__("base64").b64encode(b"new-secret9").decode()},
+        )
+        assert resp.status_code == 200, resp.text
+
+        row = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc.id)
+        )).scalar_one()
+        aad = secrets_service.aad_for_server_account_password(row.id)
+        assert secrets_service.decrypt(row.password_encrypted, aad=aad) == "new-secret9"
+        assert row.previous_password_encrypted is not None
+        assert secrets_service.decrypt(row.previous_password_encrypted, aad=aad) == "old-secret1"
+        assert row.previous_password_rotated_at is not None
+        # Переходный период открыт — apply на серверы ещё не подтверждён.
+        assert row.credentials_pending_apply is True
+
+    async def test_get_returns_both_passwords_with_view_password(
+        self, client, admin_role_token_a, operator_token_a, make_server, make_account, db,
+    ):
+        import base64
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="old-secret1")
+        await db.commit()
+
+        await client.post(
+            f"{BASE}/{acc.id}/rotate_password",
+            headers=_hdr(operator_token_a),
+            json={"password_b64": base64.b64encode(b"new-secret9").decode()},
+        )
+
+        get = await client.get(f"{BASE}/{acc.id}", headers=_hdr(admin_role_token_a))
+        assert get.status_code == 200, get.text
+        body = get.json()
+        assert base64.b64decode(body["password_b64"]).decode() == "new-secret9"
+        assert base64.b64decode(body["previous_password_b64"]).decode() == "old-secret1"
+        assert body["previous_password_rotated_at"] is not None
+
+    async def test_get_without_view_password_hides_both(
+        self, client, reader_token_a, operator_token_a, make_server, make_account, db,
+    ):
+        import base64
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="old-secret1")
+        await db.commit()
+
+        await client.post(
+            f"{BASE}/{acc.id}/rotate_password",
+            headers=_hdr(operator_token_a),
+            json={"password_b64": base64.b64encode(b"new-secret9").decode()},
+        )
+
+        get = await client.get(f"{BASE}/{acc.id}", headers=_hdr(reader_token_a))
+        assert get.status_code == 200, get.text
+        body = get.json()
+        assert body["password_b64"] is None
+        assert body["previous_password_b64"] is None
+        # Сырой ciphertext старого пароля наружу не светится.
+        assert "old-secret1" not in get.text
+
+    async def test_callback_clears_previous_password(
+        self, client, operator_token_a, make_server, make_account, db, worker_bot_token_a,
+    ):
+        import base64
+
+        from src.models import ServerAccount
+        from sqlalchemy import select
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="old-secret1")
+        await db.commit()
+
+        await client.post(
+            f"{BASE}/{acc.id}/rotate_password",
+            headers=_hdr(operator_token_a),
+            json={"password_b64": base64.b64encode(b"new-secret9").decode()},
+        )
+        await db.refresh(acc)
+        assert acc.previous_password_encrypted is not None
+        assert acc.credentials_pending_apply is True
+
+        # Worker подтвердил apply на сервере — переходный период закрыт.
+        cb_url = (
+            f"/api/server/v1/internal/servers/{srv.id}/accounts/{acc.id}/provision_status"
+        )
+        cb_headers = _hdr(worker_bot_token_a)
+        cb_headers["X-Target-Department-Id"] = srv.department_id
+        resp = await client.post(
+            cb_url,
+            json={"operation": "update", "present": True},
+            headers=cb_headers,
+        )
+        assert resp.status_code == 200, resp.text
+
+        row = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc.id)
+        )).scalar_one()
+        assert row.credentials_pending_apply is False
+        assert row.previous_password_encrypted is None
+        assert row.previous_password_rotated_at is None
+
+
+@pytest.mark.asyncio
 class TestDiscoveredNoPasswordFailFast:
     async def test_discovered_no_password_returns_409(
         self, client, operator_token_a, make_server, make_account,

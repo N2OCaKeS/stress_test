@@ -702,14 +702,17 @@ async def get_account(
     db: AsyncSession,
     identity: IdentityContext,
     account_id: str,
-) -> tuple[ServerAccount, str | None]:
+) -> tuple[ServerAccount, str | None, str | None]:
     """SELECT по PK + dept-isolation, опционально с расшифрованным паролем.
 
     Карточка доступна по `view` или `view_password`: держателю `view_password`
     голый `view` не нужен (так worker_bot, у которого только secret-access,
-    тоже читает карточку с паролем). Второй элемент кортежа — base64(plaintext)
-    при наличии `view_password`, иначе `None`. Раскрытие пароля пишет отдельный
-    CRITICAL-аудит `server_account.password_revealed`.
+    тоже читает карточку с паролем). Кортеж — `(account, password_b64,
+    previous_password_b64)`: при наличии `view_password` оба пароля приходят
+    в base64(plaintext), иначе оба `None`. `previous_password_b64` непуст
+    только когда идёт переходный период ротации (старый пароль ещё удерживается).
+    Раскрытие пароля пишет отдельный CRITICAL-аудит
+    `server_account.password_revealed`.
     """
     # Карточка доступна по view ИЛИ view_password (ролевой бланк или
     # per-account грант). Держатель ТОЛЬКО view_password (без view) тоже
@@ -728,8 +731,10 @@ async def get_account(
     # иначе видит success+failure на один зов. Симметрично с
     # `ipmi_controller.get_controller`.
     revealed: str | None = None
+    previous_revealed: str | None = None
     if has_password_action:
         revealed = await _reveal_account_password(db, account)
+        previous_revealed = _reveal_previous_password(account)
 
     audit_service.emit(
         "server_account.view",
@@ -738,7 +743,7 @@ async def get_account(
         details={"login": account.login, "department_id": account.department_id},
     )
 
-    return account, revealed
+    return account, revealed, previous_revealed
 
 
 async def list_accounts_cursor(
@@ -1522,6 +1527,12 @@ async def rotate_password(
     БД без SSH-apply'я. Для apply'я на конкретный сервер или на все — см.
     worker-dispatch (`/rotate` точечный/массовый).
 
+    Старый пароль не теряется: текущий ciphertext переезжает в
+    `previous_password_encrypted` и удерживается, пока новый пароль не доедет
+    хотя бы до одного сервера (provision-callback снимает
+    `credentials_pending_apply` и заодно зануляет previous). На время
+    переходного периода оператор может подключаться и старым, и новым паролем.
+
     Если `new_password` передан — он уже прошёл парольную политику на схеме
     (`ServerAccountRotateRequest`) и сохраняется как есть. Если нет —
     генерируем серверной стороной (`secrets.token_urlsafe(32)`).
@@ -1865,6 +1876,30 @@ async def _reveal_account_password(
                 "total_reveals_in_window": total_in_window,
             },
         )
+    return base64.b64encode(plain.encode()).decode("ascii")
+
+
+def _reveal_previous_password(account: ServerAccount) -> str | None:
+    """Расшифровать удержанный прежний пароль в base64 (или `None`).
+
+    Зовётся из `get_account` только после успешной проверки `view_password`,
+    рядом с раскрытием текущего пароля. Отдельного аудита не пишет: reveal уже
+    зафиксирован для текущего пароля тем же вызовом, а previous — лишь
+    дополнительное поле той же карточки.
+
+    Прежний пароль шифровался тем же `secrets_service.encrypt` и тем же AAD,
+    что и `password_encrypted` (AAD привязан к id строки, не к колонке) — при
+    ротации ciphertext просто переехал между колонками. Сломанный ciphertext
+    здесь не должен валить всю карточку: переходное поле менее критично, чем
+    текущий пароль, поэтому при ошибке расшифровки возвращаем `None`, а не 500.
+    """
+    if account.previous_password_encrypted is None:
+        return None
+    aad = secrets_service.aad_for_server_account_password(account.id)
+    try:
+        plain = secrets_service.decrypt(account.previous_password_encrypted, aad=aad)
+    except AppException:
+        return None
     return base64.b64encode(plain.encode()).decode("ascii")
 
 

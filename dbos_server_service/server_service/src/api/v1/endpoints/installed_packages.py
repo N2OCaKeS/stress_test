@@ -111,6 +111,13 @@ async def list_installed_packages(
     404 SERVER_NOT_FOUND, 409 SERVER_DECOMMISSIONED, 409 PREPARE_REQUIRED,
     409 TASK_IDEMPOTENT_CONFLICT, 503 WORKER_UNREACHABLE.
 
+    Endpoint возвращает 202 и task_id — реальный результат (или ошибка)
+    приходит в `task.last_error`/`task.status` при поллинге. Если сервер
+    помечен подготовленным, но управляющая SSH-сессия на боксе не поднялась
+    (типично — ОС переустановили, ключ управляющего пользователя утрачен),
+    worker завершает задачу с `SERVER_MANAGEMENT_AUTH_FAILED` и подсказкой
+    про повторный prepare (см. ниже по worker-слою).
+
     Связано: `server_worker/src/tasks/installed_packages.py::installed_packages_list`.
     """
     audit_action = "installed_packages.list"

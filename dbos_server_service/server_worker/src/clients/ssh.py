@@ -90,11 +90,20 @@ class SshError(Exception):
     # explicit __str__.
     details: dict = field(default_factory=dict)
 
-    def __str__(self) -> str:  # pragma: no cover - trivial
-        return (
+    def __str__(self) -> str:
+        # `message` несёт человекочитаемую причину (actionable hint вроде
+        # «возможно, ОС переустановлена — нужен повторный prepare»). Раньше он
+        # в строку не попадал, и оператор в task.last_error видел только сухое
+        # `SSH_AUTH_FAILED: host=... rc=None cmd='' stderr=''`. Включаем его,
+        # когда он задан, не светя при этом креды: ни password, ни new_password
+        # в message не пишутся (см. контракт docstring'а класса).
+        base = (
             f"{self.error_code}: host={self.host} rc={self.returncode} "
             f"cmd={self.cmd_sanitized!r} stderr={self.stderr!r}"
         )
+        if self.message:
+            return f"{base} message={self.message!r}"
+        return base
 
 
 # ── SshClient ────────────────────────────────────────────────────────────────

@@ -70,6 +70,27 @@ def _ssh_channel_open_error() -> asyncssh.ChannelOpenError:
     return asyncssh.ChannelOpenError(1, "no channel")
 
 
+# ── SshError.__str__ ──────────────────────────────────────────────────────────
+
+
+class TestSshErrorStr:
+    def test_includes_message_when_set(self):
+        err = SshError(
+            error_code="SSH_AUTH_FAILED",
+            host="test_server",
+            message="authentication failed: PermissionDenied",
+        )
+        s = str(err)
+        assert "SSH_AUTH_FAILED" in s
+        assert "host=test_server" in s
+        # Раньше message в строку не попадал — теперь оператор видит причину.
+        assert "authentication failed: PermissionDenied" in s
+
+    def test_omits_message_tail_when_empty(self):
+        err = SshError(error_code="SSH_AUTH_FAILED", host="h")
+        assert str(err) == "SSH_AUTH_FAILED: host=h rc=None cmd='' stderr=''"
+
+
 # ── lifecycle ───────────────────────────────────────────────────────────────
 
 

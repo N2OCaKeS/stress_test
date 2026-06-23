@@ -56,11 +56,14 @@ def _to_response(
     obj: ServerAccount,
     password_b64: str | None = None,
     ssh_private_key: str | None = None,
+    previous_password_b64: str | None = None,
 ) -> ServerAccountResponse:
     """Собрать карточку аккаунта из ORM-объекта + список привязанных серверов.
 
     `ssh_private_key` непустой только в ответе create (ssh_mode='generate') —
     приватный ключ отдаётся ровно один раз и в GET-карточке всегда `None`.
+    `previous_password_b64` непуст только при `view_password` и активном
+    переходном периоде ротации (старый пароль ещё удерживается).
     """
     resp = ServerAccountResponse(
         id=obj.id,
@@ -76,6 +79,8 @@ def _to_response(
         is_active=obj.is_active,
         password_rotated_at=obj.password_rotated_at,
         password_b64=password_b64,
+        previous_password_b64=previous_password_b64,
+        previous_password_rotated_at=obj.previous_password_rotated_at,
         ssh_public_key=obj.ssh_public_key,
         ssh_private_key=ssh_private_key,
         created_at=obj.created_at,
@@ -317,8 +322,8 @@ async def get_account(
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountResponse:
     """Get-эндпоинт. Доступ: `view` или `view_password`; пароль — при `view_password`."""
-    obj, password_b64 = await svc.get_account(db, identity, account_id)
-    return _to_response(obj, password_b64)
+    obj, password_b64, previous_password_b64 = await svc.get_account(db, identity, account_id)
+    return _to_response(obj, password_b64, previous_password_b64=previous_password_b64)
 
 
 # Поля, которые worker применяет на боксе через usermod — их правка

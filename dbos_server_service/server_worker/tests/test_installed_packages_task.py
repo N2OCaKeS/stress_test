@@ -250,6 +250,12 @@ class _FakeSshClient:
     def set_response(self, cmd_pattern: str, rc: int, stdout: str, stderr: str = "") -> None:
         self._responses[cmd_pattern] = (rc, stdout, stderr)
 
+    async def connect(self):
+        return None
+
+    async def close(self):
+        return None
+
     async def __aenter__(self):
         return self
 
@@ -645,12 +651,18 @@ class TestInstalledPackagesTask:
         class _BoomClient:
             host = ""
 
-            async def __aenter__(self):
+            async def connect(self):
                 raise SshError(
                     error_code="SSH_AUTH_FAILED",
                     host=self.host,
                     message="authentication failed",
                 )
+
+            async def close(self):
+                return None
+
+            async def __aenter__(self):
+                return self
 
             async def __aexit__(self, *args):
                 return None
@@ -676,6 +688,137 @@ class TestInstalledPackagesTask:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.FAILED
         assert t.last_error and "SSH_AUTH_FAILED" in t.last_error
+
+    @pytest.mark.parametrize(
+        "underlying_code",
+        ["SSH_AUTH_FAILED", "SSH_CONNECT_FAILED", "SSH_TIMEOUT"],
+    )
+    async def test_managed_connect_failure_remapped_to_actionable(
+        self, make_task, fetch_task, monkeypatch, underlying_code,
+    ):
+        """На managed-сервере connect-фейл управляющей сессии превращается в
+        SERVER_MANAGEMENT_AUTH_FAILED с подсказкой про re-prepare. Сырой
+        SSH_AUTH_FAILED наружу не уходит, host сохраняется, креды не светятся.
+        """
+        from sqlalchemy import update
+        from src.clients.ssh import SshError
+        from src.db.session import AsyncSessionLocal
+        from src.models import Task
+
+        class _BoomClient:
+            host = "test_server"
+
+            async def connect(self):
+                raise SshError(
+                    error_code=underlying_code,
+                    host=self.host,
+                    message="raw asyncssh detail",
+                )
+
+            async def close(self):
+                return None
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+        monkeypatch.setattr(
+            "src.tasks.installed_packages.ssh_client.build_session",
+            lambda creds, server_id: _BoomClient(),
+        )
+        tid = await make_task(
+            task_kind="installed_packages.list",
+            target_server_id="srv_reimaged",
+            payload={
+                "server_id": "srv_reimaged",
+                "pattern": "*",
+                "ssh_host": "test_server",
+                "is_managed": True,
+                "management_user": "dbos",
+            },
+        )
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Task).where(Task.id == tid).values(max_attempts=1)
+            )
+            await session.commit()
+        await installed_packages.installed_packages_list.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert t.last_error and "SERVER_MANAGEMENT_AUTH_FAILED" in t.last_error
+        # Actionable-текст про повторный prepare долетел до оператора.
+        assert "prepare" in t.last_error
+        # Исходный сырой код не маячит как основной error_code.
+        assert not t.last_error.startswith("SshError: " + underlying_code)
+        assert "host=test_server" in t.last_error
+
+    async def test_unmanaged_connect_failure_keeps_raw_error(
+        self, make_task, fetch_task, monkeypatch,
+    ):
+        """На НЕуправляемом сервере (self-сессия по паролю) connect-фейл —
+        это просто неверный пароль аккаунта, не повод звать prepare. Исходный
+        SSH_AUTH_FAILED сохраняется как есть.
+        """
+        from sqlalchemy import update
+        from src.clients.ssh import SshError
+        from src.db.session import AsyncSessionLocal
+        from src.models import Task
+
+        class _BoomClient:
+            host = "srv_self"
+
+            async def connect(self):
+                raise SshError(
+                    error_code="SSH_AUTH_FAILED",
+                    host=self.host,
+                    message="authentication failed: PermissionDenied",
+                )
+
+            async def close(self):
+                return None
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+        async def _spy(server_id, account_id, target_department_id=None):
+            return {"login": "ops", "password": "p"}
+
+        monkeypatch.setattr(
+            "src.tasks._account_helpers.server_service_client.fetch_account_password",
+            _spy,
+        )
+        monkeypatch.setattr(
+            "src.tasks.installed_packages.ssh_client.build_session",
+            lambda creds, server_id: _BoomClient(),
+        )
+        tid = await make_task(
+            task_kind="installed_packages.list",
+            target_server_id="srv_self",
+            payload={
+                "server_id": "srv_self",
+                "pattern": "*",
+                "ssh_host": "srv_self",
+                "account_id": "acc1",
+                "is_managed": False,
+            },
+        )
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Task).where(Task.id == tid).values(max_attempts=1)
+            )
+            await session.commit()
+        await installed_packages.installed_packages_list.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert t.last_error and "SSH_AUTH_FAILED" in t.last_error
+        assert "SERVER_MANAGEMENT_AUTH_FAILED" not in t.last_error
 
     async def test_managed_server_uses_session_hints_and_skips_password_fetch(
         self, make_task, fetch_task, captured_audit, monkeypatch,

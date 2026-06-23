@@ -92,6 +92,37 @@ class TestBuildSession:
         get_settings.cache_clear()
 
 
+# ── set_account_password empty-password guard ──────────────────────────────────
+
+
+class TestSetAccountPasswordEmptyGuard:
+    """Ротация обязана выставить реальный секрет.
+
+    Пустой/None пароль до `set_account_password` — это баг вызывающей стороны
+    (потерянный stash, пустой fetch), не passwordless-провижн. Отбиваем явно
+    `SSH_EMPTY_PASSWORD`, не открывая сессию, чтобы chpasswd не упал с
+    `missing new password`, а set_password не сделал тихий no-op.
+    """
+
+    async def test_empty_password_rejected_without_session(self, monkeypatch):
+        connect_mock = AsyncMock()
+        monkeypatch.setattr(asyncssh, "connect", connect_mock)
+        creds = {"login": "tester", "password": "x", "host": "10.0.0.5"}
+        with pytest.raises(SshError) as ei:
+            await ssh_client.set_account_password(creds, "srv_1", "tester", "")
+        assert ei.value.error_code == "SSH_EMPTY_PASSWORD"
+        connect_mock.assert_not_called()
+
+    async def test_none_password_rejected_without_session(self, monkeypatch):
+        connect_mock = AsyncMock()
+        monkeypatch.setattr(asyncssh, "connect", connect_mock)
+        creds = {"login": "tester", "password": "x", "host": "10.0.0.5"}
+        with pytest.raises(SshError) as ei:
+            await ssh_client.set_account_password(creds, "srv_1", "tester", None)  # type: ignore[arg-type]
+        assert ei.value.error_code == "SSH_EMPTY_PASSWORD"
+        connect_mock.assert_not_called()
+
+
 # ── Handlers route through the management session ──────────────────────────────
 
 

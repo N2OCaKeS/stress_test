@@ -395,12 +395,21 @@ class SshClient:
         stdin_full = stdin_payload
         if sudo:
             cmd_to_run = f"sudo -S -p '' {command}"
-            # sudo password подаётся первой строкой stdin, payload
-            # (если есть) — после, разделено LF. Это позволяет одним
-            # вызовом покрыть chpasswd: первая строка — пароль для sudo,
-            # вторая — `login:newpwd` для chpasswd.
-            sudo_pwd = self._password or ""
-            stdin_full = f"{sudo_pwd}\n" + (stdin_payload or "")
+            # sudo password подаётся первой строкой stdin, payload (если есть) —
+            # после, разделено LF: первая строка — пароль для sudo, вторая —
+            # `login:newpwd` для chpasswd.
+            #
+            # Но это работает только когда sudo реально читает пароль со
+            # stdin. На управляющей key-сессии (`self._password is None`) sudo
+            # настроен NOPASSWD — он НЕ потребляет первую строку, и весь stdin
+            # уходит команде как есть. Если бы мы всё равно дописали лидирующий
+            # `"\n"`, chpasswd прочитал бы пустую строку 1 и упал с
+            # `missing new password`. Поэтому при отсутствии пароля префикс не
+            # добавляем — payload идёт команде нетронутым.
+            if self._password:
+                stdin_full = f"{self._password}\n" + (stdin_payload or "")
+            else:
+                stdin_full = stdin_payload
 
         try:
             result = await self._conn.run(
@@ -457,6 +466,21 @@ class SshClient:
                 cmd_sanitized="chpasswd",
                 message=f"login {login!r} contains characters disallowed for chpasswd",
             )
+
+        # Пустой/None пароль — не дёргаем chpasswd: на payload'е `login:\n`
+        # он падает с `missing new password`. Для passwordless-аккаунтов
+        # (discovered без хранимого пароля) это не ошибка, а «пароль не
+        # задаём» — тихо выходим. Контракт держим и здесь, на дне, чтобы
+        # ни один call-site, забывший свой `if new_password:`, не наступил
+        # на missing-new-password. Caller'ы, которым пустой пароль —
+        # ошибка (ротация обязана выставить реальный секрет), отбивают его
+        # сами до вызова.
+        if not new_password:
+            logger.debug(
+                "set_password no-op for %r on %s: empty password",
+                login, self.host,
+            )
+            return
 
         # Сам payload — `login:newpwd\n`. Не логируется, не попадает в
         # cmd_sanitized.

@@ -294,6 +294,33 @@ class TestSshClientRun:
         assert "whoami" in cmd
         assert stdin.startswith("s3cret\n")
 
+    async def test_run_sudo_without_password_does_not_prepend_newline(self, monkeypatch):
+        # Key/NOPASSWD-сессия: пароля нет. sudo -S под NOPASSWD не потребляет
+        # первую строку stdin, поэтому лидирующий "\n" уехал бы в команду —
+        # для chpasswd это пустая строка 1 и `missing new password`. При
+        # отсутствии пароля префикс не добавляем, payload идёт нетронутым.
+        conn = _make_fake_conn(run_results=_run_result("", "", 0))
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "dbos", None, client_keys=["/k"]) as ssh:
+            await ssh.run("chpasswd", sudo=True, stdin_payload="root:NewP@ss1\n")
+
+        stdin = conn.run.call_args.kwargs["input"]
+        # payload подаётся БЕЗ лидирующего "\n" — chpasswd видит его строкой 1.
+        assert stdin == "root:NewP@ss1\n"
+        assert not stdin.startswith("\n")
+
+    async def test_run_sudo_without_password_no_payload_is_none(self, monkeypatch):
+        # Без пароля и без payload'а stdin остаётся None (sudo NOPASSWD сам
+        # ничего не читает) — не подаём пустой "\n", который ломал chpasswd.
+        conn = _make_fake_conn(run_results=_run_result("", "", 0))
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "dbos", None, client_keys=["/k"]) as ssh:
+            await ssh.run("usermod -s /bin/bash x", sudo=True)
+
+        assert conn.run.call_args.kwargs["input"] is None
+
     async def test_run_timeout_raises_ssh_timeout(self, monkeypatch):
         conn = _make_fake_conn(run_raises=_ssh_timeout("read timed out"))
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
@@ -413,6 +440,36 @@ class TestSshClientSetPassword:
                 await ssh.set_password("root", "TopSecret!42")
         assert "TopSecret!42" not in exc_info.value.cmd_sanitized
         assert "TopSecret!42" not in str(exc_info.value)
+
+    async def test_set_password_empty_is_noop(self, monkeypatch):
+        # Пустой пароль не должен дёргать chpasswd (иначе `login:\n` падает
+        # с `missing new password`). Passwordless-провижн полагается на это.
+        conn = _make_fake_conn()
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "ops", "current") as ssh:
+            await ssh.set_password("tester", "")
+        conn.run.assert_not_called()
+
+    async def test_set_password_none_is_noop(self, monkeypatch):
+        conn = _make_fake_conn()
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "ops", "current") as ssh:
+            await ssh.set_password("tester", None)  # type: ignore[arg-type]
+        conn.run.assert_not_called()
+
+    async def test_set_password_empty_invalid_login_still_rejected(self, monkeypatch):
+        # Валидация login'а идёт раньше empty-guard'а: битый login отбиваем
+        # даже с пустым паролем, не маскируя инъекцию под no-op.
+        conn = _make_fake_conn()
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "ops", "p") as ssh:
+            with pytest.raises(SshError) as exc_info:
+                await ssh.set_password("ro;rm -rf /", "")
+        assert exc_info.value.error_code == "SSH_INVALID_LOGIN"
+        conn.run.assert_not_called()
 
 
 # ── get_inventory() ─────────────────────────────────────────────────────────

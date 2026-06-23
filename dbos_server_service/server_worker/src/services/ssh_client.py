@@ -249,6 +249,23 @@ async def set_account_password(
     управляющим пользователем по ключу (chpasswd через sudo); иначе — под
     самим аккаунтом по паролю.
     """
+    # Ротация обязана выставить реальный секрет. Пустой пароль здесь — это
+    # баг вызывающей стороны (потерянный stash, пустой fetch), а не
+    # passwordless-провижн: если бы он дошёл до chpasswd, тот упал бы с
+    # `missing new password`, а set_password ниже сделал бы тихий no-op и
+    # storage разъехался бы с хостом. Отбиваем явно, чтобы оператор увидел
+    # причину, а не «ничего не произошло».
+    if not new_password:
+        raise SshError(
+            error_code="SSH_EMPTY_PASSWORD",
+            host=_extract_host(credentials, server_id),
+            cmd_sanitized=f"chpasswd <{login}>",
+            message=(
+                "refusing to rotate to an empty password; the account has no "
+                "password to rotate on the host"
+            ),
+        )
+
     # Обычный chpasswd-login считаем не-чувствительным (в отличие от
     # bootstrap-login'а, см. `_mask_bootstrap_login`): admin / db / app —
     # стандартные имена, не подсказка для атакующего. Если политика

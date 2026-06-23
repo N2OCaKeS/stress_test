@@ -2388,8 +2388,9 @@ function PasswordRevealCard({
 /**
  * Управление SSH-ключом аккаунта. Добавить/заменить (`generate`|`supply`) и
  * ротация при компрометации (`rotate_ssh_key`). Раскатку на привязанные
- * серверы делает backend. Сгенерированный приватный ключ показываем один раз
- * через `SshKeyResultModal`.
+ * серверы делает backend. Сам приватный ключ на экран не выводим: после
+ * генерации сервис уже хранит его, и оператор скачивает PEM кнопкой «Скачать
+ * приватный ключ» (reveal-эндпоинт) — сразу или позже.
  */
 function SshKeySection({
   account,
@@ -2411,7 +2412,6 @@ function SshKeySection({
   const [pubKey, setPubKey] = useState("");
   const [pending, setPending] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [result, setResult] = useState<SshKeyResponse | null>(null);
 
   const hasKey = !!account.ssh_key_fingerprint || !!account.ssh_public_key;
 
@@ -2477,9 +2477,13 @@ function SshKeySection({
               ssh_public_key: choice === "supply" ? pub : null,
             });
       reset();
-      // Приватный ключ приходит один раз: при generate (add) и всегда при ротации.
+      // При generate (add) и при ротации сервер возвращает приватный ключ, но
+      // на экран его не выводим. Ключ уже сохранён в хранилище — скачать его
+      // можно сейчас или позже кнопкой «Скачать приватный ключ» (reveal).
       if (res.ssh_private_key) {
-        setResult(res);
+        toast.success(
+          "SSH-ключ сохранён. Скачать приватный ключ можно сейчас или позже кнопкой «Скачать приватный ключ».",
+        );
       } else {
         toast.success("SSH-ключ сохранён, раскатка на серверы запущена.");
       }
@@ -2498,7 +2502,8 @@ function SshKeySection({
       </div>
       <div className="text-xs text-dim mb-3">
         Раскатка ключа на привязанные серверы — автоматически на стороне сервиса.
-        Приватный ключ при генерации показывается один раз.
+        Сам приватный ключ на экран не выводится: после генерации его можно
+        скачать сейчас или позже кнопкой «Скачать приватный ключ».
       </div>
 
       <div className="flex items-center gap-2 flex-wrap mb-3">
@@ -2561,7 +2566,7 @@ function SshKeySection({
                 checked={choice === "generate"}
                 onChange={() => setChoice("generate")}
               />
-              <span>сгенерировать (приватный покажем один раз)</span>
+              <span>сгенерировать (приватный ключ — кнопкой «Скачать»)</span>
             </label>
             <label className="inline-flex items-center gap-2 text-sm py-0.5">
               <input
@@ -2604,14 +2609,6 @@ function SshKeySection({
             </button>
           </div>
         </div>
-      )}
-
-      {result && (
-        <SshKeyResultModal
-          login={account.login}
-          result={result}
-          onClose={() => setResult(null)}
-        />
       )}
     </div>
   );

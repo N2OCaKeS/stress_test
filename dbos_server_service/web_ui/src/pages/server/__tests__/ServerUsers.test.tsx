@@ -24,6 +24,10 @@ const listIgnoredLoginsMock = vi.fn(() => new Promise(() => {}));
 const addIgnoredLoginMock = vi.fn((_b?: unknown) => new Promise(() => {}));
 const removeIgnoredLoginMock = vi.fn((_l?: unknown) => new Promise(() => {}));
 const revealSshPrivateKeyMock = vi.fn((_id?: unknown) => new Promise(() => {}));
+const setAccountSshKeyMock = vi.fn(
+  (_id?: unknown, _b?: unknown) => new Promise(() => {}),
+);
+const rotateAccountSshKeyMock = vi.fn((_id?: unknown) => new Promise(() => {}));
 const bindAccountServersMock = vi.fn(
   (_id?: unknown, _b?: unknown) => new Promise(() => {}),
 );
@@ -54,6 +58,12 @@ vi.mock("@/api/server/accounts", () => ({
   },
   get revealAccountSshPrivateKey() {
     return revealSshPrivateKeyMock;
+  },
+  get setAccountSshKey() {
+    return setAccountSshKeyMock;
+  },
+  get rotateAccountSshKey() {
+    return rotateAccountSshKeyMock;
   },
   get bindAccountServers() {
     return bindAccountServersMock;
@@ -147,6 +157,8 @@ describe("ServerUsers (fleet account list)", () => {
     addIgnoredLoginMock.mockReset();
     removeIgnoredLoginMock.mockReset();
     revealSshPrivateKeyMock.mockReset();
+    setAccountSshKeyMock.mockReset();
+    rotateAccountSshKeyMock.mockReset();
     bindAccountServersMock.mockReset();
     listUsersByDepartmentMock.mockReset();
     resolveUserMock.mockReset();
@@ -162,6 +174,8 @@ describe("ServerUsers (fleet account list)", () => {
     addIgnoredLoginMock.mockReturnValue(new Promise(() => {}));
     removeIgnoredLoginMock.mockReturnValue(new Promise(() => {}));
     revealSshPrivateKeyMock.mockReturnValue(new Promise(() => {}));
+    setAccountSshKeyMock.mockReturnValue(new Promise(() => {}));
+    rotateAccountSshKeyMock.mockReturnValue(new Promise(() => {}));
     bindAccountServersMock.mockReturnValue(new Promise(() => {}));
     listUsersByDepartmentMock.mockReturnValue(new Promise(() => {}));
     resolveUserMock.mockReturnValue(new Promise(() => {}));
@@ -367,6 +381,63 @@ describe("ServerUsers (fleet account list)", () => {
     await waitFor(() => {
       expect(revealSshPrivateKeyMock).toHaveBeenCalledWith("acc1");
     });
+  });
+
+  it("после генерации ключа не показывает тело приватного ключа, а предлагает скачать", async () => {
+    listServersMock.mockResolvedValue({
+      items: [{ id: "srv1", display_name: "alpha", hostname: "alpha.local" }],
+      total: 1,
+    });
+    // Аккаунт уже с ключом — кнопка «Скачать приватный ключ» доступна сразу.
+    listAccountsMock.mockResolvedValue({
+      items: [
+        {
+          ...FAKE_ACCOUNT,
+          ssh_public_key: "ssh-ed25519 AAAAC3Nz key",
+          ssh_key_fingerprint: "SHA256:abc123def",
+        },
+      ],
+      total: 1,
+      limit: 200,
+      offset: 0,
+    });
+    const PRIVATE_BODY = "-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n-----END-----";
+    setAccountSshKeyMock.mockResolvedValue({
+      id: "acc1",
+      login: "dbos-svc",
+      ssh_public_key: "ssh-ed25519 AAAAC3Nz newkey",
+      ssh_private_key: PRIVATE_BODY,
+      tasks: [],
+      skipped: [],
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByText("dbos-svc"));
+
+    // Открываем форму замены ключа и сохраняем (режим generate по умолчанию).
+    fireEvent.click(await screen.findByRole("button", { name: /Заменить ключ/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Сохранить/ }));
+
+    await waitFor(() => {
+      expect(setAccountSshKeyMock).toHaveBeenCalledWith("acc1", {
+        ssh_mode: "generate",
+        ssh_public_key: null,
+      });
+    });
+
+    // Тост-уведомление с подсказкой про «скачать сейчас или позже».
+    expect(
+      await screen.findByText(/Скачать приватный ключ можно сейчас или позже/),
+    ).toBeInTheDocument();
+
+    // Тело приватного ключа нигде не отрендерено.
+    expect(screen.queryByText(/BEGIN OPENSSH PRIVATE KEY/)).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue(PRIVATE_BODY)).not.toBeInTheDocument();
+
+    // Механизм «скачать позже» — кнопка reveal остаётся доступной.
+    expect(
+      screen.getByRole("button", { name: /Скачать приватный ключ/ }),
+    ).toBeInTheDocument();
   });
 
   it("показывает кнопку «Поиск на ОС» для оператора/менеджера", async () => {

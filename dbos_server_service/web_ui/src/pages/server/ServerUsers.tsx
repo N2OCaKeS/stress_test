@@ -46,8 +46,6 @@ import {
   ScanSearch,
   Plus,
   X,
-  ShieldPlus,
-  UserPlus,
   KeySquare,
   Download,
   AlertTriangle,
@@ -70,13 +68,8 @@ import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { RevisionDiffModal } from "@/pages/server/RevisionDiffModal";
 import { OsUsersDiscoveryModal } from "@/pages/server/OsUsersDiscoveryModal";
 import { IgnoredLoginsModal } from "@/pages/server/IgnoredLoginsModal";
-import { AccountAclModal } from "@/pages/server/AccountAclModal";
 import { isDepAdmin, isServerZoneBlocked } from "@/lib/rbac";
-import type { PlatformRole } from "@/types/persona";
 import {
-  accountAclActionLabel,
-  type AccountAclAction,
-  type AccountAclGrant,
   type RevisionAccountDiff,
   type Server,
   type ServerAccount,
@@ -111,6 +104,32 @@ function validateUnixGroups(groups: string[]): string | null {
     if (!POSIX_GROUP_RE.test(g)) {
       return `unix_groups: '${g}' не POSIX-имя (строчные, цифры, _ -, до 32 симв.)`;
     }
+  }
+  return null;
+}
+
+// Парольная политика backend'а: минимум 8 символов, обязательны и буквы, и
+// цифры. Текст один — используем и для подсказки у поля, и для маппинга
+// VALIDATION_ERROR по `password_b64`.
+const PASSWORD_POLICY_TEXT =
+  "Пароль не соответствует политике: минимум 8 символов, буквы и цифры.";
+
+function validatePassword(value: string): string | null {
+  if (value.length < 8) return PASSWORD_POLICY_TEXT;
+  if (!/[A-Za-z]/.test(value) || !/[0-9]/.test(value)) {
+    return PASSWORD_POLICY_TEXT;
+  }
+  return null;
+}
+
+/**
+ * Маппит backend-VALIDATION_ERROR по полю `password_b64` в человекочитаемый
+ * текст парольной политики. Не пароль — возвращает null, чтобы caller отдал
+ * ошибку дальше своему обработчику.
+ */
+function passwordPolicyError(e: unknown): string | null {
+  if (e instanceof ApiError && /password_b64/i.test(apiErrMsg(e, ""))) {
+    return PASSWORD_POLICY_TEXT;
   }
   return null;
 }
@@ -414,7 +433,7 @@ export function ServerUsers() {
               type="button"
               className="btn btn-sm flex items-center gap-1 shrink-0"
               onClick={() => setIgnoreListOpen(true)}
-              title="Ignore-лист отдела (manage_ignored_logins)"
+              title="Игнорируемые OS-логины отдела — чтобы служебные (postgres и т.п.) не светились как незнакомые при инвентаризации"
             >
               <EyeOff className="w-3.5 h-3.5" /> Игнор-лист
             </button>
@@ -537,7 +556,6 @@ export function ServerUsers() {
           canReveal={canReveal}
           canOperate={canOperate}
           canManage={canManage}
-          platformRole={persona.platform_role}
           serverName={serverName}
           allServers={servers}
           onChanged={() => accountsQ.refetch()}
@@ -639,8 +657,11 @@ function AccountCreateModal({
       .split(",")
       .map((g) => g.trim())
       .filter(Boolean);
+    const passwordValue = password.trim();
     const validationErr =
-      validateLogin(loginValue) ?? validateUnixGroups(unixGroups);
+      validateLogin(loginValue) ??
+      validateUnixGroups(unixGroups) ??
+      (passwordValue ? validatePassword(passwordValue) : null);
     if (validationErr) {
       setErr(validationErr);
       return;
@@ -812,6 +833,10 @@ function AccountCreateModal({
                   placeholder="пусто — backend сгенерирует сам"
                   autoComplete="new-password"
                 />
+                <span className="text-[11px] text-dim">
+                  Если задаёте свой — минимум 8 символов, буквы и цифры. Пусто —
+                  backend сгенерирует подходящий сам.
+                </span>
               </label>
 
               <div className="flex flex-col gap-1 text-sm">
@@ -881,6 +906,8 @@ function AccountCreateModal({
  * из серверов, остальное — общий envelope (включая 400/422 валидации).
  */
 function handleCreateError(e: unknown): string {
+  const policy = passwordPolicyError(e);
+  if (policy) return policy;
   if (e instanceof ApiError) {
     if (e.status === 403) return "Недостаточно прав для создания аккаунта.";
     if (e.status === 409) {
@@ -948,7 +975,6 @@ function AccountWorkzone({
   canReveal,
   canOperate,
   canManage,
-  platformRole,
   serverName,
   allServers,
   onChanged,
@@ -958,7 +984,6 @@ function AccountWorkzone({
   canReveal: boolean;
   canOperate: boolean;
   canManage: boolean;
-  platformRole: PlatformRole;
   serverName: (id: string) => string;
   allServers: Server[];
   onChanged: () => void;
@@ -1144,26 +1169,6 @@ function AccountWorkzone({
             >
               <Trash2 className="w-4 h-4" /> Удалить
             </button>
-            {canManage && (
-              <button
-                type="button"
-                className="btn btn-sm flex items-center gap-1"
-                title="Прямые гранты доступа к этой учётке"
-                onClick={() => {
-                  document
-                    .getElementById("account-acl-section")
-                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-              >
-                <ShieldPlus className="w-4 h-4" /> Доступ
-                {typeof account.acl_grant_count === "number" &&
-                  account.acl_grant_count > 0 && (
-                    <span className="badge badge-accent">
-                      {account.acl_grant_count}
-                    </span>
-                  )}
-              </button>
-            )}
           </div>
         )}
       </div>
@@ -1329,26 +1334,17 @@ function AccountWorkzone({
         />
 
         {!editing && (
-          <>
-            <ServersSection
-              account={account}
-              canOperate={canOperate}
-              serverName={serverName}
-              allServers={allServers}
-              onChanged={onChanged}
-              onRevision={handleRevision}
-              revisionBusyServer={
-                revision.tracked?.polling ? revisionServer : null
-              }
-            />
-
-            {canManage && (
-              <AccountAclSection
-                account={account}
-                platformRole={platformRole}
-              />
-            )}
-          </>
+          <ServersSection
+            account={account}
+            canOperate={canOperate}
+            serverName={serverName}
+            allServers={allServers}
+            onChanged={onChanged}
+            onRevision={handleRevision}
+            revisionBusyServer={
+              revision.tracked?.polling ? revisionServer : null
+            }
+          />
         )}
       </div>
 
@@ -1792,227 +1788,6 @@ function ServersSection({
   );
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Доступ к учётке — прямые гранты пользователям (per-account ACL)
-// ───────────────────────────────────────────────────────────────────────────
-
-/**
- * Сообщение по ошибке выдачи/снятия гранта. 422 — кривое действие или id, 403 —
- * нет manage_account_acl, 404 — учётка/грант не найдены.
- */
-function handleAclError(e: unknown): string {
-  if (e instanceof ApiError) {
-    if (e.status === 403) {
-      return "Недостаточно прав (нужен manage_account_acl).";
-    }
-    if (e.status === 404) {
-      return "Учётка или грант не найдены (возможно, cross-dept или уже снят).";
-    }
-    if (e.status === 422) {
-      return apiErrMsg(e, "Недопустимое действие или пользователь.");
-    }
-  }
-  return apiErrMsg(e, "Операция не удалась");
-}
-
-/**
- * Секция прямых грантов доступа к учётке. Гранты добавляют доступ поверх ролей
- * отдела; dep_admin и server.admin видят все учётки всегда. Список с бэйджами
- * действий и снятием, кнопка выдачи открывает `AccountAclModal`. Выбор юзера
- * в модалке гейтит платформенная роль: dep_admin/account_admin берут пикер
- * отдела, остальные вводят username вручную.
- */
-function AccountAclSection({
-  account,
-  platformRole,
-}: {
-  account: ServerAccount;
-  platformRole: PlatformRole;
-}) {
-  const toast = useToast();
-  const { confirm } = useConfirm();
-  const grantsQ = useQuery(
-    () => accountsApi.listAccountAcl(account.id),
-    [account.id],
-  );
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<AccountAclGrant | null>(null);
-  const [busyUser, setBusyUser] = useState<string | null>(null);
-
-  const canPickUsers =
-    platformRole === "dep_admin" || platformRole === "account_admin";
-
-  const grants = grantsQ.data ?? [];
-
-  function openCreate() {
-    setEditing(null);
-    setModalOpen(true);
-  }
-
-  function openEdit(grant: AccountAclGrant) {
-    setEditing(grant);
-    setModalOpen(true);
-  }
-
-  async function handleSubmit(body: {
-    user_id: string;
-    actions: AccountAclAction[];
-  }) {
-    try {
-      await accountsApi.addAccountAcl(account.id, body);
-      toast.success("Доступ выдан");
-      setModalOpen(false);
-      setEditing(null);
-      grantsQ.refetch();
-    } catch (e) {
-      toast.error(handleAclError(e));
-    }
-  }
-
-  async function handleRevoke(grant: AccountAclGrant) {
-    if (busyUser) return;
-    if (
-      !(await confirm({
-        title: "Снять доступ",
-        message: `Снять прямой грант пользователя для учётки ${account.login}? Доступ по ролям отдела сохранится.`,
-        confirmLabel: "Снять",
-        danger: true,
-      }))
-    )
-      return;
-    setBusyUser(grant.user_id);
-    try {
-      await accountsApi.revokeAccountAcl(account.id, grant.user_id);
-      toast.success("Доступ снят");
-      grantsQ.refetch();
-    } catch (e) {
-      toast.error(handleAclError(e));
-    } finally {
-      setBusyUser(null);
-    }
-  }
-
-  return (
-    <div className="card" id="account-acl-section">
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-xs uppercase text-dim flex items-center gap-2">
-          <ShieldPlus className="w-3 h-3" /> Доступ к учётке
-          {grants.length > 0 && (
-            <span className="badge badge-accent normal-case">
-              {grants.length}
-            </span>
-          )}
-        </div>
-        <button
-          type="button"
-          className="btn btn-sm btn-primary flex items-center gap-1"
-          onClick={openCreate}
-        >
-          <UserPlus className="w-3.5 h-3.5" /> Выдать доступ
-        </button>
-      </div>
-      <div className="text-xs text-dim mb-3">
-        Точечная выдача доступа к этой конкретной учётке. Гранты добавляют доступ
-        поверх ролей; dep_admin и server.admin видят все учётки всегда.
-      </div>
-
-      {grantsQ.loading && (
-        <div className="text-xs text-dim">Загрузка…</div>
-      )}
-      {grantsQ.error && (
-        <div className="text-xs text-danger">
-          {apiErrMsg(grantsQ.error, "Гранты не загрузились")}
-        </div>
-      )}
-      {!grantsQ.loading && !grantsQ.error && grants.length === 0 && (
-        <div className="text-xs text-dim italic">
-          Прямых грантов нет — доступ только по ролям отдела.
-        </div>
-      )}
-      {!grantsQ.loading && !grantsQ.error && grants.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {grants.map((g) => (
-            <AccountAclRow
-              key={g.id}
-              grant={g}
-              busy={busyUser === g.user_id || busyUser !== null}
-              onEdit={() => openEdit(g)}
-              onRevoke={() => handleRevoke(g)}
-            />
-          ))}
-        </div>
-      )}
-
-      {modalOpen && (
-        <AccountAclModal
-          canPick={canPickUsers}
-          pickerDeptId={account.department_id}
-          editing={editing}
-          onClose={() => {
-            setModalOpen(false);
-            setEditing(null);
-          }}
-          onSubmit={handleSubmit}
-        />
-      )}
-    </div>
-  );
-}
-
-function AccountAclRow({
-  grant,
-  busy,
-  onEdit,
-  onRevoke,
-}: {
-  grant: AccountAclGrant;
-  busy: boolean;
-  onEdit: () => void;
-  onRevoke: () => void;
-}) {
-  const username = useUserLabel(grant.user_id);
-  return (
-    <div className="border border-token rounded px-3 py-2 flex items-center gap-2 flex-wrap">
-      <User className="w-4 h-4 text-dim shrink-0" />
-      <span
-        className="text-sm flex-1 min-w-[120px] truncate"
-        title={grant.user_id}
-      >
-        {username}
-      </span>
-      <div className="flex flex-wrap gap-1">
-        {grant.actions.length === 0 ? (
-          <span className="text-dim italic text-xs">—</span>
-        ) : (
-          grant.actions.map((a) => (
-            <span key={a} className="badge" title={a}>
-              {accountAclActionLabel(a)}
-            </span>
-          ))
-        )}
-      </div>
-      <button
-        type="button"
-        className="btn btn-sm flex items-center gap-1"
-        disabled={busy}
-        title="Изменить набор действий"
-        onClick={onEdit}
-      >
-        <Edit3 className="w-3.5 h-3.5" /> Изменить
-      </button>
-      <button
-        type="button"
-        className="btn btn-sm btn-danger flex items-center gap-1"
-        disabled={busy}
-        title="Снять прямой грант"
-        onClick={onRevoke}
-      >
-        <X className="w-3.5 h-3.5" /> Снять
-      </button>
-    </div>
-  );
-}
-
 function StatRow({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="flex items-baseline gap-3 py-1 text-sm">
@@ -2075,9 +1850,11 @@ function AccountEditForm({
       .split(",")
       .map((g) => g.trim())
       .filter(Boolean);
+    const newPassword = password.trim();
     const validationErr =
       (loginChanged ? validateLogin(loginValue) : null) ??
-      validateUnixGroups(unixGroups);
+      validateUnixGroups(unixGroups) ??
+      (newPassword ? validatePassword(newPassword) : null);
     if (validationErr) {
       setErr(validationErr);
       return;
@@ -2097,9 +1874,12 @@ function AccountEditForm({
       if (plain) await applyPasswordChange(plain);
       onSaved();
     } catch (e) {
+      const policy = passwordPolicyError(e);
       // present-аккаунт нельзя переименовать обычным PATCH — backend отдаёт 409
       // LOGIN_LOCKED; предлагаем destructive-пересоздание отдельной кнопкой.
-      if (
+      if (policy) {
+        setErr(policy);
+      } else if (
         loginChanged &&
         e instanceof ApiError &&
         e.status === 409 &&
@@ -2171,7 +1951,10 @@ function AccountEditForm({
       }
       onSaved();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 403) {
+      const policy = passwordPolicyError(e);
+      if (policy) {
+        setErr(policy);
+      } else if (e instanceof ApiError && e.status === 403) {
         setErr("Недостаточно прав на пересоздание (нужен dep_admin/server.admin).");
       } else {
         setErr(handleActionError(e));
@@ -2260,7 +2043,7 @@ function AccountEditForm({
       </FormRow>
       <FormRow
         label="новый пароль"
-        hint="пусто — пароль не меняется; иначе пишется только в БД"
+        hint="пусто — не меняется; иначе минимум 8 символов, буквы и цифры (только в БД)"
       >
         <input
           className="input mono"

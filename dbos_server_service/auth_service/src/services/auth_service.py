@@ -21,6 +21,7 @@ from src.repositories.sessions import SessionRepository
 from src.repositories.users import UserRepository
 from src.schemas.auth import IdentityContext, LoginResponse, RefreshResponse
 from src.services import _lockout, audit_context, audit_service
+from src.services.lockout_policy_service import resolve_lockout_policy
 from src.utils.time import expires_at, is_expired
 
 # Dummy Argon2id hash для timing-equalisation при login несуществующего
@@ -76,7 +77,7 @@ async def verify_password_with_lockout(
     эмитит свои (`user.login` vs `docker.token_issued`).
     """
     user_repo = UserRepository(db)
-    settings = get_settings()
+    max_attempts, lockout_minutes = await resolve_lockout_policy(db)
 
     if await _lockout.release_if_expired(user_repo, user):
         await db.commit()
@@ -89,8 +90,8 @@ async def verify_password_with_lockout(
         await _lockout.register_failure(
             user_repo,
             user,
-            max_attempts=settings.max_failed_login_attempts,
-            lockout_minutes=settings.lockout_minutes,
+            max_attempts=max_attempts,
+            lockout_minutes=lockout_minutes,
         )
         await db.commit()
         raise AuthenticationError(

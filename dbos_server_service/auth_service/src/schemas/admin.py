@@ -26,3 +26,33 @@ class GeneratedServiceKeyResponse(BaseModel):
     algorithm: str = Field(
         ..., description="Алгоритм, под который предназначен ключ (AES-256-GCM)."
     )
+
+
+class LockoutPolicyResponse(BaseModel):
+    """Ответ GET/PUT /api/auth/v1/admin/lockout-policy.
+
+    Эффективные параметры brute-force lockout'а. `source="db"` — действует
+    runtime-override из таблицы `lockout_policy`; `source="env"` — override'а
+    нет, используются env-дефолты (`MAX_FAILED_LOGIN_ATTEMPTS` / `LOCKOUT_MINUTES`).
+    """
+
+    max_failed_attempts: int = Field(
+        ..., description="Сколько подряд неудачных login'ов триггерят lockout."
+    )
+    lockout_minutes: int = Field(
+        ..., description="Длительность lockout в минутах после достижения лимита."
+    )
+    source: str = Field(
+        ..., description="Откуда взяты значения: `db` (runtime-override) или `env` (дефолт)."
+    )
+
+
+class LockoutPolicyUpdateRequest(BaseModel):
+    """Тело PUT /api/auth/v1/admin/lockout-policy — runtime-override политики."""
+
+    max_failed_attempts: int = Field(
+        ..., ge=1, description="Лимит неудачных попыток до lockout'а (>= 1)."
+    )
+    lockout_minutes: int = Field(
+        ..., ge=1, description="Длительность lockout в минутах (>= 1)."
+    )

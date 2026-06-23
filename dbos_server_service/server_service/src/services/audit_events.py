@@ -86,10 +86,6 @@ SERVICE_EVENTS = [
     {"action": "server_account.ignored_login_added", "description": "Login added to the department ignore-list — inventory will no longer report it as an unknown OS-user", "default_severity": "WARNING"},
     {"action": "server_account.ignored_login_removed", "description": "Login removed from the department ignore-list — inventory will report it as unknown again if present on a box", "default_severity": "INFO"},
     {"action": "server_account.ignored_logins_listed", "description": "Department ignore-list of OS-user logins listed (emitted on denied)", "default_severity": "INFO"},
-    # Per-account ACL (прямые гранты на учётку поверх ролей)
-    {"action": "server_account.acl_listed", "description": "Direct per-account ACL grants for a server account listed", "default_severity": "INFO"},
-    {"action": "server_account.acl_granted", "description": "Direct per-account ACL grant created/updated for a user on a server account (additive to role matrix; replaces the action set for that user)", "default_severity": "WARNING"},
-    {"action": "server_account.acl_revoked", "description": "Direct per-account ACL grant removed for a user on a server account", "default_severity": "WARNING"},
     {"action": "server_account.recreate_login", "description": "Account OS-login recreated end-to-end (deprovision under old login → DB rename → provision under new login on all linked servers); access restricted to department_admin/service-admin", "default_severity": "CRITICAL"},
     {"action": "server_account.ssh_key_set", "description": "Account SSH key set/replaced (generate Ed25519 or supply public key); saved to DB and fanned out via account.provision to push authorized_keys", "default_severity": "WARNING"},
     {"action": "server_account.ssh_key_rotate", "description": "Account SSH key regenerated (compromise case): new Ed25519 keypair saved, private returned once, fanned out via account.provision", "default_severity": "CRITICAL"},

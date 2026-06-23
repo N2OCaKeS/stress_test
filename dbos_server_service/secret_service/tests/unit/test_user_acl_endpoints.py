@@ -100,6 +100,46 @@ async def personal_cred(adb):
     return cred
 
 
+@pytest_asyncio.fixture
+async def dept_cred(adb):
+    """Department-cred внутри OWNER_DEPT — user-ACL на неё запрещён."""
+    cred = await cred_repo.create(
+        adb,
+        id="cred_dep_uacl01",
+        name="dept_jira",
+        service="jira",
+        scope="department",
+        owner_user_id=None,
+        owner_dept_id=OWNER_DEPT,
+        login="x",
+        secret_encrypted="v2$nonce$ct",
+        status="active",
+        created_by=OWNER_USER_ID,
+    )
+    await adb.commit()
+    return cred
+
+
+@pytest_asyncio.fixture
+async def cross_dep_cred(adb):
+    """Cross-department-cred внутри OWNER_DEPT — user-ACL на неё запрещён."""
+    cred = await cred_repo.create(
+        adb,
+        id="cred_xdep_uacl01",
+        name="xdep_jira",
+        service="jira",
+        scope="cross_department",
+        owner_user_id=None,
+        owner_dept_id=OWNER_DEPT,
+        login="x",
+        secret_encrypted="v2$nonce$ct",
+        status="active",
+        created_by=OWNER_USER_ID,
+    )
+    await adb.commit()
+    return cred
+
+
 # ── ADD ─────────────────────────────────────────────────────────────────────
 
 
@@ -116,6 +156,30 @@ async def test_owner_grants_user_acl_ok(http_client, personal_cred):
     assert body["can_write"] is False
     assert body["granted_by_user_id"] == OWNER_USER_ID
     assert body["id"].startswith("uacl_")
+
+
+@pytest.mark.asyncio
+async def test_user_acl_on_department_cred_rejected(http_client, dept_cred):
+    # dep_admin OWNER_DEPT проходит grant_acl-гейт, но user-ACL на department-
+    # креду запрещён: доступ к ней раздаётся только ролями.
+    _set_identity(_identity(roles=["admin"], platform_role="department_admin"))
+    payload = {"user_id": GRANTEE_ID, "can_read": True}
+    resp = await http_client.post(
+        f"/api/secret/v1/credentials/{dept_cred.id}/user-acl", json=payload
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["error_code"] == "USER_ACL_SCOPE_NOT_PERSONAL"
+
+
+@pytest.mark.asyncio
+async def test_user_acl_on_cross_dep_cred_rejected(http_client, cross_dep_cred):
+    _set_identity(_identity(roles=["admin"], platform_role="department_admin"))
+    payload = {"user_id": GRANTEE_ID, "can_read": True}
+    resp = await http_client.post(
+        f"/api/secret/v1/credentials/{cross_dep_cred.id}/user-acl", json=payload
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["error_code"] == "USER_ACL_SCOPE_NOT_PERSONAL"
 
 
 @pytest.mark.asyncio

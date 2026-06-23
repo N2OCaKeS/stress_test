@@ -190,24 +190,23 @@ async def _authorize_account_action(
     for_update: bool = False,
     extra_details: dict | None = None,
 ) -> ServerAccount:
-    """Загрузить учётку и авторизовать `action` на ней (роль ИЛИ per-account грант).
+    """Загрузить учётку и авторизовать `action` на ней (роль либо dep_admin отдела).
 
     Единая точка для всех account-targeted операций. Решает две задачи разом:
-    permission-check (аддитивная модель `has_account_action`) и visibility.
+    permission-check (`has_account_action`) и visibility.
 
     Порядок и enumeration-резистентность:
 
-    * Сначала грузим учётку (raw, без dept-фильтра) — per-account грант нельзя
-      проверить, не зная конкретную учётку.
+    * Сначала грузим учётку (raw, без dept-фильтра).
     * Держатель бланкетной роли отдела ведёт себя как раньше: видит 404 на
       невидимую (cross-dept / отсутствующую) учётку, иначе проходит.
-    * Caller без бланкетной роли проходит, только если у него есть прямой грант
-      на эту (видимую ему) учётку с этим действием; во всех остальных случаях —
-      одинаковый 403 PERMISSION_DENIED (невидимая учётка, чужой dept,
-      существующая-без-гранта неотличимы — нет existence-oracle'а).
+    * Caller без бланкетной роли проходит, только если он department_admin
+      своего отдела и учётка видима; во всех остальных случаях — одинаковый 403
+      PERMISSION_DENIED (невидимая учётка, чужой dept, существующая-без-доступа
+      неотличимы — нет existence-oracle'а).
 
-    provision/deprovision гейтятся одноимёнными действиями (ролевая матрица
-    ИЛИ per-account флаг) в worker-dispatch'е и сюда не приходят.
+    provision/deprovision гейтятся одноимёнными действиями ролевой матрицы в
+    worker-dispatch'е и сюда не приходят.
     """
     has_role = await permissions.has_action(
         db, identity, EntityType.SERVER_ACCOUNT, action
@@ -231,11 +230,12 @@ async def _authorize_account_action(
             )
         return account
 
-    # Без бланкетной роли — единственный путь это прямой грант на видимую учётку.
+    # Без бланкетной роли — пройти может только department_admin своего отдела
+    # на видимую учётку (bypass внутри has_account_action).
     if visible and await permissions.has_account_action(db, identity, account, action):
         return account
 
-    # Нет ни роли, ни гранта (или цель невидима) — 403 без раскрытия
+    # Нет доступа (или цель невидима) — 403 без раскрытия
     # существования. denied-аудит зеркалит emit_denied_on_authz_error.
     details: dict = dict(extra_details) if extra_details else {}
     details["reason"] = "permission_denied"
@@ -741,8 +741,8 @@ async def get_account(
     Раскрытие пароля пишет отдельный CRITICAL-аудит
     `server_account.password_revealed`.
     """
-    # Карточка доступна по view ИЛИ view_password (ролевой бланк или
-    # per-account грант). Держатель ТОЛЬКО view_password (без view) тоже
+    # Карточка доступна по view ИЛИ view_password (ролевой бланк). Держатель
+    # ТОЛЬКО view_password (без view) тоже
     # открывает карточку — поэтому авторизуем по объединению двух действий
     # одним вызовом (без преждевременного denied-аудита на первом промахе).
     account = await _authorize_account_action_any(
@@ -963,7 +963,7 @@ async def update_account(
             )
 
     # Подъём has_sudo=False→true ИЛИ добавление sudo-дающей группы в unix_groups
-    # — эскалация привилегии, требует GRANT_SUDO (роль ИЛИ per-account грант).
+    # — эскалация привилегии, требует GRANT_SUDO (ролевой грант).
     # Снятие флага / снятие такой группы допустимо обычным UPDATE (понижение).
     # Группы меняются под обычным `update`, поэтому без этой проверки учётку
     # можно было закинуть в sudo-группу в обход has_sudo-гейта.
@@ -1726,7 +1726,7 @@ async def set_ssh_key(
 ) -> tuple[ServerAccount, str, str | None]:
     """Задать/заменить SSH-ключ аккаунта в БД (без fan-out — его делает endpoint).
 
-    Гейт — `update` (роль ИЛИ per-account грант). `generate` — Ed25519, храним
+    Гейт — `update` (ролевой грант). `generate` — Ed25519, храним
     public + зашифрованный private, возвращаем приватный один раз; `supply` —
     сохраняем переданный public, зашифрованный private сбрасываем (его у нас нет).
 
@@ -2036,10 +2036,10 @@ async def resolve_console_credentials(
     """Расшифровать креды учётки для интерактивной консоли.
 
     Отличие от `resolve_bootstrap_credentials`: «подключаться к консоли» —
-    отдельное право учётки. Проходит, если у caller'а есть per-account грант
-    `console` на эту учётку ЛИБО доступ `view_password` (роль или грант —
-    кто видит пароль, тот и так может им подключиться). Это делает консоль
-    доступной без бланкетного view_password при наличии узкого console-гранта.
+    отдельное ролевое право учётки. Проходит, если у caller'а есть роль с
+    `console` на server_account ЛИБО с `view_password` (кто видит пароль, тот и
+    так может им подключиться). Узкая роль `console` даёт консоль без бланкетного
+    view_password.
 
     `allow_via_server_console=True` — caller уже держит ролевой
     `(server, console)`; он проходит без отдельного права на учётке (сохраняем

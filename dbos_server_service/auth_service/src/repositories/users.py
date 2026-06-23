@@ -71,6 +71,53 @@ class UserRepository:
         result = await self._db.scalars(stmt)
         return list(result)
 
+    def _locked_filter(self, now: datetime, include_failing: bool):
+        """Условие «под lockout'ом»: активное окно `locked_until > now`.
+
+        `include_failing=True` дополнительно ловит юзеров с накопленными
+        неудачами, но ещё не залоченных (`failed_login_attempts > 0`).
+        """
+        active_lockout = User.locked_until.is_not(None) & (User.locked_until > now)
+        if include_failing:
+            return active_lockout | (User.failed_login_attempts > 0)
+        return active_lockout
+
+    async def list_locked(
+        self,
+        now: datetime,
+        include_failing: bool = False,
+        department_id: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[User]:
+        """Юзеры под brute-force lockout'ом (SQL-фильтр, не Python-side).
+
+        `department_id` — dept-scope для department_admin'а (None = все отделы).
+        """
+        stmt = select(User).where(self._locked_filter(now, include_failing))
+        if department_id is not None:
+            stmt = stmt.where(User.department_id == department_id)
+        stmt = stmt.order_by(User.locked_until.desc().nullslast(), User.id)
+        if limit is not None:
+            stmt = stmt.limit(limit).offset(offset)
+        result = await self._db.scalars(stmt)
+        return list(result)
+
+    async def count_locked(
+        self,
+        now: datetime,
+        include_failing: bool = False,
+        department_id: str | None = None,
+    ) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(User)
+            .where(self._locked_filter(now, include_failing))
+        )
+        if department_id is not None:
+            stmt = stmt.where(User.department_id == department_id)
+        return await self._db.scalar(stmt) or 0
+
     async def list_by_ids(self, user_ids: list[str]) -> list[User]:
         """Batch-выборка юзеров по списку id. Пустой список — пустой результат."""
         if not user_ids:

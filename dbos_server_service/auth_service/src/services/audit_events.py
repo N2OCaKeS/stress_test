@@ -52,6 +52,7 @@ SERVICE_EVENTS = [
     {"action": "user.ban", "description": "User account banned", "default_severity": "CRITICAL"},
     {"action": "user.unban", "description": "User account unbanned", "default_severity": "CRITICAL"},
     {"action": "user.unlock", "description": "Brute-force lockout cleared by admin (failed_login_attempts + locked_until reset)", "default_severity": "CRITICAL"},
+    {"action": "user.locked_list", "description": "Admin retrieved the list of users currently under brute-force lockout (GET /users/locked)", "default_severity": "INFO"},
     {"action": "user.ban_deactivated_via_status_change", "description": "Active ban deactivated as side-effect of PATCH /users/{id}/status", "default_severity": "WARNING"},
     {"action": "user.sessions_revoked_on_block", "description": "User sessions revoked as side-effect of PATCH /users/{id}/status to BLOCKED", "default_severity": "WARNING"},
     {"action": "user.pat_revoked_on_block", "description": "User PATs revoked as side-effect of PATCH /users/{id}/status to BLOCKED", "default_severity": "WARNING"},
@@ -67,6 +68,7 @@ SERVICE_EVENTS = [
     {"action": "user.hard_deleted", "description": "User row hard-deleted (cascade revoke + secret_service notify)", "default_severity": "CRITICAL"},
     # Service encryption keys (generator for runtime key rotation in server/secret services)
     {"action": "service_key.generate", "description": "account_admin generated a fresh AES-256 master key (base64) for distribution to a service keystore rotation; auth_service does not store it", "default_severity": "CRITICAL"},
+    {"action": "lockout_policy.update", "description": "account_admin updated the platform brute-force lockout policy (max_failed_attempts / lockout_minutes) via PUT /admin/lockout-policy", "default_severity": "CRITICAL"},
     # Departments
     {"action": "department.create", "description": "New department created", "default_severity": "CRITICAL"},
     {"action": "department.updated", "description": "Department metadata updated (PATCH /departments/{id})", "default_severity": "INFO"},

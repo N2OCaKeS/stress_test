@@ -135,6 +135,22 @@ class UserResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class LockedUserResponse(BaseModel):
+    """Юзер под brute-force lockout'ом (ответ `GET /users/locked`).
+
+    `is_locked` — производное: True, если `locked_until` в будущем (активное
+    окно). При `include_failing=True` в список попадают и юзеры с
+    `failed_login_attempts > 0`, но ещё не залоченные — у таких `is_locked=False`.
+    """
+
+    user_id: str
+    username: str
+    department_id: str | None = None
+    failed_login_attempts: int
+    locked_until: datetime | None = None
+    is_locked: bool
+
+
 class UserResolveResponse(BaseModel):
     """Ответ `GET /users/resolve` — точечный username → id lookup.
 

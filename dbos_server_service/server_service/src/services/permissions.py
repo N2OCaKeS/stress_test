@@ -26,11 +26,10 @@ cross-dept privilege leak через коллизии имён кастомны�
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import ACCOUNT_ACL_ACTION_COLUMNS, PlatformRole
+from src.core.constants import PlatformRole
 from src.core.exceptions import AuthorizationError
 from src.dependencies.auth import SERVICE_NAME
 from src.repositories import entity_permission as repo
-from src.repositories import server_account_user_acl as acl_repo
 from src.schemas.identity import IdentityContext
 
 
@@ -88,38 +87,26 @@ async def has_account_action(
 ) -> bool:
     """True iff caller имеет право на `action` для КОНКРЕТНОЙ учётки `account`.
 
-    Аддитивная модель доступа к учётке:
+    Доступ к учётке резолвится только ролями:
 
       * бланкетная роль отдела даёт `action` на server_account (как `has_action`);
-      ИЛИ
-      * у пользователя есть прямой per-account грант на эту учётку с этим
-        действием;
       ИЛИ
       * caller — `department_admin` своего отдела (bypass, видит/может всё со
         всеми учётками отдела; service-роль `admin` покрыта ролевым путём выше).
 
-    Грант только расширяет — deny/сужения нет. Dept-изоляция уже обеспечена
-    тем, что caller дошёл до видимой ему учётки (visibility-404 в сервисе);
-    грант хранит `department_id` учётки, lookup идёт по (account_id, user_id).
+    Прямых пер-юзерных грантов на конкретную учётку больше нет — права раздаются
+    только через роли (и наборы ролей в группах). Dept-изоляция обеспечена тем,
+    что caller дошёл до видимой ему учётки (visibility-404 в сервисе).
     """
     if await has_action(db, identity, "server_account", action):
         return True
     # department_admin своего отдела — bypass. Учётку он уже видит (dept-isolation
     # пройдена выше по стеку), отдельный matrix-grant ему не нужен.
-    if (
+    return (
         identity.platform_role == PlatformRole.DEPARTMENT_ADMIN
         and identity.department_id is not None
         and identity.department_id == account.department_id
-    ):
-        return True
-    column = ACCOUNT_ACL_ACTION_COLUMNS.get(action)
-    if column is None:
-        # Действие не грантуется per-account (callback/служебное) — только роль.
-        return False
-    grant = await acl_repo.get_for_account_user(db, account.id, identity.user_id)
-    if grant is None:
-        return False
-    return bool(getattr(grant, column, False))
+    )
 
 
 async def require_account_action(
@@ -130,9 +117,9 @@ async def require_account_action(
 ) -> None:
     """Бросает AuthorizationError, если нет `action` на конкретной учётке.
 
-    Account-aware аналог `require_action`: учитывает прямой per-account грант
-    и department_admin-bypass поверх ролевой матрицы. denied-аудит, как и в
-    `require_action`, эмитят вызывающие endpoint'ы.
+    Account-aware аналог `require_action`: учитывает department_admin-bypass
+    поверх ролевой матрицы. denied-аудит, как и в `require_action`, эмитят
+    вызывающие endpoint'ы.
     """
     if await has_account_action(db, identity, account, action):
         return

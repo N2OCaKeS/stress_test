@@ -53,7 +53,7 @@ from src.dependencies.db import get_db  # noqa: E402
 from src.main import create_application  # noqa: E402
 from src.models import (  # noqa: E402
     Ban, BotAccount, BotToken, Department, DepartmentServiceAccess,
-    OAuthAuthorizationCode, OAuthClient,
+    LockoutPolicy, OAuthAuthorizationCode, OAuthClient,
     PersonalAccessToken, PlatformService, ServiceRoleDefinition, Session, User, UserServiceRole,
 )
 from src.models.department_docker_registry import DepartmentDockerRegistry  # noqa: E402

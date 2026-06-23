@@ -5,7 +5,6 @@ from datetime import timezone
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import get_settings
 from src.core.constants import PlatformRole, UserStatus
 from src.core.exceptions import AuthenticationError, AuthorizationError, ConflictError, DomainValidationError, NotFoundError
 from src.core.security import hash_password, mask_email, verify_password
@@ -31,10 +30,11 @@ from src.schemas.users import (
 )
 from src.services import _lockout, audit_service
 from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
-from src.services._dept_guard import assert_dept_admin_target_dept
+from src.services._dept_guard import assert_actor_exists, assert_dept_admin_target_dept
 from src.services.auth_service import collect_user_permissions
+from src.services.lockout_policy_service import resolve_lockout_policy
 from src.utils.pagination import PaginationParams
-from src.utils.time import utcnow
+from src.utils.time import is_expired, utcnow
 
 
 def _to_response(user, dept_name: str | None) -> UserResponse:
@@ -189,6 +189,73 @@ async def list_users_by_department(
         request_id=request_id,
     )
     return [_to_response(u, dept.name) for u in users], total
+
+
+async def list_locked_users(
+    db: AsyncSession,
+    actor_id: str,
+    actor_role: str | None,
+    actor_dept_id: str | None,
+    include_failing: bool = False,
+    pagination: PaginationParams | None = None,
+    request_id: str | None = None,
+) -> tuple[list["LockedUserResponse"], int]:
+    """Юзеры под brute-force lockout'ом (страница). Возвращает `(страница, total)`.
+
+    Dept-scope: account_admin видит все отделы; department_admin — только свой
+    (фильтр по `actor_dept_id`). `include_failing` дополнительно отдаёт юзеров с
+    накопленными неудачами, но ещё не залоченных.
+    """
+    from src.schemas.users import LockedUserResponse
+
+    pagination = pagination or PaginationParams()
+    user_repo = UserRepository(db)
+
+    # department_admin скоупится своим отделом; у платформенного DA без
+    # department_id скоуп пустой — отдаём пустой список, а не все отделы.
+    scope_dept = None
+    if actor_role == PlatformRole.DEPARTMENT_ADMIN:
+        await assert_actor_exists(user_repo, actor_id)
+        scope_dept = actor_dept_id
+
+    now = utcnow()
+    users = await user_repo.list_locked(
+        now=now,
+        include_failing=include_failing,
+        department_id=scope_dept,
+        limit=pagination.limit,
+        offset=pagination.offset,
+    )
+    total = await user_repo.count_locked(
+        now=now,
+        include_failing=include_failing,
+        department_id=scope_dept,
+    )
+    audit_service.emit(
+        "user.locked_list",
+        actor_id,
+        status="success",
+        details={
+            "count": len(users),
+            "total": total,
+            "include_failing": include_failing,
+            "scope": "department" if scope_dept is not None else "all",
+        },
+        request_id=request_id,
+    )
+
+    def _to_locked(u) -> "LockedUserResponse":
+        is_locked = u.locked_until is not None and not is_expired(u.locked_until)
+        return LockedUserResponse(
+            user_id=u.id,
+            username=u.username,
+            department_id=u.department_id,
+            failed_login_attempts=u.failed_login_attempts,
+            locked_until=u.locked_until,
+            is_locked=is_locked,
+        )
+
+    return [_to_locked(u) for u in users], total
 
 
 async def resolve_username(
@@ -1065,7 +1132,7 @@ async def change_own_password(
     if user is None:
         raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
 
-    settings = get_settings()
+    max_attempts, lockout_minutes = await resolve_lockout_policy(db)
 
     # Lockout: истёкший lockout сначала сбрасываем, активный — отбиваем 429.
     # Лимит общий с /login: иначе атакующий, получивший access-токен и
@@ -1078,8 +1145,8 @@ async def change_own_password(
         await _lockout.register_failure(
             user_repo,
             user,
-            max_attempts=settings.max_failed_login_attempts,
-            lockout_minutes=settings.lockout_minutes,
+            max_attempts=max_attempts,
+            lockout_minutes=lockout_minutes,
         )
         # Commit до raise — иначе get_db()-rollback стирает инкремент,
         # та же грабля, что и в verify_password_with_lockout.

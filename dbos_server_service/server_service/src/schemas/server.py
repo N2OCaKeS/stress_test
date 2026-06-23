@@ -205,6 +205,75 @@ class ServerTaskDispatchResponse(BaseModel):
 ServerPowerStatusDispatchResponse = ServerTaskDispatchResponse
 
 
+class BulkInstalledPackagesRequest(BaseModel):
+    """Тело POST /servers/installed-packages/bulk — массовый live-запрос пакетов.
+
+    `server_ids` — список серверов, для каждого диспатчится отдельная
+    `installed_packages.list` (тот же per-server путь, что у одиночного
+    эндпоинта). `pattern` общий для всего батча — shell-glob, валидируется
+    тем же allow-list'ом, что и одиночный запрос.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    server_ids: list[str] = Field(
+        ...,
+        min_length=1,
+        description="Серверы для запроса пакетов. Дубли схлопываются, порядок сохраняется.",
+    )
+    pattern: str = Field(
+        default="*",
+        min_length=1,
+        max_length=128,
+        description="Shell-glob паттерн (`htop`, `linux-image*`, `*-dev`). По умолчанию `*` — все пакеты.",
+    )
+
+
+class BulkInstalledPackagesServerResult(BaseModel):
+    """Результат запроса пакетов по одному серверу в составе bulk-ответа.
+
+    `status` говорит UI, отдал ли сервер данные:
+    * `ok` — задача `installed_packages.list` поставлена, `task_id` заполнен;
+      сам список пакетов UI добирает поллингом `GET /tasks/{task_id}`.
+    * `prepare_required` — сервер не прошёл prepare, SSH-probe невозможна.
+    * `decommissioned` — сервер списан, worker-операции не принимает.
+    * `not_found` — сервер не виден (cross-dept / нет такого id).
+    * `auth_failed` — dispatch не дошёл до воркера (broker недоступен).
+
+    `packages` на момент dispatch'а всегда пуст — это контракт async-модели:
+    реальные `{name, version}` приходят в `task.result`, UI раскладывает их
+    в pivot «пакеты×серверы» либо «серверы×пакеты» сам.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    server_id: str = Field(description="ID сервера (prefix srv_).")
+    hostname: str | None = Field(default=None, description="Hostname сервера (None для невидимого).")
+    os_version_id: str | None = Field(default=None, description="FK на os_versions (None до инвентаризации).")
+    status: str = Field(description="ok / prepare_required / decommissioned / not_found / auth_failed.")
+    task_id: str | None = Field(default=None, description="ID задачи воркера, если status=ok.")
+    packages: list[dict] = Field(
+        default_factory=list,
+        description="Пусто на dispatch; UI добирает `{name, version}` из task.result по task_id.",
+    )
+
+
+class BulkInstalledPackagesResponse(BaseModel):
+    """Сводный ответ массового запроса пакетов.
+
+    Плоский per-server список — пригоден и для pivot'а «пакеты×серверы», и
+    «серверы×пакеты». `requested`/`dispatched` дают UI быстрый счётчик «сколько
+    серверов реально отдадут данные» без обхода всего массива.
+    """
+
+    pattern: str = Field(description="Применённый glob-паттерн.")
+    requested: int = Field(description="Сколько уникальных серверов запрошено.")
+    dispatched: int = Field(description="Сколько серверов реально получили задачу (status=ok).")
+    results: list[BulkInstalledPackagesServerResult] = Field(
+        description="Per-server результат, порядок соответствует входному списку.",
+    )
+
+
 class ServerPrepareRequest(BaseModel):
     """Тело POST /servers/{id}/prepare — bootstrap-креды для онбординга.
 
@@ -333,6 +402,120 @@ class ServerPrepareResponse(BaseModel):
 
     task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
     status: str = Field(description="Статус: queued.")
+
+
+class ServerPrepareBulkItem(BaseModel):
+    """Один сервер в массовом prepare — server_id + ручные bootstrap-креды.
+
+    В отличие от single-prepare account-режима тут только ручной ввод:
+    у разных боксов в батче разные исходные креды (свежая поставка ОС,
+    каждый со своим root-паролем). Логин/пароль приходят в base64 — та же
+    политика и тот же декод, что у `ServerPrepareRequest` (минимум 16
+    символов, буква+цифра+символ). Опциональный `ssh_private_key_b64` —
+    если вход на бокс идёт по ключу.
+    """
+
+    server_id: str = Field(description="Сервер, который готовим (prefix srv_).")
+    username_b64: str = Field(
+        description="Логин bootstrap-аккаунта в base64 (UTF-8 после декода).",
+    )
+    password_b64: str = Field(
+        description="Пароль bootstrap-аккаунта в base64 (UTF-8 после декода).",
+    )
+    ssh_private_key_b64: str | None = Field(
+        default=None,
+        description=(
+            "Опциональный приватный SSH-ключ bootstrap-аккаунта в base64 "
+            "(PEM/OpenSSH)."
+        ),
+    )
+
+    @field_validator("username_b64")
+    @classmethod
+    def _check_username_b64(cls, value: str) -> str:
+        _decode_b64(value, "username_b64")
+        return value
+
+    @field_validator("password_b64")
+    @classmethod
+    def _check_password_b64(cls, value: str) -> str:
+        plaintext = _decode_b64(value, "password_b64")
+        validate_strong_password(plaintext)
+        return value
+
+    @field_validator("ssh_private_key_b64")
+    @classmethod
+    def _check_ssh_private_key_b64(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        _decode_b64(value, "ssh_private_key_b64")
+        return value
+
+    def username(self) -> str:
+        return _decode_b64(self.username_b64, "username_b64")
+
+    def password(self) -> str:
+        return _decode_b64(self.password_b64, "password_b64")
+
+    def ssh_private_key(self) -> str | None:
+        if self.ssh_private_key_b64 is None:
+            return None
+        return _decode_b64(self.ssh_private_key_b64, "ssh_private_key_b64")
+
+
+class ServerPrepareBulkRequest(BaseModel):
+    """Тело POST /servers/prepare/bulk — массовый онбординг.
+
+    Список `items` — по записи на сервер, у каждого свои bootstrap-креды.
+    Дубли server_id в одном теле запрещены (422): иначе один битый сервер
+    в двух экземплярах путал бы per-server-итог. Cap на длину списка
+    задаётся `BULK_PREPARE_MAX_SERVERS`; превышение → 413.
+    """
+
+    items: list[ServerPrepareBulkItem] = Field(
+        ..., min_length=1,
+        description="Серверы для подготовки, по одному элементу на сервер.",
+    )
+
+    @model_validator(mode="after")
+    def _check_unique_servers(self) -> "ServerPrepareBulkRequest":
+        ids = [it.server_id for it in self.items]
+        if len(ids) != len(set(ids)):
+            raise ValueError("duplicate server_id in bulk prepare items")
+        return self
+
+
+class ServerPrepareBulkResult(BaseModel):
+    """Per-server исход массового prepare.
+
+    `status=queued` — задача поставлена, `task_id` заполнен. `status=skipped`
+    — сервер не подготовлен (нет прав / cross-dept / списан / уже-в-очереди /
+    worker недоступен), `reason` несёт причину, `task_id` пуст.
+    """
+
+    server_id: str = Field(description="Сервер из запроса.")
+    status: str = Field(description="queued | skipped.")
+    task_id: str | None = Field(
+        default=None, description="ID задачи воркера (prefix tsk_), если queued.",
+    )
+    reason: str | None = Field(
+        default=None,
+        description=(
+            "Причина пропуска (для skipped): permission_denied / "
+            "not_found_or_cross_dept / decommissioned / idempotent_conflict / "
+            "worker_unreachable."
+        ),
+    )
+
+
+class ServerPrepareBulkResponse(BaseModel):
+    """Ответ массового prepare — per-server результаты + сводные счётчики."""
+
+    results: list[ServerPrepareBulkResult] = Field(
+        description="Исход по каждому серверу из запроса (в порядке items).",
+    )
+    queued_count: int = Field(description="Сколько задач поставлено.")
+    skipped_count: int = Field(description="Сколько серверов пропущено.")
 
 
 class ServerPrepareCallbackRequest(BaseModel):

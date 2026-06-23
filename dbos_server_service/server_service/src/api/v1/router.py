@@ -22,7 +22,10 @@ from src.api.v1.endpoints.health import router as health_router
 from src.api.v1.endpoints.ipmi import list_router as ipmi_list_router
 from src.api.v1.endpoints.ipmi import list_router_legacy as ipmi_list_router_legacy
 from src.api.v1.endpoints.ipmi import router as ipmi_router
-from src.api.v1.endpoints.installed_packages import router as installed_packages_router
+from src.api.v1.endpoints.installed_packages import (
+    bulk_router as installed_packages_bulk_router,
+    router as installed_packages_router,
+)
 from src.api.v1.endpoints.internal import router as internal_router
 from src.api.v1.endpoints.inventory import users_router as users_inventory_router
 from src.api.v1.endpoints.ops import router as ops_router
@@ -36,6 +39,7 @@ from src.api.v1.endpoints.worker_dispatch import (
     router_accounts as worker_dispatch_accounts_router,
     router_ipmi as worker_dispatch_ipmi_router,
     router_servers as worker_dispatch_servers_router,
+    router_servers_bulk as worker_dispatch_servers_bulk_router,
 )
 
 router = APIRouter()
@@ -49,6 +53,11 @@ router.include_router(ipmi_list_router, tags=["ipmi"])
 # `/ipmi-controllers`; в OpenAPI публикуется только канонический путь.
 router.include_router(ipmi_list_router_legacy, tags=["ipmi"])
 router.include_router(installed_packages_router, tags=["installed-packages"])
+# Bulk-запрос пакетов — отдельный роутер без `{server_id}`-префикса
+# (`POST /servers/installed-packages/bulk`). Регистрируем ДО servers_router'а
+# нельзя (он уже выше), но статический сегмент `installed-packages` всё равно
+# матчится раньше `{server_id}`-параметра в `/servers/...`.
+router.include_router(installed_packages_bulk_router, tags=["installed-packages"])
 router.include_router(users_inventory_router, tags=["server-accounts"])
 router.include_router(os_versions_router, tags=["os-versions"])
 router.include_router(permissions_router, tags=["permissions"])
@@ -61,6 +70,9 @@ router.include_router(tasks_router, tags=["tasks"])
 # Префиксы остаются в стандартном `/servers/{id}` / `/server-accounts/{id}` /
 # `/ipmi-controllers/{id}`.
 router.include_router(worker_dispatch_servers_router, tags=["servers"])
+# Массовый prepare — отдельный роутер без `{server_id}` в префиксе (иначе
+# путь `/servers/prepare/bulk` коллидировал бы с `/servers/{id}/...`).
+router.include_router(worker_dispatch_servers_bulk_router, tags=["servers"])
 router.include_router(worker_dispatch_accounts_router, tags=["server-accounts"])
 router.include_router(worker_dispatch_ipmi_router, tags=["ipmi-controllers"])
 # Интерактивная SSH-консоль (WebSocket-мост к worker'у через Redis pub/sub).

@@ -583,11 +583,11 @@ class TestPrepareDispatchRedisAuditTrail:
     def test_creds_store_unavailable_emit_present(self):
         import inspect
 
-        src = inspect.getsource(wd_endpoint.server_prepare_dispatch)
+        src = inspect.getsource(wd_endpoint._prepare_resolve_and_dispatch)
         assert '"creds_store_unavailable"' in src
 
     def test_creds_store_failed_emit_present(self):
         import inspect
 
-        src = inspect.getsource(wd_endpoint.server_prepare_dispatch)
+        src = inspect.getsource(wd_endpoint._prepare_resolve_and_dispatch)
         assert '"creds_store_failed"' in src

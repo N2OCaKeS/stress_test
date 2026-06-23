@@ -185,15 +185,15 @@ URL prefix: `/api/secret/v1/`.
 | `DELETE` | `/credentials/{id}/acl/{acl_id}` | owner / dep_admin | Revoke. Ответ — `200 OkResponse = { ok: true }`. |
 | `GET` | `/credentials/{id}/acl` | reader+can_manage_acl | Список ACL. |
 
-### UserACL CRUD (per-user доступ)
+### UserACL CRUD (per-user доступ, только personal)
 
-Поимённый доступ конкретному пользователю поверх RoleACL: владелец personal-кред'ы (или dep_admin для department/cross) пускает конкретный `user_id` на reveal/read (опц. write), не заводя для этого service-роль. Управляется тем же правом, что и RoleACL.
+Поимённый доступ конкретному пользователю **разрешён только для личных секретов** (`scope=personal`): владелец personal-кред'ы пускает конкретный `user_id` на reveal/read (опц. write), не заводя для этого service-роль. Для `department`/`cross_department` доступ раздаётся только ролями (RoleACL) — user-ACL на них запрещён. Управляется тем же правом, что и RoleACL.
 
 | Метод | Path | Доступ | Описание |
 |---|---|---|---|
-| `POST` | `/credentials/{id}/user-acl` | owner (personal) / dep_admin (department/cross_dep) | `{user_id, can_read=true, can_write=false}`. Выдача владельцу/себе → `422`. Дубль `(cred_id, user_id)` → `409 USER_ACL_DUPLICATE`. |
+| `POST` | `/credentials/{id}/user-acl` | owner (personal) | `{user_id, can_read=true, can_write=false}`. Только `scope=personal` — иначе `422 USER_ACL_SCOPE_NOT_PERSONAL`. Выдача владельцу/себе → `422`. Дубль `(cred_id, user_id)` → `409 USER_ACL_DUPLICATE`. |
 | `GET` | `/credentials/{id}/user-acl` | reader (как read) | Список user-ACL. |
-| `DELETE` | `/credentials/{id}/user-acl/{acl_id}` | owner / dep_admin | Revoke. Ответ — `200 OkResponse = { ok: true }`. |
+| `DELETE` | `/credentials/{id}/user-acl/{acl_id}` | owner | Revoke. Ответ — `200 OkResponse = { ok: true }`. |
 
 ### DeptGrant CRUD (только `cross_department`)
 

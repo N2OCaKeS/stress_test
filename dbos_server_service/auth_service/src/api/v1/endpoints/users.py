@@ -15,6 +15,7 @@ from src.schemas.users import (
     AssignRolesRequest,
     BanRequest,
     HardDeleteUserRequest,
+    LockedUserResponse,
     ResetPasswordRequest,
     RevokeSessionsRequest,
     RevokeSessionsResponse,
@@ -557,6 +558,56 @@ async def resolve_user_labels(
     # Защита от слишком большого батча — режем до разумного потолка.
     user_ids = user_ids[:200]
     return await user_service.resolve_labels(db=db, user_ids=user_ids)
+
+
+# `/users/locked` — как и `/resolve`, регистрируется ДО `/{user_id}`, иначе
+# FastAPI съел бы `locked` как литеральный user_id.
+@router.get(
+    "/locked",
+    response_model=list[LockedUserResponse],
+    summary="Юзеры под brute-force lockout'ом",
+    description=(
+        "Список юзеров с активным lockout-окном (`locked_until > now`). "
+        "`include_failing=true` дополнительно показывает юзеров с накопленными "
+        "неудачными попытками, ещё не залоченных. account_admin видит все "
+        "отделы, department_admin — только свой. Total — в `X-Total-Count`."
+    ),
+)
+async def list_locked_users(
+    request: Request,
+    response: Response,
+    identity: AnyAdmin,
+    include_failing: bool = Query(
+        False,
+        description=(
+            "Включить юзеров с `failed_login_attempts > 0`, но ещё не залоченных "
+            "(`is_locked=false`). Без флага — только активный lockout."
+        ),
+    ),
+    pagination: PaginationParams = Depends(pagination_params),
+    db: AsyncSession = Depends(get_db),
+) -> list[LockedUserResponse]:
+    """Список залоченных юзеров.
+
+    Доступ:
+        Любой админ (`AnyAdmin`), как `/unlock`. account_admin — все отделы;
+        department_admin — только свой (платформенный DA без department_id
+        видит пусто).
+
+    Пагинация:
+        Query-параметры `limit`/`offset`; общее число — в `X-Total-Count`.
+    """
+    items, total = await user_service.list_locked_users(
+        db=db,
+        actor_id=identity.user_id,
+        actor_role=identity.platform_role,
+        actor_dept_id=identity.department_id,
+        include_failing=include_failing,
+        pagination=pagination,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.post(

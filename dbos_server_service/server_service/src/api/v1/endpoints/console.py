@@ -14,9 +14,9 @@ stash, а worker коннектится под аккаунтом по password-
   1. Клиент открывает WS с `Authorization: Bearer <token>` (subprotocol
      `bearer.<token>` либо заголовок) и обязательным query `account_id=<acc>`.
      server_service делает introspect, проверяет dept-видимость сервера и
-     право на консоль: ролевой `(server, console)` ЛИБО на учётке право
-     `console`/`view_password` (роль или per-account грант). Кто видит пароль
-     учётки, тот ей и подключается. Аккаунт привязан и виден.
+     право на консоль: ролевой `(server, console)` ЛИБО на учётке роль с
+     `console`/`view_password`. Кто видит пароль учётки, тот ей и подключается.
+     Аккаунт привязан и виден.
   2. На отказе — WS закрывается с кодом и причиной ДО accept'а либо сразу
      после: 4401 нет токена, 4400 нет `account_id`, 4403 нет права console /
      нет права на креды аккаунта, 4404 сервер/аккаунт не найден или не
@@ -123,9 +123,9 @@ async def _authenticate(token: str):
 async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
     """Интерактивная SSH-консоль к серверу под выбранным server_account'ом.
 
-    Доступ: ролевой `(server, console)` ЛИБО на выбранном аккаунте право
-    `console`/`view_password` (роль или per-account грант). Держатель
-    `view_password` подключается без отдельного console-гранта. Сервер НЕ
+    Доступ: ролевой `(server, console)` ЛИБО на выбранном аккаунте роль с
+    `console`/`view_password`. Держатель `view_password` подключается без
+    отдельного console-гранта. Сервер НЕ
     обязан быть prepared — консоль коннектится
     под кредами аккаунта, не под управляющим ключом. `account_id` берётся из
     query-параметра (обязателен). Department-scope сервера и аккаунта —
@@ -148,8 +148,8 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
     # failure/denied-аудит `ssh_console.session_open`.
     #
     # Доступ к консоли разрешён двумя путями: ролевой грант `(server, console)`
-    # ИЛИ право на учётку (`console`/`view_password`, роль или per-account
-    # грант) — последнее проверяет `resolve_console_credentials`. Поэтому здесь
+    # ИЛИ роль на учётке (`console`/`view_password`) — последнее проверяет
+    # `resolve_console_credentials`. Поэтому здесь
     # серверный `console` не требуем жёстко: его отсутствие не отказ, а сигнал
     # «проверь право на учётке». Кто держит `view_password` на учётке (и так
     # видит её пароль), тот может ей и подключиться, даже без серверного console.

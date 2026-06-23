@@ -33,21 +33,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.endpoints._dispatch import dispatch_server_ssh_task
 from src.api.v1.endpoints.worker_dispatch import require_server_prepared
+from src.core.config import get_settings
 from src.core.constants import Action, EntityType, ServerStatus
 from src.core.exceptions import (
+    AppException,
     AuthorizationError,
     ConflictError,
     DomainValidationError,
     NotFoundError,
+    ServiceUnavailableError,
 )
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
-from src.schemas.server import ServerTaskDispatchResponse
+from src.schemas.server import (
+    BulkInstalledPackagesRequest,
+    BulkInstalledPackagesResponse,
+    BulkInstalledPackagesServerResult,
+    ServerTaskDispatchResponse,
+)
 from src.services import audit_service, permissions
 from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
 
 router = APIRouter(prefix="/servers/{server_id}")
+# Bulk-запрос не привязан к одному server_id, поэтому едет отдельным роутером
+# без `{server_id}`-префикса. Путь `/servers/installed-packages/bulk` не
+# конфликтует с `/servers/{server_id}/...`: FastAPI матчит статический сегмент
+# `installed-packages` раньше path-параметра.
+bulk_router = APIRouter(prefix="/servers")
 
 
 # Pattern — shell glob, разрешаем только безопасный набор символов. Никаких
@@ -196,3 +209,192 @@ async def list_installed_packages(
         success_extra_details={"pattern": pattern},
     )
     return ServerTaskDispatchResponse(task_id=task_id, status="queued")
+
+
+@bulk_router.post(
+    "/installed-packages/bulk",
+    response_model=BulkInstalledPackagesResponse,
+    status_code=202,
+    summary="Массовый live-запрос пакетов с нескольких серверов в сводную таблицу",
+    description=(
+        "Для каждого сервера из `server_ids` диспатчит `installed_packages.list` "
+        "(тот же per-server SSH-probe, что у одиночного "
+        "`POST /servers/{id}/installed-packages`) и собирает плоский per-server "
+        "список с per-server статусом. Гейты как у одиночного, но per-server: "
+        "`(server, view)` + dept-visibility (cross-dept скрыт под `not_found`), "
+        "prepare-gate (неподготовленный → `prepare_required`, не 409 на весь "
+        "батч), decommissioned → `decommissioned`. Reserve-гейт не нужен "
+        "(read-only). Один общий `pattern` (shell glob) на весь батч.\n\n"
+        "Модель async: dispatch только ставит задачи, реальные пакеты лежат в "
+        "`task.result` каждого сервера — UI добирает их поллингом "
+        "`GET /tasks/{task_id}` и сам раскладывает в pivot «пакеты×серверы» либо "
+        "«серверы×пакеты». В ответе `packages` поэтому всегда пуст.\n\n"
+        "Cap на число серверов — `INSTALLED_PACKAGES_BULK_MAX_SERVERS` (дефолт "
+        "50); превышение → 413. Лимит строк пакетов per-server тот же, что у "
+        "одиночного (`_MAX_INSTALLED_PACKAGES_ROWS`), применяется воркером."
+    ),
+    responses={
+        202: {"description": "Батч обработан, per-server статусы в `results`."},
+        400: {"description": "INVALID_PATTERN."},
+        403: {"description": "Нет роли с `view` на server."},
+        413: {"description": "BULK_PACKAGES_TOO_LARGE — server_ids длиннее cap'а."},
+    },
+)
+async def bulk_installed_packages(
+    body: BulkInstalledPackagesRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> BulkInstalledPackagesResponse:
+    """Массовый запрос пакетов: один dispatch на сервер, сводный per-server ответ.
+
+    Доступ: `(server, view)` — проверяется один раз для всего батча (как у
+    одиночного, role-check зависит только от ролей caller'а, не от target'а),
+    дальше per-server visibility/decommissioned/prepare. Серверы, не
+    прошедшие per-server гейт, попадают в результат со статусом
+    (`not_found`/`decommissioned`/`prepare_required`/`auth_failed`), а не валят
+    весь батч.
+
+    Возможные ошибки: 400 INVALID_PATTERN, 403 PERMISSION_DENIED,
+    413 BULK_PACKAGES_TOO_LARGE. Per-server проблемы — не HTTP-ошибки, а
+    статусы в `results`.
+
+    Связано: `list_installed_packages` (одиночный путь), worker-task
+    `server_worker/src/tasks/installed_packages.py::installed_packages_list`.
+    """
+    audit_action = "installed_packages.list"
+    pattern = body.pattern
+
+    # Pattern-валидация ДО visibility — тот же allow-list, что у одиночного.
+    if not _PATTERN_RE.match(pattern):
+        raise DomainValidationError(
+            error_code="INVALID_PATTERN",
+            message="pattern must match [A-Za-z0-9._\\-+*?\\[\\]]+",
+        )
+
+    # Дедуп с сохранением порядка: повторный server_id в теле — одна задача,
+    # одна строка в ответе. Порядок входного списка сохраняем для UI.
+    seen: set[str] = set()
+    server_ids: list[str] = []
+    for sid in body.server_ids:
+        if sid not in seen:
+            seen.add(sid)
+            server_ids.append(sid)
+
+    # Cap на размер батча — каждый сервер порождает SSH-probe, не даём одному
+    # запросу залить worker-пул. Считаем по уникальным id (после дедупа).
+    cap = get_settings().installed_packages_bulk_max_servers
+    if len(server_ids) > cap:
+        audit_service.emit(
+            audit_action, target_id=None, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "bulk_packages_too_large",
+                "requested_count": len(server_ids),
+                "cap": cap,
+            },
+        )
+        raise AppException(
+            error_code="BULK_PACKAGES_TOO_LARGE",
+            message=(
+                f"Bulk packages request of {len(server_ids)} servers exceeds "
+                f"cap {cap}; split into smaller batches"
+            ),
+            http_status=413,
+        )
+
+    # Role-check один раз для всего батча — он смотрит только на роли caller'а,
+    # не на конкретный server_id, поэтому per-server повторять не нужно (и это
+    # не делает 403 existence-oracle'ом). 403 при отсутствии роли валит весь
+    # батч — это про caller'а, а не про отдельный сервер.
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=None,
+        target_type="server",
+        extra_details={"bulk": True, "requested_count": len(server_ids)},
+        identity=identity,
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW)
+
+    results: list[BulkInstalledPackagesServerResult] = []
+    dispatched = 0
+    for server_id in server_ids:
+        # Visibility + dept isolation. Cross-dept / нет row → статус not_found,
+        # не 404 на весь батч (UI покажет, какой сервер недоступен).
+        try:
+            server = await server_svc.get_server(db, identity, server_id)
+        except (NotFoundError, AuthorizationError):
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept", "bulk": True},
+            )
+            results.append(BulkInstalledPackagesServerResult(
+                server_id=server_id, status="not_found",
+            ))
+            continue
+
+        # Списанный сервер — SSH не пройдёт; в результат статусом, не 409.
+        if server.status == ServerStatus.DECOMMISSIONED:
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "decommissioned", "bulk": True},
+            )
+            results.append(BulkInstalledPackagesServerResult(
+                server_id=server.id, hostname=server.hostname,
+                os_version_id=server.os_version_id, status="decommissioned",
+            ))
+            continue
+
+        # Prepare-gate: неподготовленный сервер не отдаёт пакеты по SSH. В
+        # одиночном это 409 PREPARE_REQUIRED, здесь — статус, чтобы не уронить
+        # батч. `require_server_prepared` эмитит свой failure-audit и raise'ит
+        # ConflictError(PREPARE_REQUIRED) — ловим его per-server.
+        try:
+            require_server_prepared(server, audit_action=audit_action)
+        except ConflictError:
+            results.append(BulkInstalledPackagesServerResult(
+                server_id=server.id, hostname=server.hostname,
+                os_version_id=server.os_version_id, status="prepare_required",
+            ))
+            continue
+
+        # Dispatch. На managed-сервере worker заходит по ключу — аккаунта нет.
+        # Недоступность worker'а на отдельном сервере (broker down при
+        # dispatch'е) уходит в статус auth_failed, а не валит остальные.
+        try:
+            task_id, _ = await dispatch_server_ssh_task(
+                db=db, identity=identity, request=request,
+                server=server,
+                task_kind="installed_packages.list",
+                audit_action=audit_action,
+                resolved_account_id=None,
+                extra_payload={
+                    "pattern": pattern,
+                    "max_rows": _MAX_INSTALLED_PACKAGES_ROWS,
+                },
+                success_extra_details={"pattern": pattern, "bulk": True},
+            )
+        except (ServiceUnavailableError, ConflictError):
+            # dispatch_server_ssh_task уже заэмитил failure-audit. auth_failed —
+            # общий «сервер не отдал данные» бакет для UI (broker недоступен /
+            # idempotent-конфликт по этому серверу).
+            results.append(BulkInstalledPackagesServerResult(
+                server_id=server.id, hostname=server.hostname,
+                os_version_id=server.os_version_id, status="auth_failed",
+            ))
+            continue
+
+        dispatched += 1
+        results.append(BulkInstalledPackagesServerResult(
+            server_id=server.id, hostname=server.hostname,
+            os_version_id=server.os_version_id, status="ok", task_id=task_id,
+        ))
+
+    return BulkInstalledPackagesResponse(
+        pattern=pattern,
+        requested=len(server_ids),
+        dispatched=dispatched,
+        results=results,
+    )

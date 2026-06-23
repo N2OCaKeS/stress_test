@@ -448,6 +448,27 @@ class Settings(BaseSettings):
             "перегружает worker. Применяется поверх `global_rate_limit`."
         ),
     )
+    bulk_prepare_rate_limit: str = Field(
+        default="2/minute",
+        alias="BULK_PREPARE_RATE_LIMIT",
+        description=(
+            "Per-IP rate-limit на POST /servers/prepare/bulk (массовый "
+            "онбординг через worker). Один запрос шедулит N задач (по числу "
+            "серверов в теле) и кладёт N plaintext-stash'ей в Redis — burst "
+            "опаснее single-prepare. Применяется поверх `global_rate_limit`."
+        ),
+    )
+    bulk_prepare_max_servers: int = Field(
+        default=50,
+        ge=1,
+        alias="BULK_PREPARE_MAX_SERVERS",
+        description=(
+            "Cap на число серверов в одном POST /servers/prepare/bulk. При "
+            "превышении endpoint отбивается 413 — оператор должен раздробить "
+            "батч. Каждый сервер несёт plaintext-bootstrap-креды в Redis под "
+            "TTL, поэтому cap ниже mass-rotation."
+        ),
+    )
     ipmi_credentials_rotate_rate_limit: str = Field(
         default="5/minute",
         alias="IPMI_CREDENTIALS_ROTATE_RATE_LIMIT",
@@ -501,6 +522,19 @@ class Settings(BaseSettings):
             "шедулит N dispatch'ей по одному per host; при превышении cap'а "
             "endpoint отбивает 413, эмитит `fanout_update_on_host.truncated`. "
             "Дефолт симметричен `mass_rotation_max_servers`."
+        ),
+    )
+    installed_packages_bulk_max_servers: int = Field(
+        default=50,
+        ge=1,
+        alias="INSTALLED_PACKAGES_BULK_MAX_SERVERS",
+        description=(
+            "Cap на число серверов в одном bulk-запросе пакетов "
+            "(`POST /servers/installed-packages/bulk`). Каждый сервер из "
+            "списка порождает отдельную `installed_packages.list` (SSH-probe), "
+            "так что батч прямо нагружает worker-пул; при превышении endpoint "
+            "отбивает 413. Дефолт 50 ниже mass-rotation'а — сводную таблицу "
+            "пакетов обычно собирают по выборке, а не по всему department'у."
         ),
     )
     worker_pool_rate_limit: str = Field(

@@ -1,12 +1,14 @@
 """Use cases для /credentials/{id}/user-acl — CredentialUserACL CRUD.
 
-Per-user слой доступа: владелец personal-кред'ы (или dep_admin для
-department/cross_department) выдаёт доступ поимённо конкретному user_id.
-Управление гейтится тем же action'ом `grant_acl`, что и RoleACL — кто может
-раздавать роли, тот может раздавать и поимённый доступ.
+Per-user слой доступа разрешён ТОЛЬКО для личных секретов (scope=personal):
+владелец personal-кред'ы выдаёт доступ поимённо конкретному user_id. Для
+department/cross_department кред'ы поимённый доступ запрещён — туда доступ
+раздаётся исключительно ролями (RoleACL). Управление гейтится тем же action'ом
+`grant_acl`, что и RoleACL — кто может раздавать роли, тот может раздавать и
+поимённый доступ к личному секрету.
 
 Выдать доступ самому себе нельзя: для personal владелец и так допущен по
-owner_match, для прочих scope'ов это бессмысленный self-grant → 422.
+owner_match.
 """
 
 from __future__ import annotations
@@ -78,6 +80,16 @@ async def add(
     """
     try:
         cred = await load_for_action(db, identity, cred_id, "grant_acl")
+
+        # Поимённый (per-user) доступ разрешён только личным секретам. Для
+        # department/cross_department кред'ы доступ раздаётся исключительно
+        # ролями (RoleACL): пер-юзерный слой на не-personal убран.
+        if cred.scope != "personal":
+            raise DomainValidationError(
+                error_code="USER_ACL_SCOPE_NOT_PERSONAL",
+                message="user-ACL is allowed only for personal credentials",
+                details={"scope": cred.scope},
+            )
 
         # Self-grant: для personal владелец уже допущен по owner_match, для
         # прочих scope'ов выдавать себе поимённый доступ бессмысленно.

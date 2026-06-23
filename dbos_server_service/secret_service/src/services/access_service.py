@@ -34,9 +34,11 @@ emergency transfer/recover для кред'ы с удалённым владею
 `acl_missing_can_read`, `acl_missing_can_write`, `scope_mismatch`,
 `not_owner_dept`. Любой другой текст в reason — это баг, имейте в виду.
 
-Прямой per-user grant (`CredentialUserACL`) проверяется до scope-веток и
-короткозамыкает на положительном исходе; его miss'овый reason `no_user_acl`
-наружу не выходит — caller продолжает scope-проверку и вернёт её reason.
+Прямой per-user grant (`CredentialUserACL`) действует ТОЛЬКО на личные кред'ы
+(scope=personal): проверяется до scope-веток и короткозамыкает на положительном
+исходе; его miss'овый reason `no_user_acl` наружу не выходит — caller продолжает
+scope-проверку и вернёт её reason. Для department/cross_department доступ
+раздаётся только ролями, user-ACL на них не учитывается.
 """
 
 from __future__ import annotations
@@ -150,16 +152,22 @@ async def _check_user_acl(
     cred: Credential,
     action: Action,
 ) -> tuple[bool, str]:
-    """Прямой per-user grant на креду.
+    """Прямой per-user grant на личную креду.
 
-    Орто­гонален scope/роли: владелец personal-кред'ы (или dep_admin для
-    dept/cross) выдаёт доступ поимённо одному user_id. read/reveal требуют
-    `can_read`, write — `can_write`. Бот сюда не попадает — у него нет
-    user-identity, а user-ACL адресован конкретному пользователю.
+    Действует только для scope=personal: владелец personal-кред'ы выдаёт доступ
+    поимённо одному user_id. read/reveal требуют `can_read`, write — `can_write`.
+    Бот сюда не попадает — у него нет user-identity, а user-ACL адресован
+    конкретному пользователю.
 
-    Возвращает `(False, "no_user_acl")`, если записи нет — это не финальный
-    отказ, caller продолжает scope-проверку.
+    Для department/cross_department доступ раздаётся только ролями (RoleACL),
+    поэтому user-ACL на них не учитывается — даже если в БД остались
+    исторические строки (write-side их больше не создаёт).
+
+    Возвращает `(False, "no_user_acl")`, если записи нет / скоуп не personal —
+    это не финальный отказ, caller продолжает scope-проверку.
     """
+    if cred.scope != "personal":
+        return False, "no_user_acl"
     if identity.actor_type != "user" or not identity.user_id:
         return False, "no_user_acl"
     acl = await user_acls_repo.find(db, cred.id, identity.user_id)

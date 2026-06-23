@@ -75,6 +75,9 @@ from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import server_account as account_repo
 from src.schemas.server import (
     ServerPowerStatusDispatchResponse,
+    ServerPrepareBulkRequest,
+    ServerPrepareBulkResponse,
+    ServerPrepareBulkResult,
     ServerPrepareRequest,
     ServerPrepareResponse,
     ServerTaskDispatchResponse,
@@ -1338,6 +1341,95 @@ async def server_prepare_dispatch(
             )
         raise
 
+    async def resolve_creds(srv) -> dict:
+        # Сбор bootstrap-кред. Два режима:
+        #   * account_id — резолвим привязанный аккаунт, расшифровываем его
+        #     пароль (+ ssh-ключ, если есть). UI пароль не присылал;
+        #   * ручной — декодируем base64 из тела (валидность проверена схемой).
+        # На любом отказе резолва (нет права / не привязан / нет пароля) выходим
+        # ДО store_prepare_creds — в Redis ничего не кладём.
+        if body.is_account_mode():
+            try:
+                with emit_denied_on_authz_error(
+                    audit_action,
+                    target_id=server_id,
+                    target_type="server",
+                    extra_details={
+                        "server_id": server_id,
+                        "denied_on": "account_view_password",
+                        "account_id": body.account_id,
+                    },
+                    identity=identity,
+                ):
+                    resolved = await account_svc.resolve_bootstrap_credentials(
+                        db, identity, body.account_id, srv,
+                    )
+            except (NotFoundError, ConflictError) as exc:
+                audit_service.emit(
+                    audit_action, target_id=server_id, target_type="server",
+                    status="failure", allowed=True,
+                    details={
+                        "reason": exc.error_code.lower(),
+                        "account_id": body.account_id,
+                        "department_id": srv.department_id,
+                    },
+                )
+                raise
+            creds: dict = {
+                "bootstrap_login": resolved["login"],
+                "bootstrap_password": resolved["password"],
+            }
+            if resolved["ssh_private_key"] is not None:
+                creds["bootstrap_ssh_private_key"] = resolved["ssh_private_key"]
+            return creds
+        creds = {
+            "bootstrap_login": body.username(),
+            "bootstrap_password": body.password(),
+        }
+        ssh_private_key = body.ssh_private_key()
+        if ssh_private_key is not None:
+            creds["bootstrap_ssh_private_key"] = ssh_private_key
+        return creds
+
+    task_id = await _prepare_resolve_and_dispatch(
+        db=db, identity=identity, request=request,
+        server=server, audit_action=audit_action, task_kind=task_kind,
+        resolve_creds=resolve_creds,
+    )
+    return ServerPrepareResponse(task_id=task_id, status="queued")
+
+
+async def _prepare_resolve_and_dispatch(
+    *,
+    db: AsyncSession,
+    identity,
+    request: Request,
+    server,
+    audit_action: str,
+    task_kind: str,
+    resolve_creds,
+) -> str:
+    """Ядро prepare-dispatch'а для одного уже-загруженного сервера.
+
+    Caller отвечает за permission + visibility (single — через
+    `get_server`, bulk — через `load_visible_servers`). Здесь — общий хвост:
+    idempotency-replay → decommissioned-gate → resolve creds → augment
+    linked-accounts → Redis-stash → dispatch → audit, с тем же cleanup'ом
+    осиротевшего stash'а на всех путях отказа.
+
+    `resolve_creds(server) -> dict` собирает bootstrap-креды (manual / account-
+    режим) и сам эмитит failure-audit при своём отказе. Зовётся ПОСЛЕ
+    idempotency-replay и decommissioned-gate — на replay'е/списанном сервере
+    мы не должны ни резолвить креды, ни класть их в Redis.
+
+    Возвращает `task_id` поставленной задачи (на idempotency-replay-hit —
+    existing id, с уже заэмиченным success-audit'ом). Любой decommissioned /
+    idempotent_conflict / worker_unreachable пробрасывается исключением —
+    caller (bulk) ловит его в skipped, single — пробрасывает наружу как
+    HTTP-ошибку.
+    """
+    server_id = server.id
+
     idempotency_key = read_idempotency_key(request)
 
     # Idempotency-replay должен идти ДО `store_prepare_creds`. Иначе любой
@@ -1386,7 +1478,7 @@ async def server_prepare_dispatch(
                     "idempotent_hit": True,
                 },
             )
-            return ServerPrepareResponse(task_id=existing_id, status="queued")
+            return existing_id
 
     # Idempotency-replay не сработал. Decommissioned-check теперь блокирует
     # новый dispatch — но не мешает retry'ю существующей задачи (см. ветку
@@ -1402,53 +1494,11 @@ async def server_prepare_dispatch(
             message="Server is decommissioned and cannot accept worker operations",
         )
 
-    # Сбор bootstrap-кред. Два режима:
-    #   * account_id — резолвим привязанный аккаунт, расшифровываем его пароль
-    #     (+ ssh-ключ, если есть). UI пароль не присылал;
-    #   * ручной — декодируем base64 из тела (валидность уже проверена схемой).
-    # На любом отказе резолва (нет права / не привязан / нет пароля) выходим
-    # ДО store_prepare_creds — в Redis ничего не кладём.
-    if body.is_account_mode():
-        try:
-            with emit_denied_on_authz_error(
-                audit_action,
-                target_id=server_id,
-                target_type="server",
-                extra_details={
-                    "server_id": server_id,
-                    "denied_on": "account_view_password",
-                    "account_id": body.account_id,
-                },
-                identity=identity,
-            ):
-                resolved = await account_svc.resolve_bootstrap_credentials(
-                    db, identity, body.account_id, server,
-                )
-        except (NotFoundError, ConflictError) as exc:
-            audit_service.emit(
-                audit_action, target_id=server_id, target_type="server",
-                status="failure", allowed=True,
-                details={
-                    "reason": exc.error_code.lower(),
-                    "account_id": body.account_id,
-                    "department_id": server.department_id,
-                },
-            )
-            raise
-        bootstrap_creds: dict = {
-            "bootstrap_login": resolved["login"],
-            "bootstrap_password": resolved["password"],
-        }
-        if resolved["ssh_private_key"] is not None:
-            bootstrap_creds["bootstrap_ssh_private_key"] = resolved["ssh_private_key"]
-    else:
-        bootstrap_creds = {
-            "bootstrap_login": body.username(),
-            "bootstrap_password": body.password(),
-        }
-        ssh_private_key = body.ssh_private_key()
-        if ssh_private_key is not None:
-            bootstrap_creds["bootstrap_ssh_private_key"] = ssh_private_key
+    # Креды собирает caller-specific резолвер: single поддерживает account- и
+    # ручной режимы, bulk — только ручной (у каждого бокса свои). Резолвер сам
+    # эмитит failure-audit при отказе (нет права / не привязан / нет пароля) и
+    # выходит ДО store_prepare_creds — в Redis тогда ничего не кладём.
+    bootstrap_creds: dict = await resolve_creds(server)
 
     # Привязанные к серверу аккаунты worker должен завести сразу на этапе
     # prepare. Собираем их креды (password + ssh keypair + управляемые
@@ -1579,7 +1629,180 @@ async def server_prepare_dispatch(
             "idempotent_hit": idempotent_hit,
         },
     )
-    return ServerPrepareResponse(task_id=task_id, status="queued")
+    return task_id
+
+
+# ── /servers/prepare/bulk — массовый онбординг ──────────────────────────────
+
+
+router_servers_bulk = APIRouter(prefix="/servers")
+
+
+@router_servers_bulk.post(
+    "/prepare/bulk",
+    response_model=ServerPrepareBulkResponse,
+    status_code=202,
+    summary="Массовый бутстрап управления серверами через worker (202)",
+    description=(
+        "Публикует `server.prepare` на список серверов — по задаче на сервер, "
+        "у каждого свои bootstrap-креды (`username_b64`/`password_b64` плюс "
+        "опциональный `ssh_private_key_b64`). Те же гейты, что у single "
+        "`POST /servers/{id}/prepare`: право `(server, *, update)`, visibility/"
+        "dept-isolation, decommissioned-check, Redis-stash bootstrap-кред, "
+        "dispatch.\n\n"
+        "Per-server результат: `{server_id, status, task_id?, reason?}`. Один "
+        "битый сервер (cross-dept / списан / уже-в-очереди) уходит в `skipped` "
+        "с reason и НЕ валит остальной батч. Глобальная недоступность воркера "
+        "(redis down) на первом же сервере отбивает весь запрос 503. Дубли "
+        "server_id в теле → 422. Число серверов > `BULK_PREPARE_MAX_SERVERS` → "
+        "413. Аудит CRITICAL на каждый сервер, как в single-prepare."
+    ),
+    responses={
+        202: {"description": "Батч принят; per-server results в теле ответа."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
+        403: {"description": "Нет роли с `update` — весь батч отбит (право не зависит от сервера)."},
+        413: {"description": "BULK_PREPARE_TOO_LARGE — батч превысил BULK_PREPARE_MAX_SERVERS."},
+        422: {"description": "Битый base64 / слабый пароль / дубли server_id."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP bulk-prepare-rate-limit пробит."},
+        503: {"description": "Worker недоступен на первом сервере (redis down / не сконфигурён)."},
+    },
+)
+@endpoint_limiter.limit(get_settings().bulk_prepare_rate_limit)
+async def server_prepare_bulk_dispatch(
+    request: Request,
+    body: ServerPrepareBulkRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> ServerPrepareBulkResponse:
+    """Ставит `server.prepare` на список серверов — по задаче на сервер.
+
+    Доступ: `(server, *, update)`. Битый base64 / слабый пароль / дубли
+    server_id → 422 (валидатор схемы срабатывает до этого хендлера). Связано:
+    `_prepare_resolve_and_dispatch`, `server_prepare_dispatch` (single).
+    """
+    audit_action = "server.prepare"
+    task_kind = "server.prepare"
+
+    # Cap на размер батча: один запрос не вправе шедулить произвольное число
+    # prepare-задач (каждая кладёт plaintext-bootstrap-креды в Redis под TTL).
+    cap = get_settings().bulk_prepare_max_servers
+    if len(body.items) > cap:
+        audit_service.emit(
+            audit_action, target_id=None, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "bulk_prepare_too_large",
+                "count": len(body.items),
+                "cap": cap,
+            },
+        )
+        raise AppException(
+            error_code="BULK_PREPARE_TOO_LARGE",
+            message=(
+                f"Bulk prepare batch of {len(body.items)} servers exceeds cap "
+                f"{cap}; split into smaller batches"
+            ),
+            http_status=413,
+        )
+
+    # Право `update` зависит только от ролей caller'а, не от конкретного
+    # сервера — проверяем один раз на весь батч (как permission-first шаг в
+    # single-prepare). Нет права → 403 на весь запрос, ни одной задачи.
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=None,
+        target_type="server",
+        extra_details={"operation": "prepare_bulk", "count": len(body.items)},
+        identity=identity,
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
+
+    # Batch-load видимых серверов одним `WHERE id IN (...)`: cross-dept и
+    # отсутствующие просто не попадают в map (→ skipped), без N round-trip'ов.
+    item_by_id = {it.server_id: it for it in body.items}
+    servers_by_id = await server_svc.load_visible_servers(
+        db, identity, list(item_by_id.keys()),
+    )
+
+    results: list[ServerPrepareBulkResult] = []
+    for item in body.items:
+        sid = item.server_id
+        server = servers_by_id.get(sid)
+        if server is None:
+            audit_service.emit(
+                audit_action, target_id=sid, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept", "operation": "prepare_bulk"},
+            )
+            results.append(ServerPrepareBulkResult(
+                server_id=sid, status="skipped", reason="not_found_or_cross_dept",
+            ))
+            continue
+
+        async def resolve_creds(srv, _item=item) -> dict:
+            # Bulk — только ручной режим: у каждого бокса свои bootstrap-креды.
+            creds: dict = {
+                "bootstrap_login": _item.username(),
+                "bootstrap_password": _item.password(),
+            }
+            ssh_private_key = _item.ssh_private_key()
+            if ssh_private_key is not None:
+                creds["bootstrap_ssh_private_key"] = ssh_private_key
+            return creds
+
+        try:
+            task_id = await _prepare_resolve_and_dispatch(
+                db=db, identity=identity, request=request,
+                server=server, audit_action=audit_action, task_kind=task_kind,
+                resolve_creds=resolve_creds,
+            )
+        except ConflictError as exc:
+            # Списанный / idempotent / reuse-конфликт — per-server, в skipped.
+            # Один битый сервер не валит весь батч.
+            reason = {
+                "SERVER_DECOMMISSIONED": "decommissioned",
+                "IDEMPOTENCY_KEY_REUSE_CONFLICT": "idempotency_key_reuse_conflict",
+            }.get(exc.error_code, "idempotent_conflict")
+            results.append(ServerPrepareBulkResult(
+                server_id=sid, status="skipped", reason=reason,
+            ))
+            continue
+        except ServiceUnavailableError:
+            # Воркер недоступен глобально (redis down / не сконфигурён) — не
+            # per-server проблема: продолжать батч бессмысленно, каждый
+            # следующий сервер упадёт идентично. Already-queued уже в results;
+            # пробрасываем 503, дописывать остаток в skipped не имеет смысла —
+            # клиент ретраит весь батч (idempotent по уже-поставленным).
+            audit_service.emit(
+                audit_action, target_id=sid, target_type="server",
+                status="failure", allowed=True,
+                details={
+                    "reason": "worker_unreachable_bulk_abort",
+                    "operation": "prepare_bulk",
+                    "queued_count": sum(1 for r in results if r.status == "queued"),
+                },
+            )
+            raise
+        results.append(ServerPrepareBulkResult(
+            server_id=sid, status="queued", task_id=task_id,
+        ))
+
+    queued = sum(1 for r in results if r.status == "queued")
+    skipped = sum(1 for r in results if r.status == "skipped")
+    audit_service.emit(
+        audit_action, target_id=None, target_type="server",
+        status="success", allowed=True,
+        details={
+            "operation": "prepare_bulk",
+            "task_kind": task_kind,
+            "queued_count": queued,
+            "skipped_count": skipped,
+            "server_ids": [r.server_id for r in results],
+        },
+    )
+    return ServerPrepareBulkResponse(
+        results=results, queued_count=queued, skipped_count=skipped,
+    )
 
 
 # ── /server-accounts/{id}/rotate — admin-initiated worker rotation ──────────

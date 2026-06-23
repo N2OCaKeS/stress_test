@@ -69,3 +69,10 @@ sudo astra-modeswitch set 2 && sudo astra-mac-control enable && sudo astra-mic-c
 sudo reboot
 ```
 
+
+
+#### Отключение Parsec аудит
+Действует до перезагрузки. По умолчанию значение `0`.
+```bash
+echo 1 | sudo tee /parsecfs/disable-all-audit
+```

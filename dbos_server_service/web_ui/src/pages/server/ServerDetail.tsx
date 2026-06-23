@@ -137,7 +137,7 @@ export function ServerDetail({
         onChange={(id) => setTab(id as TabId)}
         tabs={TABS.map((t) => ({ id: t.id, label: t.label }))}
       />
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto">
         {tab === "overview" && (
           <OverviewTab
             serverId={current.id}

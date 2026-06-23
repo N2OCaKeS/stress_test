@@ -11,6 +11,7 @@ import {
   Cog,
   Container,
   Database,
+  EyeOff,
   FileText,
   HardDrive,
   Inbox,
@@ -48,6 +49,7 @@ import { ServicesPlatformRoles } from "./services/ServicesPlatformRoles";
 import { ServicesServerGroups } from "./services/ServicesServerGroups";
 import { ServicesServerPermissions } from "./services/ServicesServerPermissions";
 import { ServicesOsVersions } from "./services/ServicesOsVersions";
+import { ServicesIgnoredLogins } from "./services/ServicesIgnoredLogins";
 import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
 import { ServicesLogingRules } from "./services/ServicesLogingRules";
 import { ServicesLogingRetention } from "./services/ServicesLogingRetention";
@@ -293,6 +295,19 @@ const STATIC_ITEMS: AdminItem[] = [
     // пункт не показываем; кнопки управления гейтятся внутри страницы.
     visibleFor: (p) => isDepAdmin(p) || hasServerServiceAdmin(p),
   },
+  {
+    id: "services.server.ignored_logins",
+    label: "Игнорируемые логины",
+    hint: "OS-логины вне ревизии · отдел",
+    icon: EyeOff,
+    block: "services",
+    group: "server",
+    content: ServicesIgnoredLogins,
+    // Гейтится action `manage_ignored_logins` — dep_admin своего отдела или
+    // server.admin. Platform-роли (account_admin / loging_admin) backend режет
+    // на 403; пункт им не показываем.
+    visibleFor: (p) => isDepAdmin(p) || hasServerServiceAdmin(p),
+  },
 
   // Services block — secret. Per-credential RoleACL / DeptGrant / UserACL.
   // secret_service dept-scoped: account_admin / loging_* без отдела backend
@@ -401,7 +416,10 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "Безопасность",
     content: SecurityLockout,
-    visibleFor: (p) => p.has_admin,
+    // Управление lockout (просмотр/unlock/ban/политика) backend пускает только
+    // account_admin. dep_admin раньше видел пункт и упирался в отбойное
+    // сообщение — прячем его, чтобы видел только тот, кому реально доступно.
+    visibleFor: (p) => isAccountAdmin(p),
   },
   {
     id: "services.security.introspect",

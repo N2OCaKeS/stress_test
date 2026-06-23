@@ -67,7 +67,6 @@ import { usersInventory } from "@/api/server/misc";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { RevisionDiffModal } from "@/pages/server/RevisionDiffModal";
 import { OsUsersDiscoveryModal } from "@/pages/server/OsUsersDiscoveryModal";
-import { IgnoredLoginsModal } from "@/pages/server/IgnoredLoginsModal";
 import { isDepAdmin, isServerZoneBlocked } from "@/lib/rbac";
 import {
   type RevisionAccountDiff,
@@ -320,7 +319,6 @@ export function ServerUsers() {
   const [serverFilter, setServerFilter] = useState<string>("all");
   const [creating, setCreating] = useState(false);
   const [discovering, setDiscovering] = useState(false);
-  const [ignoreListOpen, setIgnoreListOpen] = useState(false);
 
   const serversQ = useQuery(
     () => listServers({ limit: SERVER_LIMIT }),
@@ -410,14 +408,16 @@ export function ServerUsers() {
   const aside = (
     <aside className="border-r border-token surface flex flex-col min-h-0">
       <div className="border-b border-token px-3 py-2 shrink-0">
-        <div className="flex items-center gap-2">
-          <Search className="w-4 h-4 text-dim" />
-          <input
-            className="bg-transparent outline-none flex-1 text-sm"
-            placeholder={`Поиск по ${allAccounts.length} аккаунтам…`}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-1 min-w-[140px]">
+            <Search className="w-4 h-4 text-dim shrink-0" />
+            <input
+              className="bg-transparent outline-none flex-1 min-w-0 text-sm"
+              placeholder={`Поиск по ${allAccounts.length} аккаунтам…`}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
           {canOperate && (
             <button
               type="button"
@@ -426,16 +426,6 @@ export function ServerUsers() {
               title="Найти OS-юзеров на сервере (discovery)"
             >
               <ScanSearch className="w-3.5 h-3.5" /> Поиск на ОС
-            </button>
-          )}
-          {canManage && (
-            <button
-              type="button"
-              className="btn btn-sm flex items-center gap-1 shrink-0"
-              onClick={() => setIgnoreListOpen(true)}
-              title="Игнорируемые OS-логины отдела — чтобы служебные (postgres и т.п.) не светились как незнакомые при инвентаризации"
-            >
-              <EyeOff className="w-3.5 h-3.5" /> Игнор-лист
             </button>
           )}
         </div>
@@ -589,10 +579,6 @@ export function ServerUsers() {
           onImported={() => accountsQ.refetch()}
           onIgnored={() => {}}
         />
-      )}
-
-      {ignoreListOpen && (
-        <IgnoredLoginsModal onClose={() => setIgnoreListOpen(false)} />
       )}
     </Shell>
   );
@@ -1173,7 +1159,7 @@ function AccountWorkzone({
         )}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-4 max-w-3xl">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto p-5 flex flex-col gap-4 max-w-3xl">
         {err && <div className="alert-danger text-sm">{err}</div>}
 
         {/* Долгая ревизия: уведомление со статусом; по клику (когда готово) —

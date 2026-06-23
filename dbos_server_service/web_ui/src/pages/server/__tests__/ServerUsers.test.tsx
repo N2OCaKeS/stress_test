@@ -314,16 +314,17 @@ describe("ServerUsers (fleet account list)", () => {
     expect(arg).toMatchObject({ login: "new-svc", server_ids: ["srv1"] });
   });
 
-  it("показывает кнопки «Поиск на ОС» и «Игнор-лист» для оператора/менеджера", async () => {
+  it("показывает кнопку «Поиск на ОС» для оператора/менеджера", async () => {
     selectAccount();
     renderPage();
     // alice (dep_admin) — canOperate + canManage.
     expect(
       await screen.findByRole("button", { name: /Поиск на ОС/ }),
     ).toBeInTheDocument();
+    // «Игнор-лист» переехал в администрирование — в тулбаре server users его нет.
     expect(
-      screen.getByRole("button", { name: /Игнор-лист/ }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: /Игнор-лист/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("discovery-модалка рендерит unknown_users с режимами add/ignore после скана", async () => {
@@ -360,29 +361,5 @@ describe("ServerUsers (fleet account list)", () => {
     expect(await d.findByText("ghost")).toBeInTheDocument();
     expect(d.getByLabelText(/Добавить ghost/)).toBeInTheDocument();
     expect(d.getByLabelText(/Игнорировать ghost/)).toBeInTheDocument();
-  });
-
-  it("ignore-модалка рендерит список из listIgnoredLogins", async () => {
-    selectAccount();
-    listIgnoredLoginsMock.mockResolvedValue([
-      {
-        id: "ig1",
-        department_id: "dep1",
-        login: "backup-svc",
-        reason: "вендорский",
-        created_by: null,
-        created_at: "2026-01-01T00:00:00Z",
-      },
-    ]);
-
-    renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: /Игнор-лист/ }));
-
-    const dialog = await screen.findByRole("dialog");
-    const d = within(dialog);
-    expect(await d.findByText("backup-svc")).toBeInTheDocument();
-    expect(
-      d.getByRole("button", { name: /Снять игнор/ }),
-    ).toBeInTheDocument();
   });
 });

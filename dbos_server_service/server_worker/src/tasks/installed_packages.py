@@ -92,6 +92,20 @@ AUDIT_SAFE_FIELDS: set[str] = set(_BASE_AUDIT_SAFE_FIELDS)
 # Тот же класс символов заявлен в docstring модуля и в server_service.
 _PATTERN_RE = re.compile(r"^[A-Za-z0-9._\-+*?\[\]]+$")
 
+# Allow-list имён пакетов для мутаций (install/remove/upgrade). В отличие от
+# glob-pattern'а здесь НЕ допускаем `* ? [ ]` — устанавливать/сносить пакеты
+# по маске опасно (один `*` снёс бы пол-системы) и сам apt/dpkg при install
+# трактует имя буквально. Разрешённый класс — `[A-Za-z0-9._+-]`: легальные
+# имена пакетов Debian/RPM (`linux-image-amd64`, `g++`, `lib32z1`,
+# `python3.11`). Метасимволы shell (`'`, `$`, `;`, пробел, backtick) тем
+# самым тоже отсечены — break-out из одиночных кавычек невозможен.
+_PKG_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+\-]*$")
+
+# Package manager'ы, для которых поддержана мутация. list работает на всех
+# шести бэкендах, но менять состав мы умеем только там, где знаем безопасный
+# не-интерактивный синтаксис: dpkg→apt-get, rpm→dnf/yum, apk→apk.
+_MUTABLE_PACKAGE_MANAGERS = frozenset({"dpkg", "rpm", "apk"})
+
 # Connect-time коды SshClient.connect(), означающие «до сервера дошли, но
 # управляющая SSH-сессия не поднялась»: auth не прошёл, коннект сорвался,
 # handshake завис. На ПОДГОТОВЛЕННОМ (managed) сервере это почти всегда значит,
@@ -456,4 +470,275 @@ async def installed_packages_list(task_id: str) -> None:
         audit_target_type="server",
         impl=_impl,
         audit_safe_fields=_audit_safe_fields(),
+    )
+
+
+# ── Изменяющие операции: install / remove / update ──────────────────────────
+
+# Whitelist полей для audit-details мутаций. Имена пакетов сами по себе не
+# секрет, но это интент оператора (что ставит/сносит) — отдаём в audit явно,
+# тут нет CVE-recon'а уровня glob-pattern'а (пакет именован буквально). Полный
+# stdout менеджера наружу не уходит — лежит в task.result.
+_MUTATION_AUDIT_SAFE_FIELDS: set[str] = {
+    "server_id",
+    "operation",
+    "package_manager",
+    "packages",
+    "count",
+    "returncode",
+}
+
+
+def _validate_package_names(packages: list, host: str) -> list[str]:
+    """Проверить список имён пакетов по строгому allow-list'у.
+
+    Возвращает нормализованный список строк. Любой элемент не-str, пустой
+    либо с символом вне `_PKG_NAME_RE` валит таску `INVALID_PACKAGE_NAME` —
+    раньше, чем имя попадёт в shell-команду. Это defence-in-depth поверх
+    валидации server_service: на shell-уровень уходит только то, что прошло
+    обе проверки.
+    """
+    if not isinstance(packages, list) or not packages:
+        raise SshError(
+            error_code="INVALID_PACKAGE_NAME",
+            host=host,
+            message="packages must be a non-empty list of names",
+        )
+    out: list[str] = []
+    for name in packages:
+        if not isinstance(name, str) or not _PKG_NAME_RE.match(name):
+            raise SshError(
+                error_code="INVALID_PACKAGE_NAME",
+                host=host,
+                message=(
+                    f"package name {name!r} contains characters disallowed for "
+                    "a package name (only [A-Za-z0-9._+-], must start alnum)"
+                ),
+            )
+        out.append(name)
+    return out
+
+
+def _build_mutation_command(
+    package_manager: str, operation: str, packages: list[str]
+) -> str:
+    """Собрать не-интерактивную команду мутации под выбранный package manager.
+
+    `packages` обязаны пройти `_validate_package_names` — внутри только
+    `[A-Za-z0-9._+-]`, поэтому подстановка в shell без кавычек безопасна
+    (метасимволов нет). update без явного списка пакетов = обновить всё.
+
+    Команды с `&&` (apt-get/apk update перед install) оборачиваются в
+    `sh -c '...'`. SSH-слой исполняет шаг под sudo как `sudo -S -p '' <cmd>` —
+    без обёртки sudo накрыл бы только первый сегмент до `&&`, а второй
+    (install) пошёл бы без прав и упал на dpkg-lock. Внутри одинарных кавычек
+    `sh -c` безопасно, потому что имена пакетов прошли allow-list (нет `'`).
+
+    Поддержаны dpkg/rpm/apk; для остального — `SshError`
+    (`UNSUPPORTED_PACKAGE_MANAGER`). Все команды не задают вопросов
+    (`-y` / `--noninteractive`).
+    """
+    joined = " ".join(packages)
+    if package_manager == "dpkg":
+        # DEBIAN_FRONTEND=noninteractive глушит debconf-промпты (postinst).
+        env = "DEBIAN_FRONTEND=noninteractive"
+        if operation == "install":
+            return f"sh -c '{env} apt-get update && {env} apt-get install -y {joined}'"
+        if operation == "remove":
+            return f"{env} apt-get remove -y {joined}"
+        if operation == "update":
+            # Без списка пакетов — dist-safe upgrade всего; со списком —
+            # apt-get install переустанавливает именно их на свежие версии.
+            if packages:
+                return f"sh -c '{env} apt-get update && {env} apt-get install -y --only-upgrade {joined}'"
+            return f"sh -c '{env} apt-get update && {env} apt-get upgrade -y'"
+    elif package_manager == "rpm":
+        # dnf на современных RHEL/Fedora; на старых это symlink на yum, синтаксис
+        # совпадает. -y подавляет промпты.
+        if operation == "install":
+            return f"dnf install -y {joined}"
+        if operation == "remove":
+            return f"dnf remove -y {joined}"
+        if operation == "update":
+            if packages:
+                return f"dnf upgrade -y {joined}"
+            return "dnf upgrade -y"
+    elif package_manager == "apk":
+        if operation == "install":
+            return f"sh -c 'apk update && apk add {joined}'"
+        if operation == "remove":
+            return f"apk del {joined}"
+        if operation == "update":
+            if packages:
+                return f"sh -c 'apk update && apk add --upgrade {joined}'"
+            return "sh -c 'apk update && apk upgrade'"
+    else:
+        raise SshError(
+            error_code="UNSUPPORTED_PACKAGE_MANAGER",
+            host="",
+            message=(
+                f"package manager {package_manager!r} does not support "
+                "mutation (install/remove/update); only dpkg/rpm/apk"
+            ),
+        )
+    # operation вне install/remove/update — caller валидирует, но defensive.
+    raise SshError(
+        error_code="INVALID_OPERATION",
+        host="",
+        message=f"unsupported mutation operation: {operation}",
+    )
+
+
+async def _mutate_packages_impl(payload: dict, operation: str) -> dict:
+    """Общая реализация install/remove/update под управляющей SSH-сессией.
+
+    Заходит на сервер по ключу под управляющим пользователем (мутация —
+    всегда managed-путь, server_service гейтит prepare), определяет package
+    manager, валидирует имена пакетов и выполняет соответствующую команду
+    под sudo. Возвращает `{server_id, operation, package_manager, packages,
+    count, returncode}`.
+    """
+    server_id = payload["server_id"]
+    raw_packages = payload.get("packages", [])
+    account_id = payload.get("account_id")
+    target_dept = payload.get("target_department_id")
+    is_managed = bool(payload.get("is_managed"))
+
+    creds = await resolve_ssh_creds(
+        payload,
+        server_id,
+        account_id=account_id,
+        target_dept=target_dept,
+        is_managed=is_managed,
+    )
+    ssh_client.apply_session_hints(creds, payload)
+    host = creds.get("host") or creds.get("ssh_host") or server_id
+
+    # update может идти без списка (обновить всё); install/remove обязаны
+    # иметь хотя бы один пакет. Валидируем имена до подстановки в shell.
+    packages: list[str]
+    if operation == "update" and not raw_packages:
+        packages = []
+    else:
+        packages = _validate_package_names(raw_packages, str(host))
+
+    logger.info(
+        "installed_packages.%s on %r packages=%s", operation, host, packages,
+    )
+    session = ssh_client.build_session(creds, server_id)
+    try:
+        await session.connect()
+    except SshError as exc:
+        if is_managed and exc.error_code in _CONNECT_FAILURE_CODES:
+            await session.close()
+            raise _remap_managed_connect_error(exc) from exc
+        await session.close()
+        raise
+    async with session as ssh:
+        package_manager = await _detect_package_manager(ssh)
+        if package_manager not in _MUTABLE_PACKAGE_MANAGERS:
+            raise SshError(
+                error_code="UNSUPPORTED_PACKAGE_MANAGER",
+                host=str(host),
+                message=(
+                    f"package manager {package_manager!r} on remote host does "
+                    "not support mutation (install/remove/update); supported: "
+                    "dpkg (apt-get) / rpm (dnf) / apk"
+                ),
+            )
+        cmd = _build_mutation_command(package_manager, operation, packages)
+        rc, stdout, stderr = await ssh.run(cmd, sudo=True)
+        if rc != 0:
+            raise SshError(
+                error_code="PACKAGE_MUTATION_FAILED",
+                host=str(host),
+                cmd_sanitized=cmd,
+                returncode=rc,
+                stderr=(stderr or stdout).strip(),
+                message=f"{package_manager} {operation} failed",
+            )
+    return {
+        "server_id": server_id,
+        "operation": operation,
+        "package_manager": package_manager,
+        "packages": packages,
+        "count": len(packages),
+        "returncode": rc,
+    }
+
+
+@broker.task("installed_packages.install")
+async def installed_packages_install(task_id: str) -> None:
+    """Установить пакеты на сервере (apt-get install / dnf install / apk add).
+
+    Payload: `server_id`, `packages` (непустой список имён), management-поля
+    (`is_managed`/`management_user`/`host`/`ssh_port`). Заходит под
+    управляющим пользователем с sudo, обновляет индекс и ставит пакеты в
+    не-интерактивном режиме.
+
+    Возвращает `{server_id, operation: "install", package_manager, packages,
+    count, returncode}`. Ошибки: `INVALID_PACKAGE_NAME`,
+    `UNSUPPORTED_PACKAGE_MANAGER`, `PACKAGE_MUTATION_FAILED`,
+    `SERVER_MANAGEMENT_AUTH_FAILED`, `NO_PACKAGE_MANAGER`.
+
+    Связано: server_service `POST /servers/packages/bulk-action`,
+    audit action `server.packages_install`.
+    """
+    async def _impl(payload: dict) -> dict:
+        return await _mutate_packages_impl(payload, "install")
+
+    await run_task(
+        task_id,
+        audit_action="server.packages_install",
+        audit_target_type="server",
+        impl=_impl,
+        audit_safe_fields=set(_MUTATION_AUDIT_SAFE_FIELDS),
+    )
+
+
+@broker.task("installed_packages.remove")
+async def installed_packages_remove(task_id: str) -> None:
+    """Удалить пакеты с сервера (apt-get remove / dnf remove / apk del).
+
+    Payload и контракт — как у `installed_packages_install`, операция
+    `remove`. Возвращает `{..., operation: "remove", ...}`.
+
+    Связано: server_service `POST /servers/packages/bulk-action`,
+    audit action `server.packages_remove`.
+    """
+    async def _impl(payload: dict) -> dict:
+        return await _mutate_packages_impl(payload, "remove")
+
+    await run_task(
+        task_id,
+        audit_action="server.packages_remove",
+        audit_target_type="server",
+        impl=_impl,
+        audit_safe_fields=set(_MUTATION_AUDIT_SAFE_FIELDS),
+    )
+
+
+@broker.task("installed_packages.update")
+async def installed_packages_update(task_id: str) -> None:
+    """Обновить пакеты на сервере (apt-get upgrade / dnf upgrade / apk upgrade).
+
+    Payload: `server_id`, опциональный `packages` (если пуст — обновить всё),
+    management-поля. Со списком пакетов обновляются только они
+    (`--only-upgrade` у apt), без списка — все доступные обновления.
+
+    Возвращает `{..., operation: "update", ...}` (`packages` пуст при
+    обновлении всего).
+
+    Связано: server_service `POST /servers/packages/bulk-action`,
+    audit action `server.packages_update`.
+    """
+    async def _impl(payload: dict) -> dict:
+        return await _mutate_packages_impl(payload, "update")
+
+    await run_task(
+        task_id,
+        audit_action="server.packages_update",
+        audit_target_type="server",
+        impl=_impl,
+        audit_safe_fields=set(_MUTATION_AUDIT_SAFE_FIELDS),
     )

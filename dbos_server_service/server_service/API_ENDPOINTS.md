@@ -388,6 +388,18 @@ URL vs action_kind: путь kebab-case, `task_kind` / `audit_action` — `insta
 
 Errors: `INVALID_PATTERN` / `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `PREPARE_REQUIRED` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `WORKER_UNREACHABLE` (503).
 
+### `POST /servers/packages/bulk-action`
+
+Auth: Bearer + `(server, *, manage_packages)`. Массовая ИЗМЕНЯЮЩАЯ операция: на каждый сервер из `server_ids` диспатчит `installed_packages.{install|remove|update}` — worker под управляющим пользователем по SSH с sudo выполняет `apt-get`/`dnf`/`apk`.
+
+Body: `{server_ids:[...], action:"install"|"remove"|"update", packages:[...]}`. `packages` обязателен для install/remove; для update опционален (пусто = обновить всё). Имена пакетов — строгий allow-list `[A-Za-z0-9._+-]` (без glob), валидируется схемой → `422`.
+
+Per-server гейты (не валят батч): dept-visibility (`not_found`), prepare (`prepare_required`), reserve (`reserved` — занятый чужим оператором), decommissioned (`decommissioned`). Response: `{action, packages, requested, dispatched, results:[{server_id, hostname, status, task_id?}]}`. Реальный результат UI добирает поллингом `GET /tasks/{task_id}`.
+
+Audit: `server.packages_install` / `_remove` / `_update` (WARNING — мутация на боксе). Cap серверов — `INSTALLED_PACKAGES_BULK_MAX_SERVERS` (дефолт 50).
+
+Errors: `PERMISSION_DENIED` (403), `BULK_PACKAGES_TOO_LARGE` (413), `422` (валидация тела/имён пакетов).
+
 ---
 
 ## Inventory

@@ -106,6 +106,12 @@ SERVICE_EVENTS = [
     # action: dispatch'ер `POST /servers/{id}/installed-packages` + worker-task
     # `installed_packages.list` (обе стороны эмитят с одинаковым action-name).
     {"action": "installed_packages.list", "description": "Installed packages live-listed via worker (SSH dpkg-query/rpm -qa)", "default_severity": "INFO"},
+    # Изменяющие массовые операции с пакетами — dispatch'ер
+    # `POST /servers/packages/bulk-action` + worker-таски
+    # `installed_packages.{install,remove,update}`. WARNING — мутация на боксе.
+    {"action": "server.packages_install", "description": "Packages installed on a server via worker (SSH apt-get/dnf/apk under sudo)", "default_severity": "WARNING"},
+    {"action": "server.packages_remove", "description": "Packages removed from a server via worker (SSH apt-get/dnf/apk under sudo)", "default_severity": "WARNING"},
+    {"action": "server.packages_update", "description": "Packages updated/upgraded on a server via worker (SSH apt-get/dnf/apk under sudo)", "default_severity": "WARNING"},
     # OS versions — глобальный каталог. Чтение доступно любому
     # аутентифицированному актору, без аудита; пишутся только мутации.
     {"action": "os_version.create", "description": "OS version catalog entry created", "default_severity": "INFO"},

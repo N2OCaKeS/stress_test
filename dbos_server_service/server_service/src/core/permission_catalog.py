@@ -102,6 +102,10 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
         "Отменить pending/running worker-task'у. Pending пропускается "
         "перед запуском, running доживает текущий stage и не стартует следующий."
     ),
+    Action.MANAGE_PACKAGES: (
+        "Массово ставить, удалять и обновлять пакеты на серверах через worker "
+        "по SSH (apt-get/dnf/apk под sudo). Деструктив на боксе — поверх view."
+    ),
 }
 
 # Чувствительные действия — раскрытие/ротация секретов, управление питанием,
@@ -118,6 +122,8 @@ SENSITIVE_ACTIONS: frozenset[str] = frozenset({
     # Живой shell на боксе под управляющим пользователем с sudo — самый
     # широкий доступ к серверу.
     Action.CONSOLE,
+    # Изменение состава пакетов на боксе под sudo — деструктив на сервере.
+    Action.MANAGE_PACKAGES,
 })
 
 # Служебные гранты воркера: callback'и через internal endpoint'ы. Людям в норме

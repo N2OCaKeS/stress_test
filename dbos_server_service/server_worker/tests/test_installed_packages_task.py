@@ -910,3 +910,240 @@ class TestInstalledPackagesTask:
         creds, _ = captured_creds[0]
         assert creds.get("is_managed") is True
         assert creds.get("management_user") == "dbos"
+
+
+# ── Изменяющие операции: install / remove / update ──────────────────────────
+
+
+class TestPackageNameValidation:
+    @pytest.mark.parametrize("name", [
+        "sl", "cowsay", "linux-image-amd64", "g++", "lib32z1", "python3.11",
+        "foo.bar", "a_b", "pkg+extra",
+    ])
+    def test_accepts_legit_names(self, name):
+        assert installed_packages._PKG_NAME_RE.match(name)
+
+    @pytest.mark.parametrize("name", [
+        "sl; rm -rf /", "$(reboot)", "`id`", "foo bar", "foo|cat", "foo>out",
+        "*", "py3*", "foo[0-9]", "-leading-dash", ".dotfile", "", "foo\nbar",
+    ])
+    def test_rejects_bad_names(self, name):
+        assert not installed_packages._PKG_NAME_RE.match(name)
+
+    def test_validate_rejects_non_list(self):
+        from src.clients.ssh import SshError
+        with pytest.raises(SshError) as exc:
+            installed_packages._validate_package_names("sl", "h")
+        assert exc.value.error_code == "INVALID_PACKAGE_NAME"
+
+    def test_validate_rejects_empty_list(self):
+        from src.clients.ssh import SshError
+        with pytest.raises(SshError) as exc:
+            installed_packages._validate_package_names([], "h")
+        assert exc.value.error_code == "INVALID_PACKAGE_NAME"
+
+    def test_validate_rejects_injection(self):
+        from src.clients.ssh import SshError
+        with pytest.raises(SshError) as exc:
+            installed_packages._validate_package_names(["ok", "bad;rm"], "h")
+        assert exc.value.error_code == "INVALID_PACKAGE_NAME"
+
+    def test_validate_returns_normalized(self):
+        out = installed_packages._validate_package_names(["sl", "cowsay"], "h")
+        assert out == ["sl", "cowsay"]
+
+
+class TestBuildMutationCommand:
+    def test_dpkg_install(self):
+        cmd = installed_packages._build_mutation_command("dpkg", "install", ["sl", "cowsay"])
+        assert "apt-get update" in cmd
+        assert "apt-get install -y sl cowsay" in cmd
+        assert "DEBIAN_FRONTEND=noninteractive" in cmd
+
+    def test_dpkg_remove(self):
+        cmd = installed_packages._build_mutation_command("dpkg", "remove", ["sl"])
+        assert "apt-get remove -y sl" in cmd
+
+    def test_dpkg_update_with_packages(self):
+        cmd = installed_packages._build_mutation_command("dpkg", "update", ["sl"])
+        assert "--only-upgrade sl" in cmd
+
+    def test_dpkg_update_all(self):
+        cmd = installed_packages._build_mutation_command("dpkg", "update", [])
+        assert "apt-get upgrade -y" in cmd
+
+    def test_rpm_install(self):
+        cmd = installed_packages._build_mutation_command("rpm", "install", ["htop"])
+        assert "dnf install -y htop" in cmd
+
+    def test_apk_install(self):
+        cmd = installed_packages._build_mutation_command("apk", "install", ["bash"])
+        assert "apk add bash" in cmd
+
+    def test_unsupported_manager_raises(self):
+        from src.clients.ssh import SshError
+        with pytest.raises(SshError) as exc:
+            installed_packages._build_mutation_command("pacman", "install", ["bash"])
+        assert exc.value.error_code == "UNSUPPORTED_PACKAGE_MANAGER"
+
+
+class TestMutationTasks:
+    async def test_install_success_deb(self, make_task, fetch_task, captured_audit, monkeypatch):
+        fake = _FakeSshClient(host="srv1.example")
+        fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
+        fake.set_response("apt-get install -y sl", 0, "Setting up sl ...\n")
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.install",
+            target_server_id="srv1",
+            payload={
+                "server_id": "srv1",
+                "packages": ["sl"],
+                "operation": "install",
+                "ssh_host": "srv1.example",
+                "is_managed": True,
+                "management_user": "dbos",
+            },
+        )
+        await installed_packages.installed_packages_install.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["operation"] == "install"
+        assert t.result["package_manager"] == "dpkg"
+        assert t.result["packages"] == ["sl"]
+        assert t.result["returncode"] == 0
+        # Команда выполнена под sudo (через apt-get).
+        assert any("apt-get install -y sl" in c for c in fake.commands)
+        # Audit несёт safe-fields, без полного stdout.
+        details = captured_audit[0]["details"].get("result", {})
+        assert details.get("operation") == "install"
+        assert details.get("packages") == ["sl"]
+
+    async def test_remove_success(self, make_task, fetch_task, monkeypatch):
+        fake = _FakeSshClient(host="srv1.example")
+        fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
+        fake.set_response("apt-get remove -y sl", 0, "Removing sl ...\n")
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.remove",
+            target_server_id="srv1",
+            payload={
+                "server_id": "srv1", "packages": ["sl"], "operation": "remove",
+                "ssh_host": "srv1.example", "is_managed": True, "management_user": "dbos",
+            },
+        )
+        await installed_packages.installed_packages_remove.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["operation"] == "remove"
+
+    async def test_update_all(self, make_task, fetch_task, monkeypatch):
+        fake = _FakeSshClient(host="srv1.example")
+        fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
+        fake.set_response("apt-get upgrade -y", 0, "0 upgraded\n")
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.update",
+            target_server_id="srv1",
+            payload={
+                "server_id": "srv1", "packages": [], "operation": "update",
+                "ssh_host": "srv1.example", "is_managed": True, "management_user": "dbos",
+            },
+        )
+        await installed_packages.installed_packages_update.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["operation"] == "update"
+        assert t.result["packages"] == []
+        assert any("apt-get upgrade -y" in c for c in fake.commands)
+
+    async def test_install_invalid_name_fails(self, make_task, fetch_task, monkeypatch):
+        """Имя с инъекцией валит таску до SSH-команды."""
+        from sqlalchemy import update
+        from src.db.session import AsyncSessionLocal
+        from src.models import Task
+
+        fake = _FakeSshClient(host="srv1.example")
+        fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.install",
+            target_server_id="srv1",
+            payload={
+                "server_id": "srv1", "packages": ["sl; rm -rf /"], "operation": "install",
+                "ssh_host": "srv1.example", "is_managed": True, "management_user": "dbos",
+            },
+        )
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Task).where(Task.id == tid).values(max_attempts=1)
+            )
+            await session.commit()
+        await installed_packages.installed_packages_install.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        # Никакой apt-get не выполнялся — детект тоже не дошёл.
+        assert not any("apt-get" in c for c in fake.commands)
+
+    async def test_unsupported_manager_fails(self, make_task, fetch_task, monkeypatch):
+        """pacman/portage/xbps не поддержаны для мутаций → FAILED."""
+        from sqlalchemy import update
+        from src.db.session import AsyncSessionLocal
+        from src.models import Task
+
+        fake = _FakeSshClient(host="arch1.example")
+        fake.set_response("command -v dpkg-query", 1, "")
+        fake.set_response("command -v rpm", 1, "")
+        fake.set_response("command -v apk", 1, "")
+        fake.set_response("command -v pacman", 0, "/usr/bin/pacman\n")
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.install",
+            target_server_id="srv_arch",
+            payload={
+                "server_id": "srv_arch", "packages": ["bash"], "operation": "install",
+                "ssh_host": "arch1.example", "is_managed": True, "management_user": "dbos",
+            },
+        )
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Task).where(Task.id == tid).values(max_attempts=1)
+            )
+            await session.commit()
+        await installed_packages.installed_packages_install.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+
+    async def test_command_nonzero_fails(self, make_task, fetch_task, monkeypatch):
+        """apt-get вернул rc!=0 → PACKAGE_MUTATION_FAILED → FAILED."""
+        from sqlalchemy import update
+        from src.db.session import AsyncSessionLocal
+        from src.models import Task
+
+        fake = _FakeSshClient(host="srv1.example")
+        fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
+        fake.set_response("apt-get install -y nosuchpkg", 100, "", "E: Unable to locate package")
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.install",
+            target_server_id="srv1",
+            payload={
+                "server_id": "srv1", "packages": ["nosuchpkg"], "operation": "install",
+                "ssh_host": "srv1.example", "is_managed": True, "management_user": "dbos",
+            },
+        )
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Task).where(Task.id == tid).values(max_attempts=1)
+            )
+            await session.commit()
+        await installed_packages.installed_packages_install.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED

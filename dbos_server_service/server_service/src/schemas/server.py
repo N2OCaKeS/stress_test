@@ -1,7 +1,9 @@
 """Pydantic-схемы запроса/ответа для эндпоинтов /servers."""
 
+import re
 from datetime import datetime
 from ipaddress import IPv4Address, IPv6Address
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -10,6 +12,11 @@ from src.core.password_policy import validate_strong_password
 from src.schemas.disk import DiskResponse, DiskSpec
 from src.schemas.ipmi_controller import IpmiControllerCreate
 from src.utils.url_security import validate_safe_hostname
+
+# Allow-list имён пакетов для мутаций: без glob-метасимволов (`* ? [ ]`),
+# только то, что легально для apt/dpkg/rpm — `[A-Za-z0-9._+-]`, начинается с
+# alnum. Тот же класс, что в worker'е (`tasks/installed_packages._PKG_NAME_RE`).
+_PKG_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+\-]*$")
 
 
 class ServerIpmiCreate(IpmiControllerCreate):
@@ -270,6 +277,89 @@ class BulkInstalledPackagesResponse(BaseModel):
     requested: int = Field(description="Сколько уникальных серверов запрошено.")
     dispatched: int = Field(description="Сколько серверов реально получили задачу (status=ok).")
     results: list[BulkInstalledPackagesServerResult] = Field(
+        description="Per-server результат, порядок соответствует входному списку.",
+    )
+
+
+class BulkPackagesActionRequest(BaseModel):
+    """Тело POST /servers/packages/bulk-action — массовая мутация пакетов.
+
+    `action` — `install` / `remove` / `update`. Для install/remove `packages`
+    обязателен и непуст. Для update `packages` опционален: пустой/отсутствует =
+    обновить все доступные пакеты, иначе обновить только перечисленные. Имена
+    пакетов валидируются строгим allow-list'ом `[A-Za-z0-9._+-]` (без glob —
+    устанавливать/сносить по маске нельзя). На каждый сервер диспатчится
+    отдельная `installed_packages.<action>`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    server_ids: list[str] = Field(
+        ...,
+        min_length=1,
+        description="Серверы для операции. Дубли схлопываются, порядок сохраняется.",
+    )
+    action: Literal["install", "remove", "update"] = Field(
+        ...,
+        description="install / remove / update.",
+    )
+    packages: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Имена пакетов. Обязательны для install/remove; для update "
+            "пусто = обновить всё. Allow-list [A-Za-z0-9._+-], без glob."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_action_packages(self) -> "BulkPackagesActionRequest":
+        if self.action in ("install", "remove") and not self.packages:
+            raise ValueError(
+                f"packages must be a non-empty list for action '{self.action}'"
+            )
+        bad = [p for p in self.packages if not _PKG_NAME_RE.match(p)]
+        if bad:
+            raise ValueError(
+                f"invalid package name(s) {bad!r}; allowed [A-Za-z0-9._+-], "
+                "must start with an alphanumeric"
+            )
+        return self
+
+
+class BulkPackagesActionServerResult(BaseModel):
+    """Результат мутации пакетов по одному серверу в составе bulk-ответа.
+
+    `status`:
+    * `ok` — задача `installed_packages.<action>` поставлена, `task_id` есть;
+      реальный результат UI добирает поллингом `GET /tasks/{task_id}`.
+    * `prepare_required` — сервер не прошёл prepare, SSH-мутация невозможна.
+    * `reserved` — сервер занят (busy) другим оператором, деструктив отбит.
+    * `decommissioned` — сервер списан, worker-операции не принимает.
+    * `not_found` — сервер не виден (cross-dept / нет такого id).
+    * `queued` — синоним ok для симметрии с другими bulk-ответами; не
+      используется, оставлен в контракте для совместимости.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    server_id: str = Field(description="ID сервера (prefix srv_).")
+    hostname: str | None = Field(default=None, description="Hostname (None для невидимого).")
+    status: str = Field(description="ok / prepare_required / reserved / decommissioned / not_found / queued.")
+    task_id: str | None = Field(default=None, description="ID задачи воркера, если status=ok.")
+
+
+class BulkPackagesActionResponse(BaseModel):
+    """Сводный ответ массовой мутации пакетов.
+
+    `requested`/`dispatched` дают UI быстрый счётчик «сколько серверов реально
+    получили задачу» без обхода всего массива results.
+    """
+
+    action: str = Field(description="Применённое действие: install / remove / update.")
+    packages: list[str] = Field(description="Имена пакетов (пусто при update всего).")
+    requested: int = Field(description="Сколько уникальных серверов запрошено.")
+    dispatched: int = Field(description="Сколько серверов реально получили задачу (status=ok).")
+    results: list[BulkPackagesActionServerResult] = Field(
         description="Per-server результат, порядок соответствует входному списку.",
     )
 

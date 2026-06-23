@@ -39,7 +39,7 @@ class TestFlagSets:
             "view_password", "view_credentials",
             "rotate_password", "rotate_credentials",
             "grant_sudo", "power_on", "power_off", "power_reboot",
-            "console",
+            "console", "manage_packages",
         }
         assert set(SENSITIVE_ACTIONS) == expected
 

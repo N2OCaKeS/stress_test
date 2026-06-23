@@ -24,6 +24,7 @@ from src.api.v1.endpoints.ipmi import list_router_legacy as ipmi_list_router_leg
 from src.api.v1.endpoints.ipmi import router as ipmi_router
 from src.api.v1.endpoints.installed_packages import (
     bulk_router as installed_packages_bulk_router,
+    packages_action_router as installed_packages_action_router,
     router as installed_packages_router,
 )
 from src.api.v1.endpoints.internal import router as internal_router
@@ -58,6 +59,9 @@ router.include_router(installed_packages_router, tags=["installed-packages"])
 # нельзя (он уже выше), но статический сегмент `installed-packages` всё равно
 # матчится раньше `{server_id}`-параметра в `/servers/...`.
 router.include_router(installed_packages_bulk_router, tags=["installed-packages"])
+# Массовые изменяющие операции с пакетами — `POST /servers/packages/bulk-action`.
+# Тот же приём со статическим сегментом `packages`, что у bulk-запроса.
+router.include_router(installed_packages_action_router, tags=["installed-packages"])
 router.include_router(users_inventory_router, tags=["server-accounts"])
 router.include_router(os_versions_router, tags=["os-versions"])
 router.include_router(permissions_router, tags=["permissions"])

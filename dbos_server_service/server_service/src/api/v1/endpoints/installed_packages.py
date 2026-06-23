@@ -49,9 +49,12 @@ from src.schemas.server import (
     BulkInstalledPackagesRequest,
     BulkInstalledPackagesResponse,
     BulkInstalledPackagesServerResult,
+    BulkPackagesActionRequest,
+    BulkPackagesActionResponse,
+    BulkPackagesActionServerResult,
     ServerTaskDispatchResponse,
 )
-from src.services import audit_service, permissions
+from src.services import audit_service, permissions, reservation
 from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
 
@@ -61,6 +64,22 @@ router = APIRouter(prefix="/servers/{server_id}")
 # конфликтует с `/servers/{server_id}/...`: FastAPI матчит статический сегмент
 # `installed-packages` раньше path-параметра.
 bulk_router = APIRouter(prefix="/servers")
+
+# Массовые ИЗМЕНЯЮЩИЕ операции с пакетами едут отдельным роутером без
+# `{server_id}`-префикса (как bulk-запрос). Путь `/servers/packages/bulk-action`
+# не конфликтует с `/servers/{server_id}/...`: статический сегмент матчится
+# раньше path-параметра.
+packages_action_router = APIRouter(prefix="/servers")
+
+# Маппинг action → (task_kind, audit_action). Машинные ключи task_kind'а
+# совпадают с worker-тасками (`installed_packages.install/remove/update`),
+# audit_action — namespace `server.packages_*` (мутация на сервере), как
+# `server.power_*`.
+_PACKAGES_ACTION_MAP: dict[str, tuple[str, str]] = {
+    "install": ("installed_packages.install", "server.packages_install"),
+    "remove": ("installed_packages.remove", "server.packages_remove"),
+    "update": ("installed_packages.update", "server.packages_update"),
+}
 
 
 # Pattern — shell glob, разрешаем только безопасный набор символов. Никаких
@@ -394,6 +413,192 @@ async def bulk_installed_packages(
 
     return BulkInstalledPackagesResponse(
         pattern=pattern,
+        requested=len(server_ids),
+        dispatched=dispatched,
+        results=results,
+    )
+
+
+@packages_action_router.post(
+    "/packages/bulk-action",
+    response_model=BulkPackagesActionResponse,
+    status_code=202,
+    summary="Массовая мутация пакетов (install/remove/update) на нескольких серверах",
+    description=(
+        "Для каждого сервера из `server_ids` диспатчит изменяющую задачу "
+        "`installed_packages.{install|remove|update}`: worker под управляющим "
+        "пользователем по SSH с sudo выполняет `apt-get`/`dnf`/`apk`. "
+        "`action` — install / remove / update; `packages` обязателен для "
+        "install/remove, для update опционален (пусто = обновить всё). Имена "
+        "пакетов валидируются строгим allow-list'ом `[A-Za-z0-9._+-]` (без "
+        "glob).\n\n"
+        "Право `(server, manage_packages)` — деструктив поверх view. Гейты "
+        "per-server: dept-visibility (cross-dept → `not_found`), prepare-gate "
+        "(неподготовленный → `prepare_required`), reserve-gate (занятый чужим "
+        "оператором → `reserved`), decommissioned → `decommissioned`. Один "
+        "битый сервер не валит батч.\n\n"
+        "Модель async: dispatch только ставит задачи; реальный результат "
+        "(что применено, exit-код) UI добирает поллингом `GET /tasks/{task_id}`. "
+        "Cap серверов — `INSTALLED_PACKAGES_BULK_MAX_SERVERS`; превышение → 413."
+    ),
+    responses={
+        202: {"description": "Батч обработан, per-server статусы в `results`."},
+        403: {"description": "Нет роли с `manage_packages` на server."},
+        413: {"description": "BULK_PACKAGES_TOO_LARGE — server_ids длиннее cap'а."},
+        422: {"description": "Невалидное имя пакета / пустой packages для install/remove / неизвестный action."},
+    },
+)
+async def bulk_packages_action(
+    body: BulkPackagesActionRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> BulkPackagesActionResponse:
+    """Массовая мутация пакетов: одна задача на сервер, сводный per-server ответ.
+
+    Доступ: `(server, manage_packages)` — проверяется один раз для батча (право
+    зависит только от ролей caller'а). Дальше per-server visibility /
+    decommissioned / prepare / reserve. Серверы, не прошедшие гейт, попадают в
+    результат со статусом, а не валят весь батч.
+
+    Возможные ошибки: 403 PERMISSION_DENIED, 413 BULK_PACKAGES_TOO_LARGE,
+    422 (валидация тела). Per-server проблемы — статусы в `results`.
+
+    Связано: worker-таски `installed_packages.{install,remove,update}`,
+    bulk-запрос `bulk_installed_packages` (read-only).
+    """
+    task_kind, audit_action = _PACKAGES_ACTION_MAP[body.action]
+
+    # Дедуп с сохранением порядка — повторный server_id в одну задачу/строку.
+    seen: set[str] = set()
+    server_ids: list[str] = []
+    for sid in body.server_ids:
+        if sid not in seen:
+            seen.add(sid)
+            server_ids.append(sid)
+
+    # Cap на размер батча — тот же, что у bulk-запроса (каждый сервер = отдельный
+    # SSH-dispatch, не заливаем worker-пул одним запросом).
+    cap = get_settings().installed_packages_bulk_max_servers
+    if len(server_ids) > cap:
+        audit_service.emit(
+            audit_action, target_id=None, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "bulk_packages_too_large",
+                "requested_count": len(server_ids),
+                "cap": cap,
+                "action": body.action,
+            },
+        )
+        raise AppException(
+            error_code="BULK_PACKAGES_TOO_LARGE",
+            message=(
+                f"Bulk packages action of {len(server_ids)} servers exceeds "
+                f"cap {cap}; split into smaller batches"
+            ),
+            http_status=413,
+        )
+
+    # Role-check один раз для всего батча — `manage_packages` зависит только от
+    # ролей caller'а. Нет права → 403 на весь запрос.
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=None,
+        target_type="server",
+        extra_details={"bulk": True, "requested_count": len(server_ids), "action": body.action},
+        identity=identity,
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.MANAGE_PACKAGES,
+        )
+
+    results: list[BulkPackagesActionServerResult] = []
+    dispatched = 0
+    for server_id in server_ids:
+        # Visibility + dept isolation. Cross-dept / нет row → not_found.
+        try:
+            server = await server_svc.get_server(db, identity, server_id)
+        except (NotFoundError, AuthorizationError):
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept", "bulk": True},
+            )
+            results.append(BulkPackagesActionServerResult(
+                server_id=server_id, status="not_found",
+            ))
+            continue
+
+        # Списанный сервер — worker-операции не принимает.
+        if server.status == ServerStatus.DECOMMISSIONED:
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "decommissioned", "bulk": True},
+            )
+            results.append(BulkPackagesActionServerResult(
+                server_id=server.id, hostname=server.hostname, status="decommissioned",
+            ))
+            continue
+
+        # Prepare-gate: мутация идёт по SSH под управляющим ключом. Неподготовленный
+        # сервер → статус, не 409 на весь батч.
+        try:
+            require_server_prepared(server, audit_action=audit_action)
+        except ConflictError:
+            results.append(BulkPackagesActionServerResult(
+                server_id=server.id, hostname=server.hostname, status="prepare_required",
+            ))
+            continue
+
+        # Reserve-gate: мутация пакетов — деструктив. Сервер, занятый чужим
+        # оператором (busy) → статус reserved, не валим батч. ensure_not_reserved_for
+        # эмитит свой WARNING-аудит `server.reservation_denied` и raise'ит 409.
+        try:
+            reservation.ensure_not_reserved_for(identity, server, action=audit_action)
+        except ConflictError:
+            results.append(BulkPackagesActionServerResult(
+                server_id=server.id, hostname=server.hostname, status="reserved",
+            ))
+            continue
+
+        # Dispatch. На managed-сервере worker заходит по ключу — аккаунта нет.
+        # `packages`/`action` едут доп-payload'ом; недоступность worker'а на
+        # отдельном сервере уходит в статус queued-miss (не валит остальные).
+        try:
+            task_id, _ = await dispatch_server_ssh_task(
+                db=db, identity=identity, request=request,
+                server=server,
+                task_kind=task_kind,
+                audit_action=audit_action,
+                resolved_account_id=None,
+                extra_payload={
+                    "packages": list(body.packages),
+                    "operation": body.action,
+                },
+                success_extra_details={
+                    "operation": body.action,
+                    "package_count": len(body.packages),
+                    "bulk": True,
+                },
+            )
+        except (ServiceUnavailableError, ConflictError):
+            # dispatch_server_ssh_task уже заэмитил failure-audit. Не-ok сервер
+            # помечаем not_found-бакетом «не отдал данные» — для UI это «retry».
+            results.append(BulkPackagesActionServerResult(
+                server_id=server.id, hostname=server.hostname, status="not_found",
+            ))
+            continue
+
+        dispatched += 1
+        results.append(BulkPackagesActionServerResult(
+            server_id=server.id, hostname=server.hostname, status="ok", task_id=task_id,
+        ))
+
+    return BulkPackagesActionResponse(
+        action=body.action,
+        packages=list(body.packages),
         requested=len(server_ids),
         dispatched=dispatched,
         results=results,

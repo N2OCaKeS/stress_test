@@ -152,6 +152,11 @@ class Action(StrEnum):
     # worker_bot callback после бутстрапа управления (prepare): помечает
     # сервер подготовленным. Узкий least-privilege грант, без CRUD над сервером.
     PREPARE_CALLBACK = "prepare_callback"
+    # Массовые изменяющие операции с пакетами (install/remove/update) через
+    # worker по SSH под управляющим пользователем. Деструктив на боксе —
+    # отдельный action поверх view, чтобы право менять состав пакетов можно
+    # было выдать прицельно. Дефолтно admin/operator.
+    MANAGE_PACKAGES = "manage_packages"
 
     # Sensitive: показ расшифрованного секрета. Держатель `view_password` /
     # `view_credentials` получает plaintext (в base64) прямо в GET-карточке —
@@ -209,6 +214,8 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.CONSOLE,
         # Чтение drift-сводки по серверу (агрегация event'ов из loging).
         Action.VIEW_DRIFT,
+        # Массовое изменение пакетов на боксе (install/remove/update).
+        Action.MANAGE_PACKAGES,
     }),
     EntityType.SERVER_ACCOUNT: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,

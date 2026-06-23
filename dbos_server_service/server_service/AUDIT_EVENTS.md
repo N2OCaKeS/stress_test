@@ -230,6 +230,14 @@ dispatch-событие, server_worker (`tasks/installed_packages.py`) —
 | action | default_severity | эмитится при | target_type | детали |
 |---|---|---|---|---|
 | `installed_packages.list` | INFO | dispatch success / denied / worker failure + worker task SUCCEEDED/FAILED | `server` | `task_id`, `task_kind`, `pattern`, `department_id`, `package_manager`, `count`, либо `reason` |
+| `server.packages_install` | WARNING | dispatch (`POST /servers/packages/bulk-action` action=install) success / denied / failure + worker task SUCCEEDED/FAILED | `server` | `task_id`, `task_kind=installed_packages.install`, `operation=install`, `package_count`, `department_id`, либо `reason`. Worker SUCCEEDED: `package_manager`, `packages`, `count`, `returncode` |
+| `server.packages_remove` | WARNING | то же, action=remove | `server` | как install, `task_kind=installed_packages.remove`, `operation=remove` |
+| `server.packages_update` | WARNING | то же, action=update | `server` | как install, `task_kind=installed_packages.update`, `operation=update` (packages пуст при обновлении всего) |
+
+Массовые мутации (`POST /servers/packages/bulk-action`) — reserve-gated: занятый
+чужим оператором сервер отбивается `server.reservation_denied` (WARNING) и в
+per-server результате получает статус `reserved`. Право — `(server,
+manage_packages)`, по дефолту admin/operator.
 
 ---
 

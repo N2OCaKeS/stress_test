@@ -195,58 +195,57 @@ class TestDeptAdminCannotGrantCrossDept:
         )
 
 
-# ── 5. account_admin BLOCKED by guard (admin-plane separation) ──────────────
+# ── 5. account_admin — мета-админ матрицы прав ──────────────────────────────
 
-class TestAccountAdminBlockedFromPermissionsApi:
-    """Регрессия admin-plane separation.
+class TestAccountAdminManagesPermissionsApi:
+    """``account_admin`` управляет матрицей прав любого отдела (мета-админ).
 
-    Раньше эти тесты проверяли, что ``account_admin`` может писать
-    system-wide grants (``department_id=NULL``) и per-dept grants через API.
-    Теперь ``account_admin`` блокируется ``platform_admin_guard`` middleware
-    ДО endpoint'а — 403 ``PLATFORM_ADMIN_BUSINESS_DATA_DENIED``. System-wide
-    grants создаются только через миграции (seed); per-dept grants — через
-    ``department_admin`` своего отдела (см. ``TestCustomRoleGrantScopedToActorDept``
-    в этом файле + ``tests/integration/test_platform_admin_block.py``).
+    По решению владельца платформенный ``account_admin`` управляет правами
+    отделов: ``platform_admin_guard`` пропускает его на ``/permissions*``,
+    endpoint резолвит через ``PermissionMatrixIdentity``, а
+    ``permission_service`` снимает ролевую проверку и dept-isolation. Сами
+    серверные/аккаунтные операции ему по-прежнему недоступны (см.
+    ``tests/integration/test_platform_admin_block.py``).
     """
 
-    async def test_account_admin_blocked_on_global_grant(
-        self, client, db, account_admin_token,
-    ):
-        """account_admin → 403 PLATFORM_ADMIN_BUSINESS_DATA_DENIED, даже без target.
-
-        Раньше: ``test_account_admin_can_grant_global`` — писал
-        system-wide row. После §7-8: middleware блокирует, никакой строки
-        в БД не появится.
-        """
-        resp = await client.put(
-            f"{BASE}/server/some_global_role/delete",
-            headers=_hdr(account_admin_token),
-        )
-        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
-        # Никакой строки в БД появиться не должно.
-        rows = (await db.execute(
-            select(EntityPermission).where(
-                EntityPermission.role == "some_global_role",
-            )
-        )).scalars().all()
-        assert rows == []
-
-    async def test_account_admin_blocked_on_per_dept_grant(
+    async def test_account_admin_grants_per_dept(
         self, client, db, account_admin_token, dept_a,
     ):
-        """account_admin с явным target_department_id тоже блокируется."""
+        """account_admin с явным target_department_id пишет grant в этот отдел."""
         resp = await client.put(
             f"{BASE}/server/per_dept_role/delete",
             headers=_hdr(account_admin_token),
             json={"target_department_id": dept_a},
         )
-        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["department_id"] == dept_a
         rows = (await db.execute(
             select(EntityPermission).where(
                 EntityPermission.role == "per_dept_role",
             )
         )).scalars().all()
-        assert rows == []
+        assert [r.department_id for r in rows] == [dept_a]
+
+    async def test_account_admin_grants_global(
+        self, client, db, account_admin_token,
+    ):
+        """Без target_department_id grant ложится system-wide (department_id=NULL).
+
+        account_admin — платформенный мета-админ: ему доступно управление и
+        встроенными system-wide строками, не только per-dept.
+        """
+        resp = await client.put(
+            f"{BASE}/server/some_global_role/delete",
+            headers=_hdr(account_admin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["department_id"] is None
+        rows = (await db.execute(
+            select(EntityPermission).where(
+                EntityPermission.role == "some_global_role",
+            )
+        )).scalars().all()
+        assert [r.department_id for r in rows] == [None]
 
 
 # ── 7. Worker_bot seed preserved as system-wide (regression) ────────────────

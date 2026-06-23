@@ -861,6 +861,53 @@ class TestPrepareProvisionsLinkedAccounts:
 
         get_settings.cache_clear()
 
+    async def test_success_clears_stale_last_error(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Успешная attempt после упавшей чистит stale last_error.
+
+        `mark_succeeded` не трогает last_error, поэтому без локальной очистки
+        в prepare после фейла attempt 1 в last_error висела бы старая ошибка.
+        """
+        _set_mgmt_env(monkeypatch)
+        _mock_creds(
+            monkeypatch,
+            {"bootstrap_login": "bootadmin", "bootstrap_password": "Boot1234"},
+        )
+
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_stale",
+            payload={
+                "server_id": "srv_stale",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_stale",
+            },
+        )
+        # Симулируем остаток от упавшей предыдущей попытки.
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Task).where(Task.id == tid).values(
+                    last_error="SSH_CHPASSWD_FAILED: prev attempt error",
+                )
+            )
+            await session.commit()
+
+        conn = _conn(_bootstrap_seq())
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.last_error is None
+
+        get_settings.cache_clear()
+
     async def test_no_linked_accounts_is_noop(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):

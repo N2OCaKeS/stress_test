@@ -25,12 +25,14 @@ import logging
 import re
 
 import redis.asyncio as aioredis  # noqa: F401 — re-exported for test monkeypatch backward compat
+from sqlalchemy import update
 
 from src.clients.ssh import SshError
 from src.core.config import get_settings  # noqa: F401 — re-exported for downstream / future tests
 from src.core.identifiers import validate_task_id
 from src.db.session import AsyncSessionLocal
 from src.main import broker
+from src.models import Task
 from src.repositories import task as task_repo
 from src.services import redis_pool, server_service_client, ssh_client
 from src.services.redis_stash_crypto import (
@@ -378,6 +380,14 @@ async def server_prepare(task_id: str) -> None:
             async with AsyncSessionLocal() as scrub_session:
                 await task_repo.scrub_payload_keys(
                     scrub_session, task_id, ["bootstrap_creds_key"],
+                )
+                # `mark_succeeded` оставляет last_error как есть, поэтому после
+                # упавшей attempt 1 на успешной attempt в last_error висит
+                # stale-ошибка. Гасим её здесь: prepare завершился успехом,
+                # старая ошибка вводит оператора в заблуждение. Best-effort
+                # (task уже SUCCEEDED, ронять happy-path смысла нет).
+                await scrub_session.execute(
+                    update(Task).where(Task.id == task_id).values(last_error=None)
                 )
                 await scrub_session.commit()
         except Exception:  # noqa: BLE001

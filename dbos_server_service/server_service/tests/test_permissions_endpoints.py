@@ -229,6 +229,141 @@ class TestDepartmentAdminFullCycle:
         assert rev.status_code == 200
 
 
+# ── account_admin как мета-админ матрицы прав ────────────────────────────────
+
+class TestAccountAdminMatrixMetaAdmin:
+    """Платформенный ``account_admin`` управляет матрицей прав любого отдела.
+
+    Он не привязан к департаменту и не имеет сервисных ролей, но на
+    ``/permissions*`` его пропускает guard, а ``permission_service`` снимает
+    ролевую проверку и dept-isolation. Сами серверные/аккаунтные операции
+    ему по-прежнему недоступны (см. ``TestAccountAdminStillBlockedOnBusiness``
+    и ``tests/integration/test_platform_admin_block.py``).
+    """
+
+    async def test_account_admin_lists_matrix(self, client, account_admin_token):
+        resp = await client.get(BASE, headers=_hdr(account_admin_token))
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["described"] is False
+
+    async def test_account_admin_lists_for_entity(self, client, account_admin_token):
+        resp = await client.get(f"{BASE}/server", headers=_hdr(account_admin_token))
+        assert resp.status_code == 200, resp.text
+        assert all(r["entity_type"] == "server" for r in resp.json()["items"])
+
+    async def test_account_admin_reads_catalog(self, client, account_admin_token):
+        resp = await client.get(f"{BASE}/catalog", headers=_hdr(account_admin_token))
+        assert resp.status_code == 200, resp.text
+
+    async def test_account_admin_sees_all_departments(
+        self, client, account_admin_token, admin_token, admin_token_b, dept_a, dept_b,
+    ):
+        """account_admin видит per-dept строки и dep_a, и dep_b — всю матрицу."""
+        a = await client.put(f"{BASE}/server/role_a_only/view", headers=_hdr(admin_token))
+        b = await client.put(f"{BASE}/server/role_b_only/view", headers=_hdr(admin_token_b))
+        assert a.status_code == 200 and b.status_code == 200
+        resp = await client.get(BASE, headers=_hdr(account_admin_token))
+        assert resp.status_code == 200, resp.text
+        ids = {r["id"] for r in resp.json()["items"]}
+        assert a.json()["id"] in ids
+        assert b.json()["id"] in ids
+
+    async def test_account_admin_grants_for_target_department(
+        self, client, account_admin_token, dept_b,
+    ):
+        """account_admin может выдать grant в чужой (любой) отдел через
+        ``target_department_id`` — dept-isolation к нему не применяется."""
+        resp = await client.put(
+            f"{BASE}/server/operator/delete",
+            headers=_hdr(account_admin_token),
+            json={"target_department_id": dept_b},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["entity_type"] == "server"
+        assert body["role"] == "operator"
+        assert body["action"] == "delete"
+        assert body["department_id"] == dept_b
+
+    async def test_account_admin_revokes_for_target_department(
+        self, client, account_admin_token, dept_a,
+    ):
+        """Полный grant→revoke цикл account_admin'ом для конкретного отдела."""
+        put = await client.put(
+            f"{BASE}/server/reader/update",
+            headers=_hdr(account_admin_token),
+            json={"target_department_id": dept_a},
+        )
+        assert put.status_code == 200, put.text
+        rev = await client.delete(
+            f"{BASE}/server/reader/update?target_department_id={dept_a}",
+            headers=_hdr(account_admin_token),
+        )
+        assert rev.status_code == 200, rev.text
+
+    async def test_account_admin_grant_invalid_action_422(
+        self, client, account_admin_token, dept_a,
+    ):
+        """Whitelist (entity, action) действует и для account_admin."""
+        resp = await client.put(
+            f"{BASE}/server/operator/UNKNOWN_ACT",
+            headers=_hdr(account_admin_token),
+            json={"target_department_id": dept_a},
+        )
+        assert_error(resp, 422, "INVALID_ACTION_FOR_ENTITY")
+
+    async def test_account_admin_revoke_nonexistent_404(
+        self, client, account_admin_token, dept_a,
+    ):
+        resp = await client.delete(
+            f"{BASE}/server/reader/delete?target_department_id={dept_a}",
+            headers=_hdr(account_admin_token),
+        )
+        assert_error(resp, 404, "PERMISSION_NOT_FOUND")
+
+    async def test_grant_emits_success_audit(
+        self, client, account_admin_token, dept_a, monkeypatch,
+    ):
+        """grant account_admin'ом эмитит ``permission.grant`` success с scope'ом.
+
+        Actor попадает в event через ``audit_context`` (его заполняет
+        ``get_permission_matrix_identity``), как и у обычных grant'ов — это
+        тот же путь эмиссии, что и для department_admin'а.
+        """
+        from tests._helpers import make_emit_capture
+        captured = make_emit_capture(
+            monkeypatch, "src.services.permission_service.audit_service.emit",
+        )
+        resp = await client.put(
+            f"{BASE}/server/guest/view",
+            headers=_hdr(account_admin_token),
+            json={"target_department_id": dept_a},
+        )
+        assert resp.status_code == 200, resp.text
+        grants = [e for e in captured if e["action"] == "permission.grant"
+                  and e.get("status") == "success"]
+        assert grants, "ожидали успешный permission.grant audit-event"
+        assert grants[-1]["details"]["department_id"] == dept_a
+
+
+class TestAccountAdminStillBlockedOnBusiness:
+    """Regression: bypass замкнут на матрицу прав — серверные/аккаунтные
+    эндпоинты account_admin'у по-прежнему отдают 403 (режет guard).
+    """
+
+    async def test_account_admin_blocked_on_servers(self, client, account_admin_token):
+        resp = await client.get("/api/server/v1/servers", headers=_hdr(account_admin_token))
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
+
+    async def test_account_admin_blocked_on_server_accounts(
+        self, client, account_admin_token,
+    ):
+        resp = await client.get(
+            "/api/server/v1/server-accounts", headers=_hdr(account_admin_token),
+        )
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
+
+
 # ── GET /catalog ─────────────────────────────────────────────────────────────
 
 class TestCatalog:

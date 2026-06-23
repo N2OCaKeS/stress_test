@@ -536,7 +536,10 @@ class SshClient:
             await self.modify_user(
                 login, groups=groups, has_sudo=has_sudo, shell=shell,
             )
-            if new_password is not None:
+            # Пустой/None пароль = «не ставить пароль»: chpasswd на пустом
+            # payload'е (`login:\n`) падает с 'missing new password'.
+            # Discovered-аккаунты без пароля заводятся useradd + ключ.
+            if new_password:
                 await self.set_password(login, new_password)
             if public_key is not None:
                 await self._write_authorized_key(
@@ -567,7 +570,9 @@ class SshClient:
                 stderr=stderr.strip(),
                 message=f"useradd exit code {rc}",
             )
-        if new_password is not None:
+        # См. existing-ветку выше: пустой/None пароль — не ставим (chpasswd на
+        # пустом payload'е падает 'missing new password').
+        if new_password:
             await self.set_password(login, new_password)
         if public_key is not None:
             await self._write_authorized_key(

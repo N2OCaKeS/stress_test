@@ -13,10 +13,15 @@ read-side хелперы из :mod:`src.services.permissions` (`require_action`)
 ``permission.grant`` denied с ``reason=department_isolation_grant``
 (или ``..._revoke``).
 
-System-wide строки (``department_id IS NULL``) есть только в seed-миграциях
-для встроенных ролей — через runtime endpoint их не создать. Platform-роли
-(``account_admin``/``loging_admin``) до этого слоя не доходят: их режет
-``platform_admin_guard`` middleware ещё на входе.
+System-wide строки (``department_id IS NULL``) для department-bound
+caller'ов есть только в seed-миграциях встроенных ролей — через runtime
+endpoint они их не создают.
+
+**Платформенный ``account_admin`` — мета-админ матрицы.** Он управляет
+``entity_permissions`` любого отдела (просмотр + grant/revoke), цель задаётся
+``target_department_id`` без dept-isolation проверки. Ролевой ``require_action``
+для него пропускается (сервисных ролей у него нет). ``loging_admin`` сюда не
+доходит — его режет ``platform_admin_guard`` middleware ещё на входе.
 
 Caller без ``department_id`` (edge-кейс — `loging_reader` или прочие
 platform-bound токены без отдела) писать не может и обрабатывается как
@@ -102,6 +107,12 @@ def _resolve_target_department_id(
             ),
             details={"target_department_id": target_department_id},
         )
+    if _is_matrix_meta_admin(identity):
+        # account_admin — мета-админ матрицы: пишет в любой отдел, который
+        # передан в `target_department_id`, без dept-isolation проверки.
+        # Своего отдела у него нет, поэтому isolation-логика ниже к нему
+        # неприменима — scope записи равен запрошенному target'у as-is.
+        return target_department_id
     actor_dept = identity.department_id
     if actor_dept is None:
         # Caller без department'а вообще. Трактуем как isolation violation,
@@ -158,6 +169,18 @@ _PLATFORM_GLOBAL_VIEWERS: frozenset[PlatformRole] = frozenset(
 )
 
 
+def _is_matrix_meta_admin(identity: IdentityContext) -> bool:
+    """True для платформенного `account_admin` — мета-админа матрицы прав.
+
+    Такой caller управляет `entity_permissions` любого отдела (просмотр и
+    grant/revoke), но самих серверов/аккаунтов не оперирует. У него нет
+    сервисных ролей, поэтому ролевой `require_action` его не пропустит —
+    bypass замкнут строго на permission-операции этого модуля и не
+    распространяется на бизнес-эндпоинты (power/accounts/ipmi).
+    """
+    return identity.platform_role == PlatformRole.ACCOUNT_ADMIN
+
+
 def _read_scope(identity: IdentityContext) -> str | None:
     """Scope для list-выборок матрицы.
 
@@ -189,7 +212,8 @@ async def list_all(
     Scope: department-bound caller видит свой отдел + system-wide строки;
     platform-уровневый (account_admin / loging_admin) — всю матрицу.
     """
-    await permissions.require_action(db, identity, EntityType.PERMISSION, Action.VIEW)
+    if not _is_matrix_meta_admin(identity):
+        await permissions.require_action(db, identity, EntityType.PERMISSION, Action.VIEW)
     scope = _read_scope(identity)
     if role is not None:
         return await repo.list_for_role(db, role, department_id=scope)
@@ -204,7 +228,8 @@ async def get_catalog(
     Состав берётся из `ENTITY_ACTIONS`, описания — из `permission_catalog`.
     Read-only справочник для UI и ИБ-обзора; данные матрицы не затрагивает.
     """
-    await permissions.require_action(db, identity, EntityType.PERMISSION, Action.VIEW)
+    if not _is_matrix_meta_admin(identity):
+        await permissions.require_action(db, identity, EntityType.PERMISSION, Action.VIEW)
     return build_catalog()
 
 
@@ -252,7 +277,8 @@ async def list_for_entity(
     db: AsyncSession, identity: IdentityContext, entity_type: str
 ) -> list[EntityPermission]:
     """Список grants для одного entity_type. Неизвестный type → 422."""
-    await permissions.require_action(db, identity, EntityType.PERMISSION, Action.VIEW)
+    if not _is_matrix_meta_admin(identity):
+        await permissions.require_action(db, identity, EntityType.PERMISSION, Action.VIEW)
     if entity_type not in {e.value for e in EntityType}:
         raise DomainValidationError(
             error_code="UNKNOWN_ENTITY_TYPE",
@@ -282,16 +308,18 @@ async def grant_action(
     эмитила `success` и поднимала false-positive на каждый повторный вызов.
     """
     audit_details = {"entity_type": entity_type, "role": role, "action": action}
-    # 1. проверка matrix-уровня
-    with emit_denied_on_authz_error(
-        "permission.grant",
-        target_type="entity_permission",
-        extra_details=dict(audit_details),
-        identity=identity,
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.PERMISSION, Action.PERMISSION_GRANT
-        )
+    # 1. проверка matrix-уровня. account_admin — мета-админ матрицы, ролевой
+    # grant ему не нужен; всем остальным требуется `(permission, *, permission_grant)`.
+    if not _is_matrix_meta_admin(identity):
+        with emit_denied_on_authz_error(
+            "permission.grant",
+            target_type="entity_permission",
+            extra_details=dict(audit_details),
+            identity=identity,
+        ):
+            await permissions.require_action(
+                db, identity, EntityType.PERMISSION, Action.PERMISSION_GRANT
+            )
     # 2. определяем department-scope (и enforce'им изоляцию для не-account_admin)
     department_id = _resolve_target_department_id(
         identity,
@@ -370,15 +398,18 @@ async def revoke_action(
     знал, что revoke не удалил то, что ожидал.
     """
     audit_details = {"entity_type": entity_type, "role": role, "action": action}
-    with emit_denied_on_authz_error(
-        "permission.revoke",
-        target_type="entity_permission",
-        extra_details=dict(audit_details),
-        identity=identity,
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.PERMISSION, Action.PERMISSION_REVOKE
-        )
+    # account_admin — мета-админ матрицы, ролевой revoke ему не нужен;
+    # остальным требуется `(permission, *, permission_revoke)`.
+    if not _is_matrix_meta_admin(identity):
+        with emit_denied_on_authz_error(
+            "permission.revoke",
+            target_type="entity_permission",
+            extra_details=dict(audit_details),
+            identity=identity,
+        ):
+            await permissions.require_action(
+                db, identity, EntityType.PERMISSION, Action.PERMISSION_REVOKE
+            )
     department_id = _resolve_target_department_id(
         identity,
         target_department_id,

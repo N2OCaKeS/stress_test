@@ -473,35 +473,8 @@ async def ensure_provision_credentials(
         )
         generated = True
 
-    if account.ssh_public_key is not None:
-        public_openssh = account.ssh_public_key
-        if not account.ssh_private_key_encrypted:
-            # Legacy / corrupted row: public_key есть, private — нет. Отдать
-            # worker'у пустой private_pem нельзя — он залил бы на бокс
-            # authorized_keys без матчающего private key, последующий SSH под
-            # этим ключом отвалится. Бьём 422, оператор разбирается вручную
-            # (либо сбрасывает через `reset_provision_credentials`, либо чинит
-            # restore из бэкапа).
-            raise DomainValidationError(
-                error_code="ACCOUNT_SSH_KEY_INCONSISTENT",
-                message=(
-                    "Account has ssh_public_key but no ssh_private_key_encrypted "
-                    "— legacy row needs to be reset before provision"
-                ),
-                details={"account_id": account.id},
-            )
-        private_pem = secrets_service.decrypt(
-            account.ssh_private_key_encrypted,
-            aad=secrets_service.aad_for_server_account_ssh_key(account.id),
-        )
-    else:
-        private_pem, public_openssh = _generate_ssh_keypair()
-        account.ssh_public_key = public_openssh
-        account.ssh_private_key_encrypted = secrets_service.encrypt(
-            private_pem,
-            aad=secrets_service.aad_for_server_account_ssh_key(account.id),
-        )
-        generated = True
+    public_openssh, private_pem, key_generated = _ensure_ssh_keypair_material(account)
+    generated = generated or key_generated
 
     # На любом dispatch'е provision'а сохранённый в БД ciphertext перестаёт
     # считаться подтверждённым до прихода callback'а worker'а — он либо
@@ -523,6 +496,71 @@ async def ensure_provision_credentials(
         "ssh_private_key": private_pem,
     }
     return account, creds, generated
+
+
+def _ensure_ssh_keypair_material(account: ServerAccount) -> tuple[str, str, bool]:
+    """Sticky SSH-пара для аккаунта: вернуть `(public, private, generated)`.
+
+    Если у аккаунта уже есть public_key — оставляем существующую пару и
+    расшифровываем private. Отсутствующую пару догенерируем и шифруем в
+    модель (без flush — это делает caller). Не трогает пароль.
+    """
+    if account.ssh_public_key is not None:
+        if not account.ssh_private_key_encrypted:
+            # Legacy / corrupted row: public_key есть, private — нет. Отдать
+            # worker'у пустой private_pem нельзя — он залил бы на бокс
+            # authorized_keys без матчающего private key, последующий SSH под
+            # этим ключом отвалится. Бьём 422, оператор разбирается вручную
+            # (либо сбрасывает через `reset_provision_credentials`, либо чинит
+            # restore из бэкапа).
+            raise DomainValidationError(
+                error_code="ACCOUNT_SSH_KEY_INCONSISTENT",
+                message=(
+                    "Account has ssh_public_key but no ssh_private_key_encrypted "
+                    "— legacy row needs to be reset before provision"
+                ),
+                details={"account_id": account.id},
+            )
+        private_pem = secrets_service.decrypt(
+            account.ssh_private_key_encrypted,
+            aad=secrets_service.aad_for_server_account_ssh_key(account.id),
+        )
+        return account.ssh_public_key, private_pem, False
+
+    private_pem, public_openssh = _generate_ssh_keypair()
+    account.ssh_public_key = public_openssh
+    account.ssh_private_key_encrypted = secrets_service.encrypt(
+        private_pem,
+        aad=secrets_service.aad_for_server_account_ssh_key(account.id),
+    )
+    return public_openssh, private_pem, True
+
+
+async def ensure_ssh_keypair(
+    db: AsyncSession,
+    account: ServerAccount,
+) -> tuple[ServerAccount, dict]:
+    """Гарантировать только SSH-пару у аккаунта, не трогая пароль.
+
+    Нужно для discovered-аккаунтов без пароля (`password_encrypted IS NULL`):
+    их заводят через useradd + authorized_keys без chpasswd, и выдумывать им
+    пароль нельзя. `ensure_provision_credentials` для такого аккаунта молча
+    сгенерил бы и сохранил пароль — здесь же поднимаем ровно ключ.
+
+    Sticky по ключу (как в `ensure_provision_credentials`), помечает
+    `credentials_pending_apply`, flush в этой же транзакции.
+
+    Возвращает `(account, {ssh_public_key, ssh_private_key})`.
+    """
+    was_already_pending = bool(account.credentials_pending_apply)
+    public_openssh, private_pem, generated = _ensure_ssh_keypair_material(account)
+    account.credentials_pending_apply = True
+    if generated or not was_already_pending:
+        await db.flush()
+    return account, {
+        "ssh_public_key": public_openssh,
+        "ssh_private_key": private_pem,
+    }
 
 
 async def reset_provision_credentials(

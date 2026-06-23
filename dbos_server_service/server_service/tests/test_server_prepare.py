@@ -734,6 +734,46 @@ class TestPrepareDispatch:
         assert "bootstrap_password" not in call["payload"]
         assert "linked_accounts" not in call["payload"]
 
+    async def test_linked_passwordless_account_no_password_in_stash(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch, db,
+    ):
+        """Безпарольный linked-аккаунт едет в stash без пароля, но с ключом.
+
+        Discovered-аккаунт (`password_encrypted IS NULL`) заводится useradd +
+        ключ, без chpasswd. server_service не должен ни выдумывать ему пароль
+        в stash, ни молча сохранять сгенерированный пароль в БД.
+        """
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="discovered", password=None)
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={
+                "username_b64": _b64("bootadmin"),
+                "password_b64": _b64("Boot1234!StrongPwd"),
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        call = captured_dispatch[0]
+        linked = call["stored_creds"]["linked_accounts"]
+        assert len(linked) == 1
+        assert linked[0]["login"] == "discovered"
+        # Пароль в stash не уехал — worker заведёт юзера без chpasswd.
+        assert linked[0]["password"] is None
+        # Ключ всё равно нужен (useradd + authorized_keys).
+        assert linked[0]["ssh_public_key"]
+        assert linked[0]["ssh_private_key"]
+        # Аккаунт остался безпарольным в БД — сгенерированный пароль не осел.
+        from src.models import ServerAccount
+        refreshed = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc.id)
+        )).scalar_one()
+        assert refreshed.password_encrypted is None
+        # Но ssh-пара сгенерилась и сохранилась.
+        assert refreshed.ssh_public_key is not None
+        assert refreshed.ssh_private_key_encrypted is not None
+
     async def test_account_mode_requires_view_password(
         self, client, operator_token_a, make_server, make_account,
         captured_dispatch,

@@ -2,17 +2,23 @@
 
 **Department scope.** PUT/DELETE принимают опциональный
 `target_department_id` (body для PUT, query-param для DELETE).
-Caller обязан либо опустить поле, либо передать свой `department_id` —
-несовпадение → 403 `DEPARTMENT_ISOLATION`. Platform-админы
-(`account_admin`/`loging_admin`) сюда не доходят: 403
-`PLATFORM_ADMIN_BUSINESS_DATA_DENIED` отбивает middleware ещё до
-endpoint'а. Полный rule-set — в `services/permission_service.py`.
+Department-bound caller обязан либо опустить поле, либо передать свой
+`department_id` — несовпадение → 403 `DEPARTMENT_ISOLATION`.
+
+**account_admin — мета-админ матрицы.** Платформенный `account_admin`
+управляет правами любого отдела (просмотр + grant/revoke), но самих
+серверов/аккаунтов не оперирует. Его пропускает `platform_admin_guard`
+именно на `/permissions*`-путях (на business-эндпоинтах он по-прежнему
+403 `PLATFORM_ADMIN_BUSINESS_DATA_DENIED`); endpoint резолвит его через
+`PermissionMatrixIdentity`, а `permission_service` снимает для него
+ролевую проверку и dept-isolation. `loging_admin` сюда так и не доходит —
+middleware его режет. Полный rule-set — в `services/permission_service.py`.
 """
 
 from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import CurrentUserIdentity
+from src.dependencies.auth import PermissionMatrixIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse
 from src.schemas.permission import (
@@ -51,7 +57,7 @@ router = APIRouter(prefix="/permissions")
     },
 )
 async def list_permissions(
-    identity: CurrentUserIdentity,
+    identity: PermissionMatrixIdentity,
     role: str | None = Query(
         default=None,
         max_length=64,
@@ -103,7 +109,7 @@ async def list_permissions(
     },
 )
 async def permissions_catalog(
-    identity: CurrentUserIdentity,
+    identity: PermissionMatrixIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> list[CatalogEntity]:
     """
@@ -136,7 +142,7 @@ async def permissions_catalog(
 )
 async def list_permissions_for_entity(
     entity_type: str,
-    identity: CurrentUserIdentity,
+    identity: PermissionMatrixIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> PermissionListResponse:
     """
@@ -176,7 +182,7 @@ async def grant_permission(
     entity_type: str,
     role: str,
     action: str,
-    identity: CurrentUserIdentity,
+    identity: PermissionMatrixIdentity,
     body: PermissionGrant | None = Body(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> PermissionResponse:
@@ -220,7 +226,7 @@ async def revoke_permission(
     entity_type: str,
     role: str,
     action: str,
-    identity: CurrentUserIdentity,
+    identity: PermissionMatrixIdentity,
     target_department_id: str | None = Query(
         default=None,
         max_length=64,

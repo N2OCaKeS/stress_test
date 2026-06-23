@@ -189,3 +189,61 @@ class TestStoreProvisionInlineSkipSemantics:
         assert "PEM-PRIVATE" in plain
         # password=None всё ещё попадает в JSON как null.
         assert "null" in plain or "None" not in plain
+
+
+# ── Пустой пароль = не ставить пароль (chpasswd skip) ────────────────────────
+
+
+def _run_cmds(ssh) -> list[str]:
+    """Команды, реально ушедшие в `conn.run` (первый позиционный аргумент)."""
+    return [c.args[0] for c in ssh._conn.run.await_args_list]
+
+
+class TestCreateUserEmptyPasswordSkipsChpasswd:
+    """`new_password=""`/`None` трактуется единообразно как «не ставить пароль».
+
+    chpasswd на пустом payload'е (`login:\n`) падает 'missing new password';
+    discovered-аккаунты без пароля заводятся useradd + ключ, без chpasswd.
+    """
+
+    async def test_create_branch_empty_string_no_chpasswd(self):
+        # Юзера нет: getent (rc=2) → useradd → authorized_keys. chpasswd НЕ зовём.
+        ssh = _client([
+            run_result("", "", 2),  # user_exists → нет
+            run_result("", "", 0),  # useradd
+            run_result("", "", 0),  # authorized_keys
+        ])
+        await ssh.create_user("ops", new_password="", public_key=_PUBKEY)
+        cmds = _run_cmds(ssh)
+        assert not any("chpasswd" in c for c in cmds)
+        assert ssh._conn.run.await_count == 3
+
+    async def test_create_branch_none_no_chpasswd(self):
+        ssh = _client([
+            run_result("", "", 2),
+            run_result("", "", 0),
+            run_result("", "", 0),
+        ])
+        await ssh.create_user("ops", new_password=None, public_key=_PUBKEY)
+        assert not any("chpasswd" in c for c in _run_cmds(ssh))
+
+    async def test_existing_branch_empty_string_no_chpasswd(self):
+        # Юзер уже есть: getent (rc=0) → usermod → authorized_keys. chpasswd skip.
+        ssh = _client([
+            run_result("ops:x:1001:1001::/home/ops:/bin/bash", "", 0),  # user_exists
+            run_result("", "", 0),  # usermod (modify_user)
+            run_result("", "", 0),  # authorized_keys
+        ])
+        await ssh.create_user("ops", new_password="", public_key=_PUBKEY)
+        assert not any("chpasswd" in c for c in _run_cmds(ssh))
+
+    async def test_create_branch_real_password_still_sets(self):
+        # Контроль: непустой пароль по-прежнему вызывает chpasswd.
+        ssh = _client([
+            run_result("", "", 2),  # user_exists → нет
+            run_result("", "", 0),  # useradd
+            run_result("", "", 0),  # chpasswd
+            run_result("", "", 0),  # authorized_keys
+        ])
+        await ssh.create_user("ops", new_password="P@ss123", public_key=_PUBKEY)
+        assert any("chpasswd" in c for c in _run_cmds(ssh))

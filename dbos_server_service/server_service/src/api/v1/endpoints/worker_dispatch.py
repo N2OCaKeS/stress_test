@@ -1512,13 +1512,27 @@ async def _prepare_resolve_and_dispatch(
     linked_accounts_payload: list[dict] = []
     linked_accounts = await account_repo.list_for_server(db, server_id)
     for acc in linked_accounts:
-        _, acc_creds, _ = await account_svc.ensure_provision_credentials(db, acc)
+        # Discovered-аккаунт без пароля (password_encrypted IS NULL) едет в
+        # stash без пароля: worker заведёт его useradd + ключ, без chpasswd.
+        # `ensure_provision_credentials` тут выдумал бы и сохранил пароль —
+        # аккаунт перестал бы быть безпарольным. Ключ нужен в любом случае,
+        # поэтому поднимаем только SSH-пару.
+        if acc.password_encrypted is None:
+            _, ssh_creds = await account_svc.ensure_ssh_keypair(db, acc)
+            password = None
+            ssh_public_key = ssh_creds["ssh_public_key"]
+            ssh_private_key = ssh_creds["ssh_private_key"]
+        else:
+            _, acc_creds, _ = await account_svc.ensure_provision_credentials(db, acc)
+            password = acc_creds["password"]
+            ssh_public_key = acc_creds["ssh_public_key"]
+            ssh_private_key = acc_creds["ssh_private_key"]
         linked_accounts_payload.append({
             "account_id": acc.id,
             "login": acc.login,
-            "password": acc_creds["password"],
-            "ssh_public_key": acc_creds["ssh_public_key"],
-            "ssh_private_key": acc_creds["ssh_private_key"],
+            "password": password,
+            "ssh_public_key": ssh_public_key,
+            "ssh_private_key": ssh_private_key,
             "has_sudo": acc.has_sudo,
             "unix_groups": list(acc.unix_groups),
             "shell": acc.shell,

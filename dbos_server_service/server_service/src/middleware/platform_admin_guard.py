@@ -161,6 +161,23 @@ _ADMIN_ENCRYPTION_PREFIX = "/api/server/v1/admin/encryption"
 # которого у платформенных ролей нет).
 _OS_VERSIONS_PREFIX = "/api/server/v1/os-versions"
 
+# Управление матрицей прав отделов. `account_admin` — мета-админ матрицы:
+# смотрит/выдаёт/снимает `entity_permissions` для любого отдела, но самих
+# серверов/аккаунтов не трогает. Это исключение из business-data-блока, но
+# только для account_admin: loging_admin сюда по-прежнему не пускаем (он
+# управляет аудитом, не правами). Точная проверка роли — на endpoint-уровне
+# (`PermissionMatrixIdentity`) и в `permission_service`; guard лишь не отбивает
+# account_admin'а на этих путях. Матч по префиксу + границе сегмента, чтобы
+# посторонний путь с тем же началом случайно не проскочил.
+_PERMISSIONS_PREFIX = "/api/server/v1/permissions"
+
+
+def _is_permissions_path(path: str) -> bool:
+    """True для эндпоинтов управления матрицей прав (`/permissions*`)."""
+    return path == _PERMISSIONS_PREFIX or path.startswith(
+        _PERMISSIONS_PREFIX + "/"
+    )
+
 
 def _is_os_versions_read(path: str, method: str) -> bool:
     """True для GET-чтения каталога OS-версий.
@@ -342,6 +359,13 @@ async def platform_admin_guard(request: Request, call_next):
     if role not in BLOCKED_PLATFORM_ROLES:
         # Обычные пользователи, department_admin, worker_bot (через PAT —
         # у него service_roles, нет platform_role) — пропускаем.
+        return await call_next(request)
+
+    if role == PlatformRole.ACCOUNT_ADMIN and _is_permissions_path(path):
+        # account_admin — мета-админ матрицы прав: управляет
+        # `entity_permissions` отделов, но не бизнес-данными. Пускаем дальше,
+        # роль и scope доберёт endpoint-слой + `permission_service`.
+        # loging_admin сюда не попадает — он остаётся под блоком.
         return await call_next(request)
 
     # Platform-admin поймал бизнес-эндпоинт. Эмитим explicit audit + 403.

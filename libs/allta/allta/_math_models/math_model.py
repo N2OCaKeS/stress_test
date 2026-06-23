@@ -213,6 +213,7 @@ class MathModel:
         negative: bool,
         bounds: tuple[Number, Number] | None = None,
         reference: Number | Sequence[Number] | None = None,
+        zero_floor: Number = 0.0,
     ) -> "MathModel":
         """
         Добавляет критерий в модель.
@@ -234,12 +235,21 @@ class MathModel:
             negative (bool): Признак negative-критерия. ``True`` если меньше = лучше.
             bounds (tuple[Number, Number] | None): Границы ``(L, U)`` для odds-режима.
             reference (Number | Sequence[Number] | None): Эталон(ы) для ratio-режима.
+            zero_floor (Number): Константа сглаживания ``s >= 0`` для ratio-режима.
+                Отношение считается как ``(reference + s) / (value + s)`` (negative) или
+                ``(value + s) / (reference + s)`` (positive). По умолчанию ``0.0`` —
+                поведение прежнее (чистое ``reference/value``). Задавайте ``s > 0`` для
+                метрик, где ``0`` — это идеал (например процент ошибок): тогда эталон и
+                факт ``0`` дают ``ratio = 1`` вместо обвала в ``1/cap``, а рост факта от ``0``
+                плавно роняет ``ratio`` ниже ``1``. Масштаб ``s`` берите соизмеримым с метрикой.
 
         Returns:
             MathModel: Текущий экземпляр модели для chaining-вызовов.
         """
         if not name:
             raise ValueError("name не должен быть пустым")
+        if float(zero_floor) < 0.0:
+            raise ValueError(f"{name}: zero_floor должен быть >= 0")
         if len(iterations) != len(values):
             raise ValueError("iterations и values должны быть одинаковой длины")
         if len(iterations) < 2:
@@ -275,7 +285,10 @@ class MathModel:
         if reference is not None:
             ref_arr = self._broadcast_reference(name, y_arr, reference)
             entry["reference"] = ref_arr
-            entry["ratios"] = self._compute_ratios(y_arr, ref_arr, bool(negative))
+            entry["zero_floor"] = float(zero_floor)
+            entry["ratios"] = self._compute_ratios(
+                y_arr, ref_arr, bool(negative), float(zero_floor)
+            )
 
         self._criteria[str(name)] = entry
         return self
@@ -299,11 +312,18 @@ class MathModel:
         values: np.ndarray,
         reference: np.ndarray,
         negative: bool,
+        zero_floor: float = 0.0,
     ) -> np.ndarray:
-        """Отношение к эталону по каждому замеру: positive value/ref, negative ref/value."""
+        """Отношение к эталону по каждому замеру: positive value/ref, negative ref/value.
+
+        ``zero_floor`` (s) сдвигает обе величины: ``(ref+s)/(val+s)`` для negative и
+        ``(val+s)/(ref+s)`` для positive. При ``s=0`` это прежнее ``ref/val`` с eps-защитой
+        от деления на ноль; при ``s>0`` нулевые значения перестают давать вырожденный ratio.
+        """
         eps = float(self._epsilon)
-        v = np.clip(values, eps, None)
-        r = np.clip(reference, eps, None)
+        s = float(zero_floor)
+        v = np.clip(np.asarray(values, dtype=float) + s, eps, None)
+        r = np.clip(np.asarray(reference, dtype=float) + s, eps, None)
         return r / v if negative else v / r
 
     def ratio_index(self, scale: Number = 100.0, cap: Number = 1000.0) -> dict[str, Any]:

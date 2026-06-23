@@ -250,20 +250,20 @@ services:
       server_service:
         condition: service_healthy
 
-  # Тестовый SSH-сервер для проверки server_service / server_worker:
-  # обычный openssh-server (login `tester` / `tester1234`, sudo разрешён).
-  # `make seed` сидит запись `servers` с hostname=test_server — worker может
-  # резолвить контейнер по docker DNS внутри сети; с хоста SSH доступен на
-  # порту 2222.
+  # Тестовый SSH-сервер для проверки server_service / server_worker: обычный
+  # Debian с привилегированным sshd (root). На нём реально отрабатывает
+  # `prepare` — worker заходит под bootstrap-юзером `tester`/`tester1234` по
+  # паролю, заводит управляющего пользователя `dbos` через useradd + sudoers,
+  # проверяет вход по ключу и хардит sshd (PasswordAuthentication no /
+  # PermitRootLogin no). dpkg-query на борту → installed_packages.list отдаёт
+  # реальный список. `make seed` сидит запись `servers` с hostname=test_server:
+  # worker резолвит контейнер по docker DNS внутри сети, с хоста SSH на 2222.
   test_server:
-    image: lscr.io/linuxserver/openssh-server:latest
+    build:
+      context: ./scripts/test_server
     environment:
-      USER_NAME: tester
-      USER_PASSWORD: tester1234
-      PASSWORD_ACCESS: "true"
-      SUDO_ACCESS: "true"
-      PUID: "1000"
-      PGID: "1000"
+      BOOTSTRAP_USER: tester
+      BOOTSTRAP_PASSWORD: tester1234
     ports:
       - "2222:2222"
 

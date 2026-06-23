@@ -8,7 +8,7 @@
   - выдаёт отделу доступ ко всем платформенным сервисам,
   - сидит каталог OS-версий (`os_versions`),
   - создаёт один сервер test-server-01, указывающий на контейнер test_server
-    (ssh_port=2222, привязан к openssh-server OS-record),
+    (ssh_port=2222, привязан к debian OS-record),
   - заводит OS-аккаунт `tester` (пароль `tester1234`) на этом сервере с
     шифрованием через server_service AES-GCM,
   - досевает системные роли (`admin`, `worker_bot`) в каталоге
@@ -58,13 +58,14 @@ WORKER_CONTAINER = os.environ.get(
 DEV_PASSWORD = "1234"
 AUTH_BASE_URL = os.environ.get("AUTH_BASE_URL", "http://localhost:8000")
 
-# Имя docker-сервиса с openssh-server (см. docker-compose.dev.yml).
+# Имя docker-сервиса с тестовым SSH-сервером (см. docker-compose.dev.yml).
 TEST_SERVER_HOSTNAME = "test_server"
-# `tester` / `tester1234` — это креды, которые принимает linuxserver/openssh-server
-# по env'ам USER_NAME / USER_PASSWORD; sudo есть (SUDO_ACCESS=true).
+# `tester` / `tester1234` — bootstrap-юзер, которого заводит entrypoint
+# контейнера (BOOTSTRAP_USER / BOOTSTRAP_PASSWORD); он в группе sudo. prepare
+# заходит под ним по паролю и поднимает сервер в managed-режим.
 TEST_SERVER_LOGIN = "tester"
 TEST_SERVER_PASSWORD = "tester1234"
-# Контейнер слушает 2222 (linuxserver image), снаружи проброшен 2222:2222.
+# Контейнер слушает 2222, снаружи проброшен 2222:2222.
 TEST_SERVER_SSH_PORT = 2222
 # Тестовый сервер живёт в той же docker-сети, что и наши сервисы.
 # INET-колонке нужна валидная IP-строка; реальный IP контейнер получает
@@ -72,9 +73,9 @@ TEST_SERVER_SSH_PORT = 2222
 # `test_server` по docker DNS, IP здесь — плейсхолдер для not-null.
 TEST_SERVER_IP = "10.99.0.10"
 
-# Каталог OS-версий — пока одна запись под образ linuxserver/openssh-server.
+# Каталог OS-версий — пока одна запись под debian-образ тестового сервера.
 # Когда заведём реальную Astra/Ubuntu — добавим рядом.
-OS_VERSION_NAME = "openssh-server-latest"
+OS_VERSION_NAME = "debian-stable"
 
 # Путь к PAT-файлу для server_worker'а — docker-compose.dev.yml
 # монтирует `./.dev` как `/shared`. Файл читается worker'ом при старте
@@ -286,7 +287,7 @@ def seed_auth(pwd_hash: str) -> tuple[str, dict[str, str]]:
 
 
 def seed_os_version() -> str:
-    """Сидим одну запись каталога OS под образ linuxserver/openssh-server.
+    """Сидим одну запись каталога OS под debian-образ тестового сервера.
 
     Делаем это до `seed_server`, чтобы сразу прицепить сервер к OS-version
     через `os_version_id`. На реальном prepare/inventory worker допишет
@@ -305,7 +306,7 @@ def seed_os_version() -> str:
                 "UPDATE os_versions SET description = %s, repositories = %s, "
                 "updated_at = now() WHERE id = %s",
                 (
-                    "Dev seed: образ linuxserver/openssh-server (тестовый SSH-таргет)",
+                    "Dev seed: debian-образ (тестовый SSH-таргет)",
                     [],
                     os_id,
                 ),
@@ -318,7 +319,7 @@ def seed_os_version() -> str:
                 (
                     os_id,
                     OS_VERSION_NAME,
-                    "Dev seed: образ linuxserver/openssh-server (тестовый SSH-таргет)",
+                    "Dev seed: debian-образ (тестовый SSH-таргет)",
                     [],
                 ),
             )

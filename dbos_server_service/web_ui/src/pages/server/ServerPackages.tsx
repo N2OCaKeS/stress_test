@@ -30,14 +30,21 @@ import {
   Download,
   Rows3,
   Columns3,
+  Trash2,
+  ArrowUpCircle,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { listServers } from "@/api/server/servers";
-import { installedPackagesBulk, getTask } from "@/api/server/misc";
+import {
+  installedPackagesBulk,
+  packagesBulkAction,
+  getTask,
+} from "@/api/server/misc";
 import { listOsVersions } from "@/api/server/osVersions";
 import { isDepAdmin, isServerZoneBlocked } from "@/lib/rbac";
 import { isTerminalTaskStatus } from "@/api/server/types";
@@ -46,6 +53,8 @@ import type {
   OffsetPaginatedResponse,
   OsVersion,
   PackageInfo,
+  PackagesBulkActionKind,
+  PackagesBulkActionServerStatus,
   Server,
   TaskRead,
 } from "@/api/server/types";
@@ -74,6 +83,11 @@ const STATUS_KIND: Record<string, "ok" | "warn" | "danger" | ""> = {
   not_found: "danger",
   auth_failed: "danger",
 };
+
+/** Разбивает строку фильтра на отдельные glob'ы по пробелам, без пустых. */
+function parsePatterns(raw: string): string[] {
+  return raw.split(/\s+/).filter(Boolean);
+}
 
 /** Достаёт `packages` из произвольного `task.result` (best-effort). */
 function extractPackages(result: TaskRead["result"]): PackageInfo[] {
@@ -114,6 +128,53 @@ function canProbe(
   if (persona.service_roles.server === "operator") return true;
   if (isDepAdmin(persona)) return true;
   return false;
+}
+
+// Право manage_packages (install/remove/update). Backend выдаёт его той же
+// тире, что и probe (server.operator+ / dep_admin своего отдела); финальную
+// проверку делает сервер, гейт лишь прячет блок действий от reader/guest.
+function canManagePackages(
+  persona: ReturnType<typeof usePersona>["persona"],
+): boolean {
+  if (persona.service_roles.server === "admin") return true;
+  if (persona.service_roles.server === "operator") return true;
+  if (isDepAdmin(persona)) return true;
+  return false;
+}
+
+/** Человеко-читаемые подписи статусов сервера в bulk-action ответе. */
+const ACTION_STATUS_LABEL: Record<string, string> = {
+  ok: "поставлено",
+  prepare_required: "не подготовлен",
+  reserved: "забронирован",
+  decommissioned: "decommissioned",
+  not_found: "не найден",
+};
+
+const ACTION_STATUS_KIND: Record<string, "ok" | "warn" | "danger" | ""> = {
+  ok: "ok",
+  prepare_required: "warn",
+  reserved: "warn",
+  decommissioned: "",
+  not_found: "danger",
+};
+
+const ACTION_LABEL: Record<PackagesBulkActionKind, string> = {
+  install: "Установка",
+  remove: "Удаление",
+  update: "Обновление",
+};
+
+/** Локальное состояние одного сервера в результате bulk-action (исход + поллинг). */
+interface ActionServerState {
+  serverId: string;
+  hostname: string;
+  status: PackagesBulkActionServerStatus;
+  taskId: string | null;
+  /** Терминальный статус задачи, когда она досчитана (succeeded/failed/cancelled). */
+  taskStatus: string | null;
+  polling: boolean;
+  error: string | null;
 }
 
 export function ServerPackages() {
@@ -159,6 +220,7 @@ export function ServerPackages() {
   const servers = useMemo(() => serversQ.data?.items ?? [], [serversQ.data]);
 
   const allowed = canProbe(persona);
+  const canManage = canManagePackages(persona);
 
   const filteredServers = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -212,9 +274,10 @@ export function ServerPackages() {
     setDispatching(true);
     setStates([]);
     try {
+      const patterns = parsePatterns(pattern);
       const res = await installedPackagesBulk({
         server_ids: [...selected],
-        ...(pattern.trim() ? { pattern: pattern.trim() } : {}),
+        ...(patterns.length ? { patterns } : {}),
       });
       if (!aliveRef.current) return;
       const init: ServerState[] = res.results.map((r) => ({
@@ -383,14 +446,17 @@ export function ServerPackages() {
 
       <div className="border-t border-token p-3 shrink-0 flex flex-col gap-2">
         <label className="flex flex-col gap-1 text-xs text-dim">
-          pattern (shell glob)
+          паттерны (shell glob, через пробел)
           <input
             className="input mono text-xs"
-            placeholder="* / linux-image* / *-dev"
+            placeholder="ssh* bash* *libs*"
             value={pattern}
             onChange={(e) => setPattern(e.target.value)}
-            disabled={!allowed}
           />
+          <span className="text-[10px] text-dim">
+            Несколько шаблонов через пробел; пусто — все пакеты (
+            <span className="mono">*</span>).
+          </span>
         </label>
         {allowed ? (
           <button
@@ -409,6 +475,13 @@ export function ServerPackages() {
             своего департамента).
           </div>
         )}
+
+        {canManage && (
+          <PackageActionPanel
+            serverIds={[...selected]}
+            servers={servers}
+          />
+        )}
       </div>
     </aside>
   );
@@ -421,7 +494,7 @@ export function ServerPackages() {
         onOrientation={setOrientation}
         anyPolling={anyPolling}
         dispatchErr={dispatchErr}
-        pattern={pattern.trim() || "*"}
+        pattern={parsePatterns(pattern).join(" ") || "*"}
         osLabel={osLabel}
       />
     </Shell>
@@ -461,6 +534,284 @@ function ServerPickRow({
         </span>
       )}
     </label>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Блок действий: install / remove / update по выбранным серверам
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Панель массовых действий над пакетами выбранных серверов. Видна только
+ * носителю права `manage_packages`. Принимает список пакетов (через пробел),
+ * кнопки Install / Remove / Update; Remove и Update идут с подтверждением
+ * (деструктив). После dispatch'а показывает per-server исходы и поллит итог
+ * каждой задачи до терминала.
+ */
+function PackageActionPanel({
+  serverIds,
+  servers,
+}: {
+  serverIds: string[];
+  servers: Server[];
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const [pkgInput, setPkgInput] = useState("");
+  const [running, setRunning] = useState<PackagesBulkActionKind | null>(null);
+  const [actionLabel, setActionLabel] = useState<string | null>(null);
+  const [states, setStates] = useState<ActionServerState[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  const hostnameOf = useCallback(
+    (id: string) => servers.find((s) => s.id === id)?.hostname ?? id,
+    [servers],
+  );
+
+  const packages = useMemo(() => parsePatterns(pkgInput), [pkgInput]);
+
+  const patchState = useCallback(
+    (serverId: string, patch: Partial<ActionServerState>) => {
+      setStates((prev) =>
+        prev.map((s) => (s.serverId === serverId ? { ...s, ...patch } : s)),
+      );
+    },
+    [],
+  );
+
+  async function dispatch(action: PackagesBulkActionKind) {
+    if (running) return;
+    if (serverIds.length === 0) {
+      setErr("Выберите хотя бы один сервер.");
+      return;
+    }
+    // install/remove требуют явного списка пакетов; update без списка =
+    // upgrade всех пакетов на боксе.
+    if ((action === "install" || action === "remove") && packages.length === 0) {
+      setErr("Укажите хотя бы один пакет для этого действия.");
+      return;
+    }
+
+    if (action === "remove" || action === "update") {
+      const pkgText =
+        packages.length > 0 ? packages.join(", ") : "все пакеты (upgrade)";
+      const ok = await confirm({
+        title: action === "remove" ? "Удалить пакеты" : "Обновить пакеты",
+        message:
+          action === "remove"
+            ? `Удалить ${pkgText} на ${serverIds.length} серверах? Операция необратима.`
+            : `Обновить ${pkgText} на ${serverIds.length} серверах?`,
+        confirmLabel: action === "remove" ? "Удалить" : "Обновить",
+        danger: action === "remove",
+      });
+      if (!ok) return;
+    }
+
+    setErr(null);
+    setStates([]);
+    setRunning(action);
+    setActionLabel(ACTION_LABEL[action]);
+    try {
+      const res = await packagesBulkAction({
+        server_ids: serverIds,
+        action,
+        ...(packages.length ? { packages } : {}),
+      });
+      if (!aliveRef.current) return;
+      const init: ActionServerState[] = res.results.map((r) => ({
+        serverId: r.server_id,
+        hostname: r.hostname ?? hostnameOf(r.server_id),
+        status: r.status,
+        taskId: r.task_id ?? null,
+        taskStatus: null,
+        polling: r.status === "ok" && !!r.task_id,
+        error: null,
+      }));
+      setStates(init);
+      toast.success(
+        `${ACTION_LABEL[action]}: задач поставлено ${res.dispatched} из ${res.requested}`,
+      );
+    } catch (e) {
+      if (!aliveRef.current) return;
+      const msg = apiErrMsg(e, "Не удалось поставить массовое действие");
+      setErr(msg);
+      toast.error(msg);
+    } finally {
+      if (aliveRef.current) setRunning(null);
+    }
+  }
+
+  // Поллинг исходов задач по серверам со статусом ok. Один интервал на всех:
+  // на каждом тике дёргаем GET /tasks/{id} для активных и гасим terminal'ы.
+  const startedRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const active = states.filter((s) => s.polling && s.taskId);
+    if (active.length === 0) {
+      startedRef.current.clear();
+      return;
+    }
+    const started = startedRef.current;
+    for (const s of active) {
+      if (s.taskId && !started.has(s.taskId)) started.set(s.taskId, Date.now());
+    }
+    let stopped = false;
+    const tick = () => {
+      for (const s of active) {
+        if (!s.taskId) continue;
+        const startedAt = started.get(s.taskId) ?? Date.now();
+        if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+          patchState(s.serverId, {
+            polling: false,
+            error: "Worker не закрыл задачу за отведённое время",
+          });
+          continue;
+        }
+        getTask(s.taskId)
+          .then((t) => {
+            if (stopped || !aliveRef.current) return;
+            if (!isTerminalTaskStatus(t.status)) return;
+            if (t.status === "failed") {
+              patchState(s.serverId, {
+                polling: false,
+                taskStatus: t.status,
+                error: t.last_error ?? "Задача завершилась ошибкой",
+              });
+            } else {
+              patchState(s.serverId, {
+                polling: false,
+                taskStatus: t.status,
+              });
+            }
+          })
+          .catch((e: unknown) => {
+            if (stopped || !aliveRef.current) return;
+            patchState(s.serverId, {
+              polling: false,
+              error: apiErrMsg(e, "Не удалось прочитать результат задачи"),
+            });
+          });
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, POLL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+    };
+  }, [states, patchState]);
+
+  const busy = running !== null;
+
+  return (
+    <div className="mt-3 border-t border-token pt-3 flex flex-col gap-2">
+      <div className="text-xs text-dim font-medium">
+        Действия с пакетами ({serverIds.length} серв.)
+      </div>
+      <label className="flex flex-col gap-1 text-xs text-dim">
+        пакеты (через пробел)
+        <input
+          className="input mono text-xs"
+          placeholder="htop nginx git"
+          value={pkgInput}
+          onChange={(e) => setPkgInput(e.target.value)}
+          disabled={busy}
+        />
+        <span className="text-[10px] text-dim">
+          Для установки/удаления список обязателен; для обновления пусто =
+          upgrade всех пакетов.
+        </span>
+      </label>
+      <div className="grid grid-cols-3 gap-1.5">
+        <button
+          type="button"
+          className="btn btn-sm flex items-center justify-center gap-1"
+          onClick={() => dispatch("install")}
+          disabled={busy || serverIds.length === 0}
+          title="Установить пакеты"
+        >
+          <Download className="w-3.5 h-3.5" /> Install
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-danger flex items-center justify-center gap-1"
+          onClick={() => dispatch("remove")}
+          disabled={busy || serverIds.length === 0}
+          title="Удалить пакеты"
+        >
+          <Trash2 className="w-3.5 h-3.5" /> Remove
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm flex items-center justify-center gap-1"
+          onClick={() => dispatch("update")}
+          disabled={busy || serverIds.length === 0}
+          title="Обновить пакеты (пусто = upgrade всех)"
+        >
+          <ArrowUpCircle className="w-3.5 h-3.5" /> Update
+        </button>
+      </div>
+
+      {err && (
+        <div className="alert alert-danger flex items-start gap-2 text-[11px]">
+          <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <span className="flex-1">{err}</span>
+        </div>
+      )}
+
+      {states.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {actionLabel && (
+            <div className="text-[11px] text-dim">
+              {actionLabel} — исходы по серверам:
+            </div>
+          )}
+          <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto">
+            {states.map((s) => (
+              <ActionStatusRow key={s.serverId} state={s} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Одна строка исхода действия по серверу: статус + результат поллинга. */
+function ActionStatusRow({ state }: { state: ActionServerState }) {
+  const kind = ACTION_STATUS_KIND[state.status] ?? "";
+  return (
+    <div className="surface-2 border border-token rounded px-2 py-1 text-[11px] flex items-center gap-2">
+      <span className="mono truncate flex-1" title={state.serverId}>
+        {state.hostname}
+      </span>
+      <span className={`badge${kind ? ` badge-${kind}` : ""}`}>
+        {ACTION_STATUS_LABEL[state.status] ?? state.status}
+      </span>
+      {state.polling && (
+        <RefreshCw className="w-3 h-3 animate-spin text-dim" />
+      )}
+      {!state.polling && state.error && (
+        <span className="text-danger" title={state.error}>
+          ошибка
+        </span>
+      )}
+      {!state.polling && !state.error && state.taskStatus === "succeeded" && (
+        <span className="text-ok" title="Задача завершена">
+          готово
+        </span>
+      )}
+      {!state.polling && !state.error && state.taskStatus === "cancelled" && (
+        <span className="text-dim">отменено</span>
+      )}
+    </div>
   );
 }
 

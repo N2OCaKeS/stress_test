@@ -79,9 +79,15 @@ const BUSY_KIND: Record<BusyState, "ok" | "warn" | "danger"> = {
 interface ServerDetailProps {
   serverId: string;
   onDeleted?: () => void;
+  /** Вызывается после захвата/снятия брони — чтобы список слева обновил индикатор. */
+  onBusyChanged?: () => void;
 }
 
-export function ServerDetail({ serverId, onDeleted }: ServerDetailProps) {
+export function ServerDetail({
+  serverId,
+  onDeleted,
+  onBusyChanged,
+}: ServerDetailProps) {
   const [tab, setTab] = useState<TabId>("overview");
   const q = useQuery<Server>(() => getServer(serverId), [serverId]);
 
@@ -121,7 +127,11 @@ export function ServerDetail({ serverId, onDeleted }: ServerDetailProps) {
   const current = server ?? q.data;
   return (
     <section className="flex-1 min-w-0 overflow-hidden flex flex-col">
-      <ServerHeader server={current} onServerUpdated={setServer} />
+      <ServerHeader
+        server={current}
+        onServerUpdated={setServer}
+        onBusyChanged={onBusyChanged}
+      />
       <Tabs
         active={tab}
         onChange={(id) => setTab(id as TabId)}
@@ -173,9 +183,11 @@ export function ServerDetail({ serverId, onDeleted }: ServerDetailProps) {
 function ServerHeader({
   server,
   onServerUpdated,
+  onBusyChanged,
 }: {
   server: Server;
   onServerUpdated: (next: Server) => void;
+  onBusyChanged?: () => void;
 }) {
   const deptLabel = useDeptLabel(server.department_id);
   const statusKind = STATUS_KIND[server.status];
@@ -216,7 +228,11 @@ function ServerHeader({
             dept: <b>{deptLabel}</b>
           </span>
         </div>
-        <ReserveControl server={server} onServerUpdated={onServerUpdated} />
+        <ReserveControl
+          server={server}
+          onServerUpdated={onServerUpdated}
+          onBusyChanged={onBusyChanged}
+        />
       </div>
     </div>
   );
@@ -235,9 +251,11 @@ function ServerHeader({
 function ReserveControl({
   server,
   onServerUpdated,
+  onBusyChanged,
 }: {
   server: Server;
   onServerUpdated: (next: Server) => void;
+  onBusyChanged?: () => void;
 }) {
   const { persona } = usePersona();
   const toast = useToast();
@@ -271,6 +289,7 @@ function ReserveControl({
     try {
       const next = await setBusy(server.id, { reason: reason.trim() });
       onServerUpdated(next);
+      onBusyChanged?.();
       toast.success(`Сервер ${server.hostname} забронирован`);
     } catch (e) {
       toast.error(apiErrMsg(e, "Не удалось забронировать"));
@@ -293,6 +312,7 @@ function ReserveControl({
     try {
       const next = await clearBusy(server.id);
       onServerUpdated(next);
+      onBusyChanged?.();
       toast.success(`Бронь с ${server.hostname} снята`);
     } catch (e) {
       toast.error(apiErrMsg(e, "Не удалось снять бронь"));

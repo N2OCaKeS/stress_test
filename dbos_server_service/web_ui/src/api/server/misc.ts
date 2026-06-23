@@ -18,6 +18,8 @@ import type {
   InstalledPackagesRequest,
   InstalledPackagesResult,
   ListTasksQuery,
+  PackagesBulkActionRequest,
+  PackagesBulkActionResponse,
   TaskCancelRequest,
   TaskCancelResult,
   TaskRead,
@@ -68,12 +70,39 @@ export function installedPackagesProbe(
  * статус-причину (`prepare_required` / `decommissioned` / `not_found` /
  * `auth_failed`). Список пакетов в `results[].packages` может прийти пустым —
  * тогда его добирают поллингом `GET /tasks/{task_id}` (как в single-варианте).
+ *
+ * Фильтр пакетов поддерживает несколько glob'ов сразу через `patterns`
+ * (`["ssh*", "*libs*"]`); одиночный `pattern` оставлен для совместимости.
  */
 export function installedPackagesBulk(
   body: BulkInstalledPackagesRequest,
 ): Promise<BulkInstalledPackagesResponse> {
   return apiPost<BulkInstalledPackagesResponse>(
     "/server/v1/servers/installed-packages/bulk",
+    body,
+  );
+}
+
+/**
+ * `POST /api/server/v1/servers/packages/bulk-action` — массовая установка /
+ * удаление / обновление пакетов на наборе серверов.
+ *
+ * `packages` обязателен для `install`/`remove`; для `update` пустой список
+ * означает upgrade всех пакетов. Backend сразу (HTTP 202) возвращает per-server
+ * исходы: подготовленным серверам ставит задачу и отдаёт `task_id`
+ * (`status: ok`), остальным — статус-причину (`prepare_required` / `reserved` /
+ * `decommissioned` / `not_found`). Итог каждой задачи добирают поллингом
+ * `GET /tasks/{task_id}`.
+ *
+ * Доступ: action `manage_packages` (server.operator+ / dep_admin своего отдела).
+ * Backend перепроверит права и бронь — клиентский гейт прячет заведомо лишние
+ * кнопки, но не заменяет серверную проверку.
+ */
+export function packagesBulkAction(
+  body: PackagesBulkActionRequest,
+): Promise<PackagesBulkActionResponse> {
+  return apiPost<PackagesBulkActionResponse>(
+    "/server/v1/servers/packages/bulk-action",
     body,
   );
 }

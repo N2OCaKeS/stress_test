@@ -8,7 +8,7 @@
  * Live-страница без mock-режима: списки и detail тянем напрямую через
  * `server_service`.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Search,
@@ -96,6 +96,29 @@ export function Server() {
     { enabled: !zoneBlocked },
   );
   const depsQ = useQuery<Department[]>(() => listDepartments(), []);
+
+  // Бронь сервера (busy_state / busy_user_id) меняется и другими пользователями,
+  // а useQuery без авто-рефетча показывал бы устаревший индикатор до перезахода.
+  // Тихо переопрашиваем список на интервале и при возврате фокуса на вкладку,
+  // чтобы чужой захват/освобождение подхватывались быстро. refetch стабилен
+  // (useCallback в хуке), поэтому держим его в ref и не пересоздаём интервал.
+  const refetchRef = useRef(listQ.refetch);
+  refetchRef.current = listQ.refetch;
+  useEffect(() => {
+    if (zoneBlocked) return;
+    const RESERVE_REFRESH_MS = 8_000;
+    const id = window.setInterval(() => {
+      // На скрытой вкладке не дёргаем сеть — фокус-хендлер ниже догонит при
+      // возврате.
+      if (document.visibilityState === "visible") refetchRef.current();
+    }, RESERVE_REFRESH_MS);
+    const onFocus = () => refetchRef.current();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [zoneBlocked]);
 
   const canManage =
     persona.platform_role === "dep_admin" ||
@@ -363,6 +386,7 @@ export function Server() {
             selectId(null);
             listQ.refetch();
           }}
+          onBusyChanged={() => listQ.refetch()}
           canManage={canManage}
         />
       ) : (
@@ -606,12 +630,14 @@ function WorkzoneWithActions({
   servers,
   onDelete,
   onDeleted,
+  onBusyChanged,
   canManage,
 }: {
   serverId: string;
   servers: Server[];
   onDelete: (s: Server) => void;
   onDeleted: () => void;
+  onBusyChanged: () => void;
   canManage: boolean;
 }) {
   const local = servers.find((s) => s.id === serverId);
@@ -628,7 +654,11 @@ function WorkzoneWithActions({
           </button>
         </div>
       )}
-      <ServerDetail serverId={serverId} onDeleted={onDeleted} />
+      <ServerDetail
+        serverId={serverId}
+        onDeleted={onDeleted}
+        onBusyChanged={onBusyChanged}
+      />
     </div>
   );
 }

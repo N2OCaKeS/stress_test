@@ -715,11 +715,14 @@ export interface PackageInfo {
 /**
  * Тело `POST /servers/installed-packages/bulk` — массовый запрос пакетов.
  *
- * `pattern` — тот же shell-glob, что и в single-варианте; пусто → `*`.
+ * `patterns` — список shell-glob'ов (`ssh*`, `*libs*`); пусто → `*`. Поле
+ * `pattern` (одиночный glob) оставлено для обратной совместимости: backend
+ * принимает оба, но UI шлёт `patterns`.
  */
 export interface BulkInstalledPackagesRequest {
   server_ids: string[];
   pattern?: string;
+  patterns?: string[];
 }
 
 /**
@@ -756,6 +759,61 @@ export interface BulkInstalledPackagesResponse {
   requested: number;
   dispatched: number;
   results: BulkPackagesServerResult[];
+}
+
+/**
+ * Действие массовой операции над пакетами (`POST /servers/packages/bulk-action`).
+ *
+ *  - `install` / `remove` — требуют непустого `packages`;
+ *  - `update` — без `packages` означает upgrade всех пакетов на боксе.
+ */
+export type PackagesBulkActionKind = "install" | "remove" | "update";
+
+/**
+ * Тело `POST /servers/packages/bulk-action` — поставить install/remove/update
+ * на набор серверов через worker.
+ *
+ * `packages` обязателен для `install`/`remove`; для `update` опционален
+ * (пусто → upgrade всех пакетов).
+ */
+export interface PackagesBulkActionRequest {
+  server_ids: string[];
+  action: PackagesBulkActionKind;
+  packages?: string[];
+}
+
+/**
+ * Статус одного сервера в ответе массовой операции над пакетами.
+ *
+ *  - `ok` — задача задиспатчена, итог добирается поллингом `task_id`;
+ *  - `prepare_required` — сервер не подготовлен, задача не поставлена;
+ *  - `reserved` — сервер забронирован другим пользователем;
+ *  - `decommissioned` — сервер выведен из эксплуатации;
+ *  - `not_found` — сервер не найден / вне scope.
+ */
+export type PackagesBulkActionServerStatus =
+  | "ok"
+  | "prepare_required"
+  | "reserved"
+  | "decommissioned"
+  | "not_found"
+  | (string & {});
+
+/** Один сервер в ответе массовой операции над пакетами. */
+export interface PackagesBulkActionServerResult {
+  server_id: string;
+  hostname: string | null;
+  status: PackagesBulkActionServerStatus;
+  task_id?: string | null;
+}
+
+/** Ответ POST /servers/packages/bulk-action (202). */
+export interface PackagesBulkActionResponse {
+  action: PackagesBulkActionKind;
+  packages: string[];
+  requested: number;
+  dispatched: number;
+  results: PackagesBulkActionServerResult[];
 }
 
 /**

@@ -105,6 +105,7 @@ class TestBulkAllPrepared:
         assert resp.status_code == 202, resp.text
         body = resp.json()
         assert body["pattern"] == "linux-image*"
+        assert body["patterns"] == ["linux-image*"]
         assert body["requested"] == 3
         assert body["dispatched"] == 3
         assert len(captured_dispatch) == 3
@@ -117,10 +118,10 @@ class TestBulkAllPrepared:
             assert row["hostname"] == s.hostname
             assert row["packages"] == []  # пусто на dispatch — пакеты в task.result
 
-        # Каждая задача — installed_packages.list с общим pattern/max_rows.
+        # Каждая задача — installed_packages.list с общими patterns/max_rows.
         for call in captured_dispatch:
             assert call["task_kind"] == "installed_packages.list"
-            assert call["payload"]["pattern"] == "linux-image*"
+            assert call["payload"]["patterns"] == ["linux-image*"]
             assert call["payload"]["max_rows"] == 10000
             assert call["target_resource_id"] is None
 
@@ -228,8 +229,10 @@ class TestPattern:
             URL, headers=_hdr(operator_token_a), json={"server_ids": [srv.id]},
         )
         assert resp.status_code == 202
-        assert resp.json()["pattern"] == "*"
-        assert captured_dispatch[0]["payload"]["pattern"] == "*"
+        body = resp.json()
+        assert body["pattern"] == "*"
+        assert body["patterns"] == ["*"]
+        assert captured_dispatch[0]["payload"]["patterns"] == ["*"]
 
     @pytest.mark.parametrize("bad_pattern", ["foo;bar", "foo bar", "foo$bar", "foo'bar"])
     async def test_invalid_pattern_returns_400(
@@ -242,6 +245,111 @@ class TestPattern:
             json={"server_ids": [srv.id], "pattern": bad_pattern},
         )
         assert_error(resp, 422, "INVALID_PATTERN")
+        assert captured_dispatch == []
+
+
+# ── 3b. Несколько паттернов (patterns) ───────────────────────────────────────
+
+
+class TestMultiplePatterns:
+    async def test_patterns_list_dispatched(
+        self, client, operator_token_a, make_server, captured_dispatch, db,
+    ):
+        """`patterns` пробрасывается в каждый payload как есть (OR на воркере)."""
+        srv = await make_server(department_id="dep_a")
+        await _prepared(db, srv)
+        resp = await client.post(
+            URL, headers=_hdr(operator_token_a),
+            json={"server_ids": [srv.id], "patterns": ["ssh*", "bash*", "*libs*"]},
+        )
+        assert resp.status_code == 202, resp.text
+        body = resp.json()
+        assert body["patterns"] == ["ssh*", "bash*", "*libs*"]
+        # Back-compat поле — первый паттерн.
+        assert body["pattern"] == "ssh*"
+        assert captured_dispatch[0]["payload"]["patterns"] == ["ssh*", "bash*", "*libs*"]
+
+    async def test_patterns_wins_over_single_pattern(
+        self, client, operator_token_a, make_server, captured_dispatch, db,
+    ):
+        """Если присланы оба — приоритет у `patterns`, одиночный игнорируется."""
+        srv = await make_server(department_id="dep_a")
+        await _prepared(db, srv)
+        resp = await client.post(
+            URL, headers=_hdr(operator_token_a),
+            json={
+                "server_ids": [srv.id],
+                "pattern": "ignored*",
+                "patterns": ["ssh*", "bash*"],
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        assert captured_dispatch[0]["payload"]["patterns"] == ["ssh*", "bash*"]
+
+    async def test_single_pattern_becomes_one_element_list(
+        self, client, operator_token_a, make_server, captured_dispatch, db,
+    ):
+        """Back-compat: одиночный pattern → patterns=[pattern] на воркере."""
+        srv = await make_server(department_id="dep_a")
+        await _prepared(db, srv)
+        resp = await client.post(
+            URL, headers=_hdr(operator_token_a),
+            json={"server_ids": [srv.id], "pattern": "htop"},
+        )
+        assert resp.status_code == 202, resp.text
+        assert captured_dispatch[0]["payload"]["patterns"] == ["htop"]
+
+    async def test_duplicate_patterns_collapse(
+        self, client, operator_token_a, make_server, captured_dispatch, db,
+    ):
+        """Повторный паттерн схлопывается, порядок сохраняется."""
+        srv = await make_server(department_id="dep_a")
+        await _prepared(db, srv)
+        resp = await client.post(
+            URL, headers=_hdr(operator_token_a),
+            json={"server_ids": [srv.id], "patterns": ["ssh*", "bash*", "ssh*"]},
+        )
+        assert resp.status_code == 202, resp.text
+        assert captured_dispatch[0]["payload"]["patterns"] == ["ssh*", "bash*"]
+
+    @pytest.mark.parametrize("bad", ["foo;bar", "foo bar", "foo$bar", "foo'bar"])
+    async def test_invalid_pattern_among_many_returns_422(
+        self, client, operator_token_a, make_server, captured_dispatch, db, bad,
+    ):
+        """Один битый паттерн в списке → 422 INVALID_PATTERN, ни одного dispatch'а."""
+        srv = await make_server(department_id="dep_a")
+        await _prepared(db, srv)
+        resp = await client.post(
+            URL, headers=_hdr(operator_token_a),
+            json={"server_ids": [srv.id], "patterns": ["bash*", bad]},
+        )
+        assert_error(resp, 422, "INVALID_PATTERN")
+        assert captured_dispatch == []
+
+    async def test_empty_patterns_list_rejected(
+        self, client, operator_token_a, make_server, captured_dispatch, db,
+    ):
+        """Пустой `patterns` — нарушение схемы (min_length=1) → 422."""
+        srv = await make_server(department_id="dep_a")
+        await _prepared(db, srv)
+        resp = await client.post(
+            URL, headers=_hdr(operator_token_a),
+            json={"server_ids": [srv.id], "patterns": []},
+        )
+        assert resp.status_code == 422
+        assert captured_dispatch == []
+
+    async def test_too_many_patterns_rejected(
+        self, client, operator_token_a, make_server, captured_dispatch, db,
+    ):
+        """Больше 20 паттернов — нарушение схемы (max_length=20) → 422."""
+        srv = await make_server(department_id="dep_a")
+        await _prepared(db, srv)
+        resp = await client.post(
+            URL, headers=_hdr(operator_token_a),
+            json={"server_ids": [srv.id], "patterns": [f"pkg{i}*" for i in range(21)]},
+        )
+        assert resp.status_code == 422
         assert captured_dispatch == []
 
 

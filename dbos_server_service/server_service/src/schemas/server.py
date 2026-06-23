@@ -217,8 +217,15 @@ class BulkInstalledPackagesRequest(BaseModel):
 
     `server_ids` — список серверов, для каждого диспатчится отдельная
     `installed_packages.list` (тот же per-server путь, что у одиночного
-    эндпоинта). `pattern` общий для всего батча — shell-glob, валидируется
+    эндпоинта). Паттерны общие для всего батча — shell-glob, валидируются
     тем же allow-list'ом, что и одиночный запрос.
+
+    Паттернов можно прислать несколько (`patterns: ["ssh*", "bash*", "*libs*"]`)
+    — пакет на сервере попадёт в результат, если матчит ЛЮБОЙ из них (OR).
+    Одиночный `pattern` оставлен для обратной совместимости: если прислан
+    только он — эквивалент `patterns=[pattern]`. Если присланы оба, выигрывает
+    `patterns`, одиночный `pattern` игнорируется. Ни одного из полей — дефолт
+    `["*"]` (все пакеты). Эффективный список достаём через `effective_patterns()`.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -228,12 +235,58 @@ class BulkInstalledPackagesRequest(BaseModel):
         min_length=1,
         description="Серверы для запроса пакетов. Дубли схлопываются, порядок сохраняется.",
     )
-    pattern: str = Field(
-        default="*",
+    pattern: str | None = Field(
+        default=None,
         min_length=1,
         max_length=128,
-        description="Shell-glob паттерн (`htop`, `linux-image*`, `*-dev`). По умолчанию `*` — все пакеты.",
+        description=(
+            "Одиночный shell-glob паттерн (`htop`, `linux-image*`, `*-dev`). "
+            "Back-compat: эквивалент `patterns=[pattern]`. Если задан вместе с "
+            "`patterns`, игнорируется (приоритет у `patterns`)."
+        ),
     )
+    patterns: list[str] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=20,
+        description=(
+            "Несколько shell-glob паттернов (`[\"ssh*\", \"bash*\", \"*libs*\"]`). "
+            "Пакет попадает в результат, если матчит ЛЮБОЙ (OR-матч). Каждый "
+            "элемент валидируется тем же allow-list'ом, что одиночный `pattern`. "
+            "1..20 паттернов. Приоритетнее одиночного `pattern`."
+        ),
+    )
+
+    @field_validator("patterns")
+    @classmethod
+    def _check_patterns_each(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return value
+        for p in value:
+            if not p or len(p) > 128:
+                raise ValueError("each pattern must be 1..128 chars long")
+        return value
+
+    def effective_patterns(self) -> list[str]:
+        """Свести `patterns`/`pattern` к итоговому списку glob'ов.
+
+        Приоритет: `patterns` (если присланы) → `[pattern]` (back-compat) →
+        `["*"]` (дефолт). Дедуп с сохранением порядка — повторный паттерн в
+        теле даёт одну ветку OR-матча.
+        """
+        if self.patterns is not None:
+            source = self.patterns
+        elif self.pattern is not None:
+            source = [self.pattern]
+        else:
+            source = ["*"]
+        seen: set[str] = set()
+        out: list[str] = []
+        for p in source:
+            if p not in seen:
+                seen.add(p)
+                out.append(p)
+        return out
 
 
 class BulkInstalledPackagesServerResult(BaseModel):
@@ -273,7 +326,16 @@ class BulkInstalledPackagesResponse(BaseModel):
     серверов реально отдадут данные» без обхода всего массива.
     """
 
-    pattern: str = Field(description="Применённый glob-паттерн.")
+    pattern: str = Field(
+        description=(
+            "Первый применённый glob-паттерн. Оставлен для обратной "
+            "совместимости; при нескольких паттернах смотри `patterns`."
+        ),
+    )
+    patterns: list[str] = Field(
+        default_factory=list,
+        description="Все применённые glob-паттерны (OR-матч), в порядке запроса.",
+    )
     requested: int = Field(description="Сколько уникальных серверов запрошено.")
     dispatched: int = Field(description="Сколько серверов реально получили задачу (status=ok).")
     results: list[BulkInstalledPackagesServerResult] = Field(

@@ -309,7 +309,7 @@ class TestInstalledPackagesPatternAuditMask:
         monkeypatch.delenv("AUDIT_INSTALLED_PACKAGES_PATTERN_DEBUG", raising=False)
 
         fields = installed_packages._audit_safe_fields()
-        assert "pattern" not in fields
+        assert "patterns" not in fields
         assert {"server_id", "count", "package_manager"} <= fields
         get_settings.cache_clear()
 
@@ -321,11 +321,11 @@ class TestInstalledPackagesPatternAuditMask:
         monkeypatch.setenv("AUDIT_INSTALLED_PACKAGES_PATTERN_DEBUG", "true")
 
         fields = installed_packages._audit_safe_fields()
-        assert "pattern" in fields
+        assert "patterns" in fields
         assert {"server_id", "count", "package_manager"} <= fields
         get_settings.cache_clear()
 
     def test_module_level_constant_stays_masked(self):
-        """`AUDIT_SAFE_FIELDS` (backward-compat alias) — без `pattern`."""
+        """`AUDIT_SAFE_FIELDS` (backward-compat alias) — без `patterns`."""
         from src.tasks import installed_packages
-        assert "pattern" not in installed_packages.AUDIT_SAFE_FIELDS
+        assert "patterns" not in installed_packages.AUDIT_SAFE_FIELDS

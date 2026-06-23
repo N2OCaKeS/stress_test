@@ -22,13 +22,16 @@
 * `xbps` — Void Linux → `xbps-query -l` (строки `ii <name>-<version>
   <description>`).
 
-Инструменты, не умеющие glob по pattern (apk/pacman/portage/xbps), листят
-все пакеты, а фильтрация по pattern делается в Python (`_filter_by_pattern`,
-`fnmatch`). Если ни один менеджер не найден —
-`SshError(error_code="NO_PACKAGE_MANAGER")`.
+Можно запросить несколько паттернов сразу — пакет попадает в результат,
+если матчит ЛЮБОЙ из них (OR-матч). dpkg/rpm принимают несколько glob'ов
+позиционными аргументами; инструменты, не умеющие glob по pattern
+(apk/pacman/portage/xbps), листят все пакеты, а OR-фильтрация делается в
+Python (`_filter_by_patterns`, `fnmatch`). Дубли по имени (один пакет под
+несколько паттернов) схлопываются (`_dedup_by_name`). Если ни один
+менеджер не найден — `SshError(error_code="NO_PACKAGE_MANAGER")`.
 
 Pattern — shell glob (`htop`, `linux-image*`). asyncssh.run запускает
-команду через `/bin/sh -c`, поэтому pattern оборачивается в одиночные
+команду через `/bin/sh -c`, поэтому каждый pattern оборачивается в одиночные
 кавычки. Перед подстановкой worker сам валидирует его по allow-list'у
 `[A-Za-z0-9._\\-+*?\\[\\]]+` (`_PATTERN_RE`) — это defence-in-depth, не
 полагаемся на то, что server_service отсёк `'`/`$`/`;` и прочие
@@ -52,8 +55,8 @@ from src.tasks._runner import run_task
 logger = logging.getLogger(__name__)
 
 # server_id/count/package_manager — операционные счётчики без секретов и без
-# намёка на интент оператора. `pattern` живёт в отдельном whitelist'е и
-# уходит в audit-details только при включённом
+# намёка на интент оператора. `patterns` живут в отдельном whitelist'е и
+# уходят в audit-details только при включённом
 # `AUDIT_INSTALLED_PACKAGES_PATTERN_DEBUG` — иначе оператор, запросивший
 # `linux-image*` или `openssl*`, оставлял бы CVE-релевантный фокус в audit
 # (мягкая разведка для атакующего с доступом к loging). Полный результат
@@ -67,15 +70,15 @@ _BASE_AUDIT_SAFE_FIELDS: frozenset[str] = frozenset(
 def _audit_safe_fields() -> set[str]:
     """Собрать whitelist под текущую конфигурацию.
 
-    Default — без `pattern`. Если оператор явно включил debug-флаг через
-    env, `pattern` добавляется в whitelist и попадает в audit-details.
+    Default — без `patterns`. Если оператор явно включил debug-флаг через
+    env, `patterns` добавляются в whitelist и попадают в audit-details.
     Settings read через `get_settings()` (lru_cache) — дёшево. Кэш сюда
     добавлять опасно: тесты гоняют `get_settings.cache_clear()` между
     кейсами, а отдельный module-level cache их перетёр бы.
     """
     fields = set(_BASE_AUDIT_SAFE_FIELDS)
     if get_settings().audit_installed_packages_pattern_debug:
-        fields.add("pattern")
+        fields.add("patterns")
     return fields
 
 
@@ -91,6 +94,29 @@ AUDIT_SAFE_FIELDS: set[str] = set(_BASE_AUDIT_SAFE_FIELDS)
 # инъекцию. defence-in-depth: не полагаемся на валидацию server_service.
 # Тот же класс символов заявлен в docstring модуля и в server_service.
 _PATTERN_RE = re.compile(r"^[A-Za-z0-9._\-+*?\[\]]+$")
+
+
+def _resolve_patterns(payload: dict) -> list[str]:
+    """Свести payload к списку glob-паттернов с дедупом и сохранением порядка.
+
+    Приоритет: `patterns` (список) → одиночный `pattern` (back-compat) →
+    `["*"]` (дефолт). Не-list `patterns` или не-str `pattern` подменяются
+    дефолтом — валидацию каждого элемента делает caller через `_PATTERN_RE`.
+    """
+    raw = payload.get("patterns")
+    if isinstance(raw, list) and raw:
+        source = raw
+    else:
+        pattern = payload.get("pattern", "*")
+        source = [pattern] if pattern is not None else ["*"]
+    seen: set = set()
+    out: list[str] = []
+    for p in source:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
 
 # Allow-list имён пакетов для мутаций (install/remove/upgrade). В отличие от
 # glob-pattern'а здесь НЕ допускаем `* ? [ ]` — устанавливать/сносить пакеты
@@ -140,25 +166,32 @@ def _remap_managed_connect_error(exc: SshError) -> SshError:
     )
 
 
-def _build_command(package_manager: str, pattern: str) -> str:
+def _build_command(package_manager: str, patterns: list[str]) -> str:
     """Собрать shell-команду под выбранный package manager.
 
-    Pattern оборачивается в одинарные кавычки. Перед подстановкой он
-    обязан пройти `_PATTERN_RE` (caller валидирует) — внутри не может быть
-    `'`/`$`/`;` и прочих метасимволов, поэтому break-out из кавычек
+    Каждый pattern оборачивается в одинарные кавычки. Перед подстановкой
+    они обязаны пройти `_PATTERN_RE` (caller валидирует) — внутри не может
+    быть `'`/`$`/`;` и прочих метасимволов, поэтому break-out из кавычек
     невозможен.
+
+    Для dpkg/rpm несколько паттернов передаются позиционными аргументами —
+    инструмент сам делает OR-матч (любой пакет, подошедший под хотя бы один
+    glob). apk/pacman/portage/xbps не глоббят на стороне инструмента — листят
+    всё, OR-фильтр по паттернам делается в Python (`_filter_by_patterns`).
     """
     if package_manager == "dpkg":
+        joined = " ".join("'" + p + "'" for p in patterns)
         return (
-            "dpkg-query -W -f='${Package} ${Version}\\n' '"
-            + pattern
-            + "' 2>/dev/null"
+            "dpkg-query -W -f='${Package} ${Version}\\n' "
+            + joined
+            + " 2>/dev/null"
         )
     if package_manager == "rpm":
+        joined = " ".join("'" + p + "'" for p in patterns)
         return (
-            "rpm -qa --queryformat '%{NAME} %{VERSION}\\n' '"
-            + pattern
-            + "' 2>/dev/null"
+            "rpm -qa --queryformat '%{NAME} %{VERSION}\\n' "
+            + joined
+            + " 2>/dev/null"
         )
     if package_manager == "apk":
         # apk не глоббит pattern на стороне инструмента — листим всё, а
@@ -290,20 +323,44 @@ def _parse_xbps_line(line: str) -> dict[str, str] | None:
     return {"name": name, "version": version}
 
 
-def _filter_by_pattern(
-    packages: list[dict[str, str]], pattern: str
+def _filter_by_patterns(
+    packages: list[dict[str, str]], patterns: list[str]
 ) -> list[dict[str, str]]:
-    """Отфильтровать пакеты по glob-pattern на стороне Python.
+    """Отфильтровать пакеты по набору glob-паттернов (OR-матч) на стороне Python.
 
-    Нужно для apk, который сам не глоббит — листит все пакеты, фильтруем
-    здесь. Пустой pattern или `*` — без фильтра (вернуть всё). Сравнение
-    через `fnmatch.fnmatchcase` — case-sensitive и не зависит от ОС
-    воркера, в отличие от `fnmatch.fnmatch`. Это согласуется с tool-side
-    глоббингом dpkg-query/rpm, который тоже регистрозависим.
+    Нужно для apk/pacman/portage/xbps, которые сами не глоббят — листят все
+    пакеты, фильтруем здесь. Пакет проходит, если его имя матчит ХОТЯ БЫ один
+    паттерн. Пустой список или наличие `*`/пустого паттерна — без фильтра
+    (вернуть всё). Сравнение через `fnmatch.fnmatchcase` — case-sensitive и не
+    зависит от ОС воркера, в отличие от `fnmatch.fnmatch`. Это согласуется с
+    tool-side глоббингом dpkg-query/rpm, который тоже регистрозависим.
     """
-    if not pattern or pattern == "*":
+    if not patterns or any(not p or p == "*" for p in patterns):
         return packages
-    return [p for p in packages if fnmatch.fnmatchcase(p["name"], pattern)]
+    return [
+        p for p in packages
+        if any(fnmatch.fnmatchcase(p["name"], pat) for pat in patterns)
+    ]
+
+
+def _dedup_by_name(
+    packages: list[dict[str, str]]
+) -> list[dict[str, str]]:
+    """Схлопнуть пакеты-дубли по имени, сохраняя порядок первого вхождения.
+
+    При нескольких паттернах пакет может подойти под не один glob (например
+    `ssh*` и `*server*` оба матчат `openssh-server`) — на стороне dpkg/rpm это
+    дало бы две одинаковые строки. Дедуп по `name` оставляет первую запись;
+    мульти-версионные пакеты (`linux-image-*`) различаются именем и не
+    схлопываются.
+    """
+    seen: set[str] = set()
+    out: list[dict[str, str]] = []
+    for p in packages:
+        if p["name"] not in seen:
+            seen.add(p["name"])
+            out.append(p)
+    return out
 
 
 async def _detect_package_manager(ssh: SshClient) -> str:
@@ -349,23 +406,27 @@ async def _detect_package_manager(ssh: SshClient) -> str:
 
 @broker.task("installed_packages.list")
 async def installed_packages_list(task_id: str) -> None:
-    """Получить список установленных пакетов по glob-pattern.
+    """Получить список установленных пакетов по glob-паттернам.
 
     Что делает: подключается по SSH (через дефолтный root либо account_id
     из payload, если задан), определяет package manager
     (`dpkg`/`rpm`/`apk`/`pacman`/`portage`/`xbps`), выполняет
     соответствующую команду листинга, возвращает плоский список
-    `{name, version}`-словарей. Для менеджеров без tool-side glob
-    (apk/pacman/portage/xbps) pattern фильтруется в Python.
+    `{name, version}`-словарей. Можно передать несколько паттернов —
+    пакет попадает в результат, если матчит ЛЮБОЙ (OR). dpkg/rpm глоббят
+    несколькими позиционными аргументами; для менеджеров без tool-side
+    glob (apk/pacman/portage/xbps) паттерны фильтруются в Python. Дубли по
+    имени схлопываются, итог режется по `max_rows`.
 
-    Параметры: `task_id`. Payload — `server_id` (обязательно), `pattern`
-    (default `*`), опционально `account_id`, `ssh_login`, `ssh_host`,
-    `target_department_id`.
+    Параметры: `task_id`. Payload — `server_id` (обязательно), `patterns`
+    (список glob'ов) либо одиночный `pattern` (back-compat, default `*`),
+    `max_rows` (опц. cap на число строк), опционально `account_id`,
+    `ssh_login`, `ssh_host`, `target_department_id`.
 
-    Возвращает: `{server_id, pattern, package_manager, count, packages: [...]}`.
+    Возвращает: `{server_id, patterns, package_manager, count, packages: [...]}`.
     audit-detail'и режутся whitelist'ом `_audit_safe_fields()` — список
-    пакетов наружу в loging_service не уходит. `pattern` по умолчанию
-    тоже не уходит (CVE-recon hint), показывается только если включён
+    пакетов наружу в loging_service не уходит. `patterns` по умолчанию
+    тоже не уходят (CVE-recon hint), показываются только если включён
     `AUDIT_INSTALLED_PACKAGES_PATTERN_DEBUG`.
 
     Возможные ошибки: `SshError(SSH_AUTH_FAILED/SSH_CONNECT_FAILED/...)`,
@@ -376,23 +437,25 @@ async def installed_packages_list(task_id: str) -> None:
     """
     async def _impl(payload: dict) -> dict:
         server_id = payload["server_id"]
-        pattern = payload.get("pattern", "*")
+        patterns = _resolve_patterns(payload)
+        max_rows = payload.get("max_rows")
         account_id = payload.get("account_id")
         target_dept = payload.get("target_department_id")
         is_managed = bool(payload.get("is_managed"))
 
-        # Defence-in-depth: pattern уходит в shell-команду (asyncssh.run
-        # через /bin/sh -c). Проверяем локально, не доверяя валидации
+        # Defence-in-depth: паттерны уходят в shell-команду (asyncssh.run
+        # через /bin/sh -c). Проверяем каждый локально, не доверяя валидации
         # server_service — отклоняем кавычки/$/;/метасимволы до подстановки.
-        if not isinstance(pattern, str) or not _PATTERN_RE.match(pattern):
-            raise SshError(
-                error_code="INVALID_PATTERN",
-                host=str(payload.get("ssh_host") or server_id),
-                message=(
-                    f"pattern {pattern!r} contains characters disallowed "
-                    "for a package glob (only [A-Za-z0-9._-+*?[]] allowed)"
-                ),
-            )
+        for pattern in patterns:
+            if not isinstance(pattern, str) or not _PATTERN_RE.match(pattern):
+                raise SshError(
+                    error_code="INVALID_PATTERN",
+                    host=str(payload.get("ssh_host") or server_id),
+                    message=(
+                        f"pattern {pattern!r} contains characters disallowed "
+                        "for a package glob (only [A-Za-z0-9._-+*?[]] allowed)"
+                    ),
+                )
 
         # На управляемом сервере вход по ключу под management_user — пароль
         # аккаунта не нужен; self-сценарий — пароль из server_service.
@@ -414,8 +477,10 @@ async def installed_packages_list(task_id: str) -> None:
         host = creds.get("host") or creds.get("ssh_host") or server_id
         # `%r` для host — defence-in-depth от log-injection: host приходит из
         # creds (server_service/payload-hints), теоретически может содержать
-        # `\n`. `pattern` уже прошёл `_PATTERN_RE`, безопасен.
-        logger.info("installed_packages.list on %r pattern=%s", host, pattern)
+        # `\n`. Паттерны уже прошли `_PATTERN_RE`, безопасны.
+        logger.info(
+            "installed_packages.list on %r patterns=%s", host, patterns,
+        )
         session = ssh_client.build_session(creds, server_id)
         try:
             await session.connect()
@@ -432,7 +497,7 @@ async def installed_packages_list(task_id: str) -> None:
             raise
         async with session as ssh:
             package_manager = await _detect_package_manager(ssh)
-            cmd = _build_command(package_manager, pattern)
+            cmd = _build_command(package_manager, patterns)
             rc, stdout, stderr = await ssh.run(cmd)
             if rc != 0:
                 # dpkg-query возвращает rc=1 если ничего не нашлось —
@@ -451,14 +516,22 @@ async def installed_packages_list(task_id: str) -> None:
                 stdout = ""
 
         packages = _parse_packages(stdout, package_manager)
-        # apk/pacman/portage/xbps листят все пакеты — фильтр по pattern
-        # делаем здесь. Для dpkg/rpm pattern уже отработал на стороне
-        # инструмента, повторно не фильтруем.
+        # apk/pacman/portage/xbps листят все пакеты — OR-фильтр по паттернам
+        # делаем здесь. Для dpkg/rpm паттерны уже отработали на стороне
+        # инструмента (несколько позиционных glob'ов), повторно не фильтруем.
         if package_manager in ("apk", "pacman", "portage", "xbps"):
-            packages = _filter_by_pattern(packages, pattern)
+            packages = _filter_by_patterns(packages, patterns)
+        # Один пакет может подойти под несколько паттернов (dpkg/rpm выдадут
+        # дубль-строку) — схлопываем по имени.
+        packages = _dedup_by_name(packages)
+        # Жёсткий cap на число строк — при широких glob'ах (`*`, несколько
+        # паттернов) union может распухнуть. server_service кладёт лимит в
+        # payload (`max_rows`); режем итог после дедупа.
+        if isinstance(max_rows, int) and max_rows >= 0:
+            packages = packages[:max_rows]
         return {
             "server_id": server_id,
-            "pattern": pattern,
+            "patterns": patterns,
             "package_manager": package_manager,
             "count": len(packages),
             "packages": packages,

@@ -85,20 +85,89 @@ class TestApkPatternFilter:
             {"name": "busybox", "version": "1.36.1-r0"},
             {"name": "py3-pip", "version": "23.1-r0"},
         ]
-        out = installed_packages._filter_by_pattern(pkgs, "py3*")
+        out = installed_packages._filter_by_patterns(pkgs, ["py3*"])
         assert out == [{"name": "py3-pip", "version": "23.1-r0"}]
 
     def test_star_returns_all(self):
         pkgs = [{"name": "bash", "version": "5.2.15-r0"}]
-        assert installed_packages._filter_by_pattern(pkgs, "*") == pkgs
+        assert installed_packages._filter_by_patterns(pkgs, ["*"]) == pkgs
 
-    def test_empty_pattern_returns_all(self):
+    def test_empty_patterns_returns_all(self):
         pkgs = [{"name": "bash", "version": "5.2.15-r0"}]
-        assert installed_packages._filter_by_pattern(pkgs, "") == pkgs
+        assert installed_packages._filter_by_patterns(pkgs, []) == pkgs
 
     def test_case_sensitive(self):
         pkgs = [{"name": "bash", "version": "5.2.15-r0"}]
-        assert installed_packages._filter_by_pattern(pkgs, "BASH") == []
+        assert installed_packages._filter_by_patterns(pkgs, ["BASH"]) == []
+
+    def test_or_match_across_patterns(self):
+        """Пакет проходит, если матчит ХОТЯ БЫ один паттерн (OR)."""
+        pkgs = [
+            {"name": "openssh-server", "version": "9.2"},
+            {"name": "bash", "version": "5.2"},
+            {"name": "coreutils", "version": "9.1"},
+            {"name": "zlib", "version": "1.2"},
+        ]
+        out = installed_packages._filter_by_patterns(pkgs, ["ssh*", "bash*"])
+        # openssh-server не начинается с ssh — не матчит ssh*; bash матчит bash*.
+        assert out == [{"name": "bash", "version": "5.2"}]
+        out2 = installed_packages._filter_by_patterns(pkgs, ["*ssh*", "*lib*"])
+        assert {p["name"] for p in out2} == {"openssh-server", "zlib"}
+
+    def test_star_among_patterns_returns_all(self):
+        """Если среди паттернов есть `*` — без фильтра (всё проходит)."""
+        pkgs = [{"name": "bash", "version": "5.2"}, {"name": "vim", "version": "9"}]
+        assert installed_packages._filter_by_patterns(pkgs, ["foo*", "*"]) == pkgs
+
+
+class TestDedupByName:
+    def test_collapses_same_name(self):
+        """Один пакет под несколько паттернов → одна строка (первая)."""
+        pkgs = [
+            {"name": "openssh-server", "version": "9.2"},
+            {"name": "openssh-server", "version": "9.2"},
+            {"name": "bash", "version": "5.2"},
+        ]
+        out = installed_packages._dedup_by_name(pkgs)
+        assert out == [
+            {"name": "openssh-server", "version": "9.2"},
+            {"name": "bash", "version": "5.2"},
+        ]
+
+    def test_keeps_distinct_names(self):
+        """Мульти-версионные пакеты различаются именем — не схлопываются."""
+        pkgs = [
+            {"name": "linux-image-5.10", "version": "5.10.0-1"},
+            {"name": "linux-image-5.15", "version": "5.15.0-1"},
+        ]
+        assert installed_packages._dedup_by_name(pkgs) == pkgs
+
+
+class TestResolvePatterns:
+    def test_patterns_list_wins(self):
+        out = installed_packages._resolve_patterns(
+            {"patterns": ["ssh*", "bash*"], "pattern": "ignored*"},
+        )
+        assert out == ["ssh*", "bash*"]
+
+    def test_single_pattern_backcompat(self):
+        out = installed_packages._resolve_patterns({"pattern": "htop"})
+        assert out == ["htop"]
+
+    def test_default_is_star(self):
+        assert installed_packages._resolve_patterns({}) == ["*"]
+
+    def test_empty_patterns_falls_back_to_pattern(self):
+        out = installed_packages._resolve_patterns(
+            {"patterns": [], "pattern": "vim*"},
+        )
+        assert out == ["vim*"]
+
+    def test_dedup_keeps_order(self):
+        out = installed_packages._resolve_patterns(
+            {"patterns": ["a*", "b*", "a*"]},
+        )
+        assert out == ["a*", "b*"]
 
 
 class TestPacmanParser:
@@ -165,18 +234,32 @@ class TestXbpsParser:
 
 class TestBuildCommand:
     def test_dpkg_command(self):
-        cmd = installed_packages._build_command("dpkg", "htop")
+        cmd = installed_packages._build_command("dpkg", ["htop"])
         assert "dpkg-query -W" in cmd
         assert "'htop'" in cmd
 
+    def test_dpkg_multiple_patterns(self):
+        """Несколько паттернов идут позиционными аргументами (dpkg OR-матч)."""
+        cmd = installed_packages._build_command("dpkg", ["ssh*", "bash*", "*libs*"])
+        assert "dpkg-query -W" in cmd
+        assert "'ssh*'" in cmd
+        assert "'bash*'" in cmd
+        assert "'*libs*'" in cmd
+
     def test_rpm_command(self):
-        cmd = installed_packages._build_command("rpm", "htop")
+        cmd = installed_packages._build_command("rpm", ["htop"])
         assert "rpm -qa" in cmd
         assert "'htop'" in cmd
 
+    def test_rpm_multiple_patterns(self):
+        cmd = installed_packages._build_command("rpm", ["openssl*", "kernel*"])
+        assert "rpm -qa" in cmd
+        assert "'openssl*'" in cmd
+        assert "'kernel*'" in cmd
+
     def test_apk_command_no_pattern_in_shell(self):
         """apk не глоббит — команда листит всё, pattern в shell не уходит."""
-        cmd = installed_packages._build_command("apk", "py3*")
+        cmd = installed_packages._build_command("apk", ["py3*"])
         assert "apk info -v" in cmd
         # Pattern не подставляется в shell-команду для apk.
         assert "py3" not in cmd
@@ -185,24 +268,24 @@ class TestBuildCommand:
     def test_unknown_manager_raises(self):
         from src.clients.ssh import SshError
         with pytest.raises(SshError) as exc:
-            installed_packages._build_command("nix", "htop")
+            installed_packages._build_command("nix", ["htop"])
         assert exc.value.error_code == "NO_PACKAGE_MANAGER"
 
     def test_pacman_command_no_pattern_in_shell(self):
         """pacman не глоббит — листим всё, pattern в shell не уходит."""
-        cmd = installed_packages._build_command("pacman", "py3*")
+        cmd = installed_packages._build_command("pacman", ["py3*"])
         assert "pacman -Q" in cmd
         assert "py3" not in cmd
         assert "'" not in cmd
 
     def test_portage_command_no_pattern_in_shell(self):
-        cmd = installed_packages._build_command("portage", "bash*")
+        cmd = installed_packages._build_command("portage", ["bash*"])
         assert "qlist -Iv" in cmd
         assert "bash" not in cmd
         assert "'" not in cmd
 
     def test_xbps_command_no_pattern_in_shell(self):
-        cmd = installed_packages._build_command("xbps", "bash*")
+        cmd = installed_packages._build_command("xbps", ["bash*"])
         assert "xbps-query -l" in cmd
         assert "bash" not in cmd
         assert "'" not in cmd
@@ -321,6 +404,142 @@ class TestInstalledPackagesTask:
         assert "packages" not in details
         assert details.get("count") == 2
         assert details.get("package_manager") == "dpkg"
+
+    async def test_multiple_patterns_deb_union_and_dedup(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Несколько паттернов: dpkg-query получает их позиционно, дубль по
+        имени (пакет под двумя glob'ами) схлопывается."""
+        fake = _FakeSshClient(host="srv1.example")
+        fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
+        # dpkg-query c несколькими паттернами может вернуть один пакет дважды
+        # (подошёл под ssh* и под *server*).
+        fake.set_response(
+            "dpkg-query -W", 0,
+            "openssh-server 9.2\nbash 5.2\nopenssh-server 9.2\n",
+        )
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.list",
+            target_server_id="srv1",
+            payload={
+                "server_id": "srv1",
+                "patterns": ["ssh*", "*server*", "bash*"],
+                "ssh_host": "srv1.example",
+            },
+        )
+        await installed_packages.installed_packages_list.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["patterns"] == ["ssh*", "*server*", "bash*"]
+        # Дедуп по имени: openssh-server один раз.
+        assert t.result["count"] == 2
+        assert t.result["packages"] == [
+            {"name": "openssh-server", "version": "9.2"},
+            {"name": "bash", "version": "5.2"},
+        ]
+        # Все паттерны ушли в shell-команду позиционно.
+        cmd = next(c for c in fake.commands if "dpkg-query -W" in c)
+        assert "'ssh*'" in cmd and "'*server*'" in cmd and "'bash*'" in cmd
+
+    async def test_max_rows_caps_result(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """`max_rows` режет итоговый список после дедупа."""
+        fake = _FakeSshClient(host="srv1.example")
+        fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
+        fake.set_response(
+            "dpkg-query -W", 0,
+            "a 1\nb 2\nc 3\nd 4\n",
+        )
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.list",
+            target_server_id="srv1",
+            payload={
+                "server_id": "srv1",
+                "patterns": ["*"],
+                "max_rows": 2,
+                "ssh_host": "srv1.example",
+            },
+        )
+        await installed_packages.installed_packages_list.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["count"] == 2
+        assert t.result["packages"] == [
+            {"name": "a", "version": "1"},
+            {"name": "b", "version": "2"},
+        ]
+
+    async def test_multiple_patterns_apk_python_or_filter(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Alpine: apk не глоббит — OR-фильтр по нескольким паттернам в Python."""
+        fake = _FakeSshClient(host="alpine1.example")
+        fake.set_response("command -v dpkg-query", 1, "")
+        fake.set_response("command -v rpm", 1, "")
+        fake.set_response("command -v apk", 0, "/sbin/apk\n")
+        fake.set_response(
+            "apk info -v", 0,
+            "bash-5.2.15-r0\nbusybox-1.36.1-r0\npy3-pip-23.1-r0\nopenssh-9.2-r0\n",
+        )
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.list",
+            target_server_id="srv_alpine",
+            payload={
+                "server_id": "srv_alpine",
+                "patterns": ["py3*", "openssh*"],
+                "ssh_host": "alpine1.example",
+            },
+        )
+        await installed_packages.installed_packages_list.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["package_manager"] == "apk"
+        assert {p["name"] for p in t.result["packages"]} == {"py3-pip", "openssh"}
+        # apk листил всё — паттерны в shell не уходили.
+        assert not any("py3" in c for c in fake.commands)
+
+    async def test_invalid_pattern_among_many_rejected(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Один битый паттерн среди валидных → task FAILED, SSH не открывается."""
+        from sqlalchemy import update
+        from src.db.session import AsyncSessionLocal
+        from src.models import Task
+
+        fake = _FakeSshClient(host="srv1.example")
+        fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.list",
+            target_server_id="srv1",
+            payload={
+                "server_id": "srv1",
+                "patterns": ["bash*", "a'; rm -rf /; echo '"],
+                "ssh_host": "srv1.example",
+            },
+        )
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Task).where(Task.id == tid).values(max_attempts=1)
+            )
+            await session.commit()
+        await installed_packages.installed_packages_list.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert t.last_error and "INVALID_PATTERN" in t.last_error
+        assert fake.commands == []
 
     async def test_success_rpm(self, make_task, fetch_task, captured_audit, monkeypatch):
         """Нет dpkg-query (rc=1) — falls back на rpm."""

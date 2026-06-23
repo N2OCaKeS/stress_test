@@ -243,7 +243,9 @@ async def list_installed_packages(
         "`(server, view)` + dept-visibility (cross-dept скрыт под `not_found`), "
         "prepare-gate (неподготовленный → `prepare_required`, не 409 на весь "
         "батч), decommissioned → `decommissioned`. Reserve-гейт не нужен "
-        "(read-only). Один общий `pattern` (shell glob) на весь батч.\n\n"
+        "(read-only). Паттерны (shell glob) общие на весь батч: `patterns` — "
+        "список (1..20), пакет матчит ЛЮБОЙ (OR); одиночный `pattern` оставлен "
+        "для back-compat (приоритет у `patterns`).\n\n"
         "Модель async: dispatch только ставит задачи, реальные пакеты лежат в "
         "`task.result` каждого сервера — UI добирает их поллингом "
         "`GET /tasks/{task_id}` и сам раскладывает в pivot «пакеты×серверы» либо "
@@ -282,13 +284,16 @@ async def bulk_installed_packages(
     `server_worker/src/tasks/installed_packages.py::installed_packages_list`.
     """
     audit_action = "installed_packages.list"
-    pattern = body.pattern
+    # `patterns`/`pattern` сведены в один список (приоритет у `patterns`,
+    # одиночный — back-compat, дефолт `["*"]`).
+    patterns = body.effective_patterns()
 
-    # Pattern-валидация ДО visibility — тот же allow-list, что у одиночного.
-    if not _PATTERN_RE.match(pattern):
+    # Pattern-валидация ДО visibility — тот же allow-list, что у одиночного,
+    # на каждый паттерн отдельно. Любой битый → 422, ни одного dispatch'а.
+    if not all(_PATTERN_RE.match(p) for p in patterns):
         raise DomainValidationError(
             error_code="INVALID_PATTERN",
-            message="pattern must match [A-Za-z0-9._\\-+*?\\[\\]]+",
+            message="each pattern must match [A-Za-z0-9._\\-+*?\\[\\]]+",
         )
 
     # Дедуп с сохранением порядка: повторный server_id в теле — одна задача,
@@ -390,10 +395,10 @@ async def bulk_installed_packages(
                 audit_action=audit_action,
                 resolved_account_id=None,
                 extra_payload={
-                    "pattern": pattern,
+                    "patterns": patterns,
                     "max_rows": _MAX_INSTALLED_PACKAGES_ROWS,
                 },
-                success_extra_details={"pattern": pattern, "bulk": True},
+                success_extra_details={"patterns": patterns, "bulk": True},
             )
         except (ServiceUnavailableError, ConflictError):
             # dispatch_server_ssh_task уже заэмитил failure-audit. auth_failed —
@@ -412,7 +417,8 @@ async def bulk_installed_packages(
         ))
 
     return BulkInstalledPackagesResponse(
-        pattern=pattern,
+        pattern=patterns[0],
+        patterns=patterns,
         requested=len(server_ids),
         dispatched=dispatched,
         results=results,

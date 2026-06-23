@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   AlertCircle,
   Eye,
+  EyeOff,
   Copy,
   Trash2,
   RotateCcw,
@@ -885,20 +886,31 @@ function DetailPane({
                     ? `rate-limited: ${throttleLeft}с`
                     : "reveal → CRITICAL audit"}
                 </span>
-                <button
-                  className="btn"
-                  onClick={handleReveal}
-                  disabled={revealing || blocked || throttleLeft > 0}
-                >
-                  <Eye className="w-4 h-4 inline-block" />{" "}
-                  <span>
-                    {revealing
-                      ? "…"
-                      : throttleLeft > 0
-                      ? `${throttleLeft}с`
-                      : "Reveal"}
-                  </span>
-                </button>
+                {revealed !== null ? (
+                  <button
+                    className="btn"
+                    onClick={() => setRevealed(null)}
+                    title="Скрыть значение"
+                  >
+                    <EyeOff className="w-4 h-4 inline-block" />{" "}
+                    <span>Скрыть</span>
+                  </button>
+                ) : (
+                  <button
+                    className="btn"
+                    onClick={handleReveal}
+                    disabled={revealing || blocked || throttleLeft > 0}
+                  >
+                    <Eye className="w-4 h-4 inline-block" />{" "}
+                    <span>
+                      {revealing
+                        ? "…"
+                        : throttleLeft > 0
+                        ? `${throttleLeft}с`
+                        : "Reveal"}
+                    </span>
+                  </button>
+                )}
                 <button
                   className="btn"
                   onClick={handleCopy}

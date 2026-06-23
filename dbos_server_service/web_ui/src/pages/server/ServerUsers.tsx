@@ -71,7 +71,7 @@ import { RevisionDiffModal } from "@/pages/server/RevisionDiffModal";
 import { OsUsersDiscoveryModal } from "@/pages/server/OsUsersDiscoveryModal";
 import { IgnoredLoginsModal } from "@/pages/server/IgnoredLoginsModal";
 import { AccountAclModal } from "@/pages/server/AccountAclModal";
-import { isServerZoneBlocked } from "@/lib/rbac";
+import { isDepAdmin, isServerZoneBlocked } from "@/lib/rbac";
 import type { PlatformRole } from "@/types/persona";
 import {
   accountAclActionLabel,
@@ -283,13 +283,15 @@ export function ServerUsers() {
   // server.* / dep_admin → reveal по матрице (фактический грант view_password
   // проверяет backend). guest/reader без view_password получат null/403 —
   // кнопку держим доступной для operator+ как в карточке аккаунта.
-  const isDepAdmin = persona.platform_role === "dep_admin";
+  // dep_admin берём из общего `lib/rbac` — он уже учитывает нормализацию
+  // `department_admin → dep_admin`, поэтому локальная копия строки не нужна.
+  const depAdmin = isDepAdmin(persona);
   const serverRole = persona.service_roles.server;
   const canOperate =
-    isDepAdmin || serverRole === "admin" || serverRole === "operator";
+    depAdmin || serverRole === "admin" || serverRole === "operator";
   // create/edit/delete учётки — только admin/dep_admin (как на вкладке
   // «Аккаунты» карточки сервера). Ротация и reveal — operator+.
-  const canManage = isDepAdmin || serverRole === "admin";
+  const canManage = depAdmin || serverRole === "admin";
   const canReveal = canOperate;
 
   const serverMap = useServerMap();
@@ -1199,9 +1201,8 @@ function AccountWorkzone({
             }}
           />
         ) : (
-          <>
-            <div>
-              <div className="text-xs uppercase text-dim mb-2">Профиль</div>
+          <div>
+            <div className="text-xs uppercase text-dim mb-2">Профиль</div>
               <StatRow
                 k="account_id"
                 v={<span className="mono">{account.id}</span>}
@@ -1304,26 +1305,28 @@ function AccountWorkzone({
                   )
                 }
               />
-            </div>
+          </div>
+        )}
 
-            <PasswordRevealCard
-              key={account.id}
-              account={account}
-              canReveal={canReveal}
-            />
+        {/* Пароль и SSH-ключ — управление кредами не должно пропадать при
+            переключении в edit-режим: держим их вне ветки `editing`. */}
+        <PasswordRevealCard
+          key={account.id}
+          account={account}
+          canReveal={canReveal}
+          canOperate={canOperate}
+          serverName={serverName}
+          onChanged={onChanged}
+        />
 
-            <div className="text-[11px] text-dim italic">
-              Ротация генерирует новый пароль в БД (apply на серверы — отдельно,
-              через worker-rotate на вкладке сервера). Plaintext клиенту не
-              возвращается.
-            </div>
+        <SshKeySection
+          account={account}
+          canOperate={canOperate}
+          onChanged={onChanged}
+        />
 
-            <SshKeySection
-              account={account}
-              canOperate={canOperate}
-              onChanged={onChanged}
-            />
-
+        {!editing && (
+          <>
             <ServersSection
               account={account}
               canOperate={canOperate}
@@ -2048,23 +2051,17 @@ function AccountEditForm({
 
   const loginChanged = login.trim() !== account.login;
 
-  // Сменить пароль в БД и сразу раскатать на все привязанные серверы.
+  // Сменить пароль ТОЛЬКО в БД. На серверы новый пароль не уезжает —
+  // раскатка делается отдельной кнопкой «Применить на серверы» в карточке
+  // (worker-rotate). Так старый пароль остаётся валидным для ещё не
+  // обновлённых серверов до явного apply.
   async function applyPasswordChange(plain: string) {
     await accountsApi.rotateAccountUserInitiated(account.id, {
       password: plain,
     });
-    const dispatch = await accountsApi.rotateAccountWorker(account.id);
-    const queued = dispatch.tasks.length;
-    const skipped = dispatch.skipped.length;
-    if (dispatch.partial_failure || skipped > 0) {
-      toast.error(
-        `Пароль сменён в БД; раскатка частична: задач — ${queued}, пропущено — ${skipped}.`,
-      );
-    } else {
-      toast.success(
-        `Пароль сменён и раскатан на ${queued} сервер(ов).`,
-      );
-    }
+    toast.success(
+      "Пароль сменён в БД. Примените его на серверы кнопкой «Применить на серверы».",
+    );
   }
 
   async function submit(e: React.FormEvent) {
@@ -2189,8 +2186,8 @@ function AccountEditForm({
       </div>
       <div className="text-xs text-dim">
         При изменении атрибутов backend сам разошлёт `update_on_host` на
-        привязанные серверы. Смена пароля пишется в БД и сразу раскатывается на
-        все привязанные серверы.
+        привязанные серверы. Смена пароля пишется ТОЛЬКО в БД — на серверы он
+        уезжает отдельно, кнопкой «Применить на серверы» в карточке пароля.
       </div>
       {err && <div className="alert-danger text-sm">{err}</div>}
 
@@ -2260,7 +2257,7 @@ function AccountEditForm({
       </FormRow>
       <FormRow
         label="новый пароль"
-        hint="пусто — пароль не меняется; иначе раскатка на все серверы"
+        hint="пусто — пароль не меняется; иначе пишется только в БД"
       >
         <input
           className="input mono"
@@ -2307,26 +2304,51 @@ function FormRow({
 // Password reveal card (в правой рабочей зоне)
 // ───────────────────────────────────────────────────────────────────────────
 
+/** Декод base64 → plaintext с fallback'ом на исходную строку. */
+function decodePassword(b64: string): string {
+  try {
+    return fromBase64(b64);
+  } catch {
+    return b64;
+  }
+}
+
 /**
  * Reveal-блок пароля в рабочей зоне. По клику «показать» дёргает карточку
  * аккаунта (`getAccount`), декодит `password_b64` → plaintext. `null` →
  * понятная причина (нет view_password либо нет сохранённого пароля), 429 гасит
  * кнопку на retry-окно, 403 — отдельная причина. Сбрасывается при смене
  * аккаунта (key по account.id монтирует блок заново).
+ *
+ * Пока аккаунт в переходном состоянии `credentials_pending_apply` (новый
+ * пароль сменён в БД, но раскатан не на все серверы) — backend отдаёт ещё и
+ * `previous_password_b64`; показываем ОБА: новый (для обновлённых боксов) и
+ * старый (для ещё не обновлённых). Apply на серверы — кнопками ниже
+ * (worker-rotate на все / на конкретный сервер).
  */
 function PasswordRevealCard({
   account,
   canReveal,
+  canOperate,
+  serverName,
+  onChanged,
 }: {
   account: ServerAccount;
   canReveal: boolean;
+  canOperate: boolean;
+  serverName: (id: string) => string;
+  onChanged: () => void;
 }) {
   const toast = useToast();
+  const { confirm } = useConfirm();
   const [plain, setPlain] = useState<string | null>(null);
+  const [prevPlain, setPrevPlain] = useState<string | null>(null);
   const [reason, setReason] = useState<string | null>(null);
   const [revealing, setRevealing] = useState(false);
   const [throttleUntil, setThrottleUntil] = useState(0);
   const [now, setNow] = useState(() => Date.now());
+  // Сервер, на который сейчас идёт точечный apply (или "all").
+  const [applyingServer, setApplyingServer] = useState<string | null>(null);
 
   useEffect(() => {
     if (throttleUntil <= 0) return;
@@ -2336,6 +2358,7 @@ function PasswordRevealCard({
 
   const throttleLeft = Math.max(0, Math.ceil((throttleUntil - now) / 1000));
   const shown = plain !== null;
+  const pendingApply = account.credentials_pending_apply === true;
 
   // Discovered-аккаунт без ротации обычно не имеет ciphertext'а в БД — backend
   // вернёт null даже держателю view_password. Подсказка до запроса.
@@ -2356,11 +2379,12 @@ function PasswordRevealCard({
         );
         return;
       }
-      try {
-        setPlain(fromBase64(fresh.password_b64));
-      } catch {
-        setPlain(fresh.password_b64);
-      }
+      setPlain(decodePassword(fresh.password_b64));
+      setPrevPlain(
+        fresh.previous_password_b64
+          ? decodePassword(fresh.previous_password_b64)
+          : null,
+      );
     } catch (e) {
       if (e instanceof ApiError && e.status === 429) {
         const secs = e.retryAfter ?? 60;
@@ -2377,14 +2401,55 @@ function PasswordRevealCard({
     }
   }
 
-  async function handleCopy() {
-    if (plain === null || typeof navigator === "undefined" || !navigator.clipboard)
-      return;
+  function hide() {
+    setPlain(null);
+    setPrevPlain(null);
+  }
+
+  async function copy(value: string) {
+    if (typeof navigator === "undefined" || !navigator.clipboard) return;
     try {
-      await navigator.clipboard.writeText(plain);
+      await navigator.clipboard.writeText(value);
       toast.success("Пароль скопирован");
     } catch {
       toast.error("Буфер обмена недоступен");
+    }
+  }
+
+  // Раскатка пароля на серверы. server === null → массово на все привязанные.
+  async function applyTo(server: string | null) {
+    if (applyingServer || !canOperate) return;
+    if (server === null) {
+      if (
+        !(await confirm({
+          title: "Применить пароль на серверы",
+          message: `Раскатать текущий пароль ${account.login} на все ${account.server_ids.length} привязанных серверов (worker chpasswd)?`,
+          confirmLabel: "Применить на все",
+        }))
+      )
+        return;
+    }
+    setApplyingServer(server ?? "all");
+    try {
+      const dispatch = await accountsApi.rotateAccountWorker(
+        account.id,
+        server ? { server_id: server } : {},
+      );
+      const queued = dispatch.tasks.length;
+      const skipped = dispatch.skipped.length;
+      const where = server ? serverName(server) : "все серверы";
+      if (dispatch.partial_failure || skipped > 0) {
+        toast.error(
+          `Apply (${where}) частичный: задач — ${queued}, пропущено — ${skipped}.`,
+        );
+      } else {
+        toast.success(`Apply поставлен в очередь (${where}): задач — ${queued}.`);
+      }
+      onChanged();
+    } catch (e) {
+      toast.error(handleDispatchError(e));
+    } finally {
+      setApplyingServer(null);
     }
   }
 
@@ -2395,53 +2460,149 @@ function PasswordRevealCard({
       </div>
       <div className="text-xs text-dim mb-3">
         Хранится зашифрованным (AES-256-GCM). Показ требует права view_password,
-        пишет CRITICAL audit и режется reveal-rate-limit'ом.
+        пишет CRITICAL audit и режется reveal-rate-limit'ом. Смена пароля пишется
+        только в БД — на серверы раскатывается кнопками ниже.
       </div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <div
-          className={`mono text-sm flex-1 min-w-[200px] break-all ${shown ? "" : "text-dim"}`}
-        >
-          {shown ? plain : "••••••••••••"}
+
+      {pendingApply && (
+        <div className="alert-warn text-xs flex items-start gap-2 mb-3">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>
+            Новый пароль ещё не раскатан на все серверы. До apply на части
+            боксов действует прежний пароль — ниже показаны оба.
+          </span>
         </div>
-        {shown ? (
-          <>
+      )}
+
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] text-dim w-28 shrink-0">
+            {pendingApply ? "новый (БД)" : "текущий"}
+          </span>
+          <div
+            className={`mono text-sm flex-1 min-w-[200px] break-all ${shown ? "" : "text-dim"}`}
+          >
+            {shown ? plain : "••••••••••••"}
+          </div>
+          {shown ? (
+            <>
+              <button
+                className="btn btn-sm flex items-center gap-1"
+                onClick={() => plain && copy(plain)}
+                type="button"
+              >
+                <Copy className="w-4 h-4" /> Копировать
+              </button>
+              <button
+                className="btn btn-sm flex items-center gap-1"
+                onClick={hide}
+                type="button"
+              >
+                <EyeOff className="w-4 h-4" /> Скрыть
+              </button>
+            </>
+          ) : (
             <button
               className="btn btn-sm flex items-center gap-1"
-              onClick={handleCopy}
+              onClick={handleReveal}
+              disabled={!canReveal || revealing || throttleLeft > 0}
+              title={
+                !canReveal
+                  ? "Нужна роль server.operator+ (и грант view_password)"
+                  : "Раскрыть пароль (CRITICAL audit)"
+              }
+              type="button"
+            >
+              <Eye className="w-4 h-4" />
+              {revealing
+                ? "Запрашиваем…"
+                : throttleLeft > 0
+                  ? `Подождите ${throttleLeft}с`
+                  : "Показать"}
+            </button>
+          )}
+        </div>
+
+        {shown && prevPlain !== null && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] text-dim w-28 shrink-0">
+              прежний (ещё не обновлённые серверы)
+            </span>
+            <div className="mono text-sm flex-1 min-w-[200px] break-all">
+              {prevPlain}
+            </div>
+            <button
+              className="btn btn-sm flex items-center gap-1"
+              onClick={() => copy(prevPlain)}
               type="button"
             >
               <Copy className="w-4 h-4" /> Копировать
             </button>
-            <button
-              className="btn btn-sm flex items-center gap-1"
-              onClick={() => setPlain(null)}
-              type="button"
-            >
-              <EyeOff className="w-4 h-4" /> Скрыть
-            </button>
-          </>
-        ) : (
-          <button
-            className="btn btn-sm flex items-center gap-1"
-            onClick={handleReveal}
-            disabled={!canReveal || revealing || throttleLeft > 0}
-            title={
-              !canReveal
-                ? "Нужна роль server.operator+ (и грант view_password)"
-                : "Раскрыть пароль (CRITICAL audit)"
-            }
-            type="button"
-          >
-            <Eye className="w-4 h-4" />
-            {revealing
-              ? "Запрашиваем…"
-              : throttleLeft > 0
-                ? `Подождите ${throttleLeft}с`
-                : "Показать"}
-          </button>
+          </div>
         )}
       </div>
+
       {reason && <div className="text-xs text-dim mt-3">{reason}</div>}
+
+      {/* Apply пароля на серверы: массово на все или точечно на конкретный. */}
+      <div className="border-t border-token mt-3 pt-3 flex flex-col gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-dim flex-1 min-w-[140px]">
+            Применить пароль на серверы (worker chpasswd):
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary flex items-center gap-1"
+            disabled={
+              !canOperate ||
+              applyingServer !== null ||
+              account.server_ids.length === 0
+            }
+            title={
+              canOperate
+                ? "Раскатать на все привязанные серверы"
+                : "Нужна роль server.operator+"
+            }
+            onClick={() => applyTo(null)}
+          >
+            <RotateCw
+              className={`w-3.5 h-3.5 ${applyingServer === "all" ? "animate-spin" : ""}`}
+            />{" "}
+            Применить на все серверы
+          </button>
+        </div>
+        {account.server_ids.length > 0 && (
+          <div className="flex flex-col gap-1">
+            {account.server_ids.map((sid) => (
+              <div
+                key={sid}
+                className="flex items-center gap-2 text-sm border border-token rounded px-2 py-1"
+              >
+                <ServerIcon className="w-3.5 h-3.5 text-dim shrink-0" />
+                <span className="mono flex-1 min-w-0 truncate">
+                  {serverName(sid)}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-sm flex items-center gap-1"
+                  disabled={!canOperate || applyingServer !== null}
+                  title={
+                    canOperate
+                      ? "Раскатать пароль только на этот сервер"
+                      : "Нужна роль server.operator+"
+                  }
+                  onClick={() => applyTo(sid)}
+                >
+                  <RotateCw
+                    className={`w-3.5 h-3.5 ${applyingServer === sid ? "animate-spin" : ""}`}
+                  />{" "}
+                  Применить
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

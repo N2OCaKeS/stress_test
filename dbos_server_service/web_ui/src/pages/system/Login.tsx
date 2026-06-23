@@ -12,13 +12,12 @@ import { ThemeSwitcher } from "@/components/shell/ThemeSwitcher";
 import { useAuth, USE_MOCK_AUTH } from "@/contexts/AuthContext";
 import { ApiError } from "@/api/client";
 
-const SERVICE_NAME = "DTQC-EMM";
+const SERVICE_NAME = "EMM";
 const SERVICE_VERSION = "1.0.0";
 const SERVICE_FULL =
   "Easy Machine Manager — платформа управления тестовыми серверами и виртуальными машинами";
 const SERVICE_OWNER = "ДБОС ДТиКК";
-const SERVICE_TOOLTIP =
-  "DTQC — Department of Testing and Quality Control (Департамент тестирования и контроля качества); EMM — Easy Machine Manager";
+const SERVICE_TOOLTIP = "EMM — Easy Machine Manager";
 
 export function Login() {
   const navigate = useNavigate();

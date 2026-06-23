@@ -11,10 +11,10 @@ export function TopBar({ breadcrumb = "Главная" }: TopBarProps) {
       <Link
         to="/home"
         className="text-sm font-semibold flex items-center gap-2 px-2 hover-bg rounded h-8"
-        title="DTQC — Department of Testing and Quality Control (Департамент тестирования и контроля качества); EMM — Easy Machine Manager"
+        title="EMM — Easy Machine Manager"
       >
         <Grid3x3 className="w-4 h-4 text-accent" />
-        DTQC-EMM
+        EMM
       </Link>
       <span className="text-xs text-dim">/ {breadcrumb}</span>
     </header>

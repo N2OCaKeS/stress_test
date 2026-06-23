@@ -321,6 +321,19 @@ export interface ServerAccount {
    * `password_encrypted` в ответе нет никогда.
    */
   password_b64: string | null;
+  /**
+   * Base64(plaintext) ПРЕДЫДУЩего пароля. Backend отдаёт его (тоже под
+   * `view_password`), пока аккаунт в переходном состоянии
+   * `credentials_pending_apply` — то есть пароль уже сменён в БД, но ещё не
+   * раскатан на часть серверов. Нужен оператору, чтобы подключиться к ещё не
+   * обновлённым боксам. Когда переходного периода нет — `null`/отсутствует.
+   */
+  previous_password_b64?: string | null;
+  /**
+   * True, пока новый пароль не раскатан на все привязанные серверы
+   * (есть `previous_password_b64`, действующий для части боксов).
+   */
+  credentials_pending_apply?: boolean;
   /** Отпечаток публичного SSH-ключа аккаунта (если ключ выдан). */
   ssh_key_fingerprint?: string | null;
   /** Публичный SSH-ключ (формат authorized_keys), если выдан. */

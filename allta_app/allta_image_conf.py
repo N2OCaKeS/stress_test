@@ -44,7 +44,8 @@ stands_ip = {
     'stand10':'10.177.103.206',
     'stand11':'10.177.103.207',
     'stand12':'10.177.103.208',
-    'stand13':'10.177.103.209'
+    'stand13':'10.177.103.209',
+    'stand14':'10.177.103.210'
 }
 
 
@@ -68,7 +69,8 @@ stands_type = {
         'stand10':'LowServer2',
         'stand11':'LowServer3',
         'stand12':'LowServer4',
-        'stand13':'LowServer5'
+        'stand13':'LowServer5',
+        'stand14':'MiddleServer2'
     }
 }
 
@@ -308,7 +310,7 @@ psyc_conf = {
 #################################################################################################################################################
 #Основной перечень тестов
 #################################################################################################################################################
-group_tests = ['_stand3 group', '_stand4 group', '_stand10 group', '_stand11 group', '_stand12 group', '_stand13 group']
+group_tests = ['_stand3 group', '_stand4 group', '_stand10 group', '_stand11 group', '_stand12 group', '_stand13 group', '_stand14 group']
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla', 'syslog-ng-cwl',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
@@ -359,7 +361,7 @@ test_station_vms = {
 #Перечень стендов, отображаемых на разных страницах
 #################################################################################################################################################
 main_stands = ['stand1', 'stand2', 'stand3', 'stand4', 'stand5', 'stand6', 'stand7', 'stand8', 'stand9',
-               'stand10', 'stand11', 'stand12', 'stand13']
+               'stand10', 'stand11', 'stand12', 'stand13', 'stand14']
 mobile_stands = ['stand1', 'stand2', 'stand3', 'stand4', 'stand5']
 brest_stands = []
 
@@ -408,7 +410,9 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
             'orel_stand12':     ['syslog-ng', 'InitOnFree', 'SegFault', 'XFS mem leak'],
             'smolensk_stand12': ['auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'apache-bp', 'PSQL OLAP-hq'],
             'orel_stand13':     ['syslog-ng-cwl'],
-            'smolensk_stand13': []
+            'smolensk_stand13': [],
+            'orel_stand14':     [],
+            'smolensk_stand14': []
         }
 
 
@@ -427,10 +431,12 @@ stands_groups = {
     'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large'],
     'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'apache-bp', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'XFS mem leak'],
 
-    'stand13_group':['syslog-ng-cwl']
+    'stand13_group':['syslog-ng-cwl'],
+
+    'stand14_group':[]
 }
 
-test_run_stands = [f'stand{x}' for x in ['3', '4', '10', '11', '12', '13']] #range(3, 6, 1)]
+test_run_stands = [f'stand{x}' for x in ['3', '4', '10', '11', '12', '13', '14']] #range(3, 6, 1)]
 test_run_modes = ['orel', 'smolensk']
 tests_case_zefir_key = {
     'postgresql':'BT-T7555',

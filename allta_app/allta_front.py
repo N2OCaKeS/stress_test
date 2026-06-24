@@ -610,7 +610,7 @@ def reboot(stand):
                     stand_ip=stands_ip[stand])
         return {"status": "success", "message": "ssh reboot entered"}, 200
     elif stand == "stand3" or stand == "stand4" or stand == "stand5" or stand == "stand10" \
-    or stand == "stand11" or stand == "stand12" or stand == "stand13":
+    or stand == "stand11" or stand == "stand12" or stand == "stand13" or stand == "stand14":
         ipmi = BootOrder(stand=stand)
         ipmi.set_boot_order()
         ipmi.reset()

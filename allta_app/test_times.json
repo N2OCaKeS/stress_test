@@ -70,6 +70,9 @@
         "stand13": {
             "syslog-ng-cwl": "1 day, 6:59:50",
             "Total time": "0:00:00"
+        },
+        "stand14": {
+            "Total time": "0:00:00"
         }
     },
     "1.8": {
@@ -80,12 +83,12 @@
             "EXT4": "0:53:22",
             "FAT": "1:37:37",
             "XFS": "0:53:37",
-            "unix": "1:35:28",
+            "unix": "1:34:55",
             "EXT4 parsec": "0:55:48",
             "XFS parsec": "0:55:22",
-            "unix parsec": "1:59:31",
-            "FreeIPA auth": "1:31:38",
-            "FreeIPA c-users": "1:23:18",
+            "unix parsec": "1:35:44",
+            "FreeIPA auth": "1:35:13",
+            "FreeIPA c-users": "1:21:16",
             "FreeIPA plugin": "8:56:01",
             "Total time": "0:00:00"
         },
@@ -97,8 +100,8 @@
             "psql vanilla": "3:05:02",
             "psql balance": "2:54:15",
             "psql kernels": "2:23:59",
-            "steal time": "3:12:53",
-            "steal time-sm": "3:12:48",
+            "steal time": "3:12:40",
+            "steal time-sm": "3:14:29",
             "Total time": "0:00:00"
         },
         "stand10": {
@@ -108,40 +111,43 @@
             "CEPH fio": "0:31:04",
             "Total time": "0:00:00",
             "CEPH parsec": "2:51:24",
-            "raw-spin-lock": "1:20:05"
+            "raw-spin-lock": "1:19:45"
         },
         "stand11": {
-            "parsec impact-fs": "0:36:14",
-            "parsec impact-fs aud-off": "0:36:37",
-            "docker-wa": "1:00:24",
-            "FIO": "1:44:15",
-            "vPingPong": "1:06:01",
-            "vUnixBench": "2:30:30",
+            "parsec impact-fs": "0:36:42",
+            "parsec impact-fs aud-off": "0:35:21",
+            "docker-wa": "1:00:47",
+            "FIO": "1:44:02",
+            "vPingPong": "1:05:00",
+            "vUnixBench": "2:28:50",
             "psql oom": "2:03:30",
-            "Dovecot-IMAP": "4:14:11",
-            "Exim4-SMTP": "1:47:49",
+            "Dovecot-IMAP": "4:15:21",
+            "Exim4-SMTP": "1:47:22",
             "FIO_large": "1:21:28",
             "Total time": "0:00:00",
-            "AOpenVPNcc": "1:32:21",
-            "FIO large": "3:02:09"
+            "AOpenVPNcc": "1:32:52",
+            "FIO large": "3:28:46"
         },
         "stand12": {
-            "syslog-ng": "0:58:30",
+            "syslog-ng": "2:28:02",
             "apache-rp": "0:32:16",
             "apache-bp": "1:32:16",
-            "auditd-f": "0:44:56",
-            "auditd-p": "1:55:30",
-            "auditd-u": "6:19:02",
-            "digsig-cdt": "1:19:29",
-            "InitOnFree": "1:04:28",
-            "SegFault": "1:11:53",
+            "auditd-f": "0:44:41",
+            "auditd-p": "1:53:23",
+            "auditd-u": "6:16:41",
+            "digsig-cdt": "1:19:32",
+            "InitOnFree": "1:04:27",
+            "SegFault": "1:11:39",
             "PSQL_OLAP-hq": "2:28:15",
             "Total time": "0:00:00",
-            "XFS mem leak": "1:16:07",
+            "XFS mem leak": "1:03:05",
             "PSQL OLAP-hq": "2:06:47"
         },
         "stand13": {
             "syslog-ng-cwl": "1 day, 6:52:29",
+            "Total time": "0:00:00"
+        },
+        "stand14": {
             "Total time": "0:00:00"
         }
     }

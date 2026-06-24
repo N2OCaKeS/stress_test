@@ -41,6 +41,7 @@ path_stand10 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand10.tx
 path_stand11 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand11.txt'
 path_stand12 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand12.txt'
 path_stand13 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand13.txt'
+path_stand14 = '/home/u/git/stress_test/allta_app/telegrambot/results_stand14.txt'
 chat_id = '-1002121821530'
 SERVER_ACS_IP_OR_NAME = "10.177.103.10"
 SERVER_ACS_PORT = 9999
@@ -284,6 +285,11 @@ def acs_create_snapshot(version: str, stand):
                                                                                      "version_to_update": version,
                                                                                      "password_cs": __password,
                                                                                      "stand_name": 'LowServer5'})
+    elif stand == 'stand14':
+        res_create_full_snap = requests.post(f"{BASE_URL}/create_full_snap", params={"restore_version": restore_version,
+                                                                                     "version_to_update": version,
+                                                                                     "password_cs": __password,
+                                                                                     "stand_name": 'MiddleServer2'})
     else: res_create_full_snap = 'Wrong stand'
     return res_create_full_snap.text
 
@@ -567,6 +573,7 @@ async def test_cycle_check():
             stand11_results = await is_file_body(path_stand11)
             stand12_results = await is_file_body(path_stand12)
             stand13_results = await is_file_body(path_stand13)
+            stand14_results = await is_file_body(path_stand14)
             if stand3_results:
                 await send_message_to_group(chat_id, stand3_results)
                 remove(path_stand3)
@@ -585,6 +592,9 @@ async def test_cycle_check():
             elif stand13_results:
                 await send_message_to_group(chat_id, stand13_results)
                 remove(path_stand13)
+            elif stand13_results:
+                await send_message_to_group(chat_id, stand14_results)
+                remove(path_stand14)
             await asyncio.sleep(100)
         except Exception as e:
             print(str(e))

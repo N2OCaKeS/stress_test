@@ -845,6 +845,7 @@ def info_collector(page, ajax=None):
                                 stand11_snap=cz_comm()['stand11'].keys(),
                                 stand12_snap=cz_comm()['stand12'].keys(),
                                 stand13_snap=cz_comm()['stand13'].keys(),
+                                stand14_snap=cz_comm()['stand14'].keys(),
                                 **server_diskspace_used())
 
 
@@ -1539,7 +1540,7 @@ class BootOrder:
     
     def set_boot_order(self):
         if self.stand == 'stand3' or self.stand == 'stand4' or self.stand == 'stand10' \
-            or self.stand == 'stand11' or self.stand == 'stand12' or self.stand == 'stand13':
+            or self.stand == 'stand11' or self.stand == 'stand12' or self.stand == 'stand13' or self.stand == 'stand14':
             self.__set_boot_order_ilo()
         elif self.stand == 'stand5':
             self.__set_boot_order_idrac()
@@ -1613,14 +1614,14 @@ class BootOrder:
                 return 0
         logging.debug(f'Время ожидания {timer} сек. Истекло, будет выполнена перезагрузка')
         if self.stand == 'stand3' or self.stand == 'stand4' or self.stand == 'stand10' \
-            or self.stand == 'stand11' or self.stand == 'stand12' or self.stand == 'stand13':
+            or self.stand == 'stand11' or self.stand == 'stand12' or self.stand == 'stand13' or self.stand == 'stand14':
             logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
         elif self.stand == 'stand5':
             self.__reboot_idrac()
 
     def reset(self):
         if self.stand == 'stand3' or self.stand == 'stand4' or self.stand == 'stand10' \
-            or self.stand == 'stand11' or self.stand == 'stand12' or self.stand == 'stand13':
+            or self.stand == 'stand11' or self.stand == 'stand12' or self.stand == 'stand13' or self.stand == 'stand14':
             logging.debug('execute IPMI hard reboot')
             logging.debug(self.cmd(f'{self.ssh_command} {self.reset_machine}'))
         elif self.stand == 'stand5':
@@ -1995,7 +1996,8 @@ class TestrunManager:
                 'stand10': 'LowServer2',
                 'stand11': 'LowServer3',
                 'stand12': 'LowServer4',
-                'stand13': 'LowServer5', 
+                'stand13': 'LowServer5',
+                'stand14': 'MiddleServer2', 
             }
             
             if stand == 'AllStands':
@@ -2006,7 +2008,8 @@ class TestrunManager:
                     ('stand10', 'LowServer2'),
                     ('stand11', 'LowServer3'),
                     ('stand12', 'LowServer4'),
-                    ('stand13', 'LowServer5')
+                    ('stand13', 'LowServer5'),
+                    ('stand14', 'MiddleServer2')
                 ]
                 
                 total = len(stands_config)

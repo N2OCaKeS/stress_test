@@ -990,6 +990,12 @@ async def receive_users_inventory(
     ignored_logins = await ignored_login_repo.ignored_logins_for_department(
         db, server.department_id,
     )
+    # Управляющую учётку сервера (та, под которой ходим по SSH) reconcile не
+    # классифицирует никогда — она наша, а не пользовательская. Добавляем поверх
+    # dept ignore-list'а, dept-запись в БД при этом не трогаем — расширяем только
+    # локальный set на время этой инвентаризации.
+    if server.management_user:
+        ignored_logins = ignored_logins | {server.management_user}
 
     # Батчим выборки на N юзеров: один SELECT по login'ам, один по account_id'ам
     # их связок. Без батча reconcile делает 2·N запросов и проседает на больших
@@ -1033,12 +1039,13 @@ async def receive_users_inventory(
     missing_account_ids: list[str] = []
 
     for item in payload.users:
+        # Логин в ignore-list'е отдела (или управляющая учётка сервера) —
+        # штатная служебная учётка, которую reconcile не классифицирует:
+        # ни drift, ни unknown_users, ни unlinked_existing.
+        if item.login in ignored_logins:
+            continue
         existing = existing_by_login.get(item.login)
         if existing is None:
-            # Логин в ignore-list'е отдела — штатная служебная учётка, которую
-            # оператор сознательно прячет. Не дрейфим и в unknown_users не кладём.
-            if item.login in ignored_logins:
-                continue
             # На боксе есть, к этому серверу не привязан, не заигнорен.
             # Если под этот login в отделе УЖЕ есть аккаунт — это не unknown,
             # а «существующий, но не привязанный»: отдаём отдельной категорией,
@@ -1102,6 +1109,8 @@ async def receive_users_inventory(
     # `is_new_drift` уезжает в details, чтобы потребители (loging_service /
     # отчёты) могли отличить первое срабатывание от прежнего состояния.
     for link in links:
+        if link.login in ignored_logins:
+            continue
         if link.login not in seen_logins:
             missing_account_ids.append(link.account_id)
             is_new_drift = link.present_on_server is True

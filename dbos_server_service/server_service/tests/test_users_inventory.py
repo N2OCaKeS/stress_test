@@ -1143,3 +1143,89 @@ class TestReconcileRespectsIgnoreList:
             for e in _events(captured_emits, "server_account.drift_detected")
         }
         assert drift_logins == {"ops"}
+
+
+@pytest.mark.usefixtures("soft_dept_mode")
+class TestReconcileIgnoresManagementUser:
+    async def test_management_user_not_classified(
+        self, client, worker_bot_token_a, make_server, db, dept_a, captured_emits,
+    ):
+        # Управляющая учётка сервера ("dbos") приходит в инвентаризации, но это
+        # наш SSH-пользователь — он не должен попасть ни в unknown_users, ни в
+        # drift. Обычный незнакомый "ops" классифицируется как раньше.
+        srv = await make_server(department_id=dept_a)
+        srv.management_user = "dbos"
+        await db.flush()
+
+        payload = {"users": [
+            {"login": "dbos", "uid": 1000, "unix_groups": ["sudo"], "has_sudo": True},
+            {"login": "ops", "uid": 1001, "unix_groups": [], "has_sudo": False},
+        ]}
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        # dbos — управляющая, проигнорирована; ops — настоящий unknown.
+        assert {u["login"] for u in body["unknown_users"]} == {"ops"}
+        assert body["drifted"] == 1
+        drift_logins = {
+            e["details"]["login"]
+            for e in _events(captured_emits, "server_account.drift_detected")
+        }
+        assert drift_logins == {"ops"}
+
+    async def test_management_user_with_existing_account_no_drift(
+        self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+        captured_emits,
+    ):
+        # Даже если под управляющий логин в БД есть привязанный аккаунт с
+        # разошедшимися атрибутами — drift на него не поднимаем, учётка наша.
+        srv = await make_server(department_id=dept_a)
+        srv.management_user = "dbos"
+        await make_account(
+            server_id=srv.id, login="dbos", has_sudo=False,
+            shell="/bin/bash", home_dir="/home/dbos", unix_groups=[],
+        )
+        await db.flush()
+
+        payload = {"users": [
+            {"login": "dbos", "uid": 1000, "shell": "/bin/sh",
+             "home_dir": "/home/dbos", "unix_groups": ["wheel"], "has_sudo": True},
+        ]}
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["drifted"] == 0
+        assert body["unknown_users"] == []
+        assert body["unlinked_existing"] == []
+        assert _events(captured_emits, "server_account.drift_detected") == []
+
+    async def test_no_management_user_behaves_as_before(
+        self, client, worker_bot_token_a, make_server, db, dept_a, captured_emits,
+    ):
+        # management_user=None → старое поведение: dbos классифицируется как
+        # обычный неизвестный логин.
+        srv = await make_server(department_id=dept_a)
+        assert srv.management_user is None
+
+        payload = {"users": [
+            {"login": "dbos", "uid": 1000, "unix_groups": [], "has_sudo": False},
+        ]}
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert {u["login"] for u in body["unknown_users"]} == {"dbos"}
+        assert body["drifted"] == 1
+        drift_logins = {
+            e["details"]["login"]
+            for e in _events(captured_emits, "server_account.drift_detected")
+        }
+        assert drift_logins == {"dbos"}

@@ -318,6 +318,140 @@ class TestProvisionUsesManagementSession:
         get_settings.cache_clear()
 
 
+class TestCutoverManagementUser:
+    """Cutover-rename управляющей учётки на SSH-уровне сервиса.
+
+    Под старым пользователем заводим нового (`bootstrap_management_user` поверх
+    ключевой сессии) → независимая key-сессия под новым проверяет вход + sudo →
+    с новой сессии `userdel -r` старого. Все три захода идут под key-auth.
+    """
+
+    async def test_cutover_creates_verifies_then_removes_old(self, mgmt_key, monkeypatch):
+        # Список соединений по порядку:
+        #   1) create под старым: detect_mode → bootstrap (user_exists,
+        #      useradd-flow, sudoers, authorized_keys). Кормим «mode probe» +
+        #      «user не существует» + череду 0; bootstrap идемпотентен.
+        #   2) verify под новым: один `sudo true`.
+        #   3) delete под новым: getent (exists) → userdel → rm sudoers.
+        from unittest.mock import AsyncMock
+
+        from src.services import ssh_client
+
+        # Достаточно «всё ок» (rc=0) на любой команде, кроме user_exists в
+        # create-ветке, где rc=2 заставит bootstrap идти по useradd-пути.
+        create_conn = _conn([
+            _run_result("ASTRA=1\nLEVEL=2\n", "", 0),  # detect_management_mode
+            _run_result("", "", 2),                     # bootstrap user_exists(new) → нет
+            _run_result("", "", 2),                     # create_user user_exists(new) → нет
+            _run_result("", "", 0),                     # useradd
+            _run_result("", "", 0),                     # sudoers tee
+            _run_result("", "", 0),                     # authorized_keys
+        ])
+        verify_conn = _conn([_run_result("", "", 0)])     # sudo true
+        delete_conn = _conn([
+            _run_result("oldctl:x:1001:1001::/home/oldctl:/bin/bash", "", 0),  # user_exists(old)
+            _run_result("", "", 0),                     # userdel -r
+            _run_result("", "", 0),                     # rm sudoers
+        ])
+        conns = [create_conn, verify_conn, delete_conn]
+        connect_mock = AsyncMock(side_effect=conns)
+        monkeypatch.setattr(asyncssh, "connect", connect_mock)
+
+        creds = {"host": "10.0.0.5", "ssh_port": 22}
+        result = await ssh_client.cutover_management_user(
+            creds, "srv_cut",
+            old_management_user="oldctl",
+            new_management_user="newctl",
+            public_key="ssh-ed25519 AAAAkey",
+            modes={"astra_smolensk": {"groups": [], "extra_create_commands": []}},
+            management_private_key_path=mgmt_key,
+        )
+
+        assert result["renamed"] is True
+        assert result["management_user"] == "newctl"
+        assert result["old_removed"] is True
+
+        # 1) create под старым (по ключу), 2) verify под новым (по ключу),
+        # 3) delete под новым (по ключу).
+        calls = connect_mock.await_args_list
+        assert len(calls) == 3
+        assert calls[0].kwargs["username"] == "oldctl"
+        assert calls[1].kwargs["username"] == "newctl"
+        assert calls[1].kwargs["client_keys"] == [mgmt_key]
+        assert calls[2].kwargs["username"] == "newctl"
+        # Старого реально удаляем.
+        userdel_cmd = delete_conn.run.await_args_list[1].args[0]
+        assert "userdel" in userdel_cmd and "oldctl" in userdel_cmd
+
+    async def test_cutover_verify_failure_keeps_old_user(self, mgmt_key, monkeypatch):
+        from unittest.mock import AsyncMock
+
+        from src.clients.ssh import SshError
+        from src.services import ssh_client
+
+        create_conn = _conn([
+            _run_result("ASTRA=1\nLEVEL=2\n", "", 0),
+            _run_result("", "", 2),
+            _run_result("", "", 2),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+        ])
+        # verify-сессия: sudo true вернул non-zero → анти-локаут срабатывает.
+        verify_conn = _conn([_run_result("", "denied", 1)])
+        connect_mock = AsyncMock(side_effect=[create_conn, verify_conn])
+        monkeypatch.setattr(asyncssh, "connect", connect_mock)
+
+        creds = {"host": "10.0.0.5", "ssh_port": 22}
+        with pytest.raises(SshError) as ei:
+            await ssh_client.cutover_management_user(
+                creds, "srv_cut2",
+                old_management_user="oldctl",
+                new_management_user="newctl",
+                public_key="ssh-ed25519 AAAAkey",
+                modes={},
+                management_private_key_path=mgmt_key,
+            )
+        assert ei.value.error_code == "SSH_MANAGEMENT_KEY_VERIFY_FAILED"
+        # Только две сессии открыты — delete-сессия (третья) не создавалась,
+        # старого не трогали.
+        assert connect_mock.await_count == 2
+
+    async def test_cutover_without_key_fails_before_touching_old(self, monkeypatch):
+        # Управляющий ключ воркеру не настроен → `_build_session` поднимает
+        # SSH_MANAGEMENT_KEY_MISSING на сборке старой сессии (как у любой другой
+        # management-операции). Cutover падает ДО любого деструктива — ни одной
+        # SSH-сессии не открыто, старый юзер не тронут.
+        from unittest.mock import AsyncMock
+
+        from src.clients.ssh import SshError
+        from src.services import ssh_client
+
+        get_settings.cache_clear()
+        monkeypatch.setenv("SSH_MANAGEMENT_PRIVATE_KEY_PATH", "")
+        get_settings.cache_clear()
+
+        connect_mock = AsyncMock(side_effect=AssertionError("must not connect"))
+        monkeypatch.setattr(asyncssh, "connect", connect_mock)
+
+        creds = {
+            "host": "10.0.0.5", "ssh_port": 22,
+            "is_managed": True, "management_user": "oldctl",
+        }
+        with pytest.raises(SshError) as ei:
+            await ssh_client.cutover_management_user(
+                creds, "srv_cut3",
+                old_management_user="oldctl",
+                new_management_user="newctl",
+                public_key="ssh-ed25519 AAAAkey",
+                modes={},
+                management_private_key_path=None,
+            )
+        assert ei.value.error_code == "SSH_MANAGEMENT_KEY_MISSING"
+        connect_mock.assert_not_called()
+        get_settings.cache_clear()
+
+
 class TestRotateUsesManagementSession:
     async def test_managed_rotate_connects_as_management_user(
         self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,

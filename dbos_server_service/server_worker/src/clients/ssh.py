@@ -927,6 +927,28 @@ class SshClient:
                 message=f"userdel exit code {rc}",
             )
 
+    async def remove_management_sudoers(self, management_user: str) -> None:
+        """Снести `/etc/sudoers.d/<user>-management` управляющей учётки.
+
+        Парный шаг к `delete_user` на cutover'е: bootstrap кладёт NOPASSWD-правило
+        в отдельный sudoers-drop-in, и после удаления самой учётки осиротевший
+        файл нужно убрать, чтобы он не висел висячей записью. Idempotent: `rm -f`
+        не падает на отсутствующем файле. `management_user` подставляется в путь
+        напрямую — безопасно только потому, что прошёл `_validate_login`.
+        """
+        self._validate_login(management_user)
+        sudoers_path = f"/etc/sudoers.d/{management_user}-management"
+        rc, _out, stderr = await self.run(f"rm -f {sudoers_path}", sudo=True)
+        if rc != 0:
+            raise SshError(
+                error_code="SSH_USERDEL_FAILED",
+                host=self.host,
+                cmd_sanitized=f"rm sudoers <{management_user}>",
+                returncode=rc,
+                stderr=stderr.strip(),
+                message=f"sudoers cleanup exit code {rc}",
+            )
+
     async def detect_management_mode(self) -> str:
         """Определить режим создания управляющей учётки по редакции ОС на боксе.
 

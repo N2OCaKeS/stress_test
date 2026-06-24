@@ -125,12 +125,91 @@ class TestSyncHandler:
         assert second.result == first_result
         assert len(stub_sync) == 2
 
-    async def test_rename_pending_propagated_without_rename(
-        self, make_task, fetch_task, captured_audit, stub_sync,
+    async def test_rename_pending_without_name_change_is_plain_sync(
+        self, make_task, fetch_task, captured_audit, stub_sync, stub_cutover,
     ):
-        # login сменился в конфиге (management_login != management_user сервера),
-        # rename_pending выставлен. Хендлер синкает под ТЕКУЩИМ управляющим
-        # пользователем сервера (dbos), а не под новым — rename не делает.
+        # rename_pending=True, но имя в конфиге совпадает с текущим управляющим
+        # пользователем — переименовывать нечего, идёт обычный sync, cutover не
+        # вызывается.
+        tid = await make_task(
+            task_kind="management_user_sync",
+            target_server_id="srv_sync",
+            payload=_payload(
+                management_user="dbos",
+                management_login="dbos",
+                rename_pending=True,
+            ),
+        )
+        await management_user.management_user_sync.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["rename_pending"] is True
+        assert stub_sync[0]["management_user"] == "dbos"
+        assert len(stub_cutover) == 0
+
+
+@pytest.fixture
+def stub_cutover(monkeypatch):
+    """Заглушка `ssh_client.cutover_management_user` — копит вызовы.
+
+    Возвращает успешный rename с удалённой старой учёткой. SSH-уровень
+    (create под старым → verify нового → userdel старого) покрыт отдельно.
+    """
+    calls: list[dict] = []
+
+    async def fake_cutover(
+        credentials, server_id, *, old_management_user, new_management_user,
+        public_key, modes=None, management_private_key_path=None,
+    ):
+        calls.append({
+            "credentials": dict(credentials),
+            "server_id": server_id,
+            "old": old_management_user,
+            "new": new_management_user,
+            "key_path": management_private_key_path,
+        })
+        return {
+            "renamed": True,
+            "management_user": new_management_user,
+            "management_mode": "astra_smolensk",
+            "old_removed": True,
+        }
+
+    monkeypatch.setattr(
+        "src.tasks.management_user.ssh_client.cutover_management_user", fake_cutover,
+    )
+    return calls
+
+
+@pytest.fixture
+def stub_submit_prepared(monkeypatch):
+    """Заглушка `server_service_client.submit_prepared` — копит вызовы."""
+    calls: list[dict] = []
+
+    async def fake_submit(server_id, management_user, target_dept=None, *, management_mode=None):
+        calls.append({
+            "server_id": server_id,
+            "management_user": management_user,
+            "target_dept": target_dept,
+            "management_mode": management_mode,
+        })
+        return {"ok": True}
+
+    monkeypatch.setattr(
+        "src.tasks.management_user.server_service_client.submit_prepared", fake_submit,
+    )
+    return calls
+
+
+class TestCutoverRename:
+    async def test_cutover_creates_verifies_removes_and_reports_new_user(
+        self, make_task, fetch_task, captured_audit,
+        stub_sync, stub_cutover, stub_submit_prepared,
+    ):
+        # login сменился в конфиге, rename_pending выставлен: cutover заводит
+        # нового, проверяет, удаляет старого; result несёт новое имя; sync не
+        # дёргается; server_service получает новое имя через submit_prepared.
         tid = await make_task(
             task_kind="management_user_sync",
             target_server_id="srv_sync",
@@ -144,6 +223,127 @@ class TestSyncHandler:
 
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
-        assert t.result["rename_pending"] is True
-        # sync идёт под текущим управляющим пользователем сервера, не под new.
-        assert stub_sync[0]["management_user"] == "dbos"
+        assert t.result["management_user"] == "newctl"
+        assert t.result["renamed"] is True
+        assert t.result["old_removed"] is True
+
+        assert len(stub_cutover) == 1
+        assert stub_cutover[0]["old"] == "dbos"
+        assert stub_cutover[0]["new"] == "newctl"
+        # cutover заходит под старым управляющим пользователем.
+        assert stub_cutover[0]["credentials"]["management_user"] == "dbos"
+        # Обычный sync не вызывался — это rename-ветка.
+        assert len(stub_sync) == 0
+        # server_service узнал новое имя.
+        assert len(stub_submit_prepared) == 1
+        assert stub_submit_prepared[0]["management_user"] == "newctl"
+
+    async def test_cutover_already_renamed_is_noop_sync(
+        self, make_task, fetch_task, captured_audit,
+        stub_sync, stub_cutover, stub_submit_prepared,
+    ):
+        # Повторный прогон после успешного rename: server.management_user уже
+        # newctl, config.login=newctl — переименовывать нечего, идёт обычный
+        # идемпотентный sync, cutover/submit_prepared не вызываются.
+        tid = await make_task(
+            task_kind="management_user_sync",
+            target_server_id="srv_sync",
+            payload=_payload(
+                management_user="newctl",
+                management_login="newctl",
+                rename_pending=True,
+            ),
+        )
+        await management_user.management_user_sync.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["management_user"] == "newctl"
+        assert len(stub_cutover) == 0
+        assert len(stub_submit_prepared) == 0
+        assert len(stub_sync) == 1
+        assert stub_sync[0]["management_user"] == "newctl"
+
+    async def test_cutover_verify_failure_keeps_old_and_fails(
+        self, make_task, fetch_task, captured_audit,
+        stub_sync, stub_submit_prepared, monkeypatch,
+    ):
+        # Анти-локаут: вход под новым не подтвердился → cutover поднимает ошибку,
+        # старая учётка НЕ удалена (old_removed не достигается), server_service
+        # о rename не уведомляется, task FAILED.
+        from src.clients.ssh import SshError
+
+        async def fail_cutover(*a, **kw):
+            raise SshError(
+                error_code="SSH_MANAGEMENT_KEY_VERIFY_FAILED",
+                host="10.0.0.5",
+                message="new login did not work",
+            )
+
+        monkeypatch.setattr(
+            "src.tasks.management_user.ssh_client.cutover_management_user",
+            fail_cutover,
+        )
+        tid = await make_task(
+            task_kind="management_user_sync",
+            target_server_id="srv_sync",
+            payload=_payload(
+                management_user="dbos",
+                management_login="newctl",
+                rename_pending=True,
+            ),
+        )
+        await management_user.management_user_sync.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status in (TaskStatus.FAILED, TaskStatus.QUEUED)
+        assert t.status != TaskStatus.SUCCEEDED
+        # server_service о новом имени не уведомлён — rename не завершён.
+        assert len(stub_submit_prepared) == 0
+
+    async def test_cutover_deferred_while_server_busy(
+        self, make_task, fetch_task, captured_audit,
+        stub_cutover, stub_submit_prepared, monkeypatch,
+    ):
+        # Гейт C1: пока на сервере есть другая running-задача, cutover (деструктив)
+        # откладывается обратно в queued, cutover/submit_prepared не дёргаются.
+        import uuid
+
+        from src.db.session import AsyncSessionLocal
+        from src.repositories import task as task_repo
+        from src.tasks import _runner
+
+        async def _noop_retry(*a, **kw):
+            return None
+        monkeypatch.setattr(_runner, "_schedule_retry", _noop_retry)
+
+        other = f"tsk_{uuid.uuid4().hex[:16]}"
+        async with AsyncSessionLocal() as session:
+            await task_repo.create(session, {
+                "id": other,
+                "task_kind": "inventory.sync",
+                "target_server_id": "srv_busy_cut",
+                "payload": {"server_id": "srv_busy_cut"},
+                "status": TaskStatus.RUNNING,
+                "attempt": 1,
+            })
+            await session.commit()
+
+        tid = await make_task(
+            task_kind="management_user_sync",
+            target_server_id="srv_busy_cut",
+            payload=_payload(
+                server_id="srv_busy_cut",
+                management_user="dbos",
+                management_login="newctl",
+                rename_pending=True,
+            ),
+        )
+        await management_user.management_user_sync.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.QUEUED
+        assert len(stub_cutover) == 0
+        assert len(stub_submit_prepared) == 0
+        reasons = [e.get("details", {}).get("reason") for e in captured_audit]
+        assert "destructive_deferred_server_busy" in reasons

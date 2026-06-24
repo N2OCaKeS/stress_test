@@ -519,6 +519,145 @@ async def sync_management_user(
     }
 
 
+async def cutover_management_user(
+    credentials: dict,
+    server_id: str,
+    *,
+    old_management_user: str,
+    new_management_user: str,
+    public_key: str,
+    modes: dict | None = None,
+    management_private_key_path: str | None = None,
+) -> dict:
+    """Переименовать управляющую учётку: завести новую, проверить, снести старую.
+
+    Cutover-переименование (`management_user_sync` при `rename_pending`, когда
+    имя сменилось). Подготовленным (старым) управляющим пользователем заводим
+    новую учётку, после подтверждённого входа под новой — удаляем старую со
+    всеми данными. Шаги:
+
+    1. Под СТАРЫМ управляющим пользователем (key-сессия, sudo NOPASSWD)
+       идемпотентно заводим НОВУЮ учётку `new_management_user`: useradd + sudo
+       NOPASSWD + management authorized_key + группы и extra_create_commands
+       нужного режима. Переиспользуем `SshClient.bootstrap_management_user`
+       поверх ключевой сессии (sshd-харден не трогаем — он уже сделан на
+       prepare). Если новая уже заведена и рабочая — bootstrap вырождается в
+       no-op (idempotent).
+    2. Анти-локаут: открываем независимую key-сессию УЖЕ под новой учёткой и
+       проверяем, что вход по management-ключу работает и sudo доступен. Если
+       проверка не прошла — старую НЕ трогаем, поднимаем ошибку; сервер
+       остаётся с рабочим старым управляющим пользователем.
+    3. С НОВОЙ key-сессии (не из-под удаляемого) сносим старую учётку
+       `userdel -r` со всеми данными.
+
+    `management_private_key_path` нужен для анти-локаут-проверки нового входа;
+    без него (dev/test без mounted secret) шаг проверки и удаление старой
+    учётки пропускаются — сервер остаётся на старом юзере до повторного прогона
+    с настроенным ключом.
+
+    Возврат: `{renamed: True, management_user: <новый>, management_mode,
+    old_removed: bool}`. Ошибки — `SshError` (в т.ч. `SSH_MANAGEMENT_KEY_MISSING`,
+    если управляющий ключ воркеру не настроен — падаем на сборке старой сессии
+    ДО любого деструктива, старый юзер не тронут).
+    """
+    # Старая management-сессия по ключу: под ней заводим новую учётку. Если
+    # управляющий ключ воркеру не настроен, `_build_session` поднимет
+    # `SSH_MANAGEMENT_KEY_MISSING` прямо здесь — как и у любой другой
+    # management-операции; cutover до деструктива не доходит.
+    old_creds = dict(credentials)
+    old_creds["is_managed"] = True
+    old_creds["management_user"] = old_management_user
+    host = _extract_host(old_creds, server_id)
+    logger.info(
+        "ssh management user cutover on %s: creating new management user",
+        host,
+    )
+    async with _build_session(old_creds, server_id) as ssh:
+        mode = await ssh.detect_management_mode()
+        mode_cfg = (modes or {}).get(mode) or {}
+        await ssh.bootstrap_management_user(
+            new_management_user, public_key,
+            groups=mode_cfg.get("groups") or [],
+            extra_create_commands=mode_cfg.get("extra_create_commands") or [],
+            management_private_key_path=None,
+            harden_sshd=False,
+        )
+
+    # Анти-локаут под новой учёткой: независимая key-сессия + дешёвый sudo.
+    await _verify_new_management_login(
+        host, _extract_port(old_creds),
+        management_user=new_management_user,
+        private_key_path=management_private_key_path,
+    )
+
+    # Удаление старой учётки — с НОВОЙ key-сессии (нельзя сносить юзера, под
+    # которым залогинен). userdel -r убирает home и mail spool.
+    new_creds = dict(credentials)
+    new_creds["is_managed"] = True
+    new_creds["management_user"] = new_management_user
+    logger.info(
+        "ssh management user cutover on %s: removing old management user",
+        host,
+    )
+    async with _build_session(new_creds, server_id) as ssh:
+        await ssh.delete_user(old_management_user, remove_home=True)
+        await ssh.remove_management_sudoers(old_management_user)
+
+    return {
+        "renamed": True,
+        "management_user": new_management_user,
+        "management_mode": mode,
+        "old_removed": True,
+    }
+
+
+async def _verify_new_management_login(
+    host: str,
+    port: int,
+    *,
+    management_user: str,
+    private_key_path: str,
+) -> None:
+    """Подтвердить вход под новой управляющей учёткой по ключу + sudo.
+
+    Анти-локаут перед сносом старой учётки: открываем независимую key-сессию
+    под новым пользователем и проверяем дешёвый `sudo -n true`. Любой провал —
+    `SshError(SSH_MANAGEMENT_KEY_VERIFY_FAILED)`; caller тогда не удаляет
+    старую учётку, и сервер остаётся управляемым под прежним пользователем.
+    """
+    try:
+        async with SshClient(
+            host=host,
+            username=management_user,
+            password=None,
+            port=port,
+            client_keys=[private_key_path],
+        ) as verify_ssh:
+            rc, _out, _err = await verify_ssh.run("true", sudo=True)
+    except SshError as exc:
+        raise SshError(
+            error_code="SSH_MANAGEMENT_KEY_VERIFY_FAILED",
+            host=host,
+            cmd_sanitized=f"verify new management login <{management_user}>",
+            message=(
+                "key-based login as the new management user did not work; "
+                "refusing to remove the old management user (anti-lockout)"
+            ),
+            details={"underlying_error_code": exc.error_code},
+        ) from exc
+    if rc != 0:
+        raise SshError(
+            error_code="SSH_MANAGEMENT_KEY_VERIFY_FAILED",
+            host=host,
+            cmd_sanitized=f"verify new management login <{management_user}>",
+            returncode=rc,
+            message=(
+                "new management user session could not sudo; refusing to "
+                "remove the old management user (anti-lockout)"
+            ),
+        )
+
+
 def _parse_size_to_gb(size_str: str) -> int:
     """Сконвертировать `lsblk SIZE` ("500G", "1.8T", "256M") в гигабайты.
 
@@ -851,6 +990,7 @@ __all__ = [
     "modify_user",
     "delete_user",
     "bootstrap_management_user",
+    "cutover_management_user",
     "inventory_facts_to_payload",
     "os_users_facts_to_payload",
     "SshError",

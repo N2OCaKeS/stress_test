@@ -78,6 +78,8 @@ SERVICE_EVENTS = [
     {"action": "encryption.admin_retire", "description": "account_admin убрал старую версию мастер-ключа из keystore через UI (admin /admin/encryption/retire) после полной ре-шифрации", "default_severity": "CRITICAL"},
     # Конфиг управляющей учётки — платформенный singleton под account_admin.
     {"action": "management_user_config.update", "description": "account_admin обновил конфиг управляющей учётки (имя управляющего пользователя + пер-режимные группы/bootstrap-команды через PUT /management-user-config); смена login помечается login_changed для будущего cutover-фан-аута", "default_severity": "WARNING"},
+    {"action": "management_user_config.sync", "description": "Недеструктивный re-bootstrap управляющей учётки (management_user_sync) поставлен на подготовленный сервер high-priority при изменении конфига управляющей учётки (фан-аут PUT /management-user-config)", "default_severity": "WARNING"},
+    {"action": "management_user_sync_fanout.truncated", "description": "Фан-аут management_user_sync превысил MANAGEMENT_USER_SYNC_FANOUT_MAX — хвост подготовленных серверов вырезан, выровняется на следующем PUT/prepare", "default_severity": "WARNING"},
     # Server accounts — CRUD (user-facing)
     {"action": "server_account.create", "description": "Server account created", "default_severity": "CRITICAL"},
     {"action": "server_account.view", "description": "Server account viewed", "default_severity": "INFO"},

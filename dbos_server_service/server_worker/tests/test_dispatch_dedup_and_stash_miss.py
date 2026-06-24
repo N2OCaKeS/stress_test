@@ -42,12 +42,14 @@ pytestmark = pytest.mark.asyncio
 class _Row:
     """In-memory имитация DispatchOutbox-row'и."""
 
-    def __init__(self, *, task_id: str, task_kind: str, attempts: int = 0):
+    def __init__(self, *, task_id: str, task_kind: str, attempts: int = 0,
+                 priority: int = 0):
         self.id = uuid.uuid4()
         self.task_id = task_id
         self.task_kind = task_kind
         self.payload = {}
         self.attempts = attempts
+        self.priority = priority
         self.last_error = None
         self.next_retry_at = None
         self.dispatched_at = None

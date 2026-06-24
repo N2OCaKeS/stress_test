@@ -28,6 +28,39 @@ async def list_in_departments(
     return list((await db.execute(stmt)).scalars())
 
 
+async def list_managed(db: AsyncSession, limit: int) -> list[Server]:
+    """SELECT всех подготовленных серверов (`is_managed=true`), capped по limit.
+
+    Платформенный фан-аут синхронизации управляющей учётки бьёт по всем
+    серверам платформы независимо от отдела — конфиг управляющей учётки это
+    глобальный singleton. Списанные сервера исключаем: worker-операции они не
+    принимают. Порядок `created_at` — детерминированный срез при срабатывании
+    cap'а (старейшие подготовленные первыми).
+    """
+    from src.core.constants import ServerStatus
+
+    stmt = (
+        select(Server)
+        .where(Server.is_managed.is_(True))
+        .where(Server.status != ServerStatus.DECOMMISSIONED)
+        .order_by(Server.created_at)
+        .limit(limit)
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def count_managed(db: AsyncSession) -> int:
+    """COUNT подготовленных не-списанных серверов — для truncated-аудита."""
+    from src.core.constants import ServerStatus
+
+    stmt = (
+        select(func.count(Server.id))
+        .where(Server.is_managed.is_(True))
+        .where(Server.status != ServerStatus.DECOMMISSIONED)
+    )
+    return int((await db.execute(stmt)).scalar_one())
+
+
 async def count_in_departments(
     db: AsyncSession,
     department_ids: list[str] | None,

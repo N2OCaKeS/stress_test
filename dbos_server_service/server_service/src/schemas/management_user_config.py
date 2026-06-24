@@ -131,6 +131,27 @@ class ManagementUserConfigUpdate(BaseModel):
         return _validate_login(value)
 
 
+class ManagementUserSyncFanout(BaseModel):
+    """Сводка high-priority фан-аута синхронизации на подготовленные серверы."""
+
+    dispatched: list[dict] = Field(
+        default_factory=list,
+        description="Поставленные задачи: `{server_id, task_id}`.",
+    )
+    skipped: list[dict] = Field(
+        default_factory=list,
+        description="Пропущенные серверы: `{server_id, reason}`.",
+    )
+    truncated: int = Field(
+        default=0,
+        description="Сколько серверов отрезано cap'ом фан-аута (хвост).",
+    )
+    rename_pending: bool = Field(
+        default=False,
+        description="Дублирует флаг ответа: rename управляющей учётки отложен.",
+    )
+
+
 class ManagementUserConfigResponse(BaseModel):
     """Текущий конфиг управляющей учётки со всеми режимами."""
 
@@ -142,11 +163,36 @@ class ManagementUserConfigResponse(BaseModel):
         default=False,
         description=(
             "True, если этот ответ — результат PUT, сменившего `login`. "
-            "Сигнал для будущей фазы: имя управляющей учётки изменилось и "
-            "требует cutover-фан-аута на серверах. Сам фан-аут здесь не делается."
+            "Сам rename/cutover управляющей учётки на серверах здесь не "
+            "выполняется (см. `rename_pending`) — это отдельная фаза."
         ),
     )
     previous_login: str | None = Field(
         default=None,
         description="Прежнее имя управляющей учётки до PUT (только когда login_changed=True).",
+    )
+    modes_changed: bool = Field(
+        default=False,
+        description=(
+            "True, если PUT изменил пер-режимные настройки (`groups`/"
+            "`extra_create_commands`) хотя бы одного режима. Триггер фан-аута "
+            "недеструктивной синхронизации (`management_user_sync`) на все "
+            "подготовленные серверы high-priority."
+        ),
+    )
+    rename_pending: bool = Field(
+        default=False,
+        description=(
+            "True, если `login` сменился и требуется rename/cutover управляющей "
+            "учётки на серверах. В текущей фазе rename НЕ выполняется — флаг "
+            "сигнализирует, что это сделает отдельный хендлер (фаза C). Синхро "
+            "групп/команд/ключа уже уехала фан-аутом, rename — нет."
+        ),
+    )
+    sync_fanout: ManagementUserSyncFanout | None = Field(
+        default=None,
+        description=(
+            "Сводка фан-аута `management_user_sync` (если PUT его запустил). "
+            "None — изменений, требующих синка, не было."
+        ),
     )

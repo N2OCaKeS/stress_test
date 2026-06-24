@@ -26,17 +26,22 @@ async def insert(
     task_id: str,
     task_kind: str,
     payload: dict[str, Any],
+    priority: int = 0,
 ) -> DispatchOutbox:
     """INSERT новой outbox-row в статусе pending (`dispatched_at IS NULL`).
 
     commit — на caller'е: outbox-row должен лечь в ту же транзакцию, что и
     остальные доменные изменения caller'а (например server.status update),
     иначе теряется смысл outbox'а как atomic write-ahead-log.
+
+    `priority` — зеркало `tasks.priority`. Publisher в воркере по нему решает,
+    в какую Redis-очередь публиковать (high обгоняет normal). Дефолт 0.
     """
     row = DispatchOutbox(
         task_id=task_id,
         task_kind=task_kind,
         payload=payload,
+        priority=priority,
     )
     db.add(row)
     await db.flush()
@@ -51,7 +56,8 @@ async def list_pending(
 ) -> list[DispatchOutbox]:
     """Прочитать pending outbox-rows для poller'а.
 
-    Тянем `dispatched_at IS NULL`, упорядочивая по `created_at` (FIFO).
+    Тянем `dispatched_at IS NULL`, упорядочивая по `priority DESC, created_at`
+    (high обгоняет normal, при равенстве — FIFO по времени постановки).
     Backoff-логика отдельно: `next_retry_at > now()` отсекаем здесь, чтобы
     poller не дёргал свежие падения в каждом тике.
 
@@ -67,7 +73,7 @@ async def list_pending(
             (DispatchOutbox.next_retry_at.is_(None))
             | (DispatchOutbox.next_retry_at <= func.now())
         )
-        .order_by(DispatchOutbox.created_at)
+        .order_by(DispatchOutbox.priority.desc(), DispatchOutbox.created_at)
         .limit(limit)
     )
     if with_for_update_skip_locked:

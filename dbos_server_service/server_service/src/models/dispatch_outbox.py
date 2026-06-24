@@ -47,6 +47,13 @@ class DispatchOutbox(Base):
     task_id: Mapped[str] = mapped_column(String(64), nullable=False)
     task_kind: Mapped[str] = mapped_column(String(128), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # Приоритет публикации — зеркало `tasks.priority` (0 normal, 100 high).
+    # Publisher читает pending'и `ORDER BY priority DESC, created_at ASC` и
+    # шлёт high-priority строки в отдельную Redis-очередь, которую воркер
+    # дренирует раньше нормальной. server_default 0 для legacy-row.
+    priority: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

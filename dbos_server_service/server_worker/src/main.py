@@ -33,7 +33,9 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from taskiq import TaskiqEvents, TaskiqScheduler, TaskiqState
 from taskiq.schedule_sources import LabelScheduleSource
-from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
+from taskiq_redis import RedisAsyncResultBackend
+
+from src.core.priority_broker import PriorityListQueueBroker
 
 from src.core.config import get_settings
 from src.core.constants import TaskStatus
@@ -74,7 +76,11 @@ configure_logging("server_worker", level=_settings.worker_log_level)
 
 logger = logging.getLogger(__name__)
 
-broker = ListQueueBroker(url=_settings.redis_url).with_result_backend(
+broker = PriorityListQueueBroker(
+    url=_settings.redis_url,
+    queue_name=_settings.taskiq_queue_name,
+    high_queue_name=_settings.taskiq_high_priority_queue_name,
+).with_result_backend(
     RedisAsyncResultBackend(redis_url=_settings.redis_url, result_ex_time=3600)
 )
 

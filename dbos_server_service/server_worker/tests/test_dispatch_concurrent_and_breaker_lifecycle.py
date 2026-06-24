@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS dispatch_outbox (
     task_id TEXT NOT NULL,
     task_kind TEXT NOT NULL,
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    priority INT NOT NULL DEFAULT 0,
     dispatched_at TIMESTAMPTZ,
     attempts INT NOT NULL DEFAULT 0,
     last_error TEXT,
@@ -49,7 +50,7 @@ CREATE TABLE IF NOT EXISTS dispatch_outbox (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_dispatch_outbox_pending
-    ON dispatch_outbox (created_at)
+    ON dispatch_outbox (priority DESC, created_at)
     WHERE dispatched_at IS NULL;
 """
 
@@ -147,17 +148,33 @@ class TestDispatchOutboxConcurrentReplicas:
         original_batch = settings.dispatch_outbox_batch_size
         monkeypatch.setattr(settings, "dispatch_outbox_batch_size", N)
 
-        # Подменяем Redis-redis_pool на noop-fake — SETNX/DEL не блокируют
-        # тест, но контракт «dedup_key выставлен → kiq runs» не нарушаем.
-        class _NoopRedis:
-            async def set(self, *a, **kw):
-                return True
+        # In-memory Redis с реальной SET-NX-семантикой — это и есть
+        # production-защита от double-kiq: ключ `dbos:dispatch_dedup:<row.id>`
+        # выставляется ДО kiq, и если другая реплика уже его выставила (тот же
+        # row.id), повторный kiq пропускается. Без честного SET-NX тест
+        # полагался бы только на гонку SKIP LOCKED + per-row commit, которая
+        # таймингозависима (после commit'а первой row'и locks отпускаются и
+        # параллельный SELECT может зацепить ещё-не-закоммиченные соседние
+        # row'ы). Дедуп закрывает именно это окно.
+        class _DedupRedis:
+            def __init__(self):
+                self._store: dict = {}
+                self._lock = asyncio.Lock()
 
-            async def delete(self, *a, **kw):
-                return 1
+            async def set(self, key, value, *, ex=None, nx=False, **kw):
+                async with self._lock:
+                    if nx and key in self._store:
+                        return None
+                    self._store[key] = value
+                    return True
 
+            async def delete(self, key, *a, **kw):
+                async with self._lock:
+                    return 1 if self._store.pop(key, None) is not None else 0
+
+        _shared_dedup = _DedupRedis()
         monkeypatch.setattr(
-            outbox_poller.redis_pool, "get_redis", lambda: _NoopRedis(),
+            outbox_poller.redis_pool, "get_redis", lambda: _shared_dedup,
         )
 
         results = await asyncio.gather(

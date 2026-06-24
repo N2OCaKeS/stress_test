@@ -106,6 +106,23 @@ class Settings(BaseSettings):
             "в той же сети может RPUSH-нуть payload в очередь воркера."
         ),
     )
+    taskiq_queue_name: str = Field(
+        default="taskiq",
+        description=(
+            "Имя normal-очереди taskiq (Redis-список). Воркер дренирует её "
+            "после high-priority-очереди."
+        ),
+    )
+    taskiq_high_priority_queue_name: str = Field(
+        default="taskiq_high",
+        description=(
+            "Имя high-priority-очереди taskiq (отдельный Redis-список). "
+            "dispatch_outbox publisher кладёт сюда задачи с priority >= "
+            "high-порога; воркер дренирует её ПЕРЕД normal-очередью через "
+            "`BRPOP high normal` — один атомарный блокирующий pop, который "
+            "забирает high первым, если в нём что-то есть."
+        ),
+    )
     redis_stash_encryption_key: str = Field(
         default="",
         description=(

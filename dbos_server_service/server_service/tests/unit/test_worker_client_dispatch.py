@@ -42,9 +42,10 @@ def patched_internals(monkeypatch):
     async def fake_delete(task_id_to_delete: str) -> None:
         bag.deleted.append(task_id_to_delete)
 
-    async def fake_outbox_insert(_db, *, task_id, task_kind, payload):
+    async def fake_outbox_insert(_db, *, task_id, task_kind, payload, priority=0):
         bag.outbox_inserted.append(
-            {"task_id": task_id, "task_kind": task_kind, "payload": payload}
+            {"task_id": task_id, "task_kind": task_kind, "payload": payload,
+             "priority": priority}
         )
         if bag.outbox_insert_exc is not None:
             raise bag.outbox_insert_exc

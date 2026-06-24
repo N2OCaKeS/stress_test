@@ -524,6 +524,21 @@ class Settings(BaseSettings):
             "Дефолт симметричен `mass_rotation_max_servers`."
         ),
     )
+    management_user_sync_fanout_max: int = Field(
+        default=500,
+        ge=1,
+        alias="MANAGEMENT_USER_SYNC_FANOUT_MAX",
+        description=(
+            "Cap на размер фан-аута `management_user_sync` при PUT "
+            "`/management-user-config`. Конфиг управляющей учётки — "
+            "платформенный singleton, поэтому изменение бьёт high-priority "
+            "задачей по всем подготовленным (`is_managed`) серверам платформы. "
+            "При превышении cap'а режем хвост и эмитим "
+            "`management_user_sync_fanout.truncated`; недобитые серверы "
+            "выровняются следующим PUT / prepare. Дефолт крупнее обычных "
+            "fan-out'ов — учётка одна на всю платформу."
+        ),
+    )
     installed_packages_bulk_max_servers: int = Field(
         default=50,
         ge=1,

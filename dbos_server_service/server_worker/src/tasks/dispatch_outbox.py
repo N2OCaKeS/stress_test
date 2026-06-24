@@ -132,12 +132,24 @@ def _compute_next_retry_at(attempts: int) -> datetime:
     return datetime.now(timezone.utc) + timedelta(seconds=delay)
 
 
+# Порог priority, с которого outbox-row уезжает в high-priority taskiq-очередь.
+# Совпадает с `worker_client.TASK_PRIORITY_HIGH` в server_service (=100). Ниже
+# порога — normal-очередь. Держим как локальную константу: worker не импортирует
+# server_service. При смене уровней синхронизировать вручную.
+_HIGH_PRIORITY_THRESHOLD = 100
+
+
 def _select_pending_stmt(limit: int):
     """SELECT неотправленных outbox-row'ов с учётом backoff'а.
 
     `dispatched_at IS NULL` — row ещё не доставлена.
     `next_retry_at <= now()` OR NULL — backoff истёк (или ещё не выставлен).
     `FOR UPDATE SKIP LOCKED` — multi-replica защита от двойной публикации.
+
+    Порядок `priority DESC, created_at ASC` — high-priority строки публикуются
+    в брокер раньше normal'а (при равном priority — FIFO по времени). В паре с
+    отдельной high-очередью брокера это даёт реальный обгон: high и публикуется
+    первым, и попадает в очередь, которую воркер дренирует первой.
     """
     now = datetime.now(timezone.utc)
     return (
@@ -149,7 +161,7 @@ def _select_pending_stmt(limit: int):
                 DispatchOutbox.next_retry_at <= now,
             ),
         )
-        .order_by(DispatchOutbox.created_at.asc())
+        .order_by(DispatchOutbox.priority.desc(), DispatchOutbox.created_at.asc())
         .limit(limit)
         .with_for_update(skip_locked=True)
     )
@@ -325,7 +337,16 @@ async def poll_once() -> None:
                     continue
 
                 try:
-                    await task.kicker().kiq(row.task_id)
+                    kicker = task.kicker()
+                    # High-priority outbox-row уезжает в отдельную Redis-очередь
+                    # (label `queue_name`), которую воркер дренирует первой.
+                    # PriorityListQueueBroker.kick читает этот label. Normal
+                    # идёт по дефолту (label не ставим) — доставка не меняется.
+                    if (row.priority or 0) >= _HIGH_PRIORITY_THRESHOLD:
+                        kicker = kicker.with_labels(
+                            queue_name=settings.taskiq_high_priority_queue_name,
+                        )
+                    await kicker.kiq(row.task_id)
                 except Exception as exc:  # noqa: BLE001 — publisher не должен падать
                     # kiq не прошёл — снимаем дедуп-ключ, чтобы следующий
                     # poll-тик мог нормально kiq'нуть заново. Best-effort:

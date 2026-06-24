@@ -27,7 +27,7 @@ def captured_insert(monkeypatch):
     async def fake_insert(**kwargs: Any) -> None:
         inserted.append(kwargs)
 
-    async def fake_outbox_insert(_db, *, task_id, task_kind, payload):
+    async def fake_outbox_insert(_db, *, task_id, task_kind, payload, priority=0):
         return None
 
     monkeypatch.setattr(worker_client, "_insert_task_row", fake_insert)

@@ -42,12 +42,14 @@ class _Row:
         task_kind: str,
         payload: dict | None = None,
         attempts: int = 0,
+        priority: int = 0,
     ) -> None:
         self.id = uuid.uuid4()
         self.task_id = task_id
         self.task_kind = task_kind
         self.payload = payload or {}
         self.attempts = attempts
+        self.priority = priority
         self.last_error: str | None = None
         self.next_retry_at: datetime | None = None
         self.dispatched_at: datetime | None = None

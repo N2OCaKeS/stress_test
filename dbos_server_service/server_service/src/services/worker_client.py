@@ -304,6 +304,10 @@ def _build_broker() -> ListQueueBroker:
     async def _server_prepare(task_id: str) -> None:  # noqa: ARG001
         return None
 
+    @broker.task("management_user_sync")
+    async def _management_user_sync(task_id: str) -> None:  # noqa: ARG001
+        return None
+
     _worker_broker = broker
     return broker
 
@@ -1118,6 +1122,7 @@ async def _dispatch_task_inner(
             task_id=new_id,
             task_kind=task_kind,
             payload=payload,
+            priority=priority,
         )
     except Exception as exc:  # noqa: BLE001
         # Outbox не записался — worker-row уже закоммичен (cross-DB), его не

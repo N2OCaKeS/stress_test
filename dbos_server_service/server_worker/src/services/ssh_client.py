@@ -470,6 +470,55 @@ async def bootstrap_management_user(
     }
 
 
+async def sync_management_user(
+    credentials: dict,
+    server_id: str,
+    *,
+    management_user: str,
+    public_key: str,
+    modes: dict | None = None,
+) -> dict:
+    """Недеструктивно досинхронизировать управляющую учётку на managed-сервере.
+
+    Вызывается из `management_user_sync` после изменения конфига управляющей
+    учётки. Сервер уже подготовлен (`is_managed`), поэтому заходим под
+    управляющим пользователем по ключу (key-session), детектим редакцию ОС и
+    повторно прогоняем тот же идемпотентный bootstrap: досинхрон групп +
+    extra_create_commands нужного режима + ключа. Деструктива нет — useradd на
+    существующем юзере вырождается в usermod групп, ключ доклеивается без
+    дублей.
+
+    `harden_sshd` не делаем: sshd уже захардён на prepare, повторный хардинг и
+    анти-локаут-проверка ключом тут лишние (мы уже зашли по этому ключу).
+
+    Возврат симметричен `bootstrap_management_user`:
+    `{synced: True, management_user, management_mode}`. Ошибки — `SshError`.
+    """
+    # Жёстко форсируем management key-session: сервер managed, входим под
+    # управляющим пользователем по ключу. credentials собирает caller
+    # (handler) с `is_managed=True` + host/port.
+    creds = dict(credentials)
+    creds["is_managed"] = True
+    creds["management_user"] = management_user
+    host = _extract_host(creds, server_id)
+    logger.info("ssh management user sync on %s as %s", host, management_user)
+    async with _build_session(creds, server_id) as ssh:
+        mode = await ssh.detect_management_mode()
+        mode_cfg = (modes or {}).get(mode) or {}
+        await ssh.bootstrap_management_user(
+            management_user, public_key,
+            groups=mode_cfg.get("groups") or [],
+            extra_create_commands=mode_cfg.get("extra_create_commands") or [],
+            management_private_key_path=None,
+            harden_sshd=False,
+        )
+    return {
+        "synced": True,
+        "management_user": management_user,
+        "management_mode": mode,
+    }
+
+
 def _parse_size_to_gb(size_str: str) -> int:
     """Сконвертировать `lsblk SIZE` ("500G", "1.8T", "256M") в гигабайты.
 

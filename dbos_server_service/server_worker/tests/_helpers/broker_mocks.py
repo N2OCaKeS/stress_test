@@ -34,10 +34,22 @@ def make_broker(
     kiq = AsyncMock(side_effect=kiq_exc) if kiq_exc else AsyncMock()
     kicker = MagicMock()
     kicker.kiq = kiq
+    # High-priority путь publisher'а зовёт `kicker().with_labels(queue_name=...)`
+    # перед `.kiq(...)`. Возвращаем тот же kicker (с тем же `kiq`), а
+    # переданные labels копим в `_with_labels_calls` — тесты проверяют
+    # маршрутизацию high→high-очередь, не теряя записи о вызове kiq.
+    with_labels_calls: list[dict] = []
+
+    def _with_labels(**labels):
+        with_labels_calls.append(labels)
+        return kicker
+
+    kicker.with_labels = MagicMock(side_effect=_with_labels)
     task = MagicMock()
     task.kicker = MagicMock(return_value=kicker)
     broker.find_task = MagicMock(return_value=task)
     broker._kiq = kiq
+    broker._with_labels_calls = with_labels_calls
     return broker
 
 

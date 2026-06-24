@@ -3,26 +3,34 @@
 Одна строка (`SINGLETON_ID`) на всю платформу. Чтение всегда отдаёт полный
 конфиг по всем четырём режимам: отсутствующие в БД режимы дополняются
 дефолтами (пустые группы/команды). PUT заменяет/обновляет строку, детектит
-смену `login` и возвращает её наверх флагом — фан-аут rename на сервера здесь
-НЕ выполняется (это отдельная фаза).
+смену `login`/`modes` и возвращает её наверх флагами.
+
+При изменении `modes`/`login` PUT-эндпоинт фан-аутит `management_user_sync`
+high-priority задачей на все подготовленные (`is_managed`) серверы — это
+re-bootstrap управляющей учётки (группы + extra_create_commands + ключ),
+идемпотентный и НЕдеструктивный. Смена `login` сам rename/cutover НЕ
+выполняет — только помечается `rename_pending` (фаза C, отдельный хендлер).
 """
 
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.constants import ManagementMode
+from src.core.exceptions import ConflictError, ServiceUnavailableError
 from src.models.management_user_config import (
     DEFAULT_LOGIN,
     SINGLETON_ID,
     ManagementUserConfig,
 )
+from src.repositories import server as server_repo
 from src.schemas.management_user_config import (
     ManagementModeConfig,
     ManagementUserConfigResponse,
     ManagementUserConfigUpdate,
 )
-from src.services import audit_service
+from src.services import audit_service, worker_client
 
 logger = logging.getLogger(__name__)
 
@@ -81,12 +89,20 @@ async def update_config(
         row.login = payload.login
         login_changed = True
 
+    # Сверка по-режимно: считаем `modes` изменёнными, только если присланный
+    # режим реально отличается от хранимого. PUT с теми же значениями не должен
+    # запускать фан-аут на все серверы (идемпотентный no-op запроса).
+    modes_changed = False
     if payload.modes is not None:
         merged = dict(row.modes or {})
         for mode, cfg in payload.modes.items():
-            merged[mode.value] = cfg.model_dump(mode="json")
-        row.modes = merged
-        # JSONB-словарь переприсвоен целиком — SQLAlchemy отследит изменение.
+            new_value = cfg.model_dump(mode="json")
+            if merged.get(mode.value) != new_value:
+                modes_changed = True
+            merged[mode.value] = new_value
+        if modes_changed:
+            row.modes = merged
+            # JSONB-словарь переприсвоен целиком — SQLAlchemy отследит изменение.
 
     await db.commit()
     await db.refresh(row)
@@ -99,6 +115,7 @@ async def update_config(
         allowed=True,
         details={
             "login_changed": login_changed,
+            "modes_changed": modes_changed,
             "previous_login": previous_login if login_changed else None,
             "new_login": row.login,
             "modes_updated": (
@@ -112,4 +129,136 @@ async def update_config(
         modes=_modes_from_row(row.modes or {}),
         login_changed=login_changed,
         previous_login=previous_login if login_changed else None,
+        modes_changed=modes_changed,
     )
+
+
+def _sync_payload(server, config: ManagementUserConfigResponse) -> dict:
+    """Payload одной `management_user_sync` задачи на конкретный сервер.
+
+    Несёт текущий конфиг (login + пер-режимные группы/команды) и SSH-адресацию
+    сервера. Воркер на боксе детектит редакцию и выбирает группы/команды нужного
+    режима — ровно как `server.prepare` (re-bootstrap). Ключ управляющей учётки
+    воркер берёт из своего конфига, в payload его не кладём.
+    """
+    management_modes = {
+        mode.value: cfg.model_dump(mode="json")
+        for mode, cfg in config.modes.items()
+    }
+    return {
+        "server_id": server.id,
+        "target_department_id": server.department_id,
+        "host": server.hostname,
+        "ssh_port": server.ssh_port,
+        "is_managed": server.is_managed,
+        "management_user": server.management_user,
+        "management_login": config.login,
+        "management_modes": management_modes,
+    }
+
+
+async def fanout_management_user_sync(
+    db: AsyncSession,
+    *,
+    config: ManagementUserConfigResponse,
+    actor_id: str | None,
+    request_id: str | None = None,
+    rename_pending: bool = False,
+) -> dict:
+    """Разослать `management_user_sync` high-priority на все managed-серверы.
+
+    Зовётся PUT-эндпоинтом после успешного `update_config`, если изменились
+    `modes` и/или `login`. Конфиг управляющей учётки — платформенный singleton,
+    поэтому фан-аут бьёт по всем подготовленным (`is_managed`) серверам
+    платформы независимо от отдела. Каждая задача — НЕдеструктивный re-bootstrap
+    (группы + extra_create_commands + ключ, идемпотентно), с
+    `priority=TASK_PRIORITY_HIGH`, чтобы реально обогнать normal-очередь.
+
+    Cap аналогичен `fanout_update_on_host`: при превышении
+    `management_user_sync_fanout_max` режем хвост и эмитим truncated-audit —
+    отрезанные серверы выровняются следующим PUT/prepare.
+
+    Best-effort: недоступность worker'а / idempotent-conflict на отдельном
+    сервере уходит в `skipped` и не валит остальные диспатчи. `rename_pending`
+    кладём в payload каждой задачи и в сводку — сам rename здесь НЕ делается
+    (фаза C); хендлер синхронизирует только группы/команды/ключ.
+
+    Возвращает `{dispatched, skipped, truncated, rename_pending}`.
+    """
+    cap = get_settings().management_user_sync_fanout_max
+    servers = await server_repo.list_managed(db, limit=cap)
+    truncated = 0
+    total_managed = await server_repo.count_managed(db)
+    if total_managed > cap:
+        truncated = total_managed - cap
+        audit_service.emit(
+            "management_user_sync_fanout.truncated",
+            target_id=SINGLETON_ID,
+            target_type="management_user_config",
+            status="warning",
+            allowed=True,
+            details={
+                "total_managed": total_managed,
+                "cap": cap,
+                "truncated_count": truncated,
+            },
+        )
+
+    audit_action = "management_user_config.sync"
+    dispatched: list[dict] = []
+    skipped: list[dict] = []
+    for server in servers:
+        payload = _sync_payload(server, config)
+        payload["rename_pending"] = rename_pending
+        try:
+            task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+                db=db,
+                task_kind="management_user_sync",
+                target_server_id=server.id,
+                payload=payload,
+                created_by=actor_id,
+                request_id=request_id,
+                priority=worker_client.TASK_PRIORITY_HIGH,
+            )
+            await db.commit()
+        except (ConflictError, ServiceUnavailableError) as exc:
+            reason = (
+                "idempotent_conflict"
+                if isinstance(exc, ConflictError)
+                else "worker_unreachable"
+            )
+            audit_service.emit(
+                audit_action, target_id=server.id, target_type="server",
+                status="failure", allowed=True,
+                details={
+                    "reason": reason,
+                    "task_kind": "management_user_sync",
+                    "server_id": server.id,
+                    "source": "config_fanout",
+                    "department_id": server.department_id,
+                },
+            )
+            skipped.append({"server_id": server.id, "reason": reason})
+            continue
+        audit_service.emit(
+            audit_action, target_id=server.id, target_type="server",
+            status="success", allowed=True,
+            details={
+                "task_id": task_id,
+                "task_kind": "management_user_sync",
+                "server_id": server.id,
+                "source": "config_fanout",
+                "management_login": config.login,
+                "rename_pending": rename_pending,
+                "department_id": server.department_id,
+                "idempotent_hit": idempotent_hit,
+            },
+        )
+        dispatched.append({"server_id": server.id, "task_id": task_id})
+
+    return {
+        "dispatched": dispatched,
+        "skipped": skipped,
+        "truncated": truncated,
+        "rename_pending": rename_pending,
+    }

@@ -28,9 +28,10 @@ def stub_dispatch_internals(monkeypatch):
     async def fake_delete(_id):
         pass
 
-    async def fake_outbox_insert(_db, *, task_id, task_kind, payload):
+    async def fake_outbox_insert(_db, *, task_id, task_kind, payload, priority=0):
         outbox_inserted.append(
-            {"task_id": task_id, "task_kind": task_kind, "payload": payload}
+            {"task_id": task_id, "task_kind": task_kind, "payload": payload,
+             "priority": priority}
         )
 
     monkeypatch.setattr(worker_client, "_insert_task_row", fake_insert)

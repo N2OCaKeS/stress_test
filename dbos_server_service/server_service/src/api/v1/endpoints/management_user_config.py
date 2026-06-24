@@ -8,7 +8,7 @@ bootstrap'а по режимам ОС), а не бизнес-данные отд
 `require_account_admin` (`AccountAdminIdentity`).
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.dependencies.auth import AccountAdminIdentity
@@ -16,6 +16,7 @@ from src.dependencies.db import get_db
 from src.schemas.management_user_config import (
     ManagementUserConfigResponse,
     ManagementUserConfigUpdate,
+    ManagementUserSyncFanout,
 )
 from src.services import management_user_config as svc
 
@@ -62,7 +63,31 @@ async def get_management_user_config(
 async def put_management_user_config(
     payload: ManagementUserConfigUpdate,
     identity: AccountAdminIdentity,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ManagementUserConfigResponse:
-    """Полная замена/обновление конфига. Audit: `management_user_config.update`."""
-    return await svc.update_config(db, payload)
+    """Полная замена/обновление конфига + high-priority синк на серверы.
+
+    Audit: `management_user_config.update`. Если PUT изменил `modes` и/или
+    `login`, фан-аутим недеструктивный `management_user_sync` (re-bootstrap
+    групп/команд/ключа) на все подготовленные серверы с
+    `priority=TASK_PRIORITY_HIGH`. Смена `login` сам rename НЕ выполняет —
+    в ответе/задачах поднимается `rename_pending` (rename/cutover — фаза C).
+    """
+    result = await svc.update_config(db, payload)
+
+    if result.modes_changed or result.login_changed:
+        # `login_changed` → rename учётки на серверах нужен, но в этой фазе не
+        # делается; помечаем pending. Синк групп/команд/ключа уезжает всегда,
+        # когда что-то изменилось.
+        result.rename_pending = result.login_changed
+        fanout = await svc.fanout_management_user_sync(
+            db,
+            config=result,
+            actor_id=identity.user_id,
+            request_id=getattr(request.state, "request_id", None),
+            rename_pending=result.login_changed,
+        )
+        result.sync_fanout = ManagementUserSyncFanout(**fanout)
+
+    return result

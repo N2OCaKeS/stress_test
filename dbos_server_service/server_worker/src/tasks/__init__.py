@@ -4,6 +4,7 @@ from src.tasks import (  # noqa: F401
     dispatch_outbox,
     installed_packages,
     inventory,
+    management_user,
     passwords,
     power,
     prepare,

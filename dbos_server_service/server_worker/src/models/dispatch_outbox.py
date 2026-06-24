@@ -45,6 +45,11 @@ class DispatchOutbox(DispatchOutboxBase):
     task_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     task_kind: Mapped[str] = mapped_column(String(128), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # Зеркало `tasks.priority`: publisher по нему решает, в normal- или
+    # high-priority taskiq-очередь публиковать row. server_default 0.
+    priority: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -69,6 +74,7 @@ class DispatchOutbox(DispatchOutboxBase):
     __table_args__ = (
         Index(
             "ix_dispatch_outbox_pending",
+            text("priority DESC"),
             "created_at",
             postgresql_where=text("dispatched_at IS NULL"),
         ),

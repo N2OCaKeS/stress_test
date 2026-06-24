@@ -22,6 +22,7 @@ import {
   type AdminItem,
 } from "@/pages/admin/adminCatalog";
 import { ThemeSwitcher } from "./ThemeSwitcher";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 interface AdminOnlyPanelProps {
   width: number;
@@ -239,7 +240,18 @@ export function AdminOnlyPanel({ width, collapsed, onToggleCollapsed }: AdminOnl
             )}
           </Link>
 
-          {!collapsed && <ThemeSwitcher />}
+          {collapsed ? (
+            <div className="flex justify-center">
+              <NotificationBell />
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <NotificationBell />
+              <div className="flex-1 min-w-0">
+                <ThemeSwitcher />
+              </div>
+            </div>
+          )}
 
           <div className={`flex items-center gap-2 ${collapsed ? "flex-col" : ""}`}>
             <button

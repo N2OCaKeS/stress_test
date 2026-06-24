@@ -31,6 +31,7 @@ import type { ServiceName } from "@/types/persona";
 import { useDeptLabelOpt } from "@/lib/labels";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { AdminOnlyPanel } from "./AdminOnlyPanel";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 interface ServiceChip {
   service: ServiceName;
@@ -288,7 +289,18 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
             )}
           </Link>
 
-          {!collapsed && <ThemeSwitcher />}
+          {collapsed ? (
+            <div className="flex justify-center">
+              <NotificationBell />
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <NotificationBell />
+              <div className="flex-1 min-w-0">
+                <ThemeSwitcher />
+              </div>
+            </div>
+          )}
 
           <div className={`flex items-center gap-2 ${collapsed ? "flex-col" : ""}`}>
             <button

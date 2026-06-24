@@ -605,6 +605,9 @@
             "1.8.6.30": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.209\"                     -l ru_RU.UTF-8 startdisk restore LowServer5-186rc30 nvme0n1",
             "1.8.6.38": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.209\"                     -l ru_RU.UTF-8 startdisk restore LowServer5-186rc38 nvme0n1",
             "1.8.6.39": "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"10.177.103.209\"                     -l ru_RU.UTF-8 startdisk restore LowServer5-186rc39 nvme0n1"
+        },
+        "stand14": {
+            "None": "None"
         }
     },
     "kernels": [

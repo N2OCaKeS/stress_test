@@ -14,6 +14,7 @@ import { AlertCircle } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { formatMsk } from "@/lib/datetime";
+import { useUserLabels } from "@/lib/labels";
 import { listTasks } from "@/api/server/misc";
 import {
   TASK_POLL_MS,
@@ -48,7 +49,8 @@ export function AllTasksWidget() {
     return () => window.clearInterval(id);
   }, [refetch]);
 
-  const items = tasksQ.data?.items ?? [];
+  const items = (tasksQ.data?.items ?? []) as TaskWithInitiator[];
+  const userLabel = useUserLabels(items.map((t) => t.created_by));
 
   return (
     <div className="card">
@@ -78,7 +80,7 @@ export function AllTasksWidget() {
         <div className="empty-card text-xs">Задач в отделе пока нет.</div>
       ) : (
         <div className="text-sm">
-          {items.map((task: TaskWithInitiator) => {
+          {items.map((task) => {
             const Icon = kindIcon(task.kind);
             return (
               <button
@@ -90,8 +92,12 @@ export function AllTasksWidget() {
                 <Icon className="w-4 h-4 text-dim shrink-0" />
                 <div className="min-w-0">
                   <div className="truncate mono">{task.kind}</div>
-                  <div className="text-[11px] text-dim mono truncate">
-                    {task.created_by ?? "—"} · {formatMsk(task.created_at)}
+                  <div
+                    className="text-[11px] text-dim mono truncate"
+                    title={task.created_by ?? undefined}
+                  >
+                    {task.created_by ? userLabel(task.created_by) : "—"} ·{" "}
+                    {formatMsk(task.created_at)}
                   </div>
                 </div>
                 <span className={statusBadgeClass(task.status)}>

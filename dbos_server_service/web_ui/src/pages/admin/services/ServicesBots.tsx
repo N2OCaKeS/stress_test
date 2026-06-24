@@ -32,7 +32,7 @@ import {
   isPlatformWideAdmin,
   isSecretAdmin,
 } from "@/lib/rbac";
-import { useDeptLabel } from "@/lib/labels";
+import { useDeptLabel, useUserLabel } from "@/lib/labels";
 import { formatMskDate, formatMskShort, mskDateOffset } from "@/lib/datetime";
 import { BotRolesPanel } from "@/components/bot/BotRolesPanel";
 
@@ -178,6 +178,7 @@ function BotLiveView({
   const { persona } = usePersona();
   const { startEdit } = useInlineState();
   const caps = botMutationCaps(persona, bot.department_id ?? null);
+  const createdByLabel = useUserLabel(bot.created_by);
 
   // tokens / roles — sub-resources, fetched per selected bot.
   const tokensQ = useQuery(() => botsApi.listBotTokens(bot.id), [bot.id]);
@@ -387,7 +388,7 @@ function BotLiveView({
           k="created_by"
           v={
             bot.created_by ? (
-              <span className="mono">{bot.created_by}</span>
+              <span title={bot.created_by}>{createdByLabel}</span>
             ) : (
               <span className="text-dim italic">system</span>
             )

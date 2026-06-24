@@ -86,6 +86,7 @@ function OverviewView({
 }) {
   const deptLabel = useDeptLabel(server.department_id);
   const createdByLabel = useUserLabel(server.created_by);
+  const busyUserLabel = useUserLabel(server.busy_user_id);
   const name = server.display_name ?? server.hostname;
 
   return (
@@ -134,7 +135,7 @@ function OverviewView({
           k="busy_user_id"
           v={
             server.busy_user_id ? (
-              <span className="mono">{server.busy_user_id}</span>
+              <span title={server.busy_user_id}>{busyUserLabel}</span>
             ) : (
               <span className="text-dim">—</span>
             )

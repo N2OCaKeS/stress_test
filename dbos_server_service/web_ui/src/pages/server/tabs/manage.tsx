@@ -41,6 +41,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { apiErrMsg } from "@/api/client";
 import { formatMskShort } from "@/lib/datetime";
 import { isDepAdmin } from "@/lib/rbac";
+import { useUserLabel } from "@/lib/labels";
 import { toBase64 } from "@/lib/base64";
 import {
   clearBusy,
@@ -536,6 +537,7 @@ function BusyCard({
 }) {
   const [showForm, setShowForm] = useState(false);
   const [reason, setReason] = useState("");
+  const reserverLabel = useUserLabel(server?.busy_user_id);
   if (!server) {
     return (
       <div className="card text-sm text-dim">Busy: нет данных по серверу.</div>
@@ -560,7 +562,7 @@ function BusyCard({
               {server.busy_user_id && (
                 <>
                   {" · "}юзер{" "}
-                  <span className="mono">{server.busy_user_id}</span>
+                  <span title={server.busy_user_id}>{reserverLabel}</span>
                 </>
               )}
             </div>

@@ -383,6 +383,57 @@ export function useUserLabel(userId: string | null | undefined): string {
 }
 
 /**
+ * Батч-резолв набора `usr_*` → имя. Для списков (задачи отдела, уведомления),
+ * где `useUserLabel` в `.map` звать нельзя. Собирает недостающие id в один
+ * `/users/labels` запрос, кладёт в общий с `useUserLabel` кэш и возвращает
+ * функцию `id → имя` (фоллбэк на сам id). `null`/пусто → "—".
+ */
+export function useUserLabels(
+  ids: (string | null | undefined)[],
+): (id: string | null | undefined) => string {
+  const [, force] = useState(0);
+
+  // Стабильный ключ из уникальных непустых id — чтобы effect не перезапускался
+  // на каждый ре-рендер при той же выборке.
+  const wanted = useMemo(() => {
+    const seen = new Set<string>();
+    for (const id of ids) if (id) seen.add(id);
+    return Array.from(seen).sort();
+  }, [ids]);
+  const key = wanted.join(",");
+
+  useEffect(() => {
+    if (USE_MOCK_AUTH) return;
+    const missing = wanted.filter((id) => !USER_DOMAIN.cache.has(id));
+    if (missing.length === 0) return;
+    let alive = true;
+    getUserLabels(missing)
+      .then((labels) => {
+        for (const id of missing) {
+          USER_DOMAIN.cache.set(id, labels[id] || id);
+        }
+      })
+      .catch(() => {
+        // Нет доступа / сетевой сбой — оставляем фоллбэк на id.
+        for (const id of missing) USER_DOMAIN.cache.set(id, id);
+      })
+      .finally(() => {
+        if (alive) force((n) => n + 1);
+      });
+    return () => {
+      alive = false;
+    };
+    // wanted покрыт key; зависимость на массив дала бы лишние перезапуски.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return useCallback((id: string | null | undefined) => {
+    if (!id) return "—";
+    return USER_DOMAIN.cache.get(id) ?? id;
+  }, []);
+}
+
+/**
  * `acc_*` (server_account) → login. Фоллбэк на id, пока грузится / если
  * аккаунт удалён или недоступен. `null`/пусто → "—".
  */

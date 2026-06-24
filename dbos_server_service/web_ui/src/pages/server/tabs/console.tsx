@@ -20,12 +20,13 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import {
   AlertCircle,
+  KeyRound,
   Lock,
   Plug,
   PlugZap,
   Terminal as TerminalIcon,
 } from "lucide-react";
-import { listAccounts } from "@/api/server/accounts";
+import { getAccount, listAccounts } from "@/api/server/accounts";
 import {
   consoleWsProtocols,
   consoleWsUrl,
@@ -34,7 +35,9 @@ import {
 } from "@/api/server/console";
 import { useQuery } from "@/api/auth/useQuery";
 import { usePersona } from "@/contexts/PersonaContext";
-import { apiErrMsg } from "@/api/client";
+import { useToast } from "@/contexts/ToastContext";
+import { ApiError, apiErrMsg } from "@/api/client";
+import { fromBase64 } from "@/lib/base64";
 import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
 import type {
   CursorPaginatedResponse,
@@ -73,6 +76,15 @@ export function ConsoleTab({ serverId, server }: Props) {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const selectedAccount =
     accessible.find((a) => a.id === selectedAccountId) ?? null;
+
+  // Грубый клиентский gate под право view_password — та же роль, что и для
+  // reveal-пароля на вкладке аккаунтов (dep_admin / server admin / operator).
+  // Финальное решение за backend'ом: без гранта `getAccount` вернёт
+  // password_b64=null, и кнопка просто скажет «нет доступа».
+  const canReveal =
+    persona.platform_role === "dep_admin" ||
+    persona.service_roles.server === "admin" ||
+    persona.service_roles.server === "operator";
 
   return (
     <div className="p-5 flex flex-col gap-4 max-w-7xl">
@@ -152,7 +164,11 @@ export function ConsoleTab({ serverId, server }: Props) {
       )}
 
       {accessible.length > 0 && (
-        <ConsoleSession serverId={serverId} account={selectedAccount} />
+        <ConsoleSession
+          serverId={serverId}
+          account={selectedAccount}
+          canReveal={canReveal}
+        />
       )}
     </div>
   );
@@ -176,10 +192,13 @@ function StatusBadge({ state }: { state: ConnState }) {
 function ConsoleSession({
   serverId,
   account,
+  canReveal,
 }: {
   serverId: string;
   account: ServerAccount | null;
+  canReveal: boolean;
 }) {
+  const toast = useToast();
   const mountRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -188,6 +207,7 @@ function ConsoleSession({
 
   const [state, setState] = useState<ConnState>("idle");
   const [closeInfo, setCloseInfo] = useState<ConsoleCloseInfo | null>(null);
+  const [injecting, setInjecting] = useState(false);
 
   // Монтируем терминал один раз и держим до unmount. fit на ресайз окна.
   useEffect(() => {
@@ -318,7 +338,45 @@ function ConsoleSession({
     };
   }, [serverId, account, state]);
 
+  // Подставить пароль текущей учётки в терминал без перевода строки: при
+  // запросе пароля (sudo и т.п.) пользователю остаётся нажать Enter. Пароль
+  // достаём свежим запросом и держим в локальной переменной ровно на время
+  // отправки — ни в state, ни в term.write (sudo не эхоит, не светим на экран).
+  const injectPassword = useCallback(async () => {
+    const ws = wsRef.current;
+    if (!account || injecting) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    setInjecting(true);
+    try {
+      const fresh = await getAccount(account.id);
+      if (fresh.password_b64 === null) {
+        toast.warn("Нет доступа к паролю этой учётки");
+        return;
+      }
+      let secret: string;
+      try {
+        secret = fromBase64(fresh.password_b64);
+      } catch {
+        secret = fresh.password_b64;
+      }
+      ws.send(secret);
+      toast.info("Пароль введён, нажмите Enter");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        const secs = e.retryAfter ?? 60;
+        toast.error(`Reveal-лимит: повторите через ${secs} сек`);
+      } else if (e instanceof ApiError && e.status === 403) {
+        toast.warn("Нет доступа к паролю этой учётки");
+      } else {
+        toast.error(apiErrMsg(e, "Не удалось получить пароль"));
+      }
+    } finally {
+      setInjecting(false);
+    }
+  }, [account, injecting, toast]);
+
   const connected = state === "open" || state === "connecting";
+  const sessionOpen = state === "open";
 
   return (
     <div className="flex flex-col gap-3">
@@ -337,6 +395,21 @@ function ConsoleSession({
           >
             <Plug className="w-4 h-4" />
             Подключить
+          </button>
+        )}
+        {sessionOpen && (
+          <button
+            className="btn btn-ghost"
+            onClick={injectPassword}
+            disabled={!canReveal || injecting}
+            title={
+              canReveal
+                ? "Ввести пароль учётки в терминал (без Enter)"
+                : "Нет доступа к паролю"
+            }
+          >
+            <KeyRound className="w-4 h-4" />
+            Пароль
           </button>
         )}
         <StatusBadge state={state} />

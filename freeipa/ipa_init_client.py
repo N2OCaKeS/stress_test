@@ -42,10 +42,14 @@ def initialization_freeipa_client():
     with open('/etc/resolv.conf', 'r') as file_resolv:
         resolv_lines = file_resolv.readlines()
     resolv_lines = [line for line in resolv_lines if 'nameserver 10.177.128.198' not in line]
+    first_ns_idx = next((i for i, line in enumerate(resolv_lines) if line.startswith('nameserver')), None)
+    if first_ns_idx is not None:
+        resolv_lines.insert(first_ns_idx, f"nameserver {HOSTS['server']['ip']}\n")
+    else:
+        resolv_lines.append(f"nameserver {HOSTS['server']['ip']}\n")
+    resolv_lines.append(f"search {DOMAIN}\n")
     with open('/etc/resolv.conf', 'w') as file_resolv:
         file_resolv.writelines(resolv_lines)
-        file_resolv.write(f"nameserver {HOSTS['server']['ip']}\n")
-        file_resolv.write(f"search {DOMAIN}\n")
 
     """
         Настройка DNS
@@ -64,7 +68,11 @@ def initialization_freeipa_client():
             network_settings[i] = ''
     
     # Запись в /etc/network/interfaces новые параметры dns
-    network_settings.append(f"dns-nameservers {HOSTS['server']['ip']}\n")
+    first_dns_idx = next((i for i, line in enumerate(network_settings) if "dns-nameservers" in line), None)
+    if first_dns_idx is not None:
+        network_settings.insert(first_dns_idx, f"dns-nameservers {HOSTS['server']['ip']}\n")
+    else:
+        network_settings.append(f"dns-nameservers {HOSTS['server']['ip']}\n")
     network_settings.append(f"dns-domain {DOMAIN}\n")
     
     file_network = open("/etc/network/interfaces", "w")

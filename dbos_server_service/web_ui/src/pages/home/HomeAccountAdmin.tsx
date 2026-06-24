@@ -23,7 +23,6 @@ import { listGroups } from "@/api/auth/groups";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { RecentAuditEvents } from "./widgets/RecentAuditEvents";
 import { ServicesHealth } from "./widgets/ServicesHealth";
-import { AllTasksWidget } from "./widgets/AllTasksWidget";
 
 /**
  * Account-admin Home.
@@ -128,10 +127,6 @@ export function HomeAccountAdmin() {
         <section className="grid gap-4 md:grid-cols-2">
           <RecentAuditEvents />
           <ServicesHealth />
-        </section>
-
-        <section className="mt-4">
-          <AllTasksWidget />
         </section>
       </HomeShell>
     );

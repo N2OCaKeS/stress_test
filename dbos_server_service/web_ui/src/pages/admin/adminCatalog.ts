@@ -23,6 +23,7 @@ import {
   ServerIcon,
   ShieldCheck,
   Unplug,
+  UserCog,
   Users,
   UsersRound,
   Wrench,
@@ -50,6 +51,7 @@ import { ServicesServerGroups } from "./services/ServicesServerGroups";
 import { ServicesServerPermissions } from "./services/ServicesServerPermissions";
 import { ServicesOsVersions } from "./services/ServicesOsVersions";
 import { ServicesIgnoredLogins } from "./services/ServicesIgnoredLogins";
+import { ServicesManagementUser } from "./services/ServicesManagementUser";
 import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
 import { ServicesLogingRules } from "./services/ServicesLogingRules";
 import { ServicesLogingRetention } from "./services/ServicesLogingRetention";
@@ -307,6 +309,18 @@ const STATIC_ITEMS: AdminItem[] = [
     // server.admin. Platform-роли (account_admin / loging_admin) backend режет
     // на 403; пункт им не показываем.
     visibleFor: (p) => isDepAdmin(p) || hasServerServiceAdmin(p),
+  },
+  {
+    id: "services.server.management_user",
+    label: "Системная учётка",
+    hint: "управляющая учётка · login + режимы ОС",
+    icon: UserCog,
+    block: "services",
+    group: "server",
+    content: ServicesManagementUser,
+    // Конфиг управляющей учётки гейтится account_admin; смена login запускает
+    // cutover на всех подготовленных серверах. Остальным backend ответит 403.
+    visibleFor: (p) => isAccountAdmin(p),
   },
 
   // Services block — secret. Per-credential RoleACL / DeptGrant / UserACL.

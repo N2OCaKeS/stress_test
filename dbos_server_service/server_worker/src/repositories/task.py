@@ -152,6 +152,30 @@ async def scrub_payload_keys(
         )
 
 
+async def count_other_running_on_server(
+    db: AsyncSession, *, server_id: str, exclude_task_id: str,
+) -> int:
+    """Сколько ДРУГИХ task'ов в статусе ``running`` на этом сервере.
+
+    Считает строки с ``status='running' AND target_server_id=:server_id``,
+    исключая саму вызывающую задачу (``id != :exclude_task_id``). Нужно
+    деструктив-гейту: смену пароля / ротацию / деуправление аккаунта нельзя
+    запускать, пока на том же боксе крутится другая операция — параллельный
+    chpasswd оборвал бы её SSH-сессию или оставил бокс в полу-применённом
+    состоянии.
+
+    Сама вызывающая задача к моменту гейта уже в ``running`` (mark_running
+    сделан в `_runner` до вызова impl), поэтому её обязательно исключаем —
+    иначе гейт всегда видел бы минимум себя и зацикливал бы reschedule.
+    """
+    stmt = select(func.count()).select_from(Task).where(
+        Task.status == TaskStatus.RUNNING,
+        Task.target_server_id == server_id,
+        Task.id != exclude_task_id,
+    )
+    return int((await db.execute(stmt)).scalar_one())
+
+
 async def mark_succeeded(
     db: AsyncSession, task: Task, result: dict | None,
 ) -> Task | None:
@@ -268,6 +292,53 @@ async def mark_pending_for_retry(
         return None
     task.status = TaskStatus.QUEUED
     task.last_error = error_message
+    task.scheduled_retry_at = scheduled_retry_at
+    task.worker_id = None
+    await db.flush()
+    return task
+
+
+async def mark_deferred_for_retry(
+    db: AsyncSession,
+    task: Task,
+    *,
+    scheduled_retry_at: datetime | None = None,
+) -> Task | None:
+    """Отложить задачу обратно в ``queued``, НЕ расходуя `max_attempts`.
+
+    Используется деструктив-гейтом (`DestructiveGateDeferred`): задача не
+    упала, она просто ждёт, пока на сервере освободятся другие running-задачи.
+    В отличие от `mark_pending_for_retry`, который оставляет инкрементированный
+    `mark_running`'ом attempt, здесь attempt откатывается на 1 — каждый
+    poll-цикл гейта не должен приближать задачу к исчерпанию попыток. Бокс
+    может быть занят дольше, чем `max_attempts` обычных backoff'ов, и сгорать
+    в FAILED из-за этого нельзя.
+
+    `last_error` НЕ трогаем — это не ошибка исполнения, а штатное ожидание;
+    причина откладывания живёт в audit-событии. `worker_id` обнуляем (как и
+    `mark_pending_for_retry`): между poll'ами задача «ничейная».
+
+    CAS-guard на ``status != 'cancelled'`` — если оператор отменил задачу,
+    пока гейт держал её, оставляем CANCELLED и возвращаем ``None``; caller
+    подавит re-kick.
+    """
+    rolled_back_attempt = max(int(task.attempt) - 1, 0)
+    stmt = (
+        update(Task)
+        .where(Task.id == task.id, Task.status != TaskStatus.CANCELLED)
+        .values(
+            status=TaskStatus.QUEUED,
+            attempt=rolled_back_attempt,
+            scheduled_retry_at=scheduled_retry_at,
+            worker_id=None,
+        )
+        .returning(Task.id)
+    )
+    res = await db.execute(stmt)
+    if res.scalar_one_or_none() is None:
+        return None
+    task.status = TaskStatus.QUEUED
+    task.attempt = rolled_back_attempt
     task.scheduled_retry_at = scheduled_retry_at
     task.worker_id = None
     await db.flush()

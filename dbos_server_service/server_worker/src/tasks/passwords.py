@@ -77,6 +77,7 @@ from src.services import bmc_circuit_breaker as _breaker
 from src.tasks._bmc_helpers import aclose_bmc as _aclose_bmc
 from src.tasks._bmc_helpers import extract_bmc_host as _extract_bmc_host
 from src.tasks._bmc_helpers import get_bmc as _get_bmc
+from src.tasks._destructive_gate import ensure_no_other_running_on_server
 from src.tasks._runner import run_task
 
 logger = logging.getLogger(__name__)
@@ -438,6 +439,10 @@ async def account_rotate_password(task_id: str) -> None:
         # cross-check). См. модуль docstring `server_service.internal_service`.
         target_dept = payload.get("target_department_id")
 
+        # Деструктив-гейт: chpasswd оборвал бы чужую SSH-сессию на этом боксе.
+        # Откладываем, пока на сервере есть другая running-задача.
+        await ensure_no_other_running_on_server(task_id, server_id)
+
         # На управляемом сервере вход по ключу под управляющим пользователем,
         # пароль аккаунта для аутентификации не нужен. `login` берём из payload,
         # если server_service его положил, иначе тянем через fetch. У discovered-
@@ -582,6 +587,10 @@ async def ipmi_rotate_password(task_id: str) -> None:
         target_dept = payload.get("target_department_id")
         settings = get_settings()
         user_id = int(payload.get("user_id") or settings.ipmi_user_id)
+
+        # Деструктив-гейт: ротация пароля BMC не должна идти параллельно с
+        # другой задачей на этом сервере. Откладываем до освобождения бокса.
+        await ensure_no_other_running_on_server(task_id, server_id)
 
         creds = await server_service_client.fetch_ipmi_credentials(server_id, target_dept)
         controller_id = creds["controller_id"]

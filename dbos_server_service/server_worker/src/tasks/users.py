@@ -36,6 +36,7 @@ from src.services.redis_stash_crypto import (
     stash_id_from_key,
 )
 from src.tasks._account_helpers import resolve_ssh_creds
+from src.tasks._destructive_gate import ensure_no_other_running_on_server
 from src.tasks._runner import run_task
 
 logger = logging.getLogger(__name__)
@@ -689,6 +690,11 @@ async def account_deprovision(task_id: str) -> None:
         account_id = payload["account_id"]
         target_dept = payload.get("target_department_id")
         remove_home = bool(payload.get("remove_home"))
+
+        # Деструктив-гейт: userdel меняет состав входа на боксе и может
+        # пересечься с чужой задачей на том же сервере. Откладываем, пока на
+        # сервере есть другая running-задача.
+        await ensure_no_other_running_on_server(task_id, server_id)
 
         creds = await _account_creds(payload, server_id, account_id, target_dept)
         await ssh_client.delete_user(

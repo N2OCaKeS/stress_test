@@ -34,3 +34,16 @@ class CredentialFetchError(AppException):
     `IPMI_CREDENTIALS_UNAVAILABLE`, `ACCOUNT_PASSWORD_UNAVAILABLE`,
     `PASSWORD_ROTATE_REJECTED`.
     """
+
+
+@dataclass
+class DestructiveGateDeferred(AppException):
+    """Деструктивную операцию отложили: на сервере есть другая running-задача.
+
+    Бросается гейтом (`tasks._destructive_gate`) ДО любого side-effect'а на
+    боксе, когда `count_other_running_on_server` вернул > 0. `_runner`
+    распознаёт этот тип и шедулит durable reschedule БЕЗ инкремента
+    `attempt` против `max_attempts` — задача ждёт, пока бокс освободится, а
+    не сгорает в FAILED по исчерпанию попыток. `details` несёт `server_id` и
+    число конкурирующих running-задач для audit/диагностики.
+    """

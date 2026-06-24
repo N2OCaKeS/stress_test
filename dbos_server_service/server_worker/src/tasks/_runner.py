@@ -124,6 +124,7 @@ from typing import Awaitable, Callable
 
 from src.core.config import get_settings
 from src.core.constants import TaskStatus
+from src.core.exceptions import DestructiveGateDeferred
 from src.db.session import AsyncSessionLocal
 from src.repositories import task as task_repo
 from src.services import audit_outbox_publisher
@@ -175,6 +176,13 @@ def _reset_handler_semaphore_for_tests() -> None:
 # (5 минут). Для max_attempts=3 фактические паузы: 10s, 20s.
 _RETRY_BASE_DELAY_SECONDS = 10.0
 _RETRY_MAX_DELAY_SECONDS = 300.0
+# Фиксированная пауза перед повтором деструктива, отложенного гейтом (на
+# сервере крутится другая задача). Не экспонента: мы не лечим transient-
+# сбой, а ждём освобождения бокса — равномерный poll проще и предсказуемее.
+# Этот reschedule НЕ инкрементит attempt против max_attempts (см. failure-path
+# в `_run_task_inner`), поэтому задача может ждать сколь угодно долго, не
+# сгорая в FAILED.
+_DESTRUCTIVE_DEFER_DELAY_SECONDS = 15.0
 # Cap на показатель степени. `2 ** attempt` для случайно высоких attempt
 # (например, поврежденный row после ручного re-attempt'а с не обнулённым
 # счётчиком) даёт большие int'ы — Python считает, но это CPU/память впустую.
@@ -494,6 +502,22 @@ async def _run_task_inner(
     try:
         try:
             result = await impl(payload_for_impl)
+        except DestructiveGateDeferred as deferred:
+            # Гейт отложил деструктив: на сервере крутится другая задача.
+            # Durable reschedule БЕЗ инкремента attempt — задача не должна
+            # сгореть в FAILED, пока бокс занят. Возвращаем row в `queued` с
+            # фиксированным backoff'ом и пишем явный WARNING-audit «отложено».
+            await _handle_destructive_deferred(
+                task_id=task_id,
+                task_kind=task_kind,
+                audit_action=audit_action,
+                audit_target_type=audit_target_type,
+                target_id=target_id,
+                request_id=request_id,
+                actor_id=actor_id,
+                deferred=deferred,
+            )
+            return
         except Exception as exc:  # noqa: BLE001 — surface error verbatim into DB
             # Реальные клиенты (sushy/asyncssh/pyghmi/ipmitool) могут зашить
             # creds в текст ошибки. Перед записью в task.last_error и
@@ -757,6 +781,105 @@ async def _run_task_inner(
         await _safe_flush_outbox()
     finally:
         unregister_running_task(task_id)
+
+
+async def _handle_destructive_deferred(
+    *,
+    task_id: str,
+    task_kind: str,
+    audit_action: str,
+    audit_target_type: str | None,
+    target_id: str,
+    request_id: str | None,
+    actor_id: str | None,
+    deferred: DestructiveGateDeferred,
+) -> None:
+    """Отложить деструктив, который гейт отбил из-за занятого сервера.
+
+    Поведение симметрично failure-path'у, но:
+
+      * статус → `queued` через `mark_deferred_for_retry` (attempt не
+        расходуется — задача ждёт, а не падает);
+      * audit пишется со `status=failure`, `allowed=False`,
+        `reason=destructive_deferred_server_busy`, `severity=WARNING` —
+        оператор видит «отложено», а не «упало»;
+      * фиксированный `_DESTRUCTIVE_DEFER_DELAY_SECONDS` backoff + durable
+        `scheduled_retry_at`, чтобы крах worker'а во время паузы подхватил
+        startup-recovery;
+      * cancel mid-defer оставляет CANCELLED и подавляет re-kick.
+    """
+    scheduled_retry_at = datetime.now(timezone.utc) + timedelta(
+        seconds=_DESTRUCTIVE_DEFER_DELAY_SECONDS,
+    )
+    cancelled_mid_defer = False
+    deleted_mid_defer = False
+    async with AsyncSessionLocal() as defer_session:
+        fresh = await task_repo.get_by_id(defer_session, task_id)
+        if fresh is None:
+            deleted_mid_defer = True
+            logger.warning(
+                "task row deleted mid-defer, requeue skipped task_id=%s",
+                task_id,
+            )
+        else:
+            marked = await task_repo.mark_deferred_for_retry(
+                defer_session, fresh, scheduled_retry_at=scheduled_retry_at,
+            )
+            if marked is None:
+                cancelled_mid_defer = True
+                logger.warning(
+                    "task cancelled mid-defer, requeue skipped task_id=%s",
+                    task_id,
+                )
+        if deleted_mid_defer:
+            defer_payload = {
+                "action": "task.deleted_midrun",
+                "status": "failure",
+                "allowed": False,
+                "target_id": target_id,
+                "target_type": audit_target_type,
+                "request_id": request_id,
+                "actor_id": actor_id,
+                "details": {
+                    "task_id": task_id,
+                    "original_action": audit_action,
+                    "reason": "task_deleted_midrun",
+                    "phase": "destructive_defer",
+                },
+                "severity": "WARNING",
+            }
+        else:
+            details = {
+                "task_id": task_id,
+                "reason": "destructive_deferred_server_busy",
+                "will_retry": not cancelled_mid_defer,
+                **deferred.details,
+            }
+            if cancelled_mid_defer:
+                details["observed_status"] = TaskStatus.CANCELLED.value
+                details["will_retry"] = False
+            defer_payload = {
+                "action": audit_action,
+                "status": "failure",
+                "allowed": False,
+                "target_id": target_id,
+                "target_type": audit_target_type,
+                "request_id": request_id,
+                "actor_id": actor_id,
+                "details": details,
+                "severity": "WARNING",
+            }
+        await task_repo.enqueue_audit(
+            defer_session, task_id=task_id, payload=defer_payload,
+        )
+        await defer_session.commit()
+
+    await _safe_flush_outbox()
+
+    if not cancelled_mid_defer and not deleted_mid_defer:
+        await _schedule_retry(
+            task_kind, task_id, 1, delay=_DESTRUCTIVE_DEFER_DELAY_SECONDS,
+        )
 
 
 def _compute_backoff_delay(attempt: int) -> float:

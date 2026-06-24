@@ -204,6 +204,8 @@ if __name__ == "__main__":
                             x_label="Количество пользователй",
                             y_label="Время аутентификации почти последним пользователем")
         uzs.total_rating = report.get_total_rating()
+        if uzs.total_rating == 0:
+            uzs.upload_test_cycle_status(zefir_status='fail')
 
     elif args.TT == "create-users":
         create_users_test = CreateUsersTest()

@@ -150,6 +150,8 @@ class Report:
     def get_total_rating(self,
                          multiplier=10**(4),
                          accuracy=2):
+        if any(e >= 90 for e in self.raw_table['proc_errors']):
+            return 0
         weight_c_sr_znach = 0.5 # 0.5
         weight_c_value_for_last_proc_delay = 0.2 # 0.2
         weight_c_proc_errors = 0.3

@@ -152,6 +152,14 @@ _DOCS_PREFIXES: tuple[str, ...] = ("/docs/", "/redoc/")
 # `/admin/encryption/...` пути роутятся только сюда.
 _ADMIN_ENCRYPTION_PREFIX = "/api/server/v1/admin/encryption"
 
+# Конфиг управляющей учётки — платформенный singleton, которым управляет
+# `account_admin` (имя управляющего пользователя + правила bootstrap'а по
+# режимам ОС). Это сервисная настройка уровня платформы, а не бизнес-данные
+# отдела, поэтому — как и `/admin/encryption/*` — исключение из business-блока.
+# Позитивная проверка роли (только account_admin) — в `require_account_admin`
+# на endpoint-уровне; guard лишь не отбивает запрос. Префикс точный.
+_MANAGEMENT_USER_CONFIG_PREFIX = "/api/server/v1/management-user-config"
+
 # Каталог OS-версий — глобальный справочник (имена версий, репозитории), а не
 # бизнес-данные отдела. Чтение каталога публичное (см. endpoints/os_versions.py),
 # поэтому платформенным ролям его тоже не за что отбивать. Исключение строго для
@@ -209,6 +217,18 @@ def _is_admin_encryption_path(path: str) -> bool:
     )
 
 
+def _is_management_user_config_path(path: str) -> bool:
+    """True для конфига управляющей учётки (`/management-user-config`).
+
+    Платформенная сервисная настройка под `account_admin` — исключение из
+    business-data-блока. Точная проверка роли — в `require_account_admin`;
+    middleware путь просто не блокирует. Матч по префиксу + границе сегмента.
+    """
+    return path == _MANAGEMENT_USER_CONFIG_PREFIX or path.startswith(
+        _MANAGEMENT_USER_CONFIG_PREFIX + "/"
+    )
+
+
 def _is_public_path(path: str) -> bool:
     """True для путей, которые middleware пропускает без проверки токена.
 
@@ -227,6 +247,7 @@ def _is_public_path(path: str) -> bool:
         or path in _DOCS_PATHS
         or path.startswith(_DOCS_PREFIXES)
         or _is_admin_encryption_path(path)
+        or _is_management_user_config_path(path)
     )
 
 

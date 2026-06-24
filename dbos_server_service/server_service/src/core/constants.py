@@ -97,6 +97,21 @@ class PlatformRole(StrEnum):
     LOGING_READER = "loging_reader"
 
 
+class ManagementMode(StrEnum):
+    """Режим создания управляющей учётки на боксе.
+
+    Привязан к редакции ОС: три ветки Astra Linux SE (Орёл/Смоленск/Воронеж)
+    и общий fallback для прочих ОС. Конфиг управляющей учётки хранит на каждый
+    режим свой набор доп-групп и bootstrap-команд (см.
+    `models/management_user_config`).
+    """
+
+    ASTRA_OREL = "astra_orel"
+    ASTRA_SMOLENSK = "astra_smolensk"
+    ASTRA_VORONEZH = "astra_voronezh"
+    OTHER_OS = "other_os"
+
+
 class EntityType(StrEnum):
     """Типы сущностей для матрицы entity_permissions."""
 

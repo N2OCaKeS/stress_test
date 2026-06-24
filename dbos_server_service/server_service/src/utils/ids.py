@@ -38,6 +38,11 @@ def ignored_login_id() -> str:
     return _new_id("ign_")
 
 
+def console_macro_id() -> str:
+    """`cmc_<uuid>` — для строк console_macros (личные/системные макросы консоли)."""
+    return _new_id("cmc_")
+
+
 def entity_permission_id() -> str:
     """`prm_<uuid>` — для entity_permissions."""
     return _new_id("prm_")

@@ -76,6 +76,8 @@ SERVICE_EVENTS = [
     # «автоматический s2s-runner».
     {"action": "encryption.admin_rotate", "description": "account_admin ввёл новую версию мастер-ключа активной через UI (admin /admin/encryption/rotate); keystore-bump + reencrypt-outbox seed", "default_severity": "CRITICAL"},
     {"action": "encryption.admin_retire", "description": "account_admin убрал старую версию мастер-ключа из keystore через UI (admin /admin/encryption/retire) после полной ре-шифрации", "default_severity": "CRITICAL"},
+    # Конфиг управляющей учётки — платформенный singleton под account_admin.
+    {"action": "management_user_config.update", "description": "account_admin обновил конфиг управляющей учётки (имя управляющего пользователя + пер-режимные группы/bootstrap-команды через PUT /management-user-config); смена login помечается login_changed для будущего cutover-фан-аута", "default_severity": "WARNING"},
     # Server accounts — CRUD (user-facing)
     {"action": "server_account.create", "description": "Server account created", "default_severity": "CRITICAL"},
     {"action": "server_account.view", "description": "Server account viewed", "default_severity": "INFO"},
@@ -119,6 +121,10 @@ SERVICE_EVENTS = [
     {"action": "os_version.update", "description": "OS version updated", "default_severity": "INFO"},
     {"action": "os_version.delete", "description": "OS version deleted", "default_severity": "WARNING"},
     {"action": "os.unknown_observed", "description": "Inventory callback принёс os_version, не прошедший whitelist KNOWN_OS_PREFIXES. Запись в os_versions НЕ создаётся, server.os_version_id остаётся прежним", "default_severity": "WARNING"},
+    # Макросы консоли (личные + системные в отделе). См. services/console_macro.py.
+    {"action": "console_macro.create", "description": "Console macro created (personal or system/department-wide). details: is_system, name", "default_severity": "INFO"},
+    {"action": "console_macro.update", "description": "Console macro updated. details: is_system, changed fields", "default_severity": "INFO"},
+    {"action": "console_macro.delete", "description": "Console macro deleted. details: is_system", "default_severity": "INFO"},
     # Worker-dispatch endpoints (см. endpoints/worker_dispatch.py).
     {"action": "server.inventory_sync", "description": "Inventory-sync (SSH-probe) dispatched to worker", "default_severity": "INFO"},
     {"action": "server.users_inventory_triggered", "description": "OS-user inventory (SSH getent) dispatched to worker — target=server (kick'ается со стороны сервера, аккаунты только результат)", "default_severity": "INFO"},

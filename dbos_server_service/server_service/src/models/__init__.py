@@ -1,8 +1,10 @@
 """Пакет ORM-моделей — импортируем все модели, чтобы Alembic их видел."""
 
+from src.models.console_macro import ConsoleMacro
 from src.models.dispatch_outbox import DispatchOutbox
 from src.models.entity_permission import EntityPermission
 from src.models.ipmi_controller import IpmiController
+from src.models.management_user_config import ManagementUserConfig
 from src.models.os_version import OsVersion
 from src.models.server import Server
 from src.models.secrets_outbox import ReencryptOutboxEntry
@@ -11,9 +13,11 @@ from src.models.server_account_ignored_login import ServerAccountIgnoredLogin
 from src.models.server_disk import ServerDisk
 
 __all__ = [
+    "ConsoleMacro",
     "DispatchOutbox",
     "EntityPermission",
     "IpmiController",
+    "ManagementUserConfig",
     "OsVersion",
     "ReencryptOutboxEntry",
     "Server",

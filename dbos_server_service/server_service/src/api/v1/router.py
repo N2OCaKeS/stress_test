@@ -18,6 +18,7 @@ from fastapi import APIRouter
 
 from src.api.v1.endpoints.admin_encryption import router as admin_encryption_router
 from src.api.v1.endpoints.console import router as console_router
+from src.api.v1.endpoints.console_macros import router as console_macros_router
 from src.api.v1.endpoints.health import router as health_router
 from src.api.v1.endpoints.ipmi import list_router as ipmi_list_router
 from src.api.v1.endpoints.ipmi import list_router_legacy as ipmi_list_router_legacy
@@ -29,6 +30,9 @@ from src.api.v1.endpoints.installed_packages import (
 )
 from src.api.v1.endpoints.internal import router as internal_router
 from src.api.v1.endpoints.inventory import users_router as users_inventory_router
+from src.api.v1.endpoints.management_user_config import (
+    router as management_user_config_router,
+)
 from src.api.v1.endpoints.ops import router as ops_router
 from src.api.v1.endpoints.os_versions import router as os_versions_router
 from src.api.v1.endpoints.permissions import router as permissions_router
@@ -82,6 +86,8 @@ router.include_router(worker_dispatch_ipmi_router, tags=["ipmi-controllers"])
 # Интерактивная SSH-консоль (WebSocket-мост к worker'у через Redis pub/sub).
 # WS /servers/{id}/console/ws — RBAC (server, console) + prepared-gate.
 router.include_router(console_router, tags=["console"])
+# Макросы консоли — справочник сохранённых команд (личные + системные в отделе).
+router.include_router(console_macros_router, tags=["console-macros"])
 # Internal — без tags, include_in_schema=False (скрыт из публичного OpenAPI).
 router.include_router(internal_router)
 router.include_router(secrets_migration_router)
@@ -91,3 +97,6 @@ router.include_router(ops_router)
 # Admin-эндпоинты ротации ключей шифрования для account_admin. Инфраструктура,
 # не бизнес-данные — явное исключение из platform_admin_guard business-блока.
 router.include_router(admin_encryption_router)
+# Конфиг управляющей учётки — платформенный singleton под account_admin.
+# Сервисная настройка уровня платформы, тоже исключение из business-блока.
+router.include_router(management_user_config_router)

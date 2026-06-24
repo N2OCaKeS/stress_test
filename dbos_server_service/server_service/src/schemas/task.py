@@ -85,6 +85,13 @@ class TaskRead(BaseModel):
         default=None, description="Момент финала (completed_at), None пока не терминальна.",
     )
     retry_count: int = Field(description="attempt — номер текущей попытки (0 на первой).")
+    priority: int = Field(
+        default=0,
+        description=(
+            "Приоритет в очереди воркера: больше = раньше. 0 — обычный фон, "
+            "100 — high (срочный фан-аут / ручные операции)."
+        ),
+    )
     last_error: str | None = Field(
         default=None, description="Текст последней ошибки (для detail / DLQ-фильтра failed).",
     )

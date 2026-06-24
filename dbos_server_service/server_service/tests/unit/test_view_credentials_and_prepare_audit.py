@@ -556,6 +556,7 @@ class TestPrepareDispatchIdempotentHitRaceCleanup:
             *, db=None, task_kind, target_server_id, payload,
             created_by, request_id,
             target_resource_id=None, idempotency_key=None,
+            priority=0,
             return_hit=False,
         ):
             if return_hit:

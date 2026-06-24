@@ -439,6 +439,14 @@ def _ensure_idempotency_matches(
     )
 
 
+# Приоритет worker-task'и: больше = раньше в claim'е воркера. Источник
+# семантики — `server_worker/src/models/task.py::Task.priority`. server_service
+# не импортирует пакет server_worker (отдельная БД/codebase), поэтому уровни
+# дублируются локально. При изменении набора синхронизировать вручную.
+TASK_PRIORITY_NORMAL = 0
+TASK_PRIORITY_HIGH = 100
+
+
 async def _insert_task_row(
     *,
     new_task_id: str,
@@ -449,6 +457,7 @@ async def _insert_task_row(
     created_by: str | None,
     request_id: str | None,
     idempotency_key: str | None = None,
+    priority: int = TASK_PRIORITY_NORMAL,
 ) -> None:
     """Сырая INSERT-операция в `dev_server_worker.tasks`. Параметры через bound."""
     session_factory = _engine_factory()
@@ -458,11 +467,11 @@ async def _insert_task_row(
                 """
                 INSERT INTO tasks (
                     id, task_kind, target_server_id, target_resource_id,
-                    payload, status, attempt, max_attempts,
+                    payload, status, attempt, max_attempts, priority,
                     created_by, request_id, idempotency_key
                 ) VALUES (
                     :id, :task_kind, :target_server_id, :target_resource_id,
-                    CAST(:payload AS jsonb), 'queued', 0, 3,
+                    CAST(:payload AS jsonb), 'queued', 0, 3, :priority,
                     :created_by, :request_id, :idempotency_key
                 )
                 """
@@ -473,6 +482,7 @@ async def _insert_task_row(
                 "target_server_id": target_server_id,
                 "target_resource_id": target_resource_id,
                 "payload": json.dumps(payload),
+                "priority": priority,
                 "created_by": created_by,
                 "request_id": request_id,
                 "idempotency_key": idempotency_key,
@@ -531,7 +541,7 @@ async def _fetch_task_status_and_meta(task_id_value: str) -> dict | None:
 _TASK_READ_COLUMNS = (
     "id, task_kind, status, target_server_id, target_resource_id, "
     "attempt, last_error, result, enqueued_at, started_at, "
-    "completed_at, created_by"
+    "completed_at, created_by, priority"
 )
 
 
@@ -550,6 +560,7 @@ def _row_to_task_dict(row) -> dict:
         "started_at": row[9],
         "completed_at": row[10],
         "created_by": row[11],
+        "priority": row[12],
     }
 
 
@@ -1037,6 +1048,7 @@ async def _dispatch_task_inner(
     request_id: str | None,
     target_resource_id: str | None,
     idempotency_key: str | None,
+    priority: int = TASK_PRIORITY_NORMAL,
 ) -> tuple[str, bool]:
     """Общее ядро dispatch'а. Возвращает `(task_id, idempotent_hit)`.
 
@@ -1069,6 +1081,7 @@ async def _dispatch_task_inner(
             created_by=created_by,
             request_id=request_id,
             idempotency_key=idempotency_key,
+            priority=priority,
         )
     except IntegrityError:
         # Race на UNIQUE(idempotency_key): другой процесс успел вставить
@@ -1164,8 +1177,14 @@ async def dispatch_task(
     request_id: str | None,
     target_resource_id: str | None = None,
     idempotency_key: str | None = None,
+    priority: int = TASK_PRIORITY_NORMAL,
 ) -> str:
     """INSERT task row + INSERT outbox row. Возвращает новый task_id.
+
+    `priority` — приоритет в claim'е воркера (больше = раньше); дефолт
+    `TASK_PRIORITY_NORMAL`. Высокоприоритетный фан-аут передаёт
+    `TASK_PRIORITY_HIGH`. На idempotent-hit игнорируется: приоритет уже
+    зафиксирован при первой постановке.
 
     Caller'ам, которым нужен флаг idempotent-replay'я (audit-details), —
     использовать `dispatch_task_with_hit`. Разделение на два метода вместо
@@ -1205,6 +1224,7 @@ async def dispatch_task(
         request_id=request_id,
         target_resource_id=target_resource_id,
         idempotency_key=idempotency_key,
+        priority=priority,
     )
     return new_id
 
@@ -1219,6 +1239,7 @@ async def dispatch_task_with_hit(
     request_id: str | None,
     target_resource_id: str | None = None,
     idempotency_key: str | None = None,
+    priority: int = TASK_PRIORITY_NORMAL,
 ) -> tuple[str, bool]:
     """Как `dispatch_task`, но возвращает `(task_id, idempotent_hit)`.
 
@@ -1237,4 +1258,5 @@ async def dispatch_task_with_hit(
         request_id=request_id,
         target_resource_id=target_resource_id,
         idempotency_key=idempotency_key,
+        priority=priority,
     )

@@ -156,6 +156,7 @@ def _to_task_read(
         started_at=row["started_at"],
         finished_at=row["completed_at"],
         retry_count=row["attempt"],
+        priority=row["priority"],
         last_error=row["last_error"],
         result=_summarize_result(result) if summarize else result,
     )

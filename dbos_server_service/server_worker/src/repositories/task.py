@@ -330,7 +330,11 @@ async def list_due_scheduled_retries(
             Task.scheduled_retry_at.is_not(None),
             Task.scheduled_retry_at <= threshold,
         )
-        .order_by(Task.scheduled_retry_at.asc(), Task.id.asc())
+        .order_by(
+            Task.priority.desc(),
+            Task.scheduled_retry_at.asc(),
+            Task.id.asc(),
+        )
         .with_for_update(skip_locked=True)
     )
     return list((await db.execute(stmt)).scalars().all())
@@ -358,6 +362,10 @@ async def claim_one_due_scheduled_retry(
       * Короткая per-row транзакция (SELECT+UPDATE+COMMIT) — lock держится
         миллисекунды, не висит N×Redis-RTT, как при batch-loop с одним
         долгоживущим FOR UPDATE.
+
+    Порядок выборки — `priority DESC, scheduled_retry_at ASC, id ASC`: при
+    backlog'е сначала re-kick'аются высокоприоритетные row'ы, при равном
+    приоритете — самые «просроченные» по времени retry'я.
     """
     threshold = now or datetime.now(timezone.utc)
     select_stmt = (
@@ -367,7 +375,11 @@ async def claim_one_due_scheduled_retry(
             Task.scheduled_retry_at.is_not(None),
             Task.scheduled_retry_at <= threshold,
         )
-        .order_by(Task.scheduled_retry_at.asc(), Task.id.asc())
+        .order_by(
+            Task.priority.desc(),
+            Task.scheduled_retry_at.asc(),
+            Task.id.asc(),
+        )
         .limit(1)
         .with_for_update(skip_locked=True)
     )

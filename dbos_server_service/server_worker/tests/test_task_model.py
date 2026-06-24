@@ -40,6 +40,7 @@ class TestDefaults:
             assert t.status == TaskStatus.QUEUED
             assert t.attempt == 0
             assert t.max_attempts == 3
+            assert t.priority == 0
             assert t.payload == {}
             assert t.enqueued_at is not None
             assert t.started_at is None
@@ -97,7 +98,10 @@ class TestIndexes:
 
         # PK + named indexes из __table_args__
         assert "ix_tasks_kind_status" in names
-        assert "ix_tasks_status_enqueued" in names
+        # claim/recovery + list-по-статусу идёт через priority-aware композит;
+        # старый `ix_tasks_status_enqueued` заменён миграцией 0006.
+        assert "ix_tasks_status_priority_enqueued" in names
+        assert "ix_tasks_status_enqueued" not in names
         # SQLAlchemy с index=True на колонке генерит ix_<table>_<col>
         assert "ix_tasks_target_server_id" in names
         # `ix_tasks_task_kind` дропнут как дубликат prefix композита
@@ -126,7 +130,7 @@ class TestSchema:
             cols = {r[0]: r[1] for r in result.all()}
 
         for required in ("id", "task_kind", "status", "attempt", "max_attempts",
-                         "enqueued_at", "payload"):
+                         "priority", "enqueued_at", "payload"):
             assert cols[required] == "NO", f"{required} must be NOT NULL"
         for optional in ("target_server_id", "target_resource_id", "last_error",
                          "result", "started_at", "completed_at", "created_by",
@@ -161,6 +165,19 @@ class TestSchema:
         async with AsyncSessionLocal() as session:
             t = (await session.execute(select(Task).where(Task.id == tid))).scalar_one()
             assert t.payload == {}
+
+    async def test_priority_server_default_zero(self):
+        """server_default='0' — INSERT без priority через raw SQL даёт 0."""
+        tid = _new_id()
+        async with engine.begin() as conn:
+            await conn.execute(text(
+                "INSERT INTO tasks (id, task_kind, status, attempt, max_attempts) "
+                "VALUES (:id, :k, 'queued', 0, 3)"
+            ), {"id": tid, "k": "x.y"})
+
+        async with AsyncSessionLocal() as session:
+            t = (await session.execute(select(Task).where(Task.id == tid))).scalar_one()
+            assert t.priority == 0
 
 
 # ── scrub_payload_keys ───────────────────────────────────────────────────────

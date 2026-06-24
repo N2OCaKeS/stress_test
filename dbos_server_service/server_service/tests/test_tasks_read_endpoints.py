@@ -30,6 +30,7 @@ def _row(
     last_error: str | None = None,
     result=None,
     created_by: str | None = None,
+    priority: int = 0,
 ):
     """БД-row task'и (имена колонок dev_server_worker.tasks)."""
     from datetime import datetime, timezone
@@ -48,6 +49,7 @@ def _row(
         "started_at": None,
         "completed_at": None,
         "created_by": created_by,
+        "priority": priority,
     }
 
 
@@ -106,7 +108,7 @@ class TestTaskListHappy:
         fake_worker_read["rows"] = [
             _row(id="tsk_1", target_server_id=srv.id, status="succeeded"),
             _row(id="tsk_2", target_server_id=srv.id, status="failed",
-                 last_error="boom"),
+                 last_error="boom", priority=100),
         ]
         resp = await client.get(f"{BASE}/tasks", headers=_hdr(admin_role_token_a))
         assert resp.status_code == 200, resp.text
@@ -119,6 +121,10 @@ class TestTaskListHappy:
         assert t1["department_id"] == "dep_a"
         assert "created_at" in t1
         assert t1["retry_count"] == 0
+        # priority отдаётся в карточке: дефолт normal у tsk_1, high у tsk_2.
+        assert t1["priority"] == 0
+        t2 = next(t for t in body if t["id"] == "tsk_2")
+        assert t2["priority"] == 100
 
     async def test_filter_status(
         self, client, admin_role_token_a, make_server, fake_worker_read,

@@ -46,6 +46,16 @@ class Task(Base):
         String(32), nullable=False, default=TaskStatus.QUEUED
     )
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # `priority` — приоритет в очереди claim'а: больше = раньше. 0 — обычный
+    # фон (inventory.sync, heartbeat, sweep), 100 — high (срочный фан-аут,
+    # ручные power-операции). Промежуточные значения свободны — поле int, не
+    # enum, чтобы не плодить миграцию на каждый новый уровень. Claim берёт
+    # `ORDER BY priority DESC, enqueued_at ASC`: сначала самый приоритетный,
+    # при равном приоритете — FIFO по времени постановки. server_default 0
+    # покрывает legacy-row до миграции и dispatch'и без явного priority.
+    priority: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     # Максимум попыток выполнения. Читается _runner.py при decision на retry
     # (current_attempt < max_attempts → mark_pending_for_retry, иначе
     # mark_failed). Дефолт 3 пишется на Python-уровне; server_default не
@@ -94,9 +104,15 @@ class Task(Base):
     __table_args__ = (
         UniqueConstraint("idempotency_key", name="uq_task_idempotency_key"),
         Index("ix_tasks_kind_status", "task_kind", "status"),
-        # `(status, enqueued_at)` — для worker startup-scan'а «найди мне
-        # все queued, отсортируй по времени постановки» (когда фича оживёт).
-        Index("ix_tasks_status_enqueued", "status", "enqueued_at"),
+        # `(status, priority DESC, enqueued_at)` — обслуживает claim/recovery-
+        # scan «найди queued, сначала самые приоритетные, при равенстве — FIFO
+        # по времени постановки». Тот же индекс закрывает list-вьюху по статусу.
+        Index(
+            "ix_tasks_status_priority_enqueued",
+            "status",
+            text("priority DESC"),
+            "enqueued_at",
+        ),
         # Partial index по «есть назначенное время retry'я» — startup
         # recovery (`_recover_scheduled_retries`) сканирует только их,
         # таблица в целом не сканируется.

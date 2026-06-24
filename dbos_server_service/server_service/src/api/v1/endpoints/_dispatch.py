@@ -70,6 +70,7 @@ async def dispatch_server_ssh_task(
     resolved_account_id: str | None,
     extra_payload: dict | None = None,
     success_extra_details: dict | None = None,
+    priority: int = worker_client.TASK_PRIORITY_NORMAL,
 ) -> tuple[str, bool]:
     """Поставить server-target SSH-task в очередь worker'а и заэмитить audit.
 
@@ -85,7 +86,9 @@ async def dispatch_server_ssh_task(
       * success → audit-success.
 
     `success_extra_details` мерджится в details success-события (например
-    `pattern` у installed_packages). Возвращает `(task_id, idempotent_hit)`.
+    `pattern` у installed_packages). `priority` пробрасывается в worker-row
+    (дефолт normal); срочный фан-аут передаёт `TASK_PRIORITY_HIGH`. Возвращает
+    `(task_id, idempotent_hit)`.
     """
     idempotency_key = read_idempotency_key(request)
     payload = build_ssh_task_payload(
@@ -103,6 +106,7 @@ async def dispatch_server_ssh_task(
             request_id=getattr(request.state, "request_id", None),
             target_resource_id=resolved_account_id,
             idempotency_key=idempotency_key,
+            priority=priority,
         )
         await db.commit()
     except ConflictError:

@@ -129,6 +129,25 @@ _GROUP_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
 # и shell-метасимволов — защита от инъекции.
 _PATH_RE = re.compile(r"^[A-Za-z0-9/._\-]+$")
 
+# Режимы создания управляющей учётки. Зеркалят `ManagementMode` в
+# server_service (`core/constants.py`): три уровня защищённости Astra Linux SE
+# (Орёл/Воронеж/Смоленск, они же базовый/усиленный/максимальный) и общий
+# fallback для не-Астры. Worker не импортирует server_service-enum через
+# DB-границу, поэтому держим строки здесь; меняешь там — синхронизируй тут.
+MODE_ASTRA_OREL = "astra_orel"
+MODE_ASTRA_VORONEZH = "astra_voronezh"
+MODE_ASTRA_SMOLENSK = "astra_smolensk"
+MODE_OTHER_OS = "other_os"
+
+# astra-modeswitch отдаёт уровень защищённости числом: 0 — Орёл (базовый),
+# 1 — Воронеж (усиленный), 2 — Смоленск (максимальный). В современной Astra
+# SE 1.7+ это не отдельные дистрибутивы, а режимы одной ОС.
+_ASTRA_LEVEL_TO_MODE = {
+    "0": MODE_ASTRA_OREL,
+    "1": MODE_ASTRA_VORONEZH,
+    "2": MODE_ASTRA_SMOLENSK,
+}
+
 # Маркер, которым помечаем строки authorized_keys, записанные нами. Кладём
 # его в конец строки как часть key-comment'а: OpenSSH игнорирует всё после
 # base64-payload'а до конца строки, поэтому маркер не ломает разбор ключа, но
@@ -224,6 +243,51 @@ def _validate_ssh_public_key(
             message="public key has unsupported algorithm prefix",
         )
     return key_line
+
+
+def parse_management_mode(probe_output: str) -> str:
+    """Распарсить вывод probe-команды детекта редакции в `ManagementMode`-строку.
+
+    Probe-команда (`SshClient.detect_management_mode`) печатает несколько
+    помеченных строк, из которых нам важны две:
+
+      * `ASTRA=<...>` — непустое значение означает «это Astra Linux»
+        (нашли `/etc/astra_version`, `/etc/astra/build_version`,
+        `/etc/astra-release` или `ID=astra` в os-release);
+      * `LEVEL=<0|1|2>` — уровень защищённости (`astra-modeswitch get`,
+        fallback `/etc/parsec/mswitch.conf`). 0 → Орёл, 1 → Воронеж,
+        2 → Смоленск.
+
+    Логика:
+      * не Astra → `other_os`;
+      * Astra с распознанным уровнем → соответствующий режим;
+      * Astra без читаемого уровня (старый релиз / урезанный образ без
+        modeswitch и mswitch.conf) → консервативный дефолт `astra_orel`
+        (базовый), чтобы bootstrap не падал на отсутствии данных.
+
+    Чистая функция — без SSH, удобно юнит-тестировать на строках.
+    """
+    is_astra = False
+    level: str | None = None
+    for raw_line in probe_output.splitlines():
+        line = raw_line.strip()
+        if line.startswith("ASTRA="):
+            value = line[len("ASTRA="):].strip()
+            if value:
+                is_astra = True
+        elif line.startswith("LEVEL="):
+            value = line[len("LEVEL="):].strip()
+            # Берём первый числовой символ — modeswitch иногда печатает
+            # «0\n» или «Current mode: 0», mswitch.conf — «MODE=0».
+            for ch in value:
+                if ch in _ASTRA_LEVEL_TO_MODE:
+                    level = ch
+                    break
+    if not is_astra:
+        return MODE_OTHER_OS
+    if level is not None:
+        return _ASTRA_LEVEL_TO_MODE[level]
+    return MODE_ASTRA_OREL
 
 
 class SshClient:
@@ -863,9 +927,48 @@ class SshClient:
                 message=f"userdel exit code {rc}",
             )
 
+    async def detect_management_mode(self) -> str:
+        """Определить режим создания управляющей учётки по редакции ОС на боксе.
+
+        Одной SSH-командой собираем сигналы и печатаем их помеченными
+        строками, разбор — в чистой `parse_management_mode`:
+
+          * Astra-маркеры — наличие `/etc/astra_version`,
+            `/etc/astra/build_version`, `/etc/astra-release` либо `ID=astra`
+            в `/etc/os-release`;
+          * уровень защищённости — `astra-modeswitch get` (числом 0/1/2),
+            fallback на `MODE`/`mode` из `/etc/parsec/mswitch.conf`.
+
+        Команда без sudo и без побочных эффектов (только чтение). На non-zero
+        или SSH-ошибке (`_capture_text` не raise'ит) считаем ОС не-Астрой и
+        отдаём `other_os` — bootstrap тогда возьмёт конфиг общего режима.
+        """
+        probe = (
+            "bash -c '"
+            "astra=\"\"; "
+            'for f in /etc/astra_version /etc/astra/build_version /etc/astra-release; do '
+            'if [ -f "$f" ]; then astra=1; fi; done; '
+            'if [ -z "$astra" ] && grep -qi "^ID=astra" /etc/os-release 2>/dev/null; then astra=1; fi; '
+            'echo "ASTRA=$astra"; '
+            "level=\"\"; "
+            'if command -v astra-modeswitch >/dev/null 2>&1; then '
+            'level=$(astra-modeswitch get 2>/dev/null); fi; '
+            'if [ -z "$level" ] && [ -f /etc/parsec/mswitch.conf ]; then '
+            'level=$(grep -iE "^[[:space:]]*mode[[:space:]]*=" /etc/parsec/mswitch.conf 2>/dev/null '
+            "| head -1 | cut -d= -f2); fi; "
+            'echo "LEVEL=$level"'
+            "'"
+        )
+        captured = await self._capture_text(probe)
+        if not isinstance(captured, dict) or "error" in captured:
+            return MODE_OTHER_OS
+        return parse_management_mode(captured.get("stdout", ""))
+
     async def bootstrap_management_user(
         self, management_user: str, public_key: str,
         *,
+        groups: list[str] | None = None,
+        extra_create_commands: list[str] | None = None,
         management_private_key_path: str | None = None,
         harden_sshd: bool = False,
     ) -> None:
@@ -882,18 +985,28 @@ class SshClient:
            useradd, но до sudoers» — повторно `usermod -G` не зовём
            (он перепишет group-list, NSS-кэш + sssd иногда показывают
            неполный список — потеряем существующее членство).
-        1. `useradd -m -s /bin/bash -G <sudo-group> <management_user>` (idempotent —
-           уже существующий пользователь синхронизируется как usermod,
-           пароль не трогаем, ключ ниже всё равно доложим). Sudo-группа
+        1. `useradd -m -s /bin/bash -G <sudo-group>[,<extra>...] <management_user>`
+           (idempotent — уже существующий пользователь синхронизируется как
+           usermod, пароль не трогаем, ключ ниже всё равно доложим). Sudo-группа
            подбирается по дистрибутиву: `sudo` на Debian/Ubuntu/Astra,
            `wheel` на RHEL/Alpine — пробуем sudo первым, при provision-fail
-           откатываемся на wheel. Если pre-check показал нужную группу,
-           этот шаг **skip'ается** целиком.
+           откатываемся на wheel. `groups` — доп-группы из пер-режимного
+           конфига управляющей учётки (например для конкретной редакции
+           Astra), доклеиваются к sudo-группе. Если pre-check показал нужную
+           sudo-группу, useradd **skip'ается**, но доп-группы тогда
+           досинхронизируются отдельным usermod.
         2. пишем `/etc/sudoers.d/<management_user>-management` с правилом
            `NOPASSWD: ALL` — на управляющей сессии пароля нет (заходим по
            ключу), поэтому sudo обязан работать без него;
         3. создаём `~/.ssh` с правами 700 и `authorized_keys` 600;
-        4. дописываем `public_key` в authorized_keys, если его там ещё нет.
+        4. дописываем `public_key` в authorized_keys, если его там ещё нет;
+        4.5. прогоняем `extra_create_commands` из пер-режимного конфига
+           (например выставление уровней целостности для Смоленска) под sudo
+           управляющей сессии. Команды задал администратор в конфиге — мы их
+           не парсим, выполняем как обычные prepare-шаги. Сами по себе они не
+           идемпотентны на уровне worker'а — это ответственность администратора;
+           worker лишь гарантирует, что юзер/sudo/ключ уже на месте к моменту
+           их запуска.
 
         Повторный prepare не падает: pre-check короткой дорогой обходит
         шаг 1, иначе useradd на existing → usermod, sudoers-файл
@@ -939,6 +1052,9 @@ class SshClient:
         # ненужную команду и не наступить на edge-case, когда usermod -G
         # переписывает текущую групп-листу при `id`-показании совпадающего
         # состояния (NSS-кэш, sssd, ldap-членство).
+        # Доп-группы из пер-режимного конфига. Их валидирует `_resolve_groups`
+        # внутри create_user/modify_user — здесь только нормализуем None → [].
+        extra_groups = list(groups or [])
         last_exc: SshError | None = None
         provisioned = False
         existing_groups: set[str] = set()
@@ -950,13 +1066,22 @@ class SshClient:
                     management_user, sorted(existing_groups), self.host,
                 )
                 provisioned = True
+                # useradd пропущен, но доп-группы режима всё равно
+                # досинхронизируем — usermod -G доклеит их к уже имеющейся
+                # sudo-группе. Без extra_groups usermod — no-op (см. modify_user).
+                if extra_groups:
+                    await self.modify_user(
+                        management_user,
+                        groups=sorted(existing_groups | set(extra_groups)),
+                        has_sudo=False,
+                    )
 
         if not provisioned:
             for sudo_group in ("sudo", "wheel"):
                 try:
                     await self.create_user(
                         management_user,
-                        groups=[sudo_group],
+                        groups=[sudo_group, *extra_groups],
                         has_sudo=False,
                         shell="/bin/bash",
                     )
@@ -1034,6 +1159,14 @@ class SshClient:
             error_code="SSH_PREPARE_FAILED",
         )
 
+        # 4.5. Пер-режимные команды администратора (например уровни целостности
+        # для Смоленска). Выполняются после того, как юзер/sudo/ключ уже на
+        # месте — команда вправе опираться на готовую управляющую учётку.
+        # sudo=True: команды конфигурят систему (parsec-уровни, pdpl-su и т.п.).
+        await self._run_extra_create_commands(
+            management_user, extra_create_commands or [],
+        )
+
         # 5. Анти-локаут: до того как трогать парольную аутентификацию, на
         # отдельной сессии убеждаемся, что вход под управляющим пользователем
         # по его ключу реально проходит. Если ключ не пускает (sshd запускается
@@ -1049,6 +1182,34 @@ class SshClient:
         # рискуем выключить пароль на сервере, куда ключом не зайти.
         if harden_sshd and management_private_key_path:
             await self._harden_sshd(management_user)
+
+    async def _run_extra_create_commands(
+        self, management_user: str, commands: list[str],
+    ) -> None:
+        """Прогнать пер-режимные bootstrap-команды администратора под sudo.
+
+        Команды приходят из конфига управляющей учётки (на боксе их не
+        формируем). Каждую выполняем как отдельный sudo-шаг; первая упавшая
+        (rc != 0) останавливает prepare с `SSH_PREPARE_FAILED` — половинчатый
+        bootstrap лучше провалить явно, чем оставить сервер в недонастроенном
+        состоянии без сигнала оператору. Команды НЕ парсим и не санитайзим:
+        это доверенный ввод администратора (PUT конфига гейтится
+        account_admin'ом), а shell-синтаксис на стороне бокса.
+        """
+        for index, raw in enumerate(commands):
+            command = raw.strip()
+            if not command:
+                continue
+            rc, _out, stderr = await self.run(command, sudo=True)
+            if rc != 0:
+                raise SshError(
+                    error_code="SSH_PREPARE_FAILED",
+                    host=self.host,
+                    cmd_sanitized=f"extra_create_command[{index}] <{management_user}>",
+                    returncode=rc,
+                    stderr=stderr.strip(),
+                    message=f"mode-specific create command exit code {rc}",
+                )
 
     async def _verify_management_key_login(
         self, management_user: str, private_key_path: str,

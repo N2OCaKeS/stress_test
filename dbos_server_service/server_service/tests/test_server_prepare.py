@@ -150,6 +150,28 @@ class TestPrepareDispatch:
             "bootstrap_password": "Boot1234!StrongPwd",
         }
 
+    async def test_payload_carries_management_config(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        # Payload должен нести имя управляющей учётки и пер-режимный конфиг
+        # по всем четырём режимам — детект редакции происходит на боксе.
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
+        )
+        assert resp.status_code == 202, resp.text
+        payload = captured_dispatch[0]["payload"]
+        # login — из ManagementUserConfig (нет строки → дефолт dbos).
+        assert payload["management_login"] == "dbos"
+        modes = payload["management_modes"]
+        assert set(modes.keys()) == {
+            "astra_orel", "astra_smolensk", "astra_voronezh", "other_os",
+        }
+        for cfg in modes.values():
+            assert "groups" in cfg and "extra_create_commands" in cfg
+
     async def test_reader_cannot_prepare(
         self, client, reader_token_a, make_server, captured_dispatch,
     ):
@@ -850,6 +872,58 @@ class TestPreparedCallback:
         assert refreshed.is_managed is True
         assert refreshed.management_user == "dbos"
         assert refreshed.prepared_at is not None
+
+    async def test_persists_management_mode(
+        self, client, worker_bot_token_a, make_server, db, dept_a,
+    ):
+        srv = await make_server(department_id=dept_a)
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/prepared",
+            headers=_hdr(worker_bot_token_a),
+            json={"management_user": "dbos", "management_mode": "astra_smolensk"},
+        )
+        assert resp.status_code == 200, resp.text
+
+        await db.commit()
+        refreshed = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert refreshed.management_mode == "astra_smolensk"
+
+    async def test_missing_mode_leaves_prior_value(
+        self, client, worker_bot_token_a, make_server, db, dept_a,
+    ):
+        # Первый callback ставит режим, второй (без поля) его не затирает —
+        # старый воркер без детекта не должен сбрасывать management_mode.
+        srv = await make_server(department_id=dept_a)
+        await client.post(
+            f"{BASE_INT}/servers/{srv.id}/prepared",
+            headers=_hdr(worker_bot_token_a),
+            json={"management_user": "dbos", "management_mode": "astra_voronezh"},
+        )
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/prepared",
+            headers=_hdr(worker_bot_token_a),
+            json={"management_user": "dbos"},
+        )
+        assert resp.status_code == 200, resp.text
+
+        await db.commit()
+        refreshed = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert refreshed.management_mode == "astra_voronezh"
+
+    async def test_invalid_mode_422(
+        self, client, worker_bot_token_a, make_server, dept_a,
+    ):
+        srv = await make_server(department_id=dept_a)
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/prepared",
+            headers=_hdr(worker_bot_token_a),
+            json={"management_user": "dbos", "management_mode": "astra_kazan"},
+        )
+        assert resp.status_code == 422, resp.text
 
     async def test_idempotent_repeat(
         self, client, worker_bot_token_a, make_server, db, dept_a,

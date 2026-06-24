@@ -102,9 +102,30 @@ def bootstrap_seq_existing_sudo(login: str = "dbos"):
     ]
 
 
+def detect_probe_result(astra: str = "", level: str = ""):
+    """Один `conn.run` ответ для probe-команды `detect_management_mode`.
+
+    Probe печатает `ASTRA=<...>` и `LEVEL=<...>` на stdout. Пустой `astra`
+    означает не-Астру (`other_os`); `level` 0/1/2 → Орёл/Воронеж/Смоленск.
+    """
+    return run_result(f"ASTRA={astra}\nLEVEL={level}\n", "", 0)
+
+
+def prepare_seq(astra: str = "", level: str = "", getent_rc: int = 2):
+    """Полная sequence facade-prepare: detect-probe + bootstrap.
+
+    Facade (`services.ssh_client.bootstrap_management_user`) сначала зовёт
+    `detect_management_mode` (один probe-`conn.run`), затем обычный
+    bootstrap. Дефолт — не-Астра + happy-path «юзера ещё нет».
+    """
+    return [detect_probe_result(astra, level), *bootstrap_seq(getent_rc)]
+
+
 __all__ = [
     "run_result",
     "make_conn",
     "bootstrap_seq",
     "bootstrap_seq_existing_sudo",
+    "detect_probe_result",
+    "prepare_seq",
 ]

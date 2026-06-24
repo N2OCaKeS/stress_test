@@ -61,6 +61,9 @@ class TestBootstrapLoggerDoesNotLeakLogin:
             async def __aexit__(self, *_a):
                 return False
 
+            async def detect_management_mode(self):
+                return "other_os"
+
             async def bootstrap_management_user(self, *_a, **_k):
                 return None
 

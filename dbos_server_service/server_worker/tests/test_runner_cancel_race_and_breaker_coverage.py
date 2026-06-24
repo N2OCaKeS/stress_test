@@ -299,6 +299,7 @@ class TestScrubPayloadBestEffort:
         monkeypatch.setattr(redis_pool, "get_redis", lambda: FakeRedisClient())
 
         conn = make_conn([
+            run_result("ASTRA=\nLEVEL=\n", "", 0),  # detect_management_mode probe
             run_result("", "", 2),   # getent passwd → not found (new user)
             run_result("", "", 0),   # useradd
             run_result("", "", 0),   # sudoers write

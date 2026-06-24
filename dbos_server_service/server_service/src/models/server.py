@@ -76,6 +76,11 @@ class Server(Base):
     # prepared_at — момент подтверждения от worker'а.
     is_managed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     management_user: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Детектнутая воркером при prepare редакция ОС / режим создания управляющей
+    # учётки (`astra_orel`/`astra_smolensk`/`astra_voronezh`/`other_os`). Хранит
+    # строку, а не FK на enum — значения фиксированы ManagementMode, лишняя
+    # таблица-каталог не нужна.
+    management_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
     prepared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

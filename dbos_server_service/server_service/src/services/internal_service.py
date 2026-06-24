@@ -1352,8 +1352,10 @@ async def record_server_prepared(
     Право: `(server, *, prepare_callback)` — узкий грант worker_bot'а.
 
     Помечает сервер подготовленным: `is_managed=True`, `prepared_at=now`,
-    `management_user=<имя>`. Идемпотентно: повторный callback просто
-    переписывает те же поля. Аудит — CRITICAL.
+    `management_user=<имя>`, плюс `management_mode` (детектнутая воркером
+    редакция ОС), если он пришёл в callback'е. `management_mode=None` (старый
+    воркер / детект не отработал) прежнее значение не перетирает. Идемпотентно:
+    повторный callback просто переписывает те же поля. Аудит — CRITICAL.
     """
     # Permission ВЫШЕ existence/dept: caller без grant'а получает 403
     # permission_denied вне зависимости от того, в каком dept'е сервер —
@@ -1402,11 +1404,16 @@ async def record_server_prepared(
         )
 
     prepared_at = datetime.now(timezone.utc)
-    await server_repo.update(db, server, {
+    updates: dict = {
         "is_managed": True,
         "management_user": payload.management_user,
         "prepared_at": prepared_at,
-    })
+    }
+    # `management_mode` пишем только если воркер его прислал — None оставляет
+    # прежнее значение (старый воркер без детекта не должен затирать режим).
+    if payload.management_mode is not None:
+        updates["management_mode"] = payload.management_mode.value
+    await server_repo.update(db, server, updates)
     await db.commit()
 
     audit_service.emit(
@@ -1415,6 +1422,10 @@ async def record_server_prepared(
         status="success", allowed=True,
         details={
             "management_user": payload.management_user,
+            "management_mode": (
+                payload.management_mode.value
+                if payload.management_mode is not None else None
+            ),
             "prepared_at": prepared_at.isoformat(),
             "department_id": server.department_id,
             "caller_type": identity.subject_type,

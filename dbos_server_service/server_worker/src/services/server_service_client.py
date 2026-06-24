@@ -336,12 +336,19 @@ async def submit_prepared(
     server_id: str,
     management_user: str,
     target_department_id: str | None = None,
+    *,
+    management_mode: str | None = None,
 ) -> dict:
     """Сообщить server_service, что бутстрап управления сервера завершён.
 
     Финал `server.prepare` task'а: управляющий пользователь заведён и
     публичный ключ положен. server_service помечает сервер подготовленным
-    (`is_managed=True`, `prepared_at`, management_user).
+    (`is_managed=True`, `prepared_at`, management_user, management_mode).
+
+    `management_mode` — детектнутая на боксе редакция ОС
+    (`astra_orel`/`astra_smolensk`/`astra_voronezh`/`other_os`); server_service
+    сохраняет её на сервере. `None` (старый воркер / детект не отработал) —
+    поле не отправляем, server_service оставит прежнее значение.
 
     Возвращает: `{ok, is_managed, prepared_at}` от
     `POST /api/server/v1/internal/servers/{id}/prepared`.
@@ -355,12 +362,15 @@ async def submit_prepared(
         f"{settings.server_service_url.rstrip('/')}"
         f"/api/server/v1/internal/servers/{server_id}/prepared"
     )
+    body: dict = {"management_user": management_user}
+    if management_mode is not None:
+        body["management_mode"] = management_mode
     client = get_server_service_client()
     try:
         response = await client.post(
             url,
             headers=_headers(target_department_id),
-            json={"management_user": management_user},
+            json=body,
         )
     except httpx.HTTPError as exc:
         raise CredentialFetchError(

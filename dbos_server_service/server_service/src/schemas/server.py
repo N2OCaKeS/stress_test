@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.core.b64 import decode_b64 as _decode_b64
+from src.core.constants import ManagementMode
 from src.core.password_policy import validate_strong_password
 from src.schemas.disk import DiskResponse, DiskSpec
 from src.schemas.ipmi_controller import IpmiControllerCreate
@@ -177,6 +178,7 @@ class ServerResponse(BaseModel):
     decommissioned_at: datetime | None = Field(default=None, description="Когда сервер выведен из эксплуатации.")
     is_managed: bool = Field(default=False, description="Прошёл ли сервер бутстрап управления (prepare).")
     management_user: str | None = Field(default=None, description="Имя управляющего пользователя DBOS (после prepare).")
+    management_mode: ManagementMode | None = Field(default=None, description="Детектнутая при prepare редакция ОС / режим создания управляющей учётки.")
     prepared_at: datetime | None = Field(default=None, description="Когда сервер подготовлен к управлению (prepare callback).")
     storage: list[DiskResponse] = Field(default_factory=list, description="Диски сервера (slot/size_gb/is_system/model).")
     created_at: datetime = Field(description="Когда карточка создана.")
@@ -682,6 +684,13 @@ class ServerPrepareCallbackRequest(BaseModel):
         ..., min_length=1, max_length=64,
         pattern=r"^[A-Za-z0-9._\-]+$",
         description="Имя заведённого управляющего пользователя DBOS.",
+    )
+    management_mode: ManagementMode | None = Field(
+        default=None,
+        description=(
+            "Детектнутая на боксе редакция ОС / режим создания учётки. "
+            "Не прислан (старый воркер) — server_service оставит прежнее значение."
+        ),
     )
 
 

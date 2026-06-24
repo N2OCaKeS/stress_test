@@ -403,15 +403,23 @@ async def bootstrap_management_user(
     *,
     management_user: str,
     public_key: str,
+    modes: dict | None = None,
     management_private_key_path: str | None = None,
     harden_sshd: bool = False,
 ) -> dict:
-    """Онбординг управления: завести управляющего пользователя и положить ключ.
+    """Онбординг управления: детект редакции + завести юзера по пер-режимному конфигу.
 
     `credentials` — одноразовые bootstrap-креды (`{login, password, host?,
     port?}`): под ними SSH-сессия password-auth заходит на ещё
     не управляемый сервер. После prepare управление идёт под `management_user`
     по ключу, исходный пароль больше не нужен и нигде не сохраняется.
+
+    `modes` — пер-режимный конфиг управляющей учётки из server_service:
+    `{<mode>: {groups: [...], extra_create_commands: [...]}}` по всем четырём
+    режимам. На боксе определяем редакцию ОС (`detect_management_mode`) и
+    берём групп/команды именно её режима — детект делается здесь, потому что
+    server_service до prepare редакцию не знает. Нет `modes` / нет ключа
+    режима → пустые группы и команды (как обычный bootstrap).
 
     Если задан `management_private_key_path`, после установки ключа worker
     проверяет, что вход под `management_user` по этому ключу реально работает
@@ -419,8 +427,8 @@ async def bootstrap_management_user(
     root-login через drop-in — только после успешной проверки ключа.
 
     Idempotent: повторный prepare не падает на уже заведённом юзере / уже
-    добавленном ключе. Возврат — `{prepared: True, management_user}`.
-    Ошибки — `SshError`.
+    добавленном ключе. Возврат — `{prepared: True, management_user,
+    management_mode}`. Ошибки — `SshError`.
     """
     host = _extract_host(credentials, server_id)
     username = credentials.get("login") or credentials.get("username") or "root"
@@ -443,12 +451,23 @@ async def bootstrap_management_user(
         password=password,
         port=port,
     ) as ssh:
+        # Сначала детект редакции — ещё под bootstrap-сессией, чтобы выбрать
+        # пер-режимный набор групп/команд до заведения юзера.
+        mode = await ssh.detect_management_mode()
+        mode_cfg = (modes or {}).get(mode) or {}
+        logger.info("prepare on %s detected management mode %s", host, mode)
         await ssh.bootstrap_management_user(
             management_user, public_key,
+            groups=mode_cfg.get("groups") or [],
+            extra_create_commands=mode_cfg.get("extra_create_commands") or [],
             management_private_key_path=management_private_key_path,
             harden_sshd=harden_sshd,
         )
-    return {"prepared": True, "management_user": management_user}
+    return {
+        "prepared": True,
+        "management_user": management_user,
+        "management_mode": mode,
+    }
 
 
 def _parse_size_to_gb(size_str: str) -> int:

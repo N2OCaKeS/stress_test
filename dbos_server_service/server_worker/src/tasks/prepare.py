@@ -46,7 +46,9 @@ logger = logging.getLogger(__name__)
 
 # В audit пускаем только server_id и имя управляющего юзера — bootstrap-логин
 # и пароль наружу не уходят ни при каких обстоятельствах.
-AUDIT_SAFE_FIELDS: set[str] = {"server_id", "management_user", "prepared"}
+AUDIT_SAFE_FIELDS: set[str] = {
+    "server_id", "management_user", "management_mode", "prepared",
+}
 
 # Формат ключа задаёт server_service (`worker_client.prepare_creds_key` +
 # `_new_id("pcd_")` → `dbos:prepare_creds:pcd_<uuid4.hex>`). Жёстко его
@@ -126,7 +128,7 @@ async def _read_bootstrap_creds(creds_key: str) -> dict:
         ) from exc
 
 
-async def _mark_bootstrap_succeeded(task_id: str) -> None:
+async def _mark_bootstrap_succeeded(task_id: str, mode: str | None) -> None:
     """Записать маркер «SSH-bootstrap отработал» в Redis с TTL.
 
     Ставится сразу после успешного `bootstrap_management_user`. На retry'е
@@ -136,24 +138,36 @@ async def _mark_bootstrap_succeeded(task_id: str) -> None:
     время retry либо доделает callback, либо оператор поднимет сервер
     руками. Ошибки глушим — best-effort оптимизация, без маркера retry
     отработает как раньше через cred'ы.
+
+    В значение кладём детектнутый режим (строкой), чтобы callback-retry,
+    пропустивший SSH-этап, передал тот же режим в `submit_prepared`. Если
+    режим неизвестен — пишем `"1"` как раньше (back-compat для старых маркеров).
     """
     validate_task_id(task_id)
     client = redis_pool.get_redis()
     try:
         await client.set(
-            _PREPARED_MARKER_PREFIX + task_id, "1",
+            _PREPARED_MARKER_PREFIX + task_id, mode or "1",
             ex=_PREPARED_MARKER_TTL_SECONDS,
         )
     except Exception:  # noqa: BLE001
         logger.debug("failed to set prepared marker", exc_info=True)
 
 
-async def _read_bootstrap_succeeded(task_id: str) -> bool:
-    """Проверить, отработал ли SSH-bootstrap для этой task'и ранее."""
+async def _read_bootstrap_succeeded(task_id: str) -> tuple[bool, str | None]:
+    """Проверить, отработал ли SSH-bootstrap ранее, и вернуть сохранённый режим.
+
+    Возвращает `(succeeded, mode)`. `mode` — детектнутый режим из значения
+    маркера; `None`, если маркера нет либо значение — legacy-`"1"`.
+    """
     validate_task_id(task_id)
     client = redis_pool.get_redis()
     raw = await client.get(_PREPARED_MARKER_PREFIX + task_id)
-    return raw is not None
+    if raw is None:
+        return False, None
+    value = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    mode = value if value and value != "1" else None
+    return True, mode
 
 
 async def _delete_bootstrap_succeeded(task_id: str) -> None:
@@ -279,8 +293,15 @@ async def server_prepare(task_id: str) -> None:
         # retry'е.
         creds_key = payload.get("bootstrap_creds_key")
         settings = get_settings()
-        management_user = settings.ssh_management_user
+        # Имя управляющей учётки и пер-режимный конфиг — источник истины это
+        # ManagementUserConfig в server_service (едет в payload). env остаётся
+        # фолбэком для старых dispatch'ей без этих полей.
+        management_user = payload.get("management_login") or settings.ssh_management_user
+        modes = payload.get("management_modes") or {}
         public_key = settings.ssh_management_public_key
+        # Режим определяется на боксе; если SSH-этап пропущен по marker'у
+        # (callback-retry), берём ранее сохранённый из payload-scratch.
+        detected_mode: str | None = payload.get("detected_management_mode")
 
         # Если предыдущая попытка прошла SSH-bootstrap, но упала на
         # submit_prepared (network к server_service лежал) — на текущем
@@ -288,7 +309,9 @@ async def server_prepare(task_id: str) -> None:
         # ключа мы валим прогресс с SSH_BOOTSTRAP_CREDS_MISSING, хотя
         # хост фактически готов. submit_prepared идемпотентен на стороне
         # server_service — повторный вызов безопасен.
-        already_bootstrapped = await _read_bootstrap_succeeded(task_id)
+        already_bootstrapped, marker_mode = await _read_bootstrap_succeeded(task_id)
+        if marker_mode is not None:
+            detected_mode = marker_mode
 
         if not already_bootstrapped:
             if not creds_key:
@@ -327,17 +350,19 @@ async def server_prepare(task_id: str) -> None:
             # ключу реально работает (анти-локаут) — для этого нужен путь к
             # приватному ключу из конфига. Если ключа в конфиге нет, проверка
             # и хардинг пропускаются (dev/test без mounted secret).
-            await ssh_client.bootstrap_management_user(
+            bootstrap_result = await ssh_client.bootstrap_management_user(
                 creds, server_id,
                 management_user=management_user,
                 public_key=public_key,
+                modes=modes,
                 management_private_key_path=settings.ssh_management_private_key_path or None,
                 harden_sshd=settings.ssh_harden_after_prepare,
             )
+            detected_mode = bootstrap_result.get("management_mode")
             # Маркер ставим ДО callback'а — если callback упадёт, retry
             # увидит маркер и пропустит SSH-шаг, даже если TTL bootstrap-
             # кред истёк.
-            await _mark_bootstrap_succeeded(task_id)
+            await _mark_bootstrap_succeeded(task_id, detected_mode)
 
             # Завести все привязанные к серверу аккаунты сразу на этапе
             # prepare. Сервер уже фактически управляемый (ключ проверен), поэтому
@@ -352,6 +377,7 @@ async def server_prepare(task_id: str) -> None:
 
         await server_service_client.submit_prepared(
             server_id, management_user, target_dept,
+            management_mode=detected_mode,
         )
         # Cleanup ключа в Redis: ходим только при валидном формате, иначе
         # рискнём задеть чужой keyspace при компрометации payload (тот же
@@ -399,6 +425,7 @@ async def server_prepare(task_id: str) -> None:
         return {
             "server_id": server_id,
             "management_user": management_user,
+            "management_mode": detected_mode,
             "prepared": True,
         }
 

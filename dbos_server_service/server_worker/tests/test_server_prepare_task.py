@@ -27,6 +27,7 @@ from tests._ssh_mock_helpers import (
     bootstrap_seq as _bootstrap_seq,
     bootstrap_seq_existing_sudo as _bootstrap_seq_existing_sudo,
     make_conn as _conn,
+    prepare_seq as _prepare_seq,
     run_result as _run_result,
 )
 
@@ -197,12 +198,12 @@ class TestPrepareHandler:
             },
         )
 
-        conn = _conn(_bootstrap_seq())
+        conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
         submit_calls = []
-        async def fake_submit(server_id, management_user, target_department_id=None):
-            submit_calls.append((server_id, management_user, target_department_id))
+        async def fake_submit(server_id, management_user, target_department_id=None, *, management_mode=None):
+            submit_calls.append((server_id, management_user, target_department_id, management_mode))
             return {"ok": True, "is_managed": True, "prepared_at": "2026-05-27T00:00:00Z"}
         monkeypatch.setattr(
             "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
@@ -214,7 +215,9 @@ class TestPrepareHandler:
         assert t.status == TaskStatus.SUCCEEDED
         assert t.result["management_user"] == "dbos"
         assert t.result["prepared"] is True
-        assert submit_calls == [("srv_prep1", "dbos", "dep_a")]
+        # Probe-команда печатает пустой ASTRA → не-Астра → other_os.
+        assert submit_calls == [("srv_prep1", "dbos", "dep_a", "other_os")]
+        assert t.result["management_mode"] == "other_os"
         # Креды удалены из Redis после успеха.
         assert delete_calls == ["dbos:prepare_creds:pcd_x"]
 
@@ -236,7 +239,7 @@ class TestPrepareHandler:
                 "bootstrap_creds_key": "dbos:prepare_creds:pcd_y",
             },
         )
-        conn = _conn(_bootstrap_seq())
+        conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async def fake_submit(*a, **kw):
             return {"ok": True}
@@ -277,7 +280,7 @@ class TestPrepareHandler:
                 "bootstrap_creds_key": original_key,
             },
         )
-        conn = _conn(_bootstrap_seq())
+        conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
         async def fake_submit(*a, **kw):
@@ -341,7 +344,7 @@ class TestPrepareHandler:
         assert t.status == TaskStatus.QUEUED  # re-queued, не FAILED
 
         # Попытка 2: connect успешен → SUCCEEDED. Креды снова прочитаны из Redis.
-        conn2 = _conn(_bootstrap_seq())
+        conn2 = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn2))
         await prepare.server_prepare.original_func(tid)
         t = await fetch_task(tid)
@@ -412,8 +415,9 @@ class TestPrepareHandler:
             pass
         monkeypatch.setattr(_runner, "_schedule_retry", noop)
 
-        # Имитируем что попытка 1 уже отработала SSH — ставим маркер вручную.
-        await prepare._mark_bootstrap_succeeded(tid)
+        # Имитируем что попытка 1 уже отработала SSH — ставим маркер вручную
+        # с детектнутым ранее режимом (Смоленск).
+        await prepare._mark_bootstrap_succeeded(tid, "astra_smolensk")
 
         # SSH connect не должен вызываться — маркер пропускает шаг.
         monkeypatch.setattr(
@@ -422,8 +426,8 @@ class TestPrepareHandler:
         )
 
         submit_calls = []
-        async def fake_submit(server_id, management_user, target_department_id=None):
-            submit_calls.append((server_id, management_user))
+        async def fake_submit(server_id, management_user, target_department_id=None, *, management_mode=None):
+            submit_calls.append((server_id, management_user, management_mode))
             return {"ok": True}
         monkeypatch.setattr(
             "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
@@ -433,9 +437,10 @@ class TestPrepareHandler:
 
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
-        assert submit_calls == [("srv_prep_marker", "dbos")]
+        # Режим из маркера донёсся в submit_prepared, несмотря на пропуск SSH.
+        assert submit_calls == [("srv_prep_marker", "dbos", "astra_smolensk")]
         # Маркер вычищен после успеха.
-        assert await prepare._read_bootstrap_succeeded(tid) is False
+        assert await prepare._read_bootstrap_succeeded(tid) == (False, None)
 
         get_settings.cache_clear()
 
@@ -539,7 +544,7 @@ class TestPrepareHandler:
             task_kind="server.prepare", target_server_id="srv_prep_ok",
             payload={"server_id": "srv_prep_ok", "bootstrap_creds_key": good_key},
         )
-        conn = _conn(_bootstrap_seq())
+        conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async def fake_submit(*a, **kw):
             return {"ok": True}
@@ -588,7 +593,7 @@ class TestPrepareHandler:
             pass
         monkeypatch.setattr(_runner, "_schedule_retry", noop)
 
-        await prepare._mark_bootstrap_succeeded(tid)
+        await prepare._mark_bootstrap_succeeded(tid, "other_os")
         # SSH connect не должен вызываться — маркер пропускает шаг.
         monkeypatch.setattr(
             asyncssh, "connect",
@@ -659,7 +664,7 @@ class TestPrepareHandler:
                 "bootstrap_creds_key": "dbos:prepare_creds:pcd_cleanup_fail",
             },
         )
-        conn = _conn(_bootstrap_seq())
+        conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
         async def fake_submit(*a, **kw):
@@ -696,7 +701,7 @@ class TestPrepareHandler:
                 "bootstrap_creds_key": "dbos:prepare_creds:pcd_z",
             },
         )
-        conn = _conn(_bootstrap_seq())
+        conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async def fake_submit(*a, **kw):
             return {"ok": True}
@@ -828,7 +833,7 @@ class TestPrepareProvisionsLinkedAccounts:
                 "ssh_port": 2222,
             },
         )
-        conn = _conn(_bootstrap_seq())
+        conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
         async def fake_submit(*a, **kw):
@@ -891,7 +896,7 @@ class TestPrepareProvisionsLinkedAccounts:
             )
             await session.commit()
 
-        conn = _conn(_bootstrap_seq())
+        conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
         async def fake_submit(*a, **kw):
@@ -933,7 +938,7 @@ class TestPrepareProvisionsLinkedAccounts:
                 "bootstrap_creds_key": "dbos:prepare_creds:pcd_noacc",
             },
         )
-        conn = _conn(_bootstrap_seq())
+        conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
         async def fake_submit(*a, **kw):
@@ -947,5 +952,188 @@ class TestPrepareProvisionsLinkedAccounts:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         assert called == []
+
+        get_settings.cache_clear()
+
+
+# ── Детект редакции ОС: parse_management_mode (юнит на строках) ────────────────
+
+
+class TestParseManagementMode:
+    def test_not_astra_is_other_os(self):
+        from src.clients.ssh import parse_management_mode
+        assert parse_management_mode("ASTRA=\nLEVEL=\n") == "other_os"
+
+    def test_empty_output_is_other_os(self):
+        from src.clients.ssh import parse_management_mode
+        assert parse_management_mode("") == "other_os"
+
+    def test_astra_level_zero_is_orel(self):
+        from src.clients.ssh import parse_management_mode
+        assert parse_management_mode("ASTRA=1\nLEVEL=0\n") == "astra_orel"
+
+    def test_astra_level_one_is_voronezh(self):
+        from src.clients.ssh import parse_management_mode
+        assert parse_management_mode("ASTRA=1\nLEVEL=1\n") == "astra_voronezh"
+
+    def test_astra_level_two_is_smolensk(self):
+        from src.clients.ssh import parse_management_mode
+        assert parse_management_mode("ASTRA=1\nLEVEL=2\n") == "astra_smolensk"
+
+    def test_astra_without_level_defaults_to_orel(self):
+        # Astra-маркер есть, уровень не читается (нет modeswitch/mswitch.conf) →
+        # консервативный дефолт базового режима, bootstrap не падает.
+        from src.clients.ssh import parse_management_mode
+        assert parse_management_mode("ASTRA=1\nLEVEL=\n") == "astra_orel"
+
+    def test_level_with_noise_prefix(self):
+        # modeswitch/mswitch.conf могут печатать «Current mode: 2» / «MODE=2» —
+        # берём первый числовой символ из строки LEVEL.
+        from src.clients.ssh import parse_management_mode
+        assert parse_management_mode("ASTRA=1\nLEVEL=2\n") == "astra_smolensk"
+        assert parse_management_mode("ASTRA=build-1.7\nLEVEL=1\n") == "astra_voronezh"
+
+    def test_level_without_astra_marker_stays_other_os(self):
+        # Уровень без Astra-маркера не делает ОС Астрой.
+        from src.clients.ssh import parse_management_mode
+        assert parse_management_mode("ASTRA=\nLEVEL=2\n") == "other_os"
+
+
+# ── SshClient.detect_management_mode (через мок conn.run) ─────────────────────
+
+
+class TestDetectManagementMode:
+    async def test_detect_smolensk(self, monkeypatch):
+        conn = _conn([_run_result("ASTRA=1\nLEVEL=2\n", "", 0)])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+        async with SshClient("h", "boot", "boot-pwd") as ssh:
+            assert await ssh.detect_management_mode() == "astra_smolensk"
+
+    async def test_detect_other_os_on_probe_failure(self, monkeypatch):
+        # Probe вернул non-zero (нет bash / экзотический образ) → other_os.
+        conn = _conn([_run_result("", "boom", 1)])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+        async with SshClient("h", "boot", "boot-pwd") as ssh:
+            assert await ssh.detect_management_mode() == "other_os"
+
+
+# ── bootstrap применяет пер-режимные groups + extra_create_commands ───────────
+
+
+class TestBootstrapAppliesMode:
+    async def test_extra_groups_in_useradd_and_commands_run(self, monkeypatch):
+        # Юзера нет: getent(2) → inner getent(2) → useradd → sudoers →
+        # authorized_keys → две extra_create_commands.
+        conn = _conn([
+            _run_result("", "", 2),
+            _run_result("", "", 2),
+            _run_result("", "", 0),   # useradd
+            _run_result("", "", 0),   # sudoers
+            _run_result("", "", 0),   # authorized_keys
+            _run_result("", "", 0),   # extra cmd 1
+            _run_result("", "", 0),   # extra cmd 2
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+        async with SshClient("h", "boot", "boot-pwd") as ssh:
+            await ssh.bootstrap_management_user(
+                "dbos", _PUBKEY,
+                groups=["astra-admin", "audit"],
+                extra_create_commands=["pdpl-user -i 63 dbos", "touch /tmp/marker"],
+            )
+        useradd_cmd = conn.run.await_args_list[2].args[0]
+        assert "-G sudo,astra-admin,audit" in useradd_cmd
+        # extra-команды выполнены под sudo после authorized_keys.
+        cmd5 = conn.run.await_args_list[5].args[0]
+        cmd6 = conn.run.await_args_list[6].args[0]
+        assert "sudo -S -p ''" in cmd5 and "pdpl-user -i 63 dbos" in cmd5
+        assert "sudo -S -p ''" in cmd6 and "touch /tmp/marker" in cmd6
+
+    async def test_failed_extra_command_raises(self, monkeypatch):
+        conn = _conn([
+            _run_result("", "", 2),
+            _run_result("", "", 2),
+            _run_result("", "", 0),   # useradd
+            _run_result("", "", 0),   # sudoers
+            _run_result("", "", 0),   # authorized_keys
+            _run_result("", "command not found", 127),  # extra cmd падает
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+        async with SshClient("h", "boot", "boot-pwd") as ssh:
+            with pytest.raises(SshError) as ei:
+                await ssh.bootstrap_management_user(
+                    "dbos", _PUBKEY,
+                    extra_create_commands=["does-not-exist"],
+                )
+        assert ei.value.error_code == "SSH_PREPARE_FAILED"
+
+
+# ── Handler: детект режима из payload-modes доходит до submit_prepared ─────────
+
+
+class TestPrepareHandlerMode:
+    async def test_astra_smolensk_mode_applied_and_submitted(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        _set_mgmt_env(monkeypatch)
+        _mock_creds(
+            monkeypatch,
+            {"bootstrap_login": "bootadmin", "bootstrap_password": "Boot1234"},
+        )
+
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_prep_mode",
+            payload={
+                "server_id": "srv_prep_mode",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_mode",
+                "host": "10.0.0.9",
+                "target_department_id": "dep_a",
+                "management_login": "dbos",
+                "management_modes": {
+                    "astra_orel": {"groups": [], "extra_create_commands": []},
+                    "astra_voronezh": {"groups": [], "extra_create_commands": []},
+                    "astra_smolensk": {
+                        "groups": ["astra-admin"],
+                        "extra_create_commands": ["pdpl-user -i 63 dbos"],
+                    },
+                    "other_os": {"groups": [], "extra_create_commands": []},
+                },
+            },
+        )
+
+        # Probe говорит Astra + уровень 2 (Смоленск), затем bootstrap-команды +
+        # одна extra_create_command режима Смоленск.
+        conn = _conn([
+            _run_result("ASTRA=1\nLEVEL=2\n", "", 0),  # detect probe
+            _run_result("", "", 2),                    # outer getent
+            _run_result("", "", 2),                    # inner getent
+            _run_result("", "", 0),                    # useradd
+            _run_result("", "", 0),                    # sudoers
+            _run_result("", "", 0),                    # authorized_keys
+            _run_result("", "", 0),                    # extra cmd Смоленска
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        submit_calls = []
+        async def fake_submit(server_id, management_user, target_department_id=None, *, management_mode=None):
+            submit_calls.append((server_id, management_user, target_department_id, management_mode))
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["management_mode"] == "astra_smolensk"
+        assert submit_calls == [
+            ("srv_prep_mode", "dbos", "dep_a", "astra_smolensk"),
+        ]
+        # Смоленская extra_create_command реально выполнена под sudo.
+        extra_cmd = conn.run.await_args_list[6].args[0]
+        assert "pdpl-user -i 63 dbos" in extra_cmd
+        # useradd получил доп-группу режима.
+        useradd_cmd = conn.run.await_args_list[3].args[0]
+        assert "astra-admin" in useradd_cmd
 
         get_settings.cache_clear()

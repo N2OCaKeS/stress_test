@@ -90,6 +90,7 @@ from src.schemas.server_account import (
 )
 from src.services import (
     audit_service,
+    management_user_config as management_user_config_svc,
     permissions,
     reservation,
     server_account as account_svc,
@@ -1580,6 +1581,17 @@ async def _prepare_resolve_and_dispatch(
             message="Failed to stash bootstrap credentials before dispatch",
         ) from exc
 
+    # Управляющий конфиг для воркера: имя учётки + пер-режимные группы/команды.
+    # Источник истины — ManagementUserConfig (singleton). Детект редакции
+    # происходит на боксе, поэтому отдаём конфиг по всем четырём режимам, а
+    # воркер выберет нужный после детекта. login фоллбэчится на env-дефолт
+    # воркера, если в БД его нет (get_config вернёт DEFAULT_LOGIN).
+    mgmt_cfg = await management_user_config_svc.get_config(db)
+    management_modes = {
+        mode.value: cfg.model_dump(mode="json")
+        for mode, cfg in mgmt_cfg.modes.items()
+    }
+
     payload: dict = {
         "server_id": server_id,
         "target_department_id": server.department_id,
@@ -1587,6 +1599,8 @@ async def _prepare_resolve_and_dispatch(
         "ssh_port": server.ssh_port,
         "is_managed": server.is_managed,
         "management_user": server.management_user,
+        "management_login": mgmt_cfg.login,
+        "management_modes": management_modes,
         "bootstrap_creds_key": creds_key,
     }
     try:

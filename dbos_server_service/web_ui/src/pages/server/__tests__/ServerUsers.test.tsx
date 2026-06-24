@@ -85,14 +85,19 @@ vi.mock("@/api/auth/users", () => ({
 }));
 
 // Ревизия дёргает users/inventory (misc) и поллит задачу через getTask.
+// listTasks — сеялка последней инвентаризации для индикатора в тулбаре.
 const usersInventoryMock = vi.fn(() => new Promise(() => {}));
 const getTaskMock = vi.fn(() => new Promise(() => {}));
+const listTasksMock = vi.fn(() => new Promise(() => {}));
 vi.mock("@/api/server/misc", () => ({
   get usersInventory() {
     return usersInventoryMock;
   },
   get getTask() {
     return getTaskMock;
+  },
+  get listTasks() {
+    return listTasksMock;
   },
 }));
 
@@ -164,6 +169,7 @@ describe("ServerUsers (fleet account list)", () => {
     resolveUserMock.mockReset();
     usersInventoryMock.mockReset();
     getTaskMock.mockReset();
+    listTasksMock.mockReset();
     listServersMock.mockReturnValue(new Promise(() => {}));
     listAccountsMock.mockReturnValue(new Promise(() => {}));
     getAccountMock.mockReturnValue(new Promise(() => {}));
@@ -181,6 +187,7 @@ describe("ServerUsers (fleet account list)", () => {
     resolveUserMock.mockReturnValue(new Promise(() => {}));
     usersInventoryMock.mockReturnValue(new Promise(() => {}));
     getTaskMock.mockReturnValue(new Promise(() => {}));
+    listTasksMock.mockReturnValue(new Promise(() => {}));
   });
 
   function selectAccount() {
@@ -581,6 +588,79 @@ describe("ServerUsers (fleet account list)", () => {
     });
     expect(bindAccountServersMock).toHaveBeenCalledWith("acc-existing", {
       server_ids: ["srv1"],
+    });
+  });
+
+  it("после запуска долгого скана и закрытия модалки индикатор «Открыть результат» остаётся в точке запуска", async () => {
+    selectAccount();
+    usersInventoryMock.mockResolvedValue({ task_id: "tsk-long", status: "queued" });
+    // Задача не завершается (вечный poll) — имитируем долгий скан.
+    getTaskMock.mockReturnValue(new Promise(() => {}));
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Поиск на ОС/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    const d = within(dialog);
+    fireEvent.click(d.getByRole("button", { name: /Сканировать/ }));
+
+    // Дождались, что dispatch ушёл и точка запуска узнала task_id.
+    await waitFor(() => {
+      expect(usersInventoryMock).toHaveBeenCalledTimes(1);
+    });
+
+    // Закрываем модалку до завершения задачи.
+    fireEvent.click(d.getByRole("button", { name: /Закрыть/ }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    // Индикатор последней инвентаризации остаётся в тулбаре с действием.
+    expect(
+      await screen.findByRole("button", { name: /Открыть результат/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Поиск на ОС.*идёт/)).toBeInTheDocument();
+  });
+
+  it("сеет индикатор последней инвентаризации с backend'а при заходе на страницу", async () => {
+    selectAccount();
+    // listTasks отдаёт последнюю готовую задачу, getTask — её результат.
+    listTasksMock.mockResolvedValue({
+      items: [
+        {
+          id: "tsk-seed",
+          kind: "users.inventory",
+          status: "succeeded",
+          server_id: "srv1",
+          created_at: "2026-01-01T00:00:00Z",
+          retry_count: 0,
+        },
+      ],
+      total: 1,
+      limit: 1,
+      offset: 0,
+    });
+    getTaskMock.mockResolvedValue({
+      id: "tsk-seed",
+      kind: "users.inventory",
+      status: "succeeded",
+      server_id: "srv1",
+      created_at: "2026-01-01T00:00:00Z",
+      retry_count: 0,
+      result: { unknown_users: [], diffs: [] },
+    });
+
+    renderPage();
+
+    // Индикатор «готов» с кнопкой открытия результата подтянулся без скана.
+    expect(
+      await screen.findByRole("button", { name: /Открыть результат/ }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(listTasksMock).toHaveBeenCalledWith({
+        kind: "users.inventory",
+        limit: 1,
+      });
     });
   });
 });

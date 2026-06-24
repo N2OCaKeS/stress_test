@@ -40,6 +40,7 @@ export function OsUsersDiscoveryModal({
   onImported,
   onIgnored,
   onLinked,
+  onScanStarted,
 }: {
   servers: Server[];
   serverName: (id: string) => string;
@@ -50,6 +51,12 @@ export function OsUsersDiscoveryModal({
   onIgnored: () => void;
   /** После привязки существующего аккаунта к серверу — refetch списка аккаунтов. */
   onLinked?: () => void;
+  /**
+   * Скан задиспатчен — отдаём наверх task_id и server_id. Точка запуска держит
+   * этот трек у себя, чтобы результат не пропал при закрытии модалки до конца
+   * долгой задачи.
+   */
+  onScanStarted?: (serverId: string, taskId: string) => void;
 }) {
   const toast = useToast();
   const scan = useTaskOutcome();
@@ -102,6 +109,7 @@ export function OsUsersDiscoveryModal({
     try {
       const res = await usersInventory(serverId);
       scan.track("discovery", res.task_id, res.status);
+      onScanStarted?.(serverId, res.task_id);
     } catch (e) {
       setScannedServer(null);
       toast.error(apiErrMsg(e, "Не удалось запустить скан"));

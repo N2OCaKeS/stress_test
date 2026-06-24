@@ -24,7 +24,7 @@
  * по матрице.
  */
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   Search,
@@ -63,7 +63,7 @@ import { formatMskShort } from "@/lib/datetime";
 import { useServerMap, useUserLabel } from "@/lib/labels";
 import { listServers } from "@/api/server/servers";
 import * as accountsApi from "@/api/server/accounts";
-import { usersInventory } from "@/api/server/misc";
+import { usersInventory, listTasks } from "@/api/server/misc";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { RevisionDiffModal } from "@/pages/server/RevisionDiffModal";
 import { OsUsersDiscoveryModal } from "@/pages/server/OsUsersDiscoveryModal";
@@ -251,6 +251,16 @@ export function ServerUsers() {
   const [creating, setCreating] = useState(false);
   const [discovering, setDiscovering] = useState(false);
 
+  // Последняя инвентаризация (users.inventory), запущенная из этой точки или
+  // подтянутая с backend'а — server_id, по которому она шла. Результат живёт в
+  // самой задаче, поэтому индикатор переживает закрытие модалки и перезагрузку
+  // страницы. Сам исход опрашивает useTaskOutcome.
+  const [lastInventoryServer, setLastInventoryServer] = useState<string | null>(
+    null,
+  );
+  const inventory = useTaskOutcome();
+  const navigate = useNavigate();
+
   const serversQ = useQuery(
     () => listServers({ limit: SERVER_LIMIT }),
     [],
@@ -274,6 +284,37 @@ export function ServerUsers() {
   );
 
   const serverName = (id: string) => serverMap.get(id) ?? id;
+
+  // Подтягиваем последнюю инвентаризацию отдела при заходе на страницу, чтобы
+  // индикатор был и без свежего скана (после перезагрузки/возврата). Тянем один
+  // раз, когда трека ещё нет и серверы загрузились; свой свежий dispatch
+  // (handleScanStarted) имеет приоритет и перекрывает подтянутый.
+  useEffect(() => {
+    if (zoneBlocked || serverIds.length === 0 || inventory.tracked) return;
+    let cancelled = false;
+    listTasks({ kind: "users.inventory", limit: 1 })
+      .then((page) => {
+        if (cancelled) return;
+        const task = page.items[0];
+        if (!task || !task.server_id) return;
+        setLastInventoryServer(task.server_id);
+        inventory.track("discovery", task.id, task.status);
+      })
+      .catch(() => {
+        // Нет доступа к /tasks или сеть — просто не показываем индикатор.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // inventory.track стабилен (useCallback); пересеиваем только когда сменился
+    // набор серверов или зона разблокировалась.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoneBlocked, serverIds.length]);
+
+  function handleScanStarted(serverId: string, taskId: string) {
+    setLastInventoryServer(serverId);
+    inventory.track("discovery", taskId, "queued");
+  }
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -394,6 +435,21 @@ export function ServerUsers() {
             </span>
           </div>
         )}
+        {inventory.tracked && (
+          <InventoryStatusBar
+            tracked={inventory.tracked}
+            serverName={
+              lastInventoryServer ? serverName(lastInventoryServer) : ""
+            }
+            onOpen={() =>
+              inventory.tracked && navigate(`/tasks/${inventory.tracked.taskId}`)
+            }
+            onDismiss={() => {
+              inventory.reset();
+              setLastInventoryServer(null);
+            }}
+          />
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto py-2">
@@ -510,6 +566,7 @@ export function ServerUsers() {
           onImported={() => accountsQ.refetch()}
           onIgnored={() => {}}
           onLinked={() => accountsQ.refetch()}
+          onScanStarted={handleScanStarted}
         />
       )}
     </Shell>
@@ -1309,6 +1366,76 @@ function RevisionNotice({
         onClick={onOpen}
       >
         Открыть
+      </button>
+      <button type="button" className="btn btn-sm" onClick={onDismiss}>
+        Скрыть
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Индикатор последней инвентаризации OS-юзеров в тулбаре fleet-списка. Скан
+ * асинхронный (dispatch → task_id → polling), и его результат раньше пропадал
+ * из точки запуска, если модалку закрывали до конца долгой задачи. Здесь статус
+ * (идёт/готово/ошибка) и кнопка «Открыть результат» ведут на `/tasks/{id}`, где
+ * результат живёт независимо от модалки.
+ */
+function InventoryStatusBar({
+  tracked,
+  serverName,
+  onOpen,
+  onDismiss,
+}: {
+  tracked: NonNullable<ReturnType<typeof useTaskOutcome>["tracked"]>;
+  serverName: string;
+  onOpen: () => void;
+  onDismiss: () => void;
+}) {
+  const where = serverName ? ` (${serverName})` : "";
+  if (tracked.polling) {
+    return (
+      <div
+        className="mt-2 alert text-[11px] flex items-center gap-2"
+        role="status"
+      >
+        <RotateCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+        <span className="flex-1">Поиск на ОС{where} идёт…</span>
+        <button type="button" className="btn btn-sm" onClick={onOpen}>
+          Открыть результат
+        </button>
+      </div>
+    );
+  }
+  if (tracked.error || tracked.status === "failed") {
+    return (
+      <div
+        className="mt-2 alert-danger text-[11px] flex items-start gap-2"
+        role="status"
+      >
+        <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+        <span className="flex-1">
+          Поиск на ОС{where} не удался: {tracked.error ?? "задача завершилась ошибкой"}
+        </span>
+        <button type="button" className="btn btn-sm" onClick={onDismiss}>
+          Скрыть
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="mt-2 alert text-[11px] flex items-center gap-2 flex-wrap"
+      role="status"
+    >
+      <ScanSearch className="w-3.5 h-3.5 shrink-0 text-accent" />
+      <span className="flex-1">Поиск на ОС{where} готов.</span>
+      <button
+        type="button"
+        className="btn btn-sm btn-primary"
+        onClick={onOpen}
+      >
+        Открыть результат
       </button>
       <button type="button" className="btn btn-sm" onClick={onDismiss}>
         Скрыть

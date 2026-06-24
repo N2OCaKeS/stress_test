@@ -39,6 +39,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { fromBase64 } from "@/lib/base64";
 import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
+import { ConsoleMacrosPanel } from "@/pages/server/tabs/ConsoleMacros";
 import type {
   CursorPaginatedResponse,
   OffsetPaginatedResponse,
@@ -375,6 +376,15 @@ function ConsoleSession({
     }
   }, [account, injecting, toast]);
 
+  // Выполнить команду макроса: шлём текст с переводом строки — как будто
+  // пользователь набрал её и нажал Enter. Только при открытой сессии.
+  const runCommand = useCallback((commandText: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(commandText + "\n");
+    termRef.current?.focus();
+  }, []);
+
   const connected = state === "open" || state === "connecting";
   const sessionOpen = state === "open";
 
@@ -432,6 +442,8 @@ function ConsoleSession({
           </div>
         </div>
       )}
+
+      {sessionOpen && <ConsoleMacrosPanel onRun={runCommand} />}
 
       <div
         ref={mountRef}

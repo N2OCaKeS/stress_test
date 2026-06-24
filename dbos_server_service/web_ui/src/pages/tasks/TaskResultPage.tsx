@@ -19,6 +19,7 @@ import { apiErrMsg } from "@/api/client";
 import { getTask } from "@/api/server/misc";
 import { isTerminalTaskStatus } from "@/api/server/types";
 import type {
+  InventoryUser,
   TaskRead,
   UnknownUser,
   UnlinkedExistingUser,
@@ -120,6 +121,7 @@ export function TaskResultPage() {
         <div className="scroll-block p-5">
           <InventoryResultView
             serverId={task.server_id ?? null}
+            users={asArray<InventoryUser>(result.users)}
             unknownUsers={asArray<UnknownUser>(result.unknown_users)}
             unlinkedExisting={asArray<UnlinkedExistingUser>(
               result.unlinked_existing,

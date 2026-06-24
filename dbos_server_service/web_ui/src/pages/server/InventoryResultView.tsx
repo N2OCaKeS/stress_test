@@ -1,6 +1,12 @@
 /**
  * Вид результата инвентаризации OS-юзеров (`users.inventory` →
- * `task.result.{unknown_users, unlinked_existing}`).
+ * `task.result.{users, unknown_users, unlinked_existing}`).
+ *
+ * Полный скан бокса (`users`) показывается списком «Обнаруженные пользователи»
+ * со статус-бейджем на каждого: «Не в системе» (есть в `unknown_users`), «Есть
+ * аккаунт, не привязан» (`unlinked_existing`), «Системная» (управляющая учётка
+ * сервера) либо «Уже в системе». Так оператор всегда видит, что нашли, даже
+ * когда добавлять некого.
  *
  * Незнакомые OS-юзеры (`unknown_users`) — таблица с режимом add/ignore/skip
  * (по умолчанию skip) и батч-кнопкой «Применить»: отмеченные на add заводятся
@@ -27,9 +33,16 @@ import {
   addIgnoredLogin,
   bindAccountServers,
 } from "@/api/server/accounts";
-import type { UnknownUser, UnlinkedExistingUser } from "@/api/server/types";
+import type {
+  InventoryUser,
+  UnknownUser,
+  UnlinkedExistingUser,
+} from "@/api/server/types";
 
 type RowMode = "skip" | "add" | "ignore";
+
+/** Статус найденного логина относительно БД — для бейджа в общем списке. */
+type DiscoveredStatus = "unknown" | "unlinked" | "system" | "present";
 
 function importError(e: unknown): string {
   if (e instanceof ApiError) {
@@ -59,8 +72,10 @@ function linkError(e: unknown): string {
 
 export function InventoryResultView({
   serverId,
+  users,
   unknownUsers,
   unlinkedExisting,
+  managementUser,
   onImported,
   onIgnored,
   onLinked,
@@ -68,8 +83,12 @@ export function InventoryResultView({
 }: {
   /** Сервер, к которому относится снимок — цель импорта/привязки. */
   serverId: string | null;
+  /** Полный скан бокса — все найденные OS-юзеры (`result.users`). */
+  users: InventoryUser[];
   unknownUsers: UnknownUser[];
   unlinkedExisting: UnlinkedExistingUser[];
+  /** Управляющая учётка сервера, если известна — помечаем «системной». */
+  managementUser?: string | null;
   /** После успешного импорта хотя бы одного юзера — refetch. */
   onImported?: () => void;
   /** После добавления хотя бы одного логина в ignore-list. */
@@ -96,6 +115,28 @@ export function InventoryResultView({
     () => unlinkedExisting.filter((u) => !linkedLogins.has(u.login)),
     [unlinkedExisting, linkedLogins],
   );
+
+  // Быстрый доступ по login для статуса в общем списке.
+  const unknownByLogin = useMemo(() => {
+    const m = new Map<string, UnknownUser>();
+    for (const u of unknownUsers) m.set(u.login, u);
+    return m;
+  }, [unknownUsers]);
+
+  const unlinkedByLogin = useMemo(() => {
+    const m = new Map<string, UnlinkedExistingUser>();
+    for (const u of unlinkedExisting) m.set(u.login, u);
+    return m;
+  }, [unlinkedExisting]);
+
+  // Статус найденного логина: unknown → unlinked → system → present.
+  // Привязку, выполненную в текущем снимке, учитываем — такой логин уже present.
+  function statusOf(login: string): DiscoveredStatus {
+    if (unknownByLogin.has(login)) return "unknown";
+    if (unlinkedByLogin.has(login) && !linkedLogins.has(login)) return "unlinked";
+    if (managementUser && login === managementUser) return "system";
+    return "present";
+  }
 
   function setMode(login: string, mode: RowMode) {
     setModes((prev) => ({ ...prev, [login]: mode }));
@@ -187,36 +228,85 @@ export function InventoryResultView({
     }
   }
 
+  // Есть ли что предложить оператору (добавить / связать).
+  const nothingToAct = unknownUsers.length === 0 && pendingUnlinked.length === 0;
+
   return (
     <div className="flex flex-col gap-4">
-      {/* Таблица незнакомых юзеров */}
-      <div className="flex flex-col gap-2">
-        {unknownUsers.length === 0 ? (
-          <div className="text-sm text-dim text-center py-4">
-            Новых пользователей не найдено.
+      {/* Полный список обнаруженных на боксе пользователей со статусом */}
+      {users.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <div className="text-xs uppercase text-dim">
+            Обнаруженные пользователи ({users.length})
           </div>
-        ) : (
-          <>
-            <div className="text-xs uppercase text-dim">
-              Незнакомые пользователи ({unknownUsers.length})
+          {nothingToAct && (
+            <div className="text-xs text-dim">
+              Новых пользователей для добавления нет — все обнаруженные уже
+              заведены или игнорируются.
             </div>
-            <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
-              {unknownUsers.map((u) => (
-                <UnknownUserRow
-                  key={u.login}
-                  user={u}
-                  mode={modes[u.login] ?? "skip"}
-                  disabled={applying}
-                  onMode={(m) => setMode(u.login, m)}
-                />
-              ))}
+          )}
+          <div className="flex flex-col gap-1 max-h-96 overflow-y-auto">
+            {users.map((u) => {
+              const status = statusOf(u.login);
+              if (status === "unknown") {
+                const unknown = unknownByLogin.get(u.login)!;
+                return (
+                  <UnknownUserRow
+                    key={u.login}
+                    user={unknown}
+                    mode={modes[u.login] ?? "skip"}
+                    disabled={applying}
+                    onMode={(m) => setMode(u.login, m)}
+                  />
+                );
+              }
+              if (status === "unlinked") {
+                const unlinked = unlinkedByLogin.get(u.login)!;
+                return (
+                  <UnlinkedExistingRow
+                    key={u.login}
+                    user={unlinked}
+                    busy={linkingLogin === u.login}
+                    disabled={linkingLogin != null}
+                    onLink={(accountId) => handleLink(unlinked, accountId)}
+                  />
+                );
+              }
+              return <DiscoveredUserRow key={u.login} user={u} status={status} />;
+            })}
+          </div>
+        </div>
+      ) : (
+        // Старый снимок без поля users — показываем незнакомых как раньше.
+        <div className="flex flex-col gap-2">
+          {unknownUsers.length === 0 ? (
+            <div className="text-sm text-dim text-center py-4">
+              Новых пользователей не найдено.
             </div>
-          </>
-        )}
-      </div>
+          ) : (
+            <>
+              <div className="text-xs uppercase text-dim">
+                Незнакомые пользователи ({unknownUsers.length})
+              </div>
+              <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
+                {unknownUsers.map((u) => (
+                  <UnknownUserRow
+                    key={u.login}
+                    user={u}
+                    mode={modes[u.login] ?? "skip"}
+                    disabled={applying}
+                    onMode={(m) => setMode(u.login, m)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
-      {/* Существующие аккаунты — связать с сервером */}
-      {pendingUnlinked.length > 0 && (
+      {/* Существующие аккаунты — связать с сервером (запасная секция, когда
+          общий список не строится — нет users) */}
+      {users.length === 0 && pendingUnlinked.length > 0 && (
         <div className="flex flex-col gap-2">
           <div className="text-xs uppercase text-dim">
             Существующие аккаунты — связать с сервером ({pendingUnlinked.length})
@@ -258,6 +348,40 @@ export function InventoryResultView({
   );
 }
 
+/** Строка обнаруженного пользователя без действий: уже в системе / системная. */
+function DiscoveredUserRow({
+  user,
+  status,
+}: {
+  user: InventoryUser;
+  status: "system" | "present";
+}) {
+  return (
+    <div className="border border-token rounded px-3 py-2 flex items-center gap-2 flex-wrap">
+      <div className="flex-1 min-w-[160px]">
+        <div className="text-sm mono flex items-center gap-2">
+          {user.login}
+          {user.has_sudo && (
+            <span className="badge badge-warn flex items-center gap-1">
+              <ShieldCheck className="w-3 h-3" /> sudo
+            </span>
+          )}
+        </div>
+        <div className="text-[11px] text-dim">
+          uid {user.uid}
+          {user.shell ? ` · ${user.shell}` : ""}
+          {user.unix_groups.length > 0
+            ? ` · ${user.unix_groups.join(", ")}`
+            : ""}
+        </div>
+      </div>
+      <span className="badge">
+        {status === "system" ? "Системная" : "Уже в системе"}
+      </span>
+    </div>
+  );
+}
+
 function UnknownUserRow({
   user,
   mode,
@@ -274,6 +398,7 @@ function UnknownUserRow({
       <div className="flex-1 min-w-[160px]">
         <div className="text-sm mono flex items-center gap-2">
           {user.login}
+          <span className="badge badge-warn">Не в системе</span>
           {user.has_sudo && (
             <span className="badge badge-warn flex items-center gap-1">
               <ShieldCheck className="w-3 h-3" /> sudo
@@ -345,7 +470,10 @@ function UnlinkedExistingRow({
   return (
     <div className="border border-token rounded px-3 py-2 flex items-center gap-2 flex-wrap">
       <div className="flex-1 min-w-[160px]">
-        <div className="text-sm mono">{user.login}</div>
+        <div className="text-sm mono flex items-center gap-2">
+          {user.login}
+          <span className="badge">Есть аккаунт, не привязан</span>
+        </div>
         <div className="text-[11px] text-dim">
           uid {user.uid}
           {single

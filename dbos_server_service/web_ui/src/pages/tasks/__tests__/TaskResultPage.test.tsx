@@ -155,6 +155,89 @@ describe("TaskResultPage", () => {
     expect(screen.getByLabelText(/Игнорировать ghost/)).toBeInTheDocument();
   });
 
+  it("при пустом unknown_users, но непустом users — рендерит обнаруженных со статусами и текст пустого состояния", async () => {
+    getTaskMock.mockResolvedValue({
+      id: "tsk-inv3",
+      kind: "users.inventory",
+      status: "succeeded",
+      server_id: "srv1",
+      created_at: "2026-01-01T00:00:00Z",
+      retry_count: 0,
+      result: {
+        users: [
+          {
+            login: "tester",
+            uid: 1001,
+            has_sudo: false,
+            unix_groups: ["testers"],
+            shell: "/bin/bash",
+            home_dir: "/home/tester",
+          },
+          {
+            login: "dbos",
+            uid: 1000,
+            has_sudo: true,
+            unix_groups: ["sudo"],
+            shell: "/bin/bash",
+            home_dir: "/home/dbos",
+          },
+        ],
+        unknown_users: [],
+        unlinked_existing: [],
+      },
+    });
+
+    renderAt("tsk-inv3");
+
+    expect(await screen.findByText(/Обнаруженные пользователи/)).toBeInTheDocument();
+    expect(screen.getByText("tester")).toBeInTheDocument();
+    expect(screen.getByText("dbos")).toBeInTheDocument();
+    // Оба уже учтены → текст пустого состояния, оба помечены «Уже в системе».
+    expect(
+      screen.getByText(/Новых пользователей для добавления нет/),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Уже в системе").length).toBe(2);
+  });
+
+  it("обнаруженный незнакомый пользователь в общем списке имеет действие «Добавить»", async () => {
+    getTaskMock.mockResolvedValue({
+      id: "tsk-inv4",
+      kind: "users.inventory",
+      status: "succeeded",
+      server_id: "srv1",
+      created_at: "2026-01-01T00:00:00Z",
+      retry_count: 0,
+      result: {
+        users: [
+          {
+            login: "ghost",
+            uid: 1500,
+            has_sudo: true,
+            unix_groups: ["wheel"],
+            shell: "/bin/bash",
+            home_dir: "/home/ghost",
+          },
+        ],
+        unknown_users: [
+          {
+            login: "ghost",
+            uid: 1500,
+            has_sudo: true,
+            unix_groups: ["wheel"],
+            shell: "/bin/bash",
+          },
+        ],
+        unlinked_existing: [],
+      },
+    });
+
+    renderAt("tsk-inv4");
+
+    expect(await screen.findByText("ghost")).toBeInTheDocument();
+    expect(screen.getByText("Не в системе")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Добавить ghost/)).toBeInTheDocument();
+  });
+
   it("для прочих задач рендерит TaskDetail со статусом и result", async () => {
     getTaskMock.mockResolvedValue({
       id: "tsk-pkg",

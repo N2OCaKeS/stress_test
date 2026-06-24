@@ -830,6 +830,20 @@ export interface UsersInventoryResult {
 }
 
 /**
+ * OS-юзер из полного скана бокса (`task.result.users`) — все найденные
+ * учётки, независимо от того, заведены они в БД или нет. UI накладывает на
+ * этот список статус по пересечению с `unknown_users`/`unlinked_existing`.
+ */
+export interface InventoryUser {
+  login: string;
+  uid: number;
+  has_sudo: boolean;
+  unix_groups: string[];
+  shell: string | null;
+  home_dir: string | null;
+}
+
+/**
  * OS-юзер, найденный на боксе ревизией, но не привязанный ни к одному
  * server_account'у и не попавший в ignore-list (системные по UID backend
  * отфильтровывает сам). Приезжает в `task.result.unknown_users`.

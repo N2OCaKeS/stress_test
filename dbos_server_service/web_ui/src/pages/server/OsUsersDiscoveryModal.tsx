@@ -28,6 +28,7 @@ import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { InventoryResultView } from "@/pages/server/InventoryResultView";
 import type {
   Server,
+  InventoryUser,
   UnknownUser,
   UnlinkedExistingUser,
   RevisionAccountDiff,
@@ -69,6 +70,12 @@ export function OsUsersDiscoveryModal({
 
   const scanResult = scan.tracked?.result;
 
+  const users = useMemo<InventoryUser[]>(() => {
+    if (!scanResult || typeof scanResult !== "object") return [];
+    const raw = (scanResult as { users?: unknown }).users;
+    return Array.isArray(raw) ? (raw as InventoryUser[]) : [];
+  }, [scanResult]);
+
   const unknownUsers = useMemo<UnknownUser[]>(() => {
     if (!scanResult || typeof scanResult !== "object") return [];
     const raw = (scanResult as { unknown_users?: unknown }).unknown_users;
@@ -86,6 +93,12 @@ export function OsUsersDiscoveryModal({
     const raw = (scanResult as { unlinked_existing?: unknown }).unlinked_existing;
     return Array.isArray(raw) ? (raw as UnlinkedExistingUser[]) : [];
   }, [scanResult]);
+
+  // Управляющая учётка просканированного сервера — пометить её «системной».
+  const managementUser = useMemo<string | null>(() => {
+    if (!scannedServer) return null;
+    return servers.find((s) => s.id === scannedServer)?.management_user ?? null;
+  }, [servers, scannedServer]);
 
   const polling = scan.tracked?.polling ?? false;
   const scanDone =
@@ -221,8 +234,10 @@ export function OsUsersDiscoveryModal({
               <InventoryResultView
                 key={scan.tracked?.taskId}
                 serverId={scannedServer}
+                users={users}
                 unknownUsers={unknownUsers}
                 unlinkedExisting={unlinkedExisting}
+                managementUser={managementUser}
                 onImported={onImported}
                 onIgnored={onIgnored}
                 onLinked={onLinked}

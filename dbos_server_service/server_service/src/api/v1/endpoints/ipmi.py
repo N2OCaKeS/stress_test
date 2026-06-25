@@ -369,7 +369,7 @@ async def create_controller(
         403: {"description": "Нет ни `view`, ни `view_credentials`."},
         404: {"description": "Сервер не найден / чужой dept, либо контроллер не зарегистрирован."},
         429: {"description": "RATE_LIMIT_EXCEEDED — per-IP+server reveal-rate-limit пробит."},
-        500: {"description": "DECRYPT_FAILED — сломанный ciphertext (только при view_credentials)."},
+        422: {"description": "DECRYPT_FAILED — сломанный ciphertext (только при view_credentials)."},
     },
 )
 @endpoint_limiter.limit(

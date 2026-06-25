@@ -2,7 +2,8 @@
 
 Деструктив — операция, которая мутирует состояние входа на бокс: смена
 пароля аккаунта (`account.rotate_password`), ротация пароля IPMI-контроллера
-(`ipmi.rotate_password`), удаление OS-пользователя (`account.deprovision`).
+(`ipmi.rotate_password`), удаление OS-пользователя (`account.deprovision`),
+cutover-rename management-учётки (`management_user_sync`).
 Если такую операцию запустить, пока на ТОМ ЖЕ сервере выполняется другая
 задача (inventory.sync под SSH, ещё одна провизия, консольная сессия,
 завязанная на тот же аккаунт), параллельный chpasswd / userdel может оборвать

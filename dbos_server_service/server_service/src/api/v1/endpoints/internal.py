@@ -80,8 +80,8 @@ _INTERNAL_RESPONSES_BASE: dict[int | str, dict] = {
 
 _INTERNAL_RESPONSES_CALLBACK: dict[int | str, dict] = {
     **_INTERNAL_RESPONSES_BASE,
-    422: {"description": "Битый payload (нарушение pydantic-валидации; например, BMC_VERIFY_REQUIRED / IPMI_VERIFY_TOO_OLD)."},
-    500: {"description": "DECRYPT_FAILED / ENCRYPTION_KEY_MISSING / INTERNAL_ERROR."},
+    422: {"description": "Битый payload (нарушение pydantic-валидации; например, BMC_VERIFY_REQUIRED / IPMI_VERIFY_TOO_OLD) либо DECRYPT_FAILED — сломанный/неаутентичный ciphertext."},
+    500: {"description": "ENCRYPTION_KEY_MISSING / INTERNAL_ERROR."},
 }
 
 # Type alias держит дефолт FastAPI Header() аккуратным на все три route'а сразу.
@@ -100,7 +100,8 @@ _TargetDeptHeader = Header(
     "/servers/{server_id}/ipmi/credentials",
     response_model=IpmiCredentialsResponse,
     responses={**_INTERNAL_RESPONSES_BASE,
-               500: {"description": "DECRYPT_FAILED / ENCRYPTION_KEY_MISSING."}},
+               422: {"description": "DECRYPT_FAILED — сломанный/неаутентичный ciphertext."},
+               500: {"description": "ENCRYPTION_KEY_MISSING."}},
 )
 async def get_ipmi_credentials(
     server_id: str,
@@ -132,7 +133,8 @@ async def get_ipmi_credentials(
     response_model=AccountPasswordResponse,
     responses={**_INTERNAL_RESPONSES_BASE,
                409: {"description": "ACCOUNT_HAS_NO_PASSWORD — discovered-аккаунт без сохранённого ciphertext."},
-               500: {"description": "DECRYPT_FAILED / ENCRYPTION_KEY_MISSING."}},
+               422: {"description": "DECRYPT_FAILED — сломанный/неаутентичный ciphertext."},
+               500: {"description": "ENCRYPTION_KEY_MISSING."}},
 )
 async def get_account_password(
     server_id: str,

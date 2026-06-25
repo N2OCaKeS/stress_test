@@ -572,10 +572,10 @@ async def _dispatch_account_provision(
     * Managed (либо discovered с уже сохранённым ciphertext'ом) → sticky
       существующий пароль, force_replace только если pending_apply'нутый
       ciphertext ещё не подтверждён callback'ом worker'а (race-fix).
-    * Plaintext password + ssh_private_key уезжают в Redis-stash под
-      `dbos:dispatch_creds:<dcd_id>` (TTL = `dispatch_creds_ttl_seconds`),
-      в task-payload едет только ссылка `creds_stash_key`. Симметрия с
-      `server.prepare` (bootstrap_creds_key).
+    * password + ssh_private_key уезжают в Redis-stash под
+      `dbos:dispatch_creds:<dcd_id>` envelope-encrypted'ом (`encrypt_stash`,
+      TTL = `dispatch_creds_ttl_seconds`), в task-payload едет только ссылка
+      `creds_stash_key`. Симметрия с `server.prepare` (bootstrap_creds_key).
     """
     operation = "provision"
     # decommissioned-check и account_has_no_password откладываем — Idempotency-Key

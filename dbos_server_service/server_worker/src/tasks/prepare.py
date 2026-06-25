@@ -83,13 +83,12 @@ async def _read_bootstrap_creds(creds_key: str) -> dict:
     SSH_BOOTSTRAP_CREDS_MISSING)` — task завершится FAILED с понятным
     last_error, а не молчаливо зайдёт под `root` без пароля.
 
-    Bootstrap-creds лежат в Redis как plaintext JSON. Envelope-шифрование
-    value не делается — writer (server_service.internal_service) и reader
-    (worker) не имеют общего мастер-ключа: server_service шифрует ciphertext
-    в своей БД, но bootstrap-payload между сервисами идёт plaintext'ом, иначе
-    worker не смог бы залогиниться по SSH под `root` для prepare. Mitigation'ы:
-    короткий TTL (`PREPARE_CREDS_TTL_SECONDS` ≈ 15 мин в server_service),
-    обязательный redis AUTH в prod, неугадываемый суффикс ключа
+    Bootstrap-creds лежат в Redis как envelope-encrypted token: writer
+    (server_service.internal_service) и reader (worker) делят общий
+    `redis_stash_encryption_key`, value шифруется AES-256-GCM поверх
+    HKDF-SHA256 с AAD от stash-id. Mitigation'ы: короткий TTL
+    (`PREPARE_CREDS_TTL_SECONDS` ≈ 15 мин в server_service), обязательный
+    redis AUTH в prod, неугадываемый суффикс ключа
     (`dbos:prepare_creds:<task_id>`), `_validate_dispatch_creds_key` whitelist
     на формат входящего payload-ключа. Подробнее — `AUDIT_EVENTS.md` секция
     Threat model.

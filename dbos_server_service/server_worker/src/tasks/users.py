@@ -98,10 +98,11 @@ async def _store_provision_inline(
     Redis. Если ни password, ни private_key не пришли — stash не пишем
     (нечего сохранять, лишний ключ в Redis не нужен).
 
-    Value — plaintext JSON. Envelope-шифрование (мастер-ключ + AES-GCM)
-    не применяется: worker не держит `SERVER_ENCRYPTION_KEY`. Mitigation'ы
-    — TTL, redis AUTH в prod, явный DELETE после submit, неугадываемый
-    суффикс ключа. Подробнее — `AUDIT_EVENTS.md` секция Threat model.
+    Value — envelope-encrypted token (`encrypt_stash`: AES-256-GCM поверх
+    HKDF-SHA256, AAD=`redis_stash|<task_id>`, отдельный
+    `redis_stash_encryption_key`). Доп. mitigation'ы — TTL, redis AUTH в
+    prod, явный DELETE после submit, неугадываемый суффикс ключа.
+    Подробнее — `AUDIT_EVENTS.md` секция Threat model.
     """
     if password_plaintext is None and ssh_private_key_plaintext is None:
         return

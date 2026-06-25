@@ -308,7 +308,7 @@ async def list_accounts(
         403: {"description": "Нет роли ни с `view`, ни с `view_password`."},
         404: {"description": "Аккаунт не найден или чужой dept (скрыто за 404)."},
         429: {"description": "RATE_LIMIT_EXCEEDED — per-IP+account reveal-rate-limit пробит."},
-        500: {"description": "DECRYPT_FAILED — сломанный ciphertext (только при view_password)."},
+        422: {"description": "DECRYPT_FAILED — сломанный ciphertext (только при view_password)."},
     },
 )
 @endpoint_limiter.limit(
@@ -686,7 +686,7 @@ async def rotate_ssh_key(
         403: {"description": "Нет роли с `view_password`."},
         404: {"description": "Аккаунт не найден / чужой dept, либо нет сохранённого приватного ключа."},
         429: {"description": "RATE_LIMIT_EXCEEDED — per-IP+account reveal-rate-limit пробит."},
-        500: {"description": "DECRYPT_FAILED — сломанный ciphertext приватного ключа."},
+        422: {"description": "DECRYPT_FAILED — сломанный ciphertext приватного ключа."},
     },
 )
 @endpoint_limiter.limit(

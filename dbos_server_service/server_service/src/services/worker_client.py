@@ -231,8 +231,9 @@ def _build_broker() -> ListQueueBroker:
       `update_on_host` из PATCH аккаунта (`fanout_update_on_host`).
     * ``ipmi.rotate_password`` —
       `endpoints/worker_dispatch.py::ipmi_rotate_credentials_dispatch`
-      (worker сейчас raise'ит NotImplementedError до запроса в iDRAC,
-      см. SAFETY GUARD в `server_worker/src/tasks/passwords.py`).
+      (worker делает verify-then-submit: PATCH пароля на BMC, read-only
+      verify под новым паролем, затем submit в server_service — см.
+      `server_worker/src/tasks/passwords.py::ipmi_rotate_password`).
     * ``server.prepare`` — `endpoints/worker_dispatch.py::server_prepare`
       (bootstrap-креды едут через Redis по `bootstrap_creds_key`).
     """

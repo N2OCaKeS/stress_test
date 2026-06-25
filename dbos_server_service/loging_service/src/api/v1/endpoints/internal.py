@@ -12,9 +12,10 @@
 service-key 401 → drift отдавал 503. Теперь чтение идёт сюда, под тем же
 shared-secret, что и write-канал.
 
-Фильтр обязателен: caller должен сузить выборку (`service` + `action`),
-чтобы internal-канал не превращался в неограниченный дамп журнала под
-service-key'ом.
+Фильтр обязателен: caller должен передать и `service`, и `action`, чтобы
+internal-канал не превращался в неограниченный дамп журнала под
+service-key'ом. Если хотя бы один из них отсутствует — `422`
+(`VALIDATION_ERROR`).
 """
 
 from datetime import datetime
@@ -24,6 +25,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from src.core.constants import Severity
+from src.core.exceptions import DomainValidationError
 from src.core.limits import MAX_QUERY_LIMIT, MAX_QUERY_OFFSET
 from src.dependencies.auth import require_service_token
 from src.dependencies.db import get_db
@@ -60,14 +62,19 @@ def list_events_internal(
     """Service-to-service чтение событий аудита.
 
     Контракт фильтров повторяет публичный `GET /events`, но аутентификация
-    идёт по `SERVICE_API_KEYS` вместо user-bearer'а. Нормализуем `service` и
-    `action` зеркально ingest'у — иначе запрос с raw-строкой (`AUTH_SERVICE`,
+    идёт по `SERVICE_API_KEYS` вместо user-bearer'а. `service` и `action`
+    обязательны — без них internal-канал отдавал бы неограниченный дамп
+    журнала под service-key'ом; отсутствие любого из них → `422`. Нормализуем
+    их зеркально ingest'у — иначе запрос с raw-строкой (`AUTH_SERVICE`,
     confusable-юникод) не нашёл бы уже канонизированные в БД записи.
     """
-    if service is not None:
-        service = normalize_identifier(service)
-    if action is not None:
-        action = normalize_identifier(action)
+    if service is None or action is None:
+        raise DomainValidationError(
+            error_code="VALIDATION_ERROR",
+            message="query parameters 'service' and 'action' are both required",
+        )
+    service = normalize_identifier(service)
+    action = normalize_identifier(action)
 
     return event_service.query(
         db,

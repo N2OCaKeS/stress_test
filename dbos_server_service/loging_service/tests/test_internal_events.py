@@ -9,6 +9,7 @@ drift-события для `GET /servers/{id}/drift`.
 
 * happy-path: server_service-key + `X-Service-Identity` → 200 с событиями;
 * фильтр по `action` + `target_id` сужает выборку;
+* `service` и `action` обязательны — без любого из них → 422;
 * нет токена → 401;
 * неверный ключ → 401;
 * user-роль (admin/reader) сюда не нужна — путь чисто service-to-service.
@@ -51,10 +52,39 @@ class TestInternalEventsAuth:
         assert resp.status_code == 401
 
     def test_valid_service_key_accepted(self, client):
-        resp = client.get(INTERNAL, headers=headers_for("server_service"))
+        resp = client.get(
+            INTERNAL,
+            params={"service": "server_service", "action": "server_account.drift_detected"},
+            headers=headers_for("server_service"),
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["items"] == []
+
+
+class TestInternalEventsRequiredFilter:
+    def test_no_filter_returns_422(self, client):
+        resp = client.get(INTERNAL, headers=headers_for("server_service"))
+        assert resp.status_code == 422
+        assert resp.json()["error_code"] == "VALIDATION_ERROR"
+
+    def test_missing_action_returns_422(self, client):
+        resp = client.get(
+            INTERNAL,
+            params={"service": "server_service"},
+            headers=headers_for("server_service"),
+        )
+        assert resp.status_code == 422
+        assert resp.json()["error_code"] == "VALIDATION_ERROR"
+
+    def test_missing_service_returns_422(self, client):
+        resp = client.get(
+            INTERNAL,
+            params={"action": "server_account.drift_detected"},
+            headers=headers_for("server_service"),
+        )
+        assert resp.status_code == 422
+        assert resp.json()["error_code"] == "VALIDATION_ERROR"
 
 
 class TestInternalEventsRead:
@@ -62,7 +92,9 @@ class TestInternalEventsRead:
         _ingest(client, "server_service", action="server_account.drift_detected")
         _ingest(client, "server_service", action="server_account.drift_detected")
         body = client.get(
-            INTERNAL, headers=headers_for("server_service"),
+            INTERNAL,
+            params={"service": "server_service", "action": "server_account.drift_detected"},
+            headers=headers_for("server_service"),
         ).json()
         assert len(body["items"]) == 2
 
@@ -82,6 +114,7 @@ class TestInternalEventsRead:
         body = client.get(
             INTERNAL,
             params={
+                "service": "server_service",
                 "action": "server_account.drift_detected",
                 "target_id": "srv_a",
             },
@@ -96,7 +129,11 @@ class TestInternalEventsRead:
         future = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
         body = client.get(
             INTERNAL,
-            params={"from_time": future},
+            params={
+                "service": "server_service",
+                "action": "server_account.drift_detected",
+                "from_time": future,
+            },
             headers=headers_for("server_service"),
         ).json()
         assert body["items"] == []

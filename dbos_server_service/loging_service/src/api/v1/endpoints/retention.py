@@ -151,13 +151,14 @@ def _snapshot_list(policies) -> list[dict]:
     description=(
         "Возвращает активную политику или `null`, если ни одной не настроено.\n\n"
         "**Доступ:** `platform_role=loging_admin`.\n\n"
-        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
+        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-user, fallback на IP; "
+        "см. README).\n\n"
         "**Связано:** `PUT /retention` — задать/заменить политику; "
         "`DELETE /retention` — отключить ротацию (хранить вечно)."
     ),
     responses={
         **_AUTH_RESPONSES,
-        429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-user rate-limit (fallback IP)"},
     },
 )
 # Симметрично остальным read-эндпоинтам (`GET /events`, `GET /rules`,

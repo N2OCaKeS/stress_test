@@ -91,14 +91,15 @@ def _register_events_rate_limit_key(request: Request) -> str:
         "`loging_reader_dep` / `department_admin`). Агрегат GROUP BY service "
         "отдаётся cross-dept целиком (реестр имён сервисов, не пер-dept "
         "данные событий).\n\n"
-        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
+        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-user, fallback на IP; "
+        "см. README).\n\n"
         "**Связано:** `GET /services/{service}/events` — каталог action'ов "
         "конкретного сервиса; `GET /events` — собственно события."
     ),
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
         403: {"model": ErrorEnvelope, "description": "`INSUFFICIENT_ROLE`"},
-        429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-user rate-limit (fallback IP)"},
         503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
     },
 )
@@ -318,16 +319,20 @@ def register_events(
     description=(
         "Постранично отдаёт `service_events` конкретного сервиса: `action`, "
         "`description`, `default_severity`, `registered_at`, `updated_at`.\n\n"
-        "**Доступ:** `loging_admin` или `loging_reader`. `account_admin` / "
-        "`department_admin` к чтению реестра не допускаются.\n\n"
-        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
+        "**Доступ:** любая из пяти read-ролей "
+        "(`loging_admin` / `loging_reader` / `account_admin` / "
+        "`loging_reader_dep` / `department_admin`); для dept-ролей действует "
+        "dept-scope. Каталог action'ов сервиса — реестр имён, не пер-dept "
+        "данные событий.\n\n"
+        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-user, fallback на IP; "
+        "см. README).\n\n"
         "**Связано:** `POST /services/{service}/events` — регистрация "
         "action'ов; `POST /rules` — правила на эти action'ы."
     ),
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
         403: {"model": ErrorEnvelope, "description": "`INSUFFICIENT_ROLE`"},
-        429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-user rate-limit (fallback IP)"},
         503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
     },
 )

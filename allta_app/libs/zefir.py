@@ -463,7 +463,8 @@ class ZefirTestRun:
         #self.kernel_repo = kernel_repo
         self.use_kernels = use_kernels
         orel_stand3, smolensk_stand3, orel_stand4, smolensk_stand4, orel_stand10, smolensk_stand10, \
-        orel_stand11, smolensk_stand11, orel_stand12, smolensk_stand12, orel_stand13, smolensk_stand13 = changelog_testcycle_handler(rc=self.rc, final=final)
+        orel_stand11, smolensk_stand11, orel_stand12, smolensk_stand12, orel_stand13, smolensk_stand13, \
+        orel_stand14, smolensk_stand14 = changelog_testcycle_handler(rc=self.rc, final=final)
         self.stands = stands
         self.modes = test_run_modes
         self.tests_case_zefir_key = tests_case_zefir_key
@@ -474,12 +475,14 @@ class ZefirTestRun:
             ('orel', 'stand11'): orel_stand11,
             ('orel', 'stand12'): orel_stand12,
             ('orel', 'stand13'): orel_stand13,
+            ('orel', 'stand14'): orel_stand14,
             ('smolensk', 'stand3'): smolensk_stand3,
             ('smolensk', 'stand4'): smolensk_stand4,
             ('smolensk', 'stand10'): smolensk_stand10,
             ('smolensk', 'stand11'): smolensk_stand11,
             ('smolensk', 'stand12'): smolensk_stand12,
-            ('smolensk', 'stand13'): smolensk_stand13
+            ('smolensk', 'stand13'): smolensk_stand13,
+            ('smolensk', 'stand14'): smolensk_stand14
         }
 
 

@@ -515,7 +515,7 @@ async def refresh(
         raise AuthorizationError(error_code="USER_NOT_FOUND", message="User not found")
     # Симметрия с login: если у юзера активный temporary ban с истёкшим
     # `expires_at` — снимаем inline и продолжаем рефреш. Иначе SPA с фоновой
-    # ротацией access-токена ловит 401 USER_BANNED и принудительно требует
+    # ротацией access-токена ловит 403 USER_BANNED и принудительно требует
     # повторного логина, даже когда ban уже отгорел.
     if user.status == UserStatus.BANNED:
         from src.services import user_service

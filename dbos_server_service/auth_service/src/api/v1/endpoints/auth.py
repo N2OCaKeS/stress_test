@@ -200,8 +200,9 @@ async def token_form(
     description="Аутентификация пользователя и выдача пары access + refresh токенов.",
     response_description="Пара токенов и контекст identity.",
     responses={
-        401: {"description": "Неверный username/password или юзер забанен."},
-        429: {"description": "Аккаунт залочен после 5 неудачных попыток (lockout 15 минут)."},
+        401: {"description": "INVALID_CREDENTIALS — неверный username/password."},
+        403: {"description": "USER_BANNED — юзер забанен; USER_BLOCKED — юзер заблокирован."},
+        429: {"description": "ACCOUNT_TEMPORARILY_LOCKED — залочен после 5 неудачных попыток (lockout 15 минут)."},
     },
 )
 async def login(
@@ -223,7 +224,8 @@ async def login(
 
     Возможные ошибки:
         * `INVALID_CREDENTIALS` (401) — неверный пароль или нет такого юзера.
-        * `USER_BANNED` (401) — юзер забанен permanent/temporary.
+        * `USER_BANNED` (403) — юзер забанен permanent/temporary.
+        * `USER_BLOCKED` (403) — юзер заблокирован.
         * `ACCOUNT_TEMPORARILY_LOCKED` (429) — слишком много неудачных попыток, надо ждать.
 
     Связано:
@@ -254,6 +256,7 @@ async def login(
     response_description="Новая пара access + refresh.",
     responses={
         401: {"description": "Refresh невалидный, истёк или уже использован."},
+        403: {"description": "USER_BANNED — юзер забанен; USER_BLOCKED — юзер заблокирован (сессия отзывается)."},
     },
 )
 async def refresh(
@@ -280,6 +283,8 @@ async def refresh(
         * `REFRESH_TOKEN_EXPIRED` (401) — refresh истёк.
         * `REFRESH_TOKEN_RACE` (401) — параллельный /refresh уже ротировал
           сессию (CAS-miss). Benign-race, повтор с новым refresh решает.
+        * `USER_BANNED` (403) — юзер забанен; сессия отзывается.
+        * `USER_BLOCKED` (403) — юзер заблокирован; сессия отзывается.
     """
     # Body имеет приоритет над cookie — старые клиенты, которые ещё шлют
     # refresh в теле, продолжают работать. Новый UI пустой body шлёт намеренно,
@@ -382,8 +387,7 @@ async def me(request: Request, identity: CurrentUserIdentity, db: AsyncSession =
         "схеме и режутся `extra='forbid'`."
     ),
     responses={
-        401: {"description": "Нет Bearer-токена или токен невалидный."},
-        403: {"description": "USER_BANNED — забаненный юзер не может править профиль (через guard)."},
+        401: {"description": "Нет Bearer-токена, токен невалидный, либо USER_BANNED_OR_INACTIVE — забаненный/неактивный юзер режется guard'ом раньше."},
         422: {"description": "EMPTY_UPDATE — пустое тело без полей; либо лишние поля; либо невалидный email."},
     },
 )

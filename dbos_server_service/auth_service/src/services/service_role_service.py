@@ -387,6 +387,12 @@ async def bulk_revoke(
 ) -> None:
     """Bulk-снять роль со списка юзеров. Юзеры обязательно из этого отдела."""
     _check_can_manage(identity, department_id, service_name)
+
+    # Дедуп с сохранением порядка: дубликат `user_id` иначе дёргает
+    # `_invalidate_identity_cache` и пишет один и тот же id в audit details
+    # дважды. Зеркало `bulk_assign`.
+    user_ids = list(dict.fromkeys(user_ids))
+
     user_repo = UserRepository(db)
     # Один SELECT по списку вместо N×get_by_id.
     users = await user_repo.list_by_ids(user_ids)
@@ -404,6 +410,12 @@ async def bulk_revoke(
                     f"User '{user_id}' belongs to a different department "
                     f"and cannot be revoked from roles in '{department_id}'"
                 ),
+            )
+        # Симметрия с `bulk_assign`: inactive-юзер в батче — fail-fast.
+        if not user.is_active:
+            raise ConflictError(
+                error_code="USER_INACTIVE",
+                message=f"User '{user_id}' is inactive",
             )
     role_repo = RoleRepository(db)
     await role_repo.bulk_revoke(user_ids, service_name, role_name)

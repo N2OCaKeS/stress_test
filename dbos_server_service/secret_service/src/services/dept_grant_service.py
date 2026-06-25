@@ -185,6 +185,8 @@ async def revoke(
         )
         raise
 
+    # cascade_role_acls в details уже несёт число снесённых ACL'ей —
+    # отдельное dept_revoke_cascade-событие было дублем того же действия.
     audit_service.emit(
         "tokens.dept_grant_revoked",
         target_id=grant_id_snapshot,
@@ -195,13 +197,3 @@ async def revoke(
             "cascade_role_acls": cascade_count,
         },
     )
-    if cascade_count:
-        audit_service.emit(
-            "tokens.dept_revoke_cascade",
-            target_id=cred.id,
-            target_type="credential",
-            details={
-                "recipient_dept_id": recipient,
-                "removed_role_acls": cascade_count,
-            },
-        )

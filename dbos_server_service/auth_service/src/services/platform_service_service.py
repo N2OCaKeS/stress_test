@@ -74,6 +74,19 @@ async def delete_service(
         if access and access.is_active:
             affected_dept_ids.append(dept.id)
             await dept_repo.revoke_access(access, revoked_by=actor_id)
+            # Per-dept трейл для SIEM. Глобальный `service.delete` ниже несёт
+            # только агрегатные counts — без этого события снятие доступа у
+            # конкретного отдела при удалении сервиса не отличить от ничего.
+            # Зеркалит `revoke_service_access`-эмит того же action'а.
+            audit_service.emit(
+                "department.service_revoke", actor_id,
+                target_id=dept.id, target_type="department",
+                request_id=request_id,
+                details={
+                    "service_name": service_name,
+                    "via": "service.delete",
+                },
+            )
 
     # Симметрия с `revoke_service_access`: GroupServiceRole/GroupServiceAccess
     # за пределами `dept_repo.revoke_access` не каскадятся. Без явного

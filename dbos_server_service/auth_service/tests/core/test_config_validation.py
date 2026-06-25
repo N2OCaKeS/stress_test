@@ -386,3 +386,49 @@ def test_production_rejects_memory_with_subpath():
     with pytest.raises(ValidationError) as exc:
         _build(RATE_LIMIT_STORAGE_URI="memory://shared")
     assert "RATE_LIMIT_STORAGE_URI" in str(exc.value)
+
+
+# ── SECRET_SERVICE_TLS_VERIFY: warn-only при выключенной проверке ─────────────
+
+
+def test_production_warns_on_tls_verify_disabled(caplog):
+    """`SECRET_SERVICE_TLS_VERIFY=false` при заданном URL — не падает, но
+    оставляет WARNING: без verify https-схема не защищает lifecycle-канал
+    от MITM (подменный secret_service съест emit'ы про user-delete/dept-revoke)."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="src.core.config"):
+        s = _build(
+            SECRET_SERVICE_URL="https://secret.example.com",
+            SECRET_SERVICE_TLS_VERIFY=False,
+        )
+    assert s.secret_service_tls_verify is False
+    assert any(
+        "SECRET_SERVICE_TLS_VERIFY" in rec.message for rec in caplog.records
+    ), [rec.message for rec in caplog.records]
+
+
+def test_production_no_warn_when_tls_verify_enabled(caplog):
+    """С verify=true (дефолт) предупреждения быть не должно."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="src.core.config"):
+        _build(
+            SECRET_SERVICE_URL="https://secret.example.com",
+            SECRET_SERVICE_TLS_VERIFY=True,
+        )
+    assert not any(
+        "SECRET_SERVICE_TLS_VERIFY" in rec.message for rec in caplog.records
+    )
+
+
+def test_production_no_tls_warn_when_url_empty(caplog):
+    """Пустой URL — secret_service не используется, verify-флаг неважен,
+    предупреждать не о чем."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="src.core.config"):
+        _build(SECRET_SERVICE_URL="", SECRET_SERVICE_TLS_VERIFY=False)
+    assert not any(
+        "SECRET_SERVICE_TLS_VERIFY" in rec.message for rec in caplog.records
+    )

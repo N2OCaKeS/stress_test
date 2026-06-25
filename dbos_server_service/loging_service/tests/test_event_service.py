@@ -3,7 +3,7 @@
 Покрывает:
 
 * `record()` — rollback после `ConflictError` сам падает (broken pool):
-  self-audit НЕ эмитится на сломанной сессии, в логе CRITICAL.
+  self-audit ретраится на свежей сессии, в логе CRITICAL.
 * `query()` — timeout на COUNT и SELECT эмитит warning self-audit
   `logging.events_queried` с `details.timeout=True`.
 """
@@ -50,11 +50,11 @@ class _BrokenSession:
 
 
 class TestRecordRollbackFailure:
-    def test_rollback_failure_logs_critical_and_skips_self_audit(
+    def test_rollback_failure_logs_critical_and_retries_on_fresh_session(
         self, monkeypatch, caplog
     ):
-        """`db.rollback()` падает → CRITICAL в логе, `_emit_idempotency_conflict_audit`
-        не вызывается (нельзя писать на сломанной сессии).
+        """`db.rollback()` падает → CRITICAL в логе, self-audit конфликта
+        ретраится на СВЕЖЕЙ сессии (broken pool не должен глотать инцидент).
         """
         session = _BrokenSession()
 
@@ -80,13 +80,24 @@ class TestRecordRollbackFailure:
             event_service.rule_service, "apply_rules", fake_apply_rules
         )
 
-        emitted: list = []
+        # На исправной сессии self-audit идёт через `_emit_idempotency_conflict_audit`.
+        # Здесь rollback падает, поэтому ожидаем fresh-session путь — мокаем его.
+        emitted_same: list = []
+        emitted_fresh: list = []
 
         def fake_emit(db, payload, exc):
-            emitted.append((db, payload, exc))
+            emitted_same.append((db, payload, exc))
+
+        def fake_emit_fresh(payload, exc):
+            emitted_fresh.append((payload, exc))
 
         monkeypatch.setattr(
             event_service, "_emit_idempotency_conflict_audit", fake_emit
+        )
+        monkeypatch.setattr(
+            event_service,
+            "_emit_idempotency_conflict_audit_fresh_session",
+            fake_emit_fresh,
         )
 
         payload = EventCreate(
@@ -107,8 +118,10 @@ class TestRecordRollbackFailure:
 
         # rollback пытался вызваться один раз и поднял исключение.
         assert session.rollback_calls == 1
-        # Self-audit ПРОПУЩЕН — нельзя писать на сломанной сессии.
-        assert emitted == []
+        # На сломанной сессии self-audit НЕ писали, но и не потеряли —
+        # инцидент уехал свежей сессией.
+        assert emitted_same == []
+        assert len(emitted_fresh) == 1
         # CRITICAL-лог зафиксирован.
         critical_messages = [
             r.message for r in caplog.records if r.levelno == logging.CRITICAL
@@ -357,25 +370,40 @@ class TestQueryTimeoutAudit:
 # ── _emit_idempotency_conflict_audit misuse guard ────────────────────────────
 
 
-class TestIdempotencyConflictAuditMisuseGuard:
-    """Caller-инвариант: rollback outer-tx ДО вызова self-audit. Guard смотрит
-    на `db.in_transaction()`: если tx открыта — пропускаем audit, чтобы
-    `commit=True` внутри не сорвал чужую транзакцию. Логируем CRITICAL, чтобы
-    bad-call-site был виден в SIEM."""
+class TestIdempotencyConflictAuditUnderOpenTx:
+    """Caller держит свою outer-tx (admin-CRUD под одной транзакцией). Self-audit
+    конфликта пишется в SAVEPOINT (`begin_nested`) с `commit=False`: вложенная
+    транзакция фиксируется, а top-level `commit`/`rollback` остаётся за caller'ом —
+    чужую tx не клоббрим, но и диагностику poisoning'а не теряем."""
 
     class _SessionWithOpenTx:
         def __init__(self):
             self.commits = 0
+            self.nested_begun = 0
+            self.nested_committed = 0
 
         def in_transaction(self) -> bool:
             return True
 
         def commit(self):
-            # Дополнительная страховка: если guard не отработает и audit пройдёт
-            # дальше, мы это увидим по росту commit-счётчика.
+            # Top-level commit НЕ должен вызываться — иначе мы закрыли бы
+            # чужую транзакцию.
             self.commits += 1
 
-    def test_open_tx_skips_audit_and_logs_critical(self, caplog):
+        def begin_nested(self):
+            self.nested_begun += 1
+            outer = self
+
+            class _Nested:
+                def commit(self_inner):
+                    outer.nested_committed += 1
+
+                def rollback(self_inner):
+                    pass
+
+            return _Nested()
+
+    def test_open_tx_writes_audit_in_savepoint(self, monkeypatch):
         session = self._SessionWithOpenTx()
         payload = EventCreate(
             timestamp=datetime.now(timezone.utc),
@@ -394,14 +422,22 @@ class TestIdempotencyConflictAuditMisuseGuard:
             details={"service": payload.service, "idempotency_key": payload.idempotency_key},
         )
 
-        with caplog.at_level(logging.CRITICAL, logger="src.services.event_service"):
-            event_service._emit_idempotency_conflict_audit(session, payload, exc)
+        # Мокаем сам writer — нас интересует, что он зван с commit=False
+        # внутри savepoint, а не реальная вставка (нет БД).
+        admin_calls: list = []
 
-        # Audit-row через session НЕ пошёл (commit не вызывался).
+        def fake_admin(db, p, *, commit=True):
+            admin_calls.append({"db": db, "commit": commit})
+
+        monkeypatch.setattr(event_service, "record_admin_action", fake_admin)
+
+        event_service._emit_idempotency_conflict_audit(session, payload, exc)
+
+        # Savepoint открыт и зафиксирован; top-level commit не трогали.
+        assert session.nested_begun == 1
+        assert session.nested_committed == 1
         assert session.commits == 0
-        critical = [
-            r.message for r in caplog.records if r.levelno == logging.CRITICAL
-        ]
-        assert any(
-            "called inside an open transaction" in m for m in critical
-        ), f"ожидали CRITICAL про open tx, получили: {critical!r}"
+        # Writer вызван внутри savepoint с commit=False.
+        assert len(admin_calls) == 1
+        assert admin_calls[0]["commit"] is False
+        assert admin_calls[0]["db"] is session

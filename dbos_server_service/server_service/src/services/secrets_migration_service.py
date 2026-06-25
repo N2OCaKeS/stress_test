@@ -700,10 +700,35 @@ def _reencrypt_row(row, *, aad_fn, entity_type: str, log_label: str) -> dict | N
         # ciphertext vs decrypt с чужим AAD'ом). Сам plaintext или ключ
         # из exc-сообщений не достанем — пишем только класс.
         exc_class = type(exc).__name__
+        error_code = getattr(exc, "error_code", None)
         metrics.increment_secrets_decrypt_failures()
         logger.warning(
             "reencrypt_batch %s row %s failed: %s",
             log_label, row.id, exc_class,
+        )
+        # Сбой re-encrypt'а — это либо пропавший мастер-ключ (мисконфиг env,
+        # критичная операционная ошибка), либо неаутентичный/битый ciphertext.
+        # WARNING-лога мало: оба случая надо доносить до SIEM явным событием,
+        # иначе ключ, выпавший из env, утонет в шуме. Ключ-missing выделяем
+        # отдельным action'ом, остальное — generic decrypt-failure.
+        if error_code == "ENCRYPTION_KEY_MISSING":
+            audit_action = "secrets.migration_key_missing"
+            reason = "encryption_key_missing"
+        else:
+            audit_action = "secrets.migration_decrypt_failed"
+            reason = "decrypt_failed"
+        audit_service.emit(
+            audit_action,
+            target_id=row.id,
+            target_type=entity_type,
+            status="failure",
+            allowed=True,
+            details={
+                "reason": reason,
+                "entity_type": entity_type,
+                "error_class": exc_class,
+                "error_code": error_code,
+            },
         )
         return {
             "entity_type": entity_type,

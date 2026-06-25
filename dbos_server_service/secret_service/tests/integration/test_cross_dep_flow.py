@@ -111,10 +111,12 @@ async def test_cross_dep_full_flow_with_cascade_revoke(
     )
     assert reveal_after.status_code == 404
 
-    # 9. Audit: dept_grant_added + role_acl_added + dept_grant_revoked + cascade.
+    # 9. Audit: dept_grant_added + role_acl_added + dept_grant_revoked.
     actions = {e["action"] for e in mock_logging_service}
     assert "tokens.dept_grant_added" in actions
     assert "tokens.role_acl_added" in actions
     assert "tokens.dept_grant_revoked" in actions
-    # cascade — эмитится только если RoleACL'и реально удалились (>0).
-    assert "tokens.dept_revoke_cascade" in actions
+    # Каскадно снесённые RoleACL'и считаются прямо в dept_grant_revoked
+    # (поле cascade_role_acls) — отдельного cascade-события на этом пути нет.
+    revoked = next(e for e in mock_logging_service if e["action"] == "tokens.dept_grant_revoked")
+    assert revoked["details"]["cascade_role_acls"] >= 1

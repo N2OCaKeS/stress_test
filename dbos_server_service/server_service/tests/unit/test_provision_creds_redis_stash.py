@@ -64,7 +64,7 @@ def stub_redis(monkeypatch):
     pooled.delete = AsyncMock(side_effect=fake_delete)
     pooled.aclose = AsyncMock()
 
-    monkeypatch.setattr(worker_client, "_prepare_redis_client", pooled)
+    monkeypatch.setattr(worker_client, "_creds_redis_client", pooled)
 
     class _Settings:
         server_worker_redis_url = "redis://test:6379/0"
@@ -275,7 +275,7 @@ class TestProvisionCredsRedisStash:
 
         # Pool отсутствует, URL пустой → store_dispatch_creds поднимет
         # WORKER_REDIS_NOT_CONFIGURED.
-        monkeypatch.setattr(worker_client, "_prepare_redis_client", None)
+        monkeypatch.setattr(worker_client, "_creds_redis_client", None)
 
         class _Settings:
             server_worker_redis_url = ""
@@ -359,7 +359,7 @@ class TestDispatchCredsHelpers:
         assert key == "dbos:dispatch_creds:dcd_abc123"
 
     async def test_store_dispatch_creds_no_url_raises(self, monkeypatch):
-        monkeypatch.setattr(worker_client, "_prepare_redis_client", None)
+        monkeypatch.setattr(worker_client, "_creds_redis_client", None)
 
         class _Settings:
             server_worker_redis_url = ""
@@ -378,7 +378,7 @@ class TestDispatchCredsHelpers:
     async def test_store_dispatch_creds_pooled_uses_ttl(self, monkeypatch):
         pooled = MagicMock()
         pooled.set = AsyncMock()
-        monkeypatch.setattr(worker_client, "_prepare_redis_client", pooled)
+        monkeypatch.setattr(worker_client, "_creds_redis_client", pooled)
 
         class _Settings:
             server_worker_redis_url = "redis://test:6379/0"
@@ -400,7 +400,7 @@ class TestDispatchCredsHelpers:
         """Best-effort: ошибки DEL не пропускаются наружу."""
         pooled = MagicMock()
         pooled.delete = AsyncMock(side_effect=RuntimeError("redis down"))
-        monkeypatch.setattr(worker_client, "_prepare_redis_client", pooled)
+        monkeypatch.setattr(worker_client, "_creds_redis_client", pooled)
 
         class _Settings:
             server_worker_redis_url = "redis://test:6379/0"

@@ -300,7 +300,7 @@ async def _bridge(
     в control-канале.
     """
     client = worker_client.get_worker_redis()
-    own_client = client is not worker_client._prepare_redis_client
+    own_client = client is not worker_client._creds_redis_client
     ctl_ch = worker_client.console_ctl_channel(session_id)
     in_ch = worker_client.console_in_channel(session_id)
     out_ch = worker_client.console_out_channel(session_id)

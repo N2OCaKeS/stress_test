@@ -105,6 +105,8 @@ worker дёргает после реальной работы.
 | `secrets.reencrypt_failed` | WARNING | POST `/internal/secrets/reencrypt_outbox/{id}/failed` — worker не смог закрыть outbox-row (decrypt/encrypt error), row помечен `failed` | `secret` | `outbox_id`, `status` |
 | `secrets.reencrypt_outbox_cleanup` | INFO | POST `/internal/secrets/reencrypt_outbox/cleanup` — удаление `done`-row'ов старше `older_than_hours` (bounded growth таблицы) | `secret` | `deleted`, `older_than_hours` |
 | `secrets.migration.skipped` | WARNING | `secrets_migration_service.finalize_done` — outbox-row уже закрыт другой ветвью (`status_not_processing`), либо owner-row пропал/перетёрся параллельно (`owner_vanished`, `owner_ciphertext_changed`). Идемпотентность сохранена, но факт требует видимости в SIEM | `secrets_reencrypt_outbox` | `reason in {status_not_processing, owner_vanished, owner_ciphertext_changed}`, `entity_type`, `entity_id`, `current_status` (для `status_not_processing`) |
+| `secrets.migration_key_missing` | ERROR | `secrets_migration_service.reencrypt_batch` — sync re-encrypt не смог расшифровать row из-за пропавшего мастер-ключа (`ENCRYPTION_KEY_MISSING`). Мисконфиг env, требует немедленного вмешательства оператора | `server_account` / `ipmi_controller` | `reason=encryption_key_missing`, `entity_type`, `error_class`, `error_code` |
+| `secrets.migration_decrypt_failed` | ERROR | `secrets_migration_service.reencrypt_batch` — sync re-encrypt не смог расшифровать/перешифровать row (неаутентичный или битый ciphertext, чужой AAD). Row выпала из миграции, требует ручного разбора | `server_account` / `ipmi_controller` | `reason=decrypt_failed`, `entity_type`, `error_class`, `error_code` |
 
 ---
 

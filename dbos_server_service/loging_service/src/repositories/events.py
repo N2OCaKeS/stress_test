@@ -37,8 +37,14 @@ def _with_statement_timeout(
     исключена. SAVEPOINT нужен, чтобы query_canceled (57014) не повалил
     активную внешнюю транзакцию.
 
-    На `57014` зовётся `on_canceled()` и пишется warning. Любая другая
-    DBAPIError пробрасывается caller'у.
+    На `57014` (query_canceled по statement_timeout) зовётся `on_canceled()`
+    и пишется warning. То же — на disconnect/invalidated-connection: между
+    `SET LOCAL` и `fn()` коннект мог отвалиться (рестарт PG, обрыв сети,
+    pgbouncer-kill). Такая `DBAPIError` приходит с `pgcode=None`, но с
+    `connection_invalidated=True`; для caller'а исход тот же, что у timeout'а
+    — запрос не отработал, и downstream-контракт `query()` (total=None /
+    пустая страница) корректнее, чем сырой 500. Любая ДРУГАЯ DBAPIError
+    (синтаксис, constraint, тип) — реальная ошибка запроса, её пробрасываем.
 
     Postgres-quirk: `SET LOCAL statement_timeout = N` живёт до конца
     *внешней* транзакции, выход из SAVEPOINT его не сбрасывает. Если
@@ -73,11 +79,27 @@ def _with_statement_timeout(
         nested.commit()
         return result
     except DBAPIError as exc:
-        nested.rollback()
+        # rollback'аем savepoint осторожно: на invalidated-коннекте сам
+        # rollback может кинуть (соединение уже мертво) — глушим, дальше всё
+        # равно уходим в `on_canceled`, а outer-tx откатит HTTP-обработчик.
+        try:
+            nested.rollback()
+        except Exception:
+            pass
         pgcode = getattr(getattr(exc.orig, "pgcode", None), "value", None) \
             or getattr(exc.orig, "pgcode", None)
         if pgcode == "57014":
             logger.warning(canceled_log_msg, timeout_ms)
+            return on_canceled()
+        if exc.connection_invalidated:
+            # Disconnect между SET LOCAL и запросом: коннект отвалился,
+            # запрос не выполнился. Для caller'а это эквивалент отмены —
+            # отдаём тот же downstream-ответ (total=None / пустая страница),
+            # а не 500.
+            logger.warning(
+                "audit query lost its connection mid-statement "
+                "(connection invalidated); returning canceled result"
+            )
             return on_canceled()
         raise
 
@@ -103,7 +125,7 @@ def _validate_request_id(value: str | None) -> None:
 # Поля, входящие в hash payload'а для idempotency-poisoning защиты.
 # Включены (см. tuple ниже): `timestamp`, `service`, `action`,
 # `actor_id`, `actor_type`, `username`, `department_id`, `target_id`,
-# `target_type`, `status`, `allowed`, `severity`, `actor_ip`, `user_agent`,
+# `target_type`, `status`, `allowed`, `actor_ip`, `user_agent`,
 # `details`, `idempotency_key`.
 # Любая разница в этих полях между двумя POST'ами с одинаковым
 # `idempotency_key` → разный logical event → 409 IDEMPOTENCY_KEY_CONFLICT.
@@ -120,6 +142,15 @@ def _validate_request_id(value: str | None) -> None:
 #   первым POST'ом и outbox-replay'ем. Включи мы имя — переименование
 #   ломало бы дедуп (тот же логический event получил бы другой hash → 409),
 #   поэтому имя из identity-набора hash'а исключено намеренно.
+# * `severity` — ПРОИЗВОДНОЕ поле, а не часть логической identity события.
+#   К моменту `insert()` оно уже резолвнуто из `_DEFAULT_SEVERITY` или
+#   active rule-set'а (`apply_rules` / OVERRIDE_SEVERITY) на стороне
+#   `event_service`. Если между первым POST'ом и outbox-replay'ем админ
+#   поменяет default-severity или active-правило, severity того же
+#   логического события «съедет» — включи мы его в hash, легитимный retry
+#   получил бы 409 IDEMPOTENCY_KEY_CONFLICT на ровном месте. Источник
+#   события и его исход (`action`/`status`/`details`) в hash остаются, а
+#   присвоенная политикой важность из identity-набора исключена намеренно.
 _HASH_FIELDS: tuple[str, ...] = (
     "timestamp",
     "service",
@@ -132,7 +163,6 @@ _HASH_FIELDS: tuple[str, ...] = (
     "target_type",
     "status",
     "allowed",
-    "severity",
     "actor_ip",
     "user_agent",
     "details",

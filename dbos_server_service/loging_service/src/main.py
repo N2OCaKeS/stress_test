@@ -432,12 +432,21 @@ def create_application() -> FastAPI:
         "/api/logging/v1/ready",
         "/api/logging/v1/token",
     }
-    # POST на эти префиксы — входящие от сервисов, не аудитируем (избегаем
-    # рекурсии: события приёма событий).
-    _INGEST_PREFIXES = (
-        "/api/logging/v1/events",
-        "/api/logging/v1/services/",  # POST /services/{svc}/events
-    )
+    # POST на эти пути — входящие от сервисов, не аудитируем (избегаем
+    # рекурсии: события приёма событий). Совпадение точное по сегменту,
+    # НЕ через голый `startswith`: `"/api/logging/v1/events"` голым префиксом
+    # сматчил бы и `/api/logging/v1/events_archive` (если такой роут когда-то
+    # появится), тихо пропустив его аудит. `_events` — ровно сам ingest-роут
+    # либо его подпути (`/events/...`); `_services_prefix` несёт trailing
+    # slash, поэтому матчит только `/services/{svc}/...`, но не `/services`
+    # или гипотетический `/services_registry`.
+    _INGEST_EVENTS_PATH = "/api/logging/v1/events"
+    _INGEST_SERVICES_PREFIX = "/api/logging/v1/services/"
+
+    def _is_ingest_path(path: str) -> bool:
+        if path == _INGEST_EVENTS_PATH or path.startswith(_INGEST_EVENTS_PATH + "/"):
+            return True
+        return path.startswith(_INGEST_SERVICES_PREFIX)
     # PUT/DELETE retention эндпоинт сам пишет `logging.retention_write`
     # (single source) — middleware на success дублировал бы запись.
     # Ошибки (401/403/4xx/5xx) всё равно эмитятся как `http.*` ниже.
@@ -468,7 +477,7 @@ def create_application() -> FastAPI:
         # SERVICE_API_KEY или flood утёкшим ключом не оставляет следа ни в
         # журнале, ни у SOC. 429 идёт через ту же ветку, что и 401/403 —
         # как http.client_error (см. mapping ниже), петли не создаёт.
-        if request.method == "POST" and path.startswith(_INGEST_PREFIXES):
+        if request.method == "POST" and _is_ingest_path(path):
             if status_code not in (401, 403, 429):
                 return response
 
@@ -1001,20 +1010,23 @@ def _retention_loop() -> None:
                         {"k": _RETENTION_ADVISORY_LOCK_KEY},
                     ).scalar()
                     if not locked:
-                        # Lock держит другая replica — она и сделает cleanup.
-                        # Мы всё равно фиксируем last_run, чтобы не ретраить
-                        # в каждый последующий минутный tick этого часа.
+                        # Lock держит другая replica — она и делает cleanup.
+                        # `last_run` здесь НЕ фиксируем: если держатель лока
+                        # умрёт посреди sweep'а (OOM, под убили), его лок
+                        # отпустится с сессией, а мы на следующем минутном
+                        # tick'е этого же часа перехватим работу. Пометь мы
+                        # `last_run = today`, эта replica замолчала бы до
+                        # завтра, и при гибели держателя sweep пропустился бы
+                        # за сутки целиком. Лишние tick-и под занятым локом
+                        # дёшевы — один `pg_try_advisory_lock` без работы.
                         logger.info(
                             "Retention cleanup [%s MSK]: skipped, advisory lock held by another replica",
                             today,
                         )
-                        last_run = today
-                        # Watchdog: для каждой replica successful_sweep —
-                        # локальный маркер «sweep отработал в этом окне», и
-                        # «другая replica взяла лок» — это легитимный успех
-                        # текущей итерации. Без этого non-holder replica'и
-                        # навсегда показывали бы stale successful_sweep и
-                        # отдавали бы 503 на `/ready` через TTL.
+                        # Watchdog: «другая replica держит лок» — легитимное
+                        # состояние, а не stall. Обновляем local successful_sweep
+                        # маркер, иначе non-holder replica'и через TTL отдавали
+                        # бы 503 на `/ready`, хотя кластер исправен.
                         with _retention_watchdog_lock:
                             _retention_last_successful_sweep_monotonic = time.monotonic()
                     else:

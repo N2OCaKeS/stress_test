@@ -51,7 +51,7 @@ def stub_redis(monkeypatch):
     pooled.get = AsyncMock(side_effect=fake_get)
     pooled.delete = AsyncMock(side_effect=fake_delete)
     pooled.aclose = AsyncMock()
-    monkeypatch.setattr(worker_client, "_prepare_redis_client", pooled)
+    monkeypatch.setattr(worker_client, "_creds_redis_client", pooled)
 
     class _Settings:
         server_worker_redis_url = "redis://test:6379/0"

@@ -25,16 +25,16 @@ from src.services.redis_stash_crypto import (
 
 @pytest.fixture(autouse=True)
 def _reset_prepare_client():
-    original = worker_client._prepare_redis_client
+    original = worker_client._creds_redis_client
     yield
-    worker_client._prepare_redis_client = original
+    worker_client._creds_redis_client = original
 
 
 class TestStorePrepareCredsNoUrl:
     @pytest.mark.asyncio
     async def test_empty_redis_url_raises_worker_redis_not_configured(self, monkeypatch):
         """Нет URL и нет пула → WORKER_REDIS_NOT_CONFIGURED (не 500)."""
-        monkeypatch.setattr(worker_client, "_prepare_redis_client", None)
+        monkeypatch.setattr(worker_client, "_creds_redis_client", None)
 
         class _Settings:
             server_worker_redis_url = ""
@@ -50,7 +50,7 @@ class TestStorePrepareCredsNoUrl:
 
     @pytest.mark.asyncio
     async def test_none_redis_url_raises_worker_redis_not_configured(self, monkeypatch):
-        monkeypatch.setattr(worker_client, "_prepare_redis_client", None)
+        monkeypatch.setattr(worker_client, "_creds_redis_client", None)
 
         class _Settings:
             server_worker_redis_url = None
@@ -71,7 +71,7 @@ class TestStorePrepareCredsTTL:
         """TTL из settings передаётся в SET через pooled client."""
         pooled = MagicMock()
         pooled.set = AsyncMock()
-        monkeypatch.setattr(worker_client, "_prepare_redis_client", pooled)
+        monkeypatch.setattr(worker_client, "_creds_redis_client", pooled)
 
         class _Settings:
             server_worker_redis_url = "redis://redis:6379/0"
@@ -99,7 +99,7 @@ class TestStorePrepareCredsTTL:
     @pytest.mark.asyncio
     async def test_fallback_path_uses_settings_ttl(self, monkeypatch):
         """TTL прокидывается и в per-call fallback client."""
-        monkeypatch.setattr(worker_client, "_prepare_redis_client", None)
+        monkeypatch.setattr(worker_client, "_creds_redis_client", None)
 
         fake_client = MagicMock()
         fake_client.set = AsyncMock()
@@ -139,7 +139,7 @@ class TestStorePrepareCredsJsonSerialization:
         """Значение в Redis — JSON-строка, чтобы worker мог его прочитать."""
         pooled = MagicMock()
         pooled.set = AsyncMock()
-        monkeypatch.setattr(worker_client, "_prepare_redis_client", pooled)
+        monkeypatch.setattr(worker_client, "_creds_redis_client", pooled)
 
         class _Settings:
             server_worker_redis_url = "redis://redis:6379/0"
@@ -164,7 +164,7 @@ class TestStorePrepareCredsJsonSerialization:
         """Спецсимволы в пароле не ломают сериализацию."""
         pooled = MagicMock()
         pooled.set = AsyncMock()
-        monkeypatch.setattr(worker_client, "_prepare_redis_client", pooled)
+        monkeypatch.setattr(worker_client, "_creds_redis_client", pooled)
 
         class _Settings:
             server_worker_redis_url = "redis://redis:6379/0"

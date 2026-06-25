@@ -64,13 +64,13 @@ def record(db: Session, payload: EventCreate) -> AuditEvent | None:
         return event_repo.insert(db, modified)
     except ConflictError as exc:
         # Откат завалившейся вставки, чтобы self-audit писался в чистой сессии.
-        # Если rollback сам падает (disconnect, broken pool), session
-        # гарантированно непригодна для последующего INSERT'а — self-audit
-        # на ней почти наверняка либо завалится молча, либо отравит outer
-        # error caller'у. Логируем CRITICAL (rollback-fail после
-        # ConflictError — это или баг в SQLAlchemy-сессии, или серьёзный
-        # сбой пула) и пропускаем self-audit; outer ConflictError всё
-        # равно поднимется, клиент получит 409.
+        # Если rollback сам падает (disconnect, broken pool), эта session
+        # непригодна для последующего INSERT'а. Раньше тут self-audit просто
+        # пропускался — poisoning-инцидент терялся для SOC при сбое пула,
+        # хотя именно сбой пула + конфликт ключа = подозрительная связка.
+        # Теперь на broken-rollback пишем self-audit СВЕЖЕЙ сессией из пула
+        # (новый коннект), а не молчим. Outer ConflictError в любом случае
+        # поднимается — клиент получит 409.
         rollback_ok = True
         try:
             db.rollback()
@@ -78,11 +78,13 @@ def record(db: Session, payload: EventCreate) -> AuditEvent | None:
             rollback_ok = False
             logger.critical(
                 "rollback after idempotency conflict failed: %s; "
-                "skipping self-audit emit on broken session",
+                "retrying self-audit emit on a fresh session",
                 rb_exc,
             )
         if rollback_ok:
             _emit_idempotency_conflict_audit(db, modified, exc)
+        else:
+            _emit_idempotency_conflict_audit_fresh_session(modified, exc)
         raise
 
 
@@ -96,57 +98,100 @@ def _emit_idempotency_conflict_audit(
     Любая ошибка тут проглатывается в лог — клиент всё равно должен получить
     409, а потеря warning self-audit'а не должна мешать основной ошибке.
 
-    ИНВАРИАНТ caller'а: вызывается только ПОСЛЕ rollback'а outer-tx
-    (см. `record` выше). `commit=True` ниже закрывает свою отдельную
-    транзакцию, и если outer-tx не была rollback'нута, этот commit
-    выкинет её partially-committed состояние наружу. Сейчас единственный
-    call-site — ConflictError-ветка `record`, и rollback там стоит явно.
-    Перед записью проверяем `db.in_transaction()` руками: если caller
-    нарушил инвариант, не пишем self-audit (теряем диагностику конфликта,
-    но не сносим чужую транзакцию) и логируем CRITICAL — bug должен быть
-    виден в SIEM.
+    Штатный call-site (`record` выше) зовёт нас ПОСЛЕ rollback'а — сессия
+    вне транзакции, и мы пишем self-audit отдельной tx (`commit=True`).
+    Но функцию могут позвать и из caller'а, который держит СВОЮ explicit
+    `db.begin()` (admin-CRUD под одной транзакцией). Тогда голый
+    `commit=True` снёс бы чужую транзакцию, а ранний `return` тихо терял
+    бы диагностику конфликта. Различаем оба режима по `db.in_transaction()`:
+
+    * вне транзакции — пишем self-audit отдельной tx (`commit=True`);
+    * внутри живой outer-tx — пишем в SAVEPOINT (`begin_nested`) с
+      `commit=False`, фиксируем только nested-транзакцию. Outer-tx остаётся
+      нетронутой: caller сам решит commit/rollback. Так self-audit не
+      теряется и при этом мы не клоббрим чужую транзакцию.
     """
-    if db.in_transaction():
-        # Каллер не сделал rollback (или начал новую tx после нашего вызова).
-        # Зовём commit=True здесь — это снесёт outer-tx и выпустит наружу
-        # её partially-committed состояние. Гасим self-audit, чтобы не
-        # маскировать contract violation тихим успехом.
-        logger.critical(
-            "_emit_idempotency_conflict_audit called inside an open transaction; "
-            "skipping self-audit to avoid clobbering caller's tx "
-            "(action=%s, service=%s)",
-            payload.action, payload.service,
-        )
-        return
-    try:
+    warning_payload = EventCreate(
+        timestamp=datetime.now(timezone.utc),
+        service="loging_service",
+        action="audit.idempotency_conflict",
+        actor_id=None,
+        actor_type="service",
+        username=None,
+        status="warning",
+        allowed=True,
         # severity не задаём явно — `record_admin_action` подтягивает её из
         # `_DEFAULT_SEVERITY[("audit.idempotency_conflict", "warning")]`.
         # Раньше тут стояло хардкод-значение "WARNING", дублировавшее таблицу:
         # подняли бы severity в таблице до CRITICAL — событие всё равно
         # уезжало бы WARNING'ом из-за explicit override, источник истины
         # расходился бы со SIEM-rule'ами.
-        warning_payload = EventCreate(
-            timestamp=datetime.now(timezone.utc),
-            service="loging_service",
-            action="audit.idempotency_conflict",
-            actor_id=None,
-            actor_type="service",
-            username=None,
-            status="warning",
-            allowed=True,
-            severity=None,
-            details={
-                "claimed_service": payload.service,
-                "idempotency_key": payload.idempotency_key,
-                "claimed_action": payload.action,
-                "error_code": exc.error_code,
-            },
-        )
+        severity=None,
+        details={
+            "claimed_service": payload.service,
+            "idempotency_key": payload.idempotency_key,
+            "claimed_action": payload.action,
+            "error_code": exc.error_code,
+        },
+    )
+    if db.in_transaction():
+        # Caller держит свою транзакцию — пишем в savepoint, чтобы не трогать
+        # её commit/rollback boundary. `record_admin_action(commit=False)`
+        # делает flush в рамках nested-tx; её и фиксируем.
+        nested = db.begin_nested()
+        try:
+            record_admin_action(db, warning_payload, commit=False)
+            nested.commit()
+        except Exception as audit_exc:
+            try:
+                nested.rollback()
+            except Exception:
+                pass
+            logger.warning(
+                "self-audit for IDEMPOTENCY_KEY_CONFLICT failed (nested): %s",
+                audit_exc,
+            )
+        return
+    try:
         record_admin_action(db, warning_payload, commit=True)
     except Exception as audit_exc:
         logger.warning(
             "self-audit for IDEMPOTENCY_KEY_CONFLICT failed: %s", audit_exc
         )
+
+
+def _emit_idempotency_conflict_audit_fresh_session(
+    payload: EventCreate, exc: ConflictError
+) -> None:
+    """Аварийный self-audit конфликта на свежей сессии из пула.
+
+    Зовётся, когда `db.rollback()` основной сессии сам упал (disconnect /
+    broken pool) и писать что-либо на той сессии нельзя. Берём новый коннект
+    из `SessionLocal` — у него своя транзакция и здоровое соединение, так что
+    poisoning-инцидент всё-таки попадает в журнал, а не теряется молча.
+
+    Любая ошибка здесь (БД легла целиком) проглатывается в лог — клиент в
+    любом случае получает 409, а недоступность self-audit'а не должна
+    маскировать основную ошибку.
+    """
+    from src.db.session import SessionLocal
+
+    try:
+        fresh = SessionLocal()
+    except Exception as session_exc:
+        logger.error(
+            "could not open fresh session for IDEMPOTENCY_KEY_CONFLICT "
+            "self-audit: %s",
+            session_exc,
+        )
+        return
+    try:
+        _emit_idempotency_conflict_audit(fresh, payload, exc)
+    finally:
+        try:
+            fresh.close()
+        except Exception:
+            pass
 
 
 def record_admin_action(
@@ -367,7 +412,12 @@ def _emit_query_timeout_audit(
     не маскировать legitimate response caller'у.
     """
     try:
-        actor_type = (identity or {}).get("actor_type") or "user"
+        # actor_type через тот же whitelist-резолв, что и outbox-drain:
+        # неизвестное / отсутствующее значение → `anonymous` + WARNING, а не
+        # тихий `"user"`. Голый `or "user"` помечал бы read-фильтр без
+        # actor_type как пользовательскую активность (fake user для SOC).
+        from src.services.audit_outbox import _resolve_actor_type
+        actor_type = _resolve_actor_type((identity or {}).get("actor_type"))
         details = {
             "timeout": True,
             "count_timeout": bool(timeout_state.get("count_timeout")),

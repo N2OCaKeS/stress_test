@@ -353,6 +353,33 @@ class TestUpdateServer:
         )
         body = assert_error(resp, 409, "SERVER_DUPLICATE")
         assert "db_error" not in (body.get("details") or {})
+        # Стадия конфликта прокинута в response-details (server-колонка, не disk).
+        assert (body.get("details") or {}).get("stage") == "server"
+
+    async def test_update_duplicate_emits_stage_in_audit(
+        self, client, admin_token, make_server, monkeypatch,
+    ):
+        """IntegrityError-handler `update_server` кладёт `stage` в audit-details,
+        симметрично `create_server` — SIEM видит, server-колонка vs disk-slot."""
+        from tests._helpers import make_emit_capture
+
+        captured = make_emit_capture(
+            monkeypatch, "src.services.server.audit_service.emit",
+        )
+        await make_server(department_id="dep_a", ip_address="10.30.30.30")
+        srv = await make_server(department_id="dep_a", ip_address="10.31.31.31")
+        resp = await client.patch(
+            f"{BASE}/{srv.id}",
+            headers=_hdr(admin_token),
+            json={"ip_address": "10.30.30.30"},
+        )
+        assert_error(resp, 409, "SERVER_DUPLICATE")
+        failures = [
+            e for e in captured
+            if e["action"] == "server.update" and e.get("status") == "failure"
+        ]
+        assert failures, "update-duplicate must emit a failure audit"
+        assert failures[-1]["details"]["stage"] == "server"
 
     # PATCH cross-dept hostname conflict: production-путь корректен и покрыт
     # CREATE-эквивалентом `test_create_conflict_does_not_leak_cross_dept_*`.

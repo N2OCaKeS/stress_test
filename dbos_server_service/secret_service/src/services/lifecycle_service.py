@@ -88,10 +88,25 @@ async def handle_user_deleted(
     атомарная: при любой ошибке rollback, summary возвращается с заполненным
     `errors`.
     """
-    summary = {"blocked_count": 0, "deleted_count": 0, "errors": []}
+    summary = {
+        "blocked_count": 0,
+        "deleted_count": 0,
+        "role_acls_revoked": 0,
+        "errors": [],
+    }
     try:
         creds = await _list_personal_for_user(db, user_id)
         for cred in creds:
+            # ACL личной кред'ы легитимен только в dep'е владельца. Чужие
+            # dep-ACL'и сносим сразу: после block→transfer они бы оставили
+            # стороннему dep'у доступ к кред'е нового владельца. Если dep
+            # владельца неизвестен (старые строки без owner_user_dept_id) —
+            # отличить «свой» ACL от «чужого» нельзя, оставляем как есть.
+            if cred.owner_user_dept_id is not None:
+                stale = await acl_repo.delete_outside_dept(
+                    db, cred.id, cred.owner_user_dept_id
+                )
+                summary["role_acls_revoked"] += stale
             acl_count = await _count_role_acls_for_cred(db, cred.id)
             if acl_count > 0:
                 await cred_repo.mark_blocked(db, cred, reason="owner_user_deleted")
@@ -264,6 +279,13 @@ async def handle_dept_service_access_revoked(
             summary["role_acls_revoked"] += 1
             if cred_id not in affected_cred_ids:
                 affected_cred_ids.append(cred_id)
+
+        if not affected_cred_ids:
+            # Идемпотентность: ни grant'ов, ни ACL'ей у dep'а нет — повторный
+            # event либо доступ к сервису у dep'а отсутствовал изначально.
+            # Пустой CRITICAL в SOC-канал не шлём.
+            await db.commit()
+            return summary
 
         capped_ids, truncated = _cap_cred_ids(affected_cred_ids)
         cascade_details: dict = {

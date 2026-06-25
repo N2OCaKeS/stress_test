@@ -33,6 +33,10 @@ def _make_settings(monkeypatch: pytest.MonkeyPatch, **overrides: str):
     monkeypatch.setenv("LOGGING_SERVICE_URL", "https://not-used")
     monkeypatch.setenv("WORKER_BOT_TOKEN", "dummy-test-token")
     monkeypatch.setenv("LOGGING_SERVICE_API_KEY", "dummy-test-key")
+    monkeypatch.setenv(
+        "SERVER_SERVICE_DATABASE_URL",
+        "postgresql+psycopg://app_user:app_password@postgres:5432/server_service_db_test",
+    )
     for key, value in overrides.items():
         if value is None:
             monkeypatch.delenv(key, raising=False)

@@ -2,7 +2,7 @@
 
 `store_prepare_creds` раньше создавал `aioredis.from_url(...)` per-call —
 burst POST /prepare ронял FD'ы и connection-budget Redis'а. Фикс: модульный
-slot `worker_client._prepare_redis_client`, поднимается в lifespan
+slot `worker_client._creds_redis_client`, поднимается в lifespan
 `src/main.py`, закрывается на shutdown. Параллельно с pooled-introspect /
 pooled-audit клиентами.
 """
@@ -20,14 +20,14 @@ from src.services import worker_client
 @pytest.fixture(autouse=True)
 def _reset_prepare_client():
     """Между тестами обнуляем модульный slot — он живёт глобально."""
-    worker_client._prepare_redis_client = None
+    worker_client._creds_redis_client = None
     yield
-    worker_client._prepare_redis_client = None
+    worker_client._creds_redis_client = None
 
 
 @pytest.mark.asyncio
-async def test_lifespan_startup_initialises_prepare_redis_client(monkeypatch):
-    """После старта lifespan `_prepare_redis_client` — живой `aioredis.Redis`."""
+async def test_lifespan_startup_initialises_creds_redis_client(monkeypatch):
+    """После старта lifespan `_creds_redis_client` — живой `aioredis.Redis`."""
     # conftest не выставляет SERVER_WORKER_REDIS_URL — без него lifespan пропустит
     # ветку инициализации пула. Дешёвый локальный URL, aioredis.from_url ленив.
     monkeypatch.setenv("SERVER_WORKER_REDIS_URL", "redis://localhost:6379/0")
@@ -50,15 +50,15 @@ async def test_lifespan_startup_initialises_prepare_redis_client(monkeypatch):
     from src.main import create_application
     app = create_application()
     async with app.router.lifespan_context(app):
-        assert worker_client._prepare_redis_client is not None
-        assert worker_client._prepare_redis_client is created[-1]
+        assert worker_client._creds_redis_client is not None
+        assert worker_client._creds_redis_client is created[-1]
 
     # После выхода из lifespan модульный slot обнулён
-    assert worker_client._prepare_redis_client is None
+    assert worker_client._creds_redis_client is None
 
 
 @pytest.mark.asyncio
-async def test_lifespan_shutdown_closes_prepare_redis_client(monkeypatch):
+async def test_lifespan_shutdown_closes_creds_redis_client(monkeypatch):
     """`aclose()` действительно вызывается на shutdown."""
     monkeypatch.setenv("SERVER_WORKER_REDIS_URL", "redis://localhost:6379/0")
     from src.core.config import get_settings
@@ -78,10 +78,10 @@ async def test_lifespan_shutdown_closes_prepare_redis_client(monkeypatch):
     from src.main import create_application
     app = create_application()
     async with app.router.lifespan_context(app):
-        assert worker_client._prepare_redis_client is fake_client
+        assert worker_client._creds_redis_client is fake_client
 
     fake_client.aclose.assert_awaited_once()
-    assert worker_client._prepare_redis_client is None
+    assert worker_client._creds_redis_client is None
 
 
 @pytest.mark.asyncio
@@ -119,7 +119,7 @@ async def test_lifespan_skips_pool_when_redis_url_empty(monkeypatch):
     from src.main import create_application
     app = create_application()
     async with app.router.lifespan_context(app):
-        assert worker_client._prepare_redis_client is None
+        assert worker_client._creds_redis_client is None
     assert created == []
 
 
@@ -133,7 +133,7 @@ async def test_store_prepare_creds_reuses_pooled_client(monkeypatch):
     pooled = MagicMock()
     pooled.set = AsyncMock()
     pooled.aclose = AsyncMock()
-    monkeypatch.setattr(worker_client, "_prepare_redis_client", pooled)
+    monkeypatch.setattr(worker_client, "_creds_redis_client", pooled)
 
     class _Settings:
         server_worker_redis_url = "redis://redis:6379/0"
@@ -170,7 +170,7 @@ async def test_store_prepare_creds_fallback_when_pool_uninitialised(monkeypatch)
     Production-путь всегда идёт через lifespan-пул, но standalone-вызов
     `store_prepare_creds` вне приложения (legacy/unit) должен продолжать работать.
     """
-    monkeypatch.setattr(worker_client, "_prepare_redis_client", None)
+    monkeypatch.setattr(worker_client, "_creds_redis_client", None)
 
     fake_client = MagicMock()
     fake_client.set = AsyncMock()

@@ -89,3 +89,23 @@ async def delete_for_cred_dept(
     result = await db.execute(stmt)
     await db.flush()
     return result.rowcount or 0
+
+
+async def delete_outside_dept(
+    db: AsyncSession, cred_id: str, keep_dept_id: str
+) -> int:
+    """Снести ACL'и кред'ы, висящие НЕ в `keep_dept_id`.
+
+    Используется при удалении владельца personal-кред'ы: ACL личной кред'ы
+    легитимен только в dep'е владельца. Если в БД остались строки в чужих
+    dep'ах (наследие прежнего владельца / косяк write-side'а), их надо снести,
+    иначе после transfer'а чужой dep сохранит доступ к кред'е нового владельца.
+
+    Возвращает число удалённых строк.
+    """
+    stmt = sa_delete(RoleACL).where(
+        RoleACL.cred_id == cred_id, RoleACL.dept_id != keep_dept_id
+    )
+    result = await db.execute(stmt)
+    await db.flush()
+    return result.rowcount or 0

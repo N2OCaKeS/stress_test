@@ -271,6 +271,17 @@ class Settings(BaseSettings):
             "sweep уносит блокированную креду без права recover'а."
         ),
     )
+    recover_window_days: int = Field(
+        default=30,
+        ge=1,
+        alias="RECOVER_WINDOW_DAYS",
+        description=(
+            "Окно (в днях) от blocked_at, в течение которого блокированную "
+            "креду можно восстановить (recover/transfer). Должно совпадать с "
+            "BLOCKED_RETENTION_DAYS — иначе recover-окно и hard-delete sweep'а "
+            "разъезжаются."
+        ),
+    )
     sweep_interval_seconds: int = Field(
         default=3600,
         ge=10,

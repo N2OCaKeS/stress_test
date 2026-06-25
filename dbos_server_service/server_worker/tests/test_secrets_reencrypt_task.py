@@ -314,6 +314,82 @@ class TestHappyPath:
         assert details["processed"] == 0
 
 
+class TestMalformedStatusCounters:
+    """Снапшот статуса с `null`/мусором в счётчиках не валит тик.
+
+    `int(None)` бросает TypeError мимо try/except — `_coerce_int`
+    схлопывает нечисловые значения в 0, так что server_service,
+    отдавший `remaining: null` или `pending: "x"`, не роняет worker.
+    """
+
+    async def test_remaining_none_treated_as_zero(
+        self, monkeypatch, captured_audit
+    ):
+        from src.main import _settings
+        from src.services import server_service_client
+
+        monkeypatch.setattr(_settings, "secrets_reencrypt_enabled", True)
+
+        status_mock = AsyncMock(return_value={
+            "remaining": None,
+            "total": 50,
+            "active_version": 2,
+            "outbox": {"pending": None, "processing": None},
+        })
+        seed_mock = AsyncMock()
+        claim_mock = AsyncMock()
+        monkeypatch.setattr(
+            server_service_client, "fetch_secrets_migration_status", status_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "seed_reencrypt_outbox", seed_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
+        )
+
+        # Не должно бросить TypeError.
+        await _invoke_task()
+
+        # remaining=0 & outbox empty → nothing-to-do, ни seed, ни claim.
+        seed_mock.assert_not_called()
+        claim_mock.assert_not_called()
+        tick = [e for e in captured_audit if e["action"] == "secrets.reencrypt_tick"]
+        assert len(tick) == 1
+        assert tick[0]["details"]["processed"] == 0
+        assert tick[0]["details"]["remaining"] == 0
+
+    async def test_garbage_counters_do_not_raise(
+        self, monkeypatch, captured_audit
+    ):
+        from src.main import _settings
+        from src.services import server_service_client
+
+        monkeypatch.setattr(_settings, "secrets_reencrypt_enabled", True)
+
+        status_mock = AsyncMock(return_value={
+            "remaining": "not-a-number",
+            "active_version": 1,
+            "outbox": {"pending": "x", "processing": []},
+        })
+        seed_mock = AsyncMock()
+        claim_mock = AsyncMock()
+        monkeypatch.setattr(
+            server_service_client, "fetch_secrets_migration_status", status_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "seed_reencrypt_outbox", seed_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
+        )
+
+        await _invoke_task()
+
+        seed_mock.assert_not_called()
+        claim_mock.assert_not_called()
+
+
 class TestFailureModes:
     async def test_status_fetch_failure_does_not_raise(
         self, monkeypatch, captured_audit

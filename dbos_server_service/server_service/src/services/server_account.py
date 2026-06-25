@@ -957,21 +957,19 @@ async def update_account(
         for_update=True,
     )
 
-    raw_changes = payload.model_dump(exclude_unset=True, mode="json")
+    # `mode="python"` (а не `"json"`): enum'ы/datetime остаются native-типами,
+    # а не уезжают строкой/iso-8601. Сравнение `current != new_value` идёт с
+    # ORM-атрибутами (тоже native), поэтому non-string поле (datetime / enum /
+    # decimal), добавленное в схему позже, сравнится корректно, а не str-vs-
+    # native — иначе любой такой PATCH давал бы false-positive «изменилось» и
+    # лишний fanout. `repo.update` принимает native-значения как есть.
+    raw_changes = payload.model_dump(exclude_unset=True, mode="python")
     if not raw_changes:
         return obj, set()
 
     # Сравниваем с текущим состоянием — PATCH `{has_sudo: True}` на уже-True
     # аккаунт оседает как no-op, fanout его не должен запускать. Для
     # коллекций сравниваем как множества (порядок групп не значим).
-    #
-    # `raw_changes = payload.model_dump(mode="json")` — enum'ы/datetime
-    # уезжают как строки/iso-8601. На сегодняшней схеме (`has_sudo: bool`,
-    # `unix_groups: list[str]`, `shell: str`, `home_dir: str`) сравнение
-    # `current != new_value` корректно. При добавлении non-string поля
-    # (datetime / enum / decimal) обновить этот comparator — иначе str-vs-
-    # native сравнение даст false-positive «изменилось», PATCH станет no-op
-    # с лишним fanout'ом.
     def _is_changed(field: str, new_value) -> bool:
         current = getattr(obj, field, None)
         if field == "unix_groups":

@@ -842,6 +842,47 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _require_server_service_dsn_in_prod(self) -> "Settings":
+        """В production `SERVER_SERVICE_DATABASE_URL` обязан быть задан и валиден.
+
+        Publisher читает `dispatch_outbox` из server_service-БД по этому DSN.
+        Пустое значение `get_session_factory()` трактует как «не сконфигурирован»
+        и молча пропускает тик — в dev/test это норма, но в production это значит,
+        что worker принимает задачи, а dispatch'и не публикуются: power/SSH-операции
+        зависают без видимой причины. Опечатка в DSN (битый scheme, лишний пробел)
+        даёт тот же тихий no-op либо падение глубоко в create_async_engine.
+
+        Ловим оба случая на старте: пустой DSN и DSN, который SQLAlchemy не парсит.
+        В non-prod пусто разрешено — worker может работать в отрыве от
+        server_service-БД (только heartbeat/sweep/own-tasks).
+        """
+        if self.app_env.lower() != "production":
+            return self
+        url = (self.server_service_database_url or "").strip()
+        if not url:
+            raise ValueError(
+                "SERVER_SERVICE_DATABASE_URL must be set in production "
+                "(empty DSN makes the dispatch_outbox publisher silently skip "
+                "every tick — dispatched tasks never reach the broker)."
+            )
+        try:
+            from sqlalchemy.engine import make_url
+
+            parsed = make_url(url)
+        except Exception as exc:  # noqa: BLE001 — любую parse-ошибку трактуем как битый DSN
+            raise ValueError(
+                "SERVER_SERVICE_DATABASE_URL is not a valid SQLAlchemy DSN "
+                f"({type(exc).__name__}); a typo would make the dispatch_outbox "
+                "publisher no-op or crash on connect."
+            ) from exc
+        if not parsed.drivername or not parsed.database:
+            raise ValueError(
+                "SERVER_SERVICE_DATABASE_URL must include a driver and database name "
+                f"(got drivername={parsed.drivername!r}, database={parsed.database!r})."
+            )
+        return self
+
+    @model_validator(mode="after")
     def _require_https_outbound_in_prod(self) -> "Settings":
         """В production/staging исходящие URL'ы worker'а обязаны быть https.
 

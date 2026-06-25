@@ -111,7 +111,7 @@ def console_out_channel(session_id: str) -> str:
 def get_worker_redis() -> "aioredis.Redis":
     """Вернуть Redis-клиент к worker-брокеру для console pub/sub.
 
-    Переиспользует pooled `_prepare_redis_client` (поднятый в lifespan), иначе
+    Переиспользует pooled `_creds_redis_client` (поднятый в lifespan), иначе
     строит per-call клиент. Для console-моста (subscribe + длинный listen)
     caller обязан закрывать per-call клиент сам — поэтому когда пул не поднят,
     отдаём свежий клиент, владение которым переходит caller'у.
@@ -125,8 +125,8 @@ def get_worker_redis() -> "aioredis.Redis":
             error_code="WORKER_REDIS_NOT_CONFIGURED",
             message="SERVER_WORKER_REDIS_URL is not set",
         )
-    if _prepare_redis_client is not None:
-        return _prepare_redis_client
+    if _creds_redis_client is not None:
+        return _creds_redis_client
     return aioredis.from_url(settings.server_worker_redis_url)
 
 
@@ -138,7 +138,7 @@ async def publish_console_control(session_id: str, message: dict) -> None:
     при fallback-клиенте закрываем после publish.
     """
     client = get_worker_redis()
-    own = client is not _prepare_redis_client
+    own = client is not _creds_redis_client
     try:
         await client.publish(console_ctl_channel(session_id), json.dumps(message))
     finally:
@@ -164,12 +164,12 @@ _broker_started = False
 # свой broker (by design taskiq), lock в этом сценарии работать и не должен.
 _broker_lock = asyncio.Lock()
 
-# Pooled aioredis-клиент для bootstrap-кред prepare'а. До этого
-# `store_prepare_creds` дёргал `aioredis.from_url(...)` на каждый вызов —
-# burst /prepare исчерпывал FD'ы и connection-budget Redis'а. Поднимается
-# из lifespan в `src/main.py` (см. там же `aclose`). Если None — fallback
-# на per-call client (для unit-тестов вне lifespan).
-_prepare_redis_client: aioredis.Redis | None = None
+# Pooled aioredis-клиент для стэша worker-кред: prepare-bootstrap, dispatch
+# (provision/rotate), console-сессии и их delete. До этого каждый стор дёргал
+# `aioredis.from_url(...)` на вызов — burst исчерпывал FD'ы и connection-budget
+# Redis'а. Поднимается из lifespan в `src/main.py` (см. там же `aclose`).
+# Если None — fallback на per-call client (для unit-тестов вне lifespan).
+_creds_redis_client: aioredis.Redis | None = None
 
 
 def _engine_factory():
@@ -851,7 +851,7 @@ async def delete_prepare_creds(creds_key: str) -> None:
     settings = get_settings()
     if not settings.server_worker_redis_url:
         return
-    pooled = _prepare_redis_client
+    pooled = _creds_redis_client
     try:
         if pooled is not None:
             await pooled.delete(creds_key)
@@ -891,7 +891,7 @@ async def store_prepare_creds(creds_key: str, creds: dict) -> None:
         json.dumps(creds),
         aad=aad_for_redis_stash(stash_id_from_key(creds_key)),
     )
-    pooled = _prepare_redis_client
+    pooled = _creds_redis_client
     if pooled is not None:
         await pooled.set(
             creds_key, token, ex=settings.prepare_creds_ttl_seconds,
@@ -919,7 +919,7 @@ async def delete_dispatch_creds(stash_key: str) -> None:
     settings = get_settings()
     if not settings.server_worker_redis_url:
         return
-    pooled = _prepare_redis_client
+    pooled = _creds_redis_client
     try:
         if pooled is not None:
             await pooled.delete(stash_key)
@@ -966,7 +966,7 @@ async def store_dispatch_creds(stash_key: str, creds: dict) -> None:
         json.dumps(creds),
         aad=aad_for_redis_stash(stash_id_from_key(stash_key)),
     )
-    pooled = _prepare_redis_client
+    pooled = _creds_redis_client
     if pooled is not None:
         await pooled.set(
             stash_key, token, ex=settings.dispatch_creds_ttl_seconds,
@@ -1004,7 +1004,7 @@ async def store_console_creds(stash_key: str, creds: dict) -> None:
         json.dumps(creds),
         aad=aad_for_redis_stash(stash_id_from_key(stash_key)),
     )
-    pooled = _prepare_redis_client
+    pooled = _creds_redis_client
     if pooled is not None:
         await pooled.set(
             stash_key, token, ex=settings.dispatch_creds_ttl_seconds,
@@ -1029,7 +1029,7 @@ async def delete_console_creds(stash_key: str) -> None:
     settings = get_settings()
     if not settings.server_worker_redis_url:
         return
-    pooled = _prepare_redis_client
+    pooled = _creds_redis_client
     try:
         if pooled is not None:
             await pooled.delete(stash_key)

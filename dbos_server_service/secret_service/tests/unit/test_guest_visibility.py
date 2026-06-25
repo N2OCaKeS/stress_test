@@ -251,7 +251,10 @@ async def test_guest_cannot_delete(http_client, adb):
     await adb.commit()
 
     resp = await http_client.delete(f"/api/secret/v1/credentials/{cred.id}")
-    assert resp.status_code == 403
+    # Guest на любой прямой операции с кред'ой получает 404, как и на GET:
+    # роль guest живёт только через list_guest, существование кред'ы через
+    # delete-отказ ей не раскрываем.
+    assert resp.status_code == 404
 
 
 # ── access_service.check_access(list_guest) ─────────────────────────────────

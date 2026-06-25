@@ -204,7 +204,7 @@ def _patch_introspect(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _stub_prepare_redis(monkeypatch):
-    """In-memory stub для `worker_client._prepare_redis_client`.
+    """In-memory stub для `worker_client._creds_redis_client`.
 
     `store_prepare_creds` / `store_dispatch_creds` обращаются к
     pooled Redis-клиенту. В тестах без live-Redis это вылетало бы в
@@ -237,7 +237,7 @@ def _stub_prepare_redis(monkeypatch):
     pooled.get = AsyncMock(side_effect=fake_get)
     pooled.delete = AsyncMock(side_effect=fake_delete)
     pooled.aclose = AsyncMock()
-    monkeypatch.setattr(worker_client, "_prepare_redis_client", pooled)
+    monkeypatch.setattr(worker_client, "_creds_redis_client", pooled)
 
     # Settings override: store_*_creds читает `server_worker_redis_url`
     # из get_settings(). Если URL пустой — поднимет WORKER_REDIS_NOT_CONFIGURED

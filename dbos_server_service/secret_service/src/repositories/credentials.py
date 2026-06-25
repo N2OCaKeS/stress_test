@@ -70,11 +70,33 @@ async def find_active_by_owner_service_name(
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
-def _apply_cursor(stmt, cursor: tuple[datetime, str] | None):
-    """Курсорный фильтр на пару `(created_at, id)` — оба DESC."""
+def _normalize_cursor_ts(value: datetime) -> datetime:
+    """Курсорный timestamp → aware-UTC.
+
+    `created_at` в БД — timestamptz (aware). Курсор приходит распарсенным из
+    `datetime.fromisoformat(...)`: если в строке не было смещения, получаем
+    naive datetime, и сравнение `Credential.created_at < naive` на стороне
+    Python (merge в `list_visible`) роняет TypeError, а на стороне БД даёт
+    неоднозначный bind. Приводим к UTC до сравнения.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def apply_cursor(stmt, cursor: tuple[datetime, str] | None):
+    """Keyset-фильтр на пару `(created_at, id)` под `ORDER BY` обоих DESC.
+
+    `id` — текстовый `cred_<hex>`; лексикографический `<` задаёт полный
+    порядок, согласованный с `ORDER BY Credential.id DESC`, поэтому пара
+    `(created_at, id)` уникальна и keyset не пропускает/не дублирует строки
+    даже при совпадении `created_at`. Источник истины для всех листингов —
+    репо и inline-ветка cross-dep в `credential_service` зовут эту же функцию.
+    """
     if cursor is None:
         return stmt
     after_created_at, after_id = cursor
+    after_created_at = _normalize_cursor_ts(after_created_at)
     return stmt.where(
         or_(
             Credential.created_at < after_created_at,
@@ -84,6 +106,10 @@ def _apply_cursor(stmt, cursor: tuple[datetime, str] | None):
             ),
         )
     )
+
+
+# Обратная совместимость для внутренних caller'ов модуля.
+_apply_cursor = apply_cursor
 
 
 def _apply_filters(stmt, *, scope: str | None, status: str | None):

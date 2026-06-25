@@ -80,7 +80,7 @@ _INTERNAL_RESPONSES_BASE: dict[int | str, dict] = {
 
 _INTERNAL_RESPONSES_CALLBACK: dict[int | str, dict] = {
     **_INTERNAL_RESPONSES_BASE,
-    422: {"description": "Битый payload (нарушение pydantic-валидации; например, BMC_VERIFY_REQUIRED / IPMI_VERIFY_TOO_OLD) либо DECRYPT_FAILED — сломанный/неаутентичный ciphertext."},
+    422: {"description": "Битый payload (нарушение pydantic-валидации) либо DECRYPT_FAILED — сломанный/неаутентичный ciphertext."},
     500: {"description": "ENCRYPTION_KEY_MISSING / INTERNAL_ERROR."},
 }
 
@@ -308,6 +308,7 @@ async def record_server_prepared(
     "/ipmi-controllers/{controller_id}/credentials_rotated",
     response_model=IpmiCredentialsRotatedResponse,
     responses={**_INTERNAL_RESPONSES_CALLBACK,
+               400: {"description": "ROTATED_AT_IN_FUTURE / ROTATED_AT_TOO_OLD (rotated_at вне NTP-окна) либо BMC_VERIFY_REQUIRED (отсутствует/протух proof успешного BMC test-call'а)."},
                409: {"description": "CREDENTIALS_ALREADY_APPLIED — callback на не-pending row."}},
 )
 async def ipmi_credentials_rotated_callback(

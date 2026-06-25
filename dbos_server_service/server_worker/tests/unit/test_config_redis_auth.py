@@ -36,6 +36,12 @@ def _make_settings(monkeypatch: pytest.MonkeyPatch, **overrides: str):
     # ключа. Тесты, которые специально проверяют этот guard, перекрывают
     # значение через `overrides`.
     monkeypatch.setenv("LOGGING_SERVICE_API_KEY", "dummy-test-key")
+    # `_require_server_service_dsn_in_prod` требует валидного DSN в production.
+    # Тесты этого guard'а перекрывают значение через `overrides`.
+    monkeypatch.setenv(
+        "SERVER_SERVICE_DATABASE_URL",
+        "postgresql+psycopg://app_user:app_password@postgres:5432/server_service_db_test",
+    )
     for key, value in overrides.items():
         monkeypatch.setenv(key, value)
 
@@ -244,6 +250,82 @@ class TestLoggingApiKeyRequiredInProduction:
             LOGGING_SERVICE_API_KEY="",
         )
         assert s.logging_service_api_key == ""
+
+
+class TestServerServiceDsnRequiredInProduction:
+    """Production-guard `_require_server_service_dsn_in_prod`: пустой или
+    битый `SERVER_SERVICE_DATABASE_URL` в production валит старт. Иначе
+    dispatch_outbox publisher молча no-op'ит каждый тик и dispatch'и не
+    доходят до broker'а."""
+
+    def test_production_requires_dsn(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        with pytest.raises(ValueError, match="SERVER_SERVICE_DATABASE_URL must be set"):
+            _make_settings(
+                monkeypatch,
+                APP_ENV="production",
+                REDIS_URL="redis://:pw@redis:6379/0",
+                SERVER_SERVICE_DATABASE_URL="",
+            )
+
+    def test_production_rejects_whitespace_only_dsn(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with pytest.raises(ValueError, match="SERVER_SERVICE_DATABASE_URL must be set"):
+            _make_settings(
+                monkeypatch,
+                APP_ENV="production",
+                REDIS_URL="redis://:pw@redis:6379/0",
+                SERVER_SERVICE_DATABASE_URL="   ",
+            )
+
+    def test_production_rejects_malformed_dsn(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # DSN без scheme/database — typo, который create_async_engine не
+        # отловил бы до первого коннекта.
+        with pytest.raises(ValueError, match="SERVER_SERVICE_DATABASE_URL"):
+            _make_settings(
+                monkeypatch,
+                APP_ENV="production",
+                REDIS_URL="redis://:pw@redis:6379/0",
+                SERVER_SERVICE_DATABASE_URL="postgres-host-no-scheme",
+            )
+
+    def test_production_rejects_dsn_without_database(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with pytest.raises(ValueError, match="driver and database name"):
+            _make_settings(
+                monkeypatch,
+                APP_ENV="production",
+                REDIS_URL="redis://:pw@redis:6379/0",
+                SERVER_SERVICE_DATABASE_URL="postgresql+psycopg://app_user:pw@postgres:5432/",
+            )
+
+    def test_production_accepts_valid_dsn(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        url = "postgresql+psycopg://app_user:pw@server-pg.prod.svc:5432/server_service_db"
+        s = _make_settings(
+            monkeypatch,
+            APP_ENV="production",
+            REDIS_URL="redis://:pw@redis:6379/0",
+            SERVER_SERVICE_DATABASE_URL=url,
+        )
+        assert s.server_service_database_url == url
+
+    @pytest.mark.parametrize("env", ["local", "dev", "test", "staging"])
+    def test_non_production_allows_empty_dsn(
+        self, monkeypatch: pytest.MonkeyPatch, env: str
+    ) -> None:
+        # Worker умеет работать в отрыве от server_service-БД (heartbeat/sweep
+        # /own-tasks); только production требует DSN.
+        s = _make_settings(
+            monkeypatch,
+            APP_ENV=env,
+            SERVER_SERVICE_DATABASE_URL="",
+        )
+        assert s.server_service_database_url == ""
 
 
 class TestSshHostKeyNotVerified:

@@ -69,8 +69,34 @@ def downgrade() -> None:
             )
         else:
             # auth_service / server_worker не существовали до апгрейда —
-            # удаляем. Если успели завязать на них роли/доступы — cascade
-            # снесёт их (предупреждение в reports/).
+            # удаляем. Но шесть таблиц висят на service_name через
+            # ON DELETE CASCADE (department/group/user/bot service roles +
+            # access + role definitions). Слепой DELETE утащил бы за собой
+            # выданные роли и доступы — на downgrade'е это молчаливая потеря
+            # прав. Если на сервис кто-то успел завязаться, валим downgrade
+            # с явной ошибкой: оператор сначала снимает роли/доступы вручную.
             op.execute(
-                f"DELETE FROM platform_services WHERE service_name = '{service_name}'"
+                f"""
+                DO $$
+                DECLARE
+                    dependents int;
+                BEGIN
+                    SELECT
+                        (SELECT count(*) FROM department_service_access WHERE service_name = '{service_name}')
+                      + (SELECT count(*) FROM group_service_access      WHERE service_name = '{service_name}')
+                      + (SELECT count(*) FROM service_role_definitions   WHERE service_name = '{service_name}')
+                      + (SELECT count(*) FROM user_service_roles         WHERE service_name = '{service_name}')
+                      + (SELECT count(*) FROM group_service_roles        WHERE service_name = '{service_name}')
+                      + (SELECT count(*) FROM bot_service_roles          WHERE service_name = '{service_name}')
+                    INTO dependents;
+
+                    IF dependents > 0 THEN
+                        RAISE EXCEPTION
+                            'Cannot downgrade: platform_service ''{service_name}'' has % dependent rows (roles/access). Revoke them before downgrade.',
+                            dependents;
+                    END IF;
+
+                    DELETE FROM platform_services WHERE service_name = '{service_name}';
+                END $$;
+                """
             )

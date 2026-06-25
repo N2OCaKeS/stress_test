@@ -61,7 +61,12 @@ async def test_user_deleted_with_acl_blocks_cred(adb):
     ):
         summary = await lifecycle_service.handle_user_deleted(adb, USER_ID, ACTOR_ID)
 
-    assert summary == {"blocked_count": 1, "deleted_count": 0, "errors": []}
+    assert summary == {
+        "blocked_count": 1,
+        "deleted_count": 0,
+        "role_acls_revoked": 0,
+        "errors": [],
+    }
     refreshed = await cred_repo.get_by_id(adb, cred.id)
     assert refreshed is not None
     assert refreshed.status == "blocked"
@@ -80,7 +85,12 @@ async def test_user_deleted_without_acl_hard_deletes(adb):
     ):
         summary = await lifecycle_service.handle_user_deleted(adb, USER_ID, ACTOR_ID)
 
-    assert summary == {"blocked_count": 0, "deleted_count": 1, "errors": []}
+    assert summary == {
+        "blocked_count": 0,
+        "deleted_count": 1,
+        "role_acls_revoked": 0,
+        "errors": [],
+    }
     gone = await cred_repo.get_by_id(adb, cred.id)
     assert gone is None
     deletes = [(a, kw) for a, kw in emitted if a == "tokens.delete"]

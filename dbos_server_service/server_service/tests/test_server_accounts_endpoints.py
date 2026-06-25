@@ -483,6 +483,39 @@ class TestUpdateAccount:
         assert resp.status_code == 200
         assert resp.json()["login"] == "orig"
 
+    async def test_same_value_patch_is_noop_no_fanout(
+        self, client, operator_token_a, make_server, make_account, monkeypatch,
+    ):
+        """PATCH тем же значением (shell) — no-op: не должен запускать fanout.
+
+        Сравнение `current != new_value` идёт по native-типам (model_dump
+        mode='python'), поэтому повтор существующего значения не считается
+        изменением. Ловим регресс: если comparator снова поедет на str-vs-
+        native, no-op PATCH начнёт ложно «менять» поле и дёргать update_on_host."""
+        dispatched: list = []
+
+        async def fake_fanout(*args, **kwargs):
+            dispatched.append((args, kwargs))
+            return ([], [])
+
+        # `update_on_host` fan-out гейтится `applied_fields & _OS_MANAGED_FIELDS`;
+        # на no-op `applied_fields` пуст и сюда не зайдём.
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.server_accounts.fanout_update_on_host",
+            fake_fanout,
+        )
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="deploy", shell="/bin/bash")
+        resp = await client.patch(
+            f"{BASE}/{acc.id}",
+            headers=_hdr(operator_token_a),
+            json={"shell": "/bin/bash"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["shell"] == "/bin/bash"
+        assert dispatched == [], "no-op PATCH must not trigger account fanout"
+
     async def test_raise_sudo_without_grant_role_denied(
         self, client, operator_token_a, make_server, make_account,
     ):

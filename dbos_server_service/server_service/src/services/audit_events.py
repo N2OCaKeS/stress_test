@@ -67,6 +67,8 @@ SERVICE_EVENTS = [
     {"action": "secrets.reencrypt_failed", "description": "Reencrypt outbox row marked failed (decrypt/encrypt error reported by worker)", "default_severity": "WARNING"},
     {"action": "secrets.reencrypt_outbox_cleanup", "description": "Done outbox rows older than retention threshold removed", "default_severity": "INFO"},
     {"action": "secrets.migration.skipped", "description": "Outbox-row finalize_done попал на состояние, не требующее повторного апдейта (status_not_processing — закрыта другой ветвью; owner_vanished / owner_ciphertext_changed — owner-row пропал или ротировался параллельно). Идемпотентность сохранена, факт фиксируем для SIEM", "default_severity": "WARNING"},
+    {"action": "secrets.migration_key_missing", "description": "Re-encrypt batch не смог расшифровать row из-за пропавшего мастер-ключа (ENCRYPTION_KEY_MISSING) — мисконфиг env, требует немедленного вмешательства оператора", "default_severity": "ERROR"},
+    {"action": "secrets.migration_decrypt_failed", "description": "Re-encrypt batch не смог расшифровать/перешифровать row (неаутентичный или битый ciphertext, чужой AAD) — отдельная row выпала из миграции", "default_severity": "ERROR"},
     # Ops-runner'ы (rotation_runner, …) — отдельный s2s-канал с shared-secret'ом.
     {"action": "ops.migration_status_read", "description": "Rotation-runner прочитал /internal/migration_status (shared-secret канал); фиксируем кто и когда смотрел на legacy-residue перед drop'ом старого ключа", "default_severity": "INFO"},
     {"action": "ops.encryption_rotate", "description": "Rotation-runner ввёл новую версию мастер-ключа активной через keystore и засидил reencrypt-outbox (рантайм-ротация без простоя)", "default_severity": "CRITICAL"},

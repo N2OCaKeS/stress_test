@@ -90,6 +90,7 @@ class TestAuditEventsDocCoverage:
         "task.worker_shutdown",
         "task.worker_orphaned",
         "secrets.reencrypt_tick",
+        "bmc.tls_verify_disabled",
         # CLI (cli/outbox.py)
         "audit.outbox_reattempt_manual",
         # Handler-уровень (tasks/*.py)

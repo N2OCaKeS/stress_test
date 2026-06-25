@@ -18,10 +18,11 @@ import logging
 import secrets as _secrets
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, exists, or_, select
+from sqlalchemy import exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.constants import SERVICE_NAME
 from src.core.exceptions import (
     AuthorizationError,
@@ -49,10 +50,6 @@ from src.services import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-# Окно, в течение которого блокированную креду можно восстановить (см. README).
-_RECOVER_WINDOW_DAYS = 30
 
 
 def _emit_action_failure(
@@ -260,6 +257,21 @@ def _is_account_admin(identity: Identity) -> bool:
     return identity.platform_role == "account_admin"
 
 
+# Роли, которым разрешено заводить department/cross_department-креды.
+# guest и reader — только чтение, создавать общие cred'ы они не вправе.
+_CREATE_DEPT_ROLES: frozenset[str] = frozenset({"operator", "admin"})
+
+
+def _can_create_dept_cred(identity: Identity) -> bool:
+    """operator+ своего dep'а, dep_admin или account_admin могут заводить
+    department/cross_department-креды. Чистый reader/guest — нет."""
+    if _is_account_admin(identity):
+        return True
+    if identity.platform_role == "department_admin":
+        return True
+    return bool(_CREATE_DEPT_ROLES & set(identity.roles_for(SERVICE_NAME)))
+
+
 def is_guest_only(identity: Identity) -> bool:
     """Guest = носитель ТОЛЬКО роли `guest` в secret_service.
 
@@ -298,10 +310,16 @@ async def create(
             owner_user_id = identity.user_id
         else:
             owner_dept_id = payload.owner_dept_id
-            # На свой dep заводит обычный operator+ (auth+role-каталог уже отсеяли
-            # guest'ов на endpoint-level). На чужой dep — только account_admin:
-            # у `admin` secret_service'а cross-dept привилегий нет, он живёт
-            # per-(dept, service).
+            # department/cross_department-креду заводит operator+ (или
+            # dep_admin / account_admin). reader и guest — только чтение,
+            # создавать общие cred'ы они не вправе.
+            if not _can_create_dept_cred(identity):
+                raise AuthorizationError(
+                    error_code="CREDENTIAL_ACCESS_DENIED",
+                    message="operator role or higher is required to create shared credentials",
+                )
+            # На чужой dep — только account_admin: у `admin` secret_service'а
+            # cross-dept привилегий нет, он живёт per-(dept, service).
             if identity.department_id != owner_dept_id:
                 if not _is_account_admin(identity):
                     raise AuthorizationError(
@@ -499,17 +517,7 @@ async def list_visible(
                 stmt = stmt.where(Credential.scope == scope)
             if status is not None:
                 stmt = stmt.where(Credential.status == status)
-            if cursor is not None:
-                after_created_at, after_id = cursor
-                stmt = stmt.where(
-                    or_(
-                        Credential.created_at < after_created_at,
-                        and_(
-                            Credential.created_at == after_created_at,
-                            Credential.id < after_id,
-                        ),
-                    )
-                )
+            stmt = repo.apply_cursor(stmt, cursor)
             stmt = stmt.order_by(
                 Credential.created_at.desc(), Credential.id.desc()
             ).limit(limit * 2)
@@ -563,6 +571,28 @@ _NOT_VISIBLE_REASONS: frozenset[str] = frozenset({
     "dept_grant_missing",
     "guest_role_no_access",
 })
+
+
+# Reasons на delete-пути, означающие «actor видит креду только на чтение или
+# не видит вовсе» — раскрывать существование 403-ответом нельзя, маскируем 404.
+# Сюда же попадают read-only RoleACL'и (`acl_missing_can_write`) и отсутствие
+# подходящей роли в ACL: грантополучатель с правом read не должен узнать, что
+# креда вообще существует, через отказ на delete.
+_DELETE_INFO_LEAK_REASONS: frozenset[str] = _NOT_VISIBLE_REASONS | frozenset({
+    "acl_missing_can_write",
+    "acl_missing_can_read",
+    "role_not_in_acl",
+    "no_user_acl",
+})
+
+
+def _delete_denial_is_info_leak(cred: Credential, reason: str) -> bool:
+    """delete denied → 404 (info-leak) vs 403. personal-non-owner и read-only
+    grantee'и маскируются под 404; реальный 403 оставляем только тем, кто
+    управляет кред'ой по существу (сюда такие просто не попадают)."""
+    if cred.scope == "personal":
+        return True
+    return reason in _DELETE_INFO_LEAK_REASONS
 
 
 async def load_for_action(
@@ -803,6 +833,27 @@ async def delete(
                 pass  # legitimate owner-side delete (dep_admin/admin внутри scope)
             elif _is_service_admin_for(identity, cred):
                 is_admin_override = True
+            elif _delete_denial_is_info_leak(cred, reason):
+                # Actor видит креду только на чтение (read-only RoleACL) или вне
+                # зоны видимости вовсе — не раскрываем существование через
+                # 403-с-reason'ом, отдаём общий 404. Audit пишем как 404-маску.
+                audit_service.emit(
+                    "tokens.access_denied",
+                    target_id=cred.id,
+                    target_type="credential",
+                    status="failure",
+                    allowed=False,
+                    details={
+                        "action": "delete",
+                        "reason": "info_leak_404",
+                        "scope": cred.scope,
+                        "underlying_reason": reason,
+                    },
+                )
+                raise NotFoundError(
+                    error_code="CREDENTIAL_NOT_FOUND",
+                    message="Credential not found",
+                )
             else:
                 audit_service.emit(
                     "tokens.access_denied",
@@ -1032,7 +1083,7 @@ async def transfer(
 async def recover(
     db: AsyncSession, identity: Identity, cred_id: str
 ) -> Credential:
-    """Recover blocked-кред. Окно — 30 дней с момента блокировки.
+    """Recover blocked-кред. Окно — `RECOVER_WINDOW_DAYS` с момента блокировки.
 
     Два пути входа, как у transfer:
 
@@ -1069,14 +1120,15 @@ async def recover(
                 message="Only blocked credentials can be recovered",
             )
         if cred.blocked_at is not None:
+            window_days = get_settings().recover_window_days
             # Если blocked_at без TZ — относимся как к UTC (db: timestamptz).
             blocked_at = cred.blocked_at
             if blocked_at.tzinfo is None:
                 blocked_at = blocked_at.replace(tzinfo=timezone.utc)
-            if datetime.now(timezone.utc) - blocked_at > timedelta(days=_RECOVER_WINDOW_DAYS):
+            if datetime.now(timezone.utc) - blocked_at > timedelta(days=window_days):
                 raise DomainValidationError(
                     error_code="RECOVER_WINDOW_EXPIRED",
-                    message=f"Recover window of {_RECOVER_WINDOW_DAYS} days has expired",
+                    message=f"Recover window of {window_days} days has expired",
                 )
 
         try:

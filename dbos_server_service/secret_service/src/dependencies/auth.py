@@ -254,9 +254,20 @@ async def _introspect(token: str) -> dict:
 
 
 def _to_identity(body: dict) -> Identity:
-    """Маппинг introspect-ответа в Identity."""
+    """Маппинг introspect-ответа в Identity.
+
+    Пустой `sub` отбиваем: owner-check'и сравнивают `cred.owner_user_id ==
+    identity.user_id`, и пустая строка совпала бы с любой кред'ой без
+    owner'а. Лучше 401, чем тихий identity с user_id="".
+    """
+    sub = body.get("sub")
+    if not sub:
+        raise AuthenticationError(
+            error_code="INVALID_TOKEN",
+            message="introspect response is missing subject (sub)",
+        )
     return Identity(
-        user_id=body.get("sub") or "",
+        user_id=sub,
         username=body.get("username") or "",
         # introspect отдаёт `subject_type` ("user"/"bot"/"oauth_client").
         # PAT auth_service маппит на subject_type=`user`, отдельного значения нет.

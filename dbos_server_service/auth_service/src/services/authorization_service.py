@@ -56,6 +56,32 @@ async def _introspect_oauth_client_jwt(
         )
         return IntrospectResponse(active=False)
 
+    # Клиент без отдела — fail-closed. allowed_services считается как INTERSECT
+    # dept-services с allowed_scopes; при department_id=None запрос ушёл бы в
+    # `WHERE department_id IS NULL` и `list_active_services` мог бы вернуть
+    # бесхозные DepartmentServiceAccess-строки, выдав клиенту доступ к сервису
+    # без подключения отдела. Модель держит department_id NOT NULL, но не
+    # полагаемся на это — платформенный m2m без отдела не имеет dept-scope,
+    # значит и сервисов нет.
+    if not client.department_id:
+        audit_service.emit(
+            "token.introspect",
+            client.id,
+            actor_type="oauth_client",
+            target_id=client.client_id,
+            target_type="oauth_client",
+            status="failure",
+            allowed=False,
+            details={
+                "token_type": "jwt",
+                "reason": "oauth_client_no_department",
+                "client_id": client.client_id,
+                "exp": payload.get("exp"),
+            },
+            request_id=request_id,
+        )
+        return IntrospectResponse(active=False)
+
     dept_repo = DepartmentRepository(db)
     dept_services = await dept_repo.list_active_services(client.department_id)
     allowed_services = [s for s in dept_services if s in client.allowed_scopes]

@@ -72,7 +72,8 @@ async def test_emit_success_posts_payload(configured_audit):
     assert payload["actor_id"] == "usr_1"
     assert payload["status"] == "success"
     assert payload["severity"] == "INFO"
-    assert payload["details"]["name"] == "jira_bot"
+    # `name` маскируется — человекочитаемое имя кред'ы это metadata-leak.
+    assert payload["details"]["name"] == "<CREDENTIAL>"
 
 
 async def test_emit_carries_department_name_from_context(configured_audit):

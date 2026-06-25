@@ -1313,8 +1313,14 @@ async def record_provision_status(
     # «доехало хотя бы до одного». Per-server состояние live видно через
     # `server_account_servers.present` (set_link_presence выше); pending_apply —
     # короткий drift-флаг для UI «свежевыданные creds в процессе раскатки».
-    # Deprovision (`present=False`) тоже завершает цикл для своего сервера.
-    if account.credentials_pending_apply:
+    #
+    # Снимать флаг можно только на provision/update (`present=True`) — именно они
+    # подтверждают, что новый материал реально доехал на бокс. Deprovision
+    # (`present=False`) лишь удаляет пользователя и ничего не применяет: если
+    # параллельно идёт mass-rotate, его pending снимать на deprovision-callback'е
+    # нельзя — иначе переходный период ротации закроется до того, как новый
+    # пароль раскатался хоть куда-то, и удержанный previous занулится зря.
+    if payload.present and account.credentials_pending_apply:
         account.credentials_pending_apply = False
         # Переходный период ротации завершён: новый пароль доехал хотя бы до
         # одного сервера группы. Удержанный прежний пароль больше не нужен —

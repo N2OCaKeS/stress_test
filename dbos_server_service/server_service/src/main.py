@@ -164,7 +164,7 @@ def create_application() -> FastAPI:
         # `server_worker_redis_url` не задан, пул не создаём — сам
         # `store_prepare_creds` поднимет WORKER_REDIS_NOT_CONFIGURED.
         if settings.server_worker_redis_url:
-            worker_client._prepare_redis_client = aioredis.from_url(
+            worker_client._creds_redis_client = aioredis.from_url(
                 settings.server_worker_redis_url,
             )
         # Регистрируем event-каталог в loging_service + эмитим `service.started`
@@ -241,11 +241,11 @@ def create_application() -> FastAPI:
 
             # Pooled prepare-creds Redis-клиент закрываем последним: с этого
             # момента входящих POST /prepare уже нет (uvicorn graceful drain
-            # отработал выше), а `_prepare_redis_client = None` сбрасывает
+            # отработал выше), а `_creds_redis_client = None` сбрасывает
             # модульный slot, чтобы повторный запуск lifespan (в тестах через
             # `app.router.lifespan_context`) не наследовал закрытый client.
-            prepare_redis = worker_client._prepare_redis_client
-            worker_client._prepare_redis_client = None
+            prepare_redis = worker_client._creds_redis_client
+            worker_client._creds_redis_client = None
             if prepare_redis is not None:
                 await prepare_redis.aclose()
 

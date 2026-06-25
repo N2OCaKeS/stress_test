@@ -61,9 +61,14 @@ _HASH_KEYS = {
 }
 # `acl_dump` — снимок матрицы доступа (per-cred ACL'и + dept_grants). Может
 # раскрывать, какие dep'ы видят какую креду; держим как credential-блок.
+#
+# `name` — человекочитаемое имя кред'ы (`tokens.create/update/delete/...`
+# кладут его в details). Само по себе не секрет, но это metadata-leak вида
+# «секрет <name> существует» в SOC-канал; маскируем как credential-блок.
 _CREDENTIAL_KEYS = {
     "credential", "credentials", "auth", "authorization",
     "acl_dump",
+    "name",
 }
 
 # ── Эвристики по значению ─────────────────────────────────────────────────────

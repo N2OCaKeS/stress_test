@@ -124,6 +124,25 @@ def _on_publisher_exit(task: asyncio.Task) -> None:
         )
 
 
+def _coerce_int(value: object, default: int = 0) -> int:
+    """Привести значение из JSON-ответа server_service к int без падения.
+
+    `int(None)` и `int("x")` бросают, а `status.get("remaining", 0)` спасает
+    только от отсутствующего ключа — server_service может вернуть `null`
+    (remaining=None) или нечисловой мусор. Здесь всё нечисловое схлопывается
+    в `default`, чтобы tick не падал на парсинге снапшота.
+    """
+    if isinstance(value, bool):
+        # bool — подкласс int; True/False как счётчик бессмысленны.
+        return default
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
 async def _warn_on_missing_audit_api_key(state: TaskiqState) -> None:
     """Сигнал оператору при старте, если `LOGGING_SERVICE_API_KEY` пустой.
@@ -141,6 +160,63 @@ async def _warn_on_missing_audit_api_key(state: TaskiqState) -> None:
             "will be silently dropped — see audit_client._audit_dropped_no_api_key "
             "counter and `get_dropped_no_api_key_total()`",
             _settings.app_env,
+        )
+
+
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def _warn_on_redfish_verify_disabled(state: TaskiqState) -> None:
+    """Сигнал при старте, если BMC TLS-verify выключен (`REDFISH_VERIFY_TLS=false`).
+
+    `_require_https_outbound_in_prod` стережёт исходящие HTTP-каналы worker'а,
+    но redfish им не покрыт: дефолт `redfish_verify_tls=False` означает, что
+    каждый Redfish-вызов идёт по TLS без проверки сертификата — это норма для
+    iDRAC с self-signed cert'ом, но в production оператор должен знать, что
+    канал к BMC открыт для MITM. Probe-cascade эмитит `bmc.tls_downgrade` только
+    на фактическом понижении уровня; когда verify выключен с самого старта,
+    cascade отвечает на первом же шаге и не пишет ничего. Закрываем разрыв
+    явным per-startup WARNING + audit-событием `bmc.tls_verify_disabled`.
+
+    WARNING пишем в любом окружении (оператору полезно), audit-событие эмитим
+    только в `production`/`staging` — в local/dev/test это шум.
+    """
+    if _settings.redfish_verify_tls:
+        return
+
+    env = _settings.app_env
+    logger.warning(
+        "REDFISH_VERIFY_TLS is disabled (app_env=%s); BMC Redfish calls run over "
+        "TLS without certificate validation — acceptable only for self-signed "
+        "iDRAC on an isolated management VLAN. Provision BMCs from an internal CA "
+        "and set REDFISH_VERIFY_TLS=true to close the MITM window.",
+        env,
+    )
+
+    if env.lower() not in ("production", "staging"):
+        return
+
+    # Best-effort audit через тот же transactional outbox, что и остальной
+    # worker-audit. БД/outbox недоступны на старте — просто логируем и едем,
+    # запуск worker'а из-за audit'а падать не должен.
+    payload = {
+        "action": "bmc.tls_verify_disabled",
+        "status": "success",
+        "allowed": True,
+        "actor_type": "service",
+        "target_type": "ipmi_controller",
+        "severity": "WARNING",
+        "details": {
+            "app_env": env,
+            "redfish_verify_tls": False,
+        },
+    }
+    try:
+        async with AsyncSessionLocal() as session:
+            await task_repo.enqueue_audit(session, task_id=None, payload=payload)
+            await session.commit()
+    except Exception as exc:  # noqa: BLE001 — startup-hook не должен падать из-за audit'а
+        logger.debug(
+            "bmc.tls_verify_disabled audit emit failed: %s",
+            redact_error_message(f"{type(exc).__name__}: {exc}"),
         )
 
 
@@ -1413,11 +1489,11 @@ async def secrets_reencrypt_lazy() -> None:
         })
         return
 
-    remaining = int(status.get("remaining", 0))
+    remaining = _coerce_int(status.get("remaining"))
     active_version = status.get("active_version")
     outbox_snapshot = status.get("outbox") or {}
-    pending = int(outbox_snapshot.get("pending", 0))
-    processing = int(outbox_snapshot.get("processing", 0))
+    pending = _coerce_int(outbox_snapshot.get("pending"))
+    processing = _coerce_int(outbox_snapshot.get("processing"))
 
     if remaining <= 0 and pending == 0 and processing == 0:
         logger.debug(

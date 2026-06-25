@@ -387,7 +387,7 @@ async def test_bridge_publishes_input_and_relays_output(monkeypatch, _patch_cons
     pubsub = FakePubSub(messages)
     redis = FakeRedis(pubsub)
     monkeypatch.setattr(console.worker_client, "get_worker_redis", lambda: redis)
-    monkeypatch.setattr(console.worker_client, "_prepare_redis_client", redis)
+    monkeypatch.setattr(console.worker_client, "_creds_redis_client", redis)
 
     # Клиент шлёт одну команду, потом disconnect.
     incoming = [
@@ -456,7 +456,7 @@ async def test_managed_false_server_works(monkeypatch, _patch_console):
     pubsub = FakePubSub(messages)
     redis = FakeRedis(pubsub)
     monkeypatch.setattr(console.worker_client, "get_worker_redis", lambda: redis)
-    monkeypatch.setattr(console.worker_client, "_prepare_redis_client", redis)
+    monkeypatch.setattr(console.worker_client, "_creds_redis_client", redis)
 
     ws = FakeWebSocket(headers={"Authorization": "Bearer tok"})
     await asyncio.wait_for(console.server_console_ws(ws, "srv_console1"), timeout=5.0)
@@ -488,7 +488,7 @@ async def test_bridge_start_timeout_closes_with_error(monkeypatch, _patch_consol
     pubsub = FakePubSub(messages)
     redis = FakeRedis(pubsub)
     monkeypatch.setattr(console.worker_client, "get_worker_redis", lambda: redis)
-    monkeypatch.setattr(console.worker_client, "_prepare_redis_client", redis)
+    monkeypatch.setattr(console.worker_client, "_creds_redis_client", redis)
 
     ws = FakeWebSocket(headers={"Authorization": "Bearer tok"})
     await asyncio.wait_for(console.server_console_ws(ws, "srv_console1"), timeout=5.0)

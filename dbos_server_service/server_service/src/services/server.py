@@ -526,27 +526,36 @@ async def update_server(
     audit_fields = list(changes.keys())
     if sync_storage:
         audit_fields.append("storage")
+    # Куда прилетел UNIQUE — в строку `servers` (hostname/ip/serial) или в
+    # дочерние disk-row'ы (server_id + slot). Симметрично `create_server`:
+    # constraint name из `exc.orig` парсить нестабильно (диалект-зависимо),
+    # проще трекать стадию.
+    failing_stage = "server"
     try:
         if changes:
             await repo.update(db, obj, changes)
         if sync_storage:
+            failing_stage = "storage"
             await _sync_storage(db, obj.id, payload.storage or [])
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        logger.warning("IntegrityError на обновлении сервера %s: %s", server_id, type(exc.orig).__name__)
+        logger.warning(
+            "IntegrityError на обновлении сервера %s stage=%s: %s",
+            server_id, failing_stage, type(exc.orig).__name__,
+        )
         audit_service.emit(
             "server.update",
             target_id=server_id,
             target_type="server",
             status="failure",
             allowed=True,
-            details={"reason": "duplicate", "fields": audit_fields},
+            details={"reason": "duplicate", "stage": failing_stage, "fields": audit_fields},
         )
         raise ConflictError(
             error_code="SERVER_DUPLICATE",
             message="Update collides with an existing server (hostname/IP/serial_number/disk slot)",
-            details={"hint": _DUPLICATE_HINT},
+            details={"hint": _DUPLICATE_HINT, "stage": failing_stage},
         ) from exc
     await db.refresh(obj)
     audit_service.emit(

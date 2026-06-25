@@ -671,6 +671,19 @@ class Settings(BaseSettings):
                     "exposes the lifecycle bearer to MITM/sniff in the cluster"
                 )
 
+        # ── SECRET_SERVICE_TLS_VERIFY (warn-only) ───────────────────────────
+        # Выключенная проверка сертификата открывает MITM на lifecycle-канал:
+        # подменный secret_service принимает наш Bearer и тихо съедает emit'ы
+        # про user-delete / dept-revoke. https-схема выше уже требуется, но без
+        # verify она бессмысленна. Не error (бывает self-signed внутри кластера
+        # до раскатки CA), но в SIEM такой старт должен оставлять след.
+        if self.secret_service_url and not self.secret_service_tls_verify:
+            logger.warning(
+                "SECRET_SERVICE_TLS_VERIFY=false in production: сертификат "
+                "secret_service не проверяется, lifecycle-канал уязвим к MITM. "
+                "Пропиши CA и включи SECRET_SERVICE_TLS_VERIFY=true."
+            )
+
         # ── RATE_LIMIT_STORAGE_URI: запрет memory:// в prod (если не bypass'нут) ─
         # `memory://` per-process → каждый pod держит свой счётчик. В multi-
         # replica deploy'е атакующий round-robin'ом получает N × лимит попыток

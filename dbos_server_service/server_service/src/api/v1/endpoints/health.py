@@ -40,7 +40,7 @@ async def _ping_worker_redis() -> str:
 
     Возвращает `ok` / `skipped` / `<exc-class>`. Не бросает.
     """
-    client = worker_client._prepare_redis_client
+    client = worker_client._creds_redis_client
     if client is None:
         return "skipped"
     try:

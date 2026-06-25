@@ -293,3 +293,64 @@ class TestDowngrade:
         expected_head = ScriptDirectory.from_config(cfg).get_current_head()
         rows = _inspect("SELECT version_num FROM alembic_version")
         assert rows[0][0] == expected_head
+
+
+# ── h5i6j7k8l9m0 display-names downgrade guard ───────────────────────────────
+
+class TestDisplayNamesDowngradeGuard:
+    """downgrade INSERT-only сервисов (auth_service/server_worker) удаляет их
+    из platform_services. Шесть таблиц висят на service_name через CASCADE —
+    слепой DELETE утащил бы выданные роли/доступы. Guard валит downgrade, если
+    на удаляемый сервис кто-то завязался."""
+
+    DISPLAY_NAMES_REV = "h5i6j7k8l9m0"
+
+    def _exec(self, stmt: str, params: dict | None = None) -> None:
+        eng = create_engine(_MIGR_URL, isolation_level="AUTOCOMMIT")
+        try:
+            with eng.connect() as conn:
+                conn.execute(text(stmt), params or {})
+        finally:
+            eng.dispose()
+
+    def test_downgrade_blocked_when_dependent_role_exists(self, fresh_db):
+        _alembic("upgrade", self.DISPLAY_NAMES_REV)
+        # auth_service зарегистрирован INSERT'ом этой миграции. Заводим
+        # минимальный отдел и DepartmentServiceAccess на него — зависимость,
+        # которую CASCADE снёс бы молча.
+        # На ревизии h5i6j7k8l9m0 у departments ещё есть NOT NULL display_name
+        # (дропается позже в m0n1o2p3q4r5) — заполняем, иначе INSERT падает на
+        # NotNullViolation и до guard'а в downgrade тест не доходит.
+        self._exec(
+            "INSERT INTO departments (id, name, display_name, is_active, created_at, updated_at) "
+            "VALUES ('dep_guard', 'guard', 'Guard', TRUE, now(), now())"
+        )
+        self._exec(
+            "INSERT INTO department_service_access "
+            "(id, department_id, service_name, is_active, granted_at) "
+            "VALUES ('dsa_guard', 'dep_guard', 'auth_service', TRUE, now())"
+        )
+        target = _resolve_revision_before(self.DISPLAY_NAMES_REV)
+        res = _alembic("downgrade", target)
+        assert res.returncode != 0, (
+            "downgrade должен упасть при зависимых строках, а не CASCADE-снести их"
+        )
+        combined = (res.stderr + res.stdout).lower()
+        assert "cannot downgrade" in combined or "dependent" in combined, combined
+        # platform_services.auth_service всё ещё на месте — ничего не удалили.
+        rows = _inspect(
+            "SELECT service_name FROM platform_services WHERE service_name='auth_service'"
+        )
+        assert rows == [("auth_service",)]
+
+    def test_downgrade_succeeds_when_no_dependents(self, fresh_db):
+        _alembic("upgrade", self.DISPLAY_NAMES_REV)
+        target = _resolve_revision_before(self.DISPLAY_NAMES_REV)
+        res = _alembic("downgrade", target)
+        assert res.returncode == 0, res.stderr
+        # INSERT-only сервисы удалены, UPDATE-сервисы откатились к доменным именам.
+        rows = _inspect(
+            "SELECT service_name FROM platform_services "
+            "WHERE service_name IN ('auth_service', 'server_worker')"
+        )
+        assert rows == []

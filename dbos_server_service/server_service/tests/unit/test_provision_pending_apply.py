@@ -46,7 +46,7 @@ def stub_redis(monkeypatch):
     pooled.delete = AsyncMock(side_effect=fake_delete)
     pooled.aclose = AsyncMock()
 
-    monkeypatch.setattr(worker_client, "_prepare_redis_client", pooled)
+    monkeypatch.setattr(worker_client, "_creds_redis_client", pooled)
 
     class _Settings:
         server_worker_redis_url = "redis://test:6379/0"
@@ -188,6 +188,61 @@ class TestProvisionPendingApply:
         # Но force_replace TRUE: pending_before=True → retry форсит
         # overwrite на боксе.
         assert captured_dispatch[1]["payload"]["force_replace"] is True
+
+    async def test_deprovision_callback_keeps_pending_apply(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch, stub_redis, db, worker_bot_token_a,
+    ):
+        """Deprovision (`present=False`) НЕ снимает pending_apply.
+
+        Race: оператор ротировал пароль (pending_apply=True), параллельно
+        userdel на одном из серверов группы присылает deprovision-callback.
+        Этот callback ничего не применяет — он не должен закрывать переходный
+        период ротации и зануляять удержанный previous_password."""
+        import base64
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="old-secret1")
+        await db.commit()
+
+        # Ротация открывает переходный период.
+        await client.post(
+            f"{BASE}/{acc.id}/rotate_password",
+            headers=_hdr(operator_token_a),
+            json={"password_b64": base64.b64encode(b"new-secret9").decode()},
+        )
+        await db.refresh(acc)
+        assert acc.credentials_pending_apply is True
+        assert acc.previous_password_encrypted is not None
+
+        # Deprovision-callback (present=False) от воркера.
+        cb_url = (
+            f"/api/server/v1/internal/servers/{srv.id}/accounts/{acc.id}/provision_status"
+        )
+        cb_headers = _hdr(worker_bot_token_a)
+        cb_headers["X-Target-Department-Id"] = srv.department_id
+        resp = await client.post(
+            cb_url,
+            json={"operation": "deprovision", "present": False},
+            headers=cb_headers,
+        )
+        assert resp.status_code == 200, resp.text
+
+        await db.refresh(acc)
+        # Флаг и previous остаются — новый пароль ещё никуда не доехал.
+        assert acc.credentials_pending_apply is True
+        assert acc.previous_password_encrypted is not None
+
+        # Provision-callback (present=True) закрывает период штатно.
+        resp = await client.post(
+            cb_url,
+            json={"operation": "provision", "present": True},
+            headers=cb_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        await db.refresh(acc)
+        assert acc.credentials_pending_apply is False
+        assert acc.previous_password_encrypted is None
 
     async def test_managed_account_second_provision_no_force_replace(
         self, client, operator_token_a, make_server, make_account,

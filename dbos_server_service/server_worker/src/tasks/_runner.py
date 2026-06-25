@@ -122,6 +122,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable
 
+from src.core.backoff import compute_retry_delay
 from src.core.config import get_settings
 from src.core.constants import TaskStatus
 from src.core.exceptions import DestructiveGateDeferred
@@ -895,10 +896,12 @@ def _compute_backoff_delay(attempt: int) -> float:
     бешенным attempt-счётчиком (например, после ручного re-attempt'а
     без сброса) тратили бы CPU на pow.
     """
-    exponent = min(max(attempt - 1, 0), _BACKOFF_EXPONENT_CAP)
-    return min(
-        _RETRY_BASE_DELAY_SECONDS * (2 ** exponent),
-        _RETRY_MAX_DELAY_SECONDS,
+    return compute_retry_delay(
+        attempt - 1,
+        base=2.0,
+        coefficient=_RETRY_BASE_DELAY_SECONDS,
+        cap_seconds=_RETRY_MAX_DELAY_SECONDS,
+        exp_cap=_BACKOFF_EXPONENT_CAP,
     )
 
 

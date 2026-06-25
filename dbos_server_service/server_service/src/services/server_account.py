@@ -18,7 +18,6 @@ import hashlib
 import logging
 import secrets
 import string
-import time
 from collections import OrderedDict
 
 from cryptography.hazmat.primitives import serialization
@@ -53,7 +52,14 @@ from src.schemas.server_account import (
     ServerAccountServersUpdate,
     ServerAccountUpdate,
 )
-from src.services import audit_context, audit_service, permissions, reservation, secrets_service
+from src.services import (
+    audit_context,
+    audit_service,
+    permissions,
+    reservation,
+    reveal_throttle,
+    secrets_service,
+)
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.services.server import load_visible_server, load_visible_servers
 from src.utils.ids import ignored_login_id
@@ -61,23 +67,12 @@ from src.utils.ids import server_account_id as new_id
 
 logger = logging.getLogger(__name__)
 
-# Окно throttling'а аудита раскрытия паролей. Ключ (actor_id, account_id) —
-# (timestamp последнего CRITICAL'а, накопленный счётчик reveal'ов в окне).
-# Пока в окне — повторные вызовы пишут INFO `password_revealed_throttled`,
-# счётчик идёт в details обоих типов событий, чтобы SIEM мог фильтровать
-# только по CRITICAL count и всё равно видеть общее число reveal'ов в окне.
-# In-memory словарь живёт на процесс, при рестарте теряется (приемлемо:
-# SIEM всё равно увидит первый CRITICAL после рестарта). Multi-worker деплой
-# даст по одному CRITICAL на воркера, но не водопад.
-#
-# Bounded LRU: при штурме длинного списка уникальных (actor, account) пар
-# словарь рос бы безгранично между sweep'ами (stale-cleanup срабатывает
-# только на cache-miss того же окна). Кэп `_REVEAL_AUDIT_WINDOW_MAX`
-# держит размер в пределе — на вытеснении уходит самый старый по
-# обращению ключ (LRU). Throttle-семантика самой статистики не страдает:
-# вытесненный actor получит ещё один CRITICAL на следующем reveal'е
-# вместо INFO, что в случае реального шторма даёт SIEM больше сигнала,
-# а не меньше.
+# Окно throttling'а аудита раскрытия паролей account'а. Ключ — (actor_id,
+# account_id), bucket отдельный от ipmi_controller'а (без коллизий). Пока в
+# окне — повторные вызовы пишут INFO `password_revealed_throttled`, счётчик
+# едет в details обоих типов событий. In-memory словарь живёт на процесс, при
+# рестарте теряется; multi-worker даст по CRITICAL'у на воркера, не водопад.
+# Алгоритм окна + bounded-LRU eviction — в `reveal_throttle.record_reveal`.
 _REVEAL_AUDIT_WINDOW_MAX = 10000
 _REVEAL_AUDIT_WINDOW: "OrderedDict[tuple[str, str], tuple[float, int]]" = OrderedDict()
 
@@ -100,42 +95,9 @@ def _record_reveal_attempt(actor_id: str | None, account_id: str) -> tuple[bool,
     Window=0 отключает throttle: всегда CRITICAL, счётчик не ведётся.
     """
     window = get_settings().password_reveal_audit_window_seconds
-    if window <= 0 or actor_id is None:
-        return True, 1
-    now = time.monotonic()
-    key = (actor_id, account_id)
-    entry = _REVEAL_AUDIT_WINDOW.get(key)
-    if entry is None or (now - entry[0]) >= window:
-        _REVEAL_AUDIT_WINDOW[key] = (now, 1)
-        _REVEAL_AUDIT_WINDOW.move_to_end(key)
-        # Best-effort sweep устаревших ключей — иначе словарь распухает
-        # на долгоживущем процессе. Линейный пробег, выполняется только
-        # при miss'е (т.е. редко), для O(n) словаря допустимо.
-        stale_cutoff = now - window
-        stale_keys = [k for k, (ts, _cnt) in _REVEAL_AUDIT_WINDOW.items() if ts < stale_cutoff]
-        for k in stale_keys:
-            _REVEAL_AUDIT_WINDOW.pop(k, None)
-        # LRU-eviction: после insert'а размер мог превысить кэп (хвост
-        # старее всех — `popitem(last=False)` его сбросит).
-        while len(_REVEAL_AUDIT_WINDOW) > _REVEAL_AUDIT_WINDOW_MAX:
-            _REVEAL_AUDIT_WINDOW.popitem(last=False)
-        return True, 1
-    last_at, count = entry
-    new_count = count + 1
-    _REVEAL_AUDIT_WINDOW[key] = (last_at, new_count)
-    _REVEAL_AUDIT_WINDOW.move_to_end(key)
-    return False, new_count
-
-
-def _should_emit_critical_reveal(actor_id: str | None, account_id: str) -> bool:
-    """Legacy-обёртка над `_record_reveal_attempt` без счётчика.
-
-    Сохранена для совместимости со старыми тестами, ожидающими bool-ответа
-    и не интересующимися cumulative count'ом. Новый код должен звать
-    `_record_reveal_attempt` напрямую и класть счётчик в audit-details.
-    """
-    should_emit, _count = _record_reveal_attempt(actor_id, account_id)
-    return should_emit
+    return reveal_throttle.record_reveal(
+        _REVEAL_AUDIT_WINDOW, _REVEAL_AUDIT_WINDOW_MAX, actor_id, account_id, window,
+    )
 
 
 def _added_sudo_groups(
@@ -384,7 +346,11 @@ def _generate_password() -> str:
 
 # Алфавит для авто-сгенерированных кред под provision: digit/letter/symbol —
 # чтобы результат сразу удовлетворял `is_strong` (16+ chars + три класса).
-_STRONG_PWD_SYMBOLS = "!@#$%^&*-_=+?"
+# Исключены символы, опасные в shell даже без цитирования: кавычки, бэктик,
+# обратный слэш, `$` (раскрытие переменных), а также `*`/`&` (globbing/job
+# control) — пароль остаётся безопасным, если когда-нибудь попадёт в
+# нецитированный argv.
+_STRONG_PWD_SYMBOLS = "!@#%^-_=+?"
 _STRONG_PWD_LENGTH = 24
 
 
@@ -396,8 +362,8 @@ def _generate_strong_password() -> str:
 
     Длина с запасом над `MIN_STRONG_PASSWORD_LENGTH` (16) — энтропии хватает,
     а полисная проверка проходит при любой перестановке. Алфавит — латиница +
-    цифры + ограниченный набор спецсимволов: те, что не ломают shell-цитирование
-    (исключены кавычки, бэктики, $ и обратный слэш).
+    цифры + спецсимволы, безопасные в shell даже без цитирования (исключены
+    кавычки, бэктик, обратный слэш, `$`, а также `*` и `&`).
 
     На 24 символах вероятность не получить все три класса за один candidate
     исчезающе мала (~10^-30), но цикл всё равно ограничен `_STRONG_PWD_MAX_ATTEMPTS`,

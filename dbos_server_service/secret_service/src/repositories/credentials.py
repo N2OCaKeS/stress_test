@@ -30,11 +30,13 @@ async def get_by_id(db: AsyncSession, cred_id: str) -> Credential | None:
 async def get_by_id_for_update(
     db: AsyncSession, cred_id: str
 ) -> Credential | None:
-    """SELECT по PK с `FOR UPDATE` для CAS-ротации secret'а.
+    """SELECT по PK с `FOR UPDATE` для сериализации владельца строки.
 
-    Берётся при update content и при transfer ownership, чтобы конкурентные
-    PATCH'и не перетёрли друг друга. Lock держится до конца транзакции
-    caller'а.
+    Берётся на transfer/recover ownership и в re-encrypt outbox, чтобы два
+    параллельных transfer'а (или transfer и фоновый re-encrypt) на одну креду
+    не перетёрли друг друга. Lock держится до конца транзакции caller'а.
+    Обычный update content идёт через `load_for_action` → `get_by_id` без
+    lock'а: там конкуренцию ловит CAS на ciphertext'е.
     """
     stmt = (
         select(Credential)

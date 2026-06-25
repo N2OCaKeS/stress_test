@@ -53,6 +53,7 @@ from src.models import Credential
 from src.repositories import dept_grants as dept_grants_repo
 from src.repositories import role_acls as role_acls_repo
 from src.repositories import user_acls as user_acls_repo
+from src.services import _identity_roles
 
 
 # Все поддерживаемые actions. Список замкнут — caller'ы передают строкой,
@@ -81,49 +82,11 @@ _WRITE_ACTIONS: frozenset[str] = frozenset({"write", "delete", "grant_acl", "gra
 _PERSONAL_OWNER_ONLY: frozenset[str] = frozenset({"write", "delete", "manage_status"})
 
 
-def _is_service_admin(identity: Identity) -> bool:
-    """Носитель `admin`-роли secret_service (без привязки к конкретному dept'у).
-
-    Symmetric с require_service_admin guard'ом: одна точка истины «кто
-    считается админом сервиса». Привязка к dep'у самой кред'ы — отдельный
-    шаг (`_is_service_admin_for`), потому что admin per-(dept, service) и не
-    имеет cross-dept привилегий.
-    """
-    return "admin" in identity.roles_for(SERVICE_NAME)
-
-
-def _is_service_admin_for(identity: Identity, cred: Credential) -> bool:
-    """`admin` secret_service'а с правом действовать ИМЕННО над `cred`.
-
-    Допустимо, если actor владеет admin-ролью И cred сидит в том же dept'е:
-      * `cred.owner_dept_id == identity.department_id` — department / cross_dep;
-      * `cred.owner_user_dept_id == identity.department_id` — personal владельца
-        из того же dept'а;
-      * personal с пустым owner_user_dept_id (старые записи до миграции
-        c3b5e7d2a1f8) — допускаем, чтобы admin своего dep'а мог хотя бы
-        прочитать аудиторскую креду; жёсткий cut-off потребует backfill'а.
-    """
-    if not _is_service_admin(identity):
-        return False
-    if identity.department_id is None:
-        return False
-    if cred.owner_dept_id is not None and cred.owner_dept_id == identity.department_id:
-        return True
-    if cred.scope == "personal":
-        owner_dept = cred.owner_user_dept_id
-        if owner_dept is None or owner_dept == identity.department_id:
-            return True
-    return False
-
-
-def _is_account_admin(identity: Identity) -> bool:
-    return identity.platform_role == "account_admin"
-
-
-def _is_guest_only(identity: Identity) -> bool:
-    """Guest = носитель ТОЛЬКО роли `guest` в secret_service."""
-    roles = identity.roles_for(SERVICE_NAME)
-    return bool(roles) and all(r == "guest" for r in roles)
+# Role-предикаты — общие с credential_service, живут в `_identity_roles`.
+_is_service_admin = _identity_roles.is_service_admin
+_is_service_admin_for = _identity_roles.is_service_admin_for
+_is_account_admin = _identity_roles.is_account_admin
+_is_guest_only = _identity_roles.is_guest_only
 
 
 def _has_acl_permission(acls: list, action: Action, identity_roles: list[str]) -> tuple[bool, str]:

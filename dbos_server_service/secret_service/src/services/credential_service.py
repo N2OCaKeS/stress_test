@@ -42,6 +42,7 @@ from src.schemas.credentials import (
     TransferRequest,
 )
 from src.services import (
+    _identity_roles,
     access_service,
     audit_service,
     lockout_service,
@@ -227,34 +228,10 @@ def _ensure_active_or_raise(cred: Credential) -> None:
         )
 
 
-def _is_service_admin(identity: Identity) -> bool:
-    return "admin" in identity.roles_for(SERVICE_NAME)
-
-
-def _is_service_admin_for(identity: Identity, cred: Credential) -> bool:
-    """admin secret_service'а с правом действовать над `cred` — only own dept.
-
-    Cred сидит в dept'е actor'а, если:
-      * `cred.owner_dept_id == identity.department_id` (department / cross_dep), или
-      * `cred.owner_user_dept_id == identity.department_id` (personal владельца
-        того же dept'а; пустой owner_user_dept_id — допуск как best-effort).
-    Cross-dept привилегий у роли нет — admin dep_A не лезет в cred'ы dep_B.
-    """
-    if not _is_service_admin(identity):
-        return False
-    if identity.department_id is None:
-        return False
-    if cred.owner_dept_id is not None and cred.owner_dept_id == identity.department_id:
-        return True
-    if cred.scope == "personal":
-        owner_dept = cred.owner_user_dept_id
-        if owner_dept is None or owner_dept == identity.department_id:
-            return True
-    return False
-
-
-def _is_account_admin(identity: Identity) -> bool:
-    return identity.platform_role == "account_admin"
+# Role-предикаты — общие с access_service, живут в `_identity_roles`.
+_is_service_admin = _identity_roles.is_service_admin
+_is_service_admin_for = _identity_roles.is_service_admin_for
+_is_account_admin = _identity_roles.is_account_admin
 
 
 # Роли, которым разрешено заводить department/cross_department-креды.
@@ -272,18 +249,8 @@ def _can_create_dept_cred(identity: Identity) -> bool:
     return bool(_CREATE_DEPT_ROLES & set(identity.roles_for(SERVICE_NAME)))
 
 
-def is_guest_only(identity: Identity) -> bool:
-    """Guest = носитель ТОЛЬКО роли `guest` в secret_service.
-
-    Если у actor'а есть ещё какая-то роль (reader/operator/admin) — он не
-    guest, идёт обычным путём. Чистый guest получает урезанный listing
-    (только id/name/service/scope/visible_to_dept) и больше ничего.
-    """
-    roles = identity.roles_for(SERVICE_NAME)
-    return bool(roles) and all(r == "guest" for r in roles)
-
-
-# Internal alias — для краткости в этом модуле.
+# Публичное имя для endpoint-слоя (`credentials.py`) + internal alias.
+is_guest_only = _identity_roles.is_guest_only
 _is_guest_only = is_guest_only
 
 

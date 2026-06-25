@@ -69,7 +69,6 @@ _AES_KEY_BYTES = 32  # AES-256
 # не даст стартовать без явного значения.
 _FALLBACK_HKDF_SALT = b"dbos-server-service-secrets-dev-fallback"
 _LEGACY_KDF_VERSIONS = frozenset({1})  # v1 использовал одношаговый SHA-256
-_DEV_ENVS = frozenset({"dev", "test", "local"})
 
 
 def _resolve_hkdf_salt() -> bytes:
@@ -188,6 +187,16 @@ def encrypt(plaintext: str, *, aad: bytes) -> str:
             message="Cannot encrypt None",
         )
     version = get_keystore().get_active_version()
+    if version in _LEGACY_KDF_VERSIONS:
+        # Legacy SHA-256 KDF — только для расшифровки старых v1-токенов.
+        # Активной версией он быть не должен: иначе свежий encrypt молча
+        # лёг бы на слабую деривацию. Ловим misconfig (active=v1) явно.
+        raise AppException(
+            http_status=500,
+            error_code="ENCRYPTION_LEGACY_KDF_ACTIVE",
+            message=f"Refusing to encrypt with legacy KDF version v{version}",
+            details={"version": version},
+        )
     key = _key_for_version(version)
     nonce = os.urandom(_NONCE_BYTES)
     ciphertext = AESGCM(key).encrypt(nonce, plaintext.encode(), aad)

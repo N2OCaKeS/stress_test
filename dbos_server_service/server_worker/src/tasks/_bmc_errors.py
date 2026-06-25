@@ -86,9 +86,11 @@ def _wrap_ipmitool_error(action: str, exc: IpmitoolError) -> AppException:
         «BMC не отвечает».
       * stderr-substring `unable to establish` / `no response` → `BMC_UNREACHABLE`.
       * stderr-substring `rakp` / `authentication` → `BMC_AUTH_FAILED`.
-      * иначе rc != 0 → `BMC_REJECTED` (BMC отверг команду — invalid state,
-        out-of-range user_id, и т.п.).
-      * fallback → `BMC_ERROR`.
+      * любой положительный exit-code → `BMC_REJECTED` (BMC отверг команду —
+        invalid state, out-of-range user_id, и т.п.). В проде сюда доходит
+        только `rc > 0` — caller бросает `IpmitoolError` лишь на `rc != 0`.
+      * rc == -1 (процесс убит сигналом, `proc.returncode is None`) или rc == 0
+        (defensive, в проде недостижим) → `BMC_ERROR`.
 
     `argv_safe` уже маскирует пароль (см. `ipmitool._mask_password_in_argv`), его
     кладём в `details` для diagnostics — он попадает в audit без plaintext.
@@ -103,7 +105,7 @@ def _wrap_ipmitool_error(action: str, exc: IpmitoolError) -> AppException:
             code = "BMC_UNREACHABLE"
         elif any(m in stderr_lc for m in _AUTH_STDERR_MARKERS):
             code = "BMC_AUTH_FAILED"
-        elif exc.returncode not in (0, -1):
+        elif exc.returncode > 0:
             code = "BMC_REJECTED"
         else:
             code = "BMC_ERROR"

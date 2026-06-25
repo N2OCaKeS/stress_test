@@ -340,9 +340,7 @@ async def login(
     settings = get_settings()
     user_repo = UserRepository(db)
     session_repo = SessionRepository(db)
-    role_repo = RoleRepository(db)
     dept_repo = DepartmentRepository(db)
-    group_repo = GroupRepository(db)
 
     user = await user_repo.get_by_username(username)
     if user is None:
@@ -408,12 +406,10 @@ async def login(
         )
         raise
 
-    dept_services = await dept_repo.list_active_services(user.department_id) if user.department_id else []
-    direct_roles = await role_repo.get_all_roles(user.id)
-    group_services = await group_repo.list_active_services_for_user(user.id)
-    group_roles = await group_repo.get_roles_for_user(user.id)
-    allowed_services, service_roles = _merge_permissions(dept_services, direct_roles, group_services, group_roles)
-    groups_summary = await group_repo.list_groups_with_roles_for_user(user.id)
+    # Effective view через тот же путь, что и introspect/refresh-revalidate —
+    # `collect_user_permissions` мержит dept/group service-access и роли с
+    # INTERSECT-фильтром. Раньше login дублировал эту логику инлайном.
+    allowed_services, service_roles, groups_summary = await collect_user_permissions(db, user)
     dept = await dept_repo.get_by_id(user.department_id) if user.department_id else None
 
     raw_refresh, refresh_hash = generate_refresh_token()
@@ -628,32 +624,20 @@ async def get_identity(
     означает не-OAuth токен — фильтрация не применяется.
     """
     user_repo = UserRepository(db)
-    role_repo = RoleRepository(db)
     dept_repo = DepartmentRepository(db)
-    group_repo = GroupRepository(db)
 
     user = await user_repo.get_by_id(user_id)
     if user is None:
         raise AuthenticationError(error_code="USER_NOT_FOUND", message="User not found")
 
-    dept_services = await dept_repo.list_active_services(user.department_id) if user.department_id else []
-    direct_roles = await role_repo.get_all_roles(user.id)
-    group_services = await group_repo.list_active_services_for_user(user.id)
-    group_roles = await group_repo.get_roles_for_user(user.id)
-    allowed_services, service_roles = _merge_permissions(dept_services, direct_roles, group_services, group_roles)
-    groups_summary = await group_repo.list_groups_with_roles_for_user(user.id)
+    # Тот же путь, что login/introspect: `collect_user_permissions` мержит
+    # dept/group-доступ и роли и (при заданном `oauth_scopes`) сам режет
+    # allowed_services/service_roles/groups по scope-снапшоту. Раньше `/me`
+    # дублировал и merge, и scope-фильтр инлайном.
+    allowed_services, service_roles, groups_summary = await collect_user_permissions(
+        db, user, oauth_scopes=oauth_scopes,
+    )
     dept = await dept_repo.get_by_id(user.department_id) if user.department_id else None
-
-    if oauth_scopes is not None:
-        scope_set = set(oauth_scopes)
-        allowed_services = [s for s in allowed_services if s in scope_set]
-        service_roles = {s: r for s, r in service_roles.items() if s in scope_set}
-        filtered_groups: dict[str, list[str]] = {}
-        for name, items in groups_summary.items():
-            kept = [i for i in items if i.split(".", 1)[0] in scope_set]
-            if kept:
-                filtered_groups[name] = kept
-        groups_summary = filtered_groups
 
     audit_service.emit(
         "user.me", user_id, status="success", allowed=True, request_id=request_id,

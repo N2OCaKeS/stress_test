@@ -330,9 +330,11 @@ async def notify_dept_service_access_revoked(
 ) -> None:
     """Уведомить secret_service, что отдел потерял access к сервису.
 
-    Сами шлём только когда `service == "secret_service"`: если у dep'а
-    отозвали access к docker_registry или server_service — secret_service
-    это не касается, шум только.
+    Функция шлёт callback безусловно. Решение «звать или нет» принимает
+    caller: и `department_service.revoke_service_access`, и
+    `platform_service_service.delete_service` дёргают её только когда
+    `service == "secret_service"` — для отзыва access к docker_registry или
+    server_service secret_service'у уведомление не нужно.
     """
     await _post(
         "dept-service-access-revoked",

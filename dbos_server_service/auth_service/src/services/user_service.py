@@ -390,14 +390,10 @@ async def create_user(
                 message="Only account_admin can assign platform roles (department_admin may grant loging_reader_dep within their own department)",
             )
 
-    from src.core.constants import PlatformRole as PR
-    # Платформенные роли без привязки к департаменту: account_admin —
-    # глобальный админ платформы, loging_admin/loging_reader — централизованное
-    # управление и чтение аудит-событий по всем департаментам. `department_admin`
-    # и `loging_reader_dep` сюда НЕ входят — они dept-scoped и обязаны нести
+    # Роли без привязки к департаменту перечислены в `_DEPTLESS_PLATFORM_ROLES`
+    # (account_admin/loging_admin/loging_reader). Все остальные обязаны нести
     # department_id.
-    _platform_admins = {PR.ACCOUNT_ADMIN, PR.LOGING_ADMIN, PR.LOGING_READER}
-    if platform_role not in _platform_admins and not department_id:
+    if platform_role not in _DEPTLESS_PLATFORM_ROLES and not department_id:
         raise DomainValidationError(error_code="MISSING_REQUIRED_FIELD", message="department_id is required for non-admin users")
 
     dept = await dept_repo.get_by_id(department_id) if department_id else None
@@ -1081,6 +1077,21 @@ async def reset_password(
         request_id=request_id,
     )
 
+
+# Платформенные роли, которые НЕ требуют `department_id`: account_admin —
+# глобальный админ, loging_admin/loging_reader — централизованное управление
+# и чтение аудита по всем департаментам. `department_admin` и
+# `loging_reader_dep` сюда не входят — они dept-scoped и обязаны нести
+# `department_id`. Не путать с `_ADMIN_PLATFORM_ROLES` ниже: тот шире
+# (включает department_admin) и отвечает на другой вопрос — «считается ли
+# актор админом для visibility-проверок».
+_DEPTLESS_PLATFORM_ROLES = frozenset(
+    {
+        PlatformRole.ACCOUNT_ADMIN,
+        PlatformRole.LOGING_ADMIN,
+        PlatformRole.LOGING_READER,
+    }
+)
 
 _ADMIN_PLATFORM_ROLES = frozenset(
     {

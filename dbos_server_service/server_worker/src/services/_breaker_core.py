@@ -101,6 +101,46 @@ async def _maybe_close(client: aioredis.Redis, close_after_use: bool) -> None:
         pass
 
 
+async def _eval_state_script(
+    *,
+    script: str,
+    extra_args: tuple[str, ...],
+    verb: str,
+    client_factory: ClientFactory,
+    keys: tuple[str, str, str, str],
+    log_prefix: str,
+    logger: logging.Logger,
+    close_after_use: bool,
+) -> tuple[str, float]:
+    """Eval скрипта, читающего state; вернуть `(state, retry_after_seconds)`.
+
+    Общая обвязка для `eval_check` и `eval_get_state`: оба гоняют Lua,
+    отдающий `(state, retry_after)`, и одинаково обрабатывают транспорт
+    (WARNING + fail-open `("closed", 0.0)`) и program-bug (ERROR + raise).
+    Отличаются только скриптом, хвостом ARGV и глаголом в логе.
+    """
+    client = await client_factory()
+    try:
+        try:
+            result = await client.eval(script, 4, *keys, *extra_args)
+        except _TRANSPORT_EXCEPTIONS:
+            logger.warning(
+                "%s: %s failed (transport), defaulting to closed",
+                log_prefix, verb, exc_info=True,
+            )
+            return ("closed", 0.0)
+        except Exception:
+            logger.error(
+                "%s: %s raised non-transport exception — propagating",
+                log_prefix, verb, exc_info=True,
+            )
+            raise
+    finally:
+        await _maybe_close(client, close_after_use)
+    state_raw, retry_after_raw = result[0], result[1]
+    return (_decode_state(state_raw), float(retry_after_raw))
+
+
 async def eval_check(
     *,
     client_factory: ClientFactory,
@@ -121,29 +161,16 @@ async def eval_check(
     """
     if now is None:
         now = time.time()
-    client = await client_factory()
-    try:
-        try:
-            result = await client.eval(
-                _breaker_lua.CHECK_SCRIPT, 4, *keys,
-                str(int(now)), str(cooldown_seconds),
-            )
-        except _TRANSPORT_EXCEPTIONS:
-            logger.warning(
-                "%s: check failed (transport), defaulting to closed",
-                log_prefix, exc_info=True,
-            )
-            return ("closed", 0.0)
-        except Exception:
-            logger.error(
-                "%s: check raised non-transport exception — propagating",
-                log_prefix, exc_info=True,
-            )
-            raise
-    finally:
-        await _maybe_close(client, close_after_use)
-    state_raw, retry_after_raw = result[0], result[1]
-    return (_decode_state(state_raw), float(retry_after_raw))
+    return await _eval_state_script(
+        script=_breaker_lua.CHECK_SCRIPT,
+        extra_args=(str(int(now)), str(cooldown_seconds)),
+        verb="check",
+        client_factory=client_factory,
+        keys=keys,
+        log_prefix=log_prefix,
+        logger=logger,
+        close_after_use=close_after_use,
+    )
 
 
 async def eval_get_state(
@@ -158,29 +185,16 @@ async def eval_get_state(
     """Pure-read snapshot: `(state, retry_after_seconds)`. Без побочных эффектов."""
     if now is None:
         now = time.time()
-    client = await client_factory()
-    try:
-        try:
-            result = await client.eval(
-                _breaker_lua.GET_STATE_SCRIPT, 4, *keys,
-                str(int(now)),
-            )
-        except _TRANSPORT_EXCEPTIONS:
-            logger.warning(
-                "%s: get_state failed (transport), defaulting to closed",
-                log_prefix, exc_info=True,
-            )
-            return ("closed", 0.0)
-        except Exception:
-            logger.error(
-                "%s: get_state raised non-transport exception — propagating",
-                log_prefix, exc_info=True,
-            )
-            raise
-    finally:
-        await _maybe_close(client, close_after_use)
-    state_raw, retry_after_raw = result[0], result[1]
-    return (_decode_state(state_raw), float(retry_after_raw))
+    return await _eval_state_script(
+        script=_breaker_lua.GET_STATE_SCRIPT,
+        extra_args=(str(int(now)),),
+        verb="get_state",
+        client_factory=client_factory,
+        keys=keys,
+        log_prefix=log_prefix,
+        logger=logger,
+        close_after_use=close_after_use,
+    )
 
 
 async def eval_record_success(

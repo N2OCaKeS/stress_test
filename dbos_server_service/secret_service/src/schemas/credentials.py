@@ -42,10 +42,6 @@ def _to_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-_VALID_SCOPES = ("personal", "department", "cross_department")
-_VALID_STATUS = ("active", "blocked")
-
-
 class CredentialCreate(BaseModel):
     """Тело POST /credentials.
 

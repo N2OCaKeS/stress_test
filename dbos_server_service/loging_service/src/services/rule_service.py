@@ -758,7 +758,13 @@ def get_cache_counters() -> dict[str, int]:
 
 
 def _matches(rule: _RuleSnapshot, event: EventCreate) -> bool:
-    """Проверяет, совпадает ли событие с критериями правила."""
+    """Проверяет, совпадает ли событие с критериями правила.
+
+    test-only: production-путь `apply_rules` ходит через
+    `_matches_with_severity` (читает severity из локальной переменной, а не
+    `payload.severity`). Эта версия осталась как самостоятельный предикат
+    для прямых тестов матчинга — call-graph прода её не зовёт.
+    """
     if rule.match_service is not None and rule.match_service != event.service:
         return False
     if rule.match_action is not None:

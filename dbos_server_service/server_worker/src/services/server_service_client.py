@@ -50,6 +50,68 @@ def _headers(target_department_id: str | None = None) -> dict[str, str]:
     return headers
 
 
+def _url(path: str) -> str:
+    """Собрать абсолютный URL к internal-эндпоинту server_service."""
+    base = get_settings().server_service_url.rstrip("/")
+    return f"{base}{path}"
+
+
+async def _request(
+    method: str,
+    path: str,
+    *,
+    reject_code: str,
+    target_department_id: str | None = None,
+    json: dict | None = None,
+    params: dict | None = None,
+    details: dict | None = None,
+    parse: bool = True,
+    allow_empty_body: bool = False,
+) -> dict:
+    """Единая обвязка для internal-вызовов server_service.
+
+    Каждая обёртка выше отличается только глаголом, путём, телом/параметрами
+    и кодом ошибки на не-2xx (`reject_code`). Транспортный сбой всегда
+    становится `SERVER_SERVICE_UNREACHABLE`, не-2xx — `reject_code` с
+    `status_code` в `details`.
+
+    `parse=True` — вернуть `response.json()`. `allow_empty_body=True` —
+    2xx без тела (callback-endpoint'ы) отдаёт `{}` вместо падения на
+    `ValueError`. `parse=False` — вернуть пустой dict, не читая тело.
+    """
+    client = get_server_service_client()
+    request = getattr(client, method)
+    kwargs: dict = {"headers": _headers(target_department_id)}
+    if json is not None:
+        kwargs["json"] = json
+    if params is not None:
+        kwargs["params"] = params
+    try:
+        response = await request(_url(path), **kwargs)
+    except httpx.HTTPError as exc:
+        raise CredentialFetchError(
+            error_code="SERVER_SERVICE_UNREACHABLE",
+            message=f"Failed to call server_service: {type(exc).__name__}",
+        ) from exc
+    if response.status_code >= 300:
+        err_details = dict(details or {})
+        err_details["status_code"] = response.status_code
+        raise CredentialFetchError(
+            error_code=reject_code,
+            message=f"server_service returned {response.status_code}",
+            details=err_details,
+        )
+    if not parse:
+        return {}
+    if allow_empty_body:
+        try:
+            return response.json()
+        except ValueError:
+            # 2xx без body — допустимо для callback-endpoint'ов.
+            return {}
+    return response.json()
+
+
 async def fetch_ipmi_credentials(
     server_id: str,
     target_department_id: str | None = None,
@@ -64,23 +126,13 @@ async def fetch_ipmi_credentials(
       * `IPMI_CREDENTIALS_UNAVAILABLE` — server_service вернул не 200
         (нет IPMI у сервера, отказ авторизации, dept-mismatch, ...).
     """
-    settings = get_settings()
-    url = f"{settings.server_service_url.rstrip('/')}/api/server/v1/internal/servers/{server_id}/ipmi/credentials"
-    client = get_server_service_client()
-    try:
-        response = await client.get(url, headers=_headers(target_department_id))
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="IPMI_CREDENTIALS_UNAVAILABLE",
-            message=f"server_service returned {response.status_code}",
-            details={"server_id": server_id, "status_code": response.status_code},
-        )
-    return response.json()
+    return await _request(
+        "get",
+        f"/api/server/v1/internal/servers/{server_id}/ipmi/credentials",
+        reject_code="IPMI_CREDENTIALS_UNAVAILABLE",
+        target_department_id=target_department_id,
+        details={"server_id": server_id},
+    )
 
 
 async def fetch_account_password(
@@ -97,26 +149,13 @@ async def fetch_account_password(
       * `SERVER_SERVICE_UNREACHABLE` — transport.
       * `ACCOUNT_PASSWORD_UNAVAILABLE` — server_service вернул не 200.
     """
-    settings = get_settings()
-    url = (
-        f"{settings.server_service_url.rstrip('/')}"
-        f"/api/server/v1/internal/servers/{server_id}/accounts/{account_id}/password"
+    return await _request(
+        "get",
+        f"/api/server/v1/internal/servers/{server_id}/accounts/{account_id}/password",
+        reject_code="ACCOUNT_PASSWORD_UNAVAILABLE",
+        target_department_id=target_department_id,
+        details={"server_id": server_id, "account_id": account_id},
     )
-    client = get_server_service_client()
-    try:
-        response = await client.get(url, headers=_headers(target_department_id))
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="ACCOUNT_PASSWORD_UNAVAILABLE",
-            message=f"server_service returned {response.status_code}",
-            details={"server_id": server_id, "account_id": account_id, "status_code": response.status_code},
-        )
-    return response.json()
 
 
 async def submit_rotated_password(
@@ -140,30 +179,14 @@ async def submit_rotated_password(
       * `PASSWORD_ROTATE_REJECTED` — server_service вернул не 200
         (валидация policy, dept-mismatch, отказ хранилища).
     """
-    settings = get_settings()
-    url = (
-        f"{settings.server_service_url.rstrip('/')}"
-        f"/api/server/v1/internal/servers/{server_id}/accounts/{account_id}/password/rotate"
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/accounts/{account_id}/password/rotate",
+        reject_code="PASSWORD_ROTATE_REJECTED",
+        target_department_id=target_department_id,
+        json={"password": new_password},
+        details={"server_id": server_id, "account_id": account_id},
     )
-    client = get_server_service_client()
-    try:
-        response = await client.post(
-            url,
-            headers=_headers(target_department_id),
-            json={"password": new_password},
-        )
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="PASSWORD_ROTATE_REJECTED",
-            message=f"server_service returned {response.status_code}",
-            details={"server_id": server_id, "account_id": account_id, "status_code": response.status_code},
-        )
-    return response.json()
 
 
 async def submit_inventory_facts(
@@ -193,34 +216,15 @@ async def submit_inventory_facts(
       * `INVENTORY_SUBMIT_REJECTED` — server_service вернул не 2xx
         (валидация полей, dept-mismatch, отказ хранилища).
     """
-    settings = get_settings()
-    url = (
-        f"{settings.server_service_url.rstrip('/')}"
-        f"/api/server/v1/internal/servers/{server_id}/inventory"
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/inventory",
+        reject_code="INVENTORY_SUBMIT_REJECTED",
+        target_department_id=target_department_id,
+        json=inventory_payload,
+        details={"server_id": server_id},
+        allow_empty_body=True,
     )
-    client = get_server_service_client()
-    try:
-        response = await client.post(
-            url,
-            headers=_headers(target_department_id),
-            json=inventory_payload,
-        )
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="INVENTORY_SUBMIT_REJECTED",
-            message=f"server_service returned {response.status_code}",
-            details={"server_id": server_id, "status_code": response.status_code},
-        )
-    try:
-        return response.json()
-    except ValueError:
-        # 2xx без body — допустимо для callback-endpoint'ов.
-        return {}
 
 
 async def submit_users_inventory(
@@ -247,33 +251,15 @@ async def submit_users_inventory(
       * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
       * `USERS_INVENTORY_SUBMIT_REJECTED` — server_service вернул не 2xx.
     """
-    settings = get_settings()
-    url = (
-        f"{settings.server_service_url.rstrip('/')}"
-        f"/api/server/v1/internal/servers/{server_id}/users/inventory"
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/users/inventory",
+        reject_code="USERS_INVENTORY_SUBMIT_REJECTED",
+        target_department_id=target_department_id,
+        json=users_payload,
+        details={"server_id": server_id},
+        allow_empty_body=True,
     )
-    client = get_server_service_client()
-    try:
-        response = await client.post(
-            url,
-            headers=_headers(target_department_id),
-            json=users_payload,
-        )
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="USERS_INVENTORY_SUBMIT_REJECTED",
-            message=f"server_service returned {response.status_code}",
-            details={"server_id": server_id, "status_code": response.status_code},
-        )
-    try:
-        return response.json()
-    except ValueError:
-        return {}
 
 
 async def submit_provision_status(
@@ -299,37 +285,15 @@ async def submit_provision_status(
       * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
       * `PROVISION_STATUS_REJECTED` — server_service вернул не 2xx.
     """
-    settings = get_settings()
-    url = (
-        f"{settings.server_service_url.rstrip('/')}"
-        f"/api/server/v1/internal/servers/{server_id}/accounts/{account_id}/provision_status"
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/accounts/{account_id}/provision_status",
+        reject_code="PROVISION_STATUS_REJECTED",
+        target_department_id=target_department_id,
+        json={"operation": operation, "present": present},
+        details={"server_id": server_id, "account_id": account_id},
+        allow_empty_body=True,
     )
-    client = get_server_service_client()
-    try:
-        response = await client.post(
-            url,
-            headers=_headers(target_department_id),
-            json={"operation": operation, "present": present},
-        )
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="PROVISION_STATUS_REJECTED",
-            message=f"server_service returned {response.status_code}",
-            details={
-                "server_id": server_id,
-                "account_id": account_id,
-                "status_code": response.status_code,
-            },
-        )
-    try:
-        return response.json()
-    except ValueError:
-        return {}
 
 
 async def submit_prepared(
@@ -357,36 +321,18 @@ async def submit_prepared(
       * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
       * `PREPARE_STATUS_REJECTED` — server_service вернул не 2xx.
     """
-    settings = get_settings()
-    url = (
-        f"{settings.server_service_url.rstrip('/')}"
-        f"/api/server/v1/internal/servers/{server_id}/prepared"
-    )
     body: dict = {"management_user": management_user}
     if management_mode is not None:
         body["management_mode"] = management_mode
-    client = get_server_service_client()
-    try:
-        response = await client.post(
-            url,
-            headers=_headers(target_department_id),
-            json=body,
-        )
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="PREPARE_STATUS_REJECTED",
-            message=f"server_service returned {response.status_code}",
-            details={"server_id": server_id, "status_code": response.status_code},
-        )
-    try:
-        return response.json()
-    except ValueError:
-        return {}
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/prepared",
+        reject_code="PREPARE_STATUS_REJECTED",
+        target_department_id=target_department_id,
+        json=body,
+        details={"server_id": server_id},
+        allow_empty_body=True,
+    )
 
 
 async def fetch_secrets_migration_status() -> dict:
@@ -399,26 +345,11 @@ async def fetch_secrets_migration_status() -> dict:
       * `SERVER_SERVICE_UNREACHABLE` — transport.
       * `SECRETS_MIGRATION_STATUS_UNAVAILABLE` — server_service вернул не 200.
     """
-    settings = get_settings()
-    url = (
-        f"{settings.server_service_url.rstrip('/')}"
-        f"/api/server/v1/internal/secrets/migration_status"
+    return await _request(
+        "get",
+        "/api/server/v1/internal/secrets/migration_status",
+        reject_code="SECRETS_MIGRATION_STATUS_UNAVAILABLE",
     )
-    client = get_server_service_client()
-    try:
-        response = await client.get(url, headers=_headers())
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="SECRETS_MIGRATION_STATUS_UNAVAILABLE",
-            message=f"server_service returned {response.status_code}",
-            details={"status_code": response.status_code},
-        )
-    return response.json()
 
 
 async def trigger_secrets_reencrypt_batch(limit: int) -> dict:
@@ -435,30 +366,13 @@ async def trigger_secrets_reencrypt_batch(limit: int) -> dict:
       * `SERVER_SERVICE_UNREACHABLE` — transport.
       * `SECRETS_REENCRYPT_REJECTED` — server_service вернул не 200.
     """
-    settings = get_settings()
-    url = (
-        f"{settings.server_service_url.rstrip('/')}"
-        f"/api/server/v1/internal/secrets/reencrypt_batch"
+    return await _request(
+        "post",
+        "/api/server/v1/internal/secrets/reencrypt_batch",
+        reject_code="SECRETS_REENCRYPT_REJECTED",
+        params={"limit": limit},
+        details={"limit": limit},
     )
-    client = get_server_service_client()
-    try:
-        response = await client.post(
-            url,
-            params={"limit": limit},
-            headers=_headers(),
-        )
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="SECRETS_REENCRYPT_REJECTED",
-            message=f"server_service returned {response.status_code}",
-            details={"limit": limit, "status_code": response.status_code},
-        )
-    return response.json()
 
 
 async def seed_reencrypt_outbox(limit: int = 500) -> dict:
@@ -474,28 +388,13 @@ async def seed_reencrypt_outbox(limit: int = 500) -> dict:
       * `SERVER_SERVICE_UNREACHABLE` — transport.
       * `SECRETS_OUTBOX_SEED_REJECTED` — server_service вернул не 200.
     """
-    settings = get_settings()
-    url = (
-        f"{settings.server_service_url.rstrip('/')}"
-        f"/api/server/v1/internal/secrets/reencrypt_outbox/seed"
+    return await _request(
+        "post",
+        "/api/server/v1/internal/secrets/reencrypt_outbox/seed",
+        reject_code="SECRETS_OUTBOX_SEED_REJECTED",
+        params={"limit": limit},
+        details={"limit": limit},
     )
-    client = get_server_service_client()
-    try:
-        response = await client.post(
-            url, params={"limit": limit}, headers=_headers(),
-        )
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="SECRETS_OUTBOX_SEED_REJECTED",
-            message=f"server_service returned {response.status_code}",
-            details={"limit": limit, "status_code": response.status_code},
-        )
-    return response.json()
 
 
 async def claim_reencrypt_outbox_pending(limit: int) -> list[dict]:
@@ -512,28 +411,13 @@ async def claim_reencrypt_outbox_pending(limit: int) -> list[dict]:
       * `SERVER_SERVICE_UNREACHABLE` — transport.
       * `SECRETS_OUTBOX_CLAIM_REJECTED` — server_service вернул не 200.
     """
-    settings = get_settings()
-    url = (
-        f"{settings.server_service_url.rstrip('/')}"
-        f"/api/server/v1/internal/secrets/reencrypt_outbox/pending"
-    )
-    client = get_server_service_client()
-    try:
-        response = await client.get(
-            url, params={"limit": limit}, headers=_headers(),
-        )
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="SECRETS_OUTBOX_CLAIM_REJECTED",
-            message=f"server_service returned {response.status_code}",
-            details={"limit": limit, "status_code": response.status_code},
-        )
-    body = response.json() or {}
+    body = await _request(
+        "get",
+        "/api/server/v1/internal/secrets/reencrypt_outbox/pending",
+        reject_code="SECRETS_OUTBOX_CLAIM_REJECTED",
+        params={"limit": limit},
+        details={"limit": limit},
+    ) or {}
     items = body.get("items")
     return list(items) if isinstance(items, list) else []
 
@@ -556,26 +440,12 @@ async def finalize_reencrypt_outbox_done(outbox_id: str) -> dict:
     # отбиваются, поэтому путь-traversal (`../admin`) и SQLi-вставки до
     # подстановки в URL не доходят.
     outbox_id = validate_outbox_id(outbox_id)
-    settings = get_settings()
-    url = (
-        f"{settings.server_service_url.rstrip('/')}"
-        f"/api/server/v1/internal/secrets/reencrypt_outbox/{outbox_id}/done"
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/secrets/reencrypt_outbox/{outbox_id}/done",
+        reject_code="SECRETS_OUTBOX_FINALIZE_REJECTED",
+        details={"outbox_id": outbox_id},
     )
-    client = get_server_service_client()
-    try:
-        response = await client.post(url, headers=_headers())
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="SECRETS_OUTBOX_FINALIZE_REJECTED",
-            message=f"server_service returned {response.status_code}",
-            details={"outbox_id": outbox_id, "status_code": response.status_code},
-        )
-    return response.json()
 
 
 async def finalize_reencrypt_outbox_failed(outbox_id: str, error: str) -> dict:
@@ -588,28 +458,15 @@ async def finalize_reencrypt_outbox_failed(outbox_id: str, error: str) -> dict:
     Возвращает: `{id, status}`.
     """
     outbox_id = validate_outbox_id(outbox_id)
-    settings = get_settings()
-    url = (
-        f"{settings.server_service_url.rstrip('/')}"
-        f"/api/server/v1/internal/secrets/reencrypt_outbox/{outbox_id}/failed"
-    )
     # Текст ошибки обрезаем здесь же — schema требует ≤4096.
     body = {"error": (error or "unknown")[:4096]}
-    client = get_server_service_client()
-    try:
-        response = await client.post(url, headers=_headers(), json=body)
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="SECRETS_OUTBOX_FINALIZE_REJECTED",
-            message=f"server_service returned {response.status_code}",
-            details={"outbox_id": outbox_id, "status_code": response.status_code},
-        )
-    return response.json()
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/secrets/reencrypt_outbox/{outbox_id}/failed",
+        reject_code="SECRETS_OUTBOX_FINALIZE_REJECTED",
+        json=body,
+        details={"outbox_id": outbox_id},
+    )
 
 
 async def submit_rotated_ipmi_password(
@@ -653,37 +510,18 @@ async def submit_rotated_ipmi_password(
         (валидация policy, dept-mismatch, отказ хранилища, отсутствие
         `verified_at`).
     """
-    settings = get_settings()
-    url = (
-        f"{settings.server_service_url.rstrip('/')}"
-        f"/api/server/v1/internal/ipmi-controllers/{ipmi_controller_id}/credentials_rotated"
-    )
     body: dict = {
         "new_password": new_password,
         "rotated_at": rotated_at,
         "verified_at": verified_at,
     }
-    client = get_server_service_client()
-    try:
-        response = await client.post(
-            url,
-            headers=_headers(target_department_id),
-            json=body,
-        )
-    except httpx.HTTPError as exc:
-        raise CredentialFetchError(
-            error_code="SERVER_SERVICE_UNREACHABLE",
-            message=f"Failed to call server_service: {type(exc).__name__}",
-        ) from exc
-    if response.status_code >= 300:
-        raise CredentialFetchError(
-            error_code="IPMI_ROTATE_REJECTED",
-            message=f"server_service returned {response.status_code}",
-            details={
-                "ipmi_controller_id": ipmi_controller_id,
-                "status_code": response.status_code,
-            },
-        )
-    return response.json()
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/ipmi-controllers/{ipmi_controller_id}/credentials_rotated",
+        reject_code="IPMI_ROTATE_REJECTED",
+        target_department_id=target_department_id,
+        json=body,
+        details={"ipmi_controller_id": ipmi_controller_id},
+    )
 
 

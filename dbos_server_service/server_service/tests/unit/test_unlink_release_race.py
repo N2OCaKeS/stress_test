@@ -334,6 +334,53 @@ class TestReleaseServerCasRaceAlreadyFree:
         assert len(race_emits) == 1, captured
 
 
+class TestReleaseServerVanishedDuringRelease:
+    """Defensive `vanished_during_release` — `get_for_update` вернул None.
+
+    Сервер исчез между `load_visible_server` (visibility pass) и re-fetch'ем
+    под FOR UPDATE. Hard-delete серверов в проде не реализован, путь
+    недостижим штатно; тест держит regression-guard симметрично
+    `vanished_during_acquire` на случай будущей фичи delete'а сервера.
+    """
+
+    async def test_vanished_during_release_returns_404(
+        self, db, make_server, monkeypatch,
+    ):
+        from src.repositories import server as server_repo_mod
+        from src.services import audit_service as as_mod
+
+        srv = await make_server(department_id="dep_a")
+        srv.busy_state = BusyState.BUSY
+        srv.busy_user_id = "usr_holder"
+        await db.commit()
+        await db.refresh(srv)
+
+        # `load_visible_server` проходит (через get_by_id), а последующий
+        # re-fetch под FOR UPDATE возвращает None — «сервер исчез под локом».
+        async def fake_get_for_update(*args, **kwargs):
+            return None
+
+        captured: list[dict] = []
+        monkeypatch.setattr(server_repo_mod, "get_for_update", fake_get_for_update)
+        monkeypatch.setattr(
+            as_mod, "emit",
+            lambda action, **kw: captured.append({"action": action, **kw}),
+        )
+
+        from src.core.exceptions import NotFoundError as NF
+        identity = _identity()
+        with pytest.raises(NF) as exc_info:
+            await server_svc.release_server(db, identity, srv.id)
+        assert exc_info.value.error_code == "SERVER_NOT_FOUND"
+
+        vanished = [
+            e for e in captured
+            if e["action"] == "server.release"
+            and (e.get("details") or {}).get("reason") == "vanished_during_release"
+        ]
+        assert len(vanished) == 1, captured
+
+
 class TestAcquireServerVanishedDuringAcquire:
     """Defensive `vanished_during_acquire` — rowcount=0 + re-fetch вернул None.
 

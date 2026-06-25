@@ -36,6 +36,14 @@ class TaskKind(StrEnum):
     `worker_client.py`) держат литералы — wiring на enum требует общего
     sdk-модуля (`sdk/task_kinds.py`), чтобы не дублировать определения.
     TODO: вытащить в shared sdk, заменить литералы на TaskKind.<...>.value.
+
+    Рассинхрон каталога и реальных декораторов ловится тестом
+    `tests/unit/test_constants.py::TestTaskKindBrokerDrift` (каждый kind имеет
+    handler; каждый dispatch'абельный broker-таск есть в enum'е).
+
+    `MANAGEMENT_USER_SYNC` — единственный legacy-лейбл без `<object>.<verb>`
+    точки (`management_user_sync`); историческое имя, менять нельзя — в очереди
+    могут лежать сообщения с этим лейблом.
     """
 
     POWER_ON = "power.on"
@@ -51,6 +59,10 @@ class TaskKind(StrEnum):
     SERVER_PREPARE = "server.prepare"
     IPMI_ROTATE_PASSWORD = "ipmi.rotate_password"
     INSTALLED_PACKAGES_LIST = "installed_packages.list"
+    INSTALLED_PACKAGES_INSTALL = "installed_packages.install"
+    INSTALLED_PACKAGES_REMOVE = "installed_packages.remove"
+    INSTALLED_PACKAGES_UPDATE = "installed_packages.update"
+    MANAGEMENT_USER_SYNC = "management_user_sync"
 
 
 class TaskStatus(StrEnum):

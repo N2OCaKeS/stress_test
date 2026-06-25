@@ -286,8 +286,12 @@ async def update_server(
     response_model=OkResponse,
     summary="Удалить сервер (требует delete в матрице)",
     description=(
-        "Жёсткое удаление строки + каскад на `server_accounts`, "
-        "`ipmi_controllers`, `server_disks` (ondelete=CASCADE). "
+        "Жёсткое удаление строки + каскад на `ipmi_controllers`, "
+        "`server_disks` и связки `server_account_servers` (ondelete=CASCADE). "
+        "Аккаунты `server_accounts` каскадом НЕ удаляются: M2M-связь "
+        "теряет одну строку, сам аккаунт переживает delete, если привязан "
+        "ещё к другим серверам. Аккаунт, для которого это был последний "
+        "сервер, сносится явно (иначе остался бы orphan'ом без серверов). "
         "Восстановить нельзя — для soft-delete используется "
         "`ServerStatus.DECOMMISSIONED`. Только роль с `delete` в матрице."
     ),
@@ -303,7 +307,9 @@ async def delete_server(
     db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
     """
-    Что делает: hard-delete с CASCADE на дочерние записи.
+    Что делает: hard-delete сервера. CASCADE сносит ipmi/disks/packages и
+    связки `server_account_servers`; сами аккаунты переживают, кроме тех,
+    для которых это был последний сервер (их service-слой сносит явно).
 
     Доступ:
       - `(server, *, delete)`.

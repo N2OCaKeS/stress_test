@@ -287,6 +287,52 @@ async def test_list_credentials_returns_personal_creds(http_client):
     assert len(body["items"]) >= 3
 
 
+@pytest.mark.asyncio
+async def test_list_credentials_invalid_cursor_no_separator(http_client):
+    resp = await http_client.get(
+        "/api/secret/v1/credentials", params={"cursor": "no-separator-here"}
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error_code"] == "INVALID_CURSOR"
+
+
+@pytest.mark.asyncio
+async def test_list_credentials_invalid_cursor_bad_timestamp(http_client):
+    resp = await http_client.get(
+        "/api/secret/v1/credentials", params={"cursor": "not-a-date|cred_x"}
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error_code"] == "INVALID_CURSOR"
+
+
+@pytest.mark.asyncio
+async def test_list_credentials_valid_cursor_paginates(http_client):
+    for i in range(3):
+        await http_client.post(
+            "/api/secret/v1/credentials",
+            json={
+                "name": f"page{i}",
+                "service": "jira",
+                "scope": "personal",
+                "secret_b64": b64("s"),
+            },
+        )
+    first = await http_client.get(
+        "/api/secret/v1/credentials", params={"limit": 1}
+    )
+    assert first.status_code == 200
+    cursor = first.json()["next_cursor"]
+    assert cursor and "|" in cursor
+
+    second = await http_client.get(
+        "/api/secret/v1/credentials", params={"limit": 1, "cursor": cursor}
+    )
+    assert second.status_code == 200
+    first_ids = {c["id"] for c in first.json()["items"]}
+    second_ids = {c["id"] for c in second.json()["items"]}
+    assert first_ids.isdisjoint(second_ids)
+
+
 # ── UPDATE ────────────────────────────────────────────────────────────────
 
 

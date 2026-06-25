@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import SERVICE_NAME
@@ -71,9 +71,8 @@ async def _list_dept_grants_for_recipient(
 
 async def _count_role_acls_for_cred(db: AsyncSession, cred_id: str) -> int:
     """Дешевле, чем тащить полный список — нам важно только наличие."""
-    stmt = select(RoleACL.id).where(RoleACL.cred_id == cred_id)
-    rows = (await db.execute(stmt)).all()
-    return len(rows)
+    stmt = select(func.count()).select_from(RoleACL).where(RoleACL.cred_id == cred_id)
+    return (await db.execute(stmt)).scalar_one()
 
 
 # ── Handlers ───────────────────────────────────────────────────────────────────

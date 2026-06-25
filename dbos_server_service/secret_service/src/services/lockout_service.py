@@ -1,6 +1,8 @@
 """In-memory account-level lockout для secret_service.
 
-Защищает от brute-force/credential-stuffing на reveal-эндпоинтах: после N
+Защищает от brute-force/credential-stuffing при доступе к credential'ам:
+счётчик дёргается из `load_for_action`, т.е. на любом denied access'е
+(read / write / reveal / delete), а не только на reveal'е. После N
 denied access'ов в скользящем окне actor блокируется на 15 минут (по
 дефолту). Симметрично паттерну `auth_service._lockout`, но без БД —
 secret_service хочет дешёвый, in-process throttle поверх уже-аутентифицированной

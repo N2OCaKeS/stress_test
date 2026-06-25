@@ -308,3 +308,53 @@ class TestCollectUserPermissionsEmptyScopes:
         )
         assert set(roles.keys()) == {"svc_p1", "svc_p3"}
         assert "svc_p2" not in roles
+
+    async def test_partial_oauth_scopes_filters_groups(self, db, dept_a):
+        """Группы режутся тем же scope-фильтром, что и сервисы. Юзер состоит
+        в двух группах, дающих роли на два разных сервиса; scope покрывает
+        только один. В `groups` остаётся группа со in-scope сервисом, группа
+        с out-of-scope сервисом выпадает целиком (пустая после фильтра).
+        Покрывает ветку group-filter в `collect_user_permissions` (kept/drop).
+        """
+        from src.repositories.groups import GroupRepository
+        from tests.conftest import _grant_service, _make_service, _make_user
+
+        for svc_name in ("svc_g_in", "svc_g_out"):
+            await _make_service(db, svc_name)
+            await _grant_service(db, dept_a.id, svc_name)
+        user = await _make_user(
+            db, "t_group_scope_unit", "User12345678!", department_id=dept_a.id,
+        )
+
+        group_repo = GroupRepository(db)
+        grp_in = await group_repo.create(
+            department_id=dept_a.id, name="grp_in_scope",
+            description=None, created_by=None,
+        )
+        grp_out = await group_repo.create(
+            department_id=dept_a.id, name="grp_out_scope",
+            description=None, created_by=None,
+        )
+        for grp, svc in ((grp_in, "svc_g_in"), (grp_out, "svc_g_out")):
+            await group_repo.add_member(grp.id, user.id, added_by=None)
+            await group_repo.grant_service(grp.id, svc, granted_by=None)
+            await group_repo.set_roles(grp.id, svc, ["operator"], assigned_by=None)
+        await db.commit()
+        await db.refresh(user)
+
+        # Sanity: без scope-фильтра видны обе группы.
+        _, _, full_groups = await auth_service.collect_user_permissions(
+            db, user, oauth_scopes=None,
+        )
+        assert set(full_groups.keys()) == {"grp_in_scope", "grp_out_scope"}
+
+        # Scope покрывает только svc_g_in → остаётся только grp_in_scope.
+        services, roles, groups = await auth_service.collect_user_permissions(
+            db, user, oauth_scopes=["svc_g_in"],
+        )
+        assert set(services) == {"svc_g_in"}
+        assert set(roles.keys()) == {"svc_g_in"}
+        assert set(groups.keys()) == {"grp_in_scope"}, (
+            f"out-of-scope group must be dropped entirely, got {groups}"
+        )
+        assert groups["grp_in_scope"] == ["svc_g_in.operator"]

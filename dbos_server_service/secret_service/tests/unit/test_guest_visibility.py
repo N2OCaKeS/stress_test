@@ -181,6 +181,26 @@ async def test_guest_list_response_has_no_metadata_leak(http_client, adb):
         )
 
 
+@pytest.mark.asyncio
+async def test_guest_without_department_sees_nothing(http_client, adb):
+    # Cred своего «бывшего» dep'а есть в БД, но у actor'а department_id=None
+    # (например, отдел уже удалён) — guest-путь обязан вернуть пустой список,
+    # а не упасть и не отдать чужие cred'ы.
+    await _create_dept_cred(
+        adb,
+        id="cred_no_dept_guest1",
+        owner_dept_id=GUEST_DEPT,
+        visible_to_dept=True,
+        name="orphan_visible",
+    )
+    await adb.commit()
+
+    _set_identity(_identity(department_id=None))
+    resp = await http_client.get("/api/secret/v1/credentials")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["items"] == []
+
+
 # ── non-list actions denied ─────────────────────────────────────────────────
 
 

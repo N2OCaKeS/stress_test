@@ -194,6 +194,20 @@ class TestWrapIpmitoolErrorEdgeCases:
         wrapped = self._wrap(exc)
         assert wrapped.error_code == "BMC_UNREACHABLE"
 
+    def test_returncode_minus1_signal_kill_maps_bmc_error(self):
+        """rc=-1 (процесс убит сигналом, proc.returncode is None), без unreach/auth
+        маркеров и без 'not found' → BMC_ERROR, не BMC_REJECTED."""
+        from src.clients.ipmitool import IpmitoolError
+
+        exc = IpmitoolError(
+            returncode=-1,
+            stderr="terminated",
+            argv_safe=["ipmitool"],
+            message="ipmitool killed by signal",
+        )
+        wrapped = self._wrap(exc)
+        assert wrapped.error_code == "BMC_ERROR"
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # dispatch_power_action / dispatch_get_power_state /

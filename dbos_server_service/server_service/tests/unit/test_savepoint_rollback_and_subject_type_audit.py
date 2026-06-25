@@ -184,6 +184,100 @@ class TestSavepointRollbackAuditEmit:
         assert ev["details"]["reason"] == "idempotent_conflict"
         assert ev["details"]["task_kind"] == "account.provision"
 
+    async def test_creds_store_unavailable_emits_failure(
+        self, client, operator_token_a, make_server, make_account, db,
+        monkeypatch, captured_emits,
+    ):
+        """store_dispatch_creds → ServiceUnavailableError: rollback + reason=creds_store_unavailable."""
+        from src.core.constants import AccountSource
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password=None)
+        acc.source = AccountSource.DISCOVERED.value
+        await db.flush()
+        await db.commit()
+        await db.refresh(acc)
+        acc_id, srv_id = acc.id, srv.id
+
+        async def boom(*args, **kwargs):
+            raise ServiceUnavailableError(
+                error_code="WORKER_REDIS_UNAVAILABLE", message="redis down",
+            )
+
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.store_dispatch_creds",
+            boom,
+        )
+
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc_id}/provision?server_id={srv_id}&force_password=true",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 503
+
+        failures = [
+            e for e in captured_emits
+            if e["action"] == "server_account.provision"
+            and e.get("status") == "failure"
+        ]
+        assert len(failures) == 1, captured_emits
+        ev = failures[0]
+        assert ev["allowed"] is True
+        assert ev["details"]["reason"] == "creds_store_unavailable"
+        assert ev["details"]["server_id"] == srv_id
+        assert ev["details"]["operation"] == "provision"
+
+    async def test_creds_store_failed_emits_failure_and_cleans_stash(
+        self, client, operator_token_a, make_server, make_account, db,
+        monkeypatch, captured_emits,
+    ):
+        """store_dispatch_creds → generic Exception: best-effort delete + reason=creds_store_failed."""
+        from src.core.constants import AccountSource
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password=None)
+        acc.source = AccountSource.DISCOVERED.value
+        await db.flush()
+        await db.commit()
+        await db.refresh(acc)
+        acc_id, srv_id = acc.id, srv.id
+
+        async def boom(*args, **kwargs):
+            raise RuntimeError("conn refused")
+
+        deleted: list[str] = []
+
+        async def fake_delete(stash_key, *args, **kwargs):
+            deleted.append(stash_key)
+
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.store_dispatch_creds",
+            boom,
+        )
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.delete_dispatch_creds",
+            fake_delete,
+        )
+
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc_id}/provision?server_id={srv_id}&force_password=true",
+            headers=_hdr(operator_token_a),
+        )
+        assert_error(resp, 503, "WORKER_REDIS_UNAVAILABLE")
+
+        failures = [
+            e for e in captured_emits
+            if e["action"] == "server_account.provision"
+            and e.get("status") == "failure"
+        ]
+        assert len(failures) == 1, captured_emits
+        ev = failures[0]
+        assert ev["allowed"] is True
+        assert ev["details"]["reason"] == "creds_store_failed"
+        assert ev["details"]["error_class"] == "RuntimeError"
+        assert ev["details"]["server_id"] == srv_id
+        assert len(deleted) == 1, "stash должен быть подчищен best-effort'ом"
+
     async def test_service_unavailable_emits_no_success_audit(
         self, client, operator_token_a, make_server, make_account, db,
         monkeypatch, captured_emits,

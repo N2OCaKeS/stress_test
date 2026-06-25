@@ -21,7 +21,6 @@ Department-isolation скрывает cross-dept-сервер за 404 (`SERVER_
 
 import base64
 import logging
-import time
 from collections import OrderedDict
 
 from sqlalchemy.exc import IntegrityError
@@ -38,7 +37,13 @@ from src.models import IpmiController
 from src.repositories import ipmi_controller as repo
 from src.schemas.identity import IdentityContext
 from src.schemas.ipmi_controller import IpmiControllerCreate, IpmiControllerUpdate
-from src.services import audit_context, audit_service, permissions, secrets_service
+from src.services import (
+    audit_context,
+    audit_service,
+    permissions,
+    reveal_throttle,
+    secrets_service,
+)
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.services.server import load_visible_server
 from src.utils.ids import ipmi_controller_id as new_id
@@ -46,13 +51,11 @@ from src.utils.ids import ipmi_controller_id as new_id
 logger = logging.getLogger(__name__)
 
 
-# Throttle CRITICAL `ipmi_controller.credentials_revealed` ровно так же, как
-# для server_account password reveal: UI-tooltip с автообновлением иначе
-# зальёт SIEM CRITICAL'ами. Окно/политика — общий `password_reveal_audit_window_seconds`
-# (отдельный bucket по `(actor, controller_id)`, без коллизий с account-словарём).
-#
-# Bounded LRU: см. комментарий у `server_account._REVEAL_AUDIT_WINDOW`. Кэп
-# не даёт словарю распухать при штурме длинного списка уникальных пар.
+# Throttle CRITICAL `ipmi_controller.credentials_revealed` так же, как для
+# server_account password reveal: UI-tooltip с автообновлением иначе зальёт
+# SIEM CRITICAL'ами. Окно/политика — общий `password_reveal_audit_window_seconds`,
+# отдельный bucket по `(actor, controller_id)` (без коллизий с account-словарём).
+# Алгоритм окна + bounded-LRU eviction — в `reveal_throttle.record_reveal`.
 _REVEAL_AUDIT_WINDOW_MAX = 10000
 _REVEAL_AUDIT_WINDOW: "OrderedDict[tuple[str, str], tuple[float, int]]" = OrderedDict()
 
@@ -67,26 +70,9 @@ def _record_controller_reveal_attempt(
     счётчик не накапливается. `window <= 0` → throttle отключён.
     """
     window = get_settings().password_reveal_audit_window_seconds
-    if window <= 0 or actor_id is None:
-        return True, 1
-    now = time.monotonic()
-    key = (actor_id, controller_id)
-    entry = _REVEAL_AUDIT_WINDOW.get(key)
-    if entry is None or (now - entry[0]) >= window:
-        _REVEAL_AUDIT_WINDOW[key] = (now, 1)
-        _REVEAL_AUDIT_WINDOW.move_to_end(key)
-        stale_cutoff = now - window
-        stale_keys = [k for k, (ts, _cnt) in _REVEAL_AUDIT_WINDOW.items() if ts < stale_cutoff]
-        for k in stale_keys:
-            _REVEAL_AUDIT_WINDOW.pop(k, None)
-        while len(_REVEAL_AUDIT_WINDOW) > _REVEAL_AUDIT_WINDOW_MAX:
-            _REVEAL_AUDIT_WINDOW.popitem(last=False)
-        return True, 1
-    last_at, count = entry
-    new_count = count + 1
-    _REVEAL_AUDIT_WINDOW[key] = (last_at, new_count)
-    _REVEAL_AUDIT_WINDOW.move_to_end(key)
-    return False, new_count
+    return reveal_throttle.record_reveal(
+        _REVEAL_AUDIT_WINDOW, _REVEAL_AUDIT_WINDOW_MAX, actor_id, controller_id, window,
+    )
 
 
 def emit_create_success(controller: IpmiController, department_id: str) -> None:

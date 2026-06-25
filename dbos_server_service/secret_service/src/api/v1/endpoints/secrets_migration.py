@@ -127,8 +127,8 @@ async def process(
     → CAS на credentials.secret_encrypted. Race с lazy-путём — норма, row
     закрывается done без ошибки.
 
-    Audit: `secrets.reencrypt_process` (status=success / warning, если
-    были errors).
+    Audit: `secrets.reencrypt_process` (status=failure, если все строки
+    упали — errors>0 и processed==0; иначе success).
     """
     try:
         data = await reencrypt_outbox_service.process_batch(

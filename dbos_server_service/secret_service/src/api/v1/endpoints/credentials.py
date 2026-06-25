@@ -246,9 +246,4 @@ async def recover_credential(
     return _to_read(cred)
 
 
-# Forward export — для use в __init__-aggregator'ах если потребуется.
 __all__ = ["router"]
-
-
-# Helper для тестов: возможно нужен явный 204 без content (FastAPI делает).
-_ = OkResponse  # unused import-guard

@@ -1,85 +1,76 @@
 <mxfile host="65bd71144e">
     <diagram id="external-integrations" name="EMM — корпоративные сервисы">
-        <mxGraphModel dx="1133" dy="1129" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="940" pageHeight="1380" math="0" shadow="0">
+        <mxGraphModel dx="1133" dy="1129" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="1360" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
                 <mxCell id="title" value="EMM — доступ к корпоративным сервисам" style="text;html=1;align=center;fontSize=16;fontStyle=1;" parent="1" vertex="1">
-                    <mxGeometry x="20" y="20" width="900" height="30" as="geometry"/>
+                    <mxGeometry x="20" y="10" width="1160" height="30" as="geometry"/>
                 </mxCell>
                 <mxCell id="sys" value="&lt;b&gt;EMM&lt;/b&gt;&lt;br&gt;(DTQC-EMM)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;" parent="1" vertex="1">
-                    <mxGeometry x="390" y="70" width="160" height="70" as="geometry"/>
+                    <mxGeometry x="520" y="50" width="160" height="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="gw" value="&lt;b&gt;API-шлюз&lt;/b&gt; (требуется)&lt;br&gt;единая точка доступа к корпоративным сервисам" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;dashed=1;fontSize=12;" parent="1" vertex="1">
-                    <mxGeometry x="350" y="180" width="240" height="90" as="geometry"/>
+                    <mxGeometry x="240" y="160" width="240" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="hdr" value="Корпоративные сервисы" style="text;html=1;align=center;fontSize=12;fontStyle=2;fontColor=#666666;" parent="1" vertex="1">
-                    <mxGeometry x="20" y="296" width="900" height="24" as="geometry"/>
-                </mxCell>
-                <mxCell id="jira" value="&lt;b&gt;Jira&lt;/b&gt;&lt;br&gt;Направление: EMM пишет и читает&lt;br&gt;• доступ к проекту BT&lt;br&gt;• доступ к проекту DEVQA&lt;br&gt;• доступ к Zephyr&lt;br&gt;Протокол: HTTPS · REST&lt;br&gt;Авторизация: токен на проект и операцию (r/w)&lt;br&gt;Доступ: через API-шлюз" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="330" width="380" height="180" as="geometry"/>
-                </mxCell>
-                <mxCell id="zephyr" value="&lt;b&gt;Zephyr&lt;/b&gt;&lt;br&gt;Направление: EMM пишет (+ читает статусы)&lt;br&gt;• создание тест-прогонов&lt;br&gt;• обновление статусов (pass/fail/blocked)&lt;br&gt;• проекты BT, DEVQA, … — отдельные токены,&lt;br&gt;&#160;&#160;разные уровни доступа по проектам&lt;br&gt;Протокол: HTTPS · REST · токен ≠ Jira&lt;br&gt;Доступ: через API-шлюз" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="520" y="330" width="380" height="180" as="geometry"/>
-                </mxCell>
-                <mxCell id="conf" value="&lt;b&gt;Confluence&lt;/b&gt;&lt;br&gt;Направление: EMM пишет&lt;br&gt;• публикация новых отчётов (create page)&lt;br&gt;• обновление существующих (update page)&lt;br&gt;Протокол: HTTPS · REST (JSON)&lt;br&gt;Авторизация: API-token&lt;br&gt;Доступ: через API-шлюз" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="540" width="380" height="180" as="geometry"/>
-                </mxCell>
-                <mxCell id="tag" value="&lt;b&gt;TAG&lt;/b&gt;&lt;br&gt;Направление: EMM пишет (отправляет)&lt;br&gt;• сообщения от имени бота&lt;br&gt;&#160;&#160;(уведомления о прогонах/отчётах)&lt;br&gt;Протокол: HTTPS · REST&lt;br&gt;Авторизация: bot-token(ы)&lt;br&gt;Доступ: через API-шлюз" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="520" y="540" width="380" height="180" as="geometry"/>
+                <mxCell id="g_dir" value="Прямой доступ (без API-шлюза)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;verticalAlign=top;align=center;fontStyle=1;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="760" y="160" width="420" height="410" as="geometry"/>
                 </mxCell>
                 <mxCell id="git" value="&lt;b&gt;Git&lt;/b&gt; — https://10.177.5.111/git&lt;br&gt;Направление: EMM читает (клонирование)&lt;br&gt;• клонирование репозитория (тесты/сценарии)&lt;br&gt;Протокол: HTTPS · git smart-protocol&lt;br&gt;Доступ: НАПРЯМУЮ, без API-шлюза&lt;br&gt;Токен не хранится" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b0e3e6;strokeColor=#0e8088;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="750" width="380" height="180" as="geometry"/>
+                    <mxGeometry x="780" y="210" width="380" height="160" as="geometry"/>
                 </mxCell>
-                <mxCell id="rel" value="&lt;b&gt;releases.devos.astralinux.ru&lt;/b&gt;&lt;br&gt;Направление: EMM читает&lt;br&gt;• список версий ОС&lt;br&gt;• URL для скачивания пакетов&lt;br&gt;Протокол: HTTPS · GET&lt;br&gt;Доступ: через API-шлюз" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b0e3e6;strokeColor=#0e8088;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="520" y="750" width="380" height="180" as="geometry"/>
+                <mxCell id="rel" value="&lt;b&gt;releases.devos.astralinux.ru&lt;/b&gt;&lt;br&gt;Направление: EMM читает&lt;br&gt;• список версий ОС&lt;br&gt;• URL для скачивания пакетов&lt;br&gt;Протокол: HTTPS · GET&lt;br&gt;Доступ: НАПРЯМУЮ, без API-шлюза" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b0e3e6;strokeColor=#0e8088;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="780" y="385" width="380" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="g_atl" value="Atlassian" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;verticalAlign=top;align=center;fontStyle=1;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="300" width="680" height="540" as="geometry"/>
+                </mxCell>
+                <mxCell id="jira" value="&lt;b&gt;Jira&lt;/b&gt;&lt;br&gt;Направление: EMM пишет и читает&lt;br&gt;• доступ к проекту BT&lt;br&gt;• доступ к проекту DEVQA&lt;br&gt;• доступ к Zephyr&lt;br&gt;Протокол: HTTPS · REST&lt;br&gt;Авторизация: токен на проект и операцию (r/w)&lt;br&gt;Доступ: через API-шлюз" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="340" width="320" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="zephyr" value="&lt;b&gt;Zephyr&lt;/b&gt;&lt;br&gt;Направление: EMM пишет (+ читает статусы)&lt;br&gt;• создание тест-прогонов&lt;br&gt;• обновление статусов (pass/fail/blocked)&lt;br&gt;• проекты BT, DEVQA, … — отдельные токены&lt;br&gt;Протокол: HTTPS · REST · токен ≠ Jira&lt;br&gt;Доступ: через API-шлюз" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="340" width="300" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="conf" value="&lt;b&gt;Confluence&lt;/b&gt;&lt;br&gt;Направление: EMM пишет&lt;br&gt;• публикация новых отчётов (create page)&lt;br&gt;• обновление существующих (update page)&lt;br&gt;Протокол: HTTPS · REST (JSON)&lt;br&gt;Авторизация: API-token&lt;br&gt;Доступ: через API-шлюз" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="510" width="320" height="160" as="geometry"/>
                 </mxCell>
                 <mxCell id="wiki" value="&lt;b&gt;Wiki&lt;/b&gt; (вероятно legacy)&lt;br&gt;Назначение: уточняется&lt;br&gt;Протокол / авторизация: уточняется&lt;br&gt;Доступ: через API-шлюз" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="960" width="380" height="150" as="geometry"/>
+                    <mxGeometry x="400" y="510" width="300" height="120" as="geometry"/>
                 </mxCell>
                 <mxCell id="bamboo" value="&lt;b&gt;testo-bamboo&lt;/b&gt;&lt;br&gt;Назначение: уточняется (предположительно CI / Bamboo)&lt;br&gt;Протокол / авторизация: уточняется&lt;br&gt;Доступ: через API-шлюз" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="520" y="960" width="380" height="150" as="geometry"/>
+                    <mxGeometry x="60" y="680" width="320" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="g_msg" value="Мессенджер" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;verticalAlign=top;align=center;fontStyle=1;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="860" width="680" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="tag" value="&lt;b&gt;TAG&lt;/b&gt;&lt;br&gt;Направление: EMM пишет (отправляет)&lt;br&gt;• сообщения от имени бота (уведомления о прогонах/отчётах)&lt;br&gt;Протокол: HTTPS · REST · Авторизация: bot-token(ы)&lt;br&gt;Доступ: через API-шлюз" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="900" width="640" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="g_life" value="life и плагины" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;verticalAlign=top;align=center;fontStyle=1;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="1060" width="680" height="190" as="geometry"/>
                 </mxCell>
                 <mxCell id="life" value="&lt;b&gt;life&lt;/b&gt;&lt;br&gt;Назначение: уточняется&lt;br&gt;Протокол / авторизация: уточняется&lt;br&gt;Доступ: через API-шлюз" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="1150" width="380" height="150" as="geometry"/>
+                    <mxGeometry x="60" y="1100" width="320" height="130" as="geometry"/>
                 </mxCell>
                 <mxCell id="cal" value="&lt;b&gt;calendar&lt;/b&gt; (плагин life)&lt;br&gt;Назначение: уточняется&lt;br&gt;Протокол / авторизация: уточняется&lt;br&gt;Доступ: через API-шлюз" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="520" y="1150" width="380" height="150" as="geometry"/>
+                    <mxGeometry x="400" y="1100" width="300" height="130" as="geometry"/>
                 </mxCell>
                 <mxCell id="foot" value="Сервисная УЗ sa-autotest-script — авторизация по паролю (хранится пароль), по технической необходимости (к какому сервису относится — уточняется).&#10;Список корпоративных сервисов не финальный и со временем дополняется. Принцип минимальных прав: отдельный токен на операцию (чтение/запись) и проект." style="text;html=1;align=left;fontSize=11;fontStyle=2;fontColor=#666666;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="1320" width="860" height="50" as="geometry"/>
+                    <mxGeometry x="40" y="1280" width="1140" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_emm_gw" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="sys" target="gw" edge="1">
+                <mxCell id="e_emm_gw" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="sys" target="gw" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_git_direct" value="напрямую" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;strokeColor=#666666;fontSize=10;" parent="1" source="sys" target="git" edge="1">
+                <mxCell id="e_emm_dir" value="напрямую, без API-шлюза" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#666666;fontSize=10;" parent="1" source="sys" target="g_dir" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_jira" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.3;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="gw" target="jira" edge="1">
+                <mxCell id="e_gw_atl" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="gw" target="g_atl" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_zephyr" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="gw" target="zephyr" edge="1">
+                <mxCell id="e_gw_msg" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="gw" target="g_msg" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_conf" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.3;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="gw" target="conf" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e_tag" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="gw" target="tag" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e_rel" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="gw" target="rel" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e_wiki" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.3;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="gw" target="wiki" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e_bamboo" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="gw" target="bamboo" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e_life" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.3;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="gw" target="life" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e_cal" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="gw" target="cal" edge="1">
+                <mxCell id="e_gw_life" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#666666;" parent="1" source="gw" target="g_life" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
             </root>

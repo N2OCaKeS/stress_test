@@ -5,7 +5,7 @@
   * `AUDIT_EVENTS.md` перечисляет handler-actions и worker-lifecycle
     события (`task.worker_shutdown`, `task.worker_orphaned`,
     `secrets.reencrypt_tick`, `audit.outbox_reattempt_manual`,
-    `installed_packages.list`);
+    `installed_packages.list`, `server.packages_*`, `management_user.sync`);
   * `_ipmi_stash_value` round-trip'ит ISO-timestamp (worker-clock как
     источник истины `rotated_at`).
 """
@@ -100,7 +100,11 @@ class TestAuditEventsDocCoverage:
         "server.power_status",
         "server.inventory_sync",
         "server.prepare",
+        "management_user.sync",
         "installed_packages.list",
+        "server.packages_install",
+        "server.packages_remove",
+        "server.packages_update",
         "server_account.provision",
         "server_account.update_on_host",
         "server_account.deprovision",
@@ -124,6 +128,7 @@ class TestAuditEventsDocCoverage:
             "task_cancelled",
             "cancelled_midrun",
             "task_deleted_midrun",
+            "destructive_deferred_server_busy",
         ):
             assert reason in text, f"reason={reason!r} не в AUDIT_EVENTS.md"
 

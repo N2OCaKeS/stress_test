@@ -12,9 +12,13 @@
 указывают на проблему с самой task'ой (отмена, удаление row'а,
 повторный enqueue), а не на ошибку бизнес-логики.
 
-**Severity:** `default_severity` относится к успешному завершению.
-Для failure-веток ниже severity указан явно (в коде runner'а), потому
-что runner-meta-события почти всегда status=failure.
+**Severity:** worker таблицы дефолтов (`_DEFAULT_SEVERITY`) **не держит** —
+severity либо едет явным полем в payload'е эмита (runner-meta и lifecycle почти
+всегда status=failure, поэтому ставят `WARNING`/`ERROR` руками), либо опускается
+и резолвится на стороне `loging_service`. Указанные ниже уровни — это значения
+из кода worker'а; они **дефолтные и переопределяются правилами loging**
+(`severity`/`suppress`). `default_severity` в таблицах относится к успешному
+завершению.
 
 Все события используют схему naming: `<entity>.<verb>`. Lifecycle —
 `service.<verb>`. Source-of-truth для runner-веток — `tasks/_runner.py`.
@@ -25,7 +29,7 @@
 
 | action | severity | эмитится при | target_type | детали (`details`) |
 |---|---|---|---|---|
-| `task.deleted_midrun` | WARNING | row задачи удалён из `tasks` между `mark_running` и terminal write (retention cleanup, ручной DELETE, автотест) — terminal `mark_succeeded`/`mark_failed` пропускается, retry не шедулится | `audit_target_type` handler'а (`server`, `ipmi_controller`, …), либо `None` если handler не задал | `task_id` (str), `original_action` (str — `audit_action` handler'а, например `server.power_on`; присутствует и на success-, и на failure-path), `phase` (`"success"` — только на happy-path; на failure-path не выставляется), `reason` = `"task_deleted_midrun"`, `error` (str, redacted — только на failure-path), `attempt` (int, только на failure-path), `max_attempts` (int, только на failure-path) |
+| `task.deleted_midrun` | WARNING | row задачи удалён из `tasks` между `mark_running` и terminal write (retention cleanup, ручной DELETE, автотест) — terminal `mark_succeeded`/`mark_failed` пропускается, retry не шедулится | `audit_target_type` handler'а (`server`, `ipmi_controller`, …), либо `None` если handler не задал | `task_id` (str), `original_action` (str — `audit_action` handler'а, например `server.power_on`; присутствует и на success-, и на failure-path), `phase` (`"success"` на happy-path, `"destructive_defer"` если row исчез пока гейт C1 откладывал деструктив; на обычном failure-path не выставляется), `reason` = `"task_deleted_midrun"`, `error` (str, redacted — только на failure-path), `attempt` (int, только на failure-path), `max_attempts` (int, только на failure-path) |
 
 ### Прочие runner-meta под `audit_action` handler'а
 
@@ -39,6 +43,7 @@ runner-meta-причину:
 | `duplicate_dispatch` | WARNING | `mark_running` CAS отбил task в нестандартном статусе (already running / terminal / cancelled) — повторный enqueue или race двух worker'ов | `observed_status` (str) |
 | `task_cancelled` | WARNING | оператор успел дёрнуть `POST /tasks/{id}/cancel` до того, как worker подобрал сообщение из Redis — task в `cancelled` ещё до `mark_running` | `observed_status`, опц. `cancelled_by` (str), `cancel_reason` (str). `timestamp` audit-event'а переопределяется на `task.cancelled_at` |
 | `cancelled_midrun` | WARNING | оператор отменил task пока `impl` работал — `mark_succeeded` / `mark_failed` / `mark_pending_for_retry` CAS отбили запись (status=cancelled в БД), retry не шедулится | `observed_status: "cancelled"`, `will_retry: False`, `attempt`, `max_attempts`, опц. `cancelled_by`, `cancel_reason`, `error` (на failure-path). `timestamp` override на `cancelled_at` |
+| `destructive_deferred_server_busy` | WARNING | деструктив отбит гейтом C1 (`ensure_no_other_running_on_server`) — на сервере крутится другая running-задача. Task уходит в `queued` через `mark_deferred_for_retry`, attempt **не расходуется** (ждёт, а не падает), durable `scheduled_retry_at` + фиксированный backoff подхватит startup-recovery. Эмитится `_runner.py::_handle_destructive_deferred` под `audit_action` handler'а (status=failure, `allowed=False`) | `will_retry: True` (или `False` + `observed_status: "cancelled"`, если оператор отменил task mid-defer), плюс `deferred.details` гейта. Если row удалён mid-defer — вместо этого пишется `task.deleted_midrun` с `phase: "destructive_defer"` |
 
 ---
 
@@ -46,7 +51,8 @@ runner-meta-причину:
 
 Сами handler'ы (`tasks/power.py`, `tasks/passwords.py`,
 `tasks/inventory.py`, `tasks/prepare.py`, `tasks/installed_packages.py`,
-`tasks/users.py`, `tasks/secrets_reencrypt.py`) пишут события под
+`tasks/management_user.py`, `tasks/users.py`, `tasks/secrets_reencrypt.py`)
+пишут события под
 своими `audit_action`. Severity-defaults и описания полей — в
 `server_service/AUDIT_EVENTS.md`: эти actions зарегистрированы как
 принадлежащие `server_service`, потому что именно server_service дёргает
@@ -63,7 +69,11 @@ worker'а и владеет бизнес-смыслом операции.
 | `server.power_status` | `tasks/power.py` | `server` |
 | `server.inventory_sync` | `tasks/inventory.py` | `server` |
 | `server.prepare` | `tasks/prepare.py` | `server` |
+| `management_user.sync` | `tasks/management_user.py` | `server` |
 | `installed_packages.list` | `tasks/installed_packages.py` | `server` |
+| `server.packages_install` | `tasks/installed_packages.py` | `server` |
+| `server.packages_remove` | `tasks/installed_packages.py` | `server` |
+| `server.packages_update` | `tasks/installed_packages.py` | `server` |
 | `server_account.provision` | `tasks/users.py` | `server_account` |
 | `server_account.update_on_host` | `tasks/users.py` | `server_account` |
 | `server_account.deprovision` | `tasks/users.py` | `server_account` |
@@ -83,7 +93,7 @@ worker'а и владеет бизнес-смыслом операции.
 
 `bmc.tls_verify_disabled` — per-startup сигнал, эмитится из `main.py` (`_warn_on_redfish_verify_disabled`, хук `WORKER_STARTUP`) когда `REDFISH_VERIFY_TLS=false`. Probe-cascade пишет `bmc.tls_downgrade` только на фактическом переходе на менее защищённый канал; если verify выключен с самого старта, cascade отвечает на первом шаге и молчит — этот event закрывает разрыв. WARNING-лог пишется в любом окружении, audit-событие эмитится только в `production`/`staging` (в local/dev/test это шум). Severity `WARNING`, status `success`, `actor_type=service`, `target_type=ipmi_controller`, `target_id` не задаётся (событие конфигурационное, не привязано к конкретному контроллеру). `details`: `app_env`, `redfish_verify_tls` (всегда `false`). Эмит через transactional outbox (`enqueue_audit`, `task_id=None`); при недоступности БД/outbox на старте event теряется silent — запуск worker'а из-за audit'а падать не должен.
 
-`bmc.endpoint_blocked` — SSRF-guard event. `ensure_bmc_host_allowed` (`clients/__init__.py`) резолвит `endpoint_url` в IP до любого сетевого вызова и hard-block'ает loopback (`127.0.0.0/8`, `::1`) и link-local (`169.254.0.0/16`, `fe80::/10`, в т.ч. cloud-metadata `169.254.169.254`). Severity `WARNING`, status `failure`, `allowed=false`, `actor_type=service`, `target_type=ipmi_controller`, `target_id` — исходный `endpoint_url`. `details`: `host`, `resolved` (если был резолв), `reason` (`loopback` | `link_local` | `resolve_failed` | `empty_host`). Эмит через transactional outbox; при провале outbox теряется silent. После события поднимается `BmcEndpointBlockedError(BMC_ENDPOINT_BLOCKED)` — task падает с этим `error_code` в `task.last_error`.
+`bmc.endpoint_blocked` — SSRF-guard event. `ensure_bmc_host_allowed` (`clients/__init__.py`) резолвит `endpoint_url` в IP до любого сетевого вызова и hard-block'ает loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`, `fe80::/10`, в т.ч. cloud-metadata `169.254.169.254`) и unspecified (`0.0.0.0`, `::` — на ряде платформ kernel роутит их в loopback мимо отдельных loopback-проверок, и SSRF в localhost проходит). Severity `WARNING`, status `failure`, `allowed=false`, `actor_type=service`, `target_type=ipmi_controller`, `target_id` — исходный `endpoint_url`. `details`: `host`, `resolved` (если был резолв), `reason` (`loopback` | `link_local` | `unspecified` | `resolve_failed` | `empty_host`). Эмит через transactional outbox; при провале outbox теряется silent. После события поднимается `BmcEndpointBlockedError(BMC_ENDPOINT_BLOCKED)` — task падает с этим `error_code` в `task.last_error`.
 
 На failure-ветке `ipmi_controller.password_rotate`, когда BMC принял пароль
 (apply прошёл), но read-only verify под новым паролем не сработал, runner

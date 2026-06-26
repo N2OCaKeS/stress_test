@@ -54,6 +54,7 @@ Source-of-truth — `src/services/audit_events.py::SERVICE_EVENTS`.
 | `server.view_drift` | INFO | GET `/servers/{id}/drift` — агрегированная сводка drift-событий | `server` | `department_id`, `since`, `count`, `truncated`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
 | `server.update` | INFO | UPDATE через PATCH | `server` | поля diff'а (whitelist), `department_id` |
 | `server.delete` | CRITICAL | hard-delete + CASCADE | `server` | `department_id` |
+| `server.reservation_denied` | WARNING | деструктивная операция отбита `reservation.guard`: сервер `busy_state=busy` под чужого владельца, а caller — не владелец брони и не department/service-admin (409 `SERVER_RESERVED`) | `server` | `blocked_action` (машинный ключ заблокированной операции, например `server.power_on` / `server_account.delete`), `server_id`, `department_id`, `busy_user_id`, `busy_note`, опц. `subject_type` |
 | `server.power_on` | WARNING | dispatch `power.on` в worker | `server` | `task_id`, `task_kind=power.on`, `department_id`. denied/failure: `reason in {not_found_or_cross_dept, no_view_permission, permission_denied, decommissioned, no_ipmi, idempotent_conflict, worker_unreachable}` |
 | `server.power_off` | WARNING | dispatch `power.off` — всегда hard ForceOff (никакого graceful/ACPI shutdown'а) | `server` | как `power_on` |
 | `server.power_reboot` | WARNING | dispatch `power.reboot` | `server` | как `power_on` |
@@ -81,7 +82,9 @@ WS; per-команда (`ssh_console.command`) эмитит worker (см.
 | `ssh_console.session_close` | INFO | WS disconnect / таймаут / ошибка моста — закрытие сессии | `server` | `session_id`, `reason in {client_disconnect, bridge_error, start_failed:*}`, `department_id` |
 
 `ssh_console.command` (worker-emitted, severity INFO / WARNING на ненулевом
-exit) живёт в `server_worker/AUDIT_EVENTS.md` — здесь только session-события.
+exit) — здесь session-события; per-команда зарегистрирована под server_service
+и описана в разделе «Worker-emitted» ниже, полное поведение — в
+`server_worker/AUDIT_EVENTS.md`.
 
 ---
 
@@ -108,6 +111,49 @@ worker дёргает после реальной работы.
 | `secrets.migration.skipped` | WARNING | `secrets_migration_service.finalize_done` — outbox-row уже закрыт другой ветвью (`status_not_processing`), либо owner-row пропал/перетёрся параллельно (`owner_vanished`, `owner_ciphertext_changed`). Идемпотентность сохранена, но факт требует видимости в SIEM | `secrets_reencrypt_outbox` | `reason in {status_not_processing, owner_vanished, owner_ciphertext_changed}`, `entity_type`, `entity_id`, `current_status` (для `status_not_processing`) |
 | `secrets.migration_key_missing` | ERROR | `secrets_migration_service.reencrypt_batch` — sync re-encrypt не смог расшифровать row из-за пропавшего мастер-ключа (`ENCRYPTION_KEY_MISSING`). Мисконфиг env, требует немедленного вмешательства оператора | `server_account` / `ipmi_controller` | `reason=encryption_key_missing`, `entity_type`, `error_class`, `error_code` |
 | `secrets.migration_decrypt_failed` | ERROR | `secrets_migration_service.reencrypt_batch` — sync re-encrypt не смог расшифровать/перешифровать row (неаутентичный или битый ciphertext, чужой AAD). Row выпала из миграции, требует ручного разбора | `server_account` / `ipmi_controller` | `reason=decrypt_failed`, `entity_type`, `error_class`, `error_code` |
+
+---
+
+## Master-key rotation — ops-runner (s2s shared-secret)
+
+Канал `/ops/*` под shared-secret'ом `rotation_runner` (`require_internal_caller`),
+им ходит `scripts/k8s/rotate_master_key.sh`. Отдельные action-name'ы от
+UI-вариантов (`encryption.admin_*`), чтобы SIEM различал автоматический s2s-runner
+и человека из UI. `target_type=secret`, `target_id=None` (глобальная операция).
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `ops.migration_status_read` | INFO | GET `/ops/migration_status` — rotation-runner прочитал legacy-residue перед drop'ом старого ключа | `secret` | `identity` (caller), `remaining_legacy_total`, `outbox_pending`, `active_version` |
+| `ops.encryption_rotate` | CRITICAL | POST `/ops/encryption/rotate` — новая версия мастер-ключа стала активной через keystore, reencrypt-outbox засеян (рантайм-ротация без простоя) | `secret` | `identity`, `new_version`, `previous_version`, `seeded_inserted`, `idempotent` |
+| `ops.encryption_retire` | CRITICAL | POST `/ops/encryption/retire/{version}` — старая версия мастер-ключа убрана из keystore после полной ре-шифрации (0 строк на версии) | `secret` | `identity`, `version`, `retired` |
+
+---
+
+## Master-key rotation — account_admin (UI)
+
+Платформенный канал под `account_admin` (`/admin/encryption/*`). Зеркало
+ops-runner'ских ротаций, но action-name'ы отдельные — actor = человек из UI.
+`target_type=secret`, `target_id=None`.
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `encryption.admin_rotate` | CRITICAL | POST `/admin/encryption/rotate` — account_admin ввёл новую версию мастер-ключа активной; keystore-bump + reencrypt-outbox seed | `secret` | `new_version`, `previous_version`, `seeded_inserted`, `idempotent` |
+| `encryption.admin_retire` | CRITICAL | POST `/admin/encryption/retire/{version}` — account_admin убрал старую версию из keystore после полной ре-шифрации | `secret` | `version`, `retired` |
+
+---
+
+## Management-user config (платформенный singleton)
+
+Конфиг управляющей учётки (`/management-user-config`) — платформенный singleton
+под `account_admin`. PUT правит login + пер-режимные группы/bootstrap-команды; на
+смену конфига идёт высокоприоритетный недеструктивный re-bootstrap (`management_user_sync`)
+по всем `is_managed`-серверам платформы независимо от отдела.
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `management_user_config.update` | WARNING | PUT `/management-user-config` — обновлён конфиг управляющей учётки; смена login помечается `login_changed` для будущего cutover-фан-аута | `management_user_config` | `login_changed`, `modes_changed`, `previous_login`, `new_login`, `modes_updated` |
+| `management_user_config.sync` | WARNING | фан-аут `management_user_sync` (high-priority) на конкретный managed-сервер при изменении конфига. success: задача поставлена; failure: `reason in {idempotent_conflict, worker_unreachable}` (allowed=True — best-effort, остальные серверы продолжают) | `server` | success: `task_id`, `task_kind=management_user_sync`, `server_id`, `source=config_fanout`, `management_login`, `rename_pending`, `department_id`, `idempotent_hit`. failure: `reason`, `task_kind`, `server_id`, `source`, `department_id` |
+| `management_user_sync_fanout.truncated` | WARNING | фан-аут превысил `MANAGEMENT_USER_SYNC_FANOUT_MAX` — хвост managed-серверов вырезан, выровняется на следующем PUT/prepare | `management_user_config` | `total_managed`, `cap`, `truncated_count` |
 
 ---
 
@@ -186,6 +232,13 @@ Public endpoint'ы, через которые user (обычно admin) запу
 | `server_account.list` | INFO | denied на GET list (success — by design не аудитится) | `server_account` | `reason=permission_denied` |
 | `server_account.update` | INFO | PATCH — изменение метаданных (login/unix_groups/sudo) | `server_account` | поля diff'а (whitelist) |
 | `server_account.adopted_from_host` | WARNING | POST `/server-accounts/{id}/adopt_from_host` — оператор принял факт-состояние OS-пользователя с конкретного хоста в БД (пополевно), DB-only без fan-out | `server_account` | success: `server_id`, `adopted_fields`, `changes` (old→new по реально изменённым полям), `department_id`. denied: `reason=permission_denied` + `server_id`. failure: `reason in {not_found_or_cross_dept, server_not_linked}` + `server_id` |
+| `server_account.imported_from_host` | WARNING | POST `/server-accounts/import` — оператор завёл в БД новым аккаунтом незнакомого OS-пользователя, найденного инвентаризацией (`source=discovered`, без пароля, `present_on_server=True`, привязан к серверу). Право — `(server_account, create)`; `has_sudo`/sudo-группа дополнительно требуют `grant_sudo` | `server_account` | success: `server_id`, `login`, `has_sudo`, `source`, `department_id`. denied: `reason=grant_sudo_denied` + `server_id`, `login`, `sudo_groups`. failure: `reason=duplicate` + `server_id`, `login` |
+| `server_account.ignored_logins_listed` | INFO | GET `/server-accounts/ignored-logins` — список игнор-логинов отдела (эмитится только на denied; success не аудитим) | `server_account` | denied: `reason=permission_denied` |
+| `server_account.ignored_login_added` | WARNING | POST `/server-accounts/ignored-logins` — логин добавлен в ignore-list отдела (инвентаризация перестанет репортить его как unknown OS-user). Право — `(server_account, manage_ignored_logins)` | `server_account` | success: `login`, `department_id`. denied: `reason=permission_denied` + `login`. failure: `reason=duplicate` + `login` |
+| `server_account.ignored_login_removed` | INFO | DELETE `/server-accounts/ignored-logins/{login}` — логин убран из ignore-list отдела (инвентаризация снова репортит как unknown, если он есть на боксе) | `server_account` | success: `login`, `department_id`. denied: `reason=permission_denied` + `login`. failure: `reason=not_found` + `login` |
+| `server_account.recreate_login` | CRITICAL | POST `/server-accounts/{id}/recreate_login` — OS-логин пересоздан end-to-end (deprovision под старым логином → rename в БД → provision под новым на всех привязанных серверах). Доступ — department_admin отдела аккаунта или service-admin | `server_account` | success: `old_login`, `new_login`, `deprovision_count`, `provision_count`, `skipped`, `department_id`. denied: `reason=permission_denied` (+ опц. `subject_type`). failure: `reason=not_found_or_cross_dept` |
+| `server_account.ssh_key_set` | WARNING | POST `/server-accounts/{id}/ssh_key` — SSH-ключ задан/заменён (`generate` Ed25519 или `supply` public); сохранён в БД и расходится через `account.provision` (push authorized_keys). Гейт — `update` | `server_account` | `login`, `ssh_mode in {generate, supply}`, `department_id` |
+| `server_account.ssh_key_rotate` | CRITICAL | POST `/server-accounts/{id}/rotate_ssh_key` — Ed25519-ключ перегенерён (кейс компрометации): новая пара сохранена, приватный отдан один раз, расходится через `account.provision`. Гейт — `update` | `server_account` | `login`, `department_id` |
 | `fanout_update_on_host.truncated` | WARNING | PATCH аккаунта затронул сервер-список длиннее `FANOUT_UPDATE_ON_HOST_MAX`; хвост обрезан, обрезанные хосты выровняются следующим sweep/audit-циклом | `server_account` | `total_links`, `cap`, `truncated_count`, `source=edit_fanout`, `department_id` |
 | `server_account.link_servers` | INFO | POST `/server-accounts/{id}/servers` — привязка аккаунта к дополнительным серверам | `server_account` | `server_ids`, `department_id`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
 | `server_account.unlink_servers` | INFO | DELETE `/server-accounts/{id}/servers` — отвязка от серверов | `server_account` | `server_ids`, `department_id`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
@@ -204,6 +257,20 @@ Public endpoint'ы, через которые user (обычно admin) запу
 | `ipmi_controller.delete` | CRITICAL | hard-delete | `ipmi_controller` | `server_id`, `kind` |
 | `ipmi_controller.rotate_credentials` | WARNING | 410 GONE на `/ipmi/credentials/rotate` — endpoint снят (писал ciphertext без BMC apply/verify, мог разорвать out-of-band доступ). Канонический путь — worker dispatch + internal callback `credentials_rotated`. | `ipmi_controller` | `server_id`, `caller_type`, `migration`, `reason=user_facing_endpoint_deprecated` |
 | `ipmi_controller.view_credentials_meta` | INFO | GET `/ipmi/credentials` — метаданные controller'а без plaintext-пароля (kind/endpoint_url/username/last_probed_at) | `ipmi_controller` | `server_id`, `department_id`. denied: `reason in {permission_denied, not_found_or_cross_dept, not_registered}` |
+
+---
+
+## Console macros (личные + системные в отделе)
+
+Макросы интерактивной консоли (`/console-macros`). Личный макрос — владелец
+caller; системный (department-wide) — только department_admin отдела. Чтение
+(`list`) без аудита. См. `services/console_macro.py`.
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `console_macro.create` | INFO | POST `/console-macros` — макрос создан (личный или системный). denied на системный без department_admin | `console_macro` | success: `is_system`, `name`. denied: `reason=permission_denied`, `is_system=True` |
+| `console_macro.update` | INFO | PATCH `/console-macros/{id}` — макрос изменён. denied: caller не владелец (личный) / не department_admin (системный) | `console_macro` | success: `is_system`, `fields` (изменённые поля). denied: `reason=permission_denied`, `is_system` |
+| `console_macro.delete` | INFO | DELETE `/console-macros/{id}` — макрос удалён (те же права, что у PATCH) | `console_macro` | success: `is_system`. denied: `reason=permission_denied`, `is_system` |
 
 ---
 
@@ -251,12 +318,41 @@ manage_packages)`, по дефолту admin/operator.
 
 | action | default_severity | эмитится при | target_type | детали |
 |---|---|---|---|---|
+| `task.view` | INFO | GET `/tasks` (list) или GET `/tasks/{id}` (detail) — чтение истории worker-task'. Эмитится только на denied (нет `(task, view)`-грантa); success не аудитим | `task` | denied: `reason=permission_denied` (+ опц. `subject_type`) |
 | `task.cancelled` | WARNING | POST `/tasks/{id}/cancel` — success на cancel pending/running task'и | `task` | success: `task_id`, `previous_status`, `task_kind`, `target_server_id`, `cancel_reason`. denied: `reason in {permission_denied, system_task_admin_required}` (+ `task_kind`, `target_server_id` где известно). failure: `reason in {task_not_found, task_not_found_or_cross_dept, not_cancellable}` (+ `previous_status` для `not_cancellable`; `target_server_id`/`task_kind` для `task_not_found_or_cross_dept`) |
 | `worker_dispatch.orphan_detected` | ERROR | Cross-DB сценарий в `worker_client._delete_task_row`: worker-row уже закоммичен в `dev_server_worker`, outbox-INSERT упал в caller'скую db, компенсирующий DELETE worker-row тоже упал. В worker-БД остаётся task-row, которую poller не подберёт (нет outbox-row). Парный к `/ready.worker_dispatch_orphans_total` счётчику | `task` | `task_id`, `compensation_exc` (имя класса исключения от DELETE'а worker-БД) |
 
 > **denied vs failure semantics:** `denied` пишется когда caller не прошёл прав (нет `(task, cancel)`; системная task без `account_admin`) — попытка отлавливается на стадии authz. `failure` пишется когда права прошли, но row либо не виден из-за dept-isolation (`task_not_found_or_cross_dept` — 404, маскирует чужой сервер), либо исчез между check'ом и cancel'ом (`task_not_found` race), либо уже в терминальном статусе (`not_cancellable` — 409). Cross-dept формально отказ доступа, но эмитится `failure/allowed=True`: caller прошёл permission-check, отсутствие visibility-факта по чужому серверу не должно светиться в SIEM как denied — это enumeration-guard.
 >
 > **Mid-run cancel side-effect** — отдельного server_service-события нет, но worker (см. `server_worker/src/tasks/_runner.py`) при попытке terminal write'а на cancelled row пишет audit с `action=<task_kind>` (например `power.on`, `account.rotate_password`), `status=failure`, `details.reason=cancelled_midrun` и `details.observed_status=cancelled`. Это покрывает все три ветки (success / failure / retry, последняя re-kick подавляется). SIEM может джойнить `task.cancelled (success)` с парным `<task_kind> (failure, reason=cancelled_midrun)` по `target_id=task_id` / `target_server_id`, чтобы видеть полную картину «оператор отменил, worker зафиксировал отмену в полёте».
+
+---
+
+## Worker-emitted (зарегистрированы под server_service)
+
+Эти action'ы эмитит **server_worker**, но регистрируются они здесь, под именем
+`server_service` (worker сам в loging_service не регистрируется — публикует от
+лица server_service). Так оператор/SIEM находят их через registry API
+(`GET /api/logging/v1/services/server_service/events`). Полное описание полей и
+сценариев — в `server_worker/AUDIT_EVENTS.md`; ниже — severity-default'ы как в
+`SERVICE_EVENTS`.
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `task.worker_shutdown` | ERROR | graceful shutdown worker'а: running-task принудительно переведена в retry или failed | `server` / `task` | `target_id` = `server_id` связанной таски при наличии, иначе `task_id`; severity по факту ERROR/WARNING зависит от `will_retry` |
+| `task.worker_orphaned` | ERROR | orphan-sweep нашёл running-task'у с мёртвым `worker_id` и принудительно перевёл её в failed без retry-decision | `server` / `task` | `target_id` = `server_id` связанной таски при наличии, иначе `task_id` |
+| `task.deleted_midrun` | WARNING | task-row исчезла между `mark_running` и terminal write (retention / ручной DELETE); terminal mark пропущен, факт фиксируется | `task` | факт пропавшей row между running и terminal write |
+| `secrets.reencrypt_tick` | INFO | периодический тик `secrets.reencrypt_lazy`: success/idle (`allowed=True`), warning при `finalize_errors`, failure при `app_env_mismatch` worker↔server_service (явный severity ERROR) | `secret` | признаки `finalize_errors` / `app_env_mismatch` |
+| `audit.outbox_reattempt_manual` | WARNING | оператор форсит CLI-командой `outbox-reattempt` повторную доставку конкретной row'ы worker'ского `audit_outbox` | `audit_outbox` | id переотправляемой outbox-row |
+| `bmc.tls_downgrade` | WARNING | BMC-probe worker'а перешёл на менее защищённый канал (`https_verify→https_noverify` или `*→http`); фиксируется при каждом фактическом переходе | `ipmi_controller` / `server` | from/to схемы транспорта |
+| `server_account.password_rotate` | CRITICAL | worker завершил ротацию пароля сервисной учётки (SSH apply + callback `submit_rotated_password`); dispatch-сторона — `server_account.rotate_password_dispatch` | `server_account` | `server_id`, `login`, `rotated_at`, `caller_type` (финальная сторона ротации) |
+| `ipmi_controller.password_rotate` | CRITICAL | worker завершил ротацию IPMI/BMC-пароля (apply + verify + callback `submit_rotated_ipmi_password`); dispatch-сторона — `ipmi_controller.rotate_dispatch` | `ipmi_controller` | `server_id`, `controller_id` (финальная сторона ротации) |
+| `server_account.users_inventory` | INFO | worker завершил OS-user inventory через SSH `getent` и отдал список через callback `submit_users_inventory`; срез хоста, не конкретной учётки | `server` | результат инвентаризации OS-пользователей по хосту |
+| `ssh_console.command` | INFO | команда, введённая в интерактивной SSH-консоли (одна строка по Enter); эмитит worker на PTY-мосте. WARNING при ненулевом exit-коде, если он доступен | `server` | `command` (redacted), `session_id`, `server_id` |
+
+> Парный к `server.power_*` / `account.rotate_password` mid-run-факт `<task_kind>
+> (failure, reason=cancelled_midrun)` тоже worker-emitted, но эмитится под
+> `action=<task_kind>` (см. примечание в Worker task lifecycle выше).
 
 ---
 

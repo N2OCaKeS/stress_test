@@ -118,7 +118,7 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("user.login", "failure"): "CRITICAL",
     ("user.refresh", "success"): "INFO",
     ("user.logout", "success"): "INFO",
-    ("user.me", "success"): "INFO",
+    ("user.me", "success"): "TRACE",
     ("token.refresh_reuse", "failure"): "CRITICAL",
     # Пользователи
     ("user.create", "success"): "INFO",
@@ -128,6 +128,8 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("user.ban", "success"): "CRITICAL",
     ("user.unban", "success"): "CRITICAL",
     ("user.hard_deleted", "success"): "CRITICAL",
+    ("service_key.generate", "success"): "CRITICAL",
+    ("lockout_policy.update", "success"): "CRITICAL",
     # Отделы
     ("department.create", "success"): "CRITICAL",
     ("department.list", "success"): "INFO",
@@ -172,6 +174,9 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("oauth.authorization_code_issued", "success"): "INFO",
     ("oauth.code_exchanged", "success"): "INFO",
     ("oauth.client_credentials_token", "success"): "INFO",
+    ("oauth.refresh_token", "success"): "INFO",
+    ("oauth.refresh_reuse", "failure"): "CRITICAL",
+    ("oauth.refresh_race", "failure"): "WARNING",
     # Интроспекция токенов
     ("token.introspect", "success"): "INFO",
     ("token.introspect", "failure"): "CRITICAL",

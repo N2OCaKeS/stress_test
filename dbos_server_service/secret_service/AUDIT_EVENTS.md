@@ -6,6 +6,7 @@
 
 - Имя действия — `<object>.<verb>`. Для credentials используется префикс `tokens.*` (исторический выбор: одна сущность хранит `(login, secret)` пары для внешних токенов).
 - Severity-дефолты задаются для пары `(action, status)` в `_DEFAULT_SEVERITY`. Failure-ось эскалируется вверх (CRUD → ERROR; reveal / transfer / dept-grant / cascade → CRITICAL).
+- Severity в этой таблице — **дефолты сервиса**. `loging_service` может переопределить или подавить их своими rule'ами; финальный severity события определяет loging. Здесь зафиксирован срез из `_DEFAULT_SEVERITY` на момент регистрации событий.
 - Поля envelope: `actor_id`, `actor_type` (`user` / `bot` / `oauth_client` / `service`), `actor_username`, `subject_id` (как правило `cred_id`), `subject_type`, `service`, `request_id`, `ip_address`, `user_agent`, `details` (action-specific, см. ниже), `status`, `severity`, `timestamp`.
 - `details.secret` / `details.login` / `details.password` / `details.token` маскируются `redact_payload` перед отправкой (см. `src/services/redaction.py`).
 - Health/ready НЕ логируются.
@@ -95,3 +96,22 @@
 | Action | Status | Severity | Payload (`details`) |
 |---|---|---|---|
 | `tokens.access_denied` | failure | INFO | `{ cred_id?, error_code, scope, attempted_action }`. Эмитится при `403 CREDENTIAL_ACCESS_DENIED` / `SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT` / scope-mismatch. Используется lockout-сервисом для счёта denied-попыток. |
+| `tokens.lockout_triggered` | success | WARNING | `{ actor_id, denied_count, lockout_until }`. Per-actor блокировка после серии denied-попыток (защита от перебора). Срабатывает, когда счётчик `tokens.access_denied` превышает порог. |
+
+## Re-encrypt outbox + ротация ключа
+
+Проактивная ротация мастер-ключа: `secrets.reencrypt_*` — служебный поток ре-шифрации (outbox), `secrets.encryption_*` — действия ops-runner'а, `secrets.admin_encryption_*` — те же действия, но инициированные `account_admin` из UI (отдельные имена, чтобы SIEM различал s2s-runner и человека). Failure-ось процесса и ротации эскалируется до ERROR/CRITICAL.
+
+| Action | Status | Severity | Payload (`details`) |
+|---|---|---|---|
+| `secrets.reencrypt_seed` | success | INFO | `{ pending_rows, from_key_version, to_key_version }`. Reencrypt-outbox засиден pending-строками после ротации мастер-ключа. |
+| `secrets.reencrypt_process` | success | INFO | `{ batch_size, processed, remaining }`. Обработан батч outbox'а (decrypt → encrypt под активным ключом). |
+| `secrets.reencrypt_process` | failure | ERROR | `{ error_code, message, batch_size }`. |
+| `secrets.encryption_rotate` | success | **CRITICAL** | `{ new_key_version, seeded_rows }`. Rotation-runner ввёл новую версию мастер-ключа активной через keystore и засидил reencrypt-outbox (рантайм-ротация без простоя). |
+| `secrets.encryption_rotate` | failure | **CRITICAL** | `{ error_code, message }`. |
+| `secrets.encryption_retire` | success | **CRITICAL** | `{ retired_key_version }`. Rotation-runner убрал старую версию мастер-ключа из keystore после полной ре-шифрации (0 строк на версии). |
+| `secrets.encryption_retire` | failure | **CRITICAL** | `{ error_code, message, key_version }`. |
+| `secrets.admin_encryption_rotate` | success | **CRITICAL** | `{ new_key_version, seeded_rows }`. `account_admin` ввёл новую версию мастер-ключа активной через UI (`/admin/encryption/rotate`); keystore-bump + reencrypt-outbox seed. |
+| `secrets.admin_encryption_rotate` | failure | **CRITICAL** | `{ error_code, message }`. |
+| `secrets.admin_encryption_retire` | success | **CRITICAL** | `{ retired_key_version }`. `account_admin` убрал старую версию мастер-ключа из keystore через UI (`/admin/encryption/retire`) после полной ре-шифрации. |
+| `secrets.admin_encryption_retire` | failure | **CRITICAL** | `{ error_code, message, key_version }`. |

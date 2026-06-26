@@ -71,6 +71,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `user.ban` | CRITICAL | `user_service.ban_user` | user | `ban_type`, `reason`, `expires_at`, `pat_revoked_count`. Боты НЕ отзываются автоматически: бот живёт до явного manual revoke (`DELETE /api/auth/v1/bots/{id}/tokens/{token_id}`) или истечения срока токена; в details лежат `bots_policy="no_auto_revoke"`, `bot_tokens_revoked=0`, `owned_bots_count=0` для обратной совместимости SIEM-правил. |
 | `user.unban` | CRITICAL | `user_service.unban_user` / `auto_unban_if_expired` | user | `pat_reactivated` — сколько PAT'ов, отозванных текущим ban'ом (`revoked_reason="ban"` + `revoked_at >= ban.banned_at`), возвращены. Bot-токены НЕ реактивируются (симметрично `user.ban`: бот живёт отдельной identity, ban владельца его не валит, unban — не воскрешает; перевыпуск через `POST /bots/{id}/tokens`). `actor_id=None` + `details.source="auto"` + `details.reason="ban_expired"` для auto-unban'а по истечении temporary-ban'а. |
 | `user.unlock` | CRITICAL | `user_service.unlock_user` (`POST /users/{id}/unlock`) | user | Admin снял brute-force lockout: `failed_login_attempts` и `locked_until` сброшены. `details.was_locked` отличает реальное снятие от no-op-вызова по незалоченному юзеру, `details.failed_attempts_cleared` — сколько неудач было до сброса. Бан/статус не затрагиваются. |
+| `user.locked_list` | INFO | `user_service.list_locked_users` (`GET /users/locked`) | — | Админ запросил список юзеров под активным brute-force lockout. `count`, `total`, `include_failing`, `scope` (`all` / `department`). |
 | `user.ban_deactivated_via_status_change` | WARNING | `user_service.update_user` (PATCH `/users/{id}/status`) | user | Активный ban деактивирован как side-effect смены статуса (без явного unban). Логируется отдельно от `user.unban` для трассировки полу-явных деактиваций. |
 | `user.permissions_view` | INFO | `GET /users/{id}/permissions` | user | Кто смотрит чьи права. |
 | `user.roles_purged_on_transfer` | WARNING | `user_service.update_user` (department change) | user | Сколько ролей сброшено при переводе в другой отдел. |
@@ -84,6 +85,15 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `user.sessions_revoked_on_block` | WARNING | `user_service.update_user` (`PATCH /users/{id}/status` → BLOCKED) | user | Side-effect перевода юзера в BLOCKED — сессии отозваны. `revoked_count`. |
 | `user.pat_revoked_on_block` | WARNING | `user_service.update_user` (`PATCH /users/{id}/status` → BLOCKED) | user | Side-effect перевода в BLOCKED — PAT'ы отозваны. `pat_revoked_count`. |
 | `user.hard_deleted` | CRITICAL | `user_service.hard_delete_user` (`DELETE /users/{id}`) | user | `target_username`, `target_department_id`, `reason` (обязательный человекочитаемый), `sessions_revoked`, `pat_revoked_count`. После commit'а инициирует best-effort callback в `secret_service.notify_user_deleted` — secret_service блокирует personal credentials удалённого юзера. Боты юзера НЕ трогаются (dept-owned entity). |
+
+## Platform administration
+
+`subject_type=user` (account_admin).
+
+| Action | Default severity | Emitter | Target | Key details |
+|------|------|------|------|------|
+| `service_key.generate` | CRITICAL | `admin.generate_service_key` (`POST /admin/service-keys`) | service_key | account_admin сгенерировал свежий AES-256 master key (base64) для ротации keystore в server/secret-сервисе. Сам ключ в details не уходит — только `key_bytes`, `encoding`. auth_service ключ не хранит. |
+| `lockout_policy.update` | CRITICAL | `lockout_policy_service.update_policy` (`PUT /admin/lockout-policy`) | lockout_policy | account_admin поменял платформенную brute-force политику. `old_max`, `old_minutes`, `new_max`, `new_minutes`. |
 
 ## Departments
 

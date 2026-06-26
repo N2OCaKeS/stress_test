@@ -125,6 +125,9 @@ SERVICE_EVENTS = [
     {"action": "oauth.code_exchanged", "description": "OAuth2 authorization code exchanged for token", "default_severity": "INFO"},
     {"action": "oauth.client_credentials_token", "description": "OAuth2 client credentials token issued", "default_severity": "INFO"},
     {"action": "oauth.pkce_plain_used", "description": "OAuth2 confidential client used PKCE plain method (insecure; S256 recommended)", "default_severity": "WARNING"},
+    {"action": "oauth.refresh_token", "description": "OAuth2 refresh-token rotated successfully (new access + refresh issued)", "default_severity": "INFO"},
+    {"action": "oauth.refresh_reuse", "description": "Already-rotated OAuth2 refresh token presented (possible theft); kill-switch on the whole (client_id, user_id) chain", "default_severity": "CRITICAL"},
+    {"action": "oauth.refresh_race", "description": "Concurrent OAuth2 refresh-token rotation lost CAS (benign race, retry expected)", "default_severity": "WARNING"},
     # Token introspection
     {"action": "token.introspect", "description": "Token introspection request", "default_severity": "INFO"},
     # Docker Registry

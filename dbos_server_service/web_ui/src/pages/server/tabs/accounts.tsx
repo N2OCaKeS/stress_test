@@ -13,6 +13,7 @@
  * deprovision|rotate|rotate_password|servers}`.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   Copy,
@@ -43,6 +44,7 @@ import type {
 } from "@/api/server/types";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { RotateDispatchResult } from "@/pages/server/_rotateResult";
 import { LinkAccountModal } from "./_linkAccountModal";
 
 interface Props {
@@ -359,10 +361,14 @@ function AccountDetail({
   onClosed: () => void;
 }) {
   const toast = useToast();
+  const navigate = useNavigate();
   const { confirm, prompt } = useConfirm();
   const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Разбивка последнего worker-rotate (dispatched / failed / partial_failure).
+  const [rotateResult, setRotateResult] =
+    useState<accountsApi.AccountRotateDispatchResponse | null>(null);
 
   const linkedUserLabel = useUserLabel(account.linked_user_id);
   const createdByLabel = useUserLabel(account.created_by);
@@ -397,6 +403,37 @@ function AccountDetail({
       }
     },
     [onChanged, toast],
+  );
+
+  // Worker-rotate отдельно от `run`: его ответ несёт per-task разбивку, которую
+  // показываем под карточкой (а не просто toast'им).
+  const runRotate = useCallback(
+    async (query: { server_id?: string }) => {
+      setErr(null);
+      setRotateResult(null);
+      setPending(true);
+      try {
+        const res = await accountsApi.rotateAccountWorker(account.id, query);
+        setRotateResult(res);
+        const queued = res.dispatched.length || res.tasks.length;
+        const skipped = res.failed.length || res.skipped.length;
+        if (res.partial_failure || skipped > 0) {
+          toast.error(
+            `Worker-rotate частичный: задач — ${queued}, пропущено — ${skipped}.`,
+          );
+        } else {
+          toast.success(`Worker-rotate поставлен в очередь: задач — ${queued}.`);
+        }
+        onChanged();
+      } catch (e) {
+        const msg = apiErrMsg(e);
+        setErr(msg);
+        toast.error(msg);
+      } finally {
+        setPending(false);
+      }
+    },
+    [account.id, onChanged, toast],
   );
 
   if (editing) {
@@ -642,15 +679,7 @@ function AccountDetail({
                   ? "Аккаунт не привязан к этому серверу"
                   : "Worker: SSH chpasswd на этом сервере"
             }
-            onClick={() =>
-              run(
-                () =>
-                  accountsApi.rotateAccountWorker(account.id, {
-                    server_id: serverId,
-                  }),
-                "Worker-rotate (single) поставлен в очередь",
-              )
-            }
+            onClick={() => runRotate({ server_id: serverId })}
           >
             <RotateCw className="w-4 h-4" /> Worker: этот сервер
           </button>
@@ -666,15 +695,23 @@ function AccountDetail({
                 }))
               )
                 return;
-              run(
-                () => accountsApi.rotateAccountWorker(account.id),
-                "Worker-rotate (all) поставлен в очередь",
-              );
+              runRotate({});
             }}
           >
             <RotateCw className="w-4 h-4" /> Worker: все
           </button>
         </div>
+        {rotateResult && (
+          <div className="border-t border-token mt-3 pt-3">
+            <div className="text-[11px] uppercase text-dim mb-2">
+              Результат worker-rotate
+            </div>
+            <RotateDispatchResult
+              result={rotateResult}
+              onOpenTask={(taskId) => navigate(`/tasks/${taskId}`)}
+            />
+          </div>
+        )}
       </div>
 
       {/* ── Danger zone ── */}

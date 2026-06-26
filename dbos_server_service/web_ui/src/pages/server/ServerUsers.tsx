@@ -67,6 +67,7 @@ import { usersInventory, listTasks } from "@/api/server/misc";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { RevisionDiffModal } from "@/pages/server/RevisionDiffModal";
 import { OsUsersDiscoveryModal } from "@/pages/server/OsUsersDiscoveryModal";
+import { RotateDispatchResult } from "@/pages/server/_rotateResult";
 import { isDepAdmin, isServerZoneBlocked } from "@/lib/rbac";
 import {
   type RevisionAccountDiff,
@@ -2146,6 +2147,7 @@ function PasswordRevealCard({
   onChanged: () => void;
 }) {
   const toast = useToast();
+  const navigate = useNavigate();
   const { confirm } = useConfirm();
   const [plain, setPlain] = useState<string | null>(null);
   const [prevPlain, setPrevPlain] = useState<string | null>(null);
@@ -2155,6 +2157,9 @@ function PasswordRevealCard({
   const [now, setNow] = useState(() => Date.now());
   // Сервер, на который сейчас идёт точечный apply (или "all").
   const [applyingServer, setApplyingServer] = useState<string | null>(null);
+  // Разбивка последнего worker-rotate (dispatched / failed / partial_failure).
+  const [dispatchResult, setDispatchResult] =
+    useState<accountsApi.AccountRotateDispatchResponse | null>(null);
 
   useEffect(() => {
     if (throttleUntil <= 0) return;
@@ -2241,8 +2246,9 @@ function PasswordRevealCard({
         account.id,
         server ? { server_id: server } : {},
       );
-      const queued = dispatch.tasks.length;
-      const skipped = dispatch.skipped.length;
+      setDispatchResult(dispatch);
+      const queued = dispatch.dispatched.length || dispatch.tasks.length;
+      const skipped = dispatch.failed.length || dispatch.skipped.length;
       const where = server ? serverName(server) : "все серверы";
       if (dispatch.partial_failure || skipped > 0) {
         toast.error(
@@ -2406,6 +2412,19 @@ function PasswordRevealCard({
                 </button>
               </div>
             ))}
+          </div>
+        )}
+
+        {dispatchResult && (
+          <div className="border-t border-token mt-1 pt-3">
+            <div className="text-[11px] uppercase text-dim mb-2">
+              Результат последнего apply
+            </div>
+            <RotateDispatchResult
+              result={dispatchResult}
+              serverName={serverName}
+              onOpenTask={(taskId) => navigate(`/tasks/${taskId}`)}
+            />
           </div>
         )}
       </div>

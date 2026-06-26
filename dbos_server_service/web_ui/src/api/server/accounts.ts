@@ -199,31 +199,52 @@ export function rotateAccountUserInitiated(
   );
 }
 
-/** Один задиспатченный per-server элемент в ответе worker-rotate. */
+/**
+ * Один задиспатченный per-server элемент в ответе worker-rotate. `server_name`
+ * (display_name либо hostname) и `status` заполняются в массовой ротации, в
+ * fan-out ответах (ssh_key) могут быть пустыми.
+ */
 export interface AccountRotateTask {
   server_id: string;
+  server_name: string | null;
   task_id: string;
+  status: string;
 }
 
 /** Сервер, на который worker-rotate задача не поставлена. */
 export interface AccountRotateSkipped {
   server_id: string;
-  reason: string;
+  server_name: string | null;
+  reason: AccountRotateSkipReason | (string & {});
 }
+
+/** Коды причин из backend'а (`AccountRotateSkipped.reason`). */
+export type AccountRotateSkipReason =
+  | "decommissioned"
+  | "idempotent_conflict"
+  | "worker_unreachable"
+  | "not_attempted"
+  | "not_found_or_cross_dept";
 
 /**
  * Ответ worker-dispatch'а `/rotate`. `mode` — `single` (один сервер) или `all`
- * (массовая ротация на все привязанные). `partial_failure` — true, если в
- * массовом режиме K задач улетели в очередь, а на K+1-ом worker отбил
- * 503; UI должен показать `tasks` + `next_action`.
+ * (массовая ротация на все привязанные). `dispatched`/`failed` — основные
+ * списки; `tasks`/`skipped` — их алиасы для обратной совместимости.
+ * `partial_failure` — true, если в массовом режиме K задач улетели в очередь,
+ * а на K+1-ом worker отбил 503; тогда `next_action="manual_cancel_dispatched"`
+ * и UI должен показать уже отправленные задачи + предупредить, что отменять
+ * их нужно вручную.
  */
 export interface AccountRotateDispatchResponse {
+  batch_id: string;
   mode: "single" | "all" | string;
-  status: string;
+  status: "queued" | "partial" | (string & {});
+  dispatched: AccountRotateTask[];
+  failed: AccountRotateSkipped[];
   tasks: AccountRotateTask[];
   skipped: AccountRotateSkipped[];
   partial_failure: boolean;
-  next_action: string | null;
+  next_action: "manual_cancel_dispatched" | "retry_not_attempted" | null;
 }
 
 /**

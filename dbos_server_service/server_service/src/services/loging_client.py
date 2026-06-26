@@ -31,6 +31,7 @@ import httpx
 
 from src.core import http_clients
 from src.core.config import get_settings
+from src.core.constants import SERVICE_NAME
 from src.core.exceptions import ServiceUnavailableError
 from src.core.http import bearer_header
 
@@ -73,6 +74,7 @@ async def fetch_drift_events(
 
     events_path = "/api/logging/v1/internal/events"
     params = {
+        "service": SERVICE_NAME,
         "action": "server_account.drift_detected",
         "target_id": server_id,
         "from_time": since.isoformat(),

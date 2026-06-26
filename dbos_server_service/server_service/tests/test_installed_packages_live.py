@@ -118,6 +118,7 @@ class TestDispatchSuccess:
             "server_id": srv.id,
             "host": srv.hostname,
             "ssh_port": srv.ssh_port,
+            "patterns": ["linux-image*"],
             "pattern": "linux-image*",
             "max_rows": 10000,
             "target_department_id": "dep_a",
@@ -168,12 +169,12 @@ class TestPatternValidation:
     @pytest.mark.parametrize("bad_pattern", [
         "foo;bar",       # shell-separator
         "foo|bar",       # pipe
-        "foo bar",       # пробел
         "foo$bar",       # variable expansion
         "foo`whoami`",   # command substitution
         "foo'bar",       # quote — break-out из одинарных
         "foo\"bar",      # quote
         "../etc/passwd", # path traversal
+        "bash* ;rm",     # вторая маска после split всё ещё мусор → reject
     ])
     async def test_invalid_pattern_returns_422(
         self, client, operator_token_a, make_server, captured_dispatch,
@@ -181,6 +182,8 @@ class TestPatternValidation:
     ):
         """DomainValidationError → 422 INVALID_PATTERN. Cеми shell-метасимволов
         и path-traversal должно хватать для покрытия injection-vectors'ов.
+        Каждая whitespace-разделённая маска валидируется отдельно — если хоть
+        одна мусорная, весь запрос отбивается.
         """
         srv = await make_server(department_id="dep_a")
         resp = await client.post(
@@ -190,6 +193,22 @@ class TestPatternValidation:
         )
         assert_error(resp, 422, "INVALID_PATTERN")
         assert captured_dispatch == []
+
+    async def test_multiple_whitespace_masks_split_into_patterns(
+        self, client, operator_token_a, make_server, captured_dispatch, db,
+    ):
+        """`bash* ssh*` — две маски через пробел; обе уходят в `patterns`
+        (worker OR-матчит), а не теряются как одиночный glob с пробелом."""
+        srv = await make_server(department_id="dep_a")
+        await _prepared(db, srv)
+        resp = await client.post(
+            _url(srv.id),
+            headers=_hdr(operator_token_a),
+            params={"pattern": "bash* ssh*"},
+        )
+        assert resp.status_code == 202, resp.text
+        assert len(captured_dispatch) == 1
+        assert captured_dispatch[0]["payload"]["patterns"] == ["bash*", "ssh*"]
 
 
 # ── 3. Visibility / dept-isolation ──────────────────────────────────────────

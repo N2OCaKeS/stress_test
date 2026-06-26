@@ -139,6 +139,36 @@ class TestProvisionDispatch:
         assert call["task_kind"] == "account.deprovision"
         assert call["payload"]["remove_home"] is True
 
+    async def test_deprovision_removes_link_immediately(
+        self, client, admin_role_token_a, make_server, make_account,
+        captured_dispatch, db,
+    ):
+        """Deprovision не только ставит userdel — сразу снимает связку
+        аккаунт ↔ сервер в БД (раньше связка висела до отдельного unbind)."""
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        acc = await make_account(server_ids=[srv1.id, srv2.id], login="ops")
+        resp = await client.post(
+            f"{BASE}/{acc.id}/deprovision?server_id={srv2.id}",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        link = (await db.execute(
+            select(ServerAccountServer).where(
+                ServerAccountServer.account_id == acc.id,
+                ServerAccountServer.server_id == srv2.id,
+            )
+        )).scalar_one_or_none()
+        assert link is None
+        # Вторая связка не тронута.
+        kept = (await db.execute(
+            select(ServerAccountServer).where(
+                ServerAccountServer.account_id == acc.id,
+                ServerAccountServer.server_id == srv1.id,
+            )
+        )).scalar_one_or_none()
+        assert kept is not None
+
     async def test_reader_cannot_deprovision(
         self, client, reader_token_a, make_server, make_account, captured_dispatch,
     ):
@@ -280,6 +310,54 @@ class TestProvisionStatusCallback:
         acc = await make_account(server_id=srv.id, login="ops")
         resp = await client.post(
             f"{BASE_INT}/servers/{other.id}/accounts/{acc.id}/provision_status",
+            headers=_hdr(worker_bot_token_a),
+            json={"operation": "provision", "present": True},
+        )
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
+
+    async def test_deprovision_callback_on_already_removed_link_idempotent(
+        self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+    ):
+        """Deprovision-callback `present=False` на уже снятой связке — 200
+        идемпотентно, а не 404. User-facing deprovision/unbind удаляют связку
+        сразу при постановке userdel'а; worker подтверждает present=False позже,
+        когда связки уже нет, но целевое состояние (юзера нет) достигнуто."""
+        srv = await make_server(department_id=dept_a)
+        acc = await make_account(server_id=srv.id, login="ops")
+        # Снимаем связку, имитируя уже-выполненную отвязку.
+        link = (await db.execute(
+            select(ServerAccountServer).where(
+                ServerAccountServer.account_id == acc.id,
+                ServerAccountServer.server_id == srv.id,
+            )
+        )).scalar_one()
+        await db.delete(link)
+        await db.flush()
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/provision_status",
+            headers=_hdr(worker_bot_token_a),
+            json={"operation": "deprovision", "present": False},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["present_on_server"] is False
+
+    async def test_provision_callback_on_removed_link_still_404(
+        self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+    ):
+        """`present=True` на снятой связке — по-прежнему 404 (provision не может
+        подтвердить присутствие на несуществующей связке)."""
+        srv = await make_server(department_id=dept_a)
+        acc = await make_account(server_id=srv.id, login="ops")
+        link = (await db.execute(
+            select(ServerAccountServer).where(
+                ServerAccountServer.account_id == acc.id,
+                ServerAccountServer.server_id == srv.id,
+            )
+        )).scalar_one()
+        await db.delete(link)
+        await db.flush()
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/provision_status",
             headers=_hdr(worker_bot_token_a),
             json={"operation": "provision", "present": True},
         )

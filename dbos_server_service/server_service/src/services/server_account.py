@@ -39,6 +39,7 @@ from src.core.exceptions import (
     ConflictError,
     DomainValidationError,
     NotFoundError,
+    ServiceUnavailableError,
 )
 from src.models import Server, ServerAccount, ServerAccountIgnoredLogin
 from src.repositories import server_account as repo
@@ -59,6 +60,7 @@ from src.services import (
     reservation,
     reveal_throttle,
     secrets_service,
+    worker_client,
 )
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.services.server import load_visible_server, load_visible_servers
@@ -1461,16 +1463,97 @@ async def link_servers(
     return obj
 
 
+async def _dispatch_deprovision_after_unlink(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+    login: str,
+    server_ids: list[str],
+    request_id: str | None,
+) -> None:
+    """Снять OS-учётку с боксов, к которым аккаунт только что отвязали.
+
+    Связки в БД уже удалены, поэтому payload собираем из server-row'ов напрямую
+    (не из M2M-линка). Best-effort fan-out: фейл диспатча на один сервер не
+    мешает остальным и не откатывает отвязку — фиксируем audit-warning'ом.
+    """
+    servers = await load_visible_servers(db, identity, server_ids)
+    for sid in server_ids:
+        server = servers.get(sid)
+        if server is None:
+            continue
+        payload = {
+            "server_id": server.id,
+            "account_id": account_id,
+            "target_department_id": server.department_id,
+            "host": server.hostname,
+            "ssh_port": server.ssh_port,
+            "login": login,
+            "is_managed": server.is_managed,
+            "management_user": server.management_user,
+            "remove_home": False,
+        }
+        try:
+            task_id, _ = await worker_client.dispatch_task_with_hit(
+                db=db,
+                task_kind="account.deprovision",
+                target_server_id=server.id,
+                target_resource_id=account_id,
+                payload=payload,
+                created_by=identity.user_id,
+                request_id=request_id,
+            )
+            await db.commit()
+        except (ConflictError, ServiceUnavailableError) as exc:
+            await db.rollback()
+            reason = (
+                "idempotent_conflict"
+                if isinstance(exc, ConflictError)
+                else "worker_unreachable"
+            )
+            audit_service.emit(
+                "server_account.deprovision",
+                target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": reason,
+                    "task_kind": "account.deprovision",
+                    "server_id": server.id,
+                    "source": "unlink_fanout",
+                    "department_id": server.department_id,
+                },
+            )
+            continue
+        audit_service.emit(
+            "server_account.deprovision",
+            target_id=account_id, target_type="server_account",
+            status="success", allowed=True,
+            details={
+                "task_id": task_id,
+                "task_kind": "account.deprovision",
+                "server_id": server.id,
+                "source": "unlink_fanout",
+                "login": login,
+                "department_id": server.department_id,
+            },
+        )
+
+
 async def unlink_servers(
     db: AsyncSession,
     identity: IdentityContext,
     account_id: str,
     payload: ServerAccountServersUpdate,
+    *,
+    request_id: str | None = None,
 ) -> ServerAccount:
     """Отвязать аккаунт от серверов.
 
-    Отвязка гейтится `update`. Нельзя снять последнюю связку — аккаунт всегда
-    живёт хотя бы на одном сервере (иначе → 409 ACCOUNT_NO_SERVERS).
+    Отвязка гейтится `update`. Снимает связку аккаунт ↔ сервер немедленно;
+    можно отвязать и последний сервер (аккаунт остаётся в БД без серверов,
+    его карточка живёт до отдельного delete). Если на отвязываемом сервере
+    OS-учётка реально стояла (`present_on_server`), ставится `account.deprovision`
+    (userdel) на этот бокс — чтобы пользователь не остался на хосте.
     """
     with emit_denied_on_authz_error(
         "server_account.unlink_servers",
@@ -1515,24 +1598,22 @@ async def unlink_servers(
             message="Account is not linked to one or more of the requested servers",
             details={"unknown_server_ids": unknown},
         )
-    remaining = current - set(payload.server_ids)
-    if not remaining:
-        audit_service.emit(
-            "server_account.unlink_servers",
-            target_id=account_id, target_type="server_account",
-            status="failure", allowed=True,
-            details={"reason": "would_orphan_account", "server_ids": payload.server_ids},
-        )
-        raise ConflictError(
-            error_code="ACCOUNT_NO_SERVERS",
-            message="Cannot unlink the last server — account must stay on at least one",
-        )
+    # Где OS-учётка реально стоит на боксе — после отвязки её надо снять
+    # (userdel), иначе связку в БД сняли, а пользователь остался на сервере.
+    # Снимаем по тем же live-link'ам под лок'ом, чтобы present_on_server был
+    # актуальным.
+    present_targets = {
+        link.server_id
+        for link in live_links
+        if link.server_id in set(payload.server_ids) and link.present_on_server
+    }
 
     # `remove_servers` идёт по selectin-загруженному `obj.server_links`. После
     # `lock_links_for_account` session-кэш может расходиться с live-state —
     # обновляем relationship, чтобы DELETE'ил по тому же набору, что и
     # snapshot-check выше.
     await db.refresh(obj, attribute_names=["server_links"])
+    login = obj.login
     removed = await repo.remove_servers(db, obj, payload.server_ids)
     await db.commit()
     await db.refresh(obj)
@@ -1546,6 +1627,14 @@ async def unlink_servers(
             "department_id": obj.department_id,
         },
     )
+
+    # Учётка отвязана в БД — теперь снимаем её с боксов, где она стояла.
+    # Best-effort: недоступность worker'а не откатывает отвязку (связки уже
+    # нет), но фиксируется отдельным audit-warning'ом.
+    if present_targets:
+        await _dispatch_deprovision_after_unlink(
+            db, identity, account_id, login, sorted(present_targets), request_id,
+        )
     return obj
 
 

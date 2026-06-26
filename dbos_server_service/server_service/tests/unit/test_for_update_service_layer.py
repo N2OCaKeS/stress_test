@@ -6,7 +6,8 @@ unlink_servers. Покрывает:
 * несуществующий account_id → 404;
 * no-op PATCH (пустые изменения) не трогает БД и возвращает пустой applied_fields;
 * no-op PATCH (поля уже равны новым значениям) — applied_fields пуст;
-* unlink последнего сервера → 409 ACCOUNT_NO_SERVERS;
+* unlink последнего сервера — разрешён: связка снимается, на бокс с
+  present_on_server идёт best-effort fan-out account.deprovision;
 * unlink несвязанного сервера → 404 ACCOUNT_SERVER_LINK_NOT_FOUND.
 """
 
@@ -17,12 +18,11 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from src.core.constants import Action, EntityType
-from src.models import ServerAccount
+from src.models import ServerAccountServer
 from src.schemas.identity import IdentityContext
 from src.schemas.server_account import ServerAccountServersUpdate, ServerAccountUpdate
 from src.services import server_account as svc
-from src.core.exceptions import ConflictError, NotFoundError
+from src.core.exceptions import NotFoundError
 
 
 def _make_identity(*, dept: str, user_id: str | None = None) -> IdentityContext:
@@ -116,19 +116,100 @@ class TestUpdateAccountNoop:
 
 
 class TestUnlinkServersEdgeCases:
-    async def test_unlink_last_server_raises_conflict(
-        self, db, make_server, make_account,
+    async def test_unlink_last_server_allowed_and_fans_out_deprovision(
+        self, db, make_server, make_account, monkeypatch,
     ):
+        """Отвязка последней связки разрешена: связка снимается, а на бокс,
+        где OS-учётка стояла (present_on_server=True по дефолту), идёт
+        best-effort `account.deprovision`."""
+        from src.services import worker_client
+
+        dispatched: list[dict] = []
+
+        async def fake_dispatch_with_hit(*, db=None, task_kind, target_server_id,
+                                         payload, created_by, request_id,
+                                         target_resource_id=None,
+                                         idempotency_key=None, priority=0):
+            dispatched.append({
+                "task_kind": task_kind,
+                "target_server_id": target_server_id,
+                "target_resource_id": target_resource_id,
+                "payload": payload,
+            })
+            return (f"tsk_{task_kind.replace('.', '_')}_{len(dispatched)}", False)
+
+        monkeypatch.setattr(
+            worker_client, "dispatch_task_with_hit", fake_dispatch_with_hit,
+        )
+
         srv = await make_server(department_id="dep_a")
         acc = await make_account(server_id=srv.id, login="last_link")
         identity = _make_identity(dept="dep_a")
 
-        with pytest.raises(ConflictError) as exc_info:
-            await svc.unlink_servers(
-                db, identity, acc.id,
-                ServerAccountServersUpdate(server_ids=[srv.id]),
+        obj = await svc.unlink_servers(
+            db, identity, acc.id,
+            ServerAccountServersUpdate(server_ids=[srv.id]),
+        )
+
+        # Аккаунт остался, но связок больше нет.
+        assert obj.id == acc.id
+        link = (await db.execute(
+            select(ServerAccountServer).where(
+                ServerAccountServer.account_id == acc.id,
+                ServerAccountServer.server_id == srv.id,
             )
-        assert exc_info.value.error_code == "ACCOUNT_NO_SERVERS"
+        )).scalar_one_or_none()
+        assert link is None
+
+        # На бокс ушёл deprovision (userdel), т.к. учётка была present_on_server.
+        deprov = [c for c in dispatched if c["task_kind"] == "account.deprovision"]
+        assert len(deprov) == 1
+        assert deprov[0]["target_server_id"] == srv.id
+        assert deprov[0]["target_resource_id"] == acc.id
+        assert deprov[0]["payload"]["login"] == "last_link"
+
+    async def test_unlink_last_server_no_deprovision_when_absent(
+        self, db, make_server, make_account, monkeypatch,
+    ):
+        """Если учётки на боксе нет (present_on_server=False) — связку снимаем,
+        но userdel не ставим (нечего удалять)."""
+        from src.services import worker_client
+
+        dispatched: list[dict] = []
+
+        async def fake_dispatch_with_hit(**kwargs):
+            dispatched.append(kwargs)
+            return ("tsk_x", False)
+
+        monkeypatch.setattr(
+            worker_client, "dispatch_task_with_hit", fake_dispatch_with_hit,
+        )
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="absent_link")
+        # Учётки на боксе нет.
+        link = (await db.execute(
+            select(ServerAccountServer).where(
+                ServerAccountServer.account_id == acc.id,
+                ServerAccountServer.server_id == srv.id,
+            )
+        )).scalar_one()
+        link.present_on_server = False
+        await db.flush()
+
+        identity = _make_identity(dept="dep_a")
+        await svc.unlink_servers(
+            db, identity, acc.id,
+            ServerAccountServersUpdate(server_ids=[srv.id]),
+        )
+
+        remaining = (await db.execute(
+            select(ServerAccountServer).where(
+                ServerAccountServer.account_id == acc.id,
+            )
+        )).scalars().all()
+        assert remaining == []
+        assert dispatched == []
 
     async def test_unlink_not_linked_server_raises_404(
         self, db, make_server, make_account,

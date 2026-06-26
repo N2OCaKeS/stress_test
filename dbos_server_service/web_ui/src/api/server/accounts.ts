@@ -360,8 +360,9 @@ export function bindAccountServers(
  * — отвязка идёт батчем. Wrapper экспортирует single-server форму для
  * UI-удобства, поэтому одиночный `serverId` оборачивается в массив.
  *
- * Нельзя отвязать последний сервер — 409 `ACCOUNT_NO_SERVERS`. На реальном
- * сервере OS-аккаунт не удаляется (для этого `/deprovision`).
+ * Снимает связку немедленно; можно отвязать и последний сервер (карточка
+ * аккаунта остаётся в БД без серверов до отдельного delete). Если OS-аккаунт
+ * реально стоял на боксе, backend best-effort ставит `userdel` на этот сервер.
  */
 export function unbindAccountServer(
   accountId: string,

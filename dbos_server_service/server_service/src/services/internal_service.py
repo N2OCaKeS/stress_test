@@ -1342,6 +1342,26 @@ async def record_provision_status(
     # `get_for_update`). Лок сериализует их без потерь.
     account = await account_repo.get_for_update(db, account_id)
     link = await account_repo.get_link(db, account_id, server_id)
+    if account is not None and link is None and not payload.present:
+        # Deprovision-callback на уже снятой связке: user-facing deprovision /
+        # unbind удаляют связку сразу при постановке userdel'а, не дожидаясь
+        # callback'а. К моменту, как worker подтвердит `present=False`, связки
+        # уже нет — но целевое состояние (учётки на сервере нет) достигнуто,
+        # поэтому отвечаем идемпотентным 200, а не 404.
+        audit_service.emit(
+            "server_account.provision_status",
+            target_id=account_id, target_type="server_account",
+            status="success", allowed=True,
+            details={
+                "reason": "link_already_removed",
+                "server_id": server_id,
+                "operation": payload.operation,
+                "present_on_server": False,
+                "department_id": server_department_id,
+                "caller_type": identity.subject_type,
+            },
+        )
+        return {"ok": True, "present_on_server": False}
     if account is None or link is None:
         audit_service.emit(
             "server_account.provision_status",

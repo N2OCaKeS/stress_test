@@ -130,7 +130,10 @@ async def list_installed_packages(
         default="*",
         min_length=1,
         max_length=128,
-        description="Shell-glob паттерн (`htop`, `linux-image*`, `*-dev`). По умолчанию `*` — все пакеты.",
+        description=(
+            "Shell-glob паттерн(ы). Несколько масок — через пробел "
+            "(`bash* ssh*`): worker матчит ПО ЛЮБОЙ (OR). По умолчанию `*` — все пакеты."
+        ),
     ),
     db: AsyncSession = Depends(get_db),
 ) -> ServerTaskDispatchResponse:
@@ -158,7 +161,11 @@ async def list_installed_packages(
     # существование сервера. Без неё shell-injection в dpkg-cmd через
     # `pattern=; rm -rf /` теоретически возможен, хотя `asyncssh.run` не
     # запускает shell. Defence-in-depth.
-    if not _PATTERN_RE.match(pattern):
+    #
+    # Маски разделяются whitespace'ом (`bash* ssh*`) — каждую валидируем
+    # отдельно, в payload уходит список `patterns` (worker OR-матчит по ним).
+    patterns = pattern.split()
+    if not patterns or not all(_PATTERN_RE.match(p) for p in patterns):
         raise DomainValidationError(
             error_code="INVALID_PATTERN",
             message="pattern must match [A-Za-z0-9._\\-+*?\\[\\]]+",
@@ -214,7 +221,8 @@ async def list_installed_packages(
 
     # 4. Dispatch + audit — общая обвязка в `_dispatch.dispatch_server_ssh_task`.
     # На managed-сервере worker заходит по ключу — аккаунта в payload нет.
-    # `pattern`/`max_rows` едут доп-payload'ом, `pattern` дублируется в success.
+    # `patterns`/`max_rows` едут доп-payload'ом; worker OR-матчит по списку масок.
+    # Дублируем `pattern` (raw query) для back-compat в payload и success-audit.
     task_id, _ = await dispatch_server_ssh_task(
         db=db, identity=identity, request=request,
         server=server,
@@ -222,6 +230,7 @@ async def list_installed_packages(
         audit_action=audit_action,
         resolved_account_id=None,
         extra_payload={
+            "patterns": patterns,
             "pattern": pattern,
             "max_rows": _MAX_INSTALLED_PACKAGES_ROWS,
         },

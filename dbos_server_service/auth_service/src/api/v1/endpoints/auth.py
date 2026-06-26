@@ -3,7 +3,7 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Body, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import text
@@ -260,9 +260,9 @@ async def login(
     },
 )
 async def refresh(
-    body: RefreshRequest,
     request: Request,
     response: Response,
+    body: RefreshRequest | None = Body(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> RefreshResponse:
     """Обновить access через refresh.
@@ -287,9 +287,11 @@ async def refresh(
         * `USER_BLOCKED` (403) — юзер заблокирован; сессия отзывается.
     """
     # Body имеет приоритет над cookie — старые клиенты, которые ещё шлют
-    # refresh в теле, продолжают работать. Новый UI пустой body шлёт намеренно,
-    # cookie приедет на /api/auth/v1 благодаря path scope.
-    raw_refresh = body.refresh_token or request.cookies.get(REFRESH_COOKIE_NAME)
+    # refresh в теле, продолжают работать. Новый UI шлёт пустой body или вовсе
+    # без тела, cookie приедет на /api/auth/v1 благодаря path scope. Поэтому
+    # body опционален: при отсутствии тела FastAPI не должен резать запрос 422,
+    # иначе cookie-флоу недостижим.
+    raw_refresh = (body.refresh_token if body else None) or request.cookies.get(REFRESH_COOKIE_NAME)
     if not raw_refresh:
         raise DomainValidationError(
             error_code="MISSING_REFRESH_TOKEN",
@@ -313,9 +315,9 @@ async def refresh(
     description="Инвалидирует переданный refresh. Access живёт до истечения TTL — короткий, 10 мин по умолчанию (в dev-стеке переопределён на 60).",
 )
 async def logout(
-    body: LogoutRequest,
     request: Request,
     response: Response,
+    body: LogoutRequest | None = Body(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
     """Logout — отозвать refresh.
@@ -327,7 +329,7 @@ async def logout(
     Доступ:
         Публичный. Параметр — сам refresh, для несуществующего тихо ok.
     """
-    raw_refresh = body.refresh_token or request.cookies.get(REFRESH_COOKIE_NAME)
+    raw_refresh = (body.refresh_token if body else None) or request.cookies.get(REFRESH_COOKIE_NAME)
     if not raw_refresh:
         # Нет refresh ни в body, ни в cookie — юзер уже фактически разлогинен
         # (например, повторный POST /logout после успешного первого, или

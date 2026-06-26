@@ -86,8 +86,8 @@ class InventoryCallbackRequest(BaseModel):
         ...,
         min_length=1,
         max_length=128,
-        pattern=r"^[A-Za-z0-9._\- ]+$",
-        description="OS-версия для lookup в os_versions.name.",
+        pattern=r"^[\w./()+,:\- ]+$",
+        description="OS-версия для lookup в os_versions.name (строка из PRETTY_NAME os-release).",
     )
     disks: list[InventoryDiskItem] = Field(
         default_factory=list,

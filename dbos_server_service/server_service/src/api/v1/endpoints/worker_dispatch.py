@@ -2384,7 +2384,8 @@ async def account_update_on_host_dispatch(
         "`server_id` (query) обязателен и должен быть привязан. `remove_home` "
         "(query, дефолт false) — удалять ли home-директорию. Идемпотентно: "
         "если пользователя на боксе уже нет — worker не падает. Связку "
-        "аккаунт ↔ сервер эта операция НЕ снимает (для отвязки — `/servers`).\n\n"
+        "аккаунт ↔ сервер снимаем сразу после постановки userdel'а — deprovision "
+        "и есть полная отвязка от сервера.\n\n"
         "Триггер гейтится `(server_account, *, deprovision)` — отдельным "
         "действием ролевой матрицы (или прямым per-account грантом)."
     ),
@@ -2427,6 +2428,13 @@ async def account_deprovision_dispatch(
         # userdel home не использует — флаг отдельный (`remove_home`).
         include_home_dir=False,
     )
+    # Снос OS-учётки поставлен в очередь — сразу снимаем связку аккаунт ↔ сервер
+    # в БД. До этого deprovision лишь ставил present_on_server=False, связка
+    # висела вечно; теперь deprovision и есть полная отвязка от сервера.
+    link = await account_repo.get_link(db, account_id, server_id)
+    if link is not None:
+        await db.delete(link)
+        await db.commit()
     return AccountProvisionDispatchResponse(**result)
 
 

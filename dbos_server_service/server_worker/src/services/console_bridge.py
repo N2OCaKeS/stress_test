@@ -16,7 +16,8 @@ Redis pub/sub. server_service на connect генерит `session_id`, публ
 Жизненный цикл сессии (`_ConsoleSession`):
 
   start → прочитать креды аккаунта из Redis-stash (по `creds_stash_key` из
-  start-сообщения) → SSH connect под логином аккаунта (password-auth) →
+  start-сообщения) → SSH connect под логином аккаунта (ключ аккаунта, иначе
+  пароль) →
   `open_pty` (invoke_shell) → две задачи-помпы (in→pty, pty→out) +
   watchdog idle/max-lifetime → teardown гарантированно закрывает SSH-канал и
   снимает подписки.
@@ -29,11 +30,14 @@ per-command аудите, который виден только ему (server_
 не получает).
 
 Консоль подключается под ВЫБРАННЫМ server_account, не под управляющим dbos.
-server_service резолвит логин/пароль аккаунта и кладёт их в Redis-stash
-(`dbos:console_creds:<ccd_id>`, envelope-шифрование, AAD по stash-id); worker
-читает их одной операцией, коннектится по password-auth и тут же удаляет
-ключ. Prepare для консоли не требуется — управляющий ключ в этот поток не
-вовлечён.
+server_service резолвит логин аккаунта вместе с его паролем и приватным
+ключом и кладёт их в Redis-stash (`dbos:console_creds:<ccd_id>`,
+envelope-шифрование, AAD по stash-id); worker читает их одной операцией и
+коннектится под аккаунтом. Управляемый бокс после prepare держит
+`PasswordAuthentication no`, поэтому приоритет — вход по ключу аккаунта;
+пароль остаётся запасным каналом для неуправляемых серверов. После чтения
+stash удаляется. Prepare для консоли не требуется — управляющий ключ в этот
+поток не вовлечён.
 """
 
 from __future__ import annotations
@@ -46,6 +50,8 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
+
+import asyncssh
 
 from src.clients.ssh import SshClient, SshError
 from src.core.config import get_settings
@@ -254,6 +260,7 @@ class _ConsoleSession:
     port: int
     login: str
     password: str
+    ssh_private_key: str | None = None
     server_id: str | None = None
     department_id: str | None = None
     actor_id: str | None = None
@@ -280,11 +287,17 @@ class _ConsoleSession:
         reason = "error"
         try:
             await self._resolve_creds()
+            # Управляемый бокс после prepare держит `PasswordAuthentication no` —
+            # вход возможен только по ключу аккаунта. Когда server_service положил
+            # в stash приватный ключ, коннектимся по нему; пароль остаётся
+            # запасным каналом для неуправляемых серверов с парольным входом.
+            client_keys = self._load_client_keys()
             self._ssh = SshClient(
                 host=self.host,
                 username=self.login,
-                password=self.password,
+                password=self.password or None,
                 port=self.port,
+                client_keys=client_keys,
             )
             await self._ssh.connect()
             self._process = await self._ssh.open_pty()
@@ -313,11 +326,14 @@ class _ConsoleSession:
         return reason
 
     async def _resolve_creds(self) -> None:
-        """Прочитать логин/пароль аккаунта из Redis-stash и сразу удалить ключ.
+        """Прочитать креды аккаунта из Redis-stash и сразу удалить ключ.
 
         Креды одноразовые: после чтения ключ DEL'ится (даже если что-то
         дальше упадёт — TTL подчистит). Нет ключа (TTL/Redis-restart) →
-        `SshError(CONSOLE_CREDS_MISSING)`; нет пароля у аккаунта →
+        `SshError(CONSOLE_CREDS_MISSING)`. Управляемый бокс после prepare
+        принимает только ключевой вход (`PasswordAuthentication no`), поэтому
+        приоритетно используем приватный ключ аккаунта; пароль — запасной канал
+        для неуправляемых серверов. Если нет ни ключа, ни пароля —
         `SshError(CONSOLE_PASSWORD_MISSING)`. `_build_session_from_start` уже
         гарантировал, что `creds_stash_key` задан.
         """
@@ -325,23 +341,45 @@ class _ConsoleSession:
             return
         stash_key = self.creds_stash_key
         try:
-            login, password, _ssh_key = await _read_console_creds(stash_key)
+            login, password, ssh_key = await _read_console_creds(stash_key)
         finally:
             await _delete_console_creds(stash_key)
-        if login is None or password is None:
+        if login is None:
             raise SshError(
                 error_code="CONSOLE_CREDS_MISSING",
                 host=self.host,
                 message="console credentials are missing or expired in stash",
             )
-        if not password:
+        if not password and not ssh_key:
             raise SshError(
                 error_code="CONSOLE_PASSWORD_MISSING",
                 host=self.host,
-                message="selected account has no password for console",
+                message="selected account has neither password nor ssh key for console",
             )
         self.login = login
-        self.password = password
+        self.password = password or ""
+        self.ssh_private_key = ssh_key
+
+    def _load_client_keys(self) -> list | None:
+        """Импортировать приватный ключ аккаунта из PEM-строки для asyncssh.
+
+        В stash ключ лежит как PEM-текст. `client_keys` у asyncssh трактует
+        голую строку как путь к файлу, поэтому импортируем её в key-объект
+        явно. Битый/нечитаемый ключ → `SshError(CONSOLE_KEY_INVALID)` —
+        сессия фейлится понятным кодом, а не пытается войти по паролю на боксе,
+        где парольный вход выключен.
+        """
+        if not self.ssh_private_key:
+            return None
+        try:
+            key = asyncssh.import_private_key(self.ssh_private_key)
+        except (asyncssh.KeyImportError, ValueError, TypeError) as exc:
+            raise SshError(
+                error_code="CONSOLE_KEY_INVALID",
+                host=self.host,
+                message=f"console ssh key import failed: {type(exc).__name__}",
+            ) from exc
+        return [key]
 
     async def _pump(self) -> str:
         """Запустить помпы in→pty, pty→out и watchdog; ждать первого финиша."""

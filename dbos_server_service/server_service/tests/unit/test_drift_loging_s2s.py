@@ -77,6 +77,9 @@ async def test_fetch_drift_uses_internal_path_and_service_identity(monkeypatch):
     assert captured["authorization"] == "Bearer test-read-key"
     assert captured["identity"] == "server_service"
     assert captured["params"]["action"] == "server_account.drift_detected"
+    # loging internal /events требует service+action оба — без `service` он
+    # отбивал 422 и drift отдавал 503.
+    assert captured["params"]["service"] == "server_service"
     assert captured["params"]["target_id"] == "srv_test"
     # Локальный фильтр оставляет только события целевого сервера.
     assert len(events) == 1

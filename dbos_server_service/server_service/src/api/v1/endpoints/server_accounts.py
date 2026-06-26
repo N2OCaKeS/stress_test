@@ -449,24 +449,29 @@ async def link_servers(
     response_model=ServerAccountResponse,
     summary="Отвязать аккаунт от серверов",
     description=(
-        "Снимает связки аккаунт ↔ сервер. Нельзя отвязать последний сервер — "
-        "аккаунт должен жить хотя бы на одном (иначе 409 ACCOUNT_NO_SERVERS). "
-        "На реальном сервере OS-аккаунт не удаляется. Гейтится `update`."
+        "Снимает связки аккаунт ↔ сервер немедленно. Можно отвязать и последний "
+        "сервер — аккаунт остаётся в БД без серверов (карточка живёт до "
+        "отдельного delete). Если OS-учётка реально стояла на боксе "
+        "(`present_on_server`), на него best-effort ставится `account.deprovision` "
+        "(userdel). Гейтится `update`."
     ),
     responses={
         403: {"description": "Нет `update`."},
-        404: {"description": "Аккаунт не найден / чужой dept."},
-        409: {"description": "ACCOUNT_NO_SERVERS — попытка снять последнюю связку."},
+        404: {"description": "Аккаунт не найден / чужой dept, либо один из server_id не привязан."},
     },
 )
 async def unlink_servers(
     account_id: str,
     body: ServerAccountServersUpdate,
     identity: CurrentUserIdentity,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountResponse:
     """Отвязка серверов. Доступ: `(server_account, *, update)`."""
-    obj = await svc.unlink_servers(db, identity, account_id, body)
+    obj = await svc.unlink_servers(
+        db, identity, account_id, body,
+        request_id=getattr(request.state, "request_id", None),
+    )
     return _to_response(obj)
 
 

@@ -498,12 +498,147 @@ async def test_resolve_creds_reads_stash_and_connects_under_account(monkeypatch)
     # Коннект под логином/паролем аккаунта, не под dbos-ключом.
     assert captured["ssh_kwargs"]["username"] == "svcuser"
     assert captured["ssh_kwargs"]["password"] == "svcpass"
-    assert "client_keys" not in captured["ssh_kwargs"]
+    # Ключа в stash не было — коннект только по паролю.
+    assert captured["ssh_kwargs"].get("client_keys") is None
     # Stash прочитан и удалён (креды одноразовые).
     assert captured["read_key"] == "dbos:console_creds:ccd_x"
     assert captured["deleted_key"] == "dbos:console_creds:ccd_x"
     assert fake_ssh.connected is True
     assert reason == "idle_timeout"
+
+
+def _make_test_private_key_pem() -> str:
+    """Сгенерировать валидный ed25519-PEM для import_private_key."""
+    import asyncssh
+
+    key = asyncssh.generate_private_key("ssh-ed25519")
+    pem = key.export_private_key()
+    return pem.decode("ascii") if isinstance(pem, (bytes, bytearray)) else pem
+
+
+@pytest.mark.asyncio
+async def test_resolve_creds_connects_by_key_when_stash_has_private_key(monkeypatch):
+    """Управляемый бокс (PasswordAuthentication no): коннект по ключу аккаунта.
+
+    Регрессия консоли — server_service кладёт в stash приватный ключ, но worker
+    раньше игнорировал его и пытался войти по паролю, который бокс после prepare
+    не принимает. Теперь ключ из stash импортируется и идёт в client_keys.
+    """
+    pem = _make_test_private_key_pem()
+    captured: dict = {}
+
+    async def fake_read(stash_key):
+        return "svcuser", "svcpass", pem
+
+    async def fake_delete(stash_key):
+        pass
+
+    monkeypatch.setattr(console_bridge, "_read_console_creds", fake_read)
+    monkeypatch.setattr(console_bridge, "_delete_console_creds", fake_delete)
+
+    class _BlockingStdout:
+        async def read(self, n):
+            await asyncio.sleep(3600)
+
+    process = _FakeProcess(out_chunks=[])
+    process.stdout = _BlockingStdout()
+    fake_ssh = _FakeSsh(process)
+
+    def _ssh_factory(**kwargs):
+        captured["ssh_kwargs"] = kwargs
+        return fake_ssh
+
+    monkeypatch.setattr(console_bridge, "SshClient", _ssh_factory)
+    redis = _FakeRedis(_FakePubSub([]))
+    monkeypatch.setattr(console_bridge.redis_pool, "get_redis", lambda: redis)
+    monkeypatch.setattr(console_bridge.redis_pool, "get_pubsub_redis", lambda: redis)
+
+    session = console_bridge._ConsoleSession(
+        session_id="csn_key", host="h", port=22, login="", password="",
+        creds_stash_key="dbos:console_creds:ccd_key", idle_timeout=0.3, max_lifetime=5.0,
+    )
+    reason = await asyncio.wait_for(session.run(), timeout=5.0)
+
+    client_keys = captured["ssh_kwargs"].get("client_keys")
+    assert client_keys is not None and len(client_keys) == 1
+    # В client_keys едет импортированный key-объект, не сырая PEM-строка.
+    assert not isinstance(client_keys[0], str)
+    assert captured["ssh_kwargs"]["username"] == "svcuser"
+    assert fake_ssh.connected is True
+    assert reason == "idle_timeout"
+
+
+@pytest.mark.asyncio
+async def test_resolve_creds_key_only_no_password(monkeypatch):
+    """Аккаунт без пароля, только ключ — коннект всё равно поднимается."""
+    pem = _make_test_private_key_pem()
+    captured: dict = {}
+
+    async def fake_read(stash_key):
+        return "svcuser", None, pem
+
+    async def fake_delete(stash_key):
+        pass
+
+    monkeypatch.setattr(console_bridge, "_read_console_creds", fake_read)
+    monkeypatch.setattr(console_bridge, "_delete_console_creds", fake_delete)
+
+    class _BlockingStdout:
+        async def read(self, n):
+            await asyncio.sleep(3600)
+
+    process = _FakeProcess(out_chunks=[])
+    process.stdout = _BlockingStdout()
+    fake_ssh = _FakeSsh(process)
+
+    def _ssh_factory(**kwargs):
+        captured["ssh_kwargs"] = kwargs
+        return fake_ssh
+
+    monkeypatch.setattr(console_bridge, "SshClient", _ssh_factory)
+    redis = _FakeRedis(_FakePubSub([]))
+    monkeypatch.setattr(console_bridge.redis_pool, "get_redis", lambda: redis)
+    monkeypatch.setattr(console_bridge.redis_pool, "get_pubsub_redis", lambda: redis)
+
+    session = console_bridge._ConsoleSession(
+        session_id="csn_keyonly", host="h", port=22, login="", password="",
+        creds_stash_key="dbos:console_creds:ccd_keyonly", idle_timeout=0.3, max_lifetime=5.0,
+    )
+    reason = await asyncio.wait_for(session.run(), timeout=5.0)
+
+    # Пароля нет → password=None, но коннект идёт по ключу.
+    assert captured["ssh_kwargs"]["password"] is None
+    assert captured["ssh_kwargs"].get("client_keys") is not None
+    assert reason == "idle_timeout"
+
+
+@pytest.mark.asyncio
+async def test_resolve_creds_no_password_no_key_errors(monkeypatch):
+    """Ни пароля, ни ключа — сессия фейлится CONSOLE_PASSWORD_MISSING."""
+    async def fake_read(stash_key):
+        return "svcuser", None, None
+
+    async def fake_delete(stash_key):
+        pass
+
+    monkeypatch.setattr(console_bridge, "_read_console_creds", fake_read)
+    monkeypatch.setattr(console_bridge, "_delete_console_creds", fake_delete)
+    redis = _FakeRedis(_FakePubSub([]))
+    monkeypatch.setattr(console_bridge.redis_pool, "get_redis", lambda: redis)
+    monkeypatch.setattr(console_bridge.redis_pool, "get_pubsub_redis", lambda: redis)
+
+    session = console_bridge._ConsoleSession(
+        session_id="csn_nocreds2", host="h", port=22, login="", password="",
+        creds_stash_key="dbos:console_creds:ccd_empty",
+    )
+    reason = await asyncio.wait_for(session.run(), timeout=5.0)
+    assert reason == "error"
+    ctl_ch = console_bridge.ctl_channel("csn_nocreds2")
+    events = [json.loads(m) for ch, m in redis.published if ch == ctl_ch]
+    assert any(
+        e.get("event") == "error" and e.get("error_code") == "CONSOLE_PASSWORD_MISSING"
+        for e in events
+    )
 
 
 @pytest.mark.asyncio

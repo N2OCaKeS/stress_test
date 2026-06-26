@@ -1429,8 +1429,8 @@ class TestLinkUnlinkServers:
         )
         assert_error(resp, 403, "PERMISSION_DENIED")
 
-    async def test_unlink_removes_server(
-        self, client, operator_token_a, make_server, make_account,
+    async def test_unlink_removes_server_and_dispatches_deprovision(
+        self, client, operator_token_a, make_server, make_account, captured_dispatch,
     ):
         srv1 = await make_server(department_id="dep_a")
         srv2 = await make_server(department_id="dep_a")
@@ -1443,10 +1443,18 @@ class TestLinkUnlinkServers:
         )
         assert resp.status_code == 200
         assert resp.json()["server_ids"] == [srv1.id]
+        # Учётка стояла на srv2 (present_on_server=True по дефолту) — отвязка
+        # сразу ставит userdel на этот бокс, чтобы юзер не остался на хосте.
+        deprov = [c for c in captured_dispatch if c["task_kind"] == "account.deprovision"]
+        assert len(deprov) == 1
+        assert deprov[0]["target_server_id"] == srv2.id
 
-    async def test_unlink_last_server_409(
-        self, client, operator_token_a, make_server, make_account,
+    async def test_unlink_last_server_allowed(
+        self, client, operator_token_a, make_server, make_account, captured_dispatch,
     ):
+        """Последнюю связку теперь можно снять — аккаунт остаётся в БД без
+        серверов (карточка живёт до отдельного delete), а на боксе ставится
+        userdel."""
         srv = await make_server(department_id="dep_a")
         acc = await make_account(server_id=srv.id, login="ops")
         resp = await client.request(
@@ -1455,7 +1463,11 @@ class TestLinkUnlinkServers:
             headers=_hdr(operator_token_a),
             json={"server_ids": [srv.id]},
         )
-        assert_error(resp, 409, "ACCOUNT_NO_SERVERS")
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["server_ids"] == []
+        deprov = [c for c in captured_dispatch if c["task_kind"] == "account.deprovision"]
+        assert len(deprov) == 1
+        assert deprov[0]["target_server_id"] == srv.id
 
     async def test_unlink_cross_dept_account_404(
         self, client, operator_token_a, make_server, make_account,

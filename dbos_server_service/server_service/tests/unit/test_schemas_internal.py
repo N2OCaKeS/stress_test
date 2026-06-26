@@ -47,9 +47,26 @@ class TestInventoryCallbackOsVersion:
         with pytest.raises(ValidationError):
             InventoryCallbackRequest(**{**_BASE, "os_version": "Astra; rm -rf /"})
 
-    def test_os_version_with_unicode_rejected(self):
+    def test_os_version_pretty_name_with_slash_and_parens_accepted(self):
+        # Реальный PRETTY_NAME Debian/Astra несёт `/` и скобки — раньше схема
+        # их резала и инвентаризация падала 422.
+        value = "Debian GNU/Linux 13 (trixie)"
+        m = InventoryCallbackRequest(**{**_BASE, "os_version": value})
+        assert m.os_version == value
+
+    def test_os_version_cyrillic_release_name_accepted(self):
+        # Astra SE отдаёт уровень защищённости в PRETTY_NAME кириллицей: `(Орёл)`.
+        value = "Astra Linux SE 1.7 (Орёл)"
+        m = InventoryCallbackRequest(**{**_BASE, "os_version": value})
+        assert m.os_version == value
+
+    def test_os_version_with_pipe_rejected(self):
         with pytest.raises(ValidationError):
-            InventoryCallbackRequest(**{**_BASE, "os_version": "Астра 1.7"})
+            InventoryCallbackRequest(**{**_BASE, "os_version": "Astra|cat"})
+
+    def test_os_version_with_dollar_rejected(self):
+        with pytest.raises(ValidationError):
+            InventoryCallbackRequest(**{**_BASE, "os_version": "Astra$(whoami)"})
 
     def test_os_version_over_max_length_rejected(self):
         with pytest.raises(ValidationError):

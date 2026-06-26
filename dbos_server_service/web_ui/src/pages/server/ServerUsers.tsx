@@ -1629,14 +1629,10 @@ function ServersSection({
 
   async function handleUnbind(serverId: string) {
     if (!canOperate) return;
-    if (account.server_ids.length <= 1) {
-      toast.error("Нельзя отвязать последний сервер аккаунта.");
-      return;
-    }
     if (
       !(await confirm({
         title: "Отвязать сервер",
-        message: `Отвязать аккаунт ${account.login} от ${serverName(serverId)}? Связка снимется, OS-юзер на боксе останется (для удаления — Deprovision).`,
+        message: `Отвязать аккаунт ${account.login} от ${serverName(serverId)}? Связка снимется, OS-юзер на боксе будет удалён (userdel), если он там стоял.`,
         confirmLabel: "Отвязать",
         danger: true,
       }))
@@ -1758,13 +1754,8 @@ function ServersSection({
                 </button>
                 <button
                   className="btn btn-sm btn-danger flex items-center gap-1"
-                  disabled={disabled || account.server_ids.length <= 1}
-                  title={
-                    noPrivReason ??
-                    (account.server_ids.length <= 1
-                      ? "Нельзя отвязать последний сервер"
-                      : "Снять связку (OS-юзер остаётся)")
-                  }
+                  disabled={disabled}
+                  title={noPrivReason ?? "Снять связку + userdel на боксе"}
                   onClick={() => handleUnbind(sid)}
                   type="button"
                 >

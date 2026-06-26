@@ -62,3 +62,24 @@ async def test_refresh_missing_token_returns_422(client, account_admin):
     resp = await client.post(URL, json={})
     assert resp.status_code == 422
     assert resp.json()["error_code"] == "MISSING_REFRESH_TOKEN"
+
+
+async def test_refresh_no_body_uses_cookie(client, account_admin):
+    """POST вообще без тела (ни json, ни content) должен схватить cookie.
+
+    Раньше отсутствие тела ловилось FastAPI как `body: Field required` 422
+    ещё до хендлера, и cookie-флоу был недостижим. Body теперь опционален.
+    """
+    await _login(client)
+    resp = await client.post(URL)
+    assert resp.status_code == 200
+    assert "access_token" in resp.json()
+
+
+async def test_refresh_no_body_no_cookie_returns_domain_422(client, account_admin):
+    """Без тела и без cookie — доходим до хендлера и получаем доменный
+    MISSING_REFRESH_TOKEN, а не сырой FastAPI `Field required`."""
+    client.cookies.clear()
+    resp = await client.post(URL)
+    assert resp.status_code == 422
+    assert resp.json()["error_code"] == "MISSING_REFRESH_TOKEN"

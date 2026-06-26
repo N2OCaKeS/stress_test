@@ -237,6 +237,8 @@ Auth: AnyAdmin. `account_admin` — любой юзер; `department_admin` — 
 
 Admin-вариант — для смены чужого пароля. Для self-reset используется `POST /users/me/password` (требует подтверждения старого пароля).
 
+После успеха — revoke всех активных сессий юзера и всех его PAT'ов (`revoked_reason="admin_reset"`, unban их не воскрешает), `must_change_password=True`, сброс identity-кэша. Bot-токены не трогаются (dept-owned). Audit `user.password_reset` (CRITICAL) с `sessions_revoked=true`, `tokens_revoked=true`, `pat_revoked_count`.
+
 Errors: `USER_NOT_FOUND` (404), `USER_RESET_PASSWORD_FORBIDDEN` (403) — department_admin лезет в чужой отдел, `ACTOR_VANISHED` (401) — actor-юзер удалён между JWT-выдачей и вызовом.
 
 ### `POST /users/{user_id}/force-password-change`
@@ -255,7 +257,7 @@ Auth: Bearer (user-context, m2m отбивается). Body:
 { "old_password": "...", "new_password": "<min 12, буквы + цифры>" }
 ```
 
-Self-reset пароля с обязательным подтверждением `old_password`. После успеха — revoke всех активных сессий юзера (включая текущую), PAT остаются валидными. Audit `user.self_password_reset` (CRITICAL) с `caller_is_admin` в details для SIEM-фильтра по admin-self-reset'ам.
+Self-reset пароля с обязательным подтверждением `old_password`. После успеха — revoke всех активных сессий юзера (включая текущую) и всех его PAT'ов (`revoked_reason="admin_reset"`): угнанный access-токен не должен переживать смену пароля созданием PAT'а до неё. Bot-токены не трогаются (dept-owned). Audit `user.self_password_reset` (CRITICAL) с `caller_is_admin`, `tokens_revoked=true`, `pat_revoked_count` в details для SIEM-фильтра по admin-self-reset'ам.
 
 Errors: `INVALID_OLD_PASSWORD` (401, инкрементит lockout-счётчик), `SAME_PASSWORD` (422), `ACCOUNT_TEMPORARILY_LOCKED` (429 + `retry_after_seconds`), `USER_NOT_FOUND` (404).
 

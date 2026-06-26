@@ -49,8 +49,9 @@
 | Ingest | `INGEST_RATE_LIMIT` | `100/minute` per X-Service-Identity | `POST /events` |
 | Register events | `REGISTER_EVENTS_RATE_LIMIT` | `100/minute` per X-Service-Identity | `POST /services/{service}/events` |
 | Audit query | `AUDIT_QUERY_RATE_LIMIT` | `100/minute` per user (`sub` из introspect, fallback на IP) | `GET /events`, `GET /events/stats`, `GET /events/export`, `GET /rules`, `GET /rules/{id}`, `GET /services`, `GET /services/{service}/events`, `GET /retention` |
+| Rule write | `RULE_WRITE_RATE_LIMIT` | `30/minute` per user (`sub` из introspect, fallback на IP) | `POST /rules`, `PATCH /rules/{id}`, `DELETE /rules/{id}` |
 
-Write-эндпоинты `/rules` (POST/PATCH/DELETE) и `/retention` (PUT/DELETE) **без** rate-limit — by-design: admin-операции выполняются вручную, утечка admin-токена детектится не RL'ом, а audit-каналом.
+Write-эндпоинты `/retention` (PUT/DELETE) — **без** rate-limit by-design: admin-операции выполняются вручную, утечка admin-токена детектится audit-каналом. Запись правил (`/rules`) лимитируется `RULE_WRITE_RATE_LIMIT`: компрометация `loging_admin`-токена позволяет флудить write'ами (каждый сбрасывает rule-cache и бьёт по БД), поэтому здесь RL — дополнительный rate-cap поверх audit-детекта.
 
 ---
 
@@ -150,9 +151,9 @@ Write-эндпоинты `/rules` (POST/PATCH/DELETE) и `/retention` (PUT/DELET
 |---|---|---|---|---|
 | GET | `/rules` | `loging_admin` | `RuleListResponse` (items+`has_more`+`limit`+`offset`+`total`) | 401/403 auth, `INSUFFICIENT_ROLE`, `RATE_LIMIT_EXCEEDED` |
 | GET | `/rules/{rule_id}` | `loging_admin` | `RuleResponse` | + `RULE_NOT_FOUND`, `RATE_LIMIT_EXCEEDED` |
-| POST | `/rules` | `loging_admin` | 201 `RuleResponse` | + `RULE_NAME_CONFLICT`, `EFFECT_SEVERITY_REQUIRED`, `EFFECT_SEVERITY_NOT_ALLOWED`, `UNKNOWN_MATCH_ACTION`, `VALIDATION_ERROR`, `INTERNAL_ERROR` |
-| PATCH | `/rules/{rule_id}` | `loging_admin` | `RuleResponse` | + `RULE_NOT_FOUND`, `RULE_NAME_CONFLICT`, `EFFECT_SEVERITY_REQUIRED`, `EFFECT_SEVERITY_NOT_ALLOWED`, `UNKNOWN_MATCH_ACTION`, `INTERNAL_ERROR` |
-| DELETE | `/rules/{rule_id}` | `loging_admin` | 204 | + `RULE_NOT_FOUND` |
+| POST | `/rules` | `loging_admin` | 201 `RuleResponse` | + `RULE_NAME_CONFLICT`, `EFFECT_SEVERITY_REQUIRED`, `EFFECT_SEVERITY_NOT_ALLOWED`, `UNKNOWN_MATCH_ACTION`, `VALIDATION_ERROR`, `INTERNAL_ERROR`, `RATE_LIMIT_EXCEEDED` |
+| PATCH | `/rules/{rule_id}` | `loging_admin` | `RuleResponse` | + `RULE_NOT_FOUND`, `RULE_NAME_CONFLICT`, `EFFECT_SEVERITY_REQUIRED`, `EFFECT_SEVERITY_NOT_ALLOWED`, `UNKNOWN_MATCH_ACTION`, `INTERNAL_ERROR`, `RATE_LIMIT_EXCEEDED` |
+| DELETE | `/rules/{rule_id}` | `loging_admin` | 204 | + `RULE_NOT_FOUND`, `RATE_LIMIT_EXCEEDED` |
 
 ### Retention
 

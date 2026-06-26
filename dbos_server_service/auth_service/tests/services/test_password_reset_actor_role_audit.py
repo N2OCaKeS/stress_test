@@ -85,6 +85,41 @@ class TestAdminResetPasswordActorRole:
         ev = _pick(events, "user.password_reset")
         assert ev["details"]["actor_role"] == "account_admin"
 
+    async def test_audit_carries_token_revocation_flags(
+        self, db, account_admin, user_a, monkeypatch,
+    ):
+        # Admin-reset отзывает PAT'ы целевого юзера — audit обязан нести
+        # честный `tokens_revoked=True` и фактический `pat_revoked_count`,
+        # не «PAT сохраняются by design». Создаём два PAT'а до сброса.
+        from datetime import timedelta
+
+        from src.repositories.tokens import TokenRepository
+        from src.utils.time import utcnow
+
+        token_repo = TokenRepository(db)
+        for name in ("pat_one", "pat_two"):
+            await token_repo.create(
+                user_id=user_a.id,
+                name=name,
+                token_hash=f"hash_{name}",
+                token_prefix=f"dbos_pat_{name}",
+                allowed_services=["service_x"],
+                expires_at=utcnow() + timedelta(days=30),
+            )
+        await db.commit()
+
+        events = _capture_emits(monkeypatch)
+        await user_service.reset_password(
+            db,
+            actor_id=account_admin.id,
+            user_id=user_a.id,
+            new_password="NewPass1234!",
+            actor_role=PlatformRole.ACCOUNT_ADMIN,
+        )
+        ev = _pick(events, "user.password_reset")
+        assert ev["details"]["tokens_revoked"] is True
+        assert ev["details"]["pat_revoked_count"] == 2
+
     async def test_actor_equals_target_marked_as_self(
         self, db, account_admin, monkeypatch,
     ):

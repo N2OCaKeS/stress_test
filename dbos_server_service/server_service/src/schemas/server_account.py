@@ -608,20 +608,41 @@ class ServerAccountRotateResponse(BaseModel):
 
 
 class AccountRotateTask(BaseModel):
-    """Одна per-server задача ротации в ответе worker-dispatch'а."""
+    """Одна per-server задача ротации в ответе worker-dispatch'а.
+
+    `server_name` (display_name либо hostname) и `status` добавлены для UI:
+    оператор видит, какая задача на какой сервер ушла, не делая отдельный
+    lookup. `status` сейчас всегда `dispatched` — успешно поставленная в
+    очередь задача; форма оставлена расширяемой под будущие per-task статусы.
+    """
 
     server_id: str = Field(description="Сервер, на котором применяется новый пароль.")
+    server_name: str | None = Field(
+        default=None,
+        description=(
+            "Имя сервера (display_name либо hostname). Заполняется в mass-"
+            "rotation; в fan-out ответах (ssh_key / update_on_host) может быть None."
+        ),
+    )
     task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
+    status: str = Field(
+        default="dispatched",
+        description="Статус диспетчеризации задачи (dispatched).",
+    )
 
 
 class AccountRotateSkipped(BaseModel):
     """Сервер, на который задача не поставлена (пропуск при массовой ротации)."""
 
     server_id: str = Field(description="Сервер, для которого dispatch не выполнен.")
+    server_name: str | None = Field(
+        default=None,
+        description="Имя сервера (display_name либо hostname); None, если сервер не загружен.",
+    )
     reason: str = Field(
         description=(
             "Причина пропуска: decommissioned | idempotent_conflict | "
-            "worker_unreachable."
+            "worker_unreachable | not_attempted | not_found_or_cross_dept."
         )
     )
 
@@ -645,12 +666,38 @@ class AccountRotateDispatchResponse(BaseModel):
     поставленные через `/tasks/{id}/cancel`, если откатить ротацию важно).
     """
 
+    batch_id: str = Field(
+        description=(
+            "ID батча массовой ротации (prefix bat_). Сквозной идентификатор, "
+            "под которым UI собирает per-task статусы; точечная ротация тоже "
+            "получает batch_id (батч из одной задачи)."
+        ),
+    )
     mode: str = Field(description="single | all.")
     status: str = Field(default="queued", description="Статус постановки в очередь.")
-    tasks: list[AccountRotateTask] = Field(description="Per-server задачи ротации.")
+    dispatched: list[AccountRotateTask] = Field(
+        default_factory=list,
+        description=(
+            "Успешно поставленные в очередь задачи с per-task деталями "
+            "(task_id / server_id / server_name / status). Для трекинга и отмены."
+        ),
+    )
+    failed: list[AccountRotateSkipped] = Field(
+        default_factory=list,
+        description=(
+            "Серверы, на которые задача НЕ поставлена: синхронная ошибка "
+            "диспетчеризации (worker_unreachable), либо пропуск "
+            "(decommissioned / idempotent_conflict / not_attempted / "
+            "not_found_or_cross_dept) с причиной в `reason`."
+        ),
+    )
+    tasks: list[AccountRotateTask] = Field(
+        default_factory=list,
+        description="Алиас `dispatched` для обратной совместимости.",
+    )
     skipped: list[AccountRotateSkipped] = Field(
         default_factory=list,
-        description="Серверы, пропущенные при массовой ротации.",
+        description="Алиас `failed` для обратной совместимости.",
     )
     partial_failure: bool = Field(
         default=False,

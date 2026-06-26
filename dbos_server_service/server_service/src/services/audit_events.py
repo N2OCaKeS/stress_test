@@ -56,6 +56,7 @@ SERVICE_EVENTS = [
     {"action": "internal.dept_header_missing", "description": "Internal endpoint called without X-Target-Department-Id header (soft mode bypassed server lookup)", "default_severity": "WARNING"},
     # Worker → server_service callbacks (write-direction internal API)
     {"action": "server.inventory_received", "description": "Inventory facts received from worker (hardware probe callback)", "default_severity": "INFO"},
+    {"action": "inventory.drift_detected", "description": "Hardware-inventory facts from a box diverge from stored server fields (hostname / cpu_*). DB is source of truth and is NOT overwritten — drift is reported with old/new for the operator. First-write (stored value is NULL) is saved normally. OS-version stays the box→DB exception and updates the catalog binding", "default_severity": "WARNING"},
     {"action": "server_account.users_inventory_received", "description": "OS-user inventory received from worker and reconciled against server_accounts (callback)", "default_severity": "INFO"},
     {"action": "server_account.drift_detected", "description": "Inventory found OS-user state on a box diverging from the DB (attributes / presence / unknown login). DB is source of truth and is NOT overwritten — only link presence is updated", "default_severity": "WARNING"},
     {"action": "server_account.provision_status", "description": "OS-user provision/update/deprovision result received from worker, present_on_server updated (callback)", "default_severity": "INFO"},

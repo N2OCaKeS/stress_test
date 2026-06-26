@@ -7,7 +7,57 @@ audit-detail. Тесты фиксируют, что (а) новые composite-и
 (б) lookup case-insensitive, (в) ранее покрытые ключи продолжают работать.
 """
 
+from src.services import redaction
 from src.services.redaction import redact
+
+
+# Канонический набор маскируемых ключей auth-копии redaction.py. Копия помечена
+# `# DUPE: keep in sync` (SOURCE OF TRUTH — sdk/redaction.py), но копии по
+# сервисам уже намеренно разошлись: server несёт `hkdf_salt`, secret —
+# `secret_b64` и т.д. Поэтому здесь пиним именно auth-копию: любое добавление
+# или удаление ключа в её _*_KEYS должно осознанно отразиться в этом списке,
+# иначе тест падает и заставляет проверить, что маскировка не сузилась.
+# Кросс-сервисную сверку «все копии содержат общий минимум» руками тут не
+# сделать — файлы соседних сервисов в auth-тест-контейнер не примонтированы;
+# это остаётся repo-level CI-шагом.
+_CANONICAL_PASSWORD_KEYS = {
+    "password", "passwd", "pwd", "pass",
+    "old_password", "new_password", "current_password",
+    "confirm_password", "user_password",
+}
+_CANONICAL_TOKEN_KEYS = {
+    "token", "access_token", "refresh_token", "id_token",
+    "oauth_token", "bearer", "bearer_token", "jwt", "jwt_token",
+    "session_token", "token_plaintext", "pat_token", "bot_token",
+}
+_CANONICAL_SECRET_KEYS = {
+    "secret", "secret_key", "api_key", "apikey", "api_secret",
+    "client_secret", "private_key", "signing_key",
+    "service_api_key", "service_key", "introspect_key",
+    "logging_service_api_key",
+}
+_CANONICAL_HASH_KEYS = {
+    "hash", "password_hash", "token_hash", "pwd_hash",
+    "refresh_token_hash", "pat_hash", "bot_token_hash",
+}
+_CANONICAL_CREDENTIAL_KEYS = {
+    "credential", "credentials", "auth", "authorization",
+}
+
+
+def test_auth_copy_key_sets_match_canonical():
+    """Drift-guard: набор маскируемых ключей auth-копии зафиксирован.
+
+    Если кто-то добавил/убрал ключ в `_PASSWORD_KEYS`/`_TOKEN_KEYS`/
+    `_SECRET_KEYS`/`_HASH_KEYS`/`_CREDENTIAL_KEYS` и не обновил этот список —
+    тест падает. Защищает от молчаливого сужения маскировки (например удалили
+    `client_secret` → plaintext поедет в audit-лог).
+    """
+    assert redaction._PASSWORD_KEYS == _CANONICAL_PASSWORD_KEYS
+    assert redaction._TOKEN_KEYS == _CANONICAL_TOKEN_KEYS
+    assert redaction._SECRET_KEYS == _CANONICAL_SECRET_KEYS
+    assert redaction._HASH_KEYS == _CANONICAL_HASH_KEYS
+    assert redaction._CREDENTIAL_KEYS == _CANONICAL_CREDENTIAL_KEYS
 
 
 def test_uppercase_bearer_token_redacted():

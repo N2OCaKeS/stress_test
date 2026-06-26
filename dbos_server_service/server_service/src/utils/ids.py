@@ -62,6 +62,16 @@ def task_id() -> str:
     return _new_id("tsk_")
 
 
+def rotation_batch_id() -> str:
+    """`bat_<uuid>` — сквозной id батча массовой ротации паролей.
+
+    Не персистится: служит корреляционным ключом между per-task результатами
+    в ответе dispatch'а и аудит-событиями батча, чтобы UI и SIEM сшивали
+    задачи одного запроса.
+    """
+    return _new_id("bat_")
+
+
 def prepare_creds_id() -> str:
     """`pcd_<uuid>` — для одноразового Redis-ключа bootstrap-кред `prepare`-задачи.
 

@@ -759,6 +759,62 @@ async def _upsert_disks(
     return touched
 
 
+# Скалярные hardware-факты сервера, которые приходят из inventory-callback'а и
+# подчиняются модели «БД-истина, warn-on-drift»: first-write сохраняем, drift
+# по уже заполненному полю эмитим WARNING и НЕ перетираем.
+#
+# Чего тут НЕТ намеренно:
+#   * `os_version` — версию ОС бокс обновляет через каталог `os_versions`
+#     (`_resolve_or_create_os`); это осознанное box→DB исключение.
+#   * `hostname` — адресная identity сервера (`nullable=False`, задаётся при
+#     регистрации, глобально уникален). Inventory остаётся authoritative для
+#     hostname'а как раньше; warn-on-drift к нему не применяем (он никогда не
+#     NULL, под first-write не попадает — иначе любая первая инвентаризация
+#     считалась бы drift'ом). Вынесено как вопрос владельцу — см. reports/.
+#   * disks — своя upsert-таблица `server_disks`.
+_INVENTORY_DRIFT_FIELDS = (
+    "cpu_brand",
+    "cpu_model",
+    "cpu_cores",
+    "cpu_threads",
+    "cpu_frequency_ghz",
+)
+
+
+def _inventory_field_changes(server, payload) -> tuple[dict, dict]:
+    """Разложить hardware-факты бокса на first-write и drift относительно БД.
+
+    Возвращает `(first_write, drift)`:
+
+    * `first_write` — `{field: new}` для полей, где в БД пусто (None) — их
+      сохраняем (это и есть первичное наполнение инвентаря).
+    * `drift` — `{field: {"old": <БД>, "new": <бокс>}}` для полей, где в БД
+      уже есть значение и оно расходится с фактом бокса. Эти поля НЕ
+      перетираем; вызывающий эмитит по ним WARNING.
+
+    Совпадающие значения не попадают ни в один словарь — менять нечего.
+    `cpu_frequency_ghz` сравнивается как float; остальные — по равенству.
+    """
+    first_write: dict = {}
+    drift: dict = {}
+    for field in _INVENTORY_DRIFT_FIELDS:
+        # default=None: на ORM-строке колонка всегда есть, но в тестовых
+        # стабах сервера её может не быть — трактуем отсутствие как «значения
+        # нет» (first-write по факту бокса), не падаем на AttributeError.
+        old = getattr(server, field, None)
+        new = getattr(payload, field, None)
+        if old is None:
+            # First-write: значения ещё не было. None в payload'е (cpu_brand и
+            # т.п. опциональны) тоже не пишем — записывать None поверх None
+            # незачем, и это не «факт», а отсутствие данных.
+            if new is not None:
+                first_write[field] = new
+            continue
+        if old != new:
+            drift[field] = {"old": old, "new": new}
+    return first_write, drift
+
+
 async def receive_inventory(
     db: AsyncSession,
     identity: IdentityContext,
@@ -830,24 +886,39 @@ async def receive_inventory(
         actor_subject_type=identity.subject_type,
     )
 
-    # Если OS не прошла whitelist (`_resolve_or_create_os` вернул None) —
-    # `os_version_id` оставляем прежний, чтобы случайный мусор из inventory
-    # не сносил легитимную привязку. Остальные hardware-поля апдейтим как
-    # обычно: они не зависят от каталога os_versions.
+    # Warn-on-drift по hardware-полям: БД — источник истины. First-write
+    # (хранимое значение пустое) сохраняем; расхождение хранимого с фактом
+    # бокса НЕ перетираем, а эмитим WARNING `inventory.drift_detected`
+    # (что/old/new) — оператор разбирается вручную. `os_version` — осознанное
+    # исключение: каталожную привязку `os_version_id` бокс обновляет
+    # (`_resolve_or_create_os`), drift по ней не считаем.
+    # hostname остаётся authoritative с бокса (адресная identity, не warn-on-
+    # drift факт) — апдейтим как раньше. os_version_id — box→DB исключение.
     server_update: dict = {
         "hostname": payload.hostname,
-        "cpu_brand": payload.cpu_brand,
-        "cpu_model": payload.cpu_model,
-        "cpu_cores": payload.cpu_cores,
-        "cpu_threads": payload.cpu_threads,
-        "cpu_frequency_ghz": payload.cpu_frequency_ghz,
         "os_last_synced_at": datetime.now(timezone.utc),
     }
     if os_id_resolved is not None:
         server_update["os_version_id"] = os_id_resolved
+
+    first_write, drift = _inventory_field_changes(server, payload)
+    server_update.update(first_write)
     await server_repo.update(db, server, server_update)
     disks_count = await _upsert_disks(db, server_id, payload.disks)
     await db.commit()
+
+    if drift:
+        audit_service.emit(
+            "inventory.drift_detected",
+            target_id=server_id, target_type="server",
+            status="warning", allowed=True,
+            details={
+                "fields": sorted(drift.keys()),
+                "drift": drift,
+                "department_id": server.department_id,
+                "caller_type": identity.subject_type,
+            },
+        )
 
     audit_service.emit(
         "server.inventory_received",
@@ -859,6 +930,8 @@ async def receive_inventory(
             "cpu_model": payload.cpu_model,
             "os_version": payload.os_version,
             "disks": disks_count,
+            "first_write_fields": sorted(first_write.keys()),
+            "drift_fields": sorted(drift.keys()),
             "department_id": server.department_id,
             "caller_type": identity.subject_type,
         },
@@ -867,6 +940,8 @@ async def receive_inventory(
         "ok": True,
         "os_version_id": os_id_resolved,
         "disks_upserted": disks_count,
+        "first_write_fields": sorted(first_write.keys()),
+        "drift_fields": sorted(drift.keys()),
     }
 
 

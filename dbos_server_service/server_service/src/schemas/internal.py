@@ -110,11 +110,24 @@ class InventoryCallbackRequest(BaseModel):
 
 
 class InventoryCallbackResponse(BaseModel):
-    """Ответ inventory-callback'а. Возвращаем что upsert'нули."""
+    """Ответ inventory-callback'а. Возвращаем что upsert'нули.
+
+    `first_write_fields` — hardware-поля, заполненные впервые (в БД было пусто).
+    `drift_fields` — поля, где факт бокса разошёлся с БД-истиной; они НЕ
+    перетёрты, по ним эмитится WARNING `inventory.drift_detected`.
+    """
 
     ok: bool = True
     os_version_id: str | None = Field(default=None, description="ID upsert'нутой OS-версии.")
     disks_upserted: int = Field(default=0, description="Сколько disk-записей upsert'нуто (INSERT + UPDATE).")
+    first_write_fields: list[str] = Field(
+        default_factory=list,
+        description="Hardware-поля, сохранённые впервые (хранимое было NULL).",
+    )
+    drift_fields: list[str] = Field(
+        default_factory=list,
+        description="Поля с расхождением бокс↔БД (НЕ перетёрты; WARNING-аудит).",
+    )
 
 
 # ── OS-user inventory callback ──────────────────────────────────────────────

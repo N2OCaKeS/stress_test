@@ -210,40 +210,53 @@ class TestHttpsOutboundRequiredInProd:
 
 
 class TestLoggingApiKeyRequiredInProduction:
-    """Production-guard: пустой `LOGGING_SERVICE_API_KEY` дисэйблит audit-emit
-    тихо (только ERROR-лог в `audit_client.emit`). В production это
+    """Strict-guard: пустой `LOGGING_SERVICE_API_KEY` дисэйблит audit-emit
+    тихо (только ERROR-лог в `audit_client.emit`). В production и staging это
     материальная дыра — внешнее SIEM не увидит ни одного события. Старт
     воркера должен фейлиться явно, чтобы оператор сразу заметил.
     """
 
-    def test_production_requires_api_key(
-        self, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize("env", ["production", "staging"])
+    def test_strict_env_requires_api_key(
+        self, monkeypatch: pytest.MonkeyPatch, env: str
     ) -> None:
         with pytest.raises(ValueError, match="LOGGING_SERVICE_API_KEY"):
             _make_settings(
                 monkeypatch,
-                APP_ENV="production",
+                APP_ENV=env,
                 REDIS_URL="redis://:pw@redis:6379/0",
                 LOGGING_SERVICE_API_KEY="",
             )
 
-    def test_production_accepts_non_empty_api_key(
-        self, monkeypatch: pytest.MonkeyPatch
+    def test_staging_case_insensitive(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # `APP_ENV=STAGING` тоже должен триггерить guard (lower() в гарде).
+        with pytest.raises(ValueError, match="LOGGING_SERVICE_API_KEY"):
+            _make_settings(
+                monkeypatch,
+                APP_ENV="STAGING",
+                REDIS_URL="redis://:pw@redis:6379/0",
+                LOGGING_SERVICE_API_KEY="",
+            )
+
+    @pytest.mark.parametrize("env", ["production", "staging"])
+    def test_strict_env_accepts_non_empty_api_key(
+        self, monkeypatch: pytest.MonkeyPatch, env: str
     ) -> None:
         s = _make_settings(
             monkeypatch,
-            APP_ENV="production",
+            APP_ENV=env,
             REDIS_URL="redis://:pw@redis:6379/0",
-            LOGGING_SERVICE_API_KEY="prod-shared-key",
+            LOGGING_SERVICE_API_KEY="shared-key",
         )
-        assert s.logging_service_api_key == "prod-shared-key"
+        assert s.logging_service_api_key == "shared-key"
 
-    @pytest.mark.parametrize("env", ["local", "dev", "test", "staging"])
-    def test_non_production_allows_empty_api_key(
+    @pytest.mark.parametrize("env", ["local", "dev", "test"])
+    def test_non_strict_envs_allow_empty_api_key(
         self, monkeypatch: pytest.MonkeyPatch, env: str
     ) -> None:
-        # CI/dev-стек поднимается без секрета. `staging` тоже мягкий —
-        # на разных стендах политика разная.
+        # CI/dev-стек поднимается без секрета. staging больше НЕ мягкий —
+        # он гоняет тот же набор операций, что и prod, и пишет в тот же
+        # класс приёмников аудита.
         s = _make_settings(
             monkeypatch,
             APP_ENV=env,
@@ -326,6 +339,27 @@ class TestServerServiceDsnRequiredInProduction:
             SERVER_SERVICE_DATABASE_URL="",
         )
         assert s.server_service_database_url == ""
+
+
+class TestSshMaxSessionsPerHost:
+    """Настройка per-host SSH backpressure: дефолт + override через env."""
+
+    def test_default_is_safe(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        s = _make_settings(monkeypatch, APP_ENV="local")
+        assert s.ssh_max_sessions_per_host == 4
+
+    def test_override_via_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        s = _make_settings(
+            monkeypatch, APP_ENV="local", SSH_MAX_SESSIONS_PER_HOST="8",
+        )
+        assert s.ssh_max_sessions_per_host == 8
+
+    def test_rejects_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # ge=1 — нулевой лимит запер бы все SSH-операции.
+        with pytest.raises(ValueError):
+            _make_settings(
+                monkeypatch, APP_ENV="local", SSH_MAX_SESSIONS_PER_HOST="0",
+            )
 
 
 class TestSshHostKeyNotVerified:

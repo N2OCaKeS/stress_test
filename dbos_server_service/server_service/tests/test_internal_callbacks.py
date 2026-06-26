@@ -141,7 +141,8 @@ class TestInventoryCallback:
             headers=_hdr(admin_role_token_a), json=second,
         )
         assert resp.status_code == 200
-        # CPU-поля пишутся inline в server — повторный sync просто переписывает.
+        # CPU-поля совпадают с первым sync'ом — drift не возникает, значения
+        # остаются прежними (warn-on-drift трогает только расхождения).
         refreshed = (await db.execute(
             select(Server).where(Server.id == srv.id)
         )).scalar_one()
@@ -155,6 +156,91 @@ class TestInventoryCallback:
         assert len(disks) == 1
         assert disks[0].size_gb == 200
         assert disks[0].model == "BIGGER"
+
+    async def test_cpu_drift_not_overwritten_emits_warning(
+        self, client, admin_role_token_a, make_server, db, dept_a, captured_emits,
+    ):
+        """Warn-on-drift: cpu-факт разошёлся с БД → WARNING, БД НЕ перетёрта."""
+        srv = await make_server(department_id=dept_a)
+        first = {
+            "hostname": "drift-host",
+            "kernel": "5.10.0",
+            "cpu_brand": "Intel",
+            "cpu_model": "Xeon Gold 6230",
+            "cpu_cores": 20,
+            "cpu_threads": 40,
+            "cpu_frequency_ghz": 2.1,
+            "os_version": "Astra Linux SE 1.7",
+            "disks": [],
+        }
+        # First-write — поля заполняются.
+        r1 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a), json=first,
+        )
+        assert r1.status_code == 200, r1.text
+        assert set(r1.json()["first_write_fields"]) == {
+            "cpu_brand", "cpu_model", "cpu_cores", "cpu_threads", "cpu_frequency_ghz",
+        }
+        assert r1.json()["drift_fields"] == []
+
+        captured_emits.clear()
+        # Второй sync приносит ДРУГОЙ cpu — это drift, перетирать нельзя.
+        drifted = {**first, "cpu_brand": "AMD", "cpu_model": "EPYC 7763", "cpu_cores": 64}
+        r2 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a), json=drifted,
+        )
+        assert r2.status_code == 200, r2.text
+        assert set(r2.json()["drift_fields"]) == {"cpu_brand", "cpu_model", "cpu_cores"}
+        assert r2.json()["first_write_fields"] == []
+
+        await db.commit()
+        refreshed = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        # Значения НЕ перетёрты — БД остаётся источником истины.
+        assert refreshed.cpu_brand == "Intel"
+        assert refreshed.cpu_model == "Xeon Gold 6230"
+        assert refreshed.cpu_cores == 20
+
+        drift_events = _by_action(captured_emits, "inventory.drift_detected")
+        assert len(drift_events) == 1
+        ev = drift_events[0]
+        assert ev["status"] == "warning"
+        assert set(ev["details"]["fields"]) == {"cpu_brand", "cpu_model", "cpu_cores"}
+        assert ev["details"]["drift"]["cpu_brand"] == {"old": "Intel", "new": "AMD"}
+        assert ev["details"]["drift"]["cpu_cores"] == {"old": 20, "new": 64}
+
+    async def test_no_drift_when_facts_match(
+        self, client, admin_role_token_a, make_server, db, dept_a, captured_emits,
+    ):
+        """Совпадающие факты на повторном sync'е drift не поднимают."""
+        srv = await make_server(department_id=dept_a)
+        payload = {
+            "hostname": "same-host",
+            "kernel": "5.10.0",
+            "cpu_brand": "MCST",
+            "cpu_model": "Elbrus 16C",
+            "cpu_cores": 16,
+            "cpu_threads": 16,
+            "cpu_frequency_ghz": 2.0,
+            "os_version": "Astra Linux SE 1.7",
+            "disks": [],
+        }
+        await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a), json=payload,
+        )
+        captured_emits.clear()
+        r2 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a), json=payload,
+        )
+        assert r2.status_code == 200
+        assert r2.json()["drift_fields"] == []
+        assert r2.json()["first_write_fields"] == []
+        assert _by_action(captured_emits, "inventory.drift_detected") == []
 
     async def test_worker_bot_can_callback_inventory(
         self, client, worker_bot_token_a, make_server, dept_a,

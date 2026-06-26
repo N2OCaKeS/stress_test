@@ -34,6 +34,12 @@ def _is_intracluster_host(host: str) -> bool:
 # Окружения, в которых требуется https:// для исходящих HTTP-вызовов.
 _HTTPS_REQUIRED_ENVS: frozenset[str] = frozenset({"production", "staging"})
 
+# Окружения, в которых обязателен непустой `LOGGING_SERVICE_API_KEY`. Пустой
+# ключ заставляет `audit_client.emit` тихо дропать события — для prod и
+# staging (где стоит реальный SIEM-приёмник) это материальная дыра. local/test
+# остаются без проверки: dev-стек и conftest поднимаются без секрета.
+_AUDIT_KEY_REQUIRED_ENVS: frozenset[str] = frozenset({"production", "staging"})
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -575,6 +581,30 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── SSH per-host backpressure ────────────────────────────────────────
+    # Сколько одновременных SSH-подключений worker открывает к ОДНОМУ хосту.
+    # Без лимита burst из N задач на один сервер (массовый provision +
+    # inventory одного бокса) открывает N параллельных сессий, упирается в
+    # sshd `MaxStartups` (дефолт 10:30:100 — после 10 неаутентифицированных
+    # коннектов начинается random-drop), и worker отвечает на drop'ы
+    # ретраями — амплификация. Семафор на (host, port) сериализует коннекты
+    # сверх лимита; к разным хостам сессии по-прежнему параллельны.
+    # Дефолт 4 — заметно ниже sshd-дефолта, оставляет запас под ручные
+    # сессии оператора и не душит нормальный fan-out по разным серверам.
+    ssh_max_sessions_per_host: int = Field(
+        default=4,
+        ge=1,
+        le=64,
+        alias="SSH_MAX_SESSIONS_PER_HOST",
+        description=(
+            "Max concurrent SSH connections the worker opens to a single "
+            "(host, port). Connects beyond the limit serialize on a per-host "
+            "semaphore so a burst of tasks on one server doesn't trip sshd "
+            "MaxStartups and amplify into retries. Sessions to different "
+            "hosts stay parallel. Default 4 — below the sshd 10:30:100 default."
+        ),
+    )
+
     # ── Management user / bootstrap (prepare) ────────────────────────────
     # Бутстрап управления (#14): задача `server.prepare` заходит на сервер
     # под одноразовыми bootstrap-кредами (password-auth), заводит системного
@@ -817,7 +847,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _require_logging_api_key_in_prod(self) -> "Settings":
-        """В production обязателен непустой `LOGGING_SERVICE_API_KEY`.
+        """В production/staging обязателен непустой `LOGGING_SERVICE_API_KEY`.
 
         Без ключа `audit_client.emit` тихо дропает событие (`return` без
         HTTP-запроса, только ERROR-лог) — single line в журнале легко
@@ -827,15 +857,18 @@ class Settings(BaseSettings):
         от worker'а, а security-чувствительные ops (rotate password, power)
         останутся незалогированными.
 
-        В non-prod (`local`/`dev`/`test`/`staging`) пусто разрешено — CI
-        и dev-стек не должны падать без секрета. `staging` намеренно НЕ
-        включён в strict-список: там может стоять прод-ключ, а может и
-        нет (зависит от конкретного стенда), и блокировать запуск было
-        бы лишним зерганием операторам.
+        `staging` гоняет тот же набор операций, что и production, и пишет в
+        тот же класс приёмников аудита — пустой ключ там так же молча рвёт
+        канал. Поэтому strict теперь покрывает оба окружения
+        (`_AUDIT_KEY_REQUIRED_ENVS`). В `local`/`test`/`dev` пусто
+        разрешено — CI и dev-стек не должны падать без секрета.
         """
-        if self.app_env.lower() == "production" and not self.logging_service_api_key:
+        if (
+            self.app_env.lower() in _AUDIT_KEY_REQUIRED_ENVS
+            and not self.logging_service_api_key
+        ):
             raise ValueError(
-                "LOGGING_SERVICE_API_KEY must be set in production "
+                f"LOGGING_SERVICE_API_KEY must be set in {self.app_env} "
                 "(empty key disables audit emission silently — "
                 "loging_service won't see any event from this worker)."
             )

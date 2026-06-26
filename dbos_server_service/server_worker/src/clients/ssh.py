@@ -48,6 +48,7 @@ Sudo:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -56,6 +57,61 @@ from dataclasses import dataclass, field
 import asyncssh
 
 logger = logging.getLogger(__name__)
+
+
+# ── Per-host connection backpressure ──────────────────────────────────────────
+#
+# Семафор на (host, port): ограничивает число одновременных SSH-коннектов к
+# одному target-хосту. Без него burst задач на один сервер (массовый provision +
+# inventory одного бокса) открывает N параллельных сессий, упирается в sshd
+# `MaxStartups` (random-drop после порога неаутентифицированных коннектов), и
+# worker отвечает на drop'ы ретраями — амплификация. Семафоры держатся
+# per-process в module-level реестре; к разным хостам сессии остаются
+# параллельны. На multi-replica это per-replica backpressure (общего лимита
+# через Redis тут нет — sshd MaxStartups сам по себе per-connection, и реплик
+# немного).
+_HOST_SEMAPHORES: dict[tuple[str, int], asyncio.Semaphore] = {}
+_HOST_SEMAPHORE_LIMITS: dict[tuple[str, int], int] = {}
+_HOST_SEMAPHORES_LOCK = asyncio.Lock()
+
+
+def _default_max_sessions_per_host() -> int:
+    """Лимит коннектов к одному хосту из настроек воркера.
+
+    Читается лениво (не на import'е), чтобы транспорт оставался отвязан от
+    config'а в тестах, которые конструируют `SshClient` напрямую. Любая
+    ошибка резолва настроек (например, незаполненные required-поля в голом
+    unit-окружении) — мягкий fallback на разумный дефолт, чтобы backpressure
+    никогда не валил саму SSH-операцию.
+    """
+    try:
+        from src.core.config import get_settings
+
+        return int(get_settings().ssh_max_sessions_per_host)
+    except Exception:  # noqa: BLE001 — backpressure не должен ронять транспорт
+        return 4
+
+
+async def _acquire_host_slot(host: str, port: int, limit: int) -> asyncio.Semaphore:
+    """Взять слот в per-host семафоре; вернуть сам семафор для последующего release.
+
+    Реестр семафоров защищён `_HOST_SEMAPHORES_LOCK`, чтобы конкурентные
+    коннекты к новому хосту не создали два разных семафора (race на
+    `dict.setdefault` под await не спасает — создание объекта дешёвое, но
+    инвариант «один семафор на (host, port)» важен). Если для хоста уже есть
+    семафор с другим лимитом — оставляем существующий (лимит меняется только
+    рестартом воркера; не пересоздаём на лету, чтобы не потерять уже занятые
+    слоты).
+    """
+    key = (host, port)
+    async with _HOST_SEMAPHORES_LOCK:
+        sem = _HOST_SEMAPHORES.get(key)
+        if sem is None:
+            sem = asyncio.Semaphore(limit)
+            _HOST_SEMAPHORES[key] = sem
+            _HOST_SEMAPHORE_LIMITS[key] = limit
+    await sem.acquire()
+    return sem
 
 
 # ── Errors ───────────────────────────────────────────────────────────────────
@@ -312,6 +368,7 @@ class SshClient:
         port: int = 22,
         timeout: float = 30.0,
         client_keys: list[str] | None = None,
+        max_sessions_per_host: int | None = None,
     ) -> None:
         self.host = host
         self.username = username
@@ -320,6 +377,12 @@ class SshClient:
         self.timeout = timeout
         self._client_keys = client_keys
         self._conn: asyncssh.SSHClientConnection | None = None
+        # Лимит per-host коннектов. None → берём из настроек воркера лениво на
+        # connect'е (см. `_default_max_sessions_per_host`). Тесты могут передать
+        # явный лимит, чтобы не тащить config.
+        self._max_sessions_per_host = max_sessions_per_host
+        # Семафор-слот, занятый этим коннектом; освобождается в close().
+        self._host_slot: asyncio.Semaphore | None = None
 
     async def __aenter__(self) -> "SshClient":
         await self.connect()
@@ -338,6 +401,17 @@ class SshClient:
         if self._conn is not None:
             return
 
+        # Per-host backpressure: занимаем слот ДО открытия сокета. Сериализует
+        # коннекты сверх лимита к одному (host, port); к разным хостам — нет.
+        # Слот держится до close(); на любой ошибке коннекта освобождаем сразу,
+        # чтобы упавшая попытка не «съедала» слот.
+        limit = (
+            self._max_sessions_per_host
+            if self._max_sessions_per_host is not None
+            else _default_max_sessions_per_host()
+        )
+        self._host_slot = await _acquire_host_slot(self.host, self.port, limit)
+
         try:
             self._conn = await asyncssh.connect(
                 host=self.host,
@@ -353,27 +427,44 @@ class SshClient:
                 login_timeout=self.timeout,
             )
         except asyncssh.PermissionDenied as exc:
+            self._release_host_slot()
             raise SshError(
                 error_code="SSH_AUTH_FAILED",
                 host=self.host,
                 message=f"authentication failed: {type(exc).__name__}",
             ) from exc
         except (TimeoutError, asyncssh.ConnectionLost, OSError) as exc:
+            self._release_host_slot()
             raise SshError(
                 error_code="SSH_CONNECT_FAILED",
                 host=self.host,
                 message=f"connect failed: {type(exc).__name__}: {exc}",
             ) from exc
         except asyncssh.Error as exc:
+            self._release_host_slot()
             raise SshError(
                 error_code="SSH_CONNECT_FAILED",
                 host=self.host,
                 message=f"asyncssh error: {type(exc).__name__}",
             ) from exc
+        except BaseException:
+            # CancelledError / прочее во время handshake — слот тоже отпускаем,
+            # иначе он утечёт и забэкпрешерит хост навсегда.
+            self._release_host_slot()
+            raise
+
+    def _release_host_slot(self) -> None:
+        """Отпустить занятый per-host слот. Идемпотентно."""
+        if self._host_slot is not None:
+            self._host_slot.release()
+            self._host_slot = None
 
     async def close(self) -> None:
-        """Закрыть SSH-соединение. Идемпотентно."""
+        """Закрыть SSH-соединение и отпустить per-host слот. Идемпотентно."""
         if self._conn is None:
+            # Коннект не открыт (или уже закрыт), но слот мог остаться занятым,
+            # если кто-то занял его и не дошёл до connect'а — подстраховка.
+            self._release_host_slot()
             return
         try:
             self._conn.close()
@@ -383,6 +474,7 @@ class SshClient:
             logger.debug("error during ssh close to %s", self.host, exc_info=True)
         finally:
             self._conn = None
+            self._release_host_slot()
 
     # ── Interactive PTY: invoke_shell-style session ──────────────────────
 

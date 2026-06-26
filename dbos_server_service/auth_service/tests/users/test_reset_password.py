@@ -1,7 +1,13 @@
 """Тесты: POST /api/auth/v1/users/{id}/reset-password — сброс пароля пользователя."""
 
+from datetime import timedelta
+
+from src.utils.time import utcnow
+
 URL_TPL = "/api/auth/v1/users/{user_id}/reset-password"
 LOGIN_URL = "/api/auth/v1/login"
+TOKENS_URL = "/api/auth/v1/tokens"
+INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
 
 
 async def test_admin_resets_password(client, admin_token, user_a):
@@ -36,6 +42,36 @@ async def test_reset_revokes_active_sessions(client, admin_token, user_a):
                       json={"new_password": "NewPass1234!"})
     resp = await client.post("/api/auth/v1/refresh", json={"refresh_token": login_data["refresh_token"]})
     assert resp.status_code == 401
+
+
+async def test_admin_reset_revokes_target_pats(client, admin_token, user_a_token, user_a):
+    """Admin-reset чужого пароля отзывает PAT'ы целевого юзера.
+
+    Закрывает sticky-takeover: если кто-то держал чужой PAT, выписанный до
+    сброса, после admin-reset'а он не должен переживать смену пароля.
+    """
+    pat_resp = await client.post(
+        TOKENS_URL,
+        headers={"Authorization": f"Bearer {user_a_token}"},
+        json={
+            "name": "before_admin_reset",
+            "allowed_services": ["service_x"],
+            "expires_at": (utcnow() + timedelta(days=30)).isoformat(),
+        },
+    )
+    assert pat_resp.status_code == 201, pat_resp.text
+    pat_token = pat_resp.json()["token"]
+
+    reset = await client.post(
+        URL_TPL.format(user_id=user_a.id),
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"new_password": "NewPass1234!"},
+    )
+    assert reset.status_code == 200, reset.text
+
+    introspect = await client.post(INTROSPECT_URL, json={"token": pat_token})
+    assert introspect.status_code == 200
+    assert introspect.json()["active"] is False
 
 
 async def test_regular_user_cannot_reset_password(client, user_a_token, user_b):

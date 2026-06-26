@@ -1045,7 +1045,15 @@ async def reset_password(
         must_change_password=True,
     )
     await session_repo.revoke_all_for_user(user_id)
-    await token_repo.revoke_all_for_user(user_id)
+    # Отзываем PAT'ы целевого юзера: после admin-reset'а его старые токены
+    # не должны переживать смену пароля (иначе тот, кто знал прежний пароль
+    # или держал чужой PAT, сохранял бы доступ). `reason="admin_reset"`
+    # отделяет их от ban-revoked PAT'ов — `reactivate_ban_revoked` смотрит
+    # только на `reason="ban"`, поэтому unban такие токены не воскресит.
+    # Боты не трогаем — они dept-owned, не привязаны к юзеру.
+    pat_revoked_count = await token_repo.revoke_all_for_user(
+        user_id, reason="admin_reset"
+    )
     await db.commit()
     # Сессии и PAT'ы юзера сняты — identity-кэш может ещё нести `is_active=True`
     # и пускать ранее закэшированный access-token до TTL. Сбрасываем сразу.
@@ -1072,6 +1080,7 @@ async def reset_password(
             "new_password": new_password,
             "sessions_revoked": True,
             "tokens_revoked": True,
+            "pat_revoked_count": pat_revoked_count,
             "actor_role": audit_actor_role,
         },
         request_id=request_id,

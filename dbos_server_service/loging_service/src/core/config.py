@@ -180,6 +180,17 @@ class Settings(BaseSettings):
         default="60/minute", alias="AUDIT_QUERY_RATE_LIMIT"
     )
 
+    # Per-user rate-limit на admin-запись правил (`POST/PATCH/DELETE /rules`).
+    # Скомпрометированный `loging_admin`-токен иначе может флудить write'ами:
+    # каждый create/patch/delete сбрасывает in-memory rule-cache и бьёт по БД
+    # двумя DML (rule + безусловный self-audit) под одной транзакцией. Ключ —
+    # `sub` из introspect (тот же `reader_rate_limit_key`, fallback на IP).
+    # Дефолт жёстче read-канала: легитимный админ правит правила штучно, не
+    # десятками в минуту.
+    rule_write_rate_limit: str = Field(
+        default="30/minute", alias="RULE_WRITE_RATE_LIMIT"
+    )
+
     # Per-service-identity rate-limit на `POST /services/{service}/events`.
     # Симметрия с `INGEST_RATE_LIMIT`, но key'ится по `X-Service-Identity`,
     # а не IP — batch-канал доступен только internal caller'ам через k8s

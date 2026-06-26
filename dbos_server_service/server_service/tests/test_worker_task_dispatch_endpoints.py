@@ -787,8 +787,21 @@ class TestMassRotatePartialTolerance:
         assert {t["server_id"] for t in body["tasks"]} == {good1.id, good2.id}
         assert len(captured_dispatch) == 2
         assert {c["target_server_id"] for c in captured_dispatch} == {good1.id, good2.id}
-        # Списанный — в skipped.
-        assert body["skipped"] == [{"server_id": dead.id, "reason": "decommissioned"}]
+        # Списанный — в skipped (с per-server деталями для UI).
+        assert body["skipped"] == [
+            {
+                "server_id": dead.id,
+                "server_name": dead.hostname,
+                "reason": "decommissioned",
+            }
+        ]
+        # Алиас `failed` повторяет `skipped`, `dispatched` — `tasks`.
+        assert body["failed"] == body["skipped"]
+        assert {t["server_id"] for t in body["dispatched"]} == {good1.id, good2.id}
+        assert body["batch_id"].startswith("bat_")
+        for t in body["dispatched"]:
+            assert t["status"] == "dispatched"
+            assert t["server_name"] is not None
 
     async def test_aggregated_success_audit_with_skips(
         self, client, operator_token_a, make_server, make_account,
@@ -820,7 +833,11 @@ class TestMassRotatePartialTolerance:
         assert ev["details"]["skipped_count"] == 1
         assert ev["details"]["server_ids"] == [good.id]
         assert ev["details"]["skipped"] == [
-            {"server_id": dead.id, "reason": "decommissioned"}
+            {
+                "server_id": dead.id,
+                "server_name": dead.hostname,
+                "reason": "decommissioned",
+            }
         ]
 
     async def test_all_decommissioned_returns_409(
@@ -875,7 +892,11 @@ class TestMassRotatePartialTolerance:
         body = resp.json()
         assert [t["server_id"] for t in body["tasks"]] == [good.id]
         assert body["skipped"] == [
-            {"server_id": busy.id, "reason": "idempotent_conflict"}
+            {
+                "server_id": busy.id,
+                "server_name": busy.hostname,
+                "reason": "idempotent_conflict",
+            }
         ]
         successes = [
             e for e in _events(captured_emits, "server_account.rotate_password_dispatch")

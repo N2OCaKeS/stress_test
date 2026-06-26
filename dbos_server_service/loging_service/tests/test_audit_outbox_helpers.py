@@ -8,6 +8,8 @@
   ключи; int/tuple проходили мимо guard'а и улетали в JSONB.
 """
 
+import logging
+
 from src.services.audit_outbox import _coerce_details_keys, _resolve_actor_type
 
 
@@ -22,12 +24,28 @@ class TestResolveActorType:
     def test_none_falls_back_to_anonymous(self):
         assert _resolve_actor_type(None) == "anonymous"
 
+    def test_none_does_not_warn(self, caplog):
+        # `None` — штатный 401/неаутентифицированный путь (identity ещё не
+        # получен middleware'ом). Это легитимный anonymous, WARNING тут
+        # был бы шумом в SIEM.
+        with caplog.at_level(logging.WARNING, logger="src.services.audit_outbox"):
+            assert _resolve_actor_type(None) == "anonymous"
+        assert caplog.records == []
+
     def test_unknown_falls_back_to_anonymous(self):
         # Future subject_type от auth_service, который ещё не разрешён
         # `VALID_ACTOR_TYPES`, не должен подмешиваться в user-агрегаты.
         assert _resolve_actor_type("admin") == "anonymous"
         assert _resolve_actor_type("") == "anonymous"
         assert _resolve_actor_type("USER") == "anonymous"  # case-sensitive
+
+    def test_unknown_non_none_warns(self, caplog):
+        # Непустой actor_type вне whitelist'а — действительно неожиданный
+        # случай (новый subject_type или мусор от call-site). Его хочется
+        # увидеть в warning-логах.
+        with caplog.at_level(logging.WARNING, logger="src.services.audit_outbox"):
+            assert _resolve_actor_type("admin") == "anonymous"
+        assert any("unknown actor_type" in r.message for r in caplog.records)
 
 
 # ── _coerce_details_keys ─────────────────────────────────────────────────────

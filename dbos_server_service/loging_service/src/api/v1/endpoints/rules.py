@@ -208,7 +208,8 @@ def get_rule(
         "`service_events` — нельзя завести правило на action, которого никто не "
         "регистрировал (но только если реестр непустой).\n\n"
         "**Доступ:** `platform_role=loging_admin`.\n\n"
-        "Rate-limit: **не применяется** — admin write, see-also `API_ENDPOINTS.md`.\n\n"
+        "Лимит запросов: `RULE_WRITE_RATE_LIMIT` (per-user, fallback на IP) — "
+        "защита от flood'а скомпрометированным admin-токеном.\n\n"
         "**Связано:** изменение правил сбрасывает in-memory кеш "
         "(`rule_service.invalidate_cache`)."
     ),
@@ -223,11 +224,18 @@ def get_rule(
                 "`EFFECT_SEVERITY_NOT_ALLOWED`, `UNKNOWN_MATCH_ACTION`"
             ),
         },
+        429: {"model": ErrorEnvelope, "description": "Превышен per-user write rate-limit (fallback на IP)"},
         500: {"model": ErrorEnvelope, "description": "`INTERNAL_ERROR` — IntegrityError не из UNIQUE"},
         503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
     },
 )
+@limiter.limit(
+    lambda: get_settings().rule_write_rate_limit,
+    key_func=reader_rate_limit_key,
+)
 def create_rule(
+    request: Request,
+    response: Response,
     payload: RuleCreate,
     identity: AdminIdentity,
     db: Session = Depends(get_db),
@@ -278,7 +286,7 @@ def create_rule(
         "Partial-update: меняет только переданные поля. После обновления "
         "сбрасывает in-memory кеш rule engine.\n\n"
         "**Доступ:** `platform_role=loging_admin`.\n\n"
-        "Rate-limit: **не применяется** — admin write."
+        "Лимит запросов: `RULE_WRITE_RATE_LIMIT` (per-user, fallback на IP)."
     ),
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
@@ -292,11 +300,18 @@ def create_rule(
                 "`EFFECT_SEVERITY_NOT_ALLOWED`, `UNKNOWN_MATCH_ACTION`"
             ),
         },
+        429: {"model": ErrorEnvelope, "description": "Превышен per-user write rate-limit (fallback на IP)"},
         500: {"model": ErrorEnvelope, "description": "`INTERNAL_ERROR`"},
         503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
     },
 )
+@limiter.limit(
+    lambda: get_settings().rule_write_rate_limit,
+    key_func=reader_rate_limit_key,
+)
 def update_rule(
+    request: Request,
+    response: Response,
     payload: RuleUpdate,
     identity: AdminIdentity,
     rule_id: str = Path(
@@ -363,16 +378,23 @@ def update_rule(
     description=(
         "Полностью удаляет правило и сбрасывает кеш rule engine.\n\n"
         "**Доступ:** `platform_role=loging_admin`.\n\n"
-        "Rate-limit: **не применяется** — admin write."
+        "Лимит запросов: `RULE_WRITE_RATE_LIMIT` (per-user, fallback на IP)."
     ),
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
         403: {"model": ErrorEnvelope, "description": "Роль не подходит (`INSUFFICIENT_ROLE`)"},
         404: {"model": ErrorEnvelope, "description": "`RULE_NOT_FOUND`"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-user write rate-limit (fallback на IP)"},
         503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
     },
 )
+@limiter.limit(
+    lambda: get_settings().rule_write_rate_limit,
+    key_func=reader_rate_limit_key,
+)
 def delete_rule(
+    request: Request,
+    response: Response,
     identity: AdminIdentity,
     rule_id: str = Path(
         min_length=1,

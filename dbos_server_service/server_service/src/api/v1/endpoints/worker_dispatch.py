@@ -98,7 +98,7 @@ from src.services import (
 )
 from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
-from src.utils.ids import dispatch_creds_id, prepare_creds_id
+from src.utils.ids import dispatch_creds_id, prepare_creds_id, rotation_batch_id
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +160,15 @@ def _build_account_task_payload(
         if include_home_dir is None or include_home_dir:
             payload["home_dir"] = account.home_dir
     return payload
+
+
+def _server_name(server) -> str:
+    """Человекочитаемое имя сервера для per-task деталей в ответе.
+
+    display_name, если задан, иначе hostname — то же правило, что в карточке
+    сервера.
+    """
+    return server.display_name or server.hostname
 
 
 def require_server_prepared(server, *, audit_action: str) -> None:
@@ -1999,7 +2008,10 @@ async def account_rotate_password_dispatch(
                     error_code="SERVER_NOT_FOUND", message="Server not found",
                 )
             # В массовом — пропускаем (нерабочая привязка не должна валить батч).
-            skipped.append({"server_id": sid, "reason": "not_found_or_cross_dept"})
+            skipped.append({
+                "server_id": sid, "server_name": None,
+                "reason": "not_found_or_cross_dept",
+            })
             continue
         if server.status == ServerStatus.DECOMMISSIONED:
             if mode == "single":
@@ -2018,7 +2030,10 @@ async def account_rotate_password_dispatch(
                     error_code="SERVER_DECOMMISSIONED",
                     message="Server is decommissioned, password rotation via worker not allowed",
                 )
-            skipped.append({"server_id": server.id, "reason": "decommissioned"})
+            skipped.append({
+                "server_id": server.id, "server_name": _server_name(server),
+                "reason": "decommissioned",
+            })
             continue
         dispatchable.append(server)
 
@@ -2064,6 +2079,11 @@ async def account_rotate_password_dispatch(
             http_status=413,
         )
 
+    # Батч-id и name-map: per-task детали в ответе несут server_name, чтобы
+    # UI показывал «ушло/упало» без отдельного lookup'а сервера.
+    batch_id = rotation_batch_id()
+    name_by_id = {s.id: _server_name(s) for s in dispatchable}
+
     tasks: list[dict] = []
     idempotent_hits: list[str] = []
     for server in dispatchable:
@@ -2105,7 +2125,10 @@ async def account_rotate_password_dispatch(
             )
             if mode == "single":
                 raise
-            skipped.append({"server_id": server.id, "reason": "idempotent_conflict"})
+            skipped.append({
+                "server_id": server.id, "server_name": _server_name(server),
+                "reason": "idempotent_conflict",
+            })
             continue
         except ServiceUnavailableError:
             # Воркер недоступен глобально (redis down / не сконфигурён) — не
@@ -2125,6 +2148,7 @@ async def account_rotate_password_dispatch(
                 audit_action, target_id=account_id, target_type="server_account",
                 status="failure", allowed=True,
                 details={
+                    "batch_id": batch_id,
                     "mode": mode,
                     "task_kind": "account.rotate_password",
                     "reason": "worker_unreachable_partial",
@@ -2152,6 +2176,7 @@ async def account_rotate_password_dispatch(
                     target_id=account_id, target_type="server_account",
                     status="warning", allowed=True,
                     details={
+                        "batch_id": batch_id,
                         "task_kind": "account.rotate_password",
                         "dispatched_count": len(tasks),
                         "failed_count": 1,
@@ -2167,22 +2192,34 @@ async def account_rotate_password_dispatch(
                 # увидел их в одном списке с decommissioned/idempotent.
                 skipped.append({
                     "server_id": failed_server_id,
+                    "server_name": name_by_id.get(failed_server_id),
                     "reason": "worker_unreachable",
                 })
                 for sid in not_attempted:
                     skipped.append({
-                        "server_id": sid, "reason": "not_attempted",
+                        "server_id": sid,
+                        "server_name": name_by_id.get(sid),
+                        "reason": "not_attempted",
                     })
+                dispatched_tasks = [AccountRotateTask(**t) for t in tasks]
+                failed_entries = [AccountRotateSkipped(**s) for s in skipped]
                 return AccountRotateDispatchResponse(
+                    batch_id=batch_id,
                     mode=mode,
                     status="partial",
-                    tasks=[AccountRotateTask(**t) for t in tasks],
-                    skipped=[AccountRotateSkipped(**s) for s in skipped],
+                    dispatched=dispatched_tasks,
+                    failed=failed_entries,
+                    tasks=dispatched_tasks,
+                    skipped=failed_entries,
                     partial_failure=True,
                     next_action="manual_cancel_dispatched",
                 )
             raise
-        tasks.append({"server_id": server.id, "task_id": task_id})
+        tasks.append({
+            "server_id": server.id,
+            "server_name": _server_name(server),
+            "task_id": task_id,
+        })
 
     # Агрегированный итог: эмитим всегда, даже при частичных пропусках, чтобы
     # частичное применение массовой ротации было видно в SIEM (а не только
@@ -2191,6 +2228,7 @@ async def account_rotate_password_dispatch(
         audit_action, target_id=account_id, target_type="server_account",
         status="success", allowed=True,
         details={
+            "batch_id": batch_id,
             "mode": mode,
             "task_kind": "account.rotate_password",
             "task_ids": [t["task_id"] for t in tasks],
@@ -2204,11 +2242,16 @@ async def account_rotate_password_dispatch(
             "department_id": account.department_id,
         },
     )
+    dispatched_tasks = [AccountRotateTask(**t) for t in tasks]
+    failed_entries = [AccountRotateSkipped(**s) for s in skipped]
     return AccountRotateDispatchResponse(
+        batch_id=batch_id,
         mode=mode,
         status="queued",
-        tasks=[AccountRotateTask(**t) for t in tasks],
-        skipped=[AccountRotateSkipped(**s) for s in skipped],
+        dispatched=dispatched_tasks,
+        failed=failed_entries,
+        tasks=dispatched_tasks,
+        skipped=failed_entries,
         partial_failure=False,
         next_action=None,
     )

@@ -783,18 +783,21 @@ def _resolve_actor_type(actor_type: str | None) -> str:
     Раньше код дублировался в двух местах: правка whitelist'а требовала
     держать обе ветки в синхроне руками.
 
-    Под middleware `audit_access` actor_type всегда выставлен (см.
-    `dependencies/auth.py::_fetch_identity`), поэтому None здесь — сигнал
-    того, что admin self-audit call-site забыл передать тип. Логируем
-    предупреждение: молча проглатывать None в "anonymous" мешало бы найти
-    забывший call-site по grep'у.
+    `None` — ожидаемый путь: на 401/неаутентифицированном запросе middleware
+    `audit_access` ещё не получил identity (introspect не дошёл до
+    `subject_type`), и envelope несёт `actor_type=None`. Это легитимный
+    anonymous, не ошибка call-site — раскладываем его в `anonymous` без
+    шума в SIEM. WARNING остаётся ТОЛЬКО для непустого значения, которого
+    нет в whitelist'е: новый `subject_type` от auth_service либо call-site,
+    подсунувший мусор. Такой случай стоит увидеть по grep'у warning'ов.
     """
     if actor_type in VALID_ACTOR_TYPES:
         return actor_type
-    if actor_type is None:
+    if actor_type is not None:
         logger.warning(
-            "audit_outbox._resolve_actor_type received None — admin self-audit "
-            "call-site likely forgot to pass actor_type; falling back to anonymous"
+            "audit_outbox._resolve_actor_type received unknown actor_type %r — "
+            "not in VALID_ACTOR_TYPES; falling back to anonymous",
+            actor_type,
         )
     return "anonymous"
 

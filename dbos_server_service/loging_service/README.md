@@ -134,6 +134,7 @@ Self-audit события: `logging.events_queried`, `logging.rules_read`, `logg
 | `INGEST_RATE_LIMIT` | `100/minute` | slowapi default на `POST /events` |
 | `INGEST_BURST_PER_SECOND` | `0` | burst-cap поверх `INGEST_RATE_LIMIT`. `>0` добавляет второе правило `N/second`, защищает от штормов (`100/minute` без burst-капы выжимается за 1 секунду). `0` — выключено |
 | `AUDIT_QUERY_RATE_LIMIT` | `60/minute` | slowapi default на read-канал: `GET /events`, `GET /rules*`, `GET /services*`, `GET /retention` |
+| `RULE_WRITE_RATE_LIMIT` | `30/minute` | slowapi default на admin-запись правил (`POST/PATCH/DELETE /rules`), per-user (fallback на IP) — защита от flood'а скомпрометированным `loging_admin`-токеном |
 | `REGISTER_EVENTS_RATE_LIMIT` | `100/minute` | slowapi default на `POST /services/{service}/events` (per-identity) |
 | `RATE_LIMIT_HEADERS_ENABLED` | `false` | включать ли `X-RateLimit-*` response headers |
 | `SECURITY_HSTS_ENABLED` | `false` | `Strict-Transport-Security` header — только за https-фронтом |

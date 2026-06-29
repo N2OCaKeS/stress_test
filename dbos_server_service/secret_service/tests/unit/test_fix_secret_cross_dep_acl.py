@@ -110,7 +110,8 @@ async def test_personal_same_dep_acl_still_works(adb) -> None:
     )
     allowed, reason = await access_service.check_access(adb, peer, cred, "read")
     assert allowed
-    assert reason == "acl_read"
+    # `read` (метаданные) — младший уровень лесенки; can_read его покрывает.
+    assert reason == "acl_view"
 
 
 @pytest.mark.asyncio

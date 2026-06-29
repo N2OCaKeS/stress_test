@@ -49,12 +49,19 @@
 | `cred_id` | `str` | NO | FK → `credentials.id` |
 | `dept_id` | `str` | NO | В каком департаменте действует разрешение. |
 | `role_name` | `str(64)` | NO | Имя роли (по смыслу — из per-department каталога `auth.service_role_definitions`). **На входе НЕ валидируется** против каталога: принимается любая строка 1..64. Несуществующая роль просто не сматчит actor'а при access-check (мёртвый ACL). |
-| `can_read` | `bool` | NO | Право на reveal. |
-| `can_write` | `bool` | NO | Право на update/delete (только для `scope=department` и `cross_department`). |
+| `can_view` | `bool` | NO | Видеть, что секрет есть (метаданные, в листинге), без значения. Младший уровень лесенки. |
+| `can_read` | `bool` | NO | Право на reveal (значение). Влечёт `can_view`. |
+| `can_write` | `bool` | NO | Право на update/delete (только для `scope=department` и `cross_department`). Влечёт `can_read` и `can_view`. |
 | `granted_by_user_id` | `str` | NO | `usr_…`/`bot_…` (immutable, не cascade'ится при удалении granter'а). |
 | `granted_at` | `timestamptz` | NO | |
 
 **UNIQUE**: `(cred_id, dept_id, role_name)`.
+
+**Лесенка прав**: `can_view ⊂ can_read ⊂ can_write`. На входе младшие уровни
+подтягиваются под выданный старший (выдача `can_write` ставит и `can_read`, и
+`can_view`); саму вложенность access-check соблюдает и без нормализации.
+Action `read` (метаданные/листинг) проходит при любом из трёх флагов, `reveal`
+— при `can_read`/`can_write`, изменения — при `can_write`.
 
 **Применимость по scope**:
 - `personal` — `dept_id = owner.department_id` всегда; владелец выдаёт `role_acl` другим в **своём** департаменте.
@@ -181,7 +188,7 @@ URL prefix: `/api/secret/v1/`.
 
 | Метод | Path | Доступ | Описание |
 |---|---|---|---|
-| `POST` | `/credentials/{id}/acl` | owner (personal) / dep_admin (department/cross_dep recipient) | `{dept_id, role_name, can_read, can_write}`. Для cross_dep требует существующего `DeptGrant`. |
+| `POST` | `/credentials/{id}/acl` | owner (personal) / dep_admin (department/cross_dep recipient) | `{dept_id, role_name, can_view, can_read, can_write}`. Для cross_dep требует существующего `DeptGrant`. |
 | `DELETE` | `/credentials/{id}/acl/{acl_id}` | owner / dep_admin | Revoke. Ответ — `200 OkResponse = { ok: true }`. |
 | `GET` | `/credentials/{id}/acl` | reader+can_manage_acl | Список ACL. |
 
@@ -191,7 +198,7 @@ URL prefix: `/api/secret/v1/`.
 
 | Метод | Path | Доступ | Описание |
 |---|---|---|---|
-| `POST` | `/credentials/{id}/user-acl` | owner (personal) | `{user_id, can_read=true, can_write=false}`. Только `scope=personal` — иначе `422 USER_ACL_SCOPE_NOT_PERSONAL`. Выдача владельцу/себе → `422`. Дубль `(cred_id, user_id)` → `409 USER_ACL_DUPLICATE`. |
+| `POST` | `/credentials/{id}/user-acl` | owner (personal) | `{user_id, can_view=false, can_read=true, can_write=false}`. Только `scope=personal` — иначе `422 USER_ACL_SCOPE_NOT_PERSONAL`. Выдача владельцу/себе → `422`. Дубль `(cred_id, user_id)` → `409 USER_ACL_DUPLICATE`. |
 | `GET` | `/credentials/{id}/user-acl` | reader (как read) | Список user-ACL. |
 | `DELETE` | `/credentials/{id}/user-acl/{acl_id}` | owner | Revoke. Ответ — `200 OkResponse = { ok: true }`. |
 

@@ -505,3 +505,135 @@ async def test_bot_cannot_see_personal(adb) -> None:
     allowed, reason = await access_service.check_access(adb, bot, cred, "read")
     assert not allowed
     assert reason == "scope_mismatch"
+
+
+# ── три уровня лесенки: view ⊂ read ⊂ write ─────────────────────────────────
+
+
+async def _grant_role_acl(
+    adb,
+    cred_id: str,
+    *,
+    id: str,
+    role_name: str = "reader",
+    can_view: bool = False,
+    can_read: bool = False,
+    can_write: bool = False,
+) -> None:
+    await acls_repo.create(
+        adb,
+        id=id,
+        cred_id=cred_id,
+        dept_id="dep_actor00000000000000000001",
+        role_name=role_name,
+        can_view=can_view,
+        can_read=can_read,
+        can_write=can_write,
+        granted_by_user_id="usr_admin0000000000000000000001",
+    )
+
+
+@pytest.mark.asyncio
+async def test_view_only_sees_metadata_not_value(adb) -> None:
+    """can_view: метаданные (read) видны, значение (reveal) — нет."""
+    cred = await _create_dept(adb)
+    await _grant_role_acl(adb, cred.id, id="acl_view1", can_view=True)
+    actor = _identity(roles=["reader"])
+
+    allowed, reason = await access_service.check_access(adb, actor, cred, "read")
+    assert allowed and reason == "acl_view"
+
+    allowed, reason = await access_service.check_access(adb, actor, cred, "reveal")
+    assert not allowed and reason == "acl_missing_can_read"
+
+    allowed, reason = await access_service.check_access(adb, actor, cred, "write")
+    assert not allowed and reason == "acl_missing_can_write"
+
+
+@pytest.mark.asyncio
+async def test_can_read_sees_metadata_and_value(adb) -> None:
+    """can_read: и метаданные, и значение; запись по-прежнему нет."""
+    cred = await _create_dept(adb)
+    await _grant_role_acl(adb, cred.id, id="acl_read1", can_view=True, can_read=True)
+    actor = _identity(roles=["reader"])
+
+    allowed, reason = await access_service.check_access(adb, actor, cred, "read")
+    assert allowed and reason == "acl_view"
+
+    allowed, reason = await access_service.check_access(adb, actor, cred, "reveal")
+    assert allowed and reason == "acl_read"
+
+    allowed, reason = await access_service.check_access(adb, actor, cred, "write")
+    assert not allowed and reason == "acl_missing_can_write"
+
+
+@pytest.mark.asyncio
+async def test_can_write_implies_read_and_view(adb) -> None:
+    """Лесенка: голый can_write (без read/view в строке) всё равно пускает
+    на reveal и метаданные."""
+    cred = await _create_dept(adb)
+    await _grant_role_acl(
+        adb,
+        cred.id,
+        id="acl_write1",
+        role_name="operator",
+        can_view=False,
+        can_read=False,
+        can_write=True,
+    )
+    actor = _identity(roles=["operator"])
+
+    allowed, reason = await access_service.check_access(adb, actor, cred, "read")
+    assert allowed and reason == "acl_view"
+
+    allowed, reason = await access_service.check_access(adb, actor, cred, "reveal")
+    assert allowed and reason == "acl_read"
+
+    allowed, reason = await access_service.check_access(adb, actor, cred, "write")
+    assert allowed and reason == "acl_write"
+
+
+@pytest.mark.asyncio
+async def test_backfill_invariant_can_read_without_can_view_still_reads(adb) -> None:
+    """Инвариант бэкфилла: строка с can_read=true, но can_view=false (как
+    могло остаться у непропатченного грантополучателя) всё равно даёт
+    видимость метаданных — лесенка считается на проверке, не на хранении."""
+    cred = await _create_dept(adb)
+    await _grant_role_acl(
+        adb, cred.id, id="acl_bf1", can_view=False, can_read=True, can_write=False
+    )
+    actor = _identity(roles=["reader"])
+
+    allowed, reason = await access_service.check_access(adb, actor, cred, "read")
+    assert allowed and reason == "acl_view"
+
+    allowed, reason = await access_service.check_access(adb, actor, cred, "reveal")
+    assert allowed and reason == "acl_read"
+
+
+@pytest.mark.asyncio
+async def test_user_acl_view_only_personal(adb) -> None:
+    """Поимённый view-доступ к личной кред'е: метаданные видно, значение нет."""
+    cred = await _create_personal(
+        adb, owner_user_id="usr_owner00000000000000000001"
+    )
+    from src.repositories import user_acls as uacls_repo
+
+    await uacls_repo.create(
+        adb,
+        id="uacl_view1",
+        cred_id=cred.id,
+        user_id="usr_actor000000000000000000001",
+        can_view=True,
+        can_read=False,
+        can_write=False,
+        granted_by_user_id="usr_owner00000000000000000001",
+    )
+    actor = _identity(user_id="usr_actor000000000000000000001")
+
+    allowed, reason = await access_service.check_access(adb, actor, cred, "read")
+    assert allowed and reason == "user_acl_view"
+
+    # reveal по личной кред'е без can_read — отказ (на уровне check_access).
+    allowed, reason = await access_service.check_access(adb, actor, cred, "reveal")
+    assert not allowed

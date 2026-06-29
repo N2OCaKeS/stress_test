@@ -61,9 +61,15 @@ async def create(db: AsyncSession, **fields) -> RoleACL:
 
 
 async def update_flags(
-    db: AsyncSession, acl: RoleACL, *, can_read: bool, can_write: bool
+    db: AsyncSession,
+    acl: RoleACL,
+    *,
+    can_view: bool,
+    can_read: bool,
+    can_write: bool,
 ) -> RoleACL:
-    """Переписать пару флагов существующего ACL. commit — на caller'е."""
+    """Переписать флаги существующего ACL. commit — на caller'е."""
+    acl.can_view = can_view
     acl.can_read = can_read
     acl.can_write = can_write
     await db.flush()

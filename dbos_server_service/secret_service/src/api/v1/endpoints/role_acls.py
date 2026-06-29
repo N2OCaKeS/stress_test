@@ -27,6 +27,7 @@ def _to_read(acl: RoleACL) -> RoleACLRead:
         cred_id=acl.cred_id,
         dept_id=acl.dept_id,
         role_name=acl.role_name,
+        can_view=acl.can_view,
         can_read=acl.can_read,
         can_write=acl.can_write,
         granted_by_user_id=acl.granted_by_user_id,

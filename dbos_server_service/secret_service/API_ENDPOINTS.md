@@ -195,7 +195,7 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 
 ## RoleACL
 
-ACL даёт читать (`can_read`) или менять (`can_write`) creds внутри одного департамента.
+ACL даёт видеть метаданные (`can_view`), читать значение (`can_read`) или менять (`can_write`) creds внутри одного департамента. Уровни вложены: `view ⊂ read ⊂ write`.
 
 ### POST /credentials/{cred_id}/acl
 
@@ -212,8 +212,9 @@ ACL даёт читать (`can_read`) или менять (`can_write`) creds �
 |---|---|---|
 | `dept_id` | str | да (1..64) |
 | `role_name` | str | да (1..64). **Не валидируется** против каталога `auth.service_role_definitions` — принимается любая строка; несуществующая роль просто никогда не сматчит actor'а при access-check. |
-| `can_read` | bool | default `false` |
-| `can_write` | bool | default `false` |
+| `can_view` | bool | default `false`. Видеть метаданные/листинг без значения (младший уровень лесенки `view ⊂ read ⊂ write`). |
+| `can_read` | bool | default `false`. Reveal значения; влечёт `can_view`. |
+| `can_write` | bool | default `false`. Изменение/удаление; влечёт `can_read` и `can_view`. |
 
 **Response 201:** `RoleACLRead` (с `id`, `granted_by_user_id`, `granted_at`).
 **Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `409 ROLE_ACL_DUPLICATE`, `422 DEPT_GRANT_REQUIRED`, `422 PERSONAL_ACL_OWNER_DEPT_ONLY`.
@@ -222,17 +223,17 @@ ACL даёт читать (`can_read`) или менять (`can_write`) creds �
 
 ### PUT /credentials/{cred_id}/acl
 
-Атомарный upsert `RoleACL`: задать желаемую пару `(can_read, can_write)` для `(dept_id, role_name)`. Идемпотентно, без `409` — заменяет связку `revoke`+`re-add` при тоггле ячейки матрицы.
+Атомарный upsert `RoleACL`: задать желаемый набор `(can_view, can_read, can_write)` для `(dept_id, role_name)`. Идемпотентно, без `409` — заменяет связку `revoke`+`re-add` при тоггле ячейки матрицы.
 
 - строки нет → создаётся (с `granted_by_user_id = actor`);
 - строка есть → флаги переписываются (тот же `id`, `granted_at` сохраняется);
-- оба флага `false` → строка удаляется («нет доступа» = отсутствие записи). Снятие несуществующей строки — идемпотентный no-op.
+- все флаги `false` → строка удаляется («нет доступа» = отсутствие записи). Снятие несуществующей строки — идемпотентный no-op. Выдача только `can_view` (метаданные без значения) — валидная строка, не удаляется.
 
 **Auth / scope-проверки:** те же, что у `POST` (гейт `grant_acl`, `personal` → owner-dep, cross-dep recipient → нужен `DeptGrant`).
 
-**Body (`RoleACLUpsert`):** `dept_id` (str 1..64), `role_name` (str 1..64), `can_read` (bool, default `false`), `can_write` (bool, default `false`).
+**Body (`RoleACLUpsert`):** `dept_id` (str 1..64), `role_name` (str 1..64), `can_view` (bool, default `false`), `can_read` (bool, default `false`), `can_write` (bool, default `false`).
 
-**Response 200 (`RoleACLUpsertResponse`):** `{ ok: true, acl: RoleACLRead | null }` — `acl` = `null`, когда оба флага сняты и строка удалена.
+**Response 200 (`RoleACLUpsertResponse`):** `{ ok: true, acl: RoleACLRead | null }` — `acl` = `null`, когда все флаги сняты и строка удалена.
 
 **Audit:** создание/обновление → `tokens.role_acl_added`; снятие (both-false) → `tokens.role_acl_revoked`.
 

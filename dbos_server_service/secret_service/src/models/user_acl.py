@@ -45,6 +45,7 @@ class CredentialUserACL(Base):
     # user-identity, и personal-доступ ему не выдают.
     user_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
+    can_view: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     can_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     can_write: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 

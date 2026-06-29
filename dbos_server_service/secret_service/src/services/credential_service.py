@@ -18,7 +18,7 @@ import logging
 import secrets as _secrets
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -468,7 +468,13 @@ async def list_visible(
                     RoleACL.cred_id == Credential.id,
                     RoleACL.dept_id == identity.department_id,
                     RoleACL.role_name.in_(role_names),
-                    RoleACL.can_read.is_(True),
+                    # Любой уровень лесенки даёт видимость метаданных в листинге;
+                    # точную проверку всё равно делает check_access ниже.
+                    or_(
+                        RoleACL.can_view.is_(True),
+                        RoleACL.can_read.is_(True),
+                        RoleACL.can_write.is_(True),
+                    ),
                 )
             )
             stmt = (

@@ -253,6 +253,67 @@ async def test_upsert_acl_updates_flags_no_409(http_client, dept_cred, adb):
 
 
 @pytest.mark.asyncio
+async def test_add_acl_view_only_roundtrips(http_client, dept_cred):
+    payload = {
+        "dept_id": OWNER_DEPT,
+        "role_name": "guest",
+        "can_view": True,
+        "can_read": False,
+        "can_write": False,
+    }
+    resp = await http_client.post(
+        f"/api/secret/v1/credentials/{dept_cred.id}/acl", json=payload
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["can_view"] is True
+    assert body["can_read"] is False
+    assert body["can_write"] is False
+
+
+@pytest.mark.asyncio
+async def test_upsert_view_only_persists_not_removed(http_client, dept_cred, adb):
+    # view-only (можно видеть метаданные) — валидная выдача, строку не сносим.
+    resp = await http_client.put(
+        f"/api/secret/v1/credentials/{dept_cred.id}/acl",
+        json={
+            "dept_id": OWNER_DEPT,
+            "role_name": "guest",
+            "can_view": True,
+            "can_read": False,
+            "can_write": False,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["acl"] is not None
+    assert resp.json()["acl"]["can_view"] is True
+
+    rows = await acls_repo.get_for_cred(adb, dept_cred.id)
+    assert len(rows) == 1
+    assert rows[0].can_view is True
+
+
+@pytest.mark.asyncio
+async def test_upsert_write_normalizes_lower_levels(http_client, dept_cred, adb):
+    # Выдаём только can_write — лесенка должна подтянуть can_read и can_view.
+    resp = await http_client.put(
+        f"/api/secret/v1/credentials/{dept_cred.id}/acl",
+        json={
+            "dept_id": OWNER_DEPT,
+            "role_name": "operator",
+            "can_view": False,
+            "can_read": False,
+            "can_write": True,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    acl = resp.json()["acl"]
+    assert acl["can_write"] is True
+    assert acl["can_read"] is True
+    assert acl["can_view"] is True
+
+
+@pytest.mark.asyncio
 async def test_upsert_acl_both_false_removes_row(http_client, dept_cred, adb):
     base = {"dept_id": OWNER_DEPT, "role_name": "reader"}
     r1 = await http_client.put(

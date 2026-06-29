@@ -62,6 +62,20 @@ def _new_acl_id() -> str:
     return f"acl_{_secrets.token_hex(16)}"
 
 
+def _normalize_flags(
+    *, can_view: bool, can_read: bool, can_write: bool
+) -> tuple[bool, bool, bool]:
+    """Подтянуть младшие уровни лесенки под выданный старший.
+
+    view ⊂ read ⊂ write: write влечёт read, read влечёт view. Храним флаги уже
+    выровненными, чтобы листинг ACL и бэкфилл-инвариант совпадали; саму
+    проверку доступа access_service всё равно делает по лесенке.
+    """
+    can_read = can_read or can_write
+    can_view = can_view or can_read
+    return can_view, can_read, can_write
+
+
 async def _check_dept_target(db, identity, cred, dept_id: str) -> None:
     """Проверить, что ACL для (cred, dept_id) допустим по scope'у.
 
@@ -119,6 +133,11 @@ async def add(
                 message="RoleACL with this (dept_id, role_name) already exists",
             )
 
+        can_view, can_read, can_write = _normalize_flags(
+            can_view=payload.can_view,
+            can_read=payload.can_read,
+            can_write=payload.can_write,
+        )
         try:
             acl = await repo.create(
                 db,
@@ -126,8 +145,9 @@ async def add(
                 cred_id=cred.id,
                 dept_id=payload.dept_id,
                 role_name=payload.role_name,
-                can_read=payload.can_read,
-                can_write=payload.can_write,
+                can_view=can_view,
+                can_read=can_read,
+                can_write=can_write,
                 granted_by_user_id=identity.user_id,
             )
             await db.commit()
@@ -159,6 +179,7 @@ async def add(
             "cred_id": cred.id,
             "dept_id": acl.dept_id,
             "role_name": acl.role_name,
+            "can_view": acl.can_view,
             "can_read": acl.can_read,
             "can_write": acl.can_write,
         },
@@ -182,14 +203,19 @@ async def upsert(
     `tokens.role_acl_revoked`. На failure-пути эмитим failure-вариант
     `tokens.role_acl_added` до raise.
     """
-    both_false = not payload.can_read and not payload.can_write
+    can_view, can_read, can_write = _normalize_flags(
+        can_view=payload.can_view,
+        can_read=payload.can_read,
+        can_write=payload.can_write,
+    )
+    all_false = not can_view and not can_read and not can_write
     try:
         cred = await load_for_action(db, identity, cred_id, "grant_acl")
         await _check_dept_target(db, identity, cred, payload.dept_id)
 
         existing = await repo.find(db, cred.id, payload.dept_id, payload.role_name)
 
-        if both_false:
+        if all_false:
             if existing is None:
                 # Нечего снимать — идемпотентный no-op, событий не пишем.
                 # До этой ветки шли только SELECT'ы (load_for_action /
@@ -215,8 +241,9 @@ async def upsert(
             acl = await repo.update_flags(
                 db,
                 existing,
-                can_read=payload.can_read,
-                can_write=payload.can_write,
+                can_view=can_view,
+                can_read=can_read,
+                can_write=can_write,
             )
         else:
             acl = await repo.create(
@@ -225,8 +252,9 @@ async def upsert(
                 cred_id=cred.id,
                 dept_id=payload.dept_id,
                 role_name=payload.role_name,
-                can_read=payload.can_read,
-                can_write=payload.can_write,
+                can_view=can_view,
+                can_read=can_read,
+                can_write=can_write,
                 granted_by_user_id=identity.user_id,
             )
         await db.commit()
@@ -252,6 +280,7 @@ async def upsert(
             "cred_id": cred.id,
             "dept_id": acl.dept_id,
             "role_name": acl.role_name,
+            "can_view": acl.can_view,
             "can_read": acl.can_read,
             "can_write": acl.can_write,
         },

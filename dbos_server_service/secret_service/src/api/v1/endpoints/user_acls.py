@@ -20,6 +20,7 @@ def _to_out(acl: CredentialUserACL) -> UserACLOut:
         id=acl.id,
         cred_id=acl.cred_id,
         user_id=acl.user_id,
+        can_view=acl.can_view,
         can_read=acl.can_read,
         can_write=acl.can_write,
         granted_by_user_id=acl.granted_by_user_id,

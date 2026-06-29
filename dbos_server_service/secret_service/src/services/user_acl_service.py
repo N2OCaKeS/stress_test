@@ -68,6 +68,15 @@ def _new_acl_id() -> str:
     return f"uacl_{_secrets.token_hex(16)}"
 
 
+def _normalize_flags(
+    *, can_view: bool, can_read: bool, can_write: bool
+) -> tuple[bool, bool, bool]:
+    """Подтянуть младшие уровни лесенки под выданный старший (view ⊂ read ⊂ write)."""
+    can_read = can_read or can_write
+    can_view = can_view or can_read
+    return can_view, can_read, can_write
+
+
 async def add(
     db: AsyncSession,
     identity: Identity,
@@ -114,14 +123,20 @@ async def add(
                 message="user-ACL for this user already exists",
             )
 
+        can_view, can_read, can_write = _normalize_flags(
+            can_view=payload.can_view,
+            can_read=payload.can_read,
+            can_write=payload.can_write,
+        )
         try:
             acl = await repo.create(
                 db,
                 id=_new_acl_id(),
                 cred_id=cred.id,
                 user_id=target_user,
-                can_read=payload.can_read,
-                can_write=payload.can_write,
+                can_view=can_view,
+                can_read=can_read,
+                can_write=can_write,
                 granted_by_user_id=identity.user_id,
             )
             await db.commit()
@@ -149,6 +164,7 @@ async def add(
         details={
             "cred_id": cred.id,
             "user_id": acl.user_id,
+            "can_view": acl.can_view,
             "can_read": acl.can_read,
             "can_write": acl.can_write,
         },

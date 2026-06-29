@@ -28,11 +28,22 @@ emergency transfer/recover для кред'ы с удалённым владею
 проверяется напрямую в `credential_service` (ветка `_is_account_admin`), а не
 здесь — это аварийный override восстановления, не обычный доступ к содержимому.
 
-Все ветки возвращают конкретный reason: `owner_match`, `acl_read`,
-`acl_write`, `user_acl_read`, `user_acl_write`, `dept_admin`,
-`service_admin`, `blocked`, `dept_grant_missing`, `role_not_in_acl`,
-`acl_missing_can_read`, `acl_missing_can_write`, `scope_mismatch`,
-`not_owner_dept`. Любой другой текст в reason — это баг, имейте в виду.
+Доступ к секрету выстроен лесенкой из трёх уровней:
+
+  * `view`   — видеть, что секрет есть (метаданные / в листинге), без значения;
+  * `read`   — видеть значение (reveal);
+  * `write`  — менять / удалять / раздавать доступ.
+
+Лесенка вложена: `can_write ⊇ can_read ⊇ can_view`. Поэтому action `read`
+(метаданные) проходит при любом из трёх флагов, `reveal` — при can_read или
+can_write, write-actions — только при can_write.
+
+Все ветки возвращают конкретный reason: `owner_match`, `acl_view`,
+`acl_read`, `acl_write`, `user_acl_view`, `user_acl_read`, `user_acl_write`,
+`dept_admin`, `service_admin`, `blocked`, `dept_grant_missing`,
+`role_not_in_acl`, `acl_missing_can_view`, `acl_missing_can_read`,
+`acl_missing_can_write`, `scope_mismatch`, `not_owner_dept`. Любой другой
+текст в reason — это баг, имейте в виду.
 
 Прямой per-user grant (`CredentialUserACL`) действует ТОЛЬКО на личные кред'ы
 (scope=personal): проверяется до scope-веток и короткозамыкает на положительном
@@ -73,8 +84,14 @@ Action = Literal[
     "list_guest",
 ]
 
-# Actions, которые требуют can_write на RoleACL (не просто can_read).
+# Actions, которые требуют can_write на ACL.
 _WRITE_ACTIONS: frozenset[str] = frozenset({"write", "delete", "grant_acl", "grant_dept", "manage_status"})
+
+# Actions, раскрывающие значение секрета — требуют can_read (или выше).
+_REVEAL_ACTIONS: frozenset[str] = frozenset({"reveal"})
+
+# Прочие нечитающие-значение actions (read, list_guest) — метаданные/листинг,
+# им достаточно can_view (или выше).
 
 # Actions, которые при scope=personal на cred НЕ принадлежащей actor'у
 # никогда не выдаются по ACL (только владелец может). delete и
@@ -100,13 +117,22 @@ def _has_acl_permission(acls: list, action: Action, identity_roles: list[str]) -
     matching = [a for a in acls if a.role_name in identity_roles]
     if not matching:
         return False, "role_not_in_acl"
-    needs_write = action in _WRITE_ACTIONS
+    if action in _WRITE_ACTIONS:
+        for acl in matching:
+            if acl.can_write:
+                return True, "acl_write"
+        return False, "acl_missing_can_write"
+    if action in _REVEAL_ACTIONS:
+        # Значение секрета — can_read или (по лесенке) can_write.
+        for acl in matching:
+            if acl.can_read or acl.can_write:
+                return True, "acl_read"
+        return False, "acl_missing_can_read"
+    # Метаданные / листинг — достаточно любого уровня лесенки.
     for acl in matching:
-        if needs_write and acl.can_write:
-            return True, "acl_write"
-        if not needs_write and acl.can_read:
-            return True, "acl_read"
-    return False, "acl_missing_can_write" if needs_write else "acl_missing_can_read"
+        if acl.can_view or acl.can_read or acl.can_write:
+            return True, "acl_view"
+    return False, "acl_missing_can_view"
 
 
 async def _check_user_acl(
@@ -118,8 +144,10 @@ async def _check_user_acl(
     """Прямой per-user grant на личную креду.
 
     Действует только для scope=personal: владелец personal-кред'ы выдаёт доступ
-    поимённо одному user_id. read/reveal требуют `can_read`, write — `can_write`.
-    Бот сюда не попадает — у него нет user-identity, а user-ACL адресован
+    поимённо одному user_id. Лесенка та же, что у RoleACL: метаданные (`read`)
+    — `can_view` и выше, значение (`reveal`) — `can_read` и выше, запись —
+    `can_write`. Бот сюда не попадает — у него нет user-identity, а user-ACL
+    адресован
     конкретному пользователю.
 
     Для department/cross_department доступ раздаётся только ролями (RoleACL),
@@ -145,8 +173,13 @@ async def _check_user_acl(
         if acl.can_write:
             return True, "user_acl_write"
         return False, "no_user_acl"
-    if acl.can_read:
-        return True, "user_acl_read"
+    if action in _REVEAL_ACTIONS:
+        if acl.can_read or acl.can_write:
+            return True, "user_acl_read"
+        return False, "no_user_acl"
+    # Метаданные / листинг — достаточно любого уровня лесенки.
+    if acl.can_view or acl.can_read or acl.can_write:
+        return True, "user_acl_view"
     return False, "no_user_acl"
 
 

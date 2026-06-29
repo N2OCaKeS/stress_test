@@ -205,8 +205,12 @@ async def test_blocked_non_owner_emits_masked_404(adb) -> None:
 
 @pytest.mark.asyncio
 async def test_recipient_with_grant_without_can_read_emits_real_403(adb) -> None:
-    """cross_dep recipient + DeptGrant + ACL.can_read=False → 403 + emit с
-    конкретным reason от check_access (acl_missing_can_read)."""
+    """cross_dep recipient + DeptGrant + ACL без флагов → 403 + emit с
+    конкретным reason от check_access (acl_missing_can_view).
+
+    ACL-строка с пустыми флагами (ни view, ни read, ни write) не даёт даже
+    видимости метаданных, поэтому `read` отбивается на младшем уровне лесенки.
+    """
     cred = await _make_cross_dep(adb, cred_id="cred_ad_x01")
     await grants_repo.create(
         adb,
@@ -239,7 +243,7 @@ async def test_recipient_with_grant_without_can_read_emits_real_403(adb) -> None
     details = denied[0]["details"]
     # Реальный 403 — не маскировка, поэтому ни info_leak_404, ни blocked.
     assert details["reason"] not in {"info_leak_404", "blocked"}
-    assert details["reason"] == "acl_missing_can_read"
+    assert details["reason"] == "acl_missing_can_view"
     assert details["scope"] == "cross_department"
 
 

@@ -1,7 +1,10 @@
 """Модель RoleACL — per-credential доступ внутри одного департамента.
 
 `(cred_id, dept_id, role_name)` уникально: одна роль в одном dep'е имеет
-ровно одну запись прав. `can_read`/`can_write` — фактические разрешения.
+ровно одну запись прав. `can_view`/`can_read`/`can_write` — фактические
+разрешения, выстроенные лесенкой: view (видеть, что секрет есть, без
+значения) ⊂ read (видеть значение) ⊂ write (менять). Сама лесенка (write
+влечёт read влечёт view) применяется при проверке доступа в access_service.
 
 `granted_by_user_id` намеренно без cascade'а на auth.users — если granter
 удалён, выданное им разрешение остаётся в силе (симметрия с auth W31
@@ -45,6 +48,7 @@ class RoleACL(Base):
     # Имя роли из auth.service_role_definitions (per-department каталог).
     role_name: Mapped[str] = mapped_column(String(64), nullable=False)
 
+    can_view: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     can_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     can_write: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 

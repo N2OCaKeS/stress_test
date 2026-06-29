@@ -163,3 +163,21 @@ export function prepareServersBulk(
 ): Promise<BulkPrepareResponse> {
   return apiPost<BulkPrepareResponse>("/server/v1/servers/prepare/bulk", body);
 }
+
+/**
+ * `POST /api/server/v1/servers/{id}/management-credentials/rotate` — ротация
+ * управляющей пары/пароля сервера (фича #3).
+ *
+ * Гейт — `(server, *, update)`, тот же, что у prepare; сервер обязан быть
+ * prepared (`is_managed`), иначе backend вернёт 409 PREPARE_REQUIRED.
+ * Диспатчит worker-задачу `server.rotate_management_creds` и отвечает 202 с
+ * `{task_id, status}`. Аудит — CRITICAL. Сразу после диспатча у сервера
+ * выставляется `mgmt_creds_pending_apply=True`, пока worker не подтвердит.
+ */
+export function rotateManagementCredentials(
+  id: string,
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(
+    `/server/v1/servers/${id}/management-credentials/rotate`,
+  );
+}

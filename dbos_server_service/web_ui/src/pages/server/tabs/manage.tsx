@@ -14,7 +14,7 @@
  * gate'ятся через `@/lib/rbac` хелперы. Backend перепроверит права —
  * client-side фильтр прячет только лишнее.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Play,
@@ -33,6 +33,7 @@ import {
   ListTree,
   ListChecks,
   UserCheck,
+  KeyRound,
   X,
 } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
@@ -43,11 +44,14 @@ import { formatMskShort } from "@/lib/datetime";
 import { isDepAdmin } from "@/lib/rbac";
 import { useUserLabel } from "@/lib/labels";
 import { toBase64 } from "@/lib/base64";
+import { sshKeyFingerprint } from "@/lib/sshFingerprint";
 import {
   clearBusy,
   deleteServer,
+  getServer,
   inventorySync,
   prepareServer,
+  rotateManagementCredentials,
   setBusy,
 } from "@/api/server/servers";
 import { usersInventory } from "@/api/server/misc";
@@ -112,6 +116,10 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
   // worker может закрыть их FAILED (битые bootstrap-креды, недоступный BMC),
   // и причину надо показать прямо здесь, не гоня юзера в /worker.
   const taskOutcome = useTaskOutcome();
+  // Отдельный трекер для ротации управляющих кред: у неё свой баннер в
+  // mgmt-карточке, чтобы не пересекаться с lifecycle-исходом.
+  const rotateOutcome = useTaskOutcome();
+  const rotateHandledRef = useRef<string | null>(null);
   const [current, setCurrent] = useState<Server | undefined>(server);
   // Когда родитель прислал свежий объект (мутация в соседней вкладке) —
   // подхватываем его, чтобы не залипнуть на устаревшей локальной копии.
@@ -130,6 +138,21 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
     },
     [onServerUpdated],
   );
+
+  // Когда worker подтвердил ротацию (задача succeeded) — перечитываем карточку,
+  // чтобы подхватить новый fingerprint/rotated_at и снять pending. Ref гасит
+  // повторные refetch'и: applyServer меняет `view`, иначе эффект зациклится.
+  useEffect(() => {
+    const t = rotateOutcome.tracked;
+    if (!t || t.polling || t.status !== "succeeded") return;
+    if (rotateHandledRef.current === t.taskId) return;
+    rotateHandledRef.current = t.taskId;
+    if (view) {
+      getServer(view.id)
+        .then((next) => applyServer(next))
+        .catch(() => {});
+    }
+  }, [rotateOutcome.tracked, view, applyServer]);
 
   const allowBasic = canManageBasic(persona, view);
   // os_version CRUD и server:delete — только admin-плоскость (dep_admin своего
@@ -221,6 +244,37 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
             usersInventory(view.id),
           );
           if (res) taskOutcome.track("users_inventory", res.task_id, res.status);
+        }}
+      />
+
+      <ManagementCredsCard
+        server={view}
+        allowed={allowBasic}
+        busyLabel={busy}
+        outcome={rotateOutcome.tracked}
+        onCancelled={rotateOutcome.reset}
+        onRotate={async () => {
+          if (!view) return;
+          if (
+            !(await confirm({
+              title: "Ротировать управляющие креды",
+              message: `Сгенерировать новую управляющую SSH-пару и пароль для ${view.hostname}? Старый материал отзывается после применения на сервере. Действие чувствительное, пишется в аудит как CRITICAL.`,
+              confirmLabel: "Ротировать",
+              danger: true,
+            }))
+          )
+            return;
+          rotateOutcome.reset();
+          rotateHandledRef.current = null;
+          const res = await run("mgmt_rotate", () =>
+            rotateManagementCredentials(view.id),
+          );
+          if (res) {
+            rotateOutcome.track("mgmt_rotate", res.task_id, res.status);
+            // Оптимистично метим pending: задача только поставлена в очередь,
+            // refetch по succeeded позже вернёт реальное состояние.
+            applyServer({ ...view, mgmt_creds_pending_apply: true });
+          }
         }}
       />
 
@@ -507,6 +561,131 @@ function LifecycleCard({
           dep_admin своего департамента).
         </div>
       )}
+      {outcome && (
+        <TaskOutcomeBanner
+          outcome={outcome}
+          className="mt-3"
+          onCancelled={onCancelled}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Управляющие креды (per-server, фича #3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ManagementCredsCard({
+  server,
+  allowed,
+  busyLabel,
+  outcome,
+  onCancelled,
+  onRotate,
+}: {
+  server: Server | undefined;
+  allowed: boolean;
+  busyLabel: string | null;
+  outcome: TrackedTask | null;
+  onCancelled: () => void;
+  onRotate: () => Promise<void>;
+}) {
+  const prepared = !!server && server.is_managed;
+  // pending — либо backend ещё применяет ротацию (`mgmt_creds_pending_apply`),
+  // либо мы поллим только что задиспатченную задачу.
+  const pending =
+    !!server?.mgmt_creds_pending_apply || (outcome?.polling ?? false);
+  const disabled =
+    !allowed || busyLabel !== null || !prepared || pending || !server;
+
+  const [fingerprint, setFingerprint] = useState<string | null>(null);
+  const pubKey = server?.mgmt_ssh_public_key ?? null;
+  useEffect(() => {
+    let alive = true;
+    sshKeyFingerprint(pubKey).then((fp) => {
+      if (alive) setFingerprint(fp);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [pubKey]);
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <KeyRound className="w-4 h-4 text-accent" /> Управляющие креды
+        {pending && (
+          <span className="badge badge-warn text-[11px]">
+            ротация применяется…
+          </span>
+        )}
+      </h3>
+
+      {!prepared ? (
+        <div className="text-[11px] text-dim italic">
+          Управляющая пара появляется после prepare — на неподготовленном сервере
+          ротировать нечего.
+        </div>
+      ) : (
+        <>
+          <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-xs mb-3">
+            <dt className="text-dim">fingerprint</dt>
+            <dd className="mono break-all">
+              {fingerprint ? (
+                fingerprint
+              ) : (
+                <span className="text-dim" title="server_service ещё не отдаёт mgmt_ssh_public_key в карточке сервера">
+                  —
+                </span>
+              )}
+            </dd>
+            <dt className="text-dim">rotated_at</dt>
+            <dd className="mono">
+              {server?.mgmt_creds_rotated_at ? (
+                formatMskShort(server.mgmt_creds_rotated_at)
+              ) : (
+                <span className="text-dim">—</span>
+              )}
+            </dd>
+          </dl>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex-1 text-xs text-dim">
+              Генерирует новую управляющую SSH-пару и пароль, применяет их на
+              сервере через worker и отзывает старый материал. Чувствительная
+              операция — CRITICAL-аудит.
+            </div>
+            {allowed && (
+              <button
+                className="btn btn-danger flex items-center gap-1"
+                disabled={disabled}
+                onClick={onRotate}
+                title={
+                  prepared
+                    ? "Ротировать управляющую пару и пароль"
+                    : "Сначала prepare"
+                }
+              >
+                <KeyRound className="w-4 h-4" />
+                {pending
+                  ? "Ротация идёт…"
+                  : busyLabel === "mgmt_rotate"
+                    ? "Запускаем…"
+                    : "Ротировать управляющие креды"}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {!allowed && (
+        <div className="text-[11px] text-dim italic mt-3">
+          Нет прав на ротацию управляющих кред (нужна роль server.operator+ или
+          dep_admin своего департамента).
+        </div>
+      )}
+
       {outcome && (
         <TaskOutcomeBanner
           outcome={outcome}

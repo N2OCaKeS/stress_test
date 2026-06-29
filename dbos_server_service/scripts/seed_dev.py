@@ -336,10 +336,10 @@ def seed_server(dept_id: str, created_by: str, os_version_id: str | None) -> str
         # выкатываются на сервер только через `prepare`-flow; до него worker
         # заходит самим аккаунтом по паролю (см.
         # `_account_helpers.resolve_ssh_creds`) — это сценарий
-        # tester/tester1234 на test_server'е. Сама управляющая пара в dev-стеке
-        # теперь настроена (`make dev-mgmt-key` генерит .dev-secrets/, pubkey в
-        # .env, privkey смонтирован воркеру), так что prepare поднимет сервер в
-        # managed-режим штатно — стартовое состояние оставляем неуправляемым.
+        # tester/tester1234 на test_server'е. Управляющую SSH-пару и пароль
+        # server_service генерит сам при prepare (per-server, шифрует в своей
+        # БД) — глобального ключа в стенде больше нет, стартовое состояние
+        # оставляем неуправляемым.
         cur.execute(
             "INSERT INTO servers "
             "(id, hostname, display_name, ip_address, ssh_port, os_version_id, "

@@ -121,7 +121,7 @@ src/
 
 Все SSH-таски (`inventory.sync`, `users.inventory`, `account.provision`/`update_on_host`/`deprovision`, `account.rotate_password`) выбирают сессию через `ssh_client._build_session` по признаку `is_managed`, который server_service кладёт в payload вместе с `management_user`:
 
-- **managed-сервер** (`prepare` уже прошёл) — заходим управляющим пользователем (`management_user` из payload, иначе дефолтный `SSH_MANAGEMENT_USER`=`dbos`) по приватному ключу `SSH_MANAGEMENT_PRIVATE_KEY_PATH`, `password=None`, привилегированные команды через `sudo` (NOPASSWD-sudoers ставится при бутстрапе). Сервер managed, а ключ не сконфигурен / файла нет → `SSH_MANAGEMENT_KEY_MISSING` ещё до `asyncssh.connect`.
+- **managed-сервер** (`prepare` уже прошёл) — заходим управляющим пользователем (`management_user` из payload, иначе дефолтный `SSH_MANAGEMENT_USER`=`dbos`) по приватному ключу, который свой на каждом сервере: worker тянет его just-in-time из server_service (`fetch_management_credentials`), привилегированные команды через `sudo` (NOPASSWD-sudoers ставится при бутстрапе). Сервер managed, а креды не вернулись / пусты → `SSH_MANAGEMENT_CREDS_UNAVAILABLE` ещё до `asyncssh.connect`.
 - **не-managed** — self-сессия под самим аккаунтом (`login` + пароль), как раньше.
 
 `apply_session_hints` копирует `is_managed`/`management_user` из payload в creds; если server_service их не прислал — фолбэк на self-сессию.
@@ -302,9 +302,7 @@ make test-worker
 
 | ENV | Default | Назначение |
 |---|---|---|
-| `SSH_MANAGEMENT_USER` | `dbos` | имя управляющего пользователя, которого заводит `server.prepare` на боксе и под которым идут management-сессии для managed-серверов |
-| `SSH_MANAGEMENT_PUBLIC_KEY` | `""` | публичный SSH-ключ в `authorized_keys` управляющего пользователя. Пусто → `prepare` отказывается (`SSH_INVALID_ARG`), нечего класть |
-| `SSH_MANAGEMENT_PRIVATE_KEY_PATH` | `""` | путь к приватному ключу для management-сессий managed-серверов (mounted secret). Сам ключ в коде не хардкодится. Сервер managed, но ключ не задан / файла нет → `SSH_MANAGEMENT_KEY_MISSING` |
+| `SSH_MANAGEMENT_USER` | `dbos` | имя управляющего пользователя, которого заводит `server.prepare` на боксе и под которым идут management-сессии для managed-серверов. Только fallback-дефолт: имя берётся из payload (`management_user`), env используется когда payload его не прислал. Управляющая SSH-пара и пароль свои на каждом сервере — их генерит и хранит server_service, worker получает транзиентно (prepare-stash / internal fetch); глобального ключа в env нет |
 | `CONSOLE_IDLE_TIMEOUT_SECONDS` | `900.0` | таймаут бездействия интерактивной SSH-консоли: нет ввода от клиента дольше окна → worker гасит PTY-сессию (`reason=idle_timeout`) |
 | `CONSOLE_MAX_SESSION_SECONDS` | `3600.0` | жёсткий потолок длительности одной console-сессии независимо от активности — bound на забытый открытый терминал |
 | `CONSOLE_MAX_COMMAND_LENGTH` | `8192` | максимум байт строки console-ввода без Enter перед форс-флашем (аудит, truncated) — bound на память аккумулятора строки |

@@ -117,6 +117,17 @@ export interface Server {
   is_managed: boolean;
   management_user: string | null;
   prepared_at: Iso8601 | null;
+  /**
+   * Управляющие креды per-server (фича #3). На момент написания backend
+   * (`server_service/src/schemas/server.py::ServerResponse`) ещё не сериализует
+   * эти поля — они есть в ORM-модели, но не в response-схеме. Поэтому держим их
+   * опциональными: блок «Управляющие креды» деградирует (fingerprint «—»,
+   * pending не показан), пока схема не отдаст значения. fingerprint считаем на
+   * фронте из `mgmt_ssh_public_key` (см. `@/lib/sshFingerprint`).
+   */
+  mgmt_ssh_public_key?: string | null;
+  mgmt_creds_rotated_at?: Iso8601 | null;
+  mgmt_creds_pending_apply?: boolean;
   storage: DiskResponse[];
   created_at: Iso8601;
   updated_at: Iso8601;

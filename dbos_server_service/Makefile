@@ -90,7 +90,6 @@ _DEV_ADMIN_PASS = 1234
 _DEV_ADMIN_EMAIL = admin@example.com
 
 .PHONY: help \
-        dev-mgmt-key \
         up up-build seed down down-v logs ps sh-auth sh-logging sh-server sh-worker sh-secret logs-secret \
         dev dev-stop dev-logs \
         run-auth run-logging run-server run-secret \
@@ -113,33 +112,7 @@ _DEV_ADMIN_EMAIL = admin@example.com
 
 ##@ Dev: стек в Docker (без devcontainer)
 
-# Каталог управляющей SSH-пары для prepare (gitignored). Приватный ключ
-# монтируется в server_worker как /secrets/dbos_management, публичный кладётся
-# в .env (SSH_MANAGEMENT_PUBLIC_KEY) — его worker выкатывает в authorized_keys
-# управляющего пользователя на `server.prepare`.
-_DEV_SECRETS_DIR = $(CURDIR)/.dev-secrets
-_DEV_MGMT_KEY    = $(_DEV_SECRETS_DIR)/dbos_management
-
-dev-mgmt-key: ## Идемпотентно сгенерировать управляющую ed25519-пару для prepare и записать pubkey в .env
-	@mkdir -p $(_DEV_SECRETS_DIR)
-	@chmod 700 $(_DEV_SECRETS_DIR)
-	@if [ ! -s "$(_DEV_MGMT_KEY)" ]; then \
-		echo "→ Генерация управляющей SSH-пары $(_DEV_MGMT_KEY) (ed25519)..."; \
-		ssh-keygen -t ed25519 -N "" -C "dbos-management-dev" -f "$(_DEV_MGMT_KEY)" >/dev/null; \
-	else \
-		echo "→ Управляющая SSH-пара уже есть — пропускаем генерацию."; \
-	fi
-	@chmod 600 "$(_DEV_MGMT_KEY)"
-	@chmod 644 "$(_DEV_MGMT_KEY).pub"
-	@# Перезаписываем строку SSH_MANAGEMENT_PUBLIC_KEY в .env (docker compose
-	@# подхватывает .env автоматически). Остальные строки .env сохраняем.
-	@touch $(CURDIR)/.env
-	@grep -v '^SSH_MANAGEMENT_PUBLIC_KEY=' $(CURDIR)/.env > $(CURDIR)/.env.tmp 2>/dev/null || true
-	@printf 'SSH_MANAGEMENT_PUBLIC_KEY=%s\n' "$$(cat $(_DEV_MGMT_KEY).pub)" >> $(CURDIR)/.env.tmp
-	@mv $(CURDIR)/.env.tmp $(CURDIR)/.env
-	@echo "  pubkey → .env (SSH_MANAGEMENT_PUBLIC_KEY), privkey → $(_DEV_MGMT_KEY)"
-
-up: dev-mgmt-key ## Поднять dev-стек С НУЛЯ: стереть тома + поднять + наполнить seed'ом. Каждый запуск — чистая БД с корректными dev-данными.
+up: ## Поднять dev-стек С НУЛЯ: стереть тома + поднять + наполнить seed'ом. Каждый запуск — чистая БД с корректными dev-данными.
 	@echo "→ Очистка томов (полный сброс данных)..."
 	@$(DEV) down -v --remove-orphans 2>/dev/null || true
 	@echo "→ Поднятие стека..."
@@ -158,12 +131,12 @@ up: dev-mgmt-key ## Поднять dev-стек С НУЛЯ: стереть то
 	@echo ""
 	@echo "  Стек поднят с чистой БД + dev-данными. test-server-01 / tester / tester1234."
 
-up-keep: dev-mgmt-key ## Поднять dev-стек БЕЗ сброса (данные в томах сохраняются; seed вручную при необходимости).
+up-keep: ## Поднять dev-стек БЕЗ сброса (данные в томах сохраняются; seed вручную при необходимости).
 	@$(DEV) up -d --wait postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server web_ui
 	@echo ""
 	@echo "  Стек поднят, данные сохранены. Наполнить/обновить: make seed"
 
-up-build: dev-mgmt-key ## Пересобрать образы и поднять dev-стек
+up-build: ## Пересобрать образы и поднять dev-стек
 	$(DEV) up -d --wait --build postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server
 
 seed: ## Наполнить уже поднятый dev-стек данными напрямую через SQL (admin/loging_admin1/dep_admin1/loging_reader1/user1, пароль 1234)

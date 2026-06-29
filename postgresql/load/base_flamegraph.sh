@@ -6,7 +6,7 @@ DEBUG="False"
 
 TEST_DIR="/home/u/test"
 PERF_DATA="perf.data"
-THREADS="150"
+PROCESSES="150"
 FILE_COUNT="20000"
 ARCH_LOOP="5"
 
@@ -49,10 +49,10 @@ echo -e "$INFO Директория готова"
 echo ""
 echo "=== Запуск профилирования ==="
 if [[ $DEBUG == "True" ]]; then
-    sudo perf record -g -a -o "$PERF_DATA" -- ./load2noarch "$TEST_DIR" "$THREADS" "$FILE_COUNT" "$ARCH_LOOP" && \
+    sudo perf record -g -a -o "$PERF_DATA" -- ./load2noarch "$TEST_DIR" "$PROCESSES" "$FILE_COUNT" "$ARCH_LOOP" && \
     echo -e "$INFO Профилирование завершено, данные сохранены в $PERF_DATA"
 else
-    sudo perf record -g -a -o "$PERF_DATA" -- ./load2noarch "$TEST_DIR" "$THREADS" "$FILE_COUNT" "$ARCH_LOOP" 2>&1 > /dev/null && \
+    sudo perf record -g -a -o "$PERF_DATA" -- ./load2noarch "$TEST_DIR" "$PROCESSES" "$FILE_COUNT" "$ARCH_LOOP" 2>&1 > /dev/null && \
     echo -e "$INFO Профилирование завершено, данные сохранены в $PERF_DATA"
 fi
 

@@ -575,6 +575,10 @@ OS-user inventory от worker'а (после `users.inventory`). server_service 
 
 Worker сообщает результат useradd/usermod/userdel: `present_on_server` true/false.
 
+### `POST /internal/servers/{server_id}/power-state`
+
+Worker пишет результат живой пробы питания (`power.status`) в кэш сервера. Body: `{power_state: "on"|"off"|"unknown", source: "bmc"|"ping"|"ssh"}`. server_service проставляет `power_state` + `power_state_source` + `power_state_checked_at` (UTC). Auth: `(server, *, prepare_callback)` — worker_bot-only. Idempotent best-effort. INFO audit `server.power_state_updated`. Ответ: `{ok, power_state, checked_at}`.
+
 ### `POST /internal/servers/{server_id}/prepared`
 
 Worker сообщает, что bootstrap завершён: `is_managed=True`, `prepared_at=now`. CRITICAL audit.

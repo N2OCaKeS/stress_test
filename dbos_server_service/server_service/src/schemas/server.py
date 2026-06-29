@@ -161,6 +161,8 @@ class ServerResponse(BaseModel):
     department_id: str = Field(description="Department-владелец.")
     status: str = Field(description="Статус сервера: unknown/online/offline/maintenance/decommissioned.")
     power_state: str = Field(description="Состояние питания: on/off/unknown (из кэша).")
+    power_state_source: str | None = Field(default=None, description="Чем мерили last-known power_state: bmc/ping/ssh (None — пробы ещё не было).")
+    power_state_checked_at: datetime | None = Field(default=None, description="Когда воркер последний раз пробовал питание (UTC; None — пробы ещё не было).")
     busy_state: str = Field(description="Состояние занятости: free/busy/testing.")
     busy_user_id: str | None = Field(default=None, description="user_id того, кто взял сервер (если busy/testing).")
     busy_since: datetime | None = Field(default=None, description="С какого момента сервер занят.")

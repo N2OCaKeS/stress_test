@@ -296,6 +296,40 @@ async def submit_provision_status(
     )
 
 
+async def submit_power_state(
+    server_id: str,
+    power_state: str,
+    source: str,
+    target_department_id: str | None = None,
+) -> dict:
+    """Отдать определённое состояние питания обратно в server_service.
+
+    Финал `power.status` task'а: после живой пробы (BMC либо reachability-
+    fallback) worker сообщает результат, и server_service обновляет кэш
+    `servers.power_state`. Без этого round-trip'а кэш всегда `unknown` —
+    никто его не пишет.
+
+    `power_state` — `on` / `off` / `unknown`. `source` — откуда взято:
+    `bmc` / `ping` / `ssh`.
+
+    Возвращает: `{ok, power_state, checked_at}` от
+    `POST /api/server/v1/internal/servers/{id}/power-state`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `POWER_STATE_REJECTED` — server_service вернул не 2xx.
+    """
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/power-state",
+        reject_code="POWER_STATE_REJECTED",
+        target_department_id=target_department_id,
+        json={"power_state": power_state, "source": source},
+        details={"server_id": server_id},
+        allow_empty_body=True,
+    )
+
+
 async def fetch_management_credentials(
     server_id: str,
     target_department_id: str | None = None,

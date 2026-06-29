@@ -57,6 +57,7 @@ from src.schemas.internal import (
     ProvisionStatusRequest,
     UsersInventoryCallbackRequest,
 )
+from src.schemas.internal import PowerStateCallbackRequest
 from src.schemas.server import ServerPrepareCallbackRequest
 from src.services import audit_service, metrics, permissions, secrets_service
 from src.utils.ids import os_version_id, server_disk_id
@@ -854,6 +855,85 @@ async def confirm_management_creds_applied(
         },
     )
     return {"ok": True, "rotated_at": rotated_at.isoformat()}
+
+
+async def record_power_state(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+    payload: PowerStateCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Callback воркера: результат живой пробы питания (`power.status`).
+
+    Пишет в кэш сервера `power_state` + источник (`power_state_source`) и момент
+    приёма (`power_state_checked_at`, UTC). До этого callback'а поле никогда не
+    обновлялось и UI всегда видел дефолтный unknown. Idempotent best-effort —
+    повторный вызов просто перезаписывает кэш.
+
+    Доступ: `(server, *, prepare_callback)` — тот же callback-грант worker_bot'а,
+    что и у `prepared`/`management-credentials/applied`. Аудит:
+    `server.power_state_updated` (INFO — рутинный кэш-апдейт, reveal'а нет).
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server.power_state_updated",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+    server = await server_repo.get_by_id(db, server_id)
+    if server is None:
+        audit_service.emit(
+            "server.power_state_updated",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found"},
+        )
+        raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
+    _check_target_department_for_server(
+        audit_action="server.power_state_updated",
+        target_id=server_id,
+        server_department_id=server.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+    )
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.record_power_state",
+            identity=identity,
+            target_id=server_id,
+            target_type="server",
+        )
+    checked_at = datetime.now(timezone.utc)
+    await server_repo.update(db, server, {
+        "power_state": payload.power_state,
+        "power_state_source": payload.source,
+        "power_state_checked_at": checked_at,
+    })
+    await db.commit()
+    audit_service.emit(
+        "server.power_state_updated",
+        target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "power_state": payload.power_state,
+            "source": payload.source,
+            "checked_at": checked_at.isoformat(),
+            "department_id": server.department_id,
+            "caller_type": identity.subject_type,
+        },
+    )
+    return {
+        "ok": True,
+        "power_state": payload.power_state,
+        "checked_at": checked_at.isoformat(),
+    }
 
 
 # ── Worker callbacks (write-direction internal API) ─────────────────────────

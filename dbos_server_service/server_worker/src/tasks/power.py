@@ -377,6 +377,38 @@ async def _power_status_via_reachability(payload: dict) -> dict:
     return {"power_state": "unknown", "source": "bmc"}
 
 
+async def _writeback_power_state(
+    server_id: str, result: dict, target_dept: str | None,
+) -> None:
+    """Best-effort: сообщить итог power.status обратно в server_service.
+
+    server_service по этому callback'у обновляет кэш `servers.power_state`
+    (без round-trip'а он всегда остаётся `unknown` — писать его больше
+    некому). Фейл callback'а НЕ должен валить read-only power.status, поэтому
+    глушим ЛЮБУЮ ошибку — не только `CredentialFetchError`, но и сырые
+    transport/HTTP-исключения: результат уже вычислен и всё равно уйдёт в
+    `task.result` и audit. Пробрось мы её — таска ушла бы в retry/queued, а
+    состояние, которое уже определили, потерялось бы.
+
+    `target_dept` отсутствует в payload → `_headers` просто не добавит
+    `X-Target-Department-Id`, как у соседних callback'ов; не падаем.
+    """
+    try:
+        await server_service_client.submit_power_state(
+            server_id,
+            result["power_state"],
+            result.get("source", "bmc"),
+            target_dept,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "power.status writeback failed server_id=%s error=%s; "
+            "result kept in task.result",
+            server_id,
+            getattr(exc, "error_code", type(exc).__name__),
+        )
+
+
 @broker.task("power.status")
 async def power_status(task_id: str) -> None:
     """Спросить у BMC текущее состояние питания, с reachability-fallback'ом.
@@ -426,8 +458,12 @@ async def power_status(task_id: str) -> None:
                 "power.status: BMC probe failed (%s), trying reachability fallback",
                 exc.error_code,
             )
-            return await _power_status_via_reachability(payload)
-        return {"power_state": _normalize_power_state(state), "source": "bmc"}
+            result = await _power_status_via_reachability(payload)
+        else:
+            result = {"power_state": _normalize_power_state(state), "source": "bmc"}
+
+        await _writeback_power_state(server_id, result, target_dept)
+        return result
 
     await run_task(
         task_id,

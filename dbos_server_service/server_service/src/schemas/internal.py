@@ -2,7 +2,7 @@
 
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -395,6 +395,35 @@ class ProvisionStatusResponse(BaseModel):
 
     ok: bool = True
     present_on_server: bool = Field(description="Записанное в связке состояние присутствия.")
+
+
+# ── Power-state writeback callback ──────────────────────────────────────────
+
+class PowerStateCallbackRequest(BaseModel):
+    """Тело POST /internal/servers/{id}/power-state.
+
+    Воркер пишет результат живой пробы питания (`power.status`) обратно в кэш
+    сервера. server_service проставляет `servers.power_state`, источник
+    (`power_state_source`) и момент приёма (`power_state_checked_at`, UTC).
+    Idempotent best-effort: повторный callback просто перезаписывает кэш.
+    """
+
+    power_state: Literal["on", "off", "unknown"] = Field(
+        ...,
+        description="Состояние питания с пробы: on / off / unknown.",
+    )
+    source: Literal["bmc", "ping", "ssh"] = Field(
+        ...,
+        description="Чем мерили: bmc (Redfish/ipmitool) / ping / ssh.",
+    )
+
+
+class PowerStateCallbackResponse(BaseModel):
+    """Подтверждение записи power-state callback'а."""
+
+    ok: bool = True
+    power_state: str = Field(description="Записанное в кэш состояние питания.")
+    checked_at: str = Field(description="ISO-8601 UTC момент приёма результата пробы.")
 
 
 # ── IPMI credentials_rotated callback ───────────────────────────────────────

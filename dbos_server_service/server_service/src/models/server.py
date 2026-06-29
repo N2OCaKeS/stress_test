@@ -47,6 +47,14 @@ class Server(Base):
     power_state: Mapped[str] = mapped_column(
         String(32), default=PowerState.UNKNOWN, nullable=False
     )
+    # Откуда и когда пришло последнее значение power_state. Заполняется
+    # internal-callback'ом воркера по результату живой пробы (`power.status`):
+    # source — bmc/ping/ssh, checked_at — момент приёма (UTC). До первой пробы
+    # обе колонки NULL, power_state остаётся дефолтным unknown.
+    power_state_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    power_state_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     busy_state: Mapped[str] = mapped_column(
         String(32), default=BusyState.FREE, nullable=False
     )

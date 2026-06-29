@@ -58,6 +58,8 @@ from src.schemas.internal import (
     ManagementCredsAppliedResponse,
     PasswordRotateRequest,
     PasswordRotateResponse,
+    PowerStateCallbackRequest,
+    PowerStateCallbackResponse,
     ProvisionStatusRequest,
     ProvisionStatusResponse,
     UsersInventoryCallbackRequest,
@@ -337,6 +339,35 @@ async def record_provision_status(
         target_department_id=x_target_department_id,
     )
     return ProvisionStatusResponse(**data)
+
+
+@router.post(
+    "/servers/{server_id}/power-state",
+    response_model=PowerStateCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def record_power_state(
+    server_id: str,
+    body: PowerStateCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> PowerStateCallbackResponse:
+    """Worker пишет результат живой пробы питания (`power.status`) в кэш сервера.
+
+    server_service проставляет `servers.power_state` + источник
+    (`power_state_source`) и момент приёма (`power_state_checked_at`, UTC). До
+    этого callback'а поле никогда не обновлялось — UI всегда видел unknown.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `server.power_state_updated` (INFO).
+    """
+    data = await internal_service.record_power_state(
+        db, identity, server_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return PowerStateCallbackResponse(**data)
 
 
 @router.post(

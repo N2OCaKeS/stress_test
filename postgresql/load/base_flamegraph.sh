@@ -42,9 +42,13 @@ echo -e "$INFO Наименование файла Flame Graph: $FILE_NAME"
 
 
 echo "=== Подготовка директории ==="
-sudo mkdir -p "$TEST_DIR" && \
-sudo chmod -R 777 "$TEST_DIR" && \
-echo -e "$INFO Директория готова"
+if [[ ! -d "$TEST_DIR" ]]; then
+    sudo mkdir -p "$TEST_DIR" && \
+    sudo chmod -R 777 "$TEST_DIR" && \
+    echo -e "$INFO Директория готова"
+else
+    echo -e "$INFO Директория уже существует"
+fi
 
 echo ""
 echo "=== Запуск профилирования ==="
@@ -78,3 +82,7 @@ if [[ -n "$DURATION_MS" ]]; then
 fi
 echo -e "$INFO Данные о сэмплах получены"
 
+echo ""
+echo "=== Параметры запуска ==="
+echo -e "Процессы - $PROCESSES"
+echo -e "Файлы - $FILE_COUNT"

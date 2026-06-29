@@ -7,10 +7,20 @@
  * активной миграции поллит статус каждые несколько секунд.
  *
  * «Перевыпустить ключ»: генерим свежий AES-256-GCM-ключ через
- * `auth generateServiceKey()` → сразу шлём в `rotate` сервиса → запускаем
- * поллинг до `migrated_pct === 100` и пустого outbox. После этого на каждую
- * старую версию из `by_version` доступна кнопка «Вывести (retire)»; backend
- * режет retire активной версии и версий с остатком строк (409).
+ * `auth generateServiceKey()` → сразу шлём в `rotate` сервиса. Ответ несёт
+ * `previous_version → new_version`, и карточка показывает этот переход явно.
+ *
+ * Дальше идёт фоновая перешифровка старых строк под новый ключ. Прогресс
+ * (`migrated_pct`, `remaining_legacy`, `by_version`, outbox) поллится, но сама
+ * дошифровка — это worker-таска, которая в dev может быть выключена. Поэтому
+ * поллинг не крутится вечно на месте: если несколько тиков подряд прогресс не
+ * двигается, карточка переходит в «idle» и показывает, что дошифровка идёт в
+ * фоне / сейчас не активна, с кнопкой «Обновить» для ручной проверки.
+ *
+ * Старые версии backend выводит автоматически сразу после того, как на них не
+ * остаётся строк, — карточка отражает это как завершение. Ручная кнопка
+ * «Вывести (retire)» оставлена как fallback; backend режет retire активной
+ * версии и версий с остатком строк (409).
  *
  * Безопасность: одноразовый ключ из generate сразу уходит в rotate и нигде не
  * сохраняется — ни в state, ни в логах, ни в консоли.
@@ -20,7 +30,15 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { KeyRound, RotateCw, ShieldCheck, Archive } from "lucide-react";
+import {
+  KeyRound,
+  RotateCw,
+  ShieldCheck,
+  Archive,
+  ArrowRight,
+  RefreshCw,
+  CheckCircle2,
+} from "lucide-react";
 
 import { apiErrMsg } from "@/api/client";
 import { useMockMode } from "@/api/auth/useQuery";
@@ -33,6 +51,11 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 // Интервал поллинга прогресса во время активной миграции.
 const POLL_MS = 4000;
+
+// Сколько тиков подряд без движения прогресса считаем «застоем»: после этого
+// гасим поллинг и показываем, что дошифровка идёт в фоне / не активна, вместо
+// вечного спиннера на одном проценте.
+const STALL_TICKS = 3;
 
 /** Нормализованный срез статуса миграции — общий для server и secret. */
 interface NormalizedStatus {
@@ -71,7 +94,9 @@ interface ServiceAdapter {
   key: "server" | "secret";
   label: string;
   fetchStatus: () => Promise<NormalizedStatus>;
-  rotate: (newKeyB64: string) => Promise<{ new_version: number; idempotent: boolean }>;
+  rotate: (
+    newKeyB64: string,
+  ) => Promise<{ new_version: number; previous_version: number; idempotent: boolean }>;
   retire: (version: number) => Promise<{ retired: boolean; remaining_on_version: number }>;
 }
 
@@ -228,21 +253,21 @@ function ServiceRotationCard({
   const [rotating, setRotating] = useState(false);
   const [retiringVersion, setRetiringVersion] = useState<number | null>(null);
 
-  // Поллер живёт только пока миграция активна — гасим интервал на 100%.
-  const pollRef = useRef<number | null>(null);
+  // Результат последнего перевыпуска: переход previous → new, который показываем
+  // прямо в карточке, а не только тостом.
+  const [lastRotation, setLastRotation] = useState<{ from: number; to: number } | null>(null);
+  // Прогресс перешифровки замер (несколько тиков без движения) — переходим в
+  // «idle» и перестаём поллить.
+  const [stalled, setStalled] = useState(false);
 
-  const refresh = useCallback(async () => {
-    if (mockMode) return;
-    try {
-      const s = await adapter.fetchStatus();
-      setStatus(s);
-      setErr(null);
-    } catch (e) {
-      setErr(apiErrMsg(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [adapter, mockMode]);
+  // Поллер живёт только пока миграция активна и прогресс двигается.
+  const pollRef = useRef<number | null>(null);
+  // Последнее замеченное состояние прогресса для детекта застоя.
+  const progressRef = useRef<{ pct: number; legacy: number; ticks: number }>({
+    pct: -1,
+    legacy: -1,
+    ticks: 0,
+  });
 
   const stopPoll = useCallback(() => {
     if (pollRef.current !== null) {
@@ -251,6 +276,41 @@ function ServiceRotationCard({
     }
   }, []);
 
+  const refresh = useCallback(async () => {
+    if (mockMode) return;
+    try {
+      const s = await adapter.fetchStatus();
+      // Сравниваем с прошлым замером: если процент и остаток legacy не сдвинулись
+      // несколько раз подряд при незавершённой миграции — считаем дошифровку
+      // неактивной и гасим поллинг.
+      const prev = progressRef.current;
+      if (s.migratedPct === prev.pct && s.remainingLegacy === prev.legacy) {
+        progressRef.current = {
+          pct: s.migratedPct,
+          legacy: s.remainingLegacy,
+          ticks: prev.ticks + 1,
+        };
+      } else {
+        progressRef.current = {
+          pct: s.migratedPct,
+          legacy: s.remainingLegacy,
+          ticks: 0,
+        };
+        setStalled(false);
+      }
+      if (isMigrating(s) && progressRef.current.ticks >= STALL_TICKS) {
+        setStalled(true);
+        stopPoll();
+      }
+      setStatus(s);
+      setErr(null);
+    } catch (e) {
+      setErr(apiErrMsg(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [adapter, mockMode, stopPoll]);
+
   const startPoll = useCallback(() => {
     if (mockMode || pollRef.current !== null) return;
     pollRef.current = window.setInterval(() => {
@@ -258,18 +318,26 @@ function ServiceRotationCard({
     }, POLL_MS);
   }, [mockMode, refresh]);
 
+  // Сброс трекинга прогресса — после ручного «Обновить» и после перевыпуска,
+  // чтобы дать дошифровке свежее окно наблюдения.
+  const resetProgressTracking = useCallback(() => {
+    progressRef.current = { pct: -1, legacy: -1, ticks: 0 };
+    setStalled(false);
+  }, []);
+
   // Первичная загрузка статуса.
   useEffect(() => {
     void refresh();
     return () => stopPoll();
   }, [refresh, stopPoll]);
 
-  // Запускаем/гасим поллинг в зависимости от того, идёт ли миграция.
+  // Запускаем/гасим поллинг: только пока миграция активна и не зафиксирован
+  // застой. При застое effect получит stalled=true и погасит интервал.
   useEffect(() => {
     if (!status) return;
-    if (isMigrating(status)) startPoll();
+    if (isMigrating(status) && !stalled) startPoll();
     else stopPoll();
-  }, [status, startPoll, stopPoll]);
+  }, [status, stalled, startPoll, stopPoll]);
 
   const doRotate = useCallback(async () => {
     if (mockMode) {
@@ -286,8 +354,11 @@ function ServiceRotationCard({
       if (res.idempotent) {
         toast.info(`Ключ уже активен (v${res.new_version}) — без изменений.`);
       } else {
-        toast.success(`Новый ключ активирован: v${res.new_version}.`);
+        setLastRotation({ from: res.previous_version, to: res.new_version });
+        toast.success(`Новый ключ активирован: v${res.previous_version} → v${res.new_version}.`);
       }
+      // Свежий ключ — даём дошифровке новое окно наблюдения и снова поллим.
+      resetProgressTracking();
       await refresh();
       startPoll();
     } catch (e) {
@@ -297,7 +368,13 @@ function ServiceRotationCard({
     } finally {
       setRotating(false);
     }
-  }, [adapter, mockMode, refresh, startPoll, toast]);
+  }, [adapter, mockMode, refresh, resetProgressTracking, startPoll, toast]);
+
+  // Ручная проверка прогресса из «idle»: сбрасываем застой и поллим заново.
+  const manualRefresh = useCallback(() => {
+    resetProgressTracking();
+    void refresh();
+  }, [refresh, resetProgressTracking]);
 
   // Регистрируем rotate в родителе для «Перевыпустить всё».
   useEffect(() => {
@@ -344,6 +421,8 @@ function ServiceRotationCard({
   }
 
   const migrating = status ? isMigrating(status) : false;
+  // Застой имеет смысл только при незавершённой миграции.
+  const stale = migrating && stalled;
   // Старые версии: всё, кроме активной. retire доступен только когда миграция
   // завершена (на старой версии не должно остаться строк, но окончательно
   // решает backend через 409 KEYSTORE_VERSION_IN_USE).
@@ -355,6 +434,10 @@ function ServiceRotationCard({
     : [];
   const canRetire = status ? !migrating : false;
   const busy = rotating || retiringVersion !== null;
+  // Старые версии выведены автоматически: после перевыпуска в keystore не
+  // осталось ничего, кроме активного ключа.
+  const autoRetired =
+    !!lastRotation && !!status && oldVersions.length === 0;
 
   return (
     <div className="card">
@@ -369,12 +452,29 @@ function ServiceRotationCard({
             </span>
           )}
           {migrating ? (
-            <span className="badge badge-warn">миграция</span>
+            stale ? (
+              <span className="badge" title="прогресс не двигается — дошифровка идёт в фоне">
+                в фоне
+              </span>
+            ) : (
+              <span className="badge badge-warn">миграция</span>
+            )
           ) : (
             status && <span className="badge badge-ok">в норме</span>
           )}
         </div>
       </div>
+
+      {lastRotation && (
+        <div className="alert-success mb-3 text-xs">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span className="flex items-center gap-1">
+            Активная версия ключа: v{lastRotation.from}
+            <ArrowRight className="w-3.5 h-3.5" />
+            <span className="mono">v{lastRotation.to}</span>
+          </span>
+        </div>
+      )}
 
       {loading && <div className="text-xs text-dim">Загрузка статуса…</div>}
 
@@ -391,6 +491,40 @@ function ServiceRotationCard({
           <div className={`bar ${migrating ? "warn" : "ok"} mb-3`}>
             <span style={{ width: `${Math.min(100, Math.max(0, status.migratedPct))}%` }} />
           </div>
+
+          {/* Осмысленный статус дошифровки вместо вечного спиннера на 0%. */}
+          {migrating && !stale && (
+            <div className="text-[11px] text-dim mb-3">
+              Перешифровка идёт в фоне (lazy): осталось legacy{" "}
+              {status.remainingLegacy}, в outbox {status.outboxPending}.
+              Старые версии выведутся автоматически после дошифровки.
+            </div>
+          )}
+          {stale && (
+            <div className="alert-warn mb-3 text-xs">
+              <div className="flex-1">
+                Фоновая перешифровка сейчас не активна — прогресс не двигается
+                ({status.migratedPct}%, осталось legacy {status.remainingLegacy}).
+                Это нормально: оставшиеся строки дошифруются фоновой задачей, после
+                чего старые версии выведутся автоматически.
+                <button
+                  className="btn btn-ghost flex items-center gap-1 mt-2"
+                  disabled={busy}
+                  onClick={manualRefresh}
+                  title="Проверить прогресс заново"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Обновить
+                </button>
+              </div>
+            </div>
+          )}
+          {autoRetired && (
+            <div className="text-[11px] text-ok mb-3 flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              Старые версии выведены автоматически — весь keystore на активном
+              ключе v{status.activeVersion}.
+            </div>
+          )}
 
           <div className="space-y-1 mb-3">
             {Object.keys(status.byVersion)
@@ -430,7 +564,7 @@ function ServiceRotationCard({
               })}
           </div>
 
-          {oldVersions.length === 0 && (
+          {oldVersions.length === 0 && !autoRetired && (
             <div className="text-[11px] text-dim mb-3">
               Старых версий нет — весь keystore на активном ключе.
             </div>

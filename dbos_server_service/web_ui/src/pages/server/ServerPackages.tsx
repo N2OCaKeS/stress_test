@@ -1029,20 +1029,25 @@ function PackagesWorkzone({
                 только worker закроет задачи; остальные показаны в легенде со
                 своим статусом.
               </div>
-            ) : orientation === "packages-rows" ? (
-              <PackagesByRows
-                states={states}
-                packageNames={packageNames}
-                cell={cell}
-                osLabel={osLabel}
-              />
             ) : (
-              <ServersByRows
-                states={states}
-                packageNames={packageNames}
-                cell={cell}
-                osLabel={osLabel}
-              />
+              <>
+                <MatrixMarkerHint />
+                {orientation === "packages-rows" ? (
+                  <PackagesByRows
+                    states={states}
+                    packageNames={packageNames}
+                    cell={cell}
+                    osLabel={osLabel}
+                  />
+                ) : (
+                  <ServersByRows
+                    states={states}
+                    packageNames={packageNames}
+                    cell={cell}
+                    osLabel={osLabel}
+                  />
+                )}
+              </>
             )}
           </>
         )}
@@ -1100,6 +1105,59 @@ function StatusLegend({
   );
 }
 
+/**
+ * Сервер опрошен до конца: probe-задача поставлена (`ok`), поллинг завершён и
+ * ошибки нет — значит его список пакетов окончательный. Пустая ячейка такого
+ * сервера = пакет точно не установлен. Для остальных серверов (не подготовлен,
+ * ещё поллится, ошибка и т.п.) пустота означает «неизвестно», а не «нет пакета».
+ */
+function isProbed(s: ServerState): boolean {
+  return s.status === "ok" && !s.polling && !s.error;
+}
+
+/**
+ * Ячейка версии пакета на сервере. Версия — как есть; для опрошенного сервера
+ * без пакета — приглушённый «—» (точно не установлен); для неопрошенного —
+ * ещё более бледный «·» с подсказкой статуса, чтобы не путать с отсутствием.
+ */
+function PackageCell({ server, version }: { server: ServerState; version: string }) {
+  const base = "px-3 py-1.5 mono text-xs whitespace-nowrap";
+  if (version) {
+    return <td className={base}>{version}</td>;
+  }
+  if (isProbed(server)) {
+    return (
+      <td className={`${base} text-dim`} title="Пакет не установлен">
+        —
+      </td>
+    );
+  }
+  const label = STATUS_LABEL[server.status] ?? server.status;
+  return (
+    <td
+      className={`${base} text-dim opacity-50`}
+      title={`Сервер не опрошен (${label})`}
+    >
+      ·
+    </td>
+  );
+}
+
+/** Подпись к матрице: что означают маркеры пустых ячеек. */
+function MatrixMarkerHint() {
+  return (
+    <div className="text-[11px] text-dim flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span>
+        <span className="mono">—</span> пакет не установлен
+      </span>
+      <span>
+        <span className="mono opacity-50">·</span> сервер не опрошен (см. статусы
+        выше)
+      </span>
+    </div>
+  );
+}
+
 /** Режим A: строки = пакеты, столбцы = серверы. */
 function PackagesByRows({
   states,
@@ -1145,17 +1203,13 @@ function PackagesByRows({
               <td className="px-3 py-1.5 mono text-xs sticky left-0 surface-2">
                 {name}
               </td>
-              {states.map((s) => {
-                const v = cell(s.serverId, name);
-                return (
-                  <td
-                    key={s.serverId}
-                    className={`px-3 py-1.5 mono text-xs whitespace-nowrap ${v ? "" : "text-dim"}`}
-                  >
-                    {v || "—"}
-                  </td>
-                );
-              })}
+              {states.map((s) => (
+                <PackageCell
+                  key={s.serverId}
+                  server={s}
+                  version={cell(s.serverId, name)}
+                />
+              ))}
             </tr>
           ))}
         </tbody>
@@ -1208,17 +1262,13 @@ function ServersByRows({
                   ОС: {osLabel(s.osVersionId)}
                 </div>
               </td>
-              {packageNames.map((name) => {
-                const v = cell(s.serverId, name);
-                return (
-                  <td
-                    key={name}
-                    className={`px-3 py-1.5 mono text-xs whitespace-nowrap ${v ? "" : "text-dim"}`}
-                  >
-                    {v || "—"}
-                  </td>
-                );
-              })}
+              {packageNames.map((name) => (
+                <PackageCell
+                  key={name}
+                  server={s}
+                  version={cell(s.serverId, name)}
+                />
+              ))}
             </tr>
           ))}
         </tbody>

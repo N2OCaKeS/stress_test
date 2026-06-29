@@ -18,6 +18,7 @@ import type {
   InstalledPackagesRequest,
   InstalledPackagesResult,
   ListTasksQuery,
+  PackageHistoryEntry,
   PackagesBulkActionRequest,
   PackagesBulkActionResponse,
   TaskCancelRequest,
@@ -104,6 +105,38 @@ export function packagesBulkAction(
   return apiPost<PackagesBulkActionResponse>(
     "/server/v1/servers/packages/bulk-action",
     body,
+  );
+}
+
+// ── packages history ─────────────────────────────────────────────────────────
+
+/** Параметры пагинации истории запросов пакетов. */
+export interface PackageHistoryQuery {
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * `GET /api/server/v1/servers/{server_id}/packages/history` — страница прошлых
+ * live-запросов пакетов этого сервера (DESC по времени постановки).
+ *
+ * Каждый POST `/installed-packages` оставляет такую запись — история даёт
+ * оператору уже полученные результаты, не гоняя SSH-probe заново: в строке
+ * лежат запрошенный паттерн и найденные пакеты прямо из `task.result`.
+ * Backend отдаёт голый `PackageHistoryEntry[]` + `X-Total-Count` в заголовке —
+ * протаскиваем оба через `listWithTotal` для пагинации «N из M». Доступ —
+ * `(server, view)` + dept-isolation: всю историю по серверу видит любой, кто
+ * видит сам сервер (не только свои запросы). Незавершённые (`queued`/`running`)
+ * попадают в выдачу с пустым `packages`.
+ */
+export function getPackageHistory(
+  serverId: string,
+  query: PackageHistoryQuery = {},
+): Promise<PaginatedList<PackageHistoryEntry>> {
+  const { limit = 20, offset = 0 } = query;
+  return listWithTotal<PackageHistoryEntry>(
+    `/server/v1/servers/${serverId}/packages/history`,
+    { limit, offset },
   );
 }
 

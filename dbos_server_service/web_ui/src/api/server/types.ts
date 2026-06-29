@@ -813,6 +813,36 @@ export interface PackageInfo {
 }
 
 /**
+ * Одна строка истории `GET /servers/{id}/packages/history` — прошлый
+ * live-запрос пакетов сервера. Источник — `installed_packages.list`-задача
+ * воркера: `pattern`/`patterns` берутся из её payload'а (что запрашивали),
+ * `packages`/`package_count` — из `task.result` (что нашёл worker). У ещё не
+ * завершённых запросов (`queued`/`running`) `packages` и `package_count`
+ * приходят `null` — они появятся при финализации задачи.
+ */
+export interface PackageHistoryEntry {
+  task_id: string;
+  /** queued / running / succeeded / failed / cancelled. */
+  status: string;
+  /** Одиночный shell-glob из payload'а (raw). */
+  pattern: string | null;
+  /** Список glob'ов (OR-матч), если запрашивали несколько. */
+  patterns: string[] | null;
+  /** user_id инициатора (task.created_by). */
+  requested_by: string | null;
+  /** Момент постановки запроса (ISO-8601, UTC). */
+  requested_at: string;
+  /** Момент завершения; null пока запрос не терминальный. */
+  finished_at: string | null;
+  /** Сколько пакетов нашёл worker; null пока результата нет. */
+  package_count: number | null;
+  /** Найденные пакеты; null пока запрос не завершён. */
+  packages: PackageInfo[] | null;
+  /** Текст ошибки для failed-запросов. */
+  last_error: string | null;
+}
+
+/**
  * Тело `POST /servers/installed-packages/bulk` — массовый запрос пакетов.
  *
  * `patterns` — список shell-glob'ов (`ssh*`, `*libs*`); пусто → `*`. Поле

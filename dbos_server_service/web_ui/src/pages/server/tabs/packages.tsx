@@ -21,23 +21,39 @@
  * показываем человекочитаемо.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Package, RefreshCw, AlertCircle } from "lucide-react";
-import { installedPackagesProbe, getTask } from "@/api/server/misc";
+import {
+  Package,
+  RefreshCw,
+  AlertCircle,
+  History,
+  ChevronRight,
+  ChevronDown,
+} from "lucide-react";
+import {
+  installedPackagesProbe,
+  getTask,
+  getPackageHistory,
+} from "@/api/server/misc";
 import { getServer, prepareServer } from "@/api/server/servers";
 import { listAccounts } from "@/api/server/accounts";
 import { ApiError, apiErrMsg } from "@/api/client";
+import { useQuery } from "@/api/auth/useQuery";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { isDepAdmin } from "@/lib/rbac";
 import { isTerminalTaskStatus } from "@/api/server/types";
+import { formatMskShort } from "@/lib/datetime";
 import type {
   CursorPaginatedResponse,
   OffsetPaginatedResponse,
+  PackageHistoryEntry,
   Server,
   ServerAccount,
   TaskRead,
 } from "@/api/server/types";
 import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
+
+const HISTORY_PAGE_SIZE = 20;
 
 const PACKAGES_POLL_MS = 3_000;
 const PREPARE_POLL_MS = 3_000;
@@ -107,7 +123,7 @@ function looksLikeAuthFailure(lastError: string | null | undefined): boolean {
   );
 }
 
-export function PackagesTab({ server, onServerUpdated }: Props) {
+export function PackagesTab({ serverId, server, onServerUpdated }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
   const [pattern, setPattern] = useState("");
@@ -504,6 +520,257 @@ export function PackagesTab({ server, onServerUpdated }: Props) {
           </tbody>
         </table>
       </div>
+
+      <PackageHistorySection serverId={serverId} />
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// История прошлых запросов пакетов по серверу
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Человеко-читаемые подписи статусов запроса в истории. */
+const HISTORY_STATUS_LABEL: Record<string, string> = {
+  queued: "в очереди",
+  running: "выполняется",
+  succeeded: "готово",
+  failed: "ошибка",
+  cancelled: "отменён",
+};
+
+const HISTORY_STATUS_KIND: Record<string, "ok" | "warn" | "danger" | ""> = {
+  queued: "warn",
+  running: "warn",
+  succeeded: "ok",
+  failed: "danger",
+  cancelled: "",
+};
+
+/** Паттерн(ы) запроса одной строкой: `patterns` приоритетнее одиночного `pattern`. */
+function historyPatternLabel(entry: PackageHistoryEntry): string {
+  if (entry.patterns && entry.patterns.length > 0) {
+    return entry.patterns.join(" ");
+  }
+  return entry.pattern ?? "*";
+}
+
+/**
+ * Раздел «История запросов пакетов»: список прошлых live-probe'ов по серверу
+ * (DESC по времени), без повторного SSH. Клик по строке разворачивает её
+ * результат (`packages`) из уже сохранённой задачи. Незавершённые
+ * (`queued`/`running`) показываются с пометкой и без списка пакетов.
+ * Пагинация — по `X-Total-Count` через `getPackageHistory`.
+ */
+function PackageHistorySection({ serverId }: { serverId: string }) {
+  const [page, setPage] = useState(0);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const historyQ = useQuery(
+    () =>
+      getPackageHistory(serverId, {
+        limit: HISTORY_PAGE_SIZE,
+        offset: page * HISTORY_PAGE_SIZE,
+      }),
+    [serverId, page],
+    { keepPreviousDataOnError: true },
+  );
+
+  const items = historyQ.data?.items ?? [];
+  const total = historyQ.data?.total ?? 0;
+  const totalKnown = historyQ.data?.totalKnown !== false;
+  const pages = Math.max(1, Math.ceil(total / HISTORY_PAGE_SIZE));
+  const hasNext = totalKnown
+    ? page + 1 < pages
+    : items.length === HISTORY_PAGE_SIZE;
+
+  function toggle(taskId: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }
+
+  return (
+    <div className="card">
+      <div className="flex items-center gap-2 mb-1">
+        <History className="w-4 h-4 text-accent" />
+        <div className="text-sm font-medium">История запросов</div>
+        <button
+          className="btn btn-ghost btn-sm ml-auto flex items-center gap-1"
+          onClick={() => historyQ.refetch()}
+          disabled={historyQ.loading}
+          title="Обновить историю"
+        >
+          <RefreshCw
+            className={`w-3.5 h-3.5 ${historyQ.loading ? "animate-spin" : ""}`}
+          />
+          Обновить
+        </button>
+      </div>
+      <div className="text-xs text-dim mb-3">
+        Прошлые probe'ы пакетов этого сервера — результат можно посмотреть, не
+        запуская SSH-пробу заново. Глубина ограничена retention'ом worker'а.
+      </div>
+
+      {historyQ.error && (
+        <div className="alert alert-danger flex items-start gap-2 mb-3">
+          <AlertCircle className="w-4 h-4 mt-0.5" />
+          <div className="flex-1 text-xs">
+            <div>{apiErrMsg(historyQ.error, "Историю не загрузить")}</div>
+            <button
+              className="btn btn-ghost mt-2"
+              onClick={() => historyQ.refetch()}
+            >
+              Повторить
+            </button>
+          </div>
+        </div>
+      )}
+
+      {historyQ.loading && items.length === 0 ? (
+        <div className="text-xs text-dim py-4 text-center">Загрузка…</div>
+      ) : items.length === 0 ? (
+        <div className="text-xs text-dim py-4 text-center">
+          Запросов пакетов по этому серверу ещё не было.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {items.map((entry) => (
+            <HistoryRow
+              key={entry.task_id}
+              entry={entry}
+              open={expanded.has(entry.task_id)}
+              onToggle={() => toggle(entry.task_id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {(hasNext || page > 0) && (
+        <div className="flex items-center justify-between mt-3 text-xs text-dim">
+          <span>
+            {totalKnown ? (
+              <>
+                стр. {page + 1} из {pages} · всего {total}
+              </>
+            ) : (
+              <>стр. {page + 1}</>
+            )}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0 || historyQ.loading}
+            >
+              Назад
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setPage((p) => p + 1)}
+              disabled={!hasNext || historyQ.loading}
+            >
+              Вперёд
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Одна строка истории: шапка (паттерн/время/инициатор/статус) + раскрытие. */
+function HistoryRow({
+  entry,
+  open,
+  onToggle,
+}: {
+  entry: PackageHistoryEntry;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const pending = entry.status === "queued" || entry.status === "running";
+  const kind = HISTORY_STATUS_KIND[entry.status] ?? "";
+  const packages = entry.packages ?? [];
+  const Chevron = open ? ChevronDown : ChevronRight;
+
+  return (
+    <div className="surface-2 border border-token rounded">
+      <button
+        type="button"
+        className="w-full text-left px-3 py-2 flex items-center gap-2"
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        <Chevron className="w-4 h-4 text-dim shrink-0" />
+        <span className="mono text-xs truncate flex-1" title="запрошенный шаблон">
+          {historyPatternLabel(entry)}
+        </span>
+        <span className={`badge${kind ? ` badge-${kind}` : ""} shrink-0`}>
+          {HISTORY_STATUS_LABEL[entry.status] ?? entry.status}
+        </span>
+        {pending ? (
+          <RefreshCw className="w-3 h-3 animate-spin text-dim shrink-0" />
+        ) : (
+          <span className="text-[11px] text-dim shrink-0 w-16 text-right">
+            {entry.package_count ?? 0} пак.
+          </span>
+        )}
+      </button>
+      <div className="px-3 pb-1 -mt-1 text-[11px] text-dim flex flex-wrap items-center gap-x-3 gap-y-0.5">
+        <span title="время постановки запроса">
+          {formatMskShort(entry.requested_at)}
+        </span>
+        {entry.requested_by && (
+          <span className="mono truncate" title="инициатор запроса">
+            {entry.requested_by}
+          </span>
+        )}
+      </div>
+
+      {open && (
+        <div className="border-t border-token px-3 py-2">
+          {pending ? (
+            <div className="text-[11px] text-dim italic">
+              Запрос ещё выполняется — список пакетов появится после завершения
+              задачи.
+            </div>
+          ) : entry.status === "failed" ? (
+            <div className="text-[11px] text-danger">
+              {entry.last_error ?? "Запрос завершился ошибкой."}
+            </div>
+          ) : packages.length === 0 ? (
+            <div className="text-[11px] text-dim italic">
+              Пакетов по этому запросу не найдено.
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] uppercase text-dim border-b border-token">
+                  <th className="text-left px-2 py-1 font-medium">name</th>
+                  <th className="text-left px-2 py-1 font-medium">version</th>
+                </tr>
+              </thead>
+              <tbody>
+                {packages.map((p) => (
+                  <tr
+                    key={`${p.name}-${p.version}`}
+                    className="border-b border-token last:border-b-0"
+                  >
+                    <td className="px-2 py-1 mono text-xs">{p.name}</td>
+                    <td className="px-2 py-1 mono text-xs text-dim">
+                      {p.version || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   );
 }

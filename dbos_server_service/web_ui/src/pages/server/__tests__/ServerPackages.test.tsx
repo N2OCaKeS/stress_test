@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { PersonaProvider } from "@/contexts/PersonaContext";
@@ -177,5 +183,61 @@ describe("ServerPackages", () => {
     fireEvent.click(screen.getByRole("button", { name: /Install/ }));
     await screen.findByText(/Укажите хотя бы один пакет/);
     expect(packagesBulkActionMock).not.toHaveBeenCalled();
+  });
+
+  it("отличает «пакет не установлен» (—) от «сервер не опрошен» (·)", async () => {
+    // srv_a — опрошен, пакет есть; srv_b — опрошен, пакета нет (точно «—»);
+    // srv_c — не подготовлен, опроса не было (пустота ≠ «не установлен»).
+    installedPackagesBulkMock.mockResolvedValueOnce({
+      pattern: "*",
+      requested: 3,
+      dispatched: 1,
+      results: [
+        {
+          server_id: "srv_a",
+          hostname: "host-a",
+          os_version_id: "osv_1",
+          status: "ok",
+          task_id: null,
+          packages: [{ name: "htop", version: "1.2" }],
+        },
+        {
+          server_id: "srv_b",
+          hostname: "host-b",
+          os_version_id: "osv_1",
+          status: "ok",
+          task_id: null,
+          packages: [],
+        },
+        {
+          server_id: "srv_c",
+          hostname: "host-c",
+          os_version_id: "osv_1",
+          status: "prepare_required",
+          task_id: null,
+          packages: [],
+        },
+      ],
+    });
+
+    renderPage();
+    await screen.findByText("host-a");
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    fireEvent.click(screen.getByRole("button", { name: /Запросить/ }));
+
+    const table = await screen.findByRole("table");
+    // Версия отображается как есть.
+    expect(within(table).getByText("1.2")).toBeInTheDocument();
+    // Ровно один «—» — опрошенный srv_b без пакета. srv_c (не опрошен) под
+    // маркер «не установлен» не попадает.
+    expect(within(table).getAllByText("—")).toHaveLength(1);
+    // Неопрошенный сервер показан маркером «·».
+    expect(within(table).getByText("·")).toBeInTheDocument();
+
+    // Транспонированный режим — те же инварианты.
+    fireEvent.click(screen.getByRole("button", { name: /серверы × пакеты/ }));
+    const table2 = await screen.findByRole("table");
+    expect(within(table2).getAllByText("—")).toHaveLength(1);
+    expect(within(table2).getByText("·")).toBeInTheDocument();
   });
 });

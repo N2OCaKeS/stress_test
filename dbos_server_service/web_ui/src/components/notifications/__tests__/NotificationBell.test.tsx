@@ -131,6 +131,17 @@ describe("NotificationBell + NotificationCenter", () => {
     ).toBeInTheDocument();
   });
 
+  it("ссылка «Все задачи» ведёт на страницу задач", async () => {
+    listTasksMock.mockResolvedValue(page([]));
+    renderBell();
+    await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+
+    fireEvent.click(screen.getByRole("button", { name: "Уведомления" }));
+    fireEvent.click(screen.getByText("Все задачи →"));
+
+    expect(navigateMock).toHaveBeenCalledWith("/server/tasks");
+  });
+
   it("отметить все прочитанными гасит бейдж", async () => {
     listTasksMock.mockResolvedValue(page([makeTask({ id: "t1", status: "queued" })]));
     renderBell();

@@ -120,14 +120,13 @@ describe("ServerDetail smoke", () => {
     // его показывает — берём first match).
     const hits = await screen.findAllByText(/Smoke Box/);
     expect(hits.length).toBeGreaterThan(0);
-    // Все восемь табов видны (Tabs рендерит кнопки, не role=tab).
+    // Все табы видны (Tabs рендерит кнопки, не role=tab).
     for (const label of [
       "Обзор",
       "Железо",
       "IPMI",
       "Аккаунты",
       "Консоль",
-      "Drift",
       "Пакеты",
       "Управление",
     ]) {

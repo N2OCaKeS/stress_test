@@ -23,7 +23,6 @@ import { HardwareTab } from "./tabs/hardware";
 import { IpmiTab } from "./tabs/ipmi";
 import { AccountsTab } from "./tabs/accounts";
 import { ConsoleTab } from "./tabs/console";
-import { DriftTab } from "./tabs/drift";
 import { PackagesTab } from "./tabs/packages";
 import { ManageTab } from "./tabs/manage";
 
@@ -33,7 +32,6 @@ type TabId =
   | "ipmi"
   | "accounts"
   | "console"
-  | "drift"
   | "packages"
   | "manage";
 
@@ -43,7 +41,6 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "ipmi", label: "IPMI" },
   { id: "accounts", label: "Аккаунты" },
   { id: "console", label: "Консоль" },
-  { id: "drift", label: "Drift" },
   { id: "packages", label: "Пакеты" },
   { id: "manage", label: "Управление" },
 ];
@@ -159,7 +156,6 @@ export function ServerDetail({
         {tab === "console" && (
           <ConsoleTab serverId={current.id} server={current} />
         )}
-        {tab === "drift" && <DriftTab serverId={current.id} server={current} />}
         {tab === "packages" && (
           <PackagesTab
             serverId={current.id}

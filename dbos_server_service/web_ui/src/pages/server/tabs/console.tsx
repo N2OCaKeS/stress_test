@@ -210,12 +210,17 @@ function ConsoleSession({
   const [closeInfo, setCloseInfo] = useState<ConsoleCloseInfo | null>(null);
   const [injecting, setInjecting] = useState(false);
 
-  // Монтируем терминал один раз и держим до unmount. fit на ресайз окна.
+  // Монтируем терминал один раз и держим до unmount. fit и на ресайз окна, и
+  // на ресайз самого контейнера (смена вкладок/раскрытие панелей меняют высоту
+  // не трогая window) — иначе xterm считает строки по устаревшему размеру и
+  // нижний ряд клипается, а scrollback не прокручивается.
   useEffect(() => {
-    if (!mountRef.current) return;
+    const mount = mountRef.current;
+    if (!mount) return;
     const term = new Terminal({
       convertEol: true,
       cursorBlink: true,
+      scrollback: 5000,
       fontFamily:
         "'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace",
       fontSize: 13,
@@ -223,7 +228,7 @@ function ConsoleSession({
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.open(mountRef.current);
+    term.open(mount);
     try {
       fit.fit();
     } catch {
@@ -240,9 +245,15 @@ function ConsoleSession({
       }
     };
     window.addEventListener("resize", onResize);
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => onResize())
+        : null;
+    ro?.observe(mount);
 
     return () => {
       window.removeEventListener("resize", onResize);
+      ro?.disconnect();
       inputDisposeRef.current?.();
       inputDisposeRef.current = null;
       wsRef.current?.close(1000, "unmount");
@@ -445,11 +456,15 @@ function ConsoleSession({
 
       {sessionOpen && <ConsoleMacrosPanel onRun={runCommand} />}
 
+      {/* Паддинг/фон держим на обёртке, а xterm монтируем в дочерний div на всю
+          высоту: иначе внутренний padding съедает измеряемую область, fit
+          считает на ряд больше и низ терминала обрезается. */}
       <div
-        ref={mountRef}
-        className="border border-token rounded"
+        className="border border-token rounded overflow-hidden"
         style={{ height: 480, background: "#1e1e1e", padding: 8 }}
-      />
+      >
+        <div ref={mountRef} style={{ height: "100%", width: "100%" }} />
+      </div>
     </div>
   );
 }

@@ -101,6 +101,11 @@ export function NotificationCenter({
     navigate(`/tasks/${id}`);
   }
 
+  function openAllTasks() {
+    onClose();
+    navigate("/server/tasks");
+  }
+
   if (!pos) return null;
 
   return createPortal(
@@ -164,6 +169,16 @@ export function NotificationCenter({
           })}
         </ul>
       )}
+
+      <div className="px-3 py-2 border-t border-token text-center">
+        <button
+          type="button"
+          className="text-xs text-accent hover:underline"
+          onClick={openAllTasks}
+        >
+          Все задачи →
+        </button>
+      </div>
     </div>,
     document.body,
   );

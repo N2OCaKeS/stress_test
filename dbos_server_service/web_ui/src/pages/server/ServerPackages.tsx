@@ -111,6 +111,8 @@ function extractPackages(result: TaskRead["result"]): PackageInfo[] {
 interface ServerState {
   serverId: string;
   hostname: string;
+  /** Человекочитаемое имя сервера (если задано) — показываем его как основное. */
+  displayName: string | null;
   osVersionId: string | null;
   status: BulkPackagesServerStatus;
   taskId: string | null;
@@ -283,6 +285,8 @@ export function ServerPackages() {
       const init: ServerState[] = res.results.map((r) => ({
         serverId: r.server_id,
         hostname: r.hostname ?? r.server_id,
+        displayName:
+          servers.find((s) => s.id === r.server_id)?.display_name ?? null,
         osVersionId: r.os_version_id,
         status: r.status,
         taskId: r.task_id ?? null,
@@ -905,6 +909,7 @@ function PackagesWorkzone({
       servers: states.map((s) => ({
         server_id: s.serverId,
         hostname: s.hostname,
+        display_name: s.displayName,
         os_version_id: s.osVersionId,
         status: s.status,
         packages: s.packages,
@@ -922,7 +927,9 @@ function PackagesWorkzone({
     // имя пакета, дальше по колонке на сервер с версией в ячейке.
     const header = [
       "package",
-      ...states.map((s) => `${s.hostname} (${osLabel(s.osVersionId)})`),
+      ...states.map(
+        (s) => `${s.displayName ?? s.hostname} (${osLabel(s.osVersionId)})`,
+      ),
     ];
     const lines = [header.map(csvCell).join(",")];
     for (const name of packageNames) {
@@ -1062,7 +1069,16 @@ function StatusLegend({
             className="surface-2 border border-token rounded px-2 py-1 text-[11px] flex items-center gap-2"
             title={`${s.hostname} · ОС: ${osLabel(s.osVersionId)}`}
           >
-            <span className="mono truncate max-w-[160px]">{s.hostname}</span>
+            <span className="flex flex-col leading-tight min-w-0">
+              <span className="truncate max-w-[160px]">
+                {s.displayName ?? s.hostname}
+              </span>
+              {s.displayName && (
+                <span className="mono text-[10px] text-dim truncate max-w-[160px]">
+                  {s.hostname}
+                </span>
+              )}
+            </span>
             <span className={`badge${kind ? ` badge-${kind}` : ""}`}>
               {STATUS_LABEL[s.status] ?? s.status}
             </span>
@@ -1110,7 +1126,12 @@ function PackagesByRows({
                 className="text-left px-3 py-2 font-medium whitespace-nowrap"
                 title={s.serverId}
               >
-                <div className="mono">{s.hostname}</div>
+                <div>{s.displayName ?? s.hostname}</div>
+                {s.displayName && (
+                  <div className="mono text-dim font-normal normal-case">
+                    {s.hostname}
+                  </div>
+                )}
                 <div className="text-dim normal-case font-normal">
                   ОС: {osLabel(s.osVersionId)}
                 </div>
@@ -1177,7 +1198,12 @@ function ServersByRows({
           {states.map((s) => (
             <tr key={s.serverId} className="border-b border-token last:border-b-0">
               <td className="px-3 py-1.5 sticky left-0 surface-2 whitespace-nowrap">
-                <div className="mono text-xs">{s.hostname}</div>
+                <div className="text-xs font-medium">
+                  {s.displayName ?? s.hostname}
+                </div>
+                {s.displayName && (
+                  <div className="mono text-[10px] text-dim">{s.hostname}</div>
+                )}
                 <div className="text-[10px] text-dim">
                   ОС: {osLabel(s.osVersionId)}
                 </div>

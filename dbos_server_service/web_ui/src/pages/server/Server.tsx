@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   AlertCircle,
   Play,
+  ListChecks,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -83,7 +84,10 @@ export function Server() {
   const [filterDept, setFilterDept] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [filterBusy, setFilterBusy] = useState<string>("");
-  // Мультивыбор серверов для bulk-операций (массовый prepare).
+  // Мультивыбор серверов для bulk-операций (массовый prepare). Чекбоксы и
+  // панель действий видны только в явном «режиме выбора» — иначе список
+  // остаётся обычным навигационным, а массовый prepare было не найти.
+  const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkPrepareOpen, setBulkPrepareOpen] = useState(false);
 
@@ -186,6 +190,25 @@ export function Server() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectMode() {
+    setSelectMode((on) => {
+      if (on) setSelected(new Set());
+      return !on;
+    });
+  }
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((s) => selected.has(s.id));
+  function toggleAllFiltered() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        for (const s of filtered) next.delete(s.id);
+      } else {
+        for (const s of filtered) next.add(s.id);
+      }
       return next;
     });
   }
@@ -292,6 +315,34 @@ export function Server() {
           onStatus={setFilterStatus}
           onBusy={setFilterBusy}
         />
+        {canManage && (
+          <div className="mt-2 flex flex-col gap-2">
+            <button
+              type="button"
+              className={`btn btn-sm w-full flex items-center justify-center gap-2 ${
+                selectMode ? "btn-primary" : ""
+              }`}
+              onClick={toggleSelectMode}
+              title="Выбрать несколько серверов и подготовить их разом"
+            >
+              <ListChecks className="w-4 h-4" />
+              {selectMode ? "Выйти из режима выбора" : "Массовая подготовка"}
+            </button>
+            {selectMode && (
+              <div className="flex items-center justify-between text-[11px] text-dim">
+                <span>Выбрано: {selected.size}</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={toggleAllFiltered}
+                  disabled={filtered.length === 0}
+                >
+                  {allFilteredSelected ? "Снять все" : "Выбрать все"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto py-2">
@@ -325,7 +376,7 @@ export function Server() {
             items={bucket.items}
             selectedId={selectedId}
             onSelect={selectId}
-            selectable={canManage}
+            selectable={canManage && selectMode}
             checkedIds={selected}
             onToggleChecked={toggleSelected}
           />
@@ -341,10 +392,11 @@ export function Server() {
 
       {canManage && (
         <div className="border-t border-token p-3 shrink-0 flex flex-col gap-2">
-          {selected.size > 0 && (
+          {selectMode && (
             <button
               className="btn w-full flex items-center justify-center gap-2"
               onClick={() => setBulkPrepareOpen(true)}
+              disabled={selected.size === 0}
               title="Массовый prepare выбранных серверов"
             >
               <Play className="w-4 h-4" /> Подготовить выбранные ({selected.size})

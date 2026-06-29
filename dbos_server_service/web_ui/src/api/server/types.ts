@@ -217,22 +217,6 @@ export interface BulkPrepareResponse {
   skipped_count: number;
 }
 
-/** Один drift-сигнал из `GET /servers/{id}/drift`. */
-export interface DriftEventItem {
-  login: string;
-  drift_type: "unknown_login" | "attributes" | "missing_on_box" | string;
-  fields: string[] | null;
-  detected_at: Iso8601;
-}
-
-/** Ответ `GET /servers/{id}/drift`. */
-export interface ServerDrift {
-  server_id: string;
-  since: Iso8601;
-  drifts: DriftEventItem[];
-  truncated: boolean;
-}
-
 /**
  * Тело POST /servers/{id}/prepare — bootstrap-креды.
  *

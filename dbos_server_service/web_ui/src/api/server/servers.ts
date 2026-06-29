@@ -22,7 +22,6 @@ import type {
   ServerCleanRequest,
   ServerCleanResponse,
   ServerCreateRequest,
-  ServerDrift,
   ServerPrepareBatchRequest,
   ServerPrepareBatchResponse,
   ServerPrepareRequest,
@@ -89,13 +88,6 @@ export function updateServer(
  */
 export function deleteServer(id: string, body: ReasonBody): Promise<void> {
   return apiDelete<void>(`/server/v1/servers/${id}`, body);
-}
-
-// ── drift ───────────────────────────────────────────────────────────────────
-
-/** `GET /api/server/v1/servers/{id}/drift` — drift-сводка за окно. */
-export function getServerDrift(id: string): Promise<ServerDrift> {
-  return apiGet<ServerDrift>(`/server/v1/servers/${id}/drift`);
 }
 
 // ── busy-lease ──────────────────────────────────────────────────────────────

@@ -2,7 +2,12 @@
 # Backup всех master-ключей DBOS из k8s Secret'а dbos-secrets в шифрованный архив.
 #
 # Что попадает в backup:
+#   - durable keystore-Secret'ы dbos-server-encryption-keys и
+#     dbos-secret-encryption-keys целиком (active_version + key_v<N>) —
+#     именно там живёт актуальный, ротированный master-материал шифрования
+#     server/secret-service при KEYSTORE_BACKEND=k8s. Кладутся в keystores/.
 #   - SERVER_ENCRYPTION_KEY (+ _VERSION) + все SERVER_ENCRYPTION_KEY__v<N> legacy
+#     (env-seed / file-бэкенд; на проде сам по себе уже не активен)
 #   - SECRET_ENCRYPTION_KEY (+ _VERSION) + все SECRET_ENCRYPTION_KEY__v<N>  legacy
 #   - REDIS_STASH_ENCRYPTION_KEY (+ _VERSION) + legacy (если в Secret'е есть)
 #   - HKDF_SALT_HEX
@@ -280,11 +285,41 @@ else
     echo "  - ca/${CA_SECRET_NAME}.yaml: SKIPPED (Secret не найден в $NS)" >> "$MANIFEST"
 fi
 
+# ── Durable keystore Secret'ы ────────────────────────────────────────────────
+# server/secret-service в prod держат master-ключи шифрования в отдельных
+# Secret'ах (KEYSTORE_BACKEND=k8s), а не в полях dbos-secrets. Именно там живёт
+# АКТУАЛЬНЫЙ, ротированный материал (active_version + key_v<N>) — без него
+# backup бесполезен после первой ротации. Кладём оба Secret'а целиком YAML'ом в
+# keystores/, restore подкатит обратно `kubectl apply -f`. Если Secret'а нет
+# (file-бэкенд / ещё не bootstrap'ился) — пропускаем без ошибки.
+KEYSTORE_SECRET_NAMES=(dbos-server-encryption-keys dbos-secret-encryption-keys)
+KEYSTORES_DIR="$WORK_DIR/keystores"
+mkdir -p "$KEYSTORES_DIR"
+chmod 700 "$KEYSTORES_DIR"
+
+for ks_name in "${KEYSTORE_SECRET_NAMES[@]}"; do
+    if kubectl -n "$NS" get secret "$ks_name" >/dev/null 2>&1; then
+        KS_YAML="$KEYSTORES_DIR/${ks_name}.yaml"
+        kubectl -n "$NS" get secret "$ks_name" -o yaml \
+            | sed -E \
+                -e '/^  resourceVersion:/d' \
+                -e '/^  uid:/d' \
+                -e '/^  creationTimestamp:/d' \
+                -e '/^  managedFields:/,/^  [a-z]/{/^  [a-z]/!d;}' \
+            > "$KS_YAML"
+        chmod 600 "$KS_YAML"
+        KS_SIZE=$(stat -c '%s' "$KS_YAML" 2>/dev/null || wc -c < "$KS_YAML")
+        echo "  - keystores/${ks_name}.yaml (${KS_SIZE} bytes)" >> "$MANIFEST"
+    else
+        echo "  - keystores/${ks_name}.yaml: SKIPPED (Secret не найден в $NS)" >> "$MANIFEST"
+    fi
+done
+
 # ── tar.gz ───────────────────────────────────────────────────────────────────
 TAR_PATH="$WORK_DIR/$ARCHIVE_BASENAME"
-# В архив кладём MANIFEST.txt + keys/ + ca/ (если каталог ca/ пустой — tar его
-# всё равно сохранит, при restore просто будет пустым).
-( cd "$WORK_DIR" && tar -czf "$TAR_PATH" -C "$WORK_DIR" MANIFEST.txt keys ca )
+# В архив кладём MANIFEST.txt + keys/ + ca/ + keystores/ (пустые каталоги tar
+# всё равно сохранит, при restore просто будут пустыми).
+( cd "$WORK_DIR" && tar -czf "$TAR_PATH" -C "$WORK_DIR" MANIFEST.txt keys ca keystores )
 chmod 600 "$TAR_PATH"
 
 TAR_SHA256_PLAIN="$(sha256sum "$TAR_PATH" | awk '{print $1}')"

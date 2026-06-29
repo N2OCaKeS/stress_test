@@ -12,6 +12,40 @@ if [[ ! -f "$K8S_DIR/20-secrets.yaml" ]] || [[ ! -f "$K8S_DIR/50-ingress.yaml" ]
     exit 1
 fi
 
+# ── Durable keystore bootstrap (до сервисов, create-only) ─────────────────────
+# server/secret-service стартуют с KEYSTORE_BACKEND=k8s и читают master-ключи из
+# Secret'ов dbos-server-encryption-keys / dbos-secret-encryption-keys. Их надо
+# создать ДО того, как поднимутся pod'ы, иначе keystore пуст → crashloop.
+#
+# create-only (не apply!): живой keystore с уже ротированными ключами никогда не
+# перетирается. AlreadyExists — норма (повторный деплой). Namespace создаём
+# первым, т.к. он нужен и для keystore, и для всего остального.
+KEYSTORE_OUT="$K8S_DIR/21-keystore-secrets.yaml"
+KEYSTORE_NAMES=(dbos-server-encryption-keys dbos-secret-encryption-keys)
+
+echo "→ Создаём namespace dbos (если нет)..."
+kubectl apply -f "$K8S_DIR/00-namespace.yaml"
+
+if [[ -f "$KEYSTORE_OUT" ]]; then
+    echo "→ Bootstrap durable keystore (create-only, живой keystore не трогаем)..."
+    set +e
+    create_out=$(kubectl create -f "$KEYSTORE_OUT" 2>&1)
+    set -e
+    # Показываем всё, кроме безобидного AlreadyExists (keystore уже засеян).
+    echo "$create_out" | grep -v "AlreadyExists" || true
+fi
+
+# Гарантируем, что keystore-Secret'ы реально на месте — иначе сервисы упадут.
+for name in "${KEYSTORE_NAMES[@]}"; do
+    if ! kubectl -n dbos get secret "$name" >/dev/null 2>&1; then
+        echo "ОШИБКА: keystore-Secret $name отсутствует и не сгенерирован."
+        echo "  Запустите 'make k8s-secrets' (создаст $KEYSTORE_OUT) и повторите."
+        exit 1
+    fi
+done
+echo "✓ Keystore-Secret'ы на месте: ${KEYSTORE_NAMES[*]}"
+
+echo ""
 echo "→ Применяем манифесты..."
 # `kubectl apply -k` НЕ принимает `--load-restrictor`; флаг живёт только на
 # `kubectl kustomize` (build-step). configMapGenerator `rotation-scripts`
@@ -24,6 +58,8 @@ echo ""
 echo "→ Ждём готовности pods (timeout 5 мин)..."
 kubectl -n dbos rollout status deploy/auth-postgres    --timeout=300s
 kubectl -n dbos rollout status deploy/logging-postgres --timeout=300s
+kubectl -n dbos rollout status deploy/server-postgres  --timeout=300s
+kubectl -n dbos rollout status deploy/worker-postgres  --timeout=300s
 kubectl -n dbos rollout status deploy/secret-postgres  --timeout=300s
 kubectl -n dbos rollout status deploy/logging-service  --timeout=300s
 kubectl -n dbos rollout status deploy/auth-service     --timeout=300s

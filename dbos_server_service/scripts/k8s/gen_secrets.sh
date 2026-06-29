@@ -20,6 +20,13 @@
 #                                                 остаются нетронутыми. Использовать
 #                                                 для ежегодного продления cert'а.
 #
+#   scripts/k8s/gen_secrets.sh --keystore-only  — сгенерировать ТОЛЬКО
+#                                                 21-keystore-secrets.yaml из уже
+#                                                 существующих master-ключей в
+#                                                 20-secrets.yaml. Для миграции
+#                                                 действующего деплоя на durable
+#                                                 keystore без смены ключей.
+#
 #   SAN_EXTRA="DNS:dbos.local"  scripts/k8s/gen_secrets.sh 10.177.103.102
 #       — добавить второй SAN-entry (например DNS-имя, когда оператор пока
 #       ходит по IP, но хочет, чтобы тот же cert валидировался и по
@@ -39,6 +46,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K8S_DIR="$(cd "$SCRIPT_DIR/../../k8s" && pwd)"
 SECRETS_OUT="$K8S_DIR/20-secrets.yaml"
+KEYSTORE_OUT="$K8S_DIR/21-keystore-secrets.yaml"
 INGRESS_OUT="$K8S_DIR/50-ingress.yaml"
 INGRESS_TEMPLATE="$K8S_DIR/50-ingress.yaml.template"
 ENV_FILE="$K8S_DIR/.env.k8s"
@@ -60,12 +68,18 @@ readonly RAND_MASTER_KEY_BYTES=32    # openssl rand -base64 32 → ~43 alnum
 readonly RAND_HKDF_SALT_BYTES=16     # openssl rand -hex 16
 
 # ── Парсинг флагов ────────────────────────────────────────────────────────────
-# --only-tls — перевыпустить только TLS-cert, не трогать остальные секреты.
+# --only-tls       — перевыпустить только TLS-cert, не трогать остальные секреты.
+# --keystore-only  — сгенерировать ТОЛЬКО 21-keystore-secrets.yaml из уже
+#                    существующих master-ключей в 20-secrets.yaml (для миграции
+#                    действующего деплоя на durable keystore — без регенерации
+#                    остальных секретов и без смены ключей).
 ONLY_TLS=0
+ONLY_KEYSTORE=0
 ARGS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --only-tls|--cert-only) ONLY_TLS=1; shift ;;
+        --keystore-only) ONLY_KEYSTORE=1; shift ;;
         -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
         --) shift; while [[ $# -gt 0 ]]; do ARGS+=("$1"); shift; done ;;
         -*) echo "ОШИБКА: неизвестный флаг: $1" >&2; exit 1 ;;
@@ -73,6 +87,77 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 set -- "${ARGS[@]+"${ARGS[@]}"}"
+
+# Записать 21-keystore-secrets.yaml из текущих значений переменных
+# SERVER_ENCRYPTION_KEY[_VERSION] / SECRET_ENCRYPTION_KEY[_VERSION].
+emit_keystore_file() {
+    echo "→ Пишем $KEYSTORE_OUT (bootstrap durable keystore)..."
+    {
+cat <<EOF
+# СГЕНЕРИРОВАНО ${TS} скриптом scripts/k8s/gen_secrets.sh
+# DO NOT COMMIT. Применяется deploy.sh create-only (не перетирает живой keystore).
+#
+# Durable keystore мастер-ключей шифрования (KEYSTORE_BACKEND=k8s).
+# Поля совпадают с K8sSecretKeyStore: active_version + key_v<N>.
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dbos-server-encryption-keys
+  namespace: dbos
+  labels:
+    app: server-service
+type: Opaque
+stringData:
+  active_version: "${SERVER_ENCRYPTION_KEY_VERSION}"
+  key_v${SERVER_ENCRYPTION_KEY_VERSION}: ${SERVER_ENCRYPTION_KEY}
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dbos-secret-encryption-keys
+  namespace: dbos
+  labels:
+    app: secret-service
+type: Opaque
+stringData:
+  active_version: "${SECRET_ENCRYPTION_KEY_VERSION}"
+  key_v${SECRET_ENCRYPTION_KEY_VERSION}: ${SECRET_ENCRYPTION_KEY}
+EOF
+    } > "$KEYSTORE_OUT"
+    chmod 600 "$KEYSTORE_OUT"
+}
+
+# ── --keystore-only: засеять keystore-файл из существующих ключей ─────────────
+if [[ "$ONLY_KEYSTORE" -eq 1 ]]; then
+    if [[ ! -f "$SECRETS_OUT" ]]; then
+        echo "ОШИБКА: $SECRETS_OUT не найден — неоткуда взять master-ключи." >&2
+        echo "  Для свежего деплоя запусти gen_secrets.sh без флага." >&2
+        exit 1
+    fi
+    # Вытаскиваем значения из stringData существующего 20-secrets.yaml.
+    field() { awk -v k="$1" '$1==k":"{v=$2; gsub(/^"|"$/,"",v); print v; exit}' "$SECRETS_OUT"; }
+    SERVER_ENCRYPTION_KEY="$(field SERVER_ENCRYPTION_KEY)"
+    SERVER_ENCRYPTION_KEY_VERSION="$(field SERVER_ENCRYPTION_KEY_VERSION)"
+    SECRET_ENCRYPTION_KEY="$(field SECRET_ENCRYPTION_KEY)"
+    SECRET_ENCRYPTION_KEY_VERSION="$(field SECRET_ENCRYPTION_KEY_VERSION)"
+    if [[ -z "$SERVER_ENCRYPTION_KEY" || -z "$SERVER_ENCRYPTION_KEY_VERSION" \
+       || -z "$SECRET_ENCRYPTION_KEY" || -z "$SECRET_ENCRYPTION_KEY_VERSION" ]]; then
+        echo "ОШИБКА: не нашёл SERVER/SECRET_ENCRYPTION_KEY[_VERSION] в $SECRETS_OUT." >&2
+        exit 1
+    fi
+    if [[ -f "$KEYSTORE_OUT" ]]; then
+        echo "⚠ $KEYSTORE_OUT уже существует."
+        read -p "  Перезаписать файл? (живой keystore в кластере не трогается) [yes/no]: " yn
+        [[ "$yn" == "yes" ]] || { echo "Отменено."; exit 0; }
+    fi
+    emit_keystore_file
+    echo ""
+    echo "✓ $KEYSTORE_OUT сгенерирован из существующих ключей."
+    echo "  Применить (create-only): make k8s-deploy  (или kubectl create -f $KEYSTORE_OUT)."
+    exit 0
+fi
 
 # ── Domain или IP (для Ingress + CN/SAN сертификата) ──────────────────────────
 # DOMAIN на входе может быть:
@@ -459,6 +544,27 @@ EOF
 
 chmod 600 "$SECRETS_OUT"
 
+# ── 21-keystore-secrets.yaml — durable keystore bootstrap ─────────────────────
+#
+# server_service и secret_service в prod крутятся с KEYSTORE_BACKEND=k8s: master-
+# материал шифрования живёт не в env, а в отдельных k8s Secret'ах (durable, его
+# патчит сервис на rotate). Bootstrap-Secret'ы засевают НАЧАЛЬНУЮ активную
+# версию из тех же ключей, что выше (SERVER_ENCRYPTION_KEY / SECRET_ENCRYPTION_KEY),
+# чтобы первый старт не падал на пустом keystore.
+#
+# Формат полей точно совпадает с K8sSecretKeyStore (core/keystore.py):
+#   active_version  — номер активной версии (строкой)
+#   key_v<N>        — master-материал версии N (та же base64-строка, что в env;
+#                     сервис скармливает её в HKDF как есть, без декода).
+#
+# ВАЖНО про идемпотентность: эти Secret'ы НЕ включены в kustomization и
+# применяются deploy.sh'ем строго create-only (kubectl create, не apply). Живой
+# keystore в кластере (с уже ротированными key_v<N> и сдвинутым active_version)
+# НИКОГДА не перетирается этим файлом — иначе потеря ключей и недешифруемые
+# ciphertext'ы. Полная замена ключа делается только rotate_*.sh либо пересозданием
+# namespace (k8s-destroy → re-deploy).
+emit_keystore_file
+
 # ── 50-ingress.yaml ───────────────────────────────────────────────────────────
 echo "→ Генерируем $INGRESS_OUT из шаблона..."
 if [[ "$IS_IP" -eq 1 ]]; then
@@ -555,6 +661,7 @@ echo "✓ Готово."
 echo ""
 echo "  Сгенерированы:"
 echo "    $SECRETS_OUT       (Secret dbos-secrets + dbos-ingress-tls, chmod 600)"
+echo "    $KEYSTORE_OUT  (bootstrap keystore: dbos-server/secret-encryption-keys, create-only)"
 echo "    $INGRESS_OUT       (Ingress + Middleware с host=$DOMAIN)"
 echo "    $ENV_FILE          (домен для повторных запусков)"
 echo "    $SUMMARY_OUT       (summary — admin-пароль + master-key + DB-passwords)"

@@ -14,11 +14,63 @@
 ```bash
 make k8s-install-k3s                 # один раз, на чистой VM (sudo)
 make k8s-install-cert-manager        # один раз, после k3s
-make k8s-build                       # после каждого изменения кода
-make k8s-secrets DOMAIN=dbos.local   # один раз, заполнить k8s/20-secrets.yaml
+make k8s-secrets DOMAIN=dbos.local   # один раз: 20-secrets.yaml + 21-keystore-secrets.yaml + 50-ingress.yaml
                                      # (для closed-net можно DOMAIN=10.177.103.102)
-make prod-deploy                     # build → check → deploy → migrate → smoke
+make deploy                          # = prod-deploy: build → secrets-check → deploy+keystore → migrate → smoke
 ```
+
+`make deploy` (алиас `prod-deploy`) — одна идемпотентная команда, поднимающая
+всё в правильном порядке:
+
+1. **build** — собрать и импортировать 5 образов в k3s.
+2. **secrets-check** — убедиться, что `20-secrets.yaml` / `50-ingress.yaml` на месте.
+3. **deploy** (`scripts/k8s/deploy.sh`): namespace → **create-only bootstrap
+   keystore-Secret'ов** (`dbos-server-encryption-keys` / `dbos-secret-encryption-keys`)
+   → `kubectl apply -k` (postgres/redis/RBAC/сервисы) → ожидание готовности всех
+   БД и Deployment'ов.
+4. **migrate** (`make k8s-migrate`) — `alembic upgrade head` во всех 5 сервисах
+   (auth/logging/server/worker/secret) через `kubectl exec`.
+5. **openapi dump** + **smoke**.
+
+Полностью с нуля (включая установку docker/k3s/cert-manager) — `make k8s-zero`.
+
+### Durable keystore шифрования
+
+`server_service` и `secret_service` в prod крутятся с `KEYSTORE_BACKEND=k8s`:
+master-материал шифрования живёт не в env, а в отдельных k8s Secret'ах
+`dbos-server-encryption-keys` / `dbos-secret-encryption-keys` (namespace `dbos`).
+Поля совпадают с `K8sSecretKeyStore` (`*/src/core/keystore.py`):
+`active_version` + `key_v<N>`. RBAC (`14-keystore-rbac.yaml`) даёт каждому
+сервису `get`/`patch` строго на свой Secret.
+
+- **Bootstrap.** `gen_secrets.sh` пишет `21-keystore-secrets.yaml` (gitignored,
+  `chmod 600`), засевая начальную активную версию из тех же
+  `SERVER_ENCRYPTION_KEY` / `SECRET_ENCRYPTION_KEY`, что и в `20-secrets.yaml`.
+  `deploy.sh` применяет их **create-only** (`kubectl create`, не `apply`) ДО
+  старта сервисов. Живой keystore с уже ротированными ключами **никогда не
+  перетирается** — повторный деплой идемпотентен.
+- **Миграция действующего деплоя на keystore** (когда `20-secrets.yaml` уже
+  есть, а keystore-файла нет): `bash scripts/k8s/gen_secrets.sh --keystore-only`
+  — сгенерирует `21-keystore-secrets.yaml` из существующих ключей без
+  регенерации остальных секретов, затем `make k8s-deploy`.
+- **Ротация.** `scripts/k8s/rotate_master_key.sh` (server) и
+  `scripts/k8s/rotate_secret_master_key.sh` (secret) патчат keystore-Secret
+  напрямую: `key_v<new>` + бамп `active_version` (рестарт не нужен — keystore
+  читается вживую). `--finalize` выводит старые версии после
+  `migration_status: complete`.
+- **Backup/restore.** `backup_master_keys.sh` кладёт оба keystore-Secret'а
+  целиком в `keystores/` архива; `restore_master_keys.sh --apply` подкатывает их
+  обратно.
+
+### Миграции: один механизм
+
+Alembic-миграции гоняются **только** через `make k8s-migrate`
+(`kubectl exec … alembic upgrade head`, по одному pod'у на сервис). Декларативные
+Job'ы из `45-migrations.yaml` **не подключены** в `kustomization.yaml`: Job'ы
+immutable и ломают повторный `apply -k`. Readiness сервисов — `SELECT 1`
+(схема-независим), поэтому pod'ы доходят до Ready без схемы, а exec-миграция
+отрабатывает следом, до smoke. `45-migrations.yaml` оставлен как альтернатива
+под Helm/Argo PreSync-hook.
 
 ## Архитектура
 
@@ -161,7 +213,7 @@ SAN_EXTRA="DNS:dbos.example.com" \
 
 **Сохраните admin-пароль и master-key из вывода скрипта.** Кроме stdout скрипт пишет полный summary в `/tmp/dbos-secrets-<ts>.txt` (chmod 600). После переноса в password manager — `shred -u /tmp/dbos-secrets-<ts>.txt`.
 
-> ⚠ Повторный запуск `gen_secrets.sh` перегенерирует ВСЕ секреты, включая `SERVER_ENCRYPTION_KEY` — все существующие зашифрованные строки в `server_db` станут недешифруемыми. Для смены **только** мастер-ключа используй `scripts/k8s/rotate_master_key.sh` — см. раздел «Ротация мастер-ключа» ниже.
+> ⚠ Повторный запуск `gen_secrets.sh` перегенерирует ВСЕ секреты в `20-secrets.yaml` (включая env-seed `SERVER_ENCRYPTION_KEY`) и **перезапишет файл** `21-keystore-secrets.yaml`. На **уже работающем** кластере это НЕ меняет активный ключ: `deploy.sh` применяет keystore create-only и живой `dbos-server-encryption-keys` не трогает (env-seed при `KEYSTORE_BACKEND=k8s` не используется). Но если затем пересоздать namespace — поднимется уже новый ключ, и старые ciphertext'ы станут недешифруемыми. Для штатной смены мастер-ключа без потери данных используй `scripts/k8s/rotate_master_key.sh` (см. «Ротация мастер-ключа» ниже). Для миграции действующего деплоя на keystore без смены ключа — `gen_secrets.sh --keystore-only`.
 
 TLS-сертификаты для Ingress больше не генерирует этот скрипт — их выпускает
 cert-manager (см. шаг 2a).

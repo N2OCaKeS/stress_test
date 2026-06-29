@@ -1,3 +1,10 @@
+# ВНИМАНИЕ: этот файл НЕ подключён в kustomization.yaml. Дефолтный деплой
+# (prod-deploy / k8s-zero) гоняет миграции через `make k8s-migrate`
+# (kubectl exec alembic upgrade head), потому что Job'ы immutable и ломают
+# повторный `kubectl apply -k`. Файл оставлен как декларативная альтернатива
+# для Helm/Argo PreSync-hook'а. Если включаешь его обратно в kustomization —
+# убери шаг k8s-migrate из prod-deploy/k8s-zero, иначе миграции задвоятся.
+#
 # Alembic-миграции вынесены из Pod'а в отдельные Job'ы — один Pod на сервис,
 # который завершается после `alembic upgrade head`. Это убирает гонку
 # параллельных миграций при replicas=2 и развязывает фазу schema-evolution

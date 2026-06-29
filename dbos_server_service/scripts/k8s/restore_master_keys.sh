@@ -283,6 +283,22 @@ if [[ "$APPLY" == "true" ]]; then
             echo "✓ CA Secret ${NS}/${ca_name} применён."
         done
     fi
+
+    # ── Durable keystore Secret'ы ────────────────────────────────────────────
+    # keystores/<name>.yaml — полный Secret (active_version + key_v<N>). Apply
+    # целиком (не merge): keystore-материал монолитный, частичный merge с уже
+    # существующим Secret'ом дал бы рассинхрон версий. Это перетрёт текущий
+    # keystore — для DR-restore так и надо (восстанавливаем зафиксированный срез).
+    KEYSTORES_DIR_UNPACK="$UNPACK_DIR/keystores"
+    if [[ -d "$KEYSTORES_DIR_UNPACK" ]]; then
+        for ks_yaml in "$KEYSTORES_DIR_UNPACK"/*.yaml; do
+            [[ -f "$ks_yaml" ]] || continue
+            ks_name="$(basename "$ks_yaml" .yaml)"
+            echo "→ Восстанавливаю keystore Secret ${NS}/${ks_name} (kubectl apply -f)..."
+            kubectl -n "$NS" apply -f "$ks_yaml"
+            echo "✓ keystore Secret ${NS}/${ks_name} применён."
+        done
+    fi
     echo ""
     echo "  Перезапусти сервисы, чтобы они перечитали Secret:"
     echo "    kubectl -n ${NS} rollout restart deploy/server-service deploy/server-worker"
@@ -301,6 +317,15 @@ else
             ca_name="$(basename "$ca_yaml" .yaml)"
             echo ""
             echo "── CA Secret в архиве: ${ca_name} (будет применён через kubectl apply -f) ──"
+        done
+    fi
+    KEYSTORES_DIR_UNPACK="$UNPACK_DIR/keystores"
+    if [[ -d "$KEYSTORES_DIR_UNPACK" ]]; then
+        for ks_yaml in "$KEYSTORES_DIR_UNPACK"/*.yaml; do
+            [[ -f "$ks_yaml" ]] || continue
+            ks_name="$(basename "$ks_yaml" .yaml)"
+            echo ""
+            echo "── keystore Secret в архиве: ${ks_name} (будет применён через kubectl apply -f) ──"
         done
     fi
     echo ""

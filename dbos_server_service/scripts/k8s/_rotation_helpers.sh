@@ -12,7 +12,13 @@
 #
 # Контракт по env-переменным (выставляет caller перед source'ом):
 #   NS                  — namespace (обычно $DBOS_NAMESPACE / dbos)
-#   SECRET              — имя Secret'а (обычно $DBOS_SECRET_NAME / dbos-secrets)
+#   SECRET              — имя Secret'а, который патчим (dbos-secrets либо, для
+#                         master-key ротаторов, keystore-Secret вроде
+#                         dbos-server-encryption-keys)
+#   S2S_SECRET          — Secret с s2s-ключами (ROTATION_RUNNER_API_KEY и пр.);
+#                         по умолчанию = $SECRET. Master-key ротаторы выставляют
+#                         его в dbos-secrets, потому что rotation_runner-ключ
+#                         живёт там, а не в keystore-Secret'е.
 #   ASSUME_YES          — "true" → confirm() возвращает 0 без prompt'а
 
 # shellcheck shell=bash
@@ -83,7 +89,7 @@ ROTATION_RUNNER_KEY_FIELD="ROTATION_RUNNER_API_KEY"
 # ── Достаём rotation_runner API key из Secret'а ───────────────────────────────
 _rotation_runner_key() {
     local val
-    val=$(kubectl -n "$NS" get secret "$SECRET" -o json 2>/dev/null \
+    val=$(kubectl -n "$NS" get secret "${S2S_SECRET:-$SECRET}" -o json 2>/dev/null \
         | jq -r ".data.\"${ROTATION_RUNNER_KEY_FIELD}\" // empty" \
         | { local b64; b64=$(cat); [[ -n "$b64" ]] && echo "$b64" | base64 -d || true; })
     [[ -n "$val" ]] && echo "$val" || return 1

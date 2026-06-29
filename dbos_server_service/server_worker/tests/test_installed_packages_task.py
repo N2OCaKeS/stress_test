@@ -21,6 +21,33 @@ from src.core.constants import TaskStatus
 from src.tasks import installed_packages
 
 
+@pytest.fixture(autouse=True)
+def mgmt_creds_fetch(monkeypatch):
+    """Замокать per-server fetch управляющих кред для managed-серверов.
+
+    Handler `installed_packages.*` на managed-сервере тянет per-server ключ
+    через `attach_management_creds` до сборки сессии. `build_session` в этих
+    тестах подменён фейком, поэтому ключ никуда не подставляется — fetch'у
+    достаточно не падать. Возвращает список вызовов: managed-тесты сверяют, что
+    mgmt-креды действительно фетчатся (в отличие от account-password). Для
+    неуправляемых серверов `attach_management_creds` — no-op, fetch не зовётся.
+    """
+    calls: list = []
+
+    async def _fetch(server_id, target_department_id=None):
+        calls.append((server_id, target_department_id))
+        return {
+            "management_user": "dbos",
+            "ssh_private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nstub\n",
+            "password": "mgmt-pwd",
+        }
+
+    monkeypatch.setattr(
+        "src.services.server_service_client.fetch_management_credentials", _fetch,
+    )
+    return calls
+
+
 # ── Парсер — без сети, чистый юнит ──────────────────────────────────────────
 
 
@@ -1040,12 +1067,13 @@ class TestInstalledPackagesTask:
         assert "SERVER_MANAGEMENT_AUTH_FAILED" not in t.last_error
 
     async def test_managed_server_uses_session_hints_and_skips_password_fetch(
-        self, make_task, fetch_task, captured_audit, monkeypatch,
+        self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_creds_fetch,
     ):
-        """На managed-сервере handler не должен дёргать fetch_account_password
-        ради пароля (его может вовсе не быть у discovered-аккаунта).
-        Сессия собирается через ssh_client.build_session с is_managed/
-        management_user в creds — управляющая ключевая сессия.
+        """На managed-сервере handler не дёргает fetch_account_password ради
+        пароля (его может вовсе не быть у discovered-аккаунта), но тянет
+        per-server управляющие креды через attach_management_creds. Сессия
+        собирается через ssh_client.build_session с is_managed/management_user
+        в creds — управляющая ключевая сессия.
         """
         fake = _FakeSshClient(host="srv_m.example")
         fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
@@ -1079,8 +1107,11 @@ class TestInstalledPackagesTask:
 
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
-        # На managed fetch не дёргается — пароль не нужен для управляющей сессии.
+        # На managed account-password fetch не дёргается — пароль не нужен для
+        # управляющей сессии.
         assert fetch_calls == []
+        # Но per-server управляющие креды фетчатся.
+        assert mgmt_creds_fetch == [("srv_m", None)]
         # build_session получил creds с is_managed/management_user hints.
         assert captured_creds, "build_session must be called"
         creds, server_id = captured_creds[0]
@@ -1089,10 +1120,11 @@ class TestInstalledPackagesTask:
         assert creds.get("management_user") == "dbos"
 
     async def test_managed_without_account_id_uses_default_login(
-        self, make_task, fetch_task, captured_audit, monkeypatch,
+        self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_creds_fetch,
     ):
         """Managed без account_id в payload — fallback на ssh_login,
-        fetch_account_password не зовётся. Сессия по-прежнему ключевая."""
+        fetch_account_password не зовётся, но per-server mgmt-креды тянутся.
+        Сессия по-прежнему ключевая."""
         fake = _FakeSshClient(host="srv_m2.example")
         fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
         fake.set_response("dpkg-query -W", 0, "vim 9.0\n")
@@ -1124,8 +1156,10 @@ class TestInstalledPackagesTask:
 
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
-        # Нет account_id → fetch не дёргался.
+        # Нет account_id → account-password fetch не дёргался.
         assert fetch_calls == []
+        # Per-server управляющие креды всё равно фетчатся.
+        assert mgmt_creds_fetch == [("srv_m2", None)]
         creds, _ = captured_creds[0]
         assert creds.get("is_managed") is True
         assert creds.get("management_user") == "dbos"

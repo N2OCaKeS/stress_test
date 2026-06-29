@@ -296,6 +296,67 @@ async def submit_provision_status(
     )
 
 
+async def fetch_management_credentials(
+    server_id: str,
+    target_department_id: str | None = None,
+) -> dict:
+    """Запросить расшифрованные per-server управляющие креды сервера.
+
+    Возвращает: `{management_user, ssh_private_key, password}` от
+    `GET /api/server/v1/internal/servers/{id}/management/credentials`. Это
+    приватный ключ и пароль управляющего пользователя `dbos` именно на этом
+    сервере (своя пара на каждый бокс, шифруется в server_service). Worker
+    тянет их just-in-time под управляющую сессию вместо глобального env-ключа —
+    тот же паттерн, что `fetch_account_password` / `fetch_ipmi_credentials`.
+
+    Инвариант server_service: пока креды в состоянии `pending_apply` (новый
+    материал записан, на боксе ещё старый) — эндпоинт отдаёт previous-материал,
+    то есть реально рабочий на боксе. Поэтому вход всегда идёт тем ключом,
+    который сервер действительно принимает.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `MANAGEMENT_CREDENTIALS_UNAVAILABLE` — server_service вернул не 200
+        (сервер не подготовлен, нет кред, отказ авторизации, dept-mismatch).
+    """
+    return await _request(
+        "get",
+        f"/api/server/v1/internal/servers/{server_id}/management/credentials",
+        reject_code="MANAGEMENT_CREDENTIALS_UNAVAILABLE",
+        target_department_id=target_department_id,
+        details={"server_id": server_id},
+    )
+
+
+async def submit_management_creds_applied(
+    server_id: str,
+    target_department_id: str | None = None,
+) -> dict:
+    """Подтвердить, что новые управляющие креды применены на боксе.
+
+    Финал `server.rotate_management_creds` task'а: новый ключ установлен и
+    проверен живым входом, старый убран. server_service по этому callback'у
+    снимает `mgmt_creds_pending_apply`, зануляет previous-материал и фиксирует
+    `mgmt_creds_rotated_at`. Тело пустое — server_service берёт `server_id` из
+    пути.
+
+    Возвращает: `{}` (или тело callback'а) от
+    `POST /api/server/v1/internal/servers/{id}/management-credentials/applied`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `MANAGEMENT_CREDS_APPLIED_REJECTED` — server_service вернул не 2xx.
+    """
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/management-credentials/applied",
+        reject_code="MANAGEMENT_CREDS_APPLIED_REJECTED",
+        target_department_id=target_department_id,
+        details={"server_id": server_id},
+        allow_empty_body=True,
+    )
+
+
 async def submit_prepared(
     server_id: str,
     management_user: str,

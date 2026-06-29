@@ -13,11 +13,15 @@ Bootstrap-креды (`bootstrap_login` / `bootstrap_password`) НЕ храня�
 Если ключа нет/истёк — `SSH_BOOTSTRAP_CREDS_MISSING` (task FAILED с понятным
 last_error, не молчаливый краш под `root`).
 
-Публичный ключ и имя управляющего пользователя берём из конфига воркера
-(`SSH_MANAGEMENT_PUBLIC_KEY` / `SSH_MANAGEMENT_USER`) — серверу их знать не
-нужно. По завершении POST'им callback `submit_prepared`, server_service
-помечает сервер подготовленным (`is_managed`, `prepared_at`, management_user),
-а ключ из Redis удаляем (TTL подстраховывает в любом случае).
+Управляющая SSH-пара и пароль `dbos` свои на каждом сервере: их генерит
+server_service на этапе prepare и кладёт в тот же Redis-stash, что и
+bootstrap-креды, полем `mgmt_install = {management_user, public_key,
+private_key, password}`. Worker читает их оттуда, ставит публичный ключ в
+authorized_keys, выставляет пароль (`chpasswd`) и проверяет вход новым ключом
+перед хардингом sshd. Глобального env-ключа воркера больше нет. По завершении
+POST'им callback `submit_prepared`, server_service помечает сервер
+подготовленным (`is_managed`, `prepared_at`, management_user), а ключ из Redis
+удаляем (TTL подстраховывает в любом случае).
 """
 
 import json
@@ -198,6 +202,7 @@ async def _provision_linked_accounts(
     *,
     linked_accounts: list[dict],
     payload: dict,
+    management_private_key: str | None = None,
 ) -> None:
     """Завести на свежеподготовленном сервере все привязанные аккаунты.
 
@@ -236,10 +241,14 @@ async def _provision_linked_accounts(
         # зовём: в payload prepare сервер на момент dispatch'а ещё
         # is_managed=false, хинты сбросили бы managed-режим. host/port берём
         # из payload напрямую (их кладёт server_service для адресации).
+        # Приватный ключ кладём прямо в creds из mgmt_install: на этом этапе
+        # сервер ещё pending_apply, fetch управляющих кред вернул бы пусто/
+        # старое — используем только что установленную пару.
         creds: dict = {
             "login": login,
             "is_managed": True,
             "management_user": management_user,
+            "management_private_key": management_private_key,
         }
         host = payload.get("host") or payload.get("ssh_host")
         if host:
@@ -294,10 +303,9 @@ async def server_prepare(task_id: str) -> None:
         settings = get_settings()
         # Имя управляющей учётки и пер-режимный конфиг — источник истины это
         # ManagementUserConfig в server_service (едет в payload). env остаётся
-        # фолбэком для старых dispatch'ей без этих полей.
+        # фолбэком для имени, если payload пуст (back-compat).
         management_user = payload.get("management_login") or settings.ssh_management_user
         modes = payload.get("management_modes") or {}
-        public_key = settings.ssh_management_public_key
         # Режим определяется на боксе; если SSH-этап пропущен по marker'у
         # (callback-retry), берём ранее сохранённый из payload-scratch.
         detected_mode: str | None = payload.get("detected_management_mode")
@@ -333,6 +341,36 @@ async def server_prepare(task_id: str) -> None:
             # работает; истёк → SSH_BOOTSTRAP_CREDS_MISSING.
             bootstrap = await _read_bootstrap_creds(creds_key)
 
+            # Per-server управляющий материал лежит рядом с bootstrap-кредами в
+            # том же stash'е (его генерит и кладёт server_service). Без него
+            # ставить нечего — fail-fast с понятной ошибкой, а не молчаливый
+            # bootstrap без ключа/пароля.
+            mgmt_install = bootstrap.get("mgmt_install") or {}
+            mgmt_public_key = mgmt_install.get("public_key")
+            mgmt_private_key = mgmt_install.get("private_key")
+            mgmt_password = mgmt_install.get("password")
+            mgmt_install_user = mgmt_install.get("management_user")
+            missing = [
+                name for name, value in (
+                    ("public_key", mgmt_public_key),
+                    ("private_key", mgmt_private_key),
+                    ("password", mgmt_password),
+                ) if not value
+            ]
+            if missing:
+                raise SshError(
+                    error_code="SSH_MGMT_INSTALL_INCOMPLETE",
+                    host="",
+                    message=(
+                        "prepare stash has no usable mgmt_install material "
+                        f"(missing: {', '.join(missing)}); re-run prepare"
+                    ),
+                )
+            # Имя из mgmt_install имеет приоритет — это то имя, под которым
+            # server_service сгенерил пару; payload/env остаются фолбэком.
+            if mgmt_install_user:
+                management_user = mgmt_install_user
+
             creds = {
                 "login": bootstrap.get("bootstrap_login"),
                 "password": bootstrap.get("bootstrap_password"),
@@ -346,15 +384,15 @@ async def server_prepare(task_id: str) -> None:
             # правильные.
             ssh_client.apply_session_hints(creds, payload)
             # Перед хардингом sshd worker проверяет, что вход по управляющему
-            # ключу реально работает (анти-локаут) — для этого нужен путь к
-            # приватному ключу из конфига. Если ключа в конфиге нет, проверка
-            # и хардинг пропускаются (dev/test без mounted secret).
+            # ключу реально работает (анти-локаут) — для этого передаём
+            # приватный ключ из mgmt_install. Пароль ставим через chpasswd.
             bootstrap_result = await ssh_client.bootstrap_management_user(
                 creds, server_id,
                 management_user=management_user,
-                public_key=public_key,
+                public_key=mgmt_public_key,
                 modes=modes,
-                management_private_key_path=settings.ssh_management_private_key_path or None,
+                management_private_key=mgmt_private_key,
+                management_password=mgmt_password,
                 harden_sshd=settings.ssh_harden_after_prepare,
             )
             detected_mode = bootstrap_result.get("management_mode")
@@ -372,6 +410,7 @@ async def server_prepare(task_id: str) -> None:
                 server_id, management_user,
                 linked_accounts=bootstrap.get("linked_accounts") or [],
                 payload=payload,
+                management_private_key=mgmt_private_key,
             )
 
         await server_service_client.submit_prepared(

@@ -473,6 +473,9 @@ async def installed_packages_list(task_id: str) -> None:
         # через единый apply_session_hints — server_service кладёт туда
         # server.ip_address как `host` и `ssh_port` для нестандартного порта.
         ssh_client.apply_session_hints(creds, payload)
+        # На управляемом сервере подтянуть per-server управляющий ключ из
+        # server_service до сборки сессии (build_session читает его из creds).
+        await ssh_client.attach_management_creds(creds, server_id)
 
         host = creds.get("host") or creds.get("ssh_host") or server_id
         # `%r` для host — defence-in-depth от log-injection: host приходит из
@@ -685,6 +688,9 @@ async def _mutate_packages_impl(payload: dict, operation: str) -> dict:
         is_managed=is_managed,
     )
     ssh_client.apply_session_hints(creds, payload)
+    # На управляемом сервере подтянуть per-server управляющий ключ до сборки
+    # сессии (build_session читает его из creds, а не из глобального env).
+    await ssh_client.attach_management_creds(creds, server_id)
     host = creds.get("host") or creds.get("ssh_host") or server_id
 
     # update может идти без списка (обновить всё); install/remove обязаны

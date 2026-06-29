@@ -16,10 +16,14 @@
   (`ensure_no_other_running_on_server`). Удаление старой учётки идёт с новой
   сессии, не из-под удаляемой.
 
-Имя управляющей учётки и пер-режимный конфиг едут в payload'е из server_service
-(источник истины — ManagementUserConfig); env остаётся фолбэком для старых
-dispatch'ей. По успешному rename воркер сообщает server_service новое имя через
-`submit_prepared` (тот идемпотентно переписывает `server.management_user`).
+Имя управляющей учётки, пер-режимный конфиг и публичный ключ управления едут в
+payload'е из server_service (источник истины — ManagementUserConfig + per-server
+`mgmt_ssh_public_key`); для имени остаётся env-фолбэк. Приватный ключ для входа
+свой на каждом сервере — `sync_management_user` / `cutover_management_user`
+тянут его сами через `attach_management_creds` (fetch из server_service), env
+больше не используется. По успешному rename воркер сообщает server_service новое
+имя через `submit_prepared` (тот идемпотентно переписывает
+`server.management_user`).
 """
 
 import logging
@@ -74,10 +78,15 @@ async def management_user_sync(task_id: str) -> None:
         server_management_user = payload.get("management_user")
         config_login = payload.get("management_login")
         modes = payload.get("management_modes") or {}
-        public_key = settings.ssh_management_public_key
+        # Публичный ключ управления свой на каждом сервере (server_service
+        # хранит `mgmt_ssh_public_key`) и едет в payload фан-аута. Глобального
+        # env-ключа больше нет; приватный для входа тянет сам ssh_client.
+        public_key = payload.get("management_public_key")
 
         host = payload.get("host") or payload.get("ssh_host")
         port = payload.get("ssh_port") or payload.get("port")
+
+        target_dept = payload.get("target_department_id")
 
         def _base_creds(management_user: str) -> dict:
             creds: dict = {"is_managed": True, "management_user": management_user}
@@ -85,6 +94,8 @@ async def management_user_sync(task_id: str) -> None:
                 creds["host"] = host
             if port:
                 creds["ssh_port"] = port
+            if target_dept:
+                creds["target_department_id"] = target_dept
             return creds
 
         # Cutover-rename: имя реально меняется и фан-аут попросил переименовать.
@@ -111,9 +122,6 @@ async def management_user_sync(task_id: str) -> None:
                 new_management_user=config_login,
                 public_key=public_key,
                 modes=modes,
-                management_private_key_path=(
-                    settings.ssh_management_private_key_path or None
-                ),
             )
             # По завершении rename сообщаем server_service новое имя — он
             # идемпотентно перепишет `server.management_user`. Делаем это

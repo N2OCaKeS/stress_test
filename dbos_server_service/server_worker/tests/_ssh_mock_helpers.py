@@ -112,13 +112,23 @@ def detect_probe_result(astra: str = "", level: str = ""):
 
 
 def prepare_seq(astra: str = "", level: str = "", getent_rc: int = 2):
-    """Полная sequence facade-prepare: detect-probe + bootstrap.
+    """Полная sequence facade-prepare: detect-probe + bootstrap + creds.
 
     Facade (`services.ssh_client.bootstrap_management_user`) сначала зовёт
-    `detect_management_mode` (один probe-`conn.run`), затем обычный
-    bootstrap. Дефолт — не-Астра + happy-path «юзера ещё нет».
+    `detect_management_mode` (один probe-`conn.run`), затем обычный bootstrap,
+    затем — с приходом per-server материала (`mgmt_install`) — `chpasswd`
+    управляющего пароля и анти-локаут-проверку входа новым ключом (`true` на
+    отдельной key-сессии). asyncssh.connect в тестах мокается с одним и тем же
+    conn, поэтому verify-`true` потребляет следующий элемент того же iterator'а.
+    Дефолт — не-Астра + happy-path «юзера ещё нет». Хардинг sshd тесты отключают
+    (`SSH_HARDEN_AFTER_PREPARE=false`), поэтому reload-команд тут нет.
     """
-    return [detect_probe_result(astra, level), *bootstrap_seq(getent_rc)]
+    return [
+        detect_probe_result(astra, level),
+        *bootstrap_seq(getent_rc),
+        run_result("", "", 0),  # chpasswd управляющего пароля (mgmt_install)
+        run_result("", "", 0),  # verify: `true` под новым ключом (анти-локаут)
+    ]
 
 
 __all__ = [

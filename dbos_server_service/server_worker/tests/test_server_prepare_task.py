@@ -43,6 +43,22 @@ async def _force_terminal(tid: str) -> None:
 
 _PUBKEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabc dbos"
 
+# Реальная Ed25519-пара для mgmt_install: prepare импортирует приватный ключ
+# для анти-локаут-проверки (`asyncssh.import_private_key`), поэтому он должен
+# быть валидным PEM, а не плейсхолдером.
+_MGMT_PRIV_KEY = asyncssh.generate_private_key("ssh-ed25519").export_private_key().decode()
+_MGMT_PUB_KEY = asyncssh.generate_private_key("ssh-ed25519").export_public_key().decode().strip()
+
+
+def _mgmt_install(user: str = "dbos") -> dict:
+    """Per-server материал, который server_service кладёт в prepare-stash."""
+    return {
+        "management_user": user,
+        "public_key": _MGMT_PUB_KEY,
+        "private_key": _MGMT_PRIV_KEY,
+        "password": "MgmtPw-24chars-abcdEFGH1",
+    }
+
 
 # ── SshClient.bootstrap_management_user ──────────────────────────────────────
 
@@ -161,6 +177,10 @@ def _mock_creds(monkeypatch, creds: dict | None):
                 host="",
                 message="missing or expired",
             )
+        # Per-server управляющий материал кладётся в тот же stash рядом с
+        # bootstrap-кредами; добавляем его, если тест не задал свой.
+        if "mgmt_install" not in creds:
+            return {**creds, "mgmt_install": _mgmt_install()}
         return creds
 
     async def fake_delete(creds_key):
@@ -174,7 +194,10 @@ def _mock_creds(monkeypatch, creds: dict | None):
 def _set_mgmt_env(monkeypatch):
     get_settings.cache_clear()
     monkeypatch.setenv("SSH_MANAGEMENT_USER", "dbos")
-    monkeypatch.setenv("SSH_MANAGEMENT_PUBLIC_KEY", _PUBKEY)
+    # Хардинг отключаем: per-server prepare теперь ещё ставит пароль (chpasswd)
+    # и проверяет вход новым ключом — без отключения reload sshd тесты ждали бы
+    # дополнительных команд. Сам хардинг покрыт в test_ssh_client.
+    monkeypatch.setenv("SSH_HARDEN_AFTER_PREPARE", "false")
     get_settings.cache_clear()
 
 
@@ -956,6 +979,90 @@ class TestPrepareProvisionsLinkedAccounts:
         get_settings.cache_clear()
 
 
+# ── mgmt_install: ключ + пароль из prepare-stash ──────────────────────────────
+
+
+class TestPrepareInstallsMgmtCreds:
+    """prepare ставит per-server ключ и пароль из `mgmt_install`-stash'а."""
+
+    async def test_installs_pubkey_and_sets_password(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        _set_mgmt_env(monkeypatch)
+        _mock_creds(
+            monkeypatch,
+            {"bootstrap_login": "bootadmin", "bootstrap_password": "Boot1234"},
+        )
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_mgmt_creds",
+            payload={
+                "server_id": "srv_mgmt_creds",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_mgmt",
+            },
+        )
+        conn = _conn(_prepare_seq())
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # authorized_keys получил публичный ключ из mgmt_install (на stdin).
+        keys_stdin = conn.run.await_args_list[5].kwargs["input"]
+        assert _MGMT_PUB_KEY in keys_stdin
+        # chpasswd выставил управляющий пароль из mgmt_install (login:pwd на stdin).
+        chpasswd_cmd = conn.run.await_args_list[6].args[0]
+        assert "chpasswd" in chpasswd_cmd
+        chpasswd_stdin = conn.run.await_args_list[6].kwargs["input"]
+        assert "dbos:MgmtPw-24chars-abcdEFGH1" in chpasswd_stdin
+
+        get_settings.cache_clear()
+
+    async def test_incomplete_mgmt_install_fails(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        _set_mgmt_env(monkeypatch)
+        # mgmt_install присутствует, но без полей — fake_read его не дополняет.
+        _mock_creds(
+            monkeypatch,
+            {
+                "bootstrap_login": "bootadmin",
+                "bootstrap_password": "Boot1234",
+                "mgmt_install": {"management_user": "dbos"},
+            },
+        )
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_mgmt_bad",
+            payload={
+                "server_id": "srv_mgmt_bad",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_badmgmt",
+            },
+        )
+        await _force_terminal(tid)
+
+        async def noop(*a, **kw):
+            pass
+        monkeypatch.setattr(_runner, "_schedule_retry", noop)
+        monkeypatch.setattr(
+            asyncssh, "connect",
+            AsyncMock(side_effect=AssertionError("connect must not be called")),
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert "SSH_MGMT_INSTALL_INCOMPLETE" in (t.last_error or "")
+
+        get_settings.cache_clear()
+
+
 # ── Детект редакции ОС: parse_management_mode (юнит на строках) ────────────────
 
 
@@ -1110,6 +1217,8 @@ class TestPrepareHandlerMode:
             _run_result("", "", 0),                    # sudoers
             _run_result("", "", 0),                    # authorized_keys
             _run_result("", "", 0),                    # extra cmd Смоленска
+            _run_result("", "", 0),                    # chpasswd mgmt-пароля
+            _run_result("", "", 0),                    # verify `true` под ключом
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 

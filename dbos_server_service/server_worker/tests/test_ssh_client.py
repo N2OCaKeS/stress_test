@@ -703,7 +703,7 @@ class TestBootstrapHardening:
         async with SshClient("h", "boot", "boot-pwd") as ssh:
             await ssh.bootstrap_management_user(
                 "dbos", self._PUBKEY,
-                management_private_key_path="/secrets/key",
+                management_private_key="/secrets/key",
                 harden_sshd=True,
             )
         # verify-сессия выполнила ровно `true`.
@@ -730,7 +730,7 @@ class TestBootstrapHardening:
             with pytest.raises(SshError) as ei:
                 await ssh.bootstrap_management_user(
                     "dbos", self._PUBKEY,
-                    management_private_key_path="/secrets/key",
+                    management_private_key="/secrets/key",
                     harden_sshd=True,
                 )
         assert ei.value.error_code == "SSH_MANAGEMENT_KEY_VERIFY_FAILED"
@@ -770,7 +770,7 @@ class TestBootstrapHardening:
             with pytest.raises(SshError) as ei:
                 await ssh.bootstrap_management_user(
                     "dbos", self._PUBKEY,
-                    management_private_key_path="/secrets/key",
+                    management_private_key="/secrets/key",
                     harden_sshd=True,
                 )
         assert ei.value.error_code == "SSH_HARDEN_FAILED"

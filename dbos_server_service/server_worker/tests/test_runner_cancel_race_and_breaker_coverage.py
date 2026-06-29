@@ -272,16 +272,28 @@ class TestScrubPayloadBestEffort:
             },
         )
 
-        # Минимальные env для prepare._impl
+        # Минимальные env для prepare._impl. Хардинг отключаем — per-server
+        # prepare ещё ставит пароль и проверяет ключ, reload sshd тут не нужен.
         monkeypatch.setenv("SSH_MANAGEMENT_USER", "dbos_mgmt")
-        monkeypatch.setenv("SSH_MANAGEMENT_PUBLIC_KEY", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey mgmt@host")
+        monkeypatch.setenv("SSH_HARDEN_AFTER_PREPARE", "false")
         from src.core.config import get_settings
         get_settings.cache_clear()
 
         import json
         from src.services import redis_pool
 
-        fake_creds = json.dumps({"bootstrap_login": "boot", "bootstrap_password": "B00t1234"})
+        _priv = asyncssh.generate_private_key("ssh-ed25519").export_private_key().decode()
+        _pub = asyncssh.generate_private_key("ssh-ed25519").export_public_key().decode().strip()
+        fake_creds = json.dumps({
+            "bootstrap_login": "boot",
+            "bootstrap_password": "B00t1234",
+            "mgmt_install": {
+                "management_user": "dbos_mgmt",
+                "public_key": _pub,
+                "private_key": _priv,
+                "password": "MgmtPw-24chars-abcdEFGH1",
+            },
+        })
 
         async def fake_redis_get(key):
             return fake_creds.encode()
@@ -300,10 +312,13 @@ class TestScrubPayloadBestEffort:
 
         conn = make_conn([
             run_result("ASTRA=\nLEVEL=\n", "", 0),  # detect_management_mode probe
-            run_result("", "", 2),   # getent passwd → not found (new user)
+            run_result("", "", 2),   # getent passwd (outer user_exists) → not found
+            run_result("", "", 2),   # getent passwd (create_user) → not found
             run_result("", "", 0),   # useradd
             run_result("", "", 0),   # sudoers write
             run_result("", "", 0),   # authorized_keys write
+            run_result("", "", 0),   # chpasswd управляющего пароля
+            run_result("", "", 0),   # verify `true` под новым ключом
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 

@@ -138,8 +138,9 @@ def _sync_payload(server, config: ManagementUserConfigResponse) -> dict:
 
     Несёт текущий конфиг (login + пер-режимные группы/команды) и SSH-адресацию
     сервера. Воркер на боксе детектит редакцию и выбирает группы/команды нужного
-    режима — ровно как `server.prepare` (re-bootstrap). Ключ управляющей учётки
-    воркер берёт из своего конфига, в payload его не кладём.
+    режима — ровно как `server.prepare` (re-bootstrap). Управляющий публичный
+    ключ — per-server (#3): берётся из `servers.mgmt_ssh_public_key` и едет в
+    payload, воркер кладёт его в authorized_keys при re-bootstrap'е.
     """
     management_modes = {
         mode.value: cfg.model_dump(mode="json")
@@ -154,6 +155,7 @@ def _sync_payload(server, config: ManagementUserConfigResponse) -> dict:
         "management_user": server.management_user,
         "management_login": config.login,
         "management_modes": management_modes,
+        "management_public_key": server.mgmt_ssh_public_key,
     }
 
 
@@ -208,6 +210,24 @@ async def fanout_management_user_sync(
     dispatched: list[dict] = []
     skipped: list[dict] = []
     for server in servers:
+        # Per-server управляющий ключ (#3) обязателен для re-bootstrap'а: воркер
+        # кладёт его в authorized_keys и без него падает SSH_INVALID_ARG.
+        # Managed-сервер без mgmt-кред — аномалия (prepare всегда их генерит);
+        # не диспатчим заведомо обречённую задачу, уводим в skipped.
+        if server.mgmt_ssh_public_key is None:
+            audit_service.emit(
+                audit_action, target_id=server.id, target_type="server",
+                status="failure", allowed=True,
+                details={
+                    "reason": "no_mgmt_creds",
+                    "task_kind": "management_user_sync",
+                    "server_id": server.id,
+                    "source": "config_fanout",
+                    "department_id": server.department_id,
+                },
+            )
+            skipped.append({"server_id": server.id, "reason": "no_mgmt_creds"})
+            continue
         payload = _sync_payload(server, config)
         payload["rename_pending"] = rename_pending
         try:

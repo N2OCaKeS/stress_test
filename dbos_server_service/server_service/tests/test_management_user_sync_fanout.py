@@ -48,10 +48,15 @@ def captured_sync(monkeypatch):
     return calls
 
 
-async def _make_managed(make_server, db, *, dept="dep_a"):
+async def _make_managed(make_server, db, *, dept="dep_a", with_mgmt_creds=True):
     srv = await make_server(department_id=dept)
     srv.is_managed = True
     srv.management_user = "dbos"
+    # Per-server управляющий ключ (#3) — prepare его всегда генерит на managed-
+    # сервере; fan-out читает `mgmt_ssh_public_key` и без него сервер скипается.
+    if with_mgmt_creds:
+        from src.services import management_creds as mgmt_svc
+        await mgmt_svc.ensure_management_credentials(db, srv)
     await db.flush()
     return srv
 
@@ -117,6 +122,9 @@ class TestModesChangeFanout:
             "echo hi"
         ]
         assert payload["rename_pending"] is False
+        # Per-server управляющий публичный ключ (#3) едет в payload — воркер
+        # кладёт его в authorized_keys при re-bootstrap'е.
+        assert payload["management_public_key"].startswith("ssh-ed25519 ")
 
     async def test_unchanged_modes_no_fanout(
         self, client, account_admin_token, make_server, db, captured_sync,
@@ -180,4 +188,24 @@ class TestLoginRenamePending:
         body = resp.json()
         assert body["modes_changed"] is True
         assert body["sync_fanout"]["dispatched"] == []
+        assert captured_sync == []
+
+
+class TestManagedWithoutMgmtCreds:
+    async def test_managed_server_without_mgmt_creds_skipped(
+        self, client, account_admin_token, make_server, db, captured_sync,
+    ):
+        # Managed-сервер без per-server управляющего ключа (#3): sync дёрнул бы
+        # SSH_INVALID_ARG на воркере без pubkey — поэтому такой сервер скипаем,
+        # а не диспатчим заведомо обречённую задачу.
+        await _make_managed(make_server, db, with_mgmt_creds=False)
+
+        resp = await client.put(
+            BASE, headers=_hdr(account_admin_token),
+            json={"modes": {"other_os": {"groups": ["sudo"]}}},
+        )
+        assert resp.status_code == 200
+        fanout = resp.json()["sync_fanout"]
+        assert fanout["dispatched"] == []
+        assert {s["reason"] for s in fanout["skipped"]} == {"no_mgmt_creds"}
         assert captured_sync == []

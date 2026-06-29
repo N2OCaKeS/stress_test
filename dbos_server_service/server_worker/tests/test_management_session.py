@@ -30,16 +30,38 @@ def _conn(run_results):
     return conn
 
 
+# Валидный per-server приватный ключ: `_build_session` импортирует его PEM в
+# key-объект (`asyncssh.import_private_key`), поэтому он должен быть настоящим.
+_MGMT_PRIV_KEY_PEM = (
+    asyncssh.generate_private_key("ssh-ed25519").export_private_key().decode()
+)
+
+
 @pytest.fixture
-def mgmt_key(tmp_path, monkeypatch):
-    """Положить фиктивный приватный ключ и указать на него в конфиге."""
-    key_path = tmp_path / "mgmt_id_ed25519"
-    key_path.write_text("-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n")
+def mgmt_key(monkeypatch):
+    """Замокать `fetch_management_credentials` — per-server ключ вместо env.
+
+    Управляющий приватный ключ теперь свой на каждом сервере и тянется
+    just-in-time из server_service (`attach_management_creds`). Фикстура
+    подменяет fetch и отдаёт тот же PEM, который тесты затем сверяют в
+    `client_keys` собранной сессии.
+    """
     get_settings.cache_clear()
     monkeypatch.setenv("SSH_MANAGEMENT_USER", "dbos")
-    monkeypatch.setenv("SSH_MANAGEMENT_PRIVATE_KEY_PATH", str(key_path))
     get_settings.cache_clear()
-    yield str(key_path)
+
+    async def fake_fetch(server_id, target_department_id=None):
+        return {
+            "management_user": "dbos",
+            "ssh_private_key": _MGMT_PRIV_KEY_PEM,
+            "password": "mgmt-pwd",
+        }
+
+    monkeypatch.setattr(
+        "src.services.server_service_client.fetch_management_credentials",
+        fake_fetch,
+    )
+    yield _MGMT_PRIV_KEY_PEM
     get_settings.cache_clear()
 
 
@@ -54,42 +76,91 @@ class TestBuildSession:
         assert ssh._password == "sess-pwd"
         assert ssh._client_keys is None
 
-    def test_managed_uses_management_key_session(self, mgmt_key):
+    def test_managed_uses_management_key_session(self):
+        # Per-server ключ уже в creds (его кладёт attach_management_creds).
         creds = {
             "login": "ops", "password": "sess-pwd", "host": "10.0.0.5",
             "is_managed": True, "management_user": "dbos",
+            "management_private_key": _MGMT_PRIV_KEY_PEM,
         }
         ssh = ssh_client._build_session(creds, "srv_1")
         assert ssh.username == "dbos"
         # На ключевой сессии пароль аккаунта в auth не идёт.
         assert ssh._password is None
-        assert ssh._client_keys == [mgmt_key]
+        # PEM импортирован в key-объект (одна штука).
+        assert ssh._client_keys is not None
+        assert len(ssh._client_keys) == 1
+        assert isinstance(ssh._client_keys[0], asyncssh.SSHKey)
 
-    def test_managed_falls_back_to_config_user(self, mgmt_key):
-        # management_user в payload нет — берём дефолт из конфига.
-        creds = {"login": "ops", "password": "x", "host": "h", "is_managed": True}
+    def test_managed_falls_back_to_config_user(self, monkeypatch):
+        # management_user в creds нет — берём дефолт из конфига.
+        get_settings.cache_clear()
+        monkeypatch.setenv("SSH_MANAGEMENT_USER", "dbos")
+        get_settings.cache_clear()
+        creds = {
+            "login": "ops", "password": "x", "host": "h", "is_managed": True,
+            "management_private_key": _MGMT_PRIV_KEY_PEM,
+        }
         ssh = ssh_client._build_session(creds, "srv_1")
         assert ssh.username == "dbos"
+        get_settings.cache_clear()
 
-    def test_managed_without_key_raises_clear_error(self, monkeypatch):
-        get_settings.cache_clear()
-        monkeypatch.setenv("SSH_MANAGEMENT_PRIVATE_KEY_PATH", "")
-        get_settings.cache_clear()
+    def test_managed_without_key_raises_clear_error(self):
+        # is_managed, но per-server ключ не подтянут → внятная ошибка.
         creds = {"login": "ops", "password": "x", "host": "h", "is_managed": True}
         with pytest.raises(SshError) as ei:
             ssh_client._build_session(creds, "srv_1")
-        assert ei.value.error_code == "SSH_MANAGEMENT_KEY_MISSING"
-        get_settings.cache_clear()
+        assert ei.value.error_code == "SSH_MANAGEMENT_CREDS_UNAVAILABLE"
 
-    def test_managed_with_missing_key_file_raises(self, monkeypatch):
-        get_settings.cache_clear()
-        monkeypatch.setenv("SSH_MANAGEMENT_PRIVATE_KEY_PATH", "/no/such/key")
-        get_settings.cache_clear()
-        creds = {"login": "ops", "password": "x", "host": "h", "is_managed": True}
+    def test_managed_with_invalid_key_raises(self):
+        creds = {
+            "login": "ops", "host": "h", "is_managed": True,
+            "management_private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nnope\n",
+        }
         with pytest.raises(SshError) as ei:
             ssh_client._build_session(creds, "srv_1")
-        assert ei.value.error_code == "SSH_MANAGEMENT_KEY_MISSING"
-        get_settings.cache_clear()
+        assert ei.value.error_code == "SSH_MANAGEMENT_KEY_INVALID"
+
+
+class TestAttachManagementCreds:
+    async def test_attach_fetches_and_populates(self, mgmt_key):
+        creds = {"is_managed": True, "host": "10.0.0.5"}
+        await ssh_client.attach_management_creds(creds, "srv_x")
+        assert creds["management_private_key"] == _MGMT_PRIV_KEY_PEM
+        assert creds["management_user"] == "dbos"
+
+    async def test_attach_unmanaged_is_noop(self, monkeypatch):
+        called = []
+
+        async def fake_fetch(server_id, target_department_id=None):
+            called.append(server_id)
+            return {}
+
+        monkeypatch.setattr(
+            "src.services.server_service_client.fetch_management_credentials",
+            fake_fetch,
+        )
+        creds = {"is_managed": False, "login": "ops"}
+        await ssh_client.attach_management_creds(creds, "srv_x")
+        assert called == []
+        assert "management_private_key" not in creds
+
+    async def test_attach_memoizes_within_creds(self, monkeypatch):
+        calls = []
+
+        async def fake_fetch(server_id, target_department_id=None):
+            calls.append(server_id)
+            return {"management_user": "dbos", "ssh_private_key": _MGMT_PRIV_KEY_PEM}
+
+        monkeypatch.setattr(
+            "src.services.server_service_client.fetch_management_credentials",
+            fake_fetch,
+        )
+        creds = {"is_managed": True, "host": "h"}
+        await ssh_client.attach_management_creds(creds, "srv_x")
+        await ssh_client.attach_management_creds(creds, "srv_x")
+        # Ключ уже в creds — второй fetch не делается.
+        assert len(calls) == 1
 
 
 # ── set_account_password empty-password guard ──────────────────────────────────
@@ -194,7 +265,7 @@ class TestProvisionUsesManagementSession:
         connect_kwargs = connect_mock.await_args.kwargs
         assert connect_kwargs["username"] == "dbos"
         assert connect_kwargs["password"] is None
-        assert connect_kwargs["client_keys"] == [mgmt_key]
+        assert connect_kwargs["client_keys"] is not None and len(connect_kwargs["client_keys"]) == 1
         # Заводим всё равно сам аккаунт.
         useradd_cmd = conn.run.await_args_list[1].args[0]
         assert "useradd" in useradd_cmd and useradd_cmd.rstrip().endswith("ops")
@@ -281,8 +352,14 @@ class TestProvisionUsesManagementSession:
         from src.tasks import _runner
 
         get_settings.cache_clear()
-        monkeypatch.setenv("SSH_MANAGEMENT_PRIVATE_KEY_PATH", "")
-        get_settings.cache_clear()
+        # Per-server креды недоступны: fetch вернул пусто (нет ключа) → сборка
+        # управляющей сессии падает SSH_MANAGEMENT_CREDS_UNAVAILABLE ДО connect.
+        async def empty_fetch(server_id, target_department_id=None):
+            return {}
+        monkeypatch.setattr(
+            "src.services.server_service_client.fetch_management_credentials",
+            empty_fetch,
+        )
         stash_key = await stash_dispatch_creds(password_plaintext="sess-pwd")
         tid = await make_task(
             task_kind="account.provision", target_server_id="srv_m4",
@@ -314,7 +391,7 @@ class TestProvisionUsesManagementSession:
 
         t = await fetch_task(tid)
         assert t.status == TaskStatus.FAILED
-        assert t.last_error and "SSH_MANAGEMENT_KEY_MISSING" in t.last_error
+        assert t.last_error and "SSH_MANAGEMENT_CREDS_UNAVAILABLE" in t.last_error
         get_settings.cache_clear()
 
 
@@ -364,7 +441,6 @@ class TestCutoverManagementUser:
             new_management_user="newctl",
             public_key="ssh-ed25519 AAAAkey",
             modes={"astra_smolensk": {"groups": [], "extra_create_commands": []}},
-            management_private_key_path=mgmt_key,
         )
 
         assert result["renamed"] is True
@@ -377,7 +453,8 @@ class TestCutoverManagementUser:
         assert len(calls) == 3
         assert calls[0].kwargs["username"] == "oldctl"
         assert calls[1].kwargs["username"] == "newctl"
-        assert calls[1].kwargs["client_keys"] == [mgmt_key]
+        ck1 = calls[1].kwargs["client_keys"]
+        assert ck1 is not None and len(ck1) == 1
         assert calls[2].kwargs["username"] == "newctl"
         # Старого реально удаляем.
         userdel_cmd = delete_conn.run.await_args_list[1].args[0]
@@ -410,7 +487,6 @@ class TestCutoverManagementUser:
                 new_management_user="newctl",
                 public_key="ssh-ed25519 AAAAkey",
                 modes={},
-                management_private_key_path=mgmt_key,
             )
         assert ei.value.error_code == "SSH_MANAGEMENT_KEY_VERIFY_FAILED"
         # Только две сессии открыты — delete-сессия (третья) не создавалась,
@@ -418,18 +494,21 @@ class TestCutoverManagementUser:
         assert connect_mock.await_count == 2
 
     async def test_cutover_without_key_fails_before_touching_old(self, monkeypatch):
-        # Управляющий ключ воркеру не настроен → `_build_session` поднимает
-        # SSH_MANAGEMENT_KEY_MISSING на сборке старой сессии (как у любой другой
-        # management-операции). Cutover падает ДО любого деструктива — ни одной
-        # SSH-сессии не открыто, старый юзер не тронут.
+        # Per-server ключ недоступен (fetch вернул пусто) → `_build_session`
+        # поднимает SSH_MANAGEMENT_CREDS_UNAVAILABLE на сборке старой сессии.
+        # Cutover падает ДО любого деструктива — ни одной SSH-сессии не открыто,
+        # старый юзер не тронут.
         from unittest.mock import AsyncMock
 
         from src.clients.ssh import SshError
         from src.services import ssh_client
 
-        get_settings.cache_clear()
-        monkeypatch.setenv("SSH_MANAGEMENT_PRIVATE_KEY_PATH", "")
-        get_settings.cache_clear()
+        async def empty_fetch(server_id, target_department_id=None):
+            return {}
+        monkeypatch.setattr(
+            "src.services.server_service_client.fetch_management_credentials",
+            empty_fetch,
+        )
 
         connect_mock = AsyncMock(side_effect=AssertionError("must not connect"))
         monkeypatch.setattr(asyncssh, "connect", connect_mock)
@@ -445,11 +524,9 @@ class TestCutoverManagementUser:
                 new_management_user="newctl",
                 public_key="ssh-ed25519 AAAAkey",
                 modes={},
-                management_private_key_path=None,
             )
-        assert ei.value.error_code == "SSH_MANAGEMENT_KEY_MISSING"
+        assert ei.value.error_code == "SSH_MANAGEMENT_CREDS_UNAVAILABLE"
         connect_mock.assert_not_called()
-        get_settings.cache_clear()
 
 
 class TestRotateUsesManagementSession:
@@ -482,7 +559,8 @@ class TestRotateUsesManagementSession:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         assert connect_mock.await_args.kwargs["username"] == "dbos"
-        assert connect_mock.await_args.kwargs["client_keys"] == [mgmt_key]
+        ck = connect_mock.await_args.kwargs["client_keys"]
+        assert ck is not None and len(ck) == 1
 
 
 class TestUsersInventoryUsesManagementSession:
@@ -515,7 +593,8 @@ class TestUsersInventoryUsesManagementSession:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         assert connect_mock.await_args.kwargs["username"] == "dbos"
-        assert connect_mock.await_args.kwargs["client_keys"] == [mgmt_key]
+        ck = connect_mock.await_args.kwargs["client_keys"]
+        assert ck is not None and len(ck) == 1
 
 
 def _inventory_conn():
@@ -563,7 +642,7 @@ class TestInventorySyncUsesManagementSession:
         connect_kwargs = connect_mock.await_args.kwargs
         assert connect_kwargs["username"] == "dbos"
         assert connect_kwargs["password"] is None
-        assert connect_kwargs["client_keys"] == [mgmt_key]
+        assert connect_kwargs["client_keys"] is not None and len(connect_kwargs["client_keys"]) == 1
 
     async def test_unmanaged_inventory_keeps_self_session(
         self, make_task, fetch_task, captured_audit, monkeypatch,

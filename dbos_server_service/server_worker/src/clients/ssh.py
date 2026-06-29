@@ -301,6 +301,26 @@ def _validate_ssh_public_key(
     return key_line
 
 
+def _coerce_private_key(material, host: str):
+    """Привести приватный ключ к виду, пригодному для asyncssh `client_keys`.
+
+    Per-server ключ приходит plaintext-строкой (PEM). asyncssh трактует голую
+    строку в `client_keys` как путь к файлу, поэтому PEM импортируем явно. Путь
+    к файлу и уже импортированный key-объект пропускаем как есть. Битый PEM →
+    `SshError(SSH_MANAGEMENT_KEY_INVALID)`.
+    """
+    if isinstance(material, str) and "PRIVATE KEY" in material:
+        try:
+            return asyncssh.import_private_key(material)
+        except (asyncssh.KeyImportError, ValueError, TypeError) as exc:
+            raise SshError(
+                error_code="SSH_MANAGEMENT_KEY_INVALID",
+                host=host,
+                message=f"management private key import failed: {type(exc).__name__}",
+            ) from exc
+    return material
+
+
 def parse_management_mode(probe_output: str) -> str:
     """Распарсить вывод probe-команды детекта редакции в `ManagementMode`-строку.
 
@@ -1083,7 +1103,8 @@ class SshClient:
         *,
         groups: list[str] | None = None,
         extra_create_commands: list[str] | None = None,
-        management_private_key_path: str | None = None,
+        management_private_key=None,
+        management_password: str | None = None,
         harden_sshd: bool = False,
     ) -> None:
         """Завести управляющего пользователя DBOS и положить ему публичный ключ.
@@ -1127,15 +1148,21 @@ class SshClient:
         перезаписывается, а ключ добавляется только при отсутствии
         (grep по точному совпадению строки).
 
-        Пароль управляющему пользователю не ставим — управление дальше идёт по
-        ключу. `public_key` — аргумент для безопасной записи через here-doc на
-        stdin (не подставляется в командную строку, чтобы спецсимволы ключа /
-        комментария не ломали shell).
+        4.6. Если задан `management_password` — ставим его управляющему
+           пользователю через `chpasswd`. Управление дальше идёт по ключу
+           (sudo через NOPASSWD), но пароль нужен для console-логина оператором
+           и как fallback, если NOPASSWD-drop-in слетит. Пароль свой на каждом
+           сервере и приходит из server_service (mgmt_install). Нет пароля —
+           шаг пропускается (back-compat). `public_key` — аргумент для
+           безопасной записи через here-doc на stdin (не подставляется в
+           командную строку, чтобы спецсимволы ключа / комментария не ломали
+           shell).
 
-        5. Если задан `management_private_key_path` — проверяем, что вход под
+        5. Если задан `management_private_key` — проверяем, что вход под
            управляющим пользователем по этому ключу реально работает (новый
            короткий коннект отдельной сессией). Это анти-локаут: пароль и
            root-login выключаем ТОЛЬКО после подтверждённого входа по ключу.
+           Ключ принимаем PEM-строкой (per-server материал) либо путём к файлу.
         6. Если `harden_sshd=True` и проверка ключа прошла — кладём drop-in
            `/etc/ssh/sshd_config.d/<management_user>-dbos.conf`
            (`PubkeyAuthentication yes`, `PasswordAuthentication no`,
@@ -1281,20 +1308,27 @@ class SshClient:
             management_user, extra_create_commands or [],
         )
 
+        # 4.6. Пароль управляющему пользователю (per-server, из mgmt_install).
+        # Нужен для console-логина оператором и как fallback к NOPASSWD-sudo.
+        # `set_password` идёт через sudo chpasswd; на bootstrap-сессии (пароль
+        # есть) sudo читает его со stdin, на ключевой (re-bootstrap) — NOPASSWD.
+        if management_password:
+            await self.set_password(management_user, management_password)
+
         # 5. Анти-локаут: до того как трогать парольную аутентификацию, на
         # отдельной сессии убеждаемся, что вход под управляющим пользователем
         # по его ключу реально проходит. Если ключ не пускает (sshd запускается
         # не от root, ключ не совпал, home с неверными правами) — НЕ хардим,
         # бросаем понятную ошибку, оставляя парольный SSH рабочим.
-        if management_private_key_path:
+        if management_private_key:
             await self._verify_management_key_login(
-                management_user, management_private_key_path,
+                management_user, management_private_key,
             )
 
         # 6. Хардинг sshd через drop-in. Только после подтверждённого входа по
-        # ключу. Без проверки ключа выше (path не задан) хардить нельзя — иначе
+        # ключу. Без проверки ключа выше (ключ не задан) хардить нельзя — иначе
         # рискуем выключить пароль на сервере, куда ключом не зайти.
-        if harden_sshd and management_private_key_path:
+        if harden_sshd and management_private_key:
             await self._harden_sshd(management_user)
 
     async def _run_extra_create_commands(
@@ -1326,7 +1360,7 @@ class SshClient:
                 )
 
     async def _verify_management_key_login(
-        self, management_user: str, private_key_path: str,
+        self, management_user: str, management_private_key,
     ) -> None:
         """Открыть короткую key-сессию под управляющим пользователем.
 
@@ -1336,10 +1370,15 @@ class SshClient:
         Делаем независимый коннект (новый `SshClient`) с тем же host/port, но
         под `management_user` и приватным ключом, выполняем дешёвый `true`.
 
+        `management_private_key` — per-server материал: PEM-строку импортируем в
+        key-объект (asyncssh трактует голую строку как путь к файлу), путь к
+        файлу оставляем как есть.
+
         На любой провал коннекта/команды — `SshError(
         SSH_MANAGEMENT_KEY_VERIFY_FAILED)` с actionable-сообщением; sshd при
         этом не тронут, парольный доступ остаётся.
         """
+        client_key = _coerce_private_key(management_private_key, self.host)
         try:
             async with SshClient(
                 host=self.host,
@@ -1347,7 +1386,7 @@ class SshClient:
                 password=None,
                 port=self.port,
                 timeout=self.timeout,
-                client_keys=[private_key_path],
+                client_keys=[client_key],
             ) as verify_ssh:
                 rc, _out, _err = await verify_ssh.run("true")
         except SshError as exc:

@@ -20,14 +20,72 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 from typing import Any
 
+import asyncssh
+
 from src.clients.ssh import SshClient, SshError
 from src.core.config import get_settings
+from src.services import server_service_client
 
 logger = logging.getLogger(__name__)
+
+
+def _import_management_key(material, host: str):
+    """Привести материал управляющего приватного ключа к виду для `client_keys`.
+
+    Per-server ключ прилетает из server_service plaintext-строкой (PEM). asyncssh
+    в `client_keys` трактует голую строку как путь к файлу, поэтому PEM нужно
+    импортировать в key-объект явно. Уже импортированный key-объект и путь к
+    файлу пропускаем как есть. Битый PEM → `SshError(SSH_MANAGEMENT_KEY_INVALID)`,
+    чтобы операция не сорвалась внутри asyncssh с невнятным сообщением.
+    """
+    if isinstance(material, str) and "PRIVATE KEY" in material:
+        try:
+            return asyncssh.import_private_key(material)
+        except (asyncssh.KeyImportError, ValueError, TypeError) as exc:
+            raise SshError(
+                error_code="SSH_MANAGEMENT_KEY_INVALID",
+                host=host,
+                message=f"management private key import failed: {type(exc).__name__}",
+            ) from exc
+    return material
+
+
+async def attach_management_creds(credentials: dict, server_id: str) -> dict:
+    """Подтянуть per-server управляющие креды в `credentials` до сборки сессии.
+
+    На управляемом сервере (`credentials['is_managed']`) приватный ключ
+    управляющего пользователя и его пароль больше не берутся из глобального env
+    воркера — они свои на каждом сервере и шифруются в server_service. Здесь мы
+    just-in-time тянем их через internal-эндпоинт (`fetch_management_credentials`,
+    тот же паттерн, что `fetch_account_password`) и кладём в `credentials`,
+    откуда их читает `_build_session`.
+
+    Кэш в рамках задачи: ключ уже лежит в `credentials['management_private_key']`
+    (его положил prepare из mgmt_install или предыдущий вызов на том же
+    credentials-словаре) — повторный fetch не делаем, чтобы не плодить reveal-
+    аудит и round-trip'ы при нескольких сессиях к одному боксу.
+
+    Неуправляемый сервер — no-op (self-сессия по паролю аккаунта, как раньше).
+    """
+    if not credentials.get("is_managed"):
+        return credentials
+    if credentials.get("management_private_key"):
+        return credentials
+    mgmt = await server_service_client.fetch_management_credentials(
+        server_id, credentials.get("target_department_id"),
+    )
+    credentials["management_private_key"] = mgmt.get("ssh_private_key")
+    # Пароль управляющего пользователя в auth-сессию воркера НЕ идёт (sudo на
+    # ключевой сессии работает по NOPASSWD); храним его рядом для возможного
+    # console-логина / fallback, но `_build_session` его не использует.
+    if mgmt.get("password"):
+        credentials["management_password"] = mgmt.get("password")
+    if mgmt.get("management_user") and not credentials.get("management_user"):
+        credentials["management_user"] = mgmt.get("management_user")
+    return credentials
 
 
 def apply_session_hints(credentials: dict, payload: dict) -> dict:
@@ -37,7 +95,8 @@ def apply_session_hints(credentials: dict, payload: dict) -> dict:
     `management_user` (на их основе `_build_session` выбирает между ключевой
     сессией под управляющим пользователем и self-сессией под аккаунтом), а
     также `host` / `ssh_port` — адрес сервера, чтобы не дёргать DNS-резолв из
-    `server_id` каждый раз.
+    `server_id` каждый раз. `target_department_id` нужен `attach_management_creds`
+    для cross-tenant-хинта при fetch'е per-server кред.
 
     Если адрес в credentials уже есть (например, fetch_account_password вернул
     `host`) — payload его не перетирает: credentials обычно несут более свежее
@@ -61,6 +120,10 @@ def apply_session_hints(credentials: dict, payload: dict) -> dict:
         port = payload.get("ssh_port") or payload.get("port")
         if port:
             credentials["ssh_port"] = port
+    if not credentials.get("target_department_id"):
+        dept = payload.get("target_department_id")
+        if dept:
+            credentials["target_department_id"] = dept
     return credentials
 
 
@@ -128,40 +191,40 @@ def _build_session(credentials: dict, server_id: str) -> SshClient:
 
     * **управляемый** (`credentials['is_managed']` истинно) — заходим под
       управляющим пользователем (`management_user`, из payload или дефолтного
-      `SSH_MANAGEMENT_USER`) по приватному ключу (`SSH_MANAGEMENT_PRIVATE_KEY_PATH`).
-      Пароль аккаунта в сессию не идёт; sudo на ключевой сессии работает
-      через настроенный во время prepare доступ управляющего пользователя.
+      `SSH_MANAGEMENT_USER`) по приватному ключу. Ключ свой на каждом сервере и
+      приходит per-server: его кладёт в `credentials['management_private_key']`
+      либо `attach_management_creds` (fetch из server_service), либо prepare
+      (из mgmt_install со свежесгенерированной парой). Пароль аккаунта в сессию
+      не идёт; sudo на ключевой сессии работает по NOPASSWD управляющего
+      пользователя, настроенному на prepare.
     * **не управляемый** — старое поведение: сессия под самим аккаунтом
       (`login` + `password`), как было до онбординга.
 
-    Если сервер помечен управляемым, но управляющий ключ в конфиге не задан —
-    поднимаем понятный `SshError(SSH_MANAGEMENT_KEY_MISSING)`, не падая внутри
-    asyncssh с невнятным сообщением.
+    Если сервер помечен управляемым, но per-server ключ в `credentials` не
+    подтянут (забыли вызвать `attach_management_creds`, либо fetch вернул
+    пусто) — поднимаем понятный `SshError(SSH_MANAGEMENT_CREDS_UNAVAILABLE)`, не
+    падая внутри asyncssh с невнятным сообщением.
     """
     host = _extract_host(credentials, server_id)
     port = _extract_port(credentials)
 
     if credentials.get("is_managed"):
         settings = get_settings()
-        key_path = settings.ssh_management_private_key_path
-        if not key_path:
+        key_material = credentials.get("management_private_key")
+        if not key_material:
             raise SshError(
-                error_code="SSH_MANAGEMENT_KEY_MISSING",
+                error_code="SSH_MANAGEMENT_CREDS_UNAVAILABLE",
                 host=host,
                 message=(
-                    "server is managed but SSH_MANAGEMENT_PRIVATE_KEY_PATH is "
-                    "not configured on the worker"
+                    "server is managed but no per-server management key is "
+                    "available (attach_management_creds not called or fetch "
+                    "returned nothing)"
                 ),
-            )
-        if not os.path.isfile(key_path):
-            raise SshError(
-                error_code="SSH_MANAGEMENT_KEY_MISSING",
-                host=host,
-                message="management private key file not found at configured path",
             )
         management_user = (
             credentials.get("management_user") or settings.ssh_management_user
         )
+        client_key = _import_management_key(key_material, host)
         # host + management_user — это topology disclosure для management-сети.
         # В закрытой инфраструктуре с ACL по namespace это всё равно лишний шум
         # в INFO-журнале. Сам факт sessions виден из аудита (mgmt-session
@@ -172,7 +235,7 @@ def _build_session(credentials: dict, server_id: str) -> SshClient:
             username=management_user,
             password=None,
             port=port,
-            client_keys=[key_path],
+            client_keys=[client_key],
         )
 
     username = credentials.get("login") or credentials.get("username") or "root"
@@ -205,6 +268,7 @@ async def collect_inventory(credentials: dict, server_id: str) -> dict:
     self-аккаунт может уже не иметь рабочего пароля.
     """
     logger.info("ssh inventory on %s", _extract_host(credentials, server_id))
+    await attach_management_creds(credentials, server_id)
     async with _build_session(credentials, server_id) as ssh:
         return await ssh.get_inventory()
 
@@ -225,6 +289,7 @@ async def collect_os_users(credentials: dict, server_id: str) -> dict:
     управляющим пользователем по ключу; иначе — под самим аккаунтом.
     """
     logger.info("ssh user inventory on %s", _extract_host(credentials, server_id))
+    await attach_management_creds(credentials, server_id)
     async with _build_session(credentials, server_id) as ssh:
         return await ssh.get_os_users()
 
@@ -272,6 +337,7 @@ async def set_account_password(
     # потребует маскировать, ввести `_mask_for_log(login)` тут симметрично
     # bootstrap-пути.
     logger.info("ssh chpasswd %s on %s", login, _extract_host(credentials, server_id))
+    await attach_management_creds(credentials, server_id)
     async with _build_session(credentials, server_id) as ssh:
         await ssh.set_password(login, new_password)
     return {"rotated": True}
@@ -307,6 +373,7 @@ async def provision_user(
     Возврат — `{provisioned: True}`. Ошибки — `SshError`.
     """
     logger.info("ssh useradd %s on %s", login, _extract_host(credentials, server_id))
+    await attach_management_creds(credentials, server_id)
     async with _build_session(credentials, server_id) as ssh:
         await ssh.create_user(
             login,
@@ -345,6 +412,7 @@ async def apply_authorized_key(
     logger.info(
         "ssh authorized_keys %s on %s", login, _extract_host(credentials, server_id),
     )
+    await attach_management_creds(credentials, server_id)
     async with _build_session(credentials, server_id) as ssh:
         await ssh._write_authorized_key(
             login, public_key, force_replace=force_replace,
@@ -369,6 +437,7 @@ async def modify_user(
     Возврат — `{modified: True}`. Ошибки — `SshError`.
     """
     logger.info("ssh usermod %s on %s", login, _extract_host(credentials, server_id))
+    await attach_management_creds(credentials, server_id)
     async with _build_session(credentials, server_id) as ssh:
         await ssh.modify_user(
             login, groups=groups, has_sudo=has_sudo, shell=shell,
@@ -392,6 +461,7 @@ async def delete_user(
     управляющий пользователь). Возврат — `{deleted: True}`. Ошибки — `SshError`.
     """
     logger.info("ssh userdel %s on %s", login, _extract_host(credentials, server_id))
+    await attach_management_creds(credentials, server_id)
     async with _build_session(credentials, server_id) as ssh:
         await ssh.delete_user(login, remove_home=remove_home)
     return {"deleted": True}
@@ -404,7 +474,8 @@ async def bootstrap_management_user(
     management_user: str,
     public_key: str,
     modes: dict | None = None,
-    management_private_key_path: str | None = None,
+    management_private_key: str | None = None,
+    management_password: str | None = None,
     harden_sshd: bool = False,
 ) -> dict:
     """Онбординг управления: детект редакции + завести юзера по пер-режимному конфигу.
@@ -421,10 +492,16 @@ async def bootstrap_management_user(
     server_service до prepare редакцию не знает. Нет `modes` / нет ключа
     режима → пустые группы и команды (как обычный bootstrap).
 
-    Если задан `management_private_key_path`, после установки ключа worker
-    проверяет, что вход под `management_user` по этому ключу реально работает
-    (анти-локаут). `harden_sshd=True` дополнительно выключает парольный SSH и
-    root-login через drop-in — только после успешной проверки ключа.
+    `public_key` / `management_private_key` / `management_password` — это
+    per-server материал управляющей учётки, сгенерированный server_service'ом и
+    переданный в prepare-stash (`mgmt_install`). Public кладётся в
+    authorized_keys, password ставится управляющему пользователю через
+    `chpasswd` (для console-логина оператором и как fallback к NOPASSWD-sudo),
+    приватный нужен для анти-локаут-проверки входа по ключу перед хардингом.
+    Если задан `management_private_key`, после установки ключа worker проверяет,
+    что вход под `management_user` по нему реально работает; `harden_sshd=True`
+    дополнительно выключает парольный SSH и root-login через drop-in — только
+    после успешной проверки ключа.
 
     Idempotent: повторный prepare не падает на уже заведённом юзере / уже
     добавленном ключе. Возврат — `{prepared: True, management_user,
@@ -460,7 +537,8 @@ async def bootstrap_management_user(
             management_user, public_key,
             groups=mode_cfg.get("groups") or [],
             extra_create_commands=mode_cfg.get("extra_create_commands") or [],
-            management_private_key_path=management_private_key_path,
+            management_private_key=management_private_key,
+            management_password=management_password,
             harden_sshd=harden_sshd,
         )
     return {
@@ -502,6 +580,7 @@ async def sync_management_user(
     creds["management_user"] = management_user
     host = _extract_host(creds, server_id)
     logger.info("ssh management user sync on %s as %s", host, management_user)
+    await attach_management_creds(creds, server_id)
     async with _build_session(creds, server_id) as ssh:
         mode = await ssh.detect_management_mode()
         mode_cfg = (modes or {}).get(mode) or {}
@@ -509,7 +588,7 @@ async def sync_management_user(
             management_user, public_key,
             groups=mode_cfg.get("groups") or [],
             extra_create_commands=mode_cfg.get("extra_create_commands") or [],
-            management_private_key_path=None,
+            management_private_key=None,
             harden_sshd=False,
         )
     return {
@@ -527,7 +606,6 @@ async def cutover_management_user(
     new_management_user: str,
     public_key: str,
     modes: dict | None = None,
-    management_private_key_path: str | None = None,
 ) -> dict:
     """Переименовать управляющую учётку: завести новую, проверить, снести старую.
 
@@ -550,24 +628,24 @@ async def cutover_management_user(
     3. С НОВОЙ key-сессии (не из-под удаляемого) сносим старую учётку
        `userdel -r` со всеми данными.
 
-    `management_private_key_path` нужен для анти-локаут-проверки нового входа;
-    без него (dev/test без mounted secret) шаг проверки и удаление старой
-    учётки пропускаются — сервер остаётся на старом юзере до повторного прогона
-    с настроенным ключом.
+    Переименование меняет только имя учётки — per-server ключ остаётся прежним,
+    поэтому и под новым именем заходим тем же ключом. Сам ключ тянется
+    `attach_management_creds` (fetch из server_service); если его нет —
+    `_build_session` поднимет `SSH_MANAGEMENT_CREDS_UNAVAILABLE` на старой
+    сессии ДО любого деструктива, старый юзер не тронут.
 
     Возврат: `{renamed: True, management_user: <новый>, management_mode,
-    old_removed: bool}`. Ошибки — `SshError` (в т.ч. `SSH_MANAGEMENT_KEY_MISSING`,
-    если управляющий ключ воркеру не настроен — падаем на сборке старой сессии
-    ДО любого деструктива, старый юзер не тронут).
+    old_removed: bool}`. Ошибки — `SshError`.
     """
-    # Старая management-сессия по ключу: под ней заводим новую учётку. Если
-    # управляющий ключ воркеру не настроен, `_build_session` поднимет
-    # `SSH_MANAGEMENT_KEY_MISSING` прямо здесь — как и у любой другой
-    # management-операции; cutover до деструктива не доходит.
     old_creds = dict(credentials)
     old_creds["is_managed"] = True
     old_creds["management_user"] = old_management_user
     host = _extract_host(old_creds, server_id)
+    # Тянем per-server ключ (он один на сервер, не зависит от имени учётки) —
+    # под ним заходим и старым, и новым пользователем. Нет ключа →
+    # `_build_session` упадёт `SSH_MANAGEMENT_CREDS_UNAVAILABLE` до деструктива.
+    await attach_management_creds(old_creds, server_id)
+    management_key = old_creds.get("management_private_key")
     logger.info(
         "ssh management user cutover on %s: creating new management user",
         host,
@@ -579,7 +657,7 @@ async def cutover_management_user(
             new_management_user, public_key,
             groups=mode_cfg.get("groups") or [],
             extra_create_commands=mode_cfg.get("extra_create_commands") or [],
-            management_private_key_path=None,
+            management_private_key=None,
             harden_sshd=False,
         )
 
@@ -587,14 +665,16 @@ async def cutover_management_user(
     await _verify_new_management_login(
         host, _extract_port(old_creds),
         management_user=new_management_user,
-        private_key_path=management_private_key_path,
+        management_private_key=management_key,
     )
 
     # Удаление старой учётки — с НОВОЙ key-сессии (нельзя сносить юзера, под
-    # которым залогинен). userdel -r убирает home и mail spool.
+    # которым залогинен). userdel -r убирает home и mail spool. Под новым именем
+    # заходим тем же per-server ключом.
     new_creds = dict(credentials)
     new_creds["is_managed"] = True
     new_creds["management_user"] = new_management_user
+    new_creds["management_private_key"] = management_key
     logger.info(
         "ssh management user cutover on %s: removing old management user",
         host,
@@ -616,7 +696,7 @@ async def _verify_new_management_login(
     port: int,
     *,
     management_user: str,
-    private_key_path: str,
+    management_private_key,
 ) -> None:
     """Подтвердить вход под новой управляющей учёткой по ключу + sudo.
 
@@ -624,14 +704,18 @@ async def _verify_new_management_login(
     под новым пользователем и проверяем дешёвый `sudo -n true`. Любой провал —
     `SshError(SSH_MANAGEMENT_KEY_VERIFY_FAILED)`; caller тогда не удаляет
     старую учётку, и сервер остаётся управляемым под прежним пользователем.
+
+    `management_private_key` — per-server материал ключа (PEM-строка или путь);
+    приводим его к виду для `client_keys` через `_import_management_key`.
     """
+    client_key = _import_management_key(management_private_key, host)
     try:
         async with SshClient(
             host=host,
             username=management_user,
             password=None,
             port=port,
-            client_keys=[private_key_path],
+            client_keys=[client_key],
         ) as verify_ssh:
             rc, _out, _err = await verify_ssh.run("true", sudo=True)
     except SshError as exc:
@@ -656,6 +740,72 @@ async def _verify_new_management_login(
                 "remove the old management user (anti-lockout)"
             ),
         )
+
+
+async def rotate_management_creds_on_host(
+    credentials: dict,
+    server_id: str,
+    *,
+    management_user: str,
+    new_public_key: str,
+    new_private_key: str,
+    new_password: str,
+) -> dict:
+    """Перевыкатить per-server управляющие креды на боксе (`server.rotate_management_creds`).
+
+    Заходим ТЕКУЩИМ (рабочим на боксе) ключом под управляющим пользователем,
+    ставим новый материал и проверяем его, не оставляя окна локаута:
+
+    1. Под текущей key-сессией дописываем НОВЫЙ публичный ключ в
+       authorized_keys (managed-маркер) и ставим НОВЫЙ пароль `chpasswd`. На
+       этом шаге на боксе валидны оба ключа — старый и новый.
+    2. Анти-локаут: независимой сессией под НОВЫМ приватным ключом проверяем
+       вход + `sudo true`. Провал → `SshError`, старый ключ остаётся рабочим,
+       callback не зовётся.
+    3. После подтверждения нового входа переписываем authorized_keys одним
+       новым ключом (`force_replace`) — старый ключ убираем уже зайдя по новому.
+
+    `credentials` должен нести текущий per-server ключ
+    (`management_private_key`) — его подтягивает caller через
+    `attach_management_creds`. Возврат — `{rotated: True, management_user}`.
+    Ошибки — `SshError`.
+    """
+    host = _extract_host(credentials, server_id)
+    port = _extract_port(credentials)
+    creds = dict(credentials)
+    creds["is_managed"] = True
+    creds["management_user"] = management_user
+
+    logger.info("ssh management creds rotation on %s as %s", host, management_user)
+    # 1. Текущая сессия: дописываем новый ключ (оба валидны) + новый пароль.
+    async with _build_session(creds, server_id) as ssh:
+        await ssh._write_authorized_key(
+            management_user, new_public_key, force_replace=False,
+        )
+        await ssh.set_password(management_user, new_password)
+
+    # 2. Анти-локаут под НОВЫМ ключом.
+    await _verify_new_management_login(
+        host, port,
+        management_user=management_user,
+        management_private_key=new_private_key,
+    )
+
+    # 3. Зайдя новым ключом, оставляем в authorized_keys только его — старый
+    # ключ убираем. force_replace переписывает файл целиком, поэтому делаем это
+    # ПОСЛЕ подтверждённого входа новым ключом.
+    new_creds = {
+        "is_managed": True,
+        "management_user": management_user,
+        "host": host,
+        "ssh_port": port,
+        "management_private_key": new_private_key,
+    }
+    async with _build_session(new_creds, server_id) as ssh:
+        await ssh._write_authorized_key(
+            management_user, new_public_key, force_replace=True,
+        )
+    return {"rotated": True, "management_user": management_user}
 
 
 def _parse_size_to_gb(size_str: str) -> int:
@@ -981,7 +1131,9 @@ def os_users_facts_to_payload(facts: dict) -> dict:
 
 __all__ = [
     "apply_session_hints",
+    "attach_management_creds",
     "build_session",
+    "rotate_management_creds_on_host",
     "collect_inventory",
     "collect_os_users",
     "set_account_password",

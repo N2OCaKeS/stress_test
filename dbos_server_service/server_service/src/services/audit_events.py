@@ -119,6 +119,9 @@ SERVICE_EVENTS = [
     # action: dispatch'ер `POST /servers/{id}/installed-packages` + worker-task
     # `installed_packages.list` (обе стороны эмитят с одинаковым action-name).
     {"action": "installed_packages.list", "description": "Installed packages live-listed via worker (SSH dpkg-query/rpm -qa)", "default_severity": "INFO"},
+    # История прошлых package-запросов сервера: GET /servers/{id}/packages/history.
+    # Эмитится только на denied/not-found (read success не аудитим, как у task.view).
+    {"action": "installed_packages.history", "description": "Installed-package request history read (GET /servers/{id}/packages/history); emitted on denied / not-found", "default_severity": "INFO"},
     # Изменяющие массовые операции с пакетами — dispatch'ер
     # `POST /servers/packages/bulk-action` + worker-таски
     # `installed_packages.{install,remove,update}`. WARNING — мутация на боксе.

@@ -30,6 +30,7 @@ from src.core.exceptions import NotFoundError
 from src.repositories import server as server_repo
 from src.repositories import server_account as account_repo
 from src.schemas.identity import IdentityContext
+from src.schemas.server import PackageHistoryEntry
 from src.schemas.task import TaskRead
 from src.services import permissions, worker_client
 
@@ -237,6 +238,57 @@ async def list_tasks(
         for r in rows
     ]
     return items, total
+
+
+def _to_package_history_entry(row: dict) -> PackageHistoryEntry:
+    """Worker-row → PackageHistoryEntry: pattern из payload, packages из result.
+
+    `payload` для `installed_packages.list` — `{patterns, pattern, max_rows, ...}`;
+    `result` (когда задача завершилась) — `{packages: [{name, version}, ...]}`.
+    Незавершённая задача без result даёт `packages=None`/`package_count=None`.
+    """
+    payload = row.get("payload")
+    pattern = payload.get("pattern") if isinstance(payload, dict) else None
+    patterns = payload.get("patterns") if isinstance(payload, dict) else None
+    result = row.get("result")
+    packages = None
+    package_count = None
+    if isinstance(result, dict):
+        pkgs = result.get("packages")
+        if isinstance(pkgs, list):
+            packages = pkgs
+            package_count = len(pkgs)
+    return PackageHistoryEntry(
+        task_id=row["id"],
+        status=row["status"],
+        pattern=pattern,
+        patterns=patterns,
+        requested_by=row.get("created_by"),
+        requested_at=row["enqueued_at"],
+        finished_at=row.get("completed_at"),
+        package_count=package_count,
+        packages=packages,
+        last_error=row.get("last_error"),
+    )
+
+
+async def list_server_package_history(
+    server_id: str,
+    *,
+    limit: int,
+    offset: int,
+) -> tuple[list[PackageHistoryEntry], int]:
+    """История `installed_packages.list`-запросов сервера (DESC по времени).
+
+    Permission `(server, view)` + dept-visibility решает endpoint (как у самого
+    запроса пакетов) — сюда сервер приходит уже проверенным, потому identity
+    тут не нужен. Read идёт через `worker_client.list_package_history`
+    (cross-DB к dev_server_worker.tasks). Возвращает страницу + total.
+    """
+    rows, total = await worker_client.list_package_history(
+        server_id=server_id, limit=limit, offset=offset,
+    )
+    return [_to_package_history_entry(r) for r in rows], total
 
 
 async def get_task(

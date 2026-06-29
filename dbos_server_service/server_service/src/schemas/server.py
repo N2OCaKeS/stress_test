@@ -431,6 +431,56 @@ class BulkPackagesActionResponse(BaseModel):
     )
 
 
+class PackageHistoryEntry(BaseModel):
+    """Один прошлый live-запрос пакетов сервера (история без повторного теста).
+
+    Источник — row из `dev_server_worker.tasks` с
+    `task_kind=installed_packages.list` и `target_server_id=сервер`.
+    `pattern`/`patterns` берутся из task-payload'а (что запрашивали),
+    `packages`/`package_count` — из `task.result` (что worker нашёл). Поля
+    времени, инициатора и статуса читаются прямо с task-row'а. Запрос ещё в
+    полёте (`queued`/`running`) — `packages`/`package_count` пусты, появятся
+    при финализации задачи.
+    """
+
+    task_id: str = Field(description="task_id запроса (PK в dev_server_worker.tasks).")
+    status: str = Field(description="queued / running / succeeded / failed / cancelled.")
+    pattern: str | None = Field(
+        default=None,
+        description=(
+            "Запрошенный glob-паттерн (raw, как ввёл оператор). None у row без "
+            "одиночного pattern в payload."
+        ),
+    )
+    patterns: list[str] | None = Field(
+        default=None,
+        description="Список glob-паттернов (OR-матч). None если в payload их не было.",
+    )
+    requested_by: str | None = Field(
+        default=None,
+        description="user_id инициатора (task.created_by). None у dispatch'ей без актора.",
+    )
+    requested_at: datetime = Field(description="Момент постановки запроса (enqueued_at).")
+    finished_at: datetime | None = Field(
+        default=None,
+        description="Момент завершения (completed_at). None пока запрос не терминальный.",
+    )
+    package_count: int | None = Field(
+        default=None,
+        description="Сколько пакетов нашёл worker (len result.packages). None если результата ещё нет.",
+    )
+    packages: list[dict] | None = Field(
+        default=None,
+        description=(
+            "Найденные пакеты `{name, version}` из task.result. None пока запрос "
+            "не завершён или result не содержит списка."
+        ),
+    )
+    last_error: str | None = Field(
+        default=None, description="Текст ошибки для failed-запросов.",
+    )
+
+
 class ServerPrepareRequest(BaseModel):
     """Тело POST /servers/{id}/prepare — bootstrap-креды для онбординга.
 

@@ -28,7 +28,7 @@ URL vs action_kind: путь — `/installed-packages` (kebab, человеко�
 
 import re
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.endpoints._dispatch import dispatch_server_ssh_task
@@ -52,10 +52,12 @@ from src.schemas.server import (
     BulkPackagesActionRequest,
     BulkPackagesActionResponse,
     BulkPackagesActionServerResult,
+    PackageHistoryEntry,
     ServerTaskDispatchResponse,
 )
 from src.services import audit_service, permissions, reservation
 from src.services import server as server_svc
+from src.services import tasks as tasks_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
 
 router = APIRouter(prefix="/servers/{server_id}")
@@ -237,6 +239,87 @@ async def list_installed_packages(
         success_extra_details={"pattern": pattern},
     )
     return ServerTaskDispatchResponse(task_id=task_id, status="queued")
+
+
+@router.get(
+    "/packages/history",
+    response_model=list[PackageHistoryEntry],
+    summary="История прошлых live-запросов пакетов по серверу",
+    description=(
+        "Возвращает прошлые `installed_packages.list`-задачи этого сервера "
+        "(каждый POST `/installed-packages` оставляет такую) — чтобы оператор "
+        "видел уже полученные результаты, не гоняя SSH-probe заново. "
+        "Источник — `dev_server_worker.tasks` (тот же, что у `GET /tasks`), но "
+        "запись server-scoped и тащит запрошенный `pattern` из task-payload'а "
+        "и найденные `packages` из task.result. Сортировка — по убыванию "
+        "времени (`enqueued_at DESC`), пагинация `limit` (1..100, default 20) + "
+        "`offset`; общее число — в заголовке `X-Total-Count`.\n\n"
+        "Доступ — `(server, view)` + dept-isolation (как у самого запроса "
+        "пакетов): любой, кто видит сервер, видит всю историю запросов по нему "
+        "(не только свои). Незавершённые запросы (`queued`/`running`) попадают "
+        "в выдачу с пустым `packages`. Глубина истории ограничена retention'ом "
+        "worker'а (`tasks.cleanup_completed_old`)."
+    ),
+    responses={
+        200: {"description": "Страница истории; `X-Total-Count` в заголовке."},
+        403: {"description": "Нет роли с `view` на server либо чужой department."},
+        404: {"description": "Сервер не найден / чужой dept (скрыто за 404)."},
+    },
+)
+async def list_packages_history(
+    server_id: str,
+    identity: CurrentUserIdentity,
+    response: Response,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=100_000),
+    db: AsyncSession = Depends(get_db),
+) -> list[PackageHistoryEntry]:
+    """История package-запросов сервера, по убыванию времени.
+
+    Доступ: `(server, view)` + dept-isolation (cross-dept → 404), как у
+    `list_installed_packages`. Read-only, prepare/decommissioned-гейтов нет —
+    историю прошлых запросов видно и у списанного/неподготовленного сервера.
+
+    Связано: `list_installed_packages` (источник записей), `tasks_svc.
+    list_server_package_history`, `GET /tasks` (общий task-листинг).
+    """
+    audit_action = "installed_packages.history"
+
+    # Role-check ДО visibility, чтобы 403 не работал existence-oracle'ом
+    # (тот же порядок, что у запроса пакетов).
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+        identity=identity,
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW)
+
+    # Visibility + dept isolation. Cross-dept / нет row → 404, симметрично
+    # `list_installed_packages`.
+    try:
+        server = await server_svc.get_server(db, identity, server_id)
+    except (NotFoundError, AuthorizationError) as exc:
+        if isinstance(exc, NotFoundError):
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept"},
+            )
+        else:
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="denied", allowed=False,
+                details={"reason": "no_view_permission"},
+            )
+        raise
+
+    items, total = await tasks_svc.list_server_package_history(
+        server.id, limit=limit, offset=offset,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @bulk_router.post(

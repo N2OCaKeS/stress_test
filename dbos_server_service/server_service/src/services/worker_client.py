@@ -682,6 +682,68 @@ async def list_tasks(
         return [_row_to_task_dict(r) for r in rows], total
 
 
+# История package-запросов тащит ещё и `payload` (запрошенный паттерн),
+# который generic `_TASK_READ_COLUMNS` сознательно прячет — у prepare/provision
+# payload несёт ссылку на Redis-stash с кредами. Здесь это безопасно: выборка
+# жёстко прибита к kind'у `installed_packages.list`, чей payload — только
+# `{patterns, pattern, max_rows, ...}`, без секретов.
+_PACKAGE_HISTORY_COLUMNS = (
+    "id, status, payload, result, enqueued_at, completed_at, created_by, last_error"
+)
+_PACKAGE_HISTORY_KIND = "installed_packages.list"
+
+
+async def list_package_history(
+    *,
+    server_id: str,
+    limit: int,
+    offset: int,
+) -> tuple[list[dict], int]:
+    """Страница прошлых `installed_packages.list`-задач одного сервера.
+
+    Отдельный read от generic `list_tasks`: тащит `payload` (что запрашивали),
+    который тот не отдаёт. Жёстко ограничен kind'ом `installed_packages.list`,
+    поэтому payload без ссылок на креды (в отличие от prepare/provision).
+    Сортировка `enqueued_at DESC` (свежие сверху), `total` — COUNT под тем же
+    фильтром для `X-Total-Count`. Visibility/permission решает endpoint.
+    """
+    params = {"sid": server_id, "kind": _PACKAGE_HISTORY_KIND}
+    where_sql = "WHERE task_kind = :kind AND target_server_id = :sid"
+    session_factory = _engine_factory()
+    async with session_factory() as session:
+        total = int(
+            (
+                await session.execute(
+                    text(f"SELECT COUNT(*) FROM tasks {where_sql}"), params,
+                )
+            ).scalar_one()
+        )
+        if total == 0:
+            return [], total
+        rows = (
+            await session.execute(
+                text(
+                    f"SELECT {_PACKAGE_HISTORY_COLUMNS} FROM tasks {where_sql} "
+                    "ORDER BY enqueued_at DESC, id DESC LIMIT :limit OFFSET :offset"
+                ),
+                {**params, "limit": limit, "offset": offset},
+            )
+        ).all()
+        return [
+            {
+                "id": r[0],
+                "status": r[1],
+                "payload": r[2],
+                "result": r[3],
+                "enqueued_at": r[4],
+                "completed_at": r[5],
+                "created_by": r[6],
+                "last_error": r[7],
+            }
+            for r in rows
+        ], total
+
+
 async def cancel_task(
     *,
     task_id_value: str,

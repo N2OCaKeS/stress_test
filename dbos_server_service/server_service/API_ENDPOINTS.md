@@ -391,6 +391,18 @@ URL vs action_kind: путь kebab-case, `task_kind` / `audit_action` — `insta
 
 Errors: `INVALID_PATTERN` / `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `PREPARE_REQUIRED` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `WORKER_UNREACHABLE` (503).
 
+### `GET /servers/{server_id}/packages/history`
+
+Auth: Bearer + `(server, *, view)` (то же право, что у самого запроса пакетов). История прошлых `installed_packages.list`-задач сервера — чтобы видеть уже полученные результаты, не гоняя SSH-probe заново. Источник — `dev_server_worker.tasks` (тот же, что `GET /tasks`), но server-scoped: тащит запрошенный `pattern`/`patterns` из task-payload'а и найденные `packages`/`package_count` из task.result.
+
+Сортировка — `enqueued_at DESC`. Пагинация: `limit` (1..100, default 20) + `offset`; общее число — в заголовке `X-Total-Count`. Видна вся история сервера (не только свои запросы); незавершённые (`queued`/`running`) — с пустым `packages`. Read-only: prepare/decommissioned-гейтов нет. Глубина ограничена retention'ом worker'а (`tasks.cleanup_completed_old`).
+
+Response: `list[{task_id, status, pattern, patterns, requested_by, requested_at, finished_at, package_count, packages, last_error}]`.
+
+Audit: `installed_packages.history` (INFO) — только на denied/not-found.
+
+Errors: `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404).
+
 ### `POST /servers/packages/bulk-action`
 
 Auth: Bearer + `(server, *, manage_packages)`. Массовая ИЗМЕНЯЮЩАЯ операция: на каждый сервер из `server_ids` диспатчит `installed_packages.{install|remove|update}` — worker под управляющим пользователем по SSH с sudo выполняет `apt-get`/`dnf`/`apk`.

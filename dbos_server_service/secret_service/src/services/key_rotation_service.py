@@ -23,10 +23,13 @@ from __future__ import annotations
 import base64
 import logging
 
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import AppException, BadRequestError, ConflictError
 from src.core.keystore import get_keystore
+from src.models import ReencryptOutboxEntry, RetiredKeyVersion
 from src.services import migration_status_service, reencrypt_outbox_service
 
 logger = logging.getLogger(__name__)
@@ -118,4 +121,94 @@ async def retire(db: AsyncSession, *, version: int) -> dict:
         return {"version": version, "retired": False, "remaining_on_version": 0}
 
     ks.remove_key(version)
+    await _record_tombstone(db, version)
     return {"version": version, "retired": True, "remaining_on_version": 0}
+
+
+async def _record_tombstone(db: AsyncSession, version: int) -> None:
+    """Зафиксировать факт вывода версии в `retired_key_versions`.
+
+    Делает keystore-retire durable: даже если файл keystore исчезнет и
+    bootstrap воскресит версию из env, startup-reconcile сверится с этой
+    таблицей и снова её вычистит. ON CONFLICT DO NOTHING — повтор retire'а
+    той же версии не падает.
+    """
+    ins = (
+        pg_insert(RetiredKeyVersion.__table__)
+        .values(version=int(version))
+        .on_conflict_do_nothing(index_elements=["version"])
+    )
+    await db.execute(ins)
+    await db.commit()
+
+
+async def _pending_outbox_for_version(db: AsyncSession, version: int) -> int:
+    """Сколько pending outbox-задач seed'илось с этой версии как source."""
+    stmt = select(func.count(ReencryptOutboxEntry.id)).where(
+        ReencryptOutboxEntry.status == reencrypt_outbox_service.STATUS_PENDING,
+        ReencryptOutboxEntry.source_version == int(version),
+    )
+    return int((await db.execute(stmt)).scalar_one())
+
+
+async def auto_retire_drained(db: AsyncSession) -> list[dict]:
+    """Вывести все не-активные версии, на которых не осталось строк.
+
+    Зовётся после `reencrypt_outbox_service.process_batch`: как только версия
+    опустела (0 строк под ней и нет pending-задач reencrypt-outbox'а с этой
+    версией как source), её материал больше не нужен — убираем из keystore.
+    Гарды наследуются у `retire`: активную версию не трогаем никогда,
+    retire'им только при реальном 0 строк.
+
+    Возвращает список `{version, retired}` по фактически выведенным версиям.
+    Идемпотентно: после вывода версия уходит из keystore, повторный tick её
+    уже не увидит.
+    """
+    ks = get_keystore()
+    active = int(ks.get_active_version())
+    status = await migration_status_service.compute(db, active_version=active)
+
+    retired: list[dict] = []
+    for version in ks.list_versions():
+        if int(version) == active:
+            continue
+        if int(status.by_version.get(str(int(version)), 0)) > 0:
+            continue
+        if await _pending_outbox_for_version(db, version) > 0:
+            # Версия пуста по строкам, но в очереди ещё висят задачи с ней —
+            # дожидаемся, пока worker их закроет, и только потом выводим.
+            continue
+        result = await retire(db, version=version)
+        if result["retired"]:
+            retired.append({"version": int(version), "retired": True})
+    return retired
+
+
+async def reconcile_tombstones(db: AsyncSession) -> list[int]:
+    """Вычистить из keystore версии, помеченные выведенными в БД.
+
+    Стартовый хук durability: если keystore воскресил выведенную версию из
+    env (файл на emptyDir пропал при рестарте пода), сверяемся с
+    `retired_key_versions` и убираем материал снова. Активную версию не
+    трогаем — это защита от рассинхрона, когда активной зачем-то оказалась
+    помеченная версия (тогда оставляем как есть, чтобы не потерять read-path).
+
+    Возвращает список реально вычищенных версий.
+    """
+    ks = get_keystore()
+    active = int(ks.get_active_version())
+    rows = (await db.execute(select(RetiredKeyVersion.version))).scalars().all()
+    tombstoned = {int(v) for v in rows}
+
+    pruned: list[int] = []
+    for version in ks.list_versions():
+        if int(version) == active:
+            continue
+        if int(version) in tombstoned:
+            ks.remove_key(version)
+            pruned.append(int(version))
+    if pruned:
+        logger.warning(
+            "keystore reconcile: pruned resurrected retired versions %s", pruned,
+        )
+    return pruned

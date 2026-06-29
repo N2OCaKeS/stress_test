@@ -62,6 +62,7 @@ SERVICE_EVENTS = [
     {"action": "secrets.reencrypt_process", "description": "Reencrypt-outbox batch processed (decrypt → encrypt under active key)", "default_severity": "INFO"},
     {"action": "secrets.encryption_rotate", "description": "Rotation-runner ввёл новую версию мастер-ключа активной через keystore и засидил reencrypt-outbox (рантайм-ротация без простоя)", "default_severity": "CRITICAL"},
     {"action": "secrets.encryption_retire", "description": "Rotation-runner убрал старую версию мастер-ключа из keystore после полной ре-шифрации (0 строк на версии)", "default_severity": "CRITICAL"},
+    {"action": "secrets.encryption_auto_retire", "description": "Версия мастер-ключа выведена автоматически после reencrypt-batch'а, как только на ней не осталось строк и pending-задач (actor = service/worker, не человек)", "default_severity": "CRITICAL"},
     # account_admin инициирует ротацию из UI (платформенный канал) — отдельные
     # action-name'ы от ops-runner'ских, чтобы SIEM различал «человек из UI» и
     # «автоматический s2s-runner».
@@ -106,6 +107,8 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("secrets.encryption_rotate", "failure"): "CRITICAL",
     ("secrets.encryption_retire", "success"): "CRITICAL",
     ("secrets.encryption_retire", "failure"): "CRITICAL",
+    ("secrets.encryption_auto_retire", "success"): "CRITICAL",
+    ("secrets.encryption_auto_retire", "failure"): "CRITICAL",
     ("secrets.admin_encryption_rotate", "success"): "CRITICAL",
     ("secrets.admin_encryption_rotate", "failure"): "CRITICAL",
     ("secrets.admin_encryption_retire", "success"): "CRITICAL",

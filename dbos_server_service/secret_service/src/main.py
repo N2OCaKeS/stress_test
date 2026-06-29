@@ -66,6 +66,21 @@ def create_application() -> FastAPI:
         except Exception as exc:  # noqa: BLE001 — startup-best-effort
             logger.warning("audit events registration failed: %s", exc)
 
+        # Сверка keystore с durable-пометкой выведенных версий: если файл
+        # keystore исчез (emptyDir при рестарте пода) и bootstrap воскресил
+        # выведенную версию из env — вычищаем её снова. Best-effort, не в test.
+        if settings.app_env.lower() != "test":
+            try:
+                from src.db.session import AsyncSessionLocal
+                from src.services import key_rotation_service
+
+                async with AsyncSessionLocal() as reconcile_db:
+                    pruned = await key_rotation_service.reconcile_tombstones(reconcile_db)
+                if pruned:
+                    logger.warning("keystore tombstone reconcile pruned %s", pruned)
+            except Exception as exc:  # noqa: BLE001 — startup-best-effort
+                logger.warning("keystore tombstone reconcile failed: %s", exc)
+
         # Фоновый sweep — только если включён и не в test-env. Test-suite
         # дёргает sweep_expired_blocked напрямую без loop'а.
         import asyncio as _asyncio

@@ -34,7 +34,11 @@ from src.schemas.internal import (
     ReencryptOutboxSeedResponse,
     ReencryptOutboxStatus,
 )
-from src.services import audit_service, reencrypt_outbox_service
+from src.services import (
+    audit_service,
+    key_rotation_service,
+    reencrypt_outbox_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +132,9 @@ async def process(
     закрывается done без ошибки.
 
     Audit: `secrets.reencrypt_process` (status=failure, если все строки
-    упали — errors>0 и processed==0; иначе success).
+    упали — errors>0 и processed==0; иначе success). После обработки батча
+    опустевшие не-активные версии ключа авто-выводятся
+    (`secrets.encryption_auto_retire`).
     """
     try:
         data = await reencrypt_outbox_service.process_batch(
@@ -145,6 +151,25 @@ async def process(
         ) from exc
 
     caller = getattr(request.state, "caller", None)
+    # Опустевшие не-активные версии выводим сразу — материал больше не нужен.
+    # Best-effort: сбой авто-retire не должен ронять обработку батча.
+    try:
+        retired = await key_rotation_service.auto_retire_drained(db)
+    except Exception:  # noqa: BLE001
+        logger.exception("auto_retire_after_process_failed")
+        retired = []
+    for item in retired:
+        audit_service.emit(
+            "secrets.encryption_auto_retire",
+            actor_id=None,
+            actor_type="service",
+            target_id=None,
+            target_type="secret",
+            status="success",
+            allowed=True,
+            details={"version": item["version"], "caller": caller},
+        )
+
     is_total_failure = data["errors"] > 0 and data["processed"] == 0
     audit_status = "failure" if is_total_failure else "success"
     audit_service.emit(

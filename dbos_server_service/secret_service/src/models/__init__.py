@@ -13,6 +13,7 @@ from src.models.reencrypt_outbox import (
     STATUS_PENDING,
     ReencryptOutboxEntry,
 )
+from src.models.retired_key_version import RetiredKeyVersion
 from src.models.role_acl import RoleACL
 from src.models.user_acl import CredentialUserACL
 
@@ -24,6 +25,7 @@ __all__ = [
     "DeptGrant",
     "OUTBOX_STATUS_VALUES",
     "ReencryptOutboxEntry",
+    "RetiredKeyVersion",
     "RoleACL",
     "STATUS_DONE",
     "STATUS_ERROR",

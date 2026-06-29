@@ -18,7 +18,8 @@ import {
   unlockUser,
   updateLockoutPolicy,
 } from "@/api/auth/lockout";
-import { resolveUser } from "@/api/auth/users";
+import { listUsers, resolveUser } from "@/api/auth/users";
+import { USERS as MOCK_USERS } from "@/mocks/auth";
 import type { LockedUser, LockoutPolicy } from "@/api/auth/types";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -296,8 +297,15 @@ function LockedRow({
 }
 
 // ---------------------------------------------------------------------------
-// Ручная разблокировка / блокировка по username
+// Ручная разблокировка / блокировка по выбранному пользователю
 // ---------------------------------------------------------------------------
+
+// Лёгкая форма записи пользователя для пикера: хватает id, username и email.
+interface PickUser {
+  id: string;
+  username: string;
+  email?: string | null;
+}
 
 function ManualUnlock() {
   const mockMode = useMockMode();
@@ -305,16 +313,47 @@ function ManualUnlock() {
   const [username, setUsername] = useState("");
   const [busy, setBusy] = useState<"unlock" | "ban" | null>(null);
 
+  // Список платформенных учёток для combobox'а. В live-режиме тянем первую
+  // страницу с include_banned (забаненных тоже надо уметь разблокировать),
+  // в mock-режиме отдаём фикстуру.
+  const usersQ = useQuery<PickUser[]>(
+    () =>
+      mockMode
+        ? Promise.resolve(
+            MOCK_USERS.map((u) => ({
+              id: u.id,
+              username: u.username,
+              email: u.email,
+            })),
+          )
+        : listUsers({ limit: 200, include_banned: true }).then((r) =>
+            r.items.map((u) => ({
+              id: u.id,
+              username: u.username,
+              email: u.email,
+            })),
+          ),
+    [mockMode],
+  );
+  const users = usersQ.data ?? [];
+
   async function resolveId(): Promise<string | null> {
     const name = username.trim();
     if (!name) {
-      toast.warn("Введите username");
+      toast.warn("Выберите пользователя");
       return null;
     }
     if (mockMode) {
       toast.warn("Mock-режим — действие не отправляется на backend.");
       return null;
     }
+    // Сначала ищем в загруженном списке — резолв без лишнего запроса. Если имя
+    // за пределами страницы (загружено только первые 200), падаем на точечный
+    // /users/resolve.
+    const local = users.find(
+      (u) => u.username.toLowerCase() === name.toLowerCase(),
+    );
+    if (local) return local.id;
     try {
       const r = await resolveUser(name);
       return r.user_id;
@@ -358,25 +397,34 @@ function ManualUnlock() {
   return (
     <div className="card">
       <h3 className="font-semibold flex items-center gap-2 mb-3">
-        <ShieldCheck className="w-4 h-4 text-accent" /> Ручное управление по
-        username
+        <ShieldCheck className="w-4 h-4 text-accent" /> Ручное управление
+        пользователем
       </h3>
       <div className="text-xs text-dim mb-3">
-        username резолвится через <span className="mono">GET /users/resolve</span>,
-        затем вызывается unlock или ban по найденному id.
+        Выберите пользователя из списка (поиск по username). По выбранной учётке
+        вызывается unlock или ban по её id.
       </div>
       <div className="flex items-end gap-2 flex-wrap">
         <label className="flex flex-col gap-1 text-sm flex-1 min-w-[200px]">
-          <span className="text-dim text-xs">username</span>
+          <span className="text-dim text-xs">пользователь</span>
           <input
             className="input mono"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="ivanov"
+            placeholder={usersQ.loading ? "загрузка…" : "ivanov"}
+            list="lockout-user-options"
+            autoComplete="off"
             onKeyDown={(e) => {
               if (e.key === "Enter") onUnlock();
             }}
           />
+          <datalist id="lockout-user-options">
+            {users.map((u) => (
+              <option key={u.id} value={u.username}>
+                {u.email ?? u.id}
+              </option>
+            ))}
+          </datalist>
         </label>
         <button
           className="btn btn-primary flex items-center gap-1"

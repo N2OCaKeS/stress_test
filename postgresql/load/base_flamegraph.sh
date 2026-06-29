@@ -84,5 +84,5 @@ echo -e "$INFO Данные о сэмплах получены"
 
 echo ""
 echo "=== Параметры запуска ==="
-echo -e "Процессы - $PROCESSES"
-echo -e "Файлы - $FILE_COUNT"
+echo -e "$INFO Процессы - $PROCESSES"
+echo -e "$INFO Файлы - $FILE_COUNT"

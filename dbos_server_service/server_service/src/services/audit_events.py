@@ -84,6 +84,7 @@ SERVICE_EVENTS = [
     # «автоматический s2s-runner».
     {"action": "encryption.admin_rotate", "description": "account_admin ввёл новую версию мастер-ключа активной через UI (admin /admin/encryption/rotate); keystore-bump + reencrypt-outbox seed", "default_severity": "CRITICAL"},
     {"action": "encryption.admin_retire", "description": "account_admin убрал старую версию мастер-ключа из keystore через UI (admin /admin/encryption/retire) после полной ре-шифрации", "default_severity": "CRITICAL"},
+    {"action": "encryption.auto_retire", "description": "Не-активная версия мастер-ключа автоматически выведена из keystore сразу после того, как перешифровочный батч осушил её (0 owner-строк и пустой reencrypt-outbox на версии); actor_type=system, материал ключа удалён", "default_severity": "CRITICAL"},
     # Конфиг управляющей учётки — платформенный singleton под account_admin.
     {"action": "management_user_config.update", "description": "account_admin обновил конфиг управляющей учётки (имя управляющего пользователя + пер-режимные группы/bootstrap-команды через PUT /management-user-config); смена login помечается login_changed для будущего cutover-фан-аута", "default_severity": "WARNING"},
     {"action": "management_user_config.sync", "description": "Недеструктивный re-bootstrap управляющей учётки (management_user_sync) поставлен на подготовленный сервер high-priority при изменении конфига управляющей учётки (фан-аут PUT /management-user-config)", "default_severity": "WARNING"},

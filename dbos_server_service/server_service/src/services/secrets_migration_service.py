@@ -181,6 +181,71 @@ async def _outbox_counts_by_status(db: AsyncSession) -> dict[str, int]:
     return {row[0]: int(row[1]) for row in result.all()}
 
 
+async def has_rows_on_version(db: AsyncSession, version: int) -> bool:
+    """Есть ли хоть одна owner-row с ciphertext'ом версии ``version``.
+
+    Дешёвый `EXISTS` поверх обеих owner-таблиц через `LIKE 'v<N>$%'` с
+    `LIMIT 1`. Разделитель `$` после номера не даёт `v1$%` зацепить `v10$...`.
+    Пока на версии остаются строки, Postgres находит совпадение сразу; полный
+    скан случается только когда строк уже нет (конец миграции), и редко.
+    """
+    prefix = f"v{int(version)}$%"
+    for model in (ServerAccount, IpmiController):
+        column = model.password_encrypted
+        stmt = (
+            select(model.id)
+            .where(column.is_not(None))
+            .where(column.like(prefix))
+            .limit(1)
+        )
+        if (await db.execute(stmt)).first() is not None:
+            return True
+    return False
+
+
+async def has_open_outbox_on_version(db: AsyncSession, version: int) -> bool:
+    """Есть ли незакрытые (pending/processing) outbox-row'ы на версии ``version``.
+
+    Версия читается из `v<N>$` префикса `legacy_ciphertext`. Нужна, чтобы не
+    вывести ключ, по которому ещё висит неотработанная задача перешифровки.
+    """
+    prefix = f"v{int(version)}$%"
+    stmt = (
+        select(ReencryptOutboxEntry.id)
+        .where(ReencryptOutboxEntry.status.in_([STATUS_PENDING, STATUS_PROCESSING]))
+        .where(ReencryptOutboxEntry.legacy_ciphertext.like(prefix))
+        .limit(1)
+    )
+    return (await db.execute(stmt)).first() is not None
+
+
+async def _maybe_auto_retire(
+    db: AsyncSession, candidate_versions: list[int] | None
+) -> None:
+    """Best-effort авто-вывод опустевших не-активных версий ключа.
+
+    Вызывается после commit'а перешифровочного батча. Делегирует в
+    `key_rotation_service.auto_retire_drained_versions` (ленивый импорт —
+    разрывает цикл import'ов между сервисами). Любая ошибка глушится в
+    WARNING: закрытие outbox-row важнее, чем мгновенный retire — он всё равно
+    случится на следующем батче.
+
+    `candidate_versions=None` — проверить все версии keystore (legacy
+    sync-путь); список — сузить до конкретных (хук из finalize_done передаёт
+    версию только что закрытой строки).
+    """
+    try:
+        from src.services import key_rotation_service
+
+        await key_rotation_service.auto_retire_drained_versions(
+            db, candidate_versions=candidate_versions
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort, не валим основной поток
+        logger.warning(
+            "auto-retire after reencrypt failed: %s", type(exc).__name__
+        )
+
+
 async def status(db: AsyncSession) -> dict:
     """Сводка по миграции для worker'а / оператора.
 
@@ -576,6 +641,9 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
             },
         })
 
+    # Версию закрываемой строки снимаем до commit'а — после него атрибуты
+    # entry экспайрятся, а нам нужно знать, какую версию проверять на retire.
+    drained_version = _parse_version(entry.legacy_ciphertext)
     entry.status = STATUS_DONE
     entry.processed_at = datetime.now(timezone.utc)
     entry.last_error = None
@@ -583,6 +651,8 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
     for emit_kwargs in deferred_emits:
         action = emit_kwargs.pop("action")
         audit_service.emit(action, **emit_kwargs)
+    if drained_version is not None:
+        await _maybe_auto_retire(db, [drained_version])
     return {
         "id": outbox_id,
         "status": STATUS_DONE,
@@ -796,6 +866,8 @@ async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
     if processed > 0:
         await db.flush()
         await db.commit()
+        # Батч мог осушить старую версию целиком — пробуем вывести опустевшие.
+        await _maybe_auto_retire(db, None)
     # processed == 0: писать нечего, не трогаем транзакцию — оставляем
     # SAVEPOINT / outer transaction caller'у.
 

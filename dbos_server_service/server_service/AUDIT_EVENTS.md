@@ -143,6 +143,7 @@ ops-runner'ских ротаций, но action-name'ы отдельные — a
 |---|---|---|---|---|
 | `encryption.admin_rotate` | CRITICAL | POST `/admin/encryption/rotate` — account_admin ввёл новую версию мастер-ключа активной; keystore-bump + reencrypt-outbox seed | `secret` | `new_version`, `previous_version`, `seeded_inserted`, `idempotent` |
 | `encryption.admin_retire` | CRITICAL | POST `/admin/encryption/retire/{version}` — account_admin убрал старую версию из keystore после полной ре-шифрации | `secret` | `version`, `retired` |
+| `encryption.auto_retire` | CRITICAL | Не-активная версия мастер-ключа автоматически выведена из keystore сразу после того, как перешифровочный батч (finalize_done / reencrypt_batch) осушил её — 0 owner-строк и пустой reencrypt-outbox на версии. `actor_type=system`, материал ключа удалён | `secret` | `version`, `active_version` |
 
 ---
 

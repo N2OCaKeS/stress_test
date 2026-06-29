@@ -490,8 +490,10 @@ function RolesTab({
   run: (label: string, fn: () => Promise<unknown>) => Promise<void>;
   busy: string | null;
 }) {
-  const [editor, setEditor] = useState<ServiceName | null>(null);
-  const [picking, setPicking] = useState(false);
+  // Редактирование уже назначенного сервиса: сервис известен и залочен.
+  const [editService, setEditService] = useState<ServiceName | null>(null);
+  // Назначение в новом сервисе: сервис выбирается в самой модалке.
+  const [assigning, setAssigning] = useState(false);
 
   if (loading && !perms) return <div className="spinner" aria-label="Loading" />;
   if (err) return <div className="alert-danger">{err.message}</div>;
@@ -579,7 +581,7 @@ function RolesTab({
                       className="btn btn-sm"
                       disabled={!canManage}
                       title={canManage ? "Изменить набор ролей" : capsReason}
-                      onClick={() => setEditor(svc)}
+                      onClick={() => setEditService(svc)}
                     >
                       <Edit3 className="w-3 h-3 inline" /> Edit
                     </button>
@@ -596,7 +598,7 @@ function RolesTab({
           className="btn btn-sm flex items-center gap-1"
           disabled={!canManage}
           title={canManage ? "Добавить роль в другом сервисе" : capsReason}
-          onClick={() => setPicking(true)}
+          onClick={() => setAssigning(true)}
         >
           <Plus className="w-3 h-3" /> Назначить в другом сервисе
         </button>
@@ -605,25 +607,23 @@ function RolesTab({
         )}
       </div>
 
-      {picking && (
-        <ServicePickerModal
-          mockMode={mockMode}
-          onClose={() => setPicking(false)}
-          onPick={(svc) => {
-            setPicking(false);
-            setEditor(svc);
-          }}
-        />
-      )}
-
-      {editor && (
-        <RolesEditModal
+      {(assigning || editService) && (
+        <AssignRolesModal
           userId={userId}
           deptId={deptId}
-          serviceName={editor}
-          initialRoles={directBySvc.get(editor) ?? []}
-          onClose={() => setEditor(null)}
-          onSaved={() => setEditor(null)}
+          initialService={editService}
+          lockService={!!editService}
+          initialRoles={
+            editService ? directBySvc.get(editService) ?? [] : []
+          }
+          onClose={() => {
+            setAssigning(false);
+            setEditService(null);
+          }}
+          onSaved={() => {
+            setAssigning(false);
+            setEditService(null);
+          }}
           mockMode={mockMode}
           run={run}
           busy={busy}
@@ -633,10 +633,15 @@ function RolesTab({
   );
 }
 
-function RolesEditModal({
+// Единая модалка назначения: первый селект выбирает сервис, второй —
+// мульти-список его ролей. При редактировании уже назначенного сервиса он
+// приходит в `initialService` и залочен (`lockService`), `initialRoles`
+// предзаполняют чекбоксы.
+function AssignRolesModal({
   userId,
   deptId,
-  serviceName,
+  initialService,
+  lockService,
   initialRoles,
   onClose,
   onSaved,
@@ -646,7 +651,8 @@ function RolesEditModal({
 }: {
   userId: string;
   deptId: string | null;
-  serviceName: ServiceName;
+  initialService: ServiceName | null;
+  lockService: boolean;
   initialRoles: string[];
   onClose: () => void;
   onSaved: () => void;
@@ -654,17 +660,39 @@ function RolesEditModal({
   run: (label: string, fn: () => Promise<unknown>) => Promise<void>;
   busy: string | null;
 }) {
-  // Service roles живут в `/departments/{dept}/services/{svc}/roles` — без dept
-  // мы не можем подгрузить каталог, поэтому показываем свободный ввод.
-  const rolesQ = useQuery<ServiceRole[]>(
-    () => listServiceRoles(deptId ?? "", serviceName),
-    [deptId, serviceName],
-    { enabled: !mockMode && !!deptId },
+  const [service, setService] = useState<ServiceName | "">(
+    initialService ?? "",
   );
   const [selected, setSelected] = useState<string[]>(initialRoles);
   const [manual, setManual] = useState("");
 
-  const available = rolesQ.data ?? [];
+  // Каталог сервисов для селекта-1 (фильтр по NON_ROLE_SERVICES). Не нужен,
+  // если сервис залочен на редактировании.
+  const servicesQ = useQuery<Service[]>(() => listServices(), [], {
+    enabled: !mockMode && !lockService,
+  });
+  const serviceOptions = mockMode
+    ? MOCK_PICKER_SERVICES
+    : (servicesQ.data ?? [])
+        .filter((s) => !NON_ROLE_SERVICES.has(s.service_name))
+        .map((s) => s.service_name);
+
+  // Каталог ролей выбранного сервиса для селекта-2. Живёт в
+  // `/departments/{dept}/services/{svc}/roles` — без dept подгрузить нельзя,
+  // тогда работает только ручной ввод.
+  const rolesQ = useQuery<ServiceRole[]>(
+    () => listServiceRoles(deptId ?? "", service),
+    [deptId, service],
+    { enabled: !mockMode && !!deptId && !!service },
+  );
+  const available = service ? rolesQ.data ?? [] : [];
+
+  function pickService(next: string) {
+    setService(next as ServiceName);
+    // Роли одного сервиса не должны утекать в другой.
+    setSelected([]);
+    setManual("");
+  }
 
   function toggle(name: string) {
     setSelected((cur) =>
@@ -673,89 +701,150 @@ function RolesEditModal({
   }
 
   async function save() {
-    await run(`assign-roles:${serviceName}`, () =>
-      assignUserRoles(userId, { service_name: serviceName, roles: selected }),
+    if (!service) return;
+    const svc = service;
+    await run(`assign-roles:${svc}`, () =>
+      assignUserRoles(userId, { service_name: svc, roles: selected }),
     );
     onSaved();
   }
 
+  const title = lockService
+    ? `Роли · ${initialService}`
+    : "Назначить роль в другом сервисе";
+
   return (
-    <ModalShell title={`Роли · ${serviceName}`} onClose={onClose}>
-      {!deptId && (
-        <div className="text-xs text-warn italic mb-2">
-          У пользователя нет dept_id — каталог ролей сервиса подгрузить нельзя.
-          Введи имя роли вручную ниже.
-        </div>
-      )}
-      {deptId && rolesQ.loading && (
-        <div className="spinner" aria-label="Loading" />
-      )}
-      {deptId && rolesQ.error && (
-        <div className="alert-danger text-xs">{rolesQ.error.message}</div>
-      )}
-      {available.length > 0 && (
-        <div className="flex flex-col gap-1 max-h-[240px] overflow-y-auto border border-token rounded p-2">
-          {available.map((r) => (
-            <label key={r.role_name} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={selected.includes(r.role_name)}
-                onChange={() => toggle(r.role_name)}
-              />
-              <span className="mono">{r.role_name}</span>
-              {r.is_system && <span className="badge badge-warn">system</span>}
-              {r.description && (
-                <span className="text-xs text-dim truncate">{r.description}</span>
-              )}
-            </label>
-          ))}
-        </div>
-      )}
-      <div className="mt-3">
-        <div className="text-xs text-dim mb-1">Добавить вручную:</div>
-        <div className="flex items-center gap-2">
-          <input
-            className="input flex-1"
-            value={manual}
-            onChange={(e) => setManual(e.target.value)}
-            placeholder="role_name"
-          />
-          <button
-            className="btn btn-sm"
-            disabled={!manual || selected.includes(manual)}
-            onClick={() => {
-              setSelected((cur) => [...cur, manual]);
-              setManual("");
-            }}
+    <ModalShell title={title} onClose={onClose}>
+      <div className="text-xs text-dim mb-1">Сервис:</div>
+      {lockService ? (
+        <input className="input w-full mono" value={String(service)} disabled />
+      ) : (
+        <>
+          {!mockMode && servicesQ.loading && (
+            <div className="spinner" aria-label="Loading" />
+          )}
+          {!mockMode && servicesQ.error && (
+            <div className="alert-danger text-xs">
+              {servicesQ.error.message}
+            </div>
+          )}
+          <select
+            className="input w-full"
+            value={service}
+            onChange={(e) => pickService(e.target.value)}
           >
-            <Plus className="w-3 h-3" /> add
-          </button>
-        </div>
-      </div>
-      {selected.length > 0 && (
-        <div className="mt-3">
-          <div className="text-xs text-dim mb-1">Будет назначено:</div>
-          <div className="flex flex-wrap gap-1">
-            {selected.map((r) => (
-              <span key={r} className="badge badge-accent flex items-center gap-1">
-                {r}
-                <button
-                  type="button"
-                  className="text-dim hover:text-danger"
-                  onClick={() => toggle(r)}
-                  aria-label={`remove ${r}`}
-                >
-                  <XCircle className="w-3 h-3" />
-                </button>
-              </span>
+            <option value="">— выбрать сервис —</option>
+            {serviceOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
             ))}
-          </div>
-        </div>
+          </select>
+          {!mockMode &&
+            !servicesQ.loading &&
+            !servicesQ.error &&
+            serviceOptions.length === 0 && (
+              <div className="text-xs text-dim italic mt-2">
+                Нет сервисов с ролевым каталогом.
+              </div>
+            )}
+        </>
       )}
-      <div className="text-xs text-dim mt-3 italic">
-        Replace-семантика: переданный список заменит текущий набор ролей юзера
-        в этом сервисе целиком.
-      </div>
+
+      <div className="text-xs text-dim mb-1 mt-4">Роли:</div>
+      {!service ? (
+        <div className="text-xs text-dim italic">
+          Сначала выбери сервис — тогда подгрузятся его роли.
+        </div>
+      ) : (
+        <>
+          {!deptId && (
+            <div className="text-xs text-warn italic mb-2">
+              У пользователя нет dept_id — каталог ролей сервиса подгрузить
+              нельзя. Введи имя роли вручную ниже.
+            </div>
+          )}
+          {deptId && rolesQ.loading && (
+            <div className="spinner" aria-label="Loading" />
+          )}
+          {deptId && rolesQ.error && (
+            <div className="alert-danger text-xs">{rolesQ.error.message}</div>
+          )}
+          {available.length > 0 && (
+            <div className="flex flex-col gap-1 max-h-[240px] overflow-y-auto border border-token rounded p-2">
+              {available.map((r) => (
+                <label
+                  key={r.role_name}
+                  className="flex items-center gap-2 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(r.role_name)}
+                    onChange={() => toggle(r.role_name)}
+                  />
+                  <span className="mono">{r.role_name}</span>
+                  {r.is_system && (
+                    <span className="badge badge-warn">system</span>
+                  )}
+                  {r.description && (
+                    <span className="text-xs text-dim truncate">
+                      {r.description}
+                    </span>
+                  )}
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="mt-3">
+            <div className="text-xs text-dim mb-1">Добавить вручную:</div>
+            <div className="flex items-center gap-2">
+              <input
+                className="input flex-1"
+                value={manual}
+                onChange={(e) => setManual(e.target.value)}
+                placeholder="role_name"
+              />
+              <button
+                className="btn btn-sm"
+                disabled={!manual || selected.includes(manual)}
+                onClick={() => {
+                  setSelected((cur) => [...cur, manual]);
+                  setManual("");
+                }}
+              >
+                <Plus className="w-3 h-3" /> add
+              </button>
+            </div>
+          </div>
+          {selected.length > 0 && (
+            <div className="mt-3">
+              <div className="text-xs text-dim mb-1">Будет назначено:</div>
+              <div className="flex flex-wrap gap-1">
+                {selected.map((r) => (
+                  <span
+                    key={r}
+                    className="badge badge-accent flex items-center gap-1"
+                  >
+                    {r}
+                    <button
+                      type="button"
+                      className="text-dim hover:text-danger"
+                      onClick={() => toggle(r)}
+                      aria-label={`remove ${r}`}
+                    >
+                      <XCircle className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="text-xs text-dim mt-3 italic">
+            Replace-семантика: переданный список заменит текущий набор ролей
+            юзера в этом сервисе целиком.
+          </div>
+        </>
+      )}
       <div className="mt-4 flex justify-end gap-2">
         <button className="btn" onClick={onClose} disabled={busy !== null}>
           Отмена
@@ -763,7 +852,7 @@ function RolesEditModal({
         <button
           className="btn btn-primary"
           onClick={save}
-          disabled={busy !== null}
+          disabled={!service || busy !== null}
         >
           {busy ? "..." : "Сохранить"}
         </button>
@@ -789,71 +878,6 @@ const MOCK_PICKER_SERVICES = [
   "config_service",
   "docker_registry",
 ];
-
-function ServicePickerModal({
-  mockMode,
-  onClose,
-  onPick,
-}: {
-  mockMode: boolean;
-  onClose: () => void;
-  onPick: (serviceName: ServiceName) => void;
-}) {
-  const servicesQ = useQuery<Service[]>(() => listServices(), [], {
-    enabled: !mockMode,
-  });
-  const [picked, setPicked] = useState("");
-
-  const options = mockMode
-    ? MOCK_PICKER_SERVICES
-    : (servicesQ.data ?? [])
-        .filter((s) => !NON_ROLE_SERVICES.has(s.service_name))
-        .map((s) => s.service_name);
-
-  return (
-    <ModalShell title="Назначить роль в другом сервисе" onClose={onClose}>
-      {!mockMode && servicesQ.loading && (
-        <div className="spinner" aria-label="Loading" />
-      )}
-      {!mockMode && servicesQ.error && (
-        <div className="alert-danger text-xs">{servicesQ.error.message}</div>
-      )}
-      <div className="text-xs text-dim mb-1">Сервис:</div>
-      <select
-        className="input w-full"
-        value={picked}
-        onChange={(e) => setPicked(e.target.value)}
-      >
-        <option value="">— выбрать сервис —</option>
-        {options.map((name) => (
-          <option key={name} value={name}>
-            {name}
-          </option>
-        ))}
-      </select>
-      {!mockMode &&
-        !servicesQ.loading &&
-        !servicesQ.error &&
-        options.length === 0 && (
-          <div className="text-xs text-dim italic mt-2">
-            Нет сервисов с ролевым каталогом.
-          </div>
-        )}
-      <div className="mt-4 flex justify-end gap-2">
-        <button className="btn" onClick={onClose}>
-          Отмена
-        </button>
-        <button
-          className="btn btn-primary"
-          disabled={!picked}
-          onClick={() => picked && onPick(picked as ServiceName)}
-        >
-          Открыть
-        </button>
-      </div>
-    </ModalShell>
-  );
-}
 
 function GroupsTab({
   userId,

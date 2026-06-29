@@ -897,6 +897,85 @@ async def list_accounts(
     return items, total
 
 
+async def list_department_accounts(
+    db: AsyncSession,
+    identity: IdentityContext,
+    *,
+    limit: int,
+    offset: int,
+) -> tuple[list[ServerAccount], int]:
+    """List + count всех аккаунтов отдела caller'а (включая unbound).
+
+    Dept-wide листинг: без `server_id`, скоуп — отдел caller'а. В отличие от
+    `list_accounts` (per-server, через JOIN на связки), сюда попадают и
+    аккаунты без единой привязки. Гейтится тем же `view`; dept-изоляция —
+    жёстко по `identity.department_id`, чужие отделы не видны.
+    """
+    with emit_denied_on_authz_error(
+        "server_account.list",
+        target_type="server_account",
+        identity=identity,
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
+        )
+    items = await repo.list_in_department(
+        db, identity.department_id, limit=limit, offset=offset
+    )
+    total = await repo.count_in_department(db, identity.department_id)
+    return items, total
+
+
+async def list_department_accounts_cursor(
+    db: AsyncSession,
+    identity: IdentityContext,
+    *,
+    limit: int,
+    after: str | None,
+) -> tuple[list[ServerAccount], str | None, bool]:
+    """Keyset-страница всех аккаунтов отдела. `(items, next_cursor, has_more)`.
+
+    Dept-wide аналог `list_accounts_cursor`: `limit + 1` row-fetch детектит
+    следующую страницу без COUNT'а. Скоуп — отдел caller'а, unbound-аккаунты
+    в выдаче присутствуют.
+    """
+    from src.utils.cursor import (
+        decode_cursor,
+        encode_cursor,
+        normalize_limit,
+        parse_cursor_datetime,
+    )
+
+    with emit_denied_on_authz_error(
+        "server_account.list",
+        target_type="server_account",
+        identity=identity,
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
+        )
+    page_size = normalize_limit(limit)
+    after_created_at = None
+    after_id = None
+    if after:
+        cur = decode_cursor(after)
+        after_created_at = parse_cursor_datetime(cur.sort_value)
+        after_id = cur.row_id
+    rows = await repo.list_in_department_after(
+        db,
+        identity.department_id,
+        limit=page_size + 1,
+        after_created_at=after_created_at,
+        after_id=after_id,
+    )
+    has_more = len(rows) > page_size
+    items = rows[:page_size]
+    next_cursor = (
+        encode_cursor(items[-1].created_at, items[-1].id) if has_more and items else None
+    )
+    return items, next_cursor, has_more
+
+
 async def update_account(
     db: AsyncSession,
     identity: IdentityContext,

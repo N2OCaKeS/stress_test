@@ -13,15 +13,13 @@
 
 from __future__ import annotations
 
-import pytest
-
 SERVERS = "/api/server/v1/servers"
 ACCOUNTS = "/api/server/v1/server-accounts"
 OS_VERSIONS = "/api/server/v1/os-versions"
 IPMI = "/api/server/v1/ipmi_controllers"
 
 
-from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
+from tests._helpers import auth_hdr as _hdr, b64  # noqa: E402
 
 
 class TestServersCursorExtra:
@@ -176,15 +174,33 @@ class TestServerAccountsCursorExtra:
 
         assert sorted(seen) == sorted(created)
 
-    async def test_no_server_id_param_returns_422(
-        self, client, admin_token,
+    async def test_no_server_id_param_returns_department_wide(
+        self, client, admin_token, make_server, make_account,
     ):
-        """Отсутствие server_id при cursor-запросе → валидация 422."""
+        """Без server_id — dept-wide cursor-листинг: аккаунты отдела, включая unbound."""
+        srv = await make_server(department_id="dep_a")
+        bound = await make_account(server_id=srv.id, login="dw-bound")
+        # Unbound-аккаунт (0 привязок) заводим через create-эндпоинт.
+        created = await client.post(
+            ACCOUNTS, headers=_hdr(admin_token),
+            json={"login": "dw-unbound", "password_b64": b64("dw-unbound-pw1")},
+        )
+        assert created.status_code == 201, created.text
+
         resp = await client.get(
             ACCOUNTS, headers=_hdr(admin_token),
             params={"cursor": "true"},
         )
-        assert_error(resp, 422, "VALIDATION_ERROR")
+        assert resp.status_code == 200
+        body = resp.json()
+        # Cursor-envelope, не offset.
+        assert "next_cursor" in body and "has_more" in body
+        by_login = {a["login"]: a for a in body["items"]}
+        assert "dw-bound" in by_login
+        assert by_login["dw-bound"]["id"] == bound.id
+        # Unbound виден и отдаётся с пустым списком серверов.
+        assert "dw-unbound" in by_login
+        assert by_login["dw-unbound"]["server_ids"] == []
 
 
 class TestIpmiControllersCursorExtra:

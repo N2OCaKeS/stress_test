@@ -3,12 +3,12 @@
  * 3-панельной раскладке (Shell: left + middle-list + right-workzone).
  *
  * Per-server аккаунты живут на вкладке «Аккаунты» карточки сервера; здесь —
- * единый список «все пользователи разом» по всем доступным серверам. Backend
- * не отдаёт общую выдачу аккаунтов (`GET /server-accounts` требует
- * обязательный `server_id`), поэтому страница сначала тянет список серверов
- * (`listServers`), затем веером дёргает `listAccounts` на каждый и сшивает
- * результат: один аккаунт может быть привязан к нескольким серверам, дубли по
- * `id` объединяются.
+ * единый список «все пользователи разом» по всему отделу. Список тянется
+ * dept-wide эндпоинтом (`listAccounts` без `server_id`) — одной выдачей по
+ * department'у вызывающего, включая аккаунты без единой привязки (хранимые
+ * кредены с 0 серверов), которые per-server листинг показать не мог. Список
+ * серверов (`listServers`) грузится параллельно — он нужен для фильтра,
+ * имён серверов и привязки новых.
  *
  * Средняя панель — список аккаунтов с поиском/фильтром по серверу и сортом;
  * выбор строки кладёт `?id=<accountId>` в URL. Правая рабочая зона — карточка
@@ -82,7 +82,7 @@ import {
 // клиентский поиск/сорт идут по загруженному набору. Кап честно отражается в
 // TruncationNotice.
 const SERVER_LIMIT = 200;
-const ACCOUNTS_PER_SERVER = 200;
+const ACCOUNTS_LIMIT = 500;
 
 // Зеркало `server_service/src/schemas/server_account.py`:
 //   login — `^[A-Za-z0-9._\-]+$`, 1..128 символов.
@@ -177,49 +177,25 @@ function downloadText(filename: string, text: string) {
 type SshKeyChoice = "none" | "generate" | "supply";
 
 /**
- * Сводный аккаунт: сам `ServerAccount` плюс факт усечения хотя бы на одном
- * сервере (если у какого-то сервера аккаунтов больше, чем `ACCOUNTS_PER_SERVER`).
+ * Сводная выдача аккаунтов отдела: список + общее число по данным backend'а
+ * (для TruncationNotice, если аккаунтов больше лимита одной страницы).
  */
 interface AggregatedAccounts {
   accounts: ServerAccount[];
-  /** Серверы, чью страницу аккаунтов backend усёк по лимиту. */
-  truncatedServers: number;
-  /** Серверы, чей список аккаунтов не загрузился (403/сеть) — счётчик. */
-  failedServers: number;
+  /** Всего аккаунтов в отделе по данным backend (для TruncationNotice). */
+  total: number;
 }
 
 /**
- * Веером тянет аккаунты по всем серверам и сшивает в один список без дублей.
- * Аккаунт, привязанный к N серверам, придёт в N выдачах — оставляем первую
- * копию (server_ids в карточке уже несёт полный список серверов).
+ * Тянет все аккаунты отдела одной dept-wide выдачей (`listAccounts` без
+ * `server_id`). В отличие от прежнего fan-out по серверам, сюда попадают и
+ * unbound-аккаунты (0 привязок). Пагинацию не разворачиваем: на отдел
+ * аккаунтов немного, при переборе лимита показываем TruncationNotice.
  */
-async function loadAllAccounts(serverIds: string[]): Promise<AggregatedAccounts> {
-  const byId = new Map<string, ServerAccount>();
-  let truncatedServers = 0;
-  let failedServers = 0;
-  const results = await Promise.allSettled(
-    serverIds.map((sid) =>
-      accountsApi.listAccounts({ server_id: sid, limit: ACCOUNTS_PER_SERVER }),
-    ),
-  );
-  for (const r of results) {
-    if (r.status === "rejected") {
-      failedServers += 1;
-      continue;
-    }
-    const data = r.value;
-    for (const a of data.items) {
-      if (!byId.has(a.id)) byId.set(a.id, a);
-    }
-    if ("total" in data && data.total > data.items.length) {
-      truncatedServers += 1;
-    }
-  }
-  return {
-    accounts: [...byId.values()],
-    truncatedServers,
-    failedServers,
-  };
+async function loadAllAccounts(): Promise<AggregatedAccounts> {
+  const data = await accountsApi.listAccounts({ limit: ACCOUNTS_LIMIT });
+  const total = "total" in data ? data.total : data.items.length;
+  return { accounts: data.items, total };
 }
 
 export function ServerUsers() {
@@ -272,11 +248,12 @@ export function ServerUsers() {
   const serverTotal = serversQ.data?.total ?? servers.length;
   const serverIds = useMemo(() => servers.map((s) => s.id), [servers]);
 
-  // Аккаунты тянем веером по серверам — пересобираем при смене набора серверов.
+  // Аккаунты тянем dept-wide — одной выдачей по отделу, независимо от серверов
+  // (unbound-аккаунты должны быть видны даже когда серверов в отделе нет).
   const accountsQ = useQuery(
-    () => loadAllAccounts(serverIds),
-    [serverIds.join(",")],
-    { enabled: !zoneBlocked && serverIds.length > 0 },
+    () => loadAllAccounts(),
+    [],
+    { enabled: !zoneBlocked },
   );
 
   const allAccounts = useMemo(
@@ -375,8 +352,7 @@ export function ServerUsers() {
 
   const loading = serversQ.loading || accountsQ.loading;
   const error = serversQ.error ?? accountsQ.error;
-  const truncatedServers = accountsQ.data?.truncatedServers ?? 0;
-  const failedServers = accountsQ.data?.failedServers ?? 0;
+  const accountsTotal = accountsQ.data?.total ?? allAccounts.length;
 
   const aside = (
     <aside className="border-r border-token surface flex flex-col min-h-0">
@@ -427,15 +403,6 @@ export function ServerUsers() {
             <option value="rotated">по ротации</option>
           </select>
         </div>
-        {!loading && error == null && failedServers > 0 && (
-          <div className="mt-2 alert-warn text-[11px]" role="status">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-            <span>
-              Аккаунты {failedServers} сервер(ов) не загрузились (нет доступа
-              или сетевой сбой) — список может быть неполным.
-            </span>
-          </div>
-        )}
         {inventory.tracked && (
           <InventoryStatusBar
             tracked={inventory.tracked}
@@ -501,12 +468,11 @@ export function ServerUsers() {
               total={serverTotal}
               className="mx-3 mt-2"
             />
-            {truncatedServers > 0 && (
-              <div className="text-[11px] text-dim mt-1 mx-3">
-                На {truncatedServers} сервер(ах) аккаунтов больше лимита —
-                откройте вкладку «Аккаунты» нужного сервера для полного списка.
-              </div>
-            )}
+            <TruncationNotice
+              shown={allAccounts.length}
+              total={accountsTotal}
+              className="mx-3 mt-1"
+            />
           </>
         )}
       </div>
@@ -620,10 +586,6 @@ function AccountCreateModal({
       setErr("Укажите login.");
       return;
     }
-    if (serverIds.length === 0) {
-      setErr("Выберите хотя бы один сервер.");
-      return;
-    }
     const unixGroups = groups
       .split(",")
       .map((g) => g.trim())
@@ -695,8 +657,9 @@ function AccountCreateModal({
             <div className="modal-body flex flex-col gap-3">
               <Dialog.Description className="text-sm text-dim">
                 Заводит server_account в БД и привязывает к выбранным серверам.
-                OS-юзер на боксах не создаётся — для этого Provision в секции
-                «Серверы аккаунта».
+                Серверы можно не выбирать — тогда учётка заводится как хранимый
+                креден и привязывается к серверам позже. OS-юзер на боксах не
+                создаётся — для этого Provision в секции «Серверы аккаунта».
               </Dialog.Description>
 
               {err && <div className="alert-danger text-sm">{err}</div>}
@@ -715,7 +678,10 @@ function AccountCreateModal({
 
               <div className="flex flex-col gap-1 text-sm">
                 <span className="field-label flex items-center gap-1">
-                  <ServerIcon className="w-3.5 h-3.5" /> Серверы *
+                  <ServerIcon className="w-3.5 h-3.5" /> Серверы
+                  <span className="italic font-normal text-dim">
+                    необязательно
+                  </span>
                 </span>
                 {servers.length === 0 ? (
                   <div className="text-xs text-dim py-2">
@@ -838,7 +804,7 @@ function AccountCreateModal({
               <button
                 type="submit"
                 className="btn btn-primary flex items-center gap-1"
-                disabled={pending || !login.trim() || serverIds.length === 0}
+                disabled={pending || !login.trim()}
               >
                 <Plus className="w-4 h-4" />
                 {pending ? "Создаём…" : "Создать"}
@@ -894,7 +860,9 @@ function AccountRow({
           <div className="text-[11px] text-dim flex items-center gap-2">
             <ServerIcon className="w-3 h-3 shrink-0" />
             <span className="truncate">
-              {account.server_ids.map(serverName).join(", ") || "—"}
+              {account.server_ids.length > 0
+                ? account.server_ids.map(serverName).join(", ")
+                : "не привязан"}
             </span>
           </div>
         </div>
@@ -1075,7 +1043,9 @@ function AccountWorkzone({
               {account.login}
             </h1>
             <div className="text-[11px] text-dim truncate">
-              {account.server_ids.map(serverName).join(", ") || "—"}
+              {account.server_ids.length > 0
+                ? account.server_ids.map(serverName).join(", ")
+                : "не привязан"}
             </div>
           </div>
           {account.has_sudo && (
@@ -1173,7 +1143,9 @@ function AccountWorkzone({
                 k="серверы"
                 v={
                   <span className="break-words">
-                    {account.server_ids.map(serverName).join(", ") || "—"}
+                    {account.server_ids.length > 0
+                      ? account.server_ids.map(serverName).join(", ")
+                      : "не привязан"}
                   </span>
                 }
               />

@@ -5,8 +5,9 @@
   cross-dept server → 404 hidden, has_sudo требует grant_sudo,
   дубль (server_id, login) → 409 ACCOUNT_DUPLICATE,
   пароль шифруется и не возвращается в response;
-* GET / (list) — фильтрация по server_id, пагинация,
-  cross-dept → 404 hidden, без роли с view → 403;
+* GET / (list) — per-server (фильтрация по server_id, пагинация,
+  cross-dept → 404 hidden) и dept-wide без server_id (все аккаунты отдела,
+  включая unbound; dept-изоляция), без роли с view → 403;
 * GET /{id} — reader видит свой dept, cross-dept → 404,
   плейнтекст и password_encrypted никогда не в ответе;
 * PATCH /{id} — operator OK, reader → 403, cross-dept → 404,
@@ -171,6 +172,73 @@ class TestCreateAccount:
             aad=secrets_service.aad_for_server_account_password(row.id),
         )
         assert len(plain) >= 16
+
+    async def test_admin_creates_without_servers(
+        self, client, admin_token,
+    ):
+        """server_ids опущен → аккаунт заводится без привязок (хранимый креден)."""
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_token),
+            json={"login": "unbound", "password_b64": b64("s3cret-unbound")},
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["login"] == "unbound"
+        assert body["server_ids"] == []
+        assert "s3cret-unbound" not in resp.text
+
+    async def test_admin_creates_with_empty_server_list(
+        self, client, admin_token,
+    ):
+        """Пустой server_ids явно — то же, что и опущенный."""
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_token),
+            json={"server_ids": [], "login": "unbound2"},
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["server_ids"] == []
+
+    async def test_unbound_account_reveal_and_rotate(
+        self, client, admin_role_token_a, db,
+    ):
+        """Lifecycle unbound: create без серверов → reveal пароля → rotate → reveal."""
+        import base64
+
+        from src.models import ServerAccount
+        from src.services import secrets_service
+        from sqlalchemy import select
+
+        plaintext = "unbound-pwd-1"
+        create = await client.post(
+            BASE,
+            headers=_hdr(admin_role_token_a),
+            json={"login": "unbound3", "password_b64": b64(plaintext)},
+        )
+        assert create.status_code == 201, create.text
+        account_id = create.json()["id"]
+        assert create.json()["server_ids"] == []
+
+        get = await client.get(f"{BASE}/{account_id}", headers=_hdr(admin_role_token_a))
+        assert get.status_code == 200
+        assert base64.b64decode(get.json()["password_b64"]).decode("utf-8") == plaintext
+
+        rotate = await client.post(
+            f"{BASE}/{account_id}/rotate_password",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert rotate.status_code == 200, rotate.text
+
+        row = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == account_id)
+        )).scalar_one()
+        new_plain = secrets_service.decrypt(
+            row.password_encrypted,
+            aad=secrets_service.aad_for_server_account_password(row.id),
+        )
+        assert new_plain != plaintext
+        assert len(new_plain) >= 16
 
     async def test_reader_cannot_create(
         self, client, reader_token_a, make_server,
@@ -375,12 +443,6 @@ class TestListAccounts:
         assert body["total"] == 5
         assert len(body["items"]) == 2
 
-    async def test_list_requires_server_id_param(
-        self, client, reader_token_a,
-    ):
-        resp = await client.get(BASE, headers=_hdr(reader_token_a))
-        assert_error(resp, 422, "VALIDATION_ERROR")
-
     async def test_no_role_user_returns_403(
         self, client, no_role_token_a, make_server,
     ):
@@ -389,6 +451,93 @@ class TestListAccounts:
             BASE, headers=_hdr(no_role_token_a), params={"server_id": srv.id},
         )
         assert_error(resp, 403, "PERMISSION_DENIED")
+
+
+# ── GET / (dept-wide list, без server_id) ────────────────────────────────────
+
+class TestListDepartmentAccounts:
+    """`GET /server-accounts` без `server_id` — все аккаунты отдела, включая
+    unbound (0 привязок), которые per-server листинг не показывал."""
+
+    async def _create_unbound(self, client, token, login):
+        """Завести аккаунт без привязок через create-эндпоинт."""
+        resp = await client.post(
+            BASE,
+            headers=_hdr(token),
+            json={"login": login, "password_b64": b64("unbound-pwd-1")},
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()
+
+    async def test_lists_bound_and_unbound(
+        self, client, admin_token, reader_token_a, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        await make_account(server_id=srv.id, login="bound1")
+        await self._create_unbound(client, admin_token, "unbound1")
+        resp = await client.get(BASE, headers=_hdr(reader_token_a))
+        assert resp.status_code == 200
+        body = resp.json()
+        logins = {a["login"] for a in body["items"]}
+        assert {"bound1", "unbound1"} <= logins
+        assert body["total"] >= 2
+
+    async def test_unbound_account_has_empty_server_ids(
+        self, client, admin_token, reader_token_a,
+    ):
+        await self._create_unbound(client, admin_token, "unbound2")
+        resp = await client.get(BASE, headers=_hdr(reader_token_a))
+        assert resp.status_code == 200
+        item = next(a for a in resp.json()["items"] if a["login"] == "unbound2")
+        assert item["server_ids"] == []
+
+    async def test_dept_isolation(
+        self, client, reader_token_a, admin_token_b, make_server, make_account,
+    ):
+        # Аккаунт чужого отдела (dep_b) не должен попасть в dept-wide выдачу dep_a.
+        srv_b = await make_server(department_id="dep_b")
+        await make_account(server_id=srv_b.id, login="foreign")
+        await self._create_unbound(client, admin_token_b, "foreign-unbound")
+        resp = await client.get(BASE, headers=_hdr(reader_token_a))
+        assert resp.status_code == 200
+        logins = {a["login"] for a in resp.json()["items"]}
+        assert "foreign" not in logins
+        assert "foreign-unbound" not in logins
+
+    async def test_no_role_returns_403(self, client, no_role_token_a):
+        resp = await client.get(BASE, headers=_hdr(no_role_token_a))
+        assert_error(resp, 403, "PERMISSION_DENIED")
+
+    async def test_cursor_envelope_includes_unbound(
+        self, client, admin_token, reader_token_a, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        await make_account(server_id=srv.id, login="cur-bound")
+        await self._create_unbound(client, admin_token, "cur-unbound")
+        resp = await client.get(
+            BASE, headers=_hdr(reader_token_a), params={"cursor": "true"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "next_cursor" in body and "has_more" in body
+        logins = {a["login"] for a in body["items"]}
+        assert {"cur-bound", "cur-unbound"} <= logins
+
+    async def test_pagination(
+        self, client, admin_token, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        for i in range(5):
+            await make_account(server_id=srv.id, login=f"deptuser{i}")
+        resp = await client.get(
+            BASE, headers=_hdr(admin_token), params={"limit": 2, "offset": 1},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["limit"] == 2
+        assert body["offset"] == 1
+        assert body["total"] >= 5
+        assert len(body["items"]) == 2
 
 
 # ── GET /{id} ────────────────────────────────────────────────────────────────
@@ -1304,15 +1453,22 @@ class TestMultiServerCreate:
         assert resp.status_code == 201
         assert resp.json()["server_ids"] == [srv.id]
 
-    async def test_create_empty_server_ids_rejected(
+    async def test_create_empty_server_ids_creates_unbound(
         self, client, admin_token,
     ):
+        """Пустой server_ids разрешён — аккаунт заводится без привязок (unbound)."""
         resp = await client.post(
             BASE,
             headers=_hdr(admin_token),
-            json={"server_ids": [], "login": "x"},
+            json={"server_ids": [], "login": "x", "password_b64": b64("unbound-pw-1")},
         )
-        assert_error(resp, 422, "VALIDATION_ERROR")
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["login"] == "x"
+        assert body["server_ids"] == []
+        # Виден в dept-wide листинге (без server_id).
+        lst = await client.get(BASE, headers=_hdr(admin_token))
+        assert "x" in {a["login"] for a in lst.json()["items"]}
 
     async def test_create_cross_dept_server_in_list_404(
         self, client, operator_token_a, make_server,

@@ -93,10 +93,13 @@ def _to_response(
     "",
     response_model=ServerAccountResponse,
     status_code=201,
-    summary="Создать аккаунт сразу на нескольких серверах (пароль шифруется at-rest)",
+    summary="Создать аккаунт (опционально сразу на нескольких серверах; пароль шифруется at-rest)",
     description=(
         "Заводит OS-аккаунт и привязывает его к списку серверов `server_ids` "
-        "(≥1, все в одном department'е). Пароль общий на все серверы — либо "
+        "(0 или более, все в одном department'е). Пустой/опущенный список — "
+        "аккаунт заводится как хранимый креден без привязок; серверы добавляются "
+        "позже через `/server-accounts/{id}/servers`. Пароль общий на все "
+        "серверы — либо "
         "передаётся в body как `password_b64` (`base64.b64encode(plaintext)`), "
         "либо генерируется сервером (`secrets.token_urlsafe(32)`). Если "
         "передан — декодируется и проходит политику по plaintext; в любом "
@@ -241,11 +244,13 @@ async def remove_ignored_login(
         PaginatedResponse[ServerAccountResponse]
         | CursorPaginatedResponse[ServerAccountResponse]
     ),
-    summary="Список аккаунтов, привязанных к серверу",
+    summary="Список аккаунтов отдела (или привязанных к одному серверу)",
     description=(
-        "Принимает `server_id` query-параметром. Возвращает страницу аккаунтов, "
-        "привязанных к этому серверу, отсортированных по `created_at DESC`. "
-        "Cross-dept сервер скрыт за 404.\n\n"
+        "Без `server_id` возвращает все аккаунты отдела вызывающего, включая "
+        "не привязанные ни к одному серверу (хранимые кредены с 0 связок). С "
+        "`server_id` — страница аккаунтов, привязанных к этому серверу "
+        "(cross-dept сервер скрыт за 404). В обоих режимах сортировка по "
+        "`created_at DESC`.\n\n"
         "Два режима пагинации: cursor (рекомендуемый — `cursor=true` или "
         "`after=<token>`, envelope `{items, next_cursor, has_more}`) и legacy "
         "offset/limit (envelope `{items, total, limit, offset}`)."
@@ -254,25 +259,40 @@ async def remove_ignored_login(
         200: {"description": "Страница аккаунтов."},
         400: {"description": "INVALID_CURSOR — `after` не декодируется."},
         403: {"description": "Нет роли с `view`."},
-        404: {"description": "Сервер не найден / чужой dept."},
+        404: {"description": "Сервер не найден / чужой dept (только при заданном `server_id`)."},
     },
 )
 async def list_accounts(
     identity: CurrentUserIdentity,
-    server_id: str = Query(..., description="ID сервера, чьи аккаунты выбрать."),
+    server_id: str | None = Query(
+        default=None,
+        description=(
+            "ID сервера, чьи аккаунты выбрать. Если не задан — выдача по всему "
+            "отделу вызывающего (включая аккаунты без привязок)."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0, description="DEPRECATED — используйте cursor-пагинацию."),
     after: str | None = Query(default=None, description="Opaque cursor предыдущей страницы."),
     cursor: bool = Query(default=False, description="Включить cursor-envelope."),
 ) -> PaginatedResponse[ServerAccountResponse] | CursorPaginatedResponse[ServerAccountResponse]:
-    """List-эндпоинт. Доступ: `(server_account, *, view)`."""
+    """List-эндпоинт. Доступ: `(server_account, *, view)`.
+
+    `server_id` опционален: без него — dept-wide листинг (все аккаунты отдела,
+    включая unbound), с ним — прежний per-server режим без изменений.
+    """
     if cursor or after is not None:
         from src.utils.cursor import InvalidCursorError, to_bad_request
         try:
-            items, next_cursor, has_more = await svc.list_accounts_cursor(
-                db, identity, server_id, limit=limit, after=after,
-            )
+            if server_id is None:
+                items, next_cursor, has_more = await svc.list_department_accounts_cursor(
+                    db, identity, limit=limit, after=after,
+                )
+            else:
+                items, next_cursor, has_more = await svc.list_accounts_cursor(
+                    db, identity, server_id, limit=limit, after=after,
+                )
         except InvalidCursorError as exc:
             raise to_bad_request(exc) from exc
         return CursorPaginatedResponse[ServerAccountResponse](
@@ -280,9 +300,14 @@ async def list_accounts(
             next_cursor=next_cursor,
             has_more=has_more,
         )
-    items, total = await svc.list_accounts(
-        db, identity, server_id, limit=limit, offset=offset
-    )
+    if server_id is None:
+        items, total = await svc.list_department_accounts(
+            db, identity, limit=limit, offset=offset
+        )
+    else:
+        items, total = await svc.list_accounts(
+            db, identity, server_id, limit=limit, offset=offset
+        )
     return PaginatedResponse[ServerAccountResponse](
         items=[_to_response(i) for i in items],
         total=total,

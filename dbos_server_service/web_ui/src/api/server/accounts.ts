@@ -34,15 +34,13 @@ const BASE = "/server/v1";
 // ---------------------------------------------------------------------------
 
 /**
- * Параметры `GET /server-accounts`. Backend требует `server_id` (страница
- * аккаунтов привязанных к одному серверу). `scope` оставлен как опциональный
- * расширительный фильтр — пока backend его игнорирует, но wrapper уже
- * принимает (UI-фильтр «свой dept / cross-dept admin view»).
+ * Параметры `GET /server-accounts`. `server_id` опционален: с ним backend
+ * отдаёт аккаунты одного сервера (per-server режим), без него — все аккаунты
+ * отдела вызывающего, включая не привязанные ни к одному серверу (dept-wide).
  */
 export interface ListAccountsParams {
-  /** Backend требует обязательно (`Query(...)`) — без него 422. */
-  server_id: string;
-  scope?: "department" | "all" | string;
+  /** ID сервера. Опущен — dept-wide листинг (включая unbound-аккаунты). */
+  server_id?: string;
   limit?: number;
   offset?: number;
   /** Включить cursor-envelope (`{items,next_cursor,has_more}`). */
@@ -52,7 +50,7 @@ export interface ListAccountsParams {
 }
 
 /**
- * Список аккаунтов сервера.
+ * Список аккаунтов: одного сервера (`server_id`) либо всего отдела (без него).
  *
  * Backend возвращает либо offset-envelope (`{items,total,limit,offset}`),
  * либо cursor-envelope (`{items,next_cursor,has_more}`) — определяется
@@ -69,7 +67,6 @@ export function listAccounts(
   >(`${BASE}/server-accounts`, {
     query: {
       server_id: query.server_id,
-      scope: query.scope,
       limit: query.limit,
       offset: query.offset,
       cursor: query.cursor,

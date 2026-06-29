@@ -127,6 +127,69 @@ async def count_for_server(db: AsyncSession, server_id: str) -> int:
     return int((await db.execute(stmt)).scalar_one())
 
 
+async def list_in_department(
+    db: AsyncSession, department_id: str, limit: int = 100, offset: int = 0
+) -> list[ServerAccount]:
+    """Список всех аккаунтов отдела — упорядочен по created_at DESC.
+
+    В отличие от `list_for_server`, не джойнит `server_account_servers`, а
+    фильтрует прямо по `ServerAccount.department_id`. Поэтому в выдачу попадают
+    и аккаунты без единой привязки (хранимые кредены с 0 связок), которые
+    per-server листинг показать не может.
+    """
+    stmt = (
+        select(ServerAccount)
+        .where(ServerAccount.department_id == department_id)
+        .order_by(ServerAccount.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def list_in_department_after(
+    db: AsyncSession,
+    department_id: str,
+    *,
+    limit: int,
+    after_created_at: datetime | None,
+    after_id: str | None,
+) -> list[ServerAccount]:
+    """Keyset-страница аккаунтов отдела по `(created_at DESC, id DESC)`.
+
+    Dept-wide аналог `list_for_server_after`: тот же keyset на паре
+    (created_at, id) против пропусков/дублей на одинаковых timestamp'ах, но
+    фильтр идёт по `department_id` (без джойна на связки), поэтому unbound-
+    аккаунты не теряются.
+    """
+    stmt = (
+        select(ServerAccount)
+        .where(ServerAccount.department_id == department_id)
+        .order_by(ServerAccount.created_at.desc(), ServerAccount.id.desc())
+        .limit(limit)
+    )
+    if after_created_at is not None and after_id is not None:
+        stmt = stmt.where(
+            or_(
+                ServerAccount.created_at < after_created_at,
+                and_(
+                    ServerAccount.created_at == after_created_at,
+                    ServerAccount.id < after_id,
+                ),
+            )
+        )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def count_in_department(db: AsyncSession, department_id: str) -> int:
+    """COUNT всех аккаунтов отдела (для offset-пагинации dept-wide листинга)."""
+    stmt = (
+        select(func.count(ServerAccount.id))
+        .where(ServerAccount.department_id == department_id)
+    )
+    return int((await db.execute(stmt)).scalar_one())
+
+
 async def create(db: AsyncSession, data: dict, server_ids: list[str]) -> ServerAccount:
     """INSERT строки аккаунта + связок на каждый сервер. commit — на caller'е."""
     obj = ServerAccount(**data)

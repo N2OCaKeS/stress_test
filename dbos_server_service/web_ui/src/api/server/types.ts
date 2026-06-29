@@ -384,7 +384,12 @@ export interface ServerAccount {
 
 /** Тело POST /server-accounts. */
 export interface ServerAccountCreateRequest {
-  server_ids: string[];
+  /**
+   * Серверы для привязки. Можно не передавать или передать пустой массив —
+   * тогда аккаунт заводится без привязок (хранимый креден), серверы
+   * добавляются позже через linkAccountServers.
+   */
+  server_ids?: string[];
   login: string;
   /**
    * base64(plaintext). Если не задан — backend сгенерирует

@@ -64,7 +64,7 @@ readonly RAND_S2S_KEY_LEN=48         # *_SERVICE_API_KEY*, *_INTROSPECT_*, WORKE
 readonly RAND_INTROSPECT_KEY_LEN=48  # *_INTROSPECT_SERVICE_API_KEY (тот же тип)
 readonly RAND_ADMIN_PASS_LEN=16      # INITIAL_ADMIN_PASSWORD (короткий — оператор печатает)
 readonly RAND_AUTH_SECRET_LEN=64     # AUTH_SECRET_KEY (JWT signing)
-readonly RAND_MASTER_KEY_BYTES=32    # openssl rand -base64 32 → ~43 alnum
+readonly RAND_MASTER_KEY_BYTES=32    # openssl rand -base64 32 → 44-char padded base64
 readonly RAND_HKDF_SALT_BYTES=16     # openssl rand -hex 16
 
 # ── Парсинг флагов ────────────────────────────────────────────────────────────
@@ -314,7 +314,7 @@ rand() {
     local n=$1
     LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c "$n" || true
 }
-rand_b64() { openssl rand -base64 "$1" | tr -d '\n='; }
+rand_b64() { openssl rand -base64 "$1" | tr -d '\n'; }
 rand_hex() { openssl rand -hex "$1"; }
 
 # Postgres credentials (per-service)

@@ -221,7 +221,7 @@ do_rotate() {
     fi
 
     new_ver=$((cur_ver + 1))
-    new_key=$(openssl rand -base64 32 | tr -d '\n=')
+    new_key=$(openssl rand -base64 32 | tr -d '\n')
 
     local ts summary_out now_epoch
     ts="$(date -u +%Y%m%dT%H%M%SZ)"

@@ -214,7 +214,7 @@ do_rotate() {
     max_ver="$(keystore_versions | tail -n1)"
     [[ -z "$max_ver" ]] && max_ver="$cur_ver"
     new_ver=$((max_ver + 1))
-    new_key=$(openssl rand -base64 32 | tr -d '\n=')
+    new_key=$(openssl rand -base64 32 | tr -d '\n')
 
     local ts summary_out
     ts="$(date -u +%Y%m%dT%H%M%SZ)"

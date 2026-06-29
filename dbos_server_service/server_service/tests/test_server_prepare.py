@@ -145,10 +145,15 @@ class TestPrepareDispatch:
         assert creds_key.startswith("dbos:prepare_creds:")
         assert call["payload"]["target_department_id"] == "dep_a"
         # base64 декодирован и креды ушли в Redis-store под этот ключ.
-        assert call["stored_creds"] == {
-            "bootstrap_login": "bootadmin",
-            "bootstrap_password": "Boot1234!StrongPwd",
-        }
+        stored = call["stored_creds"]
+        assert stored["bootstrap_login"] == "bootadmin"
+        assert stored["bootstrap_password"] == "Boot1234!StrongPwd"
+        # Рядом с bootstrap-кредами prepare кладёт per-server управляющие
+        # креды (#3) под `mgmt_install` для bootstrap'а воркером.
+        assert stored["mgmt_install"]["management_user"] == "dbos"
+        assert stored["mgmt_install"]["public_key"].startswith("ssh-ed25519 ")
+        assert "PRIVATE KEY" in stored["mgmt_install"]["private_key"]
+        assert stored["mgmt_install"]["password"]
 
     async def test_payload_carries_management_config(
         self, client, operator_token_a, make_server, captured_dispatch,
@@ -683,11 +688,12 @@ class TestPrepareDispatch:
         )
         assert resp.status_code == 202, resp.text
         call = captured_dispatch[0]
-        assert call["stored_creds"] == {
-            "bootstrap_login": "bootadmin",
-            "bootstrap_password": "Boot1234!StrongPwd",
-            "bootstrap_ssh_private_key": "-----BEGIN KEY-----\nabc\n-----END KEY-----",
-        }
+        stored = call["stored_creds"]
+        assert stored["bootstrap_login"] == "bootadmin"
+        assert stored["bootstrap_password"] == "Boot1234!StrongPwd"
+        assert stored["bootstrap_ssh_private_key"] == "-----BEGIN KEY-----\nabc\n-----END KEY-----"
+        # Per-server управляющие креды (#3) едут рядом под `mgmt_install`.
+        assert stored["mgmt_install"]["management_user"] == "dbos"
 
     # ── Валидация режима ──────────────────────────────────────────────────
 

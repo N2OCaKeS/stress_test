@@ -88,6 +88,11 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
         "через internal endpoint."
     ),
     Action.ROTATE_CREDENTIALS: "Ротация пароля BMC.",
+    Action.VIEW_MANAGEMENT_CREDENTIALS: (
+        "Получить расшифрованные управляющие креды сервера (приватный SSH-ключ "
+        "и пароль пользователя dbos) воркеру через internal endpoint. Воркер "
+        "тянет их перед каждой managed-операцией."
+    ),
     Action.PERMISSION_GRANT: "Выдать роли действие, добавив строку матрицы.",
     Action.PERMISSION_REVOKE: "Отозвать у роли действие.",
     Action.PROVISION: (
@@ -124,6 +129,9 @@ SENSITIVE_ACTIONS: frozenset[str] = frozenset({
     Action.CONSOLE,
     # Изменение состава пакетов на боксе под sudo — деструктив на сервере.
     Action.MANAGE_PACKAGES,
+    # Раскрытие управляющего приватного ключа и пароля сервера — широкий доступ
+    # к боксу под sudo.
+    Action.VIEW_MANAGEMENT_CREDENTIALS,
 })
 
 # Служебные гранты воркера: callback'и через internal endpoint'ы. Людям в норме

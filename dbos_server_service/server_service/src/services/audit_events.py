@@ -45,6 +45,10 @@ SERVICE_EVENTS = [
     {"action": "server.prepare", "description": "Server management bootstrap dispatched to worker (server.prepare; useradd management user + authorized_keys)", "default_severity": "CRITICAL"},
     {"action": "server.prepared", "description": "Worker confirmed server management bootstrap completed (callback marks is_managed)", "default_severity": "CRITICAL"},
     {"action": "server_account.bootstrap_resolved", "description": "Linked server account credentials decrypted to bootstrap server.prepare (account-mode prepare instead of manual creds)", "default_severity": "CRITICAL"},
+    # Per-server управляющие креды (#3): генерация на prepare, ротация, раскрытие воркеру.
+    {"action": "server.management_creds_generated", "description": "Per-server management credentials (Ed25519 key + dbos password) generated and stored on server.prepare dispatch (first generation; sticky reuse does not emit)", "default_severity": "CRITICAL"},
+    {"action": "server.management_creds_rotated", "description": "Per-server management credentials rotated: (a) POST /servers/{id}/management-credentials/rotate dispatch; (b) worker applied-callback (pending cleared, previous zeroed, rotated_at set)", "default_severity": "CRITICAL"},
+    {"action": "server.management_credentials_revealed", "description": "Decrypted per-server management credentials (private key + dbos password) revealed to worker via internal fetch. WARNING: routine internal pull before managed ops, not a human reveal. failure: reason in {server_not_found, no_creds_stored, decrypt_failed}", "default_severity": "WARNING"},
     # Sensitive: показ расшифрованных секретов (internal endpoints для worker'а)
     {"action": "ipmi_controller.view_credentials", "description": "Decrypted IPMI credentials revealed (internal)", "default_severity": "WARNING"},
     {"action": "ipmi_controller.credentials_revealed", "description": "Decrypted IPMI password revealed to user (base64) via GET ipmi card with view_credentials", "default_severity": "CRITICAL"},

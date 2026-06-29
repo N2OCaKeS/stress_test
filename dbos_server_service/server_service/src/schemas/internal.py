@@ -26,6 +26,27 @@ class AccountPasswordResponse(BaseModel):
     password: str = Field(description="Расшифрованный пароль (plaintext, только worker'у).")
 
 
+class ManagementCredentialsResponse(BaseModel):
+    """Ответ GET /internal/.../management/credentials. Per-server управляющие креды (#3)."""
+
+    management_user: str | None = Field(
+        description="Имя управляющего пользователя (dbos) на сервере. None — сервер ещё не prepared.",
+    )
+    ssh_private_key: str = Field(
+        description="Расшифрованный приватный SSH-ключ управляющего пользователя (PEM, только worker'у).",
+    )
+    password: str = Field(
+        description="Расшифрованный пароль управляющего пользователя (plaintext, только worker'у; sudo -S / console).",
+    )
+
+
+class ManagementCredsAppliedResponse(BaseModel):
+    """Ответ applied-callback'а ротации управляющих кред."""
+
+    ok: bool = True
+    rotated_at: str = Field(description="ISO-8601 UTC момент подтверждения применения на боксе.")
+
+
 class PasswordRotateRequest(BaseModel):
     """Тело POST /internal/.../accounts/{id}/password/rotate — новый пароль от worker'а."""
 

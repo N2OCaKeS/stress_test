@@ -260,12 +260,13 @@ class TestWorkerBotGrantsGlobalSeedPreserved:
         plus 2 callback grants (server:inventory_submit для hardware-инвентаризации
         и server_account:inventory_submit для инвентаризации OS-пользователей)
         плюс server_account:provision_on_host для статус-callback'а useradd/usermod/userdel
-        плюс server:prepare_callback для callback'а бутстрапа управления.
+        плюс server:prepare_callback для callback'а бутстрапа управления
+        плюс server:view_management_credentials для fetch'а per-server управляющих кред.
         """
         rows = (await db.execute(
             select(EntityPermission).where(EntityPermission.role == "worker_bot")
         )).scalars().all()
-        assert len(rows) == 8
+        assert len(rows) == 9
         for r in rows:
             assert r.department_id is None, (
                 f"worker_bot grant {(r.entity_type, r.action)} must be system-wide"
@@ -280,6 +281,7 @@ class TestWorkerBotGrantsGlobalSeedPreserved:
             ("server_account", "inventory_submit"),
             ("server_account", "provision_on_host"),
             ("server", "prepare_callback"),
+            ("server", "view_management_credentials"),
         }
         got = {(r.entity_type, r.action) for r in rows}
         assert got == expected

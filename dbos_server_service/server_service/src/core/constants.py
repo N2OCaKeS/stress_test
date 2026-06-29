@@ -181,6 +181,10 @@ class Action(StrEnum):
     ROTATE_PASSWORD = "rotate_password"
     VIEW_CREDENTIALS = "view_credentials"
     ROTATE_CREDENTIALS = "rotate_credentials"
+    # Раскрытие per-server управляющих кред (privkey + пароль пользователя dbos)
+    # воркеру через internal endpoint. Узкий least-privilege грант worker_bot'а:
+    # воркер тянет рабочий на боксе ключ перед каждой managed-операцией.
+    VIEW_MANAGEMENT_CREDENTIALS = "view_management_credentials"
 
     # Server-account specific
     GRANT_SUDO = "grant_sudo"
@@ -231,6 +235,9 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.VIEW_DRIFT,
         # Массовое изменение пакетов на боксе (install/remove/update).
         Action.MANAGE_PACKAGES,
+        # worker_bot тянет per-server управляющие креды (privkey+пароль dbos)
+        # через internal endpoint перед каждой managed-операцией.
+        Action.VIEW_MANAGEMENT_CREDENTIALS,
     }),
     EntityType.SERVER_ACCOUNT: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,

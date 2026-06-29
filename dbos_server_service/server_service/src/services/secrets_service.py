@@ -160,6 +160,26 @@ def aad_for_server_account_ssh_key(account_id: str) -> bytes:
     return f"server_account_ssh_key|server_accounts|{account_id}".encode()
 
 
+def aad_for_server_mgmt_ssh_key(server_id: str) -> bytes:
+    """AAD для `servers.mgmt_ssh_private_key_encrypted` строки `server_id`.
+
+    Формат — `"server_mgmt_ssh_key|servers|<id>"`. Привязывает ciphertext к
+    конкретному серверу: swap приватного ключа в другую строку → InvalidTag.
+    Отдельный kind от mgmt-пароля, чтобы swap privkey↔password в одной строке
+    тоже отбивался.
+    """
+    return f"server_mgmt_ssh_key|servers|{server_id}".encode()
+
+
+def aad_for_server_mgmt_password(server_id: str) -> bytes:
+    """AAD для `servers.mgmt_password_encrypted` строки `server_id`.
+
+    Формат — `"server_mgmt_password|servers|<id>"`. Привязывает ciphertext к
+    конкретному серверу: swap → InvalidTag.
+    """
+    return f"server_mgmt_password|servers|{server_id}".encode()
+
+
 def aad_for_ipmi_credential(controller_id: str) -> bytes:
     """AAD для `ipmi_controllers.password_encrypted` строки `controller_id`.
 
@@ -314,6 +334,8 @@ _ALLOWED_LAZY_TARGETS: frozenset[tuple[str, str]] = frozenset({
     ("server_accounts", "password_encrypted"),
     ("server_accounts", "ssh_private_key_encrypted"),
     ("ipmi_controllers", "password_encrypted"),
+    ("servers", "mgmt_ssh_private_key_encrypted"),
+    ("servers", "mgmt_password_encrypted"),
 })
 
 

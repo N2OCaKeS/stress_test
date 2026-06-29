@@ -34,15 +34,16 @@ class TestWorkerBotGrantCount:
         ("server", "inventory_submit"),
         ("server_account", "provision_on_host"),
         ("server", "prepare_callback"),
+        ("server", "view_management_credentials"),
     })
 
-    async def test_worker_bot_has_exactly_8_grants(
+    async def test_worker_bot_has_exactly_9_grants(
         self, client, admin_token,
     ):
         resp = await client.get(f"{BASE}?role=worker_bot", headers=_hdr(admin_token))
         assert resp.status_code == 200
         rows = resp.json()["items"]
-        assert len(rows) == 8, f"expected 8 worker_bot grants, got {len(rows)}: {rows}"
+        assert len(rows) == 9, f"expected 9 worker_bot grants, got {len(rows)}: {rows}"
 
     async def test_worker_bot_grants_match_expected_set(
         self, client, admin_token,

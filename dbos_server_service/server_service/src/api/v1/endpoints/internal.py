@@ -54,6 +54,8 @@ from src.schemas.internal import (
     IpmiCredentialsResponse,
     IpmiCredentialsRotatedRequest,
     IpmiCredentialsRotatedResponse,
+    ManagementCredentialsResponse,
+    ManagementCredsAppliedResponse,
     PasswordRotateRequest,
     PasswordRotateResponse,
     ProvisionStatusRequest,
@@ -188,6 +190,67 @@ async def rotate_account_password(
         target_department_id=x_target_department_id,
     )
     return PasswordRotateResponse(**data)
+
+
+@router.get(
+    "/servers/{server_id}/management/credentials",
+    response_model=ManagementCredentialsResponse,
+    responses={**_INTERNAL_RESPONSES_BASE,
+               404: {"description": "SERVER_NOT_FOUND / MANAGEMENT_CREDS_NOT_FOUND (сервер не prepared)."},
+               422: {"description": "DECRYPT_FAILED — сломанный/неаутентичный ciphertext."},
+               500: {"description": "ENCRYPTION_KEY_MISSING."}},
+)
+async def get_management_credentials(
+    server_id: str,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> ManagementCredentialsResponse:
+    """Отдать расшифрованные per-server управляющие креды для server_worker (#3).
+
+    Что делает: проверяет `view_management_credentials` на SERVER, читает
+    `servers.mgmt_ssh_private_key_encrypted` + `mgmt_password_encrypted`,
+    расшифровывает и возвращает `{management_user, ssh_private_key, password}`.
+    Пока `mgmt_creds_pending_apply=True` и есть previous-материал — отдаёт его
+    (рабочий на боксе), иначе текущий.
+
+    Доступ: `(server, *, view_management_credentials)`. Worker_bot роль.
+
+    Аудит: `server.management_credentials_revealed` (WARNING на success).
+    """
+    data = await internal_service.fetch_management_credentials(
+        db, identity, server_id,
+        target_department_id=x_target_department_id,
+    )
+    return ManagementCredentialsResponse(**data)
+
+
+@router.post(
+    "/servers/{server_id}/management-credentials/applied",
+    response_model=ManagementCredsAppliedResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def record_management_creds_applied(
+    server_id: str,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> ManagementCredsAppliedResponse:
+    """Worker сообщает, что новые управляющие креды применены на боксе (rotate, #3).
+
+    server_service снимает `mgmt_creds_pending_apply`, зануляет previous-зеркала
+    и проставляет `mgmt_creds_rotated_at`. С этого момента fetch отдаёт текущий
+    материал.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `server.management_creds_rotated` (CRITICAL).
+    """
+    data = await internal_service.confirm_management_creds_applied(
+        db, identity, server_id,
+        target_department_id=x_target_department_id,
+    )
+    return ManagementCredsAppliedResponse(**data)
 
 
 # ── Worker → server_service callbacks ───────────────────────────────────────

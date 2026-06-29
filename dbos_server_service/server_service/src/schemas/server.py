@@ -558,6 +558,13 @@ class ServerPrepareResponse(BaseModel):
     status: str = Field(description="Статус: queued.")
 
 
+class ServerManagementCredsRotateResponse(BaseModel):
+    """Ответ на dispatch `server.rotate_management_creds` — task_id ротации (#3)."""
+
+    task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
+    status: str = Field(description="Статус: queued.")
+
+
 class ServerPrepareBulkItem(BaseModel):
     """Один сервер в массовом prepare — server_id + ручные bootstrap-креды.
 

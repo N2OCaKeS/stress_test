@@ -74,6 +74,7 @@ from src.api.v1.endpoints._dispatch import dispatch_server_ssh_task
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import server_account as account_repo
 from src.schemas.server import (
+    ServerManagementCredsRotateResponse,
     ServerPowerStatusDispatchResponse,
     ServerPrepareBulkRequest,
     ServerPrepareBulkResponse,
@@ -90,6 +91,7 @@ from src.schemas.server_account import (
 )
 from src.services import (
     audit_service,
+    management_creds as management_creds_svc,
     management_user_config as management_user_config_svc,
     permissions,
     reservation,
@@ -1551,6 +1553,26 @@ async def _prepare_resolve_and_dispatch(
     if linked_accounts_payload:
         bootstrap_creds["linked_accounts"] = linked_accounts_payload
 
+    # Управляющий конфиг для воркера: имя учётки + пер-режимные группы/команды.
+    # Резолвим ДО store_prepare_creds — имя управляющего пользователя нужно и
+    # для mgmt_install-stash'а ниже, и для payload'а.
+    mgmt_cfg = await management_user_config_svc.get_config(db)
+
+    # Per-server управляющие креды (#3): генерим (или переиспользуем sticky)
+    # пару+пароль пользователя dbos и кладём в тот же bootstrap-stash под
+    # `mgmt_install`. Шифрованный материал сохраняется в БД в этой же
+    # транзакции (commit вместе с dispatch'ем), воркер получает plaintext
+    # транзиентно из Redis для bootstrap'а (authorized_keys + chpasswd).
+    _, mgmt_creds, mgmt_generated = await management_creds_svc.ensure_management_credentials(
+        db, server,
+    )
+    bootstrap_creds["mgmt_install"] = {
+        "management_user": mgmt_cfg.login,
+        "public_key": mgmt_creds["public_key"],
+        "private_key": mgmt_creds["private_key"],
+        "password": mgmt_creds["password"],
+    }
+
     # Креды НЕ кладём в task-payload (иначе plaintext осел бы в worker-БД).
     # Пишем их в Redis под одноразовый ключ с TTL, в payload — только ссылка.
     # Воркер читает креды по ссылке на каждой попытке, TTL чистит их сам.
@@ -1590,12 +1612,10 @@ async def _prepare_resolve_and_dispatch(
             message="Failed to stash bootstrap credentials before dispatch",
         ) from exc
 
-    # Управляющий конфиг для воркера: имя учётки + пер-режимные группы/команды.
-    # Источник истины — ManagementUserConfig (singleton). Детект редакции
-    # происходит на боксе, поэтому отдаём конфиг по всем четырём режимам, а
-    # воркер выберет нужный после детекта. login фоллбэчится на env-дефолт
-    # воркера, если в БД его нет (get_config вернёт DEFAULT_LOGIN).
-    mgmt_cfg = await management_user_config_svc.get_config(db)
+    # Управляющий конфиг (`mgmt_cfg`) уже резолвлен выше (до store). Источник
+    # истины — ManagementUserConfig (singleton). Детект редакции происходит на
+    # боксе, поэтому отдаём конфиг по всем четырём режимам, воркер выберет нужный
+    # после детекта. login фоллбэчится на env-дефолт воркера, если в БД его нет.
     management_modes = {
         mode.value: cfg.model_dump(mode="json")
         for mode, cfg in mgmt_cfg.modes.items()
@@ -1656,6 +1676,21 @@ async def _prepare_resolve_and_dispatch(
     if idempotent_hit:
         await worker_client.delete_prepare_creds(creds_key)
 
+    # Per-server управляющие креды сгенерированы в этом вызове (#3) — отдельный
+    # CRITICAL-аудит, чтобы факт первой генерации был виден в SIEM рядом с
+    # dispatch'ем prepare. Sticky-reuse (повторный prepare) его не эмитит.
+    if mgmt_generated:
+        audit_service.emit(
+            "server.management_creds_generated",
+            target_id=server_id, target_type="server",
+            status="success", allowed=True,
+            details={
+                "management_user": mgmt_cfg.login,
+                "department_id": server.department_id,
+                "regenerated": False,
+            },
+        )
+
     audit_service.emit(
         audit_action, target_id=server_id, target_type="server",
         status="success", allowed=True,
@@ -1667,6 +1702,223 @@ async def _prepare_resolve_and_dispatch(
         },
     )
     return task_id
+
+
+# ── /servers/{id}/management-credentials/rotate — ротация per-server кред ────
+
+
+@router_servers.post(
+    "/management-credentials/rotate",
+    response_model=ServerManagementCredsRotateResponse,
+    status_code=202,
+    summary="Ротация per-server управляющих кред через worker (202)",
+    description=(
+        "Публикует задачу `server.rotate_management_creds`. server_service "
+        "генерит новую Ed25519-пару + пароль управляющего пользователя, "
+        "переносит текущий ciphertext в `previous_mgmt_*` (анти-локаут), пишет "
+        "новый в `mgmt_*`, ставит `mgmt_creds_pending_apply=True` и кладёт "
+        "новый материал в Redis-stash под `creds_stash_key`. Worker заходит "
+        "ДЕЙСТВУЮЩИМ ключом (fetch отдаёт previous, пока pending), ставит новый "
+        "pubkey + chpasswd, проверяет вход новым ключом, затем POST'ит "
+        "`/internal/.../management-credentials/applied` — server_service снимает "
+        "pending и зануляет previous.\n\n"
+        "Доступ: `(server, *, update)` — тот же гейт, что у prepare. Сервер "
+        "обязан быть prepared (`is_managed`). Аудит — CRITICAL."
+    ),
+    responses={
+        202: {"description": "Задача принята, возвращается task_id."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
+        403: {"description": "Нет роли с `update` либо чужой department."},
+        404: {"description": "Сервер не найден / чужой dept (скрыто за 404)."},
+        409: {"description": "SERVER_DECOMMISSIONED / PREPARE_REQUIRED (сервер не prepared) / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
+        503: {"description": "Worker недоступен — WORKER_REDIS_UNAVAILABLE (Redis-stash) или WORKER_UNREACHABLE / WORKER_REDIS_NOT_CONFIGURED."},
+    },
+)
+async def server_rotate_management_credentials_dispatch(
+    request: Request,
+    server_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> ServerManagementCredsRotateResponse:
+    """Ставит `server.rotate_management_creds` в очередь worker'а (#3).
+
+    Доступ: `(server, *, update)`. Связано:
+    `services/management_creds.py::rotate_management_credentials`,
+    `server_worker` (worker-task — отдельная волна).
+    """
+    audit_action = "server.management_creds_rotated"
+    task_kind = "server.rotate_management_creds"
+
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+        identity=identity,
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
+
+    try:
+        server = await server_svc.get_server(db, identity, server_id)
+    except (NotFoundError, AuthorizationError) as exc:
+        if isinstance(exc, NotFoundError):
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept"},
+            )
+        else:
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="denied", allowed=False,
+                details={"reason": "no_view_permission"},
+            )
+        raise
+
+    if server.status == ServerStatus.DECOMMISSIONED:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "decommissioned"},
+        )
+        raise ConflictError(
+            error_code="SERVER_DECOMMISSIONED",
+            message="Server is decommissioned and cannot accept worker operations",
+        )
+
+    # Ротация имеет смысл только на подготовленном сервере: на неуправляемом
+    # ещё нет ни ключа, ни управляющего пользователя — сначала prepare.
+    if not server.is_managed:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "prepare_required", "department_id": server.department_id},
+        )
+        raise ConflictError(
+            error_code="PREPARE_REQUIRED",
+            message=(
+                "Server is not prepared for management; run POST "
+                "/servers/{id}/prepare before rotating management credentials"
+            ),
+        )
+
+    idempotency_key = read_idempotency_key(request)
+
+    # Генерация нового материала + dispatch в одном savepoint'е: либо коммитим
+    # обе мутации после успешного dispatch'а, либо роллбэчим. Свежий ciphertext
+    # без доехавшей задачи оставил бы pending_apply=True навсегда и разъезд
+    # БД↔бокс. До подтверждения fetch отдаёт previous, поэтому SSH не рвётся.
+    creds_sp = await db.begin_nested()
+    new_creds = await management_creds_svc.rotate_management_credentials(db, server)
+    stash_key = worker_client.dispatch_creds_key(dispatch_creds_id())
+    try:
+        await worker_client.store_dispatch_creds(
+            stash_key,
+            {
+                "new_public_key": new_creds["public_key"],
+                "new_private_key": new_creds["private_key"],
+                "new_password": new_creds["password"],
+                "management_user": server.management_user,
+            },
+        )
+    except ServiceUnavailableError:
+        await creds_sp.rollback()
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "creds_store_unavailable",
+                "task_kind": task_kind,
+                "department_id": server.department_id,
+            },
+        )
+        raise
+    except Exception as exc:
+        await worker_client.delete_dispatch_creds(stash_key)
+        await creds_sp.rollback()
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "creds_store_failed",
+                "task_kind": task_kind,
+                "department_id": server.department_id,
+                "error_class": type(exc).__name__,
+            },
+        )
+        raise ServiceUnavailableError(
+            error_code="WORKER_REDIS_UNAVAILABLE",
+            message="Failed to stash rotation credentials before dispatch",
+        ) from exc
+
+    payload: dict = {
+        "server_id": server.id,
+        "target_department_id": server.department_id,
+        "host": server.hostname,
+        "ssh_port": server.ssh_port,
+        "is_managed": server.is_managed,
+        "management_user": server.management_user,
+        "creds_stash_key": stash_key,
+    }
+    dispatch_ok = False
+    idempotent_hit = False
+    try:
+        try:
+            task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+                db=db,
+                task_kind=task_kind,
+                target_server_id=server.id,
+                payload=payload,
+                created_by=identity.user_id,
+                request_id=getattr(request.state, "request_id", None),
+                idempotency_key=idempotency_key,
+            )
+            dispatch_ok = True
+        except ConflictError:
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={
+                    "reason": "idempotent_conflict",
+                    "task_kind": task_kind,
+                    "department_id": server.department_id,
+                },
+            )
+            raise
+        except ServiceUnavailableError:
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={
+                    "reason": "worker_unreachable",
+                    "task_kind": task_kind,
+                    "department_id": server.department_id,
+                },
+            )
+            raise
+    finally:
+        if not dispatch_ok:
+            await worker_client.delete_dispatch_creds(stash_key)
+            await creds_sp.rollback()
+    # Idempotent-hit на race-пути: оригинальная task несёт свой stash, нашу
+    # свежую ротацию коммитить нельзя (БД хранила бы NEW, бокс — OLD).
+    if idempotent_hit:
+        await worker_client.delete_dispatch_creds(stash_key)
+        await creds_sp.rollback()
+    else:
+        await creds_sp.commit()
+    await db.commit()
+    audit_service.emit(
+        audit_action, target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "task_id": task_id,
+            "task_kind": task_kind,
+            "department_id": server.department_id,
+            "idempotent_hit": idempotent_hit,
+        },
+    )
+    return ServerManagementCredsRotateResponse(task_id=task_id, status="queued")
 
 
 # ── /servers/prepare/bulk — массовый онбординг ──────────────────────────────

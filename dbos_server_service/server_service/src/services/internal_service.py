@@ -665,6 +665,197 @@ async def rotate_account_password(
     return {"ok": True, "rotated_at": updated.password_rotated_at.isoformat()}
 
 
+async def fetch_management_credentials(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+    target_department_id: str | None = None,
+) -> dict:
+    """Расшифровать и вернуть per-server управляющие креды воркеру (#3).
+
+    Воркер just-in-time тянет приватный ключ + пароль пользователя `dbos`
+    перед каждой managed-операцией (паттерн `fetch_account_password`).
+
+    Инвариант анти-локаута: пока `mgmt_creds_pending_apply=True` и есть
+    previous-материал — отдаём previous (рабочий на боксе), а не свежий
+    ciphertext. После applied/prepared-callback'а (pending снят) — текущий.
+
+    Доступ: `(server, *, view_management_credentials)` — узкий грант worker_bot'а.
+    Аудит: `server.management_credentials_revealed` (WARNING на success —
+    штатный internal pull, не утечка человеку).
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.VIEW_MANAGEMENT_CREDENTIALS,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server.management_credentials_revealed",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={
+                "reason": "permission_denied",
+                "caller_type": identity.subject_type,
+            },
+        )
+        raise
+    server = await server_repo.get_by_id(db, server_id)
+    if server is None:
+        audit_service.emit(
+            "server.management_credentials_revealed",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found"},
+        )
+        raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
+    _check_target_department_for_server(
+        audit_action="server.management_credentials_revealed",
+        target_id=server_id,
+        server_department_id=server.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+    )
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.fetch_management_credentials",
+            identity=identity,
+            target_id=server_id,
+            target_type="server",
+        )
+    if server.mgmt_ssh_private_key_encrypted is None or server.mgmt_password_encrypted is None:
+        audit_service.emit(
+            "server.management_credentials_revealed",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "no_creds_stored", "department_id": server.department_id},
+        )
+        raise NotFoundError(
+            error_code="MANAGEMENT_CREDS_NOT_FOUND",
+            message="Server has no stored management credentials (not prepared yet)",
+        )
+
+    # Пока новый материал не подтверждён на боксе — отдаём previous (рабочий).
+    use_previous = (
+        server.mgmt_creds_pending_apply
+        and server.previous_mgmt_ssh_private_key_encrypted is not None
+        and server.previous_mgmt_password_encrypted is not None
+    )
+    if use_previous:
+        ssh_blob = server.previous_mgmt_ssh_private_key_encrypted
+        pwd_blob = server.previous_mgmt_password_encrypted
+        source = "previous"
+    else:
+        ssh_blob = server.mgmt_ssh_private_key_encrypted
+        pwd_blob = server.mgmt_password_encrypted
+        source = "current"
+
+    aad_ssh = secrets_service.aad_for_server_mgmt_ssh_key(server.id)
+    aad_pwd = secrets_service.aad_for_server_mgmt_password(server.id)
+    try:
+        private_pem = secrets_service.decrypt(ssh_blob, aad=aad_ssh)
+        password = secrets_service.decrypt(pwd_blob, aad=aad_pwd)
+    except AppException:
+        metrics.increment_secrets_decrypt_failures()
+        audit_service.emit(
+            "server.management_credentials_revealed",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "decrypt_failed",
+                "department_id": server.department_id,
+                "caller_type": identity.subject_type,
+            },
+        )
+        raise
+    audit_service.emit(
+        "server.management_credentials_revealed",
+        target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "department_id": server.department_id,
+            "management_user": server.management_user,
+            "source": source,
+            "caller_type": identity.subject_type,
+        },
+    )
+    return {
+        "management_user": server.management_user,
+        "ssh_private_key": private_pem,
+        "password": password,
+    }
+
+
+async def confirm_management_creds_applied(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+    target_department_id: str | None = None,
+) -> dict:
+    """Callback воркера: новые управляющие креды применены на боксе (rotate, #3).
+
+    Снимает `mgmt_creds_pending_apply`, зануляет previous-зеркала (переходное
+    окно закрыто — старый ключ на боксе больше не нужен) и проставляет
+    `mgmt_creds_rotated_at`. С этого момента fetch отдаёт текущий материал.
+
+    Доступ: `(server, *, prepare_callback)` — тот же callback-грант worker_bot'а,
+    что и у `prepared`. Аудит: `server.management_creds_rotated` (CRITICAL).
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server.management_creds_rotated",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+    server = await server_repo.get_by_id(db, server_id)
+    if server is None:
+        audit_service.emit(
+            "server.management_creds_rotated",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found"},
+        )
+        raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
+    _check_target_department_for_server(
+        audit_action="server.management_creds_rotated",
+        target_id=server_id,
+        server_department_id=server.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+    )
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.confirm_management_creds_applied",
+            identity=identity,
+            target_id=server_id,
+            target_type="server",
+        )
+    rotated_at = datetime.now(timezone.utc)
+    await server_repo.update(db, server, {
+        "mgmt_creds_pending_apply": False,
+        "previous_mgmt_ssh_private_key_encrypted": None,
+        "previous_mgmt_password_encrypted": None,
+        "mgmt_creds_rotated_at": rotated_at,
+    })
+    await db.commit()
+    audit_service.emit(
+        "server.management_creds_rotated",
+        target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "rotated_at": rotated_at.isoformat(),
+            "department_id": server.department_id,
+            "caller_type": identity.subject_type,
+        },
+    )
+    return {"ok": True, "rotated_at": rotated_at.isoformat()}
+
+
 # ── Worker callbacks (write-direction internal API) ─────────────────────────
 
 
@@ -1509,6 +1700,11 @@ async def record_server_prepared(
         "is_managed": True,
         "management_user": payload.management_user,
         "prepared_at": prepared_at,
+        # Per-server управляющие креды (#3) сгенерены и положены в БД на
+        # dispatch'е prepare с pending_apply=True; этот callback подтверждает,
+        # что воркер их применил на боксе (authorized_keys + chpasswd), —
+        # снимаем флаг. fetch с этого момента отдаёт текущий материал.
+        "mgmt_creds_pending_apply": False,
     }
     # `management_mode` пишем только если воркер его прислал — None оставляет
     # прежнее значение (старый воркер без детекта не должен затирать режим).

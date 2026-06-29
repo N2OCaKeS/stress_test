@@ -76,6 +76,27 @@ class TestWorkerBotAllowedActions:
         assert resp.status_code == 200, resp.text
         assert resp.json()["ok"] is True
 
+    async def test_can_view_management_credentials(
+        self, client, worker_bot_token_a, make_server, db,
+    ):
+        from src.services import management_creds as mgmt_svc
+
+        srv = await make_server(department_id="dep_a")
+        _, creds, _ = await mgmt_svc.ensure_management_credentials(db, srv)
+        srv.is_managed = True
+        srv.management_user = "dbos"
+        srv.mgmt_creds_pending_apply = False
+        await db.flush()
+        resp = await client.get(
+            f"{BASE_INT}/servers/{srv.id}/management/credentials",
+            headers=_hdr(worker_bot_token_a),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["ssh_private_key"] == creds["private_key"]
+        assert body["password"] == creds["password"]
+        assert body["management_user"] == "dbos"
+
 
 # ── Forbidden actions: всё остальное должно быть 403 ─────────────────────────
 
@@ -204,7 +225,7 @@ class TestWorkerBotForbiddenPermissionMatrix:
 # ── Permission-matrix регрессия: грант worker_bot реально появился в БД ──────
 
 class TestWorkerBotGrantsLandedInDb:
-    """Проверяет, что seed-миграции оставили worker_bot ровно 8 строк
+    """Проверяет, что seed-миграции оставили worker_bot ровно 9 строк
     в `entity_permissions`:
 
     * 4 secret-access (view/rotate password + view/rotate IPMI credentials);
@@ -212,7 +233,8 @@ class TestWorkerBotGrantsLandedInDb:
       server_account:inventory_submit (OS-пользователи);
     * 1 provision callback — server_account:provision_on_host (useradd/
       usermod/userdel статус);
-    * 1 prepare callback — server:prepare_callback (бутстрап управления).
+    * 1 prepare callback — server:prepare_callback (бутстрап управления);
+    * 1 mgmt-creds fetch — server:view_management_credentials (per-server #3).
     """
 
     async def test_admin_can_see_worker_bot_grants_in_listing(
@@ -237,6 +259,7 @@ class TestWorkerBotGrantsLandedInDb:
             ("server_account", "inventory_submit"),
             ("server_account", "provision_on_host"),
             ("server", "prepare_callback"),
+            ("server", "view_management_credentials"),
         }, f"worker_bot grants in DB ≠ expected: {pairs}"
 
     async def test_total_grant_count_includes_worker_bot(
@@ -250,9 +273,10 @@ class TestWorkerBotGrantsLandedInDb:
         assert resp.status_code == 200
         rows = resp.json()["items"]
         wb_rows = [r for r in rows if r["role"] == "worker_bot"]
-        assert len(wb_rows) == 8, (
-            f"expected 8 worker_bot grants (4 secret-access + 2 inventory_submit "
-            f"+ 1 provision_on_host + 1 prepare_callback), got {len(wb_rows)}"
+        assert len(wb_rows) == 9, (
+            f"expected 9 worker_bot grants (4 secret-access + 2 inventory_submit "
+            f"+ 1 provision_on_host + 1 prepare_callback + 1 view_management_credentials), "
+            f"got {len(wb_rows)}"
         )
         # Sanity: total count ≥ baseline + worker_bot.
         assert len(rows) >= len(wb_rows), "list_permissions returned too few rows"

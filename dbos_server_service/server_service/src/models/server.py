@@ -3,7 +3,7 @@
 from datetime import datetime
 from ipaddress import IPv4Address, IPv6Address
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -82,6 +82,34 @@ class Server(Base):
     # таблица-каталог не нужна.
     management_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
     prepared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Управляющая SSH-пара и пароль пользователя dbos НА ЭТОМ сервере (#3).
+    # Раньше управление шло по единому глобальному ключу из env воркера; теперь
+    # каждый сервер несёт свою пару. Public — открытым текстом (кладётся в
+    # authorized_keys при prepare и нужен для отпечатка в UI). Private и пароль —
+    # envelope AES-256-GCM через secrets_service со своим AAD. Все nullable: до
+    # prepare сервер кред не имеет, материал появляется на онбординге.
+    mgmt_ssh_public_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mgmt_ssh_private_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mgmt_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mgmt_creds_rotated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Переходное окно ротации (зеркало previous_password_encrypted у
+    # server_account): прежний материал держим, пока новый не подтверждён
+    # callback'ом воркера, чтобы fetch отдавал рабочий на боксе ключ и не было
+    # лок-аута. Зануляются после applied-callback'а.
+    previous_mgmt_ssh_private_key_encrypted: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    previous_mgmt_password_encrypted: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    # True между записью свежего ciphertext'а (prepare/rotate dispatch) и
+    # callback'ом «применено на боксе». Пока True, fetch отдаёт previous-материал
+    # (рабочий на боксе), а не свежий — это держит анти-локаут-инвариант.
+    mgmt_creds_pending_apply: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

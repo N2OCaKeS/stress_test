@@ -110,8 +110,10 @@ def _to_response(
         "Опциональный SSH-ключ (`ssh_mode`): `generate` — сервер генерит "
         "Ed25519-пару, хранит public + зашифрованный private и возвращает "
         "приватный ключ ОДИН раз в поле `ssh_private_key` (в GET его уже нет); "
-        "`supply` — клиент передаёт `ssh_public_key`. Ключ раскатается на боксы "
-        "при provision'е."
+        "`supply` — клиент передаёт `ssh_public_key` и опционально `ssh_private_key_b64` "
+        "(приватный в base64; если приложен — шифруется и хранится, тогда консоль "
+        "сможет ходить под аккаунтом по ключу; иначе хранится только public). Ключ "
+        "раскатается на боксы при provision'е."
     ),
     responses={
         201: {"description": "Аккаунт создан."},
@@ -620,10 +622,12 @@ async def recreate_login(
         "Сохраняет SSH-ключ в БД и сразу диспатчит `account.provision` на все "
         "серверы, где аккаунт присутствует (`present_on_server=True`) — только "
         "provision кладёт public key в `~/.ssh/authorized_keys`. Тело: "
-        "`{ssh_mode, ssh_public_key?}`. `generate` — сервер генерит Ed25519 и "
-        "возвращает приватный ключ ОДИН раз (`ssh_private_key`); `supply` — "
-        "клиент передаёт `ssh_public_key` (приватного в ответе нет). Гейтится "
-        "`update`. Аудит `server_account.ssh_key_set`."
+        "`{ssh_mode, ssh_public_key?, ssh_private_key_b64?}`. `generate` — сервер "
+        "генерит Ed25519 и возвращает приватный ключ ОДИН раз (`ssh_private_key`); "
+        "`supply` — клиент передаёт `ssh_public_key` и опционально `ssh_private_key_b64` "
+        "(если приложен — шифруется и хранится, тогда консоль сможет ходить под "
+        "аккаунтом; в ответе приватный не эхуется). Гейтится `update`. Аудит "
+        "`server_account.ssh_key_set`."
     ),
     responses={
         202: {"description": "Ключ записан; provision-fan-out поставлен."},
@@ -643,13 +647,19 @@ async def set_ssh_key(
     obj, public_key, private_key = await svc.set_ssh_key(
         db, identity, account_id,
         ssh_mode=body.ssh_mode, ssh_public_key=body.ssh_public_key,
+        ssh_private_key_pem=body.ssh_private_key(),
     )
+    # Снимаем скалярные поля до fan-out'а: provision-диспатч крутит свой
+    # savepoint вокруг того же объекта аккаунта, и его rollback (например при
+    # недоступном воркере) экспайрит атрибуты — чтение obj.id/obj.login после
+    # fan-out'а потянуло бы ленивый SELECT уже вне async-greenlet.
+    account_id_v, login_v = obj.id, obj.login
     tasks, skipped = await fanout_provision_for_ssh_key(
         db=db, identity=identity, request=request, account=obj,
     )
     return AccountKeyFanoutResponse(
-        id=obj.id,
-        login=obj.login,
+        id=account_id_v,
+        login=login_v,
         ssh_public_key=public_key,
         ssh_private_key=private_key,
         tasks=[AccountRotateTask(**t) for t in tasks],
@@ -683,12 +693,15 @@ async def rotate_ssh_key(
 ) -> AccountKeyFanoutResponse:
     """Rotate SSH key. Доступ: `(server_account, *, update)`. Аудит CRITICAL."""
     obj, public_key, private_key = await svc.rotate_ssh_key(db, identity, account_id)
+    # См. set_ssh_key: снимаем скаляры до fan-out'а, чтобы savepoint-rollback
+    # provision-диспатча не заставил читать экспайренный obj вне greenlet.
+    account_id_v, login_v = obj.id, obj.login
     tasks, skipped = await fanout_provision_for_ssh_key(
         db=db, identity=identity, request=request, account=obj,
     )
     return AccountKeyFanoutResponse(
-        id=obj.id,
-        login=obj.login,
+        id=account_id_v,
+        login=login_v,
         ssh_public_key=public_key,
         ssh_private_key=private_key,
         tasks=[AccountRotateTask(**t) for t in tasks],

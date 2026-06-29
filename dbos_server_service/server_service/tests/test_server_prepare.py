@@ -803,6 +803,60 @@ class TestPrepareDispatch:
         assert refreshed.ssh_public_key is not None
         assert refreshed.ssh_private_key_encrypted is not None
 
+    async def test_linked_account_existing_key_not_regenerated(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch, db,
+    ):
+        """У привязанного аккаунта с уже заданным ключом prepare его НЕ перегенерит.
+
+        Generate-if-missing идемпотентен: ключ есть → в stash едет тот же public,
+        и в БД ничего не меняется.
+        """
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+
+        from src.models import ServerAccount
+        from src.services import secrets_service
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="haskey", password=None)
+        priv = ed25519.Ed25519PrivateKey.generate()
+        pem = priv.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.OpenSSH,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode("ascii")
+        pub = priv.public_key().public_bytes(
+            encoding=serialization.Encoding.OpenSSH,
+            format=serialization.PublicFormat.OpenSSH,
+        ).decode("ascii")
+        acc.ssh_public_key = pub
+        acc.ssh_private_key_encrypted = secrets_service.encrypt(
+            pem, aad=secrets_service.aad_for_server_account_ssh_key(acc.id),
+        )
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={
+                "username_b64": _b64("bootadmin"),
+                "password_b64": _b64("Boot1234!StrongPwd"),
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        call = captured_dispatch[0]
+        linked = call["stored_creds"]["linked_accounts"]
+        assert len(linked) == 1
+        # В stash уехал ровно тот же ключ — перегенерации не было.
+        assert linked[0]["ssh_public_key"] == pub
+        assert linked[0]["ssh_private_key"] == pem
+        # В БД ключ тоже не сменился.
+        refreshed = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc.id)
+        )).scalar_one()
+        assert refreshed.ssh_public_key == pub
+
     async def test_account_mode_requires_view_password(
         self, client, operator_token_a, make_server, make_account,
         captured_dispatch,

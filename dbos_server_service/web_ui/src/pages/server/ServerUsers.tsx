@@ -48,6 +48,7 @@ import {
   X,
   KeySquare,
   Download,
+  Upload,
   AlertTriangle,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
@@ -58,7 +59,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery } from "@/api/auth/useQuery";
 import { ApiError, apiErrMsg } from "@/api/client";
-import { fromBase64 } from "@/lib/base64";
+import { fromBase64, toBase64 } from "@/lib/base64";
 import { formatMskShort } from "@/lib/datetime";
 import { useServerMap, useUserLabel } from "@/lib/labels";
 import { listServers } from "@/api/server/servers";
@@ -171,6 +172,67 @@ function downloadText(filename: string, text: string) {
   a.remove();
   // Освобождаем URL чуть позже — синхронный revoke ломает скачивание в части браузеров.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Прочитать текстовое содержимое выбранного файла (для загрузки SSH-ключей). */
+function readFileText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsText(file);
+  });
+}
+
+// Минимальная проверка приватного ключа на стороне формы — настоящую валидацию
+// делает backend/worker. Здесь ловим только пустой ввод и явно не-ключи.
+const SSH_PRIVATE_KEY_RE = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
+
+function validateSshPrivateKey(value: string): string | null {
+  if (!SSH_PRIVATE_KEY_RE.test(value)) {
+    return "Приватный ключ не похож на PEM/OpenSSH (нет строки BEGIN … PRIVATE KEY).";
+  }
+  return null;
+}
+
+/**
+ * Кнопка «загрузить из файла» с вшитым скрытым `<input type=file>`: читает
+ * содержимое выбранного файла как текст и отдаёт его в `onText`. После выбора
+ * сбрасывает value, чтобы повторный выбор того же файла снова сработал.
+ */
+function FileLoadButton({
+  label,
+  accept,
+  onText,
+  onError,
+}: {
+  label: string;
+  accept?: string;
+  onText: (text: string) => void;
+  onError?: () => void;
+}) {
+  return (
+    <label
+      className="btn btn-sm flex items-center gap-1 cursor-pointer"
+      title={label}
+    >
+      <Upload className="w-3.5 h-3.5" /> Загрузить файл
+      <input
+        type="file"
+        accept={accept}
+        aria-label={label}
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          readFileText(file)
+            .then(onText)
+            .catch(() => onError?.());
+        }}
+      />
+    </label>
+  );
 }
 
 /** Режим SSH-ключа в формах create/edit. */
@@ -568,6 +630,9 @@ function AccountCreateModal({
   const [password, setPassword] = useState("");
   const [sshChoice, setSshChoice] = useState<SshKeyChoice>("generate");
   const [sshPublicKey, setSshPublicKey] = useState("");
+  const [sshPrivateKey, setSshPrivateKey] = useState("");
+  // Приватный ключ чувствительный — по умолчанию ввод скрыт, показываем по клику.
+  const [showPrivate, setShowPrivate] = useState(false);
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const toast = useToast();
@@ -600,9 +665,21 @@ function AccountCreateModal({
       return;
     }
     const pubKey = sshPublicKey.trim();
-    if (sshChoice === "supply" && !pubKey) {
-      setErr("Вставьте публичный SSH-ключ или выберите другой режим.");
-      return;
+    // Приватный ключ кодируем как есть (PEM/OpenSSH чувствителен к завершающему
+    // переводу строки); trim — только для проверки «задан/не задан» и формата.
+    const hasPrivKey = sshPrivateKey.trim().length > 0;
+    if (sshChoice === "supply") {
+      if (!pubKey) {
+        setErr("Вставьте публичный SSH-ключ или выберите другой режим.");
+        return;
+      }
+      if (hasPrivKey) {
+        const keyErr = validateSshPrivateKey(sshPrivateKey);
+        if (keyErr) {
+          setErr(keyErr);
+          return;
+        }
+      }
     }
     setErr(null);
     setPending(true);
@@ -618,6 +695,9 @@ function AccountCreateModal({
           ? {
               ssh_mode: sshChoice,
               ssh_public_key: sshChoice === "supply" ? pubKey : null,
+              ...(sshChoice === "supply" && hasPrivKey
+                ? { ssh_private_key_b64: toBase64(sshPrivateKey) }
+                : {}),
             }
           : {}),
       });
@@ -764,7 +844,7 @@ function AccountCreateModal({
                     [
                       ["none", "без ключа"],
                       ["generate", "сгенерировать (скачать приватный ключ потом из карточки)"],
-                      ["supply", "вставить существующий публичный ключ"],
+                      ["supply", "вставить существующий ключ (публичный + опц. приватный)"],
                     ] as [SshKeyChoice, string][]
                   ).map(([value, label]) => (
                     <label
@@ -775,19 +855,109 @@ function AccountCreateModal({
                         type="radio"
                         name="ssh-key-mode"
                         checked={sshChoice === value}
-                        onChange={() => setSshChoice(value)}
+                        onChange={() => {
+                          setSshChoice(value);
+                          // Уходим из supply — не держим приватный ключ в памяти формы.
+                          if (value !== "supply") {
+                            setSshPrivateKey("");
+                            setShowPrivate(false);
+                          }
+                        }}
                       />
                       <span>{label}</span>
                     </label>
                   ))}
                 </div>
                 {sshChoice === "supply" && (
-                  <textarea
-                    className="field-input mono text-xs h-20 resize-none mt-1"
-                    value={sshPublicKey}
-                    onChange={(e) => setSshPublicKey(e.target.value)}
-                    placeholder="ssh-ed25519 AAAA… comment"
-                  />
+                  <div className="flex flex-col gap-3 mt-1">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-dim">
+                          Публичный ключ *
+                        </span>
+                        <FileLoadButton
+                          label="Загрузить публичный из файла"
+                          accept=".pub,text/plain"
+                          onText={(text) => setSshPublicKey(text.trim())}
+                          onError={() =>
+                            setErr("Не удалось прочитать файл публичного ключа.")
+                          }
+                        />
+                      </div>
+                      <textarea
+                        className="field-input mono text-xs h-20 resize-none"
+                        value={sshPublicKey}
+                        onChange={(e) => setSshPublicKey(e.target.value)}
+                        placeholder="ssh-ed25519 AAAA… comment"
+                        aria-label="Публичный SSH-ключ"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-dim">
+                          Приватный ключ{" "}
+                          <span className="italic">необязательно</span>
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="btn btn-sm flex items-center gap-1"
+                            onClick={() => setShowPrivate((v) => !v)}
+                            title={
+                              showPrivate
+                                ? "Скрыть приватный ключ"
+                                : "Показать/ввести приватный ключ"
+                            }
+                          >
+                            {showPrivate ? (
+                              <>
+                                <EyeOff className="w-3.5 h-3.5" /> Скрыть
+                              </>
+                            ) : (
+                              <>
+                                <Eye className="w-3.5 h-3.5" /> Ввести вручную
+                              </>
+                            )}
+                          </button>
+                          <FileLoadButton
+                            label="Загрузить приватный из файла"
+                            accept=".pem,.key,text/plain"
+                            onText={(text) => setSshPrivateKey(text)}
+                            onError={() =>
+                              setErr(
+                                "Не удалось прочитать файл приватного ключа.",
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                      {showPrivate ? (
+                        <textarea
+                          className="field-input mono text-xs h-24 resize-none"
+                          value={sshPrivateKey}
+                          onChange={(e) => setSshPrivateKey(e.target.value)}
+                          placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                          aria-label="Приватный SSH-ключ"
+                          autoComplete="off"
+                          spellCheck={false}
+                        />
+                      ) : (
+                        <div className="text-[11px] text-dim border border-token rounded px-2 py-1.5 flex items-center gap-2">
+                          <KeyRound className="w-3.5 h-3.5 shrink-0" />
+                          {sshPrivateKey.trim()
+                            ? "Приватный ключ задан (скрыт). Загрузите файл или нажмите «Ввести вручную», чтобы изменить."
+                            : "Приватный ключ не задан. Загрузите файл или нажмите «Ввести вручную»."}
+                        </div>
+                      )}
+                      <span className="text-[11px] text-dim">
+                        Приватный ключ нужен, чтобы платформа могла подключаться к
+                        этому аккаунту через веб-консоль. Без него консоль для
+                        аккаунта недоступна. Ключ хранится зашифрованным и наружу
+                        больше не отдаётся.
+                      </span>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>

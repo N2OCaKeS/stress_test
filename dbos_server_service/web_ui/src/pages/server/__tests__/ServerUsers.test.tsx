@@ -113,6 +113,11 @@ vi.mock("@/lib/labels", async (importOriginal) => {
 });
 
 import { ServerUsers } from "@/pages/server/ServerUsers";
+import { toBase64 } from "@/lib/base64";
+
+const SUPPLY_PUB = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 supplied";
+const SUPPLY_PRIV =
+  "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk=\n-----END OPENSSH PRIVATE KEY-----\n";
 
 function renderPage() {
   return render(
@@ -488,6 +493,130 @@ describe("ServerUsers (fleet account list)", () => {
     expect(
       screen.getByRole("button", { name: /Скачать приватный ключ/ }),
     ).toBeInTheDocument();
+  });
+
+  it("supply: ввод публичного и приватного ключей шлёт ssh_private_key_b64", async () => {
+    selectAccount();
+    createAccountMock.mockResolvedValue({
+      ...FAKE_ACCOUNT,
+      id: "acc3",
+      login: "svc-supply",
+    });
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Создать пользователя/ }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    const d = within(dialog);
+
+    fireEvent.change(d.getByPlaceholderText("dbos-svc"), {
+      target: { value: "svc-supply" },
+    });
+    // Режим supply.
+    fireEvent.click(
+      d.getByRole("radio", { name: /вставить существующий ключ/ }),
+    );
+    // Публичный ключ — в поле.
+    fireEvent.change(d.getByLabelText("Публичный SSH-ключ"), {
+      target: { value: SUPPLY_PUB },
+    });
+    // Открываем ручной ввод приватного и заполняем его.
+    fireEvent.click(d.getByRole("button", { name: /Ввести вручную/ }));
+    fireEvent.change(d.getByLabelText("Приватный SSH-ключ"), {
+      target: { value: SUPPLY_PRIV },
+    });
+
+    fireEvent.click(d.getByRole("button", { name: /Создать/ }));
+
+    await waitFor(() => {
+      expect(createAccountMock).toHaveBeenCalledTimes(1);
+    });
+    expect(createAccountMock.mock.calls[0][0]).toMatchObject({
+      login: "svc-supply",
+      ssh_mode: "supply",
+      ssh_public_key: SUPPLY_PUB,
+      ssh_private_key_b64: toBase64(SUPPLY_PRIV),
+    });
+  });
+
+  it("supply: загрузка файла приватного ключа кодирует его в ssh_private_key_b64", async () => {
+    selectAccount();
+    createAccountMock.mockResolvedValue({
+      ...FAKE_ACCOUNT,
+      id: "acc4",
+      login: "svc-file",
+    });
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Создать пользователя/ }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    const d = within(dialog);
+
+    fireEvent.change(d.getByPlaceholderText("dbos-svc"), {
+      target: { value: "svc-file" },
+    });
+    fireEvent.click(
+      d.getByRole("radio", { name: /вставить существующий ключ/ }),
+    );
+    fireEvent.change(d.getByLabelText("Публичный SSH-ключ"), {
+      target: { value: SUPPLY_PUB },
+    });
+
+    // Загружаем приватный ключ файлом — FileReader читает его в состояние.
+    const fileInput = d.getByLabelText("Загрузить приватный из файла");
+    const file = new File([SUPPLY_PRIV], "id_ed25519", { type: "text/plain" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    expect(await d.findByText(/Приватный ключ задан/)).toBeInTheDocument();
+
+    fireEvent.click(d.getByRole("button", { name: /Создать/ }));
+
+    await waitFor(() => {
+      expect(createAccountMock).toHaveBeenCalledTimes(1);
+    });
+    expect(createAccountMock.mock.calls[0][0]).toMatchObject({
+      login: "svc-file",
+      ssh_mode: "supply",
+      ssh_public_key: SUPPLY_PUB,
+      ssh_private_key_b64: toBase64(SUPPLY_PRIV),
+    });
+  });
+
+  it("supply: без приватного ключа ssh_private_key_b64 не отправляется", async () => {
+    selectAccount();
+    createAccountMock.mockResolvedValue({
+      ...FAKE_ACCOUNT,
+      id: "acc5",
+      login: "svc-pubonly",
+    });
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Создать пользователя/ }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    const d = within(dialog);
+
+    fireEvent.change(d.getByPlaceholderText("dbos-svc"), {
+      target: { value: "svc-pubonly" },
+    });
+    fireEvent.click(
+      d.getByRole("radio", { name: /вставить существующий ключ/ }),
+    );
+    fireEvent.change(d.getByLabelText("Публичный SSH-ключ"), {
+      target: { value: SUPPLY_PUB },
+    });
+
+    fireEvent.click(d.getByRole("button", { name: /Создать/ }));
+
+    await waitFor(() => {
+      expect(createAccountMock).toHaveBeenCalledTimes(1);
+    });
+    const arg = createAccountMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(arg).toMatchObject({ ssh_mode: "supply", ssh_public_key: SUPPLY_PUB });
+    expect(arg.ssh_private_key_b64).toBeUndefined();
   });
 
   it("показывает кнопку «Поиск на ОС» для оператора/менеджера", async () => {

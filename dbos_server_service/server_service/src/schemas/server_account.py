@@ -12,6 +12,8 @@ plaintext через `base64.b64encode`, симметрично с reveal-кар
 import re
 from datetime import datetime
 
+from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.hazmat.primitives import serialization
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.core.b64 import decode_b64
@@ -60,16 +62,65 @@ def _validate_ssh_public_key(value: str) -> str:
     return value
 
 
-def _check_ssh_mode_combo(mode: str | None, public_key: str | None) -> None:
-    """Согласованность пары `(ssh_mode, ssh_public_key)`.
+def _check_ssh_mode_combo(
+    mode: str | None,
+    public_key: str | None,
+    private_key_b64: str | None = None,
+) -> None:
+    """Согласованность тройки `(ssh_mode, ssh_public_key, ssh_private_key_b64)`.
 
     `supply` обязан нести `ssh_public_key`; `generate`/None — наоборот, ключ
     не принимают (он будет сгенерирован сервером или ключ не задаётся вовсе).
+    Приватный ключ (`ssh_private_key_b64`) принимается ТОЛЬКО при `supply` —
+    клиент может отдать свою пару целиком, чтобы консоль ходила под аккаунтом.
     """
     if mode == "supply" and public_key is None:
         raise ValueError("ssh_mode='supply' требует ssh_public_key")
     if mode != "supply" and public_key is not None:
         raise ValueError("ssh_public_key допустим только при ssh_mode='supply'")
+    if private_key_b64 is not None and mode != "supply":
+        raise ValueError("ssh_private_key_b64 допустим только при ssh_mode='supply'")
+
+
+def _validate_ssh_private_key_b64(b64_value: str, public_key: str | None) -> str:
+    """Декодировать и проверить приватный SSH-ключ из base64.
+
+    Принимает приватный ключ в OpenSSH- или PEM-формате без passphrase
+    (зашифрованный passphrase'ом ключ нам не разобрать — отбиваем). Если задан
+    `public_key`, дополнительно проверяем, что публичная часть приватного
+    совпадает с переданным public (тип + тело, комментарий игнорируем) — иначе
+    в БД легла бы рассогласованная пара и консоль всё равно бы не зашла.
+    Возвращает декодированный PEM-текст приватного ключа.
+    """
+    pem = decode_b64(b64_value, "ssh_private_key_b64")
+    raw = pem.encode("utf-8")
+    private = None
+    for loader in (serialization.load_ssh_private_key, serialization.load_pem_private_key):
+        try:
+            private = loader(raw, password=None)
+            break
+        except (ValueError, TypeError, UnsupportedAlgorithm):
+            continue
+    if private is None:
+        raise ValueError(
+            "ssh_private_key_b64: не удалось разобрать как приватный ключ "
+            "(ожидается OpenSSH/PEM без passphrase)"
+        )
+    if public_key is not None:
+        try:
+            derived = private.public_key().public_bytes(
+                encoding=serialization.Encoding.OpenSSH,
+                format=serialization.PublicFormat.OpenSSH,
+            ).decode("ascii")
+        except (ValueError, UnsupportedAlgorithm) as exc:
+            raise ValueError(
+                "ssh_private_key_b64: не удалось вывести публичный ключ из приватного"
+            ) from exc
+        if derived.split()[:2] != public_key.strip().split()[:2]:
+            raise ValueError(
+                "ssh_private_key_b64 не соответствует переданному ssh_public_key"
+            )
+    return pem
 
 
 class ServerAccountCreate(BaseModel):
@@ -130,6 +181,19 @@ class ServerAccountCreate(BaseModel):
             "Однострочный, валидируется на формат; финальная проверка — на воркере."
         ),
     )
+    ssh_private_key_b64: str | None = Field(
+        default=None,
+        max_length=16384,
+        description=(
+            "Опциональный приватный SSH-ключ в base64 (`base64.b64encode(pem)`) — "
+            "принимается ТОЛЬКО при ssh_mode='supply'. Если передан, он шифруется "
+            "и хранится рядом с public'ом, и тогда консоль сможет ходить под этим "
+            "аккаунтом по ключу. Должен быть в OpenSSH/PEM-формате без passphrase и "
+            "соответствовать переданному ssh_public_key (иначе 422). Если не передан "
+            "— хранится только public, приватный остаётся у клиента (консоль для "
+            "этого аккаунта работать не будет)."
+        ),
+    )
     has_sudo: bool = Field(
         default=False,
         description="Право sudo. Требует отдельного action `grant_sudo` (admin-only).",
@@ -188,7 +252,9 @@ class ServerAccountCreate(BaseModel):
 
     @model_validator(mode="after")
     def _check_ssh_combo(self) -> "ServerAccountCreate":
-        _check_ssh_mode_combo(self.ssh_mode, self.ssh_public_key)
+        _check_ssh_mode_combo(self.ssh_mode, self.ssh_public_key, self.ssh_private_key_b64)
+        if self.ssh_private_key_b64 is not None:
+            _validate_ssh_private_key_b64(self.ssh_private_key_b64, self.ssh_public_key)
         return self
 
     def password(self) -> str | None:
@@ -200,6 +266,16 @@ class ServerAccountCreate(BaseModel):
         if self.password_b64 is None:
             return None
         return decode_b64(self.password_b64, "password_b64")
+
+    def ssh_private_key(self) -> str | None:
+        """Раскодированный PEM приватного ключа (или `None`, если не передан).
+
+        Формат/соответствие public'у уже проверены валидатором — здесь только
+        повторный декод base64 для сервис-слоя.
+        """
+        if self.ssh_private_key_b64 is None:
+            return None
+        return decode_b64(self.ssh_private_key_b64, "ssh_private_key_b64")
 
 
 class ServerAccountUpdate(BaseModel):
@@ -308,6 +384,16 @@ class ServerAccountSshKeyRequest(BaseModel):
         max_length=8192,
         description="OpenSSH public key для ssh_mode='supply'. Однострочный, валидируется на формат.",
     )
+    ssh_private_key_b64: str | None = Field(
+        default=None,
+        max_length=16384,
+        description=(
+            "Опциональный приватный SSH-ключ в base64 — только при ssh_mode='supply'. "
+            "Если передан, шифруется и сохраняется рядом с public'ом (консоль сможет "
+            "ходить под аккаунтом по ключу). OpenSSH/PEM без passphrase, должен "
+            "соответствовать ssh_public_key (иначе 422)."
+        ),
+    )
 
     @field_validator("ssh_public_key")
     @classmethod
@@ -318,8 +404,16 @@ class ServerAccountSshKeyRequest(BaseModel):
 
     @model_validator(mode="after")
     def _check_ssh_combo(self) -> "ServerAccountSshKeyRequest":
-        _check_ssh_mode_combo(self.ssh_mode, self.ssh_public_key)
+        _check_ssh_mode_combo(self.ssh_mode, self.ssh_public_key, self.ssh_private_key_b64)
+        if self.ssh_private_key_b64 is not None:
+            _validate_ssh_private_key_b64(self.ssh_private_key_b64, self.ssh_public_key)
         return self
+
+    def ssh_private_key(self) -> str | None:
+        """Раскодированный PEM приватного ключа (или `None`)."""
+        if self.ssh_private_key_b64 is None:
+            return None
+        return decode_b64(self.ssh_private_key_b64, "ssh_private_key_b64")
 
 
 class AccountKeyFanoutResponse(BaseModel):

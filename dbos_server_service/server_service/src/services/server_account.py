@@ -701,6 +701,15 @@ async def create_account(
         generated_private_key = private_pem
     elif payload.ssh_mode == "supply":
         ssh_public_key = payload.ssh_public_key
+        # Опциональный приватный ключ: клиент отдаёт свою пару целиком, чтобы
+        # консоль могла ходить под аккаунтом. Формат/соответствие public'у уже
+        # проверены схемой — здесь только шифруем и кладём рядом.
+        supplied_private = payload.ssh_private_key()
+        if supplied_private is not None:
+            ssh_private_key_encrypted = secrets_service.encrypt(
+                supplied_private,
+                aad=secrets_service.aad_for_server_account_ssh_key(account_id),
+            )
 
     data = {
         "id": account_id,
@@ -1970,15 +1979,19 @@ async def set_ssh_key(
     *,
     ssh_mode: str,
     ssh_public_key: str | None,
+    ssh_private_key_pem: str | None = None,
 ) -> tuple[ServerAccount, str, str | None]:
     """Задать/заменить SSH-ключ аккаунта в БД (без fan-out — его делает endpoint).
 
     Гейт — `update` (ролевой грант). `generate` — Ed25519, храним
     public + зашифрованный private, возвращаем приватный один раз; `supply` —
-    сохраняем переданный public, зашифрованный private сбрасываем (его у нас нет).
+    сохраняем переданный public; если клиент приложил приватный
+    (`ssh_private_key_pem`, уже провалидирован схемой), шифруем и кладём рядом —
+    иначе зашифрованный private сбрасывается (его у нас нет).
 
     Возвращает `(account, ssh_public_key, private_pem_or_None)`. Приватный
-    ключ непустой только при `generate`.
+    ключ в ответе непустой только при `generate` — переданный клиентом приватный
+    наружу не эхуется.
     """
     obj = await _authorize_account_action(
         db, identity, account_id, Action.UPDATE, "server_account.ssh_key_set",
@@ -1997,10 +2010,17 @@ async def set_ssh_key(
         await repo.update_ssh_key(
             db, obj, ssh_public_key=public_openssh, ssh_private_key_encrypted=encrypted
         )
-    else:  # supply — public_key уже провалидирован схемой
+    else:  # supply — public_key (и опц. private) уже провалидированы схемой
         public_openssh = ssh_public_key  # type: ignore[assignment]
+        supplied_encrypted: str | None = None
+        if ssh_private_key_pem is not None:
+            supplied_encrypted = secrets_service.encrypt(
+                ssh_private_key_pem,
+                aad=secrets_service.aad_for_server_account_ssh_key(obj.id),
+            )
         await repo.update_ssh_key(
-            db, obj, ssh_public_key=public_openssh, ssh_private_key_encrypted=None
+            db, obj, ssh_public_key=public_openssh,
+            ssh_private_key_encrypted=supplied_encrypted,
         )
     await db.commit()
     await db.refresh(obj)

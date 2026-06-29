@@ -507,6 +507,13 @@ export interface ServerAccountCreateRequest {
   ssh_mode?: "generate" | "supply" | null;
   /** Публичный ключ для `ssh_mode: "supply"` (формат authorized_keys). */
   ssh_public_key?: string | null;
+  /**
+   * Приватный ключ в base64(plaintext) — опционально и только при
+   * `ssh_mode: "supply"`. Нужен, чтобы платформа могла подключаться к аккаунту
+   * через веб-консоль; без него консоль для этого аккаунта недоступна. Backend
+   * хранит его в зашифрованном виде и наружу больше не отдаёт.
+   */
+  ssh_private_key_b64?: string | null;
 }
 
 /**

@@ -3,7 +3,8 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import AccountAdmin
+from src.dependencies.auth import AccountAdmin, AnyAdmin
+from src.core.constants import PlatformRole
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse
 from src.schemas.services import ServiceCreate, ServiceResponse
@@ -20,18 +21,23 @@ router = APIRouter(prefix="/services")
 )
 async def list_services(
     request: Request,
-    identity: AccountAdmin,
+    identity: AnyAdmin,
     db: AsyncSession = Depends(get_db),
 ) -> list[ServiceResponse]:
     """Список зарегистрированных сервисов.
 
     Доступ:
-        Только account_admin.
+        account_admin видит весь регистр. department_admin — только сервисы,
+        к которым подключён его отдел (нужно, чтобы выбрать сервис при
+        назначении ролей юзеру). Создание/удаление — по-прежнему account_admin.
     """
+    is_account_admin = identity.platform_role == PlatformRole.ACCOUNT_ADMIN
     return await platform_service_service.list_services(
         db,
         actor_id=identity.user_id,
         request_id=getattr(request.state, "request_id", None),
+        department_id=identity.department_id,
+        all_services=is_account_admin,
     )
 
 

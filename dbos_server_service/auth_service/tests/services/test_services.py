@@ -36,6 +36,33 @@ async def test_list_services_requires_auth(client, admin_token, service_x):
     assert service_x.service_name in names
 
 
+async def test_dept_admin_lists_only_own_department_services(
+    client, dept_admin_a_token, dept_a_with_service, service_x, db,
+):
+    # department_admin видит только сервисы своего отдела (service_x выдан dept_a),
+    # а не весь регистр: чужой сервис без гранта в список не попадает.
+    from tests.conftest import _make_service
+
+    other = await _make_service(db, "other_svc_no_grant")
+    resp = await client.get(URL, headers={"Authorization": f"Bearer {dept_admin_a_token}"})
+    assert resp.status_code == 200
+    names = [s["service_name"] for s in resp.json()]
+    assert service_x.service_name in names
+    assert other.service_name not in names
+
+
+async def test_account_admin_lists_all_services(client, admin_token, service_x, db):
+    # account_admin видит весь регистр, включая сервисы без гранта отделам.
+    from tests.conftest import _make_service
+
+    other = await _make_service(db, "other_svc_for_admin")
+    resp = await client.get(URL, headers={"Authorization": f"Bearer {admin_token}"})
+    assert resp.status_code == 200
+    names = [s["service_name"] for s in resp.json()]
+    assert service_x.service_name in names
+    assert other.service_name in names
+
+
 async def test_admin_deletes_service(client, admin_token, db):
     from tests.conftest import _make_service
     svc = await _make_service(db, "to_delete_svc")

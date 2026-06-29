@@ -178,9 +178,24 @@ async def list_services(
     db: AsyncSession,
     actor_id: str | None = None,
     request_id: str | None = None,
+    *,
+    department_id: str | None = None,
+    all_services: bool = True,
 ) -> list[ServiceResponse]:
-    """Все активные сервисы."""
+    """Активные сервисы.
+
+    `all_services=True` (account_admin) — весь регистр. Иначе
+    (department_admin) — только сервисы, к которым подключён `department_id`.
+    """
     repo = ServiceRepository(db)
+    services = await repo.list_active()
+    if not all_services:
+        allowed = (
+            set(await DepartmentRepository(db).list_active_services(department_id))
+            if department_id
+            else set()
+        )
+        services = [s for s in services if s.service_name in allowed]
     result = [
         ServiceResponse(
             service_name=s.service_name,
@@ -188,11 +203,11 @@ async def list_services(
             is_active=s.is_active,
             created_at=s.created_at,
         )
-        for s in await repo.list_active()
+        for s in services
     ]
     audit_service.emit(
         "service.list", actor_id, status="success", allowed=True,
         request_id=request_id,
-        details={"count": len(result)},
+        details={"count": len(result), "scope": "all" if all_services else "department"},
     )
     return result

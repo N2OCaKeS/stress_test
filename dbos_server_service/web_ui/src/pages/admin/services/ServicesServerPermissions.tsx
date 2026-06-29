@@ -350,7 +350,7 @@ function ServicesServerPermissionsLive() {
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h3 className="font-semibold flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-accent" />
-                Матрица разрешений · server_service
+                Глобальные (тип-wide) правила · server_service
               </h3>
               <span className="text-xs text-dim">
                 {grants.length} grant-строк · scope:{" "}
@@ -358,11 +358,17 @@ function ServicesServerPermissionsLive() {
               </span>
             </div>
             <p className="text-xs text-dim leading-relaxed">
+              Правила на весь <em>тип</em> сущности (все серверы / все учётки).
               Клик по чекбоксу мгновенно выдаёт или отзывает действие для роли.
               Строки <span className="mono">admin</span> и{" "}
               <span className="mono">guest</span> залочены. Изменения пишутся в
               рамках вашего отдела (
               <span className="mono">{myDept ?? "—"}</span>).
+            </p>
+            <p className="text-[11px] text-dim leading-relaxed mt-2">
+              Точечные права на <em>конкретный</em> сервер или учётку (поверх
+              этих глобальных) настраиваются на самом ресурсе — вкладка «Права»
+              карточки сервера и блок «Инстанс-гранты» в деталях учётки.
             </p>
             <div className="mt-3 pt-3 border-t border-token text-[11px] text-dim flex items-center gap-4 flex-wrap">
               <span className="flex items-center gap-1">

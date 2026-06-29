@@ -45,6 +45,10 @@ import type {
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { RotateDispatchResult } from "@/pages/server/_rotateResult";
+import {
+  ResourceInstancePermissions,
+  type ResourceTargetOption,
+} from "@/pages/server/_resourcePermissions";
 import { LinkAccountModal } from "./_linkAccountModal";
 
 interface Props {
@@ -713,6 +717,21 @@ function AccountDetail({
           </div>
         )}
       </div>
+
+      {/* ── Инстанс-права учётки ── */}
+      <ResourceInstancePermissions
+        resourceType="server_account"
+        resourceId={account.id}
+        resourceLabel={account.login}
+        departmentId={account.department_id}
+        canEdit={canManage}
+        fetchTargets={async () => {
+          const res = await accountsApi.listAccounts({ limit: 200 });
+          return res.items.map(
+            (a): ResourceTargetOption => ({ id: a.id, label: a.login }),
+          );
+        }}
+      />
 
       {/* ── Danger zone ── */}
       <div className="card" style={{ borderColor: "rgba(244,135,113,0.3)" }}>

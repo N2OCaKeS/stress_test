@@ -787,6 +787,99 @@ export interface PermissionGrantRequest {
   target_department_id?: string | null;
 }
 
+// ── resource-permissions (instance-уровневый ACL) ────────────────────────────
+
+/**
+ * Типы ресурсов, поддерживающих инстанс-уровневый ACL
+ * (`resource_role_permissions`). Точечный грант роли имеет смысл только для
+ * сущностей с реальными строками в БД — `server` и `server_account`. Зеркало
+ * `RESOURCE_ACL_TYPES` из `server_service/src/core/constants.py`.
+ */
+export type ResourceAclType = "server" | "server_account";
+
+/**
+ * Действия, которые НЕЛЬЗЯ привязать к конкретному инстансу — они остаются
+ * только в глобальном слое (`entity_permissions`). Зеркало
+ * `_NON_INSTANCE_ACTIONS` из `server_service/src/core/constants.py`: `create`
+ * (на момент проверки инстанса ещё нет), callback-действия воркера и служебные
+ * гранты отдела. Инстанс-редактор фильтрует их из каталога, а backend
+ * отбивает PUT на них 422 `ACTION_NOT_INSTANCE_GRANTABLE`.
+ */
+export const NON_INSTANCE_ACTIONS: ReadonlySet<ActionName> = new Set<ActionName>([
+  "create",
+  "inventory_submit",
+  "provision_on_host",
+  "prepare_callback",
+  "view_management_credentials",
+  "manage_ignored_logins",
+]);
+
+/** True iff `action` можно выдать инстанс-грантом (а не только тип-wide). */
+export function isInstanceGrantable(action: ActionName): boolean {
+  return !NON_INSTANCE_ACTIONS.has(action);
+}
+
+/**
+ * Одна строка инстанс-ACL (Pydantic `ResourcePermissionResponse`).
+ *
+ * `id` с префиксом `rrp_`. Субъект гранта — роль (`role`); `department_id` —
+ * scope строки (None — system-wide, иначе отдел ресурса). `granted_by` — `null`
+ * для seed-грантов.
+ */
+export interface ResourcePermissionEntry {
+  id: string;
+  resource_type: ResourceAclType | (string & {});
+  resource_id: string;
+  role: RoleName;
+  action: ActionName;
+  department_id: string | null;
+  granted_by: string | null;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+}
+
+/** Envelope `GET .../by-resource/...` и `.../by-role/...`. */
+export interface ResourcePermissionListResponse {
+  items: ResourcePermissionEntry[];
+  total: number;
+}
+
+/**
+ * Режим распространения инстанс-грантов на цели:
+ *  - `merge` — добавить недостающие `(role, action)` образца, лишние на цели
+ *    оставить;
+ *  - `mirror` — привести цель к точной копии образца (добавить недостающее +
+ *    удалить лишнее; требует и grant, и revoke прав).
+ */
+export type ResourcePropagateMode = "merge" | "mirror";
+
+/** Тело `POST .../{resource_type}/{source_resource_id}/propagate`. */
+export interface ResourcePropagateRequest {
+  /** Цели того же типа, что и образец. Без самого образца. 1..500. */
+  target_resource_ids: string[];
+  /** merge (дефолт) | mirror. */
+  mode: ResourcePropagateMode;
+}
+
+/** Сводка propagate по одной цели. */
+export interface ResourcePropagateTargetSummary {
+  resource_id: string;
+  /** Сколько `(role, action)` добавлено. */
+  added: number;
+  /** Сколько удалено (только `mirror`; для `merge` — 0). */
+  removed: number;
+}
+
+/** Ответ `POST .../propagate` (Pydantic `ResourcePropagateResponse`). */
+export interface ResourcePropagateResponse {
+  source_resource_id: string;
+  resource_type: ResourceAclType | (string & {});
+  mode: ResourcePropagateMode;
+  /** Сколько инстанс-грантов у образца. */
+  source_grant_count: number;
+  targets: ResourcePropagateTargetSummary[];
+}
+
 // ── misc ────────────────────────────────────────────────────────────────────
 
 /**

@@ -773,14 +773,19 @@ function RolesEditModal({
 }
 
 // Сервисы, к которым нельзя назначить роль (нет ролевого каталога). auth_service
-// разложен на отдельные admin-страницы, worker_service ролей не несёт.
-const NON_ROLE_SERVICES = new Set<string>(["auth_service", "worker_service"]);
+// разложен на отдельные admin-страницы, worker_service ролей не несёт,
+// loging_service управляется платформенными ролями (loging_admin / loging_reader),
+// а каталожные guest/reader/operator/admin для него инертны.
+const NON_ROLE_SERVICES = new Set<string>([
+  "auth_service",
+  "worker_service",
+  "loging_service",
+]);
 
 // Fallback для mock-режима, когда `listServices` не дёргается (backend не поднят).
 const MOCK_PICKER_SERVICES = [
   "secret_service",
   "server_service",
-  "loging_service",
   "config_service",
   "docker_registry",
 ];

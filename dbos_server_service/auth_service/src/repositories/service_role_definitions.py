@@ -1,7 +1,8 @@
 """DAO для `ServiceRoleDefinition` (scope `(dept, service, role_name)`).
 
-Системная роль `admin` сеется через `seed_system_admin` при grant'е dept-access
-к сервису — `is_system=True` защищает её от модификации/удаления через API.
+Системные роли (`guest`, `admin`) сеются через `seed_system_roles` при grant'е
+dept-access к сервису — `is_system=True` защищает их от модификации/удаления
+через API.
 """
 
 from sqlalchemy import select
@@ -12,6 +13,14 @@ from src.utils.ids import service_role_def_id
 
 
 SYSTEM_ADMIN_ROLE_NAME = "admin"
+SYSTEM_GUEST_ROLE_NAME = "guest"
+
+# Системные роли, которые получает каждая пара (dept, service) при выдаче
+# доступа. Порядок в кортеже = порядок сидирования. Имя → описание.
+SYSTEM_ROLES: tuple[tuple[str, str], ...] = (
+    (SYSTEM_GUEST_ROLE_NAME, "Baseline guest access to the service"),
+    (SYSTEM_ADMIN_ROLE_NAME, "Full administrative access to the service"),
+)
 
 
 class ServiceRoleDefinitionRepository:
@@ -79,19 +88,39 @@ class ServiceRoleDefinitionRepository:
         await self._db.flush()
         return obj
 
-    async def seed_system_admin(
+    async def seed_system_roles(
         self, department_id: str, service_name: str, actor_id: str | None
-    ) -> ServiceRoleDefinition:
-        """Create the immutable `admin` role for (department, service).
+    ) -> list[ServiceRoleDefinition]:
+        """Create the immutable system roles (`guest`, `admin`) for (dept, service).
 
-        Reactivates an existing soft-deleted system row if present, otherwise
-        inserts a fresh one. Idempotent for already-active rows.
+        Per role: reactivates an existing soft-deleted row, marks it
+        `is_system=True`, and never duplicates. A custom role that already
+        carries one of the system names is promoted to a system role (the
+        unique `(department_id, service_name, role_name)` constraint guarantees
+        at most one such row). Idempotent for already-active system rows.
         """
+        seeded: list[ServiceRoleDefinition] = []
+        for role_name, description in SYSTEM_ROLES:
+            seeded.append(
+                await self._seed_one(
+                    department_id, service_name, role_name, description, actor_id
+                )
+            )
+        return seeded
+
+    async def _seed_one(
+        self,
+        department_id: str,
+        service_name: str,
+        role_name: str,
+        description: str,
+        actor_id: str | None,
+    ) -> ServiceRoleDefinition:
         existing = await self._db.scalar(
             select(ServiceRoleDefinition).where(
                 ServiceRoleDefinition.department_id == department_id,
                 ServiceRoleDefinition.service_name == service_name,
-                ServiceRoleDefinition.role_name == SYSTEM_ADMIN_ROLE_NAME,
+                ServiceRoleDefinition.role_name == role_name,
             )
         )
         if existing is not None:
@@ -104,8 +133,8 @@ class ServiceRoleDefinitionRepository:
         return await self.create(
             department_id=department_id,
             service_name=service_name,
-            role_name=SYSTEM_ADMIN_ROLE_NAME,
-            description="Full administrative access to the service",
+            role_name=role_name,
+            description=description,
             created_by=actor_id,
             is_system=True,
         )

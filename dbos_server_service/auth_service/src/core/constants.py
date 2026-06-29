@@ -34,10 +34,15 @@ class PlatformRole(StrEnum):
 
 
 class ServiceRole(StrEnum):
-    """Per-service роли, которые применяют все application-сервисы."""
+    """Системные per-service роли, которые сеются в каталог каждого отдела при
+    выдаче доступа к сервису (`is_system=True`).
+
+    Только `guest` и `admin` сеются автоматически и защищены от изменения.
+    Остальные роли (`reader`, `operator` и любые доменные) — это кастомные
+    определения, которые отдел заводит сам; они не перечислены здесь и
+    валидируются по каталогу `service_role_definitions`, а не по этому enum'у.
+    """
     GUEST = "guest"
-    READER = "reader"
-    OPERATOR = "operator"
     ADMIN = "admin"
 
 

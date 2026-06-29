@@ -210,9 +210,10 @@ async def grant_service_access(
     else:
         await dept_repo.grant_access(department_id, service_name, granted_by=actor_id)
 
-    # Засеять (или реактивировать) системную роль `admin` для пары (dept, service).
+    # Засеять (или реактивировать) системные роли (`guest`, `admin`) для пары
+    # (dept, service).
     role_def_repo = ServiceRoleDefinitionRepository(db)
-    await role_def_repo.seed_system_admin(department_id, service_name, actor_id)
+    await role_def_repo.seed_system_roles(department_id, service_name, actor_id)
 
     await db.commit()
     audit_service.emit(

@@ -18,7 +18,11 @@ from sqlalchemy import select
 
 from src.core.constants import PlatformRole
 from src.models import PlatformService, ServiceRoleDefinition
-from src.repositories.service_role_definitions import SYSTEM_ADMIN_ROLE_NAME
+from src.repositories.service_role_definitions import (
+    SYSTEM_ADMIN_ROLE_NAME,
+    SYSTEM_GUEST_ROLE_NAME,
+)
+from src.utils.ids import service_role_def_id
 
 
 SECRET_SERVICE_NAME = "secret_service"
@@ -79,6 +83,109 @@ async def test_admin_role_visible_in_definitions(
     assert role is not None
     assert role.is_system is True
     assert role.is_active is True
+
+
+async def _grant(client, admin_token, dept_id):
+    return await client.post(
+        f"/api/auth/v1/departments/{dept_id}/services",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"service_name": SECRET_SERVICE_NAME},
+    )
+
+
+async def _system_roles(db, dept_id):
+    rows = await db.scalars(
+        select(ServiceRoleDefinition).where(
+            ServiceRoleDefinition.department_id == dept_id,
+            ServiceRoleDefinition.service_name == SECRET_SERVICE_NAME,
+            ServiceRoleDefinition.is_system.is_(True),
+            ServiceRoleDefinition.is_active.is_(True),
+        )
+    )
+    return {r.role_name for r in rows}
+
+
+async def test_system_roles_are_guest_and_admin(
+    db, client, admin_token, dept_a, secret_service_registered,
+):
+    """После grant'а системные роли каталога — ровно `guest` + `admin`."""
+    r = await _grant(client, admin_token, dept_a.id)
+    assert r.status_code in (200, 201), r.text
+
+    assert await _system_roles(db, dept_a.id) == {
+        SYSTEM_GUEST_ROLE_NAME,
+        SYSTEM_ADMIN_ROLE_NAME,
+    }
+
+
+async def test_reader_operator_not_seeded(
+    db, client, admin_token, dept_a, secret_service_registered,
+):
+    """`reader`/`operator` системно НЕ сеются."""
+    r = await _grant(client, admin_token, dept_a.id)
+    assert r.status_code in (200, 201), r.text
+
+    rows = await db.scalars(
+        select(ServiceRoleDefinition).where(
+            ServiceRoleDefinition.department_id == dept_a.id,
+            ServiceRoleDefinition.service_name == SECRET_SERVICE_NAME,
+        )
+    )
+    names = {r.role_name for r in rows}
+    assert "reader" not in names
+    assert "operator" not in names
+
+
+async def test_repeat_grant_is_idempotent(
+    db, client, admin_token, dept_a, secret_service_registered,
+):
+    """Повторная выдача access не плодит дублей системных ролей."""
+    r1 = await _grant(client, admin_token, dept_a.id)
+    assert r1.status_code in (200, 201), r1.text
+    # Вторая выдача активному access'у возвращает 409, но даже если бы access
+    # был revoke'нут и переподнят — сеялка остаётся идемпотентной по каталогу.
+    rows = await db.scalars(
+        select(ServiceRoleDefinition).where(
+            ServiceRoleDefinition.department_id == dept_a.id,
+            ServiceRoleDefinition.service_name == SECRET_SERVICE_NAME,
+            ServiceRoleDefinition.role_name == SYSTEM_GUEST_ROLE_NAME,
+        )
+    )
+    assert len(list(rows)) == 1
+
+
+async def test_custom_role_same_name_promoted_to_system(
+    db, client, admin_token, dept_a, secret_service_registered,
+):
+    """Кастомная роль `guest`, заведённая до grant'а, не ломает сеялку —
+    строка реактивируется/помечается системной, без дубля."""
+    pre = ServiceRoleDefinition(
+        id=service_role_def_id(),
+        department_id=dept_a.id,
+        service_name=SECRET_SERVICE_NAME,
+        role_name=SYSTEM_GUEST_ROLE_NAME,
+        description="custom guest",
+        is_active=True,
+        is_system=False,
+    )
+    db.add(pre)
+    await db.flush()
+
+    r = await _grant(client, admin_token, dept_a.id)
+    assert r.status_code in (200, 201), r.text
+
+    rows = list(
+        await db.scalars(
+            select(ServiceRoleDefinition).where(
+                ServiceRoleDefinition.department_id == dept_a.id,
+                ServiceRoleDefinition.service_name == SECRET_SERVICE_NAME,
+                ServiceRoleDefinition.role_name == SYSTEM_GUEST_ROLE_NAME,
+            )
+        )
+    )
+    assert len(rows) == 1
+    assert rows[0].is_system is True
+    assert rows[0].is_active is True
 
 
 # ── 2. PlatformRole enum coverage ────────────────────────────────────────────

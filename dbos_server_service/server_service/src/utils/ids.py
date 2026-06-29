@@ -48,6 +48,11 @@ def entity_permission_id() -> str:
     return _new_id("prm_")
 
 
+def resource_role_permission_id() -> str:
+    """`rrp_<uuid>` — для resource_role_permissions (инстанс-уровневый ACL)."""
+    return _new_id("rrp_")
+
+
 def server_disk_id() -> str:
     """`dsk_<uuid>` — для server_disks."""
     return _new_id("dsk_")

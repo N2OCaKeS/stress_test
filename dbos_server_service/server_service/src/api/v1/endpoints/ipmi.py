@@ -119,7 +119,9 @@ async def _dispatch_power(
         extra_details={"server_id": server_id},
         identity=identity,
     ):
-        await permissions.require_action(db, identity, EntityType.SERVER, action)
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, action
+        )
     try:
         server = await server_svc.get_server(db, identity, server_id)
     except (NotFoundError, AuthorizationError) as exc:
@@ -620,8 +622,8 @@ async def power_status(
     # требуем `view` (а не `power_status`, который для live-probe через worker'а).
     # `guest` без view → 403; reader/operator/admin с view → 200.
     try:
-        await permissions.require_action(
-            db, identity, EntityType.SERVER, Action.VIEW,
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.VIEW,
         )
     except AuthorizationError:
         audit_service.emit(

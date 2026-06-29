@@ -232,15 +232,15 @@ class TestPowerStatusCachedAudit:
         return _capture_emits(monkeypatch)
 
     async def test_no_view_emits_denied_audit(
-        self, client, make_server, guest_token_a, captured,
+        self, client, make_server, no_role_token_a, captured,
     ):
-        """guest без view → require_action кидает AuthorizationError
+        """Субъект без view → require_action кидает AuthorizationError
         → audit denied, reason=permission_denied."""
         srv = await make_server(department_id="dep_a")
 
         resp = await client.get(
             f"{BASE}/servers/{srv.id}/ipmi/power",
-            headers=_hdr(guest_token_a),
+            headers=_hdr(no_role_token_a),
         )
         assert_error(resp, 403, "PERMISSION_DENIED")
 
@@ -328,13 +328,13 @@ class TestPowerStatusCachedAudit:
         assert successes[0]["details"]["power_state"] == "unknown"
 
     async def test_denied_emits_no_success(
-        self, client, make_server, guest_token_a, captured,
+        self, client, make_server, no_role_token_a, captured,
     ):
-        """guest denied → нет success-аудита."""
+        """Отказ по матрице → нет success-аудита."""
         srv = await make_server(department_id="dep_a")
         await client.get(
             f"{BASE}/servers/{srv.id}/ipmi/power",
-            headers=_hdr(guest_token_a),
+            headers=_hdr(no_role_token_a),
         )
         successes = [
             e for e in captured

@@ -470,11 +470,11 @@ def test_installed_packages_handler_passes_max_rows(monkeypatch):
     async def fake_get_server(_db, _identity, _id):
         return _Server()
 
-    async def fake_require(_db, _ident, _ent, _act):
+    async def fake_require(*a, **k):
         return None
 
     monkeypatch.setattr(ip.server_svc, "get_server", fake_get_server)
-    monkeypatch.setattr(ip.permissions, "require_action", fake_require)
+    monkeypatch.setattr(ip.permissions, "require_resource_action", fake_require)
     monkeypatch.setattr(ip, "audit_service", type("S", (), {"emit": lambda *a, **k: None})())
     monkeypatch.setattr(disp, "audit_service", type("S", (), {"emit": lambda *a, **k: None})())
 

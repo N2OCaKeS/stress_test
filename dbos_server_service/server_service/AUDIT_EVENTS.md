@@ -228,6 +228,21 @@ Public endpoint'ы, через которые user (обычно admin) запу
 
 ---
 
+## Instance-level ACL (resource_role_permissions)
+
+Точечные гранты роли на конкретный ресурс (`server` / `server_account`) поверх
+тип-wide матрицы. Управление — `/resource-permissions/*`, доступ как у
+`/permissions` (`account_admin` — мета-админ, остальным `(permission, *,
+permission_grant/revoke/view)` своего отдела). Все мутации — CRITICAL.
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `resource_permission.grant` | CRITICAL | INSERT в `resource_role_permissions` через PUT `/resource-permissions/{rt}/{rid}/{role}/{action}` — роль получила action на конкретный ресурс. Повтор (строка уже есть) — no-op без audit-emit (как `permission.grant`) | `server` / `server_account` | success: `target_id` = id строки грантa, `resource_type`, `resource_id`, `role`, `action`, `department_id` (отдел ресурса). denied (через `emit_denied_on_authz_error`): `reason=permission_denied`. failure: `reason in {action_not_instance_grantable, resource_not_found_or_cross_dept, race_already_exists}` |
+| `resource_permission.revoke` | CRITICAL | DELETE из `resource_role_permissions` через DELETE `/resource-permissions/{rt}/{rid}/{role}/{action}` — роль лишилась action на ресурсе | `server` / `server_account` | success: `resource_type`, `resource_id`, `role`, `action`, `department_id`. denied: `reason=permission_denied`. failure: `reason in {resource_not_found_or_cross_dept, not_found}` |
+| `resource_permission.propagate` | CRITICAL | POST `/resource-permissions/{rt}/{source_rid}/propagate` — гранты образца скопированы на цели того же типа (`mode=merge` добавляет недостающее; `mode=mirror` ещё удаляет лишнее, требует `permission_revoke`). Все цели — в отделе образца | `server` / `server_account` | success: `target_id` = образец, `resource_type`, `source_resource_id`, `mode`, `department_id`, `source_grant_count`, `targets_applied`, `total_added`, `total_removed`. denied: `reason=permission_denied`. failure: `reason in {resource_not_found_or_cross_dept, target_not_found_or_cross_dept}` (+ `target_resource_id` для цели) |
+
+---
+
 ## Server accounts — CRUD (user-facing)
 
 | action | default_severity | эмитится при | target_type | детали |
@@ -378,6 +393,7 @@ manage_packages)`, по дефолту admin/operator.
 - `action in {server_account.view_password, ipmi_controller.view_credentials}` (WARNING) — раскрытие секрета worker'у через `/internal/*`. Кросс-чекать с request_id worker-job'ы.
 - `action in {server_account.password_revealed, ipmi_controller.credentials_revealed}` (CRITICAL) — пользователь раскрыл пароль через GET-карточку (держатель `view_password` / `view_credentials`). Кросс-чекать с identity актёра (user/UI vs worker_bot).
 - `action=permission.grant OR permission.revoke` — любое изменение матрицы прав. (Управление каталогом service-ролей переехало в auth_service — соответствующее SIEM-правило живёт там.)
+- `action in {resource_permission.grant, resource_permission.revoke, resource_permission.propagate}` — изменение инстанс-уровневого ACL (точечный грант роли на конкретный server/server_account). Особое внимание к `propagate` с большим `total_added`/`targets_applied` — массовое расширение прав одним запросом.
 - `action=server.power_* AND status=denied, reason=not_found_or_cross_dept` — cross-dept probe.
 - `action=internal.dept_header_missing` — если есть в проде, значит `INTERNAL_REQUIRE_DEPT_HEADER` случайно выключен или worker сломался.
 - `action in {ipmi_controller.view_credentials, server_account.view_password, server_account.rotate_password, server.inventory_received, ipmi_controller.credentials_rotated_callback} AND status=denied AND details.reason=actor_department_mismatch` — caller (worker_bot или admin) пытается работать с сервером чужого отдела через `/internal/*`. Высокий приоритет — компрометированный/неправильно выданный PAT.

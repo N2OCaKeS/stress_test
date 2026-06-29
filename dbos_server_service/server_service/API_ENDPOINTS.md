@@ -60,7 +60,7 @@ List-эндпоинты `/servers`, `/server-accounts`, `/ipmi-controllers`, `/o
 * **Cursor (рекомендуемый):** `?cursor=true&after=<opaque>&limit=<N>` → `{items, next_cursor, has_more}`. `after` опускается на первой странице.
 * **Offset (legacy):** `?limit=<N>&offset=<M>` → `{items, total, limit, offset}`. Default `limit=100`, диапазон `1..500`.
 
-`GET /permissions` — non-paginated (матрица ожидаемо ≤200 строк).
+`GET /permissions` и `/resource-permissions/by-*` — non-paginated (матрица и инстанс-гранты ожидаемо ≤200 строк).
 
 ### URL-конвенция
 
@@ -112,8 +112,11 @@ POST-CREATE эндпоинты (`POST /servers`, `POST /server-accounts`, `POST 
 | `NO_IPMI_CONTROLLER` | 404 | BMC не зарегистрирован у сервера |
 | `TASK_NOT_FOUND` | 404 | cancel неизвестной/cross-dept task'и |
 | `OS_VERSION_NOT_FOUND` | 404 | get/update/delete неизвестной os-версии |
+| `RESOURCE_NOT_FOUND` | 404 | инстанс-ACL: ресурс (server/server_account) не найден / чужой отдел |
+| `RESOURCE_PERMISSION_NOT_FOUND` | 404 | инстанс-ACL: revoke грантa, которого нет |
 | `SERVER_DUPLICATE` / `IPMI_DUPLICATE` | 409 | UNIQUE на create |
 | `OS_VERSION_DUPLICATE` | 409 | UNIQUE(name) на create/update os-версии |
+| `RESOURCE_PERMISSION_ALREADY_EXISTS` | 409 | инстанс-ACL: гонка на UNIQUE при grant |
 | `OS_VERSION_IN_USE` | 409 | delete os-версии, на которую ссылается сервер (FK RESTRICT) |
 | `SERVER_DECOMMISSIONED` | 409 | dispatch-операция на списанный сервер |
 | `TASK_IDEMPOTENT_CONFLICT` | 409 | гонка двух POST с одним Idempotency-Key |
@@ -129,6 +132,8 @@ POST-CREATE эндпоинты (`POST /servers`, `POST /server-accounts`, `POST 
 | `INVALID_OS_VERSION` | 422 | FK violation на os_version_id |
 | `INVALID_ACTION_FOR_ENTITY` | 422 | grant на неподходящую (entity, action) пару |
 | `UNKNOWN_ENTITY_TYPE` | 422 | неизвестный entity_type в `/permissions/{type}` |
+| `UNKNOWN_RESOURCE_TYPE` | 422 | resource_type вне `{server, server_account}` в `/resource-permissions/*` |
+| `ACTION_NOT_INSTANCE_GRANTABLE` | 422 | инстанс-grant на глобально-только action (`create`, callback'и воркера, `view_management_credentials`, `manage_ignored_logins`) |
 | `WEAK_PASSWORD` | 422 | пароль не прошёл политику |
 | `PREPARE_REQUIRED` | 409 | inventory.sync / users.inventory / installed-packages на неподготовленный сервер (`is_managed=False`) — сначала prepare |
 | `ACCOUNT_NOT_LINKED` | 404 | prepare account-режим: `account_id` не привязан к этому серверу |
@@ -530,6 +535,54 @@ Errors: `PERMISSION_DENIED` / `DEPARTMENT_ISOLATION` (403), `PERMISSION_ALREADY_
 Auth: Bearer + `(permission, *, permission_revoke)`. Query: `target_department_id?`. CRITICAL audit.
 
 Errors: `PERMISSION_DENIED` / `DEPARTMENT_ISOLATION` (403), `PERMISSION_NOT_FOUND` (404).
+
+---
+
+## Resource permissions (`/resource-permissions`)
+
+Инстанс-уровневый ACL — точечные гранты роли на КОНКРЕТНЫЙ ресурс (`server` / `server_account`) поверх тип-wide матрицы `entity_permissions`. Слой аддитивный: эффективные права на ресурс = тип-wide объединение ∪ инстанс-гранты этого ресурса. Deny-грантов нет.
+
+- **resource_type** ∈ `{server, server_account}` (вне этого набора → `422 UNKNOWN_RESOURCE_TYPE`). `os_version` (глобальный каталог), `ipmi_controller` (живёт под сервером), `permission`/`task` инстанс-ACL не поддерживают.
+- **Инстанс-гранты всегда per-department:** `department_id` строки = отдел самого ресурса. System-wide инстанс-грантов через API нет.
+- **Грантуются только инстанс-привязанные действия.** `create` и callback-действия воркера (`inventory_submit` / `provision_on_host` / `prepare_callback`), а также `view_management_credentials` и `manage_ignored_logins` остаются только в глобальном слое `/permissions` (попытка выдать их инстанс-грантом → `422 ACTION_NOT_INSTANCE_GRANTABLE`).
+- **Инстанс-грантуемые действия:**
+  * `server`: `view`, `update`, `delete`, `busy_acquire`, `busy_release`, `os_sync`, `power_on`, `power_off`, `power_reboot`, `power_status`, `inventory_trigger`, `console`, `view_drift`, `manage_packages`.
+  * `server_account`: `view`, `update`, `delete`, `view_password`, `rotate_password`, `grant_sudo`, `provision`, `deprovision`, `adopt_from_host`, `console`.
+- **Доступ к управлению** — как у `/permissions`: платформенный `account_admin` — мета-админ (bypass ролевой проверки и dept-isolation), остальным нужны `(permission, *, view)` / `permission_grant` / `permission_revoke` своего отдела. Ресурс обязан быть в отделе актора (иначе `404 RESOURCE_NOT_FOUND` — существование не раскрываем). Все мутации пишутся в audit как CRITICAL.
+
+### `GET /resource-permissions/by-resource/{resource_type}/{resource_id}`
+
+Auth: Bearer + `(permission, *, view)` либо account_admin. Список инстанс-грантов на конкретный ресурс. Envelope `{items, total}`.
+
+Errors: `PERMISSION_DENIED` (403), `UNKNOWN_RESOURCE_TYPE` (422).
+
+### `GET /resource-permissions/by-role/{role}`
+
+Auth: Bearer + `(permission, *, view)` либо account_admin. Срез всех инстанс-грантов одной роли. Query: `resource_type?` (сужает выдачу до одного типа). Envelope `{items, total}`.
+
+Errors: `PERMISSION_DENIED` (403), `UNKNOWN_RESOURCE_TYPE` (422 — если передан невалидный `resource_type`).
+
+### `PUT /resource-permissions/{resource_type}/{resource_id}/{role}/{action}`
+
+Auth: Bearer + `(permission, *, permission_grant)` либо account_admin. Выдать инстанс-грант `action` роли `role` на ресурс. Идемпотентно (повтор → возврат существующей строки без INSERT и без audit). Scope строки = отдел ресурса. Ответ — `ResourcePermissionResponse` (`{id, resource_type, resource_id, role, action, department_id, granted_by, created_at, updated_at}`). CRITICAL audit `resource_permission.grant`.
+
+Errors: `PERMISSION_DENIED` (403), `RESOURCE_NOT_FOUND` (404 — ресурс не найден / чужой отдел), `RESOURCE_PERMISSION_ALREADY_EXISTS` (409 — гонка на UNIQUE), `UNKNOWN_RESOURCE_TYPE` / `ACTION_NOT_INSTANCE_GRANTABLE` (422).
+
+### `DELETE /resource-permissions/{resource_type}/{resource_id}/{role}/{action}`
+
+Auth: Bearer + `(permission, *, permission_revoke)` либо account_admin. Снять инстанс-грант. Ответ — `OkResponse`. CRITICAL audit `resource_permission.revoke`.
+
+Errors: `PERMISSION_DENIED` (403), `RESOURCE_NOT_FOUND` (404 — ресурс не найден / чужой отдел) / `RESOURCE_PERMISSION_NOT_FOUND` (404 — такой строки нет), `UNKNOWN_RESOURCE_TYPE` (422).
+
+### `POST /resource-permissions/{resource_type}/{source_resource_id}/propagate`
+
+Auth: Bearer + `(permission, *, permission_grant)` (для `mode=mirror` — дополнительно `permission_revoke`) либо account_admin. Копирует ВСЕ инстанс-гранты ресурса-образца на список целей того же типа.
+
+Body: `{"target_resource_ids": [...], "mode": "merge"|"mirror"}` (default `merge`; `target_resource_ids` — 1..500 элементов, сам образец из списка отбрасывается). `mode=merge` добавляет на каждую цель недостающие `(role, action)` образца, существующие не трогает; `mode=mirror` приводит цель к точной копии образца — добавляет недостающее И удаляет лишнее. Идемпотентно. Все цели обязаны быть в отделе образца, иначе `404 RESOURCE_NOT_FOUND`. CRITICAL audit `resource_permission.propagate`.
+
+Ответ — `ResourcePropagateResponse`: `{source_resource_id, resource_type, mode, source_grant_count, targets: [{resource_id, added, removed}]}` (`removed` всегда 0 при `merge`).
+
+Errors: `PERMISSION_DENIED` (403 — нет `permission_grant`; для `mirror` ещё `permission_revoke`), `RESOURCE_NOT_FOUND` (404 — образец или любая цель не найдены / чужой отдел), `UNKNOWN_RESOURCE_TYPE` (422), `VALIDATION_ERROR` (422 — пустой/слишком большой `target_resource_ids`, невалидный `mode`).
 
 ---
 

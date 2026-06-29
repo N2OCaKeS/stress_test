@@ -160,11 +160,14 @@ def _patch_console(monkeypatch):
 
     # По умолчанию у caller'а есть серверный `(server, console)` — тесты под
     # отказ переопределяют. Серверный console больше не жёсткий require, а
-    # has_action-проверка, чей результат прокидывается в резолвер кред.
-    async def fake_has_action(db, identity, entity_type, action):
+    # has_resource_action-проверка (тип-wide ИЛИ инстанс-грант на сервер),
+    # чей результат прокидывается в резолвер кред.
+    async def fake_has_resource_action(*a, **k):
         return True
 
-    monkeypatch.setattr(console.permissions, "has_action", fake_has_action)
+    monkeypatch.setattr(
+        console.permissions, "has_resource_action", fake_has_resource_action
+    )
 
     # Дефолтный happy-резолв кред + no-op Redis-stash (отдельные тесты
     # переопределяют под свои сценарии).
@@ -234,7 +237,7 @@ async def test_no_console_permission_closes_4403(monkeypatch, _patch_console):
     async def resolve_denied(*a, **k):
         raise AuthorizationError(error_code="PERMISSION_DENIED", message="no")
 
-    monkeypatch.setattr(console.permissions, "has_action", no_server_console)
+    monkeypatch.setattr(console.permissions, "has_resource_action", no_server_console)
     monkeypatch.setattr(console.server_svc, "load_visible_server", load)
     monkeypatch.setattr(
         console.account_svc, "resolve_console_credentials", resolve_denied,
@@ -262,7 +265,7 @@ async def test_no_creds_permission_closes_4403(monkeypatch, _patch_console):
     async def resolve_denied(*a, **k):
         raise AuthorizationError(error_code="PERMISSION_DENIED", message="no creds")
 
-    monkeypatch.setattr(console.permissions, "has_action", no_server_console)
+    monkeypatch.setattr(console.permissions, "has_resource_action", no_server_console)
     monkeypatch.setattr(console.server_svc, "load_visible_server", load)
     monkeypatch.setattr(
         console.account_svc, "resolve_console_credentials", resolve_denied,

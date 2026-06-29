@@ -42,6 +42,7 @@ from src.core.exceptions import (
     ServiceUnavailableError,
 )
 from src.models import Server, ServerAccount, ServerAccountIgnoredLogin
+from src.repositories import resource_role_permission as resource_perm_repo
 from src.repositories import server_account as repo
 from src.repositories import server_account_ignored_login as ignored_login_repo
 from src.schemas.identity import IdentityContext
@@ -180,7 +181,12 @@ async def _authorize_account_action(
     account = await (
         repo.get_for_update(db, account_id) if for_update else repo.get_by_id(db, account_id)
     )
-    visible = account is not None and account.department_id == identity.department_id
+    visible = account is not None and (
+        account.department_id == identity.department_id
+        or await permissions.has_resource_grant(
+            db, identity, EntityType.SERVER_ACCOUNT, account.id
+        )
+    )
 
     if has_role:
         # Ролевой путь: поведение как раньше — visibility-404 на невидимую цель.
@@ -234,7 +240,12 @@ async def _authorize_account_action_any(
     Семантика visibility/enumeration та же.
     """
     account = await repo.get_by_id(db, account_id)
-    visible = account is not None and account.department_id == identity.department_id
+    visible = account is not None and (
+        account.department_id == identity.department_id
+        or await permissions.has_resource_grant(
+            db, identity, EntityType.SERVER_ACCOUNT, account.id
+        )
+    )
     has_any_role = False
     for a in actions:
         if await permissions.has_action(db, identity, EntityType.SERVER_ACCOUNT, a):
@@ -313,9 +324,12 @@ async def _load_account_visible(
     account = await repo.get_by_id(db, account_id)
     if account is None:
         raise NotFoundError(error_code="ACCOUNT_NOT_FOUND", message="Server account not found")
-    if identity.department_id != account.department_id:
+    if identity.department_id != account.department_id and not await permissions.has_resource_grant(
+        db, identity, EntityType.SERVER_ACCOUNT, account.id
+    ):
         # Скрываем существование аккаунта чужого dept за тем же 404, что и
         # для несуществующего id — иначе по разнице ответов утечёт enumeration.
+        # Инстанс-грант на эту учётку делает её видимой (как и свой отдел).
         raise NotFoundError(error_code="ACCOUNT_NOT_FOUND", message="Server account not found")
     return account
 
@@ -336,7 +350,9 @@ async def _load_account_visible_for_update(
     account = await repo.get_for_update(db, account_id)
     if account is None:
         raise NotFoundError(error_code="ACCOUNT_NOT_FOUND", message="Server account not found")
-    if identity.department_id != account.department_id:
+    if identity.department_id != account.department_id and not await permissions.has_resource_grant(
+        db, identity, EntityType.SERVER_ACCOUNT, account.id
+    ):
         raise NotFoundError(error_code="ACCOUNT_NOT_FOUND", message="Server account not found")
     return account
 
@@ -1794,6 +1810,10 @@ async def delete_account(
     login = obj.login
     server_ids = repo.linked_server_ids(obj)
     department_id = obj.department_id
+    # Инстанс-гранты на эту учётку осиротели бы — чистим в той же транзакции.
+    await resource_perm_repo.delete_for_resource(
+        db, EntityType.SERVER_ACCOUNT, account_id
+    )
     await repo.delete(db, obj)
     await db.commit()
     audit_service.emit(

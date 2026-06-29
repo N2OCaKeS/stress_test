@@ -182,7 +182,9 @@ async def list_installed_packages(
         extra_details={"server_id": server_id},
         identity=identity,
     ):
-        await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW)
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.VIEW
+        )
 
     # 2. Visibility + dept isolation.
     try:
@@ -294,7 +296,9 @@ async def list_packages_history(
         extra_details={"server_id": server_id},
         identity=identity,
     ):
-        await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW)
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.VIEW
+        )
 
     # Visibility + dept isolation. Cross-dept / нет row → 404, симметрично
     # `list_installed_packages`.

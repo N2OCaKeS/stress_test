@@ -16,6 +16,7 @@ from src.core.exceptions import (
 )
 from src.models import IpmiController, Server, ServerDisk
 from src.repositories import ipmi_controller as ipmi_repo
+from src.repositories import resource_role_permission as resource_perm_repo
 from src.repositories import server as repo
 from src.repositories import server_account as account_repo
 from src.repositories import server_disk as disk_repo
@@ -37,16 +38,22 @@ logger = logging.getLogger(__name__)
 _DUPLICATE_HINT = "hostname, ip_address или serial_number уже используется"
 
 
-def _ensure_visible(identity: IdentityContext, server: Server) -> None:
-    """Скрыть cross-department сервер за 404, чтобы не выдавать его существование.
+async def _ensure_visible(
+    db: AsyncSession, identity: IdentityContext, server: Server
+) -> None:
+    """Скрыть невидимый сервер за 404, чтобы не выдавать его существование.
 
-    Чужой dept → 404, а не 403 — иначе по разнице ответов можно перечислить
-    чужие server_id'ы. Platform-роли (`account_admin`/`loging_admin`) сюда
-    физически не доходят: `platform_admin_guard` middleware режет их 403
-    до endpoint-слоя, у них нет department_id и сервисных ролей.
+    Сервер видим, если он в отделе caller'а ИЛИ у caller'а есть хоть один
+    инстанс-грант на него (через его роли). Иначе → 404, а не 403 — иначе по
+    разнице ответов можно перечислить чужие server_id'ы. Platform-роли
+    (`account_admin`/`loging_admin`) сюда физически не доходят:
+    `platform_admin_guard` middleware режет их 403 до endpoint-слоя.
     """
-    if identity.department_id != server.department_id:
-        raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
+    if identity.department_id == server.department_id:
+        return
+    if await permissions.has_resource_grant(db, identity, EntityType.SERVER, server.id):
+        return
+    raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
 
 
 async def load_visible_server(
@@ -54,18 +61,18 @@ async def load_visible_server(
     identity: IdentityContext,
     server_id: str,
 ) -> Server:
-    """Загрузить сервер с dept-visibility, БЕЗ require_action(SERVER, VIEW).
+    """Загрузить сервер с visibility-check, БЕЗ require_action(SERVER, VIEW).
 
     Используется в endpoint'ах, где основное разрешение даёт другой action
     на дочерней сущности (например, `ipmi_controller.view_credentials`
     у worker_bot — у него нет `server.view`, но он легитимно читает
-    credentials привязанного к серверу controller'а). Department-isolation
-    сохраняется через `_ensure_visible`.
+    credentials привязанного к серверу controller'а). Видимость — свой отдел
+    ИЛИ инстанс-грант (`_ensure_visible`).
     """
     obj = await repo.get_by_id(db, server_id)
     if obj is None:
         raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
-    _ensure_visible(identity, obj)
+    await _ensure_visible(db, identity, obj)
     return obj
 
 
@@ -84,10 +91,19 @@ async def load_visible_servers(
     if not server_ids:
         return {}
     found = await repo.get_many_by_ids(db, server_ids)
-    return {
+    same_dept = {
         sid: srv for sid, srv in found.items()
         if identity.department_id == srv.department_id
     }
+    # Сервера чужого отдела видимы, только если на них есть инстанс-грант.
+    cross_dept_ids = [sid for sid in found if sid not in same_dept]
+    if cross_dept_ids:
+        granted = await permissions.visible_resource_ids(
+            db, identity, EntityType.SERVER, cross_dept_ids
+        )
+        for sid in granted:
+            same_dept[sid] = found[sid]
+    return same_dept
 
 
 async def load_storage(db: AsyncSession, server_id: str) -> list[ServerDisk]:
@@ -188,8 +204,19 @@ async def list_servers_cursor(
         parse_cursor_datetime,
     )
 
-    await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW)
-    if identity.department_id is None:
+    # Тип-wide `server.view` даёт весь отдел; без него — grant-only листинг
+    # (видны ровно сервера с инстанс-грантом). Нет ни того, ни другого → 403.
+    has_type_view = await permissions.has_action(
+        db, identity, EntityType.SERVER, Action.VIEW
+    )
+    granted_ids: list[str] = []
+    if not has_type_view:
+        granted_ids = sorted(
+            await permissions.granted_resource_ids(db, identity, EntityType.SERVER)
+        )
+        if not granted_ids:
+            await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW)
+    if identity.department_id is None and not granted_ids:
         return [], None, False
     page_size = normalize_limit(limit)
     after_created_at = None
@@ -201,14 +228,23 @@ async def list_servers_cursor(
         except InvalidCursorError:
             raise
         after_id = cur.row_id
-    dept_filter = [identity.department_id]
-    rows = await repo.list_in_departments_after(
-        db,
-        dept_filter,
-        limit=page_size + 1,
-        after_created_at=after_created_at,
-        after_id=after_id,
-    )
+    if has_type_view:
+        dept_filter = [identity.department_id]
+        rows = await repo.list_in_departments_after(
+            db,
+            dept_filter,
+            limit=page_size + 1,
+            after_created_at=after_created_at,
+            after_id=after_id,
+        )
+    else:
+        rows = await repo.list_by_ids_after(
+            db,
+            granted_ids,
+            limit=page_size + 1,
+            after_created_at=after_created_at,
+            after_id=after_id,
+        )
     has_more = len(rows) > page_size
     items = rows[:page_size]
     next_cursor = (
@@ -229,12 +265,25 @@ async def list_servers(
     случайно проскочить изоляцию: у caller'а без department_id — пустой
     результат сразу. Platform-роли отрезаны guard'ом ещё в middleware.
     """
-    await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW)
-    if identity.department_id is None:
-        return [], 0
-    dept_filter = [identity.department_id]
-    items = await repo.list_in_departments(db, dept_filter, limit=limit, offset=offset)
-    total = await repo.count_in_departments(db, dept_filter)
+    has_type_view = await permissions.has_action(
+        db, identity, EntityType.SERVER, Action.VIEW
+    )
+    if has_type_view:
+        if identity.department_id is None:
+            return [], 0
+        dept_filter = [identity.department_id]
+        items = await repo.list_in_departments(db, dept_filter, limit=limit, offset=offset)
+        total = await repo.count_in_departments(db, dept_filter)
+        return items, total
+    # grant-only листинг: роль без тип-wide view видит ровно сервера с
+    # инстанс-грантом. Без единого гранта — 403 (require view поднимает отказ).
+    granted_ids = sorted(
+        await permissions.granted_resource_ids(db, identity, EntityType.SERVER)
+    )
+    if not granted_ids:
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW)
+    items = await repo.list_by_ids(db, granted_ids, limit=limit, offset=offset)
+    total = await repo.count_by_ids(db, granted_ids)
     return items, total
 
 
@@ -256,11 +305,13 @@ async def get_server(
     # эмитятся разными status'ами — permission_denied → `denied`/`allowed=False`,
     # visibility-404 (caller прошёл VIEW, цель невидима) → `failure`/`allowed=True`.
     try:
-        await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW)
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.VIEW
+        )
         obj = await repo.get_by_id(db, server_id)
         if obj is None:
             raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
-        _ensure_visible(identity, obj)
+        await _ensure_visible(db, identity, obj)
     except (NotFoundError, AuthorizationError) as exc:
         if isinstance(exc, NotFoundError):
             audit_service.emit(
@@ -311,11 +362,13 @@ async def query_drift_summary(
     from src.services import loging_client  # локальный импорт — рвём цикл при тестах
 
     try:
-        await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW_DRIFT)
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.VIEW_DRIFT
+        )
         obj = await repo.get_by_id(db, server_id)
         if obj is None:
             raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
-        _ensure_visible(identity, obj)
+        await _ensure_visible(db, identity, obj)
     except (NotFoundError, AuthorizationError) as exc:
         reason = (
             "not_found_or_cross_dept"
@@ -486,7 +539,9 @@ async def update_server(
         target_type="server",
         identity=identity,
     ):
-        await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.UPDATE
+        )
     # Visibility-check: 404 для non-existent / cross-dept. Permission уже прошёл выше
     # через `emit_denied_on_authz_error`, здесь — visibility, поэтому `failure`/
     # `allowed=True`. Эмит ДО re-raise, иначе попытка теряется в middleware'е
@@ -495,7 +550,7 @@ async def update_server(
         obj = await repo.get_by_id(db, server_id)
         if obj is None:
             raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
-        _ensure_visible(identity, obj)
+        await _ensure_visible(db, identity, obj)
     except (NotFoundError, AuthorizationError) as exc:
         audit_service.emit(
             "server.update",
@@ -598,7 +653,9 @@ async def delete_server(
         target_type="server",
         identity=identity,
     ):
-        await permissions.require_action(db, identity, EntityType.SERVER, Action.DELETE)
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.DELETE
+        )
     # Visibility-check: 404 для non-existent / cross-dept. Permission уже прошёл выше
     # через `emit_denied_on_authz_error`, здесь — visibility, поэтому `failure`/
     # `allowed=True`. Эмит ДО re-raise, иначе попытка теряется в middleware'е
@@ -607,7 +664,7 @@ async def delete_server(
         obj = await repo.get_by_id(db, server_id)
         if obj is None:
             raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
-        _ensure_visible(identity, obj)
+        await _ensure_visible(db, identity, obj)
     except (NotFoundError, AuthorizationError) as exc:
         audit_service.emit(
             "server.delete",
@@ -638,7 +695,13 @@ async def delete_server(
         for a in orphaned_accounts
     ]
     for acc in orphaned_accounts:
+        await resource_perm_repo.delete_for_resource(
+            db, EntityType.SERVER_ACCOUNT, acc.id
+        )
         await account_repo.delete(db, acc)
+    # Инстанс-гранты удаляемого сервера осиротели бы — чистим их в той же
+    # транзакции (soft-FK без каскада на уровне БД).
+    await resource_perm_repo.delete_for_resource(db, EntityType.SERVER, server_id)
     await repo.delete(db, obj)
     await db.commit()
     audit_service.emit(
@@ -696,8 +759,8 @@ async def acquire_server(
         extra_details={"server_id": server_id},
         identity=identity,
     ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER, Action.BUSY_ACQUIRE,
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.BUSY_ACQUIRE,
         )
     try:
         obj = await load_visible_server(db, identity, server_id)
@@ -839,8 +902,8 @@ async def release_server(
         extra_details={"server_id": server_id},
         identity=identity,
     ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER, Action.BUSY_RELEASE,
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.BUSY_RELEASE,
         )
     try:
         obj = await load_visible_server(db, identity, server_id)
@@ -943,8 +1006,8 @@ async def update_os_version(
         extra_details={"server_id": server_id},
         identity=identity,
     ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER, Action.OS_SYNC,
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.OS_SYNC,
         )
     try:
         obj = await load_visible_server(db, identity, server_id)

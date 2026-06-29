@@ -6,6 +6,7 @@ from src.models.entity_permission import EntityPermission
 from src.models.ipmi_controller import IpmiController
 from src.models.management_user_config import ManagementUserConfig
 from src.models.os_version import OsVersion
+from src.models.resource_role_permission import ResourceRolePermission
 from src.models.server import Server
 from src.models.secrets_outbox import ReencryptOutboxEntry
 from src.models.server_account import ServerAccount, ServerAccountServer
@@ -20,6 +21,7 @@ __all__ = [
     "ManagementUserConfig",
     "OsVersion",
     "ReencryptOutboxEntry",
+    "ResourceRolePermission",
     "Server",
     "ServerAccount",
     "ServerAccountIgnoredLogin",

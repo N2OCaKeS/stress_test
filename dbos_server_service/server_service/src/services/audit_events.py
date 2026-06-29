@@ -108,6 +108,11 @@ SERVICE_EVENTS = [
     # Управление матрицей прав
     {"action": "permission.grant", "description": "entity_permission row granted", "default_severity": "CRITICAL"},
     {"action": "permission.revoke", "description": "entity_permission row revoked", "default_severity": "CRITICAL"},
+    # Инстанс-уровневый ACL (resource_role_permissions): точечный грант роли на
+    # конкретный ресурс (server / server_account) поверх тип-wide матрицы.
+    {"action": "resource_permission.grant", "description": "Instance-level ACL row granted (role gets an action on a specific server/server_account). failure reasons: action_not_instance_grantable / resource_not_found_or_cross_dept / race_already_exists", "default_severity": "CRITICAL"},
+    {"action": "resource_permission.revoke", "description": "Instance-level ACL row revoked (role loses an action on a specific server/server_account). failure reasons: resource_not_found_or_cross_dept / not_found", "default_severity": "CRITICAL"},
+    {"action": "resource_permission.propagate", "description": "Instance-level ACL grants copied from a source resource to target resources of the same type (mode=merge adds missing; mode=mirror also removes extras). details carry total_added/total_removed/targets_applied", "default_severity": "CRITICAL"},
     # IPMI controllers — CRUD (user-facing)
     {"action": "ipmi_controller.create", "description": "IPMI controller registered for a server", "default_severity": "CRITICAL"},
     {"action": "ipmi_controller.view", "description": "IPMI controller card viewed", "default_severity": "INFO"},

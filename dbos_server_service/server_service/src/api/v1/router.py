@@ -36,6 +36,9 @@ from src.api.v1.endpoints.management_user_config import (
 from src.api.v1.endpoints.ops import router as ops_router
 from src.api.v1.endpoints.os_versions import router as os_versions_router
 from src.api.v1.endpoints.permissions import router as permissions_router
+from src.api.v1.endpoints.resource_permissions import (
+    router as resource_permissions_router,
+)
 from src.api.v1.endpoints.secrets_migration import router as secrets_migration_router
 from src.api.v1.endpoints.server_accounts import router as server_accounts_router
 from src.api.v1.endpoints.servers import router as servers_router
@@ -69,6 +72,7 @@ router.include_router(installed_packages_action_router, tags=["installed-package
 router.include_router(users_inventory_router, tags=["server-accounts"])
 router.include_router(os_versions_router, tags=["os-versions"])
 router.include_router(permissions_router, tags=["permissions"])
+router.include_router(resource_permissions_router, tags=["resource-permissions"])
 # Cancel worker-task'и. Один endpoint — POST /tasks/{id}/cancel. Сами
 # task-row'ы живут в server_worker (cross-DB engine из worker_client).
 router.include_router(tasks_router, tags=["tasks"])

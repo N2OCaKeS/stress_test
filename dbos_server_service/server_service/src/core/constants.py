@@ -286,3 +286,53 @@ def is_valid_action(entity_type: str, action: str) -> bool:
     """True iff пара (entity_type, action) есть в whitelist'е ENTITY_ACTIONS."""
     allowed = ENTITY_ACTIONS.get(entity_type)
     return allowed is not None and action in allowed
+
+
+# Типы ресурсов, которые поддерживают инстанс-уровневый ACL
+# (resource_role_permissions). Точечный грант роли на конкретный объект имеет
+# смысл только для сущностей с реальными строками в БД этого сервиса — server
+# и server_account. os_version (глобальный каталог), ipmi_controller (живёт под
+# сервером), permission/task в инстанс-ACL не входят.
+RESOURCE_ACL_TYPES: frozenset[str] = frozenset({
+    EntityType.SERVER,
+    EntityType.SERVER_ACCOUNT,
+})
+
+# Действия, которые НЕЛЬЗЯ привязать к конкретному инстансу — они остаются
+# только в глобальном слое (entity_permissions). Сюда входят:
+#   * `create` — на момент проверки инстанса ещё нет;
+#   * callback-действия воркера (inventory_submit / provision_on_host /
+#     prepare_callback) — бот оперирует всеми серверами разом, инстанс-скоуп
+#     его сломал бы;
+#   * `view_management_credentials` — служебный pull воркера через internal
+#     endpoint, человеку не назначается;
+#   * `manage_ignored_logins` — скоуп отдела, а не отдельной учётки.
+_NON_INSTANCE_ACTIONS: frozenset[str] = frozenset({
+    Action.CREATE,
+    # callback-действия воркера (дублируют permission_catalog.WORKER_CALLBACK_ACTIONS;
+    # держим набор тут, чтобы constants не зависел от permission_catalog)
+    Action.INVENTORY_SUBMIT,
+    Action.PROVISION_ON_HOST,
+    Action.PREPARE_CALLBACK,
+    Action.VIEW_MANAGEMENT_CREDENTIALS,
+    Action.MANAGE_IGNORED_LOGINS,
+})
+
+# Инстанс-грантуемые действия на каждый resource_type — производное от
+# ENTITY_ACTIONS за вычетом глобально-только. grant-эндпоинт инстанс-ACL
+# отбивает попытку выдать право на действие вне этого набора.
+INSTANCE_GRANTABLE_ACTIONS: dict[str, frozenset[str]] = {
+    rt: frozenset(ENTITY_ACTIONS[rt]) - _NON_INSTANCE_ACTIONS
+    for rt in RESOURCE_ACL_TYPES
+}
+
+
+def is_instance_grantable(resource_type: str, action: str) -> bool:
+    """True iff `action` можно выдать инстанс-грантом на `resource_type`.
+
+    Отбивает как неизвестные resource_type (нет в RESOURCE_ACL_TYPES), так и
+    действия, которые остаются только в глобальном слое (`create`, callback'и
+    воркера и т.п.).
+    """
+    allowed = INSTANCE_GRANTABLE_ACTIONS.get(resource_type)
+    return allowed is not None and action in allowed

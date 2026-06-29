@@ -156,8 +156,8 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
     try:
         identity = await _authenticate(token)
         async with AsyncSessionLocal() as db:
-            has_server_console = await permissions.has_action(
-                db, identity, EntityType.SERVER, Action.CONSOLE,
+            has_server_console = await permissions.has_resource_action(
+                db, identity, EntityType.SERVER, server_id, Action.CONSOLE,
             )
             server = await server_svc.load_visible_server(db, identity, server_id)
 

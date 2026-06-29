@@ -415,14 +415,14 @@ class TestPermissions:
         assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
         assert captured_dispatch == []
 
-    async def test_guest_without_view_returns_403(
-        self, client, guest_token_a, make_server, captured_dispatch, db,
+    async def test_no_role_without_view_returns_403(
+        self, client, no_role_token_a, make_server, captured_dispatch, db,
     ):
-        """guest без `(server, view)` — 403 на весь батч (это про caller'а)."""
+        """Субъект без `(server, view)` — 403 на весь батч (это про caller'а)."""
         srv = await make_server(department_id="dep_a")
         await _prepared(db, srv)
         resp = await client.post(
-            URL, headers=_hdr(guest_token_a), json={"server_ids": [srv.id]},
+            URL, headers=_hdr(no_role_token_a), json={"server_ids": [srv.id]},
         )
         assert resp.status_code == 403
         assert captured_dispatch == []

@@ -25,6 +25,14 @@
   `PUT /permissions/{e}/{role}/{action}`, `DELETE /permissions/{e}/{role}/{action}`.
   Каждая пара `(entity_type, action)` валидируется против whitelist'а в
   `core/constants.py::ENTITY_ACTIONS`.
+- **Инстанс-уровневый ACL** — `GET /resource-permissions/by-resource/{rt}/{rid}`,
+  `GET /resource-permissions/by-role/{role}`,
+  `PUT`/`DELETE /resource-permissions/{rt}/{rid}/{role}/{action}`,
+  `POST /resource-permissions/{rt}/{source_rid}/propagate`. Точечные гранты роли
+  на КОНКРЕТНЫЙ ресурс (`server` / `server_account`) поверх тип-wide матрицы;
+  слой аддитивный (без deny), всегда per-department (scope = отдел ресурса).
+  Грантуются только инстанс-привязанные действия — `create`, callback'и воркера,
+  `view_management_credentials`, `manage_ignored_logins` остаются в глобальном слое.
 - **Service-роли** — реестр (`admin`/`reader`/`operator`/`guest` плюс кастомные)
   живёт в `auth_service`. `server_service` сам не редактирует каталог ролей —
   только наполняет матрицу actions для них через `/permissions/...` endpoints.
@@ -68,18 +76,18 @@ HTTP запрос
 
 | Пакет | Назначение |
 |---|---|
-| `api/v1/endpoints/` | servers, ipmi, accounts, installed_packages (live SSH-probe, без БД), inventory (hardware + OS-users), os-versions, permissions, health, internal, worker_dispatch, secrets_migration |
+| `api/v1/endpoints/` | servers, ipmi, accounts, installed_packages (live SSH-probe, без БД), inventory (hardware + OS-users), os-versions, permissions, resource_permissions (инстанс-ACL), health, internal, worker_dispatch, secrets_migration |
 | `core/` | `config.py` (pydantic-settings), `constants.py` (`ENTITY_ACTIONS`, `Action`, `EntityType`, `ServerStatus`), `exceptions.py` (`AppException` + envelope handler) |
 | `db/` | `session.py`, `base.py`, миграции Alembic в `migrations/versions/` |
 | `dependencies/` | `auth.py` (introspect на каждый запрос, без кэша; пул только под TCP/TLS), `db.py` (AsyncSession) |
 | `middleware/` | `platform_admin_guard.py` — блокирует platform-админов от business endpoint'ов |
-| `models/` | 7 ORM-таблиц (см. ниже) |
-| `repositories/` | server, server_account (+ server_account_servers join), ipmi_controller, server_disk, entity_permission |
+| `models/` | 8 ORM-таблиц (см. ниже) |
+| `repositories/` | server, server_account (+ server_account_servers join), ipmi_controller, server_disk, entity_permission, resource_role_permission |
 | `schemas/` | Pydantic-схемы запросов/ответов |
-| `services/` | `server.py`, `secrets_service.py`, `worker_client.py`, `permissions.py`, `permission_service.py`, `audit_service.py`, `audit_events.py`, `audit_context.py`, `internal_service.py` |
+| `services/` | `server.py`, `secrets_service.py`, `worker_client.py`, `permissions.py`, `permission_service.py`, `resource_permission_service.py`, `audit_service.py`, `audit_events.py`, `audit_context.py`, `internal_service.py` |
 | `utils/` | генераторы id (`srv_*`, `acc_*`, `tsk_*`, …) |
 
-### Таблицы БД (7)
+### Таблицы БД (8)
 
 1. **servers** — hostname/ip/mgmt_ip/ssh_port unique, FK `os_version_id`, `department_id`, `status`, `power_state`, busy-state, `decommissioned_at`. CPU-данные хранятся inline: `cpu_brand` / `cpu_model` / `cpu_cores` / `cpu_threads` / `cpu_frequency_ghz` (обновляются `inventory.sync` callback'ом или вручную через `PATCH /servers/{id}`). Управление: `is_managed`, `management_user`, `prepared_at` — заполняются после `prepare`-бутстрапа.
 2. **server_accounts** — учётка-«личность» с общим `password_encrypted` (nullable), `has_sudo`, `unix_groups[]`, `linked_user_id`, `shell`, `home_dir`, `department_id` (владелец) и `source` (`managed` / `discovered`). Привязка к серверам — через join `server_account_servers`. Пароль один на все привязанные серверы.
@@ -88,8 +96,9 @@ HTTP запрос
 5. **server_disks** — FK CASCADE, `device_name` (слот: `system`/`disk1`/`diskN`), `size_gb`, `model`, `is_system`. Partial idx: один system-диск на сервер. Управляются только через вложенный `storage` сервера — отдельного disks-endpoint'а нет.
 6. **os_versions** — `name` unique, `description`, `repositories` (массив URL-строк). Каталог **глобальный для всей платформы** — без `department_id`, одна OS-запись на все департаменты.
 7. **entity_permissions** — `(entity_type, role, action, target_department_id)`, scope per-department или system-wide. (Бывшая таблица `server_installed_packages` удалена миграцией `c8e4f6a9b1d2` — теперь live SSH-probe через worker. Бывшая таблица-каталог `cpu_models` удалена миграцией `b6f3a91d27e8` — CPU-данные плоско в `servers`.)
+8. **resource_role_permissions** — инстанс-уровневый ACL: `(resource_type, resource_id, role, action, department_id)`, точечный грант роли на конкретный `server` / `server_account` поверх тип-wide матрицы. `department_id` = отдел ресурса (per-department, без system-wide через API), `granted_by` = автор грантa. Аддитивно к `entity_permissions`, без deny.
 
-Миграции (26 alembic ревизий, ниже — ключевые; полный набор — в `src/db/migrations/versions/`):
+Миграции (28 alembic ревизий, ниже — ключевые; полный набор — в `src/db/migrations/versions/`):
 
 - `d3ad4aac49cc_initial_schema_action_based.py` — 8 таблиц + 13 индексов.
 - `831ba55543e9_seed_default_entity_permissions.py` — 90 строк дефолтных grants (admin 50 + reader 8 + operator 32 + guest 0).
@@ -115,6 +124,8 @@ HTTP запрос
 - `e3f8c4b21a07_seed_view_drift_grant.py` — seed грантов `(server, view_drift)` для `admin` и `operator`; `reader` сохраняет инвариант «только view», расширенный грант — вручную.
 - `a8d2b7c1e394_seed_task_cancel_grant.py` — seed `(task, admin, cancel)`; отмена worker-task через `POST /tasks/{id}/cancel` доступна только держателям `admin`-роли по дефолту.
 - `a2c1d8e4b9f5_add_reveal_password_grants.py` / `a4b7e1c92d05_ipmi_controllers_bmc_vendor.py` — промежуточные миграции, последствия отменены позже (`c3f9b1a8d420` снимает reveal-гранты; `d5e8a1c3f960` дропает `bmc_vendor`).
+- `e1d4a7b2c9f3_resource_role_permissions_table.py` — таблица `resource_role_permissions` под инстанс-уровневый ACL: `(resource_type, resource_id, role, action, department_id)` + UNIQUE на этот набор и индексы под выборки by-resource / by-role.
+- `f2c8b1d6e4a9_seed_guest_server_view.py` — досев system-wide грантa `(server, guest, view)`: системная роль `guest` до этого не несла ни одного action (placeholder из `831ba55543e9`). Теперь guest видит метаданные серверов отдела, но НЕ чувствительное (`view_password` / `view_credentials` / `view_management_credentials` у него нет).
 
 ## Что в stub'ах (501 NOT_IMPLEMENTED)
 
@@ -173,15 +184,35 @@ Worker-task'и, зарегистрированные в брокере, с кл�
    `(entity_type, role, action)` в `entity_permissions`. Whitelist
    допустимых actions per entity_type — в `core/constants.py::ENTITY_ACTIONS`.
    Пользователь может иметь несколько ролей в сервисе — права складываются.
+   Поверх тип-wide матрицы лежит **инстанс-уровневый ACL**
+   (`resource_role_permissions`): точечные гранты роли на конкретный
+   `server` / `server_account`. Эффективные права на ресурс = тип-wide
+   объединение ∪ инстанс-гранты этого ресурса (аддитивно, без deny). Системная
+   роль `guest` несёт ровно один тип-wide грант `(server, view)` — метаданные
+   серверов своего отдела без чувствительного (ipmi-credentials,
+   `view_password`, `view_management_credentials`).
 
 4. **Управление матрицей.** PUT/DELETE `/permissions/{e}/{r}/{a}` требует
    `(permission, *, permission_grant)` / `permission_revoke`. Scope —
    только свой department (`target_department_id`); попытка передать чужой
    department → 403 DEPARTMENT_ISOLATION. Каждое изменение пишется в
-   audit как CRITICAL.
+   audit как CRITICAL. Инстанс-ACL (`/resource-permissions/*`) гейтится теми же
+   правами (`permission_grant` / `permission_revoke` / `view`), `account_admin` —
+   мета-админ; ресурс обязан быть в отделе актора, иначе 404 RESOURCE_NOT_FOUND.
+   Инстанс-гранты выдаются только на инстанс-привязанные действия
+   (`create`, callback'и воркера, `view_management_credentials`,
+   `manage_ignored_logins` → 422 ACTION_NOT_INSTANCE_GRANTABLE).
+   `POST /resource-permissions/{rt}/{src}/propagate` копирует набор грантов
+   образца на однотипные цели (merge — добавить недостающее; mirror —
+   привести к точной копии, требует ещё `permission_revoke`). Все мутации —
+   CRITICAL audit.
 
 5. **Изоляция департаментов.** Пользователь видит только ресурсы своего
    department. Чужие → 404 (не 403), чтобы не утечь сам факт существования.
+   Ресурс становится виден также при наличии инстанс-грантa на него
+   (`resource_role_permissions`). В листинге серверов роль без тип-wide
+   `(server, view)` видит ровно те сервера, на которые у её ролей есть
+   инстанс-грант (grant-only листинг); с тип-wide view — весь свой department.
    Создание/изменение в чужом department запрещено даже при наличии
    нужной роли. Platform-роли (`account_admin`/`loging_admin`) блокируются
    `platform_admin_guard` middleware ДО endpoint-логики: 403

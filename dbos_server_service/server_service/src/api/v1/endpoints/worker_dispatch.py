@@ -260,7 +260,9 @@ async def _dispatch_for_server(
         extra_details={"server_id": server_id},
         identity=identity,
     ):
-        await permissions.require_action(db, identity, EntityType.SERVER, action)
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, action
+        )
 
     # 2. Visibility + dept isolation.
     try:
@@ -1341,7 +1343,9 @@ async def server_prepare_dispatch(
         extra_details={"server_id": server_id},
         identity=identity,
     ):
-        await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.UPDATE
+        )
 
     try:
         server = await server_svc.get_server(db, identity, server_id)
@@ -1790,7 +1794,9 @@ async def server_rotate_management_credentials_dispatch(
         extra_details={"server_id": server_id},
         identity=identity,
     ):
-        await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.UPDATE
+        )
 
     try:
         server = await server_svc.get_server(db, identity, server_id)
@@ -2022,7 +2028,9 @@ async def server_clean_dispatch(
         extra_details={"server_id": server_id},
         identity=identity,
     ):
-        await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.UPDATE
+        )
 
     try:
         server = await server_svc.get_server(db, identity, server_id)

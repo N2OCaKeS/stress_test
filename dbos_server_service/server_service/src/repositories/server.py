@@ -120,6 +120,67 @@ async def list_in_departments_after(
     return list((await db.execute(stmt)).scalars())
 
 
+async def list_by_ids(
+    db: AsyncSession,
+    server_ids: list[str],
+    limit: int = 100,
+    offset: int = 0,
+) -> list[Server]:
+    """SELECT серверов из явного набора id, `created_at DESC`, offset/limit.
+
+    Для grant-only листинга: роль без тип-wide `server.view`, но с инстанс-
+    грантами на конкретные сервера видит ровно их. Пустой набор → пусто.
+    """
+    if not server_ids:
+        return []
+    stmt = (
+        select(Server)
+        .where(Server.id.in_(server_ids))
+        .order_by(Server.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def count_by_ids(db: AsyncSession, server_ids: list[str]) -> int:
+    """COUNT серверов из явного набора id — total для grant-only листинга."""
+    if not server_ids:
+        return 0
+    stmt = select(func.count(Server.id)).where(Server.id.in_(server_ids))
+    return int((await db.execute(stmt)).scalar_one())
+
+
+async def list_by_ids_after(
+    db: AsyncSession,
+    server_ids: list[str],
+    *,
+    limit: int,
+    after_created_at: datetime | None,
+    after_id: str | None,
+) -> list[Server]:
+    """Keyset-страница серверов из явного набора id по `(created_at, id) DESC`."""
+    if not server_ids:
+        return []
+    stmt = (
+        select(Server)
+        .where(Server.id.in_(server_ids))
+        .order_by(Server.created_at.desc(), Server.id.desc())
+        .limit(limit)
+    )
+    if after_created_at is not None and after_id is not None:
+        stmt = stmt.where(
+            or_(
+                Server.created_at < after_created_at,
+                and_(
+                    Server.created_at == after_created_at,
+                    Server.id < after_id,
+                ),
+            )
+        )
+    return list((await db.execute(stmt)).scalars())
+
+
 async def get_by_id(db: AsyncSession, server_id: str) -> Server | None:
     """SELECT по PK. Visibility-check делает service-layer."""
     stmt = select(Server).where(Server.id == server_id)

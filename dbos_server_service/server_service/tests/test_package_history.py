@@ -184,14 +184,23 @@ class TestHistoryHappy:
 
 
 class TestHistoryAccess:
-    async def test_guest_without_view_denied(
-        self, client, guest_token_a, make_server, fake_package_history,
+    async def test_no_role_without_view_denied(
+        self, client, no_role_token_a, make_server, fake_package_history,
     ):
+        """Субъект без `(server, view)` — 403 ещё до cross-DB read'а."""
         srv = await make_server(department_id="dep_a")
-        resp = await client.get(_url(srv.id), headers=_hdr(guest_token_a))
+        resp = await client.get(_url(srv.id), headers=_hdr(no_role_token_a))
         assert_error(resp, 403, "PERMISSION_DENIED")
         # Permission отбит до cross-DB read'а.
         assert fake_package_history["calls"] == []
+
+    async def test_guest_with_view_sees_history(
+        self, client, guest_token_a, make_server, fake_package_history,
+    ):
+        """guest несёт тип-wide server.view → история доступна (read-only)."""
+        srv = await make_server(department_id="dep_a")
+        resp = await client.get(_url(srv.id), headers=_hdr(guest_token_a))
+        assert resp.status_code == 200, resp.text
 
     async def test_cross_dept_server_hidden_404(
         self, client, operator_token_a, make_server, fake_package_history,

@@ -148,14 +148,26 @@ class TestPowerStatusCached:
         assert resp.status_code == 200
         assert resp.json()["last_probed_at"] is None
 
-    async def test_guest_cannot_view_power_status(
+    async def test_guest_can_view_cached_power_status(
         self, client, guest_token_a, make_server,
     ):
+        """Кэшированный power_state — это чтение поля сервера под `(server, view)`,
+        а тип-wide view у guest теперь есть → 200 (без обращения к BMC)."""
         srv = await make_server(department_id="dep_a")
         resp = await client.get(
             f"{BASE}/{srv.id}/ipmi/power", headers=_hdr(guest_token_a),
         )
-        # guest по дефолту не имеет power_status в матрице
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["power_state"] == "unknown"
+
+    async def test_no_role_cannot_view_power_status(
+        self, client, no_role_token_a, make_server,
+    ):
+        """Субъект без `(server, view)` — отказ на кэшированный power_state."""
+        srv = await make_server(department_id="dep_a")
+        resp = await client.get(
+            f"{BASE}/{srv.id}/ipmi/power", headers=_hdr(no_role_token_a),
+        )
         assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cross_dept_returns_404(

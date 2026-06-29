@@ -253,9 +253,9 @@ class TestServerCrudAudit:
         assert ev["details"]["reason"] == "not_found_or_cross_dept"
 
     async def test_get_permission_denied_emits_denied(
-        self, client, guest_token_a, make_server, captured_emits,
+        self, client, no_role_token_a, make_server, captured_emits,
     ):
-        """guest без `server.view` → 403 + explicit denied audit.
+        """Субъект без `server.view` → 403 + explicit denied audit.
 
         Симметрия с cross-dept/nonexistent: отказ по матрице прав тоже
         должен попадать в audit с action-key `server.view`, иначе SIEM
@@ -263,7 +263,7 @@ class TestServerCrudAudit:
         """
         srv = await make_server(department_id="dep_a")
         resp = await client.get(
-            f"{BASE}/servers/{srv.id}", headers=_hdr(guest_token_a),
+            f"{BASE}/servers/{srv.id}", headers=_hdr(no_role_token_a),
         )
         assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [

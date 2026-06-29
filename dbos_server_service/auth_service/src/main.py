@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import secrets
 import uuid
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
@@ -58,6 +59,37 @@ def _rate_limit_key_func(request: Request) -> str:
     settings = get_settings()
     ip = extract_client_ip(request, list(settings.trusted_proxy_ips or []))
     return ip or "unknown"
+
+
+def _is_trusted_service_request(request: Request, settings) -> bool:
+    """True, если запрос несёт валидные service-to-service креды.
+
+    Зеркалит проверку `require_service_token` (без побочных эффектов и без
+    raise). Внутренние M2M-эндпоинты (introspect / service-access) клиентские
+    сервисы зовут на каждый входящий запрос с одного контейнер-IP, поэтому
+    per-IP лимит душит легитимный трафик. Аутентифицированный вызов с верным
+    ключом считается доверенным и исключается из лимита; неаутентифицированный
+    трафик остаётся под per-IP лимитом (и всё равно ловит 401 в guard'е).
+    """
+    auth_header = request.headers.get("Authorization") or ""
+    scheme, _, token = auth_header.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return False
+
+    raw_identity = request.headers.get("X-Service-Identity")
+    identity = raw_identity.strip() if raw_identity is not None else None
+
+    # Per-service keys — authoritative source, как и в require_service_token.
+    if settings.service_api_keys:
+        if not identity:
+            return False
+        expected = settings.service_api_keys.get(identity)
+        return expected is not None and secrets.compare_digest(token, expected)
+
+    # Legacy shared secret.
+    return bool(settings.service_api_key) and secrets.compare_digest(
+        token, settings.service_api_key
+    )
 
 
 def _rate_limit_exceeded_response(request: Request, exc) -> JSONResponse:
@@ -124,14 +156,23 @@ _RATE_LIMITED_PATHS_FACTORY = {
     "GET /api/auth/v1/oauth2/authorize": "login_rate_limit",
     "POST /api/auth/v1/refresh": "refresh_rate_limit",
     "GET /api/auth/v1/docker/token": "docker_token_rate_limit",
-    # M2M-call часто, но не безудержно — закрываем от scan/brute по введённым
-    # токенам с одного IP.
+    # introspect / service-access — внутренние M2M-эндпоинты: каждый клиентский
+    # сервис зовёт их на каждый входящий запрос для ревалидации прав, и весь
+    # трафик одного сервиса идёт с одного контейнер-IP. Per-IP лимит здесь
+    # выбивается мгновенно под нормальной нагрузкой, поэтому аутентифицированные
+    # доверенные вызовы (валидный SERVICE_API_KEY) исключаются из лимита
+    # (см. `_SERVICE_INTERNAL_PATHS` ниже). Лимит остаётся как потолок для
+    # неаутентифицированного scan/brute по токенам с одного IP.
     "POST /api/auth/v1/authorization/introspect": "introspect_rate_limit",
-    # /service-access — тонкая обёртка над introspect (тот же revalidate +
-    # фильтр по service_name). Без лимита атакующий с украденным
-    # SERVICE_API_KEY заваливает auth-pool через /service-access так же
-    # эффективно, как через /introspect. Переиспользуем тот же ключ.
     "POST /api/auth/v1/authorization/service-access": "introspect_rate_limit",
+}
+
+# Внутренние M2M-эндпоинты, для которых аутентифицированный (доверенный)
+# service-to-service вызов не считается в per-IP лимит. Лимит применяется
+# только к неаутентифицированному трафику с этого IP.
+_SERVICE_INTERNAL_PATHS = {
+    "/api/auth/v1/authorization/introspect",
+    "/api/auth/v1/authorization/service-access",
 }
 
 
@@ -527,6 +568,13 @@ def create_application() -> FastAPI:
         key = (request.method, request.url.path)
         item = parsed_rate_limits.get(key)
         if item is None:
+            return await call_next(request)
+        # Доверенные внутренние M2M-вызовы (валидный service-key) не душим
+        # per-IP лимитом: весь трафик клиентского сервиса идёт с одного IP и
+        # ревалидация прав на каждый запрос мгновенно выбивает лимит.
+        if request.url.path in _SERVICE_INTERNAL_PATHS and _is_trusted_service_request(
+            request, settings
+        ):
             return await call_next(request)
         ip_key = limiter._key_func(request)
         # Per-route ключ: иначе сжигание квоты /login убивало бы /refresh

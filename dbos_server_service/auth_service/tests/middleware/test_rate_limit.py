@@ -20,9 +20,6 @@ from __future__ import annotations
 import base64
 
 import pytest
-from limits import parse as parse_rate_limit
-
-from src.main import limiter
 
 
 LOGIN_URL = "/api/auth/v1/login"
@@ -63,6 +60,16 @@ def tight_refresh_limit(monkeypatch):
 def tight_docker_token_limit(monkeypatch):
     """Override docker-token-лимита на 3/minute."""
     monkeypatch.setenv("DOCKER_TOKEN_RATE_LIMIT", "3/minute")
+    from src.core import config as config_mod
+    config_mod.get_settings.cache_clear()
+    yield
+    config_mod.get_settings.cache_clear()
+
+
+@pytest.fixture
+def tight_introspect_limit(monkeypatch):
+    """Override introspect-лимита на 2/minute."""
+    monkeypatch.setenv("INTROSPECT_RATE_LIMIT", "2/minute")
     from src.core import config as config_mod
     config_mod.get_settings.cache_clear()
     yield
@@ -276,6 +283,84 @@ class TestOAuth2AuthorizeRateLimit:
         assert resp.status_code == 429, (
             f"expected 429, got {resp.status_code}: {resp.text}"
         )
+
+
+INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
+SERVICE_ACCESS_URL = "/api/auth/v1/authorization/service-access"
+
+
+# ── introspect / service-access: доверенный M2M-трафик не лимитируется ────────
+
+
+class TestIntrospectServiceExemption:
+    """introspect / service-access — внутренние M2M-эндпоинты.
+
+    Каждый клиентский сервис зовёт их на каждый входящий запрос для
+    ревалидации прав, весь трафик идёт с одного контейнер-IP. Per-IP лимит
+    выбивался бы мгновенно → 429 каскадит по платформе. Аутентифицированные
+    доверенные вызовы (валидный SERVICE_API_KEY) исключены из лимита;
+    неаутентифицированный трафик остаётся под потолком.
+    """
+
+    async def test_authenticated_introspect_not_throttled(
+        self, tight_introspect_limit, client
+    ):
+        """С тайтлимитом 2/minute: 8 introspect'ов с валидным service-key → 0 429.
+
+        `client` авто-инжектит Bearer SERVICE_API_KEY на `/authorization/*`,
+        т.е. это доверенный M2M-вызов и он exempt.
+        """
+        for i in range(8):
+            resp = await client.post(INTROSPECT_URL, json={"token": "garbage.token"})
+            assert resp.status_code != 429, (
+                f"доверенный M2M-introspect получил 429 на #{i + 1}: {resp.text}"
+            )
+
+    async def test_authenticated_service_access_not_throttled(
+        self, tight_introspect_limit, client
+    ):
+        """service-access симметричен introspect — тоже exempt под валидным ключом."""
+        for i in range(8):
+            resp = await client.post(
+                SERVICE_ACCESS_URL,
+                json={"subject_token": "garbage.token", "service_name": "svc_x"},
+            )
+            assert resp.status_code != 429, (
+                f"доверенный M2M-service-access получил 429 на #{i + 1}: {resp.text}"
+            )
+
+    async def test_unauthenticated_introspect_still_throttled(
+        self, tight_introspect_limit, raw_client
+    ):
+        """Без валидного service-key per-IP лимит на introspect остаётся в силе.
+
+        `raw_client` не инжектит ключ → guard вернёт 401, но лимит считается ДО
+        guard'а (outermost middleware). С 2/minute третий запрос → 429.
+        """
+        for _ in range(2):
+            resp = await raw_client.post(INTROSPECT_URL, json={"token": "garbage"})
+            assert resp.status_code != 429
+
+        resp = await raw_client.post(INTROSPECT_URL, json={"token": "garbage"})
+        assert resp.status_code == 429, (
+            f"неаутентифицированный introspect-флуд не словил 429: {resp.status_code}"
+        )
+
+    async def test_wrong_service_key_introspect_still_throttled(
+        self, tight_introspect_limit, raw_client
+    ):
+        """Неверный service-key не даёт exemption — лимит применяется."""
+        headers = {"Authorization": "Bearer wrong-service-key"}
+        for _ in range(2):
+            resp = await raw_client.post(
+                INTROSPECT_URL, json={"token": "garbage"}, headers=headers
+            )
+            assert resp.status_code != 429
+
+        resp = await raw_client.post(
+            INTROSPECT_URL, json={"token": "garbage"}, headers=headers
+        )
+        assert resp.status_code == 429
 
 
 # ── Health не лимитируется ───────────────────────────────────────────────────

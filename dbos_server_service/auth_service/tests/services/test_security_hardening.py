@@ -331,13 +331,23 @@ async def test_hsts_header_off_by_default(client):
     assert "Strict-Transport-Security" not in resp.headers
 
 
-async def test_introspect_rate_limit_enforced(monkeypatch, account_admin):
-    """introspect под per-IP rate-limit, как и /login. С тайтом 3/minute 4-й → 429."""
+async def test_introspect_rate_limit_exempts_trusted_but_caps_anonymous(
+    monkeypatch, account_admin
+):
+    """introspect — внутренний M2M-эндпоинт.
+
+    Аутентифицированный вызов (валидный SERVICE_API_KEY) НЕ упирается в per-IP
+    лимит даже под тайтом 3/minute — иначе busy-сервис с одного контейнер-IP
+    выбивал бы квоту мгновенно. Неаутентифицированный трафик с того же IP
+    остаётся под лимитом (4-й → 429), чтобы не открывать анонимный scan/brute.
+    """
     monkeypatch.setenv("INTROSPECT_RATE_LIMIT", "3/minute")
     from src.core import config as config_mod
     config_mod.get_settings.cache_clear()
+
+    engine = conn = session = None
     try:
-        from src.main import create_application
+        from src.main import create_application, limiter
         from src.dependencies.db import get_db
 
         app = create_application()
@@ -367,26 +377,41 @@ async def test_introspect_rate_limit_enforced(monkeypatch, account_admin):
             yield session
 
         app.dependency_overrides[get_db] = _override
+        # Свежий per-route счётчик — фикстура _reset_rate_limiter сбрасывает
+        # module-level limiter, но этот тест строит app сам, поэтому страхуемся.
+        limiter.reset()
 
         headers = {"Authorization": f"Bearer {os.environ['SERVICE_API_KEY']}"}
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-            for i in range(3):
+            # Доверенный M2M-вызов exempt: 6 > лимит 3/minute, но 0 × 429.
+            for i in range(6):
                 r = await c.post(
                     "/api/auth/v1/authorization/introspect",
                     json={"token": "junk"}, headers=headers,
                 )
-                assert r.status_code != 429, f"#{i+1} → {r.status_code}"
+                assert r.status_code != 429, (
+                    f"доверенный introspect #{i+1} получил 429: {r.status_code}"
+                )
+
+            # Без валидного service-key лимит жив: guard вернёт 401, но per-IP
+            # счётчик тикает ДО guard'а → 4-й анонимный запрос → 429.
+            for _ in range(3):
+                r = await c.post(
+                    "/api/auth/v1/authorization/introspect", json={"token": "junk"},
+                )
+                assert r.status_code != 429
             r = await c.post(
-                "/api/auth/v1/authorization/introspect",
-                json={"token": "junk"}, headers=headers,
+                "/api/auth/v1/authorization/introspect", json={"token": "junk"},
             )
             assert r.status_code == 429
-
-        await session.close()
-        await conn.rollback()
-        await conn.close()
-        await engine.dispose()
     finally:
+        if session is not None:
+            await session.close()
+        if conn is not None:
+            await conn.rollback()
+            await conn.close()
+        if engine is not None:
+            await engine.dispose()
         config_mod.get_settings.cache_clear()
 
 

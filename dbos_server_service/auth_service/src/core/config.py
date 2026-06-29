@@ -380,9 +380,11 @@ class Settings(BaseSettings):
         default="60/minute",
         alias="INTROSPECT_RATE_LIMIT",
         description=(
-            "Per-IP лимит для `POST /api/auth/v1/authorization/introspect`. "
-            "Default 60/minute — M2M-вызов часто, но не безудержно. "
-            "Шлю через middleware так же, как /login."
+            "Per-IP лимит для introspect / service-access ТОЛЬКО для "
+            "неаутентифицированного трафика. Доверенные M2M-вызовы с валидным "
+            "SERVICE_API_KEY исключены из лимита (иначе один busy-сервис с "
+            "одного контейнер-IP выбивает квоту мгновенно). Default 60/minute — "
+            "потолок для scan/brute по токенам с одного IP без валидного ключа."
         ),
     )
 

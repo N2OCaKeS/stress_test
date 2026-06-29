@@ -24,6 +24,8 @@ export interface ConsoleMacro {
   command_text: string;
   display_order: number;
   is_system: boolean;
+  /** Имя группы для визуального объединения кнопок; `null` — без группы. */
+  group_name: string | null;
   user_id: string | null;
   department_id: string | null;
   created_at?: string;
@@ -35,6 +37,8 @@ export interface ConsoleMacroCreateRequest {
   name: string;
   command_text: string;
   display_order?: number;
+  /** Имя группы; пусто/не передано — макрос идёт вне групп. */
+  group_name?: string | null;
   /** Только dep_admin; для обычного пользователя поле игнорируется/запрещено. */
   is_system?: boolean;
 }
@@ -44,6 +48,7 @@ export interface ConsoleMacroUpdateRequest {
   name?: string;
   command_text?: string;
   display_order?: number;
+  group_name?: string | null;
   is_system?: boolean;
 }
 

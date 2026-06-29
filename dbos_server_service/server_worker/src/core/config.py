@@ -454,6 +454,37 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── power.status reachability fallback ───────────────────────────────
+    # Когда BMC не отвечает (недоступен / breaker open / неопределённое
+    # состояние), power.status вместо немедленного fail'а пробует сетевую
+    # достижимость самого сервера: ICMP-ping и TCP-коннект на SSH-порт. Если
+    # бокс отвечает — состояние считается `on` (источник `ping`/`ssh`), иначе
+    # остаётся `unknown`. Сетевая недоступность НЕ трактуется как `off`.
+    power_reachability_fallback_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enable ping/SSH-port reachability fallback in power.status when "
+            "the BMC probe fails to return a definite on/off state."
+        ),
+    )
+    power_reachability_ping_timeout_seconds: float = Field(
+        default=2.0, gt=0,
+        description="Timeout for a single ICMP echo in the power.status fallback.",
+    )
+    power_reachability_tcp_timeout_seconds: float = Field(
+        default=2.0, gt=0,
+        description=(
+            "Timeout for the SSH-port TCP connect in the power.status fallback."
+        ),
+    )
+    power_reachability_ssh_port: int = Field(
+        default=22, ge=1, le=65535,
+        description=(
+            "Default SSH port probed by the power.status reachability fallback "
+            "when the dispatch payload carries no explicit ssh_port."
+        ),
+    )
+
     # ── BMC circuit breaker ──────────────────────────────────────────────
     # Per-host shared breaker (Redis-backed; см. services/bmc_circuit_breaker.py).
     # Многореплика worker'а: каждая реплика видит общий счётчик failure'ов и

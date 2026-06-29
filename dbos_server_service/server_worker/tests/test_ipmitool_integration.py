@@ -227,7 +227,7 @@ class TestPowerStatusIpmitool:
 
         await power.power_status.original_func(tid)
         t = await fetch_task(tid)
-        assert t.result == {"power_state": "on"}
+        assert t.result == {"power_state": "on", "source": "bmc"}
 
     async def test_status_returns_off(
         self, make_task, fetch_task, captured_audit, monkeypatch,
@@ -241,7 +241,7 @@ class TestPowerStatusIpmitool:
 
         await power.power_status.original_func(tid)
         t = await fetch_task(tid)
-        assert t.result == {"power_state": "off"}
+        assert t.result == {"power_state": "off", "source": "bmc"}
 
 
 # ── error mapping: ipmitool stderr → BMC_* ──────────────────────────────────
@@ -327,7 +327,10 @@ class TestIpmitoolErrorMapping:
     async def test_binary_not_found_maps_to_bmc_unreachable(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):
-        tid = await _make_task_max1(make_task, task_kind="power.status", target_server_id="srv_1")
+        # power.on (action) — на нём отсутствие ipmitool по-прежнему валит
+        # задачу с BMC_UNREACHABLE. power.status теперь сознательно уходит в
+        # reachability-fallback вместо FAILED (см. test_power_reachability_fallback).
+        tid = await _make_task_max1(make_task, task_kind="power.on", target_server_id="srv_1")
         _patch_no_retry(monkeypatch)
         _force_ipmitool(monkeypatch)
         _patch_creds(monkeypatch, "power")
@@ -337,7 +340,7 @@ class TestIpmitoolErrorMapping:
 
         monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
 
-        await power.power_status.original_func(tid)
+        await power.power_on.original_func(tid)
         t = await fetch_task(tid)
         assert t.status == TaskStatus.FAILED
         assert "BMC_UNREACHABLE" in t.last_error

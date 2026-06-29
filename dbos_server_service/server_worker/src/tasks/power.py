@@ -29,7 +29,9 @@ from datetime import datetime, timezone
 
 from src.clients.ipmitool import IpmitoolError
 from src.clients.redfish import RedfishError
+from src.core.config import get_settings
 from src.core.constants import STASH_TTL_SECONDS
+from src.core.exceptions import AppException
 from src.core.identifiers import validate_task_id
 from src.main import broker
 from src.services import redis_pool
@@ -48,14 +50,18 @@ from src.tasks._bmc_errors import (
 from src.tasks._bmc_helpers import aclose_bmc as _aclose_bmc
 from src.tasks._bmc_helpers import extract_bmc_host as _extract_bmc_host
 from src.tasks._bmc_helpers import get_bmc as _get_bmc
+from src.tasks._reachability import probe_power_reachability
 from src.tasks._runner import run_task
 
 logger = logging.getLogger(__name__)
 
 # Whitelist для audit. power_state — единственное публичное поле во всех
 # 4 power.* handler'ах; `rebooted` у power.reboot; `previous_power_state`
-# полезен для post-action диагностики.
-AUDIT_SAFE_FIELDS: set[str] = {"power_state", "rebooted", "previous_power_state"}
+# полезен для post-action диагностики; `source` у power.status показывает
+# оператору, откуда взято состояние (bmc / ping / ssh).
+AUDIT_SAFE_FIELDS: set[str] = {
+    "power_state", "rebooted", "previous_power_state", "source",
+}
 
 
 # One-shot marker для reboot'а. Симметрично stash'ам ротации паролей в
@@ -319,19 +325,79 @@ async def power_reboot(task_id: str) -> None:
     )
 
 
+def _payload_ssh_port(payload: dict) -> int:
+    """Достать SSH-порт сервера из payload, иначе дефолт из настроек.
+
+    server_service кладёт `ssh_port`/`port` в payload для SSH-операций; для
+    power.status порт нужен только reachability-пробе. На кривое значение
+    тихо падаем на дефолтный порт — fallback не должен ронять из-за этого.
+    """
+    raw = payload.get("ssh_port") or payload.get("port")
+    if raw:
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            pass
+    return get_settings().power_reachability_ssh_port
+
+
+async def _power_status_via_reachability(payload: dict) -> dict:
+    """Fallback состояния питания, когда BMC не дал определённого on/off.
+
+    Пробуем сетевую достижимость самого сервера по адресу из payload
+    (`host`/`ssh_host`): ICMP-ping и TCP-коннект на SSH-порт. Доступен →
+    считаем `on` с пометкой источника (`ping`/`ssh`). Недоступен либо адреса
+    в payload нет — оставляем `unknown` с источником `bmc`: это reachability-
+    эвристика, а не точное состояние BMC, и сетевую недоступность мы НЕ
+    выдаём за `off`.
+    """
+    settings = get_settings()
+    if not settings.power_reachability_fallback_enabled:
+        return {"power_state": "unknown", "source": "bmc"}
+
+    host = payload.get("host") or payload.get("ssh_host")
+    if not host:
+        logger.info(
+            "power.status fallback: BMC probe failed and no server host in "
+            "payload; returning unknown",
+        )
+        return {"power_state": "unknown", "source": "bmc"}
+
+    method = await probe_power_reachability(
+        host,
+        ssh_port=_payload_ssh_port(payload),
+        ping_timeout=settings.power_reachability_ping_timeout_seconds,
+        tcp_timeout=settings.power_reachability_tcp_timeout_seconds,
+    )
+    if method is not None:
+        logger.info(
+            "power.status fallback: server reachable via %s; reporting on", method,
+        )
+        return {"power_state": "on", "source": method}
+    return {"power_state": "unknown", "source": "bmc"}
+
+
 @broker.task("power.status")
 async def power_status(task_id: str) -> None:
-    """Спросить у BMC текущее состояние питания.
+    """Спросить у BMC текущее состояние питания, с reachability-fallback'ом.
 
     Что делает: тянет IPMI-креды → GET PowerState через Redfish либо
-    `chassis power status` через ipmitool.
+    `chassis power status` через ipmitool. Если BMC недоступен (сеть / breaker
+    open / отверг запрос), переходит к сетевой пробе самого сервера —
+    ICMP-ping + TCP SSH-порт по адресу из payload, — и при достижимости
+    отдаёт `on`. Иначе состояние `unknown`.
 
     Параметры: `task_id`. Payload — `server_id`, опционально
-    `target_department_id`.
+    `target_department_id`, а для fallback'а — `host`/`ssh_host` (+`ssh_port`)
+    сервера; без них fallback не может пробить сервер и вернёт `unknown`.
 
-    Возвращает: `{power_state}` (`'on' | 'off' | 'powering_on' | ...`).
+    Возвращает: `{power_state, source}`. `power_state` —
+    `'on' | 'off' | 'powering_on' | 'unknown' | ...`; `source` — откуда взято
+    состояние: `bmc` (ответил контроллер либо ничего не известно), `ping` или
+    `ssh` (эвристика по достижимости сервера).
 
-    Возможные ошибки: `CredentialFetchError`, `AppException(BMC_*)`.
+    В отличие от power.on/off/reboot, power.status — read-only запрос и не
+    падает на недоступном BMC: всегда возвращает какое-то состояние.
 
     Связано с: `server.power_status` audit action.
     """
@@ -340,18 +406,28 @@ async def power_status(task_id: str) -> None:
         target_dept = payload.get("target_department_id")
         creds = await server_service_client.fetch_ipmi_credentials(server_id, target_dept)
         host = _extract_bmc_host(creds["endpoint_url"])
-        await _breaker.check(host)
-        client = await _get_bmc(creds)
         try:
+            await _breaker.check(host)
+            client = await _get_bmc(creds)
             try:
-                state = await dispatch_get_power_state(client)
-            except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
-                await _breaker.record_failure(host)
-                raise wrap_bmc_error("power_status", exc) from exc
-            await _breaker.record_success(host)
-        finally:
-            await _aclose_bmc(client)
-        return {"power_state": _normalize_power_state(state)}
+                try:
+                    state = await dispatch_get_power_state(client)
+                except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
+                    await _breaker.record_failure(host)
+                    raise wrap_bmc_error("power_status", exc) from exc
+                await _breaker.record_success(host)
+            finally:
+                await _aclose_bmc(client)
+        except AppException as exc:
+            # BMC недоступен / breaker open / endpoint заблокирован — состояние
+            # по контроллеру неизвестно. Пробуем определить по достижимости
+            # самого сервера, вместо того чтобы валить read-only запрос.
+            logger.info(
+                "power.status: BMC probe failed (%s), trying reachability fallback",
+                exc.error_code,
+            )
+            return await _power_status_via_reachability(payload)
+        return {"power_state": _normalize_power_state(state), "source": "bmc"}
 
     await run_task(
         task_id,

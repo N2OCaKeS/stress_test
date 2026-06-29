@@ -59,36 +59,6 @@ export interface ClusterConfigAuditEntry {
 // real impl will read from loging_service; mock keeps last entries in process.
 export const CLUSTER_CONFIG_AUDIT: ClusterConfigAuditEntry[] = [];
 
-export interface WorkerPod {
-  id: string;
-  host: string;
-  status: "running" | "idle" | "draining";
-  tasks_in_flight: number;
-  uptime: string;
-  last_task: string;
-}
-
-export const WORKER_PODS: WorkerPod[] = [
-  { id: "server_worker-0", host: "k8s-node-01", status: "running", tasks_in_flight: 3, uptime: "17д", last_task: "ipmi.probe · 5s ago" },
-  { id: "server_worker-1", host: "k8s-node-01", status: "running", tasks_in_flight: 1, uptime: "17д", last_task: "ssh.exec · 12s ago" },
-  { id: "server_worker-2", host: "k8s-node-02", status: "idle", tasks_in_flight: 0, uptime: "17д", last_task: "—" },
-  { id: "server_worker-3", host: "k8s-node-02", status: "running", tasks_in_flight: 2, uptime: "17д", last_task: "credential.rotate · 1m ago" },
-];
-
-export const CRON_JOBS = [
-  { name: "audit.sweep", schedule: "0 3 * * *", last: "04.06 03:00", status: "ok" },
-  { name: "rotation.master", schedule: "0 2 * * 0", last: "05.06 02:00", status: "ok" },
-  { name: "backup.pg", schedule: "0 1 * * *", last: "10.06 01:00", status: "ok" },
-  { name: "drill.restore", schedule: "0 0 1 * *", last: "01.06 00:00", status: "pass" },
-  { name: "outbox.drain", schedule: "*/1 * * * *", last: "10.06 11:59", status: "ok" },
-];
-
-export const DLQ_POLICIES = [
-  { name: "default", max_retries: 5, backoff: "exp(1,2,4,8,16)m", target: "dlq.default" },
-  { name: "credential.rotate", max_retries: 8, backoff: "exp(1,2,4,8,16,32,64,128)s", target: "dlq.rotate" },
-  { name: "ipmi.exec", max_retries: 3, backoff: "linear 30s", target: "dlq.ipmi" },
-];
-
 export interface ServerGroup {
   id: string;
   name: string;

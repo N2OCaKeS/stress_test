@@ -6,7 +6,6 @@ import {
   Archive,
   Bot,
   Building2,
-  Calendar,
   Clock,
   Cog,
   Container,
@@ -14,7 +13,6 @@ import {
   EyeOff,
   FileText,
   HardDrive,
-  Inbox,
   KeyRound,
   Layers,
   LockOpen,
@@ -55,9 +53,6 @@ import { ServicesManagementUser } from "./services/ServicesManagementUser";
 import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
 import { ServicesLogingRules } from "./services/ServicesLogingRules";
 import { ServicesLogingRetention } from "./services/ServicesLogingRetention";
-import { ServicesWorkerInventory } from "./services/ServicesWorkerInventory";
-import { ServicesWorkerDlq } from "./services/ServicesWorkerDlq";
-import { ServicesWorkerCron } from "./services/ServicesWorkerCron";
 import { ServicesEncryptionRotation } from "./services/ServicesEncryptionRotation";
 import { ServiceRolesCard } from "./services/ServiceRolesCard";
 
@@ -96,7 +91,6 @@ const isLoggingAdmin = (p: Persona) => p.platform_role === "logging_admin";
  * templates / policies) to whoever has admin on that service. */
 const hasSecretServiceAdmin = (p: Persona) => p.service_roles?.secret === "admin";
 const hasServerServiceAdmin = (p: Persona) => p.service_roles?.server === "admin";
-const hasWorkerServiceAdmin = (p: Persona) => p.service_roles?.worker === "admin";
 
 /**
  * Static catalogue items — cluster + auth admin + per-service feature pages
@@ -361,36 +355,6 @@ const STATIC_ITEMS: AdminItem[] = [
     visibleFor: (p) => isLoggingAdmin(p),
   },
 
-  // Services block — worker (service-specific pages; roles are dynamic)
-  {
-    id: "services.worker.inventory",
-    label: "Воркеры",
-    hint: "server_worker pods",
-    icon: Cog,
-    block: "services",
-    group: "worker",
-    content: ServicesWorkerInventory,
-    visibleFor: (p) => isAccountAdmin(p) || hasWorkerServiceAdmin(p),
-  },
-  {
-    id: "services.worker.dlq",
-    label: "DLQ-политики",
-    icon: Inbox,
-    block: "services",
-    group: "worker",
-    content: ServicesWorkerDlq,
-    visibleFor: (p) => isAccountAdmin(p) || hasWorkerServiceAdmin(p),
-  },
-  {
-    id: "services.worker.cron",
-    label: "Cron-задачи",
-    icon: Calendar,
-    block: "services",
-    group: "worker",
-    content: ServicesWorkerCron,
-    visibleFor: (p) => isAccountAdmin(p) || hasWorkerServiceAdmin(p),
-  },
-
   // Services block — security (PAT / OAuth2 / Docker / Lockout / Introspect / S2S / catalog)
   {
     id: "services.security.tokens",
@@ -490,8 +454,8 @@ const STATIC_ITEMS: AdminItem[] = [
  */
 const ROLE_ITEM_EXCLUDED_SERVICES = new Set<string>([
   "auth_service",
-  // worker_service не несёт ролей — операционный server_worker мониторится
-  // отдельными страницами (DLQ / inventory / cron), ролевого каталога у него нет.
+  // worker_service не несёт ролей и не управляется из UI — server_worker это
+  // taskiq-процесс без HTTP-API (cron/DLQ заданы кодом, мониторинг через K8s).
   "worker_service",
 ]);
 
@@ -510,9 +474,6 @@ function roleItemVisibility(serviceName: string): (p: Persona) => boolean {
     case "secret_service":
       return (p) =>
         isAccountAdmin(p) || isDepAdmin(p) || hasSecretServiceAdmin(p);
-    case "server_worker":
-      return (p) =>
-        isAccountAdmin(p) || isDepAdmin(p) || hasWorkerServiceAdmin(p);
     case "loging_service":
       return (p) =>
         isAccountAdmin(p) || isDepAdmin(p) || isLoggingAdmin(p);
@@ -530,8 +491,6 @@ function roleItemGroup(svc: Service): string {
       return "server";
     case "secret_service":
       return "secret";
-    case "server_worker":
-      return "worker";
     case "loging_service":
       return "loging";
     default:

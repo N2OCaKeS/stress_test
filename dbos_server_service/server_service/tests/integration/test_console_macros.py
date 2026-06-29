@@ -248,3 +248,123 @@ async def test_get_requires_token(client):
     """Без bearer'а — 401."""
     resp = await client.get(BASE)
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_create_with_group_name(client, reader_token_a):
+    """group_name проставляется и возвращается в ответе."""
+    resp = await client.post(
+        BASE,
+        json={
+            "name": "fw",
+            "command_text": "ufw status",
+            "group_name": "Настройки безопасности",
+        },
+        headers=_auth(reader_token_a),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["group_name"] == "Настройки безопасности"
+
+
+@pytest.mark.asyncio
+async def test_create_without_group_name_is_null(client, reader_token_a):
+    """Без group_name макрос остаётся без группы (null)."""
+    resp = await client.post(
+        BASE, json={"name": "x", "command_text": "ls"},
+        headers=_auth(reader_token_a),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["group_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_blank_group_name_normalized_to_null(client, reader_token_a):
+    """Пустая/пробельная строка в group_name → null, а не пустая группа."""
+    resp = await client.post(
+        BASE, json={"name": "x", "command_text": "ls", "group_name": "   "},
+        headers=_auth(reader_token_a),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["group_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_changes_group_name(client, reader_token_a):
+    """PATCH меняет группу макроса."""
+    created = (await client.post(
+        BASE, json={"name": "x", "command_text": "ls", "group_name": "Сеть"},
+        headers=_auth(reader_token_a),
+    )).json()
+    resp = await client.patch(
+        f"{BASE}/{created['id']}",
+        json={"group_name": "Диски"},
+        headers=_auth(reader_token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["group_name"] == "Диски"
+
+
+@pytest.mark.asyncio
+async def test_update_clears_group_via_empty_string(client, reader_token_a):
+    """Пустая строка снимает группу (→ null)."""
+    created = (await client.post(
+        BASE, json={"name": "x", "command_text": "ls", "group_name": "Сеть"},
+        headers=_auth(reader_token_a),
+    )).json()
+    resp = await client.patch(
+        f"{BASE}/{created['id']}",
+        json={"group_name": ""},
+        headers=_auth(reader_token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["group_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_clears_group_via_null(client, reader_token_a):
+    """Явный null снимает группу."""
+    created = (await client.post(
+        BASE, json={"name": "x", "command_text": "ls", "group_name": "Сеть"},
+        headers=_auth(reader_token_a),
+    )).json()
+    resp = await client.patch(
+        f"{BASE}/{created['id']}",
+        json={"group_name": None},
+        headers=_auth(reader_token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["group_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_omitting_group_keeps_it(client, reader_token_a):
+    """PATCH без group_name не трогает группу."""
+    created = (await client.post(
+        BASE, json={"name": "x", "command_text": "ls", "group_name": "Сеть"},
+        headers=_auth(reader_token_a),
+    )).json()
+    resp = await client.patch(
+        f"{BASE}/{created['id']}",
+        json={"command_text": "ls -la"},
+        headers=_auth(reader_token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["group_name"] == "Сеть"
+
+
+@pytest.mark.asyncio
+async def test_grouping_keeps_rbac_for_system_macro(client, reader_token_a):
+    """group_name не открывает обходной путь: системный макрос всё так же
+    требует department_admin → обычный пользователь получает 403."""
+    resp = await client.post(
+        BASE,
+        json={
+            "name": "sys",
+            "command_text": "uptime",
+            "is_system": True,
+            "group_name": "Настройки безопасности",
+        },
+        headers=_auth(reader_token_a),
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["error_code"] == "CONSOLE_MACRO_SYSTEM_REQUIRES_DEPARTMENT_ADMIN"

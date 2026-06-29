@@ -7,7 +7,19 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _normalize_group(value: str | None) -> str | None:
+    """Пустая/пробельная группа → None, иначе trim.
+
+    Так UI может слать `""` для «снять группу», а на выходе всегда либо
+    осмысленное имя, либо null.
+    """
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
 
 
 class ConsoleMacroCreate(BaseModel):
@@ -34,6 +46,12 @@ class ConsoleMacroCreate(BaseModel):
         default=False,
         description="true — системный (общий в отделе, только department_admin); false — личный.",
     )
+    group_name: str | None = Field(
+        default=None, max_length=128,
+        description="Группа внутри скоупа для сворачиваемых секций в UI. Пусто → без группы.",
+    )
+
+    _strip_group = field_validator("group_name")(_normalize_group)
 
 
 class ConsoleMacroUpdate(BaseModel):
@@ -52,6 +70,12 @@ class ConsoleMacroUpdate(BaseModel):
     display_order: int | None = Field(
         default=None, ge=0, description="Сменить порядок в списке.",
     )
+    group_name: str | None = Field(
+        default=None, max_length=128,
+        description="Сменить группу. Передать пустую строку или null — снять группу.",
+    )
+
+    _strip_group = field_validator("group_name")(_normalize_group)
 
 
 class ConsoleMacroResponse(BaseModel):
@@ -63,6 +87,7 @@ class ConsoleMacroResponse(BaseModel):
     name: str = Field(description="Имя макроса.")
     command_text: str = Field(description="Команда терминала.")
     display_order: int = Field(description="Порядок в списке UI.")
+    group_name: str | None = Field(default=None, description="Группа в UI; null — без группы.")
     is_system: bool = Field(description="true — системный, false — личный.")
     user_id: str | None = Field(default=None, description="Владелец личного макроса; null у системного.")
     department_id: str | None = Field(default=None, description="Отдел макроса.")

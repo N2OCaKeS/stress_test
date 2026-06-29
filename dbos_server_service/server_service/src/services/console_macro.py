@@ -90,6 +90,7 @@ async def create_macro(
         "name": payload.name,
         "command_text": payload.command_text,
         "display_order": payload.display_order,
+        "group_name": payload.group_name,
         "is_system": payload.is_system,
         "created_by": identity.user_id,
         "department_id": identity.department_id,

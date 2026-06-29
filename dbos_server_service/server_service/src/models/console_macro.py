@@ -32,6 +32,9 @@ class ConsoleMacro(Base):
     display_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    # Необязательная группа внутри скоупа: UI собирает макросы в сворачиваемые
+    # секции (например «Настройки безопасности»). NULL — макрос без группы.
+    group_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     is_system: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"

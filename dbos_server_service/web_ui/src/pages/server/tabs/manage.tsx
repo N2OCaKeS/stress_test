@@ -34,6 +34,7 @@ import {
   ListChecks,
   UserCheck,
   KeyRound,
+  Eraser,
   X,
 } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
@@ -43,7 +44,6 @@ import { apiErrMsg } from "@/api/client";
 import { formatMskShort } from "@/lib/datetime";
 import { isDepAdmin } from "@/lib/rbac";
 import { useUserLabel } from "@/lib/labels";
-import { toBase64 } from "@/lib/base64";
 import { sshKeyFingerprint } from "@/lib/sshFingerprint";
 import {
   clearBusy,
@@ -73,6 +73,7 @@ import {
   reservedErrorMessage,
 } from "@/pages/server/_serverShared";
 import { BootstrapCredsModal } from "./_bootstrapCredsModal";
+import { CleanModal } from "./_cleanModal";
 import type {
   CursorPaginatedResponse,
   OffsetPaginatedResponse,
@@ -187,6 +188,7 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
   // ввод с masked-полем пароля), а не через window.prompt.
   const [credsModalOpen, setCredsModalOpen] = useState(false);
   const [osSyncOpen, setOsSyncOpen] = useState(false);
+  const [cleanOpen, setCleanOpen] = useState(false);
 
   async function run<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
     if (busy) return null;
@@ -301,6 +303,12 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
       {/* Cancel running task: пока в `Server` нет видимого task_id, блок
           закрыт. Когда подключим список tasks из server_service — раскроется. */}
 
+      <CleanCard
+        allowed={allowBasic}
+        busyLabel={busy}
+        onClean={() => setCleanOpen(true)}
+      />
+
       {allowOsCatalog && <OsCatalogCard />}
 
       {view && credsModalOpen && (
@@ -309,18 +317,8 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
           accounts={accessibleAccounts}
           accountsLoading={accountsQ.loading}
           onClose={() => setCredsModalOpen(false)}
-          onSubmit={async (creds) => {
+          onSubmit={async (body) => {
             taskOutcome.reset();
-            const body =
-              creds.mode === "account"
-                ? { account_id: creds.accountId }
-                : {
-                    username_b64: toBase64(creds.username),
-                    password_b64: toBase64(creds.password),
-                    ...(creds.sshPrivateKey.trim()
-                      ? { ssh_private_key_b64: toBase64(creds.sshPrivateKey) }
-                      : {}),
-                  };
             const res = await run("prepare", () =>
               prepareServer(view.id, body),
             );
@@ -340,6 +338,24 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
               await deleteServer(view.id, { reason });
               onDeleted?.();
             });
+          }}
+        />
+      )}
+
+      {view && cleanOpen && (
+        <CleanModal
+          serverId={view.id}
+          hostname={view.hostname}
+          accounts={accessibleAccounts}
+          accountsLoading={accountsQ.loading}
+          currentOsVersionId={view.os_version_id}
+          onClose={() => setCleanOpen(false)}
+          onDone={() => {
+            // Clean мог сменить os_version / снять управление — перечитываем
+            // карточку, чтобы соседние вкладки и header увидели свежий объект.
+            getServer(view.id)
+              .then((next) => applyServer(next))
+              .catch(() => {});
           }}
         />
       )}
@@ -1114,6 +1130,52 @@ function OsVersionForm({
           {mode === "new" ? "Создать" : "Сохранить"}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clean — оркестрация очистки после переустановки ОС
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CleanCard({
+  allowed,
+  busyLabel,
+  onClean,
+}: {
+  allowed: boolean;
+  busyLabel: string | null;
+  onClean: () => void;
+}) {
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <Eraser className="w-4 h-4 text-accent" /> Очистка после переустановки ОС
+      </h3>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex-1 text-xs text-dim">
+          Сборная операция для сервера после переустановки ОС: отвязать все
+          учётки, заново забутстрапить управление, сменить версию ОС и/или
+          запустить inventory. Действия выбираются в модалке; отвязка учёток —
+          чувствительная (CRITICAL-аудит).
+        </div>
+        {allowed && (
+          <button
+            className="btn btn-danger flex items-center gap-1"
+            disabled={busyLabel !== null}
+            onClick={onClean}
+            title="Очистка сервера после переустановки ОС"
+          >
+            <Eraser className="w-4 h-4" /> Clean
+          </button>
+        )}
+      </div>
+      {!allowed && (
+        <div className="text-[11px] text-dim italic mt-3">
+          Нет прав на очистку (нужна роль server.operator+ или dep_admin своего
+          департамента).
+        </div>
+      )}
     </div>
   );
 }

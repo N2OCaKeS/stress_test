@@ -19,8 +19,12 @@ import type {
   OffsetPaginatedResponse,
   ReasonBody,
   Server,
+  ServerCleanRequest,
+  ServerCleanResponse,
   ServerCreateRequest,
   ServerDrift,
+  ServerPrepareBatchRequest,
+  ServerPrepareBatchResponse,
   ServerPrepareRequest,
   ServerPrepareResponse,
   ServerUpdateRequest,
@@ -162,6 +166,41 @@ export function prepareServersBulk(
   body: BulkPrepareRequest,
 ): Promise<BulkPrepareResponse> {
   return apiPost<BulkPrepareResponse>("/server/v1/servers/prepare/bulk", body);
+}
+
+/**
+ * `POST /api/server/v1/servers/prepare-batch` — массовый prepare с per-server
+ * выбором режима bootstrap-кред.
+ *
+ * На каждый сервер ровно один режим: привязанная учётка (`account_id`) либо
+ * ручной ввод (`username_b64`+`password_b64`, опц. `ssh_private_key_b64`) —
+ * те же поля, что у single-prepare. Возвращает `batch_id` + per-server
+ * разбивку: `dispatched` (задача поставлена, `task_id`) и `failed` (с `reason`).
+ */
+export function prepareServersBatch(
+  body: ServerPrepareBatchRequest,
+): Promise<ServerPrepareBatchResponse> {
+  return apiPost<ServerPrepareBatchResponse>(
+    "/server/v1/servers/prepare-batch",
+    body,
+  );
+}
+
+/**
+ * `POST /api/server/v1/servers/{id}/clean` — оркестрация очистки после
+ * переустановки ОС.
+ *
+ * Четыре независимых флага (`unbind_accounts` / `update_os_version` /
+ * `rerun_prepare` / `run_inventory_sync`) выполняются в фиксированном порядке.
+ * `os_version_id` учитывается при `update_os_version`, блок `prepare`
+ * обязателен при `rerun_prepare`. Ответ — per-action сводка с исходами
+ * `done | dispatched | skipped | failed`.
+ */
+export function cleanServer(
+  id: string,
+  body: ServerCleanRequest,
+): Promise<ServerCleanResponse> {
+  return apiPost<ServerCleanResponse>(`/server/v1/servers/${id}/clean`, body);
 }
 
 /**

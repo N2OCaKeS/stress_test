@@ -255,6 +255,106 @@ export interface ServerPrepareResponse {
   status: string;
 }
 
+// ── prepare-batch (массовый prepare с per-server режимом кред) ────────────────
+
+/**
+ * Один сервер в массовом prepare-batch: `server_id` + те же поля, что у
+ * single-prepare (`ServerPrepareRequest`). Ровно один режим на сервер:
+ * `account_id` (привязанная учётка) либо ручной `username_b64`+`password_b64`
+ * (+ опц. `ssh_private_key_b64`).
+ */
+export interface ServerPrepareBatchItem extends ServerPrepareRequest {
+  server_id: string;
+}
+
+/** Тело POST /servers/prepare-batch. Дубли `server_id` запрещены (422). */
+export interface ServerPrepareBatchRequest {
+  items: ServerPrepareBatchItem[];
+}
+
+/** Успешно поставленная per-server задача в batch-ответе. */
+export interface ServerBatchDispatched {
+  server_id: string;
+  server_name: string | null;
+  task_id: string;
+  status: string;
+}
+
+/** Коды причин отказа в prepare-batch (`ServerBatchFailed.reason`). */
+export type ServerPrepareBatchReason =
+  | "not_found_or_cross_dept"
+  | "decommissioned"
+  | "idempotent_conflict"
+  | "idempotency_key_reuse_conflict"
+  | "account_has_no_password"
+  | "account_not_found"
+  | "account_not_linked"
+  | "permission_denied"
+  | "worker_unreachable"
+  | "not_attempted"
+  | (string & {});
+
+/** Сервер, на который задача в batch'е не поставлена. */
+export interface ServerBatchFailed {
+  server_id: string;
+  server_name: string | null;
+  reason: ServerPrepareBatchReason;
+}
+
+/** Ответ POST /servers/prepare-batch (202). */
+export interface ServerPrepareBatchResponse {
+  batch_id: string;
+  dispatched: ServerBatchDispatched[];
+  failed: ServerBatchFailed[];
+}
+
+// ── clean (оркестрация очистки после переустановки ОС) ────────────────────────
+
+/**
+ * Статус per-action итога clean'а: `done` (синхронное действие выполнено —
+ * unbind / os-version), `dispatched` (worker-задача поставлена, есть `task_id`),
+ * `skipped` (действие не выбрано), `failed` (причина в `reason`).
+ */
+export type ServerCleanActionStatus =
+  | "done"
+  | "dispatched"
+  | "skipped"
+  | "failed"
+  | (string & {});
+
+/** Per-action итог clean'а. */
+export interface ServerCleanActionResult {
+  status: ServerCleanActionStatus;
+  task_id?: string | null;
+  reason?: string | null;
+  detail?: Record<string, unknown> | null;
+}
+
+/**
+ * Тело POST /servers/{id}/clean — оркестрация очистки после переустановки ОС.
+ *
+ * Минимум один флаг должен быть выбран. `os_version_id` учитывается только при
+ * `update_os_version`. `prepare` обязателен при `rerun_prepare` — та же форма
+ * bootstrap-кред, что у single-prepare (account-режим либо ручной ввод).
+ */
+export interface ServerCleanRequest {
+  unbind_accounts: boolean;
+  update_os_version: boolean;
+  rerun_prepare: boolean;
+  run_inventory_sync: boolean;
+  os_version_id?: string | null;
+  prepare?: ServerPrepareRequest | null;
+}
+
+/** Ответ POST /servers/{id}/clean — per-action итоги. */
+export interface ServerCleanResponse {
+  server_id: string;
+  unbind_accounts: ServerCleanActionResult;
+  rerun_prepare: ServerCleanActionResult;
+  update_os_version: ServerCleanActionResult;
+  run_inventory_sync: ServerCleanActionResult;
+}
+
 // ── ipmi ────────────────────────────────────────────────────────────────────
 
 /** Результат последнего probe BMC (`ipmi_controllers.last_status`). */

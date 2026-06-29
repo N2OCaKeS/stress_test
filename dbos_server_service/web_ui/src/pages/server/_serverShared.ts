@@ -51,3 +51,46 @@ export function filterAccessibleAccounts(
   }
   return [];
 }
+
+/**
+ * Человекочитаемая причина отказа в массовом prepare-batch
+ * (`ServerBatchFailed.reason`). Незнакомый код отдаём как есть, чтобы новый
+ * backend-вариант не терялся.
+ */
+const PREPARE_BATCH_REASON_RU: Record<string, string> = {
+  not_found_or_cross_dept: "сервер не найден или принадлежит другому отделу",
+  decommissioned: "сервер выведен из эксплуатации",
+  idempotent_conflict: "уже выполняется такая же задача (idempotency)",
+  idempotency_key_reuse_conflict:
+    "повторное использование idempotency-ключа — задача не поставлена",
+  account_has_no_password: "у привязанной учётки нет сохранённого пароля",
+  account_not_found: "выбранная учётка не найдена",
+  account_not_linked: "учётка не привязана к этому серверу",
+  permission_denied: "недостаточно прав на prepare этого сервера",
+  worker_unreachable: "worker недоступен — задача не поставлена",
+  not_attempted: "не пытались (батч прерван после ошибки worker'а)",
+};
+
+export function prepareBatchReasonRu(reason: string): string {
+  return PREPARE_BATCH_REASON_RU[reason] ?? reason;
+}
+
+/**
+ * Человекочитаемая причина per-action итога clean'а (`ServerCleanActionResult`).
+ * Покрывает `skipped`/`failed`-коды backend'а; незнакомое отдаём как есть.
+ */
+const CLEAN_REASON_RU: Record<string, string> = {
+  not_selected: "действие не выбрано",
+  not_found_or_cross_dept: "сервер не найден или принадлежит другому отделу",
+  decommissioned: "сервер выведен из эксплуатации",
+  prepare_required: "сначала нужен prepare — сервер не подготовлен",
+  worker_unreachable: "worker недоступен — задача не поставлена",
+  idempotent_conflict: "уже выполняется такая же задача (idempotency)",
+  no_linked_accounts: "у сервера нет привязанных учёток",
+  permission_denied: "недостаточно прав на это действие",
+  not_attempted: "не выполнялось (предыдущее действие прервало clean)",
+};
+
+export function cleanReasonRu(reason: string): string {
+  return CLEAN_REASON_RU[reason] ?? reason;
+}

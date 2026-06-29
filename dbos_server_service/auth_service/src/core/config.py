@@ -349,41 +349,42 @@ class Settings(BaseSettings):
     # (например, в тестах) — мы используем нулевые env-overrides только в
     # devcontainer'е, где per-IP не имеет смысла (все запросы 127.0.0.1).
     login_rate_limit: str = Field(
-        default="10/minute",
+        default="120/second",
         alias="LOGIN_RATE_LIMIT",
         description=(
-            "Per-IP лимит для `POST /api/auth/v1/login`. Default 10/minute — "
-            "стандартная защита от credential stuffing. Argon2id verify ~100ms "
-            "CPU, без лимита атакующий выжигает ядра."
+            "Per-IP лимит для `POST /api/auth/v1/login`. Default 120/second — "
+            "защита от credential stuffing. Argon2id verify ~100ms "
+            "CPU, без лимита атакующий выжигает ядра. Lockout по username — "
+            "отдельный механизм brute-force-защиты."
         ),
     )
     refresh_rate_limit: str = Field(
-        default="30/minute",
+        default="120/second",
         alias="REFRESH_RATE_LIMIT",
         description=(
-            "Per-IP лимит для `POST /api/auth/v1/refresh`. Default 30/minute — "
+            "Per-IP лимит для `POST /api/auth/v1/refresh`. Default 120/second — "
             "legitимный single-tab refresh раз в 9-10 минут, multi-tab клиенты "
-            "(SPA, mobile с background refresh) укладываются в 30/min."
+            "(SPA, mobile с background refresh) укладываются с запасом."
         ),
     )
     docker_token_rate_limit: str = Field(
-        default="30/minute",
+        default="120/second",
         alias="DOCKER_TOKEN_RATE_LIMIT",
         description=(
-            "Per-IP лимит для `GET /api/auth/v1/docker/token`. Default 30/minute "
+            "Per-IP лимит для `GET /api/auth/v1/docker/token`. Default 120/second "
             "— `docker pull/push` под нагрузкой шлёт burst'ы (один pull = 1-N "
             "token endpoint calls). Lockout по username работает, но "
             "атакующий, ротирующий username'ы, обходит его."
         ),
     )
     introspect_rate_limit: str = Field(
-        default="60/minute",
+        default="120/second",
         alias="INTROSPECT_RATE_LIMIT",
         description=(
             "Per-IP лимит для introspect / service-access ТОЛЬКО для "
             "неаутентифицированного трафика. Доверенные M2M-вызовы с валидным "
             "SERVICE_API_KEY исключены из лимита (иначе один busy-сервис с "
-            "одного контейнер-IP выбивает квоту мгновенно). Default 60/minute — "
+            "одного контейнер-IP выбивает квоту мгновенно). Default 120/second — "
             "потолок для scan/brute по токенам с одного IP без валидного ключа."
         ),
     )

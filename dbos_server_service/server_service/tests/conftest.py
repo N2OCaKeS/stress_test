@@ -265,7 +265,7 @@ def _reset_rate_limiter():
     Все тесты идут с одного `127.0.0.1` через ASGITransport — без reset'а
     счётчик slowapi сохранил бы состояние между кейсами и при 168+ запросах
     мог бы случайно отбить тест c 429. Глобальный лимит (`global_rate_limit`,
-    по умолчанию 500/minute) штатно проверяется в `test_rate_limit.py`.
+    по умолчанию 120/second) штатно проверяется в `test_rate_limit.py`.
     """
     from src.core.limiter import endpoint_limiter
     from src.main import app

@@ -156,7 +156,7 @@ class Settings(BaseSettings):
     # ── Rate-limit ────────────────────────────────────────────────────────────
 
     slowapi_rate_limit: str = Field(
-        default="500/minute",
+        default="120/second",
         alias="SLOWAPI_RATE_LIMIT",
         description=(
             "Глобальный per-IP rate-limit (slowapi syntax). Health/ready "
@@ -187,7 +187,7 @@ class Settings(BaseSettings):
     # Глобальный slowapi_rate_limit остаётся spam-щитом, эти — тонкая настройка
     # на reveal / transfer / recover / delete / create / dept-grant / acl.
     rate_limit_reveal: str = Field(
-        default="5/minute",
+        default="120/second",
         alias="RATE_LIMIT_REVEAL",
         description=(
             "Per-IP rate-limit для POST /credentials/{id}/reveal. Основной "
@@ -197,32 +197,32 @@ class Settings(BaseSettings):
         ),
     )
     rate_limit_transfer: str = Field(
-        default="10/minute",
+        default="120/second",
         alias="RATE_LIMIT_TRANSFER",
         description="Per-IP rate-limit для POST /credentials/{id}/transfer (admin override).",
     )
     rate_limit_recover: str = Field(
-        default="10/minute",
+        default="120/second",
         alias="RATE_LIMIT_RECOVER",
         description="Per-IP rate-limit для POST /credentials/{id}/recover.",
     )
     rate_limit_delete: str = Field(
-        default="30/minute",
+        default="120/second",
         alias="RATE_LIMIT_DELETE",
         description="Per-IP rate-limit для DELETE /credentials/{id}.",
     )
     rate_limit_create: str = Field(
-        default="60/minute",
+        default="120/second",
         alias="RATE_LIMIT_CREATE",
         description="Per-IP rate-limit для POST /credentials.",
     )
     rate_limit_dept_grant: str = Field(
-        default="20/minute",
+        default="120/second",
         alias="RATE_LIMIT_DEPT_GRANT",
         description="Per-IP rate-limit для POST /credentials/{id}/dept-grants.",
     )
     rate_limit_acl: str = Field(
-        default="30/minute",
+        default="120/second",
         alias="RATE_LIMIT_ACL",
         description="Per-IP rate-limit для POST /credentials/{id}/acl.",
     )

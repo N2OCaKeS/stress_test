@@ -80,11 +80,11 @@ def tight_introspect_limit(monkeypatch):
 
 
 class TestLoginRateLimit:
-    async def test_login_default_limit_is_10_per_minute(self):
-        """Defaults: settings.login_rate_limit == '10/minute'."""
+    async def test_login_default_limit_is_120_per_second(self):
+        """Defaults: settings.login_rate_limit == '120/second'."""
         from src.core.config import get_settings
         settings = get_settings()
-        assert settings.login_rate_limit == "10/minute"
+        assert settings.login_rate_limit == "120/second"
 
     async def test_login_429_after_exceeding_limit(
         self, tight_login_limit, client, account_admin
@@ -149,9 +149,9 @@ class TestLoginRateLimit:
 
 
 class TestRefreshRateLimit:
-    async def test_refresh_default_limit_is_30_per_minute(self):
+    async def test_refresh_default_limit_is_120_per_second(self):
         from src.core.config import get_settings
-        assert get_settings().refresh_rate_limit == "30/minute"
+        assert get_settings().refresh_rate_limit == "120/second"
 
     async def test_refresh_429_after_exceeding_limit(
         self, tight_refresh_limit, client, account_admin
@@ -185,9 +185,9 @@ def _basic_auth(username: str, password: str) -> str:
 
 
 class TestDockerTokenRateLimit:
-    async def test_docker_token_default_limit_is_30_per_minute(self):
+    async def test_docker_token_default_limit_is_120_per_second(self):
         from src.core.config import get_settings
-        assert get_settings().docker_token_rate_limit == "30/minute"
+        assert get_settings().docker_token_rate_limit == "120/second"
 
     async def test_docker_token_429_after_exceeding_limit(
         self, tight_docker_token_limit, client, account_admin
@@ -221,7 +221,7 @@ class TestOAuth2TokenRateLimit:
     async def test_oauth2_token_uses_login_limit(self):
         """oauth2/token делит login_rate_limit — отдельной настройки нет."""
         from src.core.config import get_settings
-        assert get_settings().login_rate_limit == "10/minute"
+        assert get_settings().login_rate_limit == "120/second"
 
     async def test_oauth2_token_429_after_exceeding_limit(
         self, tight_login_limit, client

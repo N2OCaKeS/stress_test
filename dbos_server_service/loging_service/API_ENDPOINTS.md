@@ -46,10 +46,10 @@
 
 | Группа | ENV-переменная | Default | Применяется на |
 |---|---|---|---|
-| Ingest | `INGEST_RATE_LIMIT` | `100/minute` per X-Service-Identity | `POST /events` |
-| Register events | `REGISTER_EVENTS_RATE_LIMIT` | `100/minute` per X-Service-Identity | `POST /services/{service}/events` |
-| Audit query | `AUDIT_QUERY_RATE_LIMIT` | `100/minute` per user (`sub` из introspect, fallback на IP) | `GET /events`, `GET /events/stats`, `GET /events/export`, `GET /rules`, `GET /rules/{id}`, `GET /services`, `GET /services/{service}/events`, `GET /retention` |
-| Rule write | `RULE_WRITE_RATE_LIMIT` | `30/minute` per user (`sub` из introspect, fallback на IP) | `POST /rules`, `PATCH /rules/{id}`, `DELETE /rules/{id}` |
+| Ingest | `INGEST_RATE_LIMIT` | `120/second` per X-Service-Identity | `POST /events` |
+| Register events | `REGISTER_EVENTS_RATE_LIMIT` | `120/second` per X-Service-Identity | `POST /services/{service}/events` |
+| Audit query | `AUDIT_QUERY_RATE_LIMIT` | `120/second` per user (`sub` из introspect, fallback на IP) | `GET /events`, `GET /events/stats`, `GET /events/export`, `GET /rules`, `GET /rules/{id}`, `GET /services`, `GET /services/{service}/events`, `GET /retention` |
+| Rule write | `RULE_WRITE_RATE_LIMIT` | `120/second` per user (`sub` из introspect, fallback на IP) | `POST /rules`, `PATCH /rules/{id}`, `DELETE /rules/{id}` |
 
 Write-эндпоинты `/retention` (PUT/DELETE) — **без** rate-limit by-design: admin-операции выполняются вручную, утечка admin-токена детектится audit-каналом. Запись правил (`/rules`) лимитируется `RULE_WRITE_RATE_LIMIT`: компрометация `loging_admin`-токена позволяет флудить write'ами (каждый сбрасывает rule-cache и бьёт по БД), поэтому здесь RL — дополнительный rate-cap поверх audit-детекта.
 

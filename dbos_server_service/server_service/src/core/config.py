@@ -372,7 +372,7 @@ class Settings(BaseSettings):
         ),
     )
     global_rate_limit: str = Field(
-        default="500/minute",
+        default="120/second",
         description=(
             "Глобальный per-IP rate-limit на все эндпоинты (синтаксис slowapi: "
             "'<count>/<period>', где period ∈ second|minute|hour|day). "
@@ -427,7 +427,7 @@ class Settings(BaseSettings):
         ),
     )
     ipmi_rotate_per_server_rate_limit: str = Field(
-        default="5/minute",
+        default="120/second",
         alias="IPMI_ROTATE_PER_SERVER_RATE_LIMIT",
         description=(
             "Per-IP rate-limit на dispatch ротации IPMI-credentials через "
@@ -438,7 +438,7 @@ class Settings(BaseSettings):
         ),
     )
     server_prepare_rate_limit: str = Field(
-        default="3/minute",
+        default="120/second",
         alias="SERVER_PREPARE_RATE_LIMIT",
         description=(
             "Per-IP rate-limit на bootstrap-управления через POST "
@@ -449,7 +449,7 @@ class Settings(BaseSettings):
         ),
     )
     bulk_prepare_rate_limit: str = Field(
-        default="2/minute",
+        default="120/second",
         alias="BULK_PREPARE_RATE_LIMIT",
         description=(
             "Per-IP rate-limit на POST /servers/prepare/bulk (массовый "
@@ -470,7 +470,7 @@ class Settings(BaseSettings):
         ),
     )
     ipmi_credentials_rotate_rate_limit: str = Field(
-        default="5/minute",
+        default="120/second",
         alias="IPMI_CREDENTIALS_ROTATE_RATE_LIMIT",
         description=(
             "Per-IP rate-limit на пользовательский POST "
@@ -481,7 +481,7 @@ class Settings(BaseSettings):
         ),
     )
     account_rotate_password_rate_limit: str = Field(
-        default="10/minute",
+        default="120/second",
         alias="ACCOUNT_ROTATE_PASSWORD_RATE_LIMIT",
         description=(
             "Per-IP rate-limit на POST /server-accounts/{id}/rotate_password — "
@@ -491,7 +491,7 @@ class Settings(BaseSettings):
         ),
     )
     mass_rotate_dispatch_rate_limit: str = Field(
-        default="5/minute",
+        default="120/second",
         alias="MASS_ROTATE_DISPATCH_RATE_LIMIT",
         description=(
             "Per-IP rate-limit на POST /server-accounts/{id}/rotate (mass-"
@@ -553,18 +553,17 @@ class Settings(BaseSettings):
         ),
     )
     worker_pool_rate_limit: str = Field(
-        default="60/minute",
+        default="120/second",
         alias="WORKER_POOL_RATE_LIMIT",
         description=(
             "Per-IP rate-limit на seed/claim outbox-эндпоинты в "
             "/internal/secrets/. Worker по контракту poll'ит batch'ами раз в "
-            "секунду; глобальный 500/min слишком великодушен на случай bug'а "
-            "в worker'е (два poller'а / loop без back-off'а) — отдельный лимит "
-            "60/min задаёт жёсткий потолок."
+            "секунду; отдельный лимит 120/second задаёт потолок на случай bug'а "
+            "в worker'е (два poller'а / loop без back-off'а)."
         ),
     )
     password_reveal_rate_limit: str = Field(
-        default="10/minute",
+        default="120/second",
         alias="PASSWORD_REVEAL_RATE_LIMIT",
         description=(
             "Per-IP+target rate-limit на reveal-эндпоинты, отдающие plaintext "
@@ -572,10 +571,8 @@ class Settings(BaseSettings):
             "GET /servers/{id}/ipmi (с view_credentials). Ключ — IP+target_id "
             "(см. `limiter.per_account_key`), чтобы burst против одной цели "
             "не разносился по нескольким account_id'ам с одного IP'шника. "
-            "Глобальный 500/min слишком великодушен для plaintext-канала — "
-            "10/min оставляет место под штатные UI-перерисовки карточки и "
-            "режет автоматический скрапер. Применяется поверх "
-            "`global_rate_limit`."
+            "Default 120/second оставляет место под штатные UI-перерисовки "
+            "карточки. Применяется поверх `global_rate_limit`."
         ),
     )
     password_reveal_audit_window_seconds: int = Field(

@@ -100,13 +100,13 @@ class TestIngestBurstCap:
         assert r.json()["error_code"] == "RATE_LIMIT_EXCEEDED"
 
     def test_default_remains_no_burst(self, monkeypatch):
-        """Backward-compat: дефолт `INGEST_BURST_PER_SECOND=0` не добавляет
-        второе правило — те же 100/minute, что были до patch'а.
+        """Дефолт `INGEST_BURST_PER_SECOND=0` не добавляет второе правило —
+        отдаётся чистый `ingest_rate_limit` (120/second).
         """
         monkeypatch.delenv("INGEST_BURST_PER_SECOND", raising=False)
         monkeypatch.delenv("INGEST_RATE_LIMIT", raising=False)
         get_settings.cache_clear()
-        assert get_settings().compose_ingest_rate_limit() == "100/minute"
+        assert get_settings().compose_ingest_rate_limit() == "120/second"
 
 
 # ── 2. Rule engine cold-start UNLOADED + DB down ──────────────────────────

@@ -214,17 +214,30 @@ async def test_dept_grant_required_422(client, identity_factory):
 
 
 async def test_rate_limit_exceeded_429(client, identity_factory, cred_factory):
-    """Per-endpoint `@limiter.limit` на /reveal — 5/minute per IP.
+    """Per-endpoint `@limiter.limit` на /reveal отбивает burst 429.
 
-    Создаём cred, шестью подряд POST /reveal с одного IP (TestClient default
-    `127.0.0.1`) пробиваем 5/minute → шестой возвращает 429 с нашим
-    error-envelope (`RATE_LIMIT_EXCEEDED`, request_id, timestamp).
+    `rate_limit_reveal` резолвится в `RateLimitItem` при импорте handler'а,
+    поэтому прижимаем endpoint-лимит к `5/minute` прямо в route-лимитах
+    limiter'а (env-override на горячую тут не сработает), создаём cred и
+    burst'ом POST /reveal с одного IP (TestClient default `127.0.0.1`)
+    пробиваем cap → следующий возвращает 429 с нашим error-envelope
+    (`RATE_LIMIT_EXCEEDED`, request_id, timestamp).
 
     Limiter живёт в `src.core.limiter` (in-memory storage), сбрасываем
     его перед и после, чтобы предыдущие тесты не подъедали бюджет.
     """
+    from limits import parse_many
+
     from src.core.limiter import limiter
 
+    saved = {
+        name: [lim.limit for lim in lims]
+        for name, lims in limiter._route_limits.items()
+    }
+    tight = parse_many("5/minute")[0]
+    for lims in limiter._route_limits.values():
+        for lim in lims:
+            lim.limit = tight
     limiter.reset()
     try:
         owner = identity_factory(
@@ -261,4 +274,7 @@ async def test_rate_limit_exceeded_429(client, identity_factory, cred_factory):
         )
         _assert_envelope(last_body, error_code="RATE_LIMIT_EXCEEDED")
     finally:
+        for name, items in saved.items():
+            for lim, original in zip(limiter._route_limits[name], items):
+                lim.limit = original
         limiter.reset()

@@ -94,7 +94,7 @@ Daemon-thread (`src/main.py::_retention_loop`) считает время до с
 - **HTTPS guard для introspect.** `AUTH_SERVICE_URL` валидируется на https в prod (`APP_ENV=production`), localhost-исключение для devcontainer. В prod + https-remote (non-loopback) запрещено `INTROSPECT_TLS_VERIFY=false` — fail-fast на старте. Production-guard'ы также требуют непустые `SERVICE_API_KEYS` и `INTROSPECT_SERVICE_API_KEY`, причём отдельные друг от друга (key-separation).
 - **Idempotency.** `EventCreate.idempotency_key` (≤ 128 символов, opaque-токен в body) + partial UNIQUE `(service, idempotency_key) WHERE idempotency_key IS NOT NULL`. Repository делает `pg_insert(...).on_conflict_do_nothing(...)` и возвращает канонический row — outbox-retry safe: повторный POST с тем же ключом возвращает 201 с прежним `event_id` и `received_at`.
 - **Redaction.** На стороне `loging_service` `event_service.record()` и `record_admin_action()` ещё раз прогоняют `details` через `utils/redaction.redact()` — defense-in-depth. Маскируются по имени ключа (`password`, `token`, `api_key`, `secret`, `credential`, …) и по форме значения (JWT-like, argon2/bcrypt-хэши).
-- **Rate-limit на ingest.** `POST /events` ключуется per-service-identity (`X-Service-Identity`, нормализованный, с fallback на IP при отсутствии header'а), бюджет `INGEST_RATE_LIMIT` (`100/minute` по умолчанию). За k8s ingress общий per-IP bucket позволял одному сервису выжать бюджет остальных — теперь bucket'ы независимы. `headers_enabled=False` — `X-RateLimit-Remaining` не утекает атакующему.
+- **Rate-limit на ingest.** `POST /events` ключуется per-service-identity (`X-Service-Identity`, нормализованный, с fallback на IP при отсутствии header'а), бюджет `INGEST_RATE_LIMIT` (`120/second` по умолчанию). За k8s ingress общий per-IP bucket позволял одному сервису выжать бюджет остальных — теперь bucket'ы независимы. `headers_enabled=False` — `X-RateLimit-Remaining` не утекает атакующему.
 - **Bypass-guard для self-audit.** `record_admin_action()` для собственных CRUD-операций пишет минуя `apply_rules` — нельзя выключить аудит rules/retention через SUPPRESS-правило.
 
 ## События, которые сервис эмитит сам
@@ -131,11 +131,11 @@ Self-audit события: `logging.events_queried`, `logging.rules_read`, `logg
 | `TOKEN_PROXY_POOL_MAX_CONNECTIONS` | `10` | `httpx.Limits` для `/token` proxy-клиента (Swagger login) |
 | `TOKEN_PROXY_POOL_MAX_KEEPALIVE` | `5` | `httpx.Limits` keepalive для `/token` proxy-клиента |
 | `MAX_REQUEST_BODY_BYTES` | `1048576` | body-size middleware cap (1 MiB) |
-| `INGEST_RATE_LIMIT` | `100/minute` | slowapi default на `POST /events` |
-| `INGEST_BURST_PER_SECOND` | `0` | burst-cap поверх `INGEST_RATE_LIMIT`. `>0` добавляет второе правило `N/second`, защищает от штормов (`100/minute` без burst-капы выжимается за 1 секунду). `0` — выключено |
-| `AUDIT_QUERY_RATE_LIMIT` | `60/minute` | slowapi default на read-канал: `GET /events`, `GET /rules*`, `GET /services*`, `GET /retention` |
-| `RULE_WRITE_RATE_LIMIT` | `30/minute` | slowapi default на admin-запись правил (`POST/PATCH/DELETE /rules`), per-user (fallback на IP) — защита от flood'а скомпрометированным `loging_admin`-токеном |
-| `REGISTER_EVENTS_RATE_LIMIT` | `100/minute` | slowapi default на `POST /services/{service}/events` (per-identity) |
+| `INGEST_RATE_LIMIT` | `120/second` | slowapi default на `POST /events` |
+| `INGEST_BURST_PER_SECOND` | `0` | burst-cap поверх `INGEST_RATE_LIMIT`. `>0` добавляет второе правило `N/second` секундного окна. `0` — выключено |
+| `AUDIT_QUERY_RATE_LIMIT` | `120/second` | slowapi default на read-канал: `GET /events`, `GET /rules*`, `GET /services*`, `GET /retention` |
+| `RULE_WRITE_RATE_LIMIT` | `120/second` | slowapi default на admin-запись правил (`POST/PATCH/DELETE /rules`), per-user (fallback на IP) — защита от flood'а скомпрометированным `loging_admin`-токеном |
+| `REGISTER_EVENTS_RATE_LIMIT` | `120/second` | slowapi default на `POST /services/{service}/events` (per-identity) |
 | `RATE_LIMIT_HEADERS_ENABLED` | `false` | включать ли `X-RateLimit-*` response headers |
 | `SECURITY_HSTS_ENABLED` | `false` | `Strict-Transport-Security` header — только за https-фронтом |
 | `AUDIT_DRAIN_TIMEOUT_SECONDS` | `2.0` | бюджет на draining pending self-audit задач при shutdown'е |

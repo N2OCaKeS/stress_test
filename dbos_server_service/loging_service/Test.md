@@ -44,7 +44,7 @@ docker compose -f loging_service/tests/docker-compose.test.yml run --rm test-run
 | `test_payload_validation.py` | Валидация `EventCreate`: лимит `details` 64 KB, `max_length` всех строковых полей, `actor_type` enum, сохранение опциональных полей. |
 | `test_schema_validators.py` | Pydantic-схемы целиком: `EventCreate` (charset, shadow-keys, NUL-byte guard, `request_id`, `idempotency_key`, charset-валидаторы `target_id`/`target_type`/`actor_id`/`subject_id` против CRLF-инъекций и unicode-байпасса), `RuleCreate` (с `effect=WARNING` / `RuleStatus.warning`), `RegisterEventsRequest`. |
 | `test_body_size_limit.py` | DoS-fix: middleware режет `Content-Length > MAX_REQUEST_BODY_BYTES` (default 1 MiB) до чтения body, malformed Content-Length (negative / plus / underscore / unicode-digit / whitespace) → 400 `INVALID_CONTENT_LENGTH`, chunked-overflow → 413 на стриме. |
-| `test_rate_limit.py` | Per-IP `100/minute` на ingest (slowapi), отдельный bucket per-service, `headers_enabled=False`, отсутствие лимита на `/health`. |
+| `test_rate_limit.py` | Per-IP `120/second` на ingest (slowapi), отдельный bucket per-service, `headers_enabled=False`, отсутствие лимита на `/health`. |
 | `test_redaction.py` | Defense-in-depth маскировка `details`: по имени ключа (password/token/secret/hash/credential) и по форме значения (JWT, argon2/bcrypt), вложенность, truncate длинных строк. |
 | `test_normalization.py` | `utils.normalization.normalize_service_name`: NFKC-фолд, удаление невидимых символов, confusable-маппинг, защита от unicode-байпасса reserved-имени `loging_service`. |
 | `test_timezones.py` | UTC в БД vs MSK на отображении: нормализация `timestamp` с offset, `received_at` всегда UTC, naive-input. |

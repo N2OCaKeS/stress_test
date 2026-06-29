@@ -71,7 +71,7 @@ def tight_limit():
 # ── happy-path: лимит большой, всё проходит ─────────────────────────────────
 
 class TestWithinLimit:
-    """В пределах глобального лимита (по умолчанию 500/minute) ничего не
+    """В пределах глобального лимита (по умолчанию 120/second) ничего не
     должно превращаться в 429."""
 
     async def test_no_token_returns_401_not_429(self, client):
@@ -135,9 +135,9 @@ class TestRateLimitExceeded:
     async def test_500_plus_requests_one_ip_yields_429(self, client, tight_limit):
         """Сценарий из требования: 500+ запросов с одного IP → 429.
 
-        Используем лимит 500/minute (production default) явно, чтобы
-        тест документировал именно требуемое поведение, а не работу с
-        искусственно низким лимитом.
+        Используем лимит 500/minute явно, чтобы тест документировал именно
+        требуемое поведение на минутном окне, а не работу с искусственно
+        низким лимитом.
         """
         tight_limit("500/minute")
 
@@ -297,10 +297,10 @@ class TestRateLimitNoAuditAmplification:
 class TestRateLimitConfig:
     """`global_rate_limit` должен попадать из settings в limiter."""
 
-    def test_default_is_500_per_minute(self):
-        """По умолчанию лимит — '500/minute' (production-baseline)."""
+    def test_default_is_120_per_second(self):
+        """По умолчанию лимит — '120/second' (production-baseline)."""
         settings = get_settings()
-        assert settings.global_rate_limit == "500/minute"
+        assert settings.global_rate_limit == "120/second"
 
     def test_limiter_uses_configured_limit(self):
         """Limiter получил именно `settings.global_rate_limit`."""
@@ -312,4 +312,4 @@ class TestRateLimitConfig:
         for group in limiter._default_limits:
             for lim in group:
                 configured.append(str(lim.limit))
-        assert any("500" in s for s in configured), f"500/minute not in default_limits: {configured}"
+        assert any("120" in s for s in configured), f"120/second not in default_limits: {configured}"

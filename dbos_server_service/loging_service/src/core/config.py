@@ -157,15 +157,15 @@ class Settings(BaseSettings):
     # БД (~3000 ev/s, ~10 GB/h), как только один client IP вылезет за cap.
     # Per-service (per-API-key) keying — отдельно. Health-пробы
     # исключены в `main.py` (см. `_RATE_LIMIT_EXEMPT_PATHS`).
-    ingest_rate_limit: str = Field(default="100/minute", alias="INGEST_RATE_LIMIT")
+    ingest_rate_limit: str = Field(default="120/second", alias="INGEST_RATE_LIMIT")
 
     # Burst-cap поверх `ingest_rate_limit`: добавляет второе правило вида
-    # `<N>/second` (через `;`-сепаратор `parse_many`'я limits). Минутный
-    # bucket один: 100 запросов в минуту реально превращаются в 100 запросов
-    # за первую секунду, и легитимный logon-шторм (10 событий × 200 users,
-    # 2000 ev/min) глохнет на «горке». Включается выставлением >0 — по
-    # умолчанию 0 (правило не добавляется, поведение совместимое со старым).
-    # Связано с `compose_ingest_rate_limit()`.
+    # `<N>/second` (через `;`-сепаратор `parse_many`'я limits). Нужен, когда
+    # базовый бюджет задан минутным окном (через env) и реально выжимается
+    # за первую секунду — секундное правило размазывает legitимный
+    # logon-шторм (10 событий × 200 users) по окну. Включается выставлением
+    # >0 — по умолчанию 0 (правило не добавляется). Связано с
+    # `compose_ingest_rate_limit()`.
     ingest_burst_per_second: int = Field(
         default=0, alias="INGEST_BURST_PER_SECOND", ge=0
     )
@@ -177,7 +177,7 @@ class Settings(BaseSettings):
     # каждую отдельную query, лимит — частоту таких query от одного клиента.
     # Default консервативный — admin-дашборды редко смотрят чаще 1 req/s.
     audit_query_rate_limit: str = Field(
-        default="60/minute", alias="AUDIT_QUERY_RATE_LIMIT"
+        default="120/second", alias="AUDIT_QUERY_RATE_LIMIT"
     )
 
     # Per-user rate-limit на admin-запись правил (`POST/PATCH/DELETE /rules`).
@@ -188,7 +188,7 @@ class Settings(BaseSettings):
     # Дефолт жёстче read-канала: легитимный админ правит правила штучно, не
     # десятками в минуту.
     rule_write_rate_limit: str = Field(
-        default="30/minute", alias="RULE_WRITE_RATE_LIMIT"
+        default="120/second", alias="RULE_WRITE_RATE_LIMIT"
     )
 
     # Per-service-identity rate-limit на `POST /services/{service}/events`.
@@ -201,7 +201,7 @@ class Settings(BaseSettings):
     # upsert'ов/s. Если header отсутствует (legacy soft), key_func фолбэчит
     # на IP — тот же дефолт, что и `POST /events`.
     register_events_rate_limit: str = Field(
-        default="100/minute", alias="REGISTER_EVENTS_RATE_LIMIT"
+        default="120/second", alias="REGISTER_EVENTS_RATE_LIMIT"
     )
 
     # Включить ли `X-RateLimit-Limit/Remaining/Reset` response headers.

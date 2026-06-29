@@ -64,7 +64,7 @@
 
 ### Rate-limit
 
-`SLOWAPI_RATE_LIMIT` (default `500/minute`) — глобальный per-IP лимит на всё, кроме `/health` и `/ready`. На `/reveal` отдельный per-actor throttle (5-мин окно).
+`SLOWAPI_RATE_LIMIT` (default `120/second`) — глобальный per-IP лимит на всё, кроме `/health` и `/ready`. На `/reveal` отдельный per-actor throttle (5-мин окно).
 
 ## Health
 

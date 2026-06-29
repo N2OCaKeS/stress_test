@@ -381,16 +381,16 @@ best-effort: их фейл не валит ready.
 
 | Variable | Default | Что |
 |---|---|---|
-| `SLOWAPI_RATE_LIMIT` | `500/minute` | Общий cap per-IP. |
+| `SLOWAPI_RATE_LIMIT` | `120/second` | Общий cap per-IP. |
 | `RATE_LIMIT_STORAGE_URI` | `memory://` | `redis://...` в prod для шейринга между репликами. |
 | `REDIS_PASSWORD` | `""` | Если задан, добавляется в DSN при `redis://` storage. |
-| `RATE_LIMIT_REVEAL` | `5/minute` | Per-actor лимит на `POST /credentials/{id}/reveal`. |
-| `RATE_LIMIT_TRANSFER` | `10/minute` | На `/transfer`. |
-| `RATE_LIMIT_RECOVER` | `10/minute` | На `/recover`. |
-| `RATE_LIMIT_DELETE` | `30/minute` | На `DELETE /credentials/{id}`. |
-| `RATE_LIMIT_CREATE` | `60/minute` | На `POST /credentials`. |
-| `RATE_LIMIT_DEPT_GRANT` | `20/minute` | На `/dept-grants` CRUD. |
-| `RATE_LIMIT_ACL` | `30/minute` | На `/acl` CRUD. |
+| `RATE_LIMIT_REVEAL` | `120/second` | Per-actor лимит на `POST /credentials/{id}/reveal`. |
+| `RATE_LIMIT_TRANSFER` | `120/second` | На `/transfer`. |
+| `RATE_LIMIT_RECOVER` | `120/second` | На `/recover`. |
+| `RATE_LIMIT_DELETE` | `120/second` | На `DELETE /credentials/{id}`. |
+| `RATE_LIMIT_CREATE` | `120/second` | На `POST /credentials`. |
+| `RATE_LIMIT_DEPT_GRANT` | `120/second` | На `/dept-grants` CRUD. |
+| `RATE_LIMIT_ACL` | `120/second` | На `/acl` CRUD. |
 
 ### Lockout
 

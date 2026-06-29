@@ -81,13 +81,13 @@ Lockout **не применяется** к refresh и PAT-токенам (там
 
 | Endpoint | ENV var | Default | Назначение |
 |---|---|---|---|
-| `POST /login` | `LOGIN_RATE_LIMIT` | `10/minute` | Argon2id verify ~100ms CPU, без лимита атакующий выжигает ядра. |
-| `POST /token` | `LOGIN_RATE_LIMIT` | `10/minute` | Swagger UI password-form — тот же login, общий лимит чтобы не обходить через `/token`. |
-| `POST /oauth2/token` | `LOGIN_RATE_LIMIT` | `10/minute` | `client_credentials` без per-client lockout'а — IP-лимит закрывает дыру. |
-| `POST /refresh` | `REFRESH_RATE_LIMIT` | `30/minute` | Multi-tab SPA / mobile background refresh укладываются; brute по opaque-refresh бессмыслен, но IP-лимит против flood'а. |
-| `GET /docker/token` | `DOCKER_TOKEN_RATE_LIMIT` | `30/minute` | `docker pull/push` burst'ы; защита от ротации username'ов в обход user-lockout. |
-| `POST /authorization/introspect` | `INTROSPECT_RATE_LIMIT` | `60/minute` | M2M-вызов часто, но не безудержно; защита auth-pool от token-flood'а. |
-| `POST /authorization/service-access` | `INTROSPECT_RATE_LIMIT` | `60/minute` | Тонкая обёртка над introspect, общий лимит. |
+| `POST /login` | `LOGIN_RATE_LIMIT` | `120/second` | Argon2id verify ~100ms CPU, без лимита атакующий выжигает ядра. Brute-force держит per-username lockout. |
+| `POST /token` | `LOGIN_RATE_LIMIT` | `120/second` | Swagger UI password-form — тот же login, общий лимит чтобы не обходить через `/token`. |
+| `POST /oauth2/token` | `LOGIN_RATE_LIMIT` | `120/second` | `client_credentials` без per-client lockout'а — IP-лимит закрывает дыру. |
+| `POST /refresh` | `REFRESH_RATE_LIMIT` | `120/second` | Multi-tab SPA / mobile background refresh укладываются; brute по opaque-refresh бессмыслен, но IP-лимит против flood'а. |
+| `GET /docker/token` | `DOCKER_TOKEN_RATE_LIMIT` | `120/second` | `docker pull/push` burst'ы; защита от ротации username'ов в обход user-lockout. |
+| `POST /authorization/introspect` | `INTROSPECT_RATE_LIMIT` | `120/second` | M2M-вызов часто, но не безудержно; защита auth-pool от token-flood'а. |
+| `POST /authorization/service-access` | `INTROSPECT_RATE_LIMIT` | `120/second` | Тонкая обёртка над introspect, общий лимит. |
 
 Backend: `RATE_LIMIT_STORAGE_URI` (например `redis://host:6379/0`). Без задания → `memory://` (per-process; в K8s с 2+ репликами лимит мультиплицируется, prod выдаёт WARNING на старте). `headers_enabled=True` — `X-RateLimit-Limit` / `X-RateLimit-Remaining` / `X-RateLimit-Reset` ставятся в ответе.
 

@@ -188,16 +188,16 @@ class TestOutboxCancelledAfterCommitNoDuplicate:
 
 
 class TestGetEventsRateLimit:
-    """`GET /events` теперь под `audit_query_rate_limit` (default 60/min)."""
+    """`GET /events` теперь под `audit_query_rate_limit` (default 120/second)."""
 
     def test_default_value(self, monkeypatch):
-        """Default — `60/minute`."""
+        """Default — `120/second`."""
         monkeypatch.delenv("AUDIT_QUERY_RATE_LIMIT", raising=False)
         from src.core.config import get_settings
 
         get_settings.cache_clear()
         settings = get_settings()
-        assert settings.audit_query_rate_limit == "60/minute"
+        assert settings.audit_query_rate_limit == "120/second"
 
     def test_override_via_env(self, monkeypatch):
         monkeypatch.setenv("AUDIT_QUERY_RATE_LIMIT", "120/minute")

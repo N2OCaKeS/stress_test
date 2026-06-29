@@ -1,7 +1,7 @@
 """Тесты: per-IP rate-limit на ingest POST /api/logging/v1/events.
 
 Фиксит: скомпрометированный shared SERVICE_API_KEY → DB flood. Лимит per-IP
-читается из ``settings.ingest_rate_limit`` (default ``100/minute``); SlowAPI
+читается из ``settings.ingest_rate_limit`` (default ``120/second``); SlowAPI
 держит счётчики в in-memory storage, который мы ресетим перед каждым тестом.
 
 См. ``loging_service/src/main.py::limiter`` и
@@ -72,20 +72,26 @@ class TestRateLimitIngest:
         # Retry-After заголовок — для совместимости с RFC 6585.
         assert resp.headers.get("Retry-After") == "60"
 
-    def test_default_limit_blocks_at_101(self, client, auth_headers):
-        """Дефолтный лимит ``100/minute`` отбивает 101-й запрос с одного IP.
+    def test_limit_blocks_past_cap(self, client, auth_headers, monkeypatch):
+        """Запрос сверх настроенного cap'а с одного IP отбивается 429.
 
-        Самая дорогая проверка в файле (100+ полных INSERT'ов); ограничена
-        одним прогоном — нужно ровно для подтверждения cap'а из ТЗ.
+        Лимит понижаем env-override'ом до ``10/minute``, чтобы проверять
+        срабатывание cap'а без сотни полных INSERT'ов и без привязки к
+        конкретному дефолту.
         """
-        # Дефолт уже 100/minute — никаких env-overrides не делаем.
-        for i in range(100):
+        monkeypatch.setenv("INGEST_RATE_LIMIT", "10/minute")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+        from src.main import limiter
+        limiter.reset()
+
+        for i in range(10):
             resp = client.post(
                 "/api/logging/v1/events", json=make_event(), headers=auth_headers
             )
             assert resp.status_code == 201, f"request #{i} got {resp.status_code}"
 
-        # 101-й — 429.
+        # 11-й — 429.
         resp = client.post(
             "/api/logging/v1/events", json=make_event(), headers=auth_headers
         )
@@ -259,12 +265,12 @@ class TestRateLimitConfig:
     """Конфигурируемость лимита через ``INGEST_RATE_LIMIT`` env."""
 
     def test_default_value(self, monkeypatch):
-        """Default — ``100/minute`` (без env override)."""
+        """Default — ``120/second`` (без env override)."""
         monkeypatch.delenv("INGEST_RATE_LIMIT", raising=False)
         from src.core.config import get_settings
         get_settings.cache_clear()
         settings = get_settings()
-        assert settings.ingest_rate_limit == "100/minute"
+        assert settings.ingest_rate_limit == "120/second"
 
     def test_override_via_env(self, monkeypatch):
         monkeypatch.setenv("INGEST_RATE_LIMIT", "500/hour")
@@ -493,7 +499,7 @@ class TestRegisterEventsRateLimitConfig:
         from src.core.config import get_settings
         get_settings.cache_clear()
         settings = get_settings()
-        assert settings.register_events_rate_limit == "100/minute"
+        assert settings.register_events_rate_limit == "120/second"
 
     def test_override_via_env(self, monkeypatch):
         monkeypatch.setenv("REGISTER_EVENTS_RATE_LIMIT", "30/minute")

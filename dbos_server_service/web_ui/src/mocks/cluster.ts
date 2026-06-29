@@ -1,5 +1,6 @@
-/* Cluster-level mocks for the admin section: health, TLS, rotations,
-   backups, migrations, audit overview, global config, workers, cron, DLQ. */
+/* Cluster-level mocks for the admin section: pod health plus the
+   service/platform role catalogues and server groups used by the
+   role-card and platform-roles pages. */
 
 export interface ClusterPod {
   svc: string;
@@ -14,50 +15,6 @@ export const CLUSTER_PODS: ClusterPod[] = [
   { svc: "loging_service", ratio: "2/2", iconName: "doc" },
   { svc: "server_worker", ratio: "4/4", iconName: "cog" },
 ];
-
-export const ROTATIONS = [
-  { name: "server-master", next: "12.06 02:00", last: "05.06" },
-  { name: "secret-master", next: "12.06 03:00", last: "05.06" },
-  { name: "redis-stash-master", next: "12.06 04:00", last: "05.06" },
-  { name: "db-passwords", next: "15.06", last: "15.05" },
-  { name: "redis-password", next: "15.06", last: "15.05" },
-  { name: "s2s-keys", next: "18.06", last: "18.05" },
-];
-
-export const BACKUPS = [
-  { name: "pg-backup", meta: "daily · 2h ago · 412 MB", badge: "ok" },
-  { name: "master-keys-backup", meta: "daily · 2h ago · 64 KB", badge: "ok" },
-  { name: "secret-full-backup", meta: "weekly · 4д назад · 18 MB", badge: "ok" },
-  { name: "pg-restore-drill", meta: "monthly · 11д назад · pass", badge: "pass" },
-];
-
-export interface GlobalConfigItem {
-  key: string;
-  value: string;
-  note: string;
-}
-
-export const GLOBAL_CONFIG_ITEMS: GlobalConfigItem[] = [
-  { key: "TLS_MIN_VERSION", value: "1.3", note: "minimum cluster-wide TLS" },
-  { key: "AUDIT_RETENTION_DAYS", value: "90", note: "loging sweep period" },
-  { key: "ROTATION_MASTER_PERIOD", value: "7d", note: "server / secret / redis-stash master" },
-  { key: "MIGRATION_AUTO_FINALIZE", value: "6mo", note: "форсированное дошифрование legacy" },
-  { key: "NETWORK_POLICY", value: "strict", note: "default-deny + namespaced east-west" },
-  { key: "DEPT_ISOLATION", value: "on", note: "cross-dept reads запрещены" },
-];
-
-export interface ClusterConfigAuditEntry {
-  /** ISO-8601 (UTC); рендерится через formatMsk*. */
-  ts: string;
-  key: string;
-  old_value: string;
-  new_value: string;
-  applied_by: string;
-}
-
-// shared in-memory audit log for cluster.config live patches.
-// real impl will read from loging_service; mock keeps last entries in process.
-export const CLUSTER_CONFIG_AUDIT: ClusterConfigAuditEntry[] = [];
 
 export interface ServerGroup {
   id: string;

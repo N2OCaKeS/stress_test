@@ -3,20 +3,16 @@ import { Navigate } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
-  Archive,
   Bot,
   Building2,
   Clock,
-  Cog,
   Container,
-  Database,
   EyeOff,
   FileText,
   HardDrive,
   KeyRound,
   Layers,
   LockOpen,
-  RotateCw,
   ScanSearch,
   ServerIcon,
   ShieldCheck,
@@ -32,12 +28,7 @@ import type { Persona } from "@/types/persona";
 import type { Service } from "@/api/auth/types";
 
 import { ClusterHealth } from "./cluster/ClusterHealth";
-import { ClusterTLS } from "./cluster/ClusterTLS";
-import { ClusterRotations } from "./cluster/ClusterRotations";
-import { ClusterBackups } from "./cluster/ClusterBackups";
-import { ClusterMigrations } from "./cluster/ClusterMigrations";
 import { ClusterAuditOverview } from "./cluster/ClusterAuditOverview";
-import { ClusterConfig } from "./cluster/ClusterConfig";
 
 import { ServicesUsers } from "./services/ServicesUsers";
 import { ServicesDepartments } from "./services/ServicesDepartments";
@@ -111,25 +102,6 @@ const STATIC_ITEMS: AdminItem[] = [
     visibleFor: (p) => isAccountAdmin(p),
   },
   {
-    id: "cluster.tls",
-    label: "TLS / сертификаты",
-    icon: ShieldCheck,
-    block: "cluster",
-    group: "Безопасность",
-    content: ClusterTLS,
-    visibleFor: (p) => isAccountAdmin(p),
-  },
-  {
-    id: "cluster.rotations",
-    label: "Master keys / ротации",
-    hint: "6 видов",
-    icon: RotateCw,
-    block: "cluster",
-    group: "Безопасность",
-    content: ClusterRotations,
-    visibleFor: (p) => isAccountAdmin(p) || hasSecretServiceAdmin(p),
-  },
-  {
     id: "cluster.encryption_rotation",
     label: "Ротация ключей шифрования",
     hint: "server · secret keystore",
@@ -137,25 +109,6 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "cluster",
     group: "Безопасность",
     content: ServicesEncryptionRotation,
-    visibleFor: (p) => isAccountAdmin(p),
-  },
-  {
-    id: "cluster.backups",
-    label: "Бэкапы / DR-drills",
-    icon: Archive,
-    block: "cluster",
-    group: "Backup",
-    content: ClusterBackups,
-    visibleFor: (p) => isAccountAdmin(p),
-  },
-  {
-    id: "cluster.migrations",
-    label: "Миграции",
-    hint: "lazy re-encrypt",
-    icon: Database,
-    block: "cluster",
-    group: "Backup",
-    content: ClusterMigrations,
     visibleFor: (p) => isAccountAdmin(p),
   },
   {
@@ -168,16 +121,6 @@ const STATIC_ITEMS: AdminItem[] = [
     content: ClusterAuditOverview,
     visibleFor: (p) =>
       isAccountAdmin(p) || isDepAdmin(p) || isLoggingAdmin(p),
-  },
-  {
-    id: "cluster.config",
-    label: "Глобальные настройки",
-    hint: "env · NetworkPolicy",
-    icon: Cog,
-    block: "cluster",
-    group: "Аудит",
-    content: ClusterConfig,
-    visibleFor: (p) => isAccountAdmin(p),
   },
 
   // Services block — auth
@@ -384,7 +327,9 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "Безопасность",
     content: SecurityDocker,
-    visibleFor: (p) => p.has_admin,
+    // account_admin сюда не лезет — registry-доступ это история отделов и
+    // сервис-админов, не платформенного аккаунт-уровня.
+    visibleFor: (p) => p.has_admin && !isAccountAdmin(p),
   },
   {
     id: "services.security.lockout",
@@ -454,9 +399,16 @@ const STATIC_ITEMS: AdminItem[] = [
  */
 const ROLE_ITEM_EXCLUDED_SERVICES = new Set<string>([
   "auth_service",
-  // worker_service не несёт ролей и не управляется из UI — server_worker это
-  // taskiq-процесс без HTTP-API (cron/DLQ заданы кодом, мониторинг через K8s).
+  // server_worker — taskiq-процесс без HTTP-API (cron/DLQ заданы кодом,
+  // мониторинг через K8s); ролей не несёт и из UI не управляется. В каталоге
+  // auth он регистрируется под именем `server_worker`; `worker_service`
+  // держим как исторический алиас, чтобы пункт не всплыл из старых данных.
+  "server_worker",
   "worker_service",
+  // loging_service администрируется платформенными ролями (loging_admin /
+  // loging_reader), а не per-service ролями — отдельный «Роли · loging» пункт
+  // смысла не имеет.
+  "loging_service",
 ]);
 
 /**

@@ -11,6 +11,7 @@ resources:
   - 11-postgres-logging.yaml
   - 12-redis.yaml            # Redis для taskiq broker + slowapi rate-limit storage
   - 13-postgres-secret.yaml
+  - 14-keystore-rbac.yaml    # SA + Role get/patch на keystore-Secret каждого сервиса
   - 20-secrets.yaml          # генерируется scripts/k8s/gen_secrets.sh
   - 45-migrations.yaml       # Alembic Job'ы на каждый сервис (применять до Deployment'ов)
   - 30-logging-service.yaml

@@ -551,6 +551,17 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
+    # kube-apiserver: server_service с KEYSTORE_BACKEND=k8s патчит Secret
+    # dbos-server-encryption-keys (master-ключи шифрования) через k8s API.
+    # In-cluster клиент идёт на kubernetes.default ClusterIP:443, который
+    # DNAT'ится на control-plane node:6443 — открыты оба порта. Operator
+    # должен сузить ipBlock'ом на IP control-plane ноды.
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
     # docker-registry token verify. Hostname/IP задаёт operator (см. ConfigMap
     # DOCKER_REGISTRY_SERVICE) — конкретный CIDR закрытой сети operator должен
     # подложить в отдельную NP с ipBlock'ом. Здесь оставлены типовые порты.
@@ -604,6 +615,17 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
+    # kube-apiserver: secret_service с KEYSTORE_BACKEND=k8s патчит Secret
+    # dbos-secret-encryption-keys (master-ключи шифрования) через k8s API.
+    # In-cluster клиент идёт на kubernetes.default ClusterIP:443, который
+    # DNAT'ится на control-plane node:6443 — открыты оба порта. Operator
+    # должен сузить ipBlock'ом на IP control-plane ноды.
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
 
 ---
 # server-worker: outbound в auth (introspect), logging (audit), server_service

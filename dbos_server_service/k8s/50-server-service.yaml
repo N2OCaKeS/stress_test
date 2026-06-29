@@ -25,6 +25,13 @@ data:
   # с запасом помещается в PG max_connections=100.
   DB_POOL_SIZE: "5"
   DB_MAX_OVERFLOW: "10"
+  # Master-ключи шифрования храним в k8s Secret (etcd), а не в файле на
+  # emptyDir /tmp — иначе при рестарте пода теряется активный ключ после
+  # rotate и retired-тумбстоуны. Бэкенд патчит dbos-server-encryption-keys
+  # через API (нужен SA-токен + RBAC get/patch, см. 14-keystore-rbac.yaml).
+  KEYSTORE_BACKEND: k8s
+  KEYSTORE_K8S_SECRET: dbos-server-encryption-keys
+  KEYSTORE_K8S_NAMESPACE: dbos
 
 ---
 apiVersion: apps/v1
@@ -57,7 +64,11 @@ spec:
         dbos.monitoring/source: "/api/server/v1/ready"
     spec:
       terminationGracePeriodSeconds: 45
-      automountServiceAccountToken: false
+      # Под ходит в k8s API за master-ключами (KEYSTORE_BACKEND=k8s),
+      # поэтому SA-токен монтируем. RBAC сведён к get/patch только на
+      # dbos-server-encryption-keys (14-keystore-rbac.yaml).
+      serviceAccountName: server-service-keystore
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

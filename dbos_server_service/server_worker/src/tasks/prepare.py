@@ -78,6 +78,17 @@ _BOOTSTRAP_KEY_RE = re.compile(r"^dbos:prepare_creds:[A-Za-z0-9_\-]{1,128}$")
 _PREPARED_MARKER_PREFIX = "dbos:prepared_marker:"
 _PREPARED_MARKER_TTL_SECONDS = 3600
 
+# Маркер «привязанные аккаунты уже заведены» в Redis. Отдельный от
+# bootstrap-маркера: SSH-bootstrap и provision привязанных учёток — это два
+# независимых шага, и второй может упасть (например, sshd на доли секунды
+# недоступен в окне reload'а после хардинга), когда первый уже прошёл и
+# хардинг выключил парольный вход. Без отдельного маркера retry видел бы
+# bootstrap-маркер, целиком пропускал блок (включая provision) и уходил в
+# submit_prepared — сервер репортился подготовленным, а ключи привязанных
+# аккаунтов на бокс не доезжали. С маркером retry пропускает только то, что
+# реально сделано, и доводит provision до конца под управляющей key-сессией.
+_LINKED_PROVISIONED_MARKER_PREFIX = "dbos:linked_provisioned_marker:"
+
 
 async def _read_bootstrap_creds(creds_key: str) -> dict:
     """Прочитать bootstrap-креды из Redis по ключу-ссылке из payload.
@@ -181,6 +192,44 @@ async def _delete_bootstrap_succeeded(task_id: str) -> None:
         await client.delete(_PREPARED_MARKER_PREFIX + task_id)
     except Exception:  # noqa: BLE001
         logger.debug("failed to delete prepared marker", exc_info=True)
+
+
+async def _mark_linked_provisioned(task_id: str) -> None:
+    """Записать маркер «привязанные аккаунты заведены» в Redis с TTL.
+
+    Ставится сразу после успешного `_provision_linked_accounts`. На retry'е
+    `_impl` смотрит этот маркер и пропускает повторный provision (он
+    идемпотентен, но требует чтения bootstrap-stash'а, который может истечь
+    по TTL раньше, чем retry дойдёт). TTL — общий с bootstrap-маркером.
+    Ошибки глушим: best-effort, без маркера retry просто перезаведёт учётки.
+    """
+    validate_task_id(task_id)
+    client = redis_pool.get_redis()
+    try:
+        await client.set(
+            _LINKED_PROVISIONED_MARKER_PREFIX + task_id, "1",
+            ex=_PREPARED_MARKER_TTL_SECONDS,
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("failed to set linked provisioned marker", exc_info=True)
+
+
+async def _read_linked_provisioned(task_id: str) -> bool:
+    """True, если привязанные аккаунты уже были заведены на прошлой попытке."""
+    validate_task_id(task_id)
+    client = redis_pool.get_redis()
+    raw = await client.get(_LINKED_PROVISIONED_MARKER_PREFIX + task_id)
+    return raw is not None
+
+
+async def _delete_linked_provisioned(task_id: str) -> None:
+    """Снять маркер после успешного `submit_prepared` — best-effort cleanup."""
+    validate_task_id(task_id)
+    client = redis_pool.get_redis()
+    try:
+        await client.delete(_LINKED_PROVISIONED_MARKER_PREFIX + task_id)
+    except Exception:  # noqa: BLE001
+        logger.debug("failed to delete linked provisioned marker", exc_info=True)
 
 
 async def _delete_bootstrap_creds(creds_key: str) -> None:
@@ -310,17 +359,30 @@ async def server_prepare(task_id: str) -> None:
         # (callback-retry), берём ранее сохранённый из payload-scratch.
         detected_mode: str | None = payload.get("detected_management_mode")
 
-        # Если предыдущая попытка прошла SSH-bootstrap, но упала на
-        # submit_prepared (network к server_service лежал) — на текущем
-        # retry'е SSH-этап пропускаем. Иначе при истёкшем TTL bootstrap-
-        # ключа мы валим прогресс с SSH_BOOTSTRAP_CREDS_MISSING, хотя
-        # хост фактически готов. submit_prepared идемпотентен на стороне
-        # server_service — повторный вызов безопасен.
+        # Два независимых маркера прошлых попыток:
+        #   * bootstrap — SSH-bootstrap отработал (юзер/ключ/sudo на месте,
+        #     парольный вход, возможно, уже выключен хардингом);
+        #   * linked — привязанные аккаунты заведены.
+        # Если предыдущая попытка прошла SSH-bootstrap, но упала позже
+        # (provision привязанных учёток / submit_prepared) — соответствующий
+        # шаг на retry'е пропускаем по маркеру. Иначе при истёкшем TTL
+        # bootstrap-ключа мы валим прогресс с SSH_BOOTSTRAP_CREDS_MISSING,
+        # хотя хост фактически готов; а повторный bootstrap по паролю после
+        # хардинга вообще не зашёл бы (парольный вход выключен).
         already_bootstrapped, marker_mode = await _read_bootstrap_succeeded(task_id)
         if marker_mode is not None:
             detected_mode = marker_mode
+        linked_provisioned = await _read_linked_provisioned(task_id)
 
-        if not already_bootstrapped:
+        # Bootstrap-stash нужен, пока есть незавершённая SSH-работа: либо ещё не
+        # прошёл сам bootstrap, либо привязанные аккаунты не заведены. Когда оба
+        # шага отмечены маркерами, retry идёт прямо в submit_prepared, не трогая
+        # Redis-stash (его TTL к этому моменту может уже истечь — для этого
+        # маркеры и существуют).
+        bootstrap: dict | None = None
+        mgmt_install: dict = {}
+        mgmt_private_key: str | None = None
+        if not already_bootstrapped or not linked_provisioned:
             if not creds_key:
                 raise SshError(
                     error_code="SSH_BOOTSTRAP_CREDS_MISSING",
@@ -342,14 +404,24 @@ async def server_prepare(task_id: str) -> None:
             bootstrap = await _read_bootstrap_creds(creds_key)
 
             # Per-server управляющий материал лежит рядом с bootstrap-кредами в
-            # том же stash'е (его генерит и кладёт server_service). Без него
-            # ставить нечего — fail-fast с понятной ошибкой, а не молчаливый
-            # bootstrap без ключа/пароля.
+            # том же stash'е (его генерит и кладёт server_service). Приватный
+            # ключ нужен и для bootstrap'а (анти-локаут), и для provision'а
+            # привязанных учёток (управляющая key-сессия) — достаём здесь, на
+            # обоих путях.
             mgmt_install = bootstrap.get("mgmt_install") or {}
-            mgmt_public_key = mgmt_install.get("public_key")
             mgmt_private_key = mgmt_install.get("private_key")
+            # Имя из mgmt_install имеет приоритет — это то имя, под которым
+            # server_service сгенерил пару; payload/env остаются фолбэком. На
+            # already_bootstrapped-retry'е (provision не доделан) имя тоже берём
+            # из stash'а, чтобы управляющая сессия зашла под правильным юзером.
+            if mgmt_install.get("management_user"):
+                management_user = mgmt_install["management_user"]
+
+        if not already_bootstrapped:
+            # Без управляющего материала ставить нечего — fail-fast с понятной
+            # ошибкой, а не молчаливый bootstrap без ключа/пароля.
+            mgmt_public_key = mgmt_install.get("public_key")
             mgmt_password = mgmt_install.get("password")
-            mgmt_install_user = mgmt_install.get("management_user")
             missing = [
                 name for name, value in (
                     ("public_key", mgmt_public_key),
@@ -366,10 +438,6 @@ async def server_prepare(task_id: str) -> None:
                         f"(missing: {', '.join(missing)}); re-run prepare"
                     ),
                 )
-            # Имя из mgmt_install имеет приоритет — это то имя, под которым
-            # server_service сгенерил пару; payload/env остаются фолбэком.
-            if mgmt_install_user:
-                management_user = mgmt_install_user
 
             creds = {
                 "login": bootstrap.get("bootstrap_login"),
@@ -396,22 +464,33 @@ async def server_prepare(task_id: str) -> None:
                 harden_sshd=settings.ssh_harden_after_prepare,
             )
             detected_mode = bootstrap_result.get("management_mode")
-            # Маркер ставим ДО callback'а — если callback упадёт, retry
-            # увидит маркер и пропустит SSH-шаг, даже если TTL bootstrap-
-            # кред истёк.
+            # Маркер ставим ДО provision'а и callback'а — если они упадут,
+            # retry увидит маркер и не будет повторять SSH-bootstrap по паролю
+            # (после хардинга парольный вход выключен, повтор не зашёл бы).
             await _mark_bootstrap_succeeded(task_id, detected_mode)
 
-            # Завести все привязанные к серверу аккаунты сразу на этапе
-            # prepare. Сервер уже фактически управляемый (ключ проверен), поэтому
-            # провизионим под управляющей сессией по ключу. Креды аккаунтов
+        if not linked_provisioned:
+            # Завести все привязанные к серверу аккаунты на этапе prepare.
+            # Сервер уже фактически управляемый (ключ проверен), поэтому
+            # провизионим под управляющей key-сессией. Креды аккаунтов
             # (password + ssh keypair + атрибуты) server_service кладёт в тот же
             # Redis-stash, что и bootstrap — в payload едет только ссылка.
+            #
+            # Маркер ставим ТОЛЬКО после успеха: provision — отдельный шаг от
+            # bootstrap'а и может упасть, когда bootstrap уже прошёл (sshd на
+            # миг недоступен в окне reload'а после хардинга, бокс лёг и т.п.).
+            # Без отдельного маркера retry пропустил бы provision по
+            # bootstrap-маркеру и отрепортил бы сервер подготовленным, а ключи
+            # привязанных аккаунтов на бокс не доехали бы. Так retry перечитает
+            # stash и доведёт provision до конца; падение provision'а не
+            # «съедается» — task остаётся в retry/FAILED с реальной ошибкой.
             await _provision_linked_accounts(
                 server_id, management_user,
-                linked_accounts=bootstrap.get("linked_accounts") or [],
+                linked_accounts=(bootstrap or {}).get("linked_accounts") or [],
                 payload=payload,
                 management_private_key=mgmt_private_key,
             )
+            await _mark_linked_provisioned(task_id)
 
         await server_service_client.submit_prepared(
             server_id, management_user, target_dept,
@@ -432,6 +511,7 @@ async def server_prepare(task_id: str) -> None:
                     extra={"task_id": task_id, "server_id": server_id},
                 )
         await _delete_bootstrap_succeeded(task_id)
+        await _delete_linked_provisioned(task_id)
         # Defense-in-depth: `bootstrap_creds_key` сам по себе — это ссылка
         # в Redis-неймспейс с одноразовыми bootstrap-кредами. TTL и явный
         # DELETE уже закрыли значение в Redis, но ссылка в `tasks.payload`

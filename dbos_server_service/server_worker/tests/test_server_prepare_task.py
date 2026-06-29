@@ -438,11 +438,14 @@ class TestPrepareHandler:
             pass
         monkeypatch.setattr(_runner, "_schedule_retry", noop)
 
-        # Имитируем что попытка 1 уже отработала SSH — ставим маркер вручную
-        # с детектнутым ранее режимом (Смоленск).
+        # Имитируем что попытка 1 уже отработала SSH и provision привязанных
+        # учёток — ставим оба маркера вручную (bootstrap с детектнутым ранее
+        # режимом Смоленск + linked). Оба маркера => retry идёт сразу в submit,
+        # не читая stash (TTL истёк).
         await prepare._mark_bootstrap_succeeded(tid, "astra_smolensk")
+        await prepare._mark_linked_provisioned(tid)
 
-        # SSH connect не должен вызываться — маркер пропускает шаг.
+        # SSH connect не должен вызываться — маркеры пропускают шаги.
         monkeypatch.setattr(
             asyncssh, "connect",
             AsyncMock(side_effect=AssertionError("ssh must not be called on retry after bootstrap")),
@@ -617,7 +620,8 @@ class TestPrepareHandler:
         monkeypatch.setattr(_runner, "_schedule_retry", noop)
 
         await prepare._mark_bootstrap_succeeded(tid, "other_os")
-        # SSH connect не должен вызываться — маркер пропускает шаг.
+        await prepare._mark_linked_provisioned(tid)
+        # SSH connect не должен вызываться — маркеры пропускают шаги.
         monkeypatch.setattr(
             asyncssh, "connect",
             AsyncMock(side_effect=AssertionError("ssh must not be called")),
@@ -975,6 +979,175 @@ class TestPrepareProvisionsLinkedAccounts:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         assert called == []
+
+        get_settings.cache_clear()
+
+    async def test_retry_provisions_linked_when_bootstrap_done_but_not_linked(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Ключевой фикс: bootstrap прошёл, provision привязанных учёток упал
+        (sshd в окне reload'а после хардинга / бокс лёг) → retry НЕ должен
+        пропускать provision по bootstrap-маркеру.
+
+        Без фикса: bootstrap-маркер => весь блок (включая provision)
+        пропускался, сервер репортился подготовленным, а ключи привязанных
+        аккаунтов на бокс не доезжали. С фиксом: отдельный linked-маркер не
+        выставлен => retry перечитывает stash и доводит provision до конца
+        под управляющей key-сессией (повторного SSH-bootstrap по паролю нет —
+        парольный вход после хардинга выключен).
+        """
+        _set_mgmt_env(monkeypatch)
+        _mock_creds(
+            monkeypatch,
+            {
+                "bootstrap_login": "bootadmin",
+                "bootstrap_password": "Boot1234",
+                "linked_accounts": [
+                    {
+                        "account_id": "acc_t", "login": "tester",
+                        "password": "TesterPw1", "ssh_public_key": "ssh-ed25519 AAAA tester",
+                        "ssh_private_key": "PEM", "has_sudo": False,
+                        "unix_groups": [], "shell": None, "home_dir": "/home/tester",
+                    },
+                ],
+            },
+        )
+
+        provision_calls = []
+
+        async def fake_provision(credentials, server_id, **kwargs):
+            provision_calls.append((credentials, server_id, kwargs))
+            return {"provisioned": True}
+
+        monkeypatch.setattr(
+            "src.tasks.prepare.ssh_client.provision_user", fake_provision,
+        )
+
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_relink",
+            payload={
+                "server_id": "srv_relink",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_relink",
+                "host": "10.0.0.9",
+                "ssh_port": 2222,
+            },
+        )
+
+        async def noop(*a, **kw):
+            pass
+        monkeypatch.setattr(_runner, "_schedule_retry", noop)
+
+        # Имитируем «attempt 1 прошёл bootstrap, но не дошёл до linked-маркера».
+        await prepare._mark_bootstrap_succeeded(tid, "other_os")
+
+        # SSH-bootstrap по паролю не должен вызываться — bootstrap-маркер стоит,
+        # а provision привязанных учёток идёт через мок provision_user.
+        monkeypatch.setattr(
+            asyncssh, "connect",
+            AsyncMock(side_effect=AssertionError("password bootstrap must not re-run")),
+        )
+
+        submit_calls = []
+        async def fake_submit(server_id, management_user, target_department_id=None, *, management_mode=None):
+            submit_calls.append((server_id, management_user, management_mode))
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # Привязанная учётка заведена на retry'е, ключ доехал.
+        assert len(provision_calls) == 1
+        creds, sid, kwargs = provision_calls[0]
+        assert kwargs["login"] == "tester"
+        assert kwargs["public_key"] == "ssh-ed25519 AAAA tester"
+        assert creds["is_managed"] is True
+        assert creds["management_user"] == "dbos"
+        # submit_prepared дошёл с режимом из bootstrap-маркера.
+        assert submit_calls == [("srv_relink", "dbos", "other_os")]
+        # Оба маркера вычищены после успеха.
+        assert await prepare._read_bootstrap_succeeded(tid) == (False, None)
+        assert await prepare._read_linked_provisioned(tid) is False
+
+        get_settings.cache_clear()
+
+    async def test_linked_provision_failure_is_not_swallowed(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Фейл provision'а привязанной учётки НЕ должен молча давать success.
+
+        Если `_provision_linked_accounts` упал — submit_prepared не зовётся,
+        linked-маркер не ставится, task падает с реальной ошибкой. Bootstrap-
+        маркер при этом уже стоит (SSH-bootstrap прошёл), чтобы retry не
+        перезаходил по паролю после хардинга.
+        """
+        _set_mgmt_env(monkeypatch)
+        _mock_creds(
+            monkeypatch,
+            {
+                "bootstrap_login": "bootadmin",
+                "bootstrap_password": "Boot1234",
+                "linked_accounts": [
+                    {
+                        "account_id": "acc_t", "login": "tester",
+                        "password": "TesterPw1", "ssh_public_key": "ssh-ed25519 AAAA tester",
+                        "ssh_private_key": "PEM", "has_sudo": False,
+                        "unix_groups": [], "shell": None, "home_dir": "/home/tester",
+                    },
+                ],
+            },
+        )
+
+        async def boom_provision(*a, **kw):
+            raise SshError(
+                error_code="SSH_AUTHORIZED_KEYS_FAILED",
+                host="10.0.0.9",
+                message="key push failed",
+            )
+
+        monkeypatch.setattr(
+            "src.tasks.prepare.ssh_client.provision_user", boom_provision,
+        )
+
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_linkfail",
+            payload={
+                "server_id": "srv_linkfail",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_linkfail",
+                "host": "10.0.0.9",
+            },
+        )
+        await _force_terminal(tid)
+
+        async def noop(*a, **kw):
+            pass
+        monkeypatch.setattr(_runner, "_schedule_retry", noop)
+
+        conn = _conn(_prepare_seq())
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        submit_calls = []
+        async def fake_submit(*a, **kw):
+            submit_calls.append(a)
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        # Прозрачный фейл: статус FAILED, реальная ошибка в last_error.
+        assert t.status == TaskStatus.FAILED
+        assert "SSH_AUTHORIZED_KEYS_FAILED" in (t.last_error or "")
+        # submit_prepared не звался — сервер НЕ отрепортён подготовленным.
+        assert submit_calls == []
+        # linked-маркер не выставлен; bootstrap-маркер стоит (SSH прошёл).
+        assert await prepare._read_linked_provisioned(tid) is False
+        assert (await prepare._read_bootstrap_succeeded(tid))[0] is True
 
         get_settings.cache_clear()
 

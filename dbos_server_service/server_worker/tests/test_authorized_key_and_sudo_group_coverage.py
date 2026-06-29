@@ -91,6 +91,43 @@ class TestCreateUserForceReplaceExistingUser:
         )
         assert _PUBKEY in bash_call.kwargs.get("input", "")
 
+    async def test_existing_user_append_pushes_key_without_useradd(self, monkeypatch):
+        # Идемпотентность provision'а уже существующего OS-юзера (bootstrap-
+        # юзер вроде `tester`, заведённый entrypoint'ом контейнера): useradd
+        # НЕ запускается, ключ всё равно доезжает в authorized_keys через
+        # append-ветку (`grep -qxF ... >>`). Пароль есть → chpasswd между
+        # getent и записью ключа.
+        conn = make_conn([
+            run_result("tester:x:1000:1000::/home/tester:/bin/bash", "", 0),  # user_exists
+            run_result("", "", 0),  # chpasswd (new_password задан)
+            run_result("", "", 0),  # bash auth_keys append
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "dbos", "p") as ssh:
+            await ssh.create_user(
+                "tester",
+                new_password="TesterPw1",
+                public_key=_PUBKEY,
+                force_replace=False,
+            )
+
+        cmds = [c.args[0] for c in conn.run.await_args_list]
+        # Юзер существует → useradd/usermod не вызываются.
+        assert not any("useradd" in c for c in cmds)
+        assert not any("usermod" in c for c in cmds)
+        # Ключ ушёл append'ом (идемпотентно), не overwrite'ом.
+        bash_cmd = next(c for c in cmds if "authorized_keys" in c)
+        assert "grep -qxF" in bash_cmd
+        assert ">>" in bash_cmd
+        # Ключ — на stdin, не в команде.
+        assert _PUBKEY not in bash_cmd
+        bash_call = next(
+            c for c in conn.run.await_args_list
+            if "authorized_keys" in (c.args[0] if c.args else "")
+        )
+        assert _PUBKEY in bash_call.kwargs.get("input", "")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # _write_authorized_key (truncate=False через caller-shape):

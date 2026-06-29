@@ -13,11 +13,15 @@
 
 from __future__ import annotations
 
+import pytest
+
 from src.core.constants import Action, EntityType
+from src.core.exceptions import NotFoundError
 from src.repositories import entity_permission as ep_repo
 from src.repositories import resource_role_permission as rrp_repo
 from src.schemas.identity import IdentityContext
 from src.services import permissions
+from src.services.server import load_visible_server
 from src.utils.ids import entity_permission_id, resource_role_permission_id
 
 
@@ -222,4 +226,51 @@ class TestHasAccountAction:
         )
         assert not await permissions.has_account_action(
             db, dep_admin_b, acc, Action.VIEW_PASSWORD
+        )
+
+
+class TestServerVisibleViaAccountGrant:
+    """Неявная видимость родительского сервера по инстанс-гранту на учётку.
+
+    Сценарий — caller из чужого отдела с system-wide грантом на учётку: сама
+    учётка ему видима (cross-dept path в `_load_account_visible`), а
+    `load_visible_server` без этой ветки прятал бы родительский сервер за 404,
+    хотя дойти до учётки без него нельзя.
+    """
+
+    async def test_cross_dept_account_grant_makes_server_visible(
+        self, db, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="svc")
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER_ACCOUNT, resource_id=acc.id,
+            role="limited", action=Action.VIEW, department_id=None,
+        )
+        identity = _identity(roles=["limited"], department_id="dep_b")
+        loaded = await load_visible_server(db, identity, srv.id)
+        assert loaded.id == srv.id
+
+    async def test_cross_dept_without_account_grant_404(
+        self, db, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        await make_account(server_id=srv.id, login="svc")
+        identity = _identity(roles=["limited"], department_id="dep_b")
+        with pytest.raises(NotFoundError):
+            await load_visible_server(db, identity, srv.id)
+
+    async def test_account_grant_does_not_grant_server_action(
+        self, db, make_server, make_account,
+    ):
+        """Видимость для навигации не даёт тип-wide прав на сам сервер."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="svc")
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER_ACCOUNT, resource_id=acc.id,
+            role="limited", action=Action.VIEW, department_id=None,
+        )
+        identity = _identity(roles=["limited"], department_id="dep_b")
+        assert not await permissions.has_resource_action(
+            db, identity, EntityType.SERVER, srv.id, Action.VIEW
         )

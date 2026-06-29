@@ -70,9 +70,21 @@ def linked_server_ids(account: ServerAccount) -> list[str]:
 
 
 async def list_for_server(
-    db: AsyncSession, server_id: str, limit: int = 100, offset: int = 0
+    db: AsyncSession,
+    server_id: str,
+    limit: int = 100,
+    offset: int = 0,
+    *,
+    restrict_ids: list[str] | None = None,
 ) -> list[ServerAccount]:
-    """Список аккаунтов, привязанных к серверу — упорядочен по created_at DESC."""
+    """Список аккаунтов, привязанных к серверу — упорядочен по created_at DESC.
+
+    `restrict_ids` сужает выборку до конкретного набора account_id (grant-only
+    листинг: роль без тип-wide view видит ровно учётки с инстанс-грантом).
+    None — без ограничения. Пустой список → пусто.
+    """
+    if restrict_ids is not None and not restrict_ids:
+        return []
     stmt = (
         select(ServerAccount)
         .join(ServerAccountServer, ServerAccountServer.account_id == ServerAccount.id)
@@ -81,6 +93,8 @@ async def list_for_server(
         .limit(limit)
         .offset(offset)
     )
+    if restrict_ids is not None:
+        stmt = stmt.where(ServerAccount.id.in_(restrict_ids))
     return list((await db.execute(stmt)).scalars())
 
 
@@ -91,13 +105,17 @@ async def list_for_server_after(
     limit: int,
     after_created_at: datetime | None,
     after_id: str | None,
+    restrict_ids: list[str] | None = None,
 ) -> list[ServerAccount]:
     """Keyset-страница аккаунтов сервера по `(created_at DESC, id DESC)`.
 
     Аналогично `server.list_in_departments_after`: пара (created_at, id) уберегает
     от пропусков/дублей на одинаковых timestamp'ах. Фильтр через JOIN на
-    `server_account_servers` (M2M).
+    `server_account_servers` (M2M). `restrict_ids` сужает до набора account_id
+    (grant-only листинг); None — без ограничения, пустой список → пусто.
     """
+    if restrict_ids is not None and not restrict_ids:
+        return []
     stmt = (
         select(ServerAccount)
         .join(ServerAccountServer, ServerAccountServer.account_id == ServerAccount.id)
@@ -105,6 +123,8 @@ async def list_for_server_after(
         .order_by(ServerAccount.created_at.desc(), ServerAccount.id.desc())
         .limit(limit)
     )
+    if restrict_ids is not None:
+        stmt = stmt.where(ServerAccount.id.in_(restrict_ids))
     if after_created_at is not None and after_id is not None:
         stmt = stmt.where(
             or_(
@@ -118,12 +138,25 @@ async def list_for_server_after(
     return list((await db.execute(stmt)).scalars())
 
 
-async def count_for_server(db: AsyncSession, server_id: str) -> int:
-    """COUNT привязанных к серверу аккаунтов (для пагинации)."""
+async def count_for_server(
+    db: AsyncSession,
+    server_id: str,
+    *,
+    restrict_ids: list[str] | None = None,
+) -> int:
+    """COUNT привязанных к серверу аккаунтов (для пагинации).
+
+    `restrict_ids` сужает счёт до набора account_id (grant-only листинг);
+    None — без ограничения, пустой список → 0.
+    """
+    if restrict_ids is not None and not restrict_ids:
+        return 0
     stmt = (
         select(func.count(ServerAccountServer.id))
         .where(ServerAccountServer.server_id == server_id)
     )
+    if restrict_ids is not None:
+        stmt = stmt.where(ServerAccountServer.account_id.in_(restrict_ids))
     return int((await db.execute(stmt)).scalar_one())
 
 
@@ -188,6 +221,84 @@ async def count_in_department(db: AsyncSession, department_id: str) -> int:
         .where(ServerAccount.department_id == department_id)
     )
     return int((await db.execute(stmt)).scalar_one())
+
+
+async def list_by_ids(
+    db: AsyncSession,
+    account_ids: list[str],
+    limit: int = 100,
+    offset: int = 0,
+) -> list[ServerAccount]:
+    """SELECT аккаунтов из явного набора id, `created_at DESC`, offset/limit.
+
+    Dept-wide аналог `server.list_by_ids`: роль без тип-wide `server_account.view`,
+    но с инстанс-грантами на конкретные учётки, видит ровно их. Пустой набор → пусто.
+    """
+    if not account_ids:
+        return []
+    stmt = (
+        select(ServerAccount)
+        .where(ServerAccount.id.in_(account_ids))
+        .order_by(ServerAccount.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def count_by_ids(db: AsyncSession, account_ids: list[str]) -> int:
+    """COUNT аккаунтов из явного набора id — total для grant-only листинга."""
+    if not account_ids:
+        return 0
+    stmt = select(func.count(ServerAccount.id)).where(ServerAccount.id.in_(account_ids))
+    return int((await db.execute(stmt)).scalar_one())
+
+
+async def list_by_ids_after(
+    db: AsyncSession,
+    account_ids: list[str],
+    *,
+    limit: int,
+    after_created_at: datetime | None,
+    after_id: str | None,
+) -> list[ServerAccount]:
+    """Keyset-страница аккаунтов из явного набора id по `(created_at, id) DESC`."""
+    if not account_ids:
+        return []
+    stmt = (
+        select(ServerAccount)
+        .where(ServerAccount.id.in_(account_ids))
+        .order_by(ServerAccount.created_at.desc(), ServerAccount.id.desc())
+        .limit(limit)
+    )
+    if after_created_at is not None and after_id is not None:
+        stmt = stmt.where(
+            or_(
+                ServerAccount.created_at < after_created_at,
+                and_(
+                    ServerAccount.created_at == after_created_at,
+                    ServerAccount.id < after_id,
+                ),
+            )
+        )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def linked_account_ids_for_server(
+    db: AsyncSession, server_id: str
+) -> list[str]:
+    """account_id'шники всех учёток, привязанных к серверу.
+
+    Нужно для неявной видимости сервера-контейнера: если у caller'а есть
+    инстанс-грант на одну из этих учёток, сам сервер становится видимым для
+    навигации (read-only), хотя тип-wide прав на сервер у caller'а нет.
+    """
+    stmt = (
+        select(ServerAccountServer.account_id)
+        .where(ServerAccountServer.server_id == server_id)
+        .distinct()
+    )
+    return list((await db.execute(stmt)).scalars())
 
 
 async def create(db: AsyncSession, data: dict, server_ids: list[str]) -> ServerAccount:

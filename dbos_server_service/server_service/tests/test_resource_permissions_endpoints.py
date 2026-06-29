@@ -429,6 +429,104 @@ class TestServerVisibilityByGrant:
         assert_error(resp, 403, "PERMISSION_DENIED")
 
 
+# ── grant-only листинг учёток (симметрия с серверами) ─────────────────────────
+
+
+class TestAccountVisibilityByGrant:
+    async def _grant_view(self, client, admin_token, account_id):
+        g = await client.put(
+            _res_url("server_account", account_id, "limited", "view"),
+            headers=_hdr(admin_token),
+        )
+        assert g.status_code == 200, g.text
+
+    async def test_custom_role_sees_exactly_granted_accounts_dept_wide(
+        self, client, admin_token, make_server, make_account, make_token,
+    ):
+        """Роль без тип-wide server_account.view видит в dept-листинге ровно
+        учётки с инстанс-грантом."""
+        srv = await make_server(department_id="dep_a")
+        acc1 = await make_account(server_id=srv.id, login="svc1")
+        acc2 = await make_account(server_id=srv.id, login="svc2")
+        await make_account(server_id=srv.id, login="svc3")  # без гранта — не виден
+        await self._grant_view(client, admin_token, acc1.id)
+        await self._grant_view(client, admin_token, acc2.id)
+
+        token = make_token(
+            department_id="dep_a", service_roles={"server_service": ["limited"]},
+        )
+        resp = await client.get(ACCOUNTS, headers=_hdr(token))
+        assert resp.status_code == 200, resp.text
+        ids = {i["id"] for i in resp.json()["items"]}
+        assert ids == {acc1.id, acc2.id}
+
+    async def test_custom_role_sees_granted_accounts_per_server(
+        self, client, admin_token, make_server, make_account, make_token,
+    ):
+        """Per-server листинг для grant-only роли — ровно гранченые учётки
+        сервера; родительский сервер при этом виден (200, не 404)."""
+        srv = await make_server(department_id="dep_a")
+        acc1 = await make_account(server_id=srv.id, login="svc1")
+        acc2 = await make_account(server_id=srv.id, login="svc2")
+        await make_account(server_id=srv.id, login="svc3")  # без гранта
+        await self._grant_view(client, admin_token, acc1.id)
+        await self._grant_view(client, admin_token, acc2.id)
+
+        token = make_token(
+            department_id="dep_a", service_roles={"server_service": ["limited"]},
+        )
+        resp = await client.get(
+            ACCOUNTS, params={"server_id": srv.id}, headers=_hdr(token),
+        )
+        assert resp.status_code == 200, resp.text
+        ids = {i["id"] for i in resp.json()["items"]}
+        assert ids == {acc1.id, acc2.id}
+
+    async def test_custom_role_cursor_page_grant_only(
+        self, client, admin_token, make_server, make_account, make_token,
+    ):
+        """Cursor-envelope dept-листинга тоже отдаёт ровно гранченые учётки."""
+        srv = await make_server(department_id="dep_a")
+        acc1 = await make_account(server_id=srv.id, login="svc1")
+        await make_account(server_id=srv.id, login="svc2")  # без гранта
+        await self._grant_view(client, admin_token, acc1.id)
+
+        token = make_token(
+            department_id="dep_a", service_roles={"server_service": ["limited"]},
+        )
+        resp = await client.get(
+            ACCOUNTS, params={"cursor": "true"}, headers=_hdr(token),
+        )
+        assert resp.status_code == 200, resp.text
+        ids = {i["id"] for i in resp.json()["items"]}
+        assert ids == {acc1.id}
+
+    async def test_custom_role_without_view_or_grant_403(
+        self, client, make_server, make_account, make_token,
+    ):
+        """Роль без тип-wide view и без единого инстанс-гранта — 403, как у серверов."""
+        srv = await make_server(department_id="dep_a")
+        await make_account(server_id=srv.id, login="svc1")
+        token = make_token(
+            department_id="dep_a", service_roles={"server_service": ["limited"]},
+        )
+        resp = await client.get(ACCOUNTS, headers=_hdr(token))
+        assert_error(resp, 403, "PERMISSION_DENIED")
+
+    async def test_dept_wide_role_sees_all_accounts(
+        self, client, admin_token, make_server, make_account,
+    ):
+        """Держатель тип-wide view (admin) видит все учётки отдела, включая
+        негранченые — dept-wide путь не сломан."""
+        srv = await make_server(department_id="dep_a")
+        acc1 = await make_account(server_id=srv.id, login="svc1")
+        acc2 = await make_account(server_id=srv.id, login="svc2")
+        resp = await client.get(ACCOUNTS, headers=_hdr(admin_token))
+        assert resp.status_code == 200, resp.text
+        ids = {i["id"] for i in resp.json()["items"]}
+        assert {acc1.id, acc2.id} <= ids
+
+
 # ── guest: metadata visible, sensitive denied ────────────────────────────────
 
 

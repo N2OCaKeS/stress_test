@@ -43,17 +43,45 @@ async def _ensure_visible(
 ) -> None:
     """Скрыть невидимый сервер за 404, чтобы не выдавать его существование.
 
-    Сервер видим, если он в отделе caller'а ИЛИ у caller'а есть хоть один
-    инстанс-грант на него (через его роли). Иначе → 404, а не 403 — иначе по
-    разнице ответов можно перечислить чужие server_id'ы. Platform-роли
-    (`account_admin`/`loging_admin`) сюда физически не доходят:
-    `platform_admin_guard` middleware режет их 403 до endpoint-слоя.
+    Сервер видим, если выполнено любое из:
+
+      * он в отделе caller'а;
+      * у caller'а есть хоть один инстанс-грант на сам сервер (через его роли);
+      * у caller'а есть инстанс-грант на учётку, привязанную к этому серверу —
+        тогда сервер-контейнер виден неявно (read-only), чтобы дойти до учётки
+        и отрисовать контекст. Тип-wide прав на сервер это НЕ даёт: операции над
+        сервером гейтятся `require_resource_action(SERVER, ...)`, а у такого
+        caller'а серверных грантов нет.
+
+    Иначе → 404, а не 403 — иначе по разнице ответов можно перечислить чужие
+    server_id'ы. Platform-роли (`account_admin`/`loging_admin`) сюда физически
+    не доходят: `platform_admin_guard` middleware режет их 403 до endpoint-слоя.
     """
     if identity.department_id == server.department_id:
         return
     if await permissions.has_resource_grant(db, identity, EntityType.SERVER, server.id):
         return
+    if await _visible_via_account_grant(db, identity, server.id):
+        return
     raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
+
+
+async def _visible_via_account_grant(
+    db: AsyncSession, identity: IdentityContext, server_id: str
+) -> bool:
+    """True iff у caller'а есть инстанс-грант на учётку, привязанную к серверу.
+
+    Неявная видимость сервера-контейнера ради навигации к доступной учётке.
+    Считаем по привязанным учёткам сервера, пересекая их с инстанс-грантами
+    caller'а — без единого гранта (или без привязанных учёток) → False.
+    """
+    linked_account_ids = await account_repo.linked_account_ids_for_server(db, server_id)
+    if not linked_account_ids:
+        return False
+    granted = await permissions.visible_resource_ids(
+        db, identity, EntityType.SERVER_ACCOUNT, linked_account_ids
+    )
+    return bool(granted)
 
 
 async def load_visible_server(

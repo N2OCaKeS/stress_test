@@ -828,6 +828,43 @@ async def get_account(
     return account, revealed, previous_revealed
 
 
+async def _resolve_account_view_scope(
+    db: AsyncSession,
+    identity: IdentityContext,
+    *,
+    extra_details: dict | None = None,
+) -> list[str] | None:
+    """Скоуп листинга учёток: `None` — тип-wide view (без ограничения по id),
+    либо отсортированный список инстанс-грантованных account_id (grant-only).
+
+    Симметрично серверному листингу (`services/server.list_servers`): держатель
+    тип-wide `server_account.view` видит весь dept-скоуп; роль без него — ровно
+    учётки, на которые ей точечно выдан грант. Нет ни тип-wide view, ни единого
+    инстанс-гранта → 403 (denied-аудит эмитит обёртка `emit_denied_on_authz_error`,
+    как у обычного `require_action`).
+    """
+    if await permissions.has_action(
+        db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
+    ):
+        return None
+    granted_ids = sorted(
+        await permissions.granted_resource_ids(db, identity, EntityType.SERVER_ACCOUNT)
+    )
+    if granted_ids:
+        return granted_ids
+    with emit_denied_on_authz_error(
+        "server_account.list",
+        target_type="server_account",
+        extra_details=extra_details,
+        identity=identity,
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
+        )
+    # has_action выше вернул False → require_action гарантированно бросил.
+    return None
+
+
 async def list_accounts_cursor(
     db: AsyncSession,
     identity: IdentityContext,
@@ -847,19 +884,16 @@ async def list_accounts_cursor(
         parse_cursor_datetime,
     )
 
-    with emit_denied_on_authz_error(
-        "server_account.list",
-        target_type="server_account",
-        extra_details={"server_id": server_id},
-        identity=identity,
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
-        )
+    # Тип-wide `server_account.view` даёт все привязанные учётки; без него —
+    # grant-only листинг (видны ровно учётки с инстанс-грантом, привязанные к
+    # этому серверу). Нет ни того, ни другого → 403.
+    restrict_ids = await _resolve_account_view_scope(
+        db, identity, extra_details={"server_id": server_id},
+    )
     try:
         await load_visible_server(db, identity, server_id)
     except NotFoundError:
-        # Visibility-404: server невидим (cross-dept / нет row), caller прошёл VIEW.
+        # Visibility-404: server невидим (cross-dept без грантов / нет row).
         audit_service.emit(
             "server_account.list",
             target_type="server_account",
@@ -880,6 +914,7 @@ async def list_accounts_cursor(
         limit=page_size + 1,
         after_created_at=after_created_at,
         after_id=after_id,
+        restrict_ids=restrict_ids,
     )
     has_more = len(rows) > page_size
     items = rows[:page_size]
@@ -896,20 +931,20 @@ async def list_accounts(
     limit: int,
     offset: int,
 ) -> tuple[list[ServerAccount], int]:
-    """List + count привязанных к серверу аккаунтов. Cross-dept сервер скрыт за 404."""
-    with emit_denied_on_authz_error(
-        "server_account.list",
-        target_type="server_account",
-        extra_details={"server_id": server_id},
-        identity=identity,
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
-        )
+    """List + count привязанных к серверу аккаунтов. Cross-dept сервер скрыт за 404.
+
+    Тип-wide `server_account.view` показывает все привязанные учётки; роль с
+    одними инстанс-грантами видит ровно гранченые учётки этого сервера
+    (grant-only). Сервер при этом виден неявно через инстанс-грант на учётку
+    (см. `server._ensure_visible`).
+    """
+    restrict_ids = await _resolve_account_view_scope(
+        db, identity, extra_details={"server_id": server_id},
+    )
     try:
         await load_visible_server(db, identity, server_id)
     except NotFoundError:
-        # Visibility-404: server невидим (cross-dept / нет row), caller прошёл VIEW.
+        # Visibility-404: server невидим (cross-dept без грантов / нет row).
         audit_service.emit(
             "server_account.list",
             target_type="server_account",
@@ -917,8 +952,10 @@ async def list_accounts(
             details={"reason": "server_not_found_or_cross_dept", "server_id": server_id},
         )
         raise
-    items = await repo.list_for_server(db, server_id, limit=limit, offset=offset)
-    total = await repo.count_for_server(db, server_id)
+    items = await repo.list_for_server(
+        db, server_id, limit=limit, offset=offset, restrict_ids=restrict_ids,
+    )
+    total = await repo.count_for_server(db, server_id, restrict_ids=restrict_ids)
     return items, total
 
 
@@ -933,21 +970,21 @@ async def list_department_accounts(
 
     Dept-wide листинг: без `server_id`, скоуп — отдел caller'а. В отличие от
     `list_accounts` (per-server, через JOIN на связки), сюда попадают и
-    аккаунты без единой привязки. Гейтится тем же `view`; dept-изоляция —
-    жёстко по `identity.department_id`, чужие отделы не видны.
+    аккаунты без единой привязки. Держатель тип-wide `view` видит весь отдел;
+    роль с одними инстанс-грантами — ровно гранченые учётки (grant-only,
+    симметрично серверному `list_servers`). dept-изоляция для тип-wide пути —
+    жёстко по `identity.department_id`; grant-only скоупится dept-match'ем
+    самих грантов.
     """
-    with emit_denied_on_authz_error(
-        "server_account.list",
-        target_type="server_account",
-        identity=identity,
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
+    scope = await _resolve_account_view_scope(db, identity)
+    if scope is None:
+        items = await repo.list_in_department(
+            db, identity.department_id, limit=limit, offset=offset
         )
-    items = await repo.list_in_department(
-        db, identity.department_id, limit=limit, offset=offset
-    )
-    total = await repo.count_in_department(db, identity.department_id)
+        total = await repo.count_in_department(db, identity.department_id)
+        return items, total
+    items = await repo.list_by_ids(db, scope, limit=limit, offset=offset)
+    total = await repo.count_by_ids(db, scope)
     return items, total
 
 
@@ -961,8 +998,9 @@ async def list_department_accounts_cursor(
     """Keyset-страница всех аккаунтов отдела. `(items, next_cursor, has_more)`.
 
     Dept-wide аналог `list_accounts_cursor`: `limit + 1` row-fetch детектит
-    следующую страницу без COUNT'а. Скоуп — отдел caller'а, unbound-аккаунты
-    в выдаче присутствуют.
+    следующую страницу без COUNT'а. Держатель тип-wide `view` видит весь отдел
+    (включая unbound-аккаунты); роль с одними инстанс-грантами — ровно гранченые
+    учётки (grant-only, симметрично серверному `list_servers_cursor`).
     """
     from src.utils.cursor import (
         decode_cursor,
@@ -971,14 +1009,7 @@ async def list_department_accounts_cursor(
         parse_cursor_datetime,
     )
 
-    with emit_denied_on_authz_error(
-        "server_account.list",
-        target_type="server_account",
-        identity=identity,
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
-        )
+    scope = await _resolve_account_view_scope(db, identity)
     page_size = normalize_limit(limit)
     after_created_at = None
     after_id = None
@@ -986,13 +1017,22 @@ async def list_department_accounts_cursor(
         cur = decode_cursor(after)
         after_created_at = parse_cursor_datetime(cur.sort_value)
         after_id = cur.row_id
-    rows = await repo.list_in_department_after(
-        db,
-        identity.department_id,
-        limit=page_size + 1,
-        after_created_at=after_created_at,
-        after_id=after_id,
-    )
+    if scope is None:
+        rows = await repo.list_in_department_after(
+            db,
+            identity.department_id,
+            limit=page_size + 1,
+            after_created_at=after_created_at,
+            after_id=after_id,
+        )
+    else:
+        rows = await repo.list_by_ids_after(
+            db,
+            scope,
+            limit=page_size + 1,
+            after_created_at=after_created_at,
+            after_id=after_id,
+        )
     has_more = len(rows) > page_size
     items = rows[:page_size]
     next_cursor = (

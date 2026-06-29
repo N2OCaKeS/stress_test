@@ -173,7 +173,6 @@ export function SecretDepAdmin() {
           <>
             При reveal эмитится audit-событие{" "}
             <span className="mono">credential.read</span> с request_id и actor_id.
-            После 10 reveal/min — 429 + lockout.
           </>
         }
         meta={{
@@ -368,7 +367,6 @@ export function SecretDetailPanel({
               Значение
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-warn">rate-limit: 10/min</span>
               <button
                 onClick={() => setRevealed((v) => !v)}
                 className="btn"

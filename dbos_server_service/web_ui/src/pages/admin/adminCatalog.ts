@@ -488,7 +488,12 @@ const STATIC_ITEMS: AdminItem[] = [
  * (users / departments / bots / platform_roles). Своих "ролей сервиса" в UI
  * он не получает — поэтому исключаем его из динамического списка.
  */
-const ROLE_ITEM_EXCLUDED_SERVICES = new Set<string>(["auth_service"]);
+const ROLE_ITEM_EXCLUDED_SERVICES = new Set<string>([
+  "auth_service",
+  // worker_service не несёт ролей — операционный server_worker мониторится
+  // отдельными страницами (DLQ / inventory / cron), ролевого каталога у него нет.
+  "worker_service",
+]);
 
 /**
  * Per-service visibility predicate for the generated «Роли · <service>» entry.
@@ -505,7 +510,6 @@ function roleItemVisibility(serviceName: string): (p: Persona) => boolean {
     case "secret_service":
       return (p) =>
         isAccountAdmin(p) || isDepAdmin(p) || hasSecretServiceAdmin(p);
-    case "worker_service":
     case "server_worker":
       return (p) =>
         isAccountAdmin(p) || isDepAdmin(p) || hasWorkerServiceAdmin(p);
@@ -526,7 +530,6 @@ function roleItemGroup(svc: Service): string {
       return "server";
     case "secret_service":
       return "secret";
-    case "worker_service":
     case "server_worker":
       return "worker";
     case "loging_service":

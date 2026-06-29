@@ -903,7 +903,7 @@ function PasswordRevealCard({
       </div>
       <div className="text-xs text-dim mb-3">
         Пароль хранится зашифрованным (AES-256-GCM). Показ требует права
-        view_password, пишет CRITICAL audit и режется reveal-rate-limit'ом.
+        view_password.
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -937,7 +937,7 @@ function PasswordRevealCard({
             title={
               !canReveal
                 ? "Нужна роль server.operator+ (и грант view_password)"
-                : "Раскрыть пароль (CRITICAL audit)"
+                : "Раскрыть пароль"
             }
             type="button"
           >

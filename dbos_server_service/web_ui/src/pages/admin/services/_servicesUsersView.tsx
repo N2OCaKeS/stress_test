@@ -60,10 +60,12 @@ import {
 } from "@/api/auth/groups";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { listServiceRoles } from "@/api/auth/service_roles";
+import { listServices } from "@/api/auth/services";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import type {
   Group,
+  Service,
   ServiceName,
   ServiceRole,
   SessionListResponse,
@@ -488,8 +490,8 @@ function RolesTab({
   run: (label: string, fn: () => Promise<unknown>) => Promise<void>;
   busy: string | null;
 }) {
-  const confirm = useConfirm();
   const [editor, setEditor] = useState<ServiceName | null>(null);
+  const [picking, setPicking] = useState(false);
 
   if (loading && !perms) return <div className="spinner" aria-label="Loading" />;
   if (err) return <div className="alert-danger">{err.message}</div>;
@@ -594,19 +596,7 @@ function RolesTab({
           className="btn btn-sm flex items-center gap-1"
           disabled={!canManage}
           title={canManage ? "Добавить роль в другом сервисе" : capsReason}
-          onClick={async () => {
-            const { ok, reason: name } = await confirm.prompt({
-              title: "Назначить роль в другом сервисе",
-              message:
-                "service_name (auth_service / secret_service / server_service / worker_service / loging_service / config_service / docker_registry):",
-              reason: true,
-              reasonLabel: "service_name",
-              reasonRequired: true,
-              confirmLabel: "Открыть",
-            });
-            if (!ok || !name) return;
-            setEditor(name as ServiceName);
-          }}
+          onClick={() => setPicking(true)}
         >
           <Plus className="w-3 h-3" /> Назначить в другом сервисе
         </button>
@@ -614,6 +604,17 @@ function RolesTab({
           <span className="text-xs text-dim italic ml-2">{capsReason}</span>
         )}
       </div>
+
+      {picking && (
+        <ServicePickerModal
+          mockMode={mockMode}
+          onClose={() => setPicking(false)}
+          onPick={(svc) => {
+            setPicking(false);
+            setEditor(svc);
+          }}
+        />
+      )}
 
       {editor && (
         <RolesEditModal
@@ -765,6 +766,84 @@ function RolesEditModal({
           disabled={busy !== null}
         >
           {busy ? "..." : "Сохранить"}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// Сервисы, к которым нельзя назначить роль (нет ролевого каталога). auth_service
+// разложен на отдельные admin-страницы, worker_service ролей не несёт.
+const NON_ROLE_SERVICES = new Set<string>(["auth_service", "worker_service"]);
+
+// Fallback для mock-режима, когда `listServices` не дёргается (backend не поднят).
+const MOCK_PICKER_SERVICES = [
+  "secret_service",
+  "server_service",
+  "loging_service",
+  "config_service",
+  "docker_registry",
+];
+
+function ServicePickerModal({
+  mockMode,
+  onClose,
+  onPick,
+}: {
+  mockMode: boolean;
+  onClose: () => void;
+  onPick: (serviceName: ServiceName) => void;
+}) {
+  const servicesQ = useQuery<Service[]>(() => listServices(), [], {
+    enabled: !mockMode,
+  });
+  const [picked, setPicked] = useState("");
+
+  const options = mockMode
+    ? MOCK_PICKER_SERVICES
+    : (servicesQ.data ?? [])
+        .filter((s) => !NON_ROLE_SERVICES.has(s.service_name))
+        .map((s) => s.service_name);
+
+  return (
+    <ModalShell title="Назначить роль в другом сервисе" onClose={onClose}>
+      {!mockMode && servicesQ.loading && (
+        <div className="spinner" aria-label="Loading" />
+      )}
+      {!mockMode && servicesQ.error && (
+        <div className="alert-danger text-xs">{servicesQ.error.message}</div>
+      )}
+      <div className="text-xs text-dim mb-1">Сервис:</div>
+      <select
+        className="input w-full"
+        value={picked}
+        onChange={(e) => setPicked(e.target.value)}
+      >
+        <option value="">— выбрать сервис —</option>
+        {options.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+      </select>
+      {!mockMode &&
+        !servicesQ.loading &&
+        !servicesQ.error &&
+        options.length === 0 && (
+          <div className="text-xs text-dim italic mt-2">
+            Нет сервисов с ролевым каталогом.
+          </div>
+        )}
+      <div className="mt-4 flex justify-end gap-2">
+        <button className="btn" onClick={onClose}>
+          Отмена
+        </button>
+        <button
+          className="btn btn-primary"
+          disabled={!picked}
+          onClick={() => picked && onPick(picked as ServiceName)}
+        >
+          Открыть
         </button>
       </div>
     </ModalShell>

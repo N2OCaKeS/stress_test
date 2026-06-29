@@ -5,7 +5,6 @@ import {
   Search,
   Key,
   X,
-  Building2,
   UserPlus,
   Loader2,
   Lock,
@@ -18,17 +17,12 @@ import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { isSecretZoneBlocked } from "@/lib/rbac";
 import { formatMsk } from "@/lib/datetime";
-import { useDeptLabel, useUserLabel, useLabelMaps } from "@/lib/labels";
+import { useDeptLabel, useUserLabel } from "@/lib/labels";
 import {
   getCredential,
   listCredentials,
 } from "@/api/secret/credentials";
 import { listRoleAcls, upsertRoleAcl } from "@/api/secret/roleAcls";
-import {
-  addDeptGrant,
-  listDeptGrants,
-  revokeDeptGrant,
-} from "@/api/secret/deptGrants";
 import { addUserAcl, listUserAcls, revokeUserAcl } from "@/api/secret/userAcls";
 import { listServiceRoles } from "@/api/auth/service_roles";
 import { listUsersByDepartment } from "@/api/auth/users";
@@ -59,9 +53,10 @@ const SCOPE_LABEL: Record<CredentialScope, string> = {
 
 /**
  * Per-credential управление доступом к секретам отдела. Слева — список кред
- * (поиск + фильтры scope/status), справа — три слоя доступа выбранной кред'ы:
- * RoleACL (роль×право внутри отдела), DeptGrant (cross-dept) и UserACL
- * (конкретные пользователи).
+ * (поиск + фильтры scope/status), справа — доступ выбранной кред'ы. ACL
+ * (RoleACL роль×право + UserACL по пользователям) настраивается только для
+ * personal-кред; для department / cross_department доступ задаётся сервис-
+ * ролями отдела.
  *
  * RBAC: secret_service dept-scoped. Платформенные роли без отдела backend
  * режет 403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT — им страница не показывается
@@ -170,12 +165,11 @@ function ServicesSecretAccessLive() {
           </span>
         </div>
         <p className="text-xs text-dim leading-relaxed">
-          Выберите credential слева, чтобы настроить доступ. Матрица доступа:
-          столбцы — <b>роли отдела</b>, строки — права <b>read</b> / <b>write</b>,
-          клик по ячейке выдаёт или отзывает право. <b>DeptGrant</b> открывает
-          cross-dept креду другому отделу; <b>UserACL</b> (только для personal-кред)
-          — доступ конкретному пользователю. Изменения пишутся немедленно и
-          аудируются.
+          Выберите credential слева, чтобы настроить доступ. Per-credential ACL
+          настраивается только для <b>personal</b>-кред: матрица ролей (столбцы —
+          роли отдела, строки — права <b>read</b> / <b>write</b>) и <b>UserACL</b>{" "}
+          — доступ конкретному пользователю. Доступ к department /
+          cross_department кред'ам определяется сервис-ролями отдела.
         </p>
       </div>
 
@@ -328,12 +322,13 @@ function AccessPanel({
   const toast = useToast();
   const credQ = useQuery(() => getCredential(credId), [credId]);
   const cred = credQ.data;
-  const isCross = cred?.scope === "cross_department";
   const isPersonal = cred?.scope === "personal";
 
-  const aclQ = useQuery(() => listRoleAcls(credId), [credId]);
-  const grantsQ = useQuery(() => listDeptGrants(credId), [credId], {
-    enabled: isCross,
+  // ACL-управление (RoleACL + UserACL) показываем только для personal-кред.
+  // Для department / cross_department доступ определяется сервис-ролями отдела —
+  // per-credential ACL там не выдаём.
+  const aclQ = useQuery(() => listRoleAcls(credId), [credId], {
+    enabled: isPersonal,
   });
   const userAclQ = useQuery(() => listUserAcls(credId), [credId], {
     enabled: isPersonal,
@@ -341,43 +336,7 @@ function AccessPanel({
 
   const confirm = useConfirm();
   const [acting, setActing] = useState(false);
-  const [addingGrant, setAddingGrant] = useState(false);
   const [addingUserAcl, setAddingUserAcl] = useState(false);
-
-  async function handleGrantAdd(recipientDeptId: string) {
-    try {
-      await addDeptGrant(credId, { recipient_dept_id: recipientDeptId });
-      toast.success("DeptGrant выдан");
-      setAddingGrant(false);
-      grantsQ.refetch();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Выдача DeptGrant не удалась"));
-    }
-  }
-
-  async function handleGrantRevoke(grantId: string) {
-    if (acting) return;
-    if (
-      !(await confirm.confirm({
-        message:
-          "Снять DeptGrant? Это каскадно снимет RoleACL recipient-отдела.",
-        danger: true,
-        confirmLabel: "Снять",
-      }))
-    )
-      return;
-    setActing(true);
-    try {
-      await revokeDeptGrant(credId, grantId);
-      toast.success("DeptGrant снят");
-      grantsQ.refetch();
-      aclQ.refetch();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Снятие DeptGrant не удалось"));
-    } finally {
-      setActing(false);
-    }
-  }
 
   async function handleUserAclAdd(body: {
     user_id: string;
@@ -461,99 +420,65 @@ function AccessPanel({
         </div>
       </div>
 
-      {/* RoleACL — матрица: столбцы=роли, строки=read/write */}
-      <RoleAccessMatrix
-        credId={credId}
-        scope={cred.scope}
-        ownerDeptId={cred.owner_dept_id}
-        actorDeptId={actorDeptId}
-        acls={aclQ.data?.items ?? []}
-        deptGrants={grantsQ.data?.items ?? []}
-        loading={aclQ.loading}
-        error={aclQ.error ? apiErrMsg(aclQ.error, "RoleACL не загрузился") : null}
-        onChanged={() => aclQ.refetch()}
-        onRetry={() => aclQ.refetch()}
-      />
-
-      {/* DeptGrant — только cross_department */}
-      {isCross && (
-        <AccessCard
-          title={`DeptGrant (${grantsQ.data?.items.length ?? 0})`}
-          icon={<Building2 className="w-3.5 h-3.5" />}
-          addLabel="Выдать отделу"
-          onAdd={() => setAddingGrant(true)}
-          loading={grantsQ.loading}
-          error={
-            grantsQ.error ? apiErrMsg(grantsQ.error, "DeptGrant не загрузился") : null
-          }
-          empty={(grantsQ.data?.items ?? []).length === 0}
-          emptyText="Нет выданных DeptGrant'ов."
-        >
-          {(grantsQ.data?.items ?? []).map((g) => (
-            <DeptGrantRow
-              key={g.id}
-              recipientDeptId={g.recipient_dept_id}
-              grantedBy={g.granted_by_user_id}
-              grantedAt={g.granted_at}
-              acting={acting}
-              onRevoke={() => handleGrantRevoke(g.id)}
-            />
-          ))}
-        </AccessCard>
-      )}
-
-      {/* UserACL — только для personal-кред (backend отбивает остальные
-          422 USER_ACL_SCOPE_NOT_PERSONAL). Для не-personal показываем
-          задизейбленный блок с пояснением. */}
       {isPersonal ? (
-        <AccessCard
-          title={`UserACL (${userAclQ.data?.items.length ?? 0})`}
-          icon={<UserPlus className="w-3.5 h-3.5" />}
-          addLabel="Выдать пользователю"
-          onAdd={() => setAddingUserAcl(true)}
-          loading={userAclQ.loading}
-          error={
-            userAclQ.error ? apiErrMsg(userAclQ.error, "UserACL не загрузился") : null
-          }
-          empty={(userAclQ.data?.items ?? []).length === 0}
-          emptyText="Нет выданных UserACL."
-        >
-          {(userAclQ.data?.items ?? []).map((a) => (
-            <UserAclRow
-              key={a.id}
-              userId={a.user_id}
-              canRead={a.can_read}
-              canWrite={a.can_write}
-              grantedBy={a.granted_by_user_id}
-              grantedAt={a.created_at}
-              acting={acting}
-              onRevoke={() => handleUserAclRevoke(a.id)}
-            />
-          ))}
-        </AccessCard>
+        <>
+          {/* RoleACL — матрица: столбцы=роли, строки=read/write */}
+          <RoleAccessMatrix
+            credId={credId}
+            actorDeptId={actorDeptId}
+            ownerDeptId={cred.owner_dept_id}
+            acls={aclQ.data?.items ?? []}
+            loading={aclQ.loading}
+            error={
+              aclQ.error ? apiErrMsg(aclQ.error, "RoleACL не загрузился") : null
+            }
+            onChanged={() => aclQ.refetch()}
+            onRetry={() => aclQ.refetch()}
+          />
+
+          {/* UserACL — доступ конкретному пользователю */}
+          <AccessCard
+            title={`UserACL (${userAclQ.data?.items.length ?? 0})`}
+            icon={<UserPlus className="w-3.5 h-3.5" />}
+            addLabel="Выдать пользователю"
+            onAdd={() => setAddingUserAcl(true)}
+            loading={userAclQ.loading}
+            error={
+              userAclQ.error
+                ? apiErrMsg(userAclQ.error, "UserACL не загрузился")
+                : null
+            }
+            empty={(userAclQ.data?.items ?? []).length === 0}
+            emptyText="Нет выданных UserACL."
+          >
+            {(userAclQ.data?.items ?? []).map((a) => (
+              <UserAclRow
+                key={a.id}
+                userId={a.user_id}
+                canRead={a.can_read}
+                canWrite={a.can_write}
+                grantedBy={a.granted_by_user_id}
+                grantedAt={a.created_at}
+                acting={acting}
+                onRevoke={() => handleUserAclRevoke(a.id)}
+              />
+            ))}
+          </AccessCard>
+        </>
       ) : (
-        <div className="card opacity-70">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs uppercase tracking-wider text-dim flex items-center gap-2">
-              <Lock className="w-3.5 h-3.5" /> UserACL
-            </div>
+        <div className="card">
+          <div className="text-xs uppercase tracking-wider text-dim flex items-center gap-2 mb-2">
+            <Lock className="w-3.5 h-3.5" /> Доступ
           </div>
           <p className="text-xs text-dim leading-relaxed">
-            Доступ конкретному пользователю выдаётся только для{" "}
-            <span className="mono">personal</span>-кред. Для{" "}
-            <span className="mono">{SCOPE_LABEL[cred.scope] ?? cred.scope}</span>{" "}
-            используйте матрицу ролей выше — backend отбивает UserACL для не-personal
-            (<span className="mono">422 USER_ACL_SCOPE_NOT_PERSONAL</span>).
+            Доступ к{" "}
+            <span className="mono">{SCOPE_LABEL[cred.scope] ?? cred.scope}</span>
+            -кред'е определяется сервис-ролями отдела. Per-credential ACL
+            настраивается только для <span className="mono">personal</span>-кред.
           </p>
         </div>
       )}
 
-      {addingGrant && (
-        <GrantModal
-          onClose={() => setAddingGrant(false)}
-          onSubmit={handleGrantAdd}
-        />
-      )}
       {addingUserAcl && (
         <UserAclModal
           actorDeptId={actorDeptId}
@@ -588,49 +513,37 @@ function OwnerLabel({ cred }: { cred: Credential }) {
 // Бэкенд хранит RoleACL пер (dept, role) с парой флагов can_read/can_write.
 // Смена ячейки — атомарный upsert (PUT): один вызов задаёт пересчитанную пару
 // для (dept, role); если оба флага гаснут — backend снимает строку.
-//
-// Для personal/department роли действуют в отделе-владельце (один dept). Для
-// cross_department ACL могут жить в нескольких отделах (owner + recipient'ы с
-// DeptGrant) — рисуем отдельную матрицу на каждый такой отдел.
 
 function RoleAccessMatrix({
   credId,
-  scope,
   ownerDeptId,
   actorDeptId,
   acls,
-  deptGrants,
   loading,
   error,
   onChanged,
   onRetry,
 }: {
   credId: string;
-  scope: CredentialScope;
   ownerDeptId: string | null;
   actorDeptId: string | null;
   acls: RoleACL[];
-  deptGrants: { recipient_dept_id: string }[];
   loading: boolean;
   error: string | null;
   onChanged: () => void;
   onRetry: () => void;
 }) {
-  // Отдел-владелец ACL: для personal/department это owner_dept_id (или, если
-  // backend его не отдал, отдел актора). Для cross добавим recipient'ов.
+  // Отдел-владелец ACL: owner_dept_id, либо (если backend его не отдал) отдел
+  // актора.
   const baseDept = ownerDeptId ?? actorDeptId ?? null;
 
   const deptIds = useMemo(() => {
     const set = new Set<string>();
     if (baseDept) set.add(baseDept);
-    if (scope === "cross_department") {
-      for (const g of deptGrants) set.add(g.recipient_dept_id);
-    }
-    // Добиваем отделы, у которых уже есть ACL, но которых нет в наборе (на
-    // случай, если grant был снят, а строки остались — их видно и можно убрать).
+    // Добиваем отделы, у которых уже есть ACL, но которых нет в наборе.
     for (const a of acls) set.add(a.dept_id);
     return Array.from(set);
-  }, [acls, baseDept, deptGrants, scope]);
+  }, [acls, baseDept]);
 
   return (
     <div className="card">
@@ -895,46 +808,6 @@ function AccessCard({
   );
 }
 
-function DeptGrantRow({
-  recipientDeptId,
-  grantedBy,
-  grantedAt,
-  acting,
-  onRevoke,
-}: {
-  recipientDeptId: string;
-  grantedBy: string;
-  grantedAt: string;
-  acting: boolean;
-  onRevoke: () => void;
-}) {
-  const deptName = useDeptLabel(recipientDeptId);
-  const grantedByName = useUserLabel(grantedBy);
-  return (
-    <div className="stat-row items-center">
-      <span className="text-dim" title={recipientDeptId}>
-        {deptName}
-      </span>
-      <span className="flex items-center gap-2">
-        <span
-          className="text-[11px] text-dim"
-          title={`выдал ${grantedByName}`}
-        >
-          {formatMsk(grantedAt)}
-        </span>
-        <button
-          className="btn btn-ghost p-1"
-          title="Снять DeptGrant"
-          disabled={acting}
-          onClick={onRevoke}
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </span>
-    </div>
-  );
-}
-
 function UserAclRow({
   userId,
   canRead,
@@ -1016,105 +889,6 @@ function ModalShell({
         {children}
       </div>
     </div>
-  );
-}
-
-/**
- * Выбор отдела по имени. Карта непуста — dropdown имён (значение — `dep_*` id).
- * Пуста (dep_admin видит только свой отдел через identity-сид) — текстовый
- * ввод сырого id.
- */
-function DeptPicker({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string;
-  onChange: (id: string) => void;
-  placeholder?: string;
-}) {
-  const { depts } = useLabelMaps();
-  const options = useMemo(
-    () => [...depts.entries()].sort((a, b) => a[1].localeCompare(b[1])),
-    [depts],
-  );
-
-  if (options.length === 0) {
-    return (
-      <input
-        className="surface-2 border border-token rounded px-2 py-1"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        maxLength={64}
-        required
-        placeholder={placeholder ?? "dep_…"}
-        title={value || undefined}
-      />
-    );
-  }
-
-  return (
-    <select
-      className="surface-2 border border-token rounded px-2 py-1"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      required
-      title={value || undefined}
-    >
-      <option value="" disabled>
-        — выберите отдел —
-      </option>
-      {options.map(([id, name]) => (
-        <option key={id} value={id} title={id}>
-          {name}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function GrantModal({
-  onClose,
-  onSubmit,
-}: {
-  onClose: () => void;
-  onSubmit: (recipientDeptId: string) => void | Promise<void>;
-}) {
-  const [deptId, setDeptId] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (submitting || !deptId.trim()) return;
-    setSubmitting(true);
-    Promise.resolve(onSubmit(deptId.trim())).finally(() => setSubmitting(false));
-  }
-
-  return (
-    <ModalShell title="Выдать DeptGrant" onClose={onClose}>
-      <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
-        <div className="text-xs text-dim">
-          DeptGrant даёт recipient-отделу право получать RoleACL на эту cross-dept
-          креду. Снятие grant'а каскадно снимает RoleACL recipient-отдела.
-        </div>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-dim text-xs">отдел-получатель *</span>
-          <DeptPicker value={deptId} onChange={setDeptId} placeholder="dep_…" />
-        </label>
-        <div className="flex items-center gap-2 mt-1">
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={submitting || !deptId.trim()}
-          >
-            {submitting ? "Выдаём…" : "Выдать"}
-          </button>
-          <button type="button" className="btn" onClick={onClose}>
-            Отмена
-          </button>
-        </div>
-      </form>
-    </ModalShell>
   );
 }
 

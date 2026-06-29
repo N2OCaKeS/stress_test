@@ -2404,9 +2404,8 @@ function PasswordRevealCard({
         <KeyRound className="w-3 h-3" /> Пароль
       </div>
       <div className="text-xs text-dim mb-3">
-        Хранится зашифрованным (AES-256-GCM). Показ требует права view_password,
-        пишет CRITICAL audit и режется reveal-rate-limit'ом. Смена пароля пишется
-        только в БД — на серверы раскатывается кнопками ниже.
+        Хранится зашифрованным (AES-256-GCM). Показ требует права view_password.
+        Смена пароля пишется только в БД — на серверы раскатывается кнопками ниже.
       </div>
 
       {pendingApply && (
@@ -2454,7 +2453,7 @@ function PasswordRevealCard({
               title={
                 !canReveal
                   ? "Нужна роль server.operator+ (и грант view_password)"
-                  : "Раскрыть пароль (CRITICAL audit)"
+                  : "Раскрыть пароль"
               }
               type="button"
             >

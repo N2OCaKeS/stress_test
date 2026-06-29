@@ -42,12 +42,6 @@ const MOCK_SERVICES: Service[] = [
     is_active: true,
     created_at: "2026-01-01T00:00:00Z",
   },
-  {
-    service_name: "worker_service",
-    description: null,
-    is_active: true,
-    created_at: "2026-01-01T00:00:00Z",
-  },
 ];
 
 export function AdminHub() {

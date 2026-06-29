@@ -41,7 +41,6 @@ const MOCK_SERVICES: Service[] = [
   { service_name: "server_service", description: null, is_active: true, created_at: "2026-01-01T00:00:00Z" },
   { service_name: "secret_service", description: null, is_active: true, created_at: "2026-01-01T00:00:00Z" },
   { service_name: "loging_service", description: null, is_active: true, created_at: "2026-01-01T00:00:00Z" },
-  { service_name: "worker_service", description: null, is_active: true, created_at: "2026-01-01T00:00:00Z" },
 ];
 
 function groupByBlockAndSection(items: AdminItem[]): Array<{

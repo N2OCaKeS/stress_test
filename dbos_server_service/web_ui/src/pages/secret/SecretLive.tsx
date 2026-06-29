@@ -881,11 +881,11 @@ function DetailPane({
               </span>
             ) : (
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-warn">
-                  {throttleLeft > 0
-                    ? `rate-limited: ${throttleLeft}с`
-                    : "reveal → CRITICAL audit"}
-                </span>
+                {throttleLeft > 0 && (
+                  <span className="text-[11px] text-warn">
+                    rate-limited: {throttleLeft}с
+                  </span>
+                )}
                 {revealed !== null ? (
                   <button
                     className="btn"
@@ -928,11 +928,11 @@ function DetailPane({
           >
             {revealed ?? "••••••••••••••••••••••••••"}
           </div>
-          <div className="text-xs text-dim mt-2">
-            {isGuest
-              ? "Guest видит метаданные; reveal закрыт — запросите доступ у dep_admin."
-              : "Reveal эмитит CRITICAL audit-событие; rate-limit / lockout отвечает 429 с Retry-After."}
-          </div>
+          {isGuest && (
+            <div className="text-xs text-dim mt-2">
+              Guest видит метаданные; reveal закрыт — запросите доступ у dep_admin.
+            </div>
+          )}
         </div>
 
         {/* Meta */}

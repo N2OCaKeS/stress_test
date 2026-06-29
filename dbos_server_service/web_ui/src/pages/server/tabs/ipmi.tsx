@@ -1074,7 +1074,7 @@ function CredentialsCard({
                 disabled={!canReveal || revealing || throttleLeft > 0}
                 title={
                   canReveal
-                    ? "Раскрыть пароль BMC (CRITICAL audit)"
+                    ? "Раскрыть пароль BMC"
                     : "Нужна роль server.operator+ и грант view_credentials"
                 }
                 type="button"

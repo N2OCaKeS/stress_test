@@ -135,7 +135,6 @@ const SERVICE_BACKEND_TO_UI: Record<string, ServiceName> = {
   auth_service: "auth",
   secret_service: "secret",
   server_service: "server",
-  worker_service: "worker",
   loging_service: "logging",
   logging_service: "logging",
   config_service: "config",

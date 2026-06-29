@@ -90,11 +90,6 @@ const MOCK_SERVICE_META: Record<string, MockServiceMeta> = {
     editors: ["bob", "carol"],
     note: "logging_reader не правит правила/retention — только смотрит события.",
   },
-  worker_service: {
-    roles: WORKER_ROLES,
-    editors: ["bob", "pavel"],
-    note: "DLQ-purge — только worker.admin · audit-event на каждое сообщение.",
-  },
   server_worker: {
     roles: WORKER_ROLES,
     editors: ["bob", "pavel"],
@@ -105,8 +100,8 @@ const MOCK_SERVICE_META: Record<string, MockServiceMeta> = {
 interface Props {
   /**
    * Backend `service_name` напрямую (`server_service` / `secret_service` /
-   * `loging_service` / `worker_service` / любой кастомный сервис из
-   * `GET /services`). Используется как path-сегмент в URL ролевых endpoint'ов.
+   * `loging_service` / любой кастомный сервис из `GET /services`).
+   * Используется как path-сегмент в URL ролевых endpoint'ов.
    */
   serviceName: string;
   title: string;

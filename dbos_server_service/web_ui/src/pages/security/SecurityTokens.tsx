@@ -19,7 +19,6 @@ const KNOWN_SERVICES: ServiceName[] = [
   "auth_service",
   "secret_service",
   "server_service",
-  "worker_service",
   "loging_service",
   "config_service",
   "docker_registry",

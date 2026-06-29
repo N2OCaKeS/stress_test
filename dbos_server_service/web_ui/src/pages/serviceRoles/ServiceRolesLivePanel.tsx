@@ -26,7 +26,6 @@ const DEFAULT_SERVICES: ServiceName[] = [
   "secret_service",
   "loging_service",
   "config_service",
-  "worker_service",
 ];
 
 // Зеркало `auth_service/src/schemas/service_roles.py::ServiceRoleCreate.role_name`:

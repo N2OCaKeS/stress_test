@@ -109,9 +109,7 @@ export function deleteCredential(
 }
 
 /**
- * `POST /credentials/{id}/reveal` — расшифровать секрет.
- *
- * CRITICAL audit + 5-минутный throttle на стороне бэка; тело не требуется.
+ * `POST /credentials/{id}/reveal` — расшифровать секрет. Тело не требуется.
  * Возвращает `{login, secret_b64}` (base64-encoded plaintext).
  */
 export function revealCredential(

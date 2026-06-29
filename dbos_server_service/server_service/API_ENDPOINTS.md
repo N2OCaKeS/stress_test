@@ -90,6 +90,9 @@ POST-CREATE эндпоинты (`POST /servers`, `POST /server-accounts`, `POST 
 | `POST /server-accounts/{id}/rotate_password` | `ACCOUNT_ROTATE_PASSWORD_RATE_LIMIT` | 10/min |
 | `POST /server-accounts/{id}/rotate` | `MASS_ROTATE_DISPATCH_RATE_LIMIT` | 5/min |
 | `POST /servers/{id}/prepare` | `SERVER_PREPARE_RATE_LIMIT` | 3/min |
+| `POST /servers/{id}/clean` | `SERVER_PREPARE_RATE_LIMIT` | 3/min |
+| `POST /servers/prepare/bulk` | `BULK_PREPARE_RATE_LIMIT` | 2/min |
+| `POST /servers/prepare-batch` | `BULK_PREPARE_RATE_LIMIT` | 2/min |
 | `/internal/secrets/reencrypt_outbox/{seed,pending}` | `WORKER_POOL_RATE_LIMIT` | 60/min |
 
 Превышение → `429 RATE_LIMIT_EXCEEDED` с `Retry-After`.
@@ -425,6 +428,18 @@ Errors: симметрично inventory.sync, включая `PREPARE_REQUIRED`
 Auth: Bearer + `(server, *, update)`. Body — два взаимоисключающих режима (ровно один): `{account_id}` (server_service резолвит привязанный server_account и расшифровывает его пароль — нужно ещё право `view_password`; account_id не привязан → `404 ACCOUNT_NOT_LINKED`, нет пароля → `409 ACCOUNT_HAS_NO_PASSWORD`) либо ручной `{username_b64, password_b64, ssh_private_key_b64?}` (base64, ssh-ключ опционален). server_service стэшит креды в Redis под TTL, в payload едет ссылка; worker заходит на сервер, заводит управляющего DBOS-пользователя, кладёт ключ. Callback → `is_managed=True`. CRITICAL audit (account-режим дополнительно эмитит `server_account.bootstrap_resolved`).
 
 Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403, в т.ч. отсутствие `view_password` в account-режиме), `SERVER_NOT_FOUND` / `ACCOUNT_NOT_LINKED` (404), `SERVER_DECOMMISSIONED` / `ACCOUNT_HAS_NO_PASSWORD` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `422` (битый base64 / нарушение режима / слабый ручной пароль), `RATE_LIMIT_EXCEEDED` (429), `WORKER_REDIS_UNAVAILABLE` / `WORKER_UNREACHABLE` (503).
+
+### `POST /servers/prepare-batch` (worker dispatch)
+
+Auth: Bearer + `(server, *, update)` (проверяется один раз на весь батч). Массовый prepare с per-server выбором режима: `items: [{server_id, account_id?} | {server_id, username_b64, password_b64, ssh_private_key_b64?}]` — у каждого сервера account-режим (по умолчанию) либо ручной, ровно один. account-режим дополнительно требует `view_password` на учётку. Per-server путь идентичен single-prepare (idempotency-replay → decommissioned-gate → resolve creds → Redis-stash → dispatch). Ответ симметричен mass-rotation: `{batch_id, dispatched: [{server_id, server_name, task_id, status}], failed: [{server_id, server_name, reason}]}`. Один битый сервер уходит в `failed`, не валит батч; глобальная недоступность воркера помечает упавший `worker_unreachable`, остаток `not_attempted`. CRITICAL audit на каждый сервер.
+
+Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403, весь батч), `BULK_PREPARE_TOO_LARGE` (413, превышен `BULK_PREPARE_MAX_SERVERS`), `422` (битый base64 / слабый пароль / нарушение режима / дубли server_id), `RATE_LIMIT_EXCEEDED` (429). Per-server `reason` (в `failed`): `not_found_or_cross_dept` / `decommissioned` / `idempotent_conflict` / `idempotency_key_reuse_conflict` / `account_has_no_password` / `account_not_found` / `account_not_linked` / `permission_denied` / `worker_unreachable` / `not_attempted`.
+
+### `POST /servers/{server_id}/clean` (worker dispatch)
+
+Auth: Bearer + `(server, *, update)` (как prepare). Оркестрация очистки после переустановки ОС: четыре флага (`unbind_accounts`, `update_os_version`, `rerun_prepare`, `run_inventory_sync`) выполняются в фиксированном порядке unbind → rerun_prepare → update_os_version → run_inventory_sync, каждый переиспользует существующий путь. `rerun_prepare=true` требует блок `prepare` (те же поля/режимы, что single-prepare). `update_os_version` берёт `os_version_id` (`null` сбрасывает). Ответ — per-action сводка `{server_id, unbind_accounts, rerun_prepare, update_os_version, run_inventory_sync}`, каждое `{status: done|dispatched|skipped|failed, task_id?, reason?, detail?}`. CRITICAL audit `server.clean` + по-действенные эмиты (`server_account.unlink_servers` / `server_account.deprovision` / `server.prepare` / `server.update_os_version` / `server.inventory_sync`).
+
+Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` (409), `422` (ни одного действия / `rerun_prepare` без `prepare` / битый base64 / слабый пароль), `RATE_LIMIT_EXCEEDED` (429). Per-action `failed.reason`: `permission_denied` / `prepare_required` / `invalid_os_version` / `worker_unreachable` / `account_has_no_password` / `account_not_linked` / `idempotent_conflict` и т.п.
 
 ---
 

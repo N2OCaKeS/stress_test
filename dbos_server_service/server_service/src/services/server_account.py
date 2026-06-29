@@ -1717,6 +1717,59 @@ async def unlink_servers(
     return obj
 
 
+async def unbind_all_accounts_from_server(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server: Server,
+    *,
+    request_id: str | None = None,
+) -> dict:
+    """Отвязать ВСЕ учётки от сервера + userdel-fanout (для server clean).
+
+    Server-центричный аналог `unlink_servers`: снимает все связки
+    `account ↔ server` для одного сервера и на боксах, где учётка реально
+    стояла (`present_on_server`), best-effort ставит `account.deprovision`
+    (userdel). Отдельной проверки прав не делает — вызывается из clean под
+    общим гейтом `(server, *, update)`.
+
+    Возвращает сводку `{accounts_unbound, deprovision_dispatched}` для
+    per-action итога clean'а.
+    """
+    # Фиксируем id/dept до commit'а — после него ORM-атрибуты `server`
+    # экспайрятся, а ленивый reload в async-сессии упал бы.
+    sid = server.id
+    server_department_id = server.department_id
+    links = await repo.list_links_for_server(db, sid)
+    removed = len(links)
+    present: list[tuple[str, str]] = []
+    for link in links:
+        if link.present_on_server:
+            present.append((link.account_id, link.login))
+        await db.delete(link)
+    await db.commit()
+    audit_service.emit(
+        "server_account.unlink_servers",
+        target_id=sid, target_type="server",
+        status="success", allowed=True,
+        details={
+            "server_id": sid,
+            "removed": removed,
+            "source": "server_clean",
+            "department_id": server_department_id,
+        },
+    )
+    # Связки сняты — снимаем учётки с боксов, где они стояли. Best-effort:
+    # недоступность worker'а не откатывает отвязку, фиксируется audit-warning'ом.
+    for account_id, login in present:
+        await _dispatch_deprovision_after_unlink(
+            db, identity, account_id, login, [sid], request_id,
+        )
+    return {
+        "accounts_unbound": removed,
+        "deprovision_dispatched": len(present),
+    }
+
+
 async def delete_account(
     db: AsyncSession,
     identity: IdentityContext,

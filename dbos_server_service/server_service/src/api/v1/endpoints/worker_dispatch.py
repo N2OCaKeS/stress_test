@@ -64,6 +64,7 @@ from src.core.exceptions import (
     AppException,
     AuthorizationError,
     ConflictError,
+    DomainValidationError,
     NotFoundError,
     ServiceUnavailableError,
 )
@@ -74,8 +75,16 @@ from src.api.v1.endpoints._dispatch import dispatch_server_ssh_task
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import server_account as account_repo
 from src.schemas.server import (
+    ServerBatchDispatched,
+    ServerBatchFailed,
+    ServerCleanActionResult,
+    ServerCleanRequest,
+    ServerCleanResponse,
     ServerManagementCredsRotateResponse,
+    ServerOsVersionUpdate,
     ServerPowerStatusDispatchResponse,
+    ServerPrepareBatchRequest,
+    ServerPrepareBatchResponse,
     ServerPrepareBulkRequest,
     ServerPrepareBulkResponse,
     ServerPrepareBulkResult,
@@ -1353,14 +1362,44 @@ async def server_prepare_dispatch(
             )
         raise
 
+    resolve_creds = _make_prepare_creds_resolver(
+        db=db, identity=identity, prepare_req=body,
+        server_id=server_id, audit_action=audit_action,
+    )
+
+    task_id = await _prepare_resolve_and_dispatch(
+        db=db, identity=identity, request=request,
+        server=server, audit_action=audit_action, task_kind=task_kind,
+        resolve_creds=resolve_creds,
+    )
+    return ServerPrepareResponse(task_id=task_id, status="queued")
+
+
+def _make_prepare_creds_resolver(
+    *,
+    db: AsyncSession,
+    identity,
+    prepare_req,
+    server_id: str,
+    audit_action: str,
+):
+    """Собрать резолвер bootstrap-кред для prepare (account- или ручной режим).
+
+    `prepare_req` — `ServerPrepareRequest` (single / clean) либо
+    `ServerPrepareBatchItem` (batch): обе несут `is_account_mode()` / `username()`
+    / `password()` / `ssh_private_key()`. Возвращает async-функцию
+    `resolve_creds(server) -> dict`, которую `_prepare_resolve_and_dispatch`
+    зовёт ПОСЛЕ idempotency-replay и decommissioned-gate.
+
+    На отказе резолва (нет `view_password` / не привязан / нет пароля) сам
+    эмитит failure-audit и поднимает исключение ДО `store_prepare_creds` — в
+    Redis тогда ничего не ложится.
+    """
+
     async def resolve_creds(srv) -> dict:
-        # Сбор bootstrap-кред. Два режима:
-        #   * account_id — резолвим привязанный аккаунт, расшифровываем его
-        #     пароль (+ ssh-ключ, если есть). UI пароль не присылал;
-        #   * ручной — декодируем base64 из тела (валидность проверена схемой).
-        # На любом отказе резолва (нет права / не привязан / нет пароля) выходим
-        # ДО store_prepare_creds — в Redis ничего не кладём.
-        if body.is_account_mode():
+        # account_id — резолвим привязанный аккаунт, расшифровываем его пароль
+        # (+ ssh-ключ, если есть); ручной — декодируем base64 (проверен схемой).
+        if prepare_req.is_account_mode():
             try:
                 with emit_denied_on_authz_error(
                     audit_action,
@@ -1369,12 +1408,12 @@ async def server_prepare_dispatch(
                     extra_details={
                         "server_id": server_id,
                         "denied_on": "account_view_password",
-                        "account_id": body.account_id,
+                        "account_id": prepare_req.account_id,
                     },
                     identity=identity,
                 ):
                     resolved = await account_svc.resolve_bootstrap_credentials(
-                        db, identity, body.account_id, srv,
+                        db, identity, prepare_req.account_id, srv,
                     )
             except (NotFoundError, ConflictError) as exc:
                 audit_service.emit(
@@ -1382,7 +1421,7 @@ async def server_prepare_dispatch(
                     status="failure", allowed=True,
                     details={
                         "reason": exc.error_code.lower(),
-                        "account_id": body.account_id,
+                        "account_id": prepare_req.account_id,
                         "department_id": srv.department_id,
                     },
                 )
@@ -1395,20 +1434,15 @@ async def server_prepare_dispatch(
                 creds["bootstrap_ssh_private_key"] = resolved["ssh_private_key"]
             return creds
         creds = {
-            "bootstrap_login": body.username(),
-            "bootstrap_password": body.password(),
+            "bootstrap_login": prepare_req.username(),
+            "bootstrap_password": prepare_req.password(),
         }
-        ssh_private_key = body.ssh_private_key()
+        ssh_private_key = prepare_req.ssh_private_key()
         if ssh_private_key is not None:
             creds["bootstrap_ssh_private_key"] = ssh_private_key
         return creds
 
-    task_id = await _prepare_resolve_and_dispatch(
-        db=db, identity=identity, request=request,
-        server=server, audit_action=audit_action, task_kind=task_kind,
-        resolve_creds=resolve_creds,
-    )
-    return ServerPrepareResponse(task_id=task_id, status="queued")
+    return resolve_creds
 
 
 async def _prepare_resolve_and_dispatch(
@@ -1921,6 +1955,212 @@ async def server_rotate_management_credentials_dispatch(
     return ServerManagementCredsRotateResponse(task_id=task_id, status="queued")
 
 
+# ── /servers/{id}/clean — оркестрация очистки после переустановки ОС ────────
+
+
+@router_servers.post(
+    "/clean",
+    response_model=ServerCleanResponse,
+    status_code=202,
+    summary="Очистить сервер после переустановки ОС (оркестрация, 202)",
+    description=(
+        "Оркестрирует выбранные в модалке действия в фиксированном порядке: "
+        "① `unbind_accounts` → ③ `rerun_prepare` → ② `update_os_version` → "
+        "④ `run_inventory_sync`. Каждое действие переиспользует существующий "
+        "путь:\n\n"
+        "* `unbind_accounts` — отвязать ВСЕ привязанные учётки сервера (снять "
+        "связки + userdel-fanout на боксы, где учётка стояла);\n"
+        "* `rerun_prepare` — `server.prepare` с bootstrap-кредами из блока "
+        "`prepare` (account-режим по умолчанию, опц. ручной): пере-создаёт "
+        "управляющую учётку и ре-провижнит привязанные аккаунты;\n"
+        "* `update_os_version` — ручной os-sync (`os_version_id`, `null` "
+        "сбрасывает);\n"
+        "* `run_inventory_sync` — `inventory.sync` (требует prepared-сервер).\n\n"
+        "Порядок фиксированный: если выбраны и `unbind_accounts`, и "
+        "`rerun_prepare` — после unbind привязанных учёток не остаётся, prepare "
+        "пере-создаст только управляющую (как «только поставили ОС»).\n\n"
+        "Ответ — per-action сводка `{status, task_id?, reason?, detail?}`: "
+        "`done` (sync-действие выполнено), `dispatched` (task поставлена), "
+        "`skipped` (`reason=not_selected`), `failed` (`reason` несёт причину). "
+        "Доступ: `(server, *, update)` — как у prepare. Аудит — `server.clean` "
+        "CRITICAL + по-действенные существующие эмиты."
+    ),
+    responses={
+        202: {"description": "Clean принят; per-action сводка в теле."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
+        403: {"description": "Нет роли с `update` либо чужой department."},
+        404: {"description": "Сервер не найден / чужой dept (скрыто за 404)."},
+        409: {"description": "SERVER_DECOMMISSIONED."},
+        422: {"description": "Ни одного действия не выбрано / rerun_prepare без `prepare` / битый base64 / слабый пароль."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP clean-rate-limit пробит."},
+    },
+)
+@endpoint_limiter.limit(get_settings().server_prepare_rate_limit)
+async def server_clean_dispatch(
+    request: Request,
+    server_id: str,
+    body: ServerCleanRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> ServerCleanResponse:
+    """Оркестрирует очистку сервера после переустановки ОС.
+
+    Доступ: `(server, *, update)`. Выбранные флаги выполняются в порядке
+    unbind → prepare → os-version → inventory; каждое действие переиспользует
+    существующий путь и отдаёт per-action итог. Связано:
+    `server_account.unbind_all_accounts_from_server`,
+    `_prepare_resolve_and_dispatch`, `server.update_os_version`,
+    `_dispatch_for_server`.
+    """
+    audit_action = "server.clean"
+
+    # Permission → visibility → decommissioned, тот же порядок, что у prepare.
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+        identity=identity,
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
+
+    try:
+        server = await server_svc.get_server(db, identity, server_id)
+    except (NotFoundError, AuthorizationError) as exc:
+        if isinstance(exc, NotFoundError):
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept"},
+            )
+        else:
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="denied", allowed=False,
+                details={"reason": "no_view_permission"},
+            )
+        raise
+
+    if server.status == ServerStatus.DECOMMISSIONED:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "decommissioned"},
+        )
+        raise ConflictError(
+            error_code="SERVER_DECOMMISSIONED",
+            message="Server is decommissioned and cannot accept worker operations",
+        )
+
+    request_id = getattr(request.state, "request_id", None)
+    # Каждое действие коммитит транзакцию и экспайрит ORM-атрибуты `server`.
+    # Фиксируем department_id, пока строка свежая, — нужен для финального
+    # аудита (после последнего коммита ленивый reload в async упал бы).
+    server_department_id = server.department_id
+
+    # Невыбранное действие отдаётся как skipped/not_selected — UI видит явный
+    # исход по каждому из четырёх флагов, а не отсутствие ключа.
+    def _not_selected() -> ServerCleanActionResult:
+        return ServerCleanActionResult(status="skipped", reason="not_selected")
+
+    unbind_res = _not_selected()
+    prepare_res = _not_selected()
+    os_res = _not_selected()
+    inv_res = _not_selected()
+
+    # ① unbind_accounts — отвязать все учётки + userdel-fanout.
+    if body.unbind_accounts:
+        detail = await account_svc.unbind_all_accounts_from_server(
+            db, identity, server, request_id=request_id,
+        )
+        unbind_res = ServerCleanActionResult(status="done", detail=detail)
+
+    # ③ rerun_prepare — пере-бутстрап управления.
+    if body.rerun_prepare:
+        # unbind мог закоммитить и проэкспайрить `server` — перечитываем строку,
+        # прежде чем `_prepare_resolve_and_dispatch` начнёт читать её атрибуты.
+        await db.refresh(server)
+        resolve_creds = _make_prepare_creds_resolver(
+            db=db, identity=identity, prepare_req=body.prepare,
+            server_id=server_id, audit_action="server.prepare",
+        )
+        try:
+            task_id = await _prepare_resolve_and_dispatch(
+                db=db, identity=identity, request=request,
+                server=server, audit_action="server.prepare",
+                task_kind="server.prepare", resolve_creds=resolve_creds,
+            )
+            prepare_res = ServerCleanActionResult(status="dispatched", task_id=task_id)
+        except AuthorizationError:
+            prepare_res = ServerCleanActionResult(status="failed", reason="permission_denied")
+        except (NotFoundError, ConflictError) as exc:
+            prepare_res = ServerCleanActionResult(status="failed", reason=exc.error_code.lower())
+        except ServiceUnavailableError:
+            prepare_res = ServerCleanActionResult(status="failed", reason="worker_unreachable")
+
+    # ② update_os_version — ручной os-sync (переиспользует server.update_os_version).
+    if body.update_os_version:
+        try:
+            await server_svc.update_os_version(
+                db, identity, server_id,
+                ServerOsVersionUpdate(os_version_id=body.os_version_id),
+            )
+            os_res = ServerCleanActionResult(
+                status="done", detail={"os_version_id": body.os_version_id},
+            )
+        except AuthorizationError:
+            os_res = ServerCleanActionResult(status="failed", reason="permission_denied")
+        except (NotFoundError, ConflictError, DomainValidationError) as exc:
+            os_res = ServerCleanActionResult(status="failed", reason=exc.error_code.lower())
+
+    # ④ run_inventory_sync — SSH-probe (требует prepared-сервер).
+    if body.run_inventory_sync:
+        try:
+            result = await _dispatch_for_server(
+                db=db, identity=identity, request=request,
+                server_id=server_id,
+                action=Action.INVENTORY_TRIGGER,
+                audit_action="server.inventory_sync",
+                task_kind="inventory.sync",
+                require_ipmi=False,
+                require_prepared=True,
+            )
+            inv_res = ServerCleanActionResult(status="dispatched", task_id=result["task_id"])
+        except AuthorizationError:
+            inv_res = ServerCleanActionResult(status="failed", reason="permission_denied")
+        except (NotFoundError, ConflictError) as exc:
+            inv_res = ServerCleanActionResult(status="failed", reason=exc.error_code.lower())
+        except ServiceUnavailableError:
+            inv_res = ServerCleanActionResult(status="failed", reason="worker_unreachable")
+
+    audit_service.emit(
+        audit_action, target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "department_id": server_department_id,
+            "actions": {
+                "unbind_accounts": body.unbind_accounts,
+                "rerun_prepare": body.rerun_prepare,
+                "update_os_version": body.update_os_version,
+                "run_inventory_sync": body.run_inventory_sync,
+            },
+            "results": {
+                "unbind_accounts": unbind_res.status,
+                "rerun_prepare": prepare_res.status,
+                "update_os_version": os_res.status,
+                "run_inventory_sync": inv_res.status,
+            },
+        },
+    )
+    return ServerCleanResponse(
+        server_id=server_id,
+        unbind_accounts=unbind_res,
+        rerun_prepare=prepare_res,
+        update_os_version=os_res,
+        run_inventory_sync=inv_res,
+    )
+
+
 # ── /servers/prepare/bulk — массовый онбординг ──────────────────────────────
 
 
@@ -2091,6 +2331,175 @@ async def server_prepare_bulk_dispatch(
     )
     return ServerPrepareBulkResponse(
         results=results, queued_count=queued, skipped_count=skipped,
+    )
+
+
+# ── /servers/prepare-batch — массовый онбординг с per-server режимом кред ────
+
+
+@router_servers_bulk.post(
+    "/prepare-batch",
+    response_model=ServerPrepareBatchResponse,
+    status_code=202,
+    summary="Массовый бутстрап управления с per-server выбором кред (202)",
+    description=(
+        "Публикует `server.prepare` на список серверов — по задаче на сервер. "
+        "Для КАЖДОГО сервера свой режим bootstrap-кред (как у single-prepare): "
+        "`account_id` (привязанная учётка, по умолчанию) либо ручной "
+        "`username_b64`/`password_b64`(+`ssh_private_key_b64`). Те же гейты, что "
+        "у single `POST /servers/{id}/prepare`: право `(server, *, update)` "
+        "(один раз на весь батч), visibility/dept-isolation, decommissioned-"
+        "check, Redis-stash bootstrap-кред, dispatch. account-режим дополнительно "
+        "требует `view_password` на конкретную учётку.\n\n"
+        "Ответ симметричен mass-rotation: `{batch_id, dispatched, failed}`. "
+        "`dispatched` — `{server_id, server_name, task_id, status}`; `failed` — "
+        "`{server_id, server_name, reason}`. Один битый сервер (cross-dept / "
+        "списан / уже-в-очереди / нет права на учётку / нет пароля) уходит в "
+        "`failed` и НЕ валит остальной батч. Глобальная недоступность воркера "
+        "помечает упавший сервер `worker_unreachable`, остаток — `not_attempted`. "
+        "Дубли server_id → 422. Число серверов > `BULK_PREPARE_MAX_SERVERS` → 413. "
+        "Аудит CRITICAL на каждый сервер, как в single-prepare."
+    ),
+    responses={
+        202: {"description": "Батч принят; per-server dispatched/failed в теле."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
+        403: {"description": "Нет роли с `update` — весь батч отбит."},
+        413: {"description": "BULK_PREPARE_TOO_LARGE — батч превысил BULK_PREPARE_MAX_SERVERS."},
+        422: {"description": "Битый base64 / слабый пароль / нарушение режима / дубли server_id."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP batch-prepare-rate-limit пробит."},
+    },
+)
+@endpoint_limiter.limit(get_settings().bulk_prepare_rate_limit)
+async def server_prepare_batch_dispatch(
+    request: Request,
+    body: ServerPrepareBatchRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> ServerPrepareBatchResponse:
+    """Ставит `server.prepare` на список серверов с per-server режимом кред.
+
+    Доступ: `(server, *, update)`. Битый base64 / слабый пароль / нарушение
+    режима / дубли server_id → 422 (валидатор схемы). Связано:
+    `_make_prepare_creds_resolver`, `_prepare_resolve_and_dispatch`.
+    """
+    audit_action = "server.prepare"
+    task_kind = "server.prepare"
+
+    cap = get_settings().bulk_prepare_max_servers
+    if len(body.items) > cap:
+        audit_service.emit(
+            audit_action, target_id=None, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "bulk_prepare_too_large",
+                "operation": "prepare_batch",
+                "count": len(body.items),
+                "cap": cap,
+            },
+        )
+        raise AppException(
+            error_code="BULK_PREPARE_TOO_LARGE",
+            message=(
+                f"Prepare batch of {len(body.items)} servers exceeds cap "
+                f"{cap}; split into smaller batches"
+            ),
+            http_status=413,
+        )
+
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=None,
+        target_type="server",
+        extra_details={"operation": "prepare_batch", "count": len(body.items)},
+        identity=identity,
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
+
+    item_by_id = {it.server_id: it for it in body.items}
+    servers_by_id = await server_svc.load_visible_servers(
+        db, identity, list(item_by_id.keys()),
+    )
+
+    batch_id = rotation_batch_id()
+    dispatched: list[dict] = []
+    failed: list[dict] = []
+    aborted = False
+    for item in body.items:
+        sid = item.server_id
+        # Воркер уже отбил ServiceUnavailable глобально — остаток не пытаемся,
+        # каждый следующий упал бы идентично. Помечаем not_attempted.
+        if aborted:
+            failed.append({"server_id": sid, "server_name": None, "reason": "not_attempted"})
+            continue
+        server = servers_by_id.get(sid)
+        if server is None:
+            audit_service.emit(
+                audit_action, target_id=sid, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept", "operation": "prepare_batch"},
+            )
+            failed.append({"server_id": sid, "server_name": None, "reason": "not_found_or_cross_dept"})
+            continue
+        resolve_creds = _make_prepare_creds_resolver(
+            db=db, identity=identity, prepare_req=item,
+            server_id=sid, audit_action=audit_action,
+        )
+        try:
+            task_id = await _prepare_resolve_and_dispatch(
+                db=db, identity=identity, request=request,
+                server=server, audit_action=audit_action, task_kind=task_kind,
+                resolve_creds=resolve_creds,
+            )
+        except ConflictError as exc:
+            reason = {
+                "SERVER_DECOMMISSIONED": "decommissioned",
+                "IDEMPOTENCY_KEY_REUSE_CONFLICT": "idempotency_key_reuse_conflict",
+                "ACCOUNT_HAS_NO_PASSWORD": "account_has_no_password",
+            }.get(exc.error_code, "idempotent_conflict")
+            failed.append({"server_id": sid, "server_name": _server_name(server), "reason": reason})
+            continue
+        except AuthorizationError:
+            # account-режим без `view_password` на конкретную учётку.
+            failed.append({"server_id": sid, "server_name": _server_name(server), "reason": "permission_denied"})
+            continue
+        except NotFoundError as exc:
+            # account-режим: учётка не видна / не привязана к серверу.
+            failed.append({
+                "server_id": sid, "server_name": _server_name(server),
+                "reason": exc.error_code.lower(),
+            })
+            continue
+        except ServiceUnavailableError:
+            audit_service.emit(
+                audit_action, target_id=sid, target_type="server",
+                status="failure", allowed=True,
+                details={
+                    "reason": "worker_unreachable_batch_abort",
+                    "operation": "prepare_batch",
+                    "dispatched_count": len(dispatched),
+                },
+            )
+            failed.append({"server_id": sid, "server_name": _server_name(server), "reason": "worker_unreachable"})
+            aborted = True
+            continue
+        dispatched.append({"server_id": sid, "server_name": _server_name(server), "task_id": task_id})
+
+    audit_service.emit(
+        audit_action, target_id=None, target_type="server",
+        status="success", allowed=True,
+        details={
+            "operation": "prepare_batch",
+            "task_kind": task_kind,
+            "batch_id": batch_id,
+            "dispatched_count": len(dispatched),
+            "failed_count": len(failed),
+            "server_ids": [it.server_id for it in body.items],
+        },
+    )
+    return ServerPrepareBatchResponse(
+        batch_id=batch_id,
+        dispatched=[ServerBatchDispatched(**d) for d in dispatched],
+        failed=[ServerBatchFailed(**f) for f in failed],
     )
 
 

@@ -682,6 +682,185 @@ class ServerPrepareBulkResponse(BaseModel):
     skipped_count: int = Field(description="Сколько серверов пропущено.")
 
 
+class ServerPrepareBatchItem(ServerPrepareRequest):
+    """Один сервер в массовом prepare с выбором режима кред (account / manual).
+
+    Наследует ровно те же поля и валидаторы, что single-prepare
+    (`ServerPrepareRequest`): `account_id` (режим выбора привязанной учётки,
+    по умолчанию) ЛИБО `username_b64`+`password_b64`(+`ssh_private_key_b64`)
+    (ручной режим). Ровно один режим на сервер — нарушение → 422. Добавляет
+    только `server_id`.
+    """
+
+    server_id: str = Field(description="Сервер, который готовим (prefix srv_).")
+
+
+class ServerPrepareBatchRequest(BaseModel):
+    """Тело POST /servers/prepare-batch — массовый онбординг с per-server режимом.
+
+    Список `items` — по записи на сервер, у каждого свой выбор bootstrap-кред
+    (account-режим по умолчанию, ручной опционально). Дубли server_id в одном
+    теле запрещены (422). Cap на длину списка — `BULK_PREPARE_MAX_SERVERS`;
+    превышение → 413.
+    """
+
+    items: list[ServerPrepareBatchItem] = Field(
+        ..., min_length=1,
+        description="Серверы для подготовки, по одному элементу на сервер.",
+    )
+
+    @model_validator(mode="after")
+    def _check_unique_servers(self) -> "ServerPrepareBatchRequest":
+        ids = [it.server_id for it in self.items]
+        if len(ids) != len(set(ids)):
+            raise ValueError("duplicate server_id in prepare-batch items")
+        return self
+
+
+class ServerBatchDispatched(BaseModel):
+    """Одна успешно поставленная per-server задача в batch-ответе."""
+
+    server_id: str = Field(description="Сервер, на который ушла задача.")
+    server_name: str | None = Field(
+        default=None, description="Имя сервера (display_name либо hostname).",
+    )
+    task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
+    status: str = Field(
+        default="dispatched", description="Статус диспетчеризации (dispatched).",
+    )
+
+
+class ServerBatchFailed(BaseModel):
+    """Сервер, на который задача не поставлена (пропуск в batch-ответе)."""
+
+    server_id: str = Field(description="Сервер, для которого dispatch не выполнен.")
+    server_name: str | None = Field(
+        default=None, description="Имя сервера (display_name либо hostname); None для невидимого.",
+    )
+    reason: str = Field(
+        description=(
+            "Причина: not_found_or_cross_dept | decommissioned | "
+            "idempotent_conflict | idempotency_key_reuse_conflict | "
+            "account_has_no_password | account_not_found | account_not_linked | "
+            "permission_denied | worker_unreachable | not_attempted."
+        ),
+    )
+
+
+class ServerPrepareBatchResponse(BaseModel):
+    """Ответ массового prepare-batch — per-server dispatched/failed + batch_id.
+
+    Форма симметрична mass-rotation: `batch_id` — сквозной идентификатор батча,
+    `dispatched` — успешно поставленные задачи, `failed` — серверы с причиной
+    пропуска. Один битый сервер не валит остальной батч.
+    """
+
+    batch_id: str = Field(description="ID батча (prefix bat_).")
+    dispatched: list[ServerBatchDispatched] = Field(
+        default_factory=list,
+        description="Успешно поставленные задачи (task_id / server_id / server_name).",
+    )
+    failed: list[ServerBatchFailed] = Field(
+        default_factory=list,
+        description="Серверы, на которые задача не поставлена, с причиной в `reason`.",
+    )
+
+
+class ServerCleanRequest(BaseModel):
+    """Тело POST /servers/{id}/clean — оркестрация очистки после переустановки ОС.
+
+    Четыре независимых флага из модалки. Выбранные действия выполняются в
+    фиксированном порядке: `unbind_accounts` → `rerun_prepare` →
+    `update_os_version` → `run_inventory_sync`.
+
+    * `unbind_accounts` — отвязать ВСЕ привязанные учётки сервера (снять связки
+      + userdel-fanout на боксы, где учётка стояла).
+    * `rerun_prepare` — заново забутстрапить управление. Требует блок `prepare`
+      с bootstrap-кредами (те же поля, что single-prepare: `account_id` —
+      привязанная учётка по умолчанию, либо ручной `username_b64`/`password_b64`
+      /`ssh_private_key_b64`).
+    * `update_os_version` — ручная смена `os_version_id` (значение в
+      `os_version_id`; `null` сбрасывает версию).
+    * `run_inventory_sync` — поставить `inventory.sync` (SSH-probe, требует
+      prepared-сервер).
+
+    Хотя бы один флаг должен быть выбран (иначе 422).
+    """
+
+    unbind_accounts: bool = Field(
+        default=False, description="Отвязать все привязанные учётки сервера.",
+    )
+    update_os_version: bool = Field(
+        default=False, description="Сменить os_version_id вручную (значение в `os_version_id`).",
+    )
+    rerun_prepare: bool = Field(
+        default=False, description="Заново забутстрапить управление (требует блок `prepare`).",
+    )
+    run_inventory_sync: bool = Field(
+        default=False, description="Поставить inventory.sync (SSH-probe).",
+    )
+    os_version_id: str | None = Field(
+        default=None,
+        description=(
+            "FK на os_versions для `update_os_version`. `null` сбрасывает версию. "
+            "Учитывается только если `update_os_version=true`."
+        ),
+    )
+    prepare: ServerPrepareRequest | None = Field(
+        default=None,
+        description=(
+            "Bootstrap-креды для `rerun_prepare` (обязателен, если "
+            "`rerun_prepare=true`). Те же поля и режимы, что single-prepare."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _check_actions(self) -> "ServerCleanRequest":
+        if self.rerun_prepare and self.prepare is None:
+            raise ValueError(
+                "rerun_prepare=true requires bootstrap credentials in 'prepare'"
+            )
+        if not (
+            self.unbind_accounts
+            or self.update_os_version
+            or self.rerun_prepare
+            or self.run_inventory_sync
+        ):
+            raise ValueError("at least one clean action must be selected")
+        return self
+
+
+class ServerCleanActionResult(BaseModel):
+    """Per-action итог clean'а.
+
+    `status`: `done` (синхронное действие выполнено: unbind / os-version),
+    `dispatched` (task поставлена: prepare / inventory; `task_id` заполнен),
+    `skipped` (действие не выбрано — `reason=not_selected`), `failed`
+    (`reason` несёт причину).
+    """
+
+    status: str = Field(description="done | dispatched | skipped | failed.")
+    task_id: str | None = Field(
+        default=None, description="ID задачи воркера, если status=dispatched.",
+    )
+    reason: str | None = Field(
+        default=None, description="Причина для skipped/failed.",
+    )
+    detail: dict | None = Field(
+        default=None, description="Доп. детали (например счётчики unbind'а).",
+    )
+
+
+class ServerCleanResponse(BaseModel):
+    """Сводный ответ POST /servers/{id}/clean — per-action итоги."""
+
+    server_id: str = Field(description="Сервер, который чистили.")
+    unbind_accounts: ServerCleanActionResult
+    rerun_prepare: ServerCleanActionResult
+    update_os_version: ServerCleanActionResult
+    run_inventory_sync: ServerCleanActionResult
+
+
 class ServerPrepareCallbackRequest(BaseModel):
     """Тело POST /internal/servers/{id}/prepared — callback воркера.
 

@@ -10,6 +10,7 @@
 import type {
   ActionName,
   PermissionCatalogItem,
+  PermissionListResponse,
   ResourceAclType,
   ResourcePermissionEffect,
   ResourcePermissionEntry,
@@ -68,6 +69,50 @@ export const MOCK_INSTANCE_CATALOG: Record<ResourceAclType, PermissionCatalogIte
   },
 };
 
+// Базовая (тип-wide) матрица для mock-режима — что роль умеет «по умолчанию»
+// на весь тип ресурса. По ней редактор проставляет чекбоксы; инстанс-гранты
+// (store) накладываются поверх. admin везде считается полным доступом и в
+// перечисление не входит.
+const BASE_GRANTS: Record<ResourceAclType, Array<[RoleName, ActionName]>> = {
+  server: [
+    ["guest", "view"],
+    ["reader", "view"],
+    ["reader", "power_status"],
+    ["operator", "view"],
+    ["operator", "busy_acquire"],
+    ["operator", "busy_release"],
+    ["operator", "os_sync"],
+    ["operator", "power_on"],
+    ["operator", "power_off"],
+    ["operator", "power_reboot"],
+    ["operator", "power_status"],
+    ["operator", "inventory_trigger"],
+  ],
+  server_account: [
+    ["guest", "view"],
+    ["reader", "view"],
+    ["operator", "view"],
+    ["operator", "rotate_password"],
+    ["operator", "provision"],
+  ],
+};
+
+/** Тип-wide матрица entity_permissions для mock-режима. */
+export function mockBaseMatrix(type: ResourceAclType): PermissionListResponse {
+  const now = "2026-06-29T00:00:00Z";
+  const items = BASE_GRANTS[type].map(([role, action], i) => ({
+    id: `perm_base_${type}_${i}`,
+    entity_type: type,
+    role,
+    action,
+    department_id: "core",
+    granted_by: null,
+    created_at: now,
+    updated_at: now,
+  }));
+  return { items, total: items.length, described: false };
+}
+
 // key `${type}:${id}` → map `${role}::${action}` → effect
 const store = new Map<string, Map<string, ResourcePermissionEffect>>();
 let seq = 1;
@@ -89,18 +134,19 @@ function ensure(
   return map;
 }
 
-// Демо-сид: пара грантов на первый встреченный ресурс через listMock —
-// один allow и один deny, чтобы тремя состояниями было что показать.
+// Демо-сид: пара override'ов поверх базовой матрицы — один deny (снимает
+// базово-разрешённое действие) и один allow (выдаёт сверх базы), чтобы было
+// видно отличие чекбокса от базы.
 function seedIfEmpty(type: ResourceAclType, id: string): void {
   const k = keyFor(type, id);
   if (store.has(k)) return;
   const map = ensure(type, id);
   if (type === "server") {
-    map.set("operator::power_reboot", "allow");
-    map.set("reader::power_off", "deny");
+    map.set("operator::power_off", "deny");
+    map.set("reader::power_reboot", "allow");
   } else {
-    map.set("operator::rotate_password", "allow");
-    map.set("reader::view_password", "deny");
+    map.set("operator::view_password", "allow");
+    map.set("reader::rotate_password", "allow");
   }
 }
 

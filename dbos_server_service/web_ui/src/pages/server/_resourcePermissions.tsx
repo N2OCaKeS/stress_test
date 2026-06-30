@@ -1,33 +1,40 @@
 /**
  * Инстанс-уровневый ACL ресурса (`server` / `server_account`).
  *
- * Поверх глобальной (тип-wide) матрицы `entity_permissions` тут редактируются
- * точечные гранты роли на КОНКРЕТНЫЙ ресурс: чекбокс на пересечении
- * роль × инстанс-грантуемое действие, клик ставит/снимает грант через PUT/DELETE.
- * Глобальные действия (`create` и callback'и воркера) сюда не попадают — они
- * живут только в глобальной матрице на странице админки.
+ * Каждая ячейка — чекбокс, проставленный по базовой (тип-wide) матрице
+ * `entity_permissions`. Снятая с базово-разрешённого галка пишет инстанс-`deny`,
+ * поставленная сверх базы — `allow`, возврат к базовому значению снимает
+ * инстанс-override. Правки копятся локально и применяются батчем по кнопке
+ * «Сохранить» (PUT allow/deny / DELETE по изменённым ячейкам). Глобальные
+ * действия (`create` и callback'и воркера) сюда не попадают.
  *
- * Кнопка «Распространить права» копирует все инстанс-гранты этого ресурса на
+ * Системные роли `admin`/`guest` показаны, но залочены — их ячейки отражают
+ * реальные базовые права (admin — всё, guest — view). Внутренняя `worker_bot`
+ * в матрицу не выводится. Если у роли есть любое право на ресурсе, `view`
+ * проставляется и блокируется автоматически.
+ *
+ * Кнопка «Распространить права» копирует инстанс-гранты этого ресурса на
  * выбранные однотипные цели (merge — добавить недостающее; mirror — привести к
  * точной копии). Источник цели-списка — `fetchTargets` от родителя.
  *
  * Backend: server_service/src/api/v1/endpoints/resource_permissions.py.
  */
 import { useCallback, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
-  Ban,
-  Check,
   Loader2,
   Lock,
-  Minus,
+  Plus,
+  RotateCcw,
+  Save,
   Share2,
   ShieldCheck,
 } from "lucide-react";
 import { useQuery, useMockMode } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
-import { getPermissionCatalog } from "@/api/server/permissions";
+import { getPermissionCatalog, listPermissions } from "@/api/server/permissions";
 import {
   grantResourcePermission,
   listResourcePermissions,
@@ -37,6 +44,7 @@ import {
 import { listServiceRoles } from "@/api/auth/service_roles";
 import {
   MOCK_INSTANCE_CATALOG,
+  mockBaseMatrix,
   mockGrant,
   mockListResourcePermissions,
   mockPropagate,
@@ -58,14 +66,22 @@ import type { ServiceRole } from "@/api/auth/types";
 // Системные роли в фиксированном порядке; кастомные идут после по алфавиту.
 const SYSTEM_ROLE_ORDER: RoleName[] = ["guest", "admin"];
 
+// Внутренние роли, которые в инстанс-матрице не показываем вообще (гранты на
+// backend у них остаются — это чисто UI-скрытие).
+const HIDDEN_ROLES: ReadonlySet<RoleName> = new Set<RoleName>(["worker_bot"]);
+
 // Роли, чьи права фиксированы платформой — их нельзя трогать ни тут, ни на
-// backend (вернёт 409 SYSTEM_ROLE_IMMUTABLE). Контролы для них read-only.
+// backend (вернёт 409 SYSTEM_ROLE_IMMUTABLE). Контролы для них read-only,
+// чекбоксы отражают реальную базу (admin — всё, guest — view).
 const LOCKED_ROLES: Record<string, string> = {
   admin: "admin держит полный доступ — правила не редактируются",
   guest: "guest — базовая роль, правила не редактируются",
 };
 
-// Состояние ячейки: null — не задано (действует тип-wide база), иначе effect.
+// Куда вести из пустого состояния, чтобы завести кастомную роль.
+const PERMISSIONS_ROUTE = "/admin/services.server.permissions";
+
+// Инстанс-override ячейки: null — нет override (действует тип-wide база).
 type CellEffect = ResourcePermissionEffect | null;
 
 function roleSortKey(role: RoleName): string {
@@ -135,6 +151,15 @@ export function ResourceInstancePermissions({
     [mockMode, departmentId, refreshTick],
   );
 
+  // Базовая (тип-wide) матрица — тот же источник, что у админ-страницы прав.
+  const baseQ = useQuery(
+    () =>
+      mockMode
+        ? Promise.resolve(mockBaseMatrix(resourceType))
+        : listPermissions({}),
+    [mockMode, resourceType, refreshTick],
+  );
+
   const grants: ResourcePermissionEntry[] = useMemo(
     () => grantsQ.data?.items ?? [],
     [grantsQ.data],
@@ -153,109 +178,212 @@ export function ResourceInstancePermissions({
     );
   }, [catalogQ.data, resourceType]);
 
-  // Индекс грантов по `${role}::${action}` → effect.
+  // Базовая матрица как множество `${role}::${action}` по нужному типу.
+  const baseSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of baseQ.data?.items ?? []) {
+      if (p.entity_type === resourceType) s.add(`${p.role}::${p.action}`);
+    }
+    return s;
+  }, [baseQ.data, resourceType]);
+
+  // Даёт ли роли это действие тип-wide база. admin — полный доступ всегда.
+  const baseAllowed = useCallback(
+    (role: RoleName, action: ActionName): boolean => {
+      if (role === "admin") return true;
+      return baseSet.has(`${role}::${action}`);
+    },
+    [baseSet],
+  );
+
+  // Инстанс-override роли по серверу (без локальных правок).
   const grantIndex = useMemo(() => {
     const m = new Map<string, ResourcePermissionEffect>();
     for (const g of grants) m.set(`${g.role}::${g.action}`, g.effect);
     return m;
   }, [grants]);
 
-  // Оптимистичный слой: ключ → effect (allow/deny) | null (снято, по базе).
-  const [optimistic, setOptimistic] = useState<Record<string, CellEffect>>({});
-  const [saving, setSaving] = useState<Record<string, boolean>>({});
+  // Локальные правки: ключ → желаемый override (allow/deny/null). Применяются
+  // батчем по «Сохранить»; ключ присутствует только у тронутой ячейки.
+  const [edits, setEdits] = useState<Record<string, CellEffect>>({});
+  const [saving, setSaving] = useState(false);
 
-  const effectFor = useCallback(
-    (role: RoleName, action: ActionName): CellEffect => {
-      const key = `${role}::${action}`;
-      if (key in optimistic) return optimistic[key];
-      return grantIndex.get(key) ?? null;
-    },
-    [optimistic, grantIndex],
+  const serverOverride = useCallback(
+    (key: string): CellEffect => grantIndex.get(key) ?? null,
+    [grantIndex],
   );
 
-  // Роли таблицы: системные + те, что уже есть в грантах + кастомные отдела.
+  // Желаемый override ячейки (правка важнее серверного состояния).
+  const currentOverride = useCallback(
+    (role: RoleName, action: ActionName): CellEffect => {
+      const key = `${role}::${action}`;
+      return key in edits ? edits[key] : serverOverride(key);
+    },
+    [edits, serverOverride],
+  );
+
+  // Состояние галки без учёта авто-view: override поверх базы.
+  const rawChecked = useCallback(
+    (role: RoleName, action: ActionName): boolean => {
+      const ov = currentOverride(role, action);
+      if (ov === "allow") return true;
+      if (ov === "deny") return false;
+      return baseAllowed(role, action);
+    },
+    [currentOverride, baseAllowed],
+  );
+
+  // Есть ли у роли любое НЕ-view право на ресурсе — тогда view авто-включён.
+  const viewForced = useCallback(
+    (role: RoleName): boolean =>
+      actions.some((a) => a.action !== "view" && rawChecked(role, a.action)),
+    [actions, rawChecked],
+  );
+
+  const effectiveChecked = useCallback(
+    (role: RoleName, action: ActionName): boolean => {
+      if (action === "view" && viewForced(role)) return true;
+      return rawChecked(role, action);
+    },
+    [rawChecked, viewForced],
+  );
+
+  // Роли таблицы: системные + из грантов + кастомные отдела, без скрытых.
   const roles = useMemo(() => {
     const set = new Set<RoleName>(SYSTEM_ROLE_ORDER);
     for (const g of grants) set.add(g.role);
     for (const r of serviceRoles) set.add(r.role_name);
+    for (const h of HIDDEN_ROLES) set.delete(h);
     return Array.from(set).sort((a, b) =>
       roleSortKey(a).localeCompare(roleSortKey(b)),
     );
   }, [grants, serviceRoles]);
 
-  // Цикл по клику: не задано → allow → deny → не задано.
-  function nextEffect(current: CellEffect): CellEffect {
-    if (current === null) return "allow";
-    if (current === "allow") return "deny";
-    return null;
-  }
+  // Кастомные роли — всё, что не системное (для точечной правки и очистки).
+  const customRoles = useMemo(
+    () => roles.filter((r) => !SYSTEM_ROLE_ORDER.includes(r)),
+    [roles],
+  );
 
-  const cycle = useCallback(
-    async (role: RoleName, action: PermissionCatalogAction) => {
-      if (!canEdit) return;
-      if (role in LOCKED_ROLES) return;
-      const key = `${role}::${action.action}`;
-      if (saving[key]) return;
-      const next = nextEffect(effectFor(role, action.action));
-      setOptimistic((m) => ({ ...m, [key]: next }));
-      setSaving((m) => ({ ...m, [key]: true }));
+  // Ключи, чьё желаемое состояние расходится с серверным — это и есть дифф.
+  const diffKeys = useMemo(
+    () => Object.keys(edits).filter((k) => edits[k] !== serverOverride(k)),
+    [edits, serverOverride],
+  );
+  const dirty = diffKeys.length > 0;
+
+  // Есть ли хоть один инстанс-override (с учётом несохранённых правок) — для
+  // бейджа «кастомные права» у ресурса.
+  const hasOverrides = useMemo(() => {
+    for (const role of roles) {
+      for (const a of actions) {
+        if (currentOverride(role, a.action) !== null) return true;
+      }
+    }
+    return false;
+  }, [roles, actions, currentOverride]);
+
+  const toggle = useCallback(
+    (role: RoleName, action: ActionName) => {
+      if (!canEdit || role in LOCKED_ROLES) return;
+      if (action === "view" && viewForced(role)) return;
+      const key = `${role}::${action}`;
+      const base = baseAllowed(role, action);
+      const desired = !effectiveChecked(role, action);
+      const override: CellEffect =
+        desired === base ? null : desired ? "allow" : "deny";
+      setEdits((m) => ({ ...m, [key]: override }));
+    },
+    [canEdit, viewForced, baseAllowed, effectiveChecked],
+  );
+
+  // Снять все инстанс-override роли — вернуть её ячейки к базе.
+  const clearRole = useCallback(
+    (role: RoleName) => {
+      if (!canEdit || role in LOCKED_ROLES) return;
+      setEdits((m) => {
+        const next = { ...m };
+        for (const a of actions) next[`${role}::${a.action}`] = null;
+        return next;
+      });
+    },
+    [canEdit, actions],
+  );
+
+  // Снять все инстанс-override на ресурсе (по всем кастомным ролям).
+  const clearAll = useCallback(() => {
+    if (!canEdit) return;
+    setEdits((m) => {
+      const next = { ...m };
+      for (const role of customRoles) {
+        for (const a of actions) next[`${role}::${a.action}`] = null;
+      }
+      return next;
+    });
+  }, [canEdit, customRoles, actions]);
+
+  const resetEdits = useCallback(() => setEdits({}), []);
+
+  // Применить дифф батчем: PUT для allow/deny, DELETE для возврата к базе.
+  const save = useCallback(async () => {
+    if (!canEdit || saving || diffKeys.length === 0) return;
+    setSaving(true);
+    const done: string[] = [];
+    let ok = 0;
+    let failed = 0;
+    for (const key of diffKeys) {
+      const [role, action] = key.split("::") as [RoleName, ActionName];
+      const target = edits[key];
       try {
-        if (next === null) {
-          if (mockMode) {
-            mockRevoke(resourceType, resourceId, role, action.action);
-          } else {
+        if (target === null) {
+          if (mockMode) mockRevoke(resourceType, resourceId, role, action);
+          else
             await revokeResourcePermission(
               resourceType,
               resourceId,
               role,
-              action.action,
+              action,
             );
-          }
-          toast.success(`Сброшено к базе: ${role}/${action.action}`);
         } else {
-          if (mockMode) {
-            mockGrant(resourceType, resourceId, role, action.action, next);
-          } else {
+          if (mockMode) mockGrant(resourceType, resourceId, role, action, target);
+          else
             await grantResourcePermission(
               resourceType,
               resourceId,
               role,
-              action.action,
-              next,
+              action,
+              target,
             );
-          }
-          if (next === "deny") {
-            toast.warn(`Запрет: ${role}/${action.action} (перекрывает базу)`);
-          } else {
-            toast[action.sensitive ? "warn" : "success"](
-              action.sensitive
-                ? `${role}/${action.action} выдано · sensitive → CRITICAL audit`
-                : `Выдано: ${role}/${action.action}`,
-            );
-          }
         }
-        setOptimistic((m) => {
-          const { [key]: _drop, ...rest } = m;
-          return rest;
-        });
-        bump();
+        done.push(key);
+        ok++;
       } catch (e) {
-        setOptimistic((m) => {
-          const { [key]: _drop, ...rest } = m;
-          return rest;
-        });
+        failed++;
         toast.error(apiErrMsg(e));
-      } finally {
-        setSaving((m) => {
-          const { [key]: _drop, ...rest } = m;
-          return rest;
-        });
       }
-    },
-    [bump, canEdit, effectFor, mockMode, resourceId, resourceType, saving, toast],
-  );
+    }
+    setEdits((m) => {
+      const next = { ...m };
+      for (const k of done) delete next[k];
+      return next;
+    });
+    setSaving(false);
+    if (ok) toast.success(`Сохранено изменений: ${ok}`);
+    if (failed) toast.warn(`Не сохранено: ${failed}`);
+    bump();
+  }, [
+    canEdit,
+    saving,
+    diffKeys,
+    edits,
+    mockMode,
+    resourceType,
+    resourceId,
+    toast,
+    bump,
+  ]);
 
-  if (catalogQ.loading || grantsQ.loading) {
+  if (catalogQ.loading || grantsQ.loading || baseQ.loading) {
     return (
       <div className="card flex items-center justify-center py-8">
         <div className="spinner">Загрузка инстанс-прав…</div>
@@ -263,8 +391,8 @@ export function ResourceInstancePermissions({
     );
   }
 
-  if (catalogQ.error || grantsQ.error) {
-    const err = catalogQ.error ?? grantsQ.error;
+  if (catalogQ.error || grantsQ.error || baseQ.error) {
+    const err = catalogQ.error ?? grantsQ.error ?? baseQ.error;
     return (
       <div className="card">
         <div className="alert-danger flex items-center gap-2">
@@ -274,6 +402,7 @@ export function ResourceInstancePermissions({
             onClick={() => {
               catalogQ.refetch();
               grantsQ.refetch();
+              baseQ.refetch();
             }}
           >
             Повторить
@@ -283,124 +412,196 @@ export function ResourceInstancePermissions({
     );
   }
 
+  const noCustomRoles = customRoles.length === 0;
+
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-accent" />
           Инстанс-гранты {resourceType === "server" ? "сервера" : "учётки"}
-        </h3>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-dim">{grants.length} грант-строк</span>
-          {canEdit && (
-            <button
-              className="btn btn-sm flex items-center gap-1"
-              onClick={() => setPropagateOpen(true)}
+          {hasOverrides && (
+            <span
+              className="badge badge-warn text-[10px]"
+              title="на ресурсе есть точечные права поверх базовой матрицы"
             >
-              <Share2 className="w-3.5 h-3.5" /> Распространить права
-            </button>
+              кастомные права
+            </span>
           )}
-        </div>
+        </h3>
+        {canEdit && !noCustomRoles && (
+          <button
+            className="btn btn-sm flex items-center gap-1"
+            onClick={() => setPropagateOpen(true)}
+          >
+            <Share2 className="w-3.5 h-3.5" /> Распространить права
+          </button>
+        )}
       </div>
 
       <p className="text-xs text-dim leading-relaxed mb-2">
         Точечные права на{" "}
         <span className="mono">{resourceLabel ?? resourceId}</span> поверх
-        глобальной (тип-wide) матрицы. Клик по ячейке прокручивает три состояния:
-        пусто → разрешить → запретить → пусто. Глобальные действия (
-        <span className="mono">create</span> и пр.) настраиваются в админ-разделе
-        «Права server_service».
+        глобальной (тип-wide) матрицы. Галки проставлены по базовой матрице:
+        снимите галку с базово-разрешённого — будет <span className="mono">deny</span>,
+        поставьте сверх базы — <span className="mono">allow</span>. Глобальные
+        действия (<span className="mono">create</span> и пр.) настраиваются в
+        админ-разделе «Права server_service».
       </p>
       <div className="text-[11px] text-dim flex items-center gap-4 flex-wrap mb-3">
         <span className="flex items-center gap-1">
-          <Minus className="w-3 h-3 text-dim" /> по базе (тип-wide)
-        </span>
-        <span className="flex items-center gap-1">
-          <Check className="w-3 h-3 text-emerald-500" /> allow — добавить
-        </span>
-        <span className="flex items-center gap-1">
-          <Ban className="w-3 h-3 text-danger" /> deny — перекрыть базу (запрет)
-        </span>
-        <span className="flex items-center gap-1">
           <Lock className="w-3 h-3" /> системная роль — фиксирована
         </span>
+        <span>view включается автоматически у роли с другими правами</span>
       </div>
 
-      {actions.length === 0 ? (
+      {noCustomRoles ? (
+        <div className="empty-card text-sm text-dim flex flex-col items-start gap-3">
+          <p className="leading-relaxed">
+            Точечные права задаются для кастомных ролей. В отделе нет кастомных
+            ролей — создайте роль.
+          </p>
+          <Link
+            to={PERMISSIONS_ROUTE}
+            className="btn btn-sm btn-primary flex items-center gap-1"
+          >
+            <Plus className="w-3.5 h-3.5" /> Создать роль
+          </Link>
+        </div>
+      ) : actions.length === 0 ? (
         <div className="text-sm text-dim">
           Нет инстанс-грантуемых действий в каталоге.
         </div>
       ) : (
-        <div className="overflow-auto max-h-[60vh] border border-token rounded">
-          <table className="text-sm border-collapse">
-            <thead className="text-left text-dim text-xs uppercase">
-              <tr>
-                <th className="pb-2 pt-2 px-3 sticky left-0 top-0 z-20 bg-[var(--bg-soft)]">
-                  role
-                </th>
-                {actions.map((a) => (
-                  <th
-                    key={a.action}
-                    className="pb-2 pt-2 px-2 mono font-normal align-bottom sticky top-0 z-10 bg-[var(--bg-soft)]"
-                    title={a.description}
-                  >
-                    <div className="flex items-center gap-1 whitespace-nowrap">
-                      <span>{a.action}</span>
-                      {a.sensitive && (
-                        <span
-                          className="badge badge-warn text-[10px]"
-                          title="sensitive → CRITICAL audit"
-                        >
-                          !
-                        </span>
-                      )}
-                    </div>
+        <>
+          <div className="overflow-auto max-h-[60vh] border border-token rounded">
+            <table className="text-sm border-collapse">
+              <thead className="text-left text-dim text-xs uppercase">
+                <tr>
+                  <th className="pb-2 pt-2 px-3 sticky left-0 top-0 z-20 bg-[var(--bg-soft)]">
+                    role
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {roles.map((role) => {
-                const locked = role in LOCKED_ROLES;
-                return (
-                  <tr key={role} className="border-t border-token">
-                    <td className="py-2 px-3 mono text-xs sticky left-0 z-10 bg-[var(--bg-soft)]">
-                      <span
-                        className="flex items-center gap-1"
-                        title={locked ? LOCKED_ROLES[role] : undefined}
-                      >
-                        {locked && <Lock className="w-3 h-3 text-dim" />}
-                        {role}
-                      </span>
-                    </td>
-                    {actions.map((a) => {
-                      const key = `${role}::${a.action}`;
-                      const effect = effectFor(role, a.action);
-                      const isSaving = !!saving[key];
-                      const disabled = !canEdit || locked;
-                      const reason = locked
-                        ? "системная роль — фиксирована"
-                        : !canEdit
-                          ? "Нет прав на изменение"
-                          : "Клик: пусто → allow → deny → пусто";
-                      return (
-                        <td key={a.action} className="py-1.5 px-2 text-center">
-                          <PermEffectCell
-                            effect={effect}
-                            disabled={disabled}
-                            saving={isSaving}
-                            title={`${a.description}\n\n${reason}`}
-                            onClick={() => cycle(role, a)}
-                          />
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                  {actions.map((a) => (
+                    <th
+                      key={a.action}
+                      className="pb-2 pt-2 px-2 mono font-normal align-bottom sticky top-0 z-10 bg-[var(--bg-soft)]"
+                      title={a.description}
+                    >
+                      <div className="flex items-center gap-1 whitespace-nowrap">
+                        <span>{a.action}</span>
+                        {a.sensitive && (
+                          <span
+                            className="badge badge-warn text-[10px]"
+                            title="sensitive → CRITICAL audit"
+                          >
+                            !
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {roles.map((role) => {
+                  const locked = role in LOCKED_ROLES;
+                  const roleDirty = actions.some(
+                    (a) => currentOverride(role, a.action) !== null,
+                  );
+                  return (
+                    <tr key={role} className="border-t border-token">
+                      <td className="py-2 px-3 mono text-xs sticky left-0 z-10 bg-[var(--bg-soft)]">
+                        <span
+                          className="flex items-center gap-1"
+                          title={locked ? LOCKED_ROLES[role] : undefined}
+                        >
+                          {locked && <Lock className="w-3 h-3 text-dim" />}
+                          {role}
+                          {!locked && canEdit && roleDirty && (
+                            <button
+                              type="button"
+                              className="btn btn-ghost p-0.5"
+                              title="Очистить роль — вернуть её права к базе"
+                              aria-label={`Очистить роль ${role}`}
+                              disabled={saving}
+                              onClick={() => clearRole(role)}
+                            >
+                              <RotateCcw className="w-3 h-3 text-dim" />
+                            </button>
+                          )}
+                        </span>
+                      </td>
+                      {actions.map((a) => {
+                        const checked = effectiveChecked(role, a.action);
+                        const autoView =
+                          a.action === "view" && viewForced(role);
+                        const disabled =
+                          !canEdit || locked || autoView || saving;
+                        const reason = locked
+                          ? "системная роль — фиксирована"
+                          : autoView
+                            ? "view включён автоматически, т.к. у роли есть другие права; снимите их, чтобы менять view"
+                            : !canEdit
+                              ? "Нет прав на изменение"
+                              : currentOverride(role, a.action) === null
+                                ? "по базовой матрице"
+                                : currentOverride(role, a.action) === "allow"
+                                  ? "allow — выдано сверх базы"
+                                  : "deny — снято с базы";
+                        return (
+                          <td
+                            key={a.action}
+                            className="py-1.5 px-2 text-center"
+                          >
+                            <PermCheckbox
+                              checked={checked}
+                              disabled={disabled}
+                              title={`${a.description}\n\n${reason}`}
+                              onChange={() => toggle(role, a.action)}
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {canEdit && (
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
+              <button
+                className="btn btn-sm btn-primary flex items-center gap-1"
+                onClick={save}
+                disabled={!dirty || saving}
+              >
+                {saving ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Save className="w-3.5 h-3.5" />
+                )}
+                Сохранить
+                {dirty && ` (${diffKeys.length})`}
+              </button>
+              <button
+                className="btn btn-sm"
+                onClick={resetEdits}
+                disabled={!dirty || saving}
+              >
+                Отмена
+              </button>
+              <button
+                className="btn btn-sm flex items-center gap-1"
+                onClick={clearAll}
+                disabled={saving || !hasOverrides}
+                title="Снять все инстанс-override на этом ресурсе"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Очистить все роли
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {!canEdit && (
@@ -676,59 +877,31 @@ function PropagateModal({
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Tri-state cell: пусто (по базе) / allow / deny
+// Checkbox cell — вкл/выкл поверх базовой матрицы
 // ───────────────────────────────────────────────────────────────────────────
 
-function PermEffectCell({
-  effect,
+function PermCheckbox({
+  checked,
   disabled,
-  saving,
   title,
-  onClick,
+  onChange,
 }: {
-  effect: CellEffect;
+  checked: boolean;
   disabled: boolean;
-  saving: boolean;
   title: string;
-  onClick: () => void;
+  onChange: () => void;
 }) {
-  if (saving) {
-    return (
-      <span
-        className="inline-flex items-center justify-center w-6 h-6 align-middle"
-        title={title}
-      >
-        <Loader2 className="w-3.5 h-3.5 animate-spin text-dim" />
-      </span>
-    );
-  }
-  const icon =
-    effect === "allow" ? (
-      <Check className="w-4 h-4 text-emerald-500" />
-    ) : effect === "deny" ? (
-      <Ban className="w-4 h-4 text-danger" />
-    ) : (
-      <Minus className="w-4 h-4 text-dim opacity-50" />
-    );
-  const label =
-    effect === "allow" ? "allow" : effect === "deny" ? "deny" : "по базе";
   return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={effect === "allow"}
-      aria-label={label}
+    <input
+      type="checkbox"
       className={[
-        "inline-flex items-center justify-center w-6 h-6 rounded align-middle",
-        disabled
-          ? "opacity-50 cursor-not-allowed"
-          : "cursor-pointer hover:bg-[var(--bg-soft)]",
+        "w-4 h-4 align-middle accent-[var(--accent)]",
+        disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
       ].join(" ")}
+      checked={checked}
       disabled={disabled}
       title={title}
-      onClick={onClick}
-    >
-      {icon}
-    </button>
+      onChange={onChange}
+    />
   );
 }

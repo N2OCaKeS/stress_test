@@ -239,6 +239,64 @@ describe("ResourceInstancePermissions", () => {
     expect(cells[4]).toBeDisabled();
   });
 
+  it("клик по ячейке локален — без запросов до «Сохранить»", async () => {
+    renderEditor();
+    await waitFor(() =>
+      expect(screen.getByTitle("desc-view")).toBeInTheDocument(),
+    );
+    const cells = screen.getAllByRole("checkbox") as HTMLInputElement[];
+    fireEvent.click(cells[5]); // operator/power_reboot
+    await new Promise((r) => setTimeout(r, 30));
+    // Ничего не ушло в сеть — изменение копится локально.
+    expect(apiPutMock).not.toHaveBeenCalled();
+    expect(apiDeleteMock).not.toHaveBeenCalled();
+    // И только кнопка применяет дифф.
+    fireEvent.click(screen.getByRole("button", { name: /Сохранить/ }));
+    await waitFor(() => expect(apiPutMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("«Отмена» сбрасывает несохранённые правки", async () => {
+    renderEditor(true, { grants: [], serviceRoles: [{ role_name: "operator" }] });
+    await waitFor(() =>
+      expect(screen.getByTitle("desc-view")).toBeInTheDocument(),
+    );
+    let cells = screen.getAllByRole("checkbox") as HTMLInputElement[];
+    // operator/power_reboot (5): база true. Снимаем — появляется дифф.
+    fireEvent.click(cells[5]);
+    expect(
+      (screen.getAllByRole("checkbox")[5] as HTMLInputElement).checked,
+    ).toBe(false);
+    const cancel = screen.getByRole("button", { name: "Отмена" });
+    expect(cancel).not.toBeDisabled();
+    fireEvent.click(cancel);
+    // Чекбокс вернулся к базе, «Сохранить» снова неактивна, сети не было.
+    cells = screen.getAllByRole("checkbox") as HTMLInputElement[];
+    expect(cells[5].checked).toBe(true);
+    expect(screen.getByRole("button", { name: /Сохранить/ })).toBeDisabled();
+    expect(apiPutMock).not.toHaveBeenCalled();
+    expect(apiDeleteMock).not.toHaveBeenCalled();
+  });
+
+  it("«Очистить роль» снимает её override → DELETE по Сохранить", async () => {
+    // operator пришёл с allow на power_reboot (override поверх базы).
+    renderEditor();
+    await waitFor(() =>
+      expect(screen.getByTitle("desc-view")).toBeInTheDocument(),
+    );
+    const clearRoleBtn = screen.getByRole("button", {
+      name: /Очистить роль operator/,
+    });
+    fireEvent.click(clearRoleBtn);
+    const saveBtn = screen.getByRole("button", { name: /Сохранить/ });
+    await waitFor(() => expect(saveBtn).not.toBeDisabled());
+    fireEvent.click(saveBtn);
+    await waitFor(() => expect(apiDeleteMock).toHaveBeenCalledTimes(1));
+    expect(apiDeleteMock).toHaveBeenCalledWith(
+      "/server/v1/resource-permissions/server/srv_1/operator/power_reboot",
+    );
+    expect(apiPutMock).not.toHaveBeenCalled();
+  });
+
   it("без кастомных ролей всё равно рендерит залоченные admin/guest", async () => {
     renderEditor(true, { grants: [], serviceRoles: [] });
     await waitFor(() =>

@@ -79,6 +79,36 @@ const LOCKED_ROLES: Record<string, string> = {
 // Инстанс-override ячейки: null — нет override (действует тип-wide база).
 type CellEffect = ResourcePermissionEffect | null;
 
+// Запасные русские подписи действий — на случай, если каталог отдал пустое или
+// неудобное описание. Берётся только когда `description` пуст.
+const ACTION_LABELS_RU: Partial<Record<ActionName, string>> = {
+  view: "Просмотр карточки",
+  update: "Редактирование",
+  delete: "Удаление",
+  busy_acquire: "Захват в работу",
+  busy_release: "Снятие брони",
+  os_sync: "Смена версии ОС вручную",
+  power_on: "Включение питания (BMC)",
+  power_off: "Выключение питания (BMC)",
+  power_reboot: "Перезагрузка (BMC)",
+  power_status: "Опрос состояния питания",
+  inventory_trigger: "Запуск инвентаризации",
+  view_drift: "Просмотр дрейфа конфигурации",
+  view_password: "Просмотр пароля",
+  rotate_password: "Ротация пароля",
+  grant_sudo: "Выдача sudo",
+  view_credentials: "Просмотр учётных данных",
+  rotate_credentials: "Ротация учётных данных",
+  cancel: "Отмена задачи",
+};
+
+// Гарантированно непустое русское описание действия для тултипов.
+function actionTitle(a: PermissionCatalogAction): string {
+  const desc = a.description?.trim();
+  if (desc) return desc;
+  return ACTION_LABELS_RU[a.action] ?? a.action;
+}
+
 function roleSortKey(role: RoleName): string {
   const idx = SYSTEM_ROLE_ORDER.indexOf(role);
   return idx >= 0 ? `0${idx}` : `1${role}`;
@@ -465,7 +495,7 @@ export function ResourceInstancePermissions({
                     <th
                       key={a.action}
                       className="pb-2 pt-2 px-2 mono font-normal align-bottom sticky top-0 z-10 bg-[var(--bg-soft)]"
-                      title={a.description}
+                      title={actionTitle(a)}
                     >
                       <div className="flex items-center gap-1 whitespace-nowrap">
                         <span>{a.action}</span>
@@ -497,13 +527,13 @@ export function ResourceInstancePermissions({
                         >
                           {locked && <Lock className="w-3 h-3 text-dim" />}
                           {role}
-                          {!locked && canEdit && roleDirty && (
+                          {!locked && canEdit && (
                             <button
                               type="button"
-                              className="btn btn-ghost p-0.5"
-                              title="Очистить роль — вернуть её права к базе"
+                              className="btn btn-ghost p-0.5 disabled:opacity-30"
+                              title="Очистить права роли в таблице — вернуть к базе"
                               aria-label={`Очистить роль ${role}`}
-                              disabled={saving}
+                              disabled={saving || !roleDirty}
                               onClick={() => clearRole(role)}
                             >
                               <RotateCcw className="w-3 h-3 text-dim" />
@@ -536,7 +566,7 @@ export function ResourceInstancePermissions({
                             <PermCheckbox
                               checked={checked}
                               disabled={disabled}
-                              title={`${a.description}\n\n${reason}`}
+                              title={`${actionTitle(a)}\n\n${reason}`}
                               onChange={() => toggle(role, a.action)}
                             />
                           </td>
@@ -550,7 +580,7 @@ export function ResourceInstancePermissions({
           </div>
 
           {canEdit && (
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <div className="sticky bottom-0 z-30 mt-3 -mb-1 flex items-center gap-2 flex-wrap border-t border-token bg-[var(--bg-soft)] pt-3 pb-2">
               <button
                 className="btn btn-sm btn-primary flex items-center gap-1"
                 onClick={save}
@@ -579,6 +609,11 @@ export function ResourceInstancePermissions({
               >
                 <RotateCcw className="w-3.5 h-3.5" /> Очистить все роли
               </button>
+              <span className="text-[11px] text-dim ml-auto">
+                {dirty
+                  ? `Несохранённых изменений: ${diffKeys.length}`
+                  : "Изменения применяются по кнопке «Сохранить»"}
+              </span>
             </div>
           )}
         </>

@@ -30,6 +30,7 @@ from src.core.constants import (
     PlatformRole,
     RESOURCE_ACL_TYPES,
     is_instance_grantable,
+    is_system_role,
 )
 from src.core.exceptions import (
     ConflictError,
@@ -45,10 +46,56 @@ from src.services import audit_service, permissions
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.utils.ids import resource_role_permission_id as new_id
 
+_VALID_EFFECTS: frozenset[str] = frozenset({"allow", "deny"})
+
 
 def _is_matrix_meta_admin(identity: IdentityContext) -> bool:
     """True для платформенного `account_admin` — мета-админа ACL."""
     return identity.platform_role == PlatformRole.ACCOUNT_ADMIN
+
+
+def _reject_system_role(
+    role: str, *, audit_action: str, resource_type: str, resource_id: str,
+    audit_details: dict,
+) -> None:
+    """Отбить инстанс-grant/revoke на системную роль (`admin`/`guest`).
+
+    Их матрица фиксирована и неизменяема — ни тип-wide, ни инстансом. worker_bot
+    не блокируем (внутренний субъект).
+    """
+    if not is_system_role(role):
+        return
+    audit_service.emit(
+        audit_action,
+        target_id=resource_id, target_type=resource_type,
+        status="failure", allowed=True,
+        details={**audit_details, "reason": "system_role_immutable"},
+    )
+    raise ConflictError(
+        error_code="SYSTEM_ROLE_IMMUTABLE",
+        message=(
+            f"System role '{role}' has a fixed permission matrix and cannot be "
+            "modified per-instance"
+        ),
+        details={"role": role},
+    )
+
+
+def _validate_effect(effect: str, *, resource_type: str, resource_id: str, audit_details: dict) -> None:
+    """effect обязан быть allow|deny (endpoint уже валидирует pattern'ом)."""
+    if effect in _VALID_EFFECTS:
+        return
+    audit_service.emit(
+        "resource_permission.grant",
+        target_id=resource_id, target_type=resource_type,
+        status="failure", allowed=True,
+        details={**audit_details, "reason": "invalid_effect"},
+    )
+    raise DomainValidationError(
+        error_code="INVALID_EFFECT",
+        message=f"effect must be one of {sorted(_VALID_EFFECTS)}, got '{effect}'",
+        details={"effect": effect},
+    )
 
 
 def _validate_resource_type(resource_type: str) -> None:
@@ -159,15 +206,20 @@ async def grant_action(
     resource_id: str,
     role: str,
     action: str,
+    effect: str = "allow",
 ) -> ResourceRolePermission:
-    """Выдать инстанс-грант `action` роли `role` на ресурс.
+    """Выдать инстанс-грант `action` роли `role` на ресурс с эффектом `effect`.
 
-    Идемпотентно: повторный grant того же scope возвращает существующую строку
-    без INSERT'а и без audit-emit (как `permission_service.grant_action`).
+    `effect=allow` (дефолт) добавляет право поверх тип-wide матрицы; `effect=deny`
+    запрещает его этой роли на ресурсе (override базы).
+
+    Идемпотентно по effect: повтор того же `(scope, effect)` возвращает строку
+    без изменений и без audit-emit; смена effect (allow↔deny) на существующей
+    строке апдейтит её и эмитит `resource_permission.grant`.
     """
     audit_details = {
         "resource_type": resource_type, "resource_id": resource_id,
-        "role": role, "action": action,
+        "role": role, "action": action, "effect": effect,
     }
     # 1. ролевой gate (account_admin — мета-админ, ему не нужен).
     if not _is_matrix_meta_admin(identity):
@@ -180,6 +232,16 @@ async def grant_action(
             await permissions.require_action(
                 db, identity, EntityType.PERMISSION, Action.PERMISSION_GRANT
             )
+    # системная роль admin/guest — неизменяема (ни allow, ни deny).
+    _reject_system_role(
+        role, audit_action="resource_permission.grant",
+        resource_type=resource_type, resource_id=resource_id,
+        audit_details=audit_details,
+    )
+    _validate_effect(
+        effect, resource_type=resource_type, resource_id=resource_id,
+        audit_details=audit_details,
+    )
     # 2. resource_type + action-инстанс-грантуемость.
     _validate_resource_type(resource_type)
     if not is_instance_grantable(resource_type, action):
@@ -202,9 +264,23 @@ async def grant_action(
         audit_action="resource_permission.grant", audit_details=audit_details,
     )
     scope_details = {**audit_details, "department_id": department_id}
-    # 4. идемпотентность.
+    # 4. идемпотентность по effect. Unique-индекс не включает effect, поэтому на
+    #    (scope) живёт максимум одна строка: тот же effect → no-op, иной →
+    #    апдейт allow↔deny (PUT-upsert семантика для override-флага).
     existing = await repo.get(db, resource_type, resource_id, role, action, department_id)
     if existing is not None:
+        if existing.effect == effect:
+            return existing
+        existing.effect = effect
+        existing.granted_by = identity.user_id
+        await db.commit()
+        await db.refresh(existing)
+        audit_service.emit(
+            "resource_permission.grant",
+            target_id=existing.id, target_type=resource_type,
+            status="success", allowed=True,
+            details={**scope_details, "previous_effect": "allow" if effect == "deny" else "deny"},
+        )
         return existing
     try:
         obj = await repo.grant(
@@ -216,6 +292,7 @@ async def grant_action(
             action=action,
             granted_by=identity.user_id,
             department_id=department_id,
+            effect=effect,
         )
         await db.commit()
     except IntegrityError as exc:
@@ -266,6 +343,11 @@ async def revoke_action(
             await permissions.require_action(
                 db, identity, EntityType.PERMISSION, Action.PERMISSION_REVOKE
             )
+    _reject_system_role(
+        role, audit_action="resource_permission.revoke",
+        resource_type=resource_type, resource_id=resource_id,
+        audit_details=audit_details,
+    )
     _validate_resource_type(resource_type)
     department_id = await _resolve_resource_scope(
         db, identity, resource_type, resource_id,
@@ -349,7 +431,13 @@ async def propagate(
     source_grants = await repo.list_all_for_resource_unscoped(
         db, resource_type, source_resource_id
     )
-    source_pairs: set[tuple[str, str]] = {(g.role, g.action) for g in source_grants}
+    # (role, action) -> effect образца. Системные роли в инстанс-ACL не живут,
+    # но на всякий случай исключаем — их матрица неизменяема.
+    source_effects: dict[tuple[str, str], str] = {
+        (g.role, g.action): g.effect
+        for g in source_grants
+        if not is_system_role(g.role)
+    }
 
     summaries: list[dict] = []
     seen: set[str] = set()
@@ -375,25 +463,39 @@ async def propagate(
             )
 
         existing = await repo.list_all_for_resource_unscoped(db, resource_type, target_id)
-        existing_pairs: set[tuple[str, str]] = {(g.role, g.action) for g in existing}
+        existing_by_pair: dict[tuple[str, str], ResourceRolePermission] = {
+            (g.role, g.action): g for g in existing
+        }
 
-        to_add = source_pairs - existing_pairs
-        for role, action in sorted(to_add):
-            await repo.grant(
-                db,
-                permission_id=new_id(),
-                resource_type=resource_type,
-                resource_id=target_id,
-                role=role,
-                action=action,
-                granted_by=identity.user_id,
-                department_id=target_dept,
-            )
+        added = 0
+        for (role, action), effect in sorted(source_effects.items()):
+            cur = existing_by_pair.get((role, action))
+            if cur is None:
+                await repo.grant(
+                    db,
+                    permission_id=new_id(),
+                    resource_type=resource_type,
+                    resource_id=target_id,
+                    role=role,
+                    action=action,
+                    granted_by=identity.user_id,
+                    department_id=target_dept,
+                    effect=effect,
+                )
+                added += 1
+            elif mode == "mirror" and cur.effect != effect and cur.department_id == target_dept:
+                # Зеркалим и effect: приводим существующую per-dept строку цели к
+                # эффекту образца (allow↔deny). System-wide (NULL) строки вне
+                # dept-scope не трогаем.
+                cur.effect = effect
+                cur.granted_by = identity.user_id
+                added += 1
 
         removed = 0
         if mode == "mirror":
-            to_remove = existing_pairs - source_pairs
-            for role, action in to_remove:
+            for (role, action) in existing_by_pair:
+                if (role, action) in source_effects:
+                    continue
                 # Снимаем per-dept грант цели (scope = отдел ресурса). API других
                 # инстанс-грантов и не создаёт, поэтому mirror приводит набор к
                 # копии образца. Возможные system-wide (NULL) seed-строки mirror
@@ -403,7 +505,7 @@ async def propagate(
                 )
         summaries.append({
             "resource_id": target_id,
-            "added": len(to_add),
+            "added": added,
             "removed": removed,
         })
 
@@ -415,7 +517,7 @@ async def propagate(
         details={
             **audit_details,
             "department_id": source_dept,
-            "source_grant_count": len(source_pairs),
+            "source_grant_count": len(source_effects),
             "targets_applied": len(summaries),
             "total_added": sum(s["added"] for s in summaries),
             "total_removed": sum(s["removed"] for s in summaries),
@@ -425,6 +527,6 @@ async def propagate(
         "source_resource_id": source_resource_id,
         "resource_type": resource_type,
         "mode": mode,
-        "source_grant_count": len(source_pairs),
+        "source_grant_count": len(source_effects),
         "targets": summaries,
     }

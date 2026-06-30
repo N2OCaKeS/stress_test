@@ -204,7 +204,7 @@ class TestGrantRevokeCrossRole:
     ):
         """dep_a admin пытается выдать грант с target_department_id=dep_b → 403."""
         resp = await client.put(
-            f"{BASE}/server/guest/view",
+            f"{BASE}/server/operator/view",
             headers=_hdr(admin_token),
             json={"target_department_id": "dep_b"},
         )

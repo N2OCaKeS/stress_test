@@ -41,6 +41,7 @@ def _identity(
 
 async def _grant_instance(
     db, *, resource_type, resource_id, role, action, department_id="dep_a",
+    effect="allow",
 ):
     await rrp_repo.grant(
         db,
@@ -51,6 +52,7 @@ async def _grant_instance(
         action=action,
         granted_by=None,
         department_id=department_id,
+        effect=effect,
     )
     await db.flush()
 
@@ -115,6 +117,124 @@ class TestHasResourceAction:
         identity = _identity(roles=[])
         assert not await permissions.has_resource_action(
             db, identity, EntityType.SERVER, srv.id, Action.POWER_STATUS
+        )
+
+
+class TestDenyOverride:
+    async def test_deny_overrides_typewide_on_one_server(self, db, make_server):
+        """Тип-wide allow power_on, но инстанс deny на Y → на Y запрет, на X — ок."""
+        srv_x = await make_server(department_id="dep_a")
+        srv_y = await make_server(department_id="dep_a")
+        await _grant_typewide(
+            db, entity_type=EntityType.SERVER, role="ops",
+            action=Action.POWER_ON, department_id="dep_a",
+        )
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER, resource_id=srv_y.id,
+            role="ops", action=Action.POWER_ON, effect="deny",
+        )
+        identity = _identity(roles=["ops"])
+        assert await permissions.has_resource_action(
+            db, identity, EntityType.SERVER, srv_x.id, Action.POWER_ON
+        )
+        assert not await permissions.has_resource_action(
+            db, identity, EntityType.SERVER, srv_y.id, Action.POWER_ON
+        )
+
+    async def test_second_role_allow_survives_other_role_deny(self, db, make_server):
+        """deny одной роли не глобален: вторая роль с allow на Y → доступ есть."""
+        srv_y = await make_server(department_id="dep_a")
+        # ops: тип-wide allow + инстанс deny на Y.
+        await _grant_typewide(
+            db, entity_type=EntityType.SERVER, role="ops",
+            action=Action.POWER_ON, department_id="dep_a",
+        )
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER, resource_id=srv_y.id,
+            role="ops", action=Action.POWER_ON, effect="deny",
+        )
+        # ops2: инстанс allow на Y.
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER, resource_id=srv_y.id,
+            role="ops2", action=Action.POWER_ON, effect="allow",
+        )
+        identity = _identity(roles=["ops", "ops2"])
+        assert await permissions.has_resource_action(
+            db, identity, EntityType.SERVER, srv_y.id, Action.POWER_ON
+        )
+
+    async def test_instance_allow_over_base_without_typewide(self, db, make_server):
+        """allow поверх базы как раньше: без тип-wide инстанс-allow даёт action."""
+        srv = await make_server(department_id="dep_a")
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER, resource_id=srv.id,
+            role="ops", action=Action.POWER_ON, effect="allow",
+        )
+        identity = _identity(roles=["ops"])
+        assert await permissions.has_resource_action(
+            db, identity, EntityType.SERVER, srv.id, Action.POWER_ON
+        )
+
+    async def test_deny_view_blocks_effective_view(self, db, make_server):
+        """deny на view у единственной роли убирает эффективный view (видимость)."""
+        srv = await make_server(department_id="dep_a")
+        await _grant_typewide(
+            db, entity_type=EntityType.SERVER, role="ops",
+            action=Action.VIEW, department_id="dep_a",
+        )
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER, resource_id=srv.id,
+            role="ops", action=Action.VIEW, effect="deny",
+        )
+        identity = _identity(roles=["ops"])
+        assert not await permissions.has_resource_action(
+            db, identity, EntityType.SERVER, srv.id, Action.VIEW
+        )
+
+    async def test_deny_only_row_does_not_extend_visibility(self, db, make_server):
+        """deny-строка не даёт инстанс-видимости (has_resource_grant False)."""
+        srv = await make_server(department_id="dep_a")
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER, resource_id=srv.id,
+            role="ops", action=Action.VIEW, effect="deny", department_id="dep_b",
+        )
+        identity = _identity(roles=["ops"], department_id="dep_b")
+        assert not await permissions.has_resource_grant(
+            db, identity, EntityType.SERVER, srv.id
+        )
+
+    async def test_account_deny_overrides_typewide(self, db, make_server, make_account):
+        """Тип-wide view_password, но инстанс deny на учётке → нет доступа."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="svc")
+        await _grant_typewide(
+            db, entity_type=EntityType.SERVER_ACCOUNT, role="ops",
+            action=Action.VIEW_PASSWORD, department_id="dep_a",
+        )
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER_ACCOUNT, resource_id=acc.id,
+            role="ops", action=Action.VIEW_PASSWORD, effect="deny",
+        )
+        identity = _identity(roles=["ops"])
+        assert not await permissions.has_account_action(
+            db, identity, acc, Action.VIEW_PASSWORD
+        )
+
+    async def test_account_deny_does_not_block_dept_admin(
+        self, db, make_server, make_account,
+    ):
+        """department_admin-bypass не зависит от инстанс-deny на роли."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="svc")
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER_ACCOUNT, resource_id=acc.id,
+            role="ops", action=Action.VIEW_PASSWORD, effect="deny",
+        )
+        dep_admin = _identity(
+            roles=["ops"], department_id="dep_a", platform_role="department_admin",
+        )
+        assert await permissions.has_account_action(
+            db, dep_admin, acc, Action.VIEW_PASSWORD
         )
 
 

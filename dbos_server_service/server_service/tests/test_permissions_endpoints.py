@@ -225,9 +225,9 @@ class TestDepartmentAdminFullCycle:
     async def test_dept_admin_full_grant_revoke_cycle(self, client, admin_token):
         await client.get(BASE, headers=_hdr(admin_token))
         await client.get(f"{BASE}/server", headers=_hdr(admin_token))
-        grant = await client.put(f"{BASE}/server/guest/view", headers=_hdr(admin_token))
+        grant = await client.put(f"{BASE}/server/cycle_role/view", headers=_hdr(admin_token))
         assert grant.status_code == 200
-        rev = await client.delete(f"{BASE}/server/guest/view", headers=_hdr(admin_token))
+        rev = await client.delete(f"{BASE}/server/cycle_role/view", headers=_hdr(admin_token))
         assert rev.status_code == 200
 
 
@@ -337,7 +337,7 @@ class TestAccountAdminMatrixMetaAdmin:
             monkeypatch, "src.services.permission_service.audit_service.emit",
         )
         resp = await client.put(
-            f"{BASE}/server/guest/view",
+            f"{BASE}/server/audit_role/view",
             headers=_hdr(account_admin_token),
             json={"target_department_id": dept_a},
         )

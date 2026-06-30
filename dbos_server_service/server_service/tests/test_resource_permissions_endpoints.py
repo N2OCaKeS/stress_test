@@ -559,3 +559,148 @@ class TestGuestMetadataVsSensitive:
         """guest не имеет server_account.view → список учёток 403."""
         resp = await client.get(ACCOUNTS, headers=_hdr(guest_token_a))
         assert_error(resp, 403, "PERMISSION_DENIED")
+
+
+# ── effect: allow / deny override ────────────────────────────────────────────
+
+
+class TestEffectOverride:
+    async def test_grant_default_effect_allow(self, client, admin_token, make_server):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.put(
+            _res_url("server", srv.id, "reader", "power_on"),
+            headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["effect"] == "allow"
+
+    async def test_grant_effect_deny_roundtrips(self, client, admin_token, make_server):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.put(
+            _res_url("server", srv.id, "reader", "power_on") + "?effect=deny",
+            headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["effect"] == "deny"
+        lst = await client.get(
+            f"{BASE}/by-resource/server/{srv.id}", headers=_hdr(admin_token),
+        )
+        row = next(
+            i for i in lst.json()["items"]
+            if i["role"] == "reader" and i["action"] == "power_on"
+        )
+        assert row["effect"] == "deny"
+
+    async def test_grant_switch_allow_to_deny_updates_row(
+        self, client, admin_token, make_server,
+    ):
+        srv = await make_server(department_id="dep_a")
+        first = await client.put(
+            _res_url("server", srv.id, "reader", "power_on"),
+            headers=_hdr(admin_token),
+        )
+        second = await client.put(
+            _res_url("server", srv.id, "reader", "power_on") + "?effect=deny",
+            headers=_hdr(admin_token),
+        )
+        assert first.json()["effect"] == "allow"
+        assert second.json()["effect"] == "deny"
+        # та же строка (id сохраняется), effect обновлён.
+        assert first.json()["id"] == second.json()["id"]
+
+    async def test_invalid_effect_rejected(self, client, admin_token, make_server):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.put(
+            _res_url("server", srv.id, "reader", "power_on") + "?effect=bogus",
+            headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 422
+
+
+class TestPropagateEffect:
+    async def test_propagate_copies_deny_effect(
+        self, client, admin_token, make_server,
+    ):
+        src = await make_server(department_id="dep_a")
+        dst = await make_server(department_id="dep_a")
+        await client.put(
+            _res_url("server", src.id, "reader", "power_on") + "?effect=deny",
+            headers=_hdr(admin_token),
+        )
+        resp = await client.post(
+            f"{BASE}/server/{src.id}/propagate",
+            headers=_hdr(admin_token),
+            json={"target_resource_ids": [dst.id], "mode": "merge"},
+        )
+        assert resp.status_code == 200, resp.text
+        lst = await client.get(
+            f"{BASE}/by-resource/server/{dst.id}", headers=_hdr(admin_token),
+        )
+        row = next(
+            i for i in lst.json()["items"]
+            if i["role"] == "reader" and i["action"] == "power_on"
+        )
+        assert row["effect"] == "deny"
+
+
+# ── system role lock: admin / guest immutable ────────────────────────────────
+
+
+class TestSystemRoleLock:
+    async def test_resource_grant_on_guest_rejected(
+        self, client, admin_token, make_server,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.put(
+            _res_url("server", srv.id, "guest", "power_on"),
+            headers=_hdr(admin_token),
+        )
+        assert_error(resp, 409, "SYSTEM_ROLE_IMMUTABLE")
+
+    async def test_resource_grant_on_admin_rejected(
+        self, client, admin_token, make_server,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.put(
+            _res_url("server", srv.id, "admin", "power_on"),
+            headers=_hdr(admin_token),
+        )
+        assert_error(resp, 409, "SYSTEM_ROLE_IMMUTABLE")
+
+    async def test_resource_revoke_on_guest_rejected(
+        self, client, admin_token, make_server,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.delete(
+            _res_url("server", srv.id, "guest", "power_on"),
+            headers=_hdr(admin_token),
+        )
+        assert_error(resp, 409, "SYSTEM_ROLE_IMMUTABLE")
+
+    async def test_resource_grant_on_custom_role_ok(
+        self, client, admin_token, make_server,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.put(
+            _res_url("server", srv.id, "custom_role", "power_on"),
+            headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 200, resp.text
+
+    async def test_matrix_grant_on_guest_rejected(self, client, admin_token):
+        resp = await client.put(
+            f"{PERMS}/server/guest/view", headers=_hdr(admin_token),
+        )
+        assert_error(resp, 409, "SYSTEM_ROLE_IMMUTABLE")
+
+    async def test_matrix_revoke_on_admin_rejected(self, client, admin_token):
+        resp = await client.delete(
+            f"{PERMS}/server/admin/view", headers=_hdr(admin_token),
+        )
+        assert_error(resp, 409, "SYSTEM_ROLE_IMMUTABLE")
+
+    async def test_matrix_grant_on_custom_role_ok(self, client, admin_token):
+        resp = await client.put(
+            f"{PERMS}/server/custom_matrix_role/view", headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 200, resp.text

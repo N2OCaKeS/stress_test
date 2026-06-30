@@ -15,6 +15,13 @@ class ResourcePermissionResponse(BaseModel):
     resource_id: str = Field(description="ID конкретного ресурса (srv_ / acc_).")
     role: str = Field(description="Роль, которой выдан action на этот ресурс.")
     action: str = Field(description="Action: view / power_on / view_password / ...")
+    effect: str = Field(
+        default="allow",
+        description=(
+            "allow — добавляет право поверх тип-wide матрицы; "
+            "deny — запрещает его этой роли на этом ресурсе (override базы)."
+        ),
+    )
     department_id: str | None = Field(
         default=None,
         description="Scope: None — system-wide; иначе — per-department (отдел ресурса).",

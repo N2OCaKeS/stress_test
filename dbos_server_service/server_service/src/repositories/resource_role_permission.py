@@ -33,6 +33,44 @@ def _scope_clause(department_id: str | None):
     return ResourceRolePermission.department_id == department_id
 
 
+async def role_effects_for_action(
+    db: AsyncSession,
+    resource_type: str,
+    resource_id: str,
+    roles: list[str],
+    action: str,
+    department_id: str | None,
+) -> dict[str, str]:
+    """Эффект инстанс-строк `(resource, action)` по каждой роли caller'а.
+
+    Возвращает `{role: "deny"}` если у роли есть хоть одна `deny`-строка на этот
+    ресурс+action (в её dept-scope), иначе `{role: "allow"}` если есть только
+    `allow`. Роли без инстанс-строк в словарь не попадают (за них отвечает база).
+    deny внутри одной роли всегда перекрывает allow.
+    """
+    if not roles:
+        return {}
+    stmt = select(
+        ResourceRolePermission.role,
+        ResourceRolePermission.effect,
+    ).where(
+        ResourceRolePermission.resource_type == resource_type,
+        ResourceRolePermission.resource_id == resource_id,
+        ResourceRolePermission.role.in_(roles),
+        ResourceRolePermission.action == action,
+        _dept_match_clause(department_id),
+    )
+    out: dict[str, str] = {}
+    for role, effect in (await db.execute(stmt)).all():
+        if out.get(role) == "deny":
+            continue
+        if effect == "deny":
+            out[role] = "deny"
+        elif role not in out:
+            out[role] = "allow"
+    return out
+
+
 async def has_resource_action(
     db: AsyncSession,
     resource_type: str,
@@ -41,7 +79,11 @@ async def has_resource_action(
     action: str,
     department_id: str | None,
 ) -> bool:
-    """True iff любая из ролей caller'а имеет инстанс-грант `action` на ресурс."""
+    """True iff любая из ролей caller'а имеет инстанс-ALLOW `action` на ресурс.
+
+    deny-строки сюда не попадают — это голый «есть ли allow-грант» lookup;
+    precedence (deny над тип-wide базой) разбирается в `services/permissions`.
+    """
     if not roles:
         return False
     stmt = (
@@ -51,6 +93,7 @@ async def has_resource_action(
             ResourceRolePermission.resource_id == resource_id,
             ResourceRolePermission.role.in_(roles),
             ResourceRolePermission.action == action,
+            ResourceRolePermission.effect == "allow",
             _dept_match_clause(department_id),
         )
         .limit(1)
@@ -65,7 +108,11 @@ async def effective_resource_actions(
     roles: list[str],
     department_id: str | None,
 ) -> set[str]:
-    """Set инстанс-грантованных действий для ролей caller'а на ресурсе."""
+    """Set инстанс-ALLOW действий для ролей caller'а на ресурсе.
+
+    Только `allow`-строки — это «что добавлено инстансом». Учёт deny и базы —
+    в `services/permissions.effective_resource_actions`.
+    """
     if not roles:
         return set()
     stmt = (
@@ -74,6 +121,7 @@ async def effective_resource_actions(
             ResourceRolePermission.resource_type == resource_type,
             ResourceRolePermission.resource_id == resource_id,
             ResourceRolePermission.role.in_(roles),
+            ResourceRolePermission.effect == "allow",
             _dept_match_clause(department_id),
         )
         .distinct()
@@ -89,17 +137,19 @@ async def resource_ids_with_any_grant(
     *,
     candidate_ids: list[str] | None = None,
 ) -> set[str]:
-    """Множество resource_id, на которые у ролей caller'а есть хоть один грант.
+    """Множество resource_id, на которые у ролей caller'а есть инстанс-ALLOW.
 
-    Для расширения видимости: ресурс виден, если на него есть инстанс-грант.
-    `candidate_ids` сужает выборку до конкретного набора (например, до id'шников
-    одной страницы списка); None — без ограничения.
+    Для расширения видимости: ресурс виден, если на него есть allow-грант.
+    deny-строки видимость не дают (и не отнимают base-видимость своего отдела —
+    она структурная). `candidate_ids` сужает выборку до конкретного набора
+    (например, до id'шников одной страницы списка); None — без ограничения.
     """
     if not roles:
         return set()
     stmt = select(ResourceRolePermission.resource_id).where(
         ResourceRolePermission.resource_type == resource_type,
         ResourceRolePermission.role.in_(roles),
+        ResourceRolePermission.effect == "allow",
         _dept_match_clause(department_id),
     )
     if candidate_ids is not None:
@@ -204,6 +254,7 @@ async def grant(
     action: str,
     granted_by: str | None,
     department_id: str | None,
+    effect: str = "allow",
 ) -> ResourceRolePermission:
     """INSERT инстанс-гранта. Scope выбирает caller. commit — на caller'е."""
     obj = ResourceRolePermission(
@@ -214,6 +265,7 @@ async def grant(
         action=action,
         granted_by=granted_by,
         department_id=department_id,
+        effect=effect,
     )
     db.add(obj)
     await db.flush()

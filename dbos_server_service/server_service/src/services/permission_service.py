@@ -36,6 +36,7 @@ from src.core.constants import (
     EntityType,
     ENTITY_ACTIONS,
     PlatformRole,
+    is_system_role,
     is_valid_action,
 )
 from src.core.permission_catalog import (
@@ -162,6 +163,34 @@ def _resolve_target_department_id(
             },
         )
     return actor_dept
+
+
+def _reject_system_role(
+    role: str, *, audit_action: str, audit_details: dict
+) -> None:
+    """Отбить попытку править матрицу системной роли (`admin`/`guest`).
+
+    Их набор прав фиксирован (admin=всё, guest=server.view) и неизменяем через
+    API. worker_bot системным не считается — его узкие гранты остаются под
+    управлением.
+    """
+    if not is_system_role(role):
+        return
+    audit_service.emit(
+        audit_action,
+        target_type="entity_permission",
+        status="failure",
+        allowed=True,
+        details={**audit_details, "reason": "system_role_immutable"},
+    )
+    raise ConflictError(
+        error_code="SYSTEM_ROLE_IMMUTABLE",
+        message=(
+            f"System role '{role}' has a fixed permission matrix and cannot be "
+            "modified"
+        ),
+        details={"role": role},
+    )
 
 
 _PLATFORM_GLOBAL_VIEWERS: frozenset[PlatformRole] = frozenset(
@@ -320,6 +349,10 @@ async def grant_action(
             await permissions.require_action(
                 db, identity, EntityType.PERMISSION, Action.PERMISSION_GRANT
             )
+    # системные роли admin/guest неизменяемы — отбиваем до dept-resolution.
+    _reject_system_role(
+        role, audit_action="permission.grant", audit_details=audit_details
+    )
     # 2. определяем department-scope (и enforce'им изоляцию для не-account_admin)
     department_id = _resolve_target_department_id(
         identity,
@@ -410,6 +443,9 @@ async def revoke_action(
             await permissions.require_action(
                 db, identity, EntityType.PERMISSION, Action.PERMISSION_REVOKE
             )
+    _reject_system_role(
+        role, audit_action="permission.revoke", audit_details=audit_details
+    )
     department_id = _resolve_target_department_id(
         identity,
         target_department_id,

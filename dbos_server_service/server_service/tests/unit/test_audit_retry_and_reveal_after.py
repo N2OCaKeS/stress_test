@@ -628,6 +628,9 @@ def _sa_view_stubs(monkeypatch):
     async def fake_has_action(*a, **k):
         return True
 
+    async def fake_has_account_action(*a, **k):
+        return True
+
     async def fake_require(*a, **k):
         return None
 
@@ -639,6 +642,9 @@ def _sa_view_stubs(monkeypatch):
 
     monkeypatch.setattr(sa_svc.audit_service, "emit", fake_emit)
     monkeypatch.setattr(sa_svc.permissions, "has_action", fake_has_action)
+    monkeypatch.setattr(
+        sa_svc.permissions, "has_account_action", fake_has_account_action
+    )
     monkeypatch.setattr(sa_svc.permissions, "require_action", fake_require)
     monkeypatch.setattr(sa_svc, "_load_account_visible", fake_load)
     monkeypatch.setattr(sa_svc.repo, "get_by_id", fake_get_by_id)
@@ -664,6 +670,10 @@ async def test_server_account_get_no_success_if_reveal_fails(
 
     class _Identity:
         department_id = "dep_a"
+        platform_role = None
+
+        def roles_for_service(self, _svc):
+            return []
 
     with pytest.raises(AppException):
         await sa_svc.get_account(db=None, identity=_Identity(), account_id="acc_1")

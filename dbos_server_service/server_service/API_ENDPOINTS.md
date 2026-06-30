@@ -117,6 +117,7 @@ POST-CREATE эндпоинты (`POST /servers`, `POST /server-accounts`, `POST 
 | `SERVER_DUPLICATE` / `IPMI_DUPLICATE` | 409 | UNIQUE на create |
 | `OS_VERSION_DUPLICATE` | 409 | UNIQUE(name) на create/update os-версии |
 | `RESOURCE_PERMISSION_ALREADY_EXISTS` | 409 | инстанс-ACL: гонка на UNIQUE при grant |
+| `SYSTEM_ROLE_IMMUTABLE` | 409 | grant/revoke прав на системную роль `admin`/`guest` (тип-wide или инстанс) |
 | `OS_VERSION_IN_USE` | 409 | delete os-версии, на которую ссылается сервер (FK RESTRICT) |
 | `SERVER_DECOMMISSIONED` | 409 | dispatch-операция на списанный сервер |
 | `TASK_IDEMPOTENT_CONFLICT` | 409 | гонка двух POST с одним Idempotency-Key |
@@ -592,13 +593,13 @@ Errors: `PERMISSION_DENIED` (403), `UNKNOWN_ENTITY_TYPE` (422).
 
 ### `PUT /permissions/{entity_type}/{role}/{action}`
 
-Auth: Bearer + `(permission, *, permission_grant)`. Body: опц. `{target_department_id}` (caller обязан передать свой dept или опустить). Идемпотентно. CRITICAL audit.
+Auth: Bearer + `(permission, *, permission_grant)`. Body: опц. `{target_department_id}` (caller обязан передать свой dept или опустить). Идемпотентно. Системные роли `admin`/`guest` неизменяемы → `409 SYSTEM_ROLE_IMMUTABLE`. CRITICAL audit.
 
-Errors: `PERMISSION_DENIED` / `DEPARTMENT_ISOLATION` (403), `PERMISSION_ALREADY_EXISTS` (409), `INVALID_ACTION_FOR_ENTITY` (422).
+Errors: `PERMISSION_DENIED` / `DEPARTMENT_ISOLATION` (403), `SYSTEM_ROLE_IMMUTABLE` / `PERMISSION_ALREADY_EXISTS` (409), `INVALID_ACTION_FOR_ENTITY` (422).
 
 ### `DELETE /permissions/{entity_type}/{role}/{action}`
 
-Auth: Bearer + `(permission, *, permission_revoke)`. Query: `target_department_id?`. CRITICAL audit.
+Auth: Bearer + `(permission, *, permission_revoke)`. Query: `target_department_id?`. Системные роли `admin`/`guest` неизменяемы → `409 SYSTEM_ROLE_IMMUTABLE`. CRITICAL audit.
 
 Errors: `PERMISSION_DENIED` / `DEPARTMENT_ISOLATION` (403), `PERMISSION_NOT_FOUND` (404).
 
@@ -606,7 +607,9 @@ Errors: `PERMISSION_DENIED` / `DEPARTMENT_ISOLATION` (403), `PERMISSION_NOT_FOUN
 
 ## Resource permissions (`/resource-permissions`)
 
-Инстанс-уровневый ACL — точечные гранты роли на КОНКРЕТНЫЙ ресурс (`server` / `server_account`) поверх тип-wide матрицы `entity_permissions`. Слой аддитивный: эффективные права на ресурс = тип-wide объединение ∪ инстанс-гранты этого ресурса. Deny-грантов нет.
+Инстанс-уровневый ACL — точечные гранты роли на КОНКРЕТНЫЙ ресурс (`server` / `server_account`) поверх тип-wide матрицы `entity_permissions`. Каждая строка несёт `effect` ∈ `{allow, deny}`. Эффективное право роли на ресурс резолвится с precedence: инстанс `deny` перекрывает тип-wide базу для этой роли, инстанс `allow` добавляет право, иначе действует тип-wide матрица. Итог для caller'а — OR по его ролям (deny одной роли убирает только её вклад, другая роль может разрешить).
+
+- **Системные роли `admin`/`guest` неизменяемы.** Любой grant/revoke на них (как инстанс, так и тип-wide через `/permissions`) → `409 SYSTEM_ROLE_IMMUTABLE`. `admin` = всё, `guest` = `server.view` — фиксированы. `worker_bot` системным не считается (его гранты управляются).
 
 - **resource_type** ∈ `{server, server_account}` (вне этого набора → `422 UNKNOWN_RESOURCE_TYPE`). `os_version` (глобальный каталог), `ipmi_controller` (живёт под сервером), `permission`/`task` инстанс-ACL не поддерживают.
 - **Инстанс-гранты всегда per-department:** `department_id` строки = отдел самого ресурса. System-wide инстанс-грантов через API нет.
@@ -630,21 +633,21 @@ Errors: `PERMISSION_DENIED` (403), `UNKNOWN_RESOURCE_TYPE` (422 — если п�
 
 ### `PUT /resource-permissions/{resource_type}/{resource_id}/{role}/{action}`
 
-Auth: Bearer + `(permission, *, permission_grant)` либо account_admin. Выдать инстанс-грант `action` роли `role` на ресурс. Идемпотентно (повтор → возврат существующей строки без INSERT и без audit). Scope строки = отдел ресурса. Ответ — `ResourcePermissionResponse` (`{id, resource_type, resource_id, role, action, department_id, granted_by, created_at, updated_at}`). CRITICAL audit `resource_permission.grant`.
+Auth: Bearer + `(permission, *, permission_grant)` либо account_admin. Выдать инстанс-грант `action` роли `role` на ресурс. Query: `effect` ∈ `{allow, deny}` (default `allow`). Идемпотентно по effect: повтор того же `(scope, effect)` → возврат строки без изменений и без audit; смена effect (allow↔deny) на существующей строке апдейтит её (id сохраняется) и эмитит audit. Scope строки = отдел ресурса. Ответ — `ResourcePermissionResponse` (`{id, resource_type, resource_id, role, action, effect, department_id, granted_by, created_at, updated_at}`). CRITICAL audit `resource_permission.grant` (в `details` — `effect`).
 
-Errors: `PERMISSION_DENIED` (403), `RESOURCE_NOT_FOUND` (404 — ресурс не найден / чужой отдел), `RESOURCE_PERMISSION_ALREADY_EXISTS` (409 — гонка на UNIQUE), `UNKNOWN_RESOURCE_TYPE` / `ACTION_NOT_INSTANCE_GRANTABLE` (422).
+Errors: `PERMISSION_DENIED` (403), `RESOURCE_NOT_FOUND` (404 — ресурс не найден / чужой отдел), `SYSTEM_ROLE_IMMUTABLE` (409 — role ∈ `{admin, guest}`) / `RESOURCE_PERMISSION_ALREADY_EXISTS` (409 — гонка на UNIQUE), `UNKNOWN_RESOURCE_TYPE` / `ACTION_NOT_INSTANCE_GRANTABLE` / `INVALID_EFFECT` (422 — `effect` вне `{allow, deny}`; обычно ловится pattern-валидацией FastAPI как `VALIDATION_ERROR`).
 
 ### `DELETE /resource-permissions/{resource_type}/{resource_id}/{role}/{action}`
 
 Auth: Bearer + `(permission, *, permission_revoke)` либо account_admin. Снять инстанс-грант. Ответ — `OkResponse`. CRITICAL audit `resource_permission.revoke`.
 
-Errors: `PERMISSION_DENIED` (403), `RESOURCE_NOT_FOUND` (404 — ресурс не найден / чужой отдел) / `RESOURCE_PERMISSION_NOT_FOUND` (404 — такой строки нет), `UNKNOWN_RESOURCE_TYPE` (422).
+Errors: `PERMISSION_DENIED` (403), `RESOURCE_NOT_FOUND` (404 — ресурс не найден / чужой отдел) / `RESOURCE_PERMISSION_NOT_FOUND` (404 — такой строки нет), `SYSTEM_ROLE_IMMUTABLE` (409 — role ∈ `{admin, guest}`), `UNKNOWN_RESOURCE_TYPE` (422).
 
 ### `POST /resource-permissions/{resource_type}/{source_resource_id}/propagate`
 
 Auth: Bearer + `(permission, *, permission_grant)` (для `mode=mirror` — дополнительно `permission_revoke`) либо account_admin. Копирует ВСЕ инстанс-гранты ресурса-образца на список целей того же типа.
 
-Body: `{"target_resource_ids": [...], "mode": "merge"|"mirror"}` (default `merge`; `target_resource_ids` — 1..500 элементов, сам образец из списка отбрасывается). `mode=merge` добавляет на каждую цель недостающие `(role, action)` образца, существующие не трогает; `mode=mirror` приводит цель к точной копии образца — добавляет недостающее И удаляет лишнее. Идемпотентно. Все цели обязаны быть в отделе образца, иначе `404 RESOURCE_NOT_FOUND`. CRITICAL audit `resource_permission.propagate`.
+Body: `{"target_resource_ids": [...], "mode": "merge"|"mirror"}` (default `merge`; `target_resource_ids` — 1..500 элементов, сам образец из списка отбрасывается). `mode=merge` добавляет на каждую цель недостающие `(role, action)` образца с их `effect`, существующие не трогает; `mode=mirror` приводит цель к точной копии образца — добавляет недостающее, переключает `effect` существующих под образец И удаляет лишнее. `effect` каждого гранта переносится. Идемпотентно. Все цели обязаны быть в отделе образца, иначе `404 RESOURCE_NOT_FOUND`. CRITICAL audit `resource_permission.propagate`.
 
 Ответ — `ResourcePropagateResponse`: `{source_resource_id, resource_type, mode, source_grant_count, targets: [{resource_id, added, removed}]}` (`removed` всегда 0 при `merge`).
 

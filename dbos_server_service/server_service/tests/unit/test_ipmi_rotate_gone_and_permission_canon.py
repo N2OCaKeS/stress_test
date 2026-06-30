@@ -264,7 +264,7 @@ class TestPermissionVisibilityCanon:
             service_roles={"server_service": ["admin"]},
         )
         resp = await client.put(
-            "/api/server/v1/permissions/server/admin/view",
+            "/api/server/v1/permissions/server/custom_role/view",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert resp.status_code in (403, 422)
@@ -279,7 +279,7 @@ class TestPermissionVisibilityCanon:
             service_roles={"server_service": ["admin"]},
         )
         resp = await client.delete(
-            "/api/server/v1/permissions/server/admin/view",
+            "/api/server/v1/permissions/server/custom_role/view",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert resp.status_code in (403, 404, 422)
@@ -292,7 +292,7 @@ class TestPermissionVisibilityCanon:
             service_roles={"server_service": ["admin"]},
         )
         resp = await client.put(
-            "/api/server/v1/permissions/server/admin/view",
+            "/api/server/v1/permissions/server/custom_role/view",
             headers={"Authorization": f"Bearer {token}"},
             json={"target_department_id": dept_b},
         )

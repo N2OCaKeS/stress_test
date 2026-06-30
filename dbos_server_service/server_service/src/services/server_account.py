@@ -188,9 +188,11 @@ async def _authorize_account_action(
         )
     )
 
-    if has_role:
-        # Ролевой путь: поведение как раньше — visibility-404 на невидимую цель.
-        if not visible:
+    if not visible:
+        # Невидимая цель. Держатель бланкетной роли получает 404 (enumeration-
+        # резистентность: existing-cross-dept неотличим от non-existent); без
+        # роли — единый 403 ниже, без existence-oracle'а.
+        if has_role:
             audit_service.emit(
                 audit_action,
                 target_id=account_id, target_type="server_account",
@@ -200,11 +202,11 @@ async def _authorize_account_action(
             raise NotFoundError(
                 error_code="ACCOUNT_NOT_FOUND", message="Server account not found"
             )
-        return account
-
-    # Без бланкетной роли — пройти может только department_admin своего отдела
-    # на видимую учётку (bypass внутри has_account_action).
-    if visible and await permissions.has_account_action(db, identity, account, action):
+    elif await permissions.has_account_action(db, identity, account, action):
+        # Видимая учётка + эффективное право (тип-wide/инстанс-allow с учётом
+        # deny, либо department_admin-bypass). Инстанс-deny на учётку снимает
+        # тип-wide allow роли — поэтому проверяем тут, а не короткозамыкаем на
+        # has_role.
         return account
 
     # Нет доступа (или цель невидима) — 403 без раскрытия
@@ -251,8 +253,9 @@ async def _authorize_account_action_any(
         if await permissions.has_action(db, identity, EntityType.SERVER_ACCOUNT, a):
             has_any_role = True
             break
-    if has_any_role:
-        if not visible:
+    if not visible:
+        # Невидимая цель: роль-holder → 404 (enumeration), иначе единый 403 ниже.
+        if has_any_role:
             audit_service.emit(
                 audit_action,
                 target_id=account_id, target_type="server_account",
@@ -262,8 +265,9 @@ async def _authorize_account_action_any(
             raise NotFoundError(
                 error_code="ACCOUNT_NOT_FOUND", message="Server account not found"
             )
-        return account
-    if visible:
+    else:
+        # Видимая учётка: проходит при эффективном праве хотя бы по одному
+        # action (deny-override учтён в has_account_action).
         for a in actions:
             if await permissions.has_account_action(db, identity, account, a):
                 return account

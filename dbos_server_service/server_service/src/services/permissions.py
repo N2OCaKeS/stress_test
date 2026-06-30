@@ -80,6 +80,45 @@ async def require_action(
     )
 
 
+async def _effective_resource_allow(
+    db: AsyncSession,
+    identity: IdentityContext,
+    resource_type: str,
+    resource_id: str,
+    action: str,
+) -> bool:
+    """Per-role precedence: инстанс-deny > инстанс-allow > тип-wide база.
+
+    Для каждой роли caller'а эффективное право на ЭТОТ ресурс:
+
+      * есть инстанс `deny`-строка → роль ЗАПРЕЩЕНА (её вклад снимается, базу
+        тип-wide эта роль тоже не даёт);
+      * иначе есть инстанс `allow`-строка → роль РАЗРЕШЕНА;
+      * иначе → базовое тип-wide право (`entity_permissions`).
+
+    Итог — OR по ролям: одна разрешающая роль даёт доступ, deny у другой роли
+    его не отбирает.
+    """
+    roles = identity.roles_for_service(SERVICE_NAME)
+    if not roles:
+        return False
+    effects = await resource_repo.role_effects_for_action(
+        db, resource_type, resource_id, roles, action,
+        department_id=identity.department_id,
+    )
+    undenied = [r for r in roles if effects.get(r) != "deny"]
+    if not undenied:
+        return False
+    # Любая неотклонённая роль с инстанс-allow — сразу доступ.
+    if any(effects.get(r) == "allow" for r in undenied):
+        return True
+    # Иначе — тип-wide база, но только для неотклонённых ролей.
+    base_roles = await repo.roles_with_action(
+        db, resource_type, undenied, action, department_id=identity.department_id
+    )
+    return bool(base_roles)
+
+
 async def has_resource_action(
     db: AsyncSession,
     identity: IdentityContext,
@@ -89,18 +128,12 @@ async def has_resource_action(
 ) -> bool:
     """True iff caller имеет `action` на КОНКРЕТНОМ ресурсе.
 
-    Аддитивно: тип-wide грант (`has_action`) **либо** инстанс-грант на этот
-    `(resource_type, resource_id, action)` через одну из ролей caller'а
-    (dept-scope-матч как в матрице). Deny-строк нет.
+    Override-модель с precedence (см. `_effective_resource_allow`): инстанс
+    `deny` перекрывает тип-wide базу для своей роли, инстанс `allow` добавляет
+    право, в остальном действует тип-wide матрица. Итог — OR по ролям caller'а.
     """
-    if await has_action(db, identity, resource_type, action):
-        return True
-    roles = identity.roles_for_service(SERVICE_NAME)
-    if not roles:
-        return False
-    return await resource_repo.has_resource_action(
-        db, resource_type, resource_id, roles, action,
-        department_id=identity.department_id,
+    return await _effective_resource_allow(
+        db, identity, resource_type, resource_id, action
     )
 
 
@@ -130,18 +163,27 @@ async def effective_resource_actions(
     resource_type: str,
     resource_id: str,
 ) -> set[str]:
-    """Union тип-wide и инстанс-грантованных действий caller'а на ресурсе.
+    """Эффективные действия caller'а на ресурсе с учётом deny-override.
 
     UI рисует кнопки на основе того, что caller может с конкретным объектом.
+    Кандидаты — union тип-wide действий и инстанс-allow; каждое прогоняется
+    через precedence, чтобы deny-строка убрала действие из набора.
     """
-    actions = await effective_actions(db, identity, resource_type)
     roles = identity.roles_for_service(SERVICE_NAME)
-    if roles:
-        actions = actions | await resource_repo.effective_resource_actions(
-            db, resource_type, resource_id, roles,
-            department_id=identity.department_id,
-        )
-    return actions
+    if not roles:
+        return set()
+    candidates = await effective_actions(db, identity, resource_type)
+    candidates = candidates | await resource_repo.effective_resource_actions(
+        db, resource_type, resource_id, roles,
+        department_id=identity.department_id,
+    )
+    allowed: set[str] = set()
+    for action in candidates:
+        if await _effective_resource_allow(
+            db, identity, resource_type, resource_id, action
+        ):
+            allowed.add(action)
+    return allowed
 
 
 async def has_resource_grant(
@@ -207,25 +249,20 @@ async def has_account_action(
 ) -> bool:
     """True iff caller имеет право на `action` для КОНКРЕТНОЙ учётки `account`.
 
-    Доступ к учётке резолвится ролями:
+    Доступ к учётке резолвится ролями с тем же precedence, что и
+    `has_resource_action` (инстанс-deny > инстанс-allow > тип-wide база):
 
-      * бланкетная роль отдела даёт `action` на server_account (как `has_action`);
+      * эффективное право хотя бы одной роли caller'а на ЭТУ учётку (инстанс
+        deny конкретной роли убирает её вклад, но другая роль может разрешить);
       ИЛИ
-      * инстанс-грант на ЭТУ учётку (`resource_role_permissions`) через одну из
-        ролей caller'а;
-      ИЛИ
-      * caller — `department_admin` своего отдела (bypass, видит/может всё со
-        всеми учётками отдела; service-роль `admin` покрыта ролевым путём выше).
+      * caller — `department_admin` своего отдела (платформенный bypass: видит/
+        может всё со всеми учётками отдела, инстанс-deny на роли его не касается).
 
     Dept-изоляция обеспечена тем, что caller дошёл до видимой ему учётки
     (visibility-404/инстанс-грант в сервисе).
     """
-    if await has_action(db, identity, "server_account", action):
-        return True
-    roles = identity.roles_for_service(SERVICE_NAME)
-    if roles and await resource_repo.has_resource_action(
-        db, "server_account", account.id, roles, action,
-        department_id=identity.department_id,
+    if await _effective_resource_allow(
+        db, identity, "server_account", account.id, action
     ):
         return True
     # department_admin своего отдела — bypass. Учётку он уже видит (dept-isolation

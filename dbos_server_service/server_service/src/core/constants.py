@@ -83,6 +83,19 @@ class ServiceRole(StrEnum):
     ADMIN = "admin"
 
 
+# Системные service-роли с фиксированной матрицей: `admin` (всё) и `guest`
+# (только server.view). Их набор прав не редактируется через API — ни тип-wide
+# (entity_permissions), ни инстанс-гранты (resource_role_permissions). worker_bot
+# сюда НЕ входит: это внутренний субъект, его узкие callback-гранты остаются
+# управляемыми.
+SYSTEM_SERVICE_ROLES: frozenset[str] = frozenset({ServiceRole.GUEST, ServiceRole.ADMIN})
+
+
+def is_system_role(role: str) -> bool:
+    """True iff `role` — системная (`admin`/`guest`) с неизменяемой матрицей."""
+    return role in SYSTEM_SERVICE_ROLES
+
+
 class PlatformRole(StrEnum):
     """Платформенные роли (приходят в `IdentityContext.platform_role`).
 

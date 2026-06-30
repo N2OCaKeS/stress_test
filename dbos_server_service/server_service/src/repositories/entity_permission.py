@@ -83,6 +83,41 @@ async def has_action(
     return (await db.execute(stmt)).scalar_one_or_none() is not None
 
 
+async def roles_with_action(
+    db: AsyncSession,
+    entity_type: str,
+    roles: list[str],
+    action: str,
+    department_id: str | None,
+) -> set[str]:
+    """Подмножество `roles`, у которых есть тип-wide `action` на `entity_type`.
+
+    Per-role срез `has_action`: нужен инстанс-ACL'у, чтобы считать базовое
+    тип-wide право отдельно для каждой роли caller'а (deny одной роли не должен
+    гасить базу другой). Scope-матч как в `has_action`.
+    """
+    if not roles:
+        return set()
+    if department_id is None:
+        dept_filter = EntityPermission.department_id.is_(None)
+    else:
+        dept_filter = or_(
+            EntityPermission.department_id.is_(None),
+            EntityPermission.department_id == department_id,
+        )
+    stmt = (
+        select(EntityPermission.role)
+        .where(
+            EntityPermission.entity_type == entity_type,
+            EntityPermission.role.in_(roles),
+            EntityPermission.action == action,
+            dept_filter,
+        )
+        .distinct()
+    )
+    return set((await db.execute(stmt)).scalars())
+
+
 async def effective_actions(
     db: AsyncSession,
     entity_type: str,

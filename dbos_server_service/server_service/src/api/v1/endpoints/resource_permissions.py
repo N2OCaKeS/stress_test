@@ -82,15 +82,18 @@ async def list_for_role(
     response_model=ResourcePermissionResponse,
     summary="Выдать инстанс-грант `action` роли на ресурс",
     description=(
-        "Идемпотентно (повтор → возврат существующей строки). Действие обязано "
-        "быть инстанс-грантуемым (`create` и callback'и воркера → 422 "
-        "ACTION_NOT_INSTANCE_GRANTABLE). Ресурс обязан быть в отделе актора "
-        "(иначе 404). Scope строки — отдел ресурса."
+        "Идемпотентно (повтор того же effect → возврат существующей строки; "
+        "иной effect → обновление allow↔deny). `effect=allow` (дефолт) добавляет "
+        "право поверх тип-wide матрицы, `effect=deny` запрещает его этой роли на "
+        "ресурсе (override базы). Действие обязано быть инстанс-грантуемым "
+        "(`create` и callback'и воркера → 422 ACTION_NOT_INSTANCE_GRANTABLE). "
+        "Системные роли `admin`/`guest` неизменяемы → 409 SYSTEM_ROLE_IMMUTABLE. "
+        "Ресурс обязан быть в отделе актора (иначе 404). Scope строки — отдел ресурса."
     ),
     responses={
         403: {"description": "PERMISSION_DENIED."},
         404: {"description": "RESOURCE_NOT_FOUND — ресурс не найден / чужой отдел."},
-        409: {"description": "RESOURCE_PERMISSION_ALREADY_EXISTS — race на UNIQUE."},
+        409: {"description": "RESOURCE_PERMISSION_ALREADY_EXISTS / SYSTEM_ROLE_IMMUTABLE."},
         422: {"description": "UNKNOWN_RESOURCE_TYPE / ACTION_NOT_INSTANCE_GRANTABLE."},
     },
 )
@@ -100,12 +103,17 @@ async def grant_permission(
     role: str,
     action: str,
     identity: PermissionMatrixIdentity,
+    effect: str = Query(
+        default="allow",
+        pattern="^(allow|deny)$",
+        description="allow (дефолт) — добавить право; deny — запретить роли на ресурсе.",
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> ResourcePermissionResponse:
     obj = await resource_permission_service.grant_action(
         db, identity,
         resource_type=resource_type, resource_id=resource_id,
-        role=role, action=action,
+        role=role, action=action, effect=effect,
     )
     return ResourcePermissionResponse.model_validate(obj)
 
@@ -114,10 +122,14 @@ async def grant_permission(
     "/{resource_type}/{resource_id}/{role}/{action}",
     response_model=OkResponse,
     summary="Снять инстанс-грант `action` с роли на ресурсе",
-    description="Удаляет точечный грант. Отсутствие строки → 404.",
+    description=(
+        "Удаляет точечный грант (allow или deny). Отсутствие строки → 404. "
+        "Системные роли `admin`/`guest` неизменяемы → 409 SYSTEM_ROLE_IMMUTABLE."
+    ),
     responses={
         403: {"description": "PERMISSION_DENIED."},
         404: {"description": "RESOURCE_NOT_FOUND / RESOURCE_PERMISSION_NOT_FOUND."},
+        409: {"description": "SYSTEM_ROLE_IMMUTABLE."},
         422: {"description": "UNKNOWN_RESOURCE_TYPE."},
     },
 )

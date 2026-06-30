@@ -164,17 +164,18 @@ class CredentialRead(BaseModel):
 
 
 class CredentialGuestRead(BaseModel):
-    """Минимальные поля кред для guest-listing.
+    """Метаданные кред для guest-роли (уровень `view`).
 
-    Guest видит только факт существования (id, name, service, scope) и
-    `visible_to_dept` (фильтр уже применён, но возвращаем флаг явно).
-    Никаких owner_*/login/secret/created_by/timestamps/blocked-полей.
+    Guest видит наличие и метаданные dept-секрета (id, name, service, scope,
+    login, visible_to_dept), но не значение (нет secret/secret_encrypted) и не
+    служебные поля (owner_*/created_by/timestamps/blocked-поля).
     """
 
     id: str
     name: str
     service: str
     scope: Literal["personal", "department", "cross_department"]
+    login: str | None = None
     visible_to_dept: bool
 
 

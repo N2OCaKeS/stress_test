@@ -24,7 +24,12 @@ def is_service_admin(identity: Identity) -> bool:
 
 
 def is_service_admin_for(identity: Identity, cred: Credential) -> bool:
-    """`admin` secret_service'а с правом действовать ИМЕННО над `cred`.
+    """`admin` secret_service'а, чей dept «владеет» этой `cred`.
+
+    Используется для lifecycle/аудит-веток (чтение и recover/transfer
+    blocked-кред'ы, включая personal своего отдела). Полный доступ admin'а к
+    активным НЕличным cred'ам своего dept'а выстроен отдельно, прямо в
+    scope-ветках access_service.
 
     Допустимо, если actor владеет admin-ролью И cred сидит в том же dept'е:
       * `cred.owner_dept_id == identity.department_id` — department / cross_dep;
@@ -57,8 +62,10 @@ def is_guest_only(identity: Identity) -> bool:
     """Guest = носитель ТОЛЬКО роли `guest` в secret_service.
 
     Если у actor'а есть ещё какая-то роль (reader/operator/admin) — он не
-    guest, идёт обычным путём. Чистый guest получает урезанный listing
-    (только id/name/service/scope/visible_to_dept) и больше ничего.
+    guest, идёт обычным путём. Чистый guest — уровень `view` на весь отдел:
+    видит метаданные всех department/cross_department-кред своего dep'а
+    (урезанная проекция id/name/service/scope/login/visible_to_dept), но не
+    значение и ничего не меняет.
     """
     roles = identity.roles_for(SERVICE_NAME)
     return bool(roles) and all(r == "guest" for r in roles)

@@ -26,23 +26,21 @@ pytestmark = pytest.mark.asyncio
 async def test_service_admin_delete_without_reason_422(
     client, identity_factory,
 ):
-    owner = identity_factory(
-        user_id="usr_owner_x",
-        department_id="dep_a",
-        service_roles={"secret_service": ["operator"]},
-    )
-    cred = await client.post(
-        f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "to_be_overridden", "service": "jira", "scope": "personal", "secret_b64": b64("x")},
-    )
-    cred_id = cred.json()["id"]
-
-    # admin per-(dept, service) — должен сидеть в том же dept'е, что и владелец cred'ы.
+    # admin удаляет общую (department) креду своего отдела — это override,
+    # требующий reason. personal-кред'ы вне зоны admin'а вовсе.
     svc_admin = identity_factory(
         user_id="usr_svc_admin",
         department_id="dep_a",
         service_roles={"secret_service": ["admin"]},
     )
+    cred = await client.post(
+        f"{BASE}/credentials", headers=auth_header(svc_admin),
+        json={
+            "name": "to_be_overridden", "service": "jira", "scope": "department",
+            "owner_dept_id": "dep_a", "secret_b64": b64("x"),
+        },
+    )
+    cred_id = cred.json()["id"]
 
     resp = await client.delete(
         f"{BASE}/credentials/{cred_id}", headers=auth_header(svc_admin),
@@ -54,22 +52,19 @@ async def test_service_admin_delete_without_reason_422(
 async def test_service_admin_delete_with_reason_succeeds_critical(
     client, identity_factory, mock_logging_service,
 ):
-    owner = identity_factory(
-        user_id="usr_owner_y",
-        department_id="dep_a",
-        service_roles={"secret_service": ["operator"]},
-    )
-    cred = await client.post(
-        f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "override_target", "service": "jira", "scope": "personal", "secret_b64": b64("x")},
-    )
-    cred_id = cred.json()["id"]
-
     svc_admin = identity_factory(
         user_id="usr_svc_admin2",
         department_id="dep_a",
         service_roles={"secret_service": ["admin"]},
     )
+    cred = await client.post(
+        f"{BASE}/credentials", headers=auth_header(svc_admin),
+        json={
+            "name": "override_target", "service": "jira", "scope": "department",
+            "owner_dept_id": "dep_a", "secret_b64": b64("x"),
+        },
+    )
+    cred_id = cred.json()["id"]
 
     resp = await client.request(
         "DELETE",

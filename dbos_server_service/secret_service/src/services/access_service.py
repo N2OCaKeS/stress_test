@@ -17,9 +17,16 @@
   4. Action-specific: delete/manage_status/grant_dept — только owner-side
      dep_admin или service-роль admin того же dept'а; grant_acl — owner для
      personal, dep_admin соответствующей стороны для department/cross.
-  5. Admin overrides:
-     - admin secret_service'а — read-only любую креду СВОЕГО dept'а
-       (cross-dept привилегий у этой роли нет).
+  5. Системные сервис-роли:
+     - `admin` своего dept'а — полный доступ (read/reveal/write/delete/
+       grant_acl/grant_dept/manage_status) к department/cross_department-кред'ам
+       этого отдела, наравне с dep_admin. Personal чужих admin НЕ видит —
+       cross-dept привилегий у роли тоже нет. Исключение — blocked-кред'ы: их
+       admin своего dept'а читает и recover'ит для аудита (включая personal
+       своего отдела), это узкий lifecycle-канал.
+     - `guest` своего dept'а — уровень `view`: метаданные/листинг всех
+       department/cross_department-кред отдела (read/list_guest), без значения
+       и без записи.
 
 account_admin (платформенная роль) в этой матрице НЕ получает доступа: ни
 read, ни reveal/write/delete — это зона ответственности dept-уровня (см.
@@ -42,8 +49,9 @@ can_write, write-actions — только при can_write.
 `acl_read`, `acl_write`, `user_acl_view`, `user_acl_read`, `user_acl_write`,
 `dept_admin`, `service_admin`, `blocked`, `dept_grant_missing`,
 `role_not_in_acl`, `acl_missing_can_view`, `acl_missing_can_read`,
-`acl_missing_can_write`, `scope_mismatch`, `not_owner_dept`. Любой другой
-текст в reason — это баг, имейте в виду.
+`acl_missing_can_write`, `scope_mismatch`, `not_owner_dept`,
+`guest_visible_to_dept`, `guest_not_visible`, `guest_no_value_access`,
+`guest_role_no_access`. Любой другой текст в reason — это баг, имейте в виду.
 
 Прямой per-user grant (`CredentialUserACL`) действует ТОЛЬКО на личные кред'ы
 (scope=personal): проверяется до scope-веток и короткозамыкает на положительном
@@ -70,9 +78,10 @@ from src.services import _identity_roles
 # Все поддерживаемые actions. Список замкнут — caller'ы передают строкой,
 # Literal даёт mypy подсветить опечатку.
 #
-# `list_guest` — отдельная проверка для guest-роли. Возвращает True только
-# на `visible_to_dept=True` AND owner_dept == identity.dept. Прочие actions
-# для guest всегда False (даже на свои dep-cred'ы без visible_to_dept).
+# `list_guest` — отдельная проверка для guest-роли в листинге. Возвращает True
+# на любой department/cross_department-кред'е своего dep'а (owner_dept ==
+# identity.dept). guest тем же путём проходит `read` (метаданные карточки);
+# value-actions (reveal/write/...) для guest всегда False.
 Action = Literal[
     "read",
     "reveal",
@@ -249,6 +258,10 @@ async def _check_department(
         and identity.department_id == cred.owner_dept_id
     ):
         return True, "dept_admin"
+    # Сервисная роль admin своего dept'а — тот же объём, что у dep_admin, но
+    # только в рамках department/cross_department-кред этого отдела.
+    if _is_service_admin(identity):
+        return True, "service_admin"
     # Обычный actor — только через RoleACL.
     acls = await role_acls_repo.get_for_cred_dept(
         db, cred.id, identity.department_id or ""
@@ -272,6 +285,8 @@ async def _check_cross_department(
     if is_owner_dep:
         if identity.platform_role == "department_admin":
             return True, "dept_admin"
+        if _is_service_admin(identity):
+            return True, "service_admin"
         acls = await role_acls_repo.get_for_cred_dept(
             db, cred.id, identity.department_id
         )
@@ -323,17 +338,28 @@ async def check_access(
     «410 vs 404» на blocked-кред'ах.
     """
     effective_status = status_override if status_override is not None else cred.status
-    # 0. Guest-only: видит только visible_to_dept-cred'ы своего dep'а в listing.
-    # Любой другой action (read/reveal/write/delete/...) — мгновенный False.
+    # 0. Guest-роль — это уровень `view` на весь отдел: видит метаданные всех
+    # department/cross_department-кред своего dep'а (листинг и карточку), но не
+    # значение и ничего не меняет. Personal чужих и cred'ы других отделов — мимо.
     if _is_guest_only(identity):
+        own_dept_shared = (
+            cred.scope in ("department", "cross_department")
+            and cred.owner_dept_id is not None
+            and cred.owner_dept_id == identity.department_id
+        )
         if action == "list_guest":
-            if (
-                cred.visible_to_dept
-                and cred.owner_dept_id is not None
-                and cred.owner_dept_id == identity.department_id
-            ):
+            if own_dept_shared:
                 return True, "guest_visible_to_dept"
             return False, "guest_not_visible"
+        if action == "read":
+            if own_dept_shared:
+                return True, "guest_visible_to_dept"
+            # Не своя dep-cred'а — маскируем существование под 404.
+            return False, "guest_role_no_access"
+        # reveal/write/delete/grant/manage_status. На своей dep-cred'е guest её
+        # видит, поэтому отказ — честный 403; на чужой/personal — 404-маска.
+        if own_dept_shared:
+            return False, "guest_no_value_access"
         return False, "guest_role_no_access"
 
     # 1. Blocked status — почти всё запрещено.
@@ -351,11 +377,10 @@ async def check_access(
         # Все остальные операции на blocked → запрещены.
         return False, "blocked"
 
-    # 5a. admin secret_service'а — read-only override на active cred'ах
-    # своего dept'а в любом scope. Кладём ДО scope-проверки — это override,
-    # а не fallback. Cross-dept привилегий у роли нет.
-    if action == "read" and _is_service_admin_for(identity, cred):
-        return True, "admin_override"
+    # Полный доступ admin'а к НЕличным cred'ам своего dept'а живёт внутри
+    # scope-веток (_check_department / _check_cross_department): там admin
+    # трактуется наравне с dep_admin. Personal чужих admin не видит — отдельного
+    # override на personal больше нет.
 
     # 5b. Прямой per-user grant. Орто­гонален scope: пускает поимённо
     # выданного пользователя на read/reveal/write независимо от его роли и

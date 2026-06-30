@@ -414,17 +414,17 @@ async def test_delete_credential_by_owner(http_client):
 
 @pytest.mark.asyncio
 async def test_admin_override_delete_requires_reason(http_client):
+    # admin удаляет общую (department) креду своего отдела — это override,
+    # требующий reason. На personal-кред'ах admin прав не имеет вовсе.
+    _set_identity(_identity(user_id=SVC_ADMIN_ID, roles=["admin"]))
     create_resp = await http_client.post(
         "/api/secret/v1/credentials",
-        json={"name": "n", "service": "jira", "scope": "personal", "secret_b64": b64("s")},
+        json={
+            "name": "n", "service": "jira", "scope": "department",
+            "owner_dept_id": OWNER_DEPT, "secret_b64": b64("s"),
+        },
     )
     cred_id = create_resp.json()["id"]
-
-    # service_admin (другой user)
-    _set_identity(_identity(
-        user_id=SVC_ADMIN_ID,
-        roles=["admin"],
-    ))
     # Без reason — 422
     resp = await http_client.request(
         "DELETE", f"/api/secret/v1/credentials/{cred_id}", json={}
@@ -435,20 +435,19 @@ async def test_admin_override_delete_requires_reason(http_client):
 
 @pytest.mark.asyncio
 async def test_admin_override_delete_with_reason_ok(http_client):
+    _set_identity(_identity(user_id=SVC_ADMIN_ID, roles=["admin"]))
     create_resp = await http_client.post(
         "/api/secret/v1/credentials",
-        json={"name": "n", "service": "jira", "scope": "personal", "secret_b64": b64("s")},
+        json={
+            "name": "n", "service": "jira", "scope": "department",
+            "owner_dept_id": OWNER_DEPT, "secret_b64": b64("s"),
+        },
     )
     cred_id = create_resp.json()["id"]
-
-    _set_identity(_identity(
-        user_id=SVC_ADMIN_ID,
-        roles=["admin"],
-    ))
     resp = await http_client.request(
         "DELETE",
         f"/api/secret/v1/credentials/{cred_id}",
-        json={"reason": "user offboarded"},
+        json={"reason": "rotated out"},
     )
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}

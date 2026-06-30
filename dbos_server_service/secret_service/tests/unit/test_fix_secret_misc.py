@@ -97,7 +97,8 @@ async def test_reveal_throttle_uses_pipeline() -> None:
 
 @pytest.mark.asyncio
 async def test_guest_direct_get_returns_404_not_403(adb) -> None:
-    """guest_role_no_access теперь в _NOT_VISIBLE_REASONS — прямой GET cred известного id отдаёт 404, не 403."""
+    """guest на прямом GET cred'ы ЧУЖОГО отдела → 404 (info-leak protection):
+    guest_role_no_access сидит в _NOT_VISIBLE_REASONS, поэтому 404, не 403."""
     from src.core.exceptions import NotFoundError
 
     cred = await cred_repo.create(
@@ -107,7 +108,7 @@ async def test_guest_direct_get_returns_404_not_403(adb) -> None:
         service="jira",
         scope="department",
         owner_user_id=None,
-        owner_dept_id="dep_guest_dep",
+        owner_dept_id="dep_other_dep",
         login=None,
         secret_encrypted="v2$nonce$ct",
         status="active",

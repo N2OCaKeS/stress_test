@@ -1,13 +1,15 @@
-"""Guest-visibility: видимость кред'ов для роли `guest`.
+"""Guest-visibility: видимость кред'ов для системной роли `guest`.
 
-Контракт:
-* guest видит в списке только cred'ы своего dep'а с `visible_to_dept=True`;
-* shape ответа — `CredentialGuestList` (без owner_user_id/login/created_by/
-  timestamps/blocked-полей);
-* любой не-list action (read/reveal/write/delete) — запрещён, даже на
-  visible_to_dept-cred своего dep'а;
-* для access_service.list_guest проверка short-circuit: visible_to_dept +
-  owner_dept_id совпадает → True; иначе False.
+Контракт (уровень `view` на весь отдел):
+* guest видит в списке метаданные ВСЕХ department/cross_department-кред своего
+  dep'а — флаг `visible_to_dept` больше не фильтрует;
+* shape ответа — `CredentialGuestList`: id/name/service/scope/login/
+  visible_to_dept, без owner_*/created_by/timestamps/blocked-полей и значения;
+* GET карточки своей dep-cred'ы → 200 с той же урезанной проекцией;
+* reveal/write/delete на своей dep-cred'е → 403 (видит, но не значение/не
+  правит); на чужой dep / personal — 404-маска;
+* для access_service: read/list_guest на dep-cred'е своего отдела → True;
+  value-actions → отказ.
 """
 
 from __future__ import annotations
@@ -86,7 +88,8 @@ async def _create_dept_cred(
     *,
     id: str,
     owner_dept_id: str,
-    visible_to_dept: bool,
+    visible_to_dept: bool = True,
+    scope: str = "department",
     name: str = "shared",
 ):
     return await cred_repo.create(
@@ -94,7 +97,7 @@ async def _create_dept_cred(
         id=id,
         name=name,
         service="jira",
-        scope="department",
+        scope=scope,
         owner_user_id=None,
         owner_dept_id=owner_dept_id,
         login="x",
@@ -109,7 +112,7 @@ async def _create_dept_cred(
 
 
 @pytest.mark.asyncio
-async def test_guest_sees_only_visible_to_dept_in_own_dept(http_client, adb):
+async def test_guest_sees_all_own_dept_creds(http_client, adb):
     own_visible = await _create_dept_cred(
         adb,
         id="cred_dept_visible01",
@@ -130,16 +133,16 @@ async def test_guest_sees_only_visible_to_dept_in_own_dept(http_client, adb):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     names = {item["name"] for item in body["items"]}
-    assert names == {"own_visible"}
-    # Shape: только разрешённые поля.
-    item = body["items"][0]
-    assert set(item.keys()) == {"id", "name", "service", "scope", "visible_to_dept"}
-    assert item["id"] == own_visible.id
-    assert item["visible_to_dept"] is True
+    # visible_to_dept больше не фильтрует — guest видит обе cred'ы отдела.
+    assert names == {"own_visible", "own_hidden"}
+    item = next(i for i in body["items"] if i["id"] == own_visible.id)
+    assert set(item.keys()) == {
+        "id", "name", "service", "scope", "login", "visible_to_dept"
+    }
 
 
 @pytest.mark.asyncio
-async def test_guest_does_not_see_visible_in_foreign_dept(http_client, adb):
+async def test_guest_does_not_see_foreign_dept(http_client, adb):
     await _create_dept_cred(
         adb,
         id="cred_other_visible01",
@@ -151,17 +154,15 @@ async def test_guest_does_not_see_visible_in_foreign_dept(http_client, adb):
 
     resp = await http_client.get("/api/secret/v1/credentials")
     assert resp.status_code == 200
-    body = resp.json()
-    assert body["items"] == []
+    assert resp.json()["items"] == []
 
 
 @pytest.mark.asyncio
-async def test_guest_list_response_has_no_metadata_leak(http_client, adb):
+async def test_guest_list_response_has_no_value_or_owner_leak(http_client, adb):
     await _create_dept_cred(
         adb,
         id="cred_meta_test01",
         owner_dept_id=GUEST_DEPT,
-        visible_to_dept=True,
         name="metatest",
     )
     await adb.commit()
@@ -169,8 +170,10 @@ async def test_guest_list_response_has_no_metadata_leak(http_client, adb):
     resp = await http_client.get("/api/secret/v1/credentials")
     assert resp.status_code == 200
     body = resp.json()
+    # login теперь часть guest-проекции (метаданные), значение и служебные
+    # поля — по-прежнему нет.
     leaked_keys = {
-        "owner_user_id", "owner_dept_id", "login", "status",
+        "owner_user_id", "owner_dept_id", "status",
         "created_by", "created_at", "updated_at",
         "blocked_at", "blocked_reason",
         "secret", "secret_encrypted", "secret_b64",
@@ -183,14 +186,10 @@ async def test_guest_list_response_has_no_metadata_leak(http_client, adb):
 
 @pytest.mark.asyncio
 async def test_guest_without_department_sees_nothing(http_client, adb):
-    # Cred своего «бывшего» dep'а есть в БД, но у actor'а department_id=None
-    # (например, отдел уже удалён) — guest-путь обязан вернуть пустой список,
-    # а не упасть и не отдать чужие cred'ы.
     await _create_dept_cred(
         adb,
         id="cred_no_dept_guest1",
         owner_dept_id=GUEST_DEPT,
-        visible_to_dept=True,
         name="orphan_visible",
     )
     await adb.commit()
@@ -201,52 +200,82 @@ async def test_guest_without_department_sees_nothing(http_client, adb):
     assert resp.json()["items"] == []
 
 
-# ── non-list actions denied ─────────────────────────────────────────────────
+# ── single-card GET ──────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_guest_cannot_get_visible_cred(http_client, adb):
+async def test_guest_get_own_dept_cred_returns_metadata(http_client, adb):
     cred = await _create_dept_cred(
         adb,
         id="cred_get_guest01",
         owner_dept_id=GUEST_DEPT,
-        visible_to_dept=True,
         name="for_get",
     )
     await adb.commit()
 
     resp = await http_client.get(f"/api/secret/v1/credentials/{cred.id}")
-    # guest_role_no_access теперь включён в _NOT_VISIBLE_REASONS — прямой GET
-    # известного cred_id отдаёт 404 (info-leak protection), а не 403, чтобы
-    # guest не мог перебирать ID и обнаруживать существование чужих кред с
-    # `visible_to_dept=False`.
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert set(body.keys()) == {
+        "id", "name", "service", "scope", "login", "visible_to_dept"
+    }
+    assert body["id"] == cred.id
+    assert body["login"] == "x"
+
+
+@pytest.mark.asyncio
+async def test_guest_get_foreign_dept_cred_404(http_client, adb):
+    cred = await _create_dept_cred(
+        adb,
+        id="cred_get_foreign01",
+        owner_dept_id=OTHER_DEPT,
+        name="foreign_get",
+    )
+    await adb.commit()
+
+    resp = await http_client.get(f"/api/secret/v1/credentials/{cred.id}")
     assert resp.status_code == 404
     assert resp.json()["error_code"] == "CREDENTIAL_NOT_FOUND"
 
 
+# ── value/write actions denied ───────────────────────────────────────────────
+
+
 @pytest.mark.asyncio
-async def test_guest_cannot_reveal(http_client, adb):
+async def test_guest_cannot_reveal_own_dept_cred(http_client, adb):
     cred = await _create_dept_cred(
         adb,
         id="cred_reveal_guest01",
         owner_dept_id=GUEST_DEPT,
-        visible_to_dept=True,
         name="for_reveal",
     )
     await adb.commit()
 
     resp = await http_client.post(f"/api/secret/v1/credentials/{cred.id}/reveal")
-    # Тот же info-leak protection — reveal по известному id для guest → 404.
+    # Видит метаданные, но не значение → честный 403.
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_guest_reveal_foreign_dept_404(http_client, adb):
+    cred = await _create_dept_cred(
+        adb,
+        id="cred_reveal_foreign01",
+        owner_dept_id=OTHER_DEPT,
+        name="for_reveal_foreign",
+    )
+    await adb.commit()
+
+    resp = await http_client.post(f"/api/secret/v1/credentials/{cred.id}/reveal")
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_guest_cannot_update(http_client, adb):
+async def test_guest_cannot_update_own_dept_cred(http_client, adb):
     cred = await _create_dept_cred(
         adb,
         id="cred_update_guest01",
         owner_dept_id=GUEST_DEPT,
-        visible_to_dept=True,
         name="for_update",
     )
     await adb.commit()
@@ -255,33 +284,28 @@ async def test_guest_cannot_update(http_client, adb):
         f"/api/secret/v1/credentials/{cred.id}",
         json={"name": "renamed"},
     )
-    # update проходит через load_for_action → info-leak 404 для guest.
-    assert resp.status_code == 404
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
-async def test_guest_cannot_delete(http_client, adb):
+async def test_guest_cannot_delete_own_dept_cred(http_client, adb):
     cred = await _create_dept_cred(
         adb,
         id="cred_delete_guest01",
         owner_dept_id=GUEST_DEPT,
-        visible_to_dept=True,
         name="for_delete",
     )
     await adb.commit()
 
     resp = await http_client.delete(f"/api/secret/v1/credentials/{cred.id}")
-    # Guest на любой прямой операции с кред'ой получает 404, как и на GET:
-    # роль guest живёт только через list_guest, существование кред'ы через
-    # delete-отказ ей не раскрываем.
-    assert resp.status_code == 404
+    assert resp.status_code == 403
 
 
-# ── access_service.check_access(list_guest) ─────────────────────────────────
+# ── access_service.check_access ──────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_access_service_list_guest_allows_visible_in_own_dept(adb):
+async def test_access_service_list_guest_allows_own_dept(adb):
     cred = await _create_dept_cred(
         adb,
         id="cred_acc_guest_ok01",
@@ -295,7 +319,7 @@ async def test_access_service_list_guest_allows_visible_in_own_dept(adb):
 
 
 @pytest.mark.asyncio
-async def test_access_service_list_guest_denies_invisible_in_own_dept(adb):
+async def test_access_service_list_guest_allows_own_dept_even_if_hidden(adb):
     cred = await _create_dept_cred(
         adb,
         id="cred_acc_guest_hidden01",
@@ -304,12 +328,12 @@ async def test_access_service_list_guest_denies_invisible_in_own_dept(adb):
     )
     actor = _identity()
     allowed, reason = await access_service.check_access(adb, actor, cred, "list_guest")
-    assert allowed is False
-    assert reason == "guest_not_visible"
+    assert allowed is True
+    assert reason == "guest_visible_to_dept"
 
 
 @pytest.mark.asyncio
-async def test_access_service_list_guest_denies_visible_in_foreign_dept(adb):
+async def test_access_service_list_guest_denies_foreign_dept(adb):
     cred = await _create_dept_cred(
         adb,
         id="cred_acc_guest_foreign01",
@@ -323,15 +347,27 @@ async def test_access_service_list_guest_denies_visible_in_foreign_dept(adb):
 
 
 @pytest.mark.asyncio
-async def test_access_service_other_actions_denied_for_guest(adb):
+async def test_access_service_guest_read_allowed_own_dept(adb):
+    cred = await _create_dept_cred(
+        adb,
+        id="cred_acc_guest_read01",
+        owner_dept_id=GUEST_DEPT,
+    )
+    actor = _identity()
+    allowed, reason = await access_service.check_access(adb, actor, cred, "read")
+    assert allowed is True
+    assert reason == "guest_visible_to_dept"
+
+
+@pytest.mark.asyncio
+async def test_access_service_guest_value_actions_denied(adb):
     cred = await _create_dept_cred(
         adb,
         id="cred_acc_guest_other01",
         owner_dept_id=GUEST_DEPT,
-        visible_to_dept=True,
     )
     actor = _identity()
-    for action in ("read", "reveal", "write", "delete", "manage_status"):
+    for action in ("reveal", "write", "delete", "manage_status", "grant_acl"):
         allowed, reason = await access_service.check_access(adb, actor, cred, action)
         assert allowed is False, f"guest must NOT be allowed for action={action}"
-        assert reason == "guest_role_no_access"
+        assert reason == "guest_no_value_access"

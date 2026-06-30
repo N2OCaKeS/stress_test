@@ -55,12 +55,13 @@ def _to_read(cred: Credential) -> CredentialRead:
 
 
 def _to_guest_read(cred: Credential) -> CredentialGuestRead:
-    """Минимальная проекция для guest-роли — без owner/login/timestamps/created_by."""
+    """Проекция метаданных для guest-роли — без owner/timestamps/created_by/значения."""
     return CredentialGuestRead(
         id=cred.id,
         name=cred.name,
         service=cred.service,
         scope=cred.scope,  # type: ignore[arg-type]
+        login=cred.login,
         visible_to_dept=cred.visible_to_dept,
     )
 
@@ -97,11 +98,11 @@ async def list_credentials(
     """Список credentials, отфильтрованный по access-check.
 
     Для роли `guest` (одна-единственная роль `guest` в secret_service) возвращается
-    урезанный shape `CredentialGuestList`: только cred'ы своего dep'а с
-    `visible_to_dept=True`, и в каждой строке — лишь (id, name, service, scope,
-    visible_to_dept). Никакого owner_user_id, login, created_by, timestamps,
-    blocked-полей. Сделано так, чтобы guest «знал о существовании» секрета и
-    мог запросить доступ через dep_admin'а, но не получал metadata-leak'а.
+    урезанный shape `CredentialGuestList`: все department/cross_department-cred'ы
+    своего dep'а, и в каждой строке — лишь (id, name, service, scope, login,
+    visible_to_dept). Никакого owner_user_id, created_by, timestamps,
+    blocked-полей и значения. Guest видит наличие и метаданные секретов отдела,
+    но не их содержимое.
     """
     require_user_context(identity)
     cursor_pair = _parse_cursor(cursor)
@@ -154,9 +155,13 @@ async def get_credential(
     cred_id: str,
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
-) -> CredentialRead:
+):
     require_user_context(identity)
     cred = await credential_service.get(db, identity, cred_id)
+    # guest получает ту же урезанную проекцию, что и в листинге — метаданные
+    # без служебных полей и без значения.
+    if credential_service.is_guest_only(identity):
+        return JSONResponse(content=_to_guest_read(cred).model_dump(mode="json"))
     return _to_read(cred)
 
 

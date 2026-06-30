@@ -311,7 +311,7 @@ async def test_update_extends_valid_to_allows_reveal_again(http_client, adb):
 
 @pytest.mark.asyncio
 async def test_guest_list_does_not_expose_validity_fields(http_client, adb):
-    """Гость видит только id/name/service/scope/visible_to_dept. valid_from /
+    """Гость видит id/name/service/scope/login/visible_to_dept. valid_from /
     valid_to гостю НЕ отдаются — это metadata-leak."""
     from src.services import secrets_service
 
@@ -349,4 +349,6 @@ async def test_guest_list_does_not_expose_validity_fields(http_client, adb):
     row = matching[0]
     assert "valid_from" not in row
     assert "valid_to" not in row
-    assert set(row.keys()) == {"id", "name", "service", "scope", "visible_to_dept"}
+    assert set(row.keys()) == {
+        "id", "name", "service", "scope", "login", "visible_to_dept"
+    }

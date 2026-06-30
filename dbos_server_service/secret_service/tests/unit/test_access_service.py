@@ -4,9 +4,9 @@
 * personal — owner / чужой через ACL / без ACL;
 * department — внутри owner_dep / снаружи;
 * cross_department — owner_dep / recipient_dep с DeptGrant / без него;
-* admin overrides — admin secret_service'а своего dept'а read-only /
-  cross-dept admin отбит; account_admin к содержимому секретов не
-  допускается (нет read/recover/transfer);
+* системная роль admin — полный доступ к department/cross_department-кред'ам
+  своего dept'а, чужие personal не видит, cross-dept admin отбит;
+  account_admin к содержимому секретов не допускается (нет read/recover/transfer);
 * blocked cred — block all except admin override своего dept'а;
 * can_read vs can_write на разные action'ы.
 """
@@ -383,26 +383,67 @@ async def test_blocked_account_admin_cannot_recover(adb) -> None:
     assert reason == "blocked"
 
 
-# ── admin overrides on active creds ───────────────────────────────────────
+# ── системная роль admin на active creds ──────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_service_admin_read_any_personal(adb) -> None:
+async def test_service_admin_cannot_see_others_personal(adb) -> None:
+    """admin своего отдела НЕ видит чужие personal-cred'ы (даже метаданные).
+
+    Личное приватно — доступ только через явный шеринг/передачу владельцем.
+    """
     cred = await _create_personal(adb, owner_user_id="usr_someone0000000000000000001")
     admin = _identity(roles=["admin"])
-    allowed, reason = await access_service.check_access(adb, admin, cred, "read")
-    assert allowed and reason == "admin_override"
+    for action in ("read", "reveal", "write", "delete"):
+        allowed, reason = await access_service.check_access(adb, admin, cred, action)
+        assert not allowed, f"{action} should be denied on others' personal"
+        assert reason in {"scope_mismatch", "role_not_in_acl"}
 
 
 @pytest.mark.asyncio
-async def test_service_admin_cannot_reveal(adb) -> None:
-    """Service admin может read но НЕ reveal — это сильнее, чем metadata."""
-    cred = await _create_personal(adb, owner_user_id="usr_someone0000000000000000001")
+async def test_service_admin_full_access_department_cred(adb) -> None:
+    """admin своего отдела — полный доступ к department-кред'е этого отдела."""
+    cred = await _create_dept(adb, scope="department")
     admin = _identity(roles=["admin"])
-    allowed, reason = await access_service.check_access(adb, admin, cred, "reveal")
+    for action in [
+        "read", "reveal", "write", "delete",
+        "grant_acl", "grant_dept", "manage_status",
+    ]:
+        allowed, reason = await access_service.check_access(adb, admin, cred, action)
+        assert allowed, f"{action} denied: {reason}"
+        assert reason == "service_admin"
+
+
+@pytest.mark.asyncio
+async def test_service_admin_full_access_cross_dep_owner_side(adb) -> None:
+    """admin владеющего отдела — полный доступ к своей cross_department-кред'е."""
+    cred = await _create_dept(adb, scope="cross_department")
+    admin = _identity(roles=["admin"])
+    for action in ["read", "reveal", "write", "delete", "grant_acl", "grant_dept"]:
+        allowed, reason = await access_service.check_access(adb, admin, cred, action)
+        assert allowed, f"{action} denied: {reason}"
+        assert reason == "service_admin"
+
+
+@pytest.mark.asyncio
+async def test_service_admin_no_full_access_cross_dep_recipient_side(adb) -> None:
+    """admin отдела-получателя НЕ владеет cross-кред'ой чужого отдела: полного
+    доступа нет, только через DeptGrant + RoleACL."""
+    cred = await _create_dept(
+        adb,
+        scope="cross_department",
+        owner_dept_id="dep_owner00000000000000000001",
+    )
+    recipient_admin = _identity(
+        user_id="usr_recipient_admin000000000001",
+        department_id="dep_recipient000000000000000001",
+        roles=["admin"],
+    )
+    allowed, reason = await access_service.check_access(
+        adb, recipient_admin, cred, "write"
+    )
     assert not allowed
-    # Реальная причина — он не owner и не в его dep'е, попадает в scope_mismatch.
-    assert reason in {"scope_mismatch", "role_not_in_acl"}
+    assert reason == "dept_grant_missing"
 
 
 @pytest.mark.asyncio

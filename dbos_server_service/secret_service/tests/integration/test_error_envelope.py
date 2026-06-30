@@ -157,25 +157,22 @@ async def test_credential_access_denied_403(client, identity_factory):
 
 
 async def test_admin_override_reason_required_422(client, identity_factory):
-    """secret_service admin того же dept'а, что и owner, — не-владелец → override
-    delete требует reason. Cross-dept admin'у override недоступен (per-dept роль),
-    поэтому admin сидит в `dep_a` рядом с owner'ом, но не сам owner."""
-    owner = identity_factory(
-        user_id="usr_owner_422",
-        department_id="dep_a",
-        service_roles={"secret_service": ["operator"]},
-    )
-    cred = await client.post(
-        f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "reason_target", "service": "jira", "scope": "personal", "secret_b64": b64("x")},
-    )
-    cred_id = cred.json()["id"]
-
+    """secret_service admin удаляет общую (department) креду своего отдела —
+    привилегированный delete, требующий reason."""
     svc_admin = identity_factory(
         user_id="usr_admin_422",
         department_id="dep_a",
         service_roles={"secret_service": ["admin"]},
     )
+    cred = await client.post(
+        f"{BASE}/credentials", headers=auth_header(svc_admin),
+        json={
+            "name": "reason_target", "service": "jira", "scope": "department",
+            "owner_dept_id": "dep_a", "secret_b64": b64("x"),
+        },
+    )
+    cred_id = cred.json()["id"]
+
     resp = await client.delete(
         f"{BASE}/credentials/{cred_id}", headers=auth_header(svc_admin),
     )

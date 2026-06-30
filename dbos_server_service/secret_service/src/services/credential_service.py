@@ -383,14 +383,16 @@ async def list_visible(
     Это не самая эффективная стратегия, но safe и читаема. Под нагрузкой
     можно перейти на JOIN через DeptGrant в репо.
 
-    Guest-role: отдельный путь. Видит только `visible_to_dept=True` AND
-    `owner_dept_id == identity.department_id` (своего dep'а). Никаких ACL,
-    никаких DeptGrant'ов, никаких personal. Caller-endpoint должен сериализовать
-    через CredentialGuestRead (без metadata).
+    Guest-role: отдельный путь. Видит метаданные всех department/
+    cross_department-кред своего dep'а (`owner_dept_id == identity.department_id`).
+    Никаких ACL, никаких DeptGrant'ов, никаких personal чужих. Caller-endpoint
+    сериализует через CredentialGuestRead (урезанная проекция, без значения).
     """
     if _is_guest_only(identity):
         if not identity.department_id:
             return [], None
+        # list_for_dept уже отдаёт только owner_dept_id == dep (department/
+        # cross_department); personal туда не попадает.
         dept_creds = await repo.list_for_dept(
             db,
             identity.department_id,
@@ -399,7 +401,7 @@ async def list_visible(
             limit=limit * 2,
             cursor=cursor,
         )
-        guest_visible = [c for c in dept_creds if c.visible_to_dept]
+        guest_visible = list(dept_creds)
         guest_visible.sort(key=lambda c: (c.created_at, c.id), reverse=True)
         sliced = guest_visible[:limit]
         next_cursor = None
@@ -804,9 +806,11 @@ async def delete(
                 db, identity, cred, "delete"
             )
             if allowed:
-                pass  # legitimate owner-side delete (dep_admin/admin внутри scope)
-            elif _is_service_admin_for(identity, cred):
-                is_admin_override = True
+                # Сервисная роль admin удаляет общую креду своего отдела —
+                # это привилегированное действие: требуем reason и пишем
+                # CRITICAL-аудит. dep_admin/owner-side delete — обычный.
+                if reason == "service_admin":
+                    is_admin_override = True
             elif _delete_denial_is_info_leak(cred, reason):
                 # Actor видит креду только на чтение (read-only RoleACL) или вне
                 # зоны видимости вовсе — не раскрываем существование через

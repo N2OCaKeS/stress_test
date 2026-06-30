@@ -20,12 +20,10 @@
  * Backend: server_service/src/api/v1/endpoints/resource_permissions.py.
  */
 import { useCallback, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   Loader2,
   Lock,
-  Plus,
   RotateCcw,
   Save,
   Share2,
@@ -77,9 +75,6 @@ const LOCKED_ROLES: Record<string, string> = {
   admin: "admin держит полный доступ — правила не редактируются",
   guest: "guest — базовая роль, правила не редактируются",
 };
-
-// Куда вести из пустого состояния, чтобы завести кастомную роль.
-const PERMISSIONS_ROUTE = "/admin/services.server.permissions";
 
 // Инстанс-override ячейки: null — нет override (действует тип-wide база).
 type CellEffect = ResourcePermissionEffect | null;
@@ -412,8 +407,6 @@ export function ResourceInstancePermissions({
     );
   }
 
-  const noCustomRoles = customRoles.length === 0;
-
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -429,7 +422,7 @@ export function ResourceInstancePermissions({
             </span>
           )}
         </h3>
-        {canEdit && !noCustomRoles && (
+        {canEdit && (
           <button
             className="btn btn-sm flex items-center gap-1"
             onClick={() => setPropagateOpen(true)}
@@ -455,20 +448,7 @@ export function ResourceInstancePermissions({
         <span>view включается автоматически у роли с другими правами</span>
       </div>
 
-      {noCustomRoles ? (
-        <div className="empty-card text-sm text-dim flex flex-col items-start gap-3">
-          <p className="leading-relaxed">
-            Точечные права задаются для кастомных ролей. В отделе нет кастомных
-            ролей — создайте роль.
-          </p>
-          <Link
-            to={PERMISSIONS_ROUTE}
-            className="btn btn-sm btn-primary flex items-center gap-1"
-          >
-            <Plus className="w-3.5 h-3.5" /> Создать роль
-          </Link>
-        </div>
-      ) : actions.length === 0 ? (
+      {actions.length === 0 ? (
         <div className="text-sm text-dim">
           Нет инстанс-грантуемых действий в каталоге.
         </div>

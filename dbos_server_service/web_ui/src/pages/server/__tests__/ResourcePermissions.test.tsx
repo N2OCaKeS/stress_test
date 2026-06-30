@@ -239,12 +239,18 @@ describe("ResourceInstancePermissions", () => {
     expect(cells[4]).toBeDisabled();
   });
 
-  it("пустое состояние без кастомных ролей: плашка + ссылка на создание", async () => {
+  it("без кастомных ролей всё равно рендерит залоченные admin/guest", async () => {
     renderEditor(true, { grants: [], serviceRoles: [] });
     await waitFor(() =>
-      expect(screen.getByText(/нет кастомных ролей/i)).toBeInTheDocument(),
+      expect(screen.getByTitle("desc-view")).toBeInTheDocument(),
     );
-    const link = screen.getByRole("link", { name: /Создать роль/ });
-    expect(link).toHaveAttribute("href", "/admin/services.server.permissions");
+    // Матрица показана: системные роли видны строками.
+    expect(screen.getByText("guest")).toBeInTheDocument();
+    expect(screen.getByText("admin")).toBeInTheDocument();
+    // Колонки view × power_reboot для двух системных ролей → 4 чекбокса,
+    // и все они залочены (disabled).
+    const cells = screen.getAllByRole("checkbox") as HTMLInputElement[];
+    expect(cells).toHaveLength(4);
+    for (const c of cells) expect(c).toBeDisabled();
   });
 });

@@ -260,7 +260,7 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
           if (
             !(await confirm({
               title: "Ротировать управляющие креды",
-              message: `Сгенерировать новую управляющую SSH-пару и пароль для ${view.hostname}? Старый материал отзывается после применения на сервере. Действие чувствительное.`,
+              message: `Сгенерировать новую управляющую SSH-пару и пароль для ${view.hostname}? Старый материал отзывается после применения на сервере.`,
               confirmLabel: "Ротировать",
               danger: true,
             }))
@@ -669,8 +669,7 @@ function ManagementCredsCard({
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex-1 text-xs text-dim">
               Генерирует новую управляющую SSH-пару и пароль, применяет их на
-              сервере через worker и отзывает старый материал. Чувствительная
-              операция.
+              сервере через worker и отзывает старый материал.
             </div>
             {allowed && (
               <button
@@ -1156,8 +1155,7 @@ function CleanCard({
         <div className="flex-1 text-xs text-dim">
           Сборная операция для сервера после переустановки ОС: отвязать все
           учётки, заново забутстрапить управление, сменить версию ОС и/или
-          запустить inventory. Действия выбираются в модалке; отвязка учёток —
-          чувствительная.
+          запустить inventory. Действия выбираются в модалке.
         </div>
         {allowed && (
           <button

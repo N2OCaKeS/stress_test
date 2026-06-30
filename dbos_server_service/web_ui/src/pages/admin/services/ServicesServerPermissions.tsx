@@ -461,10 +461,6 @@ function ServicesServerPermissionsLive() {
               <span className="flex items-center gap-1">
                 <Lock className="w-3 h-3" /> роль залочена
               </span>
-              <span className="flex items-center gap-1">
-                <span className="badge badge-warn text-[10px]">!</span>{" "}
-                чувствительное действие
-              </span>
             </div>
 
             <NewRoleForm
@@ -988,14 +984,6 @@ function RoleEntityCard({
                 />
                 <span className="mono text-xs flex items-center gap-1">
                   {a.action}
-                  {a.sensitive && (
-                    <span
-                      className="badge badge-warn text-[10px]"
-                      title="чувствительное действие"
-                    >
-                      !
-                    </span>
-                  )}
                 </span>
                 <span className="text-[11px] text-dim flex-1 truncate">
                   {a.description}
@@ -1359,14 +1347,6 @@ function EntityMatrix({
                     >
                       <div className="flex items-center gap-1 whitespace-nowrap">
                         <span>{a.action}</span>
-                        {a.sensitive && (
-                          <span
-                            className="badge badge-warn text-[10px]"
-                            title="чувствительное действие"
-                          >
-                            !
-                          </span>
-                        )}
                       </div>
                     </th>
                   ))}

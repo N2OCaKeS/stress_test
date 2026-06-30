@@ -499,14 +499,6 @@ export function ResourceInstancePermissions({
                     >
                       <div className="flex items-center gap-1 whitespace-nowrap">
                         <span>{a.action}</span>
-                        {a.sensitive && (
-                          <span
-                            className="badge badge-warn text-[10px]"
-                            title="чувствительное действие"
-                          >
-                            !
-                          </span>
-                        )}
                       </div>
                     </th>
                   ))}

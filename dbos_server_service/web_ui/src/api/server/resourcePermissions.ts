@@ -15,6 +15,7 @@ import { apiDelete, apiGet, apiPost, apiPut } from "@/api/client";
 import type {
   ActionName,
   ResourceAclType,
+  ResourcePermissionEffect,
   ResourcePermissionEntry,
   ResourcePermissionListResponse,
   ResourcePropagateRequest,
@@ -57,18 +58,23 @@ export function listResourcePermissionsByRole(
 
 /**
  * `PUT /resource-permissions/{resource_type}/{resource_id}/{role}/{action}` —
- * выдать инстанс-грант. Идемпотентно (повтор → существующая строка).
- * Не инстанс-грантуемое действие → 422 `ACTION_NOT_INSTANCE_GRANTABLE`,
- * чужой/несуществующий ресурс → 404.
+ * выдать или изменить инстанс-грант. `effect` (default `allow`) задаёт семантику:
+ * `allow` добавляет действие поверх базы, `deny` перекрывает базу и запрещает.
+ * Повтор с другим `effect` обновляет существующую строку. Не инстанс-грантуемое
+ * действие → 422 `ACTION_NOT_INSTANCE_GRANTABLE`, чужой/несуществующий ресурс →
+ * 404, системная роль (`admin`/`guest`) → 409 `SYSTEM_ROLE_IMMUTABLE`.
  */
 export function grantResourcePermission(
   resourceType: ResourceAclType,
   resourceId: string,
   role: RoleName,
   action: ActionName,
+  effect: ResourcePermissionEffect = "allow",
 ): Promise<ResourcePermissionEntry> {
   return apiPut<ResourcePermissionEntry>(
     `${BASE}/${resourceType}/${resourceId}/${role}/${action}`,
+    undefined,
+    { query: { effect } },
   );
 }
 

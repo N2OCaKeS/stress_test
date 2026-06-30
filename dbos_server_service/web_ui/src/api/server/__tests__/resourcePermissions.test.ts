@@ -51,10 +51,27 @@ describe("resourcePermissions wrappers", () => {
     );
   });
 
-  it("grant — PUT на полный путь без тела", async () => {
+  it("grant — PUT на полный путь с effect=allow по умолчанию", async () => {
     await grantResourcePermission("server", "srv_1", "operator", "power_reboot");
     expect(apiPutMock).toHaveBeenCalledWith(
       "/server/v1/resource-permissions/server/srv_1/operator/power_reboot",
+      undefined,
+      { query: { effect: "allow" } },
+    );
+  });
+
+  it("grant — effect=deny прокидывается в query", async () => {
+    await grantResourcePermission(
+      "server",
+      "srv_1",
+      "operator",
+      "power_reboot",
+      "deny",
+    );
+    expect(apiPutMock).toHaveBeenCalledWith(
+      "/server/v1/resource-permissions/server/srv_1/operator/power_reboot",
+      undefined,
+      { query: { effect: "deny" } },
     );
   });
 

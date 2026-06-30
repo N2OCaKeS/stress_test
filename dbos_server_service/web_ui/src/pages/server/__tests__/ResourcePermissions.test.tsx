@@ -48,6 +48,7 @@ function setupApi() {
             resource_id: "srv_1",
             role: "operator",
             action: "power_reboot",
+            effect: "allow",
             department_id: "core",
             granted_by: "u1",
             created_at: "2026-01-01T00:00:00Z",
@@ -109,17 +110,53 @@ describe("ResourceInstancePermissions", () => {
     expect(screen.queryByTitle("desc-inv")).not.toBeInTheDocument();
   });
 
-  it("toggle на пустой ячейке шлёт PUT на инстанс-эндпоинт", async () => {
+  // Порядок строк: guest, admin (системные, залочены), затем operator
+  // (из грантов). Колонки: view, power_reboot. Значит ячейки идут
+  // [guest/view, guest/reboot, admin/view, admin/reboot, operator/view,
+  //  operator/reboot].
+  it("клик по пустой ячейке кастомной роли шлёт PUT с effect=allow", async () => {
     renderEditor();
     await waitFor(() =>
       expect(screen.getByTitle("desc-view")).toBeInTheDocument(),
     );
-    // Первый чекбокс таблицы — guest::view (системные guest/admin идут
-    // первыми, кастомные после; первое действие — view), не выдан.
-    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    // operator/view — пустая ячейка кастомной роли (индекс 4).
+    fireEvent.click(screen.getAllByRole("checkbox")[4]);
     await waitFor(() => expect(apiPutMock).toHaveBeenCalledTimes(1));
     expect(apiPutMock).toHaveBeenCalledWith(
-      "/server/v1/resource-permissions/server/srv_1/guest/view",
+      "/server/v1/resource-permissions/server/srv_1/operator/view",
+      undefined,
+      { query: { effect: "allow" } },
     );
+  });
+
+  it("клик по allow-ячейке переключает в deny (PUT effect=deny)", async () => {
+    renderEditor();
+    await waitFor(() =>
+      expect(screen.getByTitle("desc-reboot")).toBeInTheDocument(),
+    );
+    // operator/power_reboot пришёл с effect=allow (индекс 5) → клик даёт deny.
+    fireEvent.click(screen.getAllByRole("checkbox")[5]);
+    await waitFor(() => expect(apiPutMock).toHaveBeenCalledTimes(1));
+    expect(apiPutMock).toHaveBeenCalledWith(
+      "/server/v1/resource-permissions/server/srv_1/operator/power_reboot",
+      undefined,
+      { query: { effect: "deny" } },
+    );
+  });
+
+  it("системные роли admin/guest залочены — клик не шлёт запросов", async () => {
+    renderEditor();
+    await waitFor(() =>
+      expect(screen.getByTitle("desc-view")).toBeInTheDocument(),
+    );
+    const cells = screen.getAllByRole("checkbox");
+    // guest/view (0) и admin/view (2) — disabled, клик ничего не делает.
+    expect(cells[0]).toBeDisabled();
+    expect(cells[2]).toBeDisabled();
+    fireEvent.click(cells[0]);
+    fireEvent.click(cells[2]);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(apiPutMock).not.toHaveBeenCalled();
+    expect(apiDeleteMock).not.toHaveBeenCalled();
   });
 });

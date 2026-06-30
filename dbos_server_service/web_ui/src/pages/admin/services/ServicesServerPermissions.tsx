@@ -12,6 +12,9 @@ import {
   Trash2,
   Check,
   Pencil,
+  Crosshair,
+  Server as ServerIcon,
+  KeyRound,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -30,8 +33,14 @@ import {
   patchServiceRole,
   deleteServiceRole,
 } from "@/api/auth/service_roles";
+import { listServers } from "@/api/server/servers";
+import { listAccounts } from "@/api/server/accounts";
 import { apiErrMsg } from "@/api/client";
 import { personaDeptId } from "@/lib/rbac";
+import {
+  ResourceInstancePermissions,
+  type ResourceTargetOption,
+} from "@/pages/server/_resourcePermissions";
 import type { ServiceRole } from "@/api/auth/types";
 import type {
   ActionName,
@@ -39,6 +48,7 @@ import type {
   PermissionCatalogAction,
   PermissionCatalogItem,
   PermissionEntry,
+  ResourceAclType,
   RoleName,
 } from "@/api/server/types";
 
@@ -114,6 +124,9 @@ function ServicesServerPermissionsLive() {
   const { persona } = usePersona();
   const toast = useToast();
   const myDept = personaDeptId(persona);
+  const canEdit =
+    persona.platform_role === "dep_admin" ||
+    persona.service_roles?.server === "admin";
 
   const [mode, setMode] = useState<ViewMode>("matrix");
   const [refreshTick, setRefreshTick] = useState(0);
@@ -407,6 +420,8 @@ function ServicesServerPermissionsLive() {
               />
             ))
           )}
+
+          <InstancePointSection departmentId={myDept} canEdit={canEdit} />
         </>
       ) : (
         <RoleEditor
@@ -987,6 +1002,151 @@ function NewRoleForm({
           дублировать нельзя.
         </p>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Точечные права на конкретный ресурс (поверх тип-wide базы)
+// ---------------------------------------------------------------------------
+
+// Блок под базовой матрицей: выбираешь конкретный сервер или учётку и правишь
+// allow/deny поверх «стандартной» (тип-wide) матрицы. Базовая матрица сверху
+// остаётся стандартом для всех серверов отдела, включая будущие.
+function InstancePointSection({
+  departmentId,
+  canEdit,
+}: {
+  departmentId: string | null;
+  canEdit: boolean;
+}) {
+  const [resourceType, setResourceType] = useState<ResourceAclType>("server");
+  const [resourceId, setResourceId] = useState<string>("");
+
+  const serversQ = useQuery(
+    () => listServers({ department_id: departmentId ?? undefined, limit: 200 }),
+    [departmentId],
+  );
+  const accountsQ = useQuery(() => listAccounts({ limit: 200 }), []);
+
+  const serverOptions: ResourceTargetOption[] = useMemo(
+    () =>
+      (serversQ.data?.items ?? []).map((s) => ({
+        id: s.id,
+        label: s.display_name ?? s.hostname,
+      })),
+    [serversQ.data],
+  );
+  const accountOptions: ResourceTargetOption[] = useMemo(
+    () =>
+      (accountsQ.data?.items ?? []).map((a) => ({
+        id: a.id,
+        label: a.login,
+      })),
+    [accountsQ.data],
+  );
+
+  const options =
+    resourceType === "server" ? serverOptions : accountOptions;
+  const loading = resourceType === "server" ? serversQ.loading : accountsQ.loading;
+  const selectedLabel = options.find((o) => o.id === resourceId)?.label;
+
+  function switchType(next: ResourceAclType) {
+    setResourceType(next);
+    setResourceId("");
+  }
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h3 className="font-semibold flex items-center gap-2">
+          <Crosshair className="w-4 h-4 text-accent" />
+          Точечные права на конкретный ресурс
+        </h3>
+        <span className="text-xs text-dim">поверх тип-wide базы выше</span>
+      </div>
+      <p className="text-xs text-dim leading-relaxed mb-3">
+        Базовая матрица сверху — <em>стандарт для всех серверов и учёток отдела</em>{" "}
+        (включая будущие). Здесь можно выбрать <em>конкретный</em> сервер или
+        учётку и точечно <span className="mono">allow</span>/
+        <span className="mono">deny</span> поверх этого стандарта: deny
+        перекрывает базу и запрещает, allow — добавляет.
+      </p>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-dim">тип ресурса</span>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              className={[
+                "btn btn-sm flex items-center gap-1",
+                resourceType === "server" ? "btn-primary" : "",
+              ].join(" ")}
+              onClick={() => switchType("server")}
+            >
+              <ServerIcon className="w-3 h-3" /> сервер
+            </button>
+            <button
+              type="button"
+              className={[
+                "btn btn-sm flex items-center gap-1",
+                resourceType === "server_account" ? "btn-primary" : "",
+              ].join(" ")}
+              onClick={() => switchType("server_account")}
+            >
+              <KeyRound className="w-3 h-3" /> учётка
+            </button>
+          </div>
+        </label>
+        <label className="flex flex-col gap-1 text-xs flex-1 min-w-[220px]">
+          <span className="text-dim">
+            {resourceType === "server" ? "сервер" : "учётка"}
+          </span>
+          <select
+            className="input"
+            value={resourceId}
+            onChange={(e) => setResourceId(e.target.value)}
+            disabled={loading}
+          >
+            <option value="">
+              {loading ? "— загрузка… —" : "— выберите ресурс —"}
+            </option>
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {(serversQ.error || accountsQ.error) && (
+        <div className="alert-danger text-xs mt-3">
+          {apiErrMsg(serversQ.error ?? accountsQ.error, "Список не загрузился")}
+        </div>
+      )}
+
+      {resourceId ? (
+        <div className="mt-4">
+          <ResourceInstancePermissions
+            key={`${resourceType}:${resourceId}`}
+            resourceType={resourceType}
+            resourceId={resourceId}
+            resourceLabel={selectedLabel}
+            departmentId={departmentId}
+            canEdit={canEdit}
+            fetchTargets={async () =>
+              resourceType === "server" ? serverOptions : accountOptions
+            }
+          />
+        </div>
+      ) : (
+        <div className="empty-card text-sm text-dim mt-4">
+          Ресурс не выбран — выберите сервер или учётку, чтобы задать точечные
+          права поверх базы.
+        </div>
+      )}
     </div>
   );
 }

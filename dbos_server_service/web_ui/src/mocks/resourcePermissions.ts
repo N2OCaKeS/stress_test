@@ -11,6 +11,7 @@ import type {
   ActionName,
   PermissionCatalogItem,
   ResourceAclType,
+  ResourcePermissionEffect,
   ResourcePermissionEntry,
   ResourcePropagateMode,
   ResourcePropagateResponse,
@@ -67,35 +68,39 @@ export const MOCK_INSTANCE_CATALOG: Record<ResourceAclType, PermissionCatalogIte
   },
 };
 
-// key `${type}:${id}` → набор `${role}::${action}`
-const store = new Map<string, Set<string>>();
+// key `${type}:${id}` → map `${role}::${action}` → effect
+const store = new Map<string, Map<string, ResourcePermissionEffect>>();
 let seq = 1;
 
 function keyFor(type: ResourceAclType, id: string): string {
   return `${type}:${id}`;
 }
 
-function ensure(type: ResourceAclType, id: string): Set<string> {
+function ensure(
+  type: ResourceAclType,
+  id: string,
+): Map<string, ResourcePermissionEffect> {
   const k = keyFor(type, id);
-  let set = store.get(k);
-  if (!set) {
-    set = new Set<string>();
-    store.set(k, set);
+  let map = store.get(k);
+  if (!map) {
+    map = new Map<string, ResourcePermissionEffect>();
+    store.set(k, map);
   }
-  return set;
+  return map;
 }
 
-// Демо-сид: пара грантов на первый встреченный ресурс через listMock.
+// Демо-сид: пара грантов на первый встреченный ресурс через listMock —
+// один allow и один deny, чтобы тремя состояниями было что показать.
 function seedIfEmpty(type: ResourceAclType, id: string): void {
   const k = keyFor(type, id);
   if (store.has(k)) return;
-  const set = ensure(type, id);
+  const map = ensure(type, id);
   if (type === "server") {
-    set.add("operator::power_reboot");
-    set.add("reader::view");
+    map.set("operator::power_reboot", "allow");
+    map.set("reader::power_off", "deny");
   } else {
-    set.add("operator::rotate_password");
-    set.add("reader::view");
+    map.set("operator::rotate_password", "allow");
+    map.set("reader::view_password", "deny");
   }
 }
 
@@ -104,9 +109,9 @@ export function mockListResourcePermissions(
   id: string,
 ): ResourcePermissionEntry[] {
   seedIfEmpty(type, id);
-  const set = ensure(type, id);
+  const map = ensure(type, id);
   const now = "2026-06-29T00:00:00Z";
-  return Array.from(set).map((entry) => {
+  return Array.from(map.entries()).map(([entry, effect]) => {
     const [role, action] = entry.split("::");
     return {
       id: `rrp_mock_${seq++}`,
@@ -114,6 +119,7 @@ export function mockListResourcePermissions(
       resource_id: id,
       role: role as RoleName,
       action: action as ActionName,
+      effect,
       department_id: "core",
       granted_by: "u-mock",
       created_at: now,
@@ -127,8 +133,9 @@ export function mockGrant(
   id: string,
   role: RoleName,
   action: ActionName,
+  effect: ResourcePermissionEffect = "allow",
 ): void {
-  ensure(type, id).add(`${role}::${action}`);
+  ensure(type, id).set(`${role}::${action}`, effect);
 }
 
 export function mockRevoke(
@@ -151,14 +158,15 @@ export function mockPropagate(
     const target = ensure(type, tid);
     let added = 0;
     let removed = 0;
-    for (const g of source) {
-      if (!target.has(g)) {
-        target.add(g);
+    // merge/mirror переносят и effect: новый ключ или иной effect = added.
+    for (const [g, effect] of source) {
+      if (target.get(g) !== effect) {
+        target.set(g, effect);
         added++;
       }
     }
     if (mode === "mirror") {
-      for (const g of Array.from(target)) {
+      for (const g of Array.from(target.keys())) {
         if (!source.has(g)) {
           target.delete(g);
           removed++;

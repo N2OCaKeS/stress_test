@@ -821,11 +821,20 @@ export function isInstanceGrantable(action: ActionName): boolean {
 }
 
 /**
+ * Эффект инстанс-гранта поверх тип-wide базы:
+ *  - `allow` — добавляет действие на этом ресурсе для роли;
+ *  - `deny` — перекрывает базу и запрещает действие, даже если тип-wide матрица
+ *    его выдаёт.
+ * Если инстанс-строки нет вовсе — действует тип-wide база.
+ */
+export type ResourcePermissionEffect = "allow" | "deny";
+
+/**
  * Одна строка инстанс-ACL (Pydantic `ResourcePermissionResponse`).
  *
  * `id` с префиксом `rrp_`. Субъект гранта — роль (`role`); `department_id` —
  * scope строки (None — system-wide, иначе отдел ресурса). `granted_by` — `null`
- * для seed-грантов.
+ * для seed-грантов. `effect` — allow/deny поверх базы.
  */
 export interface ResourcePermissionEntry {
   id: string;
@@ -833,6 +842,7 @@ export interface ResourcePermissionEntry {
   resource_id: string;
   role: RoleName;
   action: ActionName;
+  effect: ResourcePermissionEffect;
   department_id: string | null;
   granted_by: string | null;
   created_at: Iso8601;

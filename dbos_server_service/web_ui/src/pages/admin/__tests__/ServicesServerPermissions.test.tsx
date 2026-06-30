@@ -49,7 +49,7 @@ vi.mock("@/components/ui/ConfirmDialog", () => ({
 import { ServicesServerPermissions } from "@/pages/admin/services/ServicesServerPermissions";
 
 // Каталог: две сущности. У server есть worker-callback `prepare_callback`
-// (worker_only) — редактор обязан держать его недоступным для выдачи.
+// (worker_only) — редактор обязан полностью скрыть его из матрицы.
 const CATALOG = [
   {
     entity_type: "server",
@@ -133,15 +133,14 @@ describe("ServicesServerPermissions — батч-модель", () => {
     setup();
   });
 
-  it("worker_only действие не редактируется (чекбокс disabled)", async () => {
+  it("worker_only действие полностью скрыто из матрицы", async () => {
     renderPage();
     await waitFor(() =>
       expect(screen.getByTitle("desc-reboot")).toBeInTheDocument(),
     );
-    // У prepare_callback (worker_only) все ячейки-чекбоксы заблокированы.
-    const cbCells = screen.getAllByTitle(/desc-cb worker_only/) as HTMLInputElement[];
-    expect(cbCells.length).toBeGreaterThan(0);
-    for (const c of cbCells) expect(c).toBeDisabled();
+    // prepare_callback (worker_only) не рендерится ни колонкой, ни ячейкой.
+    expect(screen.queryByTitle(/desc-cb/)).not.toBeInTheDocument();
+    expect(screen.queryByText("prepare_callback")).not.toBeInTheDocument();
   });
 
   it("клик по ячейке локален — применяется по «Сохранить» этой таблицы", async () => {

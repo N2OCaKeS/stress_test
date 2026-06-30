@@ -153,6 +153,8 @@ class TestCatalogWorkerOnlyFlags:
         ("server_account", "inventory_submit"),
         ("server_account", "provision_on_host"),
         ("server", "prepare_callback"),
+        # Служебный pull управляющих кред — людям в матрице не показывается.
+        ("server", "view_management_credentials"),
     })
 
     async def test_worker_only_flags_match_expected(self, client, admin_token):

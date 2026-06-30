@@ -142,3 +142,12 @@ WORKER_CALLBACK_ACTIONS: frozenset[str] = frozenset({
     Action.PROVISION_ON_HOST,
     Action.PREPARE_CALLBACK,
 })
+
+# Действия, которые в матрице прав человеку показывать не нужно: callback'и
+# воркера плюс служебный pull управляющих кред сервера (privkey + пароль dbos).
+# Всё это идёт через internal endpoint'ы и грантуется только worker_bot'у —
+# флаг `worker_only` каталога считается по этому набору, чтобы UI скрывал такие
+# действия из матрицы.
+WORKER_ONLY_ACTIONS: frozenset[str] = WORKER_CALLBACK_ACTIONS | frozenset({
+    Action.VIEW_MANAGEMENT_CREDENTIALS,
+})

@@ -15,6 +15,7 @@ from src.core.permission_catalog import (
     ENTITY_DESCRIPTIONS,
     SENSITIVE_ACTIONS,
     WORKER_CALLBACK_ACTIONS,
+    WORKER_ONLY_ACTIONS,
 )
 from src.services.permission_service import build_catalog
 
@@ -48,10 +49,20 @@ class TestFlagSets:
         expected = {"inventory_submit", "provision_on_host", "prepare_callback"}
         assert set(WORKER_CALLBACK_ACTIONS) == expected
 
+    def test_worker_only_actions_extend_callbacks_with_mgmt_creds(self):
+        expected = {
+            "inventory_submit", "provision_on_host", "prepare_callback",
+            "view_management_credentials",
+        }
+        assert set(WORKER_ONLY_ACTIONS) == expected
+        # mgmt-creds pull — служебный, но не callback; в callback-набор не входит.
+        assert WORKER_CALLBACK_ACTIONS < WORKER_ONLY_ACTIONS
+
     def test_flag_sets_only_reference_actions_in_matrix(self):
         all_actions = {a for actions in ENTITY_ACTIONS.values() for a in actions}
         assert SENSITIVE_ACTIONS <= all_actions
         assert WORKER_CALLBACK_ACTIONS <= all_actions
+        assert WORKER_ONLY_ACTIONS <= all_actions
 
 
 class TestBuildCatalog:
@@ -78,7 +89,7 @@ class TestBuildCatalog:
         for entity in catalog:
             for action in entity["actions"]:
                 assert action["sensitive"] == (action["action"] in SENSITIVE_ACTIONS)
-                assert action["worker_only"] == (action["action"] in WORKER_CALLBACK_ACTIONS)
+                assert action["worker_only"] == (action["action"] in WORKER_ONLY_ACTIONS)
 
     def test_view_password_is_sensitive_not_worker(self):
         catalog = build_catalog()
@@ -93,6 +104,15 @@ class TestBuildCatalog:
         inv = next(a for a in srv["actions"] if a["action"] == "inventory_submit")
         assert inv["worker_only"] is True
         assert inv["sensitive"] is False
+
+    def test_view_management_credentials_is_worker_only_and_sensitive(self):
+        catalog = build_catalog()
+        srv = next(e for e in catalog if e["entity_type"] == "server")
+        vmc = next(
+            a for a in srv["actions"] if a["action"] == "view_management_credentials"
+        )
+        assert vmc["worker_only"] is True
+        assert vmc["sensitive"] is True
 
     def test_plain_action_no_flags(self):
         catalog = build_catalog()

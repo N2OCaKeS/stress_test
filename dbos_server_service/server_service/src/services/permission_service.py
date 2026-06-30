@@ -43,7 +43,7 @@ from src.core.permission_catalog import (
     ACTION_DESCRIPTIONS,
     ENTITY_DESCRIPTIONS,
     SENSITIVE_ACTIONS,
-    WORKER_CALLBACK_ACTIONS,
+    WORKER_ONLY_ACTIONS,
 )
 from src.core.exceptions import (
     AuthorizationError,
@@ -280,7 +280,7 @@ def build_catalog() -> list[dict]:
                     "action": action,
                     "description": ACTION_DESCRIPTIONS[action],
                     "sensitive": action in SENSITIVE_ACTIONS,
-                    "worker_only": action in WORKER_CALLBACK_ACTIONS,
+                    "worker_only": action in WORKER_ONLY_ACTIONS,
                 }
                 for action in sorted(actions, key=lambda a: action_order.get(a, 999))
             ],

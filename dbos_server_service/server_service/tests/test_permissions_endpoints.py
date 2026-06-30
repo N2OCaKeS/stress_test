@@ -402,6 +402,9 @@ class TestCatalog:
         assert flat[("server_account", "view_password")]["worker_only"] is False
         assert flat[("server", "inventory_submit")]["worker_only"] is True
         assert flat[("server", "inventory_submit")]["sensitive"] is False
+        # mgmt-creds pull — служебный (worker_only) и при этом чувствительный.
+        assert flat[("server", "view_management_credentials")]["worker_only"] is True
+        assert flat[("server", "view_management_credentials")]["sensitive"] is True
         assert flat[("server", "view")]["sensitive"] is False
         assert flat[("server", "view")]["worker_only"] is False
 

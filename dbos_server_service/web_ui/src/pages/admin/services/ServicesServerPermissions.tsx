@@ -3,7 +3,6 @@ import {
   ShieldCheck,
   AlertTriangle,
   Lock,
-  Bot,
   Loader2,
   Plus,
   X,
@@ -465,9 +464,6 @@ function ServicesServerPermissionsLive() {
               <span className="flex items-center gap-1">
                 <span className="badge badge-warn text-[10px]">!</span>{" "}
                 sensitive → CRITICAL audit
-              </span>
-              <span className="flex items-center gap-1">
-                <Bot className="w-3 h-3" /> worker_only — людям не выдаётся
               </span>
             </div>
 
@@ -949,6 +945,8 @@ function RoleEntityCard({
   saving: boolean;
   onToggle: ToggleFn;
 }) {
+  // worker_only действия — служебные, людям в матрице не показываем.
+  const visibleActions = entity.actions.filter((a) => !a.worker_only);
   return (
     <div className="card">
       <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
@@ -956,22 +954,20 @@ function RoleEntityCard({
         <span className="text-xs text-dim">{entity.description}</span>
       </div>
 
-      {entity.actions.length === 0 ? (
+      {visibleActions.length === 0 ? (
         <div className="text-sm text-dim">
           У сущности нет действий в каталоге.
         </div>
       ) : (
         <div className="flex flex-col divide-y divide-token border border-token rounded overflow-auto max-h-[60vh]">
-          {entity.actions.map((a) => {
+          {visibleActions.map((a) => {
             const allowed = isAllowed(entity.entity_type, role, a.action);
-            const disabled = locked || a.worker_only || saving;
+            const disabled = locked || saving;
             const reason = locked
               ? "роль залочена"
-              : a.worker_only
-                ? "worker_only — выдавать людям нельзя"
-                : allowed
-                  ? "Снять — отозвать"
-                  : "Поставить — выдать";
+              : allowed
+                ? "Снять — отозвать"
+                : "Поставить — выдать";
             return (
               <label
                 key={a.action}
@@ -999,9 +995,6 @@ function RoleEntityCard({
                     >
                       !
                     </span>
-                  )}
-                  {a.worker_only && (
-                    <Bot className="w-3 h-3" aria-label="worker_only" />
                   )}
                 </span>
                 <span className="text-[11px] text-dim flex-1 truncate">
@@ -1333,6 +1326,9 @@ function EntityMatrix({
   onClearRole: (role: RoleName) => void;
   hasOverride: (role: RoleName) => boolean;
 }) {
+  // worker_only действия — служебные callback'и и pull управляющих кред; людям
+  // в матрице не показываем вовсе.
+  const visibleActions = entity.actions.filter((a) => !a.worker_only);
   return (
     <div className="card">
       <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
@@ -1342,7 +1338,7 @@ function EntityMatrix({
         <span className="text-xs text-dim">{entity.description}</span>
       </div>
 
-      {entity.actions.length === 0 ? (
+      {visibleActions.length === 0 ? (
         <div className="text-sm text-dim">
           У сущности нет действий в каталоге.
         </div>
@@ -1355,7 +1351,7 @@ function EntityMatrix({
                   <th className="pb-2 pt-2 px-3 sticky left-0 top-0 z-20 bg-[var(--bg-soft)]">
                     role
                   </th>
-                  {entity.actions.map((a) => (
+                  {visibleActions.map((a) => (
                     <th
                       key={a.action}
                       className="pb-2 pt-2 px-2 mono font-normal align-bottom sticky top-0 z-10 bg-[var(--bg-soft)]"
@@ -1370,12 +1366,6 @@ function EntityMatrix({
                           >
                             !
                           </span>
-                        )}
-                        {a.worker_only && (
-                          <Bot
-                            className="w-3 h-3"
-                            aria-label="worker_only"
-                          />
                         )}
                       </div>
                     </th>
@@ -1408,20 +1398,18 @@ function EntityMatrix({
                           )}
                         </span>
                       </td>
-                      {entity.actions.map((a) => {
+                      {visibleActions.map((a) => {
                         const allowed = isAllowed(
                           entity.entity_type,
                           role,
                           a.action,
                         );
-                        const disabled = locked || a.worker_only || saving;
+                        const disabled = locked || saving;
                         const reason = locked
                           ? LOCKED_ROLES[role]
-                          : a.worker_only
-                            ? "worker_only — выдавать людям нельзя"
-                            : allowed
-                              ? "Снять — отозвать"
-                              : "Поставить — выдать";
+                          : allowed
+                            ? "Снять — отозвать"
+                            : "Поставить — выдать";
                         return (
                           <td
                             key={a.action}

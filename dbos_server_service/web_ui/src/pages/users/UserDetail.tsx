@@ -1076,7 +1076,7 @@ export function UserDetail() {
               </button>
               <span className="text-xs text-dim ml-auto">
                 {caps.delete
-                  ? "Действия требуют подтверждения и логируются в аудит."
+                  ? "Действия требуют подтверждения."
                   : `Нет прав: ${caps.reason}`}
               </span>
             </div>

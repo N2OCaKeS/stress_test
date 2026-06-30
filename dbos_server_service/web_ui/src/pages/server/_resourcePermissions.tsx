@@ -502,7 +502,7 @@ export function ResourceInstancePermissions({
                         {a.sensitive && (
                           <span
                             className="badge badge-warn text-[10px]"
-                            title="sensitive → CRITICAL audit"
+                            title="чувствительное действие"
                           >
                             !
                           </span>

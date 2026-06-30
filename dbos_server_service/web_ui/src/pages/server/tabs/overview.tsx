@@ -221,7 +221,7 @@ function OverviewView({
       </div>
 
       <div className="card">
-        <h3 className="font-semibold text-base mb-3">Аудит</h3>
+        <h3 className="font-semibold text-base mb-3">Метки времени</h3>
         <StatRow
           k="created_at"
           v={<span className="mono">{formatMsk(server.created_at)}</span>}

@@ -99,7 +99,7 @@ export function ConsoleTab({ serverId, server }: Props) {
           <span className="mono">
             {server?.display_name ?? server?.hostname ?? serverId}
           </span>{" "}
-          под выбранной сервисной учёткой. Команды сессии логируются в аудит.
+          под выбранной сервисной учёткой.
         </div>
       </div>
 

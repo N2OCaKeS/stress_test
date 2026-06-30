@@ -748,8 +748,7 @@ function BotLiveData({
                     <Trash2 className="w-4 h-4" /> Удалить навсегда
                   </button>
                   <span className="text-[11px] text-dim ml-2">
-                    Каскадом уносит токены, роли и членства бота. Действие
-                    логируется в аудит.
+                    Каскадом уносит токены, роли и членства бота.
                   </span>
                 </div>
               )}

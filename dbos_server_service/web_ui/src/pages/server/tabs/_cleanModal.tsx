@@ -165,7 +165,7 @@ export function CleanModal({
     ].filter(Boolean) as string[];
     const ok = await confirm({
       title: "Очистить сервер",
-      message: `Выполнить очистку ${hostname}? Будут запущены: ${actions.join(", ")}. Отвязка учёток снимает все связки и удаляет OS-пользователей с боксов — действие чувствительное (CRITICAL-аудит).`,
+      message: `Выполнить очистку ${hostname}? Будут запущены: ${actions.join(", ")}. Отвязка учёток снимает все связки и удаляет OS-пользователей с боксов — действие чувствительное.`,
       confirmLabel: "Выполнить очистку",
       danger: true,
     });

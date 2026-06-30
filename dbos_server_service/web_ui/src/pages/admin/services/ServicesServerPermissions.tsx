@@ -463,7 +463,7 @@ function ServicesServerPermissionsLive() {
               </span>
               <span className="flex items-center gap-1">
                 <span className="badge badge-warn text-[10px]">!</span>{" "}
-                sensitive → CRITICAL audit
+                чувствительное действие
               </span>
             </div>
 
@@ -991,7 +991,7 @@ function RoleEntityCard({
                   {a.sensitive && (
                     <span
                       className="badge badge-warn text-[10px]"
-                      title="sensitive → CRITICAL audit"
+                      title="чувствительное действие"
                     >
                       !
                     </span>
@@ -1362,7 +1362,7 @@ function EntityMatrix({
                         {a.sensitive && (
                           <span
                             className="badge badge-warn text-[10px]"
-                            title="sensitive → CRITICAL audit"
+                            title="чувствительное действие"
                           >
                             !
                           </span>

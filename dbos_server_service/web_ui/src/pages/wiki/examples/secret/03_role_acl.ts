@@ -14,7 +14,7 @@ export const ROLE_ACL: ApiSection = {
       path: "/api/secret/v1/credentials/{cred_id}/acl",
       auth: "Bearer + grant_acl: owner (personal) / dep_admin владеющего отдела (department, cross_dep owner-side) / dep_admin recipient'а при наличии DeptGrant (cross_dep recipient-side)",
       description:
-        "Создаёт RoleACL для кред'ы cred_id: «носители role_name в департаменте dept_id получают can_read и/или can_write». can_read и can_write по умолчанию false — нужно явно проставить хотя бы один, иначе ACL ничего не даёт. Для personal-кред'ы dept_id обязан совпадать с департаментом владельца (иначе 422 PERSONAL_ACL_OWNER_DEPT_ONLY). Для cross_department-кред'ы, если dept_id — НЕ owner-отдел, до выдачи ACL должен существовать DeptGrant(cred_id, dept_id), иначе 422 DEPT_GRANT_REQUIRED. Пара (dept_id, role_name) уникальна — повтор отбивается 409 ROLE_ACL_DUPLICATE. Пишет audit tokens.role_acl_added (INFO).",
+        "Создаёт RoleACL для кред'ы cred_id: «носители role_name в департаменте dept_id получают can_read и/или can_write». can_read и can_write по умолчанию false — нужно явно проставить хотя бы один, иначе ACL ничего не даёт. Для personal-кред'ы dept_id обязан совпадать с департаментом владельца (иначе 422 PERSONAL_ACL_OWNER_DEPT_ONLY). Для cross_department-кред'ы, если dept_id — НЕ owner-отдел, до выдачи ACL должен существовать DeptGrant(cred_id, dept_id), иначе 422 DEPT_GRANT_REQUIRED. Пара (dept_id, role_name) уникальна — повтор отбивается 409 ROLE_ACL_DUPLICATE.",
       curl: `curl -X POST {{BASE_URL}}/api/secret/v1/credentials/cred_5da6155c392ff8f9d2ff24ebb3b5b135/acl \\
   -H "Authorization: Bearer {{TOKEN}}" \\
   -H "Content-Type: application/json" \\
@@ -130,7 +130,7 @@ for acl in resp.json()["items"]:
       path: "/api/secret/v1/credentials/{cred_id}/acl/{acl_id}",
       auth: "Bearer + grant_acl: owner / dep_admin владеющего отдела / admin secret_service отдела; recipient dep_admin может снимать только свои ACL внутри своего отдела",
       description:
-        "Удаляет конкретный RoleACL по acl_id. Снятие — write-действие (требует grant_acl, то есть can_write на уровне доступа), как и выдача. Для cross_department-кред'ы ACL recipient-отдела может снять либо локальный dep_admin этого отдела, либо dep_admin владеющего отдела (он мощнее). acl_id должен принадлежать именно этой cred_id — иначе 404 ROLE_ACL_NOT_FOUND. Пишет audit tokens.role_acl_revoked (INFO). Операция точечная: каскадное снятие всех ACL recipient-отдела происходит при revoke DeptGrant'а или удалении департамента/пользователя (см. lifecycle).",
+        "Удаляет конкретный RoleACL по acl_id. Снятие — write-действие (требует grant_acl, то есть can_write на уровне доступа), как и выдача. Для cross_department-кред'ы ACL recipient-отдела может снять либо локальный dep_admin этого отдела, либо dep_admin владеющего отдела (он мощнее). acl_id должен принадлежать именно этой cred_id — иначе 404 ROLE_ACL_NOT_FOUND. Операция точечная: каскадное снятие всех ACL recipient-отдела происходит при revoke DeptGrant'а или удалении департамента/пользователя (см. lifecycle).",
       curl: `curl -X DELETE {{BASE_URL}}/api/secret/v1/credentials/cred_5da6155c392ff8f9d2ff24ebb3b5b135/acl/acl_8a295ca1c08b171eb3d3193aef384df6 \\
   -H "Authorization: Bearer {{TOKEN}}"`,
       python: `import requests

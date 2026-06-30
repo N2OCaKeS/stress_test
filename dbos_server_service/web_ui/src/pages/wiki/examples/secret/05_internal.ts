@@ -43,7 +43,7 @@ resp = requests.post(
     json={
         "user_id": "usr_271b5d82bb42445b82beb20378184f56",
         "actor_id": "usr_45c4c368a51a4dc8992ba81697da0086",
-        "actor_username": "admin",  # для аудита
+        "actor_username": "admin",
     },
 )
 resp.raise_for_status()
@@ -52,7 +52,7 @@ summary = resp.json()
 # deleted_count — orphan-креды снесены физически
 print(summary["blocked_count"], summary["deleted_count"])`,
       notes:
-        "Response 200 LifecycleSummary: { blocked_count, deleted_count, dept_grants_revoked, role_acls_revoked, errors }. Аудит: tokens.owner_user_deleted_block (WARNING) на blocked + tokens.delete (WARNING) на orphan. Без X-Service-Identity (или с чужим именем) → 401 INTERNAL_AUTH_REQUIRED; неверный bearer → тоже 401. Ошибки внутри handler'а → 500 LIFECYCLE_HANDLER_FAILED с details.errors (транзакция откачена).",
+        "Response 200 LifecycleSummary: { blocked_count, deleted_count, dept_grants_revoked, role_acls_revoked, errors }. Без X-Service-Identity (или с чужим именем) → 401 INTERNAL_AUTH_REQUIRED; неверный bearer → тоже 401. Ошибки внутри handler'а → 500 LIFECYCLE_HANDLER_FAILED с details.errors (транзакция откачена).",
     },
     {
       id: "internal-dept-deleted",
@@ -93,7 +93,7 @@ summary = resp.json()
 # blocked_count (как owner) + dept_grants_revoked / role_acls_revoked (как recipient)
 print(summary)`,
       notes:
-        "Response 200 LifecycleSummary: { blocked_count, dept_grants_revoked, role_acls_revoked, errors }. Аудит: tokens.owner_dept_deleted_block (WARNING) + tokens.dept_recipient_cascade (CRITICAL). auth_service шлёт этот callback best-effort после commit'а hard-delete'а отдела.",
+        "Response 200 LifecycleSummary: { blocked_count, dept_grants_revoked, role_acls_revoked, errors }. auth_service шлёт этот callback best-effort после commit'а hard-delete'а отдела.",
     },
     {
       id: "internal-dept-service-access-revoked",
@@ -135,7 +135,7 @@ resp = requests.post(
 resp.raise_for_status()
 print(resp.json())  # { dept_grants_revoked, role_acls_revoked, errors }`,
       notes:
-        "Response 200 LifecycleSummary: { dept_grants_revoked, role_acls_revoked, errors }. service != secret_service → no-op (нулевые счётчики). Аудит: tokens.dept_revoke_cascade (CRITICAL). Свои креды отдела НЕ трогаются — их блокирует только dept-deleted.",
+        "Response 200 LifecycleSummary: { dept_grants_revoked, role_acls_revoked, errors }. service != secret_service → no-op (нулевые счётчики). Свои креды отдела НЕ трогаются — их блокирует только dept-deleted.",
     },
   ],
 };

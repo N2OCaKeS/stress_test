@@ -108,7 +108,7 @@ if page["has_more"]:
       path: "/api/server/v1/server-accounts/{account_id}",
       auth: "Bearer + (view ИЛИ view_password); пароль отдаётся только держателю view_password",
       description:
-        "Карточка доступна по view или view_password. Держателю action view_password в поле password_b64 приходит base64(plaintext) — его надо декодировать обратно. Без view_password (только view) password_b64 = null. Сырого password_encrypted в ответе нет никогда. Раскрытие пароля пишет CRITICAL audit server_account.password_revealed и проходит per-IP+account rate-limit (PASSWORD_REVEAL_RATE_LIMIT, default 10/min) поверх глобального.",
+        "Карточка доступна по view или view_password. Держателю action view_password в поле password_b64 приходит base64(plaintext) — его надо декодировать обратно. Без view_password (только view) password_b64 = null. Сырого password_encrypted в ответе нет никогда. Раскрытие пароля проходит per-IP+account rate-limit (PASSWORD_REVEAL_RATE_LIMIT, default 10/min) поверх глобального.",
       curl: `resp=$(curl -s "{{BASE_URL}}/api/server/v1/server-accounts/acc_a6a30466eb0e42f4926782acd5c3b5e4" \\
   -H "Authorization: Bearer {{TOKEN}}")
 
@@ -136,7 +136,7 @@ if password_b64:
 else:
     print("без view_password пароль не раскрывается")`,
       notes:
-        "Ответ 200: ServerAccountResponse. password_b64 заполнен только при view_password (тогда — CRITICAL audit + reveal-rate-limit). Нет ни view, ни view_password → 403. Аккаунт не найден / чужой dept → 404 ACCOUNT_NOT_FOUND. Сломанный ciphertext (только при view_password) → 500 DECRYPT_FAILED. Перебор reveal-лимита → 429 RATE_LIMIT_EXCEEDED.",
+        "Ответ 200: ServerAccountResponse. password_b64 заполнен только при view_password (тогда действует reveal-rate-limit). Нет ни view, ни view_password → 403. Аккаунт не найден / чужой dept → 404 ACCOUNT_NOT_FOUND. Сломанный ciphertext (только при view_password) → 500 DECRYPT_FAILED. Перебор reveal-лимита → 429 RATE_LIMIT_EXCEEDED.",
     },
     {
       id: "account-patch",
@@ -236,7 +236,7 @@ print(resp.json()["server_ids"])`,
       path: "/api/server/v1/server-accounts/{account_id}/rotate_password",
       auth: "Bearer + (server_account, *, rotate_password)",
       description:
-        "Меняет общий пароль аккаунта в хранилище server_service (новый ciphertext), без apply'я на серверы по SSH. Body опционален: передашь password_b64 = base64(plaintext) — он декодируется, проходит политику (≥8 символов, буквы+цифры) и сохраняется; опустишь body / передашь пустой — сервер сгенерит secrets.token_urlsafe(32). Plaintext в ответ НЕ возвращается ни в одном случае (ответ — только id/login/rotated_at). Чтобы пароль реально применился на боксах — worker-dispatch /rotate. Audit — CRITICAL.",
+        "Меняет общий пароль аккаунта в хранилище server_service (новый ciphertext), без apply'я на серверы по SSH. Body опционален: передашь password_b64 = base64(plaintext) — он декодируется, проходит политику (≥8 символов, буквы+цифры) и сохраняется; опустишь body / передашь пустой — сервер сгенерит secrets.token_urlsafe(32). Plaintext в ответ НЕ возвращается ни в одном случае (ответ — только id/login/rotated_at). Чтобы пароль реально применился на боксах — worker-dispatch /rotate.",
       curl: `# свой пароль — в base64
 password='Rotated-Pass99'
 PW_B64=$(printf '%s' "$password" | base64)

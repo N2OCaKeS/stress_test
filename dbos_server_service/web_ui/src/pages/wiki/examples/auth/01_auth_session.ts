@@ -171,7 +171,7 @@ export const AUTH_SESSION: ApiSection = {
       auth: "Публично",
       description:
         "Простой liveness-чек: отвечает, пока процесс жив. В БД не ходит. " +
-        "Используется как livenessProbe в k8s. Из аудита health-запросы исключены.",
+        "Используется как livenessProbe в k8s.",
       curl: 'base_url="{{BASE_URL}}"\ncurl "$base_url/api/auth/v1/health"',
       python:
         'import requests\n\n' +

@@ -96,7 +96,7 @@ for ctrl in data["items"]:
       path: "/api/server/v1/servers/{server_id}/ipmi",
       auth: "Bearer + (ipmi_controller, *, view) либо view_credentials",
       description:
-        "Возвращает kind / endpoint_url / username / last_probed_at / last_status. Если вызывающий держит action view_credentials, поле password_b64 несёт base64(plaintext) — раскодируй стандартным base64.b64decode; иначе password_b64=null. Раскрытие пароля пишет CRITICAL audit ipmi_controller.credentials_revealed и режется per-IP+server rate-limit'ом PASSWORD_REVEAL_RATE_LIMIT (default 10/min). Cross-dept сервер скрыт за 404; сервер без контроллера → 404 NO_IPMI_CONTROLLER.",
+        "Возвращает kind / endpoint_url / username / last_probed_at / last_status. Если вызывающий держит action view_credentials, поле password_b64 несёт base64(plaintext) — раскодируй стандартным base64.b64decode; иначе password_b64=null. Раскрытие пароля режется per-IP+server rate-limit'ом PASSWORD_REVEAL_RATE_LIMIT (default 10/min). Cross-dept сервер скрыт за 404; сервер без контроллера → 404 NO_IPMI_CONTROLLER.",
       curl: `SERVER_ID="srv_..."
 
 curl {{BASE_URL}}/api/server/v1/servers/$SERVER_ID/ipmi \\
@@ -134,7 +134,7 @@ if data.get("password_b64"):
       path: "/api/server/v1/servers/{server_id}/ipmi/credentials",
       auth: "Bearer + (ipmi_controller, *, view_credentials)",
       description:
-        "Возвращает kind / endpoint_url / username / password_rotated_at БЕЗ plaintext-пароля. Plaintext доступен только worker'у через internal endpoint. Это INFO-аудит (ipmi_controller.view_credentials_meta), в отличие от CRITICAL reveal в карточке GET /servers/{id}/ipmi.",
+        "Возвращает kind / endpoint_url / username / password_rotated_at БЕЗ plaintext-пароля. Plaintext доступен только worker'у через internal endpoint.",
       curl: `SERVER_ID="srv_..."
 
 curl {{BASE_URL}}/api/server/v1/servers/$SERVER_ID/ipmi/credentials \\
@@ -163,7 +163,7 @@ print(data["username"], data["endpoint_url"], data["password_rotated_at"])`,
       path: "/api/server/v1/servers/{server_id}/ipmi",
       auth: "Bearer + (ipmi_controller, *, update)",
       description:
-        "Частичное обновление kind / endpoint_url / username. Пароль через PATCH НЕ меняется — для смены пароля есть worker-dispatch POST /ipmi-controllers/{id}/rotate (BMC apply + verify, отдельный CRITICAL audit).",
+        "Частичное обновление kind / endpoint_url / username. Пароль через PATCH НЕ меняется — для смены пароля есть worker-dispatch POST /ipmi-controllers/{id}/rotate (BMC apply + verify).",
       curl: `SERVER_ID="srv_..."
 
 curl -X PATCH {{BASE_URL}}/api/server/v1/servers/$SERVER_ID/ipmi \\
@@ -315,7 +315,7 @@ print(resp.json())  # {"task_id": "tsk_...", "status": "queued"}`,
       path: "/api/server/v1/servers/{server_id}/ipmi/credentials/rotate",
       auth: "Bearer + (ipmi_controller, *, rotate_credentials) — но всегда 410",
       description:
-        "DEPRECATED. Любой вызов (включая bot / worker_bot, fallback'а нет) отбивается 410 GONE с CRITICAL-аудитом. Endpoint писал plaintext в password_encrypted БЕЗ apply/verify на BMC — любой держатель grant'а (включая скомпрометированный bot) мог молча разорвать out-of-band доступ к стойкам. Используй вместо него POST /ipmi-controllers/{id}/rotate (worker dispatch).",
+        "DEPRECATED. Любой вызов (включая bot / worker_bot, fallback'а нет) отбивается 410 GONE. Endpoint писал plaintext в password_encrypted БЕЗ apply/verify на BMC — любой держатель grant'а (включая скомпрометированный bot) мог молча разорвать out-of-band доступ к стойкам. Используй вместо него POST /ipmi-controllers/{id}/rotate (worker dispatch).",
       curl: `SERVER_ID="srv_..."
 
 # демонстрационно — всегда вернёт 410 GONE:
@@ -347,7 +347,7 @@ print(resp.json()["error_code"])     # IPMI_ROTATE_USER_FACING_DEPRECATED`,
       path: "/api/server/v1/servers/{server_id}/ipmi",
       auth: "Bearer + (ipmi_controller, *, delete)",
       description:
-        "Hard-delete записи BMC (CRITICAL audit). После удаления любые power-операции на сервере отбиваются 404 NO_IPMI_CONTROLLER до повторной регистрации.",
+        "Hard-delete записи BMC. После удаления любые power-операции на сервере отбиваются 404 NO_IPMI_CONTROLLER до повторной регистрации.",
       curl: `SERVER_ID="srv_..."
 
 curl -X DELETE {{BASE_URL}}/api/server/v1/servers/$SERVER_ID/ipmi \\

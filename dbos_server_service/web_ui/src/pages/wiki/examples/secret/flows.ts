@@ -151,9 +151,9 @@ export const SECRET_FLOWS: ApiFlow[] = [
         description:
           "Рядовой пользователь отдела-получателя с ролью reader (отдельный " +
           "токен, не dep_admin) дёргает /reveal. Ответ — { login, secret_b64 }, " +
-          "где secret_b64 = base64(plaintext); декодируем обратно. Первый " +
-          "reveal даёт CRITICAL-аудит tokens.revealed; повторы в 5-минутном " +
-          "окне — INFO tokens.revealed_throttled.",
+          "где secret_b64 = base64(plaintext); декодируем обратно. Повторы " +
+          "в 5-минутном окне помечаются как throttled, но ответ тот же — " +
+          "200 с секретом.",
         curl:
           'READER_TOKEN="{{TOKEN}}"   # рядовой reader отдела-получателя\n\n' +
           'curl -s -X POST "$BASE/api/secret/v1/credentials/$CRED_ID/reveal" \\\n' +
@@ -220,7 +220,7 @@ export const SECRET_FLOWS: ApiFlow[] = [
           "Аутентификация — Bearer <SECRET_INTERNAL_API_KEY> (dev = " +
           "dev-introspect-api-key) + обязательный X-Service-Identity: " +
           "auth_service. Тело несёт user_id удалённого и actor_* того, кто " +
-          "инициировал удаление (для аудита). Ответ — счётчики.",
+          "инициировал удаление. Ответ — счётчики.",
         curl:
           'BASE="{{BASE_URL}}"\n' +
           'INTERNAL_KEY="{{INTERNAL_KEY}}"   # dev: dev-introspect-api-key\n' +
@@ -253,7 +253,7 @@ export const SECRET_FLOWS: ApiFlow[] = [
         title: "3. Проверка: кред'а теперь blocked",
         description:
           "GET кред'ы показывает status=blocked, blocked_reason=" +
-          "owner_user_deleted. Метаданные всё ещё читаемы (для аудита/transfer'а), " +
+          "owner_user_deleted. Метаданные всё ещё читаемы (нужны для transfer'а), " +
           "но reveal и write по ней запрещены — recover делается через " +
           "transfer новому владельцу admin'ом secret_service. Orphan-кред'ы " +
           "(deleted_count) в выдаче GET уже не существуют.",
@@ -276,9 +276,8 @@ export const SECRET_FLOWS: ApiFlow[] = [
     ],
     notes:
       "Без X-Service-Identity: auth_service (или с чужим именем / неверным " +
-      "ключом) callback отвечает 401 INTERNAL_AUTH_REQUIRED. Аудит на каскаде: " +
-      "tokens.owner_user_deleted_block (WARNING) на blocked + tokens.delete " +
-      "(WARNING) на orphan. blocked-кред'у возвращает к жизни POST " +
-      "/credentials/{id}/transfer (новый владелец из числа grantee'ев).",
+      "ключом) callback отвечает 401 INTERNAL_AUTH_REQUIRED. blocked-кред'у " +
+      "возвращает к жизни POST /credentials/{id}/transfer (новый владелец " +
+      "из числа grantee'ев).",
   },
 ];

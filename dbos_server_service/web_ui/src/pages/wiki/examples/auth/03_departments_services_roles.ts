@@ -100,7 +100,7 @@ print(resp.json())`,
       notes:
         "Ошибки: DEPARTMENT_NOT_FOUND (404), EMPTY_UPDATE (422) — оба поля не " +
         "переданы, DEPARTMENT_ALREADY_EXISTS (409) — name занят другим отделом, " +
-        "ROLE_REQUIRED (403). Audit: department.updated.",
+        "ROLE_REQUIRED (403).",
     },
     {
       id: "departments-services-list",
@@ -202,8 +202,7 @@ print(resp.json())  # {"ok": true}`,
         "Жёсткое удаление отдела: row в departments сносится физически. " +
         "CASCADE-FK уносят DepartmentServiceAccess, ServiceRoleDefinition, " +
         "UserGroup (с membership'ами и role-bindings), DepartmentDockerRegistry; " +
-        "боты и oauth_clients отдела удаляются явно. reason обязателен (1..256) " +
-        "для compliance-аудита.",
+        "боты и oauth_clients отдела удаляются явно. reason обязателен (1..256).",
       curl: `curl -sS -X DELETE {{BASE_URL}}/api/auth/v1/departments/dep_xxxxxxxx \\
   -H "Authorization: Bearer {{TOKEN}}" \\
   -H "Content-Type: application/json" \\
@@ -226,7 +225,7 @@ print(resp.json())  # {"ok": true}`,
         "Ошибки: DEPARTMENT_NOT_FOUND (404), USERS_REMAIN_IN_DEPT (422) — в " +
         "отделе остался хотя бы один активный юзер (сначала перевести их через " +
         "PATCH /users/{id} или снести через DELETE /users/{id}), ROLE_REQUIRED " +
-        "(403). Audit: department.hard_deleted (CRITICAL).",
+        "(403).",
     },
     // ---------------------------------------------------------------- services
     {
@@ -314,9 +313,7 @@ resp = requests.delete(
 resp.raise_for_status()
 print(resp.json())  # {"ok": true}`,
       notes:
-        "SERVICE_NOT_FOUND (404). Audit service.delete несёт " +
-        "cascade_revoked_department_access, cascade_deactivated_roles, " +
-        "affected_bot_count.",
+        "SERVICE_NOT_FOUND (404).",
     },
     // ---------------------------------------------------------------- service roles
     {

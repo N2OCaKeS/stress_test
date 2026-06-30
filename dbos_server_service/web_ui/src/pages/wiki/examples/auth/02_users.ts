@@ -542,7 +542,7 @@ print(resp.json())  # {"ok": true}`,
         "service-роли и членства в группах. Боты, созданные юзером, НЕ трогаются " +
         "(бот — dept-owned). После commit'а secret_service получает best-effort " +
         "notify, блокирующий personal credentials удалённого юзера. reason " +
-        "обязателен (1..256 символов) для compliance-аудита.",
+        "обязателен (1..256 символов).",
       notes:
         "Только account_admin (department_admin не пускают). Ошибки: 404 " +
         "USER_NOT_FOUND; 422 LAST_ACCOUNT_ADMIN (нельзя снести последнего " +

@@ -208,8 +208,8 @@ export const INVENTORY_TASKS: ApiSection = {
       description:
         "Помечает задачу cancelled. Pending — пропускается перед запуском; " +
         "running — graceful: текущий stage доживает, следующий не стартует " +
-        "(force-kill нет). Тело опционально несёт {reason} — фиксируется в " +
-        "audit. Доступ — (task, cancel), по умолчанию только роль admin. " +
+        "(force-kill нет). Тело опционально несёт {reason}. " +
+        "Доступ — (task, cancel), по умолчанию только роль admin. " +
         "Системные задачи (heartbeat/sweep/cleanup) отменяет только " +
         "account_admin.",
       curl:

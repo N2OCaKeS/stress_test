@@ -369,7 +369,7 @@ print(err["details"]["errors"][0]["msg"])  # ...secret_b64 is not valid base64`,
       path: "/api/secret/v1/credentials/{cred_id}",
       auth: "Bearer (owner / dep_admin / admin secret_service отдела / account_admin)",
       description:
-        "Удаляет cred'у. Owner удаляет свою без тела. Admin override (не-owner: admin secret_service своего отдела или account_admin) обязан передать reason (1..256 символов) в body, иначе 422 ADMIN_OVERRIDE_REASON_REQUIRED — это пишется в CRITICAL audit tokens.admin_override_delete. Удаление hard: повторный GET → 404.",
+        "Удаляет cred'у. Owner удаляет свою без тела. Admin override (не-owner: admin secret_service своего отдела или account_admin) обязан передать reason (1..256 символов) в body, иначе 422 ADMIN_OVERRIDE_REASON_REQUIRED. Удаление hard: повторный GET → 404.",
       curl: `# owner — без тела
 curl -X DELETE {{BASE_URL}}/api/secret/v1/credentials/cred_5a0ca2b85102ba73f695cc3624664f04 \\
   -H "Authorization: Bearer {{TOKEN}}"

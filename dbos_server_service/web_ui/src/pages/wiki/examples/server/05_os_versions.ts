@@ -25,8 +25,7 @@ export const OS_VERSIONS: ApiSection = {
         "не нужен; авторизованный запрос тоже проходит. Для новых интеграций лучше " +
         "cursor-пагинация (см. соседний пример).",
       notes:
-        "Анонимные list/get эмитят INFO-аудит os_version.list_anonymous / " +
-        "view_anonymous для SIEM-видимости. Анонимный read — под отдельным per-IP " +
+        "Анонимный read — под отдельным per-IP " +
         "лимитом 100/min (OS_VERSIONS_ANON_RATE_LIMIT).",
       curl: `# read публичный — токен не требуется
 curl "{{BASE_URL}}/api/server/v1/os-versions?limit=50&offset=0"`,
@@ -59,7 +58,7 @@ for v in page["items"]:
         "конец каталога. after опускается на первой странице. limit тот же 1..500.",
       notes:
         "Битый/недекодируемый after → 400 INVALID_CURSOR. Анонимный режим — тот же " +
-        "per-IP лимит и INFO-аудит, что и у offset-варианта.",
+        "per-IP лимит, что и у offset-варианта.",
       curl: `# первая страница cursor-режима
 curl "{{BASE_URL}}/api/server/v1/os-versions?cursor=true&limit=2"
 

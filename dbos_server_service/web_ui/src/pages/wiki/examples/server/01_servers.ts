@@ -181,8 +181,7 @@ export const SERVERS: ApiSection = {
         'print(r.status_code, s["hostname"], s["status"], s["is_managed"])',
       notes:
         "Ответ 200: ServerResponse (включая storage, busy_*, power_state, " +
-        "is_managed/management_user/prepared_at). Аудит server.view пишется на " +
-        "каждый вызов (success / denied). Ошибки: 403 PERMISSION_DENIED, " +
+        "is_managed/management_user/prepared_at). Ошибки: 403 PERMISSION_DENIED, " +
         "404 SERVER_NOT_FOUND (в т.ч. чужой department).",
     },
     {
@@ -232,7 +231,7 @@ export const SERVERS: ApiSection = {
         "Жёсткое удаление строки с каскадом на server_accounts, ipmi_controllers, " +
         "server_disks (ondelete=CASCADE). Восстановить нельзя — для soft-delete " +
         "сервер переводят в статус decommissioned через PATCH. Требует именно " +
-        "action delete в матрице (отдельный от update). Аудит CRITICAL.",
+        "action delete в матрице (отдельный от update).",
       curl:
         'base_url="{{BASE_URL}}"\n' +
         'token="{{TOKEN}}"\n' +

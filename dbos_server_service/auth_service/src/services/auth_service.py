@@ -422,6 +422,16 @@ async def login(
         user_agent=user_agent,
     )
 
+    # Лимит одновременных сессий: вытесняем самые старые в той же транзакции,
+    # что и create (под FOR UPDATE). id'шники собираем до commit'а — после
+    # него ORM-атрибуты expired и обращение к ним дёрнуло бы лишний SELECT.
+    evicted_sessions = await session_repo.enforce_concurrent_limit(
+        user_id=user.id,
+        keep_session_id=new_session.id,
+        limit=settings.max_concurrent_sessions,
+    )
+    evicted_session_ids = [s.id for s in evicted_sessions]
+
     access_token = _build_access_token(user, session_id=new_session.id)
     await db.commit()
 
@@ -443,6 +453,19 @@ async def login(
             "service_roles_count": sum(len(v) for v in service_roles.values()),
         },
     )
+    # Каждое вытеснение по лимиту — отдельным событием (severity WARNING из
+    # каталога). actor — сам юзер, target — отозванная сессия.
+    for evicted_id in evicted_session_ids:
+        audit_service.emit(
+            "user.session_evicted_over_limit", user.id, actor_type="user",
+            target_id=evicted_id, target_type="session", status="success",
+            request_id=request_id,
+            details={
+                "evicted_session_id": evicted_id,
+                "reason": "max_concurrent_sessions",
+                "limit": settings.max_concurrent_sessions,
+            },
+        )
     return LoginResponse(
         access_token=access_token,
         refresh_token=raw_refresh,

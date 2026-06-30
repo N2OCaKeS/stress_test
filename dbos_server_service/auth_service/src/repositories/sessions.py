@@ -197,6 +197,47 @@ class SessionRepository:
         await self._db.flush()
         return count
 
+    async def enforce_concurrent_limit(
+        self,
+        user_id: str,
+        keep_session_id: str,
+        limit: int,
+    ) -> list[Session]:
+        """Подрезать число активных сессий юзера до `limit` (sliding window).
+
+        Берёт активные сессии под `FOR UPDATE` — это сериализует параллельные
+        login'ы одного юзера: второй login ждёт коммита первого и пересчитывает
+        лимит уже на актуальном наборе, без длительного «лишнего» хвоста.
+        Сортирует от старых к новым по `created_at` и отзывает самые старые
+        лишние, чтобы осталось ровно `limit`. Только что созданная сессия
+        (`keep_session_id`) из кандидатов на вытеснение исключается — она
+        остаётся всегда.
+
+        `limit <= 0` трактуется как «лимит выключен» — ничего не делаем.
+        Возвращает список вытесненных сессий (для audit).
+        """
+        if limit <= 0:
+            return []
+        now = utcnow()
+        result = await self._db.scalars(
+            select(Session)
+            .where(Session.user_id == user_id, Session.is_active.is_(True))
+            .order_by(Session.created_at.asc(), Session.id.asc())
+            .with_for_update()
+        )
+        active = list(result)
+        # keep_session всегда остаётся; среди остальных держим самые свежие.
+        revocable = [s for s in active if s.id != keep_session_id]
+        excess = len(revocable) - (limit - 1)
+        if excess <= 0:
+            return []
+        evicted = revocable[:excess]
+        for sess in evicted:
+            sess.is_active = False
+            sess.revoked_at = now
+        await self._db.flush()
+        return evicted
+
     async def list_active_for_user(self, user_id: str) -> list[Session]:
         """Активные refresh-сессии юзера в порядке last_used_at desc.
 

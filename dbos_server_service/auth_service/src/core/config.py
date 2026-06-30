@@ -80,6 +80,21 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = Field(default=10, alias="ACCESS_TOKEN_TTL_MINUTES")
     refresh_token_ttl_days: int = Field(default=14, alias="REFRESH_TOKEN_TTL_DAYS")
 
+    # Потолок одновременных интерактивных user-сессий (login → refresh-сессия).
+    # На каждом login, если активных сессий юзера становится больше лимита,
+    # самые старые (по created_at) отзываются, новая остаётся — sliding window,
+    # вход не блокируется. Касается только этого login-пути: PAT и bot-токены
+    # сессиями не являются, OAuth refresh идёт через отдельную таблицу.
+    # 0 или отрицательное значение выключает лимит (вытеснения нет).
+    max_concurrent_sessions: int = Field(
+        default=2,
+        alias="MAX_CONCURRENT_SESSIONS",
+        description=(
+            "Максимум одновременных user-сессий. Сверх лимита на login "
+            "вытесняются самые старые. 0 или меньше — лимит выключен."
+        ),
+    )
+
     # Login brute-force protection: после N подряд неудач — lockout на M минут.
     # Атомарный счётчик в `users.failed_login_attempts`, lockout пишется в
     # `users.locked_until` (UTC). Сбрасывается на успешный verify или по истечении

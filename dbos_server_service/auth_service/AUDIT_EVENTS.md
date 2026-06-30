@@ -53,6 +53,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `user.me` | INFO | `/me` endpoint | user | Скан собственного identity. |
 | `token.refresh_reuse` | CRITICAL | `auth_service.refresh` (reuse-detection ветка) | session | Reuse-detection — kill-switch на всю сессию юзера. |
 | `token.refresh_race` | INFO | `auth_service.refresh` | session | CAS-miss на параллельном `/refresh`, benign-race. `session_id`, `reason="concurrent_rotation"`. |
+| `user.session_evicted_over_limit` | WARNING | `auth_service.login` | session | На login активных сессий стало больше `MAX_CONCURRENT_SESSIONS` — самая старая (по `created_at`) отозвана, новая остаётся (sliding window). Actor — сам юзер. `evicted_session_id`, `reason="max_concurrent_sessions"`, `limit`. По одному событию на вытеснение. |
 
 ## Users
 

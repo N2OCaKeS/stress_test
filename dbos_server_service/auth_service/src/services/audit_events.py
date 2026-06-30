@@ -38,6 +38,7 @@ SERVICE_EVENTS = [
     {"action": "user.me", "description": "Get current user identity", "default_severity": "TRACE"},
     {"action": "token.refresh_reuse", "description": "Refresh token reuse detected (possible theft)", "default_severity": "CRITICAL"},
     {"action": "token.refresh_race", "description": "Concurrent refresh-token rotation lost CAS (benign race, retry expected)", "default_severity": "INFO"},
+    {"action": "user.session_evicted_over_limit", "description": "Oldest session evicted on login because MAX_CONCURRENT_SESSIONS was exceeded (sliding window)", "default_severity": "WARNING"},
     # Users
     {"action": "user.create", "description": "New user account created", "default_severity": "INFO"},
     {"action": "user.list", "description": "User list retrieved (global or per-department)", "default_severity": "INFO"},

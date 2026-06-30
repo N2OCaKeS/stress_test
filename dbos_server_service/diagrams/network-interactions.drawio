@@ -1,0 +1,52 @@
+<mxfile host="65bd71144e">
+    <diagram id="network-interactions" name="EMM — сетевое взаимодействие">
+        <mxGraphModel dx="1765" dy="1129" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="540" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" value="EMM — сетевое взаимодействие" style="text;html=1;align=center;fontSize=15;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="8" width="400" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="lbl_in" value="ВХОДЯЩИЕ — пользователи → сервис (HTTPS)" style="text;html=1;align=center;fontSize=11;fontStyle=1;fontColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="38" width="600" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="vpn" value="&lt;b&gt;Пользователи (VPN)&lt;/b&gt;&lt;br&gt;Клиентские запросы к сервису&lt;br&gt;(web-UI / API) через корп. VPN.&lt;br&gt;Протокол: HTTPS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=6;spacingTop=4;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="180" y="62" width="280" height="78" as="geometry"/>
+                </mxCell>
+                <mxCell id="floor5" value="&lt;b&gt;Сеть 5-го этажа — 10.190.9.0/24&lt;/b&gt;&lt;br&gt;Клиентские запросы к сервису&lt;br&gt;(web-UI / API).&lt;br&gt;Протокол: HTTPS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=6;spacingTop=4;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="540" y="62" width="280" height="78" as="geometry"/>
+                </mxCell>
+                <mxCell id="sys" value="&lt;b&gt;EMM&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="230" width="240" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="lbl_out" value="ИСХОДЯЩИЕ — сервис → серверные сети (SSH / IPMI)" style="text;html=1;align=center;fontSize=11;fontStyle=1;fontColor=#0e8088;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="350" width="600" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="net103" value="&lt;b&gt;10.177.103.0/24&lt;/b&gt;&lt;br&gt;Управление серверами по SSH,&lt;br&gt;управление ВМ через SSH.&lt;br&gt;Протокол: SSH" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b0e3e6;strokeColor=#0e8088;align=left;verticalAlign=top;spacingLeft=6;spacingTop=4;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="20" y="375" width="300" height="92" as="geometry"/>
+                </mxCell>
+                <mxCell id="net5" value="&lt;b&gt;10.177.5.0/24&lt;/b&gt; (узел .111)&lt;br&gt;Управление серверами по SSH,&lt;br&gt;ВМ через SSH, серверами по IPMI.&lt;br&gt;Протоколы: SSH, IPMI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b0e3e6;strokeColor=#0e8088;align=left;verticalAlign=top;spacingLeft=6;spacingTop=4;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="350" y="375" width="300" height="92" as="geometry"/>
+                </mxCell>
+                <mxCell id="net102" value="&lt;b&gt;10.177.102.0/24&lt;/b&gt;&lt;br&gt;Управление серверами по SSH;&lt;br&gt;возможно ВМ через SSH;&lt;br&gt;возможно IPMI.&lt;br&gt;Протоколы: SSH (· IPMI?)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b0e3e6;strokeColor=#0e8088;align=left;verticalAlign=top;spacingLeft=6;spacingTop=4;fontSize=11;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="680" y="375" width="300" height="92" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_vpn" value="HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.35;entryY=0;entryDx=0;entryDy=0;strokeColor=#82b366;fontSize=10;endArrow=block;" parent="1" source="vpn" target="sys" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_floor5" value="HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.65;entryY=0;entryDx=0;entryDy=0;strokeColor=#82b366;fontSize=10;endArrow=block;" parent="1" source="floor5" target="sys" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_net103" value="SSH · ВМ по SSH" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#0e8088;fontSize=10;endArrow=block;" parent="1" source="sys" target="net103" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_net5" value="SSH · ВМ по SSH · IPMI" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#0e8088;fontSize=10;endArrow=block;" parent="1" source="sys" target="net5" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_net102" value="SSH (· ВМ/IPMI?)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.8;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#0e8088;fontSize=10;endArrow=block;dashed=1;" parent="1" source="sys" target="net102" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

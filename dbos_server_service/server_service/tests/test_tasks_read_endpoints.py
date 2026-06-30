@@ -244,17 +244,27 @@ class TestTaskListInfraVisibility:
         assert infra["server_id"] is None
         assert infra["department_id"] is None
 
-    async def test_operator_sees_infra_tasks(
-        self, client, operator_token_a, make_server, fake_worker_read,
+    async def test_operator_does_not_see_infra_tasks(
+        self, client, make_token, dept_a, make_server, fake_worker_read,
     ):
+        """Кастомная роль operator больше не привилегирована: инфра-задачи без
+        сервера ей не видны, только свои серверные (как любой не-admin)."""
+        token = make_token(
+            department_id=dept_a,
+            service_roles={"server_service": ["operator"]},
+            user_id="usr_operator_a",
+        )
         srv = await make_server(department_id="dep_a")
         fake_worker_read["rows"] = [
-            _row(id="srv_task", target_server_id=srv.id),
-            _row(id="infra", target_server_id=None, kind="system.heartbeat"),
+            _row(id="srv_task", target_server_id=srv.id, created_by="usr_operator_a"),
+            _row(
+                id="infra", target_server_id=None, kind="system.heartbeat",
+                created_by="usr_operator_a",
+            ),
         ]
-        resp = await client.get(f"{BASE}/tasks", headers=_hdr(operator_token_a))
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(token))
         assert resp.status_code == 200
-        assert {t["id"] for t in resp.json()} == {"srv_task", "infra"}
+        assert {t["id"] for t in resp.json()} == {"srv_task"}
 
     async def test_reader_does_not_see_infra_tasks(
         self, client, make_token, dept_a, make_server, fake_worker_read,
@@ -545,7 +555,7 @@ class TestTaskGetRbac:
 # ── Per-user scoping ───────────────────────────────────────────────────────────
 
 class TestTaskListPerUserScope:
-    """Reader без admin/operator видит только свои задачи; admin/operator/
+    """Носитель кастомной роли видит только свои задачи; service-роль admin и
     dept_admin — все задачи отдела."""
 
     async def test_reader_sees_only_own_tasks(
@@ -565,9 +575,10 @@ class TestTaskListPerUserScope:
         assert resp.headers["X-Total-Count"] == "1"
         assert {t["id"] for t in resp.json()} == {"mine"}
 
-    async def test_operator_sees_all_dept_tasks(
+    async def test_operator_sees_only_own_tasks(
         self, client, make_token, dept_a, make_server, fake_worker_read,
     ):
+        """Кастомная роль operator больше не привилегирована — только свои."""
         operator = make_token(
             department_id=dept_a, user_id="usr_op",
             service_roles={"server_service": ["operator"]},
@@ -579,7 +590,7 @@ class TestTaskListPerUserScope:
         ]
         resp = await client.get(f"{BASE}/tasks", headers=_hdr(operator))
         assert resp.status_code == 200, resp.text
-        assert {t["id"] for t in resp.json()} == {"mine", "theirs"}
+        assert {t["id"] for t in resp.json()} == {"mine"}
 
     async def test_admin_role_sees_all_dept_tasks(
         self, client, make_token, dept_a, make_server, fake_worker_read,
@@ -640,9 +651,10 @@ class TestTaskGetPerUserScope:
         resp = await client.get(f"{BASE}/tasks/theirs", headers=_hdr(reader))
         assert_error(resp, 404, "TASK_NOT_FOUND")
 
-    async def test_operator_gets_others_task(
+    async def test_operator_others_task_masked_404(
         self, client, make_token, dept_a, make_server, fake_worker_read,
     ):
+        """Кастомная роль operator чужую задачу того же отдела не видит — 404."""
         operator = make_token(
             department_id=dept_a, user_id="usr_op",
             service_roles={"server_service": ["operator"]},
@@ -652,7 +664,7 @@ class TestTaskGetPerUserScope:
             _row(id="theirs", target_server_id=srv.id, created_by="usr_other"),
         ]
         resp = await client.get(f"{BASE}/tasks/theirs", headers=_hdr(operator))
-        assert resp.status_code == 200, resp.text
+        assert_error(resp, 404, "TASK_NOT_FOUND")
 
 
 # ── created_by exposure + filter ───────────────────────────────────────────────

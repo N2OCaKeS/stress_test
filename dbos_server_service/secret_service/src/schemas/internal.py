@@ -17,7 +17,7 @@ class UserDeletedEvent(BaseModel):
     """`auth_service` сообщает, что user удалён.
 
     Мы блокируем все его personal-креды, у которых есть RoleACL grantees
-    (operator+ admins могут их потом transfer'ить), и просто удаляем
+    (admin потом transfer'нёт их на нового владельца), и просто удаляем
     "сиротские" — некому передать, ACL.count == 0.
     """
 

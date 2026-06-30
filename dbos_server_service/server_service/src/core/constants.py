@@ -73,12 +73,13 @@ class AccountSource(StrEnum):
 
 
 class ServiceRole(StrEnum):
-    """Встроенные service-роли. Кастомные роли (через auth_service) ссылаются
-    по имени (free-form string) — эти константы только seeded defaults."""
+    """Системные service-роли. Только `guest` (базовый доступ) и `admin`
+    (полный доступ) сеются автоматически и защищены `is_system`. Весь
+    промежуточный доступ — через кастомные роли (создаются в auth_service),
+    которые ссылаются на матрицу действий по имени (free-form string) и грантятся
+    per-department строками `entity_permissions`."""
 
     GUEST = "guest"
-    READER = "reader"
-    OPERATOR = "operator"
     ADMIN = "admin"
 
 
@@ -158,7 +159,7 @@ class Action(StrEnum):
     # открыть PTY-сессию под управляющим пользователем DBOS на подготовленном
     # сервере; каждая введённая команда логируется в loging как
     # `ssh_console.command`. Чувствительное (живой root-доступ к боксу) —
-    # дефолтно только admin/operator.
+    # дефолтно только admin (либо кастомная роль с этим грантом).
     CONSOLE = "console"
     # Read aggregated drift-summary по серверу — обращается в loging за
     # событиями `server_account.drift_detected`. Право узкое: даёт смотреть
@@ -170,7 +171,7 @@ class Action(StrEnum):
     # Массовые изменяющие операции с пакетами (install/remove/update) через
     # worker по SSH под управляющим пользователем. Деструктив на боксе —
     # отдельный action поверх view, чтобы право менять состав пакетов можно
-    # было выдать прицельно. Дефолтно admin/operator.
+    # было выдать прицельно. Дефолтно admin (либо кастомная роль с грантом).
     MANAGE_PACKAGES = "manage_packages"
 
     # Sensitive: показ расшифрованного секрета. Держатель `view_password` /
@@ -193,13 +194,13 @@ class Action(StrEnum):
     PROVISION_ON_HOST = "provision_on_host"
     # Принять факт-состояние OS-пользователя с конкретного хоста в БД: оператор
     # руками выбирает поля из drift'а (`found`-значения) и пишет их в аккаунт.
-    # Обновляет ТОЛЬКО БД, fan-out на серверы не идёт. Уровень — как `update`
-    # (operator/admin), отдельный action нужен, чтобы право принять чужое
+    # Обновляет ТОЛЬКО БД, fan-out на серверы не идёт. Уровень — как `update`,
+    # отдельный action нужен, чтобы право принять чужое
     # состояние можно было выдать прицельно.
     ADOPT_FROM_HOST = "adopt_from_host"
     # Управление ignore-list'ом логинов отдела: добавить/снять логин, который
     # инвентаризация не должна показывать как незнакомого пользователя. Скоуп —
-    # отдел; уровень update (operator/admin).
+    # отдел; уровень update.
     MANAGE_IGNORED_LOGINS = "manage_ignored_logins"
 
     # Управление permission-матрицей (entity_permissions rows)
@@ -273,8 +274,8 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     EntityType.PERMISSION: frozenset({
         Action.VIEW, Action.PERMISSION_GRANT, Action.PERMISSION_REVOKE,
     }),
-    # Worker-таска — view (list/detail истории) и cancel. view сидится
-    # reader/operator/admin'у, cancel — только admin'у (см. seed-миграции).
+    # Worker-таска — view (list/detail истории) и cancel. view/cancel сидятся
+    # системной роли admin (кастомные роли получают их грантом); см. seed-миграции.
     EntityType.TASK: frozenset({
         Action.VIEW,
         Action.CANCEL,

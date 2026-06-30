@@ -33,9 +33,10 @@
   слой аддитивный (без deny), всегда per-department (scope = отдел ресурса).
   Грантуются только инстанс-привязанные действия — `create`, callback'и воркера,
   `view_management_credentials`, `manage_ignored_logins` остаются в глобальном слое.
-- **Service-роли** — реестр (`admin`/`reader`/`operator`/`guest` плюс кастомные)
-  живёт в `auth_service`. `server_service` сам не редактирует каталог ролей —
-  только наполняет матрицу actions для них через `/permissions/...` endpoints.
+- **Service-роли** — реестр живёт в `auth_service`. Системными остаются только
+  `guest` (базовый доступ) и `admin` (полный); весь промежуточный доступ — через
+  кастомные роли. `server_service` сам не редактирует каталог ролей — только
+  наполняет матрицу actions для них через `/permissions/...` endpoints.
 - **Internal endpoints для worker'а** (скрыты из swagger):
   `GET /internal/servers/{id}/ipmi/credentials`,
   `GET /internal/servers/{id}/accounts/{aid}/password`,

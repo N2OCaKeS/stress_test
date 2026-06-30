@@ -8,8 +8,8 @@
 Поведение:
 
 * permission: `(task, cancel)` — отдельная пара из матрицы. По-дефолту
-  выдаётся `admin` сидингом миграции; operator/reader без явного гранта
-  получают 403.
+  выдаётся системной роли `admin` сидингом миграции; кастомные роли без
+  явного гранта получают 403.
 * visibility: если у task есть `target_server_id`, проверяем dept-isolation
   на этом сервере (cross-dept → 404 ``TASK_NOT_FOUND``, как обычно).
   Системные task'и (``task_kind`` ∈ ``_SYSTEM_TASK_KINDS`` — это
@@ -111,12 +111,12 @@ router = APIRouter(prefix="/tasks")
         "Фильтры: `status` (queued/running/succeeded/failed/cancelled — "
         "`failed` = DLQ-вьюха в UI), `kind` (task_kind), `server_id`, "
         "`created_by` (user_id инициатора — накладывается поверх role-scope, "
-        "видимость не расширяет: reader всё равно видит только свои). "
+        "видимость не расширяет: непривилегированный caller всё равно видит только свои). "
         "Пагинация: `limit` (1..200, default 50) + `offset`.\n\n"
         "Доступ: `(task, view)`. Caller видит только задачи серверов своего "
-        "отдела; reader без роли `admin`/`operator` (и не department_admin) "
+        "отдела; носитель кастомной роли без `admin` (и не department_admin) "
         "видит только свои задачи (`created_by`). Инфра-задачи без сервера "
-        "видны только service-роли `admin`/`operator`. Platform-админам "
+        "видны только service-роли `admin`. Platform-админам "
         "(`account_admin`/`loging_admin`) вход запрещён middleware'ом — 403 "
         "PLATFORM_ADMIN_BUSINESS_DATA_DENIED."
     ),
@@ -136,8 +136,8 @@ async def list_tasks_endpoint(
         default=None,
         description=(
             "Фильтр по инициатору (user_id). Накладывается поверх role-scope: "
-            "reader видит только свои, привилегированный caller с этим фильтром "
-            "сужает выдачу до конкретного инициатора."
+            "непривилегированный caller видит только свои, привилегированный "
+            "caller с этим фильтром сужает выдачу до конкретного инициатора."
         ),
     ),
     limit: int = Query(default=50, ge=1, le=200),
@@ -164,9 +164,9 @@ async def list_tasks_endpoint(
     description=(
         "Возвращает `TaskRead` с полным `result` и `last_error`. Доступ — "
         "`(task, view)` + dept-visibility (чужой отдел маскируется под 404). "
-        "Reader без роли `admin`/`operator` видит только свои задачи — чужая "
+        "Носитель кастомной роли без `admin` видит только свои задачи — чужая "
         "задача того же отдела маскируется под 404. "
-        "Инфра-задача без сервера видна только service-роли `admin`/`operator`."
+        "Инфра-задача без сервера видна только service-роли `admin`."
     ),
     responses={
         403: {"description": "Нет роли с `view` на task, либо platform-админ заблокирован."},

@@ -33,7 +33,6 @@ from src.core.exceptions import (
 )
 from src.dependencies.auth import Identity
 from src.repositories import credentials as cred_repo
-from src.repositories import dept_grants as grants_repo
 from src.schemas.credentials import (
     CredentialCreate,
     TransferRequest,
@@ -141,7 +140,7 @@ async def test_create_emits_failure_on_name_duplicate(adb) -> None:
 
 @pytest.mark.asyncio
 async def test_create_emits_failure_on_cross_dep_denied(adb) -> None:
-    """Operator пробует завести cred на чужой dep → AuthorizationError + failure."""
+    """Operator (роль без admin) пробует завести dept-cred → AuthorizationError + failure."""
     actor = _operator(user_id="usr_creat_xdep0000000000000001", department_id="dep_mine0000000000000000000001")
     payload = CredentialCreate(
         name="xdep_test",

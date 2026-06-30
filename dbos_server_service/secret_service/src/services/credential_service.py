@@ -235,13 +235,14 @@ _is_account_admin = _identity_roles.is_account_admin
 
 
 # Роли, которым разрешено заводить department/cross_department-креды.
-# guest и reader — только чтение, создавать общие cred'ы они не вправе.
-_CREATE_DEPT_ROLES: frozenset[str] = frozenset({"operator", "admin"})
+# Из сервисных ролей это только `admin`; guest и кастомные роли без admin
+# создавать общие cred'ы не вправе — им остаётся чтение.
+_CREATE_DEPT_ROLES: frozenset[str] = frozenset({"admin"})
 
 
 def _can_create_dept_cred(identity: Identity) -> bool:
-    """operator+ своего dep'а, dep_admin или account_admin могут заводить
-    department/cross_department-креды. Чистый reader/guest — нет."""
+    """Завести department/cross_department-креду может admin своего dep'а,
+    dep_admin или account_admin. guest и кастомные роли без admin — нет."""
     if _is_account_admin(identity):
         return True
     if identity.platform_role == "department_admin":
@@ -277,13 +278,13 @@ async def create(
             owner_user_id = identity.user_id
         else:
             owner_dept_id = payload.owner_dept_id
-            # department/cross_department-креду заводит operator+ (или
-            # dep_admin / account_admin). reader и guest — только чтение,
-            # создавать общие cred'ы они не вправе.
+            # department/cross_department-креду заводит admin (или
+            # dep_admin / account_admin). guest и кастомные роли без admin —
+            # только чтение, создавать общие cred'ы они не вправе.
             if not _can_create_dept_cred(identity):
                 raise AuthorizationError(
                     error_code="CREDENTIAL_ACCESS_DENIED",
-                    message="operator role or higher is required to create shared credentials",
+                    message="admin role required to create shared credentials",
                 )
             # На чужой dep — только account_admin: у `admin` secret_service'а
             # cross-dept привилегий нет, он живёт per-(dept, service).

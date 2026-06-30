@@ -34,7 +34,7 @@ import type {
 
 // Системные роли каталога secret_service в порядке отображения; кастомные роли
 // отдела идут после по алфавиту.
-const SECRET_ROLE_ORDER = ["guest", "reader", "operator", "admin"];
+const SECRET_ROLE_ORDER = ["guest", "admin"];
 
 function roleSortKey(role: string): string {
   const idx = SECRET_ROLE_ORDER.indexOf(role);

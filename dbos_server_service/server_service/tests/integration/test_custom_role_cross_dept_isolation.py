@@ -119,7 +119,8 @@ class TestBuiltinRolesGlobal:
     async def test_built_in_role_remains_global_admin(
         self, db, dept_b,
     ):
-        """admin/reader/operator are system-wide rows (department_id IS NULL).
+        """Системные роли (admin/guest/worker_bot) — system-wide строки
+        (department_id IS NULL).
 
         Even a dept_B user with one of those roles should see all the
         baseline grants from the seed migration — those rows were created
@@ -131,26 +132,30 @@ class TestBuiltinRolesGlobal:
         )
         assert ok is True
 
-    async def test_built_in_role_remains_global_reader(self, db, dept_b):
-        ok = await repo.has_action(
-            db, "server", ["reader"], "view", department_id=dept_b,
+    async def test_reader_operator_not_system_wide(self, db):
+        """reader/operator больше не системные: после cleanup-миграции у них нет
+        ни одной system-wide строки (department_id IS NULL). В матрице они живут
+        только как кастомные per-department роли.
+        """
+        rows = (await db.execute(
+            select(EntityPermission).where(
+                EntityPermission.role.in_(["reader", "operator"]),
+                EntityPermission.department_id.is_(None),
+            )
+        )).scalars().all()
+        assert rows == [], (
+            "reader/operator must not have system-wide grants after cleanup; "
+            f"got: {[(r.role, r.action, r.entity_type) for r in rows]}"
         )
-        assert ok is True
-
-    async def test_built_in_role_remains_global_operator(self, db, dept_b):
-        ok = await repo.has_action(
-            db, "server", ["operator"], "power_on", department_id=dept_b,
-        )
-        assert ok is True
 
     async def test_built_in_row_has_null_department_id(self, db):
-        """Defence-in-depth: verify seeded built-in rows did not pick up a
-        department_id by accident.
+        """Defence-in-depth: системные роли не должны случайно получить
+        department_id.
         """
         rows = (await db.execute(
             select(EntityPermission).where(
                 EntityPermission.role.in_(
-                    ["admin", "reader", "operator", "worker_bot", "guest"]
+                    ["admin", "worker_bot", "guest"]
                 ),
             )
         )).scalars().all()

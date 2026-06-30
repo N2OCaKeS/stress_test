@@ -685,8 +685,9 @@ export type EntityType =
   | (string & {});
 
 /**
- * Имя роли. Системные: `guest`/`reader`/`operator`/`admin`. Кастомные
- * создаются `account_admin`'ом или department-admin'ом и не предопределены —
+ * Имя роли. Системные: `guest`/`admin` (сеются автоматически и защищены
+ * `is_system`). Остальные — `reader`, `operator` и любые другие — кастомные:
+ * создаются `account_admin`'ом или department-admin'ом и не предопределены,
  * поэтому хвост `string`. Backend хранит как обычную строку до 64 символов.
  */
 export type RoleName =

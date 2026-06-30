@@ -4,21 +4,22 @@ Task-row'ы живут в `dev_server_worker.tasks` (отдельная БД); s
 читает их через cross-DB engine из `worker_client`. Здесь — permission/
 visibility-обвязка поверх этих read'ов:
 
-* permission — `(task, view)` по матрице entity_permissions (reader/operator/
-  admin получают грант сидинг-миграцией). Platform-admin'ы
+* permission — `(task, view)` по матрице entity_permissions (системная роль
+  `admin` получает грант сидинг-миграцией; кастомные роли — per-department
+  грантом). Platform-admin'ы
   (`account_admin`/`loging_admin`) отрезаны `platform_admin_guard`
   middleware'ом ещё до endpoint'а — 403 PLATFORM_ADMIN_BUSINESS_DATA_DENIED.
 * dept-scope — caller видит только задачи своих серверов
   (`server.department_id == caller.department_id`). Cross-dept задача
   отсутствует в листинге и маскируется под 404 в detail.
 * per-user scope — внутри отдела привилегированный caller (service-роль
-  `admin`/`operator` или `department_admin`) видит ВСЕ задачи отдела; обычный
-  reader (или носитель кастомной роли без admin/operator) видит ТОЛЬКО свои
+  `admin` или `department_admin`) видит ВСЕ задачи отдела; носитель любой
+  другой роли с `view` (кастомной) видит ТОЛЬКО свои
   задачи (`created_by == caller.user_id`). Чужая задача того же отдела для
-  reader'а отсутствует в листинге и маскируется под 404 в detail.
+  него отсутствует в листинге и маскируется под 404 в detail.
 * инфра-задачи без `target_server_id` (scheduler/heartbeat/sweep/cleanup)
-  видны только service-роли `admin`/`operator`; `department_admin`
-  (platform-роль) и `reader` их не видят — у них в карточке нет владельца,
+  видны только service-роли `admin`; `department_admin`
+  (platform-роль) и кастомные роли их не видят — у них в карточке нет владельца,
   а platform-admin до сюда не доходит.
 
 `department_id` в самой таблице tasks нет — резолвим из `server.department_id`
@@ -48,15 +49,15 @@ _EMPTY_SCOPE = object()
 def _intersect_created_by(scope: str | None, requested: str | None):
     """Пересечь role-scope-ограничение по инициатору с явным фильтром UI.
 
-    `scope` — что разрешает role-scope: конкретный user_id (reader видит
-    только себя) или `None` (привилегированный caller — без ограничения).
-    `requested` — явный `?created_by=` из запроса (или `None`).
+    `scope` — что разрешает role-scope: конкретный user_id (непривилегированный
+    caller видит только себя) или `None` (привилегированный caller — без
+    ограничения). `requested` — явный `?created_by=` из запроса (или `None`).
 
     Возврат:
     * `None` — ограничения по инициатору нет (оба None);
     * конкретный user_id — фильтруем по нему;
-    * `_EMPTY_SCOPE` — scope и requested противоречат друг другу (reader
-      спросил чужой created_by) → выборка должна быть пустой.
+    * `_EMPTY_SCOPE` — scope и requested противоречат друг другу (caller
+      спросил чужой created_by, который ему не виден) → выборка должна быть пустой.
     """
     if requested is None:
         return scope
@@ -97,30 +98,30 @@ def _summarize_result(result):
 def _sees_infra_tasks(identity: IdentityContext) -> bool:
     """True, если caller вправе видеть инфра-задачи без сервера.
 
-    Контракт: service-роль `admin`/`operator` — да; `reader` и
-    `department_admin` (platform-роль) — нет. Платформенные admin'ы сюда не
-    доходят (middleware), поэтому проверяем только service-роли и явно
+    Контракт: service-роль `admin` — да; `department_admin` (platform-роль) и
+    любая кастомная роль с `view` — нет. Платформенные admin'ы сюда не
+    доходят (middleware), поэтому проверяем только service-роль и явно
     исключаем department_admin.
     """
     if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
         return False
     roles = set(identity.roles_for_service("server_service"))
-    return bool(roles & {ServiceRole.ADMIN, ServiceRole.OPERATOR})
+    return ServiceRole.ADMIN in roles
 
 
 def _sees_all_dept_tasks(identity: IdentityContext) -> bool:
     """True, если caller видит все задачи отдела, а не только свои.
 
     Привилегированный просмотр — у `department_admin` (platform-роль своего
-    отдела) и у носителя service-роли `admin`/`operator`. Обычный `reader`
-    (и любая кастомная роль с `view`, но без admin/operator) ограничен своими
-    задачами — отбор по `created_by` делает list/get. Platform-admin'ы до сюда
-    не доходят (middleware), отдельно их не учитываем.
+    отдела) и у носителя service-роли `admin`. Любая другая роль с `view`
+    (включая кастомные) ограничена своими задачами — отбор по `created_by`
+    делает list/get. Platform-admin'ы до сюда не доходят (middleware),
+    отдельно их не учитываем.
     """
     if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
         return True
     roles = set(identity.roles_for_service("server_service"))
-    return bool(roles & {ServiceRole.ADMIN, ServiceRole.OPERATOR})
+    return ServiceRole.ADMIN in roles
 
 
 def _to_task_read(
@@ -180,26 +181,26 @@ async def list_tasks(
     и фильтруем задачи по ним (cross-DB `IN`). `server_id`-фильтр сужает до
     одного сервера — но только если он входит в видимый набор (чужой/несущест-
     вующий → пустой результат, без утечки факта существования). Поверх отдела
-    непривилегированный reader видит только свои задачи (`created_by`).
+    непривилегированный caller видит только свои задачи (`created_by`).
 
     Аргумент `created_by` — опциональный фильтр UI по инициатору. Он
     НАКЛАДЫВАЕТСЯ поверх role-scope, а не расширяет его: для непривилегированного
-    reader'а role-scope уже пинит выборку на его собственный user_id, и
+    caller'а role-scope уже пинит выборку на его собственный user_id, и
     запрос чужого `created_by` пересечётся в пусто (видимость не растёт).
-    Привилегированный caller (admin/operator/dept_admin) с `created_by=<me>`
+    Привилегированный caller (admin/dept_admin) с `created_by=<me>`
     получает строго свои задачи, без аргумента — все задачи отдела как прежде.
     """
     await permissions.require_action(db, identity, EntityType.TASK, Action.VIEW)
     if identity.department_id is None:
         return [], 0
 
-    # Reader без admin/operator-роли (и не dept-admin) видит только то, что
+    # Носитель кастомной роли (не admin и не dept-admin) видит только то, что
     # поставил сам. Привилегированный caller — все задачи отдела.
     own_only = not _sees_all_dept_tasks(identity)
     scope_created_by = identity.user_id if own_only else None
     # Явный фильтр по инициатору пересекается с role-scope (AND), не заменяет
-    # его: reader, спрашивающий чужой created_by, попадает на конфликт двух
-    # разных значений и получает пусто — фильтр не светит чужие задачи.
+    # его: непривилегированный caller, спрашивающий чужой created_by, попадает
+    # на конфликт двух разных значений и получает пусто — фильтр не светит чужие задачи.
     effective_created_by = _intersect_created_by(scope_created_by, created_by)
     if effective_created_by is _EMPTY_SCOPE:
         return [], 0
@@ -301,7 +302,7 @@ async def get_task(
     Permission `(task, view)`. Visibility: задача чужого отдела (или с
     `server_id`, которого caller не видит) маскируется под 404 TASK_NOT_FOUND.
     Инфра-задача без сервера видна только тем, кто проходит `_sees_infra_tasks`.
-    Непривилегированный reader дополнительно видит только свои задачи: чужую
+    Непривилегированный caller дополнительно видит только свои задачи: чужую
     задачу того же отдела маскируем под 404.
     """
     await permissions.require_action(db, identity, EntityType.TASK, Action.VIEW)
@@ -312,13 +313,13 @@ async def get_task(
 
     own_only = not _sees_all_dept_tasks(identity)
     if own_only and row.get("created_by") != identity.user_id:
-        # Reader видит только свои задачи — чужую того же отдела маскируем под
-        # 404, симметрично dept-isolation, чтобы не светить факт её наличия.
+        # Непривилегированный caller видит только свои задачи — чужую того же
+        # отдела маскируем под 404, симметрично dept-isolation, чтобы не светить факт её наличия.
         raise NotFoundError(error_code="TASK_NOT_FOUND", message="Task not found")
 
     server_id = row["target_server_id"]
     if server_id is None:
-        # Инфра-задача без сервера: видна только admin/operator-роли.
+        # Инфра-задача без сервера: видна только service-роли admin.
         if not _sees_infra_tasks(identity):
             raise NotFoundError(error_code="TASK_NOT_FOUND", message="Task not found")
         dept_by_server: dict[str, str] = {}

@@ -35,34 +35,23 @@ export const SERVER_GROUPS: ServerGroup[] = [
 export interface ServiceRoleDef {
   id: string;
   name: string;
-  level: "admin" | "operator" | "reader" | "rotator";
+  level: "admin" | "rotator";
   description: string;
   assigned: number;
 }
 
 export const SERVER_ROLES: ServiceRoleDef[] = [
   { id: "srv-admin", name: "server.admin", level: "admin", description: "CRUD по серверам, ролям, группам", assigned: 3 },
-  { id: "srv-operator", name: "server.operator", level: "operator", description: "перезагрузка, IPMI-команды", assigned: 7 },
-  { id: "srv-reader", name: "server.reader", level: "reader", description: "просмотр инвентаря", assigned: 12 },
   { id: "srv-rotator", name: "server.rotator", level: "rotator", description: "запуск rotate per-server", assigned: 4 },
 ];
 
 export const SECRET_ROLES: ServiceRoleDef[] = [
   { id: "sec-admin", name: "secret.admin", level: "admin", description: "CRUD credentials + ACL", assigned: 2 },
   { id: "sec-rotator", name: "secret.rotator", level: "rotator", description: "запуск ротаций", assigned: 5 },
-  { id: "sec-reader", name: "secret.reader", level: "reader", description: "list (без reveal)", assigned: 9 },
-  { id: "sec-reveal", name: "secret.reveal", level: "operator", description: "reveal plaintext (audited)", assigned: 3 },
-];
-
-export const LOGING_ROLES: ServiceRoleDef[] = [
-  { id: "log-admin", name: "loging.admin", level: "admin", description: "правила, retention, partitioning", assigned: 1 },
-  { id: "log-reader", name: "loging.reader", level: "reader", description: "просмотр аудит-событий", assigned: 6 },
 ];
 
 export const WORKER_ROLES: ServiceRoleDef[] = [
   { id: "wrk-admin", name: "worker.admin", level: "admin", description: "управление DLQ, retry-политиками, cron", assigned: 2 },
-  { id: "wrk-operator", name: "worker.operator", level: "operator", description: "manual run task, drain", assigned: 4 },
-  { id: "wrk-reader", name: "worker.reader", level: "reader", description: "task list / status", assigned: 8 },
 ];
 
 export const PLATFORM_ROLES = [

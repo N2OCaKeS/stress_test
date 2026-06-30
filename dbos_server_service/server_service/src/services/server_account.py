@@ -1219,7 +1219,7 @@ async def adopt_from_host(
     """Принять факт-состояние OS-пользователя с конкретного хоста в БД.
 
     Право: `(server_account, *, adopt_from_host)` — отдельный grant
-    update-уровня (operator/admin). Оператор инициирует руками, пополевно:
+    update-уровня. Оператор инициирует руками, пополевно:
     в payload едут только те из `has_sudo`/`unix_groups`/`shell`, что он
     отметил в drift'е, со значениями = `found` (фактом с бокса).
 
@@ -1927,7 +1927,7 @@ def _is_account_recreate_admin(
     """True, если caller вправе пересоздать логин аккаунта.
 
     Контракт: только platform `department_admin` своего отдела ИЛИ носитель
-    service-роли `admin` в server_service. Обычный operator/update-грант сюда
+    service-роли `admin` в server_service. Обычный update-грант сюда
     не проходит — recreate сносит и заводит OS-пользователя заново, это
     разрушительнее обычного update'а.
     """

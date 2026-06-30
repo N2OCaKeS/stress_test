@@ -2,7 +2,7 @@
 
 Покрытие:
 
-* create department/cross_department требует operator+ (reader/guest отбиваются);
+* create department/cross_department требует admin (reader/guest/operator отбиваются);
 * delete department-cred read-only грантополучателем → 404, не 403;
 * dept_grant revoke не плодит дублирующий dept_revoke_cascade;
 * handle_user_deleted чистит и считает ACL'и в чужих dep'ах;
@@ -63,7 +63,7 @@ def _capture_emit(module):
     return p, emitted
 
 
-# ── Fix 1: create-gate operator+ для dept/cross_dep ──────────────────────────
+# ── Fix 1: create-gate admin для dept/cross_dep ──────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -83,7 +83,8 @@ async def test_reader_cannot_create_department_cred(adb) -> None:
 
 
 @pytest.mark.asyncio
-async def test_operator_can_create_department_cred(adb) -> None:
+async def test_operator_cannot_create_department_cred(adb) -> None:
+    """operator — обычная кастомная роль без admin: общие cred'ы не заводит."""
     operator = _identity(["operator"], department_id="dep_h0000000000000000000000001")
     payload = CredentialCreate(
         name="dept_by_operator",
@@ -93,7 +94,23 @@ async def test_operator_can_create_department_cred(adb) -> None:
         owner_dept_id="dep_h0000000000000000000000001",
     )
     with _silence_emit(credential_service):
-        cred = await credential_service.create(adb, operator, payload)
+        with pytest.raises(AuthorizationError) as exc:
+            await credential_service.create(adb, operator, payload)
+    assert exc.value.error_code == "CREDENTIAL_ACCESS_DENIED"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_create_department_cred(adb) -> None:
+    admin = _identity(["admin"], department_id="dep_h0000000000000000000000001")
+    payload = CredentialCreate(
+        name="dept_by_admin",
+        service="jira",
+        scope="department",
+        secret_b64=b64("x"),
+        owner_dept_id="dep_h0000000000000000000000001",
+    )
+    with _silence_emit(credential_service):
+        cred = await credential_service.create(adb, admin, payload)
     assert cred.scope == "department"
     assert cred.owner_dept_id == "dep_h0000000000000000000000001"
 

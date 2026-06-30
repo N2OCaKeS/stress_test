@@ -17,8 +17,8 @@ docs/redoc). Матрица здесь — единственный источн
 middleware снимут, без явной service-роли всё равно ничего не пройдёт.
 
 **Department scope.** Строка в `entity_permissions` бывает system-wide
-(`department_id IS NULL`, для встроенных ролей `guest`/`reader`/`operator`/
-`admin`/`worker_bot`) или per-department (`department_id IS NOT NULL`, для
+(`department_id IS NULL`, для системных ролей `guest`/`admin`/`worker_bot`)
+или per-department (`department_id IS NOT NULL`, для
 кастомных ролей service/department admin'а). Lookup'ы видят оба: system-wide
 матчатся всем, per-department — только caller'у из того же отдела. Закрывает
 cross-dept privilege leak через коллизии имён кастомных ролей.

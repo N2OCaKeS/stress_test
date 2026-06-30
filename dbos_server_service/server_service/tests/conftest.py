@@ -76,16 +76,74 @@ def _reset_schema() -> None:
         engine.dispose()
 
 
-def _run_migrations() -> None:
+# Ревизия, удаляющая системные гранты ролей reader/operator. Её родитель —
+# последняя точка, где эти гранты ещё лежат в матрице. Тесты по-прежнему гоняют
+# reader/operator как роли (теперь — кастомные, per-department), поэтому после
+# полного upgrade'а пересеваем их грантовый набор в скоуп тестовых отделов.
+_PRE_CLEANUP_REVISION = "f2c8b1d6e4a9"
+_TEST_DEPARTMENTS = ("dep_a", "dep_b")
+
+
+def _alembic_upgrade(target: str) -> None:
     service_dir = os.path.dirname(os.path.dirname(__file__))
     env = {**os.environ, "DATABASE_URL": TEST_DATABASE_URL, "PYTHONPATH": "."}
     subprocess.run(
-        ["python", "-m", "alembic", "upgrade", "head"],
+        ["python", "-m", "alembic", "upgrade", target],
         cwd=service_dir,
         env=env,
         check=True,
         capture_output=True,
     )
+
+
+def _reseed_custom_reader_operator() -> None:
+    """Вернуть reader/operator в матрицу тестовой БД как кастомные роли.
+
+    В проде эти роли больше не системные — их грантовые строки сносит
+    миграция. Но тестовый набор гоняет их как представителей «роль с
+    операционным / read-доступом». Снимаем их эффективный набор перед
+    cleanup-миграцией и переинсёртим per-department для тестовых отделов
+    (ровно так живут кастомные роли).
+    """
+    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+    try:
+        with engine.begin() as conn:
+            grants = conn.execute(
+                text(
+                    "SELECT entity_type, role, action FROM entity_permissions "
+                    "WHERE role IN ('reader', 'operator') AND department_id IS NULL"
+                )
+            ).all()
+            _alembic_upgrade("head")
+            rows = [
+                {
+                    "id": f"prm_{uuid.uuid4().hex}",
+                    "entity_type": entity_type,
+                    "role": role,
+                    "action": action,
+                    "department_id": dept,
+                }
+                for (entity_type, role, action) in grants
+                for dept in _TEST_DEPARTMENTS
+            ]
+            if rows:
+                conn.execute(
+                    text(
+                        "INSERT INTO entity_permissions "
+                        "(id, entity_type, role, action, department_id) "
+                        "VALUES (:id, :entity_type, :role, :action, :department_id)"
+                    ),
+                    rows,
+                )
+    finally:
+        engine.dispose()
+
+
+def _run_migrations() -> None:
+    # Останавливаемся на последней ревизии перед cleanup'ом reader/operator,
+    # снимаем их эффективный набор, доводим до head и пересеваем per-department.
+    _alembic_upgrade(_PRE_CLEANUP_REVISION)
+    _reseed_custom_reader_operator()
 
 
 @pytest.fixture(scope="session", autouse=True)

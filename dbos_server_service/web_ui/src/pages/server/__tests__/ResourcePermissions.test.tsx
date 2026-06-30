@@ -114,8 +114,8 @@ describe("ResourceInstancePermissions", () => {
     await waitFor(() =>
       expect(screen.getByTitle("desc-view")).toBeInTheDocument(),
     );
-    // Первый чекбокс таблицы — guest::view (порядок ролей: guest, reader,
-    // operator, admin; первое действие — view), не выдан.
+    // Первый чекбокс таблицы — guest::view (системные guest/admin идут
+    // первыми, кастомные после; первое действие — view), не выдан.
     fireEvent.click(screen.getAllByRole("checkbox")[0]);
     await waitFor(() => expect(apiPutMock).toHaveBeenCalledTimes(1));
     expect(apiPutMock).toHaveBeenCalledWith(

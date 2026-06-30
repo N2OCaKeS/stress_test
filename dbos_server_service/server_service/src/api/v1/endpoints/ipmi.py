@@ -620,7 +620,7 @@ async def power_status(
     audit_action = "server.power_status_cached"
     # Кэшированный power_state — это чтение поля servers.power_state, поэтому
     # требуем `view` (а не `power_status`, который для live-probe через worker'а).
-    # `guest` без view → 403; reader/operator/admin с view → 200.
+    # `guest` без view → 403; любая роль с view (admin/кастомная) → 200.
     try:
         await permissions.require_resource_action(
             db, identity, EntityType.SERVER, server_id, Action.VIEW,

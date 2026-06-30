@@ -9,7 +9,7 @@
 
 * `department_id IS NULL` — *system-wide* grant. Применяется ко всем
   пользователям с ролью независимо от department'а. Зарезервировано под
-  **встроенные роли** (`guest`/`reader`/`operator`/`admin`/`worker_bot`),
+  **системные роли** (`guest`/`admin`/`worker_bot`),
   чья семантика должна оставаться единой platform-wide. Писать такие строки
   может только ``account_admin``.
 * `department_id IS NOT NULL` — *per-department* grant. Применяется только

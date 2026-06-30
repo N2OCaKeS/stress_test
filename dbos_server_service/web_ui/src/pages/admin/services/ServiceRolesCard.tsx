@@ -16,7 +16,6 @@ import {
 import {
   SERVER_ROLES,
   SECRET_ROLES,
-  LOGING_ROLES,
   WORKER_ROLES,
   type ServiceRoleDef,
 } from "@/mocks/cluster";
@@ -86,7 +85,10 @@ const MOCK_SERVICE_META: Record<string, MockServiceMeta> = {
     note: "reveal — отдельная роль: каждое использование пишется в audit с reason.",
   },
   loging_service: {
-    roles: LOGING_ROLES,
+    // loging_service сервис-ролей не несёт — управляется платформенными
+    // loging_admin / loging_reader. Карточка для него и так отдаёт баннер
+    // ранним return'ом, так что каталог пустой.
+    roles: [],
     editors: ["bob", "carol"],
     note: "logging_reader не правит правила/retention — только смотрит события.",
   },
@@ -999,7 +1001,7 @@ function LiveRoleForm({
       <div className="flex flex-col gap-3">
         <FormRow
           label="role_name"
-          hint="например server.operator или secret.rotator · неизменяемо после создания"
+          hint="например server.deploy или secret.rotator · неизменяемо после создания"
         >
           <input
             className="input mono"
@@ -1125,7 +1127,7 @@ function MockRoleForm({
   mode: "new" | "edit";
 }) {
   const [name, setName] = useState(initial?.name ?? "");
-  const [level, setLevel] = useState<ServiceRoleDef["level"]>(initial?.level ?? "reader");
+  const [level, setLevel] = useState<ServiceRoleDef["level"]>(initial?.level ?? "admin");
   const [description, setDescription] = useState(initial?.description ?? "");
   const toast = useToast();
   const submit = () => {
@@ -1140,14 +1142,12 @@ function MockRoleForm({
         {mode === "new" ? "Новая роль" : `Edit · ${initial?.name}`}
       </h3>
       <div className="flex flex-col gap-3">
-        <FormRow label="name" hint="например server.operator или secret.rotator">
+        <FormRow label="name" hint="например server.deploy или secret.rotator">
           <input className="input mono" value={name} onChange={(e) => setName(e.target.value)} />
         </FormRow>
         <FormRow label="level">
           <select className="input" value={level} onChange={(e) => setLevel(e.target.value as ServiceRoleDef["level"])}>
             <option value="admin">admin</option>
-            <option value="operator">operator</option>
-            <option value="reader">reader</option>
             <option value="rotator">rotator</option>
           </select>
         </FormRow>

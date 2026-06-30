@@ -166,12 +166,12 @@ class TestReserveGate:
         self, client, make_token, make_server, captured_dispatch, db, dept_a,
     ):
         """Владелец брони может менять пакеты на своём занятом сервере."""
-        from src.core.constants import BusyState, ServiceRole
+        from src.core.constants import BusyState
 
         token = make_token(
             user_id="usr_owner",
             department_id=dept_a,
-            service_roles={"server_service": [ServiceRole.OPERATOR]},
+            service_roles={"server_service": ["operator"]},
         )
         srv = await make_server(department_id="dep_a")
         await _prepared(db, srv)

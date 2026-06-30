@@ -420,7 +420,7 @@ async def update_account(
         "от PATCH, fan-out `update_on_host` на серверы НЕ идёт: хост уже в "
         "этом состоянии, а push разнёс бы drift одного сервера на остальные "
         "привязки. `server_id` обязан быть привязан к аккаунту. Доступ: "
-        "`(server_account, adopt_from_host)` (operator/admin). Аудит: "
+        "`(server_account, adopt_from_host)` (update-уровень). Аудит: "
         "`server_account.adopted_from_host` (WARNING)."
     ),
     responses={
@@ -577,7 +577,7 @@ async def rotate_password(
         "копиями на связках), затем на каждый сервер ставится `account.provision` "
         "под новым логином (с паролем/ключом). Тело: `{login}`.\n\n"
         "Доступ — ТОЛЬКО platform department_admin отдела аккаунта или "
-        "service-роль `admin`. Обычный operator/update-грант не проходит. "
+        "service-роль `admin`. Обычный update-грант не проходит. "
         "Аудит CRITICAL. Конфликт нового логина на одном из серверов → 409 "
         "ACCOUNT_DUPLICATE. Серверы decommissioned / недоступные воркеру "
         "уезжают в `skipped` (rename в БД при этом всё равно выполняется)."

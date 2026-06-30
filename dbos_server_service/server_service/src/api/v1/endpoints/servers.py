@@ -65,7 +65,7 @@ async def list_servers(
 
     Доступ:
       - `(server, *, view)` — обязателен для всех ролей.
-      - `department_admin` своего отдела + сервисные роли `reader`/`operator`/`admin` своего отдела.
+      - `department_admin` своего отдела + сервисные роли (`admin` либо кастомная с `view`) своего отдела.
       - Пользователь без `department_id` — пустой список.
       - `account_admin`/`loging_admin` отбиваются 403 PLATFORM_ADMIN_BUSINESS_DATA_DENIED middleware'ом.
 
@@ -411,7 +411,7 @@ async def release_server(
     summary="Сменить os_version_id вручную (без inventory sync)",
     description=(
         "Прямое выставление `servers.os_version_id` + `os_last_synced_at=now()`. "
-        "Полезно admin/operator'у когда железо переустановили без worker'а или "
+        "Полезно носителю права на update сервера, когда железо переустановили без worker'а или "
         "нужен быстрый ручной фикс. Hardware-inventory sync "
         "(`POST /inventory/sync` → worker) — отдельный flow. "
         "`os_version_id=null` сбрасывает версию. "

@@ -114,7 +114,8 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
 }
 
 # Чувствительные действия — раскрытие/ротация секретов, управление питанием,
-# выдача sudo. Аудит уровня CRITICAL; в дефолтных грантах operator'у не выдаются.
+# выдача sudo. Аудит уровня CRITICAL; в системных дефолтных грантах их несёт
+# только admin (плюс точечные worker_bot-гранты), кастомным ролям — прицельно.
 SENSITIVE_ACTIONS: frozenset[str] = frozenset({
     Action.VIEW_PASSWORD,
     Action.VIEW_CREDENTIALS,

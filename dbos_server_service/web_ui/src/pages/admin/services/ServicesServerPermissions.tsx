@@ -50,7 +50,7 @@ import type {
  *
  * Строки `admin` и `guest` залочены: admin держит полный доступ, guest —
  * базовый, их правила менять нельзя (чекбокс disabled). Редактируются
- * `reader`, `operator` и кастомные роли отдела. Кастомную роль можно завести
+ * только кастомные роли отдела. Кастомную роль можно завести
  * прямо здесь кнопкой «+ Новая роль» — она создаётся в каталоге
  * `(dept, server_service)` auth-сервиса и тут же появляется строкой матрицы.
  *
@@ -95,14 +95,14 @@ const LOCKED_ROLES: Record<string, string> = {
 };
 
 // Системные роли каталога — их нельзя дублировать кастомной.
-const SYSTEM_ROLES: RoleName[] = ["guest", "reader", "operator", "admin"];
+const SYSTEM_ROLES: RoleName[] = ["guest", "admin"];
 
 // Порядок системных ролей в таблице; кастомные идут после по алфавиту.
-const SYSTEM_ROLE_ORDER: RoleName[] = ["guest", "reader", "operator", "admin"];
+const SYSTEM_ROLE_ORDER: RoleName[] = ["guest", "admin"];
 
 function roleSortKey(role: RoleName): string {
   const idx = SYSTEM_ROLE_ORDER.indexOf(role);
-  // Системные роли — фиксированный порядок (0..3), кастомные — после, по имени.
+  // Системные роли — фиксированный порядок, кастомные — после, по имени.
   return idx >= 0 ? `0${idx}` : `1${role}`;
 }
 
@@ -467,9 +467,8 @@ function RoleEditor({
 }) {
   const [selected, setSelected] = useState<string>("");
 
-  // Системные роли каталога не приходят в service_roles (он хранит только
-  // кастомные определения отдела), поэтому добиваем их вручную — точечно
-  // править права системных reader/operator тоже нужно.
+  // Системные guest/admin не приходят в service_roles (он хранит только
+  // кастомные определения отдела), поэтому добиваем их вручную.
   const allRoleNames = useMemo(() => {
     const set = new Set<string>(SYSTEM_ROLE_ORDER);
     for (const r of serviceRoles) set.add(r.role_name);
@@ -984,7 +983,7 @@ function NewRoleForm({
           Роль создаётся в каталоге <span className="mono">(отдел, server_service)</span>.
           С базовой ролью её grant'ы копируются в новую — дальше правьте
           чекбоксами. Системные роли{" "}
-          (<span className="mono">guest/reader/operator/admin</span>)
+          (<span className="mono">guest/admin</span>)
           дублировать нельзя.
         </p>
       </div>

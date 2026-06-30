@@ -52,7 +52,7 @@ import type {
 import type { ServiceRole } from "@/api/auth/types";
 
 // Системные роли в фиксированном порядке; кастомные идут после по алфавиту.
-const SYSTEM_ROLE_ORDER: RoleName[] = ["guest", "reader", "operator", "admin"];
+const SYSTEM_ROLE_ORDER: RoleName[] = ["guest", "admin"];
 
 function roleSortKey(role: RoleName): string {
   const idx = SYSTEM_ROLE_ORDER.indexOf(role);

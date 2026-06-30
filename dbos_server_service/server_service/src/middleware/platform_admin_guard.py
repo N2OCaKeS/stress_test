@@ -34,7 +34,7 @@ global bypass матрицы — это нарушало модель: platform-
 ``platform_role ∈ {account_admin, loging_admin}``, отбивается
 403 ``PLATFORM_ADMIN_BUSINESS_DATA_DENIED``. ``department_admin``
 **не блокируется** — у него есть легитимный доступ к бизнес-данным своего
-отдела. Сервисные роли (``reader``/``operator``/``admin``/``worker_bot``/...)
+отдела. Сервисные роли (``guest``/``admin``/``worker_bot``/кастомные)
 тоже **не блокируются** — это обычная rbac-плоскость.
 
 ### Что НЕ блокируется (allowlist путей)

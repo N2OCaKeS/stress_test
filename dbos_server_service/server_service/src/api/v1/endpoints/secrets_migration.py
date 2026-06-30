@@ -51,9 +51,9 @@ async def _require_worker_scope(db: AsyncSession, identity: CurrentIdentity) -> 
 
     Endpoint реально делает decrypt-old → encrypt-active по обеим таблицам
     (`server_accounts` и `ipmi_controllers`), поэтому семантика — `view + rotate`
-    для каждой. Из default-ролей все четыре грана несёт только `worker_bot`
-    (миграция `43cf9cfef9e1_…`); `operator` сидит лишь на `rotate_*` без
-    `view_*`, что и режет ему доступ — миграция секретов не операторская задача.
+    для каждой. Из системных ролей полный набор из четырёх грантов несёт только
+    `worker_bot` (миграция `43cf9cfef9e1_…`); роль без всех четырёх (нет любого
+    из `view_*`/`rotate_*`) сюда не проходит — миграция секретов не штатная задача.
     Через `has_action` (а не `require_action`), чтобы при отсутствии любого
     из четырёх отдать единый явный 403 SECRETS_MIGRATION_DENIED, а не
     случайный action-specific код.

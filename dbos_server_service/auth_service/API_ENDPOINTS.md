@@ -2,7 +2,7 @@
 
 > **Версия сервиса:** `0.1.0` (см. `pyproject.toml`, OpenAPI `version` в `src/main.py`).
 > **Базовый префикс:** `/api/auth/v1`.
-> **Всего endpoints:** **82** (auth 7, users 20, departments 4, services 3, service_roles 6, tokens 3, bots 9, groups 16, authorization 2, oauth2 5, docker 7).
+> **Всего endpoints:** **98** (auth 8, admin 3, users 26, departments 7, services 3, service_roles 6, tokens 3, bots 11, groups 17, authorization 2, oauth2 5, docker 7).
 > **Статус реализации:** production-ready (test-count'ы — `../TEST_COVERAGE.md`).
 > **Аудит-события:** перечислены в `AUDIT_EVENTS.md`.
 
@@ -117,6 +117,8 @@ Response 200:
 
 Errors: `INVALID_CREDENTIALS` (401), `USER_BANNED` (401), `USER_BLOCKED` (401, `user.status=BLOCKED` — административно заблокированный аккаунт, не путать с временным lockout'ом по неудачным попыткам), `ACCOUNT_TEMPORARILY_LOCKED` (429 + `retry_after_seconds`).
 
+Лимит одновременных сессий: число активных refresh-сессий на юзера ограничено `MAX_CONCURRENT_SESSIONS` (default `2`). Если на успешном логине лимит превышен, самая старая сессия (по `created_at`) отзывается, новая остаётся (sliding window). На каждое вытеснение эмитится `user.session_evicted_over_limit` (WARNING) с `evicted_session_id`.
+
 `USER_BANNED` для `ban_type=temporary` снимается автоматически при первом логине после `expires_at`: `auto_unban_if_expired` атомарно деактивирует ban-row, реактивирует PAT'ы, выписанные до бана (`reactivate_ban_revoked`), эмитит `user.unban` с `source="auto"` и продолжает обычный login-flow. `permanent` ban снимается только через `POST /users/{id}/unban`.
 
 ### `POST /refresh`
@@ -138,6 +140,12 @@ Auth: public. Body: `{ "refresh_token": "..." }` → `{ "ok": true }`. Идем�
 ### `GET /me`
 
 Auth: Bearer. Возвращает свежий `IdentityContext` (перечитывает из БД, не из JWT payload).
+
+### `PATCH /me`
+
+Auth: Bearer (user-context, m2m отбивается `USER_CONTEXT_REQUIRED`). Self-service апдейт собственного профиля. Body (whitelist, `extra='forbid'`): `display_name`, `email` — оба опциональны, но минимум одно обязательно. Поля `username` / `platform_role` / `department_id` / `is_banned` / `must_change_password` в схему не входят — нельзя повысить себе права через self-management. Возвращает обновлённый `UserResponse`. Audit `me.updated` (INFO) — `changes` (email маскируется), `fields_changed`, `username`.
+
+Errors: `EMPTY_UPDATE` (422) — пустое тело; `VALIDATION_ERROR` (422) — лишнее поле / битый email.
 
 ### `GET /health` / `GET /ready`
 
@@ -186,6 +194,22 @@ Response (только не-чувствительные поля):
 
 Errors: `USER_NOT_FOUND` (404) — нет такого username в видимом scope; `USER_CONTEXT_REQUIRED` (403) — m2m-токен; 422 — пустой/отсутствующий `username`.
 
+### `GET /users/labels?ids=<csv>`
+
+Auth: любой залогиненный юзер (user-context; m2m отбивается `USER_CONTEXT_REQUIRED` 403). Батч-резолв `user_id` → `username` для подстановки имён в UI (например в карточке шаринга personal-секрета). Username — не чувствительные данные, поэтому ручка доступна не только админам.
+
+Query: `ids` — CSV из `user_id` (например `usr_a,usr_b`), 1..8192 символов; на сервере режется до 200 id за запрос. Несуществующие id молча пропускаются.
+
+Response (`UserLabelsResponse`): `{ "labels": { "usr_a": "ivanov", "usr_b": "petrov" } }` — только для найденных.
+
+### `GET /users/locked`
+
+Auth: AnyAdmin. Список юзеров с активным brute-force lockout'ом (`locked_until > now`). `account_admin` — все отделы; `department_admin` — только свой. Total — в `X-Total-Count`. Пагинация (`limit`/`offset`).
+
+Query: `include_failing` (bool, default `false`) — дополнительно показать юзеров с накопленными неудачными попытками (`failed_login_attempts > 0`), ещё не залоченных.
+
+Response: `list[LockedUserResponse]`. Audit `user.locked_list` (INFO) — `count`, `total`, `include_failing`, `scope`.
+
 ### `POST /users`
 
 Auth: AnyAdmin. Body:
@@ -212,6 +236,12 @@ Auth: AnyAdmin. Body:
 Опциональный `must_change_password` (bool) в body: по умолчанию (`null`) новый юзер обязан сменить пароль при первом входе. Явный `false` снимает force-change — но передать его может только `account_admin`; `department_admin` с `false` получает `403 CANNOT_BYPASS_PASSWORD_CHANGE`. Когда account_admin создаёт юзера с `false`, в audit `user.create` пишется `details.must_change_password_bypass=true`.
 
 Errors: `USER_ALREADY_EXISTS` (409), `DEPARTMENT_NOT_FOUND` (404), `PERMISSION_DENIED` (403), `DEPARTMENT_ACCESS_DENIED` (403) — department_admin создаёт в чужом отделе, `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — caller выдаёт `platform_role` сверх своих прав (не-admin вообще; department_admin — что-либо кроме `loging_reader_dep`), `MISSING_REQUIRED_FIELD` (422) — нет `department_id` у dept-scoped роли (обычный юзер / `department_admin` / `loging_reader_dep`), `CANNOT_BYPASS_PASSWORD_CHANGE` (403) — не-account_admin прислал `must_change_password=false`.
+
+### `GET /users/{user_id}`
+
+Auth: AnyAdmin. `account_admin` — любой юзер; `department_admin` — только свой отдел (cross-dept → 404, чтобы не было ID oracle). Single-user read для admin-UI карточки: тот же `UserResponse` shape, что и `GET /users` (с именем отдела). Доменного аудит-события не эмитит.
+
+Errors: `USER_NOT_FOUND` (404).
 
 ### `PATCH /users/{user_id}`
 
@@ -429,6 +459,16 @@ Auth: `account_admin`. Body: `{ "name": "..." }`.
 
 Errors: `DEPARTMENT_ALREADY_EXISTS` (409).
 
+### `PATCH /departments/{department_id}`
+
+Auth: `account_admin`. Точечный апдейт отдела. Body (минимум одно поле): `name`, `description`. Response: `DepartmentResponse`. Audit `department.updated` (INFO) — diff обновлённых полей.
+
+Errors: `DEPARTMENT_NOT_FOUND` (404), `EMPTY_UPDATE` (422) — оба поля не переданы, `DEPARTMENT_ALREADY_EXISTS` (409) — конфликт `name`, `ROLE_REQUIRED` (403).
+
+### `GET /departments/{department_id}/services`
+
+Auth: AnyAdmin. Список `service_name` с активным `DepartmentServiceAccess` для отдела. `department_admin` scope здесь не ограничивается — read-only листинг безопасен. Response: `list[str]`. Доменного аудит-события не эмитит.
+
 ### `POST /departments/{department_id}/services`
 
 Auth: `account_admin`. Body: `{ "service_name": "config_service" }`. Создаёт `DepartmentServiceAccess`.
@@ -464,7 +504,7 @@ Errors:
 
 ### `GET /services` / `POST /services` / `DELETE /services/{service_name}`
 
-Auth: `account_admin`.
+Auth: `POST` и `DELETE` — `account_admin`. `GET` — AnyAdmin: `account_admin` видит весь регистр, `department_admin` — только сервисы, к которым подключён его отдел (нужно для выбора сервиса при назначении ролей).
 
 `POST` body: `{ "service_name": "...", "description": "..." }`. После создания автоматически появляется системная роль `admin` (`is_system=True`).
 
@@ -918,6 +958,42 @@ Auth: public. Response: PEM-encoded RSA public key (для registry `rootcertbun
 ### `GET /docker/jwks`
 
 Auth: public. Response: JWKS (RS256).
+
+---
+
+## Platform admin (`/admin`)
+
+Платформенные операции уровня всей системы, не привязанные к конкретному ресурсу. Все — только `account_admin`.
+
+### `POST /admin/service-keys/generate`
+
+Auth: `account_admin`. Генерирует свежий мастер-ключ шифрования (32 байта AES-256, CSPRNG `secrets.token_bytes`, base64) для рантайм-ротации keystore в `server_service` / `secret_service`. auth_service ключ **нигде не хранит** — отдаёт его в ответе ровно один раз; account_admin относит ключ в rotate-эндпоинт нужного сервиса.
+
+Response (`GeneratedServiceKeyResponse`):
+
+```json
+{ "key_b64": "<base64>", "key_bytes": 32, "algorithm": "AES-256-GCM" }
+```
+
+Audit: `service_key.generate` (CRITICAL) — фиксируется только факт генерации (`key_bytes`, `encoding`), сам ключ в details не уходит.
+
+Errors: `INVALID_TOKEN` (401) — нет/битый bearer, `ROLE_REQUIRED` (403) — не account_admin.
+
+### `GET /admin/lockout-policy`
+
+Auth: `account_admin`. Возвращает эффективные параметры brute-force lockout'а и источник: `source="env"` — runtime-override не задан, действуют env-дефолты; `source="db"` — действует строка из таблицы `lockout_policy`.
+
+Response (`LockoutPolicyResponse`): `{ "max_failed_attempts": 5, "lockout_minutes": 15, "source": "env" }`. Доменного аудит-события не эмитит.
+
+Errors: `ROLE_REQUIRED` (403).
+
+### `PUT /admin/lockout-policy`
+
+Auth: `account_admin`. Записывает runtime-override политики lockout'а (платформенный scope) — меняет поведение `/login` и self-change-password без рестарта. Body: `{ "max_failed_attempts": <int>=1>, "lockout_minutes": <int>=1> }`. Response: `LockoutPolicyResponse` с `source="db"`.
+
+Audit: `lockout_policy.update` (CRITICAL) с `old_max`, `old_minutes`, `new_max`, `new_minutes`.
+
+Errors: `ROLE_REQUIRED` (403), `422` — `max_failed_attempts` / `lockout_minutes` < 1.
 
 ---
 

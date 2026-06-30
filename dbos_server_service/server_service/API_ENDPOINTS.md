@@ -292,6 +292,54 @@ Auth: Bearer + `(server_account, *, rotate_password)`. Body: опц. `password_b
 
 Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404), `WEAK_PASSWORD` (422), `RATE_LIMIT_EXCEEDED` (429).
 
+### `POST /server-accounts/import`
+
+Auth: Bearer + `(server_account, *, create)` (+ `grant_sudo` при `has_sudo=true`). Завести в БД незнакомого OS-пользователя, найденного инвентаризацией (элемент `unknown_users` из callback'а). Body: `{server_id, login, has_sudo?, unix_groups?, shell?, source?}`. Пароль НЕ задаётся (на боксе неизвестен; `source=discovered`, `password_encrypted=NULL`); аккаунт привязывается к `server_id` и помечается `present_on_server=True`. WARNING audit `server_account.imported_from_host`.
+
+Errors: `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `ACCOUNT_DUPLICATE` (409 — login уже занят на сервере).
+
+### `GET /server-accounts/ignored-logins`
+
+Auth: Bearer + `(server_account, *, manage_ignored_logins)`. Список игнор-логинов отдела вызывающего (инвентаризация не репортит их как незнакомых). Non-paginated.
+
+Errors: `PERMISSION_DENIED` (403).
+
+### `POST /server-accounts/ignored-logins`
+
+Auth: Bearer + `(server_account, *, manage_ignored_logins)`. Body: `{login, reason?}`. Добавляет логин в ignore-list отдела (перестаёт попадать в `unknown_users` и не дрейфит). UNIQUE(department, login). WARNING audit `server_account.ignored_login_added`.
+
+Errors: `PERMISSION_DENIED` (403), `IGNORED_LOGIN_DUPLICATE` (409).
+
+### `DELETE /server-accounts/ignored-logins/{login}`
+
+Auth: Bearer + `(server_account, *, manage_ignored_logins)`. Убирает логин из ignore-list отдела. INFO audit `server_account.ignored_login_removed`.
+
+Errors: `PERMISSION_DENIED` (403), `IGNORED_LOGIN_NOT_FOUND` (404).
+
+### `POST /server-accounts/{account_id}/recreate_login` (worker dispatch)
+
+Auth: Bearer — **только** platform `department_admin` отдела аккаунта или service-роль `admin` (обычный `update`/operator-грант не проходит). Body: `{login}`. Пересоздаёт живой OS-логин end-to-end: на каждый привязанный сервер `account.deprovision` под старым логином → rename в БД (синхронно с денормализованными копиями на связках) → `account.provision` под новым логином (с паролем/ключом). Серверы decommissioned/недоступные воркеру уезжают в `skipped` (rename в БД всё равно выполняется). 202. CRITICAL audit `server_account.recreate_login`.
+
+Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404), `ACCOUNT_DUPLICATE` (409 — новый логин занят на одном из серверов).
+
+### `POST /server-accounts/{account_id}/ssh_key` (worker dispatch)
+
+Auth: Bearer + `(server_account, *, update)`. Body: `{ssh_mode, ssh_public_key?, ssh_private_key_b64?}`. `generate` — сервер генерит Ed25519 и возвращает приватный ключ ОДИН раз (`ssh_private_key`); `supply` — клиент передаёт `ssh_public_key` и опц. `ssh_private_key_b64` (если приложен — шифруется и хранится, тогда консоль сможет ходить под аккаунтом). Сохраняет ключ в БД и диспатчит `account.provision` на все серверы с `present_on_server=True` (push в `authorized_keys`). 202. WARNING audit `server_account.ssh_key_set`.
+
+Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404), `422` (`supply` без public-ключа / битый ключ).
+
+### `POST /server-accounts/{account_id}/rotate_ssh_key` (worker dispatch)
+
+Auth: Bearer + `(server_account, *, update)`. Перегенерирует Ed25519-пару (кейс компрометации), сохраняет public + зашифрованный private, возвращает новый приватный ключ ОДИН раз, диспатчит `account.provision` на все серверы с `present_on_server=True` (re-push authorized_keys). 202. CRITICAL audit `server_account.ssh_key_rotate`.
+
+Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404).
+
+### `GET /server-accounts/{account_id}/ssh_private_key`
+
+Auth: Bearer + `(server_account, *, view_password)` (то же право, что у раскрытия пароля). Расшифровывает и отдаёт приватный SSH-ключ в PEM. Доступен только для сгенерированных сервером ключей (`generate`/`rotate_ssh_key`); у `supply`-ключа без приватной части и у аккаунта без ключа → 404. Per-IP+account reveal-rate-limit (`PASSWORD_REVEAL_RATE_LIMIT`, default 10/min) поверх глобального. CRITICAL audit `server_account.ssh_private_key_revealed`.
+
+Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` / `ACCOUNT_NO_SSH_PRIVATE_KEY` (404), `DECRYPT_FAILED` (422), `RATE_LIMIT_EXCEEDED` (429).
+
 ### `POST /server-accounts/{account_id}/rotate` (worker dispatch)
 
 Auth: Bearer + `(server_account, *, rotate_password)`. Query: `server_id?` (точечно vs mass-rotate).
@@ -408,6 +456,12 @@ Audit: `installed_packages.history` (INFO) — только на denied/not-foun
 
 Errors: `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404).
 
+### `POST /servers/installed-packages/bulk` (worker dispatch)
+
+Auth: Bearer + `(server, *, view)` (проверяется один раз на весь батч). Массовый live-запрос пакетов: на каждый сервер из `server_ids` диспатчит `installed_packages.list` (тот же per-server SSH-probe, что у одиночного). Паттерны общие на весь батч: `patterns` (список 1..20, матч по ЛЮБОМУ — OR) или одиночный `pattern` (back-compat). Per-server гейты (не валят батч): dept-visibility (`not_found`), prepare (`prepare_required`), decommissioned. Reserve-гейт не нужен (read-only). Async-модель: dispatch только ставит задачи, реальные пакеты лежат в `task.result` каждого сервера (в ответе `packages` пуст) — UI добирает поллингом `GET /tasks/{task_id}`. Cap — `INSTALLED_PACKAGES_BULK_MAX_SERVERS` (default 50). INFO audit `installed_packages.list` per сервер.
+
+Errors: `INVALID_PATTERN` (400), `PERMISSION_DENIED` (403), `BULK_PACKAGES_TOO_LARGE` (413).
+
 ### `POST /servers/packages/bulk-action`
 
 Auth: Bearer + `(server, *, manage_packages)`. Массовая ИЗМЕНЯЮЩАЯ операция: на каждый сервер из `server_ids` диспатчит `installed_packages.{install|remove|update}` — worker под управляющим пользователем по SSH с sudo выполняет `apt-get`/`dnf`/`apk`.
@@ -457,6 +511,18 @@ Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403, весь б�
 Auth: Bearer + `(server, *, update)` (как prepare). Оркестрация очистки после переустановки ОС: четыре флага (`unbind_accounts`, `update_os_version`, `rerun_prepare`, `run_inventory_sync`) выполняются в фиксированном порядке unbind → rerun_prepare → update_os_version → run_inventory_sync, каждый переиспользует существующий путь. `rerun_prepare=true` требует блок `prepare` (те же поля/режимы, что single-prepare). `update_os_version` берёт `os_version_id` (`null` сбрасывает). Ответ — per-action сводка `{server_id, unbind_accounts, rerun_prepare, update_os_version, run_inventory_sync}`, каждое `{status: done|dispatched|skipped|failed, task_id?, reason?, detail?}`. CRITICAL audit `server.clean` + по-действенные эмиты (`server_account.unlink_servers` / `server_account.deprovision` / `server.prepare` / `server.update_os_version` / `server.inventory_sync`).
 
 Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` (409), `422` (ни одного действия / `rerun_prepare` без `prepare` / битый base64 / слабый пароль), `RATE_LIMIT_EXCEEDED` (429). Per-action `failed.reason`: `permission_denied` / `prepare_required` / `invalid_os_version` / `worker_unreachable` / `account_has_no_password` / `account_not_linked` / `idempotent_conflict` и т.п.
+
+### `POST /servers/prepare/bulk` (worker dispatch, legacy)
+
+Auth: Bearer + `(server, *, update)` (проверяется один раз на весь батч). **Legacy** массовый prepare: поддерживает только ручной режим bootstrap-кред на каждый сервер (`items: [{server_id, username_b64, password_b64, ssh_private_key_b64?}]`) — без account-режима (для per-server выбора account/ручной используйте `POST /servers/prepare-batch`). Те же per-server гейты, что у single-prepare (visibility/dept-isolation, decommissioned-check, Redis-stash, dispatch). Один битый сервер уходит в `skipped` с `reason` и не валит батч; глобальная недоступность воркера на первом сервере отбивает весь запрос 503. Дубли `server_id` → 422. Rate-limit `BULK_PREPARE_RATE_LIMIT` (default 2/min). CRITICAL audit на каждый сервер.
+
+Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403, весь батч), `BULK_PREPARE_TOO_LARGE` (413), `422` (битый base64 / слабый пароль / дубли server_id), `RATE_LIMIT_EXCEEDED` (429), `503` (worker недоступен на первом сервере).
+
+### `POST /servers/{server_id}/management-credentials/rotate` (worker dispatch)
+
+Auth: Bearer + `(server, *, update)` (тот же гейт, что у prepare). Сервер обязан быть prepared (`is_managed`). Dispatch'ит `server.rotate_management_creds`: server_service генерит новую Ed25519-пару + пароль управляющего пользователя, переносит текущий ciphertext в `previous_mgmt_*` (анти-локаут), пишет новый в `mgmt_*`, ставит `mgmt_creds_pending_apply=True` и кладёт новый материал в Redis-stash. Worker заходит ДЕЙСТВУЮЩИМ ключом (internal-fetch отдаёт previous, пока pending), ставит новый pubkey + chpasswd, проверяет вход новым ключом, затем POST'ит `/internal/servers/{id}/management-credentials/applied`, после чего server_service снимает pending и зануляет previous. 202. CRITICAL audit `server.management_creds_rotated`.
+
+Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `PREPARE_REQUIRED` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `WORKER_REDIS_UNAVAILABLE` / `WORKER_UNREACHABLE` / `WORKER_REDIS_NOT_CONFIGURED` (503).
 
 ---
 
@@ -588,11 +654,85 @@ Errors: `PERMISSION_DENIED` (403 — нет `permission_grant`; для `mirror` 
 
 ## Tasks (`/tasks`)
 
+### `GET /tasks`
+
+Auth: Bearer + `(task, *, view)`. Страница worker-task'ов из `dev_server_worker.tasks`, сортировка `enqueued_at DESC`; общее число под фильтром — в заголовке `X-Total-Count`. Тело — `list[TaskRead]`. Фильтры: `status`, `kind` (task_kind), `server_id`, `created_by` (user_id инициатора). Пагинация: `limit` (1..200, default 50) + `offset`. Видны задачи серверов своего отдела; читатель без service-роли `admin`/`operator` (и не department_admin) видит только свои (`created_by`); инфра-задачи без сервера — только `admin`/`operator`. Platform-админам вход закрыт middleware'ом.
+
+Errors: `PERMISSION_DENIED` (403), `PLATFORM_ADMIN_BUSINESS_DATA_DENIED` (403). На denied — audit `task.view`.
+
+### `GET /tasks/{task_id}`
+
+Auth: Bearer + `(task, *, view)`. Деталь одной задачи (`TaskRead` с полным `result` и `last_error`). Dept-visibility: чужой отдел / невидимый сервер маскируются под 404; читатель видит только свои задачи (чужая того же отдела → 404). Инфра-задача без сервера видна только `admin`/`operator`.
+
+Errors: `PERMISSION_DENIED` (403), `TASK_NOT_FOUND` (404). На denied — audit `task.view`.
+
 ### `POST /tasks/{task_id}/cancel`
 
 Auth: Bearer + `(task, *, cancel)`. Body: `TaskCancelRequest | null` (`reason`). Cross-DB UPDATE в `dev_server_worker.tasks`. Системные task'и (`_SYSTEM_TASK_KINDS` — scheduler-registered heartbeat/sweep/recover/cleanup/reencrypt) требуют `account_admin`.
 
 Errors: `PERMISSION_DENIED` (403), `SYSTEM_TASK_ADMIN_REQUIRED` (403), `TASK_NOT_FOUND` (404), `TASK_NOT_CANCELLABLE` (409).
+
+---
+
+## Console (`/servers/{server_id}/console`)
+
+### `WS /servers/{server_id}/console/ws`
+
+Auth: Bearer — токен берётся из `Authorization: Bearer` либо из subprotocol `bearer.<token>` (браузерный WS API не даёт задать произвольные заголовки). Middleware-стек на WebSocket не выполняется, поэтому introspect + ban/service-access делаются в самом handler'е. Query: `account_id` (обязателен — под какой учёткой коннектиться). Интерактивная PTY-консоль через Redis pub/sub-мост к worker'у: подключение идёт под кредами выбранного `server_account`, не под управляющим ключом — поэтому сервер НЕ обязан быть prepared.
+
+Доступ: ролевой `(server, *, console)` ЛИБО на выбранном аккаунте роль с `console` или `view_password` (держатель `view_password` подключается без отдельного console-гранта). Чувствительное — оператору по умолчанию не выдано. Department-scope сервера и аккаунта проверяется.
+
+Session-события: `ssh_console.session_open` / `session_close` (INFO). Per-команда — `ssh_console.command` (эмитит worker на PTY-мосте, INFO / WARNING на ненулевом exit).
+
+WS-close коды: `4400` bad request, `4401` `ACCESS_TOKEN_MISSING`/невалидный токен, `4403` forbidden, `4404` not found, `4409` conflict, `4503` worker недоступен, `1000` нормальное закрытие.
+
+---
+
+## Console macros (`/console-macros`)
+
+Личные и системные (department-wide) заготовки команд для интерактивной консоли. См. `services/console_macro.py`.
+
+### `GET /console-macros`
+
+Auth: Bearer (любой аутентифицированный актор отдела). Личные макросы вызывающего + системные его отдела; сортировка — сначала личные, потом системные, внутри группы по `display_order`. Чтение без аудита.
+
+Errors: `ACCESS_TOKEN_MISSING` (401).
+
+### `POST /console-macros`
+
+Auth: Bearer. Body: `ConsoleMacroCreate`. `is_system=false` — личный (привязан к вызывающему, может любой вошедший); `is_system=true` — системный (общий в отделе), только `department_admin` своего отдела. INFO audit `console_macro.create`.
+
+Errors: `PERMISSION_DENIED` (403 — системный без department_admin).
+
+### `PATCH /console-macros/{macro_id}`
+
+Auth: Bearer. Личный — только владелец; системный — `department_admin` отдела. Чужой/скрытый макрос → 404 (существование не светится). INFO audit `console_macro.update`.
+
+Errors: `PERMISSION_DENIED` (403), `404` (макрос не найден или скрыт).
+
+### `DELETE /console-macros/{macro_id}`
+
+Auth: Bearer. Те же права, что у PATCH. INFO audit `console_macro.delete`.
+
+Errors: `PERMISSION_DENIED` (403), `404`.
+
+---
+
+## Management-user config (`/management-user-config`)
+
+Платформенный singleton-конфиг управляющей учётки, под которой система ходит на подготовленные серверы. Под `account_admin` — явное исключение в `platform_admin_guard`.
+
+### `GET /management-user-config`
+
+Auth: Bearer + платформенный `account_admin`. Текущий login + пер-режимные группы/bootstrap-команды (нет строки → дефолт: `login=dbos`, пустые режимы).
+
+Errors: `ACCESS_TOKEN_MISSING` / `ACCESS_TOKEN_INVALID` / `USER_BANNED` (401), `ACCOUNT_ADMIN_REQUIRED` (403).
+
+### `PUT /management-user-config`
+
+Auth: Bearer + `account_admin`. Body: `ManagementUserConfigUpdate` (`login` без значения — без изменений; присланные режимы в `modes` заменяются целиком, остальные сохраняются). При изменении `modes`/`login` фан-аутит недеструктивный high-priority `management_user_sync` (re-bootstrap групп/команд/ключа) на все `is_managed`-серверы платформы независимо от отдела. Смена `login` сам rename НЕ выполняет — в ответе поднимается `login_changed`/`rename_pending` (cutover — отдельная фаза). WARNING audit `management_user_config.update`; per-server — `management_user_config.sync`; обрезка хвоста фан-аута — `management_user_sync_fanout.truncated`.
+
+Errors: `ACCESS_TOKEN_MISSING` / `ACCESS_TOKEN_INVALID` / `USER_BANNED` (401), `ACCOUNT_ADMIN_REQUIRED` (403), `422` (невалидный login / группы / пустые команды).
 
 ---
 
@@ -615,6 +755,16 @@ Header `X-Target-Department-Id` — опциональный в soft-режим�
 ### `POST /internal/servers/{server_id}/accounts/{account_id}/password/rotate`
 
 Worker присылает новый plaintext (после SSH apply). server_service шифрует и сохраняет. CRITICAL audit.
+
+### `GET /internal/servers/{server_id}/management/credentials`
+
+Auth: `(server, *, view_management_credentials)` — worker_bot. Расшифровывает per-server управляющие креды (`mgmt_ssh_private_key_encrypted` + `mgmt_password_encrypted`) и отдаёт воркеру `{management_user, ssh_private_key, password}` для managed-операций. Пока `mgmt_creds_pending_apply=True` и есть previous-материал — отдаётся он (рабочий на боксе, `source=previous`), иначе текущий; это и есть авто-вывод старой версии после успешного applied-callback'а. WARNING audit `server.management_credentials_revealed`.
+
+Errors: `SERVER_NOT_FOUND` / `MANAGEMENT_CREDS_NOT_FOUND` (404 — сервер не prepared), `DECRYPT_FAILED` (422), `ENCRYPTION_KEY_MISSING` (500).
+
+### `POST /internal/servers/{server_id}/management-credentials/applied`
+
+Auth: `(server, *, prepare_callback)` — worker_bot. Applied-callback ротации управляющих кред: worker подтвердил, что новый материал применён и проверен на боксе. server_service снимает `mgmt_creds_pending_apply`, зануляет previous-зеркала и проставляет `mgmt_creds_rotated_at` — с этого момента fetch отдаёт текущий материал (старая версия выведена). CRITICAL audit `server.management_creds_rotated` (ветка b).
 
 ### `POST /internal/servers/{server_id}/inventory`
 
@@ -689,6 +839,42 @@ Errors: `SECRETS_MIGRATION_DENIED` (403), `SECRETS_OUTBOX_ROW_NOT_FOUND` (404), 
 Auth: shared-secret + `X-Service-Identity: rotation_runner`. Read-only сводка по `secrets_reencrypt_outbox` + per-column legacy-residue. Payload идентичен `/internal/secrets/migration_status` (но та защищена worker_bot scope'ом, потому не подходит ops-runner'у). Используется `scripts/k8s/rotate_master_key.sh --auto-finalize` для дожимания `outbox.pending == 0` и `remaining_legacy_total == 0` перед drop'ом старой версии ключа. INFO audit `ops.migration_status_read`.
 
 Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_IDENTITY_NOT_ALLOWED` (403).
+
+### `POST /internal/encryption/rotate`
+
+Auth: shared-secret + `X-Service-Identity: rotation_runner`. Рантайм-ротация мастер-ключа без простоя: новый ключ (генерит auth_service `POST /admin/service-keys/generate`) присылает rotation-runner. Новая версия становится активной (новые секреты сразу под ней), старые версии остаются читаемыми (материал в keystore), фоновая ре-шифрация публикуется через reencrypt-outbox. Идемпотентно (повтор с тем же материалом не плодит версию). CRITICAL audit `ops.encryption_rotate`.
+
+Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_IDENTITY_NOT_ALLOWED` (403), `ROTATE_KEY_INVALID` (422 — `new_key_b64` не base64 / не 32 байта).
+
+### `POST /internal/encryption/retire/{version}`
+
+Auth: shared-secret + `X-Service-Identity: rotation_runner`. Убирает старую версию мастер-ключа из keystore — только когда на версии 0 строк (полная ре-шифрация завершена) и она не активна. После retire материал недоступен, расшифровать данные этой версии станет нельзя. Дублирует автоматический авто-вывод: не-активную осушённую версию система выводит сама (см. `encryption.auto_retire`), ручной вызов — резерв. CRITICAL audit `ops.encryption_retire`.
+
+Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_IDENTITY_NOT_ALLOWED` (403), `KEYSTORE_CANNOT_RETIRE_ACTIVE` / `KEYSTORE_VERSION_IN_USE` (409).
+
+---
+
+## Admin — master-key rotation (`/admin/encryption/*`)
+
+UI-канал ротации мастер-ключа под платформенным `account_admin`. Ключи шифрования — инфраструктура, а не бизнес-данные, поэтому это явное исключение в `platform_admin_guard` (на остальных server_service-эндпоинтах account_admin отбивается 403). Ручки возвращают только статус ротации и версии ключа, без секретов. Зеркало ops-runner'ского канала, но action-name'ы отдельные (actor — человек из UI).
+
+### `GET /admin/encryption/migration_status`
+
+Auth: Bearer + платформенный `account_admin`. Read-only прогресс ре-шифрации секретов под активную версию (`remaining`/`total`/`by_version`/`migrated_pct`) — UI поллит после `rotate`, чтобы понять, когда можно `retire`.
+
+Errors: `ACCESS_TOKEN_MISSING` / `ACCESS_TOKEN_INVALID` / `USER_BANNED` (401), `ACCOUNT_ADMIN_REQUIRED` (403).
+
+### `POST /admin/encryption/rotate`
+
+Auth: Bearer + `account_admin`. Body: `{new_key_b64}` (ключ генерит auth_service). Новая версия становится активной, старые остаются читаемыми, фоновая ре-шифрация публикуется через reencrypt-outbox. Идемпотентно. CRITICAL audit `encryption.admin_rotate`.
+
+Errors: `ACCESS_TOKEN_MISSING` / `ACCESS_TOKEN_INVALID` / `USER_BANNED` (401), `ACCOUNT_ADMIN_REQUIRED` (403), `ROTATE_KEY_INVALID` (422).
+
+### `POST /admin/encryption/retire/{version}`
+
+Auth: Bearer + `account_admin`. Убирает старую версию из keystore (только осушённую и не активную). Дублирует автоматический авто-вывод (`encryption.auto_retire`): не-активную версию, на которой перешифровочный батч обнулил owner-строки и опустошил outbox, система выводит сама — ручной retire остаётся как резерв. CRITICAL audit `encryption.admin_retire`.
+
+Errors: `ACCESS_TOKEN_MISSING` / `ACCESS_TOKEN_INVALID` / `USER_BANNED` (401), `ACCOUNT_ADMIN_REQUIRED` (403), `KEYSTORE_CANNOT_RETIRE_ACTIVE` / `KEYSTORE_VERSION_IN_USE` (409).
 
 ---
 

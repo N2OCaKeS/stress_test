@@ -10,7 +10,7 @@
 
 - Все эндпоинты под `/api/logging/v1`. В prod доступны только по HTTPS (TLS-guard middleware).
 - Service-to-service ingest (`POST /events`, `POST /services/{service}/events`) защищён `SERVICE_API_KEYS` map + обязательный `X-Service-Identity` заголовок.
-- Read-эндпоинты (`GET /events`, `GET /services`, `GET /services/{service}/events`, `GET /rules`, `GET /rules/{rule_id}`, `GET /retention`) идут по user JWT — introspect в `auth_service`. Допускаются ТОЛЬКО `loging_admin` / `loging_reader`. `account_admin` / `department_admin` к чтению audit'а не имеют доступа: если dep_admin'у нужен read его отдела, ему выдаётся отдельная `loging_reader`.
+- Read-эндпоинты (`GET /events`, `GET /events/stats`, `GET /events/export`, `GET /services`, `GET /services/{service}/events`, `GET /rules`, `GET /rules/{rule_id}`, `GET /retention`) идут по user JWT — introspect в `auth_service`. К чтению журнала допускаются **пять** платформенных ролей (`require_reader` / `_READER_ROLES`): `loging_admin` / `loging_reader` / `account_admin` видят журнал cross-dept целиком; `loging_reader_dep` и `department_admin` — read-only строго в рамках своего отдела (жёсткий dept-scope: read-эндпоинты `events.py` перекрывают query-параметр `department_id` значением из identity, отсутствие отдела в identity → 403, fail-closed). `account_admin`, `loging_reader_dep` и `department_admin` получают только чтение (events / stats / export / каталог сервисов) — управление правилами и retention остаётся за `loging_admin`. Чтение правил (`GET /rules`, `GET /rules/{rule_id}`) и retention (`GET /retention`) — тоже только `loging_admin`.
 - Write на `/rules` и `/retention` доступен только `loging_admin`. `account_admin` / `department_admin` к управлению loging_service не допускаются.
 - Все значимые действия публикуются как self-audit (`logging.*` actions, см. `AUDIT_EVENTS.md`).
 - Эндпоинты `/health`, `/ready`, `/token` исключены из OpenAPI (`include_in_schema=False`).
@@ -82,7 +82,7 @@ Write-эндпоинты `/retention` (PUT/DELETE) — **без** rate-limit by-
 
 | `error_code` | HTTP | Источник |
 |---|---|---|
-| `INSUFFICIENT_ROLE` | 403 | `require_admin` (нужен `loging_admin`) / `require_reader` (нужен `loging_admin` или `loging_reader`): роль не подходит |
+| `INSUFFICIENT_ROLE` | 403 | `require_admin` (нужен `loging_admin`) / `require_reader` (нужна одна из `loging_admin` / `loging_reader` / `account_admin` / `loging_reader_dep` / `department_admin`): роль не подходит |
 
 ### Upstream (auth_service)
 
@@ -133,17 +133,27 @@ Write-эндпоинты `/retention` (PUT/DELETE) — **без** rate-limit by-
 
 | Method | URL | Auth | Response | Возможные `error_code` |
 |---|---|---|---|---|
-| GET | `/events` | `loging_admin` / `loging_reader` | `EventListResponse` (items+`has_more`+`limit`+`offset`+nullable `total`) | `MISSING_TOKEN`, `INVALID_TOKEN`, `USER_BANNED`, `INSUFFICIENT_ROLE`, `AUTH_SERVICE_NOT_CONFIGURED`, `AUTH_SERVICE_TIMEOUT`, `AUTH_SERVICE_UNREACHABLE`, `AUTH_SERVICE_ERROR`, `INTROSPECT_KEY_NOT_CONFIGURED`, `INTROSPECT_NOT_INITIALIZED`, `RATE_LIMIT_EXCEEDED` |
-| GET | `/events/stats` | `loging_admin` / `loging_reader` | `EventStatsResponse` (`total`+`by_severity`+`by_service`+`by_status`+границы окна) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
-| GET | `/events/export` | `loging_admin` / `loging_reader` | `text/csv` (заголовок + строки событий; `X-Export-Truncated` при усечении) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
-| GET | `/services` | `loging_admin` / `loging_reader` | `ServiceListResponse` (items+`has_more=False`+`limit=null`+`offset=null`) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
-| GET | `/services/{service}/events` | `loging_admin` / `loging_reader` | `ServiceEventsResponse` (items+`has_more`+`limit`+`offset`) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
+| GET | `/events` | reader (5 ролей)¹ | `EventListResponse` (items+`has_more`+`limit`+`offset`+nullable `total`) | `MISSING_TOKEN`, `INVALID_TOKEN`, `USER_BANNED`, `INSUFFICIENT_ROLE`, `AUTH_SERVICE_NOT_CONFIGURED`, `AUTH_SERVICE_TIMEOUT`, `AUTH_SERVICE_UNREACHABLE`, `AUTH_SERVICE_ERROR`, `INTROSPECT_KEY_NOT_CONFIGURED`, `INTROSPECT_NOT_INITIALIZED`, `RATE_LIMIT_EXCEEDED` |
+| GET | `/events/stats` | reader (5 ролей)¹ | `EventStatsResponse` (`total`+`by_severity`+`by_service`+`by_status`+границы окна) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
+| GET | `/events/export` | reader (5 ролей)¹ | `text/csv` (заголовок + строки событий; `X-Export-Truncated` при усечении) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
+| GET | `/services` | reader (5 ролей)¹ | `ServiceListResponse` (items+`has_more=False`+`limit=null`+`offset=null`) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
+| GET | `/services/{service}/events` | reader (5 ролей)¹ | `ServiceEventsResponse` (items+`has_more`+`limit`+`offset`) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
+
+¹ **reader (5 ролей)** — `require_reader` / `_READER_ROLES` (`src/dependencies/auth.py`). Допускаются: `loging_admin`, `loging_reader`, `account_admin` (видят журнал cross-dept целиком) и `loging_reader_dep`, `department_admin` (read-only строго в рамках своего отдела — read-эндпоинты `events.py` перекрывают `department_id` значением из identity; нет отдела в identity → 403, fail-closed). Управление правилами и retention этим ролям недоступно — оно за `loging_admin` (`require_admin`).
 
 **Окно у `GET /events` vs `GET /events/stats` / `GET /events/export`.** `GET /events` принимает диапазон только через query-параметры `from_time`/`to_time` (полуоткрытый `[from_time, to_time)`); параметра `window_hours` у него нет — переданный `window_hours` молча игнорируется. `GET /events/stats` и `GET /events/export` принимают `from_time`/`to_time` **и** `window_hours` (часы, дефолт 24, диапазон `1..24*366`): если заданы оба края `from_time`/`to_time`, `window_hours` игнорируется; если задан один край — второй достраивается сдвигом на `window_hours`; если не задан ни один — окно `[now - window_hours, now]`. Naive datetime трактуется как UTC.
 
 **Фильтры `stats` / `export`** — те же, что у `GET /events` (`department_id`, `service`, `severity`, `action`, `actor_id`, `target_id`, `status`, `request_id`), сужают выборку под агрегаты/экспорт.
 
 **CSV-экспорт.** `GET /events/export` отдаёт CSV (`Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment`). Колонки совпадают с полями события, `details` сериализуется компактным JSON'ом в последней колонке. Не более `MAX_EXPORT_ROWS` (= 50000) строк на экспорт; при превышении ответ содержит первые строки и заголовок `X-Export-Truncated: true` — сузьте окно или фильтр.
+
+### Internal read (s2s)
+
+| Method | URL | Auth | Response | Возможные `error_code` |
+|---|---|---|---|---|
+| GET | `/internal/events` | service-token | `EventListResponse` (items+`has_more`+`limit`+`offset`+nullable `total`) | `INVALID_SERVICE_KEY`, `MISSING_SERVICE_IDENTITY`, `VALIDATION_ERROR`, `RATE_LIMIT_EXCEEDED` |
+
+Внутренний service-to-service канал чтения журнала (`src/api/v1/endpoints/internal.py`), скрыт из OpenAPI (`include_in_schema=False`). Авторизация — `require_service_token` (`SERVICE_API_KEYS` map + `X-Service-Identity`), та же, что у ingest'а. Нужен, чтобы доверенный сервис читал собственный срез аудита без user-bearer'а с ролью reader. `service` и `action` в query — **обязательны**: без них канал отдавал бы неограниченный дамп журнала под service-key'ом, отсутствие любого из них → `422 VALIDATION_ERROR`. Оба нормализуются зеркально ingest'у. Контракт фильтров (`department_id`, `severity`, `actor_id`, `target_id`, `status`, `request_id`, `from_time`/`to_time`, `limit`/`offset`, `include_total`) повторяет публичный `GET /events`. Сейчас единственный потребитель — `server_service` (drift-агрегация по событиям `server_account.drift_detected`).
 
 ### Rules
 

@@ -17,7 +17,9 @@
 ### Auth-режимы
 
 - **Bearer (user JWT / PAT / bot-token)** — все user-facing эндпоинты `/credentials/...`. Для bot/PAT identity отдаёт `actor_type=bot` или `actor_type=user`; cred'ы personal scope видны только user-identity.
-- **Internal bearer** — `/internal/lifecycle/*` принимают `Authorization: Bearer <SERVICE_API_KEY>` от auth_service / account_admin handler'а.
+- **Bearer + `account_admin`** — `/admin/encryption/*` (ротация мастер-ключа из UI). Гейт — `require_account_admin`: пропускается только платформенный админ. Обычный CRUD/reveal для `account_admin` закрыт; здесь — инфраструктура (ключи), не бизнес-данные.
+- **Internal bearer (auth_service)** — `/internal/lifecycle/*` принимают `Authorization: Bearer <SERVICE_API_KEY>` (или ключ из `SERVICE_API_KEYS`) **только** от identity `auth_service` (отдельный guard на `X-Service-Identity`; чужой caller — `401 WRONG_CALLER`).
+- **Internal bearer (ops-runner)** — `/internal/migration_status`, `/internal/encryption/*`, `/internal/reencrypt_outbox/*` принимают любой валидный `SERVICE_API_KEY` / `SERVICE_API_KEYS` без жёсткой привязки caller'а (ротационный k8s-Job, воркер, account_admin через kubectl-exec).
 - **Public** — `/health`, `/ready`.
 
 ### Identity gating
@@ -255,6 +257,46 @@ Revoke `RoleACL`.
 **Response 200:** `OkResponse = { ok: true }`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `404 ROLE_ACL_NOT_FOUND`.
 
+## UserACL (поимённый доступ, только `personal`)
+
+`CredentialUserACL` — поимённый слой доступа, разрешённый **только** для личных секретов (`scope=personal`). Владелец personal-кред'ы открывает доступ конкретному `user_id`. Для `department` / `cross_department` поимённый доступ запрещён — там доступ раздаётся исключительно ролями (`RoleACL`). Управление гейтится тем же action'ом `grant_acl`, что и `RoleACL`. Уровни — та же лесенка `view ⊂ read ⊂ write`: `can_view` (видеть наличие/метаданные), `can_read` (reveal значения, влечёт `can_view`), `can_write` (изменение/удаление, влечёт `can_read`). Младшие уровни подтягиваются автоматически при выдаче старшего.
+
+### POST /credentials/{cred_id}/user-acl
+
+Выдать поимённый доступ конкретному пользователю.
+
+**Auth:** Bearer user (`require_user_context`). Гейт action `grant_acl` — владелец личного секрета. Bot/PAT без user-identity к personal-кред'е не допускается.
+**Rate-limit:** отдельный `rate_limit_acl`.
+**Body (`UserACLCreate`):**
+
+| Поле | Тип | Обязательное | Примечание |
+|---|---|---|---|
+| `user_id` | str | да (1..64) | Кому выдаём (в UI выбирается по username, резолвится в `user_id` до вызова). Не себе и не владельцу. |
+| `can_view` | bool | default `false` | Видеть наличие/метаданные без значения (младший уровень). |
+| `can_read` | bool | **default `true`** | Reveal значения; влечёт `can_view`. Выдача без чтения смысла не имеет, но флаг явный ради симметрии с `RoleACL`. |
+| `can_write` | bool | default `false` | Изменение/удаление; влечёт `can_read` и `can_view`. |
+
+**Response 201:** `UserACLOut` (`id`, `cred_id`, `user_id`, `can_view`, `can_read`, `can_write`, `granted_by_user_id`, `created_at`).
+**Audit:** `tokens.user_acl_added` (INFO; failure — ERROR).
+**Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `409 USER_ACL_DUPLICATE`, `422 USER_ACL_SCOPE_NOT_PERSONAL` (cred не `personal`), `422 USER_ACL_OWNER_REDUNDANT` (target = владелец), `422 USER_ACL_SELF_REDUNDANT` (target = сам actor).
+
+### GET /credentials/{cred_id}/user-acl
+
+Список поимённых доступов кред'ы.
+
+**Auth:** Bearer; доступ — как у `read` (load_for_action `read`).
+**Response 200:** `UserACLList = { items: UserACLOut[] }`.
+**Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`.
+
+### DELETE /credentials/{cred_id}/user-acl/{acl_id}
+
+Снять поимённый доступ.
+
+**Auth:** Bearer; гейт action `grant_acl` (владелец личного секрета).
+**Response 200:** `OkResponse = { ok: true }`.
+**Audit:** `tokens.user_acl_removed` (INFO; failure — ERROR).
+**Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `404 USER_ACL_NOT_FOUND`.
+
 ## DeptGrant (только `cross_department`)
 
 `DeptGrant` — это разрешение «recipient_dep_admin может выдавать `RoleACL` внутри своего dep'а на эту креду».
@@ -318,6 +360,102 @@ Cascade revoke `DeptGrant`'ов и `RoleACL`'ей где dep — recipient. Св
 **Audit:** `tokens.dept_revoke_cascade` (CRITICAL).
 **Error codes:** `401 INTERNAL_AUTH_REQUIRED`, `500 LIFECYCLE_HANDLER_FAILED`.
 
+## Ротация мастер-ключа — admin (UI, `account_admin`)
+
+Ключи шифрования — инфраструктура, не бизнес-данные. Ротацию из UI инициирует платформенный `account_admin`; у него нет `department_id` и dep-service-access, поэтому штатный `require_user_context` отбил бы его `403`. Здесь гейт — `require_account_admin`, и только на эти три ручки. Обычный CRUD/reveal credentials для `account_admin` остаётся закрыт.
+
+> **Двойственность ротации — осознанное решение.** `/admin/encryption/*` (человек из UI) и `/internal/encryption/*` (s2s ops-runner) вызывают одну и ту же бизнес-логику `key_rotation_service.rotate/.retire`, но различаются actor'ом и аудит-именем: `secrets.admin_encryption_*` для человека, `secrets.encryption_*` для скрипта. Разделение нужно, чтобы SIEM отличал ручную ротацию из UI от автоматической s2s-ротации.
+
+### GET /admin/encryption/migration_status
+
+Read-only прогресс ре-шифрации credentials под активную версию ключа (UI поллит после `rotate`).
+
+**Auth:** Bearer + `require_account_admin`.
+**Response 200:** `MigrationStatus` (`remaining_legacy`, `total_rows`, `by_version`, `migrated_pct`, `outbox_pending_count`). `retire` безопасен, когда `remaining_legacy == 0` и `outbox_pending_count == 0`.
+**Error codes:** `401 UNAUTHORIZED`, `403 ACCOUNT_ADMIN_REQUIRED`.
+
+### POST /admin/encryption/rotate
+
+Рантайм-ротация мастер-ключа без простоя, из UI. Новая версия становится активной (новые токены сразу под ней), старые остаются читаемыми (материал в keystore), фоновая ре-шифрация публикуется через reencrypt-outbox. Идемпотентно: повтор с тем же материалом не плодит версию.
+
+**Auth:** Bearer + `require_account_admin`.
+**Body:** `{ "new_key_b64": "<base64(32 байта)>" }` (embed). Материал генерится через auth_service `POST /admin/service-keys/generate`.
+**Response 200:** `RotateKeyResponse` (`new_version`, `previous_version`, `seeded`, `idempotent`).
+**Audit:** `secrets.admin_encryption_rotate` (**CRITICAL**, actor = account_admin).
+**Error codes:** `401 UNAUTHORIZED`, `403 ACCOUNT_ADMIN_REQUIRED`, `400 ROTATE_KEY_INVALID` (не base64 / не 32 байта).
+
+### POST /admin/encryption/retire/{version}
+
+Убрать старую версию мастер-ключа из keystore из UI. Разрешено только когда на версии 0 строк и она не активна.
+
+**Auth:** Bearer + `require_account_admin`.
+**Response 200:** `RetireKeyResponse` (`version`, `retired`).
+**Audit:** `secrets.admin_encryption_retire` (**CRITICAL**, actor = account_admin).
+**Error codes:** `401 UNAUTHORIZED`, `403 ACCOUNT_ADMIN_REQUIRED`, `409 KEYSTORE_CANNOT_RETIRE_ACTIVE`, `409 KEYSTORE_VERSION_IN_USE`.
+
+## Ротация мастер-ключа — internal (s2s ops-runner)
+
+Закрыты `require_internal_caller` (любой валидный `SERVICE_API_KEY` / `SERVICE_API_KEYS`, без жёсткой привязки caller'а). `include_in_schema=False`. Caller'ы: `rotation_runner` (k8s-Job из `rotate_secret_master_key.sh`), `worker` / `secret_worker`, либо `account_admin` через kubectl-exec.
+
+### GET /internal/migration_status
+
+Прогресс lazy re-encrypt'а под активную версию ключа (гейт для шага `--finalize` ротационного скрипта). Тот же payload, что у `/admin/encryption/migration_status`, отличается только auth.
+
+**Auth:** Internal bearer (ops).
+**Response 200:** `MigrationStatus`.
+**Error codes:** `401 INTERNAL_AUTH_REQUIRED`.
+
+### POST /internal/encryption/rotate
+
+Рантайм-ротация мастер-ключа по s2s-каналу. Эффект тот же, что у admin-rotate, инициатор — скрипт ротации.
+
+**Auth:** Internal bearer (ops).
+**Body:** `{ "new_key_b64": "<base64(32 байта)>" }` (embed).
+**Response 200:** `RotateKeyResponse`.
+**Audit:** `secrets.encryption_rotate` (**CRITICAL**, actor = service, в `details` — `caller`).
+**Error codes:** `401 INTERNAL_AUTH_REQUIRED`, `400 ROTATE_KEY_INVALID`.
+
+### POST /internal/encryption/retire/{version}
+
+Убрать старую версию мастер-ключа по s2s-каналу. Только когда на версии 0 строк и она не активна.
+
+**Auth:** Internal bearer (ops).
+**Response 200:** `RetireKeyResponse`.
+**Audit:** `secrets.encryption_retire` (**CRITICAL**, actor = service).
+**Error codes:** `401 INTERNAL_AUTH_REQUIRED`, `409 KEYSTORE_CANNOT_RETIRE_ACTIVE`, `409 KEYSTORE_VERSION_IN_USE`.
+
+## Reencrypt outbox (s2s ops-runner)
+
+Outbox-паттерн поверх lazy-пути: lazy перешифровывает только читаемые кред'ы, а «холодные» (никто не reveal'ит) остались бы под старым ключом навсегда. Оператор / CronJob после ротации зовут `seed` → `process` → `status`. Все три закрыты `require_internal_caller`, `include_in_schema=False`, префикс `/internal/reencrypt_outbox`.
+
+### POST /internal/reencrypt_outbox/seed
+
+Просканировать credentials и опубликовать pending outbox-row'ы под целевую версию. Идемпотентно: partial UNIQUE по `credential_id WHERE status='pending'` не пустит дубль.
+
+**Auth:** Internal bearer (ops).
+**Body:** `{ "target_version": <int> | null }` (embed; null → `SECRET_ENCRYPTION_KEY_VERSION` из env).
+**Response 200:** `ReencryptOutboxSeedResponse` (`inserted`, `scanned`, `active_version`).
+**Audit:** `secrets.reencrypt_seed` (INFO, в `details` — `caller`).
+**Error codes:** `401 INTERNAL_AUTH_REQUIRED`, `500 REENCRYPT_OUTBOX_SEED_FAILED`.
+
+### POST /internal/reencrypt_outbox/process
+
+Обработать до `batch_size` pending-row'ов: decrypt legacy → encrypt active → CAS на `credentials.secret_encrypted`. После батча опустевшие неактивные версии ключа **выводятся автоматически** (`secrets.encryption_auto_retire`) — материал больше не нужен.
+
+**Auth:** Internal bearer (ops).
+**Query:** `batch_size` (default `100`, `1..1000`).
+**Response 200:** `ReencryptOutboxProcessResponse` (`processed`, `errors`, `failed`).
+**Audit:** `secrets.reencrypt_process` (INFO; если все строки упали — `processed==0 && errors>0` — failure/ERROR) + по факту авто-вывода `secrets.encryption_auto_retire` (**CRITICAL**, actor = service). Best-effort: сбой авто-retire не роняет обработку батча.
+**Error codes:** `401 INTERNAL_AUTH_REQUIRED`, `500 REENCRYPT_OUTBOX_PROCESS_FAILED`.
+
+### GET /internal/reencrypt_outbox/status
+
+Сводка outbox `{pending, done, error, total}`. Когда `pending == 0` и `error == 0` (и `migration_status.remaining_legacy == 0`) — старый мастер-ключ можно дропать.
+
+**Auth:** Internal bearer (ops).
+**Response 200:** `ReencryptOutboxStatus`.
+**Error codes:** `401 INTERNAL_AUTH_REQUIRED`.
+
 ## Каталог error codes
 
 Стабильный каталог — машинные ключи в JSON-envelope под полем `error_code`.
@@ -346,6 +484,11 @@ Cascade revoke `DeptGrant`'ов и `RoleACL`'ей где dep — recipient. Св
 | `DEPT_GRANT_NOT_FOUND` | 404 | Revoke по неизвестному `grant_id`. |
 | `ROLE_ACL_DUPLICATE` | 409 | UNIQUE collision `(cred_id, dept_id, role_name)`. |
 | `ROLE_ACL_NOT_FOUND` | 404 | Revoke по неизвестному `acl_id`. |
+| `USER_ACL_DUPLICATE` | 409 | UNIQUE collision `(cred_id, user_id)` для поимённого доступа. |
+| `USER_ACL_NOT_FOUND` | 404 | Revoke user-ACL по неизвестному `acl_id`. |
+| `USER_ACL_SCOPE_NOT_PERSONAL` | 422 | Поимённый доступ выдан на не-`personal` креду. |
+| `USER_ACL_OWNER_REDUNDANT` | 422 | Поимённый доступ выдан владельцу личного секрета (он и так допущен). |
+| `USER_ACL_SELF_REDUNDANT` | 422 | Поимённый доступ выдан самому actor'у. |
 | `INVALID_TRANSFER_TARGET` | 422 | `new_owner_user_id`/`new_owner_dept_id` не подходит под scope. |
 | `RECOVER_WINDOW_EXPIRED` | 422 | `now - blocked_at > BLOCKED_RETENTION_DAYS`. |
 | `DECRYPT_FAILED` | 422 | Ciphertext или AAD не сходятся (corruption / tamper). |
@@ -353,6 +496,11 @@ Cascade revoke `DeptGrant`'ов и `RoleACL`'ей где dep — recipient. Св
 | `ENCRYPTION_KEY_MISSING` | 503 | `SECRET_ENCRYPTION_KEY__v<N>` для версии шифротекста не задан в env (legacy key не подгружен). |
 | `ENCRYPT_INPUT_INVALID` | 422 | Plaintext пустой / не str. |
 | `PLAINTEXT_TOO_LARGE` | 422 | Plaintext превышает `MAX_PLAINTEXT_BYTES`. |
+| `ROTATE_KEY_INVALID` | 400 | `new_key_b64` не base64 / не 32 байта (admin/internal rotate). |
+| `KEYSTORE_CANNOT_RETIRE_ACTIVE` | 409 | Попытка вывести активную версию мастер-ключа. |
+| `KEYSTORE_VERSION_IN_USE` | 409 | На версии ещё остались строки — вывод запрещён. |
+| `REENCRYPT_OUTBOX_SEED_FAILED` | 500 | Внутренний сбой `seed_outbox`. |
+| `REENCRYPT_OUTBOX_PROCESS_FAILED` | 500 | Внутренний сбой `process_batch`. |
 | `INVALID_CURSOR` | 400 | `cursor` не парсится в `<iso-timestamp>\|<cred_id>`. |
 | `ACCOUNT_ADMIN_REQUIRED` | 403 | Эндпоинт требует platform-роли `account_admin`. |
 | `SERVICE_ADMIN_REQUIRED` | 403 | Эндпоинт требует service-роли `admin` в secret_service. Per-(dept, service) проверка: guard отсекает не-админов на endpoint-level, дальнейшая привязка к dep'у — в business-логике. |

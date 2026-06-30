@@ -118,6 +118,42 @@ async def roles_with_action(
     return set((await db.execute(stmt)).scalars())
 
 
+async def roles_with_other_action(
+    db: AsyncSession,
+    entity_type: str,
+    roles: list[str],
+    department_id: str | None,
+    *,
+    exclude_action: str,
+) -> set[str]:
+    """Подмножество `roles` с тип-wide правом на любой action, кроме `exclude_action`.
+
+    Нужно неявному view: роль с тип-wide правом на не-view действие
+    (например `power_on`) получает тип-wide view на этот тип. Scope-матч как
+    в `has_action`.
+    """
+    if not roles:
+        return set()
+    if department_id is None:
+        dept_filter = EntityPermission.department_id.is_(None)
+    else:
+        dept_filter = or_(
+            EntityPermission.department_id.is_(None),
+            EntityPermission.department_id == department_id,
+        )
+    stmt = (
+        select(EntityPermission.role)
+        .where(
+            EntityPermission.entity_type == entity_type,
+            EntityPermission.role.in_(roles),
+            EntityPermission.action != exclude_action,
+            dept_filter,
+        )
+        .distinct()
+    )
+    return set((await db.execute(stmt)).scalars())
+
+
 async def effective_actions(
     db: AsyncSession,
     entity_type: str,

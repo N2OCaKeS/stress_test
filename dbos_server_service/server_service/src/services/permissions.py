@@ -26,12 +26,17 @@ cross-dept privilege leak через коллизии имён кастомны�
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import PlatformRole
+from src.core.constants import Action, EntityType, PlatformRole
 from src.core.exceptions import AuthorizationError
 from src.dependencies.auth import SERVICE_NAME
 from src.repositories import entity_permission as repo
 from src.repositories import resource_role_permission as resource_repo
 from src.schemas.identity import IdentityContext
+
+# Типы ресурсов, где view включается автоматически при наличии любого другого
+# права: достаточно уметь что-то делать с сервером/учёткой, чтобы видеть его
+# карточку и листинг. Для остального (permission, task) view остаётся явным.
+_IMPLIED_VIEW_TYPES = frozenset({EntityType.SERVER, EntityType.SERVER_ACCOUNT})
 
 
 async def has_action(
@@ -55,9 +60,19 @@ async def has_action(
     roles = identity.roles_for_service(SERVICE_NAME)
     if not roles:
         return False
-    return await repo.has_action(
+    if await repo.has_action(
         db, entity_type, roles, action, department_id=identity.department_id
-    )
+    ):
+        return True
+    # Тип-wide view включается неявно: роль с любым другим тип-wide правом на
+    # этот тип (например `power_on`) видит карточки и листинг ресурсов отдела.
+    if action == Action.VIEW and entity_type in _IMPLIED_VIEW_TYPES:
+        other = await repo.roles_with_other_action(
+            db, entity_type, roles, department_id=identity.department_id,
+            exclude_action=Action.VIEW,
+        )
+        return bool(other)
+    return False
 
 
 async def require_action(
@@ -98,6 +113,12 @@ async def _effective_resource_allow(
 
     Итог — OR по ролям: одна разрешающая роль даёт доступ, deny у другой роли
     его не отбирает.
+
+    Для action `view` на server/server_account действует ещё одно правило:
+    если у неотклонённой роли нет ни явного view, ни тип-wide базы view, но
+    есть любое другое право на ресурсе (инстанс-allow на любой action либо
+    тип-wide база на не-view action) — view включается неявно. Инстанс-deny на
+    view, как обычно, снимает роль раньше и неявный view ей уже не достаётся.
     """
     roles = identity.roles_for_service(SERVICE_NAME)
     if not roles:
@@ -116,7 +137,43 @@ async def _effective_resource_allow(
     base_roles = await repo.roles_with_action(
         db, resource_type, undenied, action, department_id=identity.department_id
     )
-    return bool(base_roles)
+    if base_roles:
+        return True
+    # view включается неявно: если у неотклонённой роли есть любое другое право
+    # на этом ресурсе (инстанс-allow на любой action или тип-wide база на не-view
+    # action), она может ресурс и видеть. Инстанс-deny на view выше уже снял роль.
+    if action == Action.VIEW and resource_type in _IMPLIED_VIEW_TYPES:
+        return await _has_any_other_grant(
+            db, identity, resource_type, resource_id, undenied
+        )
+    return False
+
+
+async def _has_any_other_grant(
+    db: AsyncSession,
+    identity: IdentityContext,
+    resource_type: str,
+    resource_id: str,
+    roles: list[str],
+) -> bool:
+    """True iff у одной из `roles` есть хоть какое-то право на этом ресурсе.
+
+    Право засчитывается как инстанс-allow на любой action ИЛИ тип-wide база на
+    любой не-view action. Это и есть носитель неявного view.
+    """
+    if not roles:
+        return False
+    inst = await resource_repo.roles_with_any_allow(
+        db, resource_type, resource_id, roles,
+        department_id=identity.department_id,
+    )
+    if inst:
+        return True
+    base_other = await repo.roles_with_other_action(
+        db, resource_type, roles, department_id=identity.department_id,
+        exclude_action=Action.VIEW,
+    )
+    return bool(base_other)
 
 
 async def has_resource_action(

@@ -129,6 +129,35 @@ async def effective_resource_actions(
     return set((await db.execute(stmt)).scalars())
 
 
+async def roles_with_any_allow(
+    db: AsyncSession,
+    resource_type: str,
+    resource_id: str,
+    roles: list[str],
+    department_id: str | None,
+) -> set[str]:
+    """Подмножество `roles`, у которых есть хоть один инстанс-ALLOW на ресурсе.
+
+    Action не важен — нужен факт «у роли есть какой-то точечный грант на этот
+    ресурс». На этом строится неявный view: если роль что-то может с ресурсом,
+    она может его и видеть. deny-строки сюда не попадают.
+    """
+    if not roles:
+        return set()
+    stmt = (
+        select(ResourceRolePermission.role)
+        .where(
+            ResourceRolePermission.resource_type == resource_type,
+            ResourceRolePermission.resource_id == resource_id,
+            ResourceRolePermission.role.in_(roles),
+            ResourceRolePermission.effect == "allow",
+            _dept_match_clause(department_id),
+        )
+        .distinct()
+    )
+    return set((await db.execute(stmt)).scalars())
+
+
 async def resource_ids_with_any_grant(
     db: AsyncSession,
     resource_type: str,

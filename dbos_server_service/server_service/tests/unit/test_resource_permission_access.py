@@ -16,11 +16,12 @@ from __future__ import annotations
 import pytest
 
 from src.core.constants import Action, EntityType
-from src.core.exceptions import NotFoundError
+from src.core.exceptions import AuthorizationError, NotFoundError
 from src.repositories import entity_permission as ep_repo
 from src.repositories import resource_role_permission as rrp_repo
 from src.schemas.identity import IdentityContext
 from src.services import permissions
+from src.services import server as server_service
 from src.services.server import load_visible_server
 from src.utils.ids import entity_permission_id, resource_role_permission_id
 
@@ -347,6 +348,154 @@ class TestHasAccountAction:
         assert not await permissions.has_account_action(
             db, dep_admin_b, acc, Action.VIEW_PASSWORD
         )
+
+
+class TestImpliedView:
+    """view включается неявно при наличии любого другого права на ресурсе."""
+
+    async def test_instance_power_on_implies_resource_view(self, db, make_server):
+        """Инстанс power_on на srv1 → view на srv1 неявно; на srv2 без прав — нет."""
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER, resource_id=srv1.id,
+            role="limited", action=Action.POWER_ON,
+        )
+        identity = _identity(roles=["limited"])
+        assert await permissions.has_resource_action(
+            db, identity, EntityType.SERVER, srv1.id, Action.VIEW
+        )
+        assert not await permissions.has_resource_action(
+            db, identity, EntityType.SERVER, srv2.id, Action.VIEW
+        )
+
+    async def test_instance_power_on_lists_only_granted_server(self, db, make_server):
+        """Инстанс power_on не даёт тип-wide view — листинг grant-only."""
+        srv1 = await make_server(department_id="dep_a")
+        await make_server(department_id="dep_a")
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER, resource_id=srv1.id,
+            role="limited", action=Action.POWER_ON,
+        )
+        identity = _identity(roles=["limited"])
+        assert not await permissions.has_action(
+            db, identity, EntityType.SERVER, Action.VIEW
+        )
+        granted = await permissions.granted_resource_ids(
+            db, identity, EntityType.SERVER
+        )
+        assert granted == {srv1.id}
+
+    async def test_typewide_power_on_implies_typewide_view(self, db, make_server):
+        """Тип-wide power_on без view → тип-wide view (карточки/листинг отдела)."""
+        srv = await make_server(department_id="dep_a")
+        await _grant_typewide(
+            db, entity_type=EntityType.SERVER, role="ops",
+            action=Action.POWER_ON, department_id="dep_a",
+        )
+        identity = _identity(roles=["ops"])
+        assert await permissions.has_action(
+            db, identity, EntityType.SERVER, Action.VIEW
+        )
+        assert await permissions.has_resource_action(
+            db, identity, EntityType.SERVER, srv.id, Action.VIEW
+        )
+
+    async def test_deny_view_beats_other_allow(self, db, make_server):
+        """Инстанс deny view при наличии другого allow → view запрещён."""
+        srv = await make_server(department_id="dep_a")
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER, resource_id=srv.id,
+            role="ops", action=Action.POWER_ON, effect="allow",
+        )
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER, resource_id=srv.id,
+            role="ops", action=Action.VIEW, effect="deny",
+        )
+        identity = _identity(roles=["ops"])
+        assert not await permissions.has_resource_action(
+            db, identity, EntityType.SERVER, srv.id, Action.VIEW
+        )
+
+    async def test_no_rights_no_implied_view(self, db, make_server):
+        """Роль без прав на ресурсе → view нет ни на инстансе, ни тип-wide."""
+        srv = await make_server(department_id="dep_a")
+        identity = _identity(roles=["limited"])
+        assert not await permissions.has_resource_action(
+            db, identity, EntityType.SERVER, srv.id, Action.VIEW
+        )
+        assert not await permissions.has_action(
+            db, identity, EntityType.SERVER, Action.VIEW
+        )
+
+    async def test_any_account_right_implies_account_view(
+        self, db, make_server, make_account,
+    ):
+        """Любое право на учётке ⇒ её view виден неявно."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="svc")
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER_ACCOUNT, resource_id=acc.id,
+            role="limited", action=Action.ROTATE_PASSWORD,
+        )
+        identity = _identity(roles=["limited"])
+        assert await permissions.has_account_action(
+            db, identity, acc, Action.VIEW
+        )
+
+    async def test_deny_account_view_beats_other_right(
+        self, db, make_server, make_account,
+    ):
+        """Инстанс deny view на учётке при другом allow → view учётки запрещён."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="svc")
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER_ACCOUNT, resource_id=acc.id,
+            role="limited", action=Action.ROTATE_PASSWORD,
+        )
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER_ACCOUNT, resource_id=acc.id,
+            role="limited", action=Action.VIEW, effect="deny",
+        )
+        identity = _identity(roles=["limited"])
+        assert not await permissions.has_account_action(
+            db, identity, acc, Action.VIEW
+        )
+
+
+class TestImpliedViewEndToEnd:
+    """Поведение get_server / list_servers с неявным view."""
+
+    async def test_get_server_ok_with_instance_power_on(self, db, make_server):
+        """Инстанс power_on (без view) → get_server отдаёт карточку (HTTP 200)."""
+        srv = await make_server(department_id="dep_b")  # чужой отдел
+        await _grant_instance(
+            db, resource_type=EntityType.SERVER, resource_id=srv.id,
+            role="limited", action=Action.POWER_ON, department_id=None,
+        )
+        identity = _identity(roles=["limited"], department_id="dep_a")
+        loaded = await server_service.get_server(db, identity, srv.id)
+        assert loaded.id == srv.id
+
+    async def test_get_server_404_without_any_right(self, db, make_server):
+        """Сервер без единого права у роли → 404 (как раньше)."""
+        srv = await make_server(department_id="dep_b")
+        identity = _identity(roles=["limited"], department_id="dep_a")
+        with pytest.raises((NotFoundError, AuthorizationError)):
+            await server_service.get_server(db, identity, srv.id)
+
+    async def test_list_servers_typewide_power_on_sees_dept(self, db, make_server):
+        """Тип-wide power_on (без view) → листинг видит сервера своего отдела."""
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        await _grant_typewide(
+            db, entity_type=EntityType.SERVER, role="ops",
+            action=Action.POWER_ON, department_id="dep_a",
+        )
+        identity = _identity(roles=["ops"], department_id="dep_a")
+        items, total = await server_service.list_servers(db, identity, limit=50, offset=0)
+        ids = {s.id for s in items}
+        assert {srv1.id, srv2.id} <= ids
 
 
 class TestServerVisibleViaAccountGrant:

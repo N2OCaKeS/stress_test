@@ -259,6 +259,15 @@ class Settings(BaseSettings):
         alias="SECURITY_HSTS_ENABLED",
         description="Включает Strict-Transport-Security. Только за https-фронтом.",
     )
+    swagger_ui_assets_base: str = Field(
+        default="",
+        alias="SWAGGER_UI_ASSETS_BASE",
+        description=(
+            "Базовый URL self-host бандла Swagger UI (например "
+            "`http://localhost:8088`). Пусто → /docs тянет ассеты с CDN "
+            "jsdelivr. Задан → /docs раздаётся своим маршрутом с этого адреса."
+        ),
+    )
 
     # ── Lifecycle / sweep ─────────────────────────────────────────────────────
 

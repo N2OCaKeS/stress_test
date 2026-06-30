@@ -235,6 +235,15 @@ class Settings(BaseSettings):
     security_hsts_enabled: bool = Field(
         default=False, alias="SECURITY_HSTS_ENABLED"
     )
+    swagger_ui_assets_base: str = Field(
+        default="",
+        alias="SWAGGER_UI_ASSETS_BASE",
+        description=(
+            "Базовый URL self-host бандла Swagger UI (например "
+            "`http://localhost:8088`). Пусто → /docs тянет ассеты с CDN "
+            "jsdelivr. Задан → /docs раздаётся своим маршрутом с этого адреса."
+        ),
+    )
 
     # Hard cap на размер тела запроса для мутирующих методов
     # (POST/PUT/PATCH). Закрывает DoS-вектор, ортогональный

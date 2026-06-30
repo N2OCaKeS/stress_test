@@ -457,6 +457,16 @@ class Settings(BaseSettings):
             "иначе HTTP-клиенты получают header и ломаются на rebound'е."
         ),
     )
+    swagger_ui_assets_base: str = Field(
+        default="",
+        alias="SWAGGER_UI_ASSETS_BASE",
+        description=(
+            "Базовый URL self-host бандла Swagger UI (например "
+            "`http://localhost:8088`). Пусто → /docs тянет ассеты с CDN "
+            "jsdelivr (нужен внешний доступ). Задан → /docs раздаётся своим "
+            "маршрутом и грузит bundle/css с этого адреса."
+        ),
+    )
     docker_cert_validity_days: int = Field(
         default=730,
         alias="DOCKER_CERT_VALIDITY_DAYS",

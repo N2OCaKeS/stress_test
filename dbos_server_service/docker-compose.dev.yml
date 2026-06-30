@@ -61,6 +61,9 @@ services:
     init: true
     environment:
       DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_logging
+      # Self-host Swagger UI: браузер тянет bundle/css с контейнера swagger_ui
+      # (:8088), а не с внешнего CDN jsdelivr (корп-сеть его не видит).
+      SWAGGER_UI_ASSETS_BASE: http://localhost:8088
       SERVICE_API_KEYS: '{"auth_service":"audit_auth_service_dev_key","server_service":"audit_server_service_dev_key","config_service":"audit_config_service_dev_key","server_worker":"audit_server_worker_dev_key","secret_service":"audit_secret_service_dev_key"}'
       # Outbound bearer для вызова auth_service /introspect — должен
       # совпадать с auth_service.SERVICE_API_KEY (legacy single-shared
@@ -96,6 +99,9 @@ services:
     init: true
     environment:
       DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_auth
+      # Self-host Swagger UI: браузер тянет bundle/css с контейнера swagger_ui
+      # (:8088), а не с внешнего CDN jsdelivr (корп-сеть его не видит).
+      SWAGGER_UI_ASSETS_BASE: http://localhost:8088
       SECRET_KEY: dev-secret-key-for-local-must-be-32-chars!
       ACCESS_TOKEN_TTL_MINUTES: "60"
       REFRESH_TOKEN_TTL_DAYS: "14"
@@ -143,6 +149,9 @@ services:
     init: true
     environment:
       DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server
+      # Self-host Swagger UI: браузер тянет bundle/css с контейнера swagger_ui
+      # (:8088), а не с внешнего CDN jsdelivr (корп-сеть его не видит).
+      SWAGGER_UI_ASSETS_BASE: http://localhost:8088
       AUTH_SERVICE_URL: http://auth_service:8000
       LOGGING_SERVICE_URL: http://loging_service:8001
       LOGGING_SERVICE_API_KEY: audit_server_service_dev_key
@@ -286,6 +295,9 @@ services:
       APP_HOST: 0.0.0.0
       APP_PORT: 8003
       DATABASE_URL: postgresql+psycopg://app_user:app_password@secret_postgres:5432/dev_secret
+      # Self-host Swagger UI: браузер тянет bundle/css с контейнера swagger_ui
+      # (:8088), а не с внешнего CDN jsdelivr (корп-сеть его не видит).
+      SWAGGER_UI_ASSETS_BASE: http://localhost:8088
       AUTH_SERVICE_URL: http://auth_service:8000
       INTROSPECT_SERVICE_API_KEY: dev-introspect-api-key
       LOGGING_SERVICE_URL: http://loging_service:8001

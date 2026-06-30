@@ -11,6 +11,10 @@ import redis.asyncio as aioredis
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.docs import (
+    get_swagger_ui_html,
+    get_swagger_ui_oauth2_redirect_html,
+)
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
@@ -55,6 +59,15 @@ def _is_health_path(path: str) -> bool:
     return path in HEALTH_PATHS
 
 
+# Пути, на которых CSP ослабляется под Swagger UI: бандл грузится скриптом и
+# стилем, поэтому строгий `default-src 'none'` отдаёт белую страницу. Послабление
+# точечное — на остальных путях API остаётся закрытым.
+_SWAGGER_CSP_PATHS = frozenset({"/docs", "/docs/oauth2-redirect"})
+
+# Источник ассетов по умолчанию, если self-host база не задана.
+_SWAGGER_CDN = "https://cdn.jsdelivr.net"
+
+
 # SOURCE OF TRUTH: dbos_server_service/sdk/security_headers.py
 # DUPE: keep in sync with auth_service/loging_service/server_service security_headers.py
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -64,9 +77,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     он сломает rebound. Зеркалит auth_service / loging_service.
     """
 
-    def __init__(self, app, *, hsts_enabled: bool):
+    def __init__(self, app, *, hsts_enabled: bool, assets_base: str = ""):
         super().__init__(app)
         self._hsts_enabled = hsts_enabled
+        self._assets_base = assets_base.rstrip("/")
 
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
@@ -75,13 +89,27 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault(
             "Referrer-Policy", "strict-origin-when-cross-origin"
         )
-        # CSP для JSON-API минимальный — disallow всё лишнее. Swagger UI на
-        # /docs (dev-only) тянет свои inline-скрипты, но `frame-ancestors
-        # 'none'` парный с X-Frame-Options прикрывает clickjacking.
-        response.headers.setdefault(
-            "Content-Security-Policy",
-            "default-src 'none'; frame-ancestors 'none'",
-        )
+        # CSP для JSON-API минимальный — disallow всё лишнее. На путях Swagger
+        # UI ослабляем ровно настолько, чтобы загрузился бандл (скрипт, стиль,
+        # шрифты/иконки), оставляя `frame-ancestors 'none'`.
+        if request.url.path in _SWAGGER_CSP_PATHS:
+            base = self._assets_base or _SWAGGER_CDN
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                (
+                    "default-src 'none'; "
+                    f"script-src 'self' 'unsafe-inline' {base}; "
+                    f"style-src 'self' 'unsafe-inline' {base}; "
+                    f"img-src 'self' data: {base}; "
+                    "connect-src 'self'; "
+                    "frame-ancestors 'none'"
+                ),
+            )
+        else:
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'none'; frame-ancestors 'none'",
+            )
         # Permissions-Policy: JSON-API без UI, зануляем sensor-API на случай,
         # если когда-нибудь появится браузерный клиент.
         response.headers.setdefault(
@@ -125,6 +153,32 @@ def _rate_limit_exceeded_response(request: Request, exc: RateLimitExceeded) -> J
             "X-RateLimit-Reset": str(reset_epoch),
         },
     )
+
+
+def _register_self_hosted_docs(app: FastAPI, assets_base: str) -> None:
+    """Отдать Swagger UI с локального бандла вместо CDN jsdelivr.
+
+    Корп-сеть не видит cdn.jsdelivr.net, поэтому дефолтный /docs приходит
+    белой страницей. Когда задан SWAGGER_UI_ASSETS_BASE, штатный docs_url
+    отключается, а здесь регистрируется свой /docs, тянущий bundle/css с
+    этого адреса. openapi_url остаётся same-origin.
+    """
+    base = assets_base.rstrip("/")
+
+    @app.get("/docs", include_in_schema=False)
+    async def swagger_ui_html():
+        return get_swagger_ui_html(
+            openapi_url=app.openapi_url,
+            title=f"{app.title} — Swagger UI",
+            oauth2_redirect_url=app.swagger_ui_oauth2_redirect_url,
+            swagger_js_url=f"{base}/swagger-ui-bundle.js",
+            swagger_css_url=f"{base}/swagger-ui.css",
+            swagger_ui_parameters=app.swagger_ui_parameters,
+        )
+
+    @app.get(app.swagger_ui_oauth2_redirect_url, include_in_schema=False)
+    async def swagger_ui_redirect():
+        return get_swagger_ui_oauth2_redirect_html()
 
 
 def create_application() -> FastAPI:
@@ -269,8 +323,12 @@ def create_application() -> FastAPI:
     # видеть каталог эндпоинтов (включая stub-501 с summary вроде «Reveal decrypted
     # IPMI credentials»). В dev/test/local остаётся открытым для разработки.
     is_production = settings.app_env.lower() == "production"
+    # Self-host Swagger UI: когда задан SWAGGER_UI_ASSETS_BASE, дефолтный
+    # docs_url выключаем и ставим свой /docs (см. ниже), иначе оставляем
+    # штатный вариант с CDN.
+    self_host_docs = (not is_production) and bool(settings.swagger_ui_assets_base)
     openapi_url = None if is_production else "/openapi.json"
-    docs_url = None if is_production else "/docs"
+    docs_url = None if (is_production or self_host_docs) else "/docs"
     redoc_url = None if is_production else "/redoc"
 
     app = FastAPI(
@@ -282,6 +340,9 @@ def create_application() -> FastAPI:
         swagger_ui_parameters={"persistAuthorization": True},
         lifespan=lifespan,
     )
+
+    if self_host_docs:
+        _register_self_hosted_docs(app, settings.swagger_ui_assets_base)
 
     # Регистрируем limiter в app.state — slowapi.SlowAPIMiddleware / декораторы
     # ищут его именно там. Exception handler возвращает наш стандартный
@@ -444,6 +505,7 @@ def create_application() -> FastAPI:
     app.add_middleware(
         SecurityHeadersMiddleware,
         hsts_enabled=settings.security_hsts_enabled,
+        assets_base=settings.swagger_ui_assets_base,
     )
 
     @app.exception_handler(AppException)

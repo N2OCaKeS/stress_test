@@ -10,6 +10,10 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import (
+    get_swagger_ui_html,
+    get_swagger_ui_oauth2_redirect_html,
+)
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
@@ -176,6 +180,15 @@ _SERVICE_INTERNAL_PATHS = {
 }
 
 
+# Пути, на которых CSP ослабляется под Swagger UI: бандл грузится скриптом и
+# стилем, поэтому строгий `default-src 'none'` отдаёт белую страницу. Послабление
+# точечное — на остальных путях API остаётся закрытым.
+_SWAGGER_CSP_PATHS = frozenset({"/docs", "/docs/oauth2-redirect"})
+
+# Источник ассетов по умолчанию, если self-host база не задана.
+_SWAGGER_CDN = "https://cdn.jsdelivr.net"
+
+
 # SOURCE OF TRUTH: dbos_server_service/sdk/security_headers.py
 # DUPE: keep in sync with auth_service/loging_service/server_service security_headers.py
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -185,9 +198,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     он сломает rebound.
     """
 
-    def __init__(self, app, *, hsts_enabled: bool):
+    def __init__(self, app, *, hsts_enabled: bool, assets_base: str = ""):
         super().__init__(app)
         self._hsts_enabled = hsts_enabled
+        self._assets_base = assets_base.rstrip("/")
 
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
@@ -196,13 +210,27 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault(
             "Referrer-Policy", "strict-origin-when-cross-origin"
         )
-        # CSP для JSON-API минимальный — disallow всё, что не нужно. Swagger
-        # UI поднимается на /docs (dev-only), у него свой inline-script — но
-        # `frame-ancestors 'none'` парный с X-Frame-Options.
-        response.headers.setdefault(
-            "Content-Security-Policy",
-            "default-src 'none'; frame-ancestors 'none'",
-        )
+        # CSP для JSON-API минимальный — disallow всё, что не нужно. На путях
+        # Swagger UI ослабляем ровно настолько, чтобы загрузился бандл (скрипт,
+        # стиль, шрифты/иконки), оставляя `frame-ancestors 'none'`.
+        if request.url.path in _SWAGGER_CSP_PATHS:
+            base = self._assets_base or _SWAGGER_CDN
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                (
+                    "default-src 'none'; "
+                    f"script-src 'self' 'unsafe-inline' {base}; "
+                    f"style-src 'self' 'unsafe-inline' {base}; "
+                    f"img-src 'self' data: {base}; "
+                    "connect-src 'self'; "
+                    "frame-ancestors 'none'"
+                ),
+            )
+        else:
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'none'; frame-ancestors 'none'",
+            )
         # Permissions-Policy: для JSON-API без UI зануляем sensor-API.
         response.headers.setdefault(
             "Permissions-Policy",
@@ -216,12 +244,43 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def _register_self_hosted_docs(app: FastAPI, assets_base: str) -> None:
+    """Отдать Swagger UI с локального бандла вместо CDN jsdelivr.
+
+    Корп-сеть не видит cdn.jsdelivr.net, поэтому дефолтный /docs приходит
+    белой страницей. Когда задан SWAGGER_UI_ASSETS_BASE, штатный docs_url
+    отключается, а здесь регистрируется свой /docs, тянущий bundle/css с
+    этого адреса. openapi_url остаётся same-origin.
+    """
+    base = assets_base.rstrip("/")
+
+    @app.get("/docs", include_in_schema=False)
+    async def swagger_ui_html():
+        return get_swagger_ui_html(
+            openapi_url=app.openapi_url,
+            title=f"{app.title} — Swagger UI",
+            oauth2_redirect_url=app.swagger_ui_oauth2_redirect_url,
+            swagger_js_url=f"{base}/swagger-ui-bundle.js",
+            swagger_css_url=f"{base}/swagger-ui.css",
+            swagger_ui_parameters=app.swagger_ui_parameters,
+        )
+
+    @app.get(app.swagger_ui_oauth2_redirect_url, include_in_schema=False)
+    async def swagger_ui_redirect():
+        return get_swagger_ui_oauth2_redirect_html()
+
+
 def create_application() -> FastAPI:
     """Собрать FastAPI-приложение. Один раз на процесс — все middleware/handlers wire'аются здесь."""
     settings = get_settings()
     configure_logging("auth_service", level=settings.app_log_level)
 
     _is_prod = settings.app_env == "production"
+
+    # Self-host Swagger UI: когда задан SWAGGER_UI_ASSETS_BASE, дефолтный
+    # docs_url выключаем и ставим свой /docs (см. ниже), иначе оставляем
+    # штатный вариант с CDN.
+    _self_host_docs = (not _is_prod) and bool(settings.swagger_ui_assets_base)
 
     # Подготовим лимит-keys для credential-критичных эндпоинтов. Значения
     # читаем из settings (можно override'ить через env LOGIN_RATE_LIMIT/...)
@@ -313,13 +372,16 @@ def create_application() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
-        docs_url=None if _is_prod else "/docs",
+        docs_url=None if (_is_prod or _self_host_docs) else "/docs",
         redoc_url=None if _is_prod else "/redoc",
         openapi_url=None if _is_prod else "/openapi.json",
         debug=settings.app_debug,
         swagger_ui_parameters={"persistAuthorization": True},
         lifespan=lifespan,
     )
+
+    if _self_host_docs:
+        _register_self_hosted_docs(app, settings.swagger_ui_assets_base)
 
     # Регистрируем limiter в app.state — slowapi expects `app.state.limiter`.
     # Exception handler возвращает наш стандартный error-envelope с request_id
@@ -334,6 +396,7 @@ def create_application() -> FastAPI:
     app.add_middleware(
         SecurityHeadersMiddleware,
         hsts_enabled=settings.security_hsts_enabled,
+        assets_base=settings.swagger_ui_assets_base,
     )
     if settings.cors_allowed_origins:
         app.add_middleware(

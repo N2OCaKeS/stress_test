@@ -599,6 +599,15 @@ class Settings(BaseSettings):
             "X-Content-Type-Options, Referrer-Policy) ставятся всегда."
         ),
     )
+    swagger_ui_assets_base: str = Field(
+        default="",
+        alias="SWAGGER_UI_ASSETS_BASE",
+        description=(
+            "Базовый URL self-host бандла Swagger UI (например "
+            "`http://localhost:8088`). Пусто → /docs тянет ассеты с CDN "
+            "jsdelivr. Задан → /docs раздаётся своим маршрутом с этого адреса."
+        ),
+    )
     internal_require_dept_header: bool = Field(
         default=True,
         description=(

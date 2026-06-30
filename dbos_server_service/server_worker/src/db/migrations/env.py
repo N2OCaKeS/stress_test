@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -7,7 +8,6 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-from src.core.config import get_settings
 from src.db.base import Base
 from src import models  # noqa: F401 — register tables on Base.metadata
 
@@ -16,7 +16,24 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+
+def _migration_db_url() -> str:
+    """DSN для воркер-БД под alembic.
+
+    Берём DATABASE_URL прямо из окружения: миграции воркера трогают только свою
+    базу, а полная Settings в production требует ещё SERVER_SERVICE_DATABASE_URL,
+    LOGGING_SERVICE_API_KEY и прочее, чего у migration-Job'а нет (его env не
+    собирает энтрипоинт). Если переменной нет — откатываемся на get_settings.
+    """
+    url = os.environ.get("DATABASE_URL", "").strip()
+    if url:
+        return url
+    from src.core.config import get_settings
+
+    return get_settings().database_url
+
+
+config.set_main_option("sqlalchemy.url", _migration_db_url())
 
 target_metadata = Base.metadata
 

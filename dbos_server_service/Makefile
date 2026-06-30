@@ -494,10 +494,10 @@ k8s-secrets: ## Сгенерировать k8s/20-secrets.yaml + 50-ingress.yaml
 	@echo "  Дальше: проверь k8s/20-secrets.yaml и k8s/50-ingress.yaml,"
 	@echo "  затем 'make k8s-deploy' применит их через kustomize."
 
-k8s-deploy: ## kubectl apply -k k8s/ + ожидание готовности всех deployments
+k8s-deploy: ## kubectl apply -k k8s/ + миграции (Job'ы) + ожидание готовности всех deployments
 	bash scripts/k8s/deploy.sh
 
-k8s-migrate: ## Прогнать alembic-миграции внутри pod'ов всех сервисов (идемпотентно)
+k8s-migrate: ## Ручной fallback: alembic-миграции внутри pod'ов (штатно их гонит deploy.sh через Job'ы)
 	@echo "→ Миграции auth_service..."
 	@$(K8S) exec deploy/auth-service -- alembic upgrade head
 	@echo "→ Миграции logging_service..."
@@ -558,38 +558,35 @@ k8s-zero: ## [VM, sudo] Полный deploy с нуля. Без аргумент
 	@echo "▶ pre-check: свободное место на /"
 	@df -BG / | awk 'NR==2 {gsub("G","",$$4); if($$4<10) {print "ОШИБКА: <10G свободно на /, для билда 5 образов нужно ~5G"; exit 1} else {print "  • " $$4 "G свободно — ок"}}'
 	@echo ""
-	@echo "▶ [1/10] docker engine"
+	@echo "▶ [1/9] docker engine"
 	@$(MAKE) k8s-install-docker --no-print-directory
 	@echo ""
-	@echo "▶ [2/10] k3s"
+	@echo "▶ [2/9] k3s"
 	@$(MAKE) k8s-install-k3s --no-print-directory
 	@echo ""
-	@echo "▶ [3/10] Сборка и импорт 5 образов сервисов"
+	@echo "▶ [3/9] Сборка и импорт 5 образов сервисов"
 	@$(MAKE) k8s-build --no-print-directory
 	@echo ""
-	@echo "▶ [4/10] cert-manager образы (pull + import)"
+	@echo "▶ [4/9] cert-manager образы (pull + import)"
 	@$(MAKE) k8s-install-cert-manager-images --no-print-directory
 	@echo ""
-	@echo "▶ [5/10] cert-manager apply + CA + leaf-сертификаты"
+	@echo "▶ [5/9] cert-manager apply + CA + leaf-сертификаты"
 	@$(MAKE) k8s-install-cert-manager --no-print-directory
 	@echo ""
-	@echo "▶ [6/10] secrets + ingress (host=$(if $(DOMAIN),$(DOMAIN),<auto-IP>)$(if $(DBOS_DNS), + SAN DNS:$(DBOS_DNS),))"
+	@echo "▶ [6/9] secrets + ingress (host=$(if $(DOMAIN),$(DOMAIN),<auto-IP>)$(if $(DBOS_DNS), + SAN DNS:$(DBOS_DNS),))"
 	@if [ -f k8s/20-secrets.yaml ] && [ -f k8s/50-ingress.yaml ]; then \
 		echo "  • k8s/20-secrets.yaml и k8s/50-ingress.yaml уже сгенерированы — пропускаем"; \
 	else \
 		$(if $(DBOS_DNS),SAN_EXTRA="DNS:$(DBOS_DNS)" ,)bash scripts/k8s/gen_secrets.sh $(if $(DOMAIN),$(DOMAIN),) </dev/null; \
 	fi
 	@echo ""
-	@echo "▶ [7/10] kubectl apply -k k8s/ + ожидание rollout"
+	@echo "▶ [7/9] kubectl apply -k k8s/ + миграции (Job'ы) + ожидание rollout"
 	@$(MAKE) k8s-deploy --no-print-directory
 	@echo ""
-	@echo "▶ [8/10] alembic-миграции всех 5 сервисов"
-	@$(MAKE) k8s-migrate --no-print-directory
-	@echo ""
-	@echo "▶ [9/10] dump openapi + restart swagger-ui"
+	@echo "▶ [8/9] dump openapi + restart swagger-ui"
 	@sudo -E env KUBECONFIG=/etc/rancher/k3s/k3s.yaml bash scripts/k8s/dump_openapi.sh
 	@echo ""
-	@echo "▶ [10/10] smoke"
+	@echo "▶ [9/9] smoke"
 	@$(MAKE) k8s-smoke --no-print-directory
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════════════════"
@@ -749,11 +746,11 @@ k8s-cronjob-resume: ## Возобновить CronJob. SVC=<name>.
 	$(K8S) patch cronjob $(SVC) -p '{"spec":{"suspend":false}}'
 	@echo "✓ CronJob $(SVC) возобновлён."
 
-prod-deploy: ## Meta: build → check secrets → deploy → migrate → openapi → smoke. Требует k3s и cert-manager уже установленными.
-	@echo "→ [1/6] Сборка образов и импорт в k3s..."
+prod-deploy: ## Meta: build → check secrets → deploy (вкл. миграции) → openapi → smoke. Требует k3s и cert-manager уже установленными.
+	@echo "→ [1/5] Сборка образов и импорт в k3s..."
 	@$(MAKE) k8s-build --no-print-directory
 	@echo ""
-	@echo "→ [2/6] Проверка секретов..."
+	@echo "→ [2/5] Проверка секретов..."
 	@if [ ! -f k8s/20-secrets.yaml ]; then \
 		echo "ОШИБКА: k8s/20-secrets.yaml отсутствует. Запусти 'make k8s-secrets' и заполни значения."; \
 		exit 1; \
@@ -764,21 +761,18 @@ prod-deploy: ## Meta: build → check secrets → deploy → migrate → openapi
 	fi
 	@echo "  k8s/20-secrets.yaml и k8s/50-ingress.yaml на месте."
 	@echo ""
-	@echo "→ [3/6] Применение манифестов..."
+	@echo "→ [3/5] Применение манифестов + миграции (Job'ы) + rollout..."
 	@$(MAKE) k8s-deploy --no-print-directory
 	@echo ""
-	@echo "→ [4/6] Миграции..."
-	@$(MAKE) k8s-migrate --no-print-directory
-	@echo ""
-	@echo "→ [5/6] OpenAPI dump + restart swagger-ui (иначе swagger-ui в CrashLoop)..."
+	@echo "→ [4/5] OpenAPI dump + restart swagger-ui (иначе swagger-ui в CrashLoop)..."
 	@sudo -E env KUBECONFIG=/etc/rancher/k3s/k3s.yaml bash scripts/k8s/dump_openapi.sh
 	@echo ""
-	@echo "→ [6/6] Smoke-тесты..."
+	@echo "→ [5/5] Smoke-тесты..."
 	@$(MAKE) k8s-smoke --no-print-directory
 	@echo ""
 	@echo "✓ prod-deploy завершён."
 
-deploy: prod-deploy ## Алиас prod-deploy: одна команда поднимает всё (build → secrets-check → deploy+keystore → migrate → openapi → smoke).
+deploy: prod-deploy ## Алиас prod-deploy: одна команда поднимает всё (build → secrets-check → deploy+keystore+migrate → openapi → smoke).
 
 ##@ Справка
 

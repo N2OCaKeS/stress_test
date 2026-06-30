@@ -1,9 +1,10 @@
-# ВНИМАНИЕ: этот файл НЕ подключён в kustomization.yaml. Дефолтный деплой
-# (prod-deploy / k8s-zero) гоняет миграции через `make k8s-migrate`
-# (kubectl exec alembic upgrade head), потому что Job'ы immutable и ломают
-# повторный `kubectl apply -k`. Файл оставлен как декларативная альтернатива
-# для Helm/Argo PreSync-hook'а. Если включаешь его обратно в kustomization —
-# убери шаг k8s-migrate из prod-deploy/k8s-zero, иначе миграции задвоятся.
+# ВНИМАНИЕ: этот файл НЕ подключён в kustomization.yaml. Его применяет
+# scripts/k8s/deploy.sh явным `kubectl apply -f 45-migrations.yaml` — после
+# готовности баз и ДО ожидания сервисов. В kustomization Job'ам нельзя: они
+# immutable и ломают повторный `kubectl apply -k`. Идемпотентность даёт сам
+# deploy.sh — `kubectl delete job <*-migrate>` перед apply, так что каждый
+# деплой гоняет свежий Job. `make k8s-migrate` (kubectl exec alembic upgrade
+# head) остался ручным fallback'ом и в штатный деплой больше не входит.
 #
 # Alembic-миграции вынесены из Pod'а в отдельные Job'ы — один Pod на сервис,
 # который завершается после `alembic upgrade head`. Это убирает гонку
@@ -11,10 +12,10 @@
 # от rolling-update сервиса.
 #
 # Порядок применения (deploy.sh):
-#   1. kubectl apply -f 00-..-20-secrets.yaml
-#   2. kubectl apply -f 10-postgres-*.yaml + wait pg_isready
-#   3. kubectl apply -f 45-migrations.yaml + wait --for=condition=complete
-#   4. kubectl apply -f 30-..-60-*.yaml + 70-pdb + 80-networkpolicy + 50-ingress
+#   1. kustomize build | apply (всё, кроме этих Job'ов — их в kustomization нет)
+#   2. wait rollout postgres-Deployment'ов (Job'у нужна живая БД)
+#   3. delete job <*-migrate> + apply -f 45-migrations.yaml + wait condition=complete
+#   4. wait rollout сервисов (схема уже на месте — auth-service не крашлупит)
 #
 # Альтернатива — Helm/Argo PreSync hook; в чистом kustomize порядок зашит в
 # скрипт deploy.sh (см. scripts/k8s/deploy.sh).
@@ -26,8 +27,10 @@
 # Env-разбивка: *_USER/*_PASSWORD объявлены ДО DATABASE_URL, потому что
 # kubelet раскрывает `$(VAR)` только из ранее объявленных env-записей.
 # get_settings() жадно валидирует множество полей даже для миграции, поэтому
-# server/worker-migrate несут заглушки AUTH_SERVICE_URL / LOGGING_SERVICE_URL —
-# alembic их не использует, но Settings без них не строится.
+# server/secret-migrate несут заглушки AUTH_SERVICE_URL / LOGGING_SERVICE_URL —
+# alembic их не использует, но Settings без них не строится. worker-migrate
+# берёт DSN прямо из DATABASE_URL (см. server_worker env.py), полную Settings
+# не строит, так что его прочий env здесь — задел и читаемость, не требование.
 
 apiVersion: batch/v1
 kind: Job

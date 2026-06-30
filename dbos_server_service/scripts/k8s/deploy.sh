@@ -54,18 +54,47 @@ echo "→ Применяем манифесты..."
 # load-restrictor, а apply'им через pipe.
 kubectl kustomize "$K8S_DIR" --load-restrictor=LoadRestrictionsNone | kubectl apply -f -
 
+# Базы данных поднимаем ДО миграций и ДО сервисов: migration-Job'у нужна живая
+# БД, а схема-зависимые сервисы (auth-service делает SELECT count(*) FROM users
+# в bootstrap'е и крашится, если таблицы нет) не должны ждать готовности раньше,
+# чем миграции создадут схему.
 echo ""
-echo "→ Ждём готовности pods (timeout 5 мин)..."
-kubectl -n dbos rollout status deploy/auth-postgres    --timeout=300s
-kubectl -n dbos rollout status deploy/logging-postgres --timeout=300s
-kubectl -n dbos rollout status deploy/server-postgres  --timeout=300s
-kubectl -n dbos rollout status deploy/worker-postgres  --timeout=300s
-kubectl -n dbos rollout status deploy/secret-postgres  --timeout=300s
-kubectl -n dbos rollout status deploy/logging-service  --timeout=300s
-kubectl -n dbos rollout status deploy/auth-service     --timeout=300s
-kubectl -n dbos rollout status deploy/server-service   --timeout=300s
-kubectl -n dbos rollout status deploy/server-worker    --timeout=300s
-kubectl -n dbos rollout status deploy/secret-service   --timeout=300s
+echo "→ Ждём готовности баз данных (timeout 5 мин)..."
+for pg in auth-postgres logging-postgres server-postgres worker-postgres secret-postgres; do
+    kubectl -n dbos rollout status "deploy/$pg" --timeout=300s
+done
+
+# ── Миграции отдельными Job'ами ДО ожидания сервисов ──────────────────────────
+# Job'ы из 45-migrations.yaml применяем явным `kubectl apply -f` (в kustomization
+# их нет — Job immutable, повторный `apply -k` бы падал). Идемпотентность —
+# delete по именам перед apply: каждый деплой гоняет свежий Job. Только после
+# того как все миграции дошли до condition=complete, ждём rollout сервисов —
+# к этому моменту схема на месте и auth-service переживает рестарт без crashloop.
+MIGRATE_JOBS=(auth-migrate logging-migrate server-migrate worker-migrate secret-migrate)
+
+echo ""
+echo "→ Сбрасываем прежние migration-Job'ы (Job'ы immutable, нужен чистый запуск)..."
+kubectl -n dbos delete job "${MIGRATE_JOBS[@]}" --ignore-not-found
+
+echo "→ Применяем migration-Job'ы (45-migrations.yaml)..."
+kubectl apply -f "$K8S_DIR/45-migrations.yaml"
+
+echo "→ Ждём завершения миграций (timeout 5 мин на каждую)..."
+for job in "${MIGRATE_JOBS[@]}"; do
+    if ! kubectl -n dbos wait --for=condition=complete "job/$job" --timeout=300s; then
+        echo "ОШИБКА: миграция $job не завершилась за отведённое время."
+        echo "  Последние строки лога:"
+        kubectl -n dbos logs "job/$job" --tail=50 || true
+        exit 1
+    fi
+    echo "✓ $job завершён."
+done
+
+echo ""
+echo "→ Ждём готовности сервисов (timeout 5 мин)..."
+for svc in redis logging-service auth-service server-service server-worker secret-service; do
+    kubectl -n dbos rollout status "deploy/$svc" --timeout=300s
+done
 
 echo ""
 echo "✓ Все deployments готовы."

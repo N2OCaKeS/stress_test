@@ -13,13 +13,14 @@ resources:
   - 13-postgres-secret.yaml
   - 14-keystore-rbac.yaml    # SA + Role get/patch на keystore-Secret каждого сервиса
   - 20-secrets.yaml          # генерируется scripts/k8s/gen_secrets.sh
-  # Миграции НЕ через Job'ы из 45-migrations.yaml: они immutable и ломают
-  # повторный `apply -k` (idempotency one-command-деплоя). Единый механизм —
-  # `make k8s-migrate` (kubectl exec alembic upgrade head по одному pod'у на
-  # сервис), который prod-deploy/k8s-zero гоняют после rollout и до smoke.
-  # Readiness сервисов — SELECT 1 (схема-независим), поэтому pod'ы доходят до
-  # Ready без схемы, а exec-миграция отрабатывает следом. 45-migrations.yaml
-  # оставлен как декларативная альтернатива (Helm/Argo PreSync), но не подключён.
+  # 45-migrations.yaml СПЕЦИАЛЬНО не подключён: Job'ы immutable и ломают
+  # повторный `apply -k`. deploy.sh применяет их явным `kubectl apply -f` после
+  # готовности баз и ДО ожидания сервисов (delete по именам обеспечивает
+  # идемпотентность). Порядок «postgres ready → migrate Job'ы complete →
+  # rollout сервисов» обязателен: auth-service в bootstrap'е делает
+  # SELECT count(*) FROM users и крашлупит, если схемы ещё нет. `make
+  # k8s-migrate` (kubectl exec) остался ручным fallback'ом, в штатный деплой
+  # не входит.
   - 30-logging-service.yaml
   - 40-auth-service.yaml
   - 50-server-service.yaml

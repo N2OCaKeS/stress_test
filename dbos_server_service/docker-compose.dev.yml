@@ -358,8 +358,59 @@ services:
       retries: 40
       start_period: 120s
 
+  # Общий Swagger UI по всем сервисам (дропдаун в топбаре). CORS в dev выключен,
+  # поэтому спеки не тянем из браузера напрямую, а собираем серверно в общий том
+  # (openapi_dump) и отдаём их со своего origin как статику — модель как в проде
+  # (k8s/55-swagger-ui.yaml). Просмотр работает без CORS; «Try it out» — через
+  # per-service /docs (там same-origin).
+  openapi_dump:
+    image: curlimages/curl:8.10.1
+    # root: свежий named-том /specs принадлежит root, а образ бежит под curl_user
+    # (uid 100) — без этого запись спеков падает с curl exit 23.
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        curl -sf http://auth_service:8000/openapi.json   -o /specs/auth.json
+        curl -sf http://loging_service:8001/openapi.json  -o /specs/logging.json
+        curl -sf http://server_service:8002/openapi.json  -o /specs/server.json
+        curl -sf http://secret_service:8003/openapi.json  -o /specs/secret.json
+        echo "openapi specs dumped:"; ls -l /specs
+    volumes:
+      - openapi_specs:/specs
+    depends_on:
+      auth_service:
+        condition: service_healthy
+      loging_service:
+        condition: service_healthy
+      server_service:
+        condition: service_healthy
+      secret_service:
+        condition: service_healthy
+
+  swagger_ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    environment:
+      URLS: >-
+        [{"url":"/specs/auth.json","name":"auth_service"},
+         {"url":"/specs/logging.json","name":"loging_service"},
+         {"url":"/specs/server.json","name":"server_service"},
+         {"url":"/specs/secret.json","name":"secret_service"}]
+      URLS_PRIMARY_NAME: auth_service
+      DEEP_LINKING: "true"
+    volumes:
+      - openapi_specs:/usr/share/nginx/html/specs:ro
+    ports:
+      - "8088:8080"
+    depends_on:
+      openapi_dump:
+        condition: service_completed_successfully
+
 volumes:
   dbos_dev_pg:
+  openapi_specs:
   web_ui_node_modules:
   dbos_dev_redis:
   dbos_dev_secret_pg:

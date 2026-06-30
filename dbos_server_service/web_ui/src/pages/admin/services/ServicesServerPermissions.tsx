@@ -12,6 +12,7 @@ import {
   Trash2,
   Check,
   Pencil,
+  RotateCcw,
   Crosshair,
   Server as ServerIcon,
   KeyRound,
@@ -110,13 +111,15 @@ const SYSTEM_ROLES: RoleName[] = ["guest", "admin"];
 // Порядок системных ролей в таблице; кастомные идут после по алфавиту.
 const SYSTEM_ROLE_ORDER: RoleName[] = ["guest", "admin"];
 
+// Внутренние роли, которые в матрицу не выводим вообще (гранты на backend у
+// них остаются — это чисто UI-скрытие).
+const HIDDEN_ROLES: ReadonlySet<RoleName> = new Set<RoleName>(["worker_bot"]);
+
 function roleSortKey(role: RoleName): string {
   const idx = SYSTEM_ROLE_ORDER.indexOf(role);
   // Системные роли — фиксированный порядок, кастомные — после, по имени.
   return idx >= 0 ? `0${idx}` : `1${role}`;
 }
-
-type CellStatus = "idle" | "saving";
 
 type ViewMode = "matrix" | "role";
 
@@ -147,15 +150,15 @@ function ServicesServerPermissionsLive() {
     [myDept, refreshTick],
   );
 
-  const catalog = catalogQ.data ?? [];
-  const grants = grantsQ.data?.items ?? [];
+  const catalog = useMemo(() => catalogQ.data ?? [], [catalogQ.data]);
+  const grants = useMemo(() => grantsQ.data?.items ?? [], [grantsQ.data]);
   const serviceRoles = rolesQ.data ?? [];
 
-  // Оптимистичный слой: ключ `entity::role::action` → true (allow) | false
-  // (revoked). Перетирает то, что пришло с сервера, до следующего refetch'а.
-  const [optimistic, setOptimistic] = useState<Record<string, boolean>>({});
-  // Какие ячейки сейчас в полёте — чтобы рисовать спиннер и блокировать клик.
-  const [saving, setSaving] = useState<Record<string, CellStatus>>({});
+  // Локальные правки: ключ `entity::role::action` → желаемое allow (true) /
+  // revoked (false). Копятся до батч-сохранения кнопкой нужной таблицы/роли.
+  const [edits, setEdits] = useState<Record<string, boolean>>({});
+  // Идёт ли сейчас применение диффа — на это время контролы блокируем.
+  const [saving, setSaving] = useState(false);
   // Кастомные роли, созданные в этой сессии: показываем строкой сразу, ещё до
   // того как появится первый grant (без грантов backend их в матрице не вернёт).
   const [localRoles, setLocalRoles] = useState<RoleName[]>([]);
@@ -169,23 +172,30 @@ function ServicesServerPermissionsLive() {
     return m;
   }, [grants]);
 
-  // Эффективное состояние ячейки: оптимистичный слой важнее серверного.
+  const serverAllowed = useCallback(
+    (key: string): boolean => serverIndex.has(key),
+    [serverIndex],
+  );
+
+  // Эффективное состояние ячейки: локальная правка важнее серверной.
   const isAllowed = useCallback(
     (entity: EntityType, role: RoleName, action: ActionName): boolean => {
       const key = `${entity}::${role}::${action}`;
-      if (key in optimistic) return optimistic[key];
-      return serverIndex.has(key);
+      if (key in edits) return edits[key];
+      return serverAllowed(key);
     },
-    [optimistic, serverIndex],
+    [edits, serverAllowed],
   );
 
   // Все кастомные роли отдела: из существующих grant'ов + созданные локально.
+  // Внутренние роли (worker_bot) не показываем вовсе.
   const customRoles = useMemo(() => {
     const set = new Set<RoleName>();
     for (const g of grants) {
       if (!SYSTEM_ROLES.includes(g.role)) set.add(g.role);
     }
     for (const r of localRoles) set.add(r);
+    for (const h of HIDDEN_ROLES) set.delete(h);
     return set;
   }, [grants, localRoles]);
 
@@ -202,63 +212,127 @@ function ServicesServerPermissionsLive() {
     [customRoles],
   );
 
+  // Клик по ячейке только копит правку — без сети.
   const toggleCell = useCallback(
-    async (
-      entity: EntityType,
-      role: RoleName,
-      action: PermissionCatalogAction,
-    ) => {
+    (entity: EntityType, role: RoleName, action: PermissionCatalogAction) => {
       if (role in LOCKED_ROLES) return;
       if (action.worker_only) return;
       const key = `${entity}::${role}::${action.action}`;
-      if (saving[key] === "saving") return;
-
-      const currentlyAllowed = isAllowed(entity, role, action.action);
-      const next = !currentlyAllowed;
-
-      // Оптимистично применяем + помечаем «в полёте».
-      setOptimistic((m) => ({ ...m, [key]: next }));
-      setSaving((m) => ({ ...m, [key]: "saving" }));
-
-      try {
-        if (next) {
-          await setPermission(entity, role, action.action as ActionName, {
-            target_department_id: myDept || undefined,
-          });
-          if (action.sensitive) {
-            toast.warn(
-              `${entity}/${role}/${action.action} выдано · sensitive → CRITICAL audit`,
-            );
-          } else {
-            toast.success(`Выдано: ${entity}/${role}/${action.action}`);
-          }
-        } else {
-          await deletePermission(entity, role, action.action as ActionName, {
-            target_department_id: myDept || undefined,
-          });
-          toast.success(`Отозвано: ${entity}/${role}/${action.action}`);
-        }
-        // Успех — чистим оптимистичный слой по ключу и подтягиваем правду.
-        setOptimistic((m) => {
-          const { [key]: _drop, ...rest } = m;
-          return rest;
-        });
-        bump();
-      } catch (e) {
-        // Откат: возвращаем ячейку к серверному состоянию.
-        setOptimistic((m) => {
-          const { [key]: _drop, ...rest } = m;
-          return rest;
-        });
-        toast.error(apiErrMsg(e));
-      } finally {
-        setSaving((m) => {
-          const { [key]: _drop, ...rest } = m;
-          return rest;
-        });
-      }
+      setEdits((m) => ({ ...m, [key]: !isAllowed(entity, role, action.action) }));
     },
-    [bump, isAllowed, myDept, saving, toast],
+    [isAllowed],
+  );
+
+  // Снять все права роли в одной таблице (этом entity_type) — стейдж revoke.
+  const clearRoleInEntity = useCallback(
+    (entity: PermissionCatalogItem, role: RoleName) => {
+      if (role in LOCKED_ROLES) return;
+      setEdits((m) => {
+        const next = { ...m };
+        for (const a of entity.actions) {
+          if (a.worker_only) continue;
+          next[`${entity.entity_type}::${role}::${a.action}`] = false;
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  // Снять все права роли во ВСЕХ таблицах сразу — стейдж revoke по каталогу.
+  const clearRoleEverywhere = useCallback(
+    (role: RoleName) => {
+      if (role in LOCKED_ROLES) return;
+      setEdits((m) => {
+        const next = { ...m };
+        for (const entity of catalog) {
+          for (const a of entity.actions) {
+            if (a.worker_only) continue;
+            next[`${entity.entity_type}::${role}::${a.action}`] = false;
+          }
+        }
+        return next;
+      });
+    },
+    [catalog],
+  );
+
+  // Ключи диффа (правка != сервер) среди заданного подмножества.
+  const diffKeys = useCallback(
+    (predicate: (key: string) => boolean): string[] =>
+      Object.keys(edits).filter(
+        (k) => predicate(k) && edits[k] !== serverAllowed(k),
+      ),
+    [edits, serverAllowed],
+  );
+
+  const entityDiffKeys = useCallback(
+    (entity: EntityType) => diffKeys((k) => k.startsWith(`${entity}::`)),
+    [diffKeys],
+  );
+
+  const roleDiffKeys = useCallback(
+    (role: RoleName) => diffKeys((k) => k.split("::")[1] === role),
+    [diffKeys],
+  );
+
+  // Применить дифф по списку ключей: PUT для allow, DELETE для revoke.
+  const applyDiff = useCallback(
+    async (keys: string[]) => {
+      if (saving || keys.length === 0) return;
+      setSaving(true);
+      const done: string[] = [];
+      let ok = 0;
+      let failed = 0;
+      for (const key of keys) {
+        const [entity, role, action] = key.split("::") as [
+          EntityType,
+          RoleName,
+          ActionName,
+        ];
+        try {
+          if (edits[key]) {
+            await setPermission(entity, role, action, {
+              target_department_id: myDept || undefined,
+            });
+          } else {
+            await deletePermission(entity, role, action, {
+              target_department_id: myDept || undefined,
+            });
+          }
+          done.push(key);
+          ok++;
+        } catch (e) {
+          failed++;
+          toast.error(apiErrMsg(e));
+        }
+      }
+      setEdits((m) => {
+        const next = { ...m };
+        for (const k of done) delete next[k];
+        return next;
+      });
+      setSaving(false);
+      if (ok) toast.success(`Сохранено изменений: ${ok}`);
+      if (failed) toast.warn(`Не сохранено: ${failed}`);
+      bump();
+    },
+    [saving, edits, myDept, toast, bump],
+  );
+
+  // Снять несохранённые правки в подмножестве (Отмена).
+  const cancelKeys = useCallback((keys: string[]) => {
+    setEdits((m) => {
+      const next = { ...m };
+      for (const k of keys) delete next[k];
+      return next;
+    });
+  }, []);
+
+  const allKeysIn = useCallback(
+    (predicate: (key: string) => boolean): string[] =>
+      Object.keys(edits).filter(predicate),
+    [edits],
   );
 
   // Скопировать все grant'ы базовой роли в новую (best-effort, по каталогу).
@@ -372,8 +446,9 @@ function ServicesServerPermissionsLive() {
             </div>
             <p className="text-xs text-dim leading-relaxed">
               Правила на весь <em>тип</em> сущности (все серверы / все учётки).
-              Клик по чекбоксу мгновенно выдаёт или отзывает действие для роли.
-              Строки <span className="mono">admin</span> и{" "}
+              Клик по чекбоксу копит правку локально; применяется батчем кнопкой
+              «Сохранить» у нужной таблицы. Строки{" "}
+              <span className="mono">admin</span> и{" "}
               <span className="mono">guest</span> залочены. Изменения пишутся в
               рамках вашего отдела (
               <span className="mono">{myDept ?? "—"}</span>).
@@ -409,16 +484,36 @@ function ServicesServerPermissionsLive() {
               Каталог пуст — backend не вернул ни одной сущности.
             </div>
           ) : (
-            catalog.map((entity) => (
-              <EntityMatrix
-                key={entity.entity_type}
-                entity={entity}
-                roles={rolesFor(entity.entity_type)}
-                isAllowed={isAllowed}
-                saving={saving}
-                onToggle={toggleCell}
-              />
-            ))
+            catalog.map((entity) => {
+              const dkeys = entityDiffKeys(entity.entity_type);
+              return (
+                <EntityMatrix
+                  key={entity.entity_type}
+                  entity={entity}
+                  roles={rolesFor(entity.entity_type)}
+                  isAllowed={isAllowed}
+                  saving={saving}
+                  onToggle={toggleCell}
+                  dirtyCount={dkeys.length}
+                  onSave={() => applyDiff(dkeys)}
+                  onCancel={() =>
+                    cancelKeys(
+                      allKeysIn((k) =>
+                        k.startsWith(`${entity.entity_type}::`),
+                      ),
+                    )
+                  }
+                  onClearRole={(role) => clearRoleInEntity(entity, role)}
+                  hasOverride={(role) =>
+                    entity.actions.some(
+                      (a) =>
+                        !a.worker_only &&
+                        isAllowed(entity.entity_type, role, a.action),
+                    )
+                  }
+                />
+              );
+            })
           )}
 
           <InstancePointSection departmentId={myDept} canEdit={canEdit} />
@@ -435,6 +530,12 @@ function ServicesServerPermissionsLive() {
           saving={saving}
           onToggle={toggleCell}
           onRolesChanged={bump}
+          roleDirtyCount={(role) => roleDiffKeys(role).length}
+          onSaveRole={(role) => applyDiff(roleDiffKeys(role))}
+          onCancelRole={(role) =>
+            cancelKeys(allKeysIn((k) => k.split("::")[1] === role))
+          }
+          onClearRoleEverywhere={clearRoleEverywhere}
         />
       )}
     </div>
@@ -468,6 +569,10 @@ function RoleEditor({
   saving,
   onToggle,
   onRolesChanged,
+  roleDirtyCount,
+  onSaveRole,
+  onCancelRole,
+  onClearRoleEverywhere,
 }: {
   departmentId: string | null;
   catalog: PermissionCatalogItem[];
@@ -476,17 +581,23 @@ function RoleEditor({
   rolesError: Error | null;
   onRolesRefetch: () => void;
   isAllowed: IsAllowedFn;
-  saving: Record<string, CellStatus>;
+  saving: boolean;
   onToggle: ToggleFn;
   onRolesChanged: () => void;
+  roleDirtyCount: (role: RoleName) => number;
+  onSaveRole: (role: RoleName) => void;
+  onCancelRole: (role: RoleName) => void;
+  onClearRoleEverywhere: (role: RoleName) => void;
 }) {
   const [selected, setSelected] = useState<string>("");
 
   // Системные guest/admin не приходят в service_roles (он хранит только
-  // кастомные определения отдела), поэтому добиваем их вручную.
+  // кастомные определения отдела), поэтому добиваем их вручную. Внутреннюю
+  // worker_bot не показываем.
   const allRoleNames = useMemo(() => {
     const set = new Set<string>(SYSTEM_ROLE_ORDER);
     for (const r of serviceRoles) set.add(r.role_name);
+    for (const h of HIDDEN_ROLES) set.delete(h);
     return Array.from(set).sort((a, b) =>
       roleSortKey(a).localeCompare(roleSortKey(b)),
     );
@@ -588,6 +699,44 @@ function RoleEditor({
               <span>
                 Роль <span className="mono">{selected}</span> залочена —{" "}
                 {LOCKED_ROLES[selected]}. Права не редактируются.
+              </span>
+            </div>
+          )}
+
+          {!isLocked && (
+            <div className="sticky top-0 z-30 flex items-center gap-2 flex-wrap border border-token rounded bg-[var(--bg-soft)] px-3 py-2">
+              <button
+                className="btn btn-sm btn-primary flex items-center gap-1"
+                onClick={() => onSaveRole(selected)}
+                disabled={saving || roleDirtyCount(selected) === 0}
+              >
+                {saving ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5" />
+                )}
+                Сохранить роль
+                {roleDirtyCount(selected) > 0 && ` (${roleDirtyCount(selected)})`}
+              </button>
+              <button
+                className="btn btn-sm"
+                onClick={() => onCancelRole(selected)}
+                disabled={saving || roleDirtyCount(selected) === 0}
+              >
+                Отмена
+              </button>
+              <button
+                className="btn btn-sm btn-danger flex items-center gap-1"
+                onClick={() => onClearRoleEverywhere(selected)}
+                disabled={saving}
+                title="Снять все права этой роли во всех таблицах (применится по «Сохранить роль»)"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Очистить во всех таблицах
+              </button>
+              <span className="text-[11px] text-dim ml-auto">
+                {roleDirtyCount(selected) > 0
+                  ? `Несохранённых изменений: ${roleDirtyCount(selected)}`
+                  : "Изменения применяются по кнопке «Сохранить роль»"}
               </span>
             </div>
           )}
@@ -797,7 +946,7 @@ function RoleEntityCard({
   role: RoleName;
   locked: boolean;
   isAllowed: IsAllowedFn;
-  saving: Record<string, CellStatus>;
+  saving: boolean;
   onToggle: ToggleFn;
 }) {
   return (
@@ -814,10 +963,8 @@ function RoleEntityCard({
       ) : (
         <div className="flex flex-col divide-y divide-token border border-token rounded overflow-auto max-h-[60vh]">
           {entity.actions.map((a) => {
-            const key = `${entity.entity_type}::${role}::${a.action}`;
             const allowed = isAllowed(entity.entity_type, role, a.action);
-            const isSaving = saving[key] === "saving";
-            const disabled = locked || a.worker_only;
+            const disabled = locked || a.worker_only || saving;
             const reason = locked
               ? "роль залочена"
               : a.worker_only
@@ -839,7 +986,7 @@ function RoleEntityCard({
                 <PermCheckbox
                   allowed={allowed}
                   disabled={disabled}
-                  saving={isSaving}
+                  saving={false}
                   title={`${a.description}\n\n${reason}`}
                   onClick={() => onToggle(entity.entity_type, role, a)}
                 />
@@ -1161,6 +1308,11 @@ function EntityMatrix({
   isAllowed,
   saving,
   onToggle,
+  dirtyCount,
+  onSave,
+  onCancel,
+  onClearRole,
+  hasOverride,
 }: {
   entity: PermissionCatalogItem;
   roles: RoleName[];
@@ -1169,12 +1321,17 @@ function EntityMatrix({
     role: RoleName,
     action: ActionName,
   ) => boolean;
-  saving: Record<string, CellStatus>;
+  saving: boolean;
   onToggle: (
     entity: EntityType,
     role: RoleName,
     action: PermissionCatalogAction,
   ) => void;
+  dirtyCount: number;
+  onSave: () => void;
+  onCancel: () => void;
+  onClearRole: (role: RoleName) => void;
+  hasOverride: (role: RoleName) => boolean;
 }) {
   return (
     <div className="card">
@@ -1190,90 +1347,133 @@ function EntityMatrix({
           У сущности нет действий в каталоге.
         </div>
       ) : (
-        <div className="overflow-auto max-h-[60vh] border border-token rounded">
-          <table className="text-sm border-collapse">
-            <thead className="text-left text-dim text-xs uppercase">
-              <tr>
-                <th className="pb-2 pt-2 px-3 sticky left-0 top-0 z-20 bg-[var(--bg-soft)]">
-                  role
-                </th>
-                {entity.actions.map((a) => (
-                  <th
-                    key={a.action}
-                    className="pb-2 pt-2 px-2 mono font-normal align-bottom sticky top-0 z-10 bg-[var(--bg-soft)]"
-                    title={a.description}
-                  >
-                    <div className="flex items-center gap-1 whitespace-nowrap">
-                      <span>{a.action}</span>
-                      {a.sensitive && (
-                        <span
-                          className="badge badge-warn text-[10px]"
-                          title="sensitive → CRITICAL audit"
-                        >
-                          !
-                        </span>
-                      )}
-                      {a.worker_only && (
-                        <Bot
-                          className="w-3 h-3"
-                          aria-label="worker_only"
-                        />
-                      )}
-                    </div>
+        <>
+          <div className="overflow-auto max-h-[60vh] border border-token rounded">
+            <table className="text-sm border-collapse">
+              <thead className="text-left text-dim text-xs uppercase">
+                <tr>
+                  <th className="pb-2 pt-2 px-3 sticky left-0 top-0 z-20 bg-[var(--bg-soft)]">
+                    role
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {roles.map((role) => {
-                const locked = role in LOCKED_ROLES;
-                return (
-                  <tr key={role} className="border-t border-token">
-                    <td className="py-2 px-3 mono text-xs sticky left-0 z-10 bg-[var(--bg-soft)]">
-                      <span
-                        className="flex items-center gap-1"
-                        title={locked ? LOCKED_ROLES[role] : undefined}
-                      >
-                        {locked && <Lock className="w-3 h-3 text-dim" />}
-                        {role}
-                      </span>
-                    </td>
-                    {entity.actions.map((a) => {
-                      const key = `${entity.entity_type}::${role}::${a.action}`;
-                      const allowed = isAllowed(
-                        entity.entity_type,
-                        role,
-                        a.action,
-                      );
-                      const isSaving = saving[key] === "saving";
-                      const disabled = locked || a.worker_only;
-                      const reason = locked
-                        ? LOCKED_ROLES[role]
-                        : a.worker_only
-                          ? "worker_only — выдавать людям нельзя"
-                          : allowed
-                            ? "Снять — отозвать"
-                            : "Поставить — выдать";
-                      return (
-                        <td key={a.action} className="py-1.5 px-2 text-center">
-                          <PermCheckbox
-                            allowed={allowed}
-                            disabled={disabled}
-                            saving={isSaving}
-                            title={`${a.description}\n\n${reason}`}
-                            onClick={() =>
-                              onToggle(entity.entity_type, role, a)
-                            }
+                  {entity.actions.map((a) => (
+                    <th
+                      key={a.action}
+                      className="pb-2 pt-2 px-2 mono font-normal align-bottom sticky top-0 z-10 bg-[var(--bg-soft)]"
+                      title={a.description}
+                    >
+                      <div className="flex items-center gap-1 whitespace-nowrap">
+                        <span>{a.action}</span>
+                        {a.sensitive && (
+                          <span
+                            className="badge badge-warn text-[10px]"
+                            title="sensitive → CRITICAL audit"
+                          >
+                            !
+                          </span>
+                        )}
+                        {a.worker_only && (
+                          <Bot
+                            className="w-3 h-3"
+                            aria-label="worker_only"
                           />
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                        )}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {roles.map((role) => {
+                  const locked = role in LOCKED_ROLES;
+                  return (
+                    <tr key={role} className="border-t border-token">
+                      <td className="py-2 px-3 mono text-xs sticky left-0 z-10 bg-[var(--bg-soft)]">
+                        <span
+                          className="flex items-center gap-1"
+                          title={locked ? LOCKED_ROLES[role] : undefined}
+                        >
+                          {locked && <Lock className="w-3 h-3 text-dim" />}
+                          {role}
+                          {!locked && (
+                            <button
+                              type="button"
+                              className="btn btn-ghost p-0.5 disabled:opacity-30"
+                              title="Очистить права роли в этой таблице"
+                              aria-label={`Очистить роль ${role} в ${entity.entity_type}`}
+                              disabled={saving || !hasOverride(role)}
+                              onClick={() => onClearRole(role)}
+                            >
+                              <RotateCcw className="w-3 h-3 text-dim" />
+                            </button>
+                          )}
+                        </span>
+                      </td>
+                      {entity.actions.map((a) => {
+                        const allowed = isAllowed(
+                          entity.entity_type,
+                          role,
+                          a.action,
+                        );
+                        const disabled = locked || a.worker_only || saving;
+                        const reason = locked
+                          ? LOCKED_ROLES[role]
+                          : a.worker_only
+                            ? "worker_only — выдавать людям нельзя"
+                            : allowed
+                              ? "Снять — отозвать"
+                              : "Поставить — выдать";
+                        return (
+                          <td
+                            key={a.action}
+                            className="py-1.5 px-2 text-center"
+                          >
+                            <PermCheckbox
+                              allowed={allowed}
+                              disabled={disabled}
+                              saving={false}
+                              title={`${a.description}\n\n${reason}`}
+                              onClick={() =>
+                                onToggle(entity.entity_type, role, a)
+                              }
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="sticky bottom-0 z-30 mt-3 -mb-1 flex items-center gap-2 flex-wrap border-t border-token bg-[var(--bg-soft)] pt-3 pb-2">
+            <button
+              className="btn btn-sm btn-primary flex items-center gap-1"
+              onClick={onSave}
+              disabled={saving || dirtyCount === 0}
+            >
+              {saving ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Check className="w-3.5 h-3.5" />
+              )}
+              Сохранить
+              {dirtyCount > 0 && ` (${dirtyCount})`}
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={onCancel}
+              disabled={saving || dirtyCount === 0}
+            >
+              Отмена
+            </button>
+            <span className="text-[11px] text-dim ml-auto">
+              {dirtyCount > 0
+                ? `Несохранённых изменений: ${dirtyCount}`
+                : "Изменения применяются по кнопке «Сохранить»"}
+            </span>
+          </div>
+        </>
       )}
     </div>
   );

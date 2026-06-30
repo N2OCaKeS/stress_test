@@ -13,11 +13,7 @@ import { useQuery } from "@/api/auth/useQuery";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
-import { getServer, setBusy, clearBusy, listServers } from "@/api/server/servers";
-import {
-  ResourceInstancePermissions,
-  type ResourceTargetOption,
-} from "./_resourcePermissions";
+import { getServer, setBusy, clearBusy } from "@/api/server/servers";
 import { useDeptLabel, useUserLabel } from "@/lib/labels";
 import { isDepAdmin } from "@/lib/rbac";
 import { ApiError, apiErrMsg } from "@/api/client";
@@ -37,7 +33,6 @@ type TabId =
   | "accounts"
   | "console"
   | "packages"
-  | "permissions"
   | "manage";
 
 const TABS: { id: TabId; label: string }[] = [
@@ -47,7 +42,6 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "accounts", label: "Аккаунты" },
   { id: "console", label: "Консоль" },
   { id: "packages", label: "Пакеты" },
-  { id: "permissions", label: "Права" },
   { id: "manage", label: "Управление" },
 ];
 
@@ -92,7 +86,6 @@ export function ServerDetail({
   onBusyChanged,
 }: ServerDetailProps) {
   const [tab, setTab] = useState<TabId>("overview");
-  const { persona } = usePersona();
   const q = useQuery<Server>(() => getServer(serverId), [serverId]);
 
   // Локальная копия карточки: переключение вкладок не перемонтирует
@@ -169,32 +162,6 @@ export function ServerDetail({
             server={current}
             onServerUpdated={setServer}
           />
-        )}
-        {tab === "permissions" && (
-          <div className="p-6">
-            <ResourceInstancePermissions
-              resourceType="server"
-              resourceId={current.id}
-              resourceLabel={current.display_name ?? current.hostname}
-              departmentId={current.department_id}
-              canEdit={
-                persona.platform_role === "dep_admin" ||
-                persona.service_roles?.server === "admin"
-              }
-              fetchTargets={async () => {
-                const res = await listServers({
-                  department_id: current.department_id,
-                  limit: 200,
-                });
-                return res.items.map(
-                  (s): ResourceTargetOption => ({
-                    id: s.id,
-                    label: s.display_name ?? s.hostname,
-                  }),
-                );
-              }}
-            />
-          </div>
         )}
         {tab === "manage" && (
           <ManageTab

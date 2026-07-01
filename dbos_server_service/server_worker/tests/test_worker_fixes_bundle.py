@@ -24,7 +24,7 @@ from src.db.session import AsyncSessionLocal
 from src.models import Task
 from src.tasks import passwords
 from src.tasks._runner import run_task
-from tests._ssh_mock_helpers import make_conn, run_result
+from tests._ssh_mock_helpers import make_conn, run_result, sudo_probe_result
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
@@ -338,7 +338,7 @@ class TestInstallAuthorizedKeyHomeGuard:
 
     async def test_bash_command_contains_empty_home_guard(self):
         ssh = SshClient(host="10.0.0.1", username="dbos", password="pwd")
-        ssh._conn = make_conn([run_result("", "user x not found", 1)])
+        ssh._conn = make_conn([sudo_probe_result(), run_result("", "user x not found", 1)])
 
         with pytest.raises(SshError) as exc:
             await ssh._install_authorized_key(

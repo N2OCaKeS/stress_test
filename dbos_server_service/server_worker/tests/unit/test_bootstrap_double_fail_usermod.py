@@ -17,7 +17,7 @@ import asyncssh
 import pytest
 
 from src.clients.ssh import SshClient, SshError
-from tests._ssh_mock_helpers import make_conn, run_result
+from tests._ssh_mock_helpers import make_conn, run_result, sudo_probe_result
 
 
 _PUBKEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey dbos"
@@ -41,6 +41,7 @@ class TestBootstrapDoubleUsermodFail:
             run_result("dbos:x:1001:", "", 0),              # outer user_exists
             run_result("dbos\n", "", 0),                    # id -nG pre-check
             run_result("dbos:x:1001:", "", 0),              # getent в create_user, попытка 1
+            sudo_probe_result(),                            # sudo -n true перед usermod
             run_result("", "group sudo not found", 6),      # usermod -G sudo fail
             run_result("dbos:x:1001:", "", 0),              # post-fail user_exists
             run_result("dbos\n", "", 0),                    # post-fail id -nG (всё ещё нет)
@@ -78,6 +79,7 @@ class TestBootstrapDoubleUsermodFail:
             run_result("dbos:x:1001:", "", 0),              # outer user_exists
             run_result("dbos\n", "", 0),                    # id -nG pre-check (без sudo)
             run_result("dbos:x:1001:", "", 0),              # getent внутри create_user
+            sudo_probe_result(),                            # sudo -n true перед usermod
             run_result("", "group sudo not found", 6),      # usermod -G sudo fail
             run_result("dbos:x:1001:", "", 0),              # post-fail user_exists
             run_result("dbos sudo\n", "", 0),               # post-fail id -nG → теперь sudo есть!

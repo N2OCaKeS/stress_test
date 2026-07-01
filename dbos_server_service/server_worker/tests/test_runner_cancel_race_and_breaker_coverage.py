@@ -32,7 +32,7 @@ from src.repositories import task as task_repo
 from src.services import bmc_circuit_breaker as bmc_cb
 from src.services import audit_publisher_breaker as audit_cb
 from src.tasks._runner import run_task
-from tests._ssh_mock_helpers import make_conn, run_result
+from tests._ssh_mock_helpers import make_conn, run_result, sudo_probe_result
 from tests.unit._breaker_test_helpers import (
     FakeRedis,
     frozen_clock_fixture,
@@ -314,6 +314,7 @@ class TestScrubPayloadBestEffort:
             run_result("ASTRA=\nLEVEL=\n", "", 0),  # detect_management_mode probe
             run_result("", "", 2),   # getent passwd (outer user_exists) → not found
             run_result("", "", 2),   # getent passwd (create_user) → not found
+            sudo_probe_result(),     # sudo -n true перед useradd
             run_result("", "", 0),   # useradd
             run_result("", "", 0),   # sudoers write
             run_result("", "", 0),   # authorized_keys write
@@ -489,7 +490,7 @@ class TestInstallAuthorizedKeyEdgeCases:
         """truncate=True: stdin оканчивается ровно на key+newline, без лишнего LF."""
         from src.clients.ssh import SshClient, SshError
         key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExactNewline mgmt@host"
-        ssh = self._make_client([run_result("", "", 0)])
+        ssh = self._make_client([sudo_probe_result(), run_result("", "", 0)])
         await ssh._install_authorized_key(
             target_user="dbos",
             public_key=key,
@@ -507,7 +508,7 @@ class TestInstallAuthorizedKeyEdgeCases:
         """truncate=False: ключ уходит на stdin (не в argv) — идемпотентная ветка."""
         from src.clients.ssh import SshClient
         key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABIDEM append@host"
-        ssh = self._make_client([run_result("", "", 0)])
+        ssh = self._make_client([sudo_probe_result(), run_result("", "", 0)])
         await ssh._install_authorized_key(
             target_user="dbos",
             public_key=key,
@@ -530,7 +531,7 @@ class TestInstallAuthorizedKeyEdgeCases:
         """Пробелы в начале ключа нормализуются strip'ом (не попадают в authorized_keys)."""
         from src.clients.ssh import SshClient
         clean_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILeadingSpace mgmt@host"
-        ssh = self._make_client([run_result("", "", 0)])
+        ssh = self._make_client([sudo_probe_result(), run_result("", "", 0)])
         await ssh._install_authorized_key(
             target_user="dbos",
             public_key=f"   {clean_key}  ",

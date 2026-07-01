@@ -20,6 +20,7 @@ from src.core.exceptions import CredentialFetchError
 from src.services import ssh_client
 from src.tasks import inventory, passwords, users
 from tests._ssh_mock_helpers import run_result as _run_result
+from tests._ssh_mock_helpers import sudo_probe_result as _sudo_probe
 
 
 def _conn(run_results):
@@ -289,6 +290,7 @@ class TestProvisionUsesManagementSession:
         )
         conn = _conn([
             _run_result("", "", 2),
+            _sudo_probe(),
             _run_result("", "", 0),
             _run_result("", "", 0),
         ])

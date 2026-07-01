@@ -15,6 +15,7 @@ import pytest
 
 from src.clients.ssh import SshClient, SshError
 from tests._ssh_mock_helpers import make_conn as _conn, run_result as _run_result
+from tests._ssh_mock_helpers import sudo_probe_result as _sudo_probe
 
 
 _PUBKEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest dbos"
@@ -28,6 +29,7 @@ class TestBootstrapWheelFallback:
         conn = _conn([
             _run_result("", "", 2),  # user_exists pre-check (rc=2)
             _run_result("", "", 2),  # getent внутри create_user (rc=2)
+            _sudo_probe(),           # sudo -n true перед useradd
             _run_result("", "", 0),  # useradd -G sudo
             _run_result("", "", 0),  # sudoers
             _run_result("", "", 0),  # authorized_keys
@@ -57,6 +59,7 @@ class TestBootstrapWheelFallback:
         conn = _conn([
             _run_result("", "", 2),   # user_exists pre-check
             _run_result("", "", 2),   # getent внутри create_user попытка 1
+            _sudo_probe(),            # sudo -n true перед первой sudo-командой
             _run_result("", "group 'sudo' does not exist", 6),  # useradd sudo fail
             _run_result("", "", 2),   # post-fail user_exists (юзер не создан)
             _run_result("", "", 2),   # getent внутри create_user попытка 2
@@ -89,6 +92,7 @@ class TestBootstrapWheelFallback:
             _run_result("dbos:x:1001:", "", 0),         # user_exists pre-check (есть)
             _run_result("dbos\n", "", 0),               # id -nG (нет sudo/wheel)
             _run_result("dbos:x:1001:", "", 0),         # getent внутри create_user попытка 1
+            _sudo_probe(),                              # sudo -n true перед usermod
             _run_result("", "group sudo not found", 6), # usermod -G sudo fail
             _run_result("dbos:x:1001:", "", 0),         # post-fail user_exists
             _run_result("dbos\n", "", 0),               # post-fail id -nG (всё ещё нет)
@@ -116,6 +120,7 @@ class TestBootstrapWheelFallback:
         conn = _conn([
             _run_result("dbos:x:1001:", "", 0),    # user_exists pre-check
             _run_result("dbos sudo\n", "", 0),     # id -nG — sudo на месте
+            _sudo_probe(),                         # sudo -n true перед sudoers
             _run_result("", "", 0),                # sudoers
             _run_result("", "", 0),                # authorized_keys
         ])
@@ -140,6 +145,7 @@ class TestBootstrapWheelFallback:
         conn = _conn([
             _run_result("", "", 2),                              # user_exists pre-check
             _run_result("", "", 2),                              # getent внутри create_user
+            _sudo_probe(),                                       # sudo -n true перед useradd
             _run_result("", "group 'sudo' does not exist", 6),   # useradd sudo fail
             _run_result("dbos:x:1001:", "", 0),                  # post-fail user_exists (есть!)
             _run_result("dbos wheel\n", "", 0),                  # id -nG → wheel
@@ -165,6 +171,7 @@ class TestBootstrapWheelFallback:
         conn = _conn([
             _run_result("", "", 2),                              # user_exists pre-check
             _run_result("", "", 2),                              # getent внутри create_user попытка 1
+            _sudo_probe(),                                       # sudo -n true перед useradd
             _run_result("", "group sudo not found", 6),          # useradd sudo fail
             _run_result("", "", 2),                              # post-fail user_exists (нет)
             _run_result("", "", 2),                              # getent внутри create_user попытка 2

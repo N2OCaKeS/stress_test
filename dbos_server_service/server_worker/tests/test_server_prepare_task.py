@@ -29,6 +29,7 @@ from tests._ssh_mock_helpers import (
     make_conn as _conn,
     prepare_seq as _prepare_seq,
     run_result as _run_result,
+    sudo_probe_result as _sudo_probe,
 )
 
 
@@ -73,19 +74,19 @@ class TestBootstrapManagementUser:
         async with SshClient("h", "boot", "boot-pwd") as ssh:
             await ssh.bootstrap_management_user("dbos", _PUBKEY)
 
-        useradd_cmd = conn.run.await_args_list[2].args[0]
+        useradd_cmd = conn.run.await_args_list[3].args[0]
         assert "useradd" in useradd_cmd
         assert "dbos" in useradd_cmd
         assert "-G sudo" in useradd_cmd
 
-        sudoers_cmd = conn.run.await_args_list[3].args[0]
+        sudoers_cmd = conn.run.await_args_list[4].args[0]
         assert "/etc/sudoers.d/dbos-management" in sudoers_cmd
         assert "visudo -cf" in sudoers_cmd
         # NOPASSWD-правило едет на stdin, не в командную строку.
-        sudoers_stdin = conn.run.await_args_list[3].kwargs["input"]
+        sudoers_stdin = conn.run.await_args_list[4].kwargs["input"]
         assert "dbos ALL=(ALL) NOPASSWD: ALL" in sudoers_stdin
 
-        keys_cmd = conn.run.await_args_list[4].args[0]
+        keys_cmd = conn.run.await_args_list[5].args[0]
         assert "authorized_keys" in keys_cmd
         assert "grep -qxF" in keys_cmd
 
@@ -95,9 +96,9 @@ class TestBootstrapManagementUser:
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async with SshClient("h", "boot", "boot-pwd") as ssh:
             await ssh.bootstrap_management_user("ctl", _PUBKEY)
-        sudoers_cmd = conn.run.await_args_list[3].args[0]
+        sudoers_cmd = conn.run.await_args_list[4].args[0]
         assert "/etc/sudoers.d/ctl-management" in sudoers_cmd
-        sudoers_stdin = conn.run.await_args_list[3].kwargs["input"]
+        sudoers_stdin = conn.run.await_args_list[4].kwargs["input"]
         assert "ctl ALL=(ALL) NOPASSWD: ALL" in sudoers_stdin
 
     async def test_idempotent_existing_user(self, monkeypatch):
@@ -127,11 +128,12 @@ class TestBootstrapManagementUser:
         assert ei.value.error_code == "SSH_INVALID_ARG"
 
     async def test_sudoers_failure_raises(self, monkeypatch):
-        # outer getent (rc=2) → inner getent (rc=2) → useradd (rc=0) →
-        # sudoers (rc=1, visudo отбил).
+        # outer getent (rc=2) → inner getent (rc=2) → sudo -n true → useradd
+        # (rc=0) → sudoers (rc=1, visudo отбил).
         conn = _conn([
             _run_result("", "", 2),
             _run_result("", "", 2),
+            _sudo_probe(),
             _run_result("", "", 0),
             _run_result("", "invalid sudoers", 1),
         ])
@@ -142,10 +144,12 @@ class TestBootstrapManagementUser:
         assert ei.value.error_code == "SSH_PREPARE_FAILED"
 
     async def test_authorized_keys_failure_raises(self, monkeypatch):
-        # outer getent → inner getent → useradd → sudoers → bash authorized_keys (rc=1)
+        # outer getent → inner getent → sudo -n true → useradd → sudoers →
+        # bash authorized_keys (rc=1)
         conn = _conn([
             _run_result("", "", 2),
             _run_result("", "", 2),
+            _sudo_probe(),
             _run_result("", "", 0),
             _run_result("", "", 0),
             _run_result("", "permission denied", 1),
@@ -1187,12 +1191,12 @@ class TestPrepareInstallsMgmtCreds:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         # authorized_keys получил публичный ключ из mgmt_install (на stdin).
-        keys_stdin = conn.run.await_args_list[5].kwargs["input"]
+        keys_stdin = conn.run.await_args_list[6].kwargs["input"]
         assert _MGMT_PUB_KEY in keys_stdin
         # chpasswd выставил управляющий пароль из mgmt_install (login:pwd на stdin).
-        chpasswd_cmd = conn.run.await_args_list[6].args[0]
+        chpasswd_cmd = conn.run.await_args_list[7].args[0]
         assert "chpasswd" in chpasswd_cmd
-        chpasswd_stdin = conn.run.await_args_list[6].kwargs["input"]
+        chpasswd_stdin = conn.run.await_args_list[7].kwargs["input"]
         assert "dbos:MgmtPw-24chars-abcdEFGH1" in chpasswd_stdin
 
         get_settings.cache_clear()
@@ -1302,11 +1306,12 @@ class TestDetectManagementMode:
 
 class TestBootstrapAppliesMode:
     async def test_extra_groups_in_useradd_and_commands_run(self, monkeypatch):
-        # Юзера нет: getent(2) → inner getent(2) → useradd → sudoers →
-        # authorized_keys → две extra_create_commands.
+        # Юзера нет: getent(2) → inner getent(2) → sudo -n true → useradd →
+        # sudoers → authorized_keys → две extra_create_commands.
         conn = _conn([
             _run_result("", "", 2),
             _run_result("", "", 2),
+            _sudo_probe(),            # sudo -n true перед useradd
             _run_result("", "", 0),   # useradd
             _run_result("", "", 0),   # sudoers
             _run_result("", "", 0),   # authorized_keys
@@ -1320,11 +1325,11 @@ class TestBootstrapAppliesMode:
                 groups=["astra-admin", "audit"],
                 extra_create_commands=["pdpl-user -i 63 dbos", "touch /tmp/marker"],
             )
-        useradd_cmd = conn.run.await_args_list[2].args[0]
+        useradd_cmd = conn.run.await_args_list[3].args[0]
         assert "-G sudo,astra-admin,audit" in useradd_cmd
         # extra-команды выполнены под sudo после authorized_keys.
-        cmd5 = conn.run.await_args_list[5].args[0]
-        cmd6 = conn.run.await_args_list[6].args[0]
+        cmd5 = conn.run.await_args_list[6].args[0]
+        cmd6 = conn.run.await_args_list[7].args[0]
         assert "sudo -S -p ''" in cmd5 and "pdpl-user -i 63 dbos" in cmd5
         assert "sudo -S -p ''" in cmd6 and "touch /tmp/marker" in cmd6
 
@@ -1332,6 +1337,7 @@ class TestBootstrapAppliesMode:
         conn = _conn([
             _run_result("", "", 2),
             _run_result("", "", 2),
+            _sudo_probe(),            # sudo -n true перед useradd
             _run_result("", "", 0),   # useradd
             _run_result("", "", 0),   # sudoers
             _run_result("", "", 0),   # authorized_keys
@@ -1386,6 +1392,7 @@ class TestPrepareHandlerMode:
             _run_result("ASTRA=1\nLEVEL=2\n", "", 0),  # detect probe
             _run_result("", "", 2),                    # outer getent
             _run_result("", "", 2),                    # inner getent
+            _sudo_probe(),                             # sudo -n true перед useradd
             _run_result("", "", 0),                    # useradd
             _run_result("", "", 0),                    # sudoers
             _run_result("", "", 0),                    # authorized_keys
@@ -1412,10 +1419,10 @@ class TestPrepareHandlerMode:
             ("srv_prep_mode", "dbos", "dep_a", "astra_smolensk"),
         ]
         # Смоленская extra_create_command реально выполнена под sudo.
-        extra_cmd = conn.run.await_args_list[6].args[0]
+        extra_cmd = conn.run.await_args_list[7].args[0]
         assert "pdpl-user -i 63 dbos" in extra_cmd
         # useradd получил доп-группу режима.
-        useradd_cmd = conn.run.await_args_list[3].args[0]
+        useradd_cmd = conn.run.await_args_list[4].args[0]
         assert "astra-admin" in useradd_cmd
 
         get_settings.cache_clear()

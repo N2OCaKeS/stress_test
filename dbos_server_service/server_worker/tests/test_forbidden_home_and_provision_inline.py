@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 
 from src.clients.ssh import SshClient, SshError, _FORBIDDEN_HOMES
-from tests._ssh_mock_helpers import make_conn, run_result
+from tests._ssh_mock_helpers import make_conn, run_result, sudo_probe_result
 
 
 _PUBKEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGuardTestKey guardtest@test"
@@ -40,10 +40,11 @@ class TestCreateUserWiresTargetHome:
     @pytest.mark.parametrize("forbidden_home", sorted(_FORBIDDEN_HOMES))
     async def test_create_user_rejects_system_home_via_guard(self, forbidden_home):
         # Порядок команд create_user (юзера нет): getent → useradd →
-        # _write_authorized_key. Guard срабатывает на третьем шаге ДО `conn.run`,
-        # поэтому хватает двух run_result'ов: getent и useradd.
+        # _write_authorized_key. Guard срабатывает на шаге authorized_keys ДО
+        # `conn.run`; перед useradd проходит пробер sudo -n true.
         ssh = _client([
             run_result("", "", 2),  # outer user_exists → rc=2 (нет)
+            sudo_probe_result(),    # sudo -n true перед useradd
             run_result("", "", 0),  # useradd
         ])
         with pytest.raises(SshError) as exc:
@@ -55,9 +56,10 @@ class TestCreateUserWiresTargetHome:
         assert exc.value.error_code == "SSH_INVALID_HOME"
 
     async def test_create_user_passes_legit_home(self):
-        # Полный happy-path: getent (нет), useradd, _install_authorized_key (одна команда).
+        # Полный happy-path: getent (нет), пробер, useradd, _install_authorized_key.
         ssh = _client([
             run_result("", "", 2),
+            sudo_probe_result(),
             run_result("", "", 0),
             run_result("", "", 0),
         ])
@@ -66,18 +68,19 @@ class TestCreateUserWiresTargetHome:
             home_dir="/home/ops",
             public_key=_PUBKEY,
         )
-        assert ssh._conn.run.await_count == 3
+        assert ssh._conn.run.await_count == 4
 
     async def test_create_user_no_home_dir_no_python_guard(self):
         # Без `home_dir` — Python-guard молчит, bash отрабатывает обычным
         # путём (в моке rc=0 на authorized_keys).
         ssh = _client([
             run_result("", "", 2),
+            sudo_probe_result(),
             run_result("", "", 0),
             run_result("", "", 0),
         ])
         await ssh.create_user("ops", public_key=_PUBKEY)
-        assert ssh._conn.run.await_count == 3
+        assert ssh._conn.run.await_count == 4
 
     async def test_existing_user_path_also_guards_system_home(self):
         # Идемпотентная ветка: юзер уже есть → modify_user + set_password (skip,
@@ -207,20 +210,23 @@ class TestCreateUserEmptyPasswordSkipsChpasswd:
     """
 
     async def test_create_branch_empty_string_no_chpasswd(self):
-        # Юзера нет: getent (rc=2) → useradd → authorized_keys. chpasswd НЕ зовём.
+        # Юзера нет: getent (rc=2) → пробер → useradd → authorized_keys.
+        # chpasswd НЕ зовём.
         ssh = _client([
             run_result("", "", 2),  # user_exists → нет
+            sudo_probe_result(),    # sudo -n true перед useradd
             run_result("", "", 0),  # useradd
             run_result("", "", 0),  # authorized_keys
         ])
         await ssh.create_user("ops", new_password="", public_key=_PUBKEY)
         cmds = _run_cmds(ssh)
         assert not any("chpasswd" in c for c in cmds)
-        assert ssh._conn.run.await_count == 3
+        assert ssh._conn.run.await_count == 4
 
     async def test_create_branch_none_no_chpasswd(self):
         ssh = _client([
             run_result("", "", 2),
+            sudo_probe_result(),
             run_result("", "", 0),
             run_result("", "", 0),
         ])
@@ -241,6 +247,7 @@ class TestCreateUserEmptyPasswordSkipsChpasswd:
         # Контроль: непустой пароль по-прежнему вызывает chpasswd.
         ssh = _client([
             run_result("", "", 2),  # user_exists → нет
+            sudo_probe_result(),    # sudo -n true перед useradd
             run_result("", "", 0),  # useradd
             run_result("", "", 0),  # chpasswd
             run_result("", "", 0),  # authorized_keys

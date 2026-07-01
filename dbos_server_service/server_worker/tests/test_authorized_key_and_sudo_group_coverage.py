@@ -25,7 +25,7 @@ import asyncssh
 import pytest
 
 from src.clients.ssh import SshClient, SshError
-from tests._ssh_mock_helpers import make_conn, run_result
+from tests._ssh_mock_helpers import make_conn, run_result, sudo_probe_result
 
 
 _PUBKEY = (
@@ -63,6 +63,7 @@ class TestCreateUserForceReplaceExistingUser:
         # → один bash-вызов с overwrite-команды.
         conn = make_conn([
             run_result("deploy:x:1001:1001::/home/deploy:/bin/bash", "", 0),  # user_exists
+            sudo_probe_result(),    # sudo -n true перед authorized_keys
             run_result("", "", 0),  # bash auth_keys overwrite
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
@@ -99,6 +100,7 @@ class TestCreateUserForceReplaceExistingUser:
         # getent и записью ключа.
         conn = make_conn([
             run_result("tester:x:1000:1000::/home/tester:/bin/bash", "", 0),  # user_exists
+            sudo_probe_result(),    # sudo -n true перед chpasswd
             run_result("", "", 0),  # chpasswd (new_password задан)
             run_result("", "", 0),  # bash auth_keys append
         ])
@@ -147,7 +149,7 @@ class TestWriteAuthorizedKeyStdinShape:
     """
 
     async def test_write_authorized_key_keeps_key_off_argv(self):
-        ssh = _client_with_conn([run_result("", "", 0)])
+        ssh = _client_with_conn([sudo_probe_result(), run_result("", "", 0)])
         await ssh._write_authorized_key(
             login="deploy",
             public_key=_PUBKEY,
@@ -181,7 +183,7 @@ class TestManagedKeyMarker:
     async def test_managed_append_marks_key_and_strips_old_managed(self):
         from src.clients.ssh import _MANAGED_KEY_MARKER
 
-        ssh = _client_with_conn([run_result("", "", 0)])
+        ssh = _client_with_conn([sudo_probe_result(), run_result("", "", 0)])
         await ssh._write_authorized_key(
             login="deploy",
             public_key=_PUBKEY,
@@ -208,7 +210,7 @@ class TestManagedKeyMarker:
         """
         from src.clients.ssh import _MANAGED_KEY_MARKER
 
-        ssh = _client_with_conn([run_result("", "", 0)])
+        ssh = _client_with_conn([sudo_probe_result(), run_result("", "", 0)])
         await ssh._write_authorized_key(
             login="deploy",
             public_key=_PUBKEY,
@@ -228,7 +230,7 @@ class TestManagedKeyMarker:
         """
         from src.clients.ssh import _MANAGED_KEY_MARKER
 
-        ssh = _client_with_conn([run_result("", "", 0)])
+        ssh = _client_with_conn([sudo_probe_result(), run_result("", "", 0)])
         await ssh._install_authorized_key(
             target_user="dbos",
             public_key=_PUBKEY,

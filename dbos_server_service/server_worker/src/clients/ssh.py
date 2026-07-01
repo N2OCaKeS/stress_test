@@ -393,6 +393,12 @@ class SshClient:
         self.host = host
         self.username = username
         self._password = password
+        # Требует ли sudo пароль на этом хосте. None — ещё не проверяли; выясняем
+        # лениво `sudo -n true` при первом sudo-вызове и кэшируем на коннект.
+        # Нужен, чтобы не подмешивать SSH-пароль в stdin, когда учётка настроена
+        # NOPASSWD (sudo -S не потребляет строку — иначе пароль утекает в payload
+        # sudoers/chpasswd).
+        self._sudo_needs_password: bool | None = None
         self.port = port
         self.timeout = timeout
         self._client_keys = client_keys
@@ -537,6 +543,21 @@ class SshClient:
 
     # ── Core: run a command ──────────────────────────────────────────────
 
+    async def _sudo_requires_password(self) -> bool:
+        """True, если sudo на этом хосте спрашивает пароль (не NOPASSWD).
+
+        Проверяем `sudo -n true` один раз на коннект и кэшируем: `-n` не
+        интерактивен, поэтому NOPASSWD-учётка вернёт rc 0, а требующая пароль —
+        ненулевой код (sudo не станет ждать ввод). Результат кэшируется в
+        `self._sudo_needs_password`.
+        """
+        if self._sudo_needs_password is None:
+            if self._conn is None:
+                return bool(self._password)
+            probe = await self._conn.run("sudo -n true", check=False)
+            self._sudo_needs_password = probe.exit_status != 0
+        return self._sudo_needs_password
+
     async def run(
         self,
         command: str,
@@ -575,14 +596,16 @@ class SshClient:
             # после, разделено LF: первая строка — пароль для sudo, вторая —
             # `login:newpwd` для chpasswd.
             #
-            # Но это работает только когда sudo реально читает пароль со
-            # stdin. На управляющей key-сессии (`self._password is None`) sudo
-            # настроен NOPASSWD — он НЕ потребляет первую строку, и весь stdin
-            # уходит команде как есть. Если бы мы всё равно дописали лидирующий
-            # `"\n"`, chpasswd прочитал бы пустую строку 1 и упал с
-            # `missing new password`. Поэтому при отсутствии пароля префикс не
-            # добавляем — payload идёт команде нетронутым.
-            if self._password:
+            # Но подмешивать пароль можно ТОЛЬКО когда sudo реально его читает.
+            # Два случая, когда `sudo -S` первую строку НЕ потребляет:
+            #   * key-сессия без пароля (`self._password is None`);
+            #   * учётка с NOPASSWD sudo — вход по паролю, но sudo пароля не
+            #     спрашивает (частый кейс bootstrap-юзера на prepare).
+            # В обоих случаях лидирующая строка ушла бы команде как payload:
+            # пароль оказался бы строкой 1 sudoers-файла (syntax error) или
+            # chpasswd прочитал бы пустую строку и упал. Поэтому подмешиваем
+            # пароль только если он есть И sudo его действительно требует.
+            if self._password and await self._sudo_requires_password():
                 stdin_full = f"{self._password}\n" + (stdin_payload or "")
             else:
                 stdin_full = stdin_payload

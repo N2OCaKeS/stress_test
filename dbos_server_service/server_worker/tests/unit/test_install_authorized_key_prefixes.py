@@ -23,7 +23,7 @@ import asyncssh
 import pytest
 
 from src.clients.ssh import SshClient, SshError
-from tests._ssh_mock_helpers import make_conn, run_result
+from tests._ssh_mock_helpers import make_conn, run_result, sudo_probe_result
 
 
 _KEY_TAIL = "AAAAC3NzaC1lZDI1NTE5AAAAITESTKEY comment@host"
@@ -56,16 +56,16 @@ class TestInstallAuthorizedKeyAcceptedPrefixes:
         `SSH_INVALID_ARG` до дёрганья SSH — значит regex prefix'а
         матчит и команда уходит на conn.run.
         """
-        ssh = _make_client_with_conn([run_result("", "", 0)])
+        ssh = _make_client_with_conn([sudo_probe_result(), run_result("", "", 0)])
         await ssh._install_authorized_key(
             target_user="dbos",
             public_key=f"{prefix} {_KEY_TAIL}",
             truncate=False,
             error_code="SSH_AUTHORIZED_KEYS_FAILED",
         )
-        # Один вызов — bash setup. Если бы prefix не прошёл, conn.run
+        # Пробер sudo -n true + bash setup. Если бы prefix не прошёл, conn.run
         # вообще не должен был дёргаться.
-        ssh._conn.run.assert_awaited_once()
+        assert ssh._conn.run.await_count == 2
 
     @pytest.mark.parametrize(
         "prefix",
@@ -101,7 +101,7 @@ class TestInstallAuthorizedKeyStdinShape:
         упала бы пустая строка / два одинаковых ключа. Worker-bootstrap
         опирается на «ровно одна строка в файле = ровно наш ключ».
         """
-        ssh = _make_client_with_conn([run_result("", "", 0)])
+        ssh = _make_client_with_conn([sudo_probe_result(), run_result("", "", 0)])
         key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITRUNCATE dbos-mgmt"
 
         await ssh._install_authorized_key(
@@ -137,7 +137,7 @@ class TestInstallAuthorizedKeyStdinShape:
         не должен утекать в `authorized_keys`. `strip()` убирает только
         крайние пробелы; embedded `\\n` отбивается отдельной проверкой.
         """
-        ssh = _make_client_with_conn([run_result("", "", 0)])
+        ssh = _make_client_with_conn([sudo_probe_result(), run_result("", "", 0)])
         clean = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABTRIM trim@host"
         # Trailing space + LF + tabs — всё это strip()
         await ssh._install_authorized_key(
@@ -170,6 +170,7 @@ class TestCreateUserEmptyPublicKey:
         # authorized_keys должны не доехать.
         conn = make_conn([
             run_result("", "", 2),   # getent passwd → not found
+            sudo_probe_result(),     # sudo -n true перед useradd
             run_result("", "", 0),   # useradd ok
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
@@ -185,6 +186,7 @@ class TestCreateUserEmptyPublicKey:
     async def test_whitespace_only_public_key_rejects(self, monkeypatch):
         conn = make_conn([
             run_result("", "", 2),
+            sudo_probe_result(),     # sudo -n true перед useradd
             run_result("", "", 0),
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))

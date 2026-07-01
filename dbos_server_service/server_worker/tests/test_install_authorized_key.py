@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 from src.clients.ssh import SshClient, SshError
-from tests._ssh_mock_helpers import make_conn, run_result
+from tests._ssh_mock_helpers import make_conn, run_result, sudo_probe_result
 
 
 _PUBKEY = (
@@ -41,7 +41,7 @@ class TestInstallAuthorizedKeyTruncateFlag:
         не `>>` (append), и БЕЗ `grep -qxF` (idempotent-проверки нет —
         сознательная перезапись).
         """
-        ssh = _make_client_with_conn([run_result("", "", 0)])
+        ssh = _make_client_with_conn([sudo_probe_result(), run_result("", "", 0)])
 
         await ssh._install_authorized_key(
             target_user="dbos",
@@ -50,7 +50,8 @@ class TestInstallAuthorizedKeyTruncateFlag:
             error_code="SSH_AUTHORIZED_KEYS_FAILED",
         )
 
-        # Один вызов conn.run; разбираем команду.
+        # Последний вызов conn.run — сама bash-команда (перед ней прошёл
+        # пробер sudo -n true); разбираем её.
         call = ssh._conn.run.await_args
         assert call is not None
         cmd = call.args[0]
@@ -64,7 +65,7 @@ class TestInstallAuthorizedKeyTruncateFlag:
 
     async def test_truncate_false_uses_idempotent_append(self):
         """`truncate=False` → `grep -qxF` + `>>`, ключ не дублируется."""
-        ssh = _make_client_with_conn([run_result("", "", 0)])
+        ssh = _make_client_with_conn([sudo_probe_result(), run_result("", "", 0)])
 
         await ssh._install_authorized_key(
             target_user="dbos",
@@ -148,7 +149,9 @@ class TestInstallAuthorizedKeyValidation:
         """`error_code` параметр пробрасывается в SshError — bootstrap'у
         нужно `SSH_PREPARE_FAILED`, обычному пути — `SSH_AUTHORIZED_KEYS_FAILED`.
         """
-        ssh = _make_client_with_conn([run_result("", "permission denied", 1)])
+        ssh = _make_client_with_conn(
+            [sudo_probe_result(), run_result("", "permission denied", 1)]
+        )
         with pytest.raises(SshError) as exc:
             await ssh._install_authorized_key(
                 target_user="dbos",
@@ -197,7 +200,7 @@ class TestForbiddenHomeGuard:
     async def test_legit_home_passes_python_guard(self):
         # `/home/svc` не в списке → Python-guard молчит, команда уезжает
         # на хост. Mock возвращает rc=0, чтобы не упасть на пути после.
-        ssh = _make_client_with_conn([run_result("", "", 0)])
+        ssh = _make_client_with_conn([sudo_probe_result(), run_result("", "", 0)])
         await ssh._install_authorized_key(
             target_user="svc",
             public_key=_PUBKEY,
@@ -205,19 +208,21 @@ class TestForbiddenHomeGuard:
             error_code="SSH_AUTHORIZED_KEYS_FAILED",
             target_home="/home/svc",
         )
-        ssh._conn.run.assert_awaited_once()
+        # Пробер sudo -n true + сама authorized_keys-команда.
+        assert ssh._conn.run.await_count == 2
 
     async def test_no_target_home_keeps_legacy_path(self):
         # Без явного target_home guard не активируется — проверка home
         # остаётся на bash-стороне (`case` после getent passwd).
-        ssh = _make_client_with_conn([run_result("", "", 0)])
+        ssh = _make_client_with_conn([sudo_probe_result(), run_result("", "", 0)])
         await ssh._install_authorized_key(
             target_user="dbos",
             public_key=_PUBKEY,
             truncate=False,
             error_code="SSH_AUTHORIZED_KEYS_FAILED",
         )
-        ssh._conn.run.assert_awaited_once()
+        # Пробер sudo -n true + сама authorized_keys-команда.
+        assert ssh._conn.run.await_count == 2
 
 
 class TestForbiddenHomeBashGuard:
@@ -230,7 +235,7 @@ class TestForbiddenHomeBashGuard:
     """
 
     async def test_bash_case_lists_all_forbidden_homes(self):
-        ssh = _make_client_with_conn([run_result("", "", 0)])
+        ssh = _make_client_with_conn([sudo_probe_result(), run_result("", "", 0)])
         await ssh._install_authorized_key(
             target_user="dbos",
             public_key=_PUBKEY,

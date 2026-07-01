@@ -23,7 +23,14 @@ def _conn_ok():
     conn = MagicMock(spec=asyncssh.SSHClientConnection)
     conn.close = MagicMock()
     conn.wait_closed = AsyncMock()
-    conn.run = AsyncMock(return_value=_run_result("", "", 0))
+
+    async def _run(cmd, **kw):
+        # Пробер `sudo -n true` → rc!=0 (sudo требует пароль), чтобы sudo-пароль
+        # подавался первой строкой stdin. Остальные команды — rc=0.
+        rc = 1 if cmd == "sudo -n true" else 0
+        return _run_result("", "", rc)
+
+    conn.run = AsyncMock(side_effect=_run)
     return conn
 
 

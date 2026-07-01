@@ -12,6 +12,15 @@
   4. sudoers: `bash -c '... tee ... visudo -cf ... mv ...'`;
   5. authorized_keys: `bash -c '... grep -qxF ... >> authorized_keys'`.
 
+Перед ПЕРВОЙ sudo-командой сессии (шаги 3+ идут под `sudo -S`) клиент
+один раз на коннект прогоняет пробер `sudo -n true` — выясняет, требует
+ли sudo пароль, и кэширует результат. Пробер бежит ТОЛЬКО на
+password-auth сессиях (`self._password` задан); на key-auth сессиях
+(`password=None`) его нет. В sequence'ах ниже пробер занимает отдельный
+`conn.run` со `sudo_probe_result()` (rc != 0 → «sudo требует пароль»,
+чтобы пароль подавался первой строкой stdin), вставленный прямо перед
+первой sudo-командой.
+
 Раньше каждый тест-файл (`test_server_prepare_task.py`,
 `tests/unit/test_bootstrap_wheel_fallback.py` и др.) держал свои копии
 `_run_result` / `_conn` / `_bootstrap_seq*`. При изменении формы
@@ -60,23 +69,37 @@ def make_conn(run_results):
     return conn
 
 
+def sudo_probe_result(needs_password: bool = True):
+    """Один `conn.run` ответ для пробера `sudo -n true`.
+
+    Клиент прогоняет пробер один раз на password-auth коннект перед первой
+    sudo-командой. `needs_password=True` (rc != 0) означает «sudo требует
+    пароль» — тогда пароль подаётся первой строкой stdin. `False` (rc=0) —
+    NOPASSWD, пароль не подмешивается.
+    """
+    return run_result("", "", 1 if needs_password else 0)
+
+
 def bootstrap_seq(getent_rc: int = 2):
     """Sequence для happy-path «юзера ещё нет».
 
     Путь:
       * outer user_exists → `getent passwd` rc=2 (нет) → pre-check id -nG skip'ается;
       * `create_user` → `getent passwd` rc=2 (нет);
+      * пробер `sudo -n true` перед первой sudo-командой;
       * `useradd` rc=0;
       * sudoers rc=0;
       * authorized_keys rc=0.
 
-    Итого 5 команд. `getent_rc` параметр — для тестов, которые хотят
-    смоделировать иной исход pre-check'а (rc=0 даст ветку «юзер есть»,
-    но тогда тест должен использовать `bootstrap_seq_existing_sudo`).
+    Итого 6 команд (5 бизнес-команд + пробер). `getent_rc` параметр — для
+    тестов, которые хотят смоделировать иной исход pre-check'а (rc=0 даст
+    ветку «юзер есть», но тогда тест должен использовать
+    `bootstrap_seq_existing_sudo`).
     """
     return [
         run_result("", "", getent_rc),
         run_result("", "", getent_rc),
+        sudo_probe_result(),
         run_result("", "", 0),
         run_result("", "", 0),
         run_result("", "", 0),
@@ -89,14 +112,16 @@ def bootstrap_seq_existing_sudo(login: str = "dbos"):
     Путь:
       * outer user_exists → `getent passwd` rc=0 (есть);
       * pre-check `id -nG` показывает sudo — useradd/usermod skip'аются;
+      * пробер `sudo -n true` перед первой sudo-командой;
       * sudoers;
       * authorized_keys.
 
-    Итого 4 команды.
+    Итого 5 команд (4 бизнес-команды + пробер).
     """
     return [
         run_result(f"{login}:x:1001:1001::/home/{login}:/bin/bash", "", 0),
         run_result(f"{login} sudo\n", "", 0),
+        sudo_probe_result(),
         run_result("", "", 0),
         run_result("", "", 0),
     ]
@@ -134,6 +159,7 @@ def prepare_seq(astra: str = "", level: str = "", getent_rc: int = 2):
 __all__ = [
     "run_result",
     "make_conn",
+    "sudo_probe_result",
     "bootstrap_seq",
     "bootstrap_seq_existing_sudo",
     "detect_probe_result",

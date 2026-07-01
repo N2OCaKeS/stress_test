@@ -17,6 +17,7 @@ from src.clients.ssh import SshClient, SshError
 from src.core.constants import TaskStatus
 from src.tasks import users
 from tests._ssh_mock_helpers import run_result as _run_result
+from tests._ssh_mock_helpers import sudo_probe_result as _sudo_probe
 
 
 def _conn(run_results):
@@ -32,9 +33,10 @@ def _conn(run_results):
 
 class TestCreateUser:
     async def test_useradd_new_user_then_chpasswd(self, monkeypatch):
-        # getent passwd (not found rc=2) → useradd (rc=0) → chpasswd (rc=0)
+        # getent (rc=2) → sudo -n true → useradd (rc=0) → chpasswd (rc=0)
         conn = _conn([
             _run_result("", "", 2),
+            _sudo_probe(),
             _run_result("", "", 0),
             _run_result("", "", 0),
         ])
@@ -46,7 +48,7 @@ class TestCreateUser:
                 home_dir="/home/deploy",
             )
         # useradd-команда содержит ожидаемые опции и login.
-        useradd_cmd = conn.run.await_args_list[1].args[0]
+        useradd_cmd = conn.run.await_args_list[2].args[0]
         assert "useradd" in useradd_cmd
         assert "-m" in useradd_cmd
         assert "-s /bin/bash" in useradd_cmd
@@ -54,13 +56,14 @@ class TestCreateUser:
         assert "-G devs,sudo" in useradd_cmd
         assert useradd_cmd.rstrip().endswith("deploy")
         # chpasswd получил новый пароль на stdin, не в команде.
-        chpasswd_stdin = conn.run.await_args_list[2].kwargs["input"]
+        chpasswd_stdin = conn.run.await_args_list[3].kwargs["input"]
         assert "deploy:NewPass!42\n" in chpasswd_stdin
 
     async def test_useradd_idempotent_when_exists(self, monkeypatch):
-        # getent passwd (found rc=0) → modify_user usermod (rc=0) → chpasswd (rc=0)
+        # getent (found rc=0) → sudo -n true → usermod (rc=0) → chpasswd (rc=0)
         conn = _conn([
             _run_result("deploy:x:1001:1001::/home/deploy:/bin/bash", "", 0),
+            _sudo_probe(),
             _run_result("", "", 0),
             _run_result("", "", 0),
         ])
@@ -77,6 +80,7 @@ class TestCreateUser:
     async def test_useradd_nonzero_raises(self, monkeypatch):
         conn = _conn([
             _run_result("", "", 2),     # getent: not found
+            _sudo_probe(),              # sudo -n true перед useradd
             _run_result("", "boom", 1),  # useradd fails
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
@@ -109,11 +113,11 @@ class TestCreateUser:
 
 class TestModifyUser:
     async def test_usermod_groups_and_shell(self, monkeypatch):
-        conn = _conn([_run_result("", "", 0)])
+        conn = _conn([_sudo_probe(), _run_result("", "", 0)])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async with SshClient("h", "ops", "p") as ssh:
             await ssh.modify_user("deploy", groups=["devs"], has_sudo=True, shell="/bin/sh")
-        cmd = conn.run.await_args_list[0].args[0]
+        cmd = conn.run.await_args_list[1].args[0]
         assert "usermod" in cmd
         assert "-s /bin/sh" in cmd
         assert "-G devs,sudo" in cmd
@@ -126,7 +130,7 @@ class TestModifyUser:
         assert conn.run.await_count == 0
 
     async def test_usermod_nonzero_raises(self, monkeypatch):
-        conn = _conn([_run_result("", "no such user", 6)])
+        conn = _conn([_sudo_probe(), _run_result("", "no such user", 6)])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         with pytest.raises(SshError) as ei:
             async with SshClient("h", "ops", "p") as ssh:
@@ -141,12 +145,13 @@ class TestDeleteUser:
     async def test_userdel_happy(self, monkeypatch):
         conn = _conn([
             _run_result("deploy:x:1001:1001::/home/deploy:/bin/bash", "", 0),  # getent found
+            _sudo_probe(),           # sudo -n true перед userdel
             _run_result("", "", 0),  # userdel ok
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async with SshClient("h", "ops", "p") as ssh:
             await ssh.delete_user("deploy", remove_home=True)
-        del_cmd = conn.run.await_args_list[1].args[0]
+        del_cmd = conn.run.await_args_list[2].args[0]
         assert "userdel" in del_cmd
         assert "--remove" in del_cmd
 
@@ -161,6 +166,7 @@ class TestDeleteUser:
     async def test_userdel_rc6_treated_as_success(self, monkeypatch):
         conn = _conn([
             _run_result("deploy:x:1001:1001::/home:/bin/bash", "", 0),
+            _sudo_probe(),
             _run_result("", "does not exist", 6),
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
@@ -199,9 +205,10 @@ class TestProvisionHandlers:
             "src.tasks.users.server_service_client.fetch_account_password",
             _fetch_creds("ops"),
         )
-        # getent (not found) → useradd → chpasswd
+        # getent (not found) → sudo -n true → useradd → chpasswd
         conn = _conn([
             _run_result("", "", 2),
+            _sudo_probe(),
             _run_result("", "", 0),
             _run_result("", "", 0),
         ])
@@ -237,7 +244,7 @@ class TestProvisionHandlers:
             "src.tasks.users.server_service_client.fetch_account_password",
             _fetch_creds("ops"),
         )
-        conn = _conn([_run_result("", "", 0)])  # usermod ok
+        conn = _conn([_sudo_probe(), _run_result("", "", 0)])  # sudo -n true → usermod ok
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
         submit_calls = []
@@ -274,9 +281,13 @@ class TestProvisionHandlers:
             "src.tasks.users.server_service_client.fetch_account_password",
             _fetch_creds("ops"),
         )
-        # usermod ok → authorized_keys bash ok
+        # modify_user и apply_authorized_key открывают ОТДЕЛЬНЫЕ сессии —
+        # пробер sudo -n true прогоняется в каждой:
+        # sess1: sudo -n true → usermod; sess2: sudo -n true → authorized_keys.
         conn = _conn([
+            _sudo_probe(),
             _run_result("", "", 0),
+            _sudo_probe(),
             _run_result("", "", 0),
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
@@ -322,7 +333,7 @@ class TestProvisionHandlers:
             "src.tasks.users.server_service_client.fetch_account_password",
             _fetch_creds("ops"),
         )
-        conn = _conn([_run_result("", "", 0)])  # usermod only
+        conn = _conn([_sudo_probe(), _run_result("", "", 0)])  # sudo -n true → usermod only
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
         async def fake_submit(*a, **kw):
@@ -351,9 +362,10 @@ class TestProvisionHandlers:
             "src.tasks.users.server_service_client.fetch_account_password",
             _fetch_creds("ops"),
         )
-        # getent found → userdel ok
+        # getent found → sudo -n true → userdel ok
         conn = _conn([
             _run_result("ops:x:1001:1001::/home/ops:/bin/bash", "", 0),
+            _sudo_probe(),
             _run_result("", "", 0),
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
@@ -372,7 +384,7 @@ class TestProvisionHandlers:
         assert t.result["present_on_server"] is False
         assert submit_calls == [("deprovision", False)]
         # userdel --remove применён.
-        del_cmd = conn.run.await_args_list[1].args[0]
+        del_cmd = conn.run.await_args_list[2].args[0]
         assert "userdel" in del_cmd and "--remove" in del_cmd
 
     async def test_password_not_in_audit(
@@ -416,28 +428,30 @@ class TestAuthorizedKeyWrite:
     """
 
     async def test_new_user_with_key_appends(self, monkeypatch):
-        # getent (not found) → useradd → bash setup authorized_keys
+        # getent (not found) → sudo -n true → useradd → bash setup authorized_keys
         conn = _conn([
             _run_result("", "", 2),
+            _sudo_probe(),
             _run_result("", "", 0),
             _run_result("", "", 0),
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async with SshClient("h", "ops", "p") as ssh:
             await ssh.create_user("deploy", public_key=_ED25519_PUB)
-        # Третий run — bash-команда с grep|append (не truncate).
-        bash_cmd = conn.run.await_args_list[2].args[0]
+        # Последний run — bash-команда с grep|append (не truncate).
+        bash_cmd = conn.run.await_args_list[3].args[0]
         assert "authorized_keys" in bash_cmd
         assert "grep -qxF" in bash_cmd
         assert ">>" in bash_cmd
         # Ключ ушёл на stdin, не argv.
-        stdin = conn.run.await_args_list[2].kwargs["input"]
+        stdin = conn.run.await_args_list[3].kwargs["input"]
         assert _ED25519_PUB in stdin
         assert _ED25519_PUB not in bash_cmd
 
     async def test_new_user_force_replace_truncates(self, monkeypatch):
         conn = _conn([
             _run_result("", "", 2),
+            _sudo_probe(),
             _run_result("", "", 0),
             _run_result("", "", 0),
         ])
@@ -446,16 +460,17 @@ class TestAuthorizedKeyWrite:
             await ssh.create_user(
                 "deploy", public_key=_ED25519_PUB, force_replace=True,
             )
-        bash_cmd = conn.run.await_args_list[2].args[0]
+        bash_cmd = conn.run.await_args_list[3].args[0]
         # force_replace → truncate (`>`), не append.
         assert "authorized_keys" in bash_cmd
         assert "grep -qxF" not in bash_cmd
         assert " > " in bash_cmd
 
     async def test_existing_user_with_key_runs_authorized_keys_step(self, monkeypatch):
-        # getent found → usermod (no-op) → authorized_keys
+        # getent found → usermod (no-op) → sudo -n true → authorized_keys
         conn = _conn([
             _run_result("deploy:x:1001:1001::/home/deploy:/bin/bash", "", 0),
+            _sudo_probe(),
             _run_result("", "", 0),
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
@@ -468,6 +483,7 @@ class TestAuthorizedKeyWrite:
     async def test_invalid_key_prefix_rejected(self, monkeypatch):
         conn = _conn([
             _run_result("", "", 2),
+            _sudo_probe(),
             _run_result("", "", 0),
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
@@ -515,9 +531,10 @@ class TestProvisionTaskWithInlineCreds:
             "src.tasks.users.server_service_client.fetch_account_password",
             fake_fetch,
         )
-        # getent (not found) → useradd → chpasswd → authorized_keys
+        # getent (not found) → sudo -n true → useradd → chpasswd → authorized_keys
         conn = _conn([
             _run_result("", "", 2),
+            _sudo_probe(),
             _run_result("", "", 0),
             _run_result("", "", 0),
             _run_result("", "", 0),
@@ -537,10 +554,10 @@ class TestProvisionTaskWithInlineCreds:
         assert t.status == TaskStatus.SUCCEEDED
         # `_account_creds` всё равно тянет creds (для self-сессии) — но новый
         # пароль на chpasswd идёт из inline.
-        chpasswd_stdin = conn.run.await_args_list[2].kwargs["input"]
+        chpasswd_stdin = conn.run.await_args_list[3].kwargs["input"]
         assert "ops:" + ("GenStrongPwd!9X" * 2) in chpasswd_stdin
-        # Четвёртая команда — authorized_keys с truncate (force_replace=True).
-        bash_cmd = conn.run.await_args_list[3].args[0]
+        # Последняя команда — authorized_keys с truncate (force_replace=True).
+        bash_cmd = conn.run.await_args_list[4].args[0]
         assert "authorized_keys" in bash_cmd
         assert " > " in bash_cmd  # truncate, не append
 

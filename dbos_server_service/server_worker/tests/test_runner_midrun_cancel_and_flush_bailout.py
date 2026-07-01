@@ -30,7 +30,7 @@ from src.models import AuditOutbox, Task
 from src.repositories import task as task_repo
 from src.services import audit_outbox_publisher, audit_publisher_breaker
 from src.tasks._runner import run_task
-from tests._ssh_mock_helpers import make_conn, run_result
+from tests._ssh_mock_helpers import make_conn, run_result, sudo_probe_result
 from tests.unit._breaker_test_helpers import (
     FakeRedis,
     frozen_clock_fixture,
@@ -555,6 +555,7 @@ class TestInstallAuthorizedKeyHomeGuardEdge:
     async def test_root_home_guard_propagates_error(self):
         """bash exit 1 при home="/" → SshError с rc=1."""
         ssh = self._make_client([
+            sudo_probe_result(),
             run_result("", "user has home=/", 1),
         ])
         with pytest.raises(SshError) as exc:
@@ -574,7 +575,7 @@ class TestInstallAuthorizedKeyHomeGuardEdge:
         ""|"/"|...) ...` — список расширен системными псевдо-аккаунтами
         (`/dev`, `/var/empty` и т.п.), см. `_FORBIDDEN_HOMES`.
         """
-        ssh = self._make_client([run_result("", "guard triggered", 1)])
+        ssh = self._make_client([sudo_probe_result(), run_result("", "guard triggered", 1)])
         with pytest.raises(SshError):
             await ssh._install_authorized_key(
                 target_user="dbos",
@@ -589,7 +590,7 @@ class TestInstallAuthorizedKeyHomeGuardEdge:
 
     async def test_error_code_propagated_correctly(self):
         """error_code из аргумента передаётся в SshError.error_code."""
-        ssh = self._make_client([run_result("", "err", 1)])
+        ssh = self._make_client([sudo_probe_result(), run_result("", "err", 1)])
         with pytest.raises(SshError) as exc:
             await ssh._install_authorized_key(
                 target_user="dbos",
@@ -601,21 +602,22 @@ class TestInstallAuthorizedKeyHomeGuardEdge:
 
     async def test_successful_run_does_not_raise(self):
         """rc=0 → нет SshError, выход чистый."""
-        ssh = self._make_client([run_result("", "", 0)])
+        ssh = self._make_client([sudo_probe_result(), run_result("", "", 0)])
         await ssh._install_authorized_key(
             target_user="dbos",
             public_key="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKey comment@host",
             truncate=False,
             error_code="SSH_AUTHORIZED_KEYS_FAILED",
         )
-        ssh._conn.run.assert_awaited_once()
+        # Пробер sudo -n true + сама authorized_keys-команда.
+        assert ssh._conn.run.await_count == 2
 
     async def test_stdin_contains_key_line_for_both_truncate_modes(self):
         """stdin содержит ключ + LF независимо от truncate."""
         key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIStdinCheck test@host"
 
         for truncate in (True, False):
-            ssh = self._make_client([run_result("", "", 0)])
+            ssh = self._make_client([sudo_probe_result(), run_result("", "", 0)])
             await ssh._install_authorized_key(
                 target_user="dbos",
                 public_key=key,

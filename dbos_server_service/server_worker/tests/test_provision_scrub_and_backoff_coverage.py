@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 import pytest
 
 from src.clients.ssh import SshClient, SshError, _FORBIDDEN_HOMES
-from tests._ssh_mock_helpers import make_conn, run_result
+from tests._ssh_mock_helpers import make_conn, run_result, sudo_probe_result
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -70,7 +70,7 @@ class TestForbiddenHomesViaWriteAuthorizedKey:
 
     async def test_unknown_home_passes_python_guard(self):
         """/home/realuser не в _FORBIDDEN_HOMES → Python-guard молчит."""
-        ssh = _client_with_conn([run_result("", "", 0)])
+        ssh = _client_with_conn([sudo_probe_result(), run_result("", "", 0)])
         await ssh._install_authorized_key(
             target_user="realuser",
             public_key=_PUBKEY,
@@ -78,11 +78,12 @@ class TestForbiddenHomesViaWriteAuthorizedKey:
             error_code="SSH_AUTHORIZED_KEYS_FAILED",
             target_home="/home/realuser",
         )
-        ssh._conn.run.assert_awaited_once()
+        # Пробер sudo -n true + сама authorized_keys-команда.
+        assert ssh._conn.run.await_count == 2
 
     async def test_none_target_home_skips_python_guard(self):
         """Без target_home Python-guard не активируется — проверка на bash-стороне."""
-        ssh = _client_with_conn([run_result("", "", 0)])
+        ssh = _client_with_conn([sudo_probe_result(), run_result("", "", 0)])
         await ssh._install_authorized_key(
             target_user="dbos",
             public_key=_PUBKEY,
@@ -90,7 +91,8 @@ class TestForbiddenHomesViaWriteAuthorizedKey:
             error_code="SSH_AUTHORIZED_KEYS_FAILED",
             target_home=None,
         )
-        ssh._conn.run.assert_awaited_once()
+        # Пробер sudo -n true + сама authorized_keys-команда.
+        assert ssh._conn.run.await_count == 2
 
     def test_forbidden_homes_set_non_empty(self):
         """Константа не пуста — удаление из _FORBIDDEN_HOMES не прошло тихо."""

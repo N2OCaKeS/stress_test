@@ -281,12 +281,19 @@ class TestSshClientRun:
         assert exc_info.value.error_code == "SSH_NOT_CONNECTED"
 
     async def test_run_sudo_wraps_command_and_supplies_password(self, monkeypatch):
-        conn = _make_fake_conn(run_results=_run_result("ok", "", 0))
+        # Первый sudo-вызов на коннекте прогоняет пробер `sudo -n true`. Даём
+        # ему rc != 0 — sudo требует пароль, поэтому пароль подаётся первой
+        # строкой stdin.
+        conn = _make_fake_conn(run_results=[
+            _run_result("", "", 1),   # sudo -n true: пароль требуется
+            _run_result("ok", "", 0),  # whoami под sudo
+        ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
         async with SshClient("h", "u", "s3cret") as ssh:
             await ssh.run("whoami", sudo=True)
 
+        # call_args — последний вызов (сама sudo-команда, не пробер).
         call_args = conn.run.call_args
         cmd = call_args.args[0]
         stdin = call_args.kwargs["input"]
@@ -320,6 +327,56 @@ class TestSshClientRun:
             await ssh.run("usermod -s /bin/bash x", sudo=True)
 
         assert conn.run.call_args.kwargs["input"] is None
+
+    async def test_run_sudo_password_auth_nopasswd_does_not_leak_password(self, monkeypatch):
+        # Реальный прод-кейс: вход по паролю, но sudo настроен NOPASSWD.
+        # `sudo -n true` проходит (rc 0) → sudo первую строку stdin НЕ читает,
+        # поэтому пароль подмешивать нельзя: иначе он уехал бы строкой 1 в
+        # payload (в sudoers → syntax error на '@llt@', либо в chpasswd).
+        # Проверяем, что payload уходит нетронутым, без префикса пароля.
+        conn = _make_fake_conn(run_results=[
+            _run_result("", "", 0),  # sudo -n true: NOPASSWD
+            _run_result("", "", 0),  # сама sudo-команда
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        payload = "root:NewP@ss1\n"
+        async with SshClient("h", "boot", "boot-pwd") as ssh:
+            await ssh.run("chpasswd", sudo=True, stdin_payload=payload)
+
+        # Первый вызов — пробер, второй — команда.
+        assert conn.run.await_args_list[0].args[0] == "sudo -n true"
+        stdin = conn.run.call_args.kwargs["input"]
+        assert stdin == payload
+        assert not stdin.startswith("boot-pwd")
+
+    async def test_sudo_probe_runs_once_and_is_cached(self, monkeypatch):
+        # Пробер `sudo -n true` выполняется ОДИН раз на коннект — результат
+        # кэшируется в `_sudo_needs_password`. Несколько sudo-вызовов не должны
+        # плодить повторные проберы.
+        conn = _make_fake_conn(run_results=[
+            _run_result("", "", 1),  # sudo -n true (единственный)
+            _run_result("", "", 0),  # первый sudo-вызов
+            _run_result("", "", 0),  # второй sudo-вызов
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "u", "p") as ssh:
+            await ssh.run("whoami", sudo=True)
+            await ssh.run("id", sudo=True)
+
+        probe_calls = [
+            c for c in conn.run.await_args_list if c.args[0] == "sudo -n true"
+        ]
+        assert len(probe_calls) == 1
+        # Оба реальных sudo-вызова получили пароль первой строкой (кэш «нужен пароль»).
+        sudo_calls = [
+            c for c in conn.run.await_args_list
+            if c.args[0].startswith("sudo -S -p ''")
+        ]
+        assert len(sudo_calls) == 2
+        for c in sudo_calls:
+            assert c.kwargs["input"].startswith("p\n")
 
     async def test_run_timeout_raises_ssh_timeout(self, monkeypatch):
         conn = _make_fake_conn(run_raises=_ssh_timeout("read timed out"))
@@ -383,7 +440,12 @@ class TestSshClientRun:
 
 class TestSshClientSetPassword:
     async def test_chpasswd_happy_path(self, monkeypatch):
-        conn = _make_fake_conn(run_results=_run_result("", "", 0))
+        # Пробер `sudo -n true` (rc != 0) → sudo требует пароль, chpasswd
+        # получает его первой строкой, payload — второй.
+        conn = _make_fake_conn(run_results=[
+            _run_result("", "", 1),  # sudo -n true: пароль требуется
+            _run_result("", "", 0),  # chpasswd
+        ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
         async with SshClient("h", "ops", "current") as ssh:
@@ -666,14 +728,17 @@ class TestBootstrapHardening:
     _PUBKEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabc dbos"
 
     def _bootstrap_conn(self):
-        # 5 команд happy-path bootstrap'а (юзера нет): getent, getent,
-        # useradd, sudoers, authorized_keys.
+        # Happy-path bootstrap (юзера нет): getent, getent, затем перед первым
+        # sudo-вызовом (useradd) — пробер `sudo -n true`, дальше useradd,
+        # sudoers, authorized_keys. Сессия password-auth ("boot-pwd") и sudo
+        # требует пароль → пробер rc != 0.
         return _make_fake_conn(run_results=[
-            _run_result("", "", 2),
-            _run_result("", "", 2),
-            _run_result("", "", 0),
-            _run_result("", "", 0),
-            _run_result("", "", 0),
+            _run_result("", "", 2),   # getent (outer user_exists)
+            _run_result("", "", 2),   # getent (create_user user_exists)
+            _run_result("", "", 1),   # sudo -n true: пароль требуется
+            _run_result("", "", 0),   # useradd
+            _run_result("", "", 0),   # sudoers
+            _run_result("", "", 0),   # authorized_keys
         ])
 
     async def test_key_verify_then_harden_and_reload(self, monkeypatch):
@@ -689,6 +754,7 @@ class TestBootstrapHardening:
         bootstrap_conn.run = AsyncMock(side_effect=[
             _run_result("", "", 2),   # getent (outer)
             _run_result("", "", 2),   # getent (create_user)
+            _run_result("", "", 1),   # sudo -n true: пароль требуется
             _run_result("", "", 0),   # useradd
             _run_result("", "", 0),   # sudoers
             _run_result("", "", 0),   # authorized_keys
@@ -709,11 +775,11 @@ class TestBootstrapHardening:
         # verify-сессия выполнила ровно `true`.
         assert verify_conn.run.await_args_list[0].args[0] == "true"
         # harden-команда содержит drop-in путь и validate-шаг ($sshd_bin -t).
-        harden_cmd = bootstrap_conn.run.await_args_list[5].args[0]
+        harden_cmd = bootstrap_conn.run.await_args_list[6].args[0]
         assert "/etc/ssh/sshd_config.d/dbos-dbos.conf" in harden_cmd
         assert '"$sshd_bin" -t' in harden_cmd
         # PasswordAuthentication no едет на stdin (не в командную строку).
-        harden_stdin = bootstrap_conn.run.await_args_list[5].kwargs["input"]
+        harden_stdin = bootstrap_conn.run.await_args_list[6].kwargs["input"]
         assert "PasswordAuthentication no" in harden_stdin
         assert "PermitRootLogin no" in harden_stdin
 
@@ -734,8 +800,9 @@ class TestBootstrapHardening:
                     harden_sshd=True,
                 )
         assert ei.value.error_code == "SSH_MANAGEMENT_KEY_VERIFY_FAILED"
-        # Только 5 bootstrap-команд — ни harden, ни reload не дёргались.
-        assert bootstrap_conn.run.await_count == 5
+        # 6 команд bootstrap'а (getent, getent, sudo -n true, useradd, sudoers,
+        # authorized_keys) — ни harden, ни reload не дёргались.
+        assert bootstrap_conn.run.await_count == 6
 
     async def test_no_key_path_skips_verify_and_harden(self, monkeypatch):
         bootstrap_conn = self._bootstrap_conn()
@@ -748,17 +815,18 @@ class TestBootstrapHardening:
             await ssh.bootstrap_management_user(
                 "dbos", self._PUBKEY, harden_sshd=True,
             )
-        assert bootstrap_conn.run.await_count == 5
+        assert bootstrap_conn.run.await_count == 6
 
     async def test_harden_validation_failure_raises(self, monkeypatch):
         bootstrap_conn = self._bootstrap_conn()
         verify_conn = _make_fake_conn(run_results=[_run_result("", "", 0)])
         bootstrap_conn.run = AsyncMock(side_effect=[
-            _run_result("", "", 2),
-            _run_result("", "", 2),
-            _run_result("", "", 0),
-            _run_result("", "", 0),
-            _run_result("", "", 0),
+            _run_result("", "", 2),   # getent (outer)
+            _run_result("", "", 2),   # getent (create_user)
+            _run_result("", "", 1),   # sudo -n true: пароль требуется
+            _run_result("", "", 0),   # useradd
+            _run_result("", "", 0),   # sudoers
+            _run_result("", "", 0),   # authorized_keys
             _run_result("", "bad config", 90),  # sshd -t отбил drop-in
         ])
         connects = [bootstrap_conn, verify_conn]

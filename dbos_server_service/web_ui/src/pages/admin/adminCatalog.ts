@@ -42,6 +42,7 @@ import { ServicesOsVersions } from "./services/ServicesOsVersions";
 import { ServicesIgnoredLogins } from "./services/ServicesIgnoredLogins";
 import { ServicesManagementUser } from "./services/ServicesManagementUser";
 import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
+import { ServicesSecretPermissions } from "./services/ServicesSecretPermissions";
 import { ServicesLogingRules } from "./services/ServicesLogingRules";
 import { ServicesLogingRetention } from "./services/ServicesLogingRetention";
 import { ServicesEncryptionRotation } from "./services/ServicesEncryptionRotation";
@@ -271,6 +272,18 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "secret",
     content: ServicesSecretAccess,
+    visibleFor: (p) => isDepAdmin(p) || hasSecretServiceAdmin(p),
+  },
+  {
+    id: "services.secret.permissions",
+    label: "Матрица разрешений",
+    hint: "RBAC secret_service",
+    icon: ShieldCheck,
+    block: "services",
+    group: "secret",
+    content: ServicesSecretPermissions,
+    // secret_service dept-scoped: department_admin своего отдела или
+    // secret.admin. Платформенные роли без отдела backend режет 403.
     visibleFor: (p) => isDepAdmin(p) || hasSecretServiceAdmin(p),
   },
 

@@ -212,3 +212,95 @@ export interface DeptGrant {
 export interface DeptGrantList {
   items: DeptGrant[];
 }
+
+// ── permissions (тип-wide матрица прав) ───────────────────────────────────────
+
+/**
+ * Тип сущности матрицы прав secret_service. У сервиса ровно одна управляемая
+ * сущность — `secret` (сам credential). Строковый хвост держит дверь
+ * приоткрытой, если backend когда-нибудь расширит `ENTITY_ACTIONS`.
+ */
+export type SecretEntityType = "secret" | (string & {});
+
+/**
+ * Имя роли. Системные `guest`/`admin` сеются автоматически и защищены
+ * фиксированной матрицей (grant/revoke по ним → 409 SYSTEM_ROLE_IMMUTABLE).
+ * Остальные — кастомные роли отдела, отсюда хвост `string`.
+ */
+export type SecretRoleName = "guest" | "admin" | (string & {});
+
+/**
+ * Действие над секретом. Лесенка доступа к значению:
+ * `read` (метаданные) ⊂ `reveal` (значение) ⊂ `write`. Прочие —
+ * привилегированные операции управления кред'ой. Полный whitelist —
+ * `SecretAction` в `secret_service/src/core/constants.py`.
+ */
+export type SecretActionName =
+  | "read"
+  | "reveal"
+  | "write"
+  | "delete"
+  | "grant_acl"
+  | "grant_dept"
+  | "manage_status"
+  | (string & {});
+
+/**
+ * Одна строка матрицы `entity_permissions` (`PermissionResponse`).
+ *
+ * `department_id` — scope-дискриминатор: `null` = system-wide grant, строка —
+ * per-department. `granted_by` — `null` для seed-данных.
+ */
+export interface SecretPermissionEntry {
+  id: string;
+  entity_type: SecretEntityType;
+  role: SecretRoleName;
+  action: SecretActionName;
+  department_id: string | null;
+  granted_by: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Появляется только при `describe=true` (`PermissionDescribedResponse`). */
+  entity_description?: string;
+  /** Появляется только при `describe=true`. */
+  action_description?: string;
+  /** Появляется только при `describe=true`. CRITICAL-аудит при изменении. */
+  sensitive?: boolean;
+}
+
+/**
+ * Действие в каталоге (`CatalogAction`). У secret_service нет worker-only
+ * действий, поэтому флага `worker_only` в схеме нет.
+ */
+export interface SecretPermissionCatalogAction {
+  action: SecretActionName;
+  description: string;
+  /** Чувствительное действие — CRITICAL severity в audit. */
+  sensitive: boolean;
+}
+
+/** Сущность каталога (`CatalogEntity`) — описание и набор её действий. */
+export interface SecretPermissionCatalogItem {
+  entity_type: SecretEntityType;
+  description: string;
+  actions: SecretPermissionCatalogAction[];
+}
+
+/** Envelope для GET /permissions и GET /permissions/{entity_type}. */
+export interface SecretPermissionListResponse {
+  items: SecretPermissionEntry[];
+  total: number;
+  /** True — строки обогащены описаниями (`describe=true`). */
+  described: boolean;
+}
+
+/**
+ * Body PUT /permissions/{entity_type}/{role}/{action}.
+ *
+ * `target_department_id` опционален; caller обязан либо опустить, либо
+ * передать собственный `department_id`, иначе 403 DEPARTMENT_ISOLATION.
+ * Платформенный account_admin может задать целевой отдел без dept-isolation.
+ */
+export interface SecretPermissionGrantRequest {
+  target_department_id?: string | null;
+}

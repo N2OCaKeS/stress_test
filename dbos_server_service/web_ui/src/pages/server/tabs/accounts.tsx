@@ -49,6 +49,11 @@ import {
   ResourceInstancePermissions,
   type ResourceTargetOption,
 } from "@/pages/server/_resourcePermissions";
+import {
+  PASSWORD_POLICY_HINT,
+  validateAccountPassword,
+  accountPasswordPolicyError,
+} from "@/pages/server/_serverShared";
 import { LinkAccountModal } from "./_linkAccountModal";
 
 interface Props {
@@ -1011,8 +1016,11 @@ function AccountCreateForm({
       .split(",")
       .map((g) => g.trim())
       .filter(Boolean);
+    const passwordValue = password.trim();
     const validationErr =
-      validateLogin(loginValue) ?? validateUnixGroups(unixGroups);
+      validateLogin(loginValue) ??
+      validateUnixGroups(unixGroups) ??
+      (passwordValue ? validateAccountPassword(passwordValue) : null);
     if (validationErr) {
       setErr(validationErr);
       return;
@@ -1023,7 +1031,7 @@ function AccountCreateForm({
       const body: accountsApi.ServerAccountCreateInput = {
         server_ids: [serverId],
         login: loginValue,
-        password: password.trim() || null,
+        password: passwordValue || null,
         has_sudo: hasSudo,
         unix_groups: unixGroups,
         shell: shell.trim() || null,
@@ -1035,7 +1043,7 @@ function AccountCreateForm({
       const created = await accountsApi.createAccount(body);
       onCreated(created);
     } catch (e) {
-      const msg = apiErrMsg(e, "Создание не удалось");
+      const msg = accountPasswordPolicyError(e) ?? apiErrMsg(e, "Создание не удалось");
       setErr(msg);
       onError(e);
     } finally {
@@ -1063,7 +1071,7 @@ function AccountCreateForm({
         </FormRow>
         <FormRow
           label="password"
-          hint="оставьте пустым — backend сгенерирует случайный"
+          hint={`оставьте пустым — backend сгенерирует случайный; иначе ${PASSWORD_POLICY_HINT}`}
         >
           <input
             className="input mono"

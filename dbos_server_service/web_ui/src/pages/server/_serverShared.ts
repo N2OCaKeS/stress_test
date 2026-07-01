@@ -2,6 +2,41 @@ import { ApiError, apiErrMsg } from "@/api/client";
 import type { ServerAccount } from "@/api/server/types";
 import type { Persona } from "@/types/persona";
 
+// Парольная политика ручного ввода для server-аккаунтов и IPMI-кредов —
+// зеркало `server_service/src/core/password_policy.py` (базовая политика):
+//   минимум 8 символов, обязательны и буквы, и цифры.
+// Отличается от auth_service (`@/lib/passwordPolicy`, ≥12), поэтому живёт
+// отдельно. Короткий хинт вешаем у поля, полный текст — в ошибке и в маппинге
+// backend'ового VALIDATION_ERROR по `password_b64`.
+export const PASSWORD_POLICY_HINT = "минимум 8 символов, буквы и цифры";
+
+const PASSWORD_POLICY_TEXT = `Пароль не соответствует политике: ${PASSWORD_POLICY_HINT}.`;
+
+/**
+ * Клиентская проверка пароля по базовой политике server_service. Пустую строку
+ * проверять не нужно — пароль на create/rotate опционален, backend сам сгенерит
+ * случайный. Вызывать только когда пароль реально введён.
+ */
+export function validateAccountPassword(value: string): string | null {
+  if (value.length < 8) return PASSWORD_POLICY_TEXT;
+  if (!/[A-Za-z]/.test(value) || !/[0-9]/.test(value)) {
+    return PASSWORD_POLICY_TEXT;
+  }
+  return null;
+}
+
+/**
+ * Маппит backend-VALIDATION_ERROR по полю `password_b64` (в т.ч. тип
+ * `WEAK_PASSWORD`) в человекочитаемый текст парольной политики. Не про пароль —
+ * возвращает null, чтобы caller отдал ошибку дальше своему обработчику.
+ */
+export function accountPasswordPolicyError(e: unknown): string | null {
+  if (e instanceof ApiError && /password_b64/i.test(apiErrMsg(e, ""))) {
+    return PASSWORD_POLICY_TEXT;
+  }
+  return null;
+}
+
 /**
  * Человекочитаемое сообщение по ошибке деструктивной операции над сервером.
  *

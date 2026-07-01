@@ -35,7 +35,7 @@ import { reservedErrorMessage } from "@/pages/server/_serverShared";
 import { BulkPrepareModal } from "@/pages/server/_bulkPrepareModal";
 import { listDepartments } from "@/api/auth/departments";
 import { useDeptLabel } from "@/lib/labels";
-import { isServerZoneBlocked } from "@/lib/rbac";
+import { isPlatformWideAdmin, isServerZoneBlocked } from "@/lib/rbac";
 import type {
   Server,
   ServerCreateRequest,
@@ -77,6 +77,11 @@ export function Server() {
   // им вернёт 403. Не дёргаем API и сразу показываем объяснение вместо
   // мёртвой страницы с кнопками, которые всё равно отобьются 403.
   const zoneBlocked = isServerZoneBlocked(persona);
+  // Список отделов из auth_service отдаётся только account_admin'у; остальным
+  // (dep_admin, server.*-роли) GET /departments вернёт 403. Не дёргаем его для
+  // них — иначе 403 сыпется в консоль/тосты, — а отдел создаваемого сервера
+  // берём из их персоны (см. CreatePane).
+  const isAccountAdmin = isPlatformWideAdmin(persona);
 
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("name");
@@ -99,7 +104,9 @@ export function Server() {
     [],
     { enabled: !zoneBlocked },
   );
-  const depsQ = useQuery<Department[]>(() => listDepartments(), []);
+  const depsQ = useQuery<Department[]>(() => listDepartments(), [], {
+    enabled: isAccountAdmin,
+  });
 
   // Бронь сервера (busy_state / busy_user_id) меняется и другими пользователями,
   // а useQuery без авто-рефетча показывал бы устаревший индикатор до перезахода.
@@ -426,6 +433,8 @@ export function Server() {
       {action === "new" && canManage ? (
         <CreatePane
           depts={depsQ.data ?? []}
+          isAccountAdmin={isAccountAdmin}
+          fixedDeptId={persona.dept_id}
           onCancel={closeAction}
           onSubmit={handleCreate}
         />
@@ -730,19 +739,29 @@ function isLikelyIpAddress(value: string): boolean {
 
 function CreatePane({
   depts,
+  isAccountAdmin,
+  fixedDeptId,
   onCancel,
   onSubmit,
 }: {
   depts: Department[];
+  isAccountAdmin: boolean;
+  fixedDeptId: string | null;
   onCancel: () => void;
   onSubmit: (body: ServerCreateRequest) => void | Promise<void>;
 }) {
   const [hostname, setHostname] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [departmentId, setDepartmentId] = useState(depts[0]?.id ?? "");
+  // account_admin выбирает отдел из выпадающего списка (listDepartments ему
+  // доступен); остальным отдел жёстко задан их персоной — они создают сервер
+  // только в своём отделе, dept-изоляцию всё равно энфорсит backend.
+  const [departmentId, setDepartmentId] = useState(
+    isAccountAdmin ? (depts[0]?.id ?? "") : (fixedDeptId ?? ""),
+  );
   const [ipAddress, setIpAddress] = useState("");
   const [sshPort, setSshPort] = useState<string>("22");
   const [submitting, setSubmitting] = useState(false);
+  const fixedDeptLabel = useDeptLabel(fixedDeptId);
 
   // backend кладёт ip_address в INET (IPv4Address | IPv6Address) и отбивает
   // мусор 422 ещё на pydantic; гасим заведомо-битый ввод заранее.
@@ -751,8 +770,9 @@ function CreatePane({
       ? "Ожидается IPv4 или IPv6 адрес"
       : null;
 
-  // depts может прийти позже — подхватим первый, если ещё не выбран.
-  if (!departmentId && depts.length) {
+  // depts может прийти позже — подхватим первый, если ещё не выбран (только у
+  // account_admin с выпадающим списком).
+  if (isAccountAdmin && !departmentId && depts.length) {
     setDepartmentId(depts[0].id);
   }
 
@@ -808,19 +828,35 @@ function CreatePane({
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">department *</span>
-            <select
-              className="surface-2 border border-token rounded px-2 py-1"
-              value={departmentId}
-              onChange={(e) => setDepartmentId(e.target.value)}
-              required
-            >
-              {depts.length === 0 && <option value="">— нет отделов —</option>}
-              {depts.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+            {isAccountAdmin ? (
+              <select
+                className="surface-2 border border-token rounded px-2 py-1"
+                value={departmentId}
+                onChange={(e) => setDepartmentId(e.target.value)}
+                required
+              >
+                {depts.length === 0 && (
+                  <option value="">— нет отделов —</option>
+                )}
+                {depts.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <>
+                <input
+                  className="surface-2 border border-token rounded px-2 py-1 text-dim"
+                  value={fixedDeptId ? fixedDeptLabel : "— нет отдела —"}
+                  readOnly
+                  title={fixedDeptId ?? ""}
+                />
+                <span className="text-[11px] text-dim">
+                  сервер создаётся в вашем отделе
+                </span>
+              </>
+            )}
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">IP address *</span>

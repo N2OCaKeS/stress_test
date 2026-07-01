@@ -30,14 +30,15 @@ vi.mock("@/api/auth/departments", () => ({
   listDepartments: vi.fn(() => new Promise(() => {})),
 }));
 
+import { listDepartments } from "@/api/auth/departments";
 import { Server } from "@/pages/server/Server";
 
-function renderServer() {
+function renderServer(entry = "/servers") {
   return render(
     <ThemeProvider>
       <PersonaProvider>
         <ToastProvider>
-          <MemoryRouter initialEntries={["/servers"]}>
+          <MemoryRouter initialEntries={[entry]}>
             <Server />
           </MemoryRouter>
         </ToastProvider>
@@ -63,5 +64,19 @@ describe("Server (list page) smoke", () => {
     expect(
       screen.getByText(/Выберите сервер слева для просмотра деталей/),
     ).toBeInTheDocument();
+  });
+
+  it("создание для dep_admin: отдел read-only и listDepartments не дёргается", () => {
+    // Дефолтная persona — alice (dep_admin, dept core). listDepartments ей
+    // отдаёт 403, поэтому запрос не должен уходить, а поле отдела — фиксировано.
+    renderServer("/servers?action=new");
+    expect(screen.getByText("Создание сервера")).toBeInTheDocument();
+    // Поле отдела — read-only input с id отдела, а не выпадающий список.
+    const deptInput = screen.getByDisplayValue("core");
+    expect(deptInput).toHaveAttribute("readonly");
+    expect(
+      screen.getByText(/сервер создаётся в вашем отделе/),
+    ).toBeInTheDocument();
+    expect(listDepartments).not.toHaveBeenCalled();
   });
 });

@@ -114,6 +114,30 @@ describe("AccountsTab — unbind", () => {
     expect(body).toEqual({ server_ids: ["srv1"] });
   });
 
+  it("слабый пароль отбивается клиентом с понятным текстом, POST не уходит", async () => {
+    renderTab();
+
+    const createBtn = await screen.findByRole("button", {
+      name: /Создать аккаунт/i,
+    });
+    fireEvent.click(createBtn);
+
+    fireEvent.change(screen.getByPlaceholderText("dbos-svc"), {
+      target: { value: "svc-weak" },
+    });
+    // Пароль короче политики (< 8 символов) — клиентская проверка должна
+    // остановить submit до сети.
+    fireEvent.change(screen.getByPlaceholderText("—"), {
+      target: { value: "short" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Создать" }));
+
+    expect(
+      await screen.findByText(/Пароль не соответствует политике/),
+    ).toBeInTheDocument();
+    expect(apiPostMock).not.toHaveBeenCalled();
+  });
+
   it("Unbind доступен и диспатчится на единственном сервере аккаунта", async () => {
     // Backend больше не блокирует отвязку последнего сервера — кнопка активна.
     apiGetMock.mockResolvedValue({

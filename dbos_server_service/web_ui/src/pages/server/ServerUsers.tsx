@@ -71,6 +71,10 @@ import { OsUsersDiscoveryModal } from "@/pages/server/OsUsersDiscoveryModal";
 import { RotateDispatchResult } from "@/pages/server/_rotateResult";
 import { isDepAdmin, isServerZoneBlocked } from "@/lib/rbac";
 import {
+  validateAccountPassword,
+  accountPasswordPolicyError,
+} from "@/pages/server/_serverShared";
+import {
   type RevisionAccountDiff,
   type Server,
   type ServerAccount,
@@ -104,32 +108,6 @@ function validateUnixGroups(groups: string[]): string | null {
     if (!POSIX_GROUP_RE.test(g)) {
       return `unix_groups: '${g}' не POSIX-имя (строчные, цифры, _ -, до 32 симв.)`;
     }
-  }
-  return null;
-}
-
-// Парольная политика backend'а: минимум 8 символов, обязательны и буквы, и
-// цифры. Текст один — используем и для подсказки у поля, и для маппинга
-// VALIDATION_ERROR по `password_b64`.
-const PASSWORD_POLICY_TEXT =
-  "Пароль не соответствует политике: минимум 8 символов, буквы и цифры.";
-
-function validatePassword(value: string): string | null {
-  if (value.length < 8) return PASSWORD_POLICY_TEXT;
-  if (!/[A-Za-z]/.test(value) || !/[0-9]/.test(value)) {
-    return PASSWORD_POLICY_TEXT;
-  }
-  return null;
-}
-
-/**
- * Маппит backend-VALIDATION_ERROR по полю `password_b64` в человекочитаемый
- * текст парольной политики. Не пароль — возвращает null, чтобы caller отдал
- * ошибку дальше своему обработчику.
- */
-function passwordPolicyError(e: unknown): string | null {
-  if (e instanceof ApiError && /password_b64/i.test(apiErrMsg(e, ""))) {
-    return PASSWORD_POLICY_TEXT;
   }
   return null;
 }
@@ -659,7 +637,7 @@ function AccountCreateModal({
     const validationErr =
       validateLogin(loginValue) ??
       validateUnixGroups(unixGroups) ??
-      (passwordValue ? validatePassword(passwordValue) : null);
+      (passwordValue ? validateAccountPassword(passwordValue) : null);
     if (validationErr) {
       setErr(validationErr);
       return;
@@ -992,7 +970,7 @@ function AccountCreateModal({
  * из серверов, остальное — общий envelope (включая 400/422 валидации).
  */
 function handleCreateError(e: unknown): string {
-  const policy = passwordPolicyError(e);
+  const policy = accountPasswordPolicyError(e);
   if (policy) return policy;
   if (e instanceof ApiError) {
     if (e.status === 403) return "Недостаточно прав для создания аккаунта.";
@@ -2008,7 +1986,7 @@ function AccountEditForm({
     const validationErr =
       (loginChanged ? validateLogin(loginValue) : null) ??
       validateUnixGroups(unixGroups) ??
-      (newPassword ? validatePassword(newPassword) : null);
+      (newPassword ? validateAccountPassword(newPassword) : null);
     if (validationErr) {
       setErr(validationErr);
       return;
@@ -2028,7 +2006,7 @@ function AccountEditForm({
       if (plain) await applyPasswordChange(plain);
       onSaved();
     } catch (e) {
-      const policy = passwordPolicyError(e);
+      const policy = accountPasswordPolicyError(e);
       // present-аккаунт нельзя переименовать обычным PATCH — backend отдаёт 409
       // LOGIN_LOCKED; предлагаем destructive-пересоздание отдельной кнопкой.
       if (policy) {
@@ -2105,7 +2083,7 @@ function AccountEditForm({
       }
       onSaved();
     } catch (e) {
-      const policy = passwordPolicyError(e);
+      const policy = accountPasswordPolicyError(e);
       if (policy) {
         setErr(policy);
       } else if (e instanceof ApiError && e.status === 403) {

@@ -238,6 +238,25 @@ function ServicesServerPermissionsLive() {
     [],
   );
 
+  // Снять права всех незалоченных ролей в одной таблице — стейдж revoke.
+  const clearAllRolesInEntity = useCallback(
+    (entity: PermissionCatalogItem) => {
+      const tableRoles = rolesFor(entity.entity_type);
+      setEdits((m) => {
+        const next = { ...m };
+        for (const role of tableRoles) {
+          if (role in LOCKED_ROLES) continue;
+          for (const a of entity.actions) {
+            if (a.worker_only) continue;
+            next[`${entity.entity_type}::${role}::${a.action}`] = false;
+          }
+        }
+        return next;
+      });
+    },
+    [rolesFor],
+  );
+
   // Снять все права роли во ВСЕХ таблицах сразу — стейдж revoke по каталогу.
   const clearRoleEverywhere = useCallback(
     (role: RoleName) => {
@@ -496,6 +515,7 @@ function ServicesServerPermissionsLive() {
                     )
                   }
                   onClearRole={(role) => clearRoleInEntity(entity, role)}
+                  onClearAllRoles={() => clearAllRolesInEntity(entity)}
                   hasOverride={(role) =>
                     entity.actions.some(
                       (a) =>
@@ -1293,6 +1313,7 @@ function EntityMatrix({
   onSave,
   onCancel,
   onClearRole,
+  onClearAllRoles,
   hasOverride,
 }: {
   entity: PermissionCatalogItem;
@@ -1312,11 +1333,23 @@ function EntityMatrix({
   onSave: () => void;
   onCancel: () => void;
   onClearRole: (role: RoleName) => void;
+  onClearAllRoles: () => void;
   hasOverride: (role: RoleName) => boolean;
 }) {
   // worker_only действия — служебные callback'и и pull управляющих кред; людям
   // в матрице не показываем вовсе.
   const visibleActions = entity.actions.filter((a) => !a.worker_only);
+  // Роли, которые можно чистить в этой таблице (залоченные исключены).
+  const clearableRoles = useMemo(
+    () => roles.filter((r) => !(r in LOCKED_ROLES)),
+    [roles],
+  );
+  const [selectedRole, setSelectedRole] = useState<RoleName | "">("");
+  // Если выбор пуст или роль выпала из списка — дефолт на первую доступную.
+  const activeRole: RoleName | "" =
+    selectedRole && clearableRoles.includes(selectedRole)
+      ? selectedRole
+      : (clearableRoles[0] ?? "");
   return (
     <div className="card">
       <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
@@ -1364,18 +1397,6 @@ function EntityMatrix({
                         >
                           {locked && <Lock className="w-3 h-3 text-dim" />}
                           {role}
-                          {!locked && (
-                            <button
-                              type="button"
-                              className="btn btn-ghost p-0.5 disabled:opacity-30"
-                              title="Очистить права роли в этой таблице"
-                              aria-label={`Очистить роль ${role} в ${entity.entity_type}`}
-                              disabled={saving || !hasOverride(role)}
-                              onClick={() => onClearRole(role)}
-                            >
-                              <RotateCcw className="w-3 h-3 text-dim" />
-                            </button>
-                          )}
                         </span>
                       </td>
                       {visibleActions.map((a) => {
@@ -1434,6 +1455,36 @@ function EntityMatrix({
               disabled={saving || dirtyCount === 0}
             >
               Отмена
+            </button>
+            <span className="mx-1 h-5 w-px bg-token" aria-hidden="true" />
+            <select
+              className="input input-sm"
+              aria-label="Роль для очистки"
+              value={activeRole}
+              onChange={(e) => setSelectedRole(e.target.value as RoleName)}
+              disabled={saving || clearableRoles.length === 0}
+            >
+              {clearableRoles.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+            <button
+              className="btn btn-sm flex items-center gap-1"
+              onClick={() => activeRole && onClearRole(activeRole)}
+              disabled={saving || !activeRole || !hasOverride(activeRole)}
+              title="Снять все права выбранной роли в этой таблице (применится по «Сохранить»)"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Очистить роль
+            </button>
+            <button
+              className="btn btn-sm flex items-center gap-1"
+              onClick={onClearAllRoles}
+              disabled={saving || clearableRoles.every((r) => !hasOverride(r))}
+              title="Снять все права всех ролей в этой таблице (применится по «Сохранить»)"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Очистить все роли
             </button>
             <span className="text-[11px] text-dim ml-auto">
               {dirtyCount > 0

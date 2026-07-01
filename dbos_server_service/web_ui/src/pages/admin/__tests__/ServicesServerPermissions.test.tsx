@@ -167,14 +167,15 @@ describe("ServicesServerPermissions — батч-модель", () => {
     );
   });
 
-  it("«Очистить роль в таблице» снимает её права → DELETE по Сохранить", async () => {
+  it("«Очистить роль» снимает права выбранной роли в таблице → DELETE по Сохранить", async () => {
     renderPage();
     await waitFor(() =>
       expect(screen.getByTitle("desc-reboot")).toBeInTheDocument(),
     );
-    const clearBtn = screen.getByRole("button", {
-      name: /Очистить роль operator в server/,
-    });
+    // В таблице server единственная незалоченная роль — operator, она и выбрана.
+    const clearBtn = screen.getAllByRole("button", {
+      name: "Очистить роль",
+    })[0];
     fireEvent.click(clearBtn);
     const saveButtons = screen.getAllByRole("button", { name: /Сохранить/ });
     await waitFor(() => expect(saveButtons[0]).not.toBeDisabled());

@@ -6,6 +6,7 @@ from src.models.credential import (
     Credential,
 )
 from src.models.dept_grant import DeptGrant
+from src.models.entity_permission import EntityPermission
 from src.models.reencrypt_outbox import (
     OUTBOX_STATUS_VALUES,
     STATUS_DONE,
@@ -23,6 +24,7 @@ __all__ = [
     "Credential",
     "CredentialUserACL",
     "DeptGrant",
+    "EntityPermission",
     "OUTBOX_STATUS_VALUES",
     "ReencryptOutboxEntry",
     "RetiredKeyVersion",

@@ -54,6 +54,9 @@ SERVICE_EVENTS = [
     # Ownership recovery
     {"action": "tokens.transfer_ownership", "description": "Credential ownership transferred (secret_service admin of owning department, or account_admin for cross-dep transfer after owner_dept deletion)", "default_severity": "CRITICAL"},
     {"action": "tokens.recover", "description": "Blocked credential recovered (status returned to active within 30-day window) by secret_service admin of owning department, or account_admin as emergency override after owner_dept deletion", "default_severity": "WARNING"},
+    # Permission matrix (type-wide role × action grants)
+    {"action": "permission.grant", "description": "Type-wide permission matrix grant added for a role", "default_severity": "CRITICAL"},
+    {"action": "permission.revoke", "description": "Type-wide permission matrix grant revoked for a role", "default_severity": "CRITICAL"},
     # Authorization
     {"action": "tokens.access_denied", "description": "Reader/operator attempted action without permission (no RoleACL or wrong scope)", "default_severity": "INFO"},
     {"action": "tokens.lockout_triggered", "description": "Per-actor lockout activated after repeated denied access attempts (brute-force defense)", "default_severity": "WARNING"},
@@ -100,6 +103,12 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("tokens.recover", "success"): "WARNING",
     ("tokens.access_denied", "failure"): "INFO",
     ("tokens.lockout_triggered", "success"): "WARNING",
+    ("permission.grant", "success"): "CRITICAL",
+    ("permission.grant", "failure"): "CRITICAL",
+    ("permission.grant", "denied"): "CRITICAL",
+    ("permission.revoke", "success"): "CRITICAL",
+    ("permission.revoke", "failure"): "CRITICAL",
+    ("permission.revoke", "denied"): "CRITICAL",
     ("secrets.reencrypt_seed", "success"): "INFO",
     ("secrets.reencrypt_process", "success"): "INFO",
     ("secrets.reencrypt_process", "failure"): "ERROR",

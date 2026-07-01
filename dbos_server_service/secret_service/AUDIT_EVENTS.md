@@ -98,6 +98,13 @@
 | `tokens.access_denied` | failure | INFO | `{ cred_id?, error_code, scope, attempted_action }`. Эмитится при `403 CREDENTIAL_ACCESS_DENIED` / `SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT` / scope-mismatch. Используется lockout-сервисом для счёта denied-попыток. |
 | `tokens.lockout_triggered` | success | WARNING | `{ actor_id, denied_count, lockout_until }`. Per-actor блокировка после серии denied-попыток (защита от перебора). Срабатывает, когда счётчик `tokens.access_denied` превышает порог. |
 
+## Матрица прав (entity_permissions)
+
+| Action | Status | Severity | Payload (`details`) |
+|---|---|---|---|
+| `permission.grant` | success / failure / denied | CRITICAL | `{ entity_type, role, action, department_id?, reason? }`. Выдача роли действия в тип-wide матрице. `denied` — department-isolation или service-account; `failure` — system_role_immutable / invalid_action_for_entity / race_already_exists. |
+| `permission.revoke` | success / failure / denied | CRITICAL | `{ entity_type, role, action, department_id?, reason? }`. Отзыв действия у роли. `failure` с `reason=not_found` — строки в scope не было. |
+
 ## Re-encrypt outbox + ротация ключа
 
 Проактивная ротация мастер-ключа: `secrets.reencrypt_*` — служебный поток ре-шифрации (outbox), `secrets.encryption_*` — действия ops-runner'а, `secrets.admin_encryption_*` — те же действия, но инициированные `account_admin` из UI (отдельные имена, чтобы SIEM различал s2s-runner и человека). Failure-ось процесса и ротации эскалируется до ERROR/CRITICAL.

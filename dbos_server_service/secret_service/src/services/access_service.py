@@ -46,12 +46,22 @@ emergency transfer/recover для кред'ы с удалённым владею
 can_write, write-actions — только при can_write.
 
 Все ветки возвращают конкретный reason: `owner_match`, `acl_view`,
-`acl_read`, `acl_write`, `user_acl_view`, `user_acl_read`, `user_acl_write`,
+`acl_read`, `acl_write`, `matrix_role`, `user_acl_view`, `user_acl_read`,
+`user_acl_write`,
 `dept_admin`, `service_admin`, `blocked`, `dept_grant_missing`,
 `role_not_in_acl`, `acl_missing_can_view`, `acl_missing_can_read`,
 `acl_missing_can_write`, `scope_mismatch`, `not_owner_dept`,
 `guest_visible_to_dept`, `guest_not_visible`, `guest_no_value_access`,
 `guest_role_no_access`. Любой другой текст в reason — это баг, имейте в виду.
+
+Тип-wide матрица прав (`entity_permissions`, сущность `secret`) — базовый слой
+поверх ACL для НЕличных секретов: роль вызывающего → action на все
+department/cross_department-кред'ы отдела-владельца. Консультируется в
+scope-ветках department и cross_department (сторона владельца) после
+dep_admin/service_admin и перед per-credential RoleACL; при совпадении reason —
+`matrix_role`. Эффективный доступ = OR по ролям (матрица) OR per-credential ACL;
+deny-оверрайда нет, матрица только добавляет allow. Personal-секретов матрица не
+касается — они остаются owner-only.
 
 Прямой per-user grant (`CredentialUserACL`) действует ТОЛЬКО на личные кред'ы
 (scope=personal): проверяется до scope-веток и короткозамыкает на положительном
@@ -66,10 +76,16 @@ from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import SERVICE_NAME
+from src.core.constants import (
+    ENTITY_ACTIONS,
+    SERVICE_NAME,
+    EntityType,
+    SecretAction,
+)
 from src.dependencies.auth import Identity
 from src.models import Credential
 from src.repositories import dept_grants as dept_grants_repo
+from src.repositories import entity_permissions as entity_perm_repo
 from src.repositories import role_acls as role_acls_repo
 from src.repositories import user_acls as user_acls_repo
 from src.services import _identity_roles
@@ -93,11 +109,19 @@ Action = Literal[
     "list_guest",
 ]
 
-# Actions, которые требуют can_write на ACL.
-_WRITE_ACTIONS: frozenset[str] = frozenset({"write", "delete", "grant_acl", "grant_dept", "manage_status"})
+# Actions, которые требуют can_write на ACL. Строки — из единого словаря
+# действий `SecretAction` (он же наполняет матрицу прав), чтобы вокабуляр не
+# расходился между access_service и permission_service.
+_WRITE_ACTIONS: frozenset[str] = frozenset({
+    SecretAction.WRITE,
+    SecretAction.DELETE,
+    SecretAction.GRANT_ACL,
+    SecretAction.GRANT_DEPT,
+    SecretAction.MANAGE_STATUS,
+})
 
 # Actions, раскрывающие значение секрета — требуют can_read (или выше).
-_REVEAL_ACTIONS: frozenset[str] = frozenset({"reveal"})
+_REVEAL_ACTIONS: frozenset[str] = frozenset({SecretAction.REVEAL})
 
 # Прочие нечитающие-значение actions (read, list_guest) — метаданные/листинг,
 # им достаточно can_view (или выше).
@@ -105,7 +129,11 @@ _REVEAL_ACTIONS: frozenset[str] = frozenset({"reveal"})
 # Actions, которые при scope=personal на cred НЕ принадлежащей actor'у
 # никогда не выдаются по ACL (только владелец может). delete и
 # manage_status требуют admin override.
-_PERSONAL_OWNER_ONLY: frozenset[str] = frozenset({"write", "delete", "manage_status"})
+_PERSONAL_OWNER_ONLY: frozenset[str] = frozenset({
+    SecretAction.WRITE,
+    SecretAction.DELETE,
+    SecretAction.MANAGE_STATUS,
+})
 
 
 # Role-предикаты — общие с credential_service, живут в `_identity_roles`.
@@ -113,6 +141,45 @@ _is_service_admin = _identity_roles.is_service_admin
 _is_service_admin_for = _identity_roles.is_service_admin_for
 _is_account_admin = _identity_roles.is_account_admin
 _is_guest_only = _identity_roles.is_guest_only
+
+# Матрица прав знает только грантуемые действия сущности `secret`; служебные
+# псевдо-действия (list_guest) в неё не входят и матрицей не открываются.
+_MATRIX_ACTIONS: frozenset[str] = ENTITY_ACTIONS[EntityType.SECRET]
+
+
+async def _matrix_allows(
+    db: AsyncSession,
+    identity: Identity,
+    cred: Credential,
+    action: Action,
+) -> bool:
+    """Тип-wide матрица прав отдела-владельца как базовый источник allow.
+
+    Роль вызывающего → action на все неличные секреты отдела-владельца. Слой
+    аддитивный: вызывается scope-ветками department/cross_department только на
+    стороне владельца (actor.dept == owner_dept), поверх dep_admin/service_admin
+    и перед per-credential RoleACL. Personal-секретов не касается.
+
+    Лесенка повторяет RoleACL: matrix `write` открывает reveal и метаданные;
+    остальные write-level действия (`delete`/`grant_acl`/`grant_dept`/
+    `manage_status`) — точечные привилегии, друг друга не влекут. Любой grant на
+    секрет даёт видеть его метаданные.
+    """
+    if action not in _MATRIX_ACTIONS and action not in (SecretAction.READ, SecretAction.LIST_GUEST):
+        return False
+    roles = identity.roles_for(SERVICE_NAME)
+    if not roles:
+        return False
+    granted = await entity_perm_repo.effective_actions(
+        db, EntityType.SECRET, roles, cred.owner_dept_id
+    )
+    if not granted:
+        return False
+    if action in (SecretAction.READ, SecretAction.LIST_GUEST):
+        return True
+    if action in _REVEAL_ACTIONS:
+        return SecretAction.REVEAL in granted or SecretAction.WRITE in granted
+    return action in granted
 
 
 def _has_acl_permission(acls: list, action: Action, identity_roles: list[str]) -> tuple[bool, str]:
@@ -262,6 +329,9 @@ async def _check_department(
     # только в рамках department/cross_department-кред этого отдела.
     if _is_service_admin(identity):
         return True, "service_admin"
+    # Тип-wide матрица прав отдела — базовый слой поверх ACL.
+    if await _matrix_allows(db, identity, cred, action):
+        return True, "matrix_role"
     # Обычный actor — только через RoleACL.
     acls = await role_acls_repo.get_for_cred_dept(
         db, cred.id, identity.department_id or ""
@@ -287,6 +357,8 @@ async def _check_cross_department(
             return True, "dept_admin"
         if _is_service_admin(identity):
             return True, "service_admin"
+        if await _matrix_allows(db, identity, cred, action):
+            return True, "matrix_role"
         acls = await role_acls_repo.get_for_cred_dept(
             db, cred.id, identity.department_id
         )

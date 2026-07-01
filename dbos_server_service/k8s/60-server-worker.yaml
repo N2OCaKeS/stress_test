@@ -103,6 +103,17 @@ spec:
               value: "postgresql+psycopg://$(WORKER_DB_USER):$(WORKER_DB_PASSWORD)@worker-postgres:5432/worker_db"
             - name: REDIS_URL
               value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
+            # DSN БД server_service — dispatch_outbox publisher воркера читает
+            # диспетчнутые задачи из server_db и кладёт в broker. Без него
+            # Settings падает в production и воркер крашлупит.
+            - name: SERVER_DB_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_DB_USER }
+            - name: SERVER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_DB_PASSWORD }
+            - name: SERVER_SERVICE_DATABASE_URL
+              value: "postgresql+psycopg://$(SERVER_DB_USER):$(SERVER_DB_PASSWORD)@server-postgres:5432/server_db"
             # PAT (bot-token) для bearer-аутентификации worker'а в /internal/*
             # endpoints server_service.
             - name: WORKER_BOT_TOKEN

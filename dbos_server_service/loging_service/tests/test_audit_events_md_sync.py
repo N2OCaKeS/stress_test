@@ -30,7 +30,7 @@
 import re
 from pathlib import Path
 
-from src.services.rule_service import _DEFAULT_SEVERITY
+from src.services.rule_service import _DEFAULT_SEVERITY, _LEGACY_SEVERITY
 
 
 # Корень репо вычисляем относительно файла теста: tests/ → loging_service/.
@@ -112,13 +112,17 @@ def test_audit_events_md_severity_matches_default_severity():
         if _action_prefix(action) in _EXTERNAL_TO_DOC:
             # Кросс-сервисный action — owner'ы доки в своих AUDIT_EVENTS.md;
             # проверяется только если есть совпадение в нашем `_DEFAULT_SEVERITY`.
-            code_sev = _DEFAULT_SEVERITY.get((action, status))
+            code_sev = _DEFAULT_SEVERITY.get(action)
             if code_sev is not None and code_sev != sev:
                 mismatches.append(
                     f"{action}/{status}: code={code_sev}, AUDIT_EVENTS.md={sev}"
                 )
             continue
-        code_sev = _DEFAULT_SEVERITY.get((action, status))
+        # Матрица статус-агностична (action → severity); legacy-остаток
+        # `_LEGACY_SEVERITY` статус-зависим для не покрытых матрицей action'ов.
+        code_sev = _DEFAULT_SEVERITY.get(action)
+        if code_sev is None:
+            code_sev = _LEGACY_SEVERITY.get((action, status))
         if code_sev is None:
             missing_in_code.append(f"{action}/{status} (md says {sev})")
         elif code_sev != sev:

@@ -87,21 +87,21 @@ Severity вычисляется автоматически в `src/services/rule
 | `logging.events_queried` | `warning` | WARNING | `GET /api/logging/v1/events` отменён по `statement_timeout` (COUNT/SELECT) — self-audit с timeout-флагами в `details` | `audit_event` |
 | `logging.events_exported` | `success` | WARNING | `GET /api/logging/v1/events/export` — выгрузка журнала в CSV за окно (значимое действие, эмитит HTTP-middleware) | `audit_event` |
 | `logging.rules_read` | `success` | INFO | `GET /api/logging/v1/rules` или `GET /rules/{id}` | `audit_rule` |
-| `logging.rules_write` | `success` | WARNING | `POST/PATCH/DELETE /api/logging/v1/rules*` (поверх `logging_rule.*`) | `audit_rule` |
+| `logging.rules_write` | `success` | CRITICAL | `POST/PATCH/DELETE /api/logging/v1/rules*` (поверх `logging_rule.*`) | `audit_rule` |
 | `logging.services_read` | `success` | INFO | `GET /api/logging/v1/services` (список зарегистрированных сервисов) | `service_event` |
 | `logging.service_events_browsed` | `success` | INFO | `GET /api/logging/v1/services/{svc}/events` — чтение каталога зарегистрированных action'ов сервиса (не audit-журнала) | `service_event` |
 | `logging.admin_access` | `success` | INFO | Любой admin-endpoint без явного маппинга в `_action_for_path` | — |
 | `logging.retention_read` | `success` | INFO | `GET /api/logging/v1/retention` — чтение активных политик хранения | `retention_policy` |
-| `logging.retention_write` | `success` | WARNING | `PUT/DELETE /api/logging/v1/retention` — изменение или отключение политики хранения | `retention_policy` |
-| `logging.retention_sweep` | `success` | INFO | Фоновый retention-цикл в 00:00 MSK после успешного `apply_active` | `audit_event` |
+| `logging.retention_write` | `success` | CRITICAL | `PUT/DELETE /api/logging/v1/retention` — изменение или отключение политики хранения | `retention_policy` |
+| `logging.retention_sweep` | `success` | DEBUG | Фоновый retention-цикл в 00:00 MSK после успешного `apply_active` | `audit_event` |
 
 При не-2xx ответе action из `_action_for_path` подменяется на одно из:
 
 | action | status | severity | Когда возникает |
 |---|---|---|---|
-| `http.access_denied` | `denied` | CRITICAL | HTTP 401 или 403 |
-| `http.client_error` | `failure` | WARNING | HTTP 4xx (кроме 401/403) |
-| `http.server_error` | `failure` | CRITICAL | HTTP 5xx |
+| `http.access_denied` | `denied` | WARNING | HTTP 401 или 403 |
+| `http.client_error` | `failure` | INFO | HTTP 4xx (кроме 401/403) |
+| `http.server_error` | `failure` | ERROR | HTTP 5xx |
 
 Details: `{method, path, status_code}` + `platform_role`, если у identity он есть. `ip` сейчас не пишется (см. `main.py::audit_access`).
 
@@ -111,7 +111,7 @@ Details: `{method, path, status_code}` + `platform_role`, если у identity �
 
 | action | status | severity | Когда возникает | target_type |
 |---|---|---|---|---|
-| `logging_rule.create` | `success` | WARNING | `POST /api/logging/v1/rules` | `audit_rule` |
+| `logging_rule.create` | `success` | CRITICAL | `POST /api/logging/v1/rules` | `audit_rule` |
 | `logging_rule.update` | `success` | CRITICAL | `PATCH /api/logging/v1/rules/{id}` | `audit_rule` |
 | `logging_rule.delete` | `success` | CRITICAL | `DELETE /api/logging/v1/rules/{id}` | `audit_rule` |
 

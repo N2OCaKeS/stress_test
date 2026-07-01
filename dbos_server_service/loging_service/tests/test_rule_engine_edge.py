@@ -104,11 +104,12 @@ class TestActionMatchesPattern:
 # ── _resolve_default_severity ────────────────────────────────────────────────
 
 class TestResolveDefaultSeverity:
-    def test_known_pair_uses_table(self):
-        assert rule_service._resolve_default_severity("user.login", "success") == "INFO"
+    def test_known_action_uses_table(self):
+        assert rule_service._resolve_default_severity("user.login", "success") == "WARNING"
 
-    def test_known_failure_critical(self):
-        assert rule_service._resolve_default_severity("user.login", "failure") == "CRITICAL"
+    def test_known_action_status_agnostic(self):
+        # Матрица статус-агностична: любой статус action'а получает её уровень.
+        assert rule_service._resolve_default_severity("user.login", "failure") == "WARNING"
 
     def test_unknown_success_defaults_info(self):
         assert rule_service._resolve_default_severity("custom.action", "success") == "INFO"

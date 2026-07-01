@@ -309,12 +309,8 @@ class TestPayloadHashContract:
         from src.services import event_service as evt_svc
         from src.services import rule_service
 
-        original = rule_service._DEFAULT_SEVERITY[
-            ("audit.idempotency_conflict", "warning")
-        ]
-        rule_service._DEFAULT_SEVERITY[
-            ("audit.idempotency_conflict", "warning")
-        ] = "CRITICAL"
+        original = rule_service._DEFAULT_SEVERITY["audit.idempotency_conflict"]
+        rule_service._DEFAULT_SEVERITY["audit.idempotency_conflict"] = "CRITICAL"
         try:
             poison_payload = EventCreate(
                 timestamp=datetime.now(timezone.utc),
@@ -341,9 +337,7 @@ class TestPayloadHashContract:
             assert len(rows) == 1
             assert rows[0].severity == "CRITICAL"
         finally:
-            rule_service._DEFAULT_SEVERITY[
-                ("audit.idempotency_conflict", "warning")
-            ] = original
+            rule_service._DEFAULT_SEVERITY["audit.idempotency_conflict"] = original
 
     def test_repo_insert_same_payload_returns_existing(self, db: Session):
         payload = EventCreate(

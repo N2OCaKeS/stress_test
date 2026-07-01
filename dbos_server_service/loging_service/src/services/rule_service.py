@@ -4,7 +4,8 @@
 При изменении правил через API кеш сбрасывается немедленно.
 
 Порядок обработки события:
-  1. Если severity не задан — назначается из _DEFAULT_SEVERITY (по action+status)
+  1. Если severity не задан — назначается из дефолтного правила БД
+     (`is_default`, source of truth — «Матрица событий EMM», статус-агностично)
   2. Правила перебираются по убыванию priority (`priority DESC`)
   3. SUPPRESS          — отбрасывает событие (не сохраняется), цепочка обрывается
   4. ALLOW             — сохраняет немедленно, цепочка обрывается
@@ -66,9 +67,9 @@ class _RuleSnapshot:
     # делается на ingest pydantic-моделями и check-constraint'ом.
     effect: _EffectCanonical
     effect_severity: str | None
-    # `is_default=True` — авто-сидируемое дефолтное правило `(action,status) →
-    # severity`. Дефолты задают БАЗОВЫЙ severity (заменяют прежнюю хардкод-
-    # таблицу `_DEFAULT_SEVERITY`); managed-правила (is_default=False)
+    # `is_default=True` — авто-сидируемое дефолтное правило по матрице EMM
+    # (`action → severity`, статус-агностично; ИГНОР → SUPPRESS). Дефолты
+    # задают БАЗОВЫЙ severity; managed-правила (is_default=False)
     # накладываются поверх и перекрывают. Если ни дефолт, ни managed-правило
     # не назначили severity — событие дропается (см. `apply_rules`).
     is_default: bool = False
@@ -102,197 +103,285 @@ def _snapshot_rule(rule: AuditRule) -> _RuleSnapshot:
         is_default=bool(getattr(rule, "is_default", False)),
     )
 
-# Сид-данные для дефолтных правил severity. ЭТО НЕ рантайм-источник истины:
-# `seed_default_rules` один раз материализует эти пары в таблицу `audit_rules`
+# Дефолтные severity — источник истины «Матрица событий EMM». Таблица
+# СТАТУС-АГНОСТИЧНА: один severity на action, применяется ко всем статусам
+# события (success/failure/denied/warning). ЭТО НЕ рантайм-источник:
+# `seed_default_rules` материализует эти данные в `audit_rules`
 # (`is_default=true`), после чего движок берёт severity ТОЛЬКО из БД. Таблица
-# оставлена как данные сидера (миграция + startup seed) и как контракт для
-# `test_audit_events_md_sync`. Удалённый админом дефолт не воскресает — см.
-# маркер `seed_state`.
-_DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
-    # HTTP middleware
-    ("http.access_denied", "denied"): "CRITICAL",
-    ("http.client_error", "failure"): "WARNING",
-    ("http.server_error", "failure"): "CRITICAL",
-    # Аутентификация
-    ("user.login", "success"): "INFO",
-    ("user.login", "failure"): "CRITICAL",
-    ("user.refresh", "success"): "INFO",
-    ("user.logout", "success"): "INFO",
-    ("user.me", "success"): "TRACE",
-    ("token.refresh_reuse", "failure"): "CRITICAL",
-    # Пользователи
-    ("user.create", "success"): "INFO",
-    ("user.update", "success"): "INFO",
-    ("user.roles_assign", "success"): "INFO",
-    ("user.password_reset", "success"): "CRITICAL",
-    ("user.ban", "success"): "CRITICAL",
-    ("user.unban", "success"): "CRITICAL",
-    ("user.hard_deleted", "success"): "CRITICAL",
-    ("service_key.generate", "success"): "CRITICAL",
-    ("lockout_policy.update", "success"): "CRITICAL",
-    # Отделы
-    ("department.create", "success"): "CRITICAL",
-    ("department.list", "success"): "INFO",
-    ("department.service_grant", "success"): "CRITICAL",
-    ("department.service_revoke", "success"): "CRITICAL",
-    ("department.hard_deleted", "success"): "CRITICAL",
-    # Группы
-    ("group.create", "success"): "INFO",
-    ("group.update", "success"): "INFO",
-    ("group.delete", "success"): "CRITICAL",
-    ("group.member_add", "success"): "WARNING",
-    ("group.member_remove", "success"): "WARNING",
-    ("group.service_grant", "success"): "CRITICAL",
-    ("group.service_revoke", "success"): "CRITICAL",
-    ("group.roles_assign", "success"): "CRITICAL",
-    ("group.roles_revoke", "success"): "CRITICAL",
-    # Платформенные сервисы
-    ("service.create", "success"): "CRITICAL",
-    ("service.delete", "success"): "CRITICAL",
-    ("service.list", "success"): "INFO",
-    # Роли сервисов
-    ("service_role.create", "success"): "INFO",
-    ("service_role.update", "success"): "INFO",
-    ("service_role.delete", "success"): "CRITICAL",
-    ("service_role.bulk_assign", "success"): "INFO",
-    ("service_role.bulk_revoke", "success"): "INFO",
-    # PAT
-    ("pat.create", "success"): "INFO",
-    ("pat.list", "success"): "INFO",
-    ("pat.revoke", "success"): "WARNING",
-    # Боты
-    ("bot.create", "success"): "WARNING",
-    ("bot.list", "success"): "INFO",
-    ("bot.update", "success"): "WARNING",
-    ("bot.token_create", "success"): "WARNING",
-    ("bot.token_list", "success"): "INFO",
-    ("bot.token_revoke", "success"): "WARNING",
-    # OAuth2-клиенты
-    ("oauth_client.create", "success"): "CRITICAL",
-    ("oauth_client.list", "success"): "INFO",
-    ("oauth_client.delete", "success"): "CRITICAL",
-    ("oauth.authorization_code_issued", "success"): "INFO",
-    ("oauth.code_exchanged", "success"): "INFO",
-    ("oauth.client_credentials_token", "success"): "INFO",
-    ("oauth.refresh_token", "success"): "INFO",
-    ("oauth.refresh_reuse", "failure"): "CRITICAL",
-    ("oauth.refresh_race", "failure"): "WARNING",
-    # Интроспекция токенов
-    ("token.introspect", "success"): "INFO",
-    ("token.introspect", "failure"): "CRITICAL",
-    # Проверка доступа к сервису
-    ("service.access_check", "success"): "INFO",
-    ("service.access_check", "denied"): "WARNING",
-    # Docker Registry
-    ("docker_registry.configure", "success"): "CRITICAL",
-    ("docker_registry.update", "success"): "CRITICAL",
-    ("docker_registry.get_config", "success"): "INFO",
-    ("docker_registry.disable", "success"): "CRITICAL",
-    ("docker.token_issued", "success"): "INFO",
-    # Администрирование loging_service (loging_admin)
-    ("logging_rule.create", "success"): "WARNING",
-    ("logging_rule.update", "success"): "CRITICAL",
-    ("logging_rule.delete", "success"): "CRITICAL",
-    # secret_service tokens.* — зеркало `_DEFAULT_SEVERITY` из
-    # `secret_service/src/services/audit_events.py`. Держим тут копию, чтобы
-    # ingest без explicit severity получал ту же иерархию, что в источнике
-    # (reveal/transfer/cross-dep grant — CRITICAL; CRUD-чтения — INFO;
-    # auto-block/delete/recover — WARNING).
-    ("tokens.create", "success"): "INFO",
-    ("tokens.update", "success"): "INFO",
-    ("tokens.delete", "success"): "WARNING",
-    ("tokens.admin_override_delete", "success"): "CRITICAL",
-    ("tokens.revealed", "success"): "CRITICAL",
-    ("tokens.revealed_throttled", "success"): "INFO",
-    ("tokens.dept_grant_added", "success"): "CRITICAL",
-    ("tokens.dept_grant_revoked", "success"): "CRITICAL",
-    ("tokens.dept_revoke_cascade", "success"): "CRITICAL",
-    ("tokens.dept_recipient_cascade", "success"): "CRITICAL",
-    ("tokens.role_acl_added", "success"): "INFO",
-    ("tokens.role_acl_revoked", "success"): "INFO",
-    ("tokens.owner_user_deleted_block", "success"): "WARNING",
-    ("tokens.owner_dept_deleted_block", "success"): "WARNING",
-    ("tokens.transfer_ownership", "success"): "CRITICAL",
-    ("tokens.recover", "success"): "WARNING",
-    ("tokens.access_denied", "failure"): "INFO",
-    ("tokens.revealed_blocked_by_validity", "failure"): "INFO",
-    ("user.password_change_required_blocked", "failure"): "INFO",
-    ("user.must_change_password_cleared", "success"): "INFO",
-    # auth_service secret_lifecycle: callback в secret_service упал на
-    # транспортном уровне — WARNING (не CRITICAL: один сбой компенсируется
-    # retry'ем, статус сервиса не страдает).
-    ("secret_lifecycle.notify_failed", "failure"): "WARNING",
-    # Управление серверами (server_service / server_worker)
-    ("server.prepare", "success"): "CRITICAL",
-    ("server.prepare", "failure"): "CRITICAL",
-    ("server.prepared", "success"): "CRITICAL",
-    ("server.prepared", "failure"): "CRITICAL",
-    # Удаление сервера — destructive, без отката.
-    ("server.delete", "success"): "CRITICAL",
-    # Раскрытие расшифрованных секретов пользователю (b64) — отдельный action,
-    # эмитится только когда GET /ipmi или /server-accounts/{id} вернул plaintext.
-    ("ipmi_controller.credentials_revealed", "success"): "CRITICAL",
-    ("server_account.password_revealed", "success"): "CRITICAL",
-    # IPMI power-операции — действия над железом.
-    ("server.power_on", "success"): "WARNING",
-    ("server.power_on", "failure"): "CRITICAL",
-    ("server.power_on", "denied"): "WARNING",
-    ("server.power_off", "success"): "WARNING",
-    ("server.power_off", "failure"): "CRITICAL",
-    ("server.power_off", "denied"): "WARNING",
-    ("server.power_reboot", "success"): "WARNING",
-    ("server.power_reboot", "failure"): "CRITICAL",
-    ("server.power_reboot", "denied"): "WARNING",
-    ("server.power_status", "success"): "INFO",
-    ("server.power_status", "failure"): "WARNING",
-    ("server.power_status", "denied"): "WARNING",
-    # Inventory / users-inventory / installed_packages — read-only probes.
-    ("server.inventory_sync", "success"): "INFO",
-    ("server.inventory_sync", "failure"): "WARNING",
-    ("server.inventory_sync", "denied"): "WARNING",
-    ("server_account.users_inventory", "success"): "INFO",
-    ("server_account.users_inventory", "failure"): "WARNING",
-    ("server_account.users_inventory", "denied"): "WARNING",
-    ("installed_packages.list", "success"): "INFO",
-    ("installed_packages.list", "failure"): "WARNING",
-    ("installed_packages.list", "denied"): "WARNING",
-    # Ротации секретов — sensitive, но штатный поток.
-    ("server_account.password_rotate", "success"): "WARNING",
-    ("server_account.password_rotate", "failure"): "CRITICAL",
-    ("server_account.password_rotate", "denied"): "WARNING",
-    ("ipmi_controller.password_rotate", "success"): "WARNING",
-    ("ipmi_controller.password_rotate", "failure"): "CRITICAL",
-    ("ipmi_controller.password_rotate", "denied"): "WARNING",
-    # Сервисные OS-учётки на хостах
-    ("server_account.provision", "success"): "WARNING",
-    ("server_account.provision", "failure"): "CRITICAL",
-    ("server_account.update_on_host", "success"): "INFO",
-    ("server_account.deprovision", "success"): "WARNING",
-    ("server_account.drift_detected", "success"): "WARNING",
-    # Интерактивная SSH-консоль — живой shell-доступ к боксу. session-events
-    # INFO (открытие/закрытие фиксируем для трассировки), команда INFO на
-    # success и WARNING на ненулевом exit/denied (worker эмитит явный severity).
-    ("ssh_console.session_open", "success"): "INFO",
-    ("ssh_console.session_open", "failure"): "WARNING",
-    ("ssh_console.session_open", "denied"): "WARNING",
-    ("ssh_console.session_close", "success"): "INFO",
-    ("ssh_console.command", "success"): "INFO",
-    ("ssh_console.command", "failure"): "WARNING",
-    # Обращения к loging_service (все сохраняются без ротации)
-    ("logging.events_queried",   "success"): "INFO",
-    ("logging.events_queried",   "warning"): "WARNING",
-    ("logging.events_exported",  "success"): "WARNING",
-    ("logging.rules_read",       "success"): "INFO",
-    ("logging.rules_write",      "success"): "WARNING",
-    ("logging.services_read",    "success"): "INFO",
-    ("logging.service_events_browsed", "success"): "INFO",
-    ("logging.admin_access",     "success"): "INFO",
-    ("logging.retention_read",   "success"): "INFO",
-    ("logging.retention_write",  "success"): "WARNING",
-    ("logging.retention_sweep",  "success"): "INFO",
-    ("logging.service_events_registered", "success"): "INFO",
-    ("audit.idempotency_conflict", "warning"): "WARNING",
+# живёт как данные сидера (миграция + startup reconcile) и как контракт тестов.
+# Удалённый админом дефолт не воскресает — soft-delete оставляет row в таблице,
+# reconcile её по имени не пересоздаёт.
+_DEFAULT_SEVERITY: dict[str, str] = {
+    "audit.idempotency_conflict": "WARNING",
+    "audit.outbox_reattempt_manual": "WARNING",
+    "bmc.endpoint_blocked": "CRITICAL",
+    "bmc.tls_downgrade": "CRITICAL",
+    "bmc.tls_verify_disabled": "CRITICAL",
+    "bot.create": "INFO",
+    "bot.delete": "WARNING",
+    "bot.list": "INFO",
+    "bot.roles_assign": "WARNING",
+    "bot.roles_list": "INFO",
+    "bot.roles_purged_on_services_narrowed": "WARNING",
+    "bot.roles_revoke": "WARNING",
+    "bot.suspicious_multi_ip": "CRITICAL",
+    "bot.token_create": "INFO",
+    "bot.token_expired": "INFO",
+    "bot.token_list": "INFO",
+    "bot.token_revoke": "WARNING",
+    "bot.update": "INFO",
+    "console_macro.create": "INFO",
+    "console_macro.delete": "INFO",
+    "console_macro.update": "INFO",
+    "department.create": "INFO",
+    "department.hard_deleted": "CRITICAL",
+    "department.list": "INFO",
+    "department.service_grant": "WARNING",
+    "department.service_revoke": "WARNING",
+    "department.updated": "INFO",
+    "docker.pull_denied": "WARNING",
+    "docker.push_denied": "WARNING",
+    "docker.token_issued": "INFO",
+    "docker_registry.configure": "INFO",
+    "docker_registry.disable": "WARNING",
+    "docker_registry.get_config": "INFO",
+    "docker_registry.update": "INFO",
+    "encryption.admin_retire": "CRITICAL",
+    "encryption.admin_rotate": "CRITICAL",
+    "fanout_update_on_host.truncated": "WARNING",
+    "group.bot_member_add": "INFO",
+    "group.bot_member_remove": "INFO",
+    "group.create": "INFO",
+    "group.delete": "WARNING",
+    "group.member_add": "INFO",
+    "group.member_remove": "INFO",
+    "group.roles_assign": "WARNING",
+    "group.roles_revoke": "WARNING",
+    "group.service_grant": "WARNING",
+    "group.service_revoke": "WARNING",
+    "group.update": "INFO",
+    "http.access_denied": "WARNING",
+    "http.client_error": "INFO",
+    "http.platform_admin_blocked": "WARNING",
+    "http.server_error": "ERROR",
+    "installed_packages.list": "INFO",
+    "internal.dept_header_missing": "WARNING",
+    "inventory.drift_detected": "WARNING",
+    "ipmi_controller.create": "INFO",
+    "ipmi_controller.credentials_revealed": "CRITICAL",
+    "ipmi_controller.credentials_revealed_throttled": "TRACE",
+    "ipmi_controller.credentials_rotated_callback": "WARNING",
+    "ipmi_controller.delete": "WARNING",
+    "ipmi_controller.list": "WARNING",
+    "ipmi_controller.password_rotate": "WARNING",
+    "ipmi_controller.rotate_credentials": "INFO",
+    "ipmi_controller.rotate_dispatch": "WARNING",
+    "ipmi_controller.update": "INFO",
+    "ipmi_controller.view": "WARNING",
+    "ipmi_controller.view_credentials": "CRITICAL",
+    "ipmi_controller.view_credentials_meta": "INFO",
+    "lockout_policy.update": "WARNING",
+    "logging.admin_access": "INFO",
+    "logging.events_exported": "WARNING",
+    "logging.retention_read": "INFO",
+    "logging.retention_sweep": "DEBUG",
+    "logging.retention_write": "CRITICAL",
+    "logging.rules_read": "INFO",
+    "logging.rules_write": "CRITICAL",
+    "logging.service_events_browsed": "INFO",
+    "logging.service_events_registered": "INFO",
+    "logging.services_read": "INFO",
+    "logging_rule.create": "CRITICAL",
+    "logging_rule.delete": "CRITICAL",
+    "logging_rule.update": "CRITICAL",
+    "management_user.sync": "INFO",
+    "management_user_config.sync": "INFO",
+    "management_user_config.update": "WARNING",
+    "management_user_sync_fanout.truncated": "WARNING",
+    "mass_rotation.partial_failure": "ERROR",
+    "me.updated": "INFO",
+    "oauth.authorization_code_issued": "INFO",
+    "oauth.client_credentials_token": "INFO",
+    "oauth.code_exchanged": "INFO",
+    "oauth.pkce_plain_used": "WARNING",
+    "oauth.refresh_race": "DEBUG",
+    "oauth.refresh_reuse": "CRITICAL",
+    "oauth.refresh_token": "INFO",
+    "oauth_client.create": "INFO",
+    "oauth_client.delete": "WARNING",
+    "oauth_client.list": "INFO",
+    "ops.encryption_retire": "CRITICAL",
+    "ops.encryption_rotate": "CRITICAL",
+    "ops.migration_status_read": "INFO",
+    "os.unknown_observed": "WARNING",
+    "os_version.create": "INFO",
+    "os_version.delete": "INFO",
+    "os_version.update": "INFO",
+    "pat.create": "INFO",
+    "pat.list": "INFO",
+    "pat.revoke": "WARNING",
+    "permission.grant": "WARNING",
+    "permission.revoke": "WARNING",
+    "secret_lifecycle.notify_failed": "ERROR",
+    "secrets.admin_encryption_retire": "CRITICAL",
+    "secrets.admin_encryption_rotate": "CRITICAL",
+    "secrets.encryption_retire": "CRITICAL",
+    "secrets.encryption_rotate": "CRITICAL",
+    "secrets.migration.skipped": "INFO",
+    "secrets.migration_decrypt_failed": "ERROR",
+    "secrets.migration_key_missing": "CRITICAL",
+    "secrets.reencrypt_batch": "INFO",
+    "secrets.reencrypt_done": "INFO",
+    "secrets.reencrypt_failed": "ERROR",
+    "secrets.reencrypt_outbox_cleanup": "DEBUG",
+    "secrets.reencrypt_process": "INFO",
+    "secrets.reencrypt_seed": "INFO",
+    "secrets.reencrypt_tick": "DEBUG",
+    "server.acquire": "INFO",
+    "server.create": "INFO",
+    "server.delete": "CRITICAL",
+    "server.inventory_received": "INFO",
+    "server.inventory_sync": "INFO",
+    "server.packages_install": "WARNING",
+    "server.packages_remove": "WARNING",
+    "server.packages_update": "INFO",
+    "server.power_off": "WARNING",
+    "server.power_on": "WARNING",
+    "server.power_reboot": "WARNING",
+    "server.power_status": "INFO",
+    "server.power_status_cached": "TRACE",
+    "server.prepare": "INFO",
+    "server.prepared": "INFO",
+    "server.release": "INFO",
+    "server.reservation_denied": "WARNING",
+    "server.update": "INFO",
+    "server.update_os_version": "INFO",
+    "server.users_inventory_triggered": "INFO",
+    "server.view": "INFO",
+    "server.view_drift": "INFO",
+    "server_account.adopted_from_host": "INFO",
+    "server_account.bootstrap_resolved": "INFO",
+    "server_account.create": "INFO",
+    "server_account.delete": "WARNING",
+    "server_account.deprovision": "WARNING",
+    "server_account.drift_detected": "WARNING",
+    "server_account.ignored_login_added": "INFO",
+    "server_account.ignored_login_removed": "INFO",
+    "server_account.ignored_logins_listed": "INFO",
+    "server_account.imported_from_host": "INFO",
+    "server_account.link_servers": "INFO",
+    "server_account.list": "WARNING",
+    "server_account.password_revealed": "CRITICAL",
+    "server_account.password_revealed_throttled": "TRACE",
+    "server_account.password_rotate": "WARNING",
+    "server_account.provision": "INFO",
+    "server_account.provision_status": "INFO",
+    "server_account.recreate_login": "WARNING",
+    "server_account.rotate_password": "WARNING",
+    "server_account.rotate_password_dispatch": "WARNING",
+    "server_account.ssh_key_rotate": "WARNING",
+    "server_account.ssh_key_set": "WARNING",
+    "server_account.ssh_private_key_revealed": "CRITICAL",
+    "server_account.unlink_servers": "INFO",
+    "server_account.update": "INFO",
+    "server_account.update_on_host": "INFO",
+    "server_account.users_inventory": "INFO",
+    "server_account.users_inventory_received": "INFO",
+    "server_account.view": "WARNING",
+    "server_account.view_password": "CRITICAL",
+    "service.create": "INFO",
+    "service.delete": "WARNING",
+    "service.list": "INFO",
+    "service.started": "INFO",
+    "service_key.generate": "CRITICAL",
+    "service_role.bulk_assign": "WARNING",
+    "service_role.bulk_revoke": "WARNING",
+    "service_role.create": "INFO",
+    "service_role.delete": "WARNING",
+    "service_role.update": "INFO",
+    "ssh_console.command": "WARNING",
+    "ssh_console.session_close": "INFO",
+    "ssh_console.session_open": "WARNING",
+    "task.cancelled": "INFO",
+    "task.deleted_midrun": "ERROR",
+    "task.view": "INFO",
+    "task.worker_orphaned": "ERROR",
+    "task.worker_shutdown": "WARNING",
+    "token.refresh_race": "DEBUG",
+    "token.refresh_reuse": "CRITICAL",
+    "tokens.access_denied": "WARNING",
+    "tokens.admin_override_delete": "CRITICAL",
+    "tokens.create": "INFO",
+    "tokens.delete": "WARNING",
+    "tokens.dept_grant_added": "WARNING",
+    "tokens.dept_grant_revoked": "WARNING",
+    "tokens.dept_recipient_cascade": "WARNING",
+    "tokens.dept_revoke_cascade": "WARNING",
+    "tokens.lockout_triggered": "CRITICAL",
+    "tokens.owner_dept_deleted_block": "WARNING",
+    "tokens.owner_user_deleted_block": "WARNING",
+    "tokens.recover": "WARNING",
+    "tokens.revealed": "WARNING",
+    "tokens.revealed_blocked_by_validity": "WARNING",
+    "tokens.revealed_throttled": "TRACE",
+    "tokens.role_acl_added": "WARNING",
+    "tokens.role_acl_revoked": "WARNING",
+    "tokens.transfer_ownership": "WARNING",
+    "tokens.update": "INFO",
+    "tokens.user_acl_added": "WARNING",
+    "tokens.user_acl_removed": "WARNING",
+    "user.ban": "WARNING",
+    "user.ban_deactivated_via_status_change": "WARNING",
+    "user.create": "INFO",
+    "user.force_password_change": "WARNING",
+    "user.groups_purged_on_transfer": "WARNING",
+    "user.hard_deleted": "CRITICAL",
+    "user.list": "INFO",
+    "user.locked_list": "INFO",
+    "user.login": "WARNING",
+    "user.logout": "INFO",
+    "user.me": "TRACE",
+    "user.must_change_password_cleared": "INFO",
+    "user.password_change_required_blocked": "WARNING",
+    "user.password_reset": "WARNING",
+    "user.pat_revoked_on_block": "WARNING",
+    "user.permissions_view": "INFO",
+    "user.refresh": "INFO",
+    "user.roles_assign": "WARNING",
+    "user.roles_purged_on_transfer": "WARNING",
+    "user.self_password_reset": "INFO",
+    "user.session_admin_revoked_one": "WARNING",
+    "user.session_revoked_one": "INFO",
+    "user.sessions_admin_listed": "INFO",
+    "user.sessions_admin_revoked_all": "WARNING",
+    "user.sessions_listed": "INFO",
+    "user.sessions_revoked_all": "WARNING",
+    "user.sessions_revoked_on_block": "WARNING",
+    "user.unban": "WARNING",
+    "user.unlock": "WARNING",
+    "user.update": "INFO",
+    "worker_dispatch.orphan_detected": "ERROR",
 }
+
+# Действия с уровнем ИГНОР в матрице — событие НЕ логируется вовсе. Такие
+# action'ы сидируются дефолтным SUPPRESS-правилом (см. `seed_default_rules` /
+# `apply_rules`): подавление статус-агностично и срабатывает даже при явном
+# severity.
+_DEFAULT_SUPPRESS: frozenset[str] = frozenset({
+    "service.access_check",
+    "token.introspect",
+})
+
+# Остаток прежней (action, status)-таблицы: пары, чьих action НЕТ в матрице.
+# Матрица статус-агностична; здесь остаются статус-зависимые дефолты для
+# действий, которые матрица не покрывает. `logging.events_queried` —
+# self-audit loging_service (эмитится вне rule-engine, но
+# `_resolve_default_severity` всё равно должен назначить ему severity).
+_LEGACY_SEVERITY: dict[tuple[str, str], str] = {
+    ("logging.events_queried", "success"): "INFO",
+    ("logging.events_queried", "warning"): "WARNING",
+}
+
 
 # Ключ в `seed_state`, под которым отмечается «дефолтные severity-правила
 # засеяны». Один раз посеяв набор, повторный старт видит маркер и НЕ
@@ -309,67 +398,155 @@ _DEFAULT_RULE_PRIORITY = 0
 _DEFAULT_RULE_NAME_PREFIX = "default:"
 
 
-def default_rule_name(action: str, status: str) -> str:
-    """Детерминированное имя дефолтного правила для пары `(action, status)`.
+def default_rule_name(action: str, status: str | None = None) -> str:
+    """Детерминированное имя дефолтного правила.
 
-    Усекаем до 128 (`audit_rules.name` max_length): пара
-    `action(≤128) + status(≤16)` + префикс не влезает в потолок, поэтому
-    режем хвост. Коллизия двух разных пар в одно имя теоретически возможна
-    только на патологически длинных action'ах (action сам ≤128 по схеме),
-    на реальном наборе `_DEFAULT_SEVERITY` имена уникальны.
+    Матричные (статус-агностичные) правила именуются `default:<action>`,
+    legacy-правила с конкретным статусом — `default:<action>:<status>`. Имя
+    deterministично: повторный сид не плодит дубли (UNIQUE на `name` отбил бы
+    вставку). Усекаем до 128 (`audit_rules.name` max_length): на реальном
+    наборе имена уникальны и в потолок влезают.
     """
+    if status is None:
+        return f"{_DEFAULT_RULE_NAME_PREFIX}{action}"[:128]
     return f"{_DEFAULT_RULE_NAME_PREFIX}{action}:{status}"[:128]
 
 
+@dataclass(frozen=True, slots=True)
+class _DefaultRuleSpec:
+    """Описание одного дефолтного правила для сида/reconcile/миграции."""
+
+    name: str
+    match_action: str
+    match_status: str | None
+    effect: _EffectCanonical
+    effect_severity: str | None
+
+
+def iter_default_rule_specs() -> list[_DefaultRuleSpec]:
+    """Полный набор дефолтных правил: матрица + ИГНОР-suppress + legacy.
+
+    Порядок стабилен (сортировка по action) — читаемый дифф и детерминированный
+    сид. Матричные action'ы → `OVERRIDE_SEVERITY` с `match_status=None`
+    (статус-агностично); ИГНОР → `SUPPRESS`; legacy-пары → `OVERRIDE_SEVERITY`
+    со своим статусом. Единый источник для `seed_default_rules` и миграции.
+    """
+    specs: list[_DefaultRuleSpec] = []
+    for action in sorted(_DEFAULT_SEVERITY):
+        specs.append(
+            _DefaultRuleSpec(
+                name=default_rule_name(action),
+                match_action=action,
+                match_status=None,
+                effect="OVERRIDE_SEVERITY",
+                effect_severity=_DEFAULT_SEVERITY[action],
+            )
+        )
+    for action in sorted(_DEFAULT_SUPPRESS):
+        specs.append(
+            _DefaultRuleSpec(
+                name=default_rule_name(action),
+                match_action=action,
+                match_status=None,
+                effect="SUPPRESS",
+                effect_severity=None,
+            )
+        )
+    for action, status in sorted(_LEGACY_SEVERITY):
+        specs.append(
+            _DefaultRuleSpec(
+                name=default_rule_name(action, status),
+                match_action=action,
+                match_status=status,
+                effect="OVERRIDE_SEVERITY",
+                effect_severity=_LEGACY_SEVERITY[(action, status)],
+            )
+        )
+    return specs
+
+
 def seed_default_rules(db: Session) -> int:
-    """Идемпотентно сеет дефолтные severity-правила в `audit_rules`.
+    """Сеет и сверяет дефолтные severity-правила в `audit_rules` (reconcile).
 
-    Контракт:
-      * если маркер `seed_state[DEFAULT_RULES_SEED_KEY]` уже стоит — ничего
-        не делает (удалённые админом дефолты НЕ воскресают);
-      * иначе создаёт по одному `is_default=true` OVERRIDE_SEVERITY-правилу
-        на каждую пару из `_DEFAULT_SEVERITY` и ставит маркер;
-      * всё в одной транзакции — либо весь набор + маркер, либо ничего.
+    На чистой БД создаёт по одному `is_default=true` правилу на каждый spec из
+    `iter_default_rule_specs` (матричные `OVERRIDE_SEVERITY` + `SUPPRESS` для
+    ИГНОР + legacy). Все `is_active=true`, `priority=0`.
 
-    Возвращает число созданных правил (0 — уже сеяли).
+    Реконсиляция: если маркер `seed_state` уже стоит (обновление инсталляции),
+    сид всё равно добирает недостающие правила и правит разошедшиеся — новый
+    набор из матрицы доезжает, не блокируясь старым маркером. Идемпотентно:
+    повторный запуск на актуальном наборе ничего не меняет и возвращает 0.
+
+    Инвариант «удалённый админом дефолт не воскресает» сохранён: soft-delete
+    оставляет tombstone в таблице (`deleted_at IS NOT NULL`) и ПЕРЕИМЕНОВЫВАЕТ
+    его (`<name>#deleted-<ns>-<id>`, чтобы не держать UNIQUE-имя). Поэтому
+    reconcile ищет tombstone не по имени, а по семантическому ключу
+    `(match_action, match_status)`, который delete сохраняет: есть tombstone на
+    этот ключ → дефолт НЕ пересоздаётся и НЕ реактивируется.
+
+    Возвращает число ВНОВЬ созданных правил (0 — весь набор уже на месте).
 
     Вызывается на старте сервиса (`main.lifespan`) и из тестовых фикстур.
-    Безопасен под гонку нескольких воркеров: маркер — PK в `seed_state`,
-    параллельная вставка второго воркера упадёт на PK-конфликте, и его
-    `seed_default_rules` откатится, не наплодив дублей (UNIQUE на rule.name
-    ловит вторую попытку даже без маркера).
+    Безопасен под гонку воркеров: UNIQUE на `name` отбивает дубли параллельной
+    вставки, конкурентный коммит откатится на конфликте.
     """
-    from datetime import datetime, timezone
-
     from src.models.audit_rule import AuditRule
     from src.models.seed_state import SeedState
     from src.utils.ids import audit_rule_id
 
-    existing = db.get(SeedState, DEFAULT_RULES_SEED_KEY)
-    if existing is not None:
-        return 0
-
+    specs = iter_default_rule_specs()
+    all_defaults = db.query(AuditRule).filter(AuditRule.is_default.is_(True)).all()
+    # Активные дефолты — по имени (детерминированному). Tombstone'ы — по
+    # семантическому ключу `(match_action, match_status)`: soft-delete манглит
+    # имя, поэтому по имени их не найти, а action/status он сохраняет.
+    active_by_name = {r.name: r for r in all_defaults if r.deleted_at is None}
+    tombstoned_keys = {
+        (r.match_action, r.match_status)
+        for r in all_defaults
+        if r.deleted_at is not None
+    }
     now = datetime.now(timezone.utc)
     created = 0
-    for (action, status), severity in _DEFAULT_SEVERITY.items():
-        db.add(
-            AuditRule(
-                id=audit_rule_id(),
-                name=default_rule_name(action, status),
-                description="auto-seeded default severity rule",
-                is_active=True,
-                is_default=True,
-                priority=_DEFAULT_RULE_PRIORITY,
-                match_action=action,
-                match_status=status,
-                effect="OVERRIDE_SEVERITY",
-                effect_severity=severity,
-                created_at=now,
-                updated_at=now,
+    for spec in specs:
+        row = active_by_name.get(spec.name)
+        if row is None:
+            if (spec.match_action, spec.match_status) in tombstoned_keys:
+                # Админ снёс этот дефолт (tombstone) — не воскрешаем.
+                continue
+            db.add(
+                AuditRule(
+                    id=audit_rule_id(),
+                    name=spec.name,
+                    description="auto-seeded default severity rule",
+                    is_active=True,
+                    is_default=True,
+                    priority=_DEFAULT_RULE_PRIORITY,
+                    match_action=spec.match_action,
+                    match_status=spec.match_status,
+                    effect=spec.effect,
+                    effect_severity=spec.effect_severity,
+                    created_at=now,
+                    updated_at=now,
+                )
             )
-        )
-        created += 1
-    db.add(SeedState(key=DEFAULT_RULES_SEED_KEY, seeded_at=now))
+            created += 1
+            continue
+        # Активный дефолт разошёлся с матрицей — подтягиваем к целевому виду.
+        if (
+            row.effect != spec.effect
+            or row.effect_severity != spec.effect_severity
+            or row.match_action != spec.match_action
+            or row.match_status != spec.match_status
+            or not row.is_active
+        ):
+            row.effect = spec.effect
+            row.effect_severity = spec.effect_severity
+            row.match_action = spec.match_action
+            row.match_status = spec.match_status
+            row.is_active = True
+            row.updated_at = now
+    if db.get(SeedState, DEFAULT_RULES_SEED_KEY) is None:
+        db.add(SeedState(key=DEFAULT_RULES_SEED_KEY, seeded_at=now))
     db.commit()
     invalidate_cache()
     return created
@@ -395,14 +572,15 @@ def _resolve_default_severity(
     """Возвращает severity по умолчанию.
 
     Порядок lookup'а:
-      1. Hardcoded `_DEFAULT_SEVERITY[(action, status)]` — статус-зависимая
-         таблица (failure/denied отдельным severity'ем от success).
-      2. Каталог `service_events.default_severity` для *action* — каждый сервис
-         объявляет дефолт на регистрации (`register_events`), и каталог
-         обычно полнее хардкода (~60% action'ов в hardcoded dict'е нет).
-         Lookup закрыт через `_CatalogSeverityCache` (TTL=30s), чтобы ingest
-         не дёргал БД на каждое событие.
-      3. Heuristic: `failure`/`denied`/`warning` → WARNING, остальное → INFO.
+      1. Матрица `_DEFAULT_SEVERITY[action]` — статус-агностично, один severity
+         на действие (source of truth «Матрица событий EMM»).
+      2. `_LEGACY_SEVERITY[(action, status)]` — остаток прежней статус-зависимой
+         таблицы для действий, которых нет в матрице.
+      3. Каталог `service_events.default_severity` для *action* — каждый сервис
+         объявляет дефолт на регистрации (`register_events`). Lookup закрыт
+         через `_CatalogSeverityCache` (TTL=30s), чтобы ingest не дёргал БД на
+         каждое событие.
+      4. Heuristic: `failure`/`denied`/`warning` → WARNING, остальное → INFO.
 
     *db* опционален: если caller (юнит-тест, миграция) не передал session,
     catalog lookup пропускается. Production call-sites (`apply_rules`,
@@ -412,8 +590,10 @@ def _resolve_default_severity(
     свалился бы в INFO — теряется сигнал, что операция прошла, но что-то
     пахнет.
     """
-    if (action, status) in _DEFAULT_SEVERITY:
-        return _DEFAULT_SEVERITY[(action, status)]
+    if action in _DEFAULT_SEVERITY:
+        return _DEFAULT_SEVERITY[action]
+    if (action, status) in _LEGACY_SEVERITY:
+        return _LEGACY_SEVERITY[(action, status)]
     if db is not None:
         catalog_severity = _catalog_cache.get(db, action)
         if catalog_severity is not None:
@@ -829,11 +1009,13 @@ def apply_rules(db: Session, payload: EventCreate) -> EventCreate | None:
     # (см. `_RuleCache.get` except-ветку).
     rules = _cache.get(db)
 
-    # Шаг 1: базовый severity из дефолтного правила. Дефолты сидируются как
-    # OVERRIDE_SEVERITY с `priority=0`; они НЕ участвуют в managed-цепочке
-    # ниже (иначе priority=0 дефолт перетёр бы managed-OVERRIDE по контракту
-    # «последний матч выигрывает»). Берём первый сматчившийся дефолт —
-    # на каждую `(action, status)` сидируется ровно один.
+    # Шаг 1: базовый severity из дефолтного OVERRIDE_SEVERITY-правила. Дефолты
+    # сидируются с `priority=0`; они НЕ участвуют в managed-цепочке ниже (иначе
+    # priority=0 дефолт перетёр бы managed-OVERRIDE по контракту «последний
+    # матч выигрывает»). Берём первый сматчившийся дефолт — на каждый action
+    # сидируется ровно один OVERRIDE-дефолт (статус-агностичный). Дефолтный
+    # SUPPRESS (матрица=ИГНОР) обрабатывается в шаге 2, чтобы подавление
+    # работало и для событий с явным severity.
     if not explicit:
         for rule in rules:
             if not rule.is_default:
@@ -859,6 +1041,16 @@ def apply_rules(db: Session, payload: EventCreate) -> EventCreate | None:
     # последний матч выигрывает.
     for rule in rules:
         if rule.is_default:
+            # Дефолтные OVERRIDE_SEVERITY задают базовый severity в шаге 1 и в
+            # managed-цепочке не участвуют. Дефолтный SUPPRESS (матрица=ИГНОР)
+            # подавляет событие на своём priority=0 — если ни одно managed-
+            # правило с более высоким приоритетом не оборвало цепочку раньше
+            # (ALLOW сохранил бы, SUPPRESS дропнул бы). Работает и для событий
+            # с явным severity.
+            if rule.effect == "SUPPRESS" and _matches_with_severity(
+                rule, payload, severity
+            ):
+                return None
             continue
         if not _matches_with_severity(rule, payload, severity):
             continue

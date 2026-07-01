@@ -29,9 +29,9 @@ def _event(**kwargs) -> EventCreate:
 
 class TestAdminActionDefaultSeverity:
     def test_severity_none_uses_default_table(self, db):
-        """logging_rule.create → WARNING из _DEFAULT_SEVERITY."""
+        """logging_rule.create → CRITICAL из _DEFAULT_SEVERITY."""
         ev = record_admin_action(db, _event(action="logging_rule.create", severity=None))
-        assert ev.severity == "WARNING"
+        assert ev.severity == "CRITICAL"
 
     def test_severity_none_logging_rule_update_critical(self, db):
         ev = record_admin_action(db, _event(action="logging_rule.update", severity=None))
@@ -87,8 +87,8 @@ class TestAdminActionDefaultSeverity:
         ))
         rule_service.invalidate_cache()
         ev = record_admin_action(db, _event(action="logging_rule.create", severity=None))
-        # Должно остаться WARNING (из _DEFAULT_SEVERITY), не DEBUG из правила
-        assert ev.severity == "WARNING"
+        # Должно остаться CRITICAL (из _DEFAULT_SEVERITY), не DEBUG из правила
+        assert ev.severity == "CRITICAL"
 
 
 # ── defence-in-depth: service guard ──────────────────────────────────────────

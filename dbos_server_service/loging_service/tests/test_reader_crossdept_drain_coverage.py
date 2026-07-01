@@ -400,7 +400,7 @@ class TestRecordAdminActionSeverityResolution:
 
         action = "logging_rule.create"
         status = "success"
-        expected_severity = _DEFAULT_SEVERITY[(action, status)]
+        expected_severity = _DEFAULT_SEVERITY[action]
 
         payload = EventCreate(
             timestamp=datetime.now(timezone.utc),

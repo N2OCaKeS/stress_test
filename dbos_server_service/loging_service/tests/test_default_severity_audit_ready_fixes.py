@@ -37,63 +37,69 @@ from src.services.rule_service import _DEFAULT_SEVERITY, _resolve_default_severi
 
 
 class TestDefaultSeverityTokensSync:
-    """Severity-таблица содержит все 17 success+1 failure tokens.* и
-    secret_lifecycle.notify_failed/failure из secret_service / auth_service."""
+    """Severity-таблица (матрица EMM) покрывает все tokens.* и
+    secret_lifecycle.notify_failed без fallback'а. Таблица статус-агностична:
+    один severity на action независимо от статуса события."""
 
-    _TOKENS_SUCCESS_CRITICAL = (
-        "tokens.revealed",
+    _TOKENS_CRITICAL = (
         "tokens.admin_override_delete",
+        "tokens.lockout_triggered",
+    )
+    _TOKENS_INFO = (
+        "tokens.create",
+        "tokens.update",
+    )
+    _TOKENS_TRACE = (
+        "tokens.revealed_throttled",
+    )
+    _TOKENS_WARNING = (
+        "tokens.revealed",
+        "tokens.delete",
+        "tokens.access_denied",
+        "tokens.revealed_blocked_by_validity",
+        "tokens.transfer_ownership",
+        "tokens.recover",
         "tokens.dept_grant_added",
         "tokens.dept_grant_revoked",
         "tokens.dept_revoke_cascade",
         "tokens.dept_recipient_cascade",
-        "tokens.transfer_ownership",
-    )
-    _TOKENS_SUCCESS_INFO = (
-        "tokens.create",
-        "tokens.update",
-        "tokens.revealed_throttled",
         "tokens.role_acl_added",
         "tokens.role_acl_revoked",
-    )
-    _TOKENS_SUCCESS_WARNING = (
-        "tokens.delete",
+        "tokens.user_acl_added",
+        "tokens.user_acl_removed",
         "tokens.owner_user_deleted_block",
         "tokens.owner_dept_deleted_block",
-        "tokens.recover",
     )
 
-    def test_tokens_success_critical(self):
-        for action in self._TOKENS_SUCCESS_CRITICAL:
-            assert _DEFAULT_SEVERITY.get((action, "success")) == "CRITICAL", action
+    def test_tokens_critical(self):
+        for action in self._TOKENS_CRITICAL:
+            assert _DEFAULT_SEVERITY.get(action) == "CRITICAL", action
 
-    def test_tokens_success_info(self):
-        for action in self._TOKENS_SUCCESS_INFO:
-            assert _DEFAULT_SEVERITY.get((action, "success")) == "INFO", action
+    def test_tokens_info(self):
+        for action in self._TOKENS_INFO:
+            assert _DEFAULT_SEVERITY.get(action) == "INFO", action
 
-    def test_tokens_success_warning(self):
-        for action in self._TOKENS_SUCCESS_WARNING:
-            assert _DEFAULT_SEVERITY.get((action, "success")) == "WARNING", action
+    def test_tokens_trace(self):
+        for action in self._TOKENS_TRACE:
+            assert _DEFAULT_SEVERITY.get(action) == "TRACE", action
 
-    def test_tokens_access_denied_failure_info(self):
-        assert _DEFAULT_SEVERITY.get(("tokens.access_denied", "failure")) == "INFO"
+    def test_tokens_warning(self):
+        for action in self._TOKENS_WARNING:
+            assert _DEFAULT_SEVERITY.get(action) == "WARNING", action
 
-    def test_secret_lifecycle_notify_failed_warning(self):
-        assert (
-            _DEFAULT_SEVERITY.get(("secret_lifecycle.notify_failed", "failure"))
-            == "WARNING"
-        )
+    def test_secret_lifecycle_notify_failed_error(self):
+        assert _DEFAULT_SEVERITY.get("secret_lifecycle.notify_failed") == "ERROR"
 
     def test_tokens_resolver_no_fallback(self):
-        """Все 17 success tokens.* + access_denied/failure должны резолвиться
-        через явную таблицу (не через fallback по status)."""
+        """Все tokens.* из матрицы резолвятся через явную таблицу."""
         all_actions = (
-            self._TOKENS_SUCCESS_CRITICAL
-            + self._TOKENS_SUCCESS_INFO
-            + self._TOKENS_SUCCESS_WARNING
+            self._TOKENS_CRITICAL
+            + self._TOKENS_INFO
+            + self._TOKENS_TRACE
+            + self._TOKENS_WARNING
         )
         for action in all_actions:
-            assert (action, "success") in _DEFAULT_SEVERITY, action
+            assert action in _DEFAULT_SEVERITY, action
 
 
 # ── 2. audit_rules.priority tiebreaker ────────────────────────────────────────
@@ -417,26 +423,21 @@ class TestReadyFailureBranches:
 # ── 10. SIEM sanity: каждый action в `_DEFAULT_SEVERITY` имеет покрытие ───────
 
 
+_VALID_LEVELS = ("TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+
 class TestDefaultSeverityCoverage:
-    """Для каждого action присутствует хотя бы одна `(action, status)` пара.
-    Гард от полу-добавленных action'ов, где severity-таблица расходится с
-    SERVICE_EVENTS-реестром источника.
+    """Каждому action матрицы назначен валидный severity. Гард от
+    полу-добавленных action'ов, где severity-таблица расходится с матрицей.
     """
 
-    def test_every_action_has_at_least_one_status(self):
-        actions = {action for action, _ in _DEFAULT_SEVERITY.keys()}
-        for action in actions:
-            statuses = {
-                status for a, status in _DEFAULT_SEVERITY.keys() if a == action
-            }
-            assert statuses, f"{action} имеет 0 status'ов в _DEFAULT_SEVERITY"
+    def test_every_action_has_valid_level(self):
+        for action, severity in _DEFAULT_SEVERITY.items():
+            assert severity in _VALID_LEVELS, f"{action} → {severity!r}"
 
-    def test_failure_branch_resolves_via_fallback_or_table(self):
-        """Для каждого action либо есть явная failure/denied/warning запись,
-        либо `_resolve_default_severity` корректно фолбэчит на WARNING."""
-        actions = {action for action, _ in _DEFAULT_SEVERITY.keys()}
-        for action in actions:
+    def test_failure_branch_resolves(self):
+        """Матрица статус-агностична: для любого action `_resolve_default_severity`
+        на статусе failure отдаёт заявленный уровень (а не heuristic)."""
+        for action, severity in _DEFAULT_SEVERITY.items():
             sev = _resolve_default_severity(action, "failure")
-            assert sev in ("INFO", "WARNING", "ERROR", "CRITICAL"), (
-                f"{action}/failure resolves to {sev!r}"
-            )
+            assert sev == severity, f"{action}/failure resolves to {sev!r}"

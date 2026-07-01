@@ -82,17 +82,25 @@ class TestActionMatchesPattern:
 # ── _resolve_default_severity ─────────────────────────────────────────────────
 
 class TestResolveDefaultSeverity:
-    def test_known_action_success(self):
-        assert _resolve_default_severity("user.login", "success") == "INFO"
+    # Матрица EMM статус-агностична: один severity на action.
+    def test_known_action(self):
+        assert _resolve_default_severity("user.login", "success") == "WARNING"
 
-    def test_known_action_failure(self):
-        assert _resolve_default_severity("user.login", "failure") == "CRITICAL"
+    def test_known_action_status_agnostic(self):
+        # Любой статус action'а получает уровень из матрицы.
+        assert _resolve_default_severity("user.login", "failure") == "WARNING"
 
     def test_critical_action(self):
-        assert _resolve_default_severity("user.ban", "success") == "CRITICAL"
+        assert _resolve_default_severity("user.hard_deleted", "success") == "CRITICAL"
 
     def test_warning_action(self):
-        assert _resolve_default_severity("bot.create", "success") == "WARNING"
+        assert _resolve_default_severity("pat.revoke", "success") == "WARNING"
+
+    def test_info_action(self):
+        assert _resolve_default_severity("bot.create", "success") == "INFO"
+
+    def test_trace_action(self):
+        assert _resolve_default_severity("user.me", "success") == "TRACE"
 
     def test_unknown_action_success_defaults_to_info(self):
         assert _resolve_default_severity("unknown.action", "success") == "INFO"
@@ -106,11 +114,11 @@ class TestResolveDefaultSeverity:
     def test_logging_retention_read_info(self):
         assert _resolve_default_severity("logging.retention_read", "success") == "INFO"
 
-    def test_logging_retention_write_warning(self):
-        assert _resolve_default_severity("logging.retention_write", "success") == "WARNING"
+    def test_logging_retention_write_critical(self):
+        assert _resolve_default_severity("logging.retention_write", "success") == "CRITICAL"
 
     def test_admin_rule_create(self):
-        assert _resolve_default_severity("logging_rule.create", "success") == "WARNING"
+        assert _resolve_default_severity("logging_rule.create", "success") == "CRITICAL"
 
     def test_admin_rule_update(self):
         assert _resolve_default_severity("logging_rule.update", "success") == "CRITICAL"
@@ -119,23 +127,23 @@ class TestResolveDefaultSeverity:
         assert _resolve_default_severity("logging_rule.delete", "success") == "CRITICAL"
 
     def test_http_access_denied(self):
-        assert _resolve_default_severity("http.access_denied", "denied") == "CRITICAL"
+        assert _resolve_default_severity("http.access_denied", "denied") == "WARNING"
 
     def test_token_refresh_reuse(self):
         assert _resolve_default_severity("token.refresh_reuse", "failure") == "CRITICAL"
 
     # Управление серверами и OS-учётками (server_service / server_worker).
-    def test_server_prepare_critical(self):
-        assert _resolve_default_severity("server.prepare", "success") == "CRITICAL"
-        assert _resolve_default_severity("server.prepare", "failure") == "CRITICAL"
+    def test_server_prepare_info(self):
+        assert _resolve_default_severity("server.prepare", "success") == "INFO"
+        assert _resolve_default_severity("server.prepare", "failure") == "INFO"
 
-    def test_server_prepared_critical(self):
-        assert _resolve_default_severity("server.prepared", "success") == "CRITICAL"
-        assert _resolve_default_severity("server.prepared", "failure") == "CRITICAL"
+    def test_server_prepared_info(self):
+        assert _resolve_default_severity("server.prepared", "success") == "INFO"
+        assert _resolve_default_severity("server.prepared", "failure") == "INFO"
 
-    def test_server_account_provision_severity(self):
-        assert _resolve_default_severity("server_account.provision", "success") == "WARNING"
-        assert _resolve_default_severity("server_account.provision", "failure") == "CRITICAL"
+    def test_server_account_provision_info(self):
+        assert _resolve_default_severity("server_account.provision", "success") == "INFO"
+        assert _resolve_default_severity("server_account.provision", "failure") == "INFO"
 
     def test_server_account_update_on_host_info(self):
         assert _resolve_default_severity("server_account.update_on_host", "success") == "INFO"
@@ -146,6 +154,15 @@ class TestResolveDefaultSeverity:
     def test_server_account_drift_detected_warning(self):
         assert _resolve_default_severity("server_account.drift_detected", "success") == "WARNING"
 
+    def test_bmc_tls_downgrade_critical(self):
+        assert _resolve_default_severity("bmc.tls_downgrade", "failure") == "CRITICAL"
+
+    def test_view_password_critical(self):
+        assert _resolve_default_severity("server_account.view_password", "success") == "CRITICAL"
+
+    def test_tokens_revealed_warning(self):
+        assert _resolve_default_severity("tokens.revealed", "success") == "WARNING"
+
 
 # ── apply_rules — severity resolution ────────────────────────────────────────
 
@@ -154,12 +171,13 @@ class TestApplyRulesSeverityResolution:
         event = _event(severity=None, action="user.login", status="success")
         result = apply_rules(seeded_db, event)
         assert result is not None
-        assert result.severity == "INFO"
+        assert result.severity == "WARNING"
 
-    def test_assigns_critical_for_failed_login(self, seeded_db):
+    def test_default_severity_status_agnostic(self, seeded_db):
+        # Матрица применяется независимо от статуса — failure тоже WARNING.
         event = _event(severity=None, action="user.login", status="failure", allowed=False)
         result = apply_rules(seeded_db, event)
-        assert result.severity == "CRITICAL"
+        assert result.severity == "WARNING"
 
     def test_explicit_severity_preserved(self, seeded_db):
         event = _event(severity="DEBUG", action="user.login", status="success")
@@ -276,86 +294,41 @@ class TestApplyRulesLogic:
 # ── _DEFAULT_SEVERITY — server/worker actions ────────────────────────────────
 
 class TestDefaultSeverityServerActions:
-    """Покрывает дефолты severity для эмитов server_service / server_worker.
+    """Дефолты severity для эмитов server_service / server_worker.
 
-    Без явных entry'ев действия проваливались в fallback (INFO/WARNING) — для
-    power-операций и ротаций секретов это занижало приоритет SIEM-триагера.
+    Матрица EMM статус-агностична: severity одинаков для success/failure/denied.
     """
 
-    # power_on / power_off / power_reboot
-    @pytest.mark.parametrize("action", ["server.power_on", "server.power_off", "server.power_reboot"])
-    def test_power_mutating_success_is_warning(self, action):
-        assert _resolve_default_severity(action, "success") == "WARNING"
+    @pytest.mark.parametrize("status", ["success", "failure", "denied"])
+    @pytest.mark.parametrize(
+        "action", ["server.power_on", "server.power_off", "server.power_reboot"]
+    )
+    def test_power_mutating_is_warning(self, action, status):
+        assert _resolve_default_severity(action, status) == "WARNING"
 
-    @pytest.mark.parametrize("action", ["server.power_on", "server.power_off", "server.power_reboot"])
-    def test_power_mutating_failure_is_critical(self, action):
-        assert _resolve_default_severity(action, "failure") == "CRITICAL"
+    @pytest.mark.parametrize("status", ["success", "failure", "denied"])
+    def test_power_status_is_info(self, status):
+        assert _resolve_default_severity("server.power_status", status) == "INFO"
 
-    @pytest.mark.parametrize("action", ["server.power_on", "server.power_off", "server.power_reboot"])
-    def test_power_mutating_denied_is_warning(self, action):
-        assert _resolve_default_severity(action, "denied") == "WARNING"
+    @pytest.mark.parametrize("status", ["success", "failure", "denied"])
+    def test_inventory_sync_is_info(self, status):
+        assert _resolve_default_severity("server.inventory_sync", status) == "INFO"
 
-    # power_status — read-only, INFO для success
-    def test_power_status_success_is_info(self):
-        assert _resolve_default_severity("server.power_status", "success") == "INFO"
+    @pytest.mark.parametrize("status", ["success", "failure", "denied"])
+    def test_users_inventory_is_info(self, status):
+        assert _resolve_default_severity("server_account.users_inventory", status) == "INFO"
 
-    def test_power_status_failure_is_warning(self):
-        assert _resolve_default_severity("server.power_status", "failure") == "WARNING"
+    @pytest.mark.parametrize("status", ["success", "failure", "denied"])
+    def test_installed_packages_is_info(self, status):
+        assert _resolve_default_severity("installed_packages.list", status) == "INFO"
 
-    def test_power_status_denied_is_warning(self):
-        assert _resolve_default_severity("server.power_status", "denied") == "WARNING"
-
-    # inventory_sync — read-only probe
-    def test_inventory_sync_success_is_info(self):
-        assert _resolve_default_severity("server.inventory_sync", "success") == "INFO"
-
-    def test_inventory_sync_failure_is_warning(self):
-        assert _resolve_default_severity("server.inventory_sync", "failure") == "WARNING"
-
-    def test_inventory_sync_denied_is_warning(self):
-        assert _resolve_default_severity("server.inventory_sync", "denied") == "WARNING"
-
-    # users_inventory — read-only probe
-    def test_users_inventory_success_is_info(self):
-        assert _resolve_default_severity("server_account.users_inventory", "success") == "INFO"
-
-    def test_users_inventory_failure_is_warning(self):
-        assert _resolve_default_severity("server_account.users_inventory", "failure") == "WARNING"
-
-    def test_users_inventory_denied_is_warning(self):
-        assert _resolve_default_severity("server_account.users_inventory", "denied") == "WARNING"
-
-    # installed_packages.list — read-only probe
-    def test_installed_packages_success_is_info(self):
-        assert _resolve_default_severity("installed_packages.list", "success") == "INFO"
-
-    def test_installed_packages_failure_is_warning(self):
-        assert _resolve_default_severity("installed_packages.list", "failure") == "WARNING"
-
-    def test_installed_packages_denied_is_warning(self):
-        assert _resolve_default_severity("installed_packages.list", "denied") == "WARNING"
-
-    # password_rotate — sensitive, штатный поток
+    @pytest.mark.parametrize("status", ["success", "failure", "denied"])
     @pytest.mark.parametrize(
         "action",
         ["server_account.password_rotate", "ipmi_controller.password_rotate"],
     )
-    def test_password_rotate_success_is_warning(self, action):
-        assert _resolve_default_severity(action, "success") == "WARNING"
-
-    @pytest.mark.parametrize(
-        "action",
-        ["server_account.password_rotate", "ipmi_controller.password_rotate"],
-    )
-    def test_password_rotate_failure_is_critical(self, action):
-        assert _resolve_default_severity(action, "failure") == "CRITICAL"
-
-    @pytest.mark.parametrize(
-        "action",
-        ["server_account.password_rotate", "ipmi_controller.password_rotate"],
-    )
-    def test_password_rotate_denied_is_warning(self, action):
-        assert _resolve_default_severity(action, "denied") == "WARNING"
+    def test_password_rotate_is_warning(self, action, status):
+        assert _resolve_default_severity(action, status) == "WARNING"
 
 
 # ── RuleCreate.match_service normalisation ───────────────────────────────────

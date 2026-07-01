@@ -24,8 +24,11 @@ from src.services.rule_service import (
     _DEFAULT_SEVERITY,
     apply_rules,
     default_rule_name,
+    iter_default_rule_specs,
     seed_default_rules,
 )
+
+_TOTAL_DEFAULT_RULES = len(iter_default_rule_specs())
 
 
 def _event(**kwargs) -> EventCreate:
@@ -52,15 +55,26 @@ def _purge_rules_and_marker(db):
 # ── Сид при пустой БД ─────────────────────────────────────────────────────────
 
 class TestSeedOnEmptyDb:
-    def test_seed_creates_rule_per_default_pair(self, db):
+    def test_seed_creates_rule_per_default_spec(self, db):
         _purge_rules_and_marker(db)
         created = seed_default_rules(db)
-        assert created == len(_DEFAULT_SEVERITY)
+        assert created == _TOTAL_DEFAULT_RULES
 
         rows = db.execute(
             text("SELECT count(*) FROM audit_rules WHERE is_default = true")
         ).scalar()
-        assert rows == len(_DEFAULT_SEVERITY)
+        assert rows == _TOTAL_DEFAULT_RULES
+
+    def test_seed_all_rules_active(self, db):
+        _purge_rules_and_marker(db)
+        seed_default_rules(db)
+        inactive = db.execute(
+            text(
+                "SELECT count(*) FROM audit_rules "
+                "WHERE is_default = true AND is_active = false"
+            )
+        ).scalar()
+        assert inactive == 0
 
     def test_seed_sets_marker(self, db):
         _purge_rules_and_marker(db)
@@ -71,15 +85,29 @@ class TestSeedOnEmptyDb:
     def test_seeded_rule_severity_matches_table(self, db):
         _purge_rules_and_marker(db)
         seed_default_rules(db)
-        # Точечно сверяем пару user.login/failure → CRITICAL.
+        # Матрица статус-агностична: у user.login один дефолт с match_status IS NULL.
         row = db.execute(
             text(
                 "SELECT effect_severity FROM audit_rules "
-                "WHERE match_action = :a AND match_status = :s AND is_default = true"
+                "WHERE match_action = :a AND match_status IS NULL AND is_default = true"
             ),
-            {"a": "user.login", "s": "failure"},
+            {"a": "user.login"},
         ).scalar()
-        assert row == _DEFAULT_SEVERITY[("user.login", "failure")]
+        assert row == _DEFAULT_SEVERITY["user.login"]
+
+    def test_ignore_action_seeded_as_suppress(self, db):
+        _purge_rules_and_marker(db)
+        seed_default_rules(db)
+        # ИГНОР-действия матрицы → дефолтный SUPPRESS.
+        for action in ("service.access_check", "token.introspect"):
+            effect = db.execute(
+                text(
+                    "SELECT effect FROM audit_rules "
+                    "WHERE match_action = :a AND is_default = true"
+                ),
+                {"a": action},
+            ).scalar()
+            assert effect == "SUPPRESS", action
 
 
 # ── Идемпотентность ───────────────────────────────────────────────────────────
@@ -89,12 +117,12 @@ class TestSeedIdempotent:
         _purge_rules_and_marker(db)
         first = seed_default_rules(db)
         second = seed_default_rules(db)
-        assert first == len(_DEFAULT_SEVERITY)
+        assert first == _TOTAL_DEFAULT_RULES
         assert second == 0
         rows = db.execute(
             text("SELECT count(*) FROM audit_rules WHERE is_default = true")
         ).scalar()
-        assert rows == len(_DEFAULT_SEVERITY)
+        assert rows == _TOTAL_DEFAULT_RULES
 
 
 # ── Удаление дефолта → drop ───────────────────────────────────────────────────
@@ -104,16 +132,16 @@ class TestDeletedDefaultDrops:
         db = seeded_db
         out = apply_rules(db, _event(action="user.login", status="success"))
         assert out is not None
-        assert out.severity == "INFO"
+        assert out.severity == "WARNING"
 
     def test_event_dropped_after_default_deleted(self, seeded_db):
         db = seeded_db
-        # Удаляем дефолт для (user.login, success) штатным soft-delete.
+        # Удаляем статус-агностичный дефолт user.login штатным soft-delete.
         rule = (
             db.query(AuditRule)
             .filter(
                 AuditRule.match_action == "user.login",
-                AuditRule.match_status == "success",
+                AuditRule.match_status.is_(None),
                 AuditRule.is_default.is_(True),
             )
             .one()
@@ -123,23 +151,23 @@ class TestDeletedDefaultDrops:
         # Нет дефолта, нет managed-правила, нет каталога → drop.
         assert apply_rules(db, _event(action="user.login", status="success")) is None
 
-    def test_other_pairs_unaffected_by_delete(self, seeded_db):
+    def test_other_actions_unaffected_by_delete(self, seeded_db):
         db = seeded_db
         rule = (
             db.query(AuditRule)
             .filter(
                 AuditRule.match_action == "user.login",
-                AuditRule.match_status == "success",
+                AuditRule.match_status.is_(None),
                 AuditRule.is_default.is_(True),
             )
             .one()
         )
         rule_repo.delete(db, rule)
         rule_service.invalidate_cache()
-        # (user.login, failure) дефолт не трогали — событие логируется.
-        out = apply_rules(db, _event(action="user.login", status="failure", allowed=False))
+        # Другое действие (user.logout) дефолт не трогали — событие логируется.
+        out = apply_rules(db, _event(action="user.logout", status="success"))
         assert out is not None
-        assert out.severity == "CRITICAL"
+        assert out.severity == "INFO"
 
 
 # ── Повторный старт не воскрешает удалённый дефолт ────────────────────────────
@@ -151,7 +179,7 @@ class TestReseedDoesNotResurrect:
             db.query(AuditRule)
             .filter(
                 AuditRule.match_action == "user.login",
-                AuditRule.match_status == "success",
+                AuditRule.match_status.is_(None),
                 AuditRule.is_default.is_(True),
             )
             .one()
@@ -160,7 +188,8 @@ class TestReseedDoesNotResurrect:
         db.commit()
         rule_service.invalidate_cache()
 
-        # Повторный старт сервиса — маркер `seed_state` стоит, сид no-op.
+        # Повторный старт сервиса — reconcile видит soft-deleted row по имени
+        # и НЕ воскрешает её.
         created = seed_default_rules(db)
         assert created == 0
         rule_service.invalidate_cache()
@@ -210,8 +239,12 @@ class TestManagedOverridesDefault:
 # ── default_rule_name ─────────────────────────────────────────────────────────
 
 class TestDefaultRuleName:
-    def test_deterministic(self):
+    def test_deterministic_with_status(self):
         assert default_rule_name("user.login", "success") == "default:user.login:success"
+
+    def test_status_agnostic_name(self):
+        # Матричные (статус-агностичные) правила — без хвоста статуса.
+        assert default_rule_name("user.login") == "default:user.login"
 
     def test_capped_at_128(self):
         long_action = "a" * 200

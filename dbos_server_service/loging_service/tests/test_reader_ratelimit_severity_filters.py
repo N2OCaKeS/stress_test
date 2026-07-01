@@ -123,13 +123,13 @@ class TestSeverityFromCatalog:
         from src.repositories import service_events as se_repo
         from src.services.rule_service import _resolve_default_severity
 
-        # `user.login`/success есть в hardcoded → "INFO".
+        # `user.login` есть в матрице → "WARNING" (catalog CRITICAL игнорируется).
         se_repo.upsert_events(
             db, "auth_service",
             [{"action": "user.login", "description": "x",
               "default_severity": "CRITICAL"}],
         )
-        assert _resolve_default_severity("user.login", "success", db) == "INFO"
+        assert _resolve_default_severity("user.login", "success", db) == "WARNING"
 
     def test_catalog_used_when_hardcoded_missing(self, db):
         """Action не в hardcoded → catalog → "CRITICAL"."""
@@ -168,8 +168,8 @@ class TestSeverityFromCatalog:
 
         # Heuristic, потому что catalog не доступен.
         assert _resolve_default_severity("unknown.thing", "failure") == "WARNING"
-        # Hardcoded работает и без db.
-        assert _resolve_default_severity("user.login", "success") == "INFO"
+        # Матрица работает и без db.
+        assert _resolve_default_severity("user.login", "success") == "WARNING"
 
     def test_register_events_invalidates_catalog_cache(self, client, auth_headers, db):
         """Hook на upsert: после `POST /services/{}/events` свежий severity

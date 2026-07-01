@@ -50,8 +50,7 @@ def upgrade() -> None:
     from src.services.rule_service import (
         DEFAULT_RULES_SEED_KEY,
         _DEFAULT_RULE_PRIORITY,
-        _DEFAULT_SEVERITY,
-        default_rule_name,
+        iter_default_rule_specs,
     )
     from src.utils.ids import audit_rule_id
 
@@ -82,19 +81,19 @@ def upgrade() -> None:
     rows = [
         {
             "id": audit_rule_id(),
-            "name": default_rule_name(action, status),
+            "name": spec.name,
             "description": "auto-seeded default severity rule",
             "is_active": True,
             "is_default": True,
             "priority": _DEFAULT_RULE_PRIORITY,
-            "match_action": action,
-            "match_status": status,
-            "effect": "OVERRIDE_SEVERITY",
-            "effect_severity": severity,
+            "match_action": spec.match_action,
+            "match_status": spec.match_status,
+            "effect": spec.effect,
+            "effect_severity": spec.effect_severity,
             "created_at": now,
             "updated_at": now,
         }
-        for (action, status), severity in _DEFAULT_SEVERITY.items()
+        for spec in iter_default_rule_specs()
     ]
     if rows:
         op.bulk_insert(audit_rules, rows)

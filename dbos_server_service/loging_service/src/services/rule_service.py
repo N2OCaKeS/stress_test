@@ -382,6 +382,28 @@ _LEGACY_SEVERITY: dict[tuple[str, str], str] = {
     ("logging.events_queried", "warning"): "WARNING",
 }
 
+# Действия из каталогов сервисов (auth/secret/server/worker `audit_events.py`),
+# которых НЕТ в снимке «Матрицы событий EMM» — свежие события, добавленные
+# после снимка. Severity взят из каталога сервиса-источника (в матрице их нет).
+# Покрываем их дефолтными OVERRIDE-правилами, чтобы на чистом старте у loging
+# было is_default-правило на КАЖДОЕ эмитимое действие, а не fallback-эвристика.
+# Пересечений с матрицей быть не должно; если действие появится в матрице —
+# она приоритетнее (см. слияние в `iter_default_rule_specs`).
+_CODE_CATALOG_SEVERITY: dict[str, str] = {
+    "encryption.auto_retire": "CRITICAL",
+    "installed_packages.history": "INFO",
+    "resource_permission.grant": "CRITICAL",
+    "resource_permission.propagate": "CRITICAL",
+    "resource_permission.revoke": "CRITICAL",
+    "secrets.encryption_auto_retire": "CRITICAL",
+    "server.clean": "CRITICAL",
+    "server.management_credentials_revealed": "WARNING",
+    "server.management_creds_generated": "CRITICAL",
+    "server.management_creds_rotated": "CRITICAL",
+    "server.power_state_updated": "INFO",
+    "user.session_evicted_over_limit": "WARNING",
+}
+
 
 # Ключ в `seed_state`, под которым отмечается «дефолтные severity-правила
 # засеяны». Один раз посеяв набор, повторный старт видит маркер и НЕ
@@ -428,18 +450,23 @@ def iter_default_rule_specs() -> list[_DefaultRuleSpec]:
 
     Порядок стабилен (сортировка по action) — читаемый дифф и детерминированный
     сид. Матричные action'ы → `OVERRIDE_SEVERITY` с `match_status=None`
-    (статус-агностично); ИГНОР → `SUPPRESS`; legacy-пары → `OVERRIDE_SEVERITY`
-    со своим статусом. Единый источник для `seed_default_rules` и миграции.
+    (статус-агностично); code-only action'ы из `_CODE_CATALOG_SEVERITY` — тоже
+    OVERRIDE (матрица приоритетнее при пересечении); ИГНОР → `SUPPRESS`;
+    legacy-пары → `OVERRIDE_SEVERITY` со своим статусом. Единый источник для
+    `seed_default_rules` и миграции.
     """
     specs: list[_DefaultRuleSpec] = []
-    for action in sorted(_DEFAULT_SEVERITY):
+    # Матрица приоритетнее code-каталога: сначала code-only, затем матрица
+    # перезаписывает пересечения (пересечений быть не должно, но контракт явный).
+    override_severity = {**_CODE_CATALOG_SEVERITY, **_DEFAULT_SEVERITY}
+    for action in sorted(override_severity):
         specs.append(
             _DefaultRuleSpec(
                 name=default_rule_name(action),
                 match_action=action,
                 match_status=None,
                 effect="OVERRIDE_SEVERITY",
-                effect_severity=_DEFAULT_SEVERITY[action],
+                effect_severity=override_severity[action],
             )
         )
     for action in sorted(_DEFAULT_SUPPRESS):
@@ -574,9 +601,11 @@ def _resolve_default_severity(
     Порядок lookup'а:
       1. Матрица `_DEFAULT_SEVERITY[action]` — статус-агностично, один severity
          на действие (source of truth «Матрица событий EMM»).
-      2. `_LEGACY_SEVERITY[(action, status)]` — остаток прежней статус-зависимой
+      2. `_CODE_CATALOG_SEVERITY[action]` — code-only действия из каталогов
+         сервисов, которых нет в снимке матрицы (тоже статус-агностично).
+      3. `_LEGACY_SEVERITY[(action, status)]` — остаток прежней статус-зависимой
          таблицы для действий, которых нет в матрице.
-      3. Каталог `service_events.default_severity` для *action* — каждый сервис
+      4. Каталог `service_events.default_severity` для *action* — каждый сервис
          объявляет дефолт на регистрации (`register_events`). Lookup закрыт
          через `_CatalogSeverityCache` (TTL=30s), чтобы ingest не дёргал БД на
          каждое событие.
@@ -592,6 +621,8 @@ def _resolve_default_severity(
     """
     if action in _DEFAULT_SEVERITY:
         return _DEFAULT_SEVERITY[action]
+    if action in _CODE_CATALOG_SEVERITY:
+        return _CODE_CATALOG_SEVERITY[action]
     if (action, status) in _LEGACY_SEVERITY:
         return _LEGACY_SEVERITY[(action, status)]
     if db is not None:

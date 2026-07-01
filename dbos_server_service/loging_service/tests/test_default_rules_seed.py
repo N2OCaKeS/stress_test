@@ -109,6 +109,26 @@ class TestSeedOnEmptyDb:
             ).scalar()
             assert effect == "SUPPRESS", action
 
+    def test_code_catalog_actions_seeded_as_override(self, db):
+        _purge_rules_and_marker(db)
+        seed_default_rules(db)
+        # Действия из каталогов сервисов, отсутствующие в матрице EMM, тоже
+        # получают is_default OVERRIDE-правило с severity из каталога.
+        from src.services.rule_service import _CODE_CATALOG_SEVERITY
+        for action, severity in _CODE_CATALOG_SEVERITY.items():
+            row = db.execute(
+                text(
+                    "SELECT effect, effect_severity, match_status, is_active "
+                    "FROM audit_rules "
+                    "WHERE match_action = :a AND is_default = true"
+                ),
+                {"a": action},
+            ).one()
+            assert row.effect == "OVERRIDE_SEVERITY", action
+            assert row.effect_severity == severity, action
+            assert row.match_status is None, action
+            assert row.is_active is True, action
+
 
 # ── Идемпотентность ───────────────────────────────────────────────────────────
 

@@ -30,7 +30,11 @@
 import re
 from pathlib import Path
 
-from src.services.rule_service import _DEFAULT_SEVERITY, _LEGACY_SEVERITY
+from src.services.rule_service import (
+    _CODE_CATALOG_SEVERITY,
+    _DEFAULT_SEVERITY,
+    _LEGACY_SEVERITY,
+)
 
 
 # Корень репо вычисляем относительно файла теста: tests/ → loging_service/.
@@ -112,15 +116,16 @@ def test_audit_events_md_severity_matches_default_severity():
         if _action_prefix(action) in _EXTERNAL_TO_DOC:
             # Кросс-сервисный action — owner'ы доки в своих AUDIT_EVENTS.md;
             # проверяется только если есть совпадение в нашем `_DEFAULT_SEVERITY`.
-            code_sev = _DEFAULT_SEVERITY.get(action)
+            code_sev = _DEFAULT_SEVERITY.get(action) or _CODE_CATALOG_SEVERITY.get(action)
             if code_sev is not None and code_sev != sev:
                 mismatches.append(
                     f"{action}/{status}: code={code_sev}, AUDIT_EVENTS.md={sev}"
                 )
             continue
-        # Матрица статус-агностична (action → severity); legacy-остаток
-        # `_LEGACY_SEVERITY` статус-зависим для не покрытых матрицей action'ов.
-        code_sev = _DEFAULT_SEVERITY.get(action)
+        # Матрица статус-агностична (action → severity); code-каталог покрывает
+        # action'ы, отсутствующие в матрице; legacy-остаток `_LEGACY_SEVERITY`
+        # статус-зависим для оставшихся не покрытых action'ов.
+        code_sev = _DEFAULT_SEVERITY.get(action) or _CODE_CATALOG_SEVERITY.get(action)
         if code_sev is None:
             code_sev = _LEGACY_SEVERITY.get((action, status))
         if code_sev is None:

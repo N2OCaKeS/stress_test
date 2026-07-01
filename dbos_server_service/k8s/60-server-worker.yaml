@@ -137,6 +137,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            # runAsUser=1000 без passwd-entry → asyncssh (SSH к боксам) падает
+            # на getpass.getuser(). Задаём локальное имя явно.
+            - name: USER
+              value: "worker"
+            - name: LOGNAME
+              value: "worker"
           # Миграции вынесены в Job worker-migrate (см. 45-migrations.yaml).
           command: ["taskiq"]
           args:

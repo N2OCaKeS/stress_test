@@ -680,12 +680,14 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
-    # BMC connectivity: Redfish (443/TCP) и ipmitool (623/UDP). Operator
-    # должен сузить ipBlock'ом в отдельной NP, когда CIDR стенда зафиксируется.
+    # Managed-server connectivity: SSH (console, prepare, inventory, packages,
+    # provision) — порт SSH произвольный per-server, поэтому разрешаем любой
+    # TCP; плюс Redfish (443/TCP входит в общий TCP) и ipmitool (623/UDP).
+    # Operator должен сузить ipBlock'ом в отдельной NP, когда CIDR стенда
+    # зафиксируется.
     - to: []
       ports:
         - protocol: TCP
-          port: 443
         - protocol: UDP
           port: 623
 

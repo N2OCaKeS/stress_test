@@ -143,7 +143,7 @@ export function PersonaSelector() {
     <div className="gradient-bg min-h-screen flex flex-col">
       <header className="border-b border-token surface px-6 h-12 flex items-center gap-3">
         <Grid3x3 className="w-4 h-4 text-accent" />
-        <span className="text-sm font-semibold">DBOS Server Manager</span>
+        <span className="text-sm font-semibold">EMM</span>
         <span className="text-xs text-dim ml-2">UI mockup · фаза 2</span>
         <div className="ml-auto flex items-center gap-2">
           <label className="text-xs text-dim">Тема:</label>

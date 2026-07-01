@@ -38,7 +38,7 @@ export function NotFound() {
       <header className="surface border-b border-token h-12 px-4 flex items-center gap-3 shrink-0">
         <Link to="/" className="text-sm font-semibold flex items-center gap-2">
           <Grid3x3 className="w-4 h-4 text-accent" />
-          DBOS Server Manager
+          EMM
         </Link>
         <span className="text-xs text-dim ml-2">404</span>
         <div className="ml-auto flex items-center gap-2">
@@ -88,7 +88,7 @@ export function NotFound() {
 
       <footer className="border-t border-token surface px-6 py-3 flex items-center justify-between text-xs text-dim">
         <div>
-          DBOS Server Manager · <span className="mono">v1.8.5.46</span>
+          EMM · <span className="mono">v1.8.5.46</span>
         </div>
         {USE_MOCK_AUTH && (
           <Link to="/" className="hover:underline">

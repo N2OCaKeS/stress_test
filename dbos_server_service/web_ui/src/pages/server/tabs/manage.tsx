@@ -284,6 +284,9 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
         server={view}
         allowed={allowBasic}
         busyLabel={busy}
+        foreignReservation={
+          !!view?.busy_user_id && view.busy_user_id !== persona.id
+        }
         onSetBusy={async (reason) => {
           if (!view) return;
           const next = await run("busy_set", () =>
@@ -293,8 +296,12 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
         }}
         onClearBusy={async () => {
           if (!view) return;
-          if (!(await confirm({ message: "Снять busy-захват с сервера?" })))
-            return;
+          const foreign =
+            !!view.busy_user_id && view.busy_user_id !== persona.id;
+          const message = foreign
+            ? "Сервер забронирован другим пользователем. Снять бронь принудительно? После освобождения его сможет занять любой."
+            : "Снять busy-захват с сервера?";
+          if (!(await confirm({ message }))) return;
           const next = await run("busy_clear", () => clearBusy(view.id));
           if (next) applyServer(next);
         }}
@@ -720,12 +727,15 @@ function BusyCard({
   server,
   allowed,
   busyLabel,
+  foreignReservation = false,
   onSetBusy,
   onClearBusy,
 }: {
   server: Server | undefined;
   allowed: boolean;
   busyLabel: string | null;
+  /** Бронь держит другой пользователь — освобождение будет принудительным. */
+  foreignReservation?: boolean;
   onSetBusy: (reason: string) => Promise<void>;
   onClearBusy: () => Promise<void>;
 }) {
@@ -776,10 +786,14 @@ function BusyCard({
               className="btn flex items-center gap-1"
               disabled={disabled}
               onClick={onClearBusy}
-              title="Освободить сервер"
+              title={
+                foreignReservation
+                  ? "Снять чужую бронь принудительно"
+                  : "Освободить сервер"
+              }
             >
               <PlayCircle className="w-4 h-4" />
-              Clear busy
+              {foreignReservation ? "Освободить принудительно" : "Clear busy"}
             </button>
           )}
         </div>

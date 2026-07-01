@@ -9,6 +9,8 @@ prepare НЕ требуется. Покрытие:
   * не найден / cross-dept (сервер или аккаунт) → close 4404;
   * у аккаунта нет пароля → close 4409 ACCOUNT_HAS_NO_PASSWORD;
   * decommissioned → close 4409 SERVER_DECOMMISSIONED;
+  * занят другим пользователем → close 4409 SERVER_BUSY + denied-аудит;
+  * занят самим caller'ом / свободен → бронь-гейт пропускает;
   * managed=False сервер → консоль работает (prepare не нужен);
   * happy-path bridge: креды аккаунта стэшатся в Redis, после `ready` ввод
     клиента публикуется в `console:in:<sid>`, вывод из `console:out:<sid>`
@@ -31,7 +33,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.api.v1.endpoints import console
-from src.core.constants import ServerStatus
+from src.core.constants import BusyState, ServerStatus
 from src.core.exceptions import AuthorizationError, ConflictError, NotFoundError
 from starlette.websockets import WebSocketState
 
@@ -123,7 +125,13 @@ class FakeRedis:
         pass
 
 
-def _make_server(*, is_managed=True, status=ServerStatus.ONLINE):
+def _make_server(
+    *,
+    is_managed=True,
+    status=ServerStatus.ONLINE,
+    busy_state=BusyState.FREE,
+    busy_user_id=None,
+):
     return SimpleNamespace(
         id="srv_console1",
         hostname="host.example",
@@ -132,6 +140,8 @@ def _make_server(*, is_managed=True, status=ServerStatus.ONLINE):
         management_user="dbos",
         department_id="dep_a",
         status=status,
+        busy_state=busy_state,
+        busy_user_id=busy_user_id,
     )
 
 
@@ -341,6 +351,50 @@ async def test_decommissioned_closes_conflict(monkeypatch, _patch_console):
     await console.server_console_ws(ws, "srv_console1")
     assert ws.closed_code == console._WS_CLOSE_CONFLICT
     assert ws.closed_reason == "SERVER_DECOMMISSIONED"
+
+
+@pytest.mark.asyncio
+async def test_busy_by_other_user_closes_conflict(monkeypatch, _patch_console):
+    """Сервер занят другим пользователем → close 4409 SERVER_BUSY + denied."""
+    async def load(*a, **k):
+        return _make_server(busy_state=BusyState.BUSY, busy_user_id="usr_other")
+
+    monkeypatch.setattr(console.server_svc, "load_visible_server", load)
+    ws = FakeWebSocket(headers={"Authorization": "Bearer tok"})
+    await console.server_console_ws(ws, "srv_console1")
+    assert ws.closed_code == console._WS_CLOSE_CONFLICT
+    assert ws.closed_reason == "SERVER_BUSY"
+    assert not ws.accepted
+    assert any(
+        e["action"] == "ssh_console.session_open"
+        and e["status"] == "denied"
+        and e.get("details", {}).get("reason") == "server_busy"
+        and e.get("details", {}).get("busy_user_id") == "usr_other"
+        for e in _patch_console
+    )
+
+
+@pytest.mark.asyncio
+async def test_busy_by_self_passes_gate(monkeypatch, _patch_console):
+    """Сервер забронирован самим caller'ом → бронь-гейт пропускает.
+
+    Доходим до резолва кред: подменяем его отказом, чтобы не гонять мост, но
+    закрытие идёт уже НЕ с SERVER_BUSY — гейт брони пройден.
+    """
+    async def load(*a, **k):
+        return _make_server(busy_state=BusyState.BUSY, busy_user_id="usr_1")
+
+    async def resolve_denied(*a, **k):
+        raise AuthorizationError(error_code="PERMISSION_DENIED", message="no")
+
+    monkeypatch.setattr(console.server_svc, "load_visible_server", load)
+    monkeypatch.setattr(
+        console.account_svc, "resolve_console_credentials", resolve_denied,
+    )
+    ws = FakeWebSocket(headers={"Authorization": "Bearer tok"})
+    await console.server_console_ws(ws, "srv_console1")
+    assert ws.closed_reason != "SERVER_BUSY"
+    assert ws.closed_code == console._WS_CLOSE_FORBIDDEN
 
 
 @pytest.mark.asyncio

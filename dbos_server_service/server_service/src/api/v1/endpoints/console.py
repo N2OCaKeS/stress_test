@@ -20,7 +20,8 @@ stash, а worker коннектится под аккаунтом по password-
   2. На отказе — WS закрывается с кодом и причиной ДО accept'а либо сразу
      после: 4401 нет токена, 4400 нет `account_id`, 4403 нет права console /
      нет права на креды аккаунта, 4404 сервер/аккаунт не найден или не
-     привязан, 4409 server decommissioned / у аккаунта нет пароля, 4503 Redis
+     привязан, 4409 server decommissioned / сервер занят другим
+     пользователем (`SERVER_BUSY`) / у аккаунта нет пароля, 4503 Redis
      недоступен.
   3. После accept'а server_service генерит `session_id` (`csn_<hex>`),
      стэшит креды в Redis под `dbos:console_creds:<ccd_id>`, публикует `start`
@@ -45,7 +46,7 @@ import logging
 from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
-from src.core.constants import Action, EntityType, ServerStatus
+from src.core.constants import Action, BusyState, EntityType, ServerStatus
 from src.core.exceptions import (
     AppException,
     AuthenticationError,
@@ -174,6 +175,27 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
                     },
                 )
                 await websocket.close(code=_WS_CLOSE_CONFLICT, reason="SERVER_DECOMMISSIONED")
+                return
+
+            # Бронь-гейт: сервер, занятый другим пользователем, консоль не
+            # отдаёт никому — даже админу. Чтобы подключиться, админ сначала
+            # снимает бронь (`busy_release`), сервер освобождается, дальше он
+            # бронирует/подключается сам. Владелец брони заходит как обычно.
+            if (
+                server.busy_state == BusyState.BUSY
+                and server.busy_user_id != identity.user_id
+            ):
+                audit_service.emit(
+                    "ssh_console.session_open", target_id=server_id, target_type="server",
+                    status="denied", allowed=False,
+                    details={
+                        "reason": "server_busy",
+                        "department_id": server.department_id,
+                        "account_id": account_id,
+                        "busy_user_id": server.busy_user_id,
+                    },
+                )
+                await websocket.close(code=_WS_CLOSE_CONFLICT, reason="SERVER_BUSY")
                 return
 
             # Account-гейт консоли: серверный `(server, console)` ИЛИ на учётке

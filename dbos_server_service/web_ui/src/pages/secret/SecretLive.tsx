@@ -24,7 +24,6 @@ import {
   Pencil,
   ArrowRightLeft,
   ShieldPlus,
-  Building2,
   X,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
@@ -48,11 +47,6 @@ import {
   updateCredential,
 } from "@/api/secret/credentials";
 import { addRoleAcl, listRoleAcls, revokeRoleAcl } from "@/api/secret/roleAcls";
-import {
-  addDeptGrant,
-  listDeptGrants,
-  revokeDeptGrant,
-} from "@/api/secret/deptGrants";
 import {
   addUserAcl,
   listUserAcls,
@@ -378,7 +372,6 @@ export function SecretLive() {
           canManage={canManage}
           isGuest={isGuestList}
           currentUserId={persona.id}
-          isDepAdmin={persona.platform_role === "dep_admin"}
           canPickUsers={
             persona.platform_role === "dep_admin" ||
             persona.platform_role === "account_admin"
@@ -485,7 +478,6 @@ function DetailPane({
   canManage,
   isGuest,
   currentUserId,
-  isDepAdmin,
   canPickUsers,
   actorDeptId,
   onDelete,
@@ -495,7 +487,6 @@ function DetailPane({
   canManage: boolean;
   isGuest: boolean;
   currentUserId: string;
-  isDepAdmin: boolean;
   canPickUsers: boolean;
   actorDeptId: string | null;
   onDelete: (c: Credential) => void;
@@ -509,28 +500,23 @@ function DetailPane({
   const ownerUserName = useUserLabel(cred?.owner_user_id);
   const createdByName = useUserLabel(cred?.created_by);
 
-  const isCross = cred?.scope === "cross_department";
   const isPersonal = cred?.scope === "personal";
-  // Доступ пользователям видят: владелец personal-кред'ы (свой секрет) и
-  // dep_admin для dept/cross-кред (управляет от имени отдела). Управление
-  // user-ACL гейтит этот же признак.
-  const canManageUserAcl = isPersonal
-    ? cred?.owner_user_id === currentUserId
-    : isDepAdmin;
-  // RoleACL для личной креды вправе выдавать её владелец (бэкенд авторизует через
-  // grant_acl на собственной креде), а не только dep_admin/operator.
+  // Роли и департаментные гранты для department/cross_department настраиваются
+  // в разделе администрирования. На карточке остаётся только владельческий
+  // шеринг личного секрета: RoleACL на свою креду и доступ конкретным
+  // пользователям. Оба признака поэтому гейтятся личным владением.
+  const canManageUserAcl =
+    isPersonal && cred?.owner_user_id === currentUserId;
   const canManageAcl =
-    canManage || (isPersonal && cred?.owner_user_id === currentUserId);
-  // Guest без reveal-доступа не нагружаем ACL/grant-листингами (бэк всё равно
-  // отобьёт 403), показываем только метаданные.
+    isPersonal && (canManage || cred?.owner_user_id === currentUserId);
+  // Guest без reveal-доступа не нагружаем ACL-листингами (бэк всё равно отобьёт
+  // 403), показываем только метаданные. RoleACL/UserACL запрашиваем лишь на
+  // личных кредах — управление правами dept/cross живёт в администрировании.
   const aclQ = useQuery(() => listRoleAcls(credId), [credId], {
-    enabled: !isGuest,
+    enabled: !isGuest && isPersonal,
   });
   const userAclQ = useQuery(() => listUserAcls(credId), [credId], {
     enabled: !isGuest && canManageUserAcl,
-  });
-  const grantsQ = useQuery(() => listDeptGrants(credId), [credId], {
-    enabled: isCross && !isGuest,
   });
 
   const [revealed, setRevealed] = useState<string | null>(null);
@@ -547,7 +533,6 @@ function DetailPane({
   const [transferring, setTransferring] = useState(false);
   const [addingAcl, setAddingAcl] = useState(false);
   const [addingUserAcl, setAddingUserAcl] = useState(false);
-  const [addingGrant, setAddingGrant] = useState(false);
 
   // Общий гейт для прямых мутаций detail-панели (recover / delete / снятие
   // ACL и grant) — блокирует двойной клик, пока запрос в полёте.
@@ -701,40 +686,6 @@ function DetailPane({
       userAclQ.refetch();
     } catch (e) {
       toast.error(apiErrMsg(e, "Снятие доступа не удалось"));
-    } finally {
-      setActing(false);
-    }
-  }
-
-  async function handleGrantAdd(recipientDeptId: string) {
-    try {
-      await addDeptGrant(credId, { recipient_dept_id: recipientDeptId });
-      toast.success("DeptGrant выдан");
-      setAddingGrant(false);
-      grantsQ.refetch();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Выдача grant'а не удалась"));
-    }
-  }
-
-  async function handleGrantRevoke(grantId: string) {
-    if (acting) return;
-    if (
-      !(await confirm({
-        message:
-          "Снять DeptGrant? Это каскадно снимет RoleACL recipient-dep'а.",
-        danger: true,
-      }))
-    )
-      return;
-    setActing(true);
-    try {
-      await revokeDeptGrant(credId, grantId);
-      toast.success("DeptGrant снят");
-      grantsQ.refetch();
-      aclQ.refetch();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Снятие grant'а не удалось"));
     } finally {
       setActing(false);
     }
@@ -976,8 +927,8 @@ function DetailPane({
           </div>
         </div>
 
-        {/* Access — RoleACL */}
-        {!isGuest && (
+        {/* Access — RoleACL (только личный секрет; dept/cross — в админке) */}
+        {!isGuest && isPersonal && (
           <div className="surface border border-token rounded-lg p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="text-xs uppercase tracking-wider text-dim">
@@ -1075,57 +1026,16 @@ function DetailPane({
           </div>
         )}
 
-        {/* Dept grants — только cross_department */}
-        {isCross && !isGuest && (
+        {/* Права dept/cross-секрета настраиваются в администрировании */}
+        {!isGuest && !isPersonal && (
           <div className="surface border border-token rounded-lg p-4 col-span-2">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-xs uppercase tracking-wider text-dim">
-                Dept grants ({grantsQ.data?.items.length ?? 0})
-              </div>
-              {canManage && (
-                <button
-                  className="btn btn-ghost text-xs flex items-center gap-1"
-                  onClick={() => setAddingGrant(true)}
-                >
-                  <Building2 className="w-3.5 h-3.5" /> Выдать grant
-                </button>
-              )}
+            <div className="text-xs uppercase tracking-wider text-dim mb-1">
+              Права доступа
             </div>
-            {grantsQ.loading && (
-              <div className="text-xs text-dim">Загрузка…</div>
-            )}
-            {grantsQ.error && (
-              <div className="text-xs text-danger">
-                {apiErrMsg(grantsQ.error, "Dept-grants не загрузились")}
-              </div>
-            )}
-            {!grantsQ.loading && !grantsQ.error && (
-              <div className="text-sm flex flex-col gap-1">
-                {(grantsQ.data?.items ?? []).length === 0 && (
-                  <div className="text-xs text-dim">Нет выданных grant'ов.</div>
-                )}
-                {(grantsQ.data?.items ?? []).map((g) => (
-                  <div key={g.id} className="stat-row items-center">
-                    <span className="text-dim">
-                      {depts.get(g.recipient_dept_id) ?? g.recipient_dept_id}
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <span className="mono text-xs">{formatMsk(g.granted_at)}</span>
-                      {canManage && (
-                        <button
-                          className="btn btn-ghost p-1"
-                          title="Снять grant"
-                          disabled={acting}
-                          onClick={() => handleGrantRevoke(g.id)}
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="text-xs text-dim">
+              Роли, департаментные гранты и доступы пользователей к секретам
+              отдела настраиваются в разделе администрирования.
+            </div>
           </div>
         )}
       </div>
@@ -1146,7 +1056,7 @@ function DetailPane({
       )}
       {addingAcl && (
         <AclModal
-          isCross={isCross}
+          isCross={false}
           actorDeptId={actorDeptId}
           onClose={() => setAddingAcl(false)}
           onSubmit={handleAclAdd}
@@ -1159,12 +1069,6 @@ function DetailPane({
           resolveDeptId={actorDeptId}
           onClose={() => setAddingUserAcl(false)}
           onSubmit={handleUserAclAdd}
-        />
-      )}
-      {addingGrant && (
-        <GrantModal
-          onClose={() => setAddingGrant(false)}
-          onSubmit={handleGrantAdd}
         />
       )}
     </section>
@@ -1859,55 +1763,6 @@ export function AclModal({
             type="submit"
             className="btn btn-primary"
             disabled={submitting || !valid}
-          >
-            {submitting ? "Выдаём…" : "Выдать"}
-          </button>
-          <button type="button" className="btn" onClick={onClose}>
-            Отмена
-          </button>
-        </div>
-      </form>
-    </ModalShell>
-  );
-}
-
-function GrantModal({
-  onClose,
-  onSubmit,
-}: {
-  onClose: () => void;
-  onSubmit: (recipientDeptId: string) => void | Promise<void>;
-}) {
-  const [deptId, setDeptId] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (submitting || !deptId.trim()) return;
-    setSubmitting(true);
-    Promise.resolve(onSubmit(deptId.trim())).finally(() => setSubmitting(false));
-  }
-
-  return (
-    <ModalShell title="Выдать DeptGrant" onClose={onClose}>
-      <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
-        <div className="text-xs text-dim">
-          DeptGrant даёт recipient-dep'у право получать RoleACL на эту cross-dept
-          креду. Снятие grant'а каскадно снимает RoleACL recipient-dep'а.
-        </div>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-dim text-xs">отдел-получатель *</span>
-          <DeptPicker
-            value={deptId}
-            onChange={setDeptId}
-            placeholder="dep_…"
-          />
-        </label>
-        <div className="flex items-center gap-2 mt-1">
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={submitting || !deptId.trim()}
           >
             {submitting ? "Выдаём…" : "Выдать"}
           </button>

@@ -207,6 +207,10 @@ spec:
         - podSelector:
             matchLabels:
               job: server-migrate
+        # server-worker читает outbox server_db через dispatch_outbox poller.
+        - podSelector:
+            matchLabels:
+              app: server-worker
       ports:
         - protocol: TCP
           port: 5432

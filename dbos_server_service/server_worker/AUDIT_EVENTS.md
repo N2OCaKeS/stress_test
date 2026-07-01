@@ -4,8 +4,17 @@
 `audit_outbox` (см. `services/audit_outbox_publisher.py`). Большинство
 событий пишется под `audit_action` конкретного handler'а
 (`server.power_on`, `ipmi_controller.password_rotate`,
-`server_account.password_rotate`, и т.д.) — их каталоги живут в
-`server_service/AUDIT_EVENTS.md` рядом с источником запроса.
+`server_account.password_rotate`, и т.д.) — бизнес-смысл и поля `details`
+описаны в `server_service/AUDIT_EVENTS.md` рядом с источником запроса.
+
+Каталог этих action'ов worker регистрирует в loging **под собственным
+именем** (`server_worker`) на старте — `services/audit_events.py::register_events`,
+хук `WORKER_STARTUP` (`main.py::_register_audit_events`). Эмит идёт с
+`X-Service-Identity: server_worker` (`audit_client.emit`), поэтому loging
+трекает worker-каталог отдельно от `server_service`; severity-defaults для
+success-ветки берутся из `SERVICE_EVENTS`. Severity в самом эмите почти
+всегда едет явным полем в payload'е (runner-meta / lifecycle обычно
+status=failure) и перекрывает default каталога.
 
 Здесь перечислены **runner-level meta-события** — те, которые
 `tasks/_runner.py` пишет от своего имени, без вызова `impl`. Они

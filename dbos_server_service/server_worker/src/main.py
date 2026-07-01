@@ -221,6 +221,26 @@ async def _warn_on_redfish_verify_disabled(state: TaskiqState) -> None:
 
 
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def _register_audit_events(state: TaskiqState) -> None:
+    """Зарегистрировать worker-каталог audit-событий в loging_service.
+
+    Симметрия с auth/secret/server: на старте POST'им свой список action'ов
+    (`services/audit_events.py`), чтобы loging знал severity-defaults для
+    пар (action, status). Блокирующий httpx уходит в тред через
+    `register_events_async`; провал регистрации не валит старт воркера.
+    """
+    from src.services.audit_events import register_events_async
+
+    try:
+        await register_events_async()
+    except Exception as exc:  # noqa: BLE001 — startup-хук не должен падать из-за audit-каталога
+        logger.warning(
+            "audit: event registration raised on startup: %s",
+            redact_error_message(f"{type(exc).__name__}: {exc}"),
+        )
+
+
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
 async def _warmup_http_pools(state: TaskiqState) -> None:
     """Прогрев pooled httpx.AsyncClient'ов для loging_service и server_service.
 

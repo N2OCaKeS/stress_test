@@ -113,7 +113,7 @@ export function Shell({ breadcrumb, middle, children }: ShellProps) {
           </>
         )}
         {middle && middleCollapsed && (
-          <div className="shrink-0 w-7 border-r border-token surface flex flex-col items-center py-2">
+          <div className="shrink-0 w-7 border-r border-token surface flex flex-col items-center justify-center">
             <button
               type="button"
               onClick={() => setMiddleCollapsed(false)}

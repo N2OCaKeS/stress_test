@@ -747,6 +747,91 @@ class TestManagedSkipsFetchForAuth:
         assert t.status == TaskStatus.SUCCEEDED
         assert spy.calls == []
 
+    async def test_managed_update_apply_password_fetches_and_sets(
+        self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,
+    ):
+        """`apply_password=True` на управляемом сервере тянет хранимый пароль
+        best-effort (вход по ключу, для аутентификации он не нужен) и
+        прописывает его на боксе через chpasswd.
+        """
+        tid = await make_task(
+            task_kind="account.update_on_host", target_server_id="srv_u_ap",
+            payload={
+                "server_id": "srv_u_ap", "account_id": "acc_u", "login": "ops",
+                "has_sudo": True, "unix_groups": ["devs"], "shell": "/bin/bash",
+                "is_managed": True, "management_user": "dbos",
+                "apply_password": True,
+            },
+        )
+        spy = _fetch_spy("ops")
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.fetch_account_password", spy,
+        )
+        # Key-сессии (password=None) не гоняют sudo -n true пробер:
+        # sess1 usermod, sess2 chpasswd.
+        conn = _conn([
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.submit_provision_status", fake_submit,
+        )
+
+        await users.account_update_on_host.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["password_applied"] is True
+        # Пароль тянули ровно один раз (best-effort для chpasswd, не для auth).
+        assert len(spy.calls) == 1
+        cp_call = next(
+            c for c in conn.run.await_args_list
+            if "chpasswd" in (c.args[0] if c.args else "")
+        )
+        assert "ops:sess-pwd\n" in cp_call.kwargs.get("input", "")
+
+    async def test_managed_update_apply_password_discovered_skips(
+        self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,
+    ):
+        """discovered-аккаунт без хранимого пароля: fetch отдаёт 404,
+        chpasswd пропускается, задача не падает (`password_applied=False`).
+        """
+        tid = await make_task(
+            task_kind="account.update_on_host", target_server_id="srv_u_disc",
+            payload={
+                "server_id": "srv_u_disc", "account_id": "acc_u", "login": "ops",
+                "has_sudo": True, "unix_groups": ["devs"], "shell": "/bin/bash",
+                "is_managed": True, "management_user": "dbos",
+                "apply_password": True,
+            },
+        )
+        spy = _fetch_spy("ops", has_password=False)
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.fetch_account_password", spy,
+        )
+        # Только usermod: chpasswd не зовётся (пароля нет).
+        conn = _conn([_run_result("", "", 0)])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.submit_provision_status", fake_submit,
+        )
+
+        await users.account_update_on_host.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["password_applied"] is False
+        assert len(spy.calls) == 1
+        cmds = [c.args[0] for c in conn.run.await_args_list]
+        assert not any("chpasswd" in c for c in cmds)
+
     async def test_managed_rotate_with_payload_login_does_not_fetch(
         self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,
     ):

@@ -414,8 +414,11 @@ async def users_inventory(task_id: str) -> None:
 
 # Whitelist для audit details.result у provision/update/deprovision. Login и
 # server_id — не секрет; пароль и состав групп в audit не уходят.
+# `password_applied`/`key_applied` — булевы флаги, что реально доехало на бокс
+# при apply-пути update_on_host (сам пароль/ключ в audit не попадают).
 AUDIT_SAFE_FIELDS_PROVISION: set[str] = {
     "server_id", "account_id", "operation", "present_on_server",
+    "password_applied", "key_applied",
 }
 
 
@@ -603,25 +606,43 @@ async def account_provision(task_id: str) -> None:
 
 @broker.task("account.update_on_host")
 async def account_update_on_host(task_id: str) -> None:
-    """Синхронизировать атрибуты OS-пользователя на сервере (`usermod`).
+    """Синхронизировать OS-пользователя на сервере и раскатать текущие креды.
 
-    Поток: собираем сессию (`_account_creds`) → `ssh_client.modify_user`
-    (usermod groups/sudo/shell) → опционально раскатываем сменившийся
-    SSH-публичный ключ в `~/.ssh/authorized_keys` → `submit_provision_status(present=True)`.
-    Пароль не меняется, поэтому на управляемом сервере он не запрашивается
-    вовсе — `login` берётся из payload.
+    Поток: деструктив-гейт → собираем сессию (`_account_creds`) →
+    `ssh_client.modify_user` (usermod groups/sudo/shell) → опционально
+    `chpasswd` (текущий хранимый пароль) → опционально SSH-публичный ключ в
+    `~/.ssh/authorized_keys` → `submit_provision_status(present=True)`.
 
-    `ssh_public_key` едет в payload, когда у аккаунта сменился (или впервые
-    появился) ключ — server_service кладёт его в payload так же, как для
-    `account.provision`. Поле опционально: пока server_service его не шлёт на
-    update, шаг записи ключа пропускается, остальное поведение не меняется.
-    Запись идемпотентна и помечает наш ключ managed-маркером — ротация
-    заменяет именно его, ручные ключи оператора не трогаются. `force_replace`
-    из payload перезаписывает файл целиком (re-provision после переустановки ОС).
+    Это исполнительная сторона apply-пути: server_service шлёт эту задачу
+    после смены атрибутов (usermod-синк) и — по авто-apply после set/rotate
+    пароля/ключа либо ручному `POST /server-accounts/{id}/apply` — просит
+    донести на бокс текущие креды аккаунта.
 
-    Параметры/payload — как у `account_provision`.
+    Управление пробросом креды идёт через два опциональных поля payload:
 
-    Возвращает: `{server_id, account_id, operation, present_on_server}`.
+    * `apply_password` (bool, дефолт False) — прописать на боксе текущий
+      хранимый пароль аккаунта через `chpasswd`. На управляемом сервере вход
+      по ключу, поэтому пароль тянем best-effort из server_service
+      (`_fetch_password_to_set`); у discovered-аккаунта пароля нет — шаг тихо
+      пропускается (не ошибка). На не управляемом сервере self-сессия уже
+      залогинена паролем аккаунта — он же и есть текущий хранимый, повторный
+      `chpasswd` идемпотентен.
+    * `ssh_public_key` (str) — публичный ключ аккаунта. Запись идемпотентна и
+      помечает наш ключ managed-маркером: ротация заменяет именно его, ручные
+      ключи оператора не трогаются. `force_replace` перезаписывает файл целиком
+      (re-provision после переустановки ОС).
+
+    Оба шага независимы и идемпотентны; ни одно поле не задано — задача
+    вырождается в чистый usermod-синк (обратная совместимость с
+    attribute-only fan-out'ом). Частичный отказ не маскируется: если пароль
+    прописался, а запись ключа упала — `SshError` пробрасывается, задача
+    FAILED с error_code упавшего шага (не молчаливый success), и retry
+    повторит оба идемпотентных шага.
+
+    Параметры/payload — как у `account_provision`, плюс `apply_password`.
+
+    Возвращает: `{server_id, account_id, operation, present_on_server,
+    password_applied, key_applied}`.
     Связано с: `server_account.update_on_host` audit action.
     """
     async def _impl(payload: dict) -> dict:
@@ -629,6 +650,13 @@ async def account_update_on_host(task_id: str) -> None:
         server_id = payload["server_id"]
         account_id = payload["account_id"]
         target_dept = payload.get("target_department_id")
+
+        # Деструктив-гейт: apply-путь может дёрнуть `chpasswd`, а он мутирует
+        # состояние входа на боксе и рискует пересечься с параллельной ротацией
+        # пароля того же аккаунта. Откладываем, пока на сервере есть другая
+        # running-задача (при чистом usermod-синке гейт — no-op, если сервер
+        # свободен).
+        await ensure_no_other_running_on_server(task_id, server_id)
 
         creds = await _account_creds(payload, server_id, account_id, target_dept)
         await ssh_client.modify_user(
@@ -638,10 +666,29 @@ async def account_update_on_host(task_id: str) -> None:
             has_sudo=bool(payload.get("has_sudo")),
             shell=payload.get("shell"),
         )
+
+        # Пароль. Прописываем текущий хранимый пароль на боксе, когда
+        # server_service попросил apply (`apply_password`). Managed — тянем его
+        # best-effort из server_service; self-сессия уже держит его в creds.
+        password_applied = False
+        if payload.get("apply_password"):
+            if payload.get("is_managed"):
+                new_password = await _fetch_password_to_set(
+                    server_id, account_id, target_dept,
+                )
+            else:
+                new_password = creds.get("password")
+            if new_password:
+                await ssh_client.set_account_password(
+                    creds, server_id, creds["login"], new_password,
+                )
+                password_applied = True
+
         # Смена/первичная установка SSH-ключа на уже заведённом юзере.
         # provision кладёт ключ при useradd; здесь донесём ротацию ключа на
         # хост. Если server_service не положил ключ в payload — пропускаем.
         public_key = payload.get("ssh_public_key")
+        key_applied = False
         if public_key:
             await ssh_client.apply_authorized_key(
                 creds, server_id,
@@ -649,6 +696,8 @@ async def account_update_on_host(task_id: str) -> None:
                 public_key=public_key,
                 force_replace=bool(payload.get("force_replace")),
             )
+            key_applied = True
+
         await server_service_client.submit_provision_status(
             server_id, account_id, "update", True, target_dept,
         )
@@ -657,6 +706,8 @@ async def account_update_on_host(task_id: str) -> None:
             "account_id": account_id,
             "operation": "update",
             "present_on_server": True,
+            "password_applied": password_applied,
+            "key_applied": key_applied,
         }
 
     await run_task(

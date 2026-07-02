@@ -348,6 +348,189 @@ class TestProvisionHandlers:
         cmds = [c.args[0] for c in conn.run.await_args_list]
         assert not any("authorized_keys" in c for c in cmds)
 
+    async def test_update_on_host_apply_password_runs_chpasswd(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """`apply_password=True` на self-сессии прописывает текущий пароль
+        аккаунта через chpasswd — это исполнение apply-пути (после set/rotate
+        пароля / ручной apply).
+        """
+        tid = await make_task(
+            task_kind="account.update_on_host", target_server_id="srv_up",
+            payload={
+                "server_id": "srv_up", "account_id": "acc_up", "login": "ops",
+                "has_sudo": False, "unix_groups": ["devs"], "shell": "/bin/sh",
+                "apply_password": True,
+            },
+        )
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.fetch_account_password",
+            _fetch_creds("ops"),
+        )
+        # modify_user и set_account_password открывают ОТДЕЛЬНЫЕ сессии, в
+        # каждой password-auth прогоняется пробер sudo -n true:
+        # sess1: sudo -n true → usermod; sess2: sudo -n true → chpasswd.
+        conn = _conn([
+            _sudo_probe(),
+            _run_result("", "", 0),
+            _sudo_probe(),
+            _run_result("", "", 0),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.submit_provision_status", fake_submit,
+        )
+
+        await users.account_update_on_host.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["password_applied"] is True
+        cmds = [c.args[0] for c in conn.run.await_args_list]
+        assert any("usermod" in c for c in cmds)
+        # chpasswd прогнан, пароль ушёл на stdin (login:pwd), не в argv.
+        cp_call = next(
+            c for c in conn.run.await_args_list
+            if "chpasswd" in (c.args[0] if c.args else "")
+        )
+        assert "ops:sess-pwd\n" in cp_call.kwargs.get("input", "")
+        assert "sess-pwd" not in cp_call.args[0]
+
+    async def test_update_on_host_without_apply_password_skips_chpasswd(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Без `apply_password` update идёт только через usermod: chpasswd не
+        зовётся, `password_applied` в результате False (attribute-only fan-out).
+        """
+        tid = await make_task(
+            task_kind="account.update_on_host", target_server_id="srv_nap",
+            payload={
+                "server_id": "srv_nap", "account_id": "acc_nap", "login": "ops",
+                "has_sudo": False, "unix_groups": ["devs"], "shell": "/bin/sh",
+            },
+        )
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.fetch_account_password",
+            _fetch_creds("ops"),
+        )
+        conn = _conn([_sudo_probe(), _run_result("", "", 0)])  # sudo -n true → usermod
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.submit_provision_status", fake_submit,
+        )
+
+        await users.account_update_on_host.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["password_applied"] is False
+        cmds = [c.args[0] for c in conn.run.await_args_list]
+        assert not any("chpasswd" in c for c in cmds)
+
+    async def test_update_on_host_partial_failure_key_after_password(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Пароль применился, запись ключа упала → задача НЕ succeeded, ошибка
+        видна в last_error и audit'е (не молчаливый успех).
+        """
+        pubkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPARTIAL ops@x"
+        tid = await make_task(
+            task_kind="account.update_on_host", target_server_id="srv_pf",
+            payload={
+                "server_id": "srv_pf", "account_id": "acc_pf", "login": "ops",
+                "has_sudo": False, "unix_groups": ["devs"], "shell": "/bin/sh",
+                "apply_password": True, "ssh_public_key": pubkey,
+            },
+        )
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.fetch_account_password",
+            _fetch_creds("ops"),
+        )
+        # sess1: sudo -n true → usermod(ok); sess2: sudo -n true → chpasswd(ok);
+        # sess3: sudo -n true → authorized_keys(rc=1, падение).
+        conn = _conn([
+            _sudo_probe(),
+            _run_result("", "", 0),
+            _sudo_probe(),
+            _run_result("", "", 0),
+            _sudo_probe(),
+            _run_result("", "permission denied", 1),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        submitted = []
+        async def fake_submit(*a, **kw):
+            submitted.append(a)
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.submit_provision_status", fake_submit,
+        )
+
+        await users.account_update_on_host.original_func(tid)
+        t = await fetch_task(tid)
+        # Не успех: запись ключа упала после применения пароля.
+        assert t.status != TaskStatus.SUCCEEDED
+        assert "SSH_AUTHORIZED_KEYS_FAILED" in (t.last_error or "")
+        # submit_provision_status(present=True) НЕ должен был уйти — мы упали
+        # до него, статус на боксе не подтверждаем.
+        assert submitted == []
+        # Audit несёт failure для действия update_on_host, не success.
+        ev = [e for e in captured_audit if e["action"] == "server_account.update_on_host"]
+        assert ev and all(e.get("status") != "success" for e in ev)
+
+    async def test_update_on_host_authorized_key_idempotent_across_runs(
+        self, monkeypatch,
+    ):
+        """Повторная раскатка того же ключа не плодит строк в authorized_keys.
+
+        Эмулируем состояние файла между вызовами: managed-запись фильтрует
+        прежние managed-строки и дописывает ключ только если его ещё нет.
+        Два прогона `apply_authorized_key` → ровно одна строка с ключом.
+        """
+        from src.clients.ssh import _MANAGED_KEY_MARKER
+        from src.services import ssh_client
+
+        pubkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIDEMPOTENT ops@x"
+
+        class _StatefulConn:
+            def __init__(self):
+                self.lines: list[str] = []
+                self.close = MagicMock()
+                self.wait_closed = AsyncMock()
+
+            async def run(self, cmd, *, input=None, check=False):
+                if "sudo -n true" in cmd:
+                    return _run_result("", "", 0)  # NOPASSWD
+                if "authorized_keys" in cmd:
+                    key_line = (input or "").rstrip("\n")
+                    # Managed-write: снести прежние managed-строки, потом
+                    # idempotent append.
+                    kept = [
+                        ln for ln in self.lines
+                        if f" {_MANAGED_KEY_MARKER}" not in ln
+                    ]
+                    if key_line and key_line not in kept:
+                        kept.append(key_line)
+                    self.lines = kept
+                    return _run_result("", "", 0)
+                return _run_result("", "", 0)
+
+        conn = _StatefulConn()
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        creds = {"login": "ops", "password": "pwd", "host": "10.0.0.9"}
+        for _ in range(2):
+            await ssh_client.apply_authorized_key(
+                creds, "srv_idem", login="ops", public_key=pubkey,
+            )
+
+        # Ровно одна строка, и это наш ключ с managed-маркером.
+        assert conn.lines == [f"{pubkey} {_MANAGED_KEY_MARKER}"]
+
     async def test_deprovision_submits_present_false(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):

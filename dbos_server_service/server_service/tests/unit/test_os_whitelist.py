@@ -55,6 +55,17 @@ class TestIsKnownOs:
     def test_red_os_matches(self):
         assert is_known_os("RED OS 7.3")
 
+    def test_bare_version_matches(self):
+        # Новый контракт: воркер шлёт чистую версию без distro-имени.
+        assert is_known_os("1.8.1.6")
+        assert is_known_os("1.7.5")
+        assert is_known_os("1.7")
+
+    def test_bare_integer_without_dot_rejected(self):
+        # Голое число без разделителя — не версия, запись не создаём.
+        assert not is_known_os("42")
+        assert not is_known_os("2022")
+
     def test_unknown_strings_rejected(self):
         # Не префиксы whitelist'а
         assert not is_known_os("UniqueDistro 42")

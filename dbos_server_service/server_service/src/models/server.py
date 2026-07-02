@@ -40,6 +40,10 @@ class Server(Base):
     # Обновляется write-callback'ами worker'а: `services/server.py:873`
     # (admin-PATCH) и `services/internal_service.py:831` (inventory submit).
     os_last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Режим безопасности Astra с бокса (латиницей: Smolensk/Orel/Voronezh).
+    # Per-server факт из inventory-callback'а — версия ОС в каталоге общая, а
+    # режим у каждого сервера свой. UI склеивает "<os_version.name> <mode>".
+    os_security_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
     department_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     status: Mapped[str] = mapped_column(
         String(32), default=ServerStatus.UNKNOWN, nullable=False

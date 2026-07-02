@@ -242,6 +242,204 @@ class TestInventoryCallback:
         assert r2.json()["first_write_fields"] == []
         assert _by_action(captured_emits, "inventory.drift_detected") == []
 
+    async def test_inventory_writes_os_repositories_and_security_mode(
+        self, client, admin_role_token_a, make_server, db, dept_a,
+    ):
+        """Callback с чистой версией + repositories + os_security_mode: каталог
+        получает версию "1.8.1.6" с репозиториями, сервер линкуется и несёт
+        per-server режим "Smolensk"; read-схема сервера его отдаёт."""
+        srv = await make_server(department_id=dept_a)
+        repos = [
+            "http://dl.astralinux.ru/astra/stable/1.7_x86-64/repository-main/",
+            "http://dl.astralinux.ru/astra/stable/1.7_x86-64/repository-update/",
+        ]
+        payload = {
+            "hostname": "smolensk-box",
+            "kernel": "5.15.0-astra-amd64",
+            "cpu_brand": "Intel",
+            "cpu_model": "Xeon Gold",
+            "cpu_cores": 8,
+            "os_version": "1.8.1.6",
+            "os_security_mode": "Smolensk",
+            "repositories": repos,
+            "disks": [],
+        }
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        os_version_id = resp.json()["os_version_id"]
+        assert os_version_id
+
+        await db.commit()
+        os_ver = (await db.execute(
+            select(OsVersion).where(OsVersion.id == os_version_id)
+        )).scalar_one()
+        # Каталог — только версия, без режима.
+        assert os_ver.name == "1.8.1.6"
+        assert os_ver.repositories == repos
+
+        refreshed = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert refreshed.os_version_id == os_version_id
+        assert refreshed.os_security_mode == "Smolensk"
+
+        # Read-схема сервера отдаёт os_security_mode (UI склеит "1.8.1.6 Smolensk").
+        get = await client.get(
+            f"/api/server/v1/servers/{srv.id}", headers=_hdr(admin_role_token_a),
+        )
+        assert get.status_code == 200, get.text
+        assert get.json()["os_security_mode"] == "Smolensk"
+
+    async def test_inventory_repeat_overwrites_repositories(
+        self, client, admin_role_token_a, make_server, db, dept_a,
+    ):
+        """Повторный inventory с новым списком репозиториев перезаписывает
+        хранимый снапшот версии ОС."""
+        srv = await make_server(department_id=dept_a)
+        base = {
+            "hostname": "box",
+            "kernel": "5.15.0",
+            "cpu_brand": "Intel",
+            "cpu_model": "Xeon",
+            "cpu_cores": 4,
+            "os_version": "1.8.1.6",
+            "disks": [],
+        }
+        first = {**base, "repositories": ["http://repo.example/old/"]}
+        r1 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a), json=first,
+        )
+        assert r1.status_code == 200, r1.text
+        osv_id = r1.json()["os_version_id"]
+
+        new_repos = [
+            "http://repo.example/main/",
+            "http://repo.example/update/",
+        ]
+        second = {**base, "repositories": new_repos}
+        r2 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a), json=second,
+        )
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["os_version_id"] == osv_id
+
+        await db.commit()
+        os_ver = (await db.execute(
+            select(OsVersion).where(OsVersion.id == osv_id)
+        )).scalar_one()
+        assert os_ver.repositories == new_repos
+
+    async def test_inventory_empty_repositories_does_not_wipe(
+        self, client, admin_role_token_a, make_server, db, dept_a,
+    ):
+        """Повторный inventory с пустым списком репозиториев не затирает уже
+        сохранённые (сбой sources.list / старый воркер не обнуляют каталог)."""
+        srv = await make_server(department_id=dept_a)
+        base = {
+            "hostname": "box2",
+            "kernel": "5.15.0",
+            "cpu_brand": "Intel",
+            "cpu_model": "Xeon",
+            "cpu_cores": 4,
+            "os_version": "1.8.1.6",
+            "disks": [],
+        }
+        stored = ["http://repo.example/kept/"]
+        r1 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a),
+            json={**base, "repositories": stored},
+        )
+        assert r1.status_code == 200, r1.text
+        osv_id = r1.json()["os_version_id"]
+
+        r2 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a),
+            json={**base, "repositories": []},
+        )
+        assert r2.status_code == 200, r2.text
+
+        await db.commit()
+        os_ver = (await db.execute(
+            select(OsVersion).where(OsVersion.id == osv_id)
+        )).scalar_one()
+        assert os_ver.repositories == stored
+
+    async def test_inventory_without_repositories_field_backcompat(
+        self, client, admin_role_token_a, make_server, db, dept_a,
+    ):
+        """Старый воркер без поля repositories: callback не падает, репозитории
+        версии не трогаются."""
+        srv = await make_server(department_id=dept_a)
+        # Поле repositories вовсе отсутствует в payload'е.
+        payload = {
+            "hostname": "legacy-box",
+            "kernel": "5.15.0",
+            "cpu_brand": "Intel",
+            "cpu_model": "Xeon",
+            "cpu_cores": 4,
+            "os_version": "1.8.1.6",
+            "disks": [],
+        }
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        osv_id = resp.json()["os_version_id"]
+        assert osv_id
+
+        await db.commit()
+        os_ver = (await db.execute(
+            select(OsVersion).where(OsVersion.id == osv_id)
+        )).scalar_one()
+        assert os_ver.repositories == []
+
+    async def test_inventory_os_security_mode_persist_and_backcompat(
+        self, client, admin_role_token_a, make_server, db, dept_a,
+    ):
+        """Режим пишется из callback'а; повторный inventory без os_security_mode
+        (старый воркер) существующее значение не затирает."""
+        srv = await make_server(department_id=dept_a)
+        base = {
+            "hostname": "mode-box",
+            "kernel": "5.15.0",
+            "cpu_brand": "Intel",
+            "cpu_model": "Xeon",
+            "cpu_cores": 4,
+            "os_version": "1.8.1.6",
+            "disks": [],
+        }
+        r1 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a),
+            json={**base, "os_security_mode": "Voronezh"},
+        )
+        assert r1.status_code == 200, r1.text
+        await db.commit()
+        srv_row = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert srv_row.os_security_mode == "Voronezh"
+
+        # Старый воркер: поля os_security_mode в payload'е нет — режим сохраняется.
+        r2 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a), json=base,
+        )
+        assert r2.status_code == 200, r2.text
+        await db.commit()
+        srv_row2 = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert srv_row2.os_security_mode == "Voronezh"
+
     async def test_worker_bot_can_callback_inventory(
         self, client, worker_bot_token_a, make_server, dept_a,
     ):
@@ -491,7 +689,6 @@ class TestIpmiCredentialsRotatedCallback:
             select(IpmiController).where(IpmiController.id == ctrl.id)
         )).scalar_one()
         # password_rotated_at не выставился (если был None — остаётся None).
-        old_rotated = refreshed.password_rotated_at
         # И новый пароль не сохранён — decrypt старого должен вернуть исходный.
         assert secrets_service.decrypt(
             refreshed.password_encrypted,

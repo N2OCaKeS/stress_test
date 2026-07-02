@@ -823,6 +823,7 @@ async def _resolve_or_create_os(
     db: AsyncSession,
     name: str,
     *,
+    repositories: list[str] | None = None,
     server_id: str | None = None,
     server_department_id: str | None = None,
     actor_subject_type: str | None = None,
@@ -838,7 +839,20 @@ async def _resolve_or_create_os(
     Известное имя → существующий flow: если в каталоге есть строка с тем
     же name — возвращаем её id; иначе INSERT с WARNING-аудитом
     `os_version.create` (есть авто-создание, оператор видит источник).
+
+    `repositories` — снапшот активных репозиториев версии ОС с бокса.
+    Семантика записи в каталог:
+
+      * first-seen (INSERT) — пишем присланный список как есть (пустой у
+        старого воркера — норма, колонка default '{}');
+      * версия уже в каталоге и список непустой — перезаписываем хранимый
+        снапшот (актуальная картина репозиториев версии), updated_at бампится
+        onupdate'ом;
+      * версия уже в каталоге, но список пустой — НЕ затираем существующие:
+        старый воркер без поля либо сбой чтения sources.list не должны
+        обнулять каталог.
     """
+    repositories = list(repositories or [])
     if not is_known_os(name):
         logger.warning(
             "unknown OS observed: %r from server %s — skip create",
@@ -865,6 +879,7 @@ async def _resolve_or_create_os(
     obj, created = await osv_repo.create_if_absent(db, {
         "id": os_version_id(),
         "name": name,
+        "repositories": repositories,
     })
     if created:
         audit_service.emit(
@@ -880,6 +895,10 @@ async def _resolve_or_create_os(
                 "server_department_id": server_department_id,
             },
         )
+    elif repositories:
+        # Версия уже в каталоге — обновляем снапшот репозиториев только на
+        # непустом списке. Пустой не затираем (см. docstring).
+        await osv_repo.update(db, obj, {"repositories": repositories})
     return obj.id
 
 
@@ -1024,6 +1043,7 @@ async def receive_inventory(
     os_id_resolved = await _resolve_or_create_os(
         db,
         payload.os_version,
+        repositories=payload.repositories,
         server_id=server_id,
         server_department_id=server.department_id,
         actor_subject_type=identity.subject_type,
@@ -1043,6 +1063,11 @@ async def receive_inventory(
     }
     if os_id_resolved is not None:
         server_update["os_version_id"] = os_id_resolved
+    # Режим безопасности — per-server факт с бокса. Обновляем на каждом
+    # непустом значении; None (старый воркер без поля) существующее не затирает,
+    # симметрично семантике repositories.
+    if payload.os_security_mode is not None:
+        server_update["os_security_mode"] = payload.os_security_mode
 
     first_write, drift = _inventory_field_changes(server, payload)
     server_update.update(first_write)

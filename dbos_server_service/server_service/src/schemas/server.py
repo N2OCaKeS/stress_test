@@ -158,6 +158,7 @@ class ServerResponse(BaseModel):
     ssh_port: int = Field(description="SSH-порт.")
     os_version_id: str | None = Field(default=None, description="FK на os_versions.")
     os_last_synced_at: datetime | None = Field(default=None, description="Последняя синхронизация OS-инвентарником.")
+    os_security_mode: str | None = Field(default=None, description="Режим безопасности Astra с бокса (Smolensk/Orel/Voronezh). UI склеивает с именем версии.")
     department_id: str = Field(description="Department-владелец.")
     status: str = Field(description="Статус сервера: unknown/online/offline/maintenance/decommissioned.")
     power_state: str = Field(description="Состояние питания: on/off/unknown (из кэша).")

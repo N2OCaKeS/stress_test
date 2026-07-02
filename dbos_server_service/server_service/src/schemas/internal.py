@@ -108,7 +108,32 @@ class InventoryCallbackRequest(BaseModel):
         min_length=1,
         max_length=128,
         pattern=r"^[\w./()+,:\- ]+$",
-        description="OS-версия для lookup в os_versions.name (строка из PRETTY_NAME os-release).",
+        description=(
+            "Версия ОС для lookup/записи в os_versions.name. Воркер отдаёт "
+            "чистую версию ('1.8.1.6'), без имени дистрибутива и режима — режим "
+            "едет отдельным полем os_security_mode."
+        ),
+    )
+    os_security_mode: str | None = Field(
+        default=None,
+        max_length=32,
+        pattern=r"^[A-Za-z]+$",
+        description=(
+            "Режим безопасности Astra латиницей: Smolensk / Orel / Voronezh. "
+            "Per-server факт (пишется в servers.os_security_mode), в каталог "
+            "версий НЕ идёт. Опционально — старый воркер поле не шлёт "
+            "(back-compat), тогда существующее значение сервера не трогается."
+        ),
+    )
+    repositories: list[str] = Field(
+        default_factory=list,
+        max_length=128,
+        description=(
+            "Активные репозитории ОС (из /etc/apt/sources.list). Снапшот версии "
+            "ОС: непустой список перезаписывает хранимый в каталоге os_versions. "
+            "Поле опционально — старый воркер его не шлёт (back-compat), тогда "
+            "репозитории версии не трогаются."
+        ),
     )
     disks: list[InventoryDiskItem] = Field(
         default_factory=list,
@@ -127,6 +152,16 @@ class InventoryCallbackRequest(BaseModel):
             raise ValueError(
                 f"at most one disk may have is_system=True, got {system_count}"
             )
+        return value
+
+    @field_validator("repositories")
+    @classmethod
+    def _bound_repositories(cls, value: list[str]) -> list[str]:
+        # sources.list-строки не бесконечны; ограничиваем длину элемента, чтобы
+        # битый payload не раздул колонку каталога.
+        for item in value:
+            if len(item) > 2048:
+                raise ValueError("repository entry too long (max 2048 chars)")
         return value
 
 

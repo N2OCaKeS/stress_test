@@ -198,3 +198,136 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
+
+---
+# Отдельный taskiq-scheduler: фаерит периодические (cron) задачи — heartbeat,
+# orphan-sweep, ночные cleanup'ы — в broker, а исполняют их worker'ы выше.
+# РОВНО 1 реплика: scheduler кладёт задачу в очередь на каждый тик, две реплики
+# выстрелили бы каждую задачу дважды (двойные heartbeat/cleanup, лишние sweep'ы).
+# strategy Recreate — чтобы во время rollout не оказалось двух scheduler'ов
+# одновременно. Образ и env те же, что у server-worker; отличие — команда.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server-worker-scheduler
+  namespace: dbos
+  labels:
+    app: server-worker-scheduler
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: server-worker-scheduler
+  template:
+    metadata:
+      labels:
+        app: server-worker-scheduler
+      annotations:
+        prometheus.io/scrape: "false"
+        dbos.monitoring/source: "taskiq scheduler — фаерит периодики в broker"
+    spec:
+      terminationGracePeriodSeconds: 30
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: server-worker-scheduler
+          image: dbos/server-worker:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          envFrom:
+            - configMapRef:
+                name: server-worker-config
+          env:
+            - name: WORKER_DB_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: WORKER_DB_USER }
+            - name: WORKER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: WORKER_DB_PASSWORD }
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: REDIS_PASSWORD }
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(WORKER_DB_USER):$(WORKER_DB_PASSWORD)@worker-postgres:5432/worker_db"
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
+            - name: SERVER_DB_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_DB_USER }
+            - name: SERVER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_DB_PASSWORD }
+            - name: SERVER_SERVICE_DATABASE_URL
+              value: "postgresql+psycopg://$(SERVER_DB_USER):$(SERVER_DB_PASSWORD)@server-postgres:5432/server_db"
+            - name: WORKER_BOT_TOKEN
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: WORKER_BOT_TOKEN }
+            - name: LOGGING_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY_WORKER }
+            - name: SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: WORKER_SERVICE_API_KEY }
+            - name: REDIS_STASH_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: REDIS_STASH_ENCRYPTION_KEY }
+            - name: REDIS_STASH_ENCRYPTION_KEY_VERSION
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: REDIS_STASH_ENCRYPTION_KEY_VERSION }
+            - name: HKDF_SALT_HEX
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: HKDF_SALT_HEX }
+            - name: WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: USER
+              value: "worker"
+            - name: LOGNAME
+              value: "worker"
+          command: ["taskiq"]
+          args:
+            - "scheduler"
+            - "src.main:scheduler"
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "grep -aql taskiq /proc/[0-9]*/cmdline 2>/dev/null || exit 1"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 18
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "grep -aql taskiq /proc/[0-9]*/cmdline 2>/dev/null || exit 1"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "250m", memory: "256Mi" }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

@@ -270,6 +270,9 @@ spec:
               app: server-worker
         - podSelector:
             matchLabels:
+              app: server-worker-scheduler
+        - podSelector:
+            matchLabels:
               app: secret-service
       ports:
         - protocol: TCP
@@ -643,9 +646,13 @@ metadata:
   name: server-worker-egress
   namespace: dbos
 spec:
+  # Покрывает и worker'ы, и отдельный taskiq-scheduler (тот же egress: redis для
+  # kick'а задач, worker/server-postgres, auth/logging).
   podSelector:
-    matchLabels:
-      app: server-worker
+    matchExpressions:
+      - key: app
+        operator: In
+        values: ["server-worker", "server-worker-scheduler"]
   policyTypes:
     - Egress
   egress:

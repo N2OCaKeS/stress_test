@@ -50,6 +50,51 @@ export function usePanelWidth(
   return [width, setWidth] as const;
 }
 
+/**
+ * clamp+persist numeric panel height. В отличие от ширины высота необязательна:
+ * `null` означает «занимать всю доступную высоту» (базовое состояние), а число —
+ * зафиксированный пользователем оверрайд. Сброс (setHeight(null)) убирает ключ
+ * из localStorage и возвращает панель к заполнению места.
+ */
+export function usePanelHeight(key: string, min: number, max: number) {
+  const [height, setHeightRaw] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw == null) return null;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return null;
+      return Math.min(max, Math.max(min, n));
+    } catch {
+      return null;
+    }
+  });
+
+  const setHeight = useCallback(
+    (next: number | null) => {
+      if (next == null) {
+        setHeightRaw(null);
+        try {
+          window.localStorage.removeItem(key);
+        } catch {
+          // ignore
+        }
+        return;
+      }
+      const clamped = Math.min(max, Math.max(min, next));
+      setHeightRaw(clamped);
+      try {
+        window.localStorage.setItem(key, String(clamped));
+      } catch {
+        // ignore quota / disabled storage
+      }
+    },
+    [key, min, max],
+  );
+
+  return [height, setHeight] as const;
+}
+
 /** persisted boolean flag (used for left-panel collapsed mode). */
 export function usePanelFlag(key: string, fallback: boolean) {
   const [value, setValueRaw] = useState<boolean>(() => readBool(key, fallback));

@@ -40,6 +40,8 @@ import { ApiError, apiErrMsg } from "@/api/client";
 import { fromBase64 } from "@/lib/base64";
 import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
 import { ConsoleMacrosPanel } from "@/pages/server/tabs/ConsoleMacros";
+import { HeightResizeHandle } from "@/components/shell/ResizeHandle";
+import { usePanelHeight } from "@/components/shell/usePanelWidth";
 import type {
   CursorPaginatedResponse,
   OffsetPaginatedResponse,
@@ -53,6 +55,13 @@ interface Props {
 }
 
 type ConnState = "idle" | "connecting" | "open" | "closed";
+
+// Ключ и границы для регулируемой высоты терминала. По умолчанию высота не
+// зафиксирована — терминал заполняет всё доступное место; после первого drag'а
+// в localStorage ложится явный оверрайд.
+const CONSOLE_HEIGHT_KEY = "dbos-console-height";
+const CONSOLE_MIN_HEIGHT = 240;
+const CONSOLE_MAX_HEIGHT = 2000;
 
 export function ConsoleTab({ serverId, server }: Props) {
   const { persona } = usePersona();
@@ -88,7 +97,7 @@ export function ConsoleTab({ serverId, server }: Props) {
     persona.service_roles.server === "operator";
 
   return (
-    <div className="p-5 flex flex-col gap-4 w-full">
+    <div className="p-5 flex flex-col gap-4 w-full h-full min-h-0">
       <div>
         <div className="text-sm font-medium mb-1 flex items-center gap-2">
           <TerminalIcon className="w-4 h-4 text-accent" />
@@ -201,6 +210,7 @@ function ConsoleSession({
 }) {
   const toast = useToast();
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -209,6 +219,11 @@ function ConsoleSession({
   const [state, setState] = useState<ConnState>("idle");
   const [closeInfo, setCloseInfo] = useState<ConsoleCloseInfo | null>(null);
   const [injecting, setInjecting] = useState(false);
+  const [termHeight, setTermHeight] = usePanelHeight(
+    CONSOLE_HEIGHT_KEY,
+    CONSOLE_MIN_HEIGHT,
+    CONSOLE_MAX_HEIGHT,
+  );
 
   // Монтируем терминал один раз и держим до unmount. fit и на ресайз окна, и
   // на ресайз самого контейнера (смена вкладок/раскрытие панелей меняют высоту
@@ -400,7 +415,7 @@ function ConsoleSession({
   const sessionOpen = state === "open";
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 flex-1 min-h-0">
       <div className="flex items-center gap-3">
         {connected ? (
           <button className="btn btn-ghost" onClick={disconnect}>
@@ -458,13 +473,35 @@ function ConsoleSession({
 
       {/* Паддинг/фон держим на обёртке, а xterm монтируем в дочерний div на всю
           высоту: иначе внутренний padding съедает измеряемую область, fit
-          считает на ряд больше и низ терминала обрезается. */}
+          считает на ряд больше и низ терминала обрезается. Без явной высоты
+          обёртка тянется на всё оставшееся место (flex-1); после drag'а высота
+          фиксируется. Смену размера подхватывает ResizeObserver внутри и
+          пересчитывает fit — терминал при этом не пересоздаётся. */}
       <div
-        className="border border-token rounded overflow-hidden"
-        style={{ height: 480, background: "#1e1e1e", padding: 8 }}
+        ref={wrapRef}
+        className={`border border-token rounded overflow-hidden ${
+          termHeight == null ? "flex-1 min-h-0" : ""
+        }`}
+        style={{
+          height: termHeight ?? undefined,
+          background: "#1e1e1e",
+          padding: 8,
+        }}
       >
         <div ref={mountRef} style={{ height: "100%", width: "100%" }} />
       </div>
+      <HeightResizeHandle
+        min={CONSOLE_MIN_HEIGHT}
+        max={CONSOLE_MAX_HEIGHT}
+        measure={() =>
+          wrapRef.current?.getBoundingClientRect().height ??
+          termHeight ??
+          CONSOLE_MIN_HEIGHT
+        }
+        onChange={setTermHeight}
+        onReset={() => setTermHeight(null)}
+        ariaLabel="Изменить высоту консоли (двойной клик — сброс)"
+      />
     </div>
   );
 }

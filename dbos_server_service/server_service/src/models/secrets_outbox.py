@@ -47,6 +47,14 @@ class ReencryptOutboxEntry(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     entity_type: Mapped[str] = mapped_column(String(32), nullable=False)
     entity_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Имя зашифрованной колонки owner-row'а — одна строка может нести несколько
+    # шифр-полей (server: mgmt_password + mgmt_ssh_key + previous_*), поэтому
+    # без имени колонки задачи на них слились бы в один entity и не разложились.
+    # Старые row'ы (до появления поля) относятся к password_encrypted — миграция
+    # бэкфилит их этим значением.
+    column_name: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default="password_encrypted"
+    )
     # Wire-формат `v<N>$...` — то, что лежало в owner-row на момент
     # seed'а. Источник истины для decrypt'а: даже если кто-то параллельно
     # ротирует пароль на этой строке, outbox получит фиктивную ошибку при
@@ -80,11 +88,14 @@ class ReencryptOutboxEntry(Base):
             "status",
             "created_at",
         ),
-        # Узкий unique гарантирует «одна активная задача на owner-row'у».
+        # Узкий unique гарантирует «одна активная задача на (owner-row, колонку)».
+        # Колонка входит в ключ: у одной owner-row'ы несколько шифр-полей, и
+        # каждое перешифровывается своей задачей.
         Index(
             "uq_secrets_reencrypt_outbox_entity_active",
             "entity_type",
             "entity_id",
+            "column_name",
             unique=True,
             postgresql_where="status IN ('pending', 'processing')",
         ),

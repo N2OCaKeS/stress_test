@@ -2,17 +2,18 @@
 
 Контекст. После смены `SERVER_ENCRYPTION_KEY` старые ciphertext'ы (`v<old>$...`)
 остаются читаемыми через `SERVER_ENCRYPTION_KEY__v<old>`, новые пишутся
-активной версией. Чтобы можно было дропнуть старый ключ, надо пройтись по
-всем строкам в `server_accounts.password_encrypted` и
-`ipmi_controllers.password_encrypted`, расшифровать тем ключом, что
-соответствует префиксу, и зашифровать обратно активной версией.
+активной версией. Чтобы можно было дропнуть старый ключ, надо пройтись по всем
+шифр-колонкам всех таблиц сервиса (реестр `ENCRYPTED_COLUMNS`: пароль и
+ssh-ключ аккаунта + previous, пароль BMC, mgmt-пароль и mgmt-ключ сервера +
+previous), расшифровать тем ключом, что соответствует префиксу, и своим AAD, и
+зашифровать обратно активной версией тем же AAD.
 
 Outbox-pattern. Раньше воркер дёргал `POST /reencrypt_batch` синхронно:
 server-service держал AsyncSession открытым на весь decrypt-batch →
 encrypt-batch → UPDATE цикл, что блокировало pool. Теперь работа разбита
 на короткие транзакции через таблицу `secrets_reencrypt_outbox`:
 
-* :func:`seed_outbox` сканит обе owner-таблицы и публикует pending-row'ы
+* :func:`seed_outbox` сканит все шифр-колонки реестра и публикует pending-row'ы
   под активную версию ключа. Запускается из endpoint'а или CLI после bump'а
   `SERVER_ENCRYPTION_KEY_VERSION`.
 * :func:`claim_pending` берёт батч pending-row'ов с
@@ -34,10 +35,12 @@ import logging
 import math
 import re
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, delete, func, select, update
+from sqlalchemy import BigInteger, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +50,7 @@ from src.models import (
     IpmiController,
     ReencryptOutboxEntry,
     SecretsMigrationState,
+    Server,
     ServerAccount,
 )
 from src.services import audit_service, metrics, secrets_service
@@ -63,6 +67,7 @@ _VERSION_PREFIX_RE = re.compile(r"^v(\d+)\$")
 
 ENTITY_SERVER_ACCOUNT = "server_account"
 ENTITY_IPMI_CONTROLLER = "ipmi_controller"
+ENTITY_SERVER = "server"
 
 STATUS_PENDING = "pending"
 STATUS_PROCESSING = "processing"
@@ -71,6 +76,106 @@ STATUS_FAILED = "failed"
 
 # Единственная строка `secrets_migration_state`.
 SINGLETON_STATE_ID = "singleton"
+
+# Предикат частичного unique-индекса `uq_secrets_reencrypt_outbox_entity_active`,
+# записанный литералами. В ON CONFLICT его надо давать именно литералом, а не
+# `status.in_([...])`: параметризованный `status IN ($1,$2)` в generic-плане
+# server-side prepared statement (psycopg готовит запрос после N повторов)
+# Postgres не может сопоставить с литеральным предикатом индекса и роняет
+# «no unique or exclusion constraint matching the ON CONFLICT specification».
+_OUTBOX_ACTIVE_INDEX_WHERE = text("status IN ('pending', 'processing')")
+
+
+# ── Реестр шифр-колонок ──────────────────────────────────────────────────────
+#
+# Единый источник правды по всем зашифрованным колонкам сервиса. Seed, дренаж,
+# счётчики remaining и retire-гард ходят по этому списку, а не по хардкоду
+# отдельных полей. Добавить новую шифр-колонку = одна запись здесь (плюс, если
+# у неё свой AAD-kind, соответствующий `aad_for_*` в secrets_service).
+#
+# AAD у каждой колонки берётся ТОТ ЖЕ, которым её реально шифруют/расшифровывают
+# в сервисном слое — иначе decrypt при перешифровке упал бы InvalidTag:
+#
+# * server_accounts.password_encrypted / previous_password_encrypted —
+#   aad_for_server_account_password (previous_* переезжает из password_encrypted
+#   тем же AAD, см. server_account.rotate_password / reveal_previous_password);
+# * server_accounts.ssh_private_key_encrypted — aad_for_server_account_ssh_key;
+# * ipmi_controllers.password_encrypted — aad_for_ipmi_credential;
+# * servers.mgmt_password_encrypted / previous_mgmt_password_encrypted —
+#   aad_for_server_mgmt_password (previous_* переезжает из mgmt_password_encrypted,
+#   см. management_creds.stash_new / internal_service.fetch mgmt creds);
+# * servers.mgmt_ssh_private_key_encrypted / previous_mgmt_ssh_private_key_encrypted —
+#   aad_for_server_mgmt_ssh_key.
+
+
+@dataclass(frozen=True)
+class EncryptedColumnSpec:
+    """Одна зашифрованная колонка: owner-модель, имя поля и её AAD-функция."""
+
+    entity_type: str
+    model: type
+    column_name: str
+    aad_fn: Callable[[str], bytes]
+
+    @property
+    def column(self):
+        """ORM-атрибут колонки (для SELECT/WHERE)."""
+        return getattr(self.model, self.column_name)
+
+
+# Порядок важен: server_account-колонки идут раньше ipmi и server, чтобы
+# quota-split в seed_outbox/reencrypt_batch оставался предсказуемым (сначала
+# аккаунты, потом BMC, потом управляющие креды серверов).
+ENCRYPTED_COLUMNS: tuple[EncryptedColumnSpec, ...] = (
+    EncryptedColumnSpec(
+        ENTITY_SERVER_ACCOUNT, ServerAccount, "password_encrypted",
+        secrets_service.aad_for_server_account_password,
+    ),
+    EncryptedColumnSpec(
+        ENTITY_SERVER_ACCOUNT, ServerAccount, "previous_password_encrypted",
+        secrets_service.aad_for_server_account_password,
+    ),
+    EncryptedColumnSpec(
+        ENTITY_SERVER_ACCOUNT, ServerAccount, "ssh_private_key_encrypted",
+        secrets_service.aad_for_server_account_ssh_key,
+    ),
+    EncryptedColumnSpec(
+        ENTITY_IPMI_CONTROLLER, IpmiController, "password_encrypted",
+        secrets_service.aad_for_ipmi_credential,
+    ),
+    EncryptedColumnSpec(
+        ENTITY_SERVER, Server, "mgmt_password_encrypted",
+        secrets_service.aad_for_server_mgmt_password,
+    ),
+    EncryptedColumnSpec(
+        ENTITY_SERVER, Server, "previous_mgmt_password_encrypted",
+        secrets_service.aad_for_server_mgmt_password,
+    ),
+    EncryptedColumnSpec(
+        ENTITY_SERVER, Server, "mgmt_ssh_private_key_encrypted",
+        secrets_service.aad_for_server_mgmt_ssh_key,
+    ),
+    EncryptedColumnSpec(
+        ENTITY_SERVER, Server, "previous_mgmt_ssh_private_key_encrypted",
+        secrets_service.aad_for_server_mgmt_ssh_key,
+    ),
+)
+
+# Быстрый lookup по (entity_type, column_name) — finalize_done читает spec по
+# полям outbox-row'а.
+_SPEC_BY_KEY: dict[tuple[str, str], EncryptedColumnSpec] = {
+    (s.entity_type, s.column_name): s for s in ENCRYPTED_COLUMNS
+}
+
+
+def _spec_for(entity_type: str, column_name: str) -> EncryptedColumnSpec:
+    """Найти spec по паре (entity_type, column_name) или бросить ValueError."""
+    spec = _SPEC_BY_KEY.get((entity_type, column_name))
+    if spec is None:
+        raise ValueError(
+            f"unknown encrypted column {entity_type!r}/{column_name!r}"
+        )
+    return spec
 
 
 # ── Force-режим: durable флаг + in-process кэш под maintenance-gate ──────────
@@ -139,7 +244,7 @@ def compute_retry_after(remaining: int) -> int:
 
 
 async def remaining_legacy(db: AsyncSession) -> int:
-    """Сколько owner-строк ещё под не-активной версией ключа (обе таблицы)."""
+    """Сколько шифр-ячеек ещё под не-активной версией ключа (все колонки реестра)."""
     active = get_keystore().get_active_version()
     by_version = await _count_by_version(db)
     return sum(c for v, c in by_version.items() if v != active)
@@ -288,10 +393,10 @@ async def _count_by_version_for_column(db: AsyncSession, column) -> dict[int, in
 
 
 async def _count_by_version(db: AsyncSession) -> dict[int, int]:
-    """Объединить per-column счётчики по обеим owner-таблицам."""
+    """Объединить per-column счётчики по всем шифр-колонкам реестра."""
     combined: dict[int, int] = {}
-    for column in (ServerAccount.password_encrypted, IpmiController.password_encrypted):
-        per_column = await _count_by_version_for_column(db, column)
+    for spec in ENCRYPTED_COLUMNS:
+        per_column = await _count_by_version_for_column(db, spec.column)
         for v, c in per_column.items():
             combined[v] = combined.get(v, 0) + c
     return combined
@@ -322,22 +427,16 @@ async def _column_breakdown(
 
 
 async def _total(db: AsyncSession) -> int:
-    """Сумма `password_encrypted IS NOT NULL` по обеим таблицам."""
-    sa_total = (
-        await db.execute(
-            select(func.count(ServerAccount.id)).where(
-                ServerAccount.password_encrypted.is_not(None)
+    """Сумма non-NULL ciphertext'ов по всем шифр-колонкам реестра."""
+    total = 0
+    for spec in ENCRYPTED_COLUMNS:
+        cnt = (
+            await db.execute(
+                select(func.count()).where(spec.column.is_not(None))
             )
-        )
-    ).scalar_one()
-    ipmi_total = (
-        await db.execute(
-            select(func.count(IpmiController.id)).where(
-                IpmiController.password_encrypted.is_not(None)
-            )
-        )
-    ).scalar_one()
-    return int(sa_total) + int(ipmi_total)
+        ).scalar_one()
+        total += int(cnt)
+    return int(total)
 
 
 async def _outbox_counts_by_status(db: AsyncSession) -> dict[str, int]:
@@ -351,18 +450,20 @@ async def _outbox_counts_by_status(db: AsyncSession) -> dict[str, int]:
 
 
 async def has_rows_on_version(db: AsyncSession, version: int) -> bool:
-    """Есть ли хоть одна owner-row с ciphertext'ом версии ``version``.
+    """Есть ли хоть одна шифр-колонка любой таблицы с ciphertext'ом версии ``version``.
 
-    Дешёвый `EXISTS` поверх обеих owner-таблиц через `LIKE 'v<N>$%'` с
-    `LIMIT 1`. Разделитель `$` после номера не даёт `v1$%` зацепить `v10$...`.
-    Пока на версии остаются строки, Postgres находит совпадение сразу; полный
-    скан случается только когда строк уже нет (конец миграции), и редко.
+    Инвариант retire: версию нельзя выводить, пока хоть в одном шифр-поле любой
+    owner-row остаётся ciphertext на этой версии. Дешёвый `EXISTS` по каждой
+    колонке реестра через `LIKE 'v<N>$%'` с `LIMIT 1`. Разделитель `$` после
+    номера не даёт `v1$%` зацепить `v10$...`. Пока на версии остаются строки,
+    Postgres находит совпадение сразу; полный скан случается только когда строк
+    уже нет (конец миграции), и редко.
     """
     prefix = f"v{int(version)}$%"
-    for model in (ServerAccount, IpmiController):
-        column = model.password_encrypted
+    for spec in ENCRYPTED_COLUMNS:
+        column = spec.column
         stmt = (
-            select(model.id)
+            select(spec.model.id)
             .where(column.is_not(None))
             .where(column.like(prefix))
             .limit(1)
@@ -422,7 +523,7 @@ async def status(db: AsyncSession) -> dict:
     outbox, server_account_password_encrypted, ipmi_controller_password_encrypted,
     remaining_legacy_total, migrated_pct, outbox_pending}``.
 
-    * ``total`` — все non-NULL `password_encrypted` в обеих таблицах.
+    * ``total`` — все non-NULL шифр-ячейки по всем колонкам реестра.
     * ``by_version`` — `{N: count}` по версиям из префиксов (агрегат).
     * ``remaining`` — сумма `count`'ов для версий, отличных от активной;
       malformed строки в `by_version` не попадают (это legacy-поле,
@@ -453,15 +554,18 @@ async def status(db: AsyncSession) -> dict:
         STATUS_DONE: outbox_counts.get(STATUS_DONE, 0),
         STATUS_FAILED: outbox_counts.get(STATUS_FAILED, 0),
     }
-    sa_breakdown = await _column_breakdown(
-        db, ServerAccount.password_encrypted, active
-    )
-    ipmi_breakdown = await _column_breakdown(
-        db, IpmiController.password_encrypted, active
-    )
-    remaining_legacy_total = (
-        sa_breakdown["remaining_legacy"] + ipmi_breakdown["remaining_legacy"]
-    )
+    # Полный per-column breakdown по всему реестру: ключ — `<table>.<column>`.
+    # Оператор видит, какое именно шифр-поле тащит legacy-токены (mgmt-пароль
+    # сервера, ssh-ключ аккаунта и т.д.).
+    columns_breakdown: dict[str, dict] = {}
+    remaining_legacy_total = 0
+    for spec in ENCRYPTED_COLUMNS:
+        bd = await _column_breakdown(db, spec.column, active)
+        columns_breakdown[f"{spec.model.__tablename__}.{spec.column_name}"] = bd
+        remaining_legacy_total += bd["remaining_legacy"]
+    # Два исторических top-level поля оставлены под старый контракт схемы.
+    sa_breakdown = columns_breakdown["server_accounts.password_encrypted"]
+    ipmi_breakdown = columns_breakdown["ipmi_controllers.password_encrypted"]
     if total == 0:
         migrated_pct = 100.0
     else:
@@ -478,6 +582,7 @@ async def status(db: AsyncSession) -> dict:
         "outbox": outbox_snapshot,
         "server_account_password_encrypted": sa_breakdown,
         "ipmi_controller_password_encrypted": ipmi_breakdown,
+        "columns": columns_breakdown,
         "remaining_legacy_total": remaining_legacy_total,
         "migrated_pct": migrated_pct,
         "outbox_pending": outbox_snapshot[STATUS_PENDING],
@@ -498,9 +603,7 @@ def _legacy_ciphertext_filter(column, active_prefix: str):
     """Общий predicate для legacy-ciphertext SELECT'ов.
 
     Возвращает три where-кляузы: not-NULL, wire-prefix `v<N>$`, и
-    not-LIKE-активного префикса. Применяется к
-    ``ServerAccount.password_encrypted`` / ``IpmiController.password_encrypted``
-    и к любым другим аналогичным колонкам, если такие появятся.
+    not-LIKE-активного префикса. Применяется к любой шифр-колонке реестра.
     """
     return (
         column.is_not(None),
@@ -511,13 +614,13 @@ def _legacy_ciphertext_filter(column, active_prefix: str):
 
 async def _pick_legacy_ciphertext_rows(
     db: AsyncSession,
-    model,
+    spec: EncryptedColumnSpec,
     active: int,
     limit: int | None,
     *,
     scalars: bool = True,
 ):
-    """SELECT row'ов с legacy-ciphertext'ом для заданного owner-модели.
+    """SELECT row'ов с legacy-ciphertext'ом для заданной шифр-колонки реестра.
 
     `scalars=True` — отдаём полные ORM-объекты (использует `reencrypt_batch`).
     `scalars=False` — отдаём пары `(id, ciphertext)` для `seed_outbox`,
@@ -527,7 +630,8 @@ async def _pick_legacy_ciphertext_rows(
     quota'е). Иначе clause LIMIT добавляется в SELECT.
     """
     active_prefix = f"v{active}$%"
-    column = model.password_encrypted
+    model = spec.model
+    column = spec.column
     if scalars:
         stmt = select(model)
     else:
@@ -564,21 +668,18 @@ async def seed_outbox(db: AsyncSession, limit: int | None = None) -> dict:
 
     inserted = 0
 
-    candidates: list[tuple[str, str, str]] = []  # (entity_type, entity_id, ciphertext)
+    # (entity_type, entity_id, column_name, ciphertext)
+    candidates: list[tuple[str, str, str, str]] = []
 
-    sa_rows = await _pick_legacy_ciphertext_rows(
-        db, ServerAccount, active, limit, scalars=False
-    )
-    for row in sa_rows:
-        candidates.append((ENTITY_SERVER_ACCOUNT, row[0], row[1]))
-
-    remaining = None if limit is None else max(0, limit - len(candidates))
-    if remaining is None or remaining > 0:
-        ipmi_rows = await _pick_legacy_ciphertext_rows(
-            db, IpmiController, active, remaining, scalars=False
+    for spec in ENCRYPTED_COLUMNS:
+        remaining = None if limit is None else max(0, limit - len(candidates))
+        if remaining == 0:
+            break
+        rows = await _pick_legacy_ciphertext_rows(
+            db, spec, active, remaining, scalars=False
         )
-        for row in ipmi_rows:
-            candidates.append((ENTITY_IPMI_CONTROLLER, row[0], row[1]))
+        for row in rows:
+            candidates.append((spec.entity_type, row[0], spec.column_name, row[1]))
 
     scanned = len(candidates)
 
@@ -587,21 +688,20 @@ async def seed_outbox(db: AsyncSession, limit: int | None = None) -> dict:
     # поэтому используем index_where форму через `index_elements` +
     # `index_where`. Для предсказуемости делаем по одной строке: на крупных
     # seed'ах разница ничтожна, а ошибка на одной row не валит весь batch.
-    for entity_type, entity_id, ciphertext in candidates:
+    for entity_type, entity_id, column_name, ciphertext in candidates:
         stmt = (
             pg_insert(ReencryptOutboxEntry.__table__)
             .values(
                 id=f"rox_{uuid4().hex}",
                 entity_type=entity_type,
                 entity_id=entity_id,
+                column_name=column_name,
                 legacy_ciphertext=ciphertext,
                 status=STATUS_PENDING,
             )
             .on_conflict_do_nothing(
-                index_elements=["entity_type", "entity_id"],
-                index_where=ReencryptOutboxEntry.status.in_(
-                    [STATUS_PENDING, STATUS_PROCESSING]
-                ),
+                index_elements=["entity_type", "entity_id", "column_name"],
+                index_where=_OUTBOX_ACTIVE_INDEX_WHERE,
             )
             .returning(ReencryptOutboxEntry.__table__.c.id)
         )
@@ -658,6 +758,7 @@ async def claim_pending(db: AsyncSession, limit: int) -> list[dict]:
             "id": r.id,
             "entity_type": r.entity_type,
             "entity_id": r.entity_id,
+            "column_name": r.column_name,
             "legacy_ciphertext": r.legacy_ciphertext,
             "attempts_before": r.attempts,
         }
@@ -677,20 +778,12 @@ async def claim_pending(db: AsyncSession, limit: int) -> list[dict]:
             "id": s["id"],
             "entity_type": s["entity_type"],
             "entity_id": s["entity_id"],
+            "column_name": s["column_name"],
             "legacy_ciphertext": s["legacy_ciphertext"],
             "attempts": s["attempts_before"] + 1,
         }
         for s in snapshot
     ]
-
-
-def _aad_for_entry(entity_type: str, entity_id: str) -> bytes:
-    """Подобрать AAD по типу owner-row'а — see secrets_service."""
-    if entity_type == ENTITY_SERVER_ACCOUNT:
-        return secrets_service.aad_for_server_account_password(entity_id)
-    if entity_type == ENTITY_IPMI_CONTROLLER:
-        return secrets_service.aad_for_ipmi_credential(entity_id)
-    raise ValueError(f"unknown entity_type {entity_type!r}")
 
 
 async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
@@ -700,11 +793,11 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
 
     1. SELECT outbox-row с `FOR UPDATE`, проверяем `status='processing'`.
     2. SELECT owner-row с `FOR UPDATE`. Если row пропал или ciphertext
-       разошёлся с legacy (параллельный rotate) — закрываем outbox-row
-       `done`/`skipped=True` без crypto-операций.
+       нужной колонки разошёлся с legacy (параллельный rotate) — закрываем
+       outbox-row `done`/`skipped=True` без crypto-операций.
     3. `decrypt(legacy_ciphertext, aad)` старым ключом → plaintext.
     4. `encrypt(plaintext, aad)` активным ключом → new ciphertext.
-    5. UPDATE owner-row.password_encrypted = new ciphertext.
+    5. UPDATE owner-row.<column_name> = new ciphertext (колонка из outbox-row).
     6. UPDATE outbox-row → `status='done'`, `processed_at=now()`.
 
     Crypto-операции дешёвые, lock держим только пока активна транзакция
@@ -762,33 +855,24 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
     # по skipped-ветке до crypto-операций.
     skipped = False
     skip_reason: str | None = None
-    owner: ServerAccount | IpmiController | None
-    if entry.entity_type == ENTITY_SERVER_ACCOUNT:
-        owner_stmt = (
-            select(ServerAccount)
-            .where(ServerAccount.id == entry.entity_id)
-            .with_for_update()
-        )
-        owner = (await db.execute(owner_stmt)).scalar_one_or_none()
-    elif entry.entity_type == ENTITY_IPMI_CONTROLLER:
-        owner_stmt = (
-            select(IpmiController)
-            .where(IpmiController.id == entry.entity_id)
-            .with_for_update()
-        )
-        owner = (await db.execute(owner_stmt)).scalar_one_or_none()
-    else:
-        # entity_type валидируется на seed; сюда не доедем штатно.
-        raise ValueError(f"unknown entity_type {entry.entity_type!r}")
+    # spec по (entity_type, column_name) — какую именно колонку owner-row'ы
+    # перешифровываем и каким AAD. Валидируется на seed; сюда не доедем штатно.
+    spec = _spec_for(entry.entity_type, entry.column_name)
+    owner_stmt = (
+        select(spec.model)
+        .where(spec.model.id == entry.entity_id)
+        .with_for_update()
+    )
+    owner = (await db.execute(owner_stmt)).scalar_one_or_none()
 
     if owner is None:
         skipped = True
         skip_reason = "owner_vanished"
-    elif owner.password_encrypted != entry.legacy_ciphertext:
+    elif getattr(owner, spec.column_name) != entry.legacy_ciphertext:
         skipped = True
         skip_reason = "owner_ciphertext_changed"
     else:
-        aad = _aad_for_entry(entry.entity_type, entry.entity_id)
+        aad = spec.aad_fn(entry.entity_id)
         try:
             plaintext = secrets_service.decrypt(entry.legacy_ciphertext, aad=aad)
         except Exception:
@@ -799,7 +883,7 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
             metrics.increment_secrets_decrypt_failures()
             raise
         new_ciphertext = secrets_service.encrypt(plaintext, aad=aad)
-        owner.password_encrypted = new_ciphertext
+        setattr(owner, spec.column_name, new_ciphertext)
 
     if skipped:
         # Owner-row пропал / ротировал ciphertext параллельно — outbox-row всё
@@ -816,6 +900,7 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
                 "reason": skip_reason,
                 "entity_type": entry.entity_type,
                 "entity_id": entry.entity_id,
+                "column_name": entry.column_name,
             },
         })
 
@@ -915,33 +1000,56 @@ async def cleanup_done(db: AsyncSession, older_than_hours: int) -> int:
 # ── Legacy compat: старый sync-batch остаётся как backward-compat ──────────
 
 
+_SA_PASSWORD_SPEC = _SPEC_BY_KEY[(ENTITY_SERVER_ACCOUNT, "password_encrypted")]
+_IPMI_PASSWORD_SPEC = _SPEC_BY_KEY[(ENTITY_IPMI_CONTROLLER, "password_encrypted")]
+
+
 async def _pick_account_batch(db: AsyncSession, active: int, limit: int) -> list[ServerAccount]:
-    """Выбрать ServerAccount'ы с префиксом, отличным от активного."""
-    return await _pick_legacy_ciphertext_rows(db, ServerAccount, active, limit)
+    """Выбрать ServerAccount'ы с password-префиксом, отличным от активного."""
+    return await _pick_legacy_ciphertext_rows(db, _SA_PASSWORD_SPEC, active, limit)
 
 
 async def _pick_ipmi_batch(db: AsyncSession, active: int, limit: int) -> list[IpmiController]:
-    """Симметрично _pick_account_batch — для ipmi_controllers."""
-    return await _pick_legacy_ciphertext_rows(db, IpmiController, active, limit)
+    """Симметрично _pick_account_batch — для ipmi_controllers.password."""
+    return await _pick_legacy_ciphertext_rows(db, _IPMI_PASSWORD_SPEC, active, limit)
 
 
-def _reencrypt_row(row, *, aad_fn, entity_type: str, log_label: str) -> dict | None:
+async def _pick_rows_for_spec(
+    db: AsyncSession, spec: EncryptedColumnSpec, active: int, limit: int
+):
+    """Выбрать legacy-row'ы под одну колонку реестра.
+
+    Два password-поля роутятся через исторические `_pick_account_batch` /
+    `_pick_ipmi_batch` (их monkeypatch'ат старые тесты), остальные колонки —
+    через общий `_pick_legacy_ciphertext_rows`.
+    """
+    if spec is _SA_PASSWORD_SPEC:
+        return await _pick_account_batch(db, active, limit)
+    if spec is _IPMI_PASSWORD_SPEC:
+        return await _pick_ipmi_batch(db, active, limit)
+    return await _pick_legacy_ciphertext_rows(db, spec, active, limit)
+
+
+def _reencrypt_row(
+    row, *, aad_fn, entity_type: str, log_label: str,
+    column_name: str = "password_encrypted",
+) -> dict | None:
     """Перешифровать один ciphertext-row под активный ключ.
 
-    Возвращает `None` на успех (и обновляет `row.password_encrypted` in-place)
+    Возвращает `None` на успех (и обновляет `row.<column_name>` in-place)
     либо dict `{entity_type, entity_id, error_class}` на сбой decrypt/encrypt.
     Любые исключения decrypt/encrypt здесь поглощаются — caller считает
     `processed` / `errors` по возврату.
 
-    `aad_fn` — `secrets_service.aad_for_server_account_password` или
-    `aad_for_ipmi_credential`; вызывается с `row.id`.
+    `aad_fn` — AAD-функция колонки (см. реестр `ENCRYPTED_COLUMNS`); вызывается
+    с `row.id`. `column_name` — какое шифр-поле row'ы перешифровываем.
     `log_label` — человеческое имя источника для WARNING'а (например
-    `"server_account"`).
+    `"server_account.password_encrypted"`).
     """
     try:
         aad = aad_fn(row.id)
-        plain = secrets_service.decrypt(row.password_encrypted, aad=aad)
-        row.password_encrypted = secrets_service.encrypt(plain, aad=aad)
+        plain = secrets_service.decrypt(getattr(row, column_name), aad=aad)
+        setattr(row, column_name, secrets_service.encrypt(plain, aad=aad))
         return None
     except Exception as exc:  # noqa: BLE001 — любая ошибка decrypt/encrypt
         # Тип эксепшна важен для диагностики (ключ ушёл из env vs битый
@@ -1010,12 +1118,6 @@ async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
     if limit <= 0:
         return {"processed": 0, "errors": 0}
 
-    accounts = await _pick_account_batch(db, active, limit)
-    remaining_quota = limit - len(accounts)
-    ipmis: list[IpmiController] = []
-    if remaining_quota > 0:
-        ipmis = await _pick_ipmi_batch(db, active, remaining_quota)
-
     processed = 0
     errors = 0
     # Список упавших row'ов с минимумом полей для диагностики оператору.
@@ -1024,16 +1126,20 @@ async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
     # чтобы SIEM мог разложить инциденты по таблицам.
     failed_rows: list[dict[str, str]] = []
 
-    batches = (
-        (accounts, secrets_service.aad_for_server_account_password,
-         ENTITY_SERVER_ACCOUNT, "server_account"),
-        (ipmis, secrets_service.aad_for_ipmi_credential,
-         ENTITY_IPMI_CONTROLLER, "ipmi_controller"),
-    )
-    for rows, aad_fn, entity_type, log_label in batches:
+    # Идём по всему реестру шифр-колонок, деля quota между ними по порядку:
+    # каждая колонка забирает остаток limit'а. Так один батч может закрыть
+    # разные поля одной и той же owner-row'ы.
+    remaining_quota = limit
+    for spec in ENCRYPTED_COLUMNS:
+        if remaining_quota <= 0:
+            break
+        rows = await _pick_rows_for_spec(db, spec, active, remaining_quota)
+        remaining_quota -= len(rows)
+        log_label = f"{spec.entity_type}.{spec.column_name}"
         for row in rows:
             failure = _reencrypt_row(
-                row, aad_fn=aad_fn, entity_type=entity_type, log_label=log_label
+                row, aad_fn=spec.aad_fn, entity_type=spec.entity_type,
+                log_label=log_label, column_name=spec.column_name,
             )
             if failure is None:
                 processed += 1

@@ -97,10 +97,19 @@ class MigrationStatusResponse(BaseModel):
             " симметрично server_account-полю выше."
         ),
     )
+    columns: dict[str, ColumnMigrationBreakdown] = Field(
+        default_factory=dict,
+        description=(
+            "Полный per-column breakdown по всем шифр-колонкам сервиса,"
+            " ключ — `<table>.<column>` (server_accounts.password_encrypted,"
+            " servers.mgmt_password_encrypted, ...). Оператор смотрит, какое"
+            " именно поле держит legacy-токены на старой версии ключа."
+        ),
+    )
     remaining_legacy_total: int = Field(
         0, ge=0,
         description=(
-            "Суммарный `remaining_legacy` по обеим колонкам (дублирует"
+            "Суммарный `remaining_legacy` по ВСЕМ шифр-колонкам (дублирует"
             " `remaining`, но семантически — для lazy-страницы)."
         ),
     )
@@ -195,9 +204,18 @@ class OutboxItem(BaseModel):
 
     id: str = Field(..., description="`rox_<uuid>` — outbox row id.")
     entity_type: str = Field(
-        ..., description="`server_account` | `ipmi_controller`."
+        ..., description="`server_account` | `ipmi_controller` | `server`."
     )
     entity_id: str = Field(..., description="ID owner-row'а в исходной таблице.")
+    column_name: str = Field(
+        "password_encrypted",
+        description=(
+            "Имя зашифрованной колонки owner-row'ы, которую перешифровываем"
+            " (`password_encrypted`, `ssh_private_key_encrypted`,"
+            " `mgmt_password_encrypted`, ...). finalize_done читает его из БД;"
+            " поле — для диагностики worker'а."
+        ),
+    )
     legacy_ciphertext: str = Field(
         ...,
         description=(

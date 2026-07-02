@@ -353,6 +353,11 @@ class TestReencryptBatchLogsPerRowError:
         async def _pick_ipmis(db, active, limit):
             return []
 
+        async def _pick_nothing(db, spec, active, limit):
+            # Остальные шифр-колонки реестра (previous_*, ssh-ключ, mgmt-креды)
+            # в этом тесте пусты — не ходим в БД (она тут None).
+            return []
+
         class _Settings:
             server_encryption_key_version = 1
 
@@ -361,6 +366,9 @@ class TestReencryptBatchLogsPerRowError:
         )
         monkeypatch.setattr(
             secrets_migration_service, "_pick_ipmi_batch", _pick_ipmis,
+        )
+        monkeypatch.setattr(
+            secrets_migration_service, "_pick_legacy_ciphertext_rows", _pick_nothing,
         )
         monkeypatch.setattr(
             secrets_migration_service, "get_settings", lambda: _Settings(),

@@ -8,7 +8,7 @@
 Проверяется: include_in_schema=False, permission gates (view_credentials /
 view_password / rotate_password — НЕ выданы по умолчанию никому кроме admin),
 404 vs ACCOUNT_HAS_NO_PASSWORD, plaintext НЕ светится за пределы response,
-`X-Target-Department-Id` cross-check (soft + strict mode).
+`X-Target-Department-Id` cross-check (безусловный: missing → 403, mismatch → 404).
 """
 
 from __future__ import annotations
@@ -262,37 +262,16 @@ def _hdr_with_dept(token: str, dept: str | None) -> dict[str, str]:
     return _hdr(token, dept=dept)
 
 
-@pytest.mark.usefixtures("soft_dept_mode")
-class TestTargetDeptHeaderSoftMode:
-    """Soft mode (`internal_require_dept_header=False`): mismatched / missing
-    `X-Target-Department-Id` is audited but does NOT block the call. Опция для
-    dev/test, где workers ещё не научены форвардить header — в проде default
-    strict (True). Fixture `soft_dept_mode` явно опускает гард на время теста.
+class TestTargetDeptHeaderScoping:
+    """`X-Target-Department-Id` — единственный cross-dept гард internal-эндпоинтов,
+    enforce'ится безусловно. Отдел самого воркер-бота в авторизации не участвует:
+    один глобальный бот обслуживает серверы всех отделов.
+
+      * заголовок отсутствует → 403 TARGET_DEPARTMENT_HEADER_REQUIRED;
+      * заголовок ≠ server.department_id → 404 (маска not-found);
+      * заголовок = server.department_id → операция проходит, даже если бот
+        числится в другом отделе.
     """
-
-    async def test_no_header_still_returns_200(
-        self, client, worker_pat_token, make_server, make_ipmi,
-    ):
-        srv = await make_server(department_id="dep_a")
-        await make_ipmi(server_id=srv.id, password="ipmi-soft-pwd")
-        resp = await client.get(
-            f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
-            headers=_hdr(worker_pat_token),
-        )
-        assert resp.status_code == 200
-        assert resp.json()["password"] == "ipmi-soft-pwd"
-
-    async def test_mismatched_header_still_returns_200(
-        self, client, worker_pat_token, make_server, make_ipmi,
-    ):
-        srv = await make_server(department_id="dep_a")
-        await make_ipmi(server_id=srv.id, password="ipmi-mismatch-pwd")
-        resp = await client.get(
-            f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
-            headers=_hdr_with_dept(worker_pat_token, "dep_b"),  # wrong dept
-        )
-        assert resp.status_code == 200
-        assert resp.json()["password"] == "ipmi-mismatch-pwd"
 
     async def test_matched_header_returns_200(
         self, client, worker_pat_token, make_server, make_ipmi,
@@ -306,11 +285,74 @@ class TestTargetDeptHeaderSoftMode:
         assert resp.status_code == 200
         assert resp.json()["password"] == "ipmi-match-pwd"
 
+    async def test_no_header_returns_403(
+        self, client, worker_pat_token, make_server, make_ipmi,
+    ):
+        srv = await make_server(department_id="dep_a")
+        await make_ipmi(server_id=srv.id, password="ipmi-no-hdr")
+        resp = await client.get(
+            f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
+            headers=_hdr(worker_pat_token),
+        )
+        assert_error(resp, 403, "TARGET_DEPARTMENT_HEADER_REQUIRED")
+        assert "ipmi-no-hdr" not in resp.text
+
+    async def test_mismatched_header_returns_404(
+        self, client, worker_pat_token, make_server, make_ipmi,
+    ):
+        srv = await make_server(department_id="dep_a")
+        await make_ipmi(server_id=srv.id, password="ipmi-mismatch-pwd")
+        resp = await client.get(
+            f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
+            headers=_hdr_with_dept(worker_pat_token, "dep_b"),  # wrong dept
+        )
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
+        assert "ipmi-mismatch-pwd" not in resp.text
+
+    async def test_worker_from_other_dept_succeeds_with_matching_header(
+        self, client, worker_pat_token, make_server, make_ipmi, dept_b,
+    ):
+        """Ключевой мультидепт-кейс: бот числится в dep_a, сервер — в dep_b,
+        заголовок = dep_b → УСПЕХ. До фикса actor-check отбивал это 404."""
+        srv = await make_server(department_id="dep_b")
+        await make_ipmi(server_id=srv.id, password="cross-dept-ok")
+        resp = await client.get(
+            f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
+            headers=_hdr_with_dept(worker_pat_token, "dep_b"),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["password"] == "cross-dept-ok"
+
+    async def test_worker_from_other_dept_no_header_returns_403(
+        self, client, worker_pat_token, make_server, make_ipmi, dept_b,
+    ):
+        srv = await make_server(department_id="dep_b")
+        await make_ipmi(server_id=srv.id, password="cross-dept-secret")
+        resp = await client.get(
+            f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
+            headers=_hdr(worker_pat_token),
+        )
+        assert_error(resp, 403, "TARGET_DEPARTMENT_HEADER_REQUIRED")
+        assert "cross-dept-secret" not in resp.text
+
+    async def test_worker_from_other_dept_wrong_header_returns_404(
+        self, client, worker_pat_token, make_server, make_ipmi, dept_b,
+    ):
+        """Сервер dep_b, заголовок dep_c (≠ server dept) → 404-маска."""
+        srv = await make_server(department_id="dep_b")
+        await make_ipmi(server_id=srv.id, password="cross-dept-secret")
+        resp = await client.get(
+            f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
+            headers=_hdr_with_dept(worker_pat_token, "dep_c"),
+        )
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
+        assert "cross-dept-secret" not in resp.text
+
 
 class TestTargetDeptHeaderStrictMode:
-    """Strict mode (`internal_require_dept_header=True`): missing or mismatched
-    `X-Target-Department-Id` → 403 + audit `denied`. Production setting once
-    server_worker is upgraded to forward the header.
+    """Header-scoping на остальных read/rotate endpoint'ах: missing → 403
+    TARGET_DEPARTMENT_HEADER_REQUIRED, mismatch → 404 (маска not-found),
+    matched → 200. Enforce безусловно.
     """
 
     async def test_missing_header_returns_403_for_ipmi(
@@ -324,7 +366,7 @@ class TestTargetDeptHeaderStrictMode:
         )
         assert_error(resp, 403, "TARGET_DEPARTMENT_HEADER_REQUIRED")
 
-    async def test_mismatched_header_returns_403_for_ipmi(
+    async def test_mismatched_header_returns_404_for_ipmi(
         self, client, worker_pat_token, make_server, make_ipmi, strict_dept_mode,
     ):
         srv = await make_server(department_id="dep_a")
@@ -333,8 +375,8 @@ class TestTargetDeptHeaderStrictMode:
             f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
             headers=_hdr_with_dept(worker_pat_token, "dep_b"),
         )
-        assert_error(resp, 403, "TARGET_DEPARTMENT_MISMATCH")
-        # Plaintext password MUST NOT appear in the 403 response.
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
+        # Plaintext password MUST NOT appear in the 404 response.
         assert "should-not-leak" not in resp.text
 
     async def test_matched_header_returns_200_for_ipmi(
@@ -360,7 +402,7 @@ class TestTargetDeptHeaderStrictMode:
         )
         assert_error(resp, 403, "TARGET_DEPARTMENT_HEADER_REQUIRED")
 
-    async def test_mismatched_header_returns_403_for_account_password(
+    async def test_mismatched_header_returns_404_for_account_password(
         self, client, worker_pat_token, make_server, make_account, strict_dept_mode,
     ):
         srv = await make_server(department_id="dep_a")
@@ -369,7 +411,7 @@ class TestTargetDeptHeaderStrictMode:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr_with_dept(worker_pat_token, "dep_b"),
         )
-        assert_error(resp, 403, "TARGET_DEPARTMENT_MISMATCH")
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
         assert "acc-mismatch" not in resp.text
 
     async def test_matched_header_returns_200_for_account_password(
@@ -384,7 +426,7 @@ class TestTargetDeptHeaderStrictMode:
         assert resp.status_code == 200
         assert resp.json()["password"] == "acc-ok-pwd"
 
-    async def test_mismatched_header_returns_403_for_rotate(
+    async def test_mismatched_header_returns_404_for_rotate(
         self, client, worker_pat_token, make_server, make_account, strict_dept_mode,
     ):
         srv = await make_server(department_id="dep_a")
@@ -394,7 +436,7 @@ class TestTargetDeptHeaderStrictMode:
             headers=_hdr_with_dept(worker_pat_token, "dep_b"),
             json={"password": "NewBlocked1234"},
         )
-        assert_error(resp, 403, "TARGET_DEPARTMENT_MISMATCH")
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
 
     async def test_matched_header_allows_rotate(
         self, client, worker_pat_token, make_server, make_account, strict_dept_mode,
@@ -410,45 +452,20 @@ class TestTargetDeptHeaderStrictMode:
         assert resp.json()["ok"] is True
 
 
-# ── Actor-vs-server department cross-check (always-on, even in soft mode) ────
+# ── Actor-agnostic: бот из чужого отдела с валидным header'ом проходит ───────
 
-@pytest.mark.usefixtures("soft_dept_mode")
-class TestActorDeptCrossCheckSoftMode:
-    """Caller's `identity.department_id` всегда обязан совпасть с
-    `server.department_id`. Соответствие forced даже в soft-mode — это закрывает
-    cross-department leak, при котором worker_bot из dep_b мог читать секреты
-    серверов dep_a, пока worker не научен форвардить header.
-
-    Cross-dept actor отдаёт **404** (а не 403): разница 403-vs-404 сама была
-    enumeration-oracle'ом (caller'у выдавалось «есть в чужом dept»). Теперь
-    унифицировано с обычным «not found».
-
-    Header-mismatch остаётся soft-mode warning (тестируется в
-    ``TestTargetDeptHeaderSoftMode``). Здесь актуальна именно actor-проверка.
+class TestWorkerBotDeptAgnostic:
+    """Отдел самого бота в авторизации не участвует — важен только заголовок.
+    Бот dep_b (foreign) с корректным `X-Target-Department-Id` работает с
+    серверами dep_a, как и «родной» бот; неверный/отсутствующий заголовок
+    отбивается одинаково для любого бота.
     """
 
-    async def test_ipmi_credentials_actor_mismatch_returns_404_soft(
-        self, client, make_token, make_server, make_ipmi,
-    ):
-        srv = await make_server(department_id="dep_a")
-        await make_ipmi(server_id=srv.id, password="dep-a-only-secret")
-        # Worker bot из чужого отдела, но с глобальной admin-ролью.
-        foreign_token = make_token(
-            department_id="dep_b",
-            service_roles={"server_service": ["admin"]},
-        )
-        resp = await client.get(
-            f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
-            headers=_hdr_with_dept(foreign_token, "dep_a"),
-        )
-        assert_error(resp, 404, "SERVER_NOT_FOUND")
-        assert "dep-a-only-secret" not in resp.text
-
-    async def test_account_password_actor_mismatch_returns_404_soft(
+    async def test_foreign_bot_matching_header_succeeds(
         self, client, make_token, make_server, make_account,
     ):
         srv = await make_server(department_id="dep_a")
-        acc = await make_account(server_id=srv.id, password="dep-a-only-pwd")
+        acc = await make_account(server_id=srv.id, password="dep-a-pwd")
         foreign_token = make_token(
             department_id="dep_b",
             service_roles={"server_service": ["admin"]},
@@ -457,14 +474,12 @@ class TestActorDeptCrossCheckSoftMode:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr_with_dept(foreign_token, "dep_a"),
         )
-        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
-        assert "dep-a-only-pwd" not in resp.text
+        assert resp.status_code == 200
+        assert resp.json()["password"] == "dep-a-pwd"
 
-    async def test_account_password_actor_mismatch_no_header_returns_404_soft(
+    async def test_foreign_bot_no_header_returns_403(
         self, client, make_token, make_server, make_account,
     ):
-        """Самый опасный кейс — soft-mode без header'а ранее пропускал
-        server lookup и не блокировал. Теперь actor-check ловит cross-dept."""
         srv = await make_server(department_id="dep_a")
         acc = await make_account(server_id=srv.id, password="leak-target")
         foreign_token = make_token(
@@ -475,39 +490,22 @@ class TestActorDeptCrossCheckSoftMode:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr(foreign_token),
         )
-        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
+        assert_error(resp, 403, "TARGET_DEPARTMENT_HEADER_REQUIRED")
         assert "leak-target" not in resp.text
 
-    async def test_rotate_actor_mismatch_no_header_returns_404_soft(
+    async def test_foreign_bot_wrong_header_returns_404(
         self, client, make_token, make_server, make_account,
     ):
         srv = await make_server(department_id="dep_a")
-        acc = await make_account(server_id=srv.id, password="old")
+        acc = await make_account(server_id=srv.id, password="leak-target")
         foreign_token = make_token(
             department_id="dep_b",
             service_roles={"server_service": ["admin"]},
         )
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
-            headers=_hdr(foreign_token),
-            json={"password": "CrossDeptInj1234"},
-        )
-        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
-
-    async def test_rotate_actor_mismatch_matched_header_still_404_soft(
-        self, client, make_token, make_server, make_account,
-    ):
-        """Даже если caller подсунул правильный header'ом — actor-check всё
-        равно блокирует. Header'ом не «обмануть» проверку."""
-        srv = await make_server(department_id="dep_a")
-        acc = await make_account(server_id=srv.id, password="old")
-        foreign_token = make_token(
-            department_id="dep_b",
-            service_roles={"server_service": ["admin"]},
-        )
-        resp = await client.post(
-            f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
-            headers=_hdr_with_dept(foreign_token, "dep_a"),
+            headers=_hdr_with_dept(foreign_token, "dep_b"),
             json={"password": "CrossDeptInj5678"},
         )
         assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
+        assert "leak-target" not in resp.text

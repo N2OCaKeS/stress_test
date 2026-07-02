@@ -74,9 +74,9 @@ CRUD IPMI-контроллеров (iDRAC/HPiLO/ipmitool). Классы: `TestCr
 
 ### `test_internal_endpoints.py` — internal worker→server_service эндпоинты
 
-Internal API для воркера: `TestOpenApiHidden` (internal-пути скрыты из public OpenAPI), `TestIpmiCredentials` (worker fetch'ит credentials), `TestAccountPassword` (fetch для PXE/SSH), `TestRotatePassword`, `TestTargetDeptHeaderSoftMode`, `TestTargetDeptHeaderStrictMode`.
+Internal API для воркера: `TestOpenApiHidden` (internal-пути скрыты из public OpenAPI), `TestIpmiCredentials` (worker fetch'ит credentials), `TestAccountPassword` (fetch для PXE/SSH), `TestRotatePassword`, `TestTargetDeptHeaderScoping`, `TestTargetDeptHeaderStrictMode`, `TestWorkerBotDeptAgnostic`.
 
-Strict-mode (`INTERNAL_REQUIRE_DEPT_HEADER=true`, default в проде) требует `X-Target-Department-Id` header от воркера; soft-mode (тесты / staging) пускает без header, но эмитит audit warning (`dept_header_missing`).
+`X-Target-Department-Id` — единственный cross-dept гард и enforce'ится безусловно (глобальный worker-бот обслуживает серверы всех отделов, его собственный отдел не участвует): нет заголовка → 403 `TARGET_DEPARTMENT_HEADER_REQUIRED`, не совпал с `server.department_id` → 404 (маска not-found). Совпал — проходит, даже если бот из другого отдела.
 
 ### `test_internal_callbacks.py` — worker→server_service callbacks
 
@@ -202,7 +202,7 @@ Pydantic-валидация: `TestServerCreateHostname/IpParsing/SshPort/NonNega
 
 ### `unit/test_internal_soft_mode_warning_audit.py`
 
-Audit-событие `dept_header_missing` эмитится в soft-mode когда воркер не прислал `X-Target-Department-Id`, в strict-mode не эмитится (запрос отбивается ещё раньше).
+Header-scoping на service-уровне: отсутствие `X-Target-Department-Id` → 403 `TARGET_DEPARTMENT_HEADER_REQUIRED`, несовпадение → 404 (маска) с denied-audit `reason=target_department_mismatch`, совпадение → успех. Отдельный кейс: бот из чужого отдела с корректным заголовком проходит.
 
 ### `unit/test_config_redis_prod_guard.py`
 

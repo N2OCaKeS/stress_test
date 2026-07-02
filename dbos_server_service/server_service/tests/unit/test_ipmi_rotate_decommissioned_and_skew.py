@@ -4,7 +4,7 @@ Areas:
 * ipmi_rotate_password_dispatch — SERVER_DECOMMISSIONED (409) для IPMI rotate.
 * _dispatch_for_server — audit failure emit с reason=no_ipmi для
   power.status (require_ipmi=True).
-* _check_target_department_for_server actor-mismatch → SERVER_NOT_FOUND
+* _check_target_department_for_server header mismatch → SERVER_NOT_FOUND
   (404) — через receive_inventory_facts (один из call-site'ов wrapper'а).
 * rotated_at boundary value — ровно на границе rotated_at_skew_seconds
   (drift == max_skew → отбрасывается, drift == max_skew-1 → принимается).
@@ -186,22 +186,20 @@ class TestDispatchForServerNoIpmiAudit:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# _check_target_department_for_server actor-mismatch → SERVER_NOT_FOUND
+# _check_target_department_for_server header mismatch → SERVER_NOT_FOUND
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TestCheckTargetDepartmentForServerActorMismatch:
+class TestCheckTargetDepartmentForServerHeaderMismatch:
     """`_check_target_department_for_server`:
-    actor.department_id ≠ server.department_id → 404 `SERVER_NOT_FOUND`
-    (cross-dept actor получает то же 404, что и валидный caller на
-    несуществующем server_id).
+    `X-Target-Department-Id` ≠ server.department_id → 404 `SERVER_NOT_FOUND`
+    (мисматч-заголовок получает ту же 404-маску, что и валидный caller на
+    несуществующем server_id). Отдел самого бота не участвует.
 
-    Симметричный к `test_credentials_rotated_actor_mismatch_returns_404_soft`
-    тест для wrapper'а, отвечающего за server-target (а не controller).
-    Использует `receive_inventory_facts` (один из call-site'ов).
+    Использует `receive_inventory` (один из call-site'ов wrapper'а).
     """
 
-    async def test_actor_dept_mismatch_returns_404_server_not_found(
+    async def test_header_dept_mismatch_returns_404_server_not_found(
         self, db, make_server, monkeypatch,
     ):
         from src.schemas.internal import InventoryCallbackRequest
@@ -209,7 +207,7 @@ class TestCheckTargetDepartmentForServerActorMismatch:
 
         srv = await make_server(department_id="dep_a")
 
-        # Bot из чужого dept'а — actor_department_id != server.department_id.
+        # Отдел бота роли не играет; блокирует заголовок dep_b на сервере dep_a.
         identity = IdentityContext(
             user_id="bot_cross_dept",
             username="worker_bot",
@@ -224,10 +222,8 @@ class TestCheckTargetDepartmentForServerActorMismatch:
 
         captured = _capture_emits(monkeypatch)
 
-        # permissions.require_action прошло бы (admin), а dept-check ниже —
-        # blocking. Чтобы isolate'ить именно ветку actor-mismatch (а не
-        # завалиться на отсутствующем `inventory_submit` action'е), пропускаем
-        # permission-check.
+        # Пропускаем permission-check, чтобы изолировать ветку header-mismatch
+        # (а не завалиться на отсутствующем `inventory_submit` action'е).
         async def _allow_action(*args, **kwargs):
             return None
 
@@ -254,7 +250,7 @@ class TestCheckTargetDepartmentForServerActorMismatch:
                 identity=identity,
                 server_id=srv.id,
                 payload=payload,
-                target_department_id="dep_a",
+                target_department_id="dep_b",  # ≠ server dep_a
             )
 
         assert exc_info.value.error_code == "SERVER_NOT_FOUND"
@@ -263,7 +259,7 @@ class TestCheckTargetDepartmentForServerActorMismatch:
             e for e in captured
             if e["action"] == "server.inventory_received"
             and e.get("status") == "denied"
-            and e.get("details", {}).get("reason") == "actor_department_mismatch"
+            and e.get("details", {}).get("reason") == "target_department_mismatch"
         ]
         assert len(denials) == 1, captured
         ev = denials[0]
@@ -271,6 +267,7 @@ class TestCheckTargetDepartmentForServerActorMismatch:
         assert ev["target_type"] == "server"
         assert ev["allowed"] is False
         assert ev["details"]["actor_department_id"] == "dep_b"
+        assert ev["details"]["header_department_id"] == "dep_b"
         assert ev["details"]["server_department_id"] == "dep_a"
 
 

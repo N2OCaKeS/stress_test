@@ -11,7 +11,7 @@
 - happy path с upsert'ом os_versions / server_disks и inline CPU-полей в server;
 - 403 для не-worker_bot / reader / без token'а;
 - 404 для несуществующих server_id / controller_id;
-- X-Target-Department-Id strict-mode (403 на mismatch);
+- X-Target-Department-Id scoping (403 на missing, 404 на mismatch);
 - audit-emission для обоих событий;
 - worker_bot имеет grant'ы; admin-роль тоже работает; reader — нет.
 """
@@ -728,7 +728,7 @@ def strict_dept_mode(monkeypatch):
 
 
 class TestCallbackDeptHeaderStrict:
-    async def test_inventory_mismatch_returns_403(
+    async def test_inventory_mismatch_returns_404(
         self, client, admin_role_token_a, make_server, strict_dept_mode, dept_a,
     ):
         srv = await make_server(department_id=dept_a)
@@ -741,7 +741,7 @@ class TestCallbackDeptHeaderStrict:
                 "cpu_cores": 1, "os_version": "x", "disks": [],
             },
         )
-        assert_error(resp, 403, "TARGET_DEPARTMENT_MISMATCH")
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_ipmi_callback_matched_header_returns_200(
         self, client, admin_role_token_a, make_server, make_ipmi,
@@ -770,18 +770,17 @@ class TestNewCallbacksHiddenFromOpenAPI:
         assert not any("inventory" in p and "/internal/" in p for p in paths)
 
 
-# ── Enum-oracle: actor-vs-server dept mismatch masked as 404 ────────────────
+# ── Enum-oracle: header dept mismatch masked as 404 ─────────────────────────
 #
-# Симметрия с `TestActorDeptCrossCheckSoftMode` для read-direction endpoints
-# (`fetch_account_password` / `rotate_account_password` / `fetch_ipmi_credentials`).
-# Write-direction callbacks тоже не должны разделять «не существует» и
-# «существует в чужом dept» — иначе compromised worker_bot из dep_b
-# проброcом id'шников из dep_a по разнице 403 vs 404 enum'ит cross-dept данные.
+# Write-direction callbacks не должны разделять «не существует» и «существует
+# в чужом dept» — иначе compromised worker_bot проброcом id'шников по разнице
+# 403 vs 404 enum'ит cross-dept данные. Заголовок ≠ server.department_id →
+# 404-маска; отсутствие заголовка → 403 (single guard); missing-permission
+# отбивается раньше dept-check'а собственным 403.
 
 
-@pytest.mark.usefixtures("soft_dept_mode")
-class TestInternalCallbacksActorDeptMaskedAs404:
-    async def test_inventory_actor_mismatch_returns_404_soft(
+class TestInternalCallbacksDeptMaskedAs404:
+    async def test_inventory_wrong_header_returns_404(
         self, client, make_token, make_server, dept_a,
     ):
         srv = await make_server(department_id=dept_a)
@@ -791,7 +790,7 @@ class TestInternalCallbacksActorDeptMaskedAs404:
         )
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/inventory",
-            headers=_hdr(foreign_token),
+            headers=_hdr(foreign_token, dept="dep_b"),  # ≠ server dep_a
             json={
                 "hostname": "x", "kernel": "x",
                 "cpu_brand": "Intel", "cpu_model": "Foreign",
@@ -800,8 +799,7 @@ class TestInternalCallbacksActorDeptMaskedAs404:
         )
         assert_error(resp, 404, "SERVER_NOT_FOUND")
 
-    # soft-404 cloak not implemented — current contract is 403
-    async def test_users_inventory_actor_mismatch_returns_404_soft(
+    async def test_users_inventory_no_header_returns_403(
         self, client, make_token, make_server, dept_a,
     ):
         srv = await make_server(department_id=dept_a)
@@ -816,18 +814,17 @@ class TestInternalCallbacksActorDeptMaskedAs404:
         )
         assert_error(resp, 403)
 
-    async def test_provision_status_actor_mismatch_returns_422_contract(
+    async def test_provision_status_bad_payload_returns_422_contract(
         self, client, make_token, make_server, make_account, dept_a,
     ):
-        """provision_status: payload-validation срабатывает ДО actor-mismatch guard.
+        """provision_status: payload-validation срабатывает ДО dept-guard.
 
         Эндпоинт ожидает enum-`operation` (`useradd` не в whitelist'е
         FastAPI-схемы) и отбивает 422 на схеме раньше, чем доходит до
-        проверки actor.department_id. Контракт: 422 здесь — норма, потому
-        что schema-валидация всегда выполняется первой и enumerable-leak
-        невозможен (ответ одинаков и для owner'а, и для чужого dept'а).
-        Поведение зафиксировано тестом, чтобы случайный merge guard'а
-        перед валидацией не превратил его в актор-leak.
+        dept-check'а. Контракт: 422 здесь — норма, потому что schema-валидация
+        всегда выполняется первой и enumerable-leak невозможен (ответ одинаков
+        и для owner'а, и для чужого dept'а). Поведение зафиксировано тестом,
+        чтобы случайный merge guard'а перед валидацией не превратил его в leak.
         """
         srv = await make_server(department_id=dept_a)
         acc = await make_account(server_id=srv.id, password="leak-target")
@@ -837,19 +834,19 @@ class TestInternalCallbacksActorDeptMaskedAs404:
         )
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/provision_status",
-            headers=_hdr(foreign_token),
+            headers=_hdr(foreign_token, dept="dep_b"),
             json={"operation": "useradd", "present": True},
         )
         assert_error(resp, 422)
 
-    async def test_prepared_actor_mismatch_returns_403_permission_denied(
+    async def test_prepared_no_permission_returns_403_permission_denied(
         self, client, make_token, make_server, dept_a,
     ):
         """`prepare_callback` — worker_bot-only грант; admin его не имеет.
 
-        Cross-dept admin без grant'а получает 403 PERMISSION_DENIED ещё
-        ДО dept-check'а: permission проверяется первой, симметрично остальным
-        internal-функциям (`fetch_account_password`, `record_provision_status`).
+        Admin без grant'а получает 403 PERMISSION_DENIED ещё ДО dept-check'а:
+        permission проверяется первой, симметрично остальным internal-функциям
+        (`fetch_account_password`, `record_provision_status`).
         """
         srv = await make_server(department_id=dept_a)
         foreign_token = make_token(
@@ -858,12 +855,12 @@ class TestInternalCallbacksActorDeptMaskedAs404:
         )
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/prepared",
-            headers=_hdr(foreign_token),
+            headers=_hdr(foreign_token, dept="dep_a"),
             json={"management_user": "ops"},
         )
         assert_error(resp, 403, "PERMISSION_DENIED")
 
-    async def test_credentials_rotated_actor_mismatch_returns_404_soft(
+    async def test_credentials_rotated_wrong_header_returns_404(
         self, client, make_token, make_server, make_ipmi, dept_a,
     ):
         srv = await make_server(department_id=dept_a)
@@ -874,7 +871,7 @@ class TestInternalCallbacksActorDeptMaskedAs404:
         )
         resp = await client.post(
             f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
-            headers=_hdr(foreign_token),
+            headers=_hdr(foreign_token, dept="dep_b"),  # ≠ server dep_a
             json={
                 "new_password": "ForeignTry1234",
                 "rotated_at": _iso(),
@@ -929,7 +926,7 @@ class TestCheckTargetDeptFieldLabel:
             },
             json={"password": "NewLabeled1234"},
         )
-        body = assert_error(resp, 403, "TARGET_DEPARTMENT_MISMATCH")
+        body = assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
         details = body.get("details") or {}
         assert details.get("target_id") == acc.id
         assert "server_id" not in details

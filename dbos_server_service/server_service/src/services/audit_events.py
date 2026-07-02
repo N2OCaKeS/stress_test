@@ -58,7 +58,6 @@ SERVICE_EVENTS = [
     {"action": "server_account.password_revealed", "description": "Decrypted server account password revealed to user (base64) via GET account card with view_password", "default_severity": "CRITICAL"},
     {"action": "server_account.password_revealed_throttled", "description": "Subsequent password reveal within audit window (actor+account) — first reveal was already logged as CRITICAL `server_account.password_revealed`; INFO-копия для трассировки шумного UI-polling'а без CRITICAL-флуда SIEM", "default_severity": "INFO"},
     {"action": "server_account.rotate_password", "description": "Server account password rotated", "default_severity": "CRITICAL"},
-    {"action": "internal.dept_header_missing", "description": "Internal endpoint called without X-Target-Department-Id header (soft mode bypassed server lookup)", "default_severity": "WARNING"},
     # Worker → server_service callbacks (write-direction internal API)
     {"action": "server.inventory_received", "description": "Inventory facts received from worker (hardware probe callback)", "default_severity": "INFO"},
     {"action": "inventory.drift_detected", "description": "Hardware-inventory facts from a box diverge from stored server fields (hostname/cpu_*). DB is source of truth and is NOT overwritten — drift reported with old/new. First-write (NULL) is saved; os_version stays the box→DB exception.", "default_severity": "WARNING"},

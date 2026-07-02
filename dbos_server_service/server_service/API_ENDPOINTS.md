@@ -743,9 +743,9 @@ Errors: `ACCESS_TOKEN_MISSING` / `ACCESS_TOKEN_INVALID` / `USER_BANNED` (401), `
 
 `subject_type == 'bot'` на FastAPI-уровне НЕ enforce'ится — полагаемся на матрицу прав (owner-decision 2026-05-30). По seed `view_password`/`rotate_password`/`view_credentials`/`rotate_credentials` выданы только роли `worker_bot`.
 
-Header `X-Target-Department-Id` — опциональный в soft-режиме (default), обязательный при `INTERNAL_REQUIRE_DEPT_HEADER=true`. Несовпадение с реальным `server.department_id` → `403 TARGET_DEPARTMENT_MISMATCH`.
+Header `X-Target-Department-Id` — обязательный и enforce'ится безусловно (единственный cross-dept гард глобального worker-бота; отдел самого бота не участвует). Отсутствует → `403 TARGET_DEPARTMENT_HEADER_REQUIRED`; не совпал с реальным `server.department_id` → `404` (маска not-found `SERVER_NOT_FOUND`/`ACCOUNT_NOT_FOUND`/`NO_IPMI_CONTROLLER`, чтобы 403/404 не работали enumeration-oracle'ом), audit `reason=target_department_mismatch`.
 
-Общий набор кодов: `403 PERMISSION_DENIED` / `TARGET_DEPARTMENT_MISMATCH` / `TARGET_DEPARTMENT_HEADER_REQUIRED`, `404 SERVER_NOT_FOUND` / `ACCOUNT_NOT_FOUND` / `NO_IPMI_CONTROLLER`. Callback-routes дополнительно `422` (битый payload) и `500` `DECRYPT_FAILED` / `ENCRYPTION_KEY_MISSING`.
+Общий набор кодов: `403 PERMISSION_DENIED` / `TARGET_DEPARTMENT_HEADER_REQUIRED`, `404 SERVER_NOT_FOUND` / `ACCOUNT_NOT_FOUND` / `NO_IPMI_CONTROLLER` (сюда же маскируется target_department_mismatch). Callback-routes дополнительно `422` (битый payload) и `500` `DECRYPT_FAILED` / `ENCRYPTION_KEY_MISSING`.
 
 ### `GET /internal/servers/{server_id}/ipmi/credentials`
 

@@ -234,21 +234,20 @@ Worker-task'и, зарегистрированные в брокере, с кл�
    узких callback-гранта — `(server, inventory_submit)`,
    `(server_account, inventory_submit)`, `(server_account, provision_on_host)`,
    `(server, prepare_callback)`. Никаких power-операций, delete,
-   permission-grant'ов. `internal_service._check_target_department`
-   делает **двухуровневый** dept-cross-check:
-   * **Actor vs server** — `identity.department_id` обязан совпасть с
-     `server.department_id`, **всегда**, не зависит от
-     `INTERNAL_REQUIRE_DEPT_HEADER`. Mismatch (включая `None` для
-     platform-роли) → 403 `TARGET_DEPARTMENT_MISMATCH` с
-     `reason=actor_department_mismatch`. Это закрывает leak, при котором
-     soft-mode пропускал worker'а из чужого отдела по глобальной
-     admin-роли.
-   * **`X-Target-Department-Id` header** — worker форвардит target dept из
-     task payload, defense-in-depth поверх actor-check'а. Default mode —
-     strict (`INTERNAL_REQUIRE_DEPT_HEADER=true`): отсутствие header'а → 403
-     `TARGET_DEPARTMENT_HEADER_REQUIRED`, mismatch → 403
-     `TARGET_DEPARTMENT_MISMATCH`. Soft mode (`false`) оставлен только для
-     dev/test — отсутствие/mismatch только пишет audit warning.
+   permission-grant'ов. Один глобальный worker-бот обслуживает серверы всех
+   отделов, поэтому отдел самого бота в авторизации не участвует.
+   `internal_service._check_target_department` скоупит по заголовку
+   **`X-Target-Department-Id`** (worker форвардит target dept из payload
+   задачи), и это единственный cross-dept гард — enforce'ится безусловно:
+   * заголовок отсутствует → 403 `TARGET_DEPARTMENT_HEADER_REQUIRED`
+     (`reason=missing_target_department_header`);
+   * заголовок ≠ `server.department_id` → 404 (маска not-found:
+     `SERVER_NOT_FOUND`/`ACCOUNT_NOT_FOUND`/`NO_IPMI_CONTROLLER`, чтобы
+     403/404 не работали enumeration-oracle'ом), `reason=target_department_mismatch`;
+   * совпал → операция проходит, даже если бот числится в другом отделе.
+     `actor_department_id` пишется в audit для наблюдаемости, но на
+     блокировку не влияет. `INTERNAL_REQUIRE_DEPT_HEADER` больше не влияет на
+     enforcement (проверка безусловна), поле оставлено для совместимости.
 
 8. **Защита транспортного слоя.** Rate-limit slowapi global 500/min,
    slowloris-защита. `X-Forwarded-For` принимается только от

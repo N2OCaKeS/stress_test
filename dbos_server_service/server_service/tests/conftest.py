@@ -679,19 +679,22 @@ async def make_account(db):
 
 @pytest.fixture
 def soft_dept_mode(monkeypatch):
-    """Force `internal_require_dept_header=False` (soft mode) для теста.
+    """Отключить cross-dept scoping (`X-Target-Department-Id`) на время теста.
 
-    Default в проде/staging — True (strict). В тестах часть классов проверяет
-    permission/access-логику без header'а — им явно нужен soft mode. Clear'им
-    lru_cache на get_settings до и после, чтобы override детерминированно
-    подхватился и не утёк в соседний тест.
+    `X-Target-Department-Id` теперь единственный cross-dept гард и enforce'ится
+    безусловно: без совпадающего заголовка любой internal-вызов отбивается
+    403/404. Часть тестов проверяет НЕ scoping, а permission/reconcile/provision-
+    логику и дёргает `/internal/*` без заголовка — для них патчим
+    `_check_target_department` в no-op, чтобы отсутствие заголовка не мешало.
+    Тесты самого scoping'а заголовок шлют явно и этот фикстур не используют.
     """
-    from src.core.config import get_settings
+    from src.services import internal_service
 
-    monkeypatch.setenv("INTERNAL_REQUIRE_DEPT_HEADER", "false")
-    get_settings.cache_clear()  # type: ignore[attr-defined]
+    def _noop(**_kwargs):
+        return None
+
+    monkeypatch.setattr(internal_service, "_check_target_department", _noop)
     yield
-    get_settings.cache_clear()  # type: ignore[attr-defined]
 
 
 @pytest_asyncio.fixture

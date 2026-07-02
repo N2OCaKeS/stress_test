@@ -6,7 +6,7 @@
 проверок не сливает caller'у факт принадлежности account_id чужому
 департаменту: server_repo.get_by_id зовётся ДО dept-check'а, поэтому
 несуществующий server_id никогда не порождает фейковый
-`actor_department_mismatch`.
+`target_department_mismatch`.
 
 Связанные тесты: `test_server_not_found_target_type.py::TestServerNotFoundTargetType`
 закрывает базовый случай; этот файл добивает cross-dept + soft-mode
@@ -116,7 +116,7 @@ class TestFetchAccountPasswordServerNotFound:
         # Caller из dep_b ходит за server_id, которого нет вовсе. До фикса
         # dept-check мог сработать первым на разнице header'а и actor'а;
         # сейчас server_repo.get_by_id зовётся РАНЬШЕ — иначе SIEM ловил бы
-        # `actor_department_mismatch` на любых обращениях к несуществующим
+        # `target_department_mismatch` на любых обращениях к несуществующим
         # серверам.
         _settings(monkeypatch, strict=False)
         _stub_permissions_ok(monkeypatch)
@@ -134,7 +134,7 @@ class TestFetchAccountPasswordServerNotFound:
 
         mismatch = [
             e for e in captured_emits
-            if e["details"].get("reason") == "actor_department_mismatch"
+            if e["details"].get("reason") == "target_department_mismatch"
         ]
         assert mismatch == []
         server_not_found = [
@@ -195,7 +195,7 @@ class TestRotateAccountPasswordServerNotFound:
 
         mismatch = [
             e for e in captured_emits
-            if e["details"].get("reason") == "actor_department_mismatch"
+            if e["details"].get("reason") == "target_department_mismatch"
         ]
         assert mismatch == []
         server_not_found = [

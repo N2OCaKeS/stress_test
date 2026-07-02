@@ -7,26 +7,25 @@ service-to-service caller, работает platform-wide) и опирались
 что означало: любой holder PAT'а мог читать секреты ЛЮБОГО сервера в
 ЛЮБОМ department'е.
 
-Сейчас каждая функция ниже проводит **двухуровневый dept-check** через
-`_check_target_department`:
+Один глобальный worker-бот обслуживает серверы РАЗНЫХ отделов: он живёт в
+системном отделе, и его `identity.department_id` заведомо не совпадает с
+`server.department_id`. Поэтому отдел самого бота в авторизации НЕ участвует.
+Единственный cross-dept гард — заголовок `X-Target-Department-Id`, который
+проверяет `_check_target_department`:
 
-  1. **Actor vs server**. `identity.department_id` (caller bot/user) **обязан**
-     совпасть с `server.department_id`. Это блокирует **всегда**, независимо
-     от `internal_require_dept_header`. `None` actor (platform-роли) тоже
-     отбивается. 403 `TARGET_DEPARTMENT_MISMATCH`, `reason=actor_department_mismatch`.
+  * заголовок форвардит воркер из `target_department_id` задачи (server_service
+    сам положил туда `server.department_id` при dispatch'е, уже проверив права
+    запросившего юзера);
+  * заголовок **обязан присутствовать** и совпасть с `server.department_id`;
+  * отсутствует → 403 `TARGET_DEPARTMENT_HEADER_REQUIRED`;
+  * не совпал → 404 (маска not-found, чтобы 403/404 не работали
+    enumeration-oracle'ом), `reason=target_department_mismatch`;
+  * совпал → пропускаем.
 
-  2. **`X-Target-Department-Id` header**. Worker форвардит target dept из
-     task payload — defense-in-depth поверх actor-check'а (ловит stale
-     payload / неправильный dispatch). Behaviour'ом управляет
-     `internal_require_dept_header`:
-     * `False` (dev/test) → отсутствие/mismatch → audit warning, не блок.
-     * `True` (production default) → 403 `TARGET_DEPARTMENT_HEADER_REQUIRED`
-       или `TARGET_DEPARTMENT_MISMATCH`.
-
-Header НЕ заменяет существующую `require_action` permission-проверку —
-это defense-in-depth cross-check, который делает компрометированный/неправильно
-выданный worker-PAT видимым в audit-trail'е (и блокируемым в strict-режиме),
-даже когда PAT всё ещё держит глобальные actions.
+Проверка заголовка безусловна — она не зависит от `internal_require_dept_header`,
+т.к. это единственный барьер между воркером и сервером чужого отдела. Header
+НЕ заменяет `require_action` permission-проверку — это ортогональный cross-dept
+scoping поверх матрицы прав.
 """
 
 import logging
@@ -70,42 +69,6 @@ logger = logging.getLogger(__name__)
 # `monkeypatch.setenv` в тестах подхватываются без перезагрузки модуля.
 
 
-def _emit_dept_header_missing_soft(
-    *,
-    handler_path: str,
-    identity: IdentityContext,
-    target_id: str,
-    target_type: str,
-    extra: dict | None = None,
-) -> None:
-    """Soft-mode SIEM-trail для missing `X-Target-Department-Id` header'а.
-
-    Эмитится только когда `_check_target_department` уже прошёл успешно
-    (actor-vs-server совпало), но header не пришёл — `internal_require_dept_header`
-    выключен. Отдельный action для SIEM-правила «worker без header'а».
-    Эмиссия — однообразно во всех internal-handler'ах с двухуровневым
-    dept-check'ом.
-    """
-    if get_settings().internal_require_dept_header:
-        return
-    details = {
-        "path": handler_path,
-        "soft_mode": True,
-        "caller_type": identity.subject_type,
-    }
-    if extra:
-        details.update(extra)
-    audit_service.emit(
-        "internal.dept_header_missing",
-        actor_id=identity.user_id,
-        target_id=target_id,
-        target_type=target_type,
-        status="warning",
-        allowed=True,
-        details=details,
-    )
-
-
 def _check_target_department(
     *,
     audit_action: str,
@@ -118,24 +81,22 @@ def _check_target_department(
     not_found_message: str,
     extra_details: dict | None = None,
 ) -> None:
-    """Cross-check caller department + `X-Target-Department-Id` header против
-    server.department_id.
+    """Cross-check `X-Target-Department-Id` header против server.department_id.
 
-    Два уровня:
+    Отдел самого воркер-бота (`actor_department_id`) в авторизации НЕ участвует:
+    один глобальный бот обслуживает серверы всех отделов и живёт в системном
+    отделе. Единственный cross-dept гард — заголовок, поэтому он enforce'ится
+    безусловно (не зависит от `internal_require_dept_header`):
 
-    1. **Actor department** (`identity.department_id`) **должен совпасть** с
-       `server.department_id`. Это всегда блокирует, независимо от
-       `internal_require_dept_header` — soft mode не должен открывать
-       cross-department leak. `None` actor (platform-роли) тоже блокируется.
-       Caller'у уходит 404 (`not_found_error_code`), а не 403 — разница 403/404
-       для cross-dept caller'а работала бы enumeration-oracle'ом. В аудит
-       пишется `reason=actor_department_mismatch`.
+    * `header_department_id is None` → 403 ``TARGET_DEPARTMENT_HEADER_REQUIRED``,
+      `reason=missing_target_department_header`.
+    * `header_department_id != server_department_id` → 404 (`not_found_error_code`,
+      маска not-found — разница 403/404 работала бы enumeration-oracle'ом для
+      воркера, щупающего чужой отдел), `reason=target_department_mismatch`.
+    * совпал → пропускаем.
 
-    2. **Header** (`X-Target-Department-Id`). Бросает ``AuthorizationError``
-       только в strict-режиме: header отсутствует → 403
-       ``TARGET_DEPARTMENT_HEADER_REQUIRED``, header не совпадает → 403
-       ``TARGET_DEPARTMENT_MISMATCH`` с `reason=target_department_mismatch`.
-       В soft-режиме mismatch и missing — это warning-audit, не блок.
+    `actor_department_id` пишется в `details` для наблюдаемости (SIEM видит, из
+    какого отдела пришёл бот), но на блокировку не влияет.
 
     `audit_action` — тот же action-key, что caller использует для
     success/denied/failure emit'ов, чтобы оператор мог корреллировать.
@@ -146,7 +107,6 @@ def _check_target_department(
     account/controller caller'ы получали `acc_*`/`ipm_*` либо под чужой
     меткой, либо требовали явного override'а на каждом call-site.
     """
-    strict = get_settings().internal_require_dept_header
     extra = dict(extra_details or {})
     extra.update({
         "server_department_id": server_department_id,
@@ -154,69 +114,36 @@ def _check_target_department(
         "actor_department_id": actor_department_id,
     })
 
-    def _emit(reason: str, *, denied: bool) -> None:
-        """Локальный shortcut для audit_service.emit с общим target/action.
-
-        `denied=True` → status=denied/allowed=False (блок), иначе warning/allowed.
-        """
+    def _emit_denied(reason: str) -> None:
+        """Локальный shortcut для denied-audit с общим target/action."""
         audit_service.emit(
             audit_action,
             target_id=target_id, target_type=target_type,
-            status="denied" if denied else "warning",
-            allowed=not denied,
+            status="denied", allowed=False,
             details={**extra, "reason": reason},
         )
 
-    # Actor-vs-server check: всегда блокирующий, не зависит от soft/strict.
-    # Closes cross-department password/credentials leak в soft-mode, где
-    # отсутствие/несовпадение `X-Target-Department-Id` header'а не отбивалось.
-    # `actor_department_id is None` — platform-роли (account_admin/loging_admin),
-    # которых platform_admin_guard должен был отбить раньше; defense-in-depth.
-    if actor_department_id is None or actor_department_id != server_department_id:
-        _emit("actor_department_mismatch", denied=True)
+    if header_department_id is None:
+        _emit_denied("missing_target_department_header")
+        raise AuthorizationError(
+            error_code="TARGET_DEPARTMENT_HEADER_REQUIRED",
+            message=(
+                "X-Target-Department-Id header is required for internal "
+                "endpoints"
+            ),
+            details={"target_id": target_id},
+        )
+
+    if header_department_id != server_department_id:
+        # Заголовок указывает на чужой отдел — либо stale payload воркера, либо
+        # PAT, который щупает не свои серверы. Маскируем под not-found, чтобы по
+        # разнице кодов нельзя было перечислить существующие чужие ресурсы.
+        _emit_denied("target_department_mismatch")
         raise NotFoundError(
             error_code=not_found_error_code,
             message=not_found_message,
             details={"target_id": target_id},
         )
-
-    if header_department_id is None:
-        if strict:
-            _emit("missing_target_department_header", denied=True)
-            raise AuthorizationError(
-                error_code="TARGET_DEPARTMENT_HEADER_REQUIRED",
-                message=(
-                    "X-Target-Department-Id header is required for internal "
-                    "credential endpoints in strict mode"
-                ),
-                details={"target_id": target_id},
-            )
-        # Soft mode (`internal_require_dept_header=False`) — намеренное dev/test
-        # ослабление защиты от stale-payload worker'а. В production
-        # `internal_require_dept_header=True` (см. `core/config.py`), и сюда мы
-        # сюда не доходим. denied=False / warning here — by design: actor-vs-server
-        # check уже отбил cross-dept caller'а строкой выше, остаётся только
-        # сигнализировать в audit о missing-header (это делает caller через
-        # `_emit_dept_header_missing_soft` под отдельным action'ом
-        # `internal.dept_header_missing`). Не использовать в prod.
-        return
-
-    if header_department_id != server_department_id:
-        # Mismatch эмитим всегда, независимо от режима — это сигнал бага в
-        # worker'е (stale payload) или, хуже, PAT'а, который щупает чужие
-        # отделы. Header mismatch остаётся 403, а не 404 — actor уже
-        # подтвердил, что он в правильном dept'е (проверка выше), так что
-        # oracle'а тут нет, а 403 правильнее сигналит о misconfig'е.
-        _emit("target_department_mismatch", denied=strict)
-        if strict:
-            raise AuthorizationError(
-                error_code="TARGET_DEPARTMENT_MISMATCH",
-                message=(
-                    "X-Target-Department-Id does not match the server's "
-                    "actual department"
-                ),
-                details={"target_id": target_id},
-            )
 
 
 # Тонкие обёртки над `_check_target_department` для случаев, где маска 404
@@ -317,7 +244,7 @@ async def fetch_ipmi_credentials(
     # выделяя 403 в отдельный сигнал. Иначе по разнице 403 vs 404 caller
     # угадывал бы, что сервер есть в чужом dept'е. Несуществующий server_id
     # обрабатываем ДО dept-check'а: SIEM иначе ловит фейковый
-    # actor_department_mismatch, которого фактически нет.
+    # target_department_mismatch, которого фактически нет.
     if server is None:
         audit_service.emit(
             "ipmi_controller.view_credentials",
@@ -337,14 +264,6 @@ async def fetch_ipmi_credentials(
         not_found_error_code="SERVER_NOT_FOUND",
         not_found_message="Server not found",
     )
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.fetch_ipmi_credentials",
-            identity=identity,
-            target_id=server_id,
-            target_type="ipmi_controller",
-            extra={"server_id": server_id},
-        )
     ctrl = await ipmi_repo.get_by_server_id(db, server_id)
     if ctrl is None:
         audit_service.emit(
@@ -434,15 +353,13 @@ async def fetch_account_password(
             },
         )
         raise
-    # Dept-check РАНЬШЕ existence-проверок: иначе разная реакция
-    # (404 ACCOUNT_NOT_FOUND vs 403 TARGET_DEPARTMENT_MISMATCH) сама по себе
-    # сливает caller'у, привязан ли account_id к серверу чужого dept.
-    # Cross-dept actor получает то же 404 ACCOUNT_NOT_FOUND, что и валидный
-    # caller на несуществующем account_id, 403 остаётся только для
-    # permission_denied.
+    # Dept-check РАНЬШЕ existence-проверок: header-mismatch маскируется под то же
+    # 404 ACCOUNT_NOT_FOUND, что и валидный caller на несуществующем account_id, —
+    # по коду ответа нельзя перечислить чужие ресурсы. 403 остаётся только для
+    # permission_denied / отсутствующего заголовка.
     # Исключение: если server_id фактически не существует — эмитим честный
     # `server_not_found` ДО dept-check'а. Иначе SIEM ловит фейковый
-    # `actor_department_mismatch` на каждом тычке несуществующим server_id.
+    # `target_department_mismatch` на каждом тычке несуществующим server_id.
     # Клиенту всё равно уходит 404 ACCOUNT_NOT_FOUND/SERVER_NOT_FOUND, oracle
     # не открывается.
     server = await server_repo.get_by_id(db, server_id)
@@ -473,14 +390,6 @@ async def fetch_account_password(
         actor_department_id=identity.department_id,
         extra_details={"server_id": server_id},
     )
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.fetch_account_password",
-            identity=identity,
-            target_id=account_id,
-            target_type="server_account",
-            extra={"server_id": server_id},
-        )
     account = await account_repo.get_by_id(db, account_id)
     if account is None or not await account_repo.is_linked(db, account_id, server_id):
         audit_service.emit(
@@ -593,11 +502,11 @@ async def rotate_account_password(
             },
         )
         raise
-    # Dept-check РАНЬШЕ existence-проверок: иначе 404 ACCOUNT_NOT_FOUND vs
-    # 403 TARGET_DEPARTMENT_MISMATCH сами по себе сливают caller'у, чей
-    # отдел держит account_id. Симметрично с `fetch_account_password`.
+    # Dept-check РАНЬШЕ existence-проверок: header-mismatch маскируется под то же
+    # 404 ACCOUNT_NOT_FOUND, что и валидный caller на несуществующем account_id.
+    # Симметрично с `fetch_account_password`.
     # Исключение: если server отсутствует — эмитим честный `server_not_found`
-    # ДО dept-check'а, чтобы SIEM не ловил фейковый actor_department_mismatch.
+    # ДО dept-check'а, чтобы SIEM не ловил фейковый target_department_mismatch.
     server = await server_repo.get_by_id(db, server_id)
     if server is None:
         # Сервер отсутствует — missing-entity это server, не account.
@@ -626,14 +535,6 @@ async def rotate_account_password(
         actor_department_id=identity.department_id,
         extra_details={"server_id": server_id},
     )
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.rotate_account_password",
-            identity=identity,
-            target_id=account_id,
-            target_type="server_account",
-            extra={"server_id": server_id},
-        )
     account = await account_repo.get_by_id(db, account_id)
     if account is None or not await account_repo.is_linked(db, account_id, server_id):
         audit_service.emit(
@@ -716,13 +617,6 @@ async def fetch_management_credentials(
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
     )
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.fetch_management_credentials",
-            identity=identity,
-            target_id=server_id,
-            target_type="server",
-        )
     if server.mgmt_ssh_private_key_encrypted is None or server.mgmt_password_encrypted is None:
         audit_service.emit(
             "server.management_credentials_revealed",
@@ -829,13 +723,6 @@ async def confirm_management_creds_applied(
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
     )
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.confirm_management_creds_applied",
-            identity=identity,
-            target_id=server_id,
-            target_type="server",
-        )
     rotated_at = datetime.now(timezone.utc)
     await server_repo.update(db, server, {
         "mgmt_creds_pending_apply": False,
@@ -903,13 +790,6 @@ async def record_power_state(
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
     )
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.record_power_state",
-            identity=identity,
-            target_id=server_id,
-            target_type="server",
-        )
     checked_at = datetime.now(timezone.utc)
     await server_repo.update(db, server, {
         "power_state": payload.power_state,
@@ -1115,13 +995,12 @@ async def receive_inventory(
         )
         raise
 
-    # Dept-check ВЫШЕ existence-проверки: разница 404 SERVER_NOT_FOUND vs
-    # 403 TARGET_DEPARTMENT_MISMATCH сама сливает caller'у факт существования
-    # сервера в чужом dept. `_check_target_department_for_server` отвечает
-    # 404 SERVER_NOT_FOUND, как и валидный caller на несуществующем server_id —
-    # оба исхода неотличимы. Несуществующий server_id обрабатываем ДО
-    # dept-check'а — иначе SIEM ловит фейковый actor_department_mismatch
-    # (server_dept=None vs actor.dept != None).
+    # Dept-check ВЫШЕ existence-проверки: `_check_target_department_for_server`
+    # на header-mismatch отвечает 404 SERVER_NOT_FOUND — как и валидный caller
+    # на несуществующем server_id, оба исхода неотличимы, факт существования
+    # сервера в чужом dept не утекает. Несуществующий server_id обрабатываем ДО
+    # dept-check'а — иначе SIEM ловит фейковый target_department_mismatch
+    # (server_dept=None).
     server = await server_repo.get_by_id(db, server_id)
     if server is None:
         audit_service.emit(
@@ -1141,13 +1020,6 @@ async def receive_inventory(
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
     )
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.receive_inventory",
-            identity=identity,
-            target_id=server_id,
-            target_type="server",
-        )
 
     os_id_resolved = await _resolve_or_create_os(
         db,
@@ -1320,13 +1192,6 @@ async def receive_users_inventory(
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
     )
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.receive_users_inventory",
-            identity=identity,
-            target_id=server_id,
-            target_type="server",
-        )
 
     # Снимок текущих связок сервера + login'ов, найденных на боксе.
     links = await account_repo.list_links_for_server(db, server_id)
@@ -1597,14 +1462,6 @@ async def record_provision_status(
         actor_department_id=identity.department_id,
         extra_details={"server_id": server_id},
     )
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.record_provision_status",
-            identity=identity,
-            target_id=account_id,
-            target_type="server_account",
-            extra={"server_id": server_id},
-        )
 
     # FOR UPDATE на server_accounts — fan-out из mass-rotation может прислать
     # несколько callback'ов в одном окне; без row-lock'а параллельные UPDATE
@@ -1744,10 +1601,11 @@ async def record_server_prepared(
             details={"reason": "permission_denied"},
         )
         raise
-    # Dept-check ВЫШЕ existence-проверки: разница 404 SERVER_NOT_FOUND vs
-    # 403 TARGET_DEPARTMENT_MISMATCH сама сливает caller'у факт существования
-    # сервера в чужом dept. Несуществующий server_id обрабатываем ДО dept-check'а —
-    # иначе SIEM ловит фейковый actor_department_mismatch на тычках в air.
+    # Dept-check ВЫШЕ existence-проверки: `_check_target_department_for_server`
+    # на header-mismatch отвечает 404 SERVER_NOT_FOUND, факт существования
+    # сервера в чужом dept не утекает. Несуществующий server_id обрабатываем ДО
+    # dept-check'а — иначе SIEM ловит фейковый target_department_mismatch на
+    # тычках в air.
     server = await server_repo.get_by_id(db, server_id)
     if server is None:
         audit_service.emit(
@@ -1767,13 +1625,6 @@ async def record_server_prepared(
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
     )
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.record_server_prepared",
-            identity=identity,
-            target_id=server_id,
-            target_type="server",
-        )
 
     prepared_at = datetime.now(timezone.utc)
     updates: dict = {
@@ -1835,7 +1686,7 @@ async def record_ipmi_credentials_rotated(
     # permission_denied, что enum-oracle'ит факт привязки controller_id к
     # серверу чужого dept. Но если controller_id фактически не существует —
     # эмитим честный `controller_not_found` ДО dept-check'а, иначе SIEM ловит
-    # фейковый `actor_department_mismatch` на каждом тычке несуществующим id.
+    # фейковый `target_department_mismatch` на каждом тычке несуществующим id.
     # Клиенту всё равно уходит 404 NO_IPMI_CONTROLLER, oracle не открывается.
     ctrl = await ipmi_repo.get_by_id(db, controller_id)
     if ctrl is None:
@@ -1853,7 +1704,7 @@ async def record_ipmi_credentials_rotated(
     if server is None:
         # Orphaned controller: controller-row жив, но server_id ссылается на
         # удалённый сервер. Без явной ветки _check_target_department сравнил бы
-        # actor.department_id с None и эмитнул ложный `actor_department_mismatch`,
+        # actor.department_id с None и эмитнул ложный `target_department_mismatch`,
         # будто caller лез в чужой dept — на деле dept-конфликта нет, просто
         # сервер пропал. Пишем честный `orphaned_ipmi_controller` и отдаём 404,
         # пусть оператор подчистит запись.
@@ -1891,14 +1742,6 @@ async def record_ipmi_credentials_rotated(
             details={"reason": "permission_denied"},
         )
         raise
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.record_ipmi_credentials_rotated",
-            identity=identity,
-            target_id=controller_id,
-            target_type="ipmi_controller",
-            extra={"server_id": ctrl.server_id},
-        )
 
     rotated_at = payload.rotated_at
     if rotated_at.tzinfo is None:

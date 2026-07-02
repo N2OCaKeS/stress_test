@@ -16,7 +16,7 @@
    `logger.warning`.
 6. `record_ipmi_credentials_rotated` для orphaned controller (server is
    None) эмитит `reason="orphaned_ipmi_controller"` и не светит ложный
-   `actor_department_mismatch`.
+   `target_department_mismatch`.
 7. `tasks.cancel_task` для row с `target_server_id=None` и `task_kind`
    не в `_SYSTEM_TASK_KINDS` отдаёт 403 ``TASK_NOT_CANCELLABLE_WITHOUT_TARGET``,
    эмитит denied-audit и `cancel_task` не вызывается.
@@ -475,7 +475,7 @@ class TestOrphanedIpmiController:
     async def test_orphaned_controller_emits_orphaned_reason(
         self, monkeypatch, captured_emits, db,
     ):
-        """server is None → reason=orphaned_ipmi_controller (не actor_department_mismatch)."""
+        """server is None → reason=orphaned_ipmi_controller (не target_department_mismatch)."""
         _settings(monkeypatch, strict=False)
         _stub_permissions_ok(monkeypatch)
 
@@ -513,8 +513,8 @@ class TestOrphanedIpmiController:
         assert len(events) == 1, captured_emits
         reasons = [e["details"].get("reason") for e in events]
         assert "orphaned_ipmi_controller" in reasons
-        # И обратное: фейковый actor_department_mismatch НЕ эмитим.
-        assert "actor_department_mismatch" not in reasons
+        # И обратное: фейковый target_department_mismatch НЕ эмитим.
+        assert "target_department_mismatch" not in reasons
 
 
 # ── 7. cancel_task без target_server_id и не в whitelist'е ────────────────────

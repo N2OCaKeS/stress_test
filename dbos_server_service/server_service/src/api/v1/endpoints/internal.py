@@ -16,13 +16,12 @@ endpoint'ы: bot worker'а должен иметь роль с чувствит�
 здесь же subject_type не проверяется. Документировано как трейд-офф
 до появления выделенного worker-PAT-канала.
 
-Дополнительно каждый endpoint читает опциональный header
-``X-Target-Department-Id`` и cross-check'ит его против реального
-`server.department_id`. Worker форвардит сюда значение, которое он получил
-в payload задачи (server_service сам положил `target_department_id` в
-payload при dispatch'е). Soft/strict-режим — в
-``internal_service._check_target_department``, контролируется
-``settings.internal_require_dept_header``.
+Каждый endpoint читает заголовок ``X-Target-Department-Id`` и cross-check'ит
+его против реального `server.department_id`. Worker форвардит сюда значение,
+которое он получил в payload задачи (server_service сам положил
+`target_department_id` в payload при dispatch'е, уже проверив права юзера).
+Отдел самого воркер-бота в авторизации не участвует — он глобальный. Проверка
+заголовка безусловна (см. ``internal_service._check_target_department``).
 
 `responses=` каталог здесь публикуется как контракт worker-SDK, хотя
 endpoints скрыты из OpenAPI (`include_in_schema=False`): worker
@@ -30,16 +29,14 @@ SDK-codegen всё равно читает routes и нуждается в ст�
 error_code'ах. Общий набор для всех internal-эндпоинтов:
 
 * 403 PERMISSION_DENIED — нет нужного action в матрице.
-* 403 TARGET_DEPARTMENT_MISMATCH — `X-Target-Department-Id` не совпал
-  с реальным dept целевого сервера / контроллера.
-* 403 TARGET_DEPARTMENT_HEADER_REQUIRED — strict-режим, header не
+* 403 TARGET_DEPARTMENT_HEADER_REQUIRED — `X-Target-Department-Id` не
   прислан.
 * 404 SERVER_NOT_FOUND / ACCOUNT_NOT_FOUND / NO_IPMI_CONTROLLER —
-  целевой ресурс не найден. Сюда же попадает actor_department_mismatch
-  (caller'ский dept не совпал с server.department_id) — отдаётся 404
-  той же маски, чтобы 403/404 не работали enumeration-oracle'ом для
-  cross-dept caller'а; deny-аудит при этом эмитится с
-  `reason=actor_department_mismatch`.
+  целевой ресурс не найден. Сюда же маскируется target_department_mismatch
+  (`X-Target-Department-Id` не совпал с реальным dept целевого сервера /
+  контроллера) — отдаётся 404 той же маски, чтобы 403/404 не работали
+  enumeration-oracle'ом для воркера, щупающего чужой отдел; deny-аудит при
+  этом эмитится с `reason=target_department_mismatch`.
 """
 
 from fastapi import APIRouter, Depends, Header
@@ -78,8 +75,8 @@ router = APIRouter(prefix="/internal", include_in_schema=False)
 # конкретный handler делается локально (например, `record_ipmi_credentials_rotated`
 # имеет специфичный CREDENTIALS_ALREADY_APPLIED / BMC_VERIFY_REQUIRED).
 _INTERNAL_RESPONSES_BASE: dict[int | str, dict] = {
-    403: {"description": "PERMISSION_DENIED (нет action'а в матрице) / TARGET_DEPARTMENT_MISMATCH / TARGET_DEPARTMENT_HEADER_REQUIRED. actor_department_mismatch отдаётся 404, а не 403 — см. ниже."},
-    404: {"description": "SERVER_NOT_FOUND / ACCOUNT_NOT_FOUND / NO_IPMI_CONTROLLER. Сюда же маскируется actor_department_mismatch — caller'ский dept не совпал с server.department_id, в audit пишется `reason=actor_department_mismatch`."},
+    403: {"description": "PERMISSION_DENIED (нет action'а в матрице) / TARGET_DEPARTMENT_HEADER_REQUIRED (`X-Target-Department-Id` не прислан). target_department_mismatch отдаётся 404, а не 403 — см. ниже."},
+    404: {"description": "SERVER_NOT_FOUND / ACCOUNT_NOT_FOUND / NO_IPMI_CONTROLLER. Сюда же маскируется target_department_mismatch — `X-Target-Department-Id` не совпал с server.department_id, в audit пишется `reason=target_department_mismatch`."},
 }
 
 _INTERNAL_RESPONSES_CALLBACK: dict[int | str, dict] = {
@@ -95,7 +92,7 @@ _TargetDeptHeader = Header(
     description=(
         "Department id, который worker считает принадлежащим целевому серверу "
         "(скопирован из payload задачи). server_service cross-check'ит его с "
-        "реальным server.department_id. Обязателен в strict-режиме."
+        "реальным server.department_id. Обязателен: без него — 403."
     ),
 )
 

@@ -1,19 +1,22 @@
-"""Internal endpoints в soft-mode эмитят `internal.dept_header_missing` warning.
+"""Header-scoping internal-эндпоинтов на service-уровне.
 
-До фикса `fetch_account_password`/`rotate_account_password` пропускали server
-lookup, если `X-Target-Department-Id` header отсутствует в soft-mode (экономия
-на hot path). При этом `_check_target_department` НЕ вызывался → warning audit
-тоже не эмитился. SOC не видел missing header.
+`X-Target-Department-Id` — единственный cross-dept гард и enforce'ится
+безусловно. Отдел самого воркер-бота в авторизации не участвует (один
+глобальный бот обслуживает серверы всех отделов):
 
-После фикса: при soft-mode + missing header перед пропуском эмитим
-`internal.dept_header_missing` (severity=WARNING). Симметрично с
-`fetch_ipmi_credentials`, который всегда зовёт `_check_target_department`.
+* заголовок отсутствует → 403 `TARGET_DEPARTMENT_HEADER_REQUIRED`,
+  denied-audit с `reason=missing_target_department_header`;
+* заголовок ≠ server.department_id → 404 (маска not-found),
+  denied-audit с `reason=target_department_mismatch`;
+* заголовок = server.department_id → операция проходит, даже если бот
+  числится в другом отделе.
 """
 
 from __future__ import annotations
 
 import pytest
 
+from src.core.exceptions import AuthorizationError, NotFoundError
 from src.services import internal_service
 
 from tests._helpers import make_emit_capture
@@ -69,9 +72,6 @@ def _stub_secrets(monkeypatch):
         "decrypt",
         lambda c, **_kw: "plaintext",
     )
-    # internal_service переключён на decrypt_with_meta — стабим его тоже,
-    # возвращая DecryptResult с needs_reencrypt=False (тесты soft-mode не
-    # проверяют lazy-flow, им важна только успешная расшифровка).
     monkeypatch.setattr(
         internal_service.secrets_service,
         "decrypt_with_meta",
@@ -84,8 +84,6 @@ def _stub_secrets(monkeypatch):
         "encrypt",
         lambda p, **_kw: "v1$nonce$cipher",
     )
-    # `aad_for_*` helpers могут отсутствовать (если secrets_service ещё не
-    # дотянулся), но если есть — стабим в no-op строку.
     for attr in ("aad_for_server_account_password", "aad_for_ipmi_credential"):
         if hasattr(internal_service.secrets_service, attr):
             monkeypatch.setattr(
@@ -96,41 +94,23 @@ def _stub_secrets(monkeypatch):
 
 @pytest.fixture
 def captured_emits(monkeypatch):
-    # Internal_service импортирует audit_service модулем, default patch покрывает обоих.
     return make_emit_capture(monkeypatch)
 
 
-def _identity():
+def _identity(department_id: str = "dep_a"):
     from src.schemas.identity import IdentityContext
 
     return IdentityContext(
         user_id="bot_w",
         username="server_worker_user",
-        department_id="dep_a",
+        department_id=department_id,
         service_roles={"server_service": ["worker_bot"]},
         subject_type="bot",
     )
 
 
-def _settings(monkeypatch, *, strict: bool):
-    class _S:
-        internal_require_dept_header = strict
-        # IPMI verify max age — реальное значение по умолчанию (60s).
-        # record_ipmi_credentials_rotated читает его при проверке verified_at.
-        ipmi_verify_max_age_seconds = 60
-        # Окно допустимого NTP-skew для rotated_at (default из core/config.py).
-        rotated_at_skew_seconds = 600
-        # Future-skew окно для verified_at — отдельное от max_age, чтобы
-        # на стендах с NTP-drift'ом не отбивать BMC verify.
-        verify_future_skew_seconds = 60
-
-    monkeypatch.setattr(internal_service, "get_settings", lambda: _S())
-
-
 def _stub_server_repo(monkeypatch, *, server_id: str, department_id: str | None = "dep_a"):
-    """Заглушка для server repository — `_check_target_department` теперь
-    зовётся безусловно и требует `server.department_id` для actor-vs-server
-    cross-check'а."""
+    """Заглушка для server repository — server lookup идёт до header-check'а."""
     class _Server:
         pass
 
@@ -147,131 +127,43 @@ def _stub_server_repo(monkeypatch, *, server_id: str, department_id: str | None 
 
 
 @pytest.mark.asyncio
-async def test_fetch_account_password_soft_mode_no_header_emits_warning(
+async def test_fetch_account_password_no_header_returns_403(
     monkeypatch, captured_emits, db,
 ):
-    """Soft mode + missing header → `internal.dept_header_missing` WARNING."""
-    _settings(monkeypatch, strict=False)
+    """Отсутствие заголовка → 403 TARGET_DEPARTMENT_HEADER_REQUIRED + denied."""
     _stub_permissions_ok(monkeypatch)
-    _stub_secrets(monkeypatch)
     _stub_account_repo(monkeypatch, server_id="srv_1", account_id="acc_1")
     _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
 
-    await internal_service.fetch_account_password(
-        db, _identity(), server_id="srv_1", account_id="acc_1", target_department_id=None,
-    )
-
-    warns = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
-    assert len(warns) == 1
-    w = warns[0]
-    assert w["status"] == "warning"
-    assert w["allowed"] is True
-    assert w["details"]["soft_mode"] is True
-    assert w["details"]["server_id"] == "srv_1"
-    assert w["details"]["path"] == "internal.fetch_account_password"
-    assert w["actor_id"] == "bot_w"
-
-
-@pytest.mark.asyncio
-async def test_rotate_account_password_soft_mode_no_header_emits_warning(
-    monkeypatch, captured_emits, db,
-):
-    """Соответствующее поведение для rotate-callback'а."""
-    _settings(monkeypatch, strict=False)
-    _stub_permissions_ok(monkeypatch)
-    _stub_secrets(monkeypatch)
-    _stub_account_repo(monkeypatch, server_id="srv_1", account_id="acc_1")
-    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
-
-    await internal_service.rotate_account_password(
-        db, _identity(), server_id="srv_1", account_id="acc_1",
-        new_password="newpwd", target_department_id=None,
-    )
-
-    warns = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
-    assert len(warns) == 1
-    assert warns[0]["details"]["path"] == "internal.rotate_account_password"
-
-
-@pytest.mark.asyncio
-async def test_strict_mode_no_header_does_not_emit_dept_header_missing(
-    monkeypatch, captured_emits, db,
-):
-    """Strict mode идёт по `_check_target_department` ветке — она эмитит
-    свой `denied`-audit; `internal.dept_header_missing` НЕ эмитится.
-    """
-    _settings(monkeypatch, strict=True)
-    _stub_permissions_ok(monkeypatch)
-    _stub_secrets(monkeypatch)
-    _stub_account_repo(monkeypatch, server_id="srv_1", account_id="acc_1")
-
-    # Стаб server_repo — нужен `_check_target_department`'у.
-    class _Server:
-        department_id = "dep_a"
-
-    async def get_by_id(db, sid):
-        return _Server()
-
-    monkeypatch.setattr(internal_service.server_repo, "get_by_id", get_by_id)
-
-    from src.core.exceptions import AuthorizationError
-
-    with pytest.raises(AuthorizationError):
+    with pytest.raises(AuthorizationError) as ei:
         await internal_service.fetch_account_password(
-            db, _identity(), server_id="srv_1", account_id="acc_1", target_department_id=None,
+            db, _identity(), server_id="srv_1", account_id="acc_1",
+            target_department_id=None,
         )
+    assert ei.value.error_code == "TARGET_DEPARTMENT_HEADER_REQUIRED"
 
-    # Strict-режим эмитит `server_account.view_password` denied, но НЕ
-    # `internal.dept_header_missing` (та ветка идёт только в soft).
-    missing = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
-    assert missing == []
-
-
-def test_audit_events_catalog_contains_dept_header_missing():
-    """`internal.dept_header_missing` зарегистрирован в SERVICE_EVENTS."""
-    actions = {e["action"] for e in SERVICE_EVENTS}
-    assert "internal.dept_header_missing" in actions
-    entry = next(e for e in SERVICE_EVENTS if e["action"] == "internal.dept_header_missing")
-    assert entry["default_severity"] == "WARNING"
+    denied = [
+        e for e in captured_emits
+        if e["action"] == "server_account.view_password" and e.get("status") == "denied"
+    ]
+    assert len(denied) == 1
+    assert denied[0]["details"]["reason"] == "missing_target_department_header"
 
 
 @pytest.mark.asyncio
-async def test_fetch_account_password_actor_mismatch_soft_emits_denied(
+async def test_fetch_account_password_header_mismatch_returns_404(
     monkeypatch, captured_emits, db,
 ):
-    """Soft mode + actor.dept != server.dept → 404 ACCOUNT_NOT_FOUND
-    (унификация cross-dept под существование) + denied audit с
-    `reason=actor_department_mismatch`. Header-missing warning **не** должен
-    эмититься: actor-проверка падает раньше.
-    """
-    _settings(monkeypatch, strict=False)
+    """Заголовок dep_b на сервере dep_a → 404 ACCOUNT_NOT_FOUND (маска) +
+    denied `reason=target_department_mismatch`."""
     _stub_permissions_ok(monkeypatch)
-    _stub_secrets(monkeypatch)
     _stub_account_repo(monkeypatch, server_id="srv_1", account_id="acc_1")
-
-    class _Server:
-        department_id = "dep_a"
-
-    async def get_by_id(db, sid):
-        return _Server()
-
-    monkeypatch.setattr(internal_service.server_repo, "get_by_id", get_by_id)
-
-    from src.core.exceptions import NotFoundError
-    from src.schemas.identity import IdentityContext
-
-    foreign_identity = IdentityContext(
-        user_id="bot_w",
-        username="server_worker_user",
-        department_id="dep_b",  # отличается от сервера
-        service_roles={"server_service": ["worker_bot"]},
-        subject_type="bot",
-    )
+    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
 
     with pytest.raises(NotFoundError) as ei:
         await internal_service.fetch_account_password(
-            db, foreign_identity, server_id="srv_1", account_id="acc_1",
-            target_department_id=None,
+            db, _identity(), server_id="srv_1", account_id="acc_1",
+            target_department_id="dep_b",
         )
     assert ei.value.error_code == "ACCOUNT_NOT_FOUND"
 
@@ -280,50 +172,76 @@ async def test_fetch_account_password_actor_mismatch_soft_emits_denied(
         if e["action"] == "server_account.view_password" and e.get("status") == "denied"
     ]
     assert len(denied) == 1
-    assert denied[0]["details"]["reason"] == "actor_department_mismatch"
-    assert denied[0]["details"]["actor_department_id"] == "dep_b"
+    assert denied[0]["details"]["reason"] == "target_department_mismatch"
+    assert denied[0]["details"]["header_department_id"] == "dep_b"
     assert denied[0]["details"]["server_department_id"] == "dep_a"
-    # Header-missing warning не должен дойти — actor-check падает раньше.
-    missing = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
-    assert missing == []
 
 
 @pytest.mark.asyncio
-async def test_rotate_account_password_actor_mismatch_soft_emits_denied(
+async def test_fetch_account_password_matched_header_succeeds(
     monkeypatch, captured_emits, db,
 ):
-    """Симметрично для rotate-callback'а — actor-mismatch блокирует в soft.
-    Cross-dept унифицирован под ACCOUNT_NOT_FOUND, чтобы не выдавать
-    enumeration-oracle по разнице 403/404.
-    """
-    _settings(monkeypatch, strict=False)
+    """Совпавший заголовок → пароль отдаётся."""
     _stub_permissions_ok(monkeypatch)
     _stub_secrets(monkeypatch)
     _stub_account_repo(monkeypatch, server_id="srv_1", account_id="acc_1")
+    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
 
-    class _Server:
-        department_id = "dep_a"
-
-    async def get_by_id(db, sid):
-        return _Server()
-
-    monkeypatch.setattr(internal_service.server_repo, "get_by_id", get_by_id)
-
-    from src.core.exceptions import NotFoundError
-    from src.schemas.identity import IdentityContext
-
-    foreign_identity = IdentityContext(
-        user_id="bot_w",
-        username="server_worker_user",
-        department_id="dep_b",
-        service_roles={"server_service": ["worker_bot"]},
-        subject_type="bot",
+    result = await internal_service.fetch_account_password(
+        db, _identity(), server_id="srv_1", account_id="acc_1",
+        target_department_id="dep_a",
     )
+    assert result["password"] == "plaintext"
+
+
+@pytest.mark.asyncio
+async def test_fetch_account_password_foreign_bot_matched_header_succeeds(
+    monkeypatch, captured_emits, db,
+):
+    """Ключевой мультидепт-кейс: бот числится в dep_b, сервер — в dep_a,
+    заголовок = dep_a → УСПЕХ. Отдел бота в авторизации не участвует."""
+    _stub_permissions_ok(monkeypatch)
+    _stub_secrets(monkeypatch)
+    _stub_account_repo(monkeypatch, server_id="srv_1", account_id="acc_1")
+    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
+
+    result = await internal_service.fetch_account_password(
+        db, _identity(department_id="dep_b"), server_id="srv_1", account_id="acc_1",
+        target_department_id="dep_a",
+    )
+    assert result["password"] == "plaintext"
+
+
+@pytest.mark.asyncio
+async def test_rotate_account_password_no_header_returns_403(
+    monkeypatch, captured_emits, db,
+):
+    _stub_permissions_ok(monkeypatch)
+    _stub_secrets(monkeypatch)
+    _stub_account_repo(monkeypatch, server_id="srv_1", account_id="acc_1")
+    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
+
+    with pytest.raises(AuthorizationError) as ei:
+        await internal_service.rotate_account_password(
+            db, _identity(), server_id="srv_1", account_id="acc_1",
+            new_password="newpwd", target_department_id=None,
+        )
+    assert ei.value.error_code == "TARGET_DEPARTMENT_HEADER_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_rotate_account_password_header_mismatch_returns_404(
+    monkeypatch, captured_emits, db,
+):
+    _stub_permissions_ok(monkeypatch)
+    _stub_secrets(monkeypatch)
+    _stub_account_repo(monkeypatch, server_id="srv_1", account_id="acc_1")
+    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
 
     with pytest.raises(NotFoundError) as ei:
         await internal_service.rotate_account_password(
-            db, foreign_identity, server_id="srv_1", account_id="acc_1",
-            new_password="injected", target_department_id=None,
+            db, _identity(), server_id="srv_1", account_id="acc_1",
+            new_password="injected", target_department_id="dep_b",
         )
     assert ei.value.error_code == "ACCOUNT_NOT_FOUND"
 
@@ -332,15 +250,14 @@ async def test_rotate_account_password_actor_mismatch_soft_emits_denied(
         if e["action"] == "server_account.rotate_password" and e.get("status") == "denied"
     ]
     assert len(denied) == 1
-    assert denied[0]["details"]["reason"] == "actor_department_mismatch"
+    assert denied[0]["details"]["reason"] == "target_department_mismatch"
 
 
 @pytest.mark.asyncio
-async def test_fetch_ipmi_credentials_soft_mode_no_header_emits_warning(
+async def test_fetch_ipmi_credentials_header_mismatch_returns_404(
     monkeypatch, captured_emits, db,
 ):
-    """fetch_ipmi_credentials: soft + missing header → `internal.dept_header_missing`."""
-    _settings(monkeypatch, strict=False)
+    """fetch_ipmi_credentials: заголовок ≠ server dept → 404 SERVER_NOT_FOUND."""
     _stub_permissions_ok(monkeypatch)
     _stub_secrets(monkeypatch)
     _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
@@ -357,201 +274,18 @@ async def test_fetch_ipmi_credentials_soft_mode_no_header_emits_warning(
 
     monkeypatch.setattr(internal_service.ipmi_repo, "get_by_server_id", get_by_server_id)
 
-    await internal_service.fetch_ipmi_credentials(
-        db, _identity(), server_id="srv_1", target_department_id=None,
-    )
+    with pytest.raises(NotFoundError) as ei:
+        await internal_service.fetch_ipmi_credentials(
+            db, _identity(), server_id="srv_1", target_department_id="dep_b",
+        )
+    assert ei.value.error_code == "SERVER_NOT_FOUND"
 
-    warns = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
-    assert len(warns) == 1
-    assert warns[0]["details"]["path"] == "internal.fetch_ipmi_credentials"
-    assert warns[0]["details"]["caller_type"] == "bot"
-
-
-@pytest.mark.asyncio
-async def test_receive_inventory_soft_mode_no_header_emits_warning(
-    monkeypatch, captured_emits, db,
-):
-    """receive_inventory: soft + missing header → warning."""
-    _settings(monkeypatch, strict=False)
-    _stub_permissions_ok(monkeypatch)
-    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
-
-    async def _noop(*a, **kw):
-        return None
-
-    async def _resolve_os(*a, **kw):
-        return "osv_1"
-
-    async def _upsert(*a, **kw):
-        return 0
-
-    monkeypatch.setattr(internal_service.server_repo, "update", _noop)
-    monkeypatch.setattr(internal_service, "_resolve_or_create_os", _resolve_os)
-    monkeypatch.setattr(internal_service, "_upsert_disks", _upsert)
-
-    class _Sess:
-        async def commit(self):
-            return None
-
-    from src.schemas.internal import InventoryCallbackRequest
-
-    payload = InventoryCallbackRequest(
-        hostname="h", kernel="k", cpu_brand=None, cpu_model=None,
-        cpu_cores=1, cpu_threads=None, cpu_frequency_ghz=None,
-        os_version="Astra", disks=[],
-    )
-    await internal_service.receive_inventory(
-        _Sess(), _identity(), server_id="srv_1", payload=payload,
-        target_department_id=None,
-    )
-
-    warns = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
-    assert len(warns) == 1
-    assert warns[0]["details"]["path"] == "internal.receive_inventory"
-
-
-@pytest.mark.asyncio
-async def test_record_provision_status_soft_mode_no_header_emits_warning(
-    monkeypatch, captured_emits, db,
-):
-    """record_provision_status: soft + missing header → warning."""
-    _settings(monkeypatch, strict=False)
-    _stub_permissions_ok(monkeypatch)
-    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
-
-    class _Account:
-        id = "acc_1"
-        login = "root"
-        # `record_provision_status` сверяет dept аккаунта с dept сервера
-        # (defense-in-depth от cross-dept linkage). Стабим тот же dept,
-        # что у _stub_server_repo выше.
-        department_id = "dep_a"
-        # record_provision_status читает флаг, чтобы снять pending_apply на
-        # успешном callback'е. Стартовое значение False — путь «уже применено,
-        # ничего не трогаем», для проверки soft-warning'а этого достаточно.
-        credentials_pending_apply = False
-
-    class _Link:
-        pass
-
-    async def get_by_id(db, aid):
-        return _Account()
-
-    async def get_for_update(db, aid):
-        return _Account()
-
-    async def get_link(db, aid, sid):
-        return _Link()
-
-    async def set_link_presence(db, link, present):
-        return None
-
-    monkeypatch.setattr(internal_service.account_repo, "get_by_id", get_by_id)
-    monkeypatch.setattr(internal_service.account_repo, "get_for_update", get_for_update)
-    monkeypatch.setattr(internal_service.account_repo, "get_link", get_link)
-    monkeypatch.setattr(internal_service.account_repo, "set_link_presence", set_link_presence)
-
-    class _Sess:
-        async def commit(self):
-            return None
-
-    from src.schemas.internal import ProvisionStatusRequest
-
-    payload = ProvisionStatusRequest(operation="provision", present=True)
-    await internal_service.record_provision_status(
-        _Sess(), _identity(), server_id="srv_1", account_id="acc_1",
-        payload=payload, target_department_id=None,
-    )
-
-    warns = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
-    assert len(warns) == 1
-    assert warns[0]["details"]["path"] == "internal.record_provision_status"
-
-
-@pytest.mark.asyncio
-async def test_record_server_prepared_soft_mode_no_header_emits_warning(
-    monkeypatch, captured_emits, db,
-):
-    """record_server_prepared: soft + missing header → warning."""
-    _settings(monkeypatch, strict=False)
-    _stub_permissions_ok(monkeypatch)
-    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
-
-    async def _noop(*a, **kw):
-        return None
-
-    monkeypatch.setattr(internal_service.server_repo, "update", _noop)
-
-    class _Sess:
-        async def commit(self):
-            return None
-
-    from src.schemas.server import ServerPrepareCallbackRequest
-
-    payload = ServerPrepareCallbackRequest(management_user="dbos_mgmt")
-    await internal_service.record_server_prepared(
-        _Sess(), _identity(), server_id="srv_1", payload=payload,
-        target_department_id=None,
-    )
-
-    warns = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
-    assert len(warns) == 1
-    assert warns[0]["details"]["path"] == "internal.record_server_prepared"
-
-
-@pytest.mark.asyncio
-async def test_record_ipmi_credentials_rotated_soft_mode_no_header_emits_warning(
-    monkeypatch, captured_emits, db,
-):
-    """record_ipmi_credentials_rotated: soft + missing header → warning."""
-    from datetime import datetime, timezone
-
-    _settings(monkeypatch, strict=False)
-    _stub_permissions_ok(monkeypatch)
-    _stub_secrets(monkeypatch)
-    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
-
-    class _Ctrl:
-        id = "ctrl_1"
-        server_id = "srv_1"
-        password_encrypted = None
-        password_rotated_at = None
-        credentials_pending_apply = True
-
-    ctrl_obj = _Ctrl()
-
-    async def get_by_id(db, cid):
-        return ctrl_obj
-
-    async def get_for_update(db, cid):
-        return ctrl_obj
-
-    async def update(db, ctrl, fields):
-        return None
-
-    monkeypatch.setattr(internal_service.ipmi_repo, "get_by_id", get_by_id)
-    monkeypatch.setattr(internal_service.ipmi_repo, "get_for_update", get_for_update)
-    monkeypatch.setattr(internal_service.ipmi_repo, "update", update)
-
-    class _Sess:
-        async def commit(self):
-            return None
-
-    from src.schemas.internal import IpmiCredentialsRotatedRequest
-
-    payload = IpmiCredentialsRotatedRequest(
-        new_password="Strong1Password",
-        rotated_at=datetime.now(timezone.utc),
-        verified_at=datetime.now(timezone.utc),
-    )
-    await internal_service.record_ipmi_credentials_rotated(
-        _Sess(), _identity(), controller_id="ctrl_1", payload=payload,
-        target_department_id=None,
-    )
-
-    warns = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
-    assert len(warns) == 1
-    assert warns[0]["details"]["path"] == "internal.record_ipmi_credentials_rotated"
+    denied = [
+        e for e in captured_emits
+        if e["action"] == "ipmi_controller.view_credentials" and e.get("status") == "denied"
+    ]
+    assert len(denied) == 1
+    assert denied[0]["details"]["reason"] == "target_department_mismatch"
 
 
 def test_platform_admin_blocked_description_matches_blocked_roles():

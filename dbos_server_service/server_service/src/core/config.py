@@ -611,15 +611,13 @@ class Settings(BaseSettings):
     internal_require_dept_header: bool = Field(
         default=True,
         description=(
-            "True (default, secure-by-default) — /api/server/v1/internal/* "
-            "endpoints требуют от caller'а (server_worker) заголовок "
-            "`X-Target-Department-Id`, совпадающий с реальным "
-            "server.department_id. Mismatch / отсутствие → 403. "
-            "False — header читается только для cross-check'а в audit; "
-            "mismatch логгируется, но не блокирует. Soft mode оставлен только "
-            "для dev/test (conftest при необходимости выставляет False явно) — "
-            "в любом deploy'е, который не контролирует worker-PAT периметр, "
-            "должно быть True."
+            "Исторический флаг soft/strict для `X-Target-Department-Id` на "
+            "/api/server/v1/internal/*. Сейчас проверка заголовка безусловна "
+            "(отсутствует → 403 TARGET_DEPARTMENT_HEADER_REQUIRED, не совпал с "
+            "server.department_id → 404), т.к. заголовок — единственный "
+            "cross-dept гард глобального worker-бота, и enforce'ится всегда "
+            "независимо от этого значения. Поле оставлено для совместимости "
+            "конфигов; на авторизацию больше не влияет."
         ),
     )
 

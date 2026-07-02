@@ -7,7 +7,7 @@ Areas:
   - controller found, server in cross-dept → NO_IPMI_CONTROLLER
   - decommissioned server → SERVER_DECOMMISSIONED
   - _dispatch_for_server no_ipmi → audit reason=no_ipmi for power.status
-* denied→failure audit — _check_target_department_for_server actor-mismatch
+* denied→failure audit — _check_target_department_for_server header mismatch
   raises SERVER_NOT_FOUND; verify ipmi_rotate audit emit on
   not_found_or_cross_dept paths
 * identity= activated — subject_type in denied audit events on bot calls
@@ -511,27 +511,26 @@ class TestDispatchForServerNoIpmiAudit:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. denied→failure — _check_target_department_for_server actor-mismatch
+# 4. denied→failure — _check_target_department_for_server header mismatch
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TestCheckTargetDeptForServerActorMismatch:
-    """_check_target_department_for_server: actor dept mismatch → SERVER_NOT_FOUND.
+class TestCheckTargetDeptForServerHeaderMismatch:
+    """_check_target_department_for_server: header dept mismatch → SERVER_NOT_FOUND.
 
     Функции, использующие _check_target_department_for_server:
       receive_inventory_facts → internal endpoint /inventory/facts
       record_server_prepared  → internal endpoint /servers/{id}/prepared
       submit_users_inventory_callback
 
-    Тестируем на service-уровне через monkeypatch, симметрично
-    test_internal_soft_mode_warning_audit.py::TestCheckTargetDeptForAccount.
+    Тестируем на service-уровне через monkeypatch.
     """
 
     @pytest.mark.asyncio
-    async def test_receive_inventory_facts_actor_mismatch_returns_server_not_found(
+    async def test_receive_inventory_facts_header_mismatch_returns_server_not_found(
         self, monkeypatch, db,
     ):
-        """Caller из dep_b пытается отправить inventory для dep_a сервера
+        """Заголовок dep_b на сервере dep_a
         → _check_target_department_for_server бросает SERVER_NOT_FOUND (маска)."""
         from src.services import internal_service
 
@@ -587,15 +586,15 @@ class TestCheckTargetDeptForServerActorMismatch:
 
         mismatch_emits = [
             e for e in captured
-            if (e.get("details") or {}).get("reason") == "actor_department_mismatch"
+            if (e.get("details") or {}).get("reason") == "target_department_mismatch"
         ]
         assert mismatch_emits, captured
 
     @pytest.mark.asyncio
-    async def test_receive_inventory_facts_actor_mismatch_emits_denied(
+    async def test_receive_inventory_facts_header_mismatch_emits_denied(
         self, monkeypatch, db,
     ):
-        """actor_department_mismatch audit emit содержит status=denied, allowed=False."""
+        """target_department_mismatch audit emit содержит status=denied, allowed=False."""
         from src.services import internal_service
 
         server_id = "srv_dep_mismatch_audit"
@@ -650,7 +649,7 @@ class TestCheckTargetDeptForServerActorMismatch:
         ]
         assert denied_emits, captured
         ev = denied_emits[0]
-        assert ev["details"]["reason"] == "actor_department_mismatch"
+        assert ev["details"]["reason"] == "target_department_mismatch"
         assert ev["target_id"] == server_id
 
 

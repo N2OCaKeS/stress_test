@@ -129,22 +129,23 @@ class TestResolveSameDeptServersBatch:
         assert emitted[0]["details"]["server_id"] == "srv_x"
 
 
-# ── 2. soft-mode комментарий в _check_target_department ──────────────────────
+# ── 2. header-scoping документирован в _check_target_department ──────────────
 
 
-class TestSoftModeCommentExplicit:
-    """Код должен явно говорить, что soft-mode — это
-    намеренное dev/test ослабление, а не упущенный denied-audit.
+class TestHeaderScopingDocumented:
+    """`_check_target_department` должен явно документировать, что
+    `X-Target-Department-Id` — единственный cross-dept гард, отдел бота не
+    участвует, и разбор missing → 403 / mismatch → 404.
     """
 
-    def test_check_target_department_source_documents_soft_mode(self):
+    def test_check_target_department_source_documents_header_scoping(self):
         src = inspect.getsource(internal_service._check_target_department)
-        # Ищем маркеры намеренности (русский комментарий).
-        assert "dev/test" in src.lower(), (
-            "Soft-mode ветка должна быть помечена как dev/test ослабление."
-        )
-        assert "internal_require_dept_header" in src
-        assert "не использовать в prod" in src.lower() or "by design" in src.lower()
+        low = src.lower()
+        assert "x-target-department-id" in low
+        assert "target_department_header_required" in low
+        assert "target_department_mismatch" in low
+        # Отдел самого бота не должен влиять на блокировку.
+        assert "actor_department_id" in src
 
 
 # ── 3. internal_service: rotated_at NTP-skew settings ────────────────────────

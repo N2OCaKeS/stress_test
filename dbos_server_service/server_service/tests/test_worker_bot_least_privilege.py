@@ -33,10 +33,10 @@ from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 class TestWorkerBotAllowedActions:
     """worker_bot должен мочь делать ровно 4 действия.
 
-    `soft_dept_mode` нужен потому, что default `internal_require_dept_header`
-    теперь True (strict): эти тесты бьют /internal/* без X-Target-Department-Id
-    — проверяют permission-матрицу, не dept-header. Strict-семантика header'а
-    отдельно покрыта в `test_internal_endpoints.py::TestTargetDeptHeader*`.
+    `soft_dept_mode` отключает cross-dept scoping: эти тесты бьют /internal/*
+    без X-Target-Department-Id — проверяют permission-матрицу, не dept-header
+    (он теперь enforce'ится безусловно). Семантика header'а отдельно покрыта в
+    `test_internal_endpoints.py::TestTargetDeptHeader*`.
     """
 
     async def test_can_view_ipmi_credentials(

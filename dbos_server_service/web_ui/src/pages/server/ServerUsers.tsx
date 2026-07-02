@@ -1404,6 +1404,13 @@ function AccountWorkzone({
           onChanged={onChanged}
         />
 
+        <ApplyCredentialsCard
+          account={account}
+          canOperate={canOperate}
+          serverName={serverName}
+          onChanged={onChanged}
+        />
+
         {!editing && (
           <ServersSection
             account={account}
@@ -2573,6 +2580,7 @@ function SshKeySection({
   const [pubKey, setPubKey] = useState("");
   const [pending, setPending] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingPrev, setDownloadingPrev] = useState(false);
 
   const hasKey = !!account.ssh_key_fingerprint || !!account.ssh_public_key;
 
@@ -2601,6 +2609,42 @@ function SshKeySection({
       }
     } finally {
       setDownloading(false);
+    }
+  }
+
+  // Скачать ПРЕДЫДУЩИЙ приватный ключ — им ещё живут серверы, до которых новый
+  // ключ после ротации не доехал. 404 ACCOUNT_NO_PREVIOUS_SSH_KEY → прежнего
+  // ключа просто нет (ротаций не было или он уже вычищен).
+  async function handleDownloadPrevious() {
+    if (downloadingPrev || !canReveal) return;
+    setDownloadingPrev(true);
+    try {
+      const res = await accountsApi.revealPreviousAccountSshPrivateKey(
+        account.id,
+      );
+      downloadText(
+        `${account.login}_previous_id_ed25519.pem`,
+        res.ssh_private_key,
+      );
+      toast.success("Предыдущий приватный ключ скачан");
+    } catch (e) {
+      if (
+        e instanceof ApiError &&
+        e.status === 404 &&
+        (e.errorCode === "ACCOUNT_NO_PREVIOUS_SSH_KEY" ||
+          /ACCOUNT_NO_PREVIOUS_SSH_KEY/i.test(apiErrMsg(e, "")))
+      ) {
+        toast.error("Предыдущего ключа нет — ротаций ещё не было.");
+      } else if (e instanceof ApiError && e.status === 429) {
+        const secs = e.retryAfter ?? 60;
+        toast.error(`Reveal-лимит: повторите через ${secs} сек`);
+      } else if (e instanceof ApiError && e.status === 403) {
+        toast.error("Недостаточно прав: нужен view_password.");
+      } else {
+        toast.error(apiErrMsg(e, "Не удалось скачать предыдущий ключ"));
+      }
+    } finally {
+      setDownloadingPrev(false);
     }
   }
 
@@ -2664,7 +2708,9 @@ function SshKeySection({
       <div className="text-xs text-dim mb-3">
         Раскатка ключа на привязанные серверы — автоматически на стороне сервиса.
         Сам приватный ключ на экран не выводится: после генерации его можно
-        скачать сейчас или позже кнопкой «Скачать приватный ключ».
+        скачать сейчас или позже кнопкой «Скачать приватный ключ». Предыдущий
+        ключ — для доступа к серверам, ещё не обновлённым на новый ключ после
+        ротации.
       </div>
 
       <div className="flex items-center gap-2 flex-wrap mb-3">
@@ -2697,6 +2743,18 @@ function SshKeySection({
               >
                 <Download className="w-3.5 h-3.5" />{" "}
                 {downloading ? "Скачиваем…" : "Скачать приватный ключ"}
+              </button>
+            )}
+            {canReveal && (
+              <button
+                type="button"
+                className="btn btn-sm flex items-center gap-1"
+                disabled={downloadingPrev}
+                title="Скачать предыдущий приватный ключ — для доступа к серверам, ещё не обновлённым на новый ключ. Требует view_password."
+                onClick={handleDownloadPrevious}
+              >
+                <Download className="w-3.5 h-3.5" />{" "}
+                {downloadingPrev ? "Скачиваем…" : "Скачать предыдущий ключ"}
               </button>
             )}
             {hasKey && (
@@ -2769,6 +2827,113 @@ function SshKeySection({
                   : "Сохранить"}
             </button>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Применить креды на серверы — единый apply пароля + SSH-ключа
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Раскатывает текущие пароль и SSH-ключ аккаунта на все привязанные серверы
+ * одним вызовом (`chpasswd` + перезапись `authorized_keys`). В отличие от apply
+ * пароля в карточке пароля, здесь уезжают оба секрета сразу — удобно после
+ * смены пароля и/или ключа, когда серверы надо догнать до актуального
+ * состояния. Ответ — сводка per-server задач.
+ */
+function ApplyCredentialsCard({
+  account,
+  canOperate,
+  serverName,
+  onChanged,
+}: {
+  account: ServerAccount;
+  canOperate: boolean;
+  serverName: (id: string) => string;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const navigate = useNavigate();
+  const { confirm } = useConfirm();
+  const [applying, setApplying] = useState(false);
+  const [result, setResult] =
+    useState<accountsApi.AccountRotateDispatchResponse | null>(null);
+
+  const noServers = account.server_ids.length === 0;
+
+  async function handleApply() {
+    if (applying || !canOperate) return;
+    if (
+      !(await confirm({
+        title: "Применить на серверы",
+        message: `Раскатать текущие пароль и SSH-ключ ${account.login} на все ${account.server_ids.length} привязанных серверов (chpasswd + authorized_keys)?`,
+        confirmLabel: "Применить",
+      }))
+    )
+      return;
+    setApplying(true);
+    setResult(null);
+    try {
+      const dispatch = await accountsApi.applyAccountCredentials(account.id);
+      setResult(dispatch);
+      const queued = dispatch.dispatched.length || dispatch.tasks.length;
+      const skipped = dispatch.failed.length || dispatch.skipped.length;
+      if (dispatch.partial_failure || skipped > 0) {
+        toast.error(
+          `Применение частичное: задач — ${queued}, пропущено — ${skipped}.`,
+        );
+      } else {
+        toast.success(`Применение запущено: задач — ${queued}.`);
+      }
+      onChanged();
+    } catch (e) {
+      toast.error(handleDispatchError(e));
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="text-xs uppercase text-dim mb-2 flex items-center gap-2">
+        <Upload className="w-3 h-3" /> Применить на серверы
+      </div>
+      <div className="text-xs text-dim mb-3">
+        Пароль и ssh-ключ применяются на привязанные серверы (chpasswd +
+        authorized_keys). Раскатка идёт worker-задачами; сами секреты меняются
+        отдельно (ротация пароля/ключа выше).
+      </div>
+
+      <button
+        type="button"
+        className="btn btn-sm btn-primary flex items-center gap-1"
+        disabled={!canOperate || applying || noServers}
+        title={
+          !canOperate
+            ? "Нужна роль server.operator+"
+            : noServers
+              ? "Аккаунт не привязан ни к одному серверу"
+              : "Раскатать пароль и ssh-ключ на все привязанные серверы"
+        }
+        onClick={handleApply}
+      >
+        <Upload className={`w-3.5 h-3.5 ${applying ? "animate-pulse" : ""}`} />{" "}
+        {applying ? "Применяем…" : "Применить на сервер"}
+      </button>
+
+      {result && (
+        <div className="border-t border-token mt-3 pt-3">
+          <div className="text-[11px] uppercase text-dim mb-2">
+            Результат применения
+          </div>
+          <RotateDispatchResult
+            result={result}
+            serverName={serverName}
+            onOpenTask={(taskId) => navigate(`/tasks/${taskId}`)}
+          />
         </div>
       )}
     </div>

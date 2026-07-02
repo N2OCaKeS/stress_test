@@ -261,6 +261,22 @@ export function rotateAccountWorker(
   );
 }
 
+/**
+ * Раскатать текущие пароль и SSH-ключ аккаунта на все привязанные серверы за
+ * один вызов (`chpasswd` + перезапись `authorized_keys`). В отличие от
+ * `/rotate`, который меняет секрет, apply лишь применяет уже сохранённое.
+ *
+ * Гейтится `rotate_password`. Ответ — сводка per-server задач (тот же envelope,
+ * что у worker-rotate): `dispatched`/`failed` + `partial_failure`.
+ */
+export function applyAccountCredentials(
+  accountId: string,
+): Promise<AccountRotateDispatchResponse> {
+  return apiPost<AccountRotateDispatchResponse>(
+    `${BASE}/server-accounts/${accountId}/apply`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // SSH-ключи аккаунта
 // ---------------------------------------------------------------------------
@@ -325,6 +341,21 @@ export function revealAccountSshPrivateKey(
 ): Promise<SshPrivateKeyReveal> {
   return apiGet<SshPrivateKeyReveal>(
     `${BASE}/server-accounts/${accountId}/ssh_private_key`,
+  );
+}
+
+/**
+ * Скачать (раскрыть) ПРЕДЫДУЩИЙ приватный SSH-ключ аккаунта — нужен для доступа
+ * к серверам, ещё не обновлённым на новый ключ после ротации. Зеркало
+ * `revealAccountSshPrivateKey`, тот же гейт `view_password`, тот же audit и
+ * reveal-rate-limit (429). Если прежнего ключа нет — 404
+ * `ACCOUNT_NO_PREVIOUS_SSH_KEY`.
+ */
+export function revealPreviousAccountSshPrivateKey(
+  accountId: string,
+): Promise<SshPrivateKeyReveal> {
+  return apiGet<SshPrivateKeyReveal>(
+    `${BASE}/server-accounts/${accountId}/previous_ssh_private_key`,
   );
 }
 

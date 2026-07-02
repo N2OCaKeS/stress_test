@@ -14,6 +14,8 @@ server_service'а. Тесты покрывают:
 from __future__ import annotations
 
 from src.services.ssh_client import (
+    _detect_astra_mode,
+    _extract_repositories,
     _normalize_cpu_vendor,
     _parse_size_to_gb,
     inventory_facts_to_payload,
@@ -194,3 +196,110 @@ class TestCpuVendorNormalization:
 
     def test_unknown_vendor_passthrough(self):
         assert _normalize_cpu_vendor("Loongson") == "Loongson"
+
+
+# ── Astra os_version / os_security_mode ──────────────────────────────────────
+
+
+def _astra_facts(build=None, license_text=None, apt=None):
+    """`_FULL_FACTS` c Astra-блоками (build_version / astra_license / apt)."""
+    facts = dict(_FULL_FACTS)
+    if build is not None:
+        facts["astra_build"] = {"stdout": build, "returncode": 0}
+    if license_text is not None:
+        facts["astra_license"] = {"stdout": license_text, "returncode": 0}
+    if apt is not None:
+        facts["apt_sources"] = {"stdout": apt, "returncode": 0}
+    return facts
+
+
+class TestAstraOsVersion:
+    def test_build_version_wins_over_pretty_name(self):
+        facts = _astra_facts(build="1.7.5\n")
+        payload = inventory_facts_to_payload(facts)
+        # os_version — только версия сборки, без «Astra Linux SE» и режима.
+        assert payload["os_version"] == "1.7.5"
+
+    def test_security_mode_from_license_smolensk(self):
+        facts = _astra_facts(
+            build="1.7.5", license_text="Лицензия ... режим Смоленск ...",
+        )
+        payload = inventory_facts_to_payload(facts)
+        assert payload["os_version"] == "1.7.5"
+        assert payload["os_security_mode"] == "Smolensk"
+
+    def test_security_mode_voronezh(self):
+        facts = _astra_facts(build="1.8.1.6", license_text="... Воронеж ...")
+        payload = inventory_facts_to_payload(facts)
+        assert payload["os_version"] == "1.8.1.6"
+        assert payload["os_security_mode"] == "Voronezh"
+
+    def test_security_mode_orel(self):
+        facts = _astra_facts(build="1.7.0", license_text="... Орёл ...")
+        assert inventory_facts_to_payload(facts)["os_security_mode"] == "Orel"
+
+    def test_build_without_recognized_mode_leaves_mode_none(self):
+        facts = _astra_facts(build="1.7.5", license_text="нечитаемая лицензия")
+        payload = inventory_facts_to_payload(facts)
+        assert payload["os_version"] == "1.7.5"
+        assert payload["os_security_mode"] is None
+
+    def test_non_astra_falls_back_to_pretty_name(self):
+        # _FULL_FACTS без astra_build → PRETTY_NAME, режим None.
+        payload = inventory_facts_to_payload(_FULL_FACTS)
+        assert payload["os_version"] == "Astra Linux SE 1.7"
+        assert payload["os_security_mode"] is None
+
+    def test_missing_astra_build_error_block_uses_fallback(self):
+        """build_version отсутствует (cat rc!=0) → fallback на os-release."""
+        facts = dict(_FULL_FACTS)
+        facts["astra_build"] = {"error": "No such file", "returncode": 1, "stdout": ""}
+        facts["astra_license"] = {"error": "No such file", "returncode": 1, "stdout": ""}
+        payload = inventory_facts_to_payload(facts)
+        assert payload["os_version"] == "Astra Linux SE 1.7"
+        assert payload["os_security_mode"] is None
+
+
+class TestDetectAstraMode:
+    def test_latin_and_cyrillic(self):
+        assert _detect_astra_mode("smolensk edition") == "astra_smolensk"
+        assert _detect_astra_mode("... Смоленск ...") == "astra_smolensk"
+        assert _detect_astra_mode("Voronezh") == "astra_voronezh"
+        assert _detect_astra_mode("орел") == "astra_orel"
+        assert _detect_astra_mode("Орёл") == "astra_orel"
+
+    def test_unknown_and_empty(self):
+        assert _detect_astra_mode("") is None
+        assert _detect_astra_mode("some other os") is None
+
+
+class TestExtractRepositories:
+    def test_only_active_deb_lines(self):
+        text = (
+            "# комментарий\n"
+            "deb http://dl.astralinux.ru/ smolensk main\n"
+            "\n"
+            "#deb http://old/ off main\n"
+            "deb-src http://dl.astralinux.ru/ smolensk main\n"
+            "  deb [arch=amd64] http://extra/ stable main  \n"
+        )
+        repos = _extract_repositories({"stdout": text, "returncode": 0})
+        assert repos == [
+            "deb http://dl.astralinux.ru/ smolensk main",
+            "deb-src http://dl.astralinux.ru/ smolensk main",
+            "deb [arch=amd64] http://extra/ stable main",
+        ]
+
+    def test_missing_block_returns_empty(self):
+        assert _extract_repositories(None) == []
+        assert _extract_repositories({"error": "no file", "returncode": 1}) == []
+
+    def test_payload_includes_repositories(self):
+        facts = _astra_facts(
+            build="1.7.5",
+            apt="deb http://dl.astralinux.ru/ smolensk main\n#off\n",
+        )
+        payload = inventory_facts_to_payload(facts)
+        assert payload["repositories"] == [
+            "deb http://dl.astralinux.ru/ smolensk main",
+        ]

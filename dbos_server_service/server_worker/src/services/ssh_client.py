@@ -25,7 +25,13 @@ from typing import Any
 
 import asyncssh
 
-from src.clients.ssh import SshClient, SshError
+from src.clients.ssh import (
+    MODE_ASTRA_OREL,
+    MODE_ASTRA_SMOLENSK,
+    MODE_ASTRA_VORONEZH,
+    SshClient,
+    SshError,
+)
 from src.core.config import get_settings
 from src.services import server_service_client
 
@@ -941,12 +947,72 @@ def _extract_disks(disks_block: dict) -> list[dict]:
     return out
 
 
-def _extract_os_version(os_block: dict) -> str:
-    """Из распарсенного /etc/os-release собрать строку для каталога os_versions.
+# Название режима защищённости Astra Linux SE для отдельного поля
+# os_security_mode. Ключи — те же ManagementMode-строки, что worker кладёт при
+# prepare (см. `clients.ssh` MODE_ASTRA_*), значения — редакция латиницей с
+# заглавной (UI склеит с версией сам). Меняешь маппинг режимов там — сверься тут.
+_ASTRA_MODE_LABELS = {
+    MODE_ASTRA_OREL: "Orel",
+    MODE_ASTRA_VORONEZH: "Voronezh",
+    MODE_ASTRA_SMOLENSK: "Smolensk",
+}
 
-    Предпочтительно `PRETTY_NAME` (например, "Astra Linux SE 1.7"), fallback
-    на `NAME` + `VERSION_ID`. Если нет ничего — `"unknown"` placeholder.
+
+def _capture_stdout(block: Any) -> str:
+    """stdout из `_capture_text`-блока (`{stdout, ...}` либо `{error, ...}`).
+
+    Пустая строка, если блока нет или он не читается — все вызовы best-effort.
     """
+    if isinstance(block, dict):
+        return (block.get("stdout") or "").strip()
+    return ""
+
+
+def _detect_astra_mode(license_text: str) -> str | None:
+    """Определить режим защищённости Astra по содержимому /etc/astra_license.
+
+    Возвращает ManagementMode-строку (`astra_orel`/`astra_voronezh`/
+    `astra_smolensk` — те же, что worker кладёт при prepare), либо None, если
+    режим не распознан. prepare детектит режим иначе (через `astra-modeswitch`
+    / `mswitch.conf`), поэтому здесь опираемся на само имя редакции в лицензии:
+    матчим и русское название, и латинскую транслитерацию — формат файла между
+    релизами меняется.
+    """
+    text = (license_text or "").lower()
+    if not text:
+        return None
+    if "смоленск" in text or "smolensk" in text:
+        return MODE_ASTRA_SMOLENSK
+    if "воронеж" in text or "voronezh" in text:
+        return MODE_ASTRA_VORONEZH
+    if "орёл" in text or "орел" in text or "orel" in text:
+        return MODE_ASTRA_OREL
+    return None
+
+
+def _extract_os_version(
+    os_block: dict,
+    astra_build_block: Any = None,
+) -> str:
+    """Собрать имя версии ОС для каталога os_versions.
+
+    Для Astra Linux (есть `/etc/astra/build_version`) — только версия сборки,
+    например `1.7.5` (без «Astra Linux SE» и без режима — режим уходит
+    отдельным полем `os_security_mode`, а UI склеивает их сам).
+
+    Не-Astra (build_version нет) — прежнее поведение: `PRETTY_NAME` из
+    os-release, fallback на `NAME` + `VERSION_ID`, иначе `"unknown"`.
+    """
+    build = _capture_stdout(astra_build_block)
+    if build:
+        # build_version — одна строка с версией; берём первую непустую на
+        # случай, если в файле окажется что-то ещё.
+        build_version = next(
+            (ln.strip() for ln in build.splitlines() if ln.strip()), ""
+        )
+        if build_version:
+            return build_version
+
     if not isinstance(os_block, dict):
         return "unknown"
     pretty = (os_block.get("PRETTY_NAME") or "").strip()
@@ -957,6 +1023,40 @@ def _extract_os_version(os_block: dict) -> str:
     if name and ver:
         return f"{name} {ver}"
     return name or "unknown"
+
+
+def _extract_os_security_mode(astra_license_block: Any) -> str | None:
+    """Режим защищённости Astra для поля `os_security_mode`.
+
+    Возвращает `Orel`/`Voronezh`/`Smolensk` (латиницей, с заглавной) по
+    содержимому `/etc/astra_license`, либо None — если это не Astra или режим
+    не распознан.
+    """
+    mode = _detect_astra_mode(_capture_stdout(astra_license_block))
+    if mode is None:
+        return None
+    return _ASTRA_MODE_LABELS[mode]
+
+
+def _extract_repositories(apt_block: Any) -> list[str]:
+    """Активные apt-репозитории из `cat` sources.list (+ sources.list.d).
+
+    Берём только строки, начинающиеся с `deb`/`deb-src`; закомментированные
+    (`#`) и пустые пропускаем. Каждую строку триммим. Дубликаты не
+    схлопываем — оператору важно видеть источники как есть.
+    """
+    if not isinstance(apt_block, dict):
+        return []
+    text = apt_block.get("stdout") or ""
+    repos: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        first = line.split(None, 1)[0]
+        if first in ("deb", "deb-src"):
+            repos.append(line)
+    return repos
 
 
 def _extract_hostname(hostname_block: Any) -> str:
@@ -991,9 +1091,16 @@ def inventory_facts_to_payload(facts: dict) -> dict:
     """Сконвертировать `SshClient.get_inventory()` в payload `InventoryCallbackRequest`.
 
     Сырой `facts` — вложенный dict (`cpu/disks/os/pci` — sub-blocks с lscpu/lsblk
-    JSON и parsed os-release). server_service ждёт flat-schema: `hostname`,
-    `kernel`, `cpu_brand`, `cpu_model`, `cpu_cores`, `cpu_threads`,
-    `cpu_frequency_ghz`, `os_version`, `disks: [...]`, `lspci?`.
+    JSON и parsed os-release, плюс `astra_build`/`astra_license`/`apt_sources`).
+    server_service ждёт flat-schema: `hostname`, `kernel`, `cpu_brand`,
+    `cpu_model`, `cpu_cores`, `cpu_threads`, `cpu_frequency_ghz`, `os_version`,
+    `os_security_mode?`, `disks: [...]`, `lspci?`, `repositories: [...]`.
+
+    Для Astra Linux `os_version` — версия сборки (`1.7.5`) из
+    `/etc/astra/build_version`, а режим защищённости уходит отдельным полем
+    `os_security_mode` (`Orel`/`Voronezh`/`Smolensk` из `/etc/astra_license`).
+    Для прочих ОС `os_version` — `PRETTY_NAME` из os-release, `os_security_mode`
+    — None. `repositories` — активные `deb`/`deb-src` строки apt-sources.
 
     CPU-поля пишутся прямо в `servers` (отдельной таблицы-каталога нет),
     поэтому `cpu_brand` / `cpu_model` могут быть `None` если worker не
@@ -1014,9 +1121,14 @@ def inventory_facts_to_payload(facts: dict) -> dict:
         "cpu_cores": cpu_facts["cpu_cores"],
         "cpu_threads": cpu_facts["cpu_threads"],
         "cpu_frequency_ghz": cpu_facts["cpu_frequency_ghz"],
-        "os_version": _extract_os_version(facts.get("os", {})),
+        "os_version": _extract_os_version(
+            facts.get("os", {}),
+            facts.get("astra_build"),
+        ),
+        "os_security_mode": _extract_os_security_mode(facts.get("astra_license")),
         "disks": _extract_disks(facts.get("disks", {})),
         "lspci": _extract_lspci(facts.get("pci", {})),
+        "repositories": _extract_repositories(facts.get("apt_sources")),
     }
 
 

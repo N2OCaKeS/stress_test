@@ -564,6 +564,10 @@ _LSPCI = """\
 00:01.0 "ISA bridge" "Intel" "PIIX3"
 """
 
+_ASTRA_BUILD = "1.7.5\n"
+_ASTRA_LICENSE = "Лицензия Astra Linux SE ... Смоленск ...\n"
+_APT_SOURCES = "deb http://dl.astralinux.ru/ smolensk main\n# off\n"
+
 
 class TestSshClientGetInventory:
     async def test_collects_all_blocks(self, monkeypatch):
@@ -575,6 +579,9 @@ class TestSshClientGetInventory:
             _run_result(_LSBLK_JSON),
             _run_result(_OS_RELEASE),
             _run_result(_LSPCI),
+            _run_result(_ASTRA_BUILD),
+            _run_result(_ASTRA_LICENSE),
+            _run_result(_APT_SOURCES),
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
@@ -598,6 +605,9 @@ class TestSshClientGetInventory:
             _run_result(_LSBLK_JSON),
             _run_result(_OS_RELEASE),
             _run_result(_LSPCI),
+            _run_result(_ASTRA_BUILD),
+            _run_result(_ASTRA_LICENSE),
+            _run_result(_APT_SOURCES),
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
@@ -618,6 +628,9 @@ class TestSshClientGetInventory:
             _run_result(_LSBLK_JSON),
             _run_result(_OS_RELEASE),
             _run_result(_LSPCI),
+            _run_result(_ASTRA_BUILD),
+            _run_result(_ASTRA_LICENSE),
+            _run_result(_APT_SOURCES),
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
@@ -637,6 +650,9 @@ class TestSshClientGetInventory:
             _run_result(_LSBLK_JSON),
             _run_result(_OS_RELEASE),
             _run_result(_LSPCI),
+            _run_result(_ASTRA_BUILD),
+            _run_result(_ASTRA_LICENSE),
+            _run_result(_APT_SOURCES),
         ]
         conn = _make_fake_conn(run_results=run_results)
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))

@@ -11,7 +11,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import asyncssh
-import pytest
 
 from src.core.constants import TaskStatus
 from src.core.exceptions import CredentialFetchError
@@ -20,7 +19,11 @@ from tests._ssh_mock_helpers import run_result as _run_result
 
 
 def _conn_with_inventory_output():
-    """SSHClientConnection-like mock с canned-результатами 6 inventory-команд."""
+    """SSHClientConnection-like mock с canned-результатами inventory-команд.
+
+    Очерёдность: hostname, uname, lscpu, lsblk, os-release, lspci,
+    build_version, astra_license, apt-sources.
+    """
     conn = MagicMock(spec=asyncssh.SSHClientConnection)
     conn.close = MagicMock()
     conn.wait_closed = AsyncMock()
@@ -31,6 +34,9 @@ def _conn_with_inventory_output():
         _run_result('{"blockdevices":[{"name":"sda","size":"500G","type":"disk","model":"X","serial":"S1"}]}'),
         _run_result('NAME="Astra Linux"\nVERSION_ID="1.7"\n'),
         _run_result('00:00.0 "Host bridge" "Intel"\n'),
+        _run_result("1.7.5\n"),
+        _run_result("Настоящая лицензия ... Смоленск ...\n"),
+        _run_result("deb http://dl.astralinux.ru/ smolensk main\n# disabled\n\n"),
     ])
     return conn
 
@@ -86,7 +92,11 @@ class TestInventoryHappyPath:
         assert payload["cpu_cores"] >= 1
         assert "cpu_threads" in payload
         assert "cpu_frequency_ghz" in payload
-        assert payload["os_version"]  # из os-release parse
+        # Astra: os_version — только версия сборки, режим — отдельным полем.
+        assert payload["os_version"] == "1.7.5"
+        assert payload["os_security_mode"] == "Smolensk"
+        # Только активная deb-строка, закомментированная отброшена.
+        assert payload["repositories"] == ["deb http://dl.astralinux.ru/ smolensk main"]
         assert isinstance(payload["disks"], list)
         # сырые facts больше не в payload — только flat-schema fields.
         assert "facts" not in payload

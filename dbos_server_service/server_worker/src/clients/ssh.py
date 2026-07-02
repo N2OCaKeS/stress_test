@@ -1623,12 +1623,16 @@ class SshClient:
         * `lsblk -J -o NAME,SIZE,TYPE,MODEL,SERIAL` — диски;
         * `cat /etc/os-release` — KEY=VALUE с дистрибутивом;
         * `lspci -mm` — PCI-устройства (одной строкой `class "vendor"
-          "device" ...`).
+          "device" ...`);
+        * `cat /etc/astra/build_version` — версия сборки Astra Linux;
+        * `cat /etc/astra_license` — лицензия, из неё берём режим защищённости;
+        * `cat /etc/apt/sources.list` (+ `sources.list.d/*.list`) — репозитории.
 
         Возврат — dict с ключами `hostname`, `kernel`, `cpu`, `disks`,
-        `os`, `pci`. Каждый блок может содержать `error` с описанием,
-        если команда вернула non-zero — частичный inventory лучше,
-        чем полный фейл одной команды.
+        `os`, `pci`, `astra_build`, `astra_license`, `apt_sources`. Каждый
+        блок может содержать `error` с описанием, если команда вернула
+        non-zero — частичный inventory лучше, чем полный фейл одной команды.
+        Astra-блоки на не-Астре ожидаемо приходят с `error` (файлов нет).
         """
         facts: dict = {}
 
@@ -1662,6 +1666,25 @@ class SshClient:
             facts["pci"] = {"devices": lines}
             if "error" in lspci_raw:
                 facts["pci"]["error"] = lspci_raw["error"]
+
+        # 6. Astra-специфика и apt-репозитории. Каждая команда best-effort:
+        # на не-Астре build_version / astra_license отсутствуют, cat вернёт
+        # non-zero — `_capture_text` не raise'ит, положит `error`, а маппер
+        # (`services/ssh_client.py`) сам решит, Astra это или нет.
+        #
+        #   * build_version — основная версия сборки (например `1.7.5`);
+        #   * astra_license — из него определяем режим защищённости
+        #     (Орёл/Воронеж/Смоленск);
+        #   * apt sources — активные репозитории из sources.list и
+        #     sources.list.d/*.list (одной командой, ошибки глушим, stdout
+        #     остаётся даже при частичном фейле).
+        facts["astra_build"] = await self._capture_text(
+            "cat /etc/astra/build_version"
+        )
+        facts["astra_license"] = await self._capture_text("cat /etc/astra_license")
+        facts["apt_sources"] = await self._capture_text(
+            "cat /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null"
+        )
 
         return facts
 

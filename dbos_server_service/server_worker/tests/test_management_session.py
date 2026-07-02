@@ -608,6 +608,9 @@ def _inventory_conn():
         _run_result('{"blockdevices":[{"name":"sda","size":"500G","type":"disk"}]}'),
         _run_result('NAME="Astra Linux"\nVERSION_ID="1.7"\n'),
         _run_result('00:00.0 "Host bridge" "Intel"\n'),
+        _run_result("1.7.5\n"),
+        _run_result("Настоящая лицензия ... Смоленск ...\n"),
+        _run_result("deb http://dl.astralinux.ru/ smolensk main\n# disabled\n\n"),
     ])
 
 

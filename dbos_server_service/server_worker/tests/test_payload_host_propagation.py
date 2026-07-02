@@ -32,6 +32,9 @@ def _inventory_conn():
         _run_result('{"blockdevices":[]}'),
         _run_result('NAME="Test"\n'),
         _run_result(""),
+        _run_result("1.7.5\n"),
+        _run_result("Смоленск\n"),
+        _run_result(""),
     ])
     return conn
 

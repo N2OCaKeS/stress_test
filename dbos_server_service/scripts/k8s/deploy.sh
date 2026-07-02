@@ -6,11 +6,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K8S_DIR="$(cd "$SCRIPT_DIR/../../k8s" && pwd)"
 
-if [[ ! -f "$K8S_DIR/20-secrets.yaml" ]] || [[ ! -f "$K8S_DIR/50-ingress.yaml" ]]; then
-    echo "ОШИБКА: $K8S_DIR/20-secrets.yaml или 50-ingress.yaml не существует."
+if [[ ! -f "$K8S_DIR/20-secrets.yaml" ]] || [[ ! -f "$K8S_DIR/50-ingress.yaml" ]] \
+   || [[ ! -f "$K8S_DIR/51-ingress-cert.yaml" ]]; then
+    echo "ОШИБКА: $K8S_DIR/20-secrets.yaml, 50-ingress.yaml или 51-ingress-cert.yaml не существует."
     echo "  Запустите сначала: scripts/k8s/gen_secrets.sh <domain>"
     exit 1
 fi
+
+INGRESS_CERT_OUT="$K8S_DIR/51-ingress-cert.yaml"
 
 # ── Durable keystore bootstrap (до сервисов, create-only) ─────────────────────
 # server/secret-service стартуют с KEYSTORE_BACKEND=k8s и читают master-ключи из
@@ -53,6 +56,26 @@ echo "→ Применяем манифесты..."
 # security'ом. Поэтому строим manifests через `kubectl kustomize` с разрешением
 # load-restrictor, а apply'им через pipe.
 kubectl kustomize "$K8S_DIR" --load-restrictor=LoadRestrictionsNone | kubectl apply -f -
+
+# ── Edge-TLS: cert-manager выписывает ingress-лист внутренним CA ───────────────
+# Certificate dbos-ingress-cert наполняет Secret dbos-ingress-tls (тот же, что
+# слушает Ingress) листом от dbos-ca-issuer. Применяем ОТДЕЛЬНО (не через
+# kustomize — там нет CRD cert-manager) и ПОСЛЕ готовности cert-manager+CA,
+# которые ставит install_cert_manager.sh до deploy. Пока лист выписывается
+# (секунды), traefik отдаёт свой дефолтный cert — короткое окно, приемлемо.
+echo ""
+echo "→ Edge-TLS: выписываем ingress-cert внутренним CA (dbos-ca-issuer)..."
+if ! kubectl -n dbos get issuer dbos-ca-issuer >/dev/null 2>&1; then
+    echo "ОШИБКА: Issuer dbos-ca-issuer не найден — cert-manager+CA не установлены."
+    echo "  Выполните: make k8s-install-cert-manager (scripts/k8s/install_cert_manager.sh)."
+    exit 1
+fi
+kubectl apply -f "$INGRESS_CERT_OUT"
+echo "→ Ждём выписку dbos-ingress-cert (Secret dbos-ingress-tls, timeout 120s)..."
+if ! kubectl -n dbos wait --for=condition=Ready certificate/dbos-ingress-cert --timeout=120s; then
+    echo "⚠ Certificate dbos-ingress-cert не стал Ready за 120s — проверьте cert-manager:"
+    kubectl -n dbos describe certificate dbos-ingress-cert 2>/dev/null | tail -20 || true
+fi
 
 # Базы данных поднимаем ДО миграций и ДО сервисов: migration-Job'у нужна живая
 # БД, а схема-зависимые сервисы (auth-service делает SELECT count(*) FROM users
@@ -98,6 +121,17 @@ done
 
 echo ""
 echo "✓ Все deployments готовы."
+
+# Traefik сам подхватывает изменившийся Secret, но при ПЕРВОМ появлении
+# dbos-ingress-tls на свежем кластере надёжнее форснуть reload, чтобы edge сразу
+# отдавал CA-issued лист (иначе до реконсиляции возможен дефолтный cert Traefik).
+if kubectl -n kube-system get deploy traefik >/dev/null 2>&1; then
+    echo ""
+    echo "→ Рестарт traefik, чтобы подхватил ingress-cert от CA..."
+    kubectl -n kube-system rollout restart deploy/traefik || true
+    kubectl -n kube-system rollout status deploy/traefik --timeout=120s || true
+fi
+
 echo ""
 kubectl -n dbos get pods,svc
 
@@ -111,4 +145,6 @@ echo ""
 echo "  Пропиши на клиенте, если домен не в DNS:"
 echo "    echo '${NODE_IP} ${DOMAIN}' | sudo tee -a /etc/hosts"
 echo ""
-echo "  Self-signed cert — браузер покажет предупреждение, нужно один раз принять."
+echo "  Edge-TLS выписан внутренним CA (dbos-ca-issuer). Импортируй ОДИН CA —"
+echo "  и доверенны IP, DNS и все будущие перевыпуски:"
+echo "    kubectl -n dbos get secret dbos-ca-key-pair -o jsonpath='{.data.ca\\.crt}' | base64 -d > dbos-ca.crt"

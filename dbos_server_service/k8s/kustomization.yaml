@@ -28,7 +28,7 @@ resources:
   - 13-secret-service.yaml
   - 70-pdb.yaml              # PodDisruptionBudget на все сервисы с replicas=2
   - 80-networkpolicy.yaml    # default-deny ingress + явные allow между подграфами
-  - 50-ingress.yaml          # TLS-secret'ы выпускает cert-manager (91/92-*.yaml)
+  - 50-ingress.yaml          # edge-TLS (dbos-ingress-tls) выписывает cert-manager по 51-ingress-cert.yaml (issuer 91-ca-issuer)
   - 55-swagger-ui.yaml       # общий Swagger UI для трёх сервисов на /docs
   - 65-web-ui.yaml           # nginx-раздача собранного web_ui (SPA) на catch-all /
   - 70-hpa.yaml              # HPA: автомасштабирование сервисов + web-ui (2..5 реплик по CPU)

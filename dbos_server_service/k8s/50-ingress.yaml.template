@@ -9,10 +9,11 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    # Edge-TLS-cert лежит готовым в Secret `dbos-ingress-tls`, его кладёт
-    # scripts/k8s/gen_secrets.sh (self-signed, SAN под DNS/IP). cert-manager
-    # сюда не подключаем: для IP-режима он leaf под host=IP не выпустит, а
-    # для DNS-режима overhead с двойным источником ничего не даёт.
+    # Edge-TLS-cert лежит в Secret `dbos-ingress-tls`, его наполняет cert-manager
+    # по Certificate `dbos-ingress-cert` (k8s/51-ingress-cert.yaml, рендерит
+    # scripts/k8s/gen_secrets.sh) внутренним CA (Issuer dbos-ca-issuer, SAN под
+    # DNS+IP из деплой-переменных). Оператор импортирует ОДИН CA
+    # (dbos-ca-key-pair/ca.crt) — доверенны и IP, и DNS, и все перевыпуски.
     # Cluster-internal вызовы между сервисами идут по plain http
     # (NetworkPolicy default-deny закрывает namespace).
 spec:

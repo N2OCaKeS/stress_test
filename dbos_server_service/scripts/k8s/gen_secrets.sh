@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Генерация k8s/20-secrets.yaml + 50-ingress.yaml с реальными prod-значениями.
+# Генерация k8s/20-secrets.yaml + 50-ingress.yaml + 51-ingress-cert.yaml
+# с реальными prod-значениями. Edge-TLS выписывает cert-manager внутренним CA.
 # Идемпотентный: если файлы уже существуют — спрашивает, перезаписывать ли.
 #
 # Использование:
@@ -14,11 +15,16 @@
 #                                                 Ingress без host: → принимает
 #                                                 любой Host header).
 #
-#   scripts/k8s/gen_secrets.sh --only-tls       — перевыпустить ТОЛЬКО TLS-cert
-#                                                 (срок 365 дней). admin password,
-#                                                 master-keys, s2s-ключи, DB-пароли
-#                                                 остаются нетронутыми. Использовать
-#                                                 для ежегодного продления cert'а.
+#   scripts/k8s/gen_secrets.sh --only-tls       — перевыпустить ТОЛЬКО ingress-cert.
+#                                                 Перерендерит Certificate-манифест
+#                                                 (dbos-ingress-cert), применит его
+#                                                 и форснёт reissue через cert-manager
+#                                                 (внутренний CA dbos-ca-issuer).
+#                                                 admin password, master-keys,
+#                                                 s2s-ключи, DB-пароли не трогаются.
+#                                                 Штатно cert-manager сам продлевает
+#                                                 лист по renewBefore — ручной вызов
+#                                                 нужен лишь при смене SAN/хоста.
 #
 #   scripts/k8s/gen_secrets.sh --keystore-only  — сгенерировать ТОЛЬКО
 #                                                 21-keystore-secrets.yaml из уже
@@ -49,6 +55,10 @@ SECRETS_OUT="$K8S_DIR/20-secrets.yaml"
 KEYSTORE_OUT="$K8S_DIR/21-keystore-secrets.yaml"
 INGRESS_OUT="$K8S_DIR/50-ingress.yaml"
 INGRESS_TEMPLATE="$K8S_DIR/50-ingress.yaml.template"
+# cert-manager Certificate для edge-TLS. Рендерится из SAN (host + DBOS_DNS),
+# наполняет Secret dbos-ingress-tls листом от внутреннего CA (dbos-ca-issuer).
+# Применяется deploy.sh'ем после готовности cert-manager (не через kustomize).
+INGRESS_CERT_OUT="$K8S_DIR/51-ingress-cert.yaml"
 ENV_FILE="$K8S_DIR/.env.k8s"
 # Operator-конфиг с предсказуемыми кредами (admin-пароль, force-change и т.д.).
 # Оператор копирует его из deploy.env.example и заполняет ДО make k8s-zero.
@@ -131,6 +141,79 @@ stringData:
 EOF
     } > "$KEYSTORE_OUT"
     chmod 600 "$KEYSTORE_OUT"
+}
+
+# Записать 51-ingress-cert.yaml — cert-manager Certificate для edge-TLS.
+# SAN берётся из $SAN_ARG (host + опциональные SAN_EXTRA, где k8s-zero прокидывает
+# DBOS_DNS). Список "TYPE:VALUE" раскладывается на dnsNames/ipAddresses.
+# cert-manager выпишет лист внутренним CA (dbos-ca-issuer) в Secret
+# dbos-ingress-tls — тот же, что слушает Ingress. Оператор доверяет ОДНОМУ CA
+# (dbos-ca-key-pair/ca.crt), после чего валидны и IP, и DNS, и все перевыпуски.
+emit_ingress_cert_file() {
+    echo "→ Пишем $INGRESS_CERT_OUT (Certificate dbos-ingress-cert, issuer=dbos-ca-issuer)..."
+    local dns_lines="" ip_lines="" entry
+    local OLDIFS="$IFS"
+    IFS=','
+    for entry in $SAN_ARG; do
+        # trim ведущие пробелы
+        entry="${entry#"${entry%%[![:space:]]*}"}"
+        case "$entry" in
+            DNS:*) dns_lines+="    - ${entry#DNS:}"$'\n' ;;
+            IP:*)  ip_lines+="    - ${entry#IP:}"$'\n' ;;
+        esac
+    done
+    IFS="$OLDIFS"
+    {
+cat <<EOF
+# СГЕНЕРИРОВАНО ${TS} скриптом scripts/k8s/gen_secrets.sh
+# DO NOT COMMIT. Файл в .gitignore (k8s/51-ingress-cert.yaml).
+#
+# Edge-TLS лист для Ingress. cert-manager выписывает его внутренним CA
+# (Issuer dbos-ca-issuer, см. k8s/91-ca-issuer.yaml) в Secret dbos-ingress-tls.
+# Применяется deploy.sh'ем ПОСЛЕ готовности cert-manager+CA, не через kustomize
+# (в kustomize нет CRD cert-manager на момент apply). Оператор импортирует один
+# CA (dbos-ca-key-pair/ca.crt) — доверенны и IP, и DNS, и будущие перевыпуски.
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dbos-ingress-cert
+  namespace: dbos
+  labels:
+    app: dbos-ingress
+spec:
+  secretName: dbos-ingress-tls
+  # Год на лист; за 30 дней до истечения cert-manager перевыпустит сам.
+  duration: 8760h
+  renewBefore: 720h
+  commonName: ${DOMAIN}
+  subject:
+    organizations:
+      - DBOS Server Manager
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment
+EOF
+    if [[ -n "$dns_lines" ]]; then
+        echo "  dnsNames:"
+        printf '%s' "$dns_lines"
+    fi
+    if [[ -n "$ip_lines" ]]; then
+        echo "  ipAddresses:"
+        printf '%s' "$ip_lines"
+    fi
+cat <<EOF
+  issuerRef:
+    name: dbos-ca-issuer
+    kind: Issuer
+    group: cert-manager.io
+EOF
+    } > "$INGRESS_CERT_OUT"
+    chmod 600 "$INGRESS_CERT_OUT"
 }
 
 # ── --keystore-only: засеять keystore-файл из существующих ключей ─────────────
@@ -237,64 +320,54 @@ else
     ADMIN_EMAIL="admin@${DOMAIN}"
 fi
 
-# ── --only-tls: перевыпуск ТОЛЬКО TLS-cert (без regen остальных секретов) ─────
+# ── --only-tls: перевыпуск ТОЛЬКО ingress-cert (без regen остальных секретов) ─
 #
-# Используется оператором каждый год для продления self-signed cert'а (срок 365).
-# Патчит живой Secret dbos-ingress-tls в namespace dbos через kubectl.
-# Не трогает k8s/20-secrets.yaml: admin-пароль, master-keys, s2s-ключи и DB-пароли
-# остаются без изменений. После патча оператор делает:
-#     kubectl -n dbos rollout restart deploy/traefik   # если traefik кеширует cert
-# или просто ждёт пока ingress-controller подхватит новый Secret.
+# Перерендерит Certificate-манифест (dbos-ingress-cert) под текущий SAN и
+# применит его; затем форснёт reissue, удалив Secret dbos-ingress-tls, чтобы
+# cert-manager собрал свежий лист внутренним CA. Не трогает k8s/20-secrets.yaml:
+# admin-пароль, master-keys, s2s-ключи и DB-пароли остаются без изменений.
+# Штатно cert-manager сам продлевает лист по renewBefore (за 30 дней) — ручной
+# вызов нужен только при смене SAN/хоста.
 if [[ "$ONLY_TLS" -eq 1 ]]; then
-    echo "→ Режим --only-tls: перевыпуск только TLS-cert (365 дней)."
+    echo "→ Режим --only-tls: перевыпуск ingress-cert через cert-manager."
     echo "  DOMAIN=${DOMAIN}, SAN=${SAN_ARG}."
     echo "  Остальные секреты (admin/master-keys/s2s/DB) НЕ затрагиваются."
     echo ""
 
     if ! command -v kubectl >/dev/null 2>&1; then
-        echo "ОШИБКА: --only-tls требует kubectl (патчит Secret в cluster'е)." >&2
+        echo "ОШИБКА: --only-tls требует kubectl (применяет Certificate в cluster'е)." >&2
+        exit 1
+    fi
+    if ! kubectl -n dbos get issuer dbos-ca-issuer >/dev/null 2>&1; then
+        echo "ОШИБКА: Issuer dbos-ca-issuer не найден в namespace dbos." >&2
+        echo "  Сначала поставь cert-manager + CA: make k8s-install-cert-manager." >&2
         exit 1
     fi
 
-    TMP_TLS=$(mktemp -d)
-    trap "rm -rf $TMP_TLS" EXIT
+    emit_ingress_cert_file
+    echo "→ Применяем $INGRESS_CERT_OUT..."
+    kubectl apply -f "$INGRESS_CERT_OUT"
 
-    openssl req -x509 -nodes -newkey rsa:2048 \
-        -keyout "$TMP_TLS/tls.key" \
-        -out    "$TMP_TLS/tls.crt" \
-        -days   365 \
-        -subj   "/CN=$DOMAIN/O=DBOS Server Manager" \
-        -addext "subjectAltName=${SAN_ARG}" \
-        2>/dev/null
-
-    TLS_CRT_B64=$(base64 -w0 < "$TMP_TLS/tls.crt")
-    TLS_KEY_B64=$(base64 -w0 < "$TMP_TLS/tls.key")
-
-    # Бэкап старого cert'а (на случай rollback'а), потом merge-patch.
+    # Бэкап текущего листа (на случай отката), потом форсим reissue удалением
+    # Secret'а — cert-manager пересоберёт dbos-ingress-tls за секунды.
     BACKUP_FILE="/tmp/dbos-ingress-tls-backup-${TS}.yaml"
     if kubectl -n dbos get secret dbos-ingress-tls -o yaml > "$BACKUP_FILE" 2>/dev/null; then
         chmod 600 "$BACKUP_FILE"
         echo "→ Бэкап старого Secret'а dbos-ingress-tls: ${BACKUP_FILE} (chmod 600)."
-    else
-        echo "⚠ Старый Secret dbos-ingress-tls не найден — создам новый."
+        echo "→ Удаляем Secret dbos-ingress-tls (force reissue)..."
+        kubectl -n dbos delete secret dbos-ingress-tls --ignore-not-found
     fi
 
-    echo "→ Patch Secret dbos-ingress-tls в namespace dbos..."
-    kubectl -n dbos patch secret dbos-ingress-tls --type='merge' -p "$(jq -n \
-        --arg crt "$TLS_CRT_B64" --arg key "$TLS_KEY_B64" \
-        '{data: {"tls.crt": $crt, "tls.key": $key}}')" 2>/dev/null \
-    || {
-        # Если Secret'а ещё нет — создаём.
-        kubectl -n dbos create secret tls dbos-ingress-tls \
-            --cert="$TMP_TLS/tls.crt" --key="$TMP_TLS/tls.key"
+    echo "→ Ждём выписку dbos-ingress-cert (timeout 120s)..."
+    kubectl -n dbos wait --for=condition=Ready certificate/dbos-ingress-cert --timeout=120s || {
+        echo "⚠ Certificate не стал Ready за 120s — проверь: kubectl -n dbos describe certificate dbos-ingress-cert" >&2
     }
 
     echo ""
-    echo "✓ TLS-cert обновлён."
+    echo "✓ ingress-cert перевыпущен внутренним CA (dbos-ca-issuer)."
     echo ""
-    echo "  Срок действия — 365 дней с ${TS}."
-    echo "  Если ingress-controller кеширует cert — kubectl -n dbos rollout restart deploy/traefik."
-    echo "  Rollback: kubectl apply -f ${BACKUP_FILE}"
+    echo "  Если traefik кеширует cert — kubectl -n kube-system rollout restart deploy/traefik."
+    echo "  Rollback листа: kubectl apply -f ${BACKUP_FILE}"
     exit 0
 fi
 
@@ -419,21 +492,10 @@ REDIS_PASSWORD=$(rand "$RAND_REDIS_PASS_LEN")
 echo "→ Генерируем RSA private key для Docker registry..."
 RSA_PEM=$(openssl genrsa 2048 2>/dev/null)
 
-# ── Self-signed TLS cert для Ingress ──────────────────────────────────────────
-echo "→ Генерируем self-signed TLS-сертификат для $DOMAIN..."
-TMP=$(mktemp -d)
-trap "rm -rf $TMP" EXIT
-
-openssl req -x509 -nodes -newkey rsa:2048 \
-    -keyout "$TMP/tls.key" \
-    -out    "$TMP/tls.crt" \
-    -days   365 \
-    -subj   "/CN=$DOMAIN/O=DBOS Server Manager" \
-    -addext "subjectAltName=${SAN_ARG}" \
-    2>/dev/null
-
-TLS_CRT_B64=$(base64 -w0 < "$TMP/tls.crt")
-TLS_KEY_B64=$(base64 -w0 < "$TMP/tls.key")
+# Edge-TLS больше не self-signed: лист для Ingress выписывает cert-manager
+# внутренним CA (dbos-ca-issuer) в Secret dbos-ingress-tls. Манифест Certificate
+# рендерится ниже (emit_ingress_cert_file → 51-ingress-cert.yaml), применяет его
+# deploy.sh после готовности cert-manager.
 
 # ── JSON map для loging_service (inbound) ────────────────────────────────────
 LOGGING_SERVICE_API_KEYS_JSON=$(cat <<EOF
@@ -559,24 +621,11 @@ cat <<EOF
 
   # Redis (taskiq broker + rate-limit storage)
   REDIS_PASSWORD: ${REDIS_PASSWORD}
-
----
-# TLS-сертификат для Traefik (Ingress endpoint: ${DOMAIN}, SAN: ${SAN_ARG}).
-# Имя `dbos-ingress-tls` совпадает с `tls.secretName` в Ingress
-# (k8s/50-ingress.yaml). cert-manager-shim не дёргается (мы заранее кладём
-# готовый Secret), что важно для IP-режима, где cert-manager не умеет
-# выпускать leaf-сертификаты под host = IP-адрес.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: dbos-ingress-tls
-  namespace: dbos
-type: kubernetes.io/tls
-data:
-  tls.crt: ${TLS_CRT_B64}
-  tls.key: ${TLS_KEY_B64}
 EOF
 } > "$SECRETS_OUT"
+
+# Edge-TLS Secret dbos-ingress-tls здесь НЕ кладётся: его наполняет cert-manager
+# по Certificate dbos-ingress-cert (51-ingress-cert.yaml, issuer dbos-ca-issuer).
 
 chmod 600 "$SECRETS_OUT"
 
@@ -628,6 +677,11 @@ sys.stdout.write(src)
 else
     sed "s|__INGRESS_HOST__|${DOMAIN}|g" "$INGRESS_TEMPLATE" > "$INGRESS_OUT"
 fi
+
+# ── 51-ingress-cert.yaml — cert-manager Certificate для edge-TLS ──────────────
+# Наполнит Secret dbos-ingress-tls листом от внутреннего CA. Применяет deploy.sh
+# после готовности cert-manager (не через kustomize — там нет CRD cert-manager).
+emit_ingress_cert_file
 
 # ── .env.k8s — сохраним домен для повторных запусков ──────────────────────────
 echo "INGRESS_HOST=${DOMAIN}" > "$ENV_FILE"
@@ -688,6 +742,8 @@ NOTES
 * Этот summary: ${SUMMARY_OUT} (chmod 600). Перенеси в password
   manager и удали:  shred -u ${SUMMARY_OUT}
 * Ротация мастер-ключа: scripts/k8s/rotate_master_key.sh.
+* Edge-TLS выписывает cert-manager внутренним CA (dbos-ca-issuer) в Secret
+  dbos-ingress-tls; для доверия импортируй ОДИН CA (dbos-ca-key-pair/ca.crt).
 EOF
 } > "$SUMMARY_OUT"
 chmod 600 "$SUMMARY_OUT"
@@ -696,9 +752,10 @@ echo ""
 echo "✓ Готово."
 echo ""
 echo "  Сгенерированы:"
-echo "    $SECRETS_OUT       (Secret dbos-secrets + dbos-ingress-tls, chmod 600)"
+echo "    $SECRETS_OUT       (Secret dbos-secrets, chmod 600)"
 echo "    $KEYSTORE_OUT  (bootstrap keystore: dbos-server/secret-encryption-keys, create-only)"
 echo "    $INGRESS_OUT       (Ingress + Middleware с host=$DOMAIN)"
+echo "    $INGRESS_CERT_OUT  (Certificate dbos-ingress-cert, issuer=dbos-ca-issuer)"
 echo "    $ENV_FILE          (домен для повторных запусков)"
 echo "    $SUMMARY_OUT       (summary — admin-пароль + master-key + DB-passwords)"
 echo ""
@@ -707,11 +764,14 @@ echo "    ${INITIAL_ADMIN_USERNAME} / ${INITIAL_ADMIN_PASSWORD}"
 echo ""
 echo "  После переноса:  shred -u ${SUMMARY_OUT}"
 echo ""
-echo "  Self-signed cert валиден 365 дней. Перевыпуск: ${0} ${DOMAIN}"
+echo "  Edge-TLS выпишет cert-manager внутренним CA (dbos-ca-issuer) при deploy.sh."
+echo "  Оператор импортирует ОДИН CA (доверенны IP, DNS и все перевыпуски):"
+echo "    kubectl -n dbos get secret dbos-ca-key-pair -o jsonpath='{.data.ca\\.crt}' | base64 -d > dbos-ca.crt"
+echo "  и добавляет dbos-ca.crt в доверенные корневые."
 echo ""
 if [[ "$IS_IP" -eq 1 ]]; then
     echo "  Доступ — напрямую по IP, /etc/hosts не нужен:"
-    echo "    curl --cacert <ca> https://${DOMAIN}/api/auth/v1/health"
+    echo "    curl --cacert dbos-ca.crt https://${DOMAIN}/api/auth/v1/health"
     echo "  (или curl -k, если CA ещё не импортирован)."
 else
     echo "  Для доступа с локальной машины пропиши в /etc/hosts:"

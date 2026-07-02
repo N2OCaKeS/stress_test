@@ -95,6 +95,12 @@ export interface Server {
   mgmt_ip_address: string | null;
   ssh_port: number;
   os_version_id: string | null;
+  /**
+   * Режим защищённости Astra SE, определённый инвентаризацией (astra_license):
+   * `"Smolensk"` / `"Orel"` / `"Voronezh"`. `null`, если детект не отработал.
+   * Показывается рядом с версией ОС в обзоре сервера.
+   */
+  os_security_mode?: string | null;
   os_last_synced_at: Iso8601 | null;
   department_id: string;
   status: ServerStatus;

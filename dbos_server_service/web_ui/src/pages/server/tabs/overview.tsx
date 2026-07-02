@@ -202,7 +202,10 @@ function OverviewView({
           k="os_version"
           v={
             server.os_version_id ? (
-              <OsVersionName osVersionId={server.os_version_id} />
+              <OsVersionName
+                osVersionId={server.os_version_id}
+                securityMode={server.os_security_mode}
+              />
             ) : (
               <span className="text-dim">не задана</span>
             )
@@ -265,16 +268,28 @@ function OverviewView({
   );
 }
 
-/** Резолвит `osv_*` в имя из каталога OS-версий; raw id — в title. */
-function OsVersionName({ osVersionId }: { osVersionId: string }) {
+/**
+ * Резолвит `osv_*` в имя (версию) из каталога OS-версий; raw id — в title.
+ * Если у сервера определён режим защищённости Astra (`securityMode`), дописывает
+ * его после версии: «1.8.1.6 Smolensk». Пустой режим — показываем только версию.
+ */
+function OsVersionName({
+  osVersionId,
+  securityMode,
+}: {
+  osVersionId: string;
+  securityMode?: string | null;
+}) {
   const q = useQuery(() => listOsVersions({ limit: 200 }), []);
   const name = useMemo(
     () => q.data?.items.find((v) => v.id === osVersionId)?.name,
     [q.data, osVersionId],
   );
+  const version = name ?? osVersionId;
+  const label = securityMode ? `${version} ${securityMode}` : version;
   return (
     <span className="mono" title={osVersionId}>
-      {name ?? osVersionId}
+      {label}
     </span>
   );
 }

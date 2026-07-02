@@ -521,6 +521,21 @@ class Settings(BaseSettings):
     initial_admin_password: str | None = Field(default=None, alias="INITIAL_ADMIN_PASSWORD")
     initial_admin_email: str | None = Field(default=None, alias="INITIAL_ADMIN_EMAIL")
 
+    # Токен бота воркера (server_worker). Если задан — auth_service на старте
+    # идемпотентно заводит системный отдел, роль worker_bot@server_service,
+    # бота `server_worker` и bot-токен с хэшем этого значения (тот же hash,
+    # что валидирует introspect). Пустой — шаг worker-бота пропускается
+    # (dev/test без воркера). Значение кладёт gen_secrets в dbos-secrets.
+    worker_bot_token: str = Field(
+        default="",
+        alias="WORKER_BOT_TOKEN",
+        description=(
+            "Готовый bot-токен воркера (`dbos_bot_…`). Auth_service на старте "
+            "идемпотентно заводит под него бота server_worker с ролью "
+            "worker_bot@server_service. Пустой — шаг пропускается."
+        ),
+    )
+
     # ── Production-валидатор ─────────────────────────────────────────────────
     #
     # Запускается только при `APP_ENV=production`. Цель — не дать сервису

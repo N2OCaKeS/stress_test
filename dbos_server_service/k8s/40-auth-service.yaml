@@ -126,6 +126,13 @@ spec:
             - name: INITIAL_ADMIN_EMAIL
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_EMAIL }
+            # Готовый bot-токен воркера. auth_service на старте идемпотентно
+            # заводит под него системный отдел, роль worker_bot@server_service
+            # и бота server_worker — оператору не нужно делать это руками.
+            # Тот же токен монтируется в server_worker (WORKER_BOT_TOKEN).
+            - name: WORKER_BOT_TOKEN
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: WORKER_BOT_TOKEN }
             - name: SECRET_INTERNAL_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SECRET_INTERNAL_API_KEY }

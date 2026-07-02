@@ -88,6 +88,9 @@ _DEV_SECRET_KEY = dev-secret-service-encryption-key-do-not-use!
 _DEV_ADMIN_USER = admin
 _DEV_ADMIN_PASS = 1234
 _DEV_ADMIN_EMAIL = admin@example.com
+# Токен бота воркера: auth на старте заводит под него бота server_worker
+# в системном отделе. То же значение, что в docker-compose.dev.yml.
+_DEV_WORKER_BOT_TOKEN = dbos_bot_dev_worker_local_token_do_not_use_in_prod
 
 .PHONY: help \
         up up-build seed down down-v logs ps sh-auth sh-logging sh-server sh-worker sh-secret logs-secret \
@@ -119,8 +122,6 @@ up: ## Поднять dev-стек С НУЛЯ: стереть тома + под
 	@$(DEV) up -d --wait postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server web_ui
 	@echo "→ Наполнение dev-данными (seed)..."
 	@$(MAKE) --no-print-directory seed
-	@echo "→ Перезапуск server_worker (подхватить свежий worker_bot PAT из seed)..."
-	@$(DEV) restart server_worker >/dev/null 2>&1 || true
 	@echo ""
 	@echo "  auth_service    →  http://localhost:8000/docs    (admin / 1234)"
 	@echo "  loging_service  →  http://localhost:8001/docs    (loging_admin1 / 1234)"
@@ -210,6 +211,7 @@ conn.close()"
 		ACCESS_TOKEN_TTL_MINUTES=60 REFRESH_TOKEN_TTL_DAYS=14 \
 		LOGGING_SERVICE_URL=http://localhost:8001 LOGGING_SERVICE_API_KEY=$(_DEV_AUTH_AUDIT_KEY) \
 		INITIAL_ADMIN_USERNAME=$(_DEV_ADMIN_USER) INITIAL_ADMIN_PASSWORD=$(_DEV_ADMIN_PASS) INITIAL_ADMIN_EMAIL=$(_DEV_ADMIN_EMAIL) \
+		WORKER_BOT_TOKEN=$(_DEV_WORKER_BOT_TOKEN) \
 		PYTHONPATH=. uvicorn src.main:app --host 0.0.0.0 --port 8000 \
 		> $(CURDIR)/.dev/auth.log 2>&1 & echo $$! > $(CURDIR)/.dev/auth.pid
 	@echo "→ Ожидание готовности auth_service..."

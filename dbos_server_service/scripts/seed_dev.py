@@ -11,13 +11,14 @@
     (ssh_port=2222, привязан к debian OS-record),
   - заводит OS-аккаунт `tester` (пароль `tester1234`) на этом сервере с
     шифрованием через server_service AES-GCM,
-  - досевает системные роли (`admin`, `worker_bot`) в каталоге
-    `service_role_definitions` для отдела НТ × `server_service`,
-  - заводит bot'а `worker_bot_nt` с ролью `worker_bot` и выдаёт ему PAT,
-    пишет в `.dev/.worker_pat` для server_worker'а (после seed нужно
-    `docker compose restart server_worker`),
+  - досевает системную роль `admin` в каталоге `service_role_definitions`
+    для отдела НТ по всем сервисам,
   - заводит три credential'а в secret_service (dev_jira_token,
     dev_postgres_password, dev_loadgen_secret).
+
+Bot воркера (`server_worker`) в dev НЕ создаётся этим скриптом: его заводит
+auth_service на старте из `WORKER_BOT_TOKEN` в системном отделе `DBOS System`
+— тот же путь, что и в prod (см. `bootstrap_service.bootstrap_worker_bot`).
 
 Пароли argon2-хешируются внутри контейнера auth_service (там лежит ровно та
 библиотека, что и проверяет логин). Шифрование кред — внутри контейнера
@@ -32,9 +33,7 @@ import os
 import secrets
 import subprocess
 import sys
-import time
 
-import httpx
 import psycopg
 
 PG_HOST = os.environ.get("PG_HOST", "localhost")
@@ -51,12 +50,8 @@ SECRET_CONTAINER = os.environ.get(
 SERVER_CONTAINER = os.environ.get(
     "SERVER_CONTAINER", "dbos_server_service-server_service-1"
 )
-WORKER_CONTAINER = os.environ.get(
-    "WORKER_CONTAINER", "dbos_server_service-server_worker-1"
-)
 
 DEV_PASSWORD = "1234"
-AUTH_BASE_URL = os.environ.get("AUTH_BASE_URL", "http://localhost:8000")
 
 # Имя docker-сервиса с тестовым SSH-сервером (см. docker-compose.dev.yml).
 TEST_SERVER_HOSTNAME = "test_server"
@@ -76,13 +71,6 @@ TEST_SERVER_IP = "10.99.0.10"
 # Каталог OS-версий — пока одна запись под debian-образ тестового сервера.
 # Когда заведём реальную Astra/Ubuntu — добавим рядом.
 OS_VERSION_NAME = "debian-stable"
-
-# Путь к PAT-файлу для server_worker'а — docker-compose.dev.yml
-# монтирует `./.dev` как `/shared`. Файл читается worker'ом при старте
-# и кладётся в env WORKER_BOT_TOKEN.
-WORKER_PAT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".dev")
-WORKER_PAT_FILE = os.path.join(WORKER_PAT_DIR, ".worker_pat")
-WORKER_BOT_NAME = "worker_bot_nt"
 
 # UI-имена платформенных сервисов (должны совпадать с теми, что сидятся
 # через bootstrap auth_service'а — см. docker-compose env'ы и
@@ -191,13 +179,6 @@ def seed_auth(pwd_hash: str) -> tuple[str, dict[str, str]]:
         cur.execute(
             "DELETE FROM users WHERE username = ANY(%s)",
             (list(new_usernames),),
-        )
-        # Стереть seed-бота — иначе он держит FK на dept, и DELETE
-        # departments падает FK violation'ом. Его токены/роли уйдут
-        # каскадом по FK ondelete=CASCADE.
-        cur.execute(
-            "DELETE FROM bot_accounts WHERE name = %s",
-            (WORKER_BOT_NAME,),
         )
         cur.execute(
             "DELETE FROM departments WHERE name = %s",
@@ -454,8 +435,10 @@ def seed_service_role_defs(dept_id: str, admin_id: str) -> None:
       * `admin` — системная роль (`is_system=True`), чтобы её нельзя было
         удалить через API. Любой `dep_admin` через UI сможет навешивать
         её на юзеров.
-      * `worker_bot` — только для server_service: нужна для bot'а воркера
-        (см. `seed_worker_bot` ниже).
+
+    Роль `worker_bot` здесь не заводим: воркер живёт в системном отделе
+    `DBOS System`, а не в бизнес-отделе НТ — его роль сеет bootstrap
+    auth_service'а вместе с ботом.
     """
     section("auth_service: системные service_role_definitions")
     with conn(PG_HOST, PG_PORT, "dev_auth") as c, c.cursor() as cur:
@@ -481,179 +464,9 @@ def seed_service_role_defs(dept_id: str, admin_id: str) -> None:
                 ),
             )
             ok(f"role admin@{svc_name} (is_system)")
-        # worker_bot нужен только для server_service — за пределами этого
-        # сервиса entity_permissions для роли пустой, давать её бесполезно.
-        cur.execute(
-            "INSERT INTO service_role_definitions "
-            "(id, department_id, service_name, role_name, description, "
-            " is_active, is_system, created_by) "
-            "VALUES (%s, %s, 'server_service', 'worker_bot', %s, "
-            " true, true, %s)",
-            (
-                gen_id("srd"),
-                dept_id,
-                "Worker bot least-privilege role (internal callbacks)",
-                admin_id,
-            ),
-        )
-        ok("role worker_bot@server_service (is_system)")
 
 
 # ── auth: bot + PAT для server_worker'а ─────────────────────────────────────
-
-
-# httpx по умолчанию забирает прокси из env (HTTP_PROXY/HTTPS_PROXY) —
-# у разработчика на хосте часто стоит локальный SOCKS/HTTP-прокси (например
-# clash на 127.0.0.1:7897), который на запросы в localhost:8000 отдаёт 502.
-# Дев-стек поднят в той же машине; явно сбрасываем прокси для seed-клиентов.
-_HTTPX_KW = {"trust_env": False}
-
-
-def _http_get(url: str, **kw: object) -> httpx.Response:
-    return httpx.get(url, **_HTTPX_KW, **kw)  # type: ignore[arg-type]
-
-
-def _http_post(url: str, **kw: object) -> httpx.Response:
-    return httpx.post(url, **_HTTPX_KW, **kw)  # type: ignore[arg-type]
-
-
-def _http_client(**kw: object) -> httpx.Client:
-    return httpx.Client(**_HTTPX_KW, **kw)  # type: ignore[arg-type]
-
-
-def _wait_auth_healthy(retries: int = 30) -> None:
-    """Дождаться, пока auth_service ответит 200 на /health.
-
-    Внутри `make seed` стек только что поднят — health-проверка docker'а
-    уже его проверила, но если seed запускается отдельно, добавим
-    короткий retry чтобы не падать на networking-flake'е первого вызова.
-    """
-    for _ in range(retries):
-        try:
-            r = _http_get(f"{AUTH_BASE_URL}/api/auth/v1/health", timeout=3)
-            if r.status_code == 200:
-                return
-        except httpx.HTTPError:
-            pass
-        time.sleep(1)
-    fail(f"auth_service не отвечает на {AUTH_BASE_URL}/api/auth/v1/health")
-    sys.exit(1)
-
-
-def _admin_login() -> str:
-    r = _http_post(
-        f"{AUTH_BASE_URL}/api/auth/v1/login",
-        json={"username": "admin", "password": DEV_PASSWORD},
-        timeout=10,
-    )
-    if r.status_code != 200:
-        fail(f"admin login failed: {r.status_code} {r.text}")
-        sys.exit(1)
-    return r.json()["access_token"]
-
-
-def seed_worker_bot(dept_id: str) -> None:
-    """Завести bot'а воркера, выдать ему `worker_bot`-роль и записать PAT.
-
-    После seed'а нужно `docker compose restart server_worker`, потому что
-    worker читает `/shared/.worker_pat` ровно один раз — на старте (см.
-    docker-compose.dev.yml). seed это не делает, чтобы не зависеть от
-    docker compose CLI в окружении и не дёргать рантайм за seed'ом.
-
-    Идемпотентность: bot с таким именем удаляется до создания (вместе с
-    его токенами/ролями через FK ondelete=CASCADE).
-    """
-    section("auth_service: bot worker_bot_nt + PAT для server_worker'а")
-    _wait_auth_healthy()
-    token = _admin_login()
-    client = _http_client(
-        base_url=AUTH_BASE_URL,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=15,
-    )
-
-    # Снести bot'а с этим именем, если он остался от предыдущего прогона.
-    # /bots возвращает либо list, либо envelope с items — нормализуем.
-    # Имена ботов уникальны глобально, поэтому ищем без фильтра по dept'у:
-    # прошлый прогон seed'а мог остаться с bot'ом в уже не существующем
-    # dept_id, и фильтр по новому dept_id его не найдёт — POST упёрся бы
-    # в BOT_NAME_TAKEN.
-    existing_id: str | None = None
-    r = client.get("/api/auth/v1/bots")
-    if r.status_code == 200:
-        data = r.json()
-        items = data.get("items") if isinstance(data, dict) else data
-        for b in items or []:
-            if b.get("name") == WORKER_BOT_NAME:
-                existing_id = b.get("bot_id") or b.get("id")
-                break
-    if existing_id:
-        r = client.delete(f"/api/auth/v1/bots/{existing_id}")
-        if r.status_code not in (200, 204, 404):
-            fail(f"failed to delete existing bot {existing_id}: {r.status_code} {r.text}")
-            sys.exit(1)
-        ok(f"старый bot {WORKER_BOT_NAME} ({existing_id}) удалён")
-
-    r = client.post(
-        "/api/auth/v1/bots",
-        json={
-            "name": WORKER_BOT_NAME,
-            "department_id": dept_id,
-            "allowed_services": ["server_service"],
-            "description": "Dev seed: PAT для server_worker'а",
-        },
-    )
-    if r.status_code not in (200, 201):
-        fail(f"create bot failed: {r.status_code} {r.text}")
-        sys.exit(1)
-    bot_id = r.json()["bot_id"]
-    ok(f"bot {WORKER_BOT_NAME} ({bot_id})")
-
-    r = client.post(
-        f"/api/auth/v1/bots/{bot_id}/roles",
-        json={"service_name": "server_service", "roles": ["worker_bot"]},
-    )
-    if r.status_code not in (200, 201, 204):
-        fail(f"assign worker_bot role failed: {r.status_code} {r.text}")
-        sys.exit(1)
-    ok("роль worker_bot@server_service назначена")
-
-    # Политика auth'а требует expires_at ≤ 6 месяцев. Берём ровно 6 мес
-    # (180 дней) — для dev-стека хватит надолго, для prod'а PAT всё равно
-    # выписывается отдельно.
-    from datetime import datetime, timedelta, timezone
-    expires_at = (datetime.now(timezone.utc) + timedelta(days=180)).isoformat()
-    r = client.post(
-        f"/api/auth/v1/bots/{bot_id}/tokens",
-        json={
-            "name": f"dev_worker_pat_{int(time.time())}",
-            "expires_at": expires_at,
-        },
-    )
-    if r.status_code not in (200, 201):
-        fail(f"issue PAT failed: {r.status_code} {r.text}")
-        sys.exit(1)
-    pat = r.json().get("token")
-    if not pat:
-        fail(f"PAT response без поля 'token': {r.json()}")
-        sys.exit(1)
-
-    os.makedirs(WORKER_PAT_DIR, exist_ok=True)
-    # Старый PAT мог быть оставлен с владельцем root (если предыдущая
-    # версия seed писала из-под container'а). Открыть его на запись
-    # под текущим юзером не получится. Unlink работает по правам
-    # директории — её владеет mfilippenko, поэтому unlink проходит,
-    # после чего создаём свежий файл с 0600.
-    try:
-        os.unlink(WORKER_PAT_FILE)
-    except FileNotFoundError:
-        pass
-    fd = os.open(WORKER_PAT_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, pat.encode("ascii"))
-    finally:
-        os.close(fd)
-    ok(f"PAT записан в {WORKER_PAT_FILE} ({pat[:24]}…)")
 
 
 # ── secret_service ───────────────────────────────────────────────────────────
@@ -723,7 +536,6 @@ def main() -> None:
         dept_id, created_by=user_ids["admin"], os_version_id=os_version_id,
     )
     seed_server_account(server_id, dept_id, created_by=user_ids["admin"])
-    seed_worker_bot(dept_id)
     seed_secrets(dept_id, user_ids)
 
     print()
@@ -741,8 +553,8 @@ def main() -> None:
 
   Server:     test-server-01 → {TEST_SERVER_HOSTNAME}:{TEST_SERVER_SSH_PORT} (контейнер test_server)
               OS-version: {OS_VERSION_NAME}, account: tester (sudo, пароль зашифрован)
-  Worker bot: {WORKER_BOT_NAME} → PAT в .dev/.worker_pat
-              ⚠ перезапусти server_worker: `docker compose -f docker-compose.dev.yml restart server_worker`
+  Worker bot: server_worker (системный отдел «DBOS System») — заведён
+              auth_service'ом на старте из WORKER_BOT_TOKEN, не этим seed'ом.
   Credentials: dev_jira_token, dev_postgres_password (dept НТ),
                dev_loadgen_secret (personal user1)
 """)

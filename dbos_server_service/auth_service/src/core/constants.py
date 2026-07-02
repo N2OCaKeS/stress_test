@@ -115,3 +115,30 @@ KNOWN_SERVICE_IDENTITIES: frozenset[str] = frozenset({
     # без allow-list'а strict-режим резал бы такой trip с 401.
     "secret_service",
 })
+
+
+# ── Bootstrap: платформенные сервисы и infra-боты ────────────────────────────
+# Канонический список платформенных сервисов, которые auth_service
+# регистрирует на старте (см. `services/bootstrap_service.py`). Порядок в
+# кортеже = порядок сидирования. Идемпотентно: уже существующие записи
+# (заведённые вручную или прошлым стартом) не трогаются, description не
+# перетирается. secret_service обязателен — без него grant отдела на secret
+# падает 404.
+PLATFORM_SERVICES: tuple[tuple[str, str], ...] = (
+    ("auth_service", "Аутентификация и управление аккаунтами"),
+    ("loging_service", "Аудит и журналирование событий"),
+    ("server_service", "Инвентаризация и управление серверами"),
+    ("server_worker", "Воркер задач IPMI/SSH"),
+    ("secret_service", "Хранилище токенов и учётных данных"),
+)
+
+# Системный отдел под infra-ботов (воркер и т.п.). Заводится на старте, если
+# отсутствует; имя стабильно, чтобы повторный старт не плодил дубли.
+SYSTEM_DEPARTMENT_NAME = "DBOS System"
+
+# Бот воркера: имя, сервис и роль. Токен берётся из `WORKER_BOT_TOKEN` (env);
+# роль `worker_bot@server_service` открывает доступ к internal-эндпоинтам
+# server_service, которые дёргает server_worker.
+WORKER_BOT_NAME = "server_worker"
+WORKER_BOT_SERVICE = "server_service"
+WORKER_BOT_ROLE = "worker_bot"

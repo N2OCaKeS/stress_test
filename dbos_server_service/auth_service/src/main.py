@@ -29,7 +29,11 @@ from src.dependencies.db import get_db
 from src.services import audit_context, audit_service, http_pool, secret_service_client
 from src.services.audit_context import AuditContext, extract_client_ip
 from src.services.audit_events import register_events
-from src.services.bootstrap_service import bootstrap_admin
+from src.services.bootstrap_service import (
+    bootstrap_admin,
+    bootstrap_platform_services,
+    bootstrap_worker_bot,
+)
 
 _HEALTH_PATHS = {"/api/auth/v1/health", "/api/auth/v1/ready"}
 
@@ -302,6 +306,17 @@ def create_application() -> FastAPI:
 
         async for db in get_db():
             await bootstrap_admin(db)
+            # Идемпотентная регистрация платформенных сервисов + провизия
+            # worker-бота из WORKER_BOT_TOKEN. Провал не должен ронять старт
+            # auth (например, недоступна БД в момент сидирования) — логируем
+            # и продолжаем; следующая реплика/рестарт досидит.
+            try:
+                await bootstrap_platform_services(db)
+                await bootstrap_worker_bot(db)
+            except Exception:
+                _startup_logger.exception(
+                    "bootstrap platform services / worker bot failed"
+                )
 
         # Pooled httpx.AsyncClient для audit-emit в loging_service.
         # Конструирование клиента вынесено в `services/http_pool.init_pools` —

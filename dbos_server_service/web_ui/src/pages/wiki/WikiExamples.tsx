@@ -437,7 +437,7 @@ function WikiBody() {
 
   return (
     <main className="flex-1 overflow-y-auto min-w-0">
-      <div className="px-8 py-6 max-w-7xl w-full mx-auto flex flex-col gap-6">
+      <div className="px-8 py-6 w-full flex flex-col gap-6">
         <div>
           <h1 className="text-2xl font-bold mb-1">Wiki — примеры API</h1>
           <p className="text-sm text-dim">

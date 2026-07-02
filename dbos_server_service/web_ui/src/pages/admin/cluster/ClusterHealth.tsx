@@ -68,7 +68,7 @@ export function ClusterHealth() {
   );
 
   return (
-    <div className="space-y-4 max-w-7xl">
+    <div className="space-y-4 w-full">
       {readonly && (
         <div className="readonly-bar">
           <ShieldAlert className="w-3.5 h-3.5" />

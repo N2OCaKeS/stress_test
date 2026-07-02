@@ -28,7 +28,7 @@ export function NotWiredPlaceholder({
   return (
     <Shell breadcrumb={breadcrumb}>
       <main className="flex-1 overflow-hidden flex flex-col min-w-0">
-        <div className="scroll-block max-w-3xl w-full mx-auto px-8 py-12">
+        <div className="scroll-block max-w-3xl w-full px-8 py-12">
           <div className="card flex items-start gap-4">
             <Plug className="w-8 h-8 text-warn shrink-0 mt-1" />
             <div className="flex-1">
@@ -71,7 +71,7 @@ export function Placeholder({ title, mockupFile }: PlaceholderProps) {
   return (
     <Shell breadcrumb={title}>
       <main className="flex-1 overflow-hidden flex flex-col min-w-0">
-        <div className="scroll-block max-w-3xl w-full mx-auto px-8 py-12">
+        <div className="scroll-block max-w-3xl w-full px-8 py-12">
           <div className="card flex items-center gap-4">
             <Construction className="w-8 h-8 text-warn shrink-0" />
             <div>

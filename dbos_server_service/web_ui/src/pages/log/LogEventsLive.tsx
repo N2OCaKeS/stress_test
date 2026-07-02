@@ -537,7 +537,7 @@ function StatsPane({
 
   return (
     <section className="flex-1 min-w-0 overflow-y-auto p-5">
-      <div className="max-w-7xl mx-auto space-y-4">
+      <div className="w-full space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <h1 className="text-xl font-semibold">

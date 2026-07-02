@@ -207,7 +207,7 @@ export function ServicesEncryptionRotation() {
   }
 
   return (
-    <div className="space-y-4 max-w-5xl">
+    <div className="space-y-4 w-full">
       <div className="card">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <h3 className="font-semibold flex items-center gap-2">

@@ -42,7 +42,7 @@ export function LogRetention() {
   return (
     <Shell breadcrumb="loging_service / retention">
       <main className="flex-1 overflow-hidden flex flex-col min-w-0">
-        <div className="scroll-block max-w-6xl w-full mx-auto px-8 py-8">
+        <div className="scroll-block w-full px-8 py-8">
           <section className="mb-6">
             <div className="text-2xl font-bold mb-1 flex items-center gap-2">
               <Archive className="w-6 h-6 text-accent" /> Retention policy

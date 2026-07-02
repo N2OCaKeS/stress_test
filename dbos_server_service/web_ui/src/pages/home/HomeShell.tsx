@@ -19,7 +19,7 @@ export function HomeShell({ title, subtitle, children }: HomeShellProps) {
   return (
     <Shell breadcrumb="Главная">
       <main className="flex-1 overflow-hidden flex flex-col min-w-0">
-        <div className="scroll-block max-w-6xl w-full mx-auto px-8 py-8">
+        <div className="scroll-block w-full px-8 py-8">
           <section className="mb-8">
             <div className="text-3xl font-bold mb-1">{title}</div>
             <div className="text-dim">{subtitle}</div>

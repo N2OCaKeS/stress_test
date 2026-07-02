@@ -88,7 +88,7 @@ export function ConsoleTab({ serverId, server }: Props) {
     persona.service_roles.server === "operator";
 
   return (
-    <div className="p-5 flex flex-col gap-4 max-w-7xl">
+    <div className="p-5 flex flex-col gap-4 w-full">
       <div>
         <div className="text-sm font-medium mb-1 flex items-center gap-2">
           <TerminalIcon className="w-4 h-4 text-accent" />

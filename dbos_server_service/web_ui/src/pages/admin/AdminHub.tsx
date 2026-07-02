@@ -112,7 +112,7 @@ export function AdminHub() {
     >
       {lookup.kind === "none" && (
         <main className="flex-1 overflow-y-auto min-h-0">
-          <div className="max-w-5xl mx-auto px-8 py-8">
+          <div className="max-w-5xl px-8 py-8">
             <section>
               <div className="text-3xl font-bold mb-1">Администрирование</div>
               <div className="text-dim mb-6">
@@ -133,7 +133,7 @@ export function AdminHub() {
       )}
       {lookup.kind === "forbidden" && (
         <main className="flex-1 overflow-y-auto min-h-0">
-          <div className="max-w-3xl mx-auto px-8 py-8">
+          <div className="max-w-3xl px-8 py-8">
             <div className="empty-card danger">
               <AlertTriangle className="w-10 h-10 mx-auto text-warn mb-3" />
               <div className="font-semibold mb-1">Нет доступа к разделу</div>
@@ -163,7 +163,7 @@ export function AdminHub() {
       )}
       {lookup.kind === "missing" && (
         <main className="flex-1 overflow-y-auto min-h-0">
-          <div className="max-w-3xl mx-auto px-8 py-8">
+          <div className="max-w-3xl px-8 py-8">
             <div className="empty-card">
               <AlertTriangle className="w-10 h-10 mx-auto text-dim mb-3" />
               <div className="font-semibold mb-1">Раздел не найден</div>
@@ -180,7 +180,7 @@ export function AdminHub() {
       )}
       {active && Content && !fullPane && (
         <main className="flex-1 overflow-y-auto min-h-0">
-          <div className="max-w-7xl mx-auto px-8 py-8">
+          <div className="w-full px-8 py-8">
             <section>
               <div className="mb-6">
                 <div className="text-3xl font-bold mb-1">{active.label}</div>

@@ -71,7 +71,7 @@ export function MyAccount() {
   return (
     <Shell breadcrumb="Главная / Личные настройки">
       <main className="flex-1 overflow-hidden flex flex-col min-w-0">
-        <div className="px-8 pt-6 pb-2 max-w-5xl w-full mx-auto flex items-start justify-between gap-4">
+        <div className="px-8 pt-6 pb-2 max-w-5xl w-full flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="text-2xl font-bold mb-1">
               {user?.username ?? "— (не авторизован)"}
@@ -93,7 +93,7 @@ export function MyAccount() {
           </button>
         </div>
 
-        <div className="max-w-5xl w-full mx-auto px-8">
+        <div className="max-w-5xl w-full px-8">
           <Tabs
             active={tab}
             onChange={(id) => setTab(id as TabId)}
@@ -108,7 +108,7 @@ export function MyAccount() {
           />
         </div>
 
-        <div className="scroll-block max-w-5xl w-full mx-auto px-8 py-6 flex flex-col gap-5">
+        <div className="scroll-block max-w-5xl w-full px-8 py-6 flex flex-col gap-5">
           {tab === "profile" && (
             <ProfileCard mockMode={mockMode} onSessionsInvalidated={bumpSessions} />
           )}

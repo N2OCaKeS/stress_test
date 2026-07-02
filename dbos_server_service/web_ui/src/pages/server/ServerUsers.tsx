@@ -73,6 +73,7 @@ import { isDepAdmin, isServerZoneBlocked } from "@/lib/rbac";
 import {
   validateAccountPassword,
   accountPasswordPolicyError,
+  PASSWORD_POLICY_HINT,
 } from "@/pages/server/_serverShared";
 import {
   type RevisionAccountDiff,
@@ -847,8 +848,8 @@ function AccountCreateModal({
                   autoComplete="new-password"
                 />
                 <span className="text-[11px] text-dim">
-                  Если задаёте свой — минимум 8 символов, буквы и цифры. Пусто —
-                  backend сгенерирует подходящий сам.
+                  Если задаёте свой — {PASSWORD_POLICY_HINT}. Пусто — backend
+                  сгенерирует подходящий сам.
                 </span>
               </label>
 
@@ -2251,7 +2252,7 @@ function AccountEditForm({
       </FormRow>
       <FormRow
         label="новый пароль"
-        hint="пусто — не меняется; иначе минимум 8 символов, буквы и цифры (только в БД)"
+        hint={`пусто — не меняется; иначе ${PASSWORD_POLICY_HINT} (только в БД)`}
       >
         <input
           className="input mono"

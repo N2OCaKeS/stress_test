@@ -35,6 +35,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
+import { PASSWORD_POLICY_MESSAGE } from "@/lib/passwordPolicy";
 import { formatMskShort, mskDateOffset } from "@/lib/datetime";
 import type {
   Group,
@@ -360,7 +361,7 @@ function PasswordCard({ mockMode }: { mockMode: boolean }) {
       return;
     }
     if (policyBad) {
-      toast.warn("Пароль: минимум 12 символов, буквы и цифры");
+      toast.warn(PASSWORD_POLICY_MESSAGE);
       return;
     }
     if (mockMode) {
@@ -408,12 +409,13 @@ function PasswordCard({ mockMode }: { mockMode: boolean }) {
       />
       <input
         type="password"
-        className="input mb-2"
-        placeholder="Новый пароль (min 12, буквы + цифры)"
+        className="input mb-1"
+        placeholder="Новый пароль"
         value={newPwd}
         onChange={(e) => setNewPwd(e.target.value)}
         autoComplete="new-password"
       />
+      <div className="text-[11px] text-dim mb-2">{PASSWORD_POLICY_MESSAGE}</div>
       <input
         type="password"
         className="input mb-2"

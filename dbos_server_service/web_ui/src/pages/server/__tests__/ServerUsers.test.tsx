@@ -372,6 +372,21 @@ describe("ServerUsers (fleet account list)", () => {
     expect(arg).toMatchObject({ login: "new-svc", server_ids: ["srv1"] });
   });
 
+  it("показывает подсказку парольной политики у поля пароля в форме создания", async () => {
+    selectAccount();
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Создать пользователя/ }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    const d = within(dialog);
+    expect(
+      d.getByText(/минимум 8 символов, буквы и цифры/),
+    ).toBeInTheDocument();
+  });
+
   it("создание с генерацией ключа не показывает тело приватного ключа, а тостит про скачивание из карточки", async () => {
     selectAccount();
     const PRIVATE_BODY = "-----BEGIN OPENSSH PRIVATE KEY-----\nfresh\n-----END-----";

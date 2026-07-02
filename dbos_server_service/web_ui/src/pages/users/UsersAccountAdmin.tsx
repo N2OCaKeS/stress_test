@@ -39,6 +39,7 @@ import {
 } from "@/api/auth/users";
 import { listBotsWithTotal } from "@/api/auth/bots";
 import { listGroupsWithTotal } from "@/api/auth/groups";
+import { PASSWORD_POLICY_MESSAGE } from "@/lib/passwordPolicy";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { listDepartments } from "@/api/auth/departments";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
@@ -347,7 +348,7 @@ export function UsersAccountAdmin() {
     if (!targetUser) return;
     const { ok, reason: pwd } = await confirm.prompt({
       title: "Сброс пароля",
-      message: `Новый пароль для ${tgtLabel} (min 12, буквы + цифры):`,
+      message: `Новый пароль для ${tgtLabel}. ${PASSWORD_POLICY_MESSAGE}.`,
       reason: true,
       reasonSecret: true,
       reasonRequired: true,

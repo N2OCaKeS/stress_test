@@ -10,6 +10,13 @@ import type { Persona } from "@/types/persona";
 // backend'ового VALIDATION_ERROR по `password_b64`.
 export const PASSWORD_POLICY_HINT = "минимум 8 символов, буквы и цифры";
 
+// Усиленная политика для bootstrap-кред на `server.prepare` — зеркало
+// `server_service/src/core/password_policy.py::validate_strong_password`:
+//   минимум 16 символов, обязательны буква, цифра и спецсимвол. Это входная
+//   точка доступа к свежей коробке, слабый пароль здесь backend отобьёт (422).
+export const PASSWORD_POLICY_HINT_STRONG =
+  "минимум 16 символов, минимум одна буква, одна цифра и один спецсимвол";
+
 const PASSWORD_POLICY_TEXT = `Пароль не соответствует политике: ${PASSWORD_POLICY_HINT}.`;
 
 /**

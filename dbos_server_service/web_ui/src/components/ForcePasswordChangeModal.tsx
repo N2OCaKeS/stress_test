@@ -4,6 +4,10 @@ import { KeyRound, Check, ShieldAlert } from "lucide-react";
 import { ApiError } from "@/api/client";
 import { changeMyPassword } from "@/api/auth/users";
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  MIN_PASSWORD_LENGTH,
+  PASSWORD_POLICY_MESSAGE,
+} from "@/lib/passwordPolicy";
 
 /**
  * Blocking modal shown when `IdentityContext.must_change_password === true`.
@@ -24,7 +28,7 @@ export function ForcePasswordChangeModal() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const minLen = 12;
+  const minLen = MIN_PASSWORD_LENGTH;
   const hasLetter = /[A-Za-zА-Яа-яЁё]/.test(newPwd);
   const hasDigit = /\d/.test(newPwd);
   const mismatch = confirm.length > 0 && newPwd !== confirm;
@@ -97,7 +101,7 @@ export function ForcePasswordChangeModal() {
                 </div>
                 <div>
                   <label className="field-label">
-                    Новый пароль (минимум {minLen} символов, буквы + цифры)
+                    Новый пароль ({PASSWORD_POLICY_MESSAGE})
                   </label>
                   <input
                     type="password"

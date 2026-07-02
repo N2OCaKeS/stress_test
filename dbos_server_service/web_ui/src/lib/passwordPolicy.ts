@@ -8,7 +8,7 @@
 export const MIN_PASSWORD_LENGTH = 12;
 
 export const PASSWORD_POLICY_MESSAGE =
-  "Минимум 12 символов, буквы и цифры обязательны";
+  "Минимум 12 символов, минимум одна буква и одна цифра";
 
 export function validatePassword(value: string): string | null {
   if (value.length < MIN_PASSWORD_LENGTH) {

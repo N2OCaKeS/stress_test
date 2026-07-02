@@ -17,6 +17,7 @@ import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { KeyRound } from "lucide-react";
 import { toBase64 } from "@/lib/base64";
+import { PASSWORD_POLICY_HINT_STRONG } from "@/pages/server/_serverShared";
 import type { ServerAccount, ServerPrepareRequest } from "@/api/server/types";
 
 /**
@@ -156,6 +157,9 @@ export function BootstrapCredsFields({
               autoComplete="off"
             />
           </div>
+          <span className="text-[11px] text-dim">
+            Пароль bootstrap-учётки: {PASSWORD_POLICY_HINT_STRONG}.
+          </span>
           <textarea
             className="field-input mono text-xs"
             rows={2}
@@ -187,6 +191,9 @@ export function BootstrapCredsFields({
               disabled={disabled}
               autoComplete="off"
             />
+            <span className="text-[11px] text-dim mt-1 block">
+              Пароль bootstrap-учётки: {PASSWORD_POLICY_HINT_STRONG}.
+            </span>
           </div>
           <div>
             <label className="field-label">SSH private key (опционально)</label>

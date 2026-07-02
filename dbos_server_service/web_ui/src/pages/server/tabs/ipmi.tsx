@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { fromBase64 } from "@/lib/base64";
+import { PASSWORD_POLICY_HINT } from "@/pages/server/_serverShared";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import {
@@ -378,6 +379,7 @@ function RegisterPane({
               required
               disabled={!canRegister}
             />
+            <span className="text-dim text-[11px]">{PASSWORD_POLICY_HINT}</span>
           </label>
           <p className="text-xs text-dim">
             TLS-проверка не настраивается здесь: worker сам подбирает транспорт

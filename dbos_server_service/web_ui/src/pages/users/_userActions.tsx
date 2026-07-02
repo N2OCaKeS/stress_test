@@ -8,6 +8,7 @@ import { createGroup } from "@/api/auth/groups";
 import { createBot, issueBotToken } from "@/api/auth/bots";
 import {
   isValidEmail,
+  PASSWORD_POLICY_MESSAGE,
   validatePassword,
   validateUsername,
 } from "@/lib/passwordPolicy";
@@ -189,7 +190,7 @@ export function CreateUserForm({
           )}
         </div>
       </Field>
-      <Field label="initial password (auto-generated)">
+      <Field label={`initial password (auto-generated) · ${PASSWORD_POLICY_MESSAGE}`}>
         <div className="flex gap-2 items-center">
           <input
             className="input flex-1 mono"

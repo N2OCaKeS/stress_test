@@ -15,6 +15,9 @@ import { apiGet, apiPost } from "@/api/client";
 
 const BASE = "/secret/v1/admin/encryption";
 
+/** Режим перешифровки — см. `server/encryptionAdmin`. */
+export type RotateMode = "lazy" | "force";
+
 /** Ответ `GET /migration_status` для `secret_service`. */
 export interface SecretMigrationStatus {
   active_version: number;
@@ -23,6 +26,16 @@ export interface SecretMigrationStatus {
   remaining_legacy: number;
   migrated_pct: number;
   outbox_pending_count: number;
+  /** Версии ключа в keystore (список либо просто их число). */
+  versions_in_keystore?: number[] | number;
+  /** Текущий режим перешифровки. */
+  mode?: RotateMode | string;
+  /** Активен ли force-режим (сервис блокирует запросы). */
+  force_active?: boolean;
+  /** Оценка времени до завершения, сек. */
+  eta_seconds?: number | null;
+  /** Скорость дошифровки, строк/сек. */
+  throughput?: number | null;
 }
 
 /** Ответ `POST /rotate`. */
@@ -44,9 +57,13 @@ export function getMigrationStatus(): Promise<SecretMigrationStatus> {
   return apiGet<SecretMigrationStatus>(`${BASE}/migration_status`);
 }
 
-export function rotate(newKeyB64: string): Promise<SecretRotateResponse> {
+export function rotate(
+  newKeyB64: string,
+  mode: RotateMode = "lazy",
+): Promise<SecretRotateResponse> {
   return apiPost<SecretRotateResponse>(`${BASE}/rotate`, {
     new_key_b64: newKeyB64,
+    mode,
   });
 }
 

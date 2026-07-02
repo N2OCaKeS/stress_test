@@ -57,6 +57,8 @@ const POLL_MS = 4000;
 // вечного спиннера на одном проценте.
 const STALL_TICKS = 3;
 
+type RotateMode = serverEnc.RotateMode;
+
 /** Нормализованный срез статуса миграции — общий для server и secret. */
 interface NormalizedStatus {
   activeVersion: number;
@@ -65,6 +67,21 @@ interface NormalizedStatus {
   migratedPct: number;
   byVersion: Record<string, number>;
   outboxPending: number;
+  versionsInKeystore: number;
+  mode?: string;
+  forceActive: boolean;
+  etaSeconds: number | null;
+  throughput: number | null;
+}
+
+/** Считает число версий в keystore: поле бэка (список/число) либо by_version. */
+function keystoreCount(
+  versions: number[] | number | undefined,
+  byVersion: Record<string, number>,
+): number {
+  if (Array.isArray(versions)) return versions.length;
+  if (typeof versions === "number") return versions;
+  return Object.keys(byVersion).length;
 }
 
 function normalizeServer(s: serverEnc.ServerMigrationStatus): NormalizedStatus {
@@ -75,6 +92,11 @@ function normalizeServer(s: serverEnc.ServerMigrationStatus): NormalizedStatus {
     migratedPct: s.migrated_pct,
     byVersion: s.by_version,
     outboxPending: s.outbox_pending,
+    versionsInKeystore: keystoreCount(s.versions_in_keystore, s.by_version),
+    mode: s.mode,
+    forceActive: s.force_active ?? false,
+    etaSeconds: s.eta_seconds ?? null,
+    throughput: s.throughput ?? null,
   };
 }
 
@@ -86,7 +108,21 @@ function normalizeSecret(s: secretEnc.SecretMigrationStatus): NormalizedStatus {
     migratedPct: s.migrated_pct,
     byVersion: s.by_version,
     outboxPending: s.outbox_pending_count,
+    versionsInKeystore: keystoreCount(s.versions_in_keystore, s.by_version),
+    mode: s.mode,
+    forceActive: s.force_active ?? false,
+    etaSeconds: s.eta_seconds ?? null,
+    throughput: s.throughput ?? null,
   };
+}
+
+/** Оценка оставшегося времени перешифровки из `eta_seconds`. */
+function formatEta(seconds: number): string {
+  if (seconds >= 60) {
+    const mins = Math.ceil(seconds / 60);
+    return `~${mins} мин`;
+  }
+  return `~${Math.max(1, Math.ceil(seconds))} сек`;
 }
 
 /** Адаптер сервиса — прячет различия server/secret за единым интерфейсом. */
@@ -96,6 +132,7 @@ interface ServiceAdapter {
   fetchStatus: () => Promise<NormalizedStatus>;
   rotate: (
     newKeyB64: string,
+    mode: RotateMode,
   ) => Promise<{ new_version: number; previous_version: number; idempotent: boolean }>;
   retire: (version: number) => Promise<{ retired: boolean; remaining_on_version: number }>;
 }
@@ -104,7 +141,7 @@ const SERVER_ADAPTER: ServiceAdapter = {
   key: "server",
   label: "server_service",
   fetchStatus: () => serverEnc.getMigrationStatus().then(normalizeServer),
-  rotate: (k) => serverEnc.rotate(k),
+  rotate: (k, mode) => serverEnc.rotate(k, mode),
   retire: (v) => serverEnc.retire(v),
 };
 
@@ -112,7 +149,7 @@ const SECRET_ADAPTER: ServiceAdapter = {
   key: "secret",
   label: "secret_service",
   fetchStatus: () => secretEnc.getMigrationStatus().then(normalizeSecret),
-  rotate: (k) => secretEnc.rotate(k),
+  rotate: (k, mode) => secretEnc.rotate(k, mode),
   retire: (v) => secretEnc.retire(v),
 };
 
@@ -222,6 +259,11 @@ const MOCK_STATUS: Record<string, NormalizedStatus> = {
     migratedPct: 100,
     byVersion: { "2": 0, "3": 124 },
     outboxPending: 0,
+    versionsInKeystore: 2,
+    mode: "lazy",
+    forceActive: false,
+    etaSeconds: null,
+    throughput: null,
   },
   secret: {
     activeVersion: 2,
@@ -230,6 +272,11 @@ const MOCK_STATUS: Record<string, NormalizedStatus> = {
     migratedPct: 81,
     byVersion: { "1": 11, "2": 47 },
     outboxPending: 3,
+    versionsInKeystore: 2,
+    mode: "lazy",
+    forceActive: false,
+    etaSeconds: 45,
+    throughput: 4,
   },
 };
 
@@ -252,6 +299,9 @@ function ServiceRotationCard({
   const [err, setErr] = useState<string | null>(null);
   const [rotating, setRotating] = useState(false);
   const [retiringVersion, setRetiringVersion] = useState<number | null>(null);
+  // Режим перешифровки для следующего перевыпуска: lazy (фоном) по умолчанию,
+  // force (экстренно, блокирует сервис) — только при утечке ключа.
+  const [mode, setMode] = useState<RotateMode>("lazy");
 
   // Результат последнего перевыпуска: переход previous → new, который показываем
   // прямо в карточке, а не только тостом.
@@ -344,13 +394,27 @@ function ServiceRotationCard({
       toast.warn("Mock-режим — ротация не отправляется на backend.");
       return;
     }
+    // force блокирует сервис на время полной перешифровки — требуем явного
+    // подтверждения перед тем, как отправить экстренную ротацию.
+    if (mode === "force") {
+      const ok = await confirm.confirm({
+        title: `Экстренная перешифровка — ${adapter.label}`,
+        message:
+          `В режиме force ${adapter.label} будет НЕДОСТУПЕН на время полной ` +
+          `перешифровки: все запросы, кроме статуса, получат 503. Используйте ` +
+          `только при подозрении на утечку ключа. Продолжить?`,
+        danger: true,
+        confirmLabel: "Запустить force",
+      });
+      if (!ok) return;
+    }
     setRotating(true);
     setErr(null);
     try {
       // Одноразовый ключ: получаем и сразу отдаём в rotate. В переменной
       // живёт ровно до завершения запроса, в state не кладём.
       const generated = await generateServiceKey();
-      const res = await adapter.rotate(generated.key_b64);
+      const res = await adapter.rotate(generated.key_b64, mode);
       if (res.idempotent) {
         toast.info(`Ключ уже активен (v${res.new_version}) — без изменений.`);
       } else {
@@ -368,7 +432,7 @@ function ServiceRotationCard({
     } finally {
       setRotating(false);
     }
-  }, [adapter, mockMode, refresh, resetProgressTracking, startPoll, toast]);
+  }, [adapter, confirm, mode, mockMode, refresh, resetProgressTracking, startPoll, toast]);
 
   // Ручная проверка прогресса из «idle»: сбрасываем застой и поллим заново.
   const manualRefresh = useCallback(() => {
@@ -451,6 +515,11 @@ function ServiceRotationCard({
               active v{status.activeVersion}
             </span>
           )}
+          {status?.forceActive && (
+            <span className="badge badge-warn" title="сервис заблокирован на время перешифровки">
+              force
+            </span>
+          )}
           {migrating ? (
             stale ? (
               <span className="badge" title="прогресс не двигается — дошифровка идёт в фоне">
@@ -482,7 +551,8 @@ function ServiceRotationCard({
         <>
           <div className="flex items-center justify-between text-xs mb-1">
             <span className="text-dim">
-              перешифровано {status.migratedPct}% · всего строк {status.total}
+              перешифровано {status.migratedPct}% · всего строк {status.total} ·
+              версий в keystore {status.versionsInKeystore}
             </span>
             <span className="text-dim">
               legacy: {status.remainingLegacy} · outbox: {status.outboxPending}
@@ -492,8 +562,38 @@ function ServiceRotationCard({
             <span style={{ width: `${Math.min(100, Math.max(0, status.migratedPct))}%` }} />
           </div>
 
+          {/* Режим и оценка времени активной перешифровки. */}
+          {migrating && (
+            <div className="text-[11px] text-dim mb-2 flex flex-wrap gap-x-3 gap-y-0.5">
+              <span>
+                режим:{" "}
+                <span className="mono">
+                  {status.mode ?? (status.forceActive ? "force" : "lazy")}
+                </span>
+              </span>
+              {status.etaSeconds != null && status.etaSeconds > 0 && (
+                <span>осталось {formatEta(status.etaSeconds)}</span>
+              )}
+              {status.throughput != null && status.throughput > 0 && (
+                <span>скорость ~{status.throughput} строк/с</span>
+              )}
+            </div>
+          )}
+
+          {status.forceActive && (
+            <div className="alert-warn mb-3 text-xs">
+              <div className="flex-1">
+                Идёт экстренная (force) перешифровка — {adapter.label} блокирует
+                запросы до завершения. Осталось legacy {status.remainingLegacy}
+                {status.etaSeconds != null && status.etaSeconds > 0 &&
+                  `, ${formatEta(status.etaSeconds)}`}
+                .
+              </div>
+            </div>
+          )}
+
           {/* Осмысленный статус дошифровки вместо вечного спиннера на 0%. */}
-          {migrating && !stale && (
+          {migrating && !stale && !status.forceActive && (
             <div className="text-[11px] text-dim mb-3">
               Перешифровка идёт в фоне (lazy): осталось legacy{" "}
               {status.remainingLegacy}, в outbox {status.outboxPending}.
@@ -574,14 +674,49 @@ function ServiceRotationCard({
 
       {err && <div className="alert-danger mb-3 text-xs">{err}</div>}
 
-      <div className="flex justify-end">
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div className="text-xs">
+          <div className="flex items-center gap-3 mb-1">
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="radio"
+                name={`rotate-mode-${adapter.key}`}
+                checked={mode === "lazy"}
+                onChange={() => setMode("lazy")}
+                disabled={busy || mockMode}
+              />
+              lazy (по умолчанию)
+            </label>
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="radio"
+                name={`rotate-mode-${adapter.key}`}
+                checked={mode === "force"}
+                onChange={() => setMode("force")}
+                disabled={busy || mockMode}
+              />
+              force (экстренно)
+            </label>
+          </div>
+          <div className="text-[11px] text-dim max-w-md">
+            {mode === "lazy"
+              ? "Перешифровка идёт в фоне, сервис работает; строки читаются и старым, и новым ключом."
+              : "Сервис блокируется (503) до конца полной перешифровки. Только при подозрении на утечку ключа."}
+          </div>
+        </div>
         <button
-          className="btn btn-primary flex items-center gap-1"
+          className={`btn flex items-center gap-1 ${
+            mode === "force" ? "btn-danger" : "btn-primary"
+          }`}
           disabled={busy || mockMode}
           onClick={() => void doRotate()}
         >
           <RotateCw className="w-4 h-4" />
-          {rotating ? "Перевыпуск…" : "Перевыпустить ключ"}
+          {rotating
+            ? "Перевыпуск…"
+            : mode === "force"
+              ? "Перевыпустить (force)"
+              : "Перевыпустить ключ"}
         </button>
       </div>
     </div>

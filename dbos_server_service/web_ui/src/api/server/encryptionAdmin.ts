@@ -18,6 +18,16 @@ import { apiGet, apiPost } from "@/api/client";
 
 const BASE = "/server/v1/admin/encryption";
 
+/**
+ * Режим перешифровки при ротации ключа:
+ *   - `lazy` (по умолчанию) — новая версия активируется сразу, старые строки
+ *     дошифровываются в фоне; сервис продолжает работать, строки читаются и
+ *     старым, и новым ключом;
+ *   - `force` — экстренная полная перешифровка; сервис блокирует все запросы
+ *     (503 REENCRYPT_IN_PROGRESS), кроме статуса/health, до завершения.
+ */
+export type RotateMode = "lazy" | "force";
+
 /** Состояние outbox перешифрования (фоновая дорасшифровка legacy-строк). */
 export interface ServerEncryptionOutbox {
   pending?: number;
@@ -36,6 +46,16 @@ export interface ServerMigrationStatus {
   outbox: ServerEncryptionOutbox;
   remaining_legacy_total: number;
   outbox_pending: number;
+  /** Версии ключа в keystore (список либо просто их число). */
+  versions_in_keystore?: number[] | number;
+  /** Текущий режим перешифровки. */
+  mode?: RotateMode | string;
+  /** Активен ли force-режим (сервис блокирует запросы). */
+  force_active?: boolean;
+  /** Оценка времени до завершения, сек. */
+  eta_seconds?: number | null;
+  /** Скорость дошифровки, строк/сек. */
+  throughput?: number | null;
 }
 
 /** Ответ `POST /rotate`. `seeded` — счётчики засиженных под новую версию строк. */
@@ -57,9 +77,13 @@ export function getMigrationStatus(): Promise<ServerMigrationStatus> {
   return apiGet<ServerMigrationStatus>(`${BASE}/migration_status`);
 }
 
-export function rotate(newKeyB64: string): Promise<ServerRotateResponse> {
+export function rotate(
+  newKeyB64: string,
+  mode: RotateMode = "lazy",
+): Promise<ServerRotateResponse> {
   return apiPost<ServerRotateResponse>(`${BASE}/rotate`, {
     new_key_b64: newKeyB64,
+    mode,
   });
 }
 

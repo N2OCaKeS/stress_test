@@ -17,6 +17,7 @@ import { Login } from "@/pages/system/Login";
 import { NotFound } from "@/pages/system/NotFound";
 import { RouteGuard } from "@/components/RouteGuard";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ReencryptBanner } from "@/components/ReencryptBanner";
 
 const Home = lazy(() =>
   import("@/pages/home/Home").then((m) => ({ default: m.Home }))
@@ -114,6 +115,7 @@ export function App() {
             <ToastProvider>
               <LabelsProvider>
               <ConfirmProvider>
+              <ReencryptBanner />
               <ErrorBoundary>
               <Suspense fallback={<RouteFallback />}>
               <Routes>

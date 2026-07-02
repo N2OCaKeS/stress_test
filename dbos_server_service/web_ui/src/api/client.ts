@@ -151,6 +151,42 @@ function triggerPasswordChangeRequired(): void {
   }
 }
 
+// В force-режиме перешифровки ключа сервис отвечает 503 REENCRYPT_IN_PROGRESS
+// на любой запрос, кроме статуса/health, с заголовком Retry-After. Это не
+// ошибка, а временное обслуживание — глобальный баннер с обратным отсчётом
+// подписывается сюда, чтобы показать состояние вместо обычного тоста.
+export interface ReencryptNotice {
+  /** Какой сервис ушёл в force-перешифровку (определяется по пути запроса). */
+  service: "server" | "secret" | "unknown";
+  /** Секунды до предполагаемого возврата — из Retry-After / retry_after / eta_seconds. */
+  retryAfter: number;
+  etaSeconds?: number;
+  remaining?: number;
+  message?: string;
+}
+type ReencryptHandler = (notice: ReencryptNotice) => void;
+let reencryptHandler: ReencryptHandler | null = null;
+
+export function registerReencryptHandler(handler: ReencryptHandler | null): void {
+  reencryptHandler = handler;
+}
+
+function triggerReencrypt(notice: ReencryptNotice): void {
+  if (reencryptHandler) {
+    try {
+      reencryptHandler(notice);
+    } catch {
+      // never let a UI-side error escape the fetch path
+    }
+  }
+}
+
+function serviceFromPath(path: string): ReencryptNotice["service"] {
+  if (path.startsWith("/server/")) return "server";
+  if (path.startsWith("/secret/")) return "secret";
+  return "unknown";
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -341,9 +377,30 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
     } catch {
       // Non-JSON body (HTML error page, empty 204, etc.) — keep payload empty.
     }
-    const retryAfter = parseRetryAfter(retryAfterHeader, payload.details);
+    let retryAfter = parseRetryAfter(retryAfterHeader, payload.details);
     if (res.status === 403 && payload.error_code === "PASSWORD_CHANGE_REQUIRED") {
       triggerPasswordChangeRequired();
+    }
+    // Force-перешифровка: тело несёт retry_after / eta_seconds / remaining на
+    // верхнем уровне (вне стандартного details). Собираем отсчёт с приоритетом
+    // Retry-After → retry_after → eta_seconds и поднимаем глобальный баннер.
+    if (res.status === 503 && payload.error_code === "REENCRYPT_IN_PROGRESS") {
+      const raw = payload as Record<string, unknown>;
+      const bodyRetry =
+        typeof raw["retry_after"] === "number" ? (raw["retry_after"] as number) : undefined;
+      const etaSeconds =
+        typeof raw["eta_seconds"] === "number" ? (raw["eta_seconds"] as number) : undefined;
+      const remaining =
+        typeof raw["remaining"] === "number" ? (raw["remaining"] as number) : undefined;
+      const countdown = retryAfter ?? bodyRetry ?? etaSeconds ?? 30;
+      retryAfter = countdown;
+      triggerReencrypt({
+        service: serviceFromPath(opts.path),
+        retryAfter: countdown,
+        etaSeconds,
+        remaining,
+        message: payload.message,
+      });
     }
     throw new ApiError(res.status, payload, retryAfter);
   }

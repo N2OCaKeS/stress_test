@@ -344,7 +344,7 @@ function OverviewEditForm({
 
   return (
     <div className="p-5">
-      <div className="card max-w-2xl">
+      <div className="card w-full">
         <h3 className="font-semibold mb-3 flex items-center gap-2">
           <Pencil className="w-4 h-4 text-accent" /> Редактировать ·{" "}
           <span className="mono">{initial.hostname}</span>

@@ -810,7 +810,7 @@ function UserForm({
   }
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <UserCog className="w-4 h-4 text-accent" />
         {mode === "new" ? "Новый пользователь" : `Edit · ${initial?.username}`}

@@ -77,7 +77,7 @@ function ServerView({
 }) {
   const { startEdit } = useInlineState();
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold flex items-center gap-2 mono">
           <ServerIcon className="w-4 h-4 text-accent" /> {server.hostname}
@@ -135,7 +135,7 @@ function ServerForm({
   const [rack, setRack] = useState(initial?.rack ?? "");
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <ServerIcon className="w-4 h-4 text-accent" />
         {mode === "new" ? "Новый сервер" : `Edit · ${initial?.hostname}`}

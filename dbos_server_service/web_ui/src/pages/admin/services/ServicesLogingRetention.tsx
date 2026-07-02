@@ -180,7 +180,7 @@ function LiveRetention() {
         )}
 
         {!policyQ.loading && !policyQ.error && (
-          <div className="grid gap-4 md:grid-cols-2 max-w-4xl">
+          <div className="grid gap-4 md:grid-cols-2">
             <div className="card">
               <div className="stat-label flex items-center gap-2">
                 <Clock className="w-3 h-3" /> Активная политика
@@ -331,7 +331,7 @@ function MockRetention_() {
 function MockRetentionView({ policy, canEdit }: { policy: RetentionPolicyMock; canEdit: boolean }) {
   const { startEdit } = useInlineState();
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold flex items-center gap-2 mono">
           <Clock className="w-4 h-4 text-accent" /> {policy.id}
@@ -367,7 +367,7 @@ function MockRetentionForm({
   const [days, setDays] = useState(initial?.days ?? 30);
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <Clock className="w-4 h-4 text-accent" />
         {mode === "new" ? "Новая политика retention" : `Edit · ${initial?.id}`}

@@ -17,7 +17,7 @@ export function NotWiredInline({
   endpoints?: string[];
 }) {
   return (
-    <div className="card flex items-start gap-3 m-4 max-w-2xl">
+    <div className="card flex items-start gap-3 m-4 w-full">
       <Plug className="w-6 h-6 text-warn shrink-0 mt-1" />
       <div className="flex-1">
         <div className="text-sm font-semibold mb-1">

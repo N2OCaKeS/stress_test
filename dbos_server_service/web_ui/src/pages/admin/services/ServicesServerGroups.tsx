@@ -75,7 +75,7 @@ function GroupView({
   const toast = useToast();
   const notWired = () => toast.warn(SERVER_GROUPS_NOT_WIRED);
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <div className="mb-3 alert-block text-xs">
         Раздел работает только когда подключен server_service. Кнопки ниже —
         заглушки до появления соответствующих endpoint'ов.
@@ -123,7 +123,7 @@ function GroupForm({
   };
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <Layers className="w-4 h-4 text-accent" />
         {mode === "new" ? "Новая группа" : `Edit · ${initial?.name}`}

@@ -788,7 +788,7 @@ function BotCreateForm({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <Bot className="w-4 h-4 text-accent" /> Новый бот
       </h3>
@@ -934,7 +934,7 @@ function BotEditForm({
   };
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <Bot className="w-4 h-4 text-accent" /> Edit · {initial.name}
       </h3>
@@ -1051,7 +1051,7 @@ function MockBotView({
   const { startEdit } = useInlineState();
   const toast = useToast();
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold flex items-center gap-2 mono">
           <Bot className="w-4 h-4 text-accent" /> {bot.name}
@@ -1124,7 +1124,7 @@ function MockBotForm({
   };
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <Bot className="w-4 h-4 text-accent" />
         {mode === "new" ? "Новый бот" : `Edit · ${initial?.name}`}

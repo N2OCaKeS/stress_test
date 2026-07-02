@@ -290,7 +290,7 @@ function RegisterPane({
   }
 
   return (
-    <div className="p-5 max-w-xl">
+    <div className="p-5 w-full">
       <div className="card">
         <div className="flex items-center gap-2 mb-3">
           <KeyRound className="w-5 h-5" />

@@ -140,7 +140,7 @@ export function ServicesManagementUser() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-5 max-w-3xl">
+      <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-5">
         {cfgQ.loading && cfgQ.data == null && (
           <div className="text-xs text-dim text-center py-4">Загрузка…</div>
         )}

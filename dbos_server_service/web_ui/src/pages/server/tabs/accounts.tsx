@@ -1033,7 +1033,7 @@ function AccountCreateForm({
   }
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2 mono">
         <Plus className="w-4 h-4 text-accent" /> Новый аккаунт на{" "}
         {serverHostname}
@@ -1178,7 +1178,7 @@ function AccountEditForm({
   }
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2 mono">
         <Edit3 className="w-4 h-4 text-accent" /> Edit · {account.login}
       </h3>

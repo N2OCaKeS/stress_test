@@ -169,7 +169,7 @@ function LiveRules() {
 function RuleView({ rule, onDelete }: { rule: Rule; onDelete: () => void }) {
   const { startEdit } = useInlineState();
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold flex items-center gap-2">
           <Filter className="w-4 h-4 text-accent" /> {rule.name}
@@ -284,7 +284,7 @@ function RuleForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="card max-w-2xl flex flex-col gap-3">
+    <form onSubmit={handleSubmit} className="card w-full flex flex-col gap-3">
       <h3 className="font-semibold flex items-center gap-2">
         <Filter className="w-4 h-4 text-accent" />
         {initial ? `Edit · ${initial.name}` : "Новое правило"}
@@ -497,7 +497,7 @@ function MockRules() {
 function MockRuleView({ rule, canEdit }: { rule: AlertRule; canEdit: boolean }) {
   const { startEdit } = useInlineState();
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-warn" />
@@ -534,7 +534,7 @@ function MockRuleForm({
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <AlertTriangle className="w-4 h-4 text-warn" />
         {mode === "new" ? "Новое правило" : `Edit · ${initial?.expr}`}

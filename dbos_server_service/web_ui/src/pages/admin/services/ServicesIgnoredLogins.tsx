@@ -125,7 +125,7 @@ export function ServicesIgnoredLogins() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-4 max-w-3xl">
+      <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-4">
         <div className="text-xs text-dim">
           Логины из списка ревизия не считает незнакомыми (помимо системных по
           UID). Действует на весь отдел.

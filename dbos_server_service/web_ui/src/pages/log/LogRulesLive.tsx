@@ -404,7 +404,7 @@ function RuleForm({
 
   return (
     <section className="flex-1 min-w-0 overflow-y-auto">
-      <div className="p-5 max-w-xl">
+      <div className="p-5 w-full">
         <div className="flex items-center gap-2 mb-4">
           <button
             className="btn btn-ghost flex items-center gap-1"

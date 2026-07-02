@@ -1277,7 +1277,7 @@ function GroupCreateForm({
   };
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <UsersRound className="w-4 h-4 text-accent" /> Новая группа
       </h3>
@@ -1358,7 +1358,7 @@ function GroupEditForm({
   };
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <UsersRound className="w-4 h-4 text-accent" /> Edit · {initial.name}
       </h3>

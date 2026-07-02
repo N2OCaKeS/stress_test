@@ -134,7 +134,7 @@ export function ServiceRolesCard({
   // связке guard'ами игнорируются. Скрываем CRUD во всех режимах.
   if (serviceName === "loging_service") {
     return (
-      <div className="card max-w-3xl m-4 flex flex-col gap-3">
+      <div className="card m-4 flex flex-col gap-3 w-full">
         <h3 className="font-semibold flex items-center gap-2">
           <Icon className="w-4 h-4 text-accent" /> {title}
         </h3>
@@ -462,7 +462,7 @@ function LiveRoleView({
     : undefined;
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold flex items-center gap-2 mono">
           <ShieldCheck className="w-4 h-4 text-accent" /> {role.role_name}
@@ -993,7 +993,7 @@ function LiveRoleForm({
     || (mode === "new" && !roleName.trim());
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <ShieldCheck className="w-4 h-4 text-accent" />
         {mode === "new" ? "Новая роль" : `Edit · ${initial?.role_name}`}
@@ -1088,7 +1088,7 @@ function MockRoleView({ role, canEdit }: { role: ServiceRoleDef; canEdit: boolea
   const { startEdit } = useInlineState();
   const toast = useToast();
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold flex items-center gap-2 mono">
           <ShieldCheck className="w-4 h-4 text-accent" /> {role.name}
@@ -1136,7 +1136,7 @@ function MockRoleForm({
   };
 
   return (
-    <div className="card max-w-2xl">
+    <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <ShieldCheck className="w-4 h-4 text-accent" />
         {mode === "new" ? "Новая роль" : `Edit · ${initial?.name}`}

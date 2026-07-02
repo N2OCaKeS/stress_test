@@ -798,7 +798,7 @@ function BusyCard({
           )}
         </div>
       ) : showForm ? (
-        <div className="flex flex-col gap-2 max-w-xl">
+        <div className="flex flex-col gap-2">
           <FormRow label="reason / purpose">
             <input
               className="input"
@@ -1099,7 +1099,7 @@ function OsVersionForm({
   }
 
   return (
-    <div className="flex flex-col gap-2 max-w-2xl">
+    <div className="flex flex-col gap-2">
       <FormRow label="name">
         <input
           className="input mono"

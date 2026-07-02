@@ -24,6 +24,12 @@ const listIgnoredLoginsMock = vi.fn(() => new Promise(() => {}));
 const addIgnoredLoginMock = vi.fn((_b?: unknown) => new Promise(() => {}));
 const removeIgnoredLoginMock = vi.fn((_l?: unknown) => new Promise(() => {}));
 const revealSshPrivateKeyMock = vi.fn((_id?: unknown) => new Promise(() => {}));
+const revealPrevSshPrivateKeyMock = vi.fn(
+  (_id?: unknown) => new Promise(() => {}),
+);
+const clearPrevSshPrivateKeyMock = vi.fn(
+  (_id?: unknown) => new Promise(() => {}),
+);
 const setAccountSshKeyMock = vi.fn(
   (_id?: unknown, _b?: unknown) => new Promise(() => {}),
 );
@@ -58,6 +64,12 @@ vi.mock("@/api/server/accounts", () => ({
   },
   get revealAccountSshPrivateKey() {
     return revealSshPrivateKeyMock;
+  },
+  get revealPreviousAccountSshPrivateKey() {
+    return revealPrevSshPrivateKeyMock;
+  },
+  get clearPreviousAccountSshPrivateKey() {
+    return clearPrevSshPrivateKeyMock;
   },
   get setAccountSshKey() {
     return setAccountSshKeyMock;
@@ -167,6 +179,8 @@ describe("ServerUsers (fleet account list)", () => {
     addIgnoredLoginMock.mockReset();
     removeIgnoredLoginMock.mockReset();
     revealSshPrivateKeyMock.mockReset();
+    revealPrevSshPrivateKeyMock.mockReset();
+    clearPrevSshPrivateKeyMock.mockReset();
     setAccountSshKeyMock.mockReset();
     rotateAccountSshKeyMock.mockReset();
     bindAccountServersMock.mockReset();
@@ -185,6 +199,8 @@ describe("ServerUsers (fleet account list)", () => {
     addIgnoredLoginMock.mockReturnValue(new Promise(() => {}));
     removeIgnoredLoginMock.mockReturnValue(new Promise(() => {}));
     revealSshPrivateKeyMock.mockReturnValue(new Promise(() => {}));
+    revealPrevSshPrivateKeyMock.mockReturnValue(new Promise(() => {}));
+    clearPrevSshPrivateKeyMock.mockReturnValue(new Promise(() => {}));
     setAccountSshKeyMock.mockReturnValue(new Promise(() => {}));
     rotateAccountSshKeyMock.mockReturnValue(new Promise(() => {}));
     bindAccountServersMock.mockReturnValue(new Promise(() => {}));
@@ -240,7 +256,9 @@ describe("ServerUsers (fleet account list)", () => {
         screen.getByRole("button", { name: /Редактировать/ }),
       ).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /Удалить/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Удалить" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Ротировать \(БД\)/ }),
     ).toBeInTheDocument();
@@ -436,6 +454,52 @@ describe("ServerUsers (fleet account list)", () => {
     await waitFor(() => {
       expect(revealSshPrivateKeyMock).toHaveBeenCalledWith("acc1");
     });
+  });
+
+  it("удаляет предыдущий ключ через clearPreviousAccountSshPrivateKey и прячет кнопки previous", async () => {
+    listServersMock.mockResolvedValue({
+      items: [{ id: "srv1", display_name: "alpha", hostname: "alpha.local" }],
+      total: 1,
+    });
+    listAccountsMock.mockResolvedValue({
+      items: [
+        {
+          ...FAKE_ACCOUNT,
+          ssh_public_key: "ssh-ed25519 AAAAC3Nz key",
+          ssh_key_fingerprint: "SHA256:abc123def",
+        },
+      ],
+      total: 1,
+      limit: 200,
+      offset: 0,
+    });
+    clearPrevSshPrivateKeyMock.mockResolvedValue(undefined);
+
+    renderPage();
+    fireEvent.click(await screen.findByText("dbos-svc"));
+
+    const clearBtn = await screen.findByRole("button", {
+      name: /Удалить предыдущий ключ/,
+    });
+    fireEvent.click(clearBtn);
+
+    // Подтверждаем в диалоге.
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /Удалить/ }));
+
+    await waitFor(() => {
+      expect(clearPrevSshPrivateKeyMock).toHaveBeenCalledWith("acc1");
+    });
+
+    // После удаления кнопки previous-ключа исчезают.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: /Удалить предыдущий ключ/ }),
+      ).not.toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole("button", { name: /Скачать предыдущий ключ/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("после генерации ключа не показывает тело приватного ключа, а предлагает скачать", async () => {

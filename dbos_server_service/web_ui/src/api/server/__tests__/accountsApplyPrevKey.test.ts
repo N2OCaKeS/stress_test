@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const apiGetMock = vi.fn();
 const apiPostMock = vi.fn();
+const apiDeleteMock = vi.fn();
 
 vi.mock("@/api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/client")>();
@@ -9,12 +10,14 @@ vi.mock("@/api/client", async (importOriginal) => {
     ...actual,
     apiGet: (...a: unknown[]) => apiGetMock(...a),
     apiPost: (...a: unknown[]) => apiPostMock(...a),
+    apiDelete: (...a: unknown[]) => apiDeleteMock(...a),
   };
 });
 
 import { ApiError } from "@/api/client";
 import {
   applyAccountCredentials,
+  clearPreviousAccountSshPrivateKey,
   revealPreviousAccountSshPrivateKey,
 } from "@/api/server/accounts";
 
@@ -81,5 +84,26 @@ describe("revealPreviousAccountSshPrivateKey", () => {
       status: 404,
       errorCode: "ACCOUNT_NO_PREVIOUS_SSH_KEY",
     });
+  });
+});
+
+describe("clearPreviousAccountSshPrivateKey", () => {
+  beforeEach(() => {
+    apiDeleteMock.mockReset();
+  });
+
+  it("бьёт DELETE на /server-accounts/{id}/previous_ssh_private_key", async () => {
+    apiDeleteMock.mockResolvedValue(undefined);
+    await clearPreviousAccountSshPrivateKey("acc1");
+    expect(apiDeleteMock).toHaveBeenCalledWith(
+      "/server/v1/server-accounts/acc1/previous_ssh_private_key",
+    );
+  });
+
+  it("идемпотентна: успешный delete резолвится void", async () => {
+    apiDeleteMock.mockResolvedValue(undefined);
+    await expect(
+      clearPreviousAccountSshPrivateKey("acc1"),
+    ).resolves.toBeUndefined();
   });
 });

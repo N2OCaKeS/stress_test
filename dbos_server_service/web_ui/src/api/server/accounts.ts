@@ -169,16 +169,23 @@ export function deleteAccount(accountId: string): Promise<void> {
 // Password rotation
 // ---------------------------------------------------------------------------
 
-/** Ответ `/rotate_password` — без plaintext'а наружу. */
+/**
+ * Ответ `/rotate_password` — без plaintext'а наружу. Кроме нового `rotated_at`
+ * несёт сводку раскатки нового пароля на привязанные серверы: `tasks` — куда
+ * применение задиспатчено, `skipped` — серверы, пропущенные с причиной. Типы
+ * общие с worker-rotate; у аккаунта без привязок оба списка пустые.
+ */
 export interface ServerAccountRotateResponse {
   id: string;
   login: string;
   rotated_at: string;
+  tasks?: AccountRotateTask[];
+  skipped?: AccountRotateSkipped[];
 }
 
 /**
- * User-initiated ротация пароля: меняет только ciphertext в БД, без apply'я
- * на серверы.
+ * User-initiated ротация пароля: меняет ciphertext в БД и раскатывает новый
+ * пароль на привязанные серверы (сводка — в `tasks`/`skipped` ответа).
  *
  * Body `password` опционален — если не задан, backend сгенерирует случайный
  * через `secrets.token_urlsafe(32)`. Plaintext в ответ не возвращается.
@@ -218,6 +225,7 @@ export interface AccountRotateSkipped {
 /** Коды причин из backend'а (`AccountRotateSkipped.reason`). */
 export type AccountRotateSkipReason =
   | "decommissioned"
+  | "reserved"
   | "idempotent_conflict"
   | "worker_unreachable"
   | "not_attempted"
@@ -355,6 +363,20 @@ export function revealPreviousAccountSshPrivateKey(
   accountId: string,
 ): Promise<SshPrivateKeyReveal> {
   return apiGet<SshPrivateKeyReveal>(
+    `${BASE}/server-accounts/${accountId}/previous_ssh_private_key`,
+  );
+}
+
+/**
+ * Удалить сохранённый ПРЕДЫДУЩИЙ приватный SSH-ключ аккаунта. Идемпотентно:
+ * если прежнего ключа уже нет, backend всё равно отвечает успехом. Нужен, чтобы
+ * вычистить старый ключ после того, как ранее недоступные серверы догнали новый.
+ * Гейтится тем же правом, что и изменение ключа аккаунта.
+ */
+export function clearPreviousAccountSshPrivateKey(
+  accountId: string,
+): Promise<void> {
+  return apiDelete<void>(
     `${BASE}/server-accounts/${accountId}/previous_ssh_private_key`,
   );
 }

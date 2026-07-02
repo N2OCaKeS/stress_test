@@ -152,6 +152,45 @@ function downloadText(filename: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * Свести fan-out ответа ротации (пароль/ключ) к единому envelope
+ * `AccountRotateDispatchResponse`, который умеет рисовать `RotateDispatchResult`.
+ * Ротация раскатывается на все привязанные серверы, поэтому mode — `all`; поля
+ * `server_name`/`status` в лёгких ответах (ssh_key) могут отсутствовать и
+ * подставляются по месту.
+ */
+function toDispatchSummary(
+  id: string,
+  tasks: {
+    server_id: string;
+    server_name?: string | null;
+    task_id: string;
+    status?: string;
+  }[],
+  skipped: { server_id: string; server_name?: string | null; reason: string }[],
+): accountsApi.AccountRotateDispatchResponse {
+  return {
+    batch_id: id,
+    mode: "all",
+    status: "queued",
+    dispatched: [],
+    failed: [],
+    tasks: tasks.map((t) => ({
+      server_id: t.server_id,
+      server_name: t.server_name ?? null,
+      task_id: t.task_id,
+      status: t.status ?? "queued",
+    })),
+    skipped: skipped.map((s) => ({
+      server_id: s.server_id,
+      server_name: s.server_name ?? null,
+      reason: s.reason,
+    })),
+    partial_failure: false,
+    next_action: null,
+  };
+}
+
 /** Прочитать текстовое содержимое выбранного файла (для загрузки SSH-ключей). */
 function readFileText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -1056,10 +1095,14 @@ function AccountWorkzone({
   onDeleted: () => void;
 }) {
   const toast = useToast();
+  const navigate = useNavigate();
   const { prompt, confirm } = useConfirm();
   const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Сводка раскатки последней ротации пароля на серверы (tasks/skipped).
+  const [rotateResult, setRotateResult] =
+    useState<accountsApi.AccountRotateDispatchResponse | null>(null);
 
   const linkedUserLabel = useUserLabel(account.linked_user_id);
   const createdByLabel = useUserLabel(account.created_by);
@@ -1081,6 +1124,7 @@ function AccountWorkzone({
   useEffect(() => {
     setEditing(false);
     setErr(null);
+    setRotateResult(null);
     setRevisionServer(null);
     setRevisionModalOpen(false);
     setAutoOpenedTask(null);
@@ -1132,17 +1176,28 @@ function AccountWorkzone({
     if (
       !(await confirm({
         title: "Ротация пароля",
-        message: `Сгенерировать новый пароль для ${account.login} в БД? На серверы изменение не уезжает — для apply используйте worker-rotate на вкладке «Аккаунты» сервера.`,
+        message: `Сгенерировать новый пароль для ${account.login}? Новый пароль будет раскатан на привязанные серверы; итог раскатки покажем ниже.`,
         confirmLabel: "Ротировать",
       }))
     )
       return;
     setErr(null);
+    setRotateResult(null);
     setPending(true);
     try {
       const res = await accountsApi.rotateAccountUserInitiated(account.id);
+      const summary = toDispatchSummary(
+        res.id,
+        res.tasks ?? [],
+        res.skipped ?? [],
+      );
+      setRotateResult(summary);
+      const queued = summary.tasks.length;
+      const skipped = summary.skipped.length;
       toast.success(
-        `Пароль ${res.login} ротирован в БД (${formatMskShort(res.rotated_at)})`,
+        skipped > 0
+          ? `Пароль ${res.login} ротирован; применение отправлено на ${queued} серв., пропущено ${skipped}.`
+          : `Пароль ${res.login} ротирован; применение отправлено на ${queued} серв.`,
       );
       onChanged();
     } catch (e) {
@@ -1243,6 +1298,19 @@ function AccountWorkzone({
 
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto p-5 flex flex-col gap-4 max-w-3xl">
         {err && <div className="alert-danger text-sm">{err}</div>}
+
+        {rotateResult && (
+          <div className="card">
+            <div className="text-[11px] uppercase text-dim mb-2">
+              Раскатка ротации пароля
+            </div>
+            <RotateDispatchResult
+              result={rotateResult}
+              serverName={serverName}
+              onOpenTask={(taskId) => navigate(`/tasks/${taskId}`)}
+            />
+          </div>
+        )}
 
         {/* Долгая ревизия: уведомление со статусом; по клику (когда готово) —
             открыть модалку diff. Быстрая открывает модалку сама. */}
@@ -1401,6 +1469,7 @@ function AccountWorkzone({
           account={account}
           canOperate={canOperate}
           canReveal={canReveal}
+          serverName={serverName}
           onChanged={onChanged}
         />
 
@@ -2564,15 +2633,18 @@ function SshKeySection({
   account,
   canOperate,
   canReveal,
+  serverName,
   onChanged,
 }: {
   account: ServerAccount;
   canOperate: boolean;
   /** view_password — держатель может скачать сохранённый приватный ключ. */
   canReveal: boolean;
+  serverName: (id: string) => string;
   onChanged: () => void;
 }) {
   const toast = useToast();
+  const navigate = useNavigate();
   const { confirm } = useConfirm();
   // null — форма закрыта; "add" — добавить/заменить; "rotate" — ротация.
   const [mode, setMode] = useState<"add" | "rotate" | null>(null);
@@ -2581,6 +2653,20 @@ function SshKeySection({
   const [pending, setPending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadingPrev, setDownloadingPrev] = useState(false);
+  const [clearingPrev, setClearingPrev] = useState(false);
+  // Предыдущий ключ удалён из этой сессии — прячем кнопки previous (его больше
+  // нет). Флаг локальный: карточка аккаунта поле «есть ли previous» не несёт.
+  const [prevCleared, setPrevCleared] = useState(false);
+  // Сводка раскатки выдачи/ротации ключа на серверы (tasks/skipped).
+  const [dispatchResult, setDispatchResult] =
+    useState<accountsApi.AccountRotateDispatchResponse | null>(null);
+
+  // Смена аккаунта — сбрасываем локальное состояние секции.
+  useEffect(() => {
+    setMode(null);
+    setPrevCleared(false);
+    setDispatchResult(null);
+  }, [account.id]);
 
   const hasKey = !!account.ssh_key_fingerprint || !!account.ssh_public_key;
 
@@ -2648,6 +2734,36 @@ function SshKeySection({
     }
   }
 
+  // Удалить сохранённый предыдущий ключ. Идемпотентно: 404 (прежнего ключа не
+  // было) трактуем как успех и всё равно прячем кнопки previous.
+  async function handleClearPrevious() {
+    if (clearingPrev || !canOperate) return;
+    const ok = await confirm({
+      title: "Удалить предыдущий ключ",
+      message: `Удалить сохранённый предыдущий SSH-ключ ${account.login}? Делайте это, когда обновили серверы, что были недоступны в момент ротации: без предыдущего ключа доступ к ещё не обновлённым серверам будет потерян.`,
+      confirmLabel: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
+    setClearingPrev(true);
+    try {
+      await accountsApi.clearPreviousAccountSshPrivateKey(account.id);
+      setPrevCleared(true);
+      toast.success("Предыдущий ключ удалён");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        setPrevCleared(true);
+        toast.info("Предыдущего ключа не было — удалять нечего.");
+      } else if (e instanceof ApiError && e.status === 403) {
+        toast.error("Недостаточно прав для удаления ключа.");
+      } else {
+        toast.error(apiErrMsg(e, "Не удалось удалить предыдущий ключ"));
+      }
+    } finally {
+      setClearingPrev(false);
+    }
+  }
+
   function reset() {
     setMode(null);
     setChoice("generate");
@@ -2682,6 +2798,12 @@ function SshKeySection({
               ssh_public_key: choice === "supply" ? pub : null,
             });
       reset();
+      // Ротация оставляет прежний ключ доступным для reveal/download — сбрасываем
+      // локальный флаг «previous удалён», чтобы кнопки previous снова показались.
+      if (mode === "rotate") setPrevCleared(false);
+      setDispatchResult(
+        toDispatchSummary(res.id, res.tasks ?? [], res.skipped ?? []),
+      );
       // При generate (add) и при ротации сервер возвращает приватный ключ, но
       // на экран его не выводим. Ключ уже сохранён в хранилище — скачать его
       // можно сейчас или позже кнопкой «Скачать приватный ключ» (reveal).
@@ -2710,7 +2832,8 @@ function SshKeySection({
         Сам приватный ключ на экран не выводится: после генерации его можно
         скачать сейчас или позже кнопкой «Скачать приватный ключ». Предыдущий
         ключ — для доступа к серверам, ещё не обновлённым на новый ключ после
-        ротации.
+        ротации; удалите его, когда обновили серверы, что были недоступны в
+        момент ротации.
       </div>
 
       <div className="flex items-center gap-2 flex-wrap mb-3">
@@ -2745,17 +2868,31 @@ function SshKeySection({
                 {downloading ? "Скачиваем…" : "Скачать приватный ключ"}
               </button>
             )}
-            {canReveal && (
-              <button
-                type="button"
-                className="btn btn-sm flex items-center gap-1"
-                disabled={downloadingPrev}
-                title="Скачать предыдущий приватный ключ — для доступа к серверам, ещё не обновлённым на новый ключ. Требует view_password."
-                onClick={handleDownloadPrevious}
-              >
-                <Download className="w-3.5 h-3.5" />{" "}
-                {downloadingPrev ? "Скачиваем…" : "Скачать предыдущий ключ"}
-              </button>
+            {canReveal && !prevCleared && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-sm flex items-center gap-1"
+                  disabled={downloadingPrev}
+                  title="Скачать предыдущий приватный ключ — для доступа к серверам, ещё не обновлённым на новый ключ. Требует view_password."
+                  onClick={handleDownloadPrevious}
+                >
+                  <Download className="w-3.5 h-3.5" />{" "}
+                  {downloadingPrev ? "Скачиваем…" : "Скачать предыдущий ключ"}
+                </button>
+                {canOperate && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-danger flex items-center gap-1"
+                    disabled={clearingPrev}
+                    title="Удалить сохранённый предыдущий ключ — когда все ранее недоступные серверы уже обновлены на новый ключ."
+                    onClick={handleClearPrevious}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />{" "}
+                    {clearingPrev ? "Удаляем…" : "Удалить предыдущий ключ"}
+                  </button>
+                )}
+              </>
             )}
             {hasKey && (
               <button
@@ -2827,6 +2964,19 @@ function SshKeySection({
                   : "Сохранить"}
             </button>
           </div>
+        </div>
+      )}
+
+      {dispatchResult && (
+        <div className="border-t border-token mt-3 pt-3">
+          <div className="text-[11px] uppercase text-dim mb-2">
+            Раскатка ключа на серверы
+          </div>
+          <RotateDispatchResult
+            result={dispatchResult}
+            serverName={serverName}
+            onOpenTask={(taskId) => navigate(`/tasks/${taskId}`)}
+          />
         </div>
       )}
     </div>

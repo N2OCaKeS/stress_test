@@ -22,6 +22,7 @@ import type {
 /** Человекочитаемая причина пропуска по `reason`-коду backend'а. */
 const SKIP_REASON_LABELS: Record<string, string> = {
   decommissioned: "сервер выведен из эксплуатации",
+  reserved: "сервер зарезервирован",
   idempotent_conflict: "уже выполняется такая же задача (idempotency)",
   worker_unreachable: "worker недоступен — задача не поставлена",
   not_attempted: "не пытались (батч прерван после ошибки worker'а)",

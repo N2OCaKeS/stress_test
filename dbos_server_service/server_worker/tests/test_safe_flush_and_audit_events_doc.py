@@ -4,8 +4,8 @@
   * `_safe_flush_outbox` пробрасывает `asyncio.CancelledError`;
   * `AUDIT_EVENTS.md` перечисляет handler-actions и worker-lifecycle
     события (`task.worker_shutdown`, `task.worker_orphaned`,
-    `secrets.reencrypt_tick`, `audit.outbox_reattempt_manual`,
-    `installed_packages.list`, `server.packages_*`, `management_user.sync`);
+    `audit.outbox_reattempt_manual`, `installed_packages.list`,
+    `server.packages_*`, `management_user.sync`);
   * `_ipmi_stash_value` round-trip'ит ISO-timestamp (worker-clock как
     источник истины `rotated_at`).
 """
@@ -89,7 +89,6 @@ class TestAuditEventsDocCoverage:
         # Lifecycle worker'а (main.py)
         "task.worker_shutdown",
         "task.worker_orphaned",
-        "secrets.reencrypt_tick",
         "bmc.tls_verify_disabled",
         # CLI (cli/outbox.py)
         "audit.outbox_reattempt_manual",

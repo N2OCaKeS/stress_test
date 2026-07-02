@@ -15,8 +15,8 @@
    Mark_failed("worker_orphaned") + audit-row.
 
 3. **Реальные periodic task'и** — `worker.heartbeat` пишет в
-   `worker_heartbeats`, `secrets.reencrypt_lazy` зарегистрирована как
-   stub. Scheduler-wiring уже покрыт отдельным тестом retry/shutdown.
+   `worker_heartbeats`. Scheduler-wiring уже покрыт отдельным тестом
+   retry/shutdown.
 
 Все тесты — против реальной PostgreSQL, без моков БД.
 """
@@ -669,15 +669,6 @@ class TestWorkerHeartbeatTask:
 
         _runner_state._reset_worker_id_for_tests()
 
-    async def test_secrets_reencrypt_lazy_stub_does_not_raise(self):
-        """Stub `secrets.reencrypt_lazy` — no-op, должен выполниться без exception."""
-        from src.main import secrets_reencrypt_lazy
-
-        if hasattr(secrets_reencrypt_lazy, "original_func"):
-            await secrets_reencrypt_lazy.original_func()
-        else:
-            await secrets_reencrypt_lazy()
-
 
 class TestSchedulerRegistration:
     """Periodic task'и зарегистрированы в broker (могут быть kiq'нуты
@@ -692,11 +683,6 @@ class TestSchedulerRegistration:
         from src.main import broker
 
         assert "tasks.sweep_orphaned" in broker.get_all_tasks()
-
-    def test_secrets_reencrypt_lazy_registered(self):
-        from src.main import broker
-
-        assert "secrets.reencrypt_lazy" in broker.get_all_tasks()
 
 
 class TestWorkerIdResolution:

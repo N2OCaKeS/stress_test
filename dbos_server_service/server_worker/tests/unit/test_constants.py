@@ -49,7 +49,6 @@ _NON_DISPATCH_BROKER_TASKS = frozenset({
     "dispatch_outbox.cleanup_old",
     "dispatch_outbox.poll",
     "internal.outbox_re_attempt",
-    "secrets.reencrypt_lazy",
     "system.heartbeat",
     "tasks.cleanup_completed_old",
     "tasks.recover_scheduled_retries",

@@ -63,8 +63,6 @@ SERVICE_EVENTS = [
     {"action": "task.deleted_midrun", "description": "Row задачи исчез между mark_running и terminal write (retention/ручной DELETE)", "default_severity": "ERROR"},
     {"action": "task.worker_shutdown", "description": "Graceful shutdown воркера — живые задачи переведены в retry/failed", "default_severity": "WARNING"},
     {"action": "task.worker_orphaned", "description": "Sweep нашёл running-задачу с мёртвым worker_id и принудительно завалил её", "default_severity": "ERROR"},
-    # Фоновая ре-шифрация секретов — main.py::secrets_reencrypt_lazy
-    {"action": "secrets.reencrypt_tick", "description": "Тик периодической ре-шифрации секретов под активный мастер-ключ", "default_severity": "DEBUG"},
     # BMC-транспорт и SSRF-guard — clients/__init__.py, main.py
     {"action": "ipmi_controller.password_rotate", "description": "Ротация пароля IPMI/BMC применена и проверена + callback", "default_severity": "WARNING"},
     {"action": "bmc.tls_downgrade", "description": "BMC-probe перешёл на менее защищённый канал (verify→noverify или *→http)", "default_severity": "CRITICAL"},

@@ -202,17 +202,17 @@ class Settings(BaseSettings):
         ),
     )
     # Канал worker → server_service: internal-callback'и тащат крипто (decrypt
-    # /encrypt /UPDATE row под master-key); `finalize_reencrypt_outbox_done` на
-    # большом batch + slow PostgreSQL легко выйдет за 5s. 15s — компромисс
-    # между «не зависать» и «не ловить ложный SERVER_SERVICE_UNREACHABLE».
+    # /encrypt /UPDATE row под master-key) и могут упереться в slow PostgreSQL,
+    # легко выйдя за 5s. 15s — компромисс между «не зависать» и «не ловить
+    # ложный SERVER_SERVICE_UNREACHABLE».
     server_service_request_timeout_seconds: float = Field(
         default=15.0,
         gt=0.0,
         description=(
             "HTTP timeout для internal-callback'ов в server_service "
-            "(fetch_*/submit_*/reencrypt_outbox/*). Длиннее audit-timeout'а: "
-            "криптооперации сервера могут тянуться 50-200ms на row, batch "
-            "callback'и упираются в slow PG."
+            "(fetch_*/submit_*). Длиннее audit-timeout'а: криптооперации "
+            "сервера могут тянуться 50-200ms на row, callback'и упираются "
+            "в slow PG."
         ),
     )
     worker_log_level: str = Field(default="INFO", description="Python log level")
@@ -698,41 +698,6 @@ class Settings(BaseSettings):
             "Max bytes of a single console command line buffered before an "
             "Enter; longer input is force-flushed (audited, truncated) to "
             "bound memory of the line accumulator."
-        ),
-    )
-
-    # ── Background master-key rotation ───────────────────────────────────
-    # Periodic task `secrets.reencrypt_lazy` зовёт server_service
-    # `/internal/secrets/migration_status` + `/reencrypt_batch`. Активна
-    # только когда `RUNNING_TASKS` пустой — чтобы не конкурировать с
-    # power/SSH/inventory задачами за DB-write'ы и CPU. Дефолт интервала
-    # 300s — re-encrypt latency-некритичен, но и не хочется ждать сутки
-    # после bump'а активной версии ключа.
-    # Дефолт намеренно `False`: без явного `SECRETS_REENCRYPT_ENABLED=true`
-    # worker не дёргает `/internal/secrets/reencrypt_batch`. При `True` он
-    # начал бы периодическую re-encryption с первого старта, даже когда
-    # миграция ключа не запланирована — а при копировании prod-манифеста в
-    # dev/staging (где `/internal/secrets/*` недостижим или ключ другой) это
-    # включалось бы неожиданно. Включать осознанно на время миграции ключа.
-    # Симметрично другим prod-guard-настройкам (secure-by-default).
-    secrets_reencrypt_enabled: bool = Field(
-        default=False,
-        description=(
-            "Toggle the background secret re-encryption periodic task. "
-            "Default False — enable explicitly (SECRETS_REENCRYPT_ENABLED=true) "
-            "only while a master-key migration is in progress, so it never "
-            "fires unexpectedly when a prod manifest is copied to dev/staging."
-        ),
-    )
-    secrets_reencrypt_batch_size: int = Field(
-        default=100,
-        ge=1,
-        le=1000,
-        description=(
-            "Размер одного `reencrypt_batch` запроса. Worker не делает "
-            "несколько батчей за тик — это сохраняется на следующий "
-            "интервал, чтобы high-priority задачи могли прорваться "
-            "между батчами."
         ),
     )
 

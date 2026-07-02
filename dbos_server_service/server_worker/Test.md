@@ -34,7 +34,7 @@ docker compose -f server_worker/tests/docker-compose.test.yml run --rm test-runn
 
 ### `test_smoke.py` — sanity на импорты и регистрацию
 
-Все модули `src.*` импортируются без побочки; taskiq-broker регистрирует полный набор tasks (`power.*`, `inventory.*`, `passwords.*`, `installed_packages.list`, `secrets.reencrypt_lazy`, periodic `tasks.cleanup_completed_old` / `audit_outbox.cleanup_published_old` / `worker.cleanup_stale_heartbeats` / `worker.heartbeat` / `worker.sweep`).
+Все модули `src.*` импортируются без побочки; taskiq-broker регистрирует полный набор tasks (`power.*`, `inventory.*`, `passwords.*`, `installed_packages.list`, periodic `tasks.cleanup_completed_old` / `audit_outbox.cleanup_published_old` / `worker.cleanup_stale_heartbeats` / `worker.heartbeat` / `worker.sweep`).
 
 ### `test_task_model.py` — ORM `Task`
 
@@ -103,10 +103,6 @@ Durable retry: `tasks.scheduled_retry_at` пишется ДО fire-and-forget `_
 ### `test_account_password_task.py` — `passwords.account_rotate_password`
 
 Реальный `SshClient` через mock asyncssh + submit_rotated_password. Round-trip: `fetch_account_password → SshClient.set_password (chpasswd) → submit_rotated_password (новый ciphertext server_service'у)`. Покрыто: chpasswd happy/fail, invalid login, stderr-scrubbing, идемпотентность fetch+submit.
-
-### `test_secrets_reencrypt_task.py` — `secrets.reencrypt_lazy`
-
-Periodic фоновая ре-шифрация секретов. Скип на `SECRETS_REENCRYPT_ENABLED=false`. Скип при непустом `RUNNING_TASKS` (high-prio в полёте). Happy: status `remaining>0` → batch вызывается. `remaining=0` → batch НЕ вызывается, audit `success processed=0`. APP_ENV guard: при несовпадении `worker.app_env` и `server_service.app_env` (case-insensitive) тик прерывается до batch'а с audit `failure reason=app_env_mismatch`; case-mismatch (`Production`/`production`) проходит; отсутствие поля в payload (старый server_service) — soft, тик идёт. Batch-size wiring через настройки.
 
 ---
 
@@ -182,5 +178,4 @@ Payload содержит обязательные поля (`action`, `status`, 
 
 - **Реальный Redis / taskiq broker** — `_runner.run_task` зовётся напрямую, kiq-роутинг и serialize/deserialize не тестируются end-to-end (broker регистрируется только smoke-тестом).
 - **Реальный BMC / реальный SSH-сервер** — всё mock'ается. E2E с настоящим iDRAC или asyncssh-сервером лежит за пределами этого реестра.
-- **`secrets.reencrypt_lazy` против реального `server_service` с большим количеством секретов** — покрыты только wiring и батч-граничные случаи, нагрузочное поведение не тестируется.
 - **Производительность / propagation latency** между outbox и `loging_service` — отдельный нагрузочный тест, в реестре нет.

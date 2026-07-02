@@ -223,19 +223,6 @@ class TestServiceIdentityHeader:
         assert cap["headers"].get("X-Service-Identity") == "server_worker"
         assert cap["headers"].get("X-Target-Department-Id") == "dep_xyz"
 
-    async def test_internal_secrets_endpoint_also_carries_identity(
-        self, settings_stub, monkeypatch
-    ):
-        """`/internal/secrets/migration_status` тоже идёт под worker identity."""
-        cap = {}
-        monkeypatch.setattr(
-            httpx,
-            "AsyncClient",
-            _Client(_Resp(200, {"remaining": 0, "total": 0}), cap),
-        )
-        await server_service_client.fetch_secrets_migration_status()
-        assert cap["headers"].get("X-Service-Identity") == "server_worker"
-
 
 # ── handler semaphore lazy init ─────────────────────────────────────────────
 

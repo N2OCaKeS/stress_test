@@ -60,7 +60,7 @@ runner-meta-причину:
 
 Сами handler'ы (`tasks/power.py`, `tasks/passwords.py`,
 `tasks/inventory.py`, `tasks/prepare.py`, `tasks/installed_packages.py`,
-`tasks/management_user.py`, `tasks/users.py`, `tasks/secrets_reencrypt.py`)
+`tasks/management_user.py`, `tasks/users.py`)
 пишут события под
 своими `audit_action`. Severity-defaults и описания полей — в
 `server_service/AUDIT_EVENTS.md`: эти actions зарегистрированы как
@@ -130,12 +130,9 @@ Transport-уровень (`BMC_AUTH_FAILED` / `BMC_UNREACHABLE` / `BMC_TIMEOUT`)
 |---|---|---|---|---|
 | `task.worker_shutdown` | ERROR (или WARNING если задача уйдёт в retry) | graceful shutdown worker'а — все живые task'и переводятся в `failed` (либо retry если `attempt < max_attempts`), чтобы scheduler/другой реплика подхватили | `task` (canonical: `target_id = task_id`) | `task_id`, `reason="worker_shutdown"`, `attempt`, `max_attempts`, `will_retry`, опц. `server_id` (если task несла `target_server_id`) |
 | `task.worker_orphaned` | ERROR | sweep'ер нашёл task'у, у которой `worker_id` не отвечает heartbeat'ом (упавший процесс) — task принудительно `failed`, retry-decision не делается, оператор разбирается вручную | `task` (canonical: `target_id = task_id`) | `task_id`, `reason="worker_orphaned"`, `worker_id`, `attempt`, `max_attempts`, опц. `server_id` (если task несла `target_server_id`) |
-| `secrets.reencrypt_tick` | INFO (success, `allowed=True`), WARNING (status=`warning`, `errors>0`, `allowed=False`, `reason="finalize_errors"`), ERROR (status=`failure`, `allowed=False`, `reason="app_env_mismatch"`) | каждый тик `secrets.reencrypt_lazy` — даже когда работы нет (skip/idle), чтобы видеть пульс ротации ключей | `secret` | `processed`, `skipped`, `errors`, `claimed`, `seeded`, `remaining_before`, `active_version`, `batch_size`. На partial-failure-path добавляется `reason="finalize_errors"` и `allowed=False`, чтобы scheduler/sweep отличали чистый success от warning'а по одному полю. Либо `skipped=True` + `reason` (`active_tasks_present` / `app_env_mismatch`) на ранних exit'ах; `app_env_mismatch` дополнительно несёт `worker_app_env` и `server_service_app_env` и эмитится с `allowed=False`. |
 | `audit.outbox_reattempt_manual` | WARNING | CLI-команда `outbox-reattempt` — оператор форсит повторную доставку конкретной row'ы из `audit_outbox`. Severity WARNING — manual-интервенция в audit-pipeline | `audit_outbox` | `row_id`, `reason` (оператор пишет, зачем), `source="cli"`. На emit'е заполняются `actor_id` (`--actor-id` CLI), `actor_type="operator"`, `target_id=row_id`, `severity=WARNING` явным полем (не из default-таблицы) |
 
 `dispatch_outbox` publisher (`tasks/dispatch_outbox.py`) audit-событий **не эмитит**: он читает строки `dispatch_outbox` из server_service-БД и кикает taskiq-задачи — это внутренний fanout, не бизнес-операция. Видимость наблюдается через worker-логи (`reached attempts cap`, backoff-warnings) и счётчики publisher'а. Если оператор ищет в этой таблице `dispatch_outbox.*` — таких action'ов нет by design.
-
-`secrets.reencrypt_lazy` (taskiq-периодика, `main.py::secrets_reencrypt_lazy`) собственного action'а **не имеет** — каждый её тик пишет одно audit-событие `secrets.reencrypt_tick` (см. строку выше). Имя `secrets.reencrypt_lazy` встречается только в worker-логах (`secrets.reencrypt_lazy: ...`) и в названии cron-job'ы в `core/config.py`. SIEM-правила пишутся по `action=secrets.reencrypt_tick`.
 
 ---
 

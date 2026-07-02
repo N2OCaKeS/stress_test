@@ -14,8 +14,6 @@
 * `audit_outbox_publisher._publish_one` через ContextVar держит латч
   «row уже отправлена» — после успешного 2xx record_success-exception не
   приводит к повторному HTTP-roundtrip'у на следующем проходе.
-* `secrets_reencrypt_lazy` на `ValueError` (malformed outbox_id) зовёт
-  `finalize_reencrypt_outbox_failed` — row не остаётся в `processing`.
 * `_filter_result_for_audit` sentinel-ветки `no_whitelist`/`result_not_dict`.
 """
 
@@ -23,7 +21,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -337,58 +335,6 @@ class TestRecordSuccessDuplicationGuard:
                 _select(AuditOutbox).where(AuditOutbox.id == row_id)
             )).scalar_one()
             assert fresh.published_at is not None
-
-
-# ── ValueError ветка secrets_reencrypt_lazy ──────────────────────────
-
-
-class TestSecretsReencryptLazyMalformedId:
-    async def test_malformed_outbox_id_calls_finalize_failed(self, monkeypatch):
-        """ValueError из `validate_outbox_id` теперь приводит к
-        `finalize_reencrypt_outbox_failed`, чтобы row не остался в processing."""
-        from src.main import _settings, secrets_reencrypt_lazy
-        from src.services import server_service_client
-        from src.tasks._runner_state import RUNNING_TASKS
-
-        RUNNING_TASKS.clear()
-        monkeypatch.setattr(_settings, "secrets_reencrypt_enabled", True)
-
-        status_mock = AsyncMock(return_value={
-            "remaining": 1, "total": 1, "active_version": 2,
-            "by_version": {"1": 1},
-            "outbox": {"pending": 1, "processing": 0, "done": 0, "failed": 0},
-        })
-        # claim возвращает row с битым id.
-        claim_mock = AsyncMock(return_value=[
-            {"id": "../path-traversal", "entity_type": "server_account",
-             "entity_id": "acc_x", "legacy_ciphertext": "v1$n$c", "attempts": 0},
-        ])
-        # finalize_done бросает ValueError (валидатор отбил битый id).
-        done_mock = AsyncMock(side_effect=ValueError("malformed outbox_id"))
-        failed_mock = AsyncMock(return_value={"id": "../path-traversal", "status": "failed"})
-
-        monkeypatch.setattr(
-            server_service_client, "fetch_secrets_migration_status", status_mock,
-        )
-        monkeypatch.setattr(
-            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
-        )
-        monkeypatch.setattr(
-            server_service_client, "finalize_reencrypt_outbox_done", done_mock,
-        )
-        monkeypatch.setattr(
-            server_service_client, "finalize_reencrypt_outbox_failed", failed_mock,
-        )
-
-        fn = getattr(secrets_reencrypt_lazy, "original_func", secrets_reencrypt_lazy)
-        await fn()
-
-        # finalize_failed должен быть позван ровно один раз с тем же битым id
-        # и непустым `error` (объясняющим malformed-id).
-        failed_mock.assert_awaited_once()
-        call_args = failed_mock.await_args
-        assert call_args.args[0] == "../path-traversal"
-        assert "malformed" in (call_args.kwargs.get("error") or "")
 
 
 # ── dispatch_outbox idempotency cap + _filter_result_for_audit sentinels ──

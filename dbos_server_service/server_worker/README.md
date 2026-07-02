@@ -89,7 +89,6 @@ src/
     installed_packages.py       # installed_packages.list (live SSH dpkg-query/rpm -qa)
     users.py                    # users.inventory (getent) + account.provision/update_on_host/deprovision (useradd/usermod/userdel)
     prepare.py                  # server.prepare (bootstrap управляющего пользователя + SSH-ключ)
-  # secrets.reencrypt_lazy зарегистрирован напрямую в main.py через broker.task — отдельного файла tasks/secrets.py пока нет
   utils/
     ids.py                      # tsk_* generator
     redaction.py                # 7 regex'ов для last_error / stdout
@@ -196,7 +195,6 @@ taskiq scheduler src.main:scheduler
 | `tasks.cleanup_completed_old` | `0 0 * * *` (03:00 MSK) | DELETE SUCCEEDED/FAILED task'ов старше `TASKS_RETENTION_DAYS` (default 30d); bounded growth `tasks`. QUEUED/RUNNING не трогаем — это работа orphan-sweep'а. |
 | `audit_outbox.cleanup_published_old` | `30 0 * * *` (03:30 MSK) | DELETE published outbox-row'ов (как delivered, так и DLQ-poisoned) старше `AUDIT_OUTBOX_RETENTION_DAYS` (default 90d). Сдвиг от `tasks.cleanup_completed_old` чтобы не пересекаться по DB-write нагрузке. |
 | `tasks.recover_scheduled_retries` | `*/1 * * * *` | periodic recovery «зависших» retry-row'ов: `status='queued' AND scheduled_retry_at <= now()` re-kick'ается через CAS `list_due_scheduled_retries` (SKIP LOCKED). Закрывает дыру startup-only recovery: если фоновая `_RETRY_TASKS`-task молча отменилась (GC / event-loop / чужой cancel), без minute-cron'а row застряла бы до рестарта. |
-| `secrets.reencrypt_lazy` | `*/5 * * * *` | постепенная ре-шифрация секретов через outbox-pattern: `GET /internal/secrets/migration_status` (наблюдаемость + APP_ENV-guard), при пустом outbox и `remaining>0` — `POST /reencrypt_outbox/seed`, затем `GET /reencrypt_outbox/pending?limit=N` (claim) и для каждого row'а `POST .../{id}/done` (либо `.../{id}/failed`, если done упал). Worker мастер-ключ не держит, crypto на server-side в короткой per-row транзакции. Skip'ается, если `RUNNING_TASKS` непуст — приоритет ниже пользовательских handler'ов. Дополнительно сверяет `APP_ENV` worker'а и server_service'а (последний отдаёт его в `migration_status`): несовпадение → аборт тика + audit `secrets.reencrypt_tick status=failure allowed=False reason=app_env_mismatch`. Защита от staging-worker'а, случайно нацеленного на prod-server_service. Partial-failure батча (часть `finalize_done` упала) → audit `status=warning allowed=False reason=finalize_errors`; clean-success остаётся `status=success allowed=True`. |
 
 Cron в taskiq читается в UTC; MSK-времена в комментариях для оператора. Расписания планируем по московскому времени (Europe/Moscow, UTC+3), а в БД и брокер всё уходит в UTC. Hardware-handlers (`power.*`, `ipmi.rotate_password`) используют BMC dispatcher из `tasks/_bmc_helpers.py`: HEAD-probe `/redfish/v1/` → Redfish-клиент, иначе fallback на `ipmitool` (`clients/ipmitool.py`).
 
@@ -236,7 +234,7 @@ make test-worker
 | `LOGGING_SERVICE_API_KEY` | `""` | shared SERVICE_API_KEY для `/api/logging/v1/events`. В `production` обязателен (иначе `audit_client.emit` тихо дропал бы события) |
 | `HTTP_REQUEST_TIMEOUT_SECONDS` | `5.0` | legacy общий httpx timeout — fallback для тестов; production-path расщеплён ниже на audit/server_service |
 | `AUDIT_REQUEST_TIMEOUT_SECONDS` | `5.0` | httpx timeout для emit'ов в `loging_service /events`. Короткий — ingest должен отвечать быстро; outbox retry на медленных проходах rule_engine'а предпочтительнее зависшего worker'а |
-| `SERVER_SERVICE_REQUEST_TIMEOUT_SECONDS` | `15.0` | httpx timeout для internal-callback'ов в server_service (`fetch_*`/`submit_*`/`reencrypt_outbox/*`); длиннее audit-таймаута — крипто-операции server'а тянутся 50-200ms на row, batch-callback'и упираются в slow PG |
+| `SERVER_SERVICE_REQUEST_TIMEOUT_SECONDS` | `15.0` | httpx timeout для internal-callback'ов в server_service (`fetch_*`/`submit_*`); длиннее audit-таймаута — крипто-операции server'а тянутся 50-200ms на row, callback'и упираются в slow PG |
 | `WORKER_LOG_LEVEL` | `INFO` | python log level. `DEBUG` повышает шум, но `httpx/httpcore/hpack` принудительно понижены до WARNING (защита от утечки `Authorization` в логи) |
 
 ### Жизненный цикл и replica identity
@@ -308,12 +306,3 @@ make test-worker
 | `CONSOLE_MAX_COMMAND_LENGTH` | `8192` | максимум байт строки console-ввода без Enter перед форс-флашем (аудит, truncated) — bound на память аккумулятора строки |
 
 Bootstrap-креды `prepare` worker читает из Redis (тот же `REDIS_URL`, что и broker) по ссылке `bootstrap_creds_key` из payload — ключ `dbos:prepare_creds:<task_id>`. TTL ключа выставляет server_service (его env `PREPARE_CREDS_TTL_SECONDS`, default 900s); пока TTL жив, retry работает, по истечении — `SSH_BOOTSTRAP_CREDS_MISSING`. Plaintext в `tasks.payload` не оседает.
-
-### Master-key re-encryption (background)
-
-| ENV | Default | Назначение |
-|---|---|---|
-| `SECRETS_REENCRYPT_ENABLED` | `false` | включает periodic `secrets.reencrypt_lazy` (5-минутный тик). Дефолт `false` — включать осознанно (`true`) только на время миграции master-ключа, чтобы тик не сработал неожиданно при копировании prod-манифеста в dev/staging, где `/internal/secrets/*` недостижим |
-| `SECRETS_REENCRYPT_BATCH_SIZE` | `100` | размер `reencrypt_outbox/pending?limit=N` claim'а одного тика. Worker не делает несколько claim'ов за тик — high-priority задачи должны успевать прорваться между ними. Seed-фаза при пустом outbox запрашивает до `N * 10` row'ов, чтобы один тик после bump'а версии ключа уже нашёл, что обработать. |
-
-Operator ad-hoc: `services.server_service_client.trigger_secrets_reencrypt_batch(limit)` — синхронный одиночный батч-вызов `POST /api/server/v1/internal/secrets/reencrypt_batch`. Не используется production-path'ом (там работает outbox-периодик `secrets.reencrypt_lazy` выше); оставлен как ручка для оператора, чтобы можно было запустить один батч из shell'а без выкатывания периодика, и для regression-тестов sync-маршрута. Если когда-нибудь решим вынести в отдельный `cli/` — переезд тривиальный, callers нет.

@@ -22,7 +22,6 @@ from src.clients import redfish as redfish_client
 from src.core import identifiers
 from src.repositories import task as task_repo
 from src.services import _breaker_lua, audit_publisher_breaker as cb
-from src.services import server_service_client
 from src.tasks import _runner
 from src.utils.redaction import redact_error_message  # noqa: F401  — import-time проверка зоны
 
@@ -37,13 +36,7 @@ from tests.unit._breaker_test_helpers import (
 
 
 class TestValidateOutboxId:
-    """`validate_outbox_id` уже добавлен; проверяем, что callers ходят через него."""
-
-    def test_validate_outbox_id_is_imported_from_identifiers(self) -> None:
-        assert (
-            server_service_client.validate_outbox_id
-            is identifiers.validate_outbox_id
-        )
+    """`validate_outbox_id` отбивает мусорные id до подстановки в URL-path."""
 
     @pytest.mark.parametrize(
         "good",
@@ -72,20 +65,6 @@ class TestValidateOutboxId:
     def test_rejects_unsafe_input(self, bad: str) -> None:
         with pytest.raises(ValueError):
             identifiers.validate_outbox_id(bad)
-
-    def test_finalize_done_calls_validator(self) -> None:
-        # Статический check: оба `finalize_*` пропускают outbox_id через
-        # validator до подстановки в URL-template.
-        src = inspect.getsource(server_service_client.finalize_reencrypt_outbox_done)
-        assert "validate_outbox_id" in src
-        # Проверка очерёдности: validator зовётся до построения url
-        # (иначе SQLi/path-traversal сначала бы попал в f-string).
-        assert src.index("validate_outbox_id") < src.index("/done")
-
-    def test_finalize_failed_calls_validator(self) -> None:
-        src = inspect.getsource(server_service_client.finalize_reencrypt_outbox_failed)
-        assert "validate_outbox_id" in src
-        assert src.index("validate_outbox_id") < src.index("/failed")
 
 
 # ── item 2: rotate_user_password docstring переписан ─────────────────────────

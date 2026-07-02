@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { TopBar } from "./TopBar";
 import { LeftPanel } from "./LeftPanel";
 import { ResizeHandle } from "./ResizeHandle";
@@ -26,9 +27,15 @@ const MID_MAX = 600;
  *
  * Left/middle widths are user-resizable and persisted to localStorage.
  * LeftPanel below COLLAPSED_THRESHOLD switches to icons-only rendering.
+ * Middle сворачивается целиком в узкую полоску с кнопкой возврата — место
+ * отдаётся контенту (например, консоли сервера).
  */
 export function Shell({ breadcrumb, middle, children }: ShellProps) {
   const [collapsed, setCollapsed] = usePanelFlag("dbos-left-collapsed", false);
+  const [middleCollapsed, setMiddleCollapsed] = usePanelFlag(
+    "dbos-middle-collapsed",
+    false,
+  );
   const [leftWidth, setLeftWidth] = usePanelWidth(
     "dbos-left-width",
     LEFT_DEFAULT,
@@ -78,13 +85,22 @@ export function Shell({ breadcrumb, middle, children }: ShellProps) {
           resetTo={LEFT_DEFAULT}
           ariaLabel="Resize left panel"
         />
-        {middle && (
+        {middle && !middleCollapsed && (
           <>
             <div
-              className="shrink-0 min-h-0 flex flex-col overflow-hidden [&>aside]:!w-full [&>section]:!w-full [&>aside]:flex-1 [&>section]:flex-1"
+              className="relative shrink-0 min-h-0 flex flex-col overflow-hidden [&>aside]:!w-full [&>section]:!w-full [&>aside]:flex-1 [&>section]:flex-1"
               style={{ width: middleWidth }}
             >
               {middle}
+              <button
+                type="button"
+                onClick={() => setMiddleCollapsed(true)}
+                title="Свернуть панель"
+                aria-label="Collapse middle panel"
+                className="absolute top-1/2 right-0 -translate-y-1/2 z-20 h-10 w-4 flex items-center justify-center rounded-l surface-2 border border-r-0 border-token text-dim hover-bg transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
             </div>
             <ResizeHandle
               width={middleWidth}
@@ -95,6 +111,19 @@ export function Shell({ breadcrumb, middle, children }: ShellProps) {
               ariaLabel="Resize middle panel"
             />
           </>
+        )}
+        {middle && middleCollapsed && (
+          <div className="shrink-0 w-7 border-r border-token surface flex flex-col items-center py-2">
+            <button
+              type="button"
+              onClick={() => setMiddleCollapsed(false)}
+              title="Развернуть панель"
+              aria-label="Expand middle panel"
+              className="btn flex items-center justify-center"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         )}
         {children}
       </div>

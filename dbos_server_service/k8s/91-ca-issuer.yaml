@@ -3,9 +3,9 @@
 # Идея:
 #   1) `dbos-selfsigned-bootstrap` — self-signed Issuer, нужен только для того,
 #      чтобы подписать корневой CA-сертификат.
-#   2) `dbos-internal-ca` — Certificate (isCA: true), CN "DBOS Server Manager
-#      Internal CA", срок 10 лет. cert-manager положит ключ + сертификат
-#      в Secret `dbos-ca-key-pair`.
+#   2) `dbos-internal-ca` — Certificate (isCA: true), CN "EMM Internal CA",
+#      срок 10 лет. cert-manager положит ключ + сертификат в Secret
+#      `dbos-ca-key-pair`.
 #   3) `dbos-ca-issuer` — CA-Issuer, подписывает leaf-сертификаты для сервисов
 #      приватным ключом из `dbos-ca-key-pair`.
 #
@@ -29,10 +29,9 @@ metadata:
   namespace: dbos
 spec:
   isCA: true
-  commonName: DBOS Server Manager Internal CA
+  commonName: EMM Internal CA
   subject:
     organizations:
-      - DBOS Server Manager
       - Astra Linux SE
     countries:
       - RU

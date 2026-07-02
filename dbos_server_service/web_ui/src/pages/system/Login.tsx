@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import {
   AlertCircle,
@@ -6,9 +6,11 @@ import {
   EyeOff,
   Loader,
   Lock,
+  ShieldCheck,
   User,
 } from "lucide-react";
 import { ThemeSwitcher } from "@/components/shell/ThemeSwitcher";
+import { CertHelpModal } from "@/components/CertHelpModal";
 import { useAuth, USE_MOCK_AUTH } from "@/contexts/AuthContext";
 import { ApiError } from "@/api/client";
 
@@ -31,6 +33,10 @@ export function Login() {
   const [showPw, setShowPw] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
+  const [certHelpOpen, setCertHelpOpen] = useState(false);
+  // Авто-помощь по cert показываем один раз за жизнь экрана, чтобы серия
+  // повторных попыток входа не мигала модалкой на каждый submit.
+  const certAutoShown = useRef(false);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -45,6 +51,9 @@ export function Login() {
       if (err instanceof ApiError) {
         setError(err);
       } else {
+        // Сетевой обрыв на логине почти всегда означает недоверенный CA:
+        // браузер режет fetch к /api ещё до ответа. Подсказываем установку
+        // сертификата автоматически (один раз).
         setError(
           new ApiError(0, {
             error: "network_error",
@@ -52,6 +61,10 @@ export function Login() {
             message: "Не удалось связаться с auth_service",
           }),
         );
+        if (!certAutoShown.current) {
+          certAutoShown.current = true;
+          setCertHelpOpen(true);
+        }
       }
     } finally {
       setSubmitting(false);
@@ -60,6 +73,7 @@ export function Login() {
 
   const isLockout = error?.errorCode === "ACCOUNT_TEMPORARILY_LOCKED";
   const isRateLimit = error?.errorCode === "RATE_LIMIT_EXCEEDED";
+  const isNetworkError = error?.errorCode === "NETWORK_ERROR";
 
   return (
     <div className="gradient-bg min-h-screen flex flex-col">
@@ -104,6 +118,15 @@ export function Login() {
                       Повтор через {Math.ceil(error.retryAfter / 60) || 1} мин
                       ({error.retryAfter} сек).
                     </div>
+                  )}
+                  {isNetworkError && (
+                    <button
+                      type="button"
+                      className="text-xs underline mt-1"
+                      onClick={() => setCertHelpOpen(true)}
+                    >
+                      Похоже на недоверенный сертификат — как установить
+                    </button>
                   )}
                   <div className="text-[10px] opacity-60 mt-1 mono">
                     {error.errorCode}
@@ -184,6 +207,17 @@ export function Login() {
             <div className="mt-5 text-center text-xs text-dim">
               Забыли пароль? Обратитесь к своему руководителю.
             </div>
+
+            <div className="mt-3 text-center">
+              <button
+                type="button"
+                className="text-xs text-accent hover:underline inline-flex items-center gap-1"
+                onClick={() => setCertHelpOpen(true)}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Проблемы с подключением? Установить сертификат
+              </button>
+            </div>
           </div>
 
           {USE_MOCK_AUTH && (
@@ -199,6 +233,11 @@ export function Login() {
       <footer className="border-t border-token surface px-6 py-3 flex items-center justify-center text-xs text-dim">
         {SERVICE_NAME} · <span className="mono ml-1">v{SERVICE_VERSION}</span>
       </footer>
+
+      <CertHelpModal
+        open={certHelpOpen}
+        onClose={() => setCertHelpOpen(false)}
+      />
     </div>
   );
 }

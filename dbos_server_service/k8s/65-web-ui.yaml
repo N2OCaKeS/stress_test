@@ -54,6 +54,14 @@ spec:
               mountPath: /var/cache/nginx
             - name: nginx-run
               mountPath: /var/run
+            # Публичный CA-сертификат раздаём файлом рядом со статикой, чтобы
+            # клиент скачал его из UI и добавил в доверенные (см. nginx.conf,
+            # location /dbos-ca.crt). Монтируем ТОЛЬКО ca.crt — приватный ключ
+            # CA (tls.key) из того же секрета сюда не попадает.
+            - name: ca-cert
+              mountPath: /usr/share/nginx/html/dbos-ca.crt
+              subPath: dbos-ca.crt
+              readOnly: true
           startupProbe:
             httpGet:
               path: /healthz
@@ -88,6 +96,14 @@ spec:
         - name: nginx-run
           emptyDir:
             sizeLimit: 8Mi
+        # Из секрета берём только публичный ca.crt под именем dbos-ca.crt.
+        # Приватный ключ CA (tls.key) в items не перечислен — не монтируется.
+        - name: ca-cert
+          secret:
+            secretName: dbos-ca-key-pair
+            items:
+              - key: ca.crt
+                path: dbos-ca.crt
 
 ---
 apiVersion: v1

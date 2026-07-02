@@ -545,6 +545,20 @@ def _ensure_ssh_keypair_material(account: ServerAccount) -> tuple[str, str, bool
         private_pem,
         aad=secrets_service.aad_for_server_account_ssh_key(account.id),
     )
+    # У учётки не было ключа — сгенерили пару при резолве кред (prepare /
+    # provision). Фиксируем факт автогенерации: public дальше уедет в
+    # authorized_keys на боксе. Идемпотентно — эмит только на реальной
+    # генерации (ветка `ssh_public_key is None`).
+    audit_service.emit(
+        "server_account.ssh_key_generated",
+        target_id=account.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "login": account.login,
+            "department_id": account.department_id,
+            "ssh_key_fingerprint": ssh_public_key_fingerprint(public_openssh),
+        },
+    )
     return public_openssh, private_pem, True
 
 
@@ -2124,8 +2138,11 @@ async def rotate_ssh_key(
         private_pem,
         aad=secrets_service.aad_for_server_account_ssh_key(obj.id),
     )
+    # Ротация (не set): текущий приватный ключ удерживаем в previous на время
+    # переходного периода, пока новый не раскатан на серверы (retain_previous).
     await repo.update_ssh_key(
-        db, obj, ssh_public_key=public_openssh, ssh_private_key_encrypted=encrypted
+        db, obj, ssh_public_key=public_openssh, ssh_private_key_encrypted=encrypted,
+        retain_previous=True,
     )
     await db.commit()
     await db.refresh(obj)
@@ -2345,6 +2362,125 @@ async def reveal_ssh_private_key(
         },
     )
     return account, private_pem
+
+
+async def reveal_previous_ssh_private_key(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+) -> tuple[ServerAccount, str]:
+    """Расшифровать УДЕРЖАННЫЙ прежний приватный SSH-ключ для скачивания.
+
+    Зеркало `reveal_ssh_private_key`, но по `previous_ssh_private_key_encrypted`
+    — прежний ключ доступен на время переходного периода ротации ssh-ключа,
+    пока новый не раскатан на серверы. Гейт тот же — `view_password`. Если
+    прежнего ключа нет (ротации не было либо переходный период закрыт) — 404
+    ACCOUNT_NO_PREVIOUS_SSH_KEY. Раскрытие пишет CRITICAL
+    `server_account.reveal_previous_ssh_private_key`.
+
+    Прежний ключ шифровался тем же AAD, что и текущий (AAD привязан к id строки,
+    не к колонке) — при ротации ciphertext просто переехал между колонками.
+
+    Возвращает `(account, previous_private_pem)`.
+    """
+    account = await _authorize_account_action(
+        db, identity, account_id, Action.VIEW_PASSWORD,
+        "server_account.reveal_previous_ssh_private_key",
+    )
+
+    if account.previous_ssh_private_key_encrypted is None:
+        audit_service.emit(
+            "server_account.reveal_previous_ssh_private_key",
+            target_id=account.id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "no_previous_ssh_key_stored",
+                "department_id": account.department_id,
+            },
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_NO_PREVIOUS_SSH_KEY",
+            message=(
+                "Account has no retained previous SSH private key (no key "
+                "rotation in progress)"
+            ),
+        )
+
+    aad = secrets_service.aad_for_server_account_ssh_key(account.id)
+    try:
+        private_pem = secrets_service.decrypt(
+            account.previous_ssh_private_key_encrypted, aad=aad
+        )
+    except AppException:
+        audit_service.emit(
+            "server_account.reveal_previous_ssh_private_key",
+            target_id=account.id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "decrypt_failed",
+                "department_id": account.department_id,
+            },
+        )
+        raise
+
+    audit_service.emit(
+        "server_account.reveal_previous_ssh_private_key",
+        target_id=account.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "login": account.login,
+            "department_id": account.department_id,
+        },
+    )
+    return account, private_pem
+
+
+async def authorize_apply_credentials(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+) -> ServerAccount:
+    """Загрузить учётку + авторизовать ручной apply кред на серверы.
+
+    Ручной проброс пароля+ключа на привязанные серверы — та же плоскость, что и
+    ротация пароля: гейтим `rotate_password` (роль либо per-account грант).
+    Невидимая / чужая учётка скрыта за 404 для держателя права, без права —
+    единый 403 (как `_authorize_account_action`). Возвращает видимую учётку с
+    подгруженными `server_links` для fan-out'а.
+    """
+    return await _authorize_account_action(
+        db, identity, account_id, Action.ROTATE_PASSWORD,
+        "server_account.apply_credentials",
+    )
+
+
+def audit_apply_credentials(
+    *,
+    account_id: str,
+    login: str,
+    department_id: str,
+    tasks: list[dict],
+    skipped: list[dict],
+) -> None:
+    """Сводный аудит ручного apply кред на серверы (`server_account.apply_credentials`).
+
+    Per-server dispatch'и уже эмитят свои события внутри fan-out'а; здесь —
+    итоговая сводка (сколько серверов получили задачу, сколько пропущено).
+    Скаляры принимаются явно: после fan-out'а объект аккаунта в сессии мог
+    проэкспайриться (savepoint-rollback на недоступном воркере).
+    """
+    audit_service.emit(
+        "server_account.apply_credentials",
+        target_id=account_id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "login": login,
+            "department_id": department_id,
+            "dispatched": len(tasks),
+            "skipped": len(skipped),
+            "source": "manual_apply",
+        },
+    )
 
 
 async def resolve_bootstrap_credentials(

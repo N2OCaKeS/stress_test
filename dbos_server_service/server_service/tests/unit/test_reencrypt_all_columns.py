@@ -7,7 +7,7 @@
 
 Проверяем:
 
-* полный round-trip через outbox — все восемь шифр-ячеек одной server-row +
+* полный round-trip через outbox — все девять шифр-ячеек одной server-row +
   account + ipmi переезжают на активную версию, каждая расшифровывается своим
   AAD в исходный plaintext;
 * инвариант retire — пока хоть одна колонка (mgmt_ssh) на старой версии,
@@ -46,6 +46,7 @@ _SRV_PREV_MGMT_SSH = "srv-prev-mgmt-ssh-private-key"
 _ACC_PW = "acc-password"
 _ACC_PREV_PW = "acc-prev-password"
 _ACC_SSH = "acc-ssh-private-key"
+_ACC_PREV_SSH = "acc-prev-ssh-private-key"
 _IPMI_PW = "ipmi-password"
 
 
@@ -77,6 +78,9 @@ async def _seed_all_columns(db, make_server, make_account, make_ipmi):
     acc.ssh_private_key_encrypted = secrets_service.encrypt(
         _ACC_SSH, aad=secrets_service.aad_for_server_account_ssh_key(acc.id)
     )
+    acc.previous_ssh_private_key_encrypted = secrets_service.encrypt(
+        _ACC_PREV_SSH, aad=secrets_service.aad_for_server_account_ssh_key(acc.id)
+    )
 
     ctrl = await make_ipmi(server_id=srv.id, password=_IPMI_PW)
 
@@ -98,6 +102,8 @@ async def _seed_all_columns(db, make_server, make_account, make_ipmi):
          secrets_service.aad_for_server_account_password, _ACC_PREV_PW),
         (ServerAccount, acc.id, "ssh_private_key_encrypted",
          secrets_service.aad_for_server_account_ssh_key, _ACC_SSH),
+        (ServerAccount, acc.id, "previous_ssh_private_key_encrypted",
+         secrets_service.aad_for_server_account_ssh_key, _ACC_PREV_SSH),
         (IpmiController, ctrl.id, "password_encrypted",
          secrets_service.aad_for_ipmi_credential, _IPMI_PW),
     ]
@@ -117,7 +123,7 @@ async def _drain_outbox(db) -> None:
 async def test_all_columns_reencrypted_end_to_end(
     db, make_server, make_account, make_ipmi
 ):
-    """Все восемь шифр-ячеек переходят на новую версию и расшифровываются."""
+    """Все девять шифр-ячеек переходят на новую версию и расшифровываются."""
     ks = get_keystore()
     old_version = ks.get_active_version()
 
@@ -130,10 +136,10 @@ async def test_all_columns_reencrypted_end_to_end(
     new_version = ks.get_active_version()
     assert new_version == old_version + 1
 
-    # Все 8 ячеек попали в outbox (повторный seed находит их же, ничего не
+    # Все 9 ячеек попали в outbox (повторный seed находит их же, ничего не
     # добавляя).
     reseed = await secrets_migration_service.seed_outbox(db)
-    assert reseed["scanned"] == 8, reseed
+    assert reseed["scanned"] == 9, reseed
     assert reseed["inserted"] == 0, reseed
 
     await _drain_outbox(db)
@@ -225,17 +231,17 @@ async def test_lingering_mgmt_ssh_blocks_retire(
 async def test_remaining_legacy_sums_all_columns(
     db, make_server, make_account, make_ipmi
 ):
-    """remaining_legacy и seed.scanned учитывают все 8 шифр-ячеек, не только пароли."""
+    """remaining_legacy и seed.scanned учитывают все 9 шифр-ячеек, не только пароли."""
     await _seed_all_columns(db, make_server, make_account, make_ipmi)
 
     await key_rotation_service.rotate(db, new_key_b64=_fresh_key_b64())
 
-    # Ничего ещё не дренировали — все 8 ячеек под старой версией.
-    assert await secrets_migration_service.remaining_legacy(db) == 8
+    # Ничего ещё не дренировали — все 9 ячеек под старой версией.
+    assert await secrets_migration_service.remaining_legacy(db) == 9
 
     status = await secrets_migration_service.status(db)
-    assert status["remaining_legacy_total"] == 8
-    assert status["remaining"] == 8
+    assert status["remaining_legacy_total"] == 9
+    assert status["remaining"] == 9
     # Полный per-column breakdown содержит все колонки реестра.
     assert set(status["columns"].keys()) == {
         "servers.mgmt_password_encrypted",
@@ -245,6 +251,7 @@ async def test_remaining_legacy_sums_all_columns(
         "server_accounts.password_encrypted",
         "server_accounts.previous_password_encrypted",
         "server_accounts.ssh_private_key_encrypted",
+        "server_accounts.previous_ssh_private_key_encrypted",
         "ipmi_controllers.password_encrypted",
     }
 

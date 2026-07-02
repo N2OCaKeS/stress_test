@@ -289,9 +289,15 @@ Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404).
 
 ### `POST /server-accounts/{account_id}/rotate_password`
 
-Auth: Bearer + `(server_account, *, rotate_password)`. Body: опц. `password_b64` (`base64.b64encode(plaintext)`, иначе `secrets.token_urlsafe(32)`; политика по декодированному plaintext). Меняет только ciphertext в БД, без SSH-apply. Plaintext НЕ возвращается. CRITICAL audit.
+Auth: Bearer + `(server_account, *, rotate_password)`. Body: опц. `password_b64` (`base64.b64encode(plaintext)`, иначе `secrets.token_urlsafe(32)`; политика по декодированному plaintext). Меняет ciphertext в БД, поднимает `credentials_pending_apply` и авто-диспатчит `account.update_on_host` (`apply_password: true` + текущий `ssh_public_key`) на серверы с `present_on_server=True` — пароль/ключ пробрасываются на боксы (best-effort). Plaintext НЕ возвращается. CRITICAL audit.
 
 Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404), `WEAK_PASSWORD` (422), `RATE_LIMIT_EXCEEDED` (429).
+
+### `POST /server-accounts/{account_id}/apply` (worker dispatch)
+
+Auth: Bearer + `(server_account, *, rotate_password)`. Ручной проброс: ставит `account.update_on_host` (`apply_password: true` при наличии пароля + текущий `ssh_public_key`) на все серверы с `present_on_server=True` — доносит сохранённые пароль и ssh-ключ (chpasswd + authorized_keys). Секреты в payload не кладутся: воркер сам резолвит пароль (internal `fetch_account_password` для managed / self-сессия для non-managed). Тот же apply, что авто-запускается после set/rotate. Best-effort: недоступный/списанный/reserved сервер уходит в `skipped`. 202. Ответ `{id, login, tasks[], skipped[]}`. WARNING audit `server_account.apply_credentials`.
+
+Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404).
 
 ### `POST /server-accounts/import`
 
@@ -325,13 +331,13 @@ Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404), `ACCOUNT_DUPLICATE
 
 ### `POST /server-accounts/{account_id}/ssh_key` (worker dispatch)
 
-Auth: Bearer + `(server_account, *, update)`. Body: `{ssh_mode, ssh_public_key?, ssh_private_key_b64?}`. `generate` — сервер генерит Ed25519 и возвращает приватный ключ ОДИН раз (`ssh_private_key`); `supply` — клиент передаёт `ssh_public_key` и опц. `ssh_private_key_b64` (если приложен — шифруется и хранится, тогда консоль сможет ходить под аккаунтом). Сохраняет ключ в БД и диспатчит `account.provision` на все серверы с `present_on_server=True` (push в `authorized_keys`). 202. WARNING audit `server_account.ssh_key_set`.
+Auth: Bearer + `(server_account, *, update)`. Body: `{ssh_mode, ssh_public_key?, ssh_private_key_b64?}`. `generate` — сервер генерит Ed25519 и возвращает приватный ключ ОДИН раз (`ssh_private_key`); `supply` — клиент передаёт `ssh_public_key` и опц. `ssh_private_key_b64` (если приложен — шифруется и хранится, тогда консоль сможет ходить под аккаунтом). Сохраняет ключ в БД, поднимает `credentials_pending_apply` и диспатчит `account.update_on_host` (текущий `ssh_public_key`, `apply_password` НЕ ставится) на все серверы с `present_on_server=True` (push в `authorized_keys`). 202. WARNING audit `server_account.ssh_key_set`.
 
 Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404), `422` (`supply` без public-ключа / битый ключ).
 
 ### `POST /server-accounts/{account_id}/rotate_ssh_key` (worker dispatch)
 
-Auth: Bearer + `(server_account, *, update)`. Перегенерирует Ed25519-пару (кейс компрометации), сохраняет public + зашифрованный private, возвращает новый приватный ключ ОДИН раз, диспатчит `account.provision` на все серверы с `present_on_server=True` (re-push authorized_keys). 202. CRITICAL audit `server_account.ssh_key_rotate`.
+Auth: Bearer + `(server_account, *, update)`. Перегенерирует Ed25519-пару (кейс компрометации), сохраняет public + зашифрованный private, **прежний приватный удерживает в `previous_ssh_private_key_encrypted`** (доступен через `/previous_ssh_private_key` на время переходного периода), возвращает новый приватный ключ ОДИН раз, диспатчит `account.update_on_host` на все серверы с `present_on_server=True` (re-push authorized_keys). 202. CRITICAL audit `server_account.ssh_key_rotate`.
 
 Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404).
 
@@ -340,6 +346,12 @@ Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404).
 Auth: Bearer + `(server_account, *, view_password)` (то же право, что у раскрытия пароля). Расшифровывает и отдаёт приватный SSH-ключ в PEM. Доступен только для сгенерированных сервером ключей (`generate`/`rotate_ssh_key`); у `supply`-ключа без приватной части и у аккаунта без ключа → 404. Per-IP+account reveal-rate-limit (`PASSWORD_REVEAL_RATE_LIMIT`, default 10/min) поверх глобального. CRITICAL audit `server_account.ssh_private_key_revealed`.
 
 Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` / `ACCOUNT_NO_SSH_PRIVATE_KEY` (404), `DECRYPT_FAILED` (422), `RATE_LIMIT_EXCEEDED` (429).
+
+### `GET /server-accounts/{account_id}/previous_ssh_private_key`
+
+Auth: Bearer + `(server_account, *, view_password)`. Зеркало `/ssh_private_key`, но отдаёт удержанный ПРЕЖНИЙ приватный ключ (`previous_ssh_private_key_encrypted`) — доступен на время переходного периода ротации ssh-ключа, пока новый не раскатан на серверы. Нет удержанного ключа → 404 `ACCOUNT_NO_PREVIOUS_SSH_KEY`. Тот же reveal-rate-limit. CRITICAL audit `server_account.reveal_previous_ssh_private_key`.
+
+Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` / `ACCOUNT_NO_PREVIOUS_SSH_KEY` (404), `DECRYPT_FAILED` (422), `RATE_LIMIT_EXCEEDED` (429).
 
 ### `POST /server-accounts/{account_id}/rotate` (worker dispatch)
 

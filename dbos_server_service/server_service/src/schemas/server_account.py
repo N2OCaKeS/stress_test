@@ -442,6 +442,28 @@ class AccountKeyFanoutResponse(BaseModel):
     )
 
 
+class AccountApplyCredentialsResponse(BaseModel):
+    """Ответ ручного `POST /server-accounts/{id}/apply` — сводка проброса кред.
+
+    Ставит `account.update_on_host` (несёт пароль+ssh-ключ) на серверы, где
+    аккаунт присутствует. `tasks` — поставленные задачи (`{server_id, task_id}`),
+    `skipped` — серверы, на которые задача не поставлена (decommissioned / не
+    present / worker недоступен). Тот же apply, что авто-запускается после
+    set/rotate пароля/ключа.
+    """
+
+    id: str = Field(description="Account ID.")
+    login: str = Field(description="OS-логин.")
+    tasks: list["AccountRotateTask"] = Field(
+        default_factory=list,
+        description="Поставленные `update_on_host`-задачи (по серверу, где аккаунт present).",
+    )
+    skipped: list["AccountRotateSkipped"] = Field(
+        default_factory=list,
+        description="Серверы, на которые задача не поставлена (decommissioned / не present / worker недоступен).",
+    )
+
+
 class ServerAccountAdoptRequest(BaseModel):
     """Тело POST /server-accounts/{id}/adopt_from_host.
 

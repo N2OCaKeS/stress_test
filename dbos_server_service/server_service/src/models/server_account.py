@@ -124,6 +124,17 @@ class ServerAccount(Base):
     # на provision-вызове они заполняются автогенерацией Ed25519.
     ssh_public_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     ssh_private_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Прежний приватный ключ на время переходного периода ротации ssh-ключа.
+    # При rotate_ssh_key текущий ciphertext переезжает сюда (тем же envelope и
+    # AAD, что ssh_private_key_encrypted — AAD привязан к id строки, не к
+    # колонке), даёт оператору скачать старый ключ, пока новый не раскатан на
+    # серверы. По образцу previous_password_encrypted.
+    previous_ssh_private_key_encrypted: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    previous_ssh_key_rotated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # True между dispatch'ем ротации/provision'а и callback'ом worker'а: в БД
     # уже свежий ciphertext, на боксе ещё старый материал. Retry до callback'а
     # форсит `force_replace=True` — иначе race-сценарий «dispatch ok, callback

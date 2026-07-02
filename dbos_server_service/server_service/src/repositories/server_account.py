@@ -708,15 +708,50 @@ async def update_ssh_key(
     *,
     ssh_public_key: str,
     ssh_private_key_encrypted: str | None,
+    retain_previous: bool = False,
 ) -> ServerAccount:
-    """Записать новый SSH-ключ аккаунта.
+    """Записать новый SSH-ключ аккаунта и поднять `credentials_pending_apply`.
 
     `ssh_private_key_encrypted=None` — режим supply (приватного у нас нет,
     клиент держит его сам); тогда сбрасываем хранимый зашифрованный private,
-    чтобы public и private не разъезжались. commit — на caller'е.
+    чтобы public и private не разъезжались.
+
+    `retain_previous=True` (ротация ssh-ключа) — перед перезаписью текущий
+    приватный ciphertext переезжает в `previous_ssh_private_key_encrypted` (+
+    timestamp), симметрично `update_password`. Прежний ключ остаётся доступным,
+    пока новый не раскатан на серверы. Если текущего приватного ключа нет
+    (supply без private / ключа ещё не было) — переносить нечего.
+
+    Ключ поменялся → на боксах его ещё нет; ставим `credentials_pending_apply`,
+    apply-fanout `account.update_on_host` доставит его на серверы. commit — на
+    caller'е.
     """
+    if retain_previous and account.ssh_private_key_encrypted is not None:
+        account.previous_ssh_private_key_encrypted = account.ssh_private_key_encrypted
+        account.previous_ssh_key_rotated_at = datetime.now(timezone.utc)
     account.ssh_public_key = ssh_public_key
     account.ssh_private_key_encrypted = ssh_private_key_encrypted
+    account.credentials_pending_apply = True
+    await db.flush()
+    return account
+
+
+async def clear_previous_ssh_key(
+    db: AsyncSession, account: ServerAccount
+) -> ServerAccount:
+    """Занулить прежний ssh-ключ — переходный период ротации закончен.
+
+    Симметрично `clear_previous_password`: зовётся, когда новый ключ
+    подтверждён на серверах. Идемпотентна: если previous уже пуст — no-op.
+    commit — на caller'е.
+    """
+    if (
+        account.previous_ssh_private_key_encrypted is None
+        and account.previous_ssh_key_rotated_at is None
+    ):
+        return account
+    account.previous_ssh_private_key_encrypted = None
+    account.previous_ssh_key_rotated_at = None
     await db.flush()
     return account
 

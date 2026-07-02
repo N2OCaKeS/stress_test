@@ -993,31 +993,52 @@ async def fanout_update_on_host(
     return tasks
 
 
-async def fanout_provision_for_ssh_key(
+async def fanout_apply_credentials(
     *,
     db: AsyncSession,
     identity,
     request: Request,
     account,
+    action: str,
+    apply_password: bool,
+    audit_action: str = "server_account.apply_credentials",
 ) -> tuple[list[dict], list[dict]]:
-    """Раскатать SSH-ключ на все привязанные сервера через `account.provision`.
+    """Пробросить пароль/ssh-ключ учётки на все привязанные сервера.
 
-    Только `account.provision` кладёт public key в `~/.ssh/authorized_keys`
-    (idempotent useradd → usermod + re-push ключа с force_replace). Воркерский
-    `account.update_on_host` (usermod) ключ НЕ трогает — поэтому fan-out
-    SSH-ключа идёт именно provision'ом. `_dispatch_account_provision` сам
-    достаёт сохранённый в БД ключ через `ensure_provision_credentials` (sticky),
-    так что на бокс уедет ровно то, что только что записал `set_ssh_key`.
+    Единый apply-механизм фичи «проброс кред»: ставит `account.update_on_host`
+    на серверы, где аккаунт присутствует (`present_on_server=True`). Зовётся
+    авто — после set/rotate пароля и ssh-ключа — и вручную через `POST .../apply`.
 
-    Бьём только по серверам, где аккаунт реально присутствует
-    (`present_on_server=True`) — заводить пользователя на боксе, где его быть
-    не должно, не задача fan-out'а ключа. Best-effort: недоступность воркера /
-    decommissioned на отдельном сервере не валит остальные.
+    Секреты в payload НЕ кладутся: по контракту воркер сам резолвит пароль
+    (internal `fetch_account_password` для managed, self-сессия для non-managed),
+    а публичный ssh-ключ — не секрет. В payload едут:
+
+    * `apply_password: true` — просьба перезалить пароль на боксе (chpasswd).
+      Выставляется только когда у учётки реально есть сохранённый пароль и
+      caller хочет его пробросить (rotate пароля / ручной apply). Для apply
+      после смены только ssh-ключа флаг не ставится.
+    * `ssh_public_key` — текущий публичный ключ учётки (если задан), воркер
+      кладёт его в authorized_keys.
+    * `force_replace: true` — материал только что сменился в БД, на боксе ещё
+      старый; форсим overwrite.
+
+    `action` — право, которым авторизовать per-server dispatch (совпадает с
+    гейтом вызвавшего endpoint'а: `rotate_password` для пароля/apply, `update`
+    для ssh-ключа). Best-effort: недоступность воркера / decommissioned /
+    reserved на отдельном сервере не валит остальные.
 
     Возвращает `(tasks, skipped)` — формы `{server_id, task_id}` и
     `{server_id, reason}`.
     """
-    audit_action = "server_account.provision"
+    # Пароль просим перезалить только если он реально сохранён — иначе воркеру
+    # нечего fetch'ить (discovered без пароля), и chpasswd не нужен.
+    effective_apply_password = apply_password and account.password_encrypted is not None
+    extra_payload: dict = {"force_replace": True}
+    if effective_apply_password:
+        extra_payload["apply_password"] = True
+    if account.ssh_public_key is not None:
+        extra_payload["ssh_public_key"] = account.ssh_public_key
+
     target_links = [
         link for link in account.server_links if link.present_on_server
     ]
@@ -1025,19 +1046,21 @@ async def fanout_provision_for_ssh_key(
     skipped: list[dict] = []
     for link in target_links:
         try:
-            result = await _dispatch_account_provision(
+            result = await _dispatch_account_on_host(
                 db=db, identity=identity, request=request,
                 account_id=account.id, server_id=link.server_id,
+                action=action, acl_action=action,
                 audit_action=audit_action,
-                task_kind="account.provision",
-                force_password=False,
+                task_kind="account.update_on_host",
+                operation="apply",
+                extra_payload=extra_payload,
+                include_home_dir=False,
             )
         except ConflictError as exc:
-            reason = (
-                "decommissioned"
-                if exc.error_code == "SERVER_DECOMMISSIONED"
-                else "idempotent_conflict"
-            )
+            reason = {
+                "SERVER_DECOMMISSIONED": "decommissioned",
+                "SERVER_RESERVED": "reserved",
+            }.get(exc.error_code, "idempotent_conflict")
             skipped.append({"server_id": link.server_id, "reason": reason})
             continue
         except ServiceUnavailableError:

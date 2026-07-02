@@ -99,7 +99,9 @@ _OUTBOX_ACTIVE_INDEX_WHERE = text("status IN ('pending', 'processing')")
 # * server_accounts.password_encrypted / previous_password_encrypted —
 #   aad_for_server_account_password (previous_* переезжает из password_encrypted
 #   тем же AAD, см. server_account.rotate_password / reveal_previous_password);
-# * server_accounts.ssh_private_key_encrypted — aad_for_server_account_ssh_key;
+# * server_accounts.ssh_private_key_encrypted / previous_ssh_private_key_encrypted —
+#   aad_for_server_account_ssh_key (previous_* переезжает из ssh_private_key_encrypted
+#   при rotate_ssh_key, см. server_account.rotate_ssh_key / reveal_previous_ssh_private_key);
 # * ipmi_controllers.password_encrypted — aad_for_ipmi_credential;
 # * servers.mgmt_password_encrypted / previous_mgmt_password_encrypted —
 #   aad_for_server_mgmt_password (previous_* переезжает из mgmt_password_encrypted,
@@ -137,6 +139,10 @@ ENCRYPTED_COLUMNS: tuple[EncryptedColumnSpec, ...] = (
     ),
     EncryptedColumnSpec(
         ENTITY_SERVER_ACCOUNT, ServerAccount, "ssh_private_key_encrypted",
+        secrets_service.aad_for_server_account_ssh_key,
+    ),
+    EncryptedColumnSpec(
+        ENTITY_SERVER_ACCOUNT, ServerAccount, "previous_ssh_private_key_encrypted",
         secrets_service.aad_for_server_account_ssh_key,
     ),
     EncryptedColumnSpec(

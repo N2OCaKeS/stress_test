@@ -15,11 +15,12 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.endpoints.worker_dispatch import (
-    fanout_provision_for_ssh_key,
+    fanout_apply_credentials,
     fanout_update_on_host,
     recreate_login_orchestrate,
 )
 from src.core.config import get_settings
+from src.core.constants import Action
 from src.core.limiter import endpoint_limiter, per_account_key
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
@@ -27,6 +28,7 @@ from src.models import ServerAccount
 from src.repositories import server_account as account_repo
 from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
 from src.schemas.server_account import (
+    AccountApplyCredentialsResponse,
     AccountKeyFanoutResponse,
     AccountRecreateLoginResponse,
     AccountRotateSkipped,
@@ -555,9 +557,18 @@ async def rotate_password(
     body: ServerAccountRotateRequest | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountRotateResponse:
-    """Rotate-эндпоинт. Доступ: `(server_account, *, rotate_password)`. Аудит — CRITICAL."""
+    """Rotate-эндпоинт. Доступ: `(server_account, *, rotate_password)`. Аудит — CRITICAL.
+
+    После смены ciphertext'а в БД авто-пробрасываем новый пароль (+ ssh-ключ)
+    на серверы, где аккаунт присутствует, через `account.update_on_host`
+    (best-effort fan-out; недоступность воркера уходит в audit, не валит ответ).
+    """
     new_password = body.password() if body is not None else None
     obj = await svc.rotate_password(db, identity, account_id, new_password)
+    await fanout_apply_credentials(
+        db=db, identity=identity, request=request, account=obj,
+        action=Action.ROTATE_PASSWORD, apply_password=True,
+    )
     return ServerAccountRotateResponse(
         id=obj.id,
         login=obj.login,
@@ -654,8 +665,9 @@ async def set_ssh_key(
     # недоступном воркере) экспайрит атрибуты — чтение obj.id/obj.login после
     # fan-out'а потянуло бы ленивый SELECT уже вне async-greenlet.
     account_id_v, login_v = obj.id, obj.login
-    tasks, skipped = await fanout_provision_for_ssh_key(
+    tasks, skipped = await fanout_apply_credentials(
         db=db, identity=identity, request=request, account=obj,
+        action=Action.UPDATE, apply_password=False,
     )
     return AccountKeyFanoutResponse(
         id=account_id_v,
@@ -696,14 +708,62 @@ async def rotate_ssh_key(
     # См. set_ssh_key: снимаем скаляры до fan-out'а, чтобы savepoint-rollback
     # provision-диспатча не заставил читать экспайренный obj вне greenlet.
     account_id_v, login_v = obj.id, obj.login
-    tasks, skipped = await fanout_provision_for_ssh_key(
+    tasks, skipped = await fanout_apply_credentials(
         db=db, identity=identity, request=request, account=obj,
+        action=Action.UPDATE, apply_password=False,
     )
     return AccountKeyFanoutResponse(
         id=account_id_v,
         login=login_v,
         ssh_public_key=public_key,
         ssh_private_key=private_key,
+        tasks=[AccountRotateTask(**t) for t in tasks],
+        skipped=[AccountRotateSkipped(**s) for s in skipped],
+    )
+
+
+@router.post(
+    "/{account_id}/apply",
+    response_model=AccountApplyCredentialsResponse,
+    status_code=202,
+    summary="Пробросить текущие пароль+ssh-ключ аккаунта на привязанные серверы",
+    description=(
+        "Ручной проброс: ставит `account.update_on_host` на все серверы, где "
+        "аккаунт присутствует (`present_on_server=True`), донося сохранённые в "
+        "БД пароль и ssh-ключ (chpasswd + authorized_keys). Тот же apply, что "
+        "авто-запускается после set/rotate пароля/ключа. Гейтится "
+        "`(server_account, rotate_password)` — та же плоскость, что у ротации "
+        "пароля. Best-effort: недоступный/списанный сервер уходит в `skipped`, "
+        "не валит остальные. Аудит `server_account.apply_credentials`."
+    ),
+    responses={
+        202: {"description": "Apply-задачи поставлены; сводка в теле."},
+        403: {"description": "Нет `rotate_password` либо чужой department."},
+        404: {"description": "Аккаунт не найден / чужой dept."},
+    },
+)
+async def apply_credentials(
+    account_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AccountApplyCredentialsResponse:
+    """Apply-эндпоинт. Доступ: `(server_account, *, rotate_password)`."""
+    account = await svc.authorize_apply_credentials(db, identity, account_id)
+    # Снимаем скаляры до fan-out'а: provision-диспатч крутит savepoint вокруг
+    # объекта аккаунта, его rollback (недоступный воркер) экспайрит атрибуты.
+    account_id_v, login_v, dept_v = account.id, account.login, account.department_id
+    tasks, skipped = await fanout_apply_credentials(
+        db=db, identity=identity, request=request, account=account,
+        action=Action.ROTATE_PASSWORD, apply_password=True,
+    )
+    svc.audit_apply_credentials(
+        account_id=account_id_v, login=login_v, department_id=dept_v,
+        tasks=tasks, skipped=skipped,
+    )
+    return AccountApplyCredentialsResponse(
+        id=account_id_v,
+        login=login_v,
         tasks=[AccountRotateTask(**t) for t in tasks],
         skipped=[AccountRotateSkipped(**s) for s in skipped],
     )
@@ -743,6 +803,48 @@ async def reveal_ssh_private_key(
 ) -> ServerAccountSshPrivateKeyResponse:
     """Reveal приватного ключа. Доступ: `(server_account, *, view_password)`. Аудит CRITICAL."""
     obj, private_pem = await svc.reveal_ssh_private_key(db, identity, account_id)
+    return ServerAccountSshPrivateKeyResponse(
+        id=obj.id,
+        login=obj.login,
+        ssh_private_key=private_pem,
+        ssh_public_key=obj.ssh_public_key,
+    )
+
+
+@router.get(
+    "/{account_id}/previous_ssh_private_key",
+    response_model=ServerAccountSshPrivateKeyResponse,
+    summary="Скачать ПРЕЖНИЙ приватный SSH-ключ аккаунта (под view_password)",
+    description=(
+        "Зеркало `/ssh_private_key`, но отдаёт удержанный прежний приватный ключ "
+        "(`previous_ssh_private_key_encrypted`) — он доступен на время переходного "
+        "периода ротации ssh-ключа, пока новый не раскатан на серверы. Гейт — "
+        "`view_password` (то же право, что у раскрытия пароля / текущего ключа). "
+        "Нет удержанного ключа (ротации не было или период закрыт) → 404 "
+        "ACCOUNT_NO_PREVIOUS_SSH_KEY. Раскрытие пишет CRITICAL audit "
+        "`server_account.reveal_previous_ssh_private_key`.\n\n"
+        "Тот же per-IP+account reveal-rate-limit, что у раскрытия пароля "
+        "(`PASSWORD_REVEAL_RATE_LIMIT`, default 10/min)."
+    ),
+    responses={
+        200: {"description": "Прежний приватный ключ расшифрован и отдан."},
+        403: {"description": "Нет роли с `view_password`."},
+        404: {"description": "Аккаунт не найден / чужой dept, либо нет удержанного прежнего ключа."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP+account reveal-rate-limit пробит."},
+        422: {"description": "DECRYPT_FAILED — сломанный ciphertext прежнего ключа."},
+    },
+)
+@endpoint_limiter.limit(
+    get_settings().password_reveal_rate_limit, key_func=per_account_key,
+)
+async def reveal_previous_ssh_private_key(
+    request: Request,
+    account_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> ServerAccountSshPrivateKeyResponse:
+    """Reveal прежнего приватного ключа. Доступ: `(server_account, *, view_password)`. Аудит CRITICAL."""
+    obj, private_pem = await svc.reveal_previous_ssh_private_key(db, identity, account_id)
     return ServerAccountSshPrivateKeyResponse(
         id=obj.id,
         login=obj.login,

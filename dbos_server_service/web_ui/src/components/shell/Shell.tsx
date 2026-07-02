@@ -113,15 +113,15 @@ export function Shell({ breadcrumb, middle, children }: ShellProps) {
           </>
         )}
         {middle && middleCollapsed && (
-          <div className="shrink-0 w-7 border-r border-token surface flex flex-col items-center justify-center">
+          <div className="shrink-0 flex flex-col items-center justify-center">
             <button
               type="button"
               onClick={() => setMiddleCollapsed(false)}
               title="Развернуть панель"
               aria-label="Expand middle panel"
-              className="btn flex items-center justify-center"
+              className="h-10 w-4 flex items-center justify-center rounded-r surface-2 border border-l-0 border-token text-dim hover-bg transition-colors"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
         )}

@@ -15,6 +15,7 @@ from __future__ import annotations
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.keystore import get_keystore
 from src.models import ReencryptOutboxEntry
 from src.schemas.internal import MigrationStatus
 
@@ -72,6 +73,14 @@ async def compute(
     else:
         migrated_pct = round((total - remaining_legacy) * 100.0 / total, 2)
     outbox_pending = await _outbox_pending_count(db)
+
+    # Версии в keystore + снапшот force-режима. Read-only, состояние гейта
+    # берём из общей singleton-строки (лениво, чтобы не тащить цикл импорта).
+    from src.services import reencrypt_state_service
+
+    versions_in_keystore = get_keystore().list_versions()
+    state = await reencrypt_state_service.get_state(db)
+
     return MigrationStatus(
         active_version=active_version,
         total_rows=total,
@@ -79,4 +88,12 @@ async def compute(
         remaining_legacy=remaining_legacy,
         migrated_pct=migrated_pct,
         outbox_pending_count=outbox_pending,
+        versions_in_keystore=versions_in_keystore,
+        # process_batch клеймит и финализирует строку в одной транзакции —
+        # отдельного статуса 'processing' у outbox'а нет, поэтому 0.
+        outbox_processing=0,
+        mode=state.mode,
+        force_active=state.force_active,
+        eta_seconds=state.eta_seconds,
+        throughput=state.throughput,
     )

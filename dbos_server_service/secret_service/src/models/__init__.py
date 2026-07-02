@@ -14,6 +14,13 @@ from src.models.reencrypt_outbox import (
     STATUS_PENDING,
     ReencryptOutboxEntry,
 )
+from src.models.reencrypt_state import (
+    MODE_FORCE,
+    MODE_LAZY,
+    REENCRYPT_MODE_VALUES,
+    STATE_ROW_ID,
+    ReencryptState,
+)
 from src.models.retired_key_version import RetiredKeyVersion
 from src.models.role_acl import RoleACL
 from src.models.user_acl import CredentialUserACL
@@ -25,9 +32,14 @@ __all__ = [
     "CredentialUserACL",
     "DeptGrant",
     "EntityPermission",
+    "MODE_FORCE",
+    "MODE_LAZY",
     "OUTBOX_STATUS_VALUES",
+    "REENCRYPT_MODE_VALUES",
     "ReencryptOutboxEntry",
+    "ReencryptState",
     "RetiredKeyVersion",
+    "STATE_ROW_ID",
     "RoleACL",
     "STATUS_DONE",
     "STATUS_ERROR",

@@ -30,7 +30,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import AppException, BadRequestError, ConflictError
 from src.core.keystore import get_keystore
 from src.models import ReencryptOutboxEntry, RetiredKeyVersion
-from src.services import migration_status_service, reencrypt_outbox_service
+from src.services import (
+    migration_status_service,
+    reencrypt_outbox_service,
+    reencrypt_state_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +57,27 @@ def _validate_key_b64(key_b64: str) -> None:
         )
 
 
-async def rotate(db: AsyncSession, *, new_key_b64: str) -> dict:
+async def rotate(
+    db: AsyncSession, *, new_key_b64: str, mode: str = "lazy"
+) -> dict:
     """Ввести новую версию ключа активной и засидить outbox.
 
-    Возвращает ``{new_version, previous_version, seeded, idempotent}``.
+    `mode`:
+
+    * ``lazy`` (дефолт) — фоновая перешифровка без простоя. self-drain loop
+      растащит outbox в троттлинг-режиме;
+    * ``force`` — включить maintenance-gate: пока перешифровка не завершена,
+      сервис отдаёт 503 на все запросы (кроме status/health/ready), а drain
+      идёт плотным циклом. Флаг force персистентный (переживает рестарт).
+
+    Возвращает ``{new_version, previous_version, seeded, idempotent, mode}``.
     """
+    if mode not in ("lazy", "force"):
+        raise BadRequestError(
+            error_code="ROTATE_MODE_INVALID",
+            message="mode must be 'lazy' or 'force'",
+        )
+
     _validate_key_b64(new_key_b64)
     ks = get_keystore()
     previous_version = ks.get_active_version()
@@ -67,6 +87,8 @@ async def rotate(db: AsyncSession, *, new_key_b64: str) -> dict:
     except AppException:
         current_material = None
     if current_material == new_key_b64:
+        # Материал уже активен — версию не плодим и force-окно не открываем
+        # (перешифровывать нечего).
         return {
             "new_version": previous_version,
             "previous_version": previous_version,
@@ -76,6 +98,7 @@ async def rotate(db: AsyncSession, *, new_key_b64: str) -> dict:
                 "active_version": previous_version,
             },
             "idempotent": True,
+            "mode": "lazy",
         }
 
     new_version = max(ks.list_versions(), default=previous_version) + 1
@@ -83,11 +106,28 @@ async def rotate(db: AsyncSession, *, new_key_b64: str) -> dict:
     ks.set_active(new_version)
 
     seeded = await reencrypt_outbox_service.seed_outbox(db)
+
+    effective_mode = mode
+    if mode == "force":
+        # Открываем force-окно только если реально есть что перешифровывать —
+        # иначе gate заблокировал бы сервис в пустую (drain снял бы флаг на
+        # первом же тике, но при выключенном drain'е — навсегда).
+        status = await migration_status_service.compute(
+            db, active_version=new_version
+        )
+        if int(status.remaining_legacy) > 0:
+            await reencrypt_state_service.enter_force(
+                db, remaining=int(status.remaining_legacy)
+            )
+        else:
+            effective_mode = "lazy"
+
     return {
         "new_version": new_version,
         "previous_version": previous_version,
         "seeded": seeded,
         "idempotent": False,
+        "mode": effective_mode,
     }
 
 

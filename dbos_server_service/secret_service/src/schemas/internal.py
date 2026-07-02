@@ -88,6 +88,15 @@ class MigrationStatus(BaseModel):
     remaining_legacy: int
     migrated_pct: float
     outbox_pending_count: int = 0
+    # ── Self-drain / force-режим ─────────────────────────────────────────────
+    # Поля симметричны server_service (UI общий): режим дренажа, флаг force-
+    # окна, снапшот прогресса и версии в keystore.
+    versions_in_keystore: list[int] = Field(default_factory=list)
+    outbox_processing: int = 0
+    mode: str = "lazy"
+    force_active: bool = False
+    eta_seconds: int = 0
+    throughput: float = 0.0
 
 
 class ReencryptOutboxSeedResponse(BaseModel):
@@ -139,6 +148,9 @@ class RotateKeyResponse(BaseModel):
     previous_version: int
     seeded: ReencryptOutboxSeedResponse
     idempotent: bool
+    # Фактический режим после ротации: 'force' если открыто maintenance-окно,
+    # иначе 'lazy' (в т.ч. когда force запрошен, но перешифровывать нечего).
+    mode: str = "lazy"
 
 
 class RetireKeyResponse(BaseModel):

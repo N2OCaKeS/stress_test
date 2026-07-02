@@ -306,6 +306,88 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Re-encrypt self-drain ─────────────────────────────────────────────────
+
+    reencrypt_drain_enabled: bool = Field(
+        default=True,
+        alias="REENCRYPT_DRAIN_ENABLED",
+        description=(
+            "Запускать ли self-drain loop в lifespan'е. Он дренит reencrypt-"
+            "outbox прямо в процессе secret_service (в проде нет отдельного "
+            "worker'а). В tests/local-dev'е выключается, чтобы дренаж дёргать "
+            "напрямую из тестов."
+        ),
+    )
+    reencrypt_lazy_batch_size: int = Field(
+        default=25,
+        ge=1,
+        le=1000,
+        alias="REENCRYPT_LAZY_BATCH_SIZE",
+        description="Размер батча дренажа в lazy-режиме (троттлинг).",
+    )
+    reencrypt_force_batch_size: int = Field(
+        default=200,
+        ge=1,
+        le=5000,
+        alias="REENCRYPT_FORCE_BATCH_SIZE",
+        description="Размер батча дренажа в force-режиме (плотный цикл).",
+    )
+    reencrypt_lazy_interval_seconds: float = Field(
+        default=1.0,
+        ge=0.0,
+        alias="REENCRYPT_LAZY_INTERVAL_SECONDS",
+        description="Пауза между батчами в lazy-режиме, пока есть работа (сек).",
+    )
+    reencrypt_force_interval_seconds: float = Field(
+        default=0.2,
+        ge=0.0,
+        alias="REENCRYPT_FORCE_INTERVAL_SECONDS",
+        description="Пауза между батчами в force-режиме (сек).",
+    )
+    reencrypt_idle_interval_seconds: float = Field(
+        default=5.0,
+        ge=0.1,
+        alias="REENCRYPT_IDLE_INTERVAL_SECONDS",
+        description="Пауза, когда дренить нечего (outbox пуст), сек.",
+    )
+    reencrypt_gate_cache_ttl_seconds: float = Field(
+        default=2.0,
+        ge=0.0,
+        alias="REENCRYPT_GATE_CACHE_TTL_SECONDS",
+        description=(
+            "TTL кэша состояния для maintenance-gate. Gate читает singleton-"
+            "строку не чаще раза в TTL, чтобы не бить в БД на каждый запрос. "
+            "Реплики сходятся к общему состоянию в пределах этого окна."
+        ),
+    )
+    reencrypt_retry_after_min: int = Field(
+        default=15,
+        ge=1,
+        alias="REENCRYPT_RETRY_AFTER_MIN",
+        description="Нижняя граница Retry-After в maintenance-gate (сек).",
+    )
+    reencrypt_retry_after_max: int = Field(
+        default=300,
+        ge=1,
+        alias="REENCRYPT_RETRY_AFTER_MAX",
+        description="Верхняя граница (потолок) Retry-After (сек).",
+    )
+    reencrypt_retry_after_buffer: int = Field(
+        default=5,
+        ge=0,
+        alias="REENCRYPT_RETRY_AFTER_BUFFER",
+        description="Буфер поверх ETA при расчёте Retry-After (сек).",
+    )
+    reencrypt_default_throughput: float = Field(
+        default=10.0,
+        gt=0.0,
+        alias="REENCRYPT_DEFAULT_THROUGHPUT",
+        description=(
+            "Дефолтный throughput (строк/сек) для оценки ETA, пока drain loop "
+            "не измерил реальный. Не даёт делить на ноль в самом начале force."
+        ),
+    )
+
     # ── Validators ────────────────────────────────────────────────────────────
 
     @field_validator("service_api_keys", mode="before")

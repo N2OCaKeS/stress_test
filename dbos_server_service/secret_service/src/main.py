@@ -28,6 +28,7 @@ from src.core.logging import configure_logging, request_id_var
 from src.core.security import SecurityHeadersMiddleware
 from src.middleware.audit_middleware import AuditAccessMiddleware
 from src.middleware.https_guard import HTTPSRequiredMiddleware
+from src.middleware.maintenance_gate import ReencryptMaintenanceMiddleware
 from src.services import audit_context, audit_events
 
 logger = logging.getLogger("secret_service.startup")
@@ -119,15 +120,25 @@ def create_application() -> FastAPI:
             from src.services.sweep_service import sweep_loop as _sweep_loop
             sweep_task = _asyncio.create_task(_sweep_loop())
 
+        # Self-drain loop: перешифровка reencrypt-outbox прямо в процессе
+        # (в проде нет отдельного worker'а). В test-env выключен — тесты
+        # дёргают drain_tick напрямую.
+        drain_task: _asyncio.Task | None = None
+        if settings.reencrypt_drain_enabled and settings.app_env.lower() != "test":
+            from src.services.reencrypt_drain_service import drain_loop as _drain_loop
+            drain_task = _asyncio.create_task(_drain_loop())
+
         try:
             yield
         finally:
-            if sweep_task is not None:
-                sweep_task.cancel()
+            for _bg_task, _name in ((sweep_task, "sweep"), (drain_task, "drain")):
+                if _bg_task is None:
+                    continue
+                _bg_task.cancel()
                 try:
-                    await sweep_task
+                    await _bg_task
                 except (_asyncio.CancelledError, Exception) as exc:  # noqa: BLE001
-                    logger.debug("sweep task shutdown: %s", exc)
+                    logger.debug("%s task shutdown: %s", _name, exc)
             from src.db.session import engine as _main_engine
             await _main_engine.dispose()
 
@@ -200,6 +211,12 @@ def create_application() -> FastAPI:
     # HTTPSGuard и SecurityHeaders регистрируем последними → outermost.
     app.add_middleware(AuditAccessMiddleware)
     app.add_middleware(SlowAPIMiddleware)
+
+    # Maintenance-gate регистрируется ПОСЛЕ audit/slowapi → выше по стеку:
+    # 503 REENCRYPT_IN_PROGRESS в force-окне всплывает мимо audit'а, без
+    # amplification'а на заблокированном трафике. status/health/ready gate
+    # пропускает (см. middleware).
+    app.add_middleware(ReencryptMaintenanceMiddleware)
 
     # HTTPSRequiredMiddleware регистрируется ПЕРЕД SecurityHeadersMiddleware,
     # чтобы security-headers оборачивали 403 cleartext-ответ. В dev/test/local

@@ -195,17 +195,29 @@ async def rotate_encryption_key(
             " auth_service `POST /admin/service-keys/generate`."
         ),
     ),
+    mode: str = Body(
+        default="lazy",
+        embed=True,
+        description=(
+            "lazy (дефолт) — фоновая перешифровка без простоя; force — "
+            "maintenance-окно: сервис отдаёт 503 на всё (кроме status/health/"
+            "ready), пока перешифровка не завершится."
+        ),
+    ),
 ) -> RotateKeyResponse:
     """Рантайм-ротация мастер-ключа secret_service без простоя.
 
     Новая версия становится активной (новые токены сразу под ней), старые
     токены остаются читаемыми (материал старых версий ещё в keystore),
     фоновая ре-шифрация публикуется через reencrypt-outbox. Идемпотентно:
-    повтор с тем же материалом не плодит версию.
+    повтор с тем же материалом не плодит версию. `mode=force` дополнительно
+    открывает maintenance-окно (см. параметр).
 
     Audit: `secrets.encryption_rotate` (CRITICAL).
     """
-    data = await key_rotation_service.rotate(db, new_key_b64=new_key_b64)
+    data = await key_rotation_service.rotate(
+        db, new_key_b64=new_key_b64, mode=mode
+    )
     caller = getattr(request.state, "caller", None)
     audit_service.emit(
         "secrets.encryption_rotate",
@@ -219,6 +231,7 @@ async def rotate_encryption_key(
             "previous_version": data["previous_version"],
             "seeded_inserted": data["seeded"]["inserted"],
             "idempotent": data["idempotent"],
+            "mode": data["mode"],
         },
     )
     return RotateKeyResponse(**data)

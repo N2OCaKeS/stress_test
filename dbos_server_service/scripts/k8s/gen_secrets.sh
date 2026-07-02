@@ -469,15 +469,15 @@ type: Opaque
 stringData:
   # Postgres
   AUTH_DB_USER: auth_user
-  AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD}
+  AUTH_DB_PASSWORD: "${AUTH_DB_PASSWORD}"
   LOGGING_DB_USER: logging_user
-  LOGGING_DB_PASSWORD: ${LOGGING_DB_PASSWORD}
+  LOGGING_DB_PASSWORD: "${LOGGING_DB_PASSWORD}"
   SERVER_DB_USER: server_user
-  SERVER_DB_PASSWORD: ${SERVER_DB_PASSWORD}
+  SERVER_DB_PASSWORD: "${SERVER_DB_PASSWORD}"
   WORKER_DB_USER: worker_user
-  WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD}
+  WORKER_DB_PASSWORD: "${WORKER_DB_PASSWORD}"
   SECRET_DB_USER: secret_user
-  SECRET_DB_PASSWORD: ${SECRET_DB_PASSWORD}
+  SECRET_DB_PASSWORD: "${SECRET_DB_PASSWORD}"
 
   # auth_service
   AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
@@ -487,9 +487,12 @@ EOF
     echo "$RSA_PEM" | sed 's/^/    /'
 cat <<EOF
 
-  INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME}
-  INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD}
-  INITIAL_ADMIN_EMAIL: ${ADMIN_EMAIL}
+  # Квотируем: operator-значения из deploy.env могут быть чисто числовыми
+  # ("1") или YAML-булевыми, а stringData требует строк — без кавычек kubectl
+  # падает с "cannot unmarshal number into stringData".
+  INITIAL_ADMIN_USERNAME: "${INITIAL_ADMIN_USERNAME}"
+  INITIAL_ADMIN_PASSWORD: "${INITIAL_ADMIN_PASSWORD}"
+  INITIAL_ADMIN_EMAIL: "${ADMIN_EMAIL}"
   # Отключение форс-смены пароля admin при первом входе. "true" ← оператор
   # задал в deploy.env DBOS_BOOTSTRAP_FORCE_PASSWORD_CHANGE=false (admin входит
   # под своим паролем, smoke его не перетирает). Дефолт "false" = форс включён.

@@ -7,16 +7,16 @@ import { Tabs } from "@/components/ui/Tabs";
  * Помощник по установке корневого сертификата платформы.
  *
  * Прод стоит за TLS, выписанным внутренним CA. Пока устройство не доверяет
- * этому CA, браузер рвёт все запросы к `/api/**` с сетевой ошибкой и UI не
- * работает. Сам сертификат раздаёт nginx web-ui по `/dbos-ca.crt` (см.
- * web_ui/nginx.conf) — модалка даёт кнопку скачивания и короткую инструкцию
- * по установке под Windows / Linux / macOS.
+ * этому CA (EMM Internal CA), браузер рвёт все запросы к `/api/**` с сетевой
+ * ошибкой и UI не работает. Сам сертификат раздаёт nginx web-ui по
+ * `/emm-ca.crt` (см. web_ui/nginx.conf) — модалка даёт кнопку скачивания и
+ * короткую инструкцию по установке под Windows / Linux / macOS.
  *
  * Открывается двумя путями: вручную ссылкой на экране логина и автоматически,
  * когда первый запрос падает с сетевой ошибкой (см. Login).
  */
 
-const CA_URL = "/dbos-ca.crt";
+const CA_URL = "/emm-ca.crt";
 
 interface CertHelpModalProps {
   open: boolean;
@@ -30,6 +30,18 @@ const OS_TABS = [
   { id: "linux", label: "Linux" },
   { id: "macos", label: "macOS" },
 ];
+
+/**
+ * Стартовый таб. Клиентская база платформы — Astra Linux, поэтому Linux по
+ * умолчанию. Windows/macOS показываем, только если браузер явно на них.
+ */
+function detectOsTab(): OsTab {
+  if (typeof navigator === "undefined") return "linux";
+  const src = `${navigator.platform ?? ""} ${navigator.userAgent ?? ""}`.toLowerCase();
+  if (src.includes("win")) return "windows";
+  if (src.includes("mac") || src.includes("iphone") || src.includes("ipad")) return "macos";
+  return "linux";
+}
 
 /** Строка с shell-командой и кнопкой копирования. */
 function CmdLine({ cmd }: { cmd: string }) {
@@ -66,7 +78,7 @@ function WindowsHelp() {
   return (
     <ol className="text-sm text-dim space-y-1.5 list-decimal pl-4">
       <li>
-        Двойной клик по скачанному файлу <span className="mono">dbos-ca.crt</span>{" "}
+        Двойной клик по скачанному файлу <span className="mono">emm-ca.crt</span>{" "}
         → «Установить сертификат».
       </li>
       <li>Расположение хранилища — «Локальный компьютер».</li>
@@ -85,21 +97,59 @@ function WindowsHelp() {
 function LinuxHelp() {
   return (
     <div className="space-y-3">
-      <div>
-        <div className="text-sm text-dim mb-1">
-          Системное хранилище (curl, системные утилиты):
-        </div>
-        <CmdLine cmd="sudo cp dbos-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates" />
-      </div>
-      <div>
-        <div className="text-sm text-dim mb-1">
-          Chrome / Chromium (NSS-хранилище):
-        </div>
-        <CmdLine cmd={'certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "DBOS Internal CA" -i dbos-ca.crt'} />
-      </div>
       <div className="text-sm text-dim">
-        Firefox: Настройки → Приватность и защита → Сертификаты → «Центры» →
-        Импорт. После установки перезапустить браузер.
+        Браузеры на Linux не читают системное хранилище
+        (<span className="mono">update-ca-certificates</span>). Chrome, Chromium
+        и Yandex доверяют NSS-хранилищу <span className="mono">~/.pki/nssdb</span>,
+        Firefox — своему хранилищу в профиле. Сертификат добавляем туда через{" "}
+        <span className="mono">certutil</span>.
+      </div>
+
+      <div>
+        <div className="text-sm text-dim mb-1">1. Установить certutil:</div>
+        <CmdLine cmd="sudo apt install -y libnss3-tools" />
+      </div>
+
+      <div>
+        <div className="text-sm font-medium mb-1">Chrome / Chromium / Yandex</div>
+        <div className="text-sm text-dim mb-1">
+          Общий NSS-стор для всех Chromium-браузеров:
+        </div>
+        <CmdLine
+          cmd={
+            "mkdir -p ~/.pki/nssdb\n" +
+            'certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "emm" -i ~/Downloads/emm-ca.crt'
+          }
+        />
+      </div>
+
+      <div>
+        <div className="text-sm font-medium mb-1">Firefox</div>
+        <div className="text-sm text-dim mb-1">
+          По всем профилям сразу:
+        </div>
+        <CmdLine
+          cmd={
+            "for p in ~/.mozilla/firefox/*.default*/; do\n" +
+            '  certutil -d sql:"$p" -A -t "C,," -n "emm" -i ~/Downloads/emm-ca.crt\n' +
+            "done"
+          }
+        />
+        <div className="text-sm text-dim mt-1">
+          То же можно вручную: Настройки → Приватность → Сертификаты → Просмотр →
+          «Центры» → Импорт → отметить «Доверять при идентификации сайтов».
+        </div>
+      </div>
+
+      <div className="text-sm text-dim">
+        Путь <span className="mono">~/Downloads/emm-ca.crt</span> — это куда файл
+        качается кнопкой выше; подставьте свой, если сохранили в другое место.
+        После добавления полностью закройте и заново откройте браузеры.
+      </div>
+
+      <div>
+        <div className="text-sm text-dim mb-1">Проверка:</div>
+        <CmdLine cmd="certutil -d sql:$HOME/.pki/nssdb -L | grep -i emm" />
       </div>
     </div>
   );
@@ -109,7 +159,7 @@ function MacosHelp() {
   return (
     <ol className="text-sm text-dim space-y-1.5 list-decimal pl-4">
       <li>
-        Двойной клик по <span className="mono">dbos-ca.crt</span> — откроется
+        Двойной клик по <span className="mono">emm-ca.crt</span> — откроется
         «Связка ключей» (Keychain), выбрать связку «Система».
       </li>
       <li>
@@ -122,7 +172,7 @@ function MacosHelp() {
 }
 
 export function CertHelpModal({ open, onClose }: CertHelpModalProps) {
-  const [tab, setTab] = useState<OsTab>("windows");
+  const [tab, setTab] = useState<OsTab>(detectOsTab);
 
   return (
     <Dialog.Root
@@ -151,7 +201,7 @@ export function CertHelpModal({ open, onClose }: CertHelpModalProps) {
 
             <a
               href={CA_URL}
-              download="dbos-ca.crt"
+              download="emm-ca.crt"
               className="btn btn-primary inline-flex items-center gap-2 mb-4"
             >
               <Download className="w-4 h-4" />

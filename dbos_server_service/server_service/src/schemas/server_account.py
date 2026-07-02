@@ -719,11 +719,26 @@ class ServerAccountRotateRequest(BaseModel):
 
 
 class ServerAccountRotateResponse(BaseModel):
-    """Ответ на rotate_password — без plaintext'а наружу."""
+    """Ответ на rotate_password — без plaintext'а наружу.
+
+    `tasks` / `skipped` несут результат авто-fan-out'а нового пароля на серверы,
+    где аккаунт присутствует (`account.update_on_host`): `tasks` — по одной
+    записи на успешно поставленный сервер (`{server_id, task_id}`), `skipped` —
+    серверы, на которые задача не поставлена (непровиженные / decommissioned /
+    worker недоступен) с причиной в `reason`. UI видит, куда поехало применение.
+    """
 
     id: str = Field(description="Account ID.")
     login: str = Field(description="OS-логин.")
     rotated_at: datetime = Field(description="UTC timestamp ротации.")
+    tasks: list["AccountRotateTask"] = Field(
+        default_factory=list,
+        description="Поставленные `update_on_host`-задачи (по серверу, где аккаунт present).",
+    )
+    skipped: list["AccountRotateSkipped"] = Field(
+        default_factory=list,
+        description="Серверы, на которые проброс не поставлен (не present / decommissioned / worker недоступен).",
+    )
 
 
 class AccountRotateTask(BaseModel):

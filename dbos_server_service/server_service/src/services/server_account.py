@@ -2435,6 +2435,45 @@ async def reveal_previous_ssh_private_key(
     return account, private_pem
 
 
+async def clear_previous_ssh_key(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+) -> ServerAccount:
+    """Занулить удержанный прежний приватный SSH-ключ вручную.
+
+    Оператор жмёт, когда добил серверы, что были недоступны в момент ротации,
+    и переходный период закрыт — прежний ключ больше не нужен. Авто-очистки по
+    provision-callback'у нет: previous держится до ручной очистки либо следующей
+    ротации. Гейт — `rotate_password` (та же плоскость, что у ротации/apply).
+
+    Идемпотентна: нет удержанного ключа → no-op, тот же 200. `details.cleared`
+    отражает, реально ли что-то удалили. Аудит INFO
+    `server_account.clear_previous_ssh_key`.
+    """
+    account = await _authorize_account_action(
+        db, identity, account_id, Action.ROTATE_PASSWORD,
+        "server_account.clear_previous_ssh_key",
+    )
+    had_previous = (
+        account.previous_ssh_private_key_encrypted is not None
+        or account.previous_ssh_key_rotated_at is not None
+    )
+    await repo.clear_previous_ssh_key(db, account)
+    await db.commit()
+    audit_service.emit(
+        "server_account.clear_previous_ssh_key",
+        target_id=account.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "login": account.login,
+            "department_id": account.department_id,
+            "cleared": had_previous,
+        },
+    )
+    return account
+
+
 async def authorize_apply_credentials(
     db: AsyncSession,
     identity: IdentityContext,

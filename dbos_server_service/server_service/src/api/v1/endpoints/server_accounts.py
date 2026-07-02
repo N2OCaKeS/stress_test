@@ -565,14 +565,20 @@ async def rotate_password(
     """
     new_password = body.password() if body is not None else None
     obj = await svc.rotate_password(db, identity, account_id, new_password)
-    await fanout_apply_credentials(
+    # Снимаем скаляры до fan-out'а: apply-диспатч крутит savepoint вокруг
+    # объекта аккаунта, его rollback (недоступный воркер) экспайрит атрибуты —
+    # см. тот же приём в set_ssh_key / apply_credentials.
+    account_id_v, login_v, rotated_at_v = obj.id, obj.login, obj.password_rotated_at
+    tasks, skipped = await fanout_apply_credentials(
         db=db, identity=identity, request=request, account=obj,
         action=Action.ROTATE_PASSWORD, apply_password=True,
     )
     return ServerAccountRotateResponse(
-        id=obj.id,
-        login=obj.login,
-        rotated_at=obj.password_rotated_at,
+        id=account_id_v,
+        login=login_v,
+        rotated_at=rotated_at_v,
+        tasks=[AccountRotateTask(**t) for t in tasks],
+        skipped=[AccountRotateSkipped(**s) for s in skipped],
     )
 
 
@@ -851,3 +857,34 @@ async def reveal_previous_ssh_private_key(
         ssh_private_key=private_pem,
         ssh_public_key=obj.ssh_public_key,
     )
+
+
+@router.delete(
+    "/{account_id}/previous_ssh_private_key",
+    response_model=OkResponse,
+    summary="Забыть удержанный ПРЕЖНИЙ приватный SSH-ключ (ручная очистка)",
+    description=(
+        "Зануляет удержанный прежний приватный ключ аккаунта "
+        "(`previous_ssh_private_key_encrypted` + `previous_ssh_key_rotated_at`). "
+        "Оператор зовёт, когда добил серверы, недоступные в момент ротации, и "
+        "прежний ключ переходного периода больше не нужен. Гейт — "
+        "`(server_account, rotate_password)` (та же плоскость, что у ротации / "
+        "apply). Идемпотентна: если удержанного ключа нет — тот же 200, без "
+        "ошибки. Авто-очистки по callback'у нет — previous держится до этой "
+        "ручной очистки либо до следующей ротации ssh-ключа. Аудит INFO "
+        "`server_account.clear_previous_ssh_key`."
+    ),
+    responses={
+        200: {"description": "Прежний ключ забыт (или его и не было — идемпотентно)."},
+        403: {"description": "Нет `rotate_password`."},
+        404: {"description": "Аккаунт не найден / чужой dept."},
+    },
+)
+async def clear_previous_ssh_private_key(
+    account_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> OkResponse:
+    """Очистка прежнего приватного ключа. Доступ: `(server_account, *, rotate_password)`. Аудит INFO."""
+    await svc.clear_previous_ssh_key(db, identity, account_id)
+    return OkResponse()

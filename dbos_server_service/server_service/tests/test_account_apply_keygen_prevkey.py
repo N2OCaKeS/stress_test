@@ -307,3 +307,157 @@ class TestPreviousSshKey:
             f"{BASE}/{acc.id}/previous_ssh_private_key", headers=_hdr(reader),
         )
         assert resp.status_code == 403, resp.text
+
+    async def test_clear_removes_previous(
+        self, client, admin_token, make_server, make_account, captured_dispatch, db,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password="pw1")
+        await self._generate_then_rotate(client, admin_token, acc.id)
+        fresh = await _reload(db, acc.id)
+        assert fresh.previous_ssh_private_key_encrypted is not None
+
+        resp = await client.delete(
+            f"{BASE}/{acc.id}/previous_ssh_private_key", headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["ok"] is True
+        cleared = await _reload(db, acc.id)
+        assert cleared.previous_ssh_private_key_encrypted is None
+        assert cleared.previous_ssh_key_rotated_at is None
+        # Прежний ключ забыт → reveal больше не отдаёт его.
+        reveal = await client.get(
+            f"{BASE}/{acc.id}/previous_ssh_private_key", headers=_hdr(admin_token),
+        )
+        assert_error(reveal, 404, "ACCOUNT_NO_PREVIOUS_SSH_KEY")
+
+    async def test_clear_idempotent_when_no_previous(
+        self, client, admin_token, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password="pw1")
+        # Ротации ssh-ключа не было — прежнего ключа нет, но DELETE идемпотентен.
+        resp = await client.delete(
+            f"{BASE}/{acc.id}/previous_ssh_private_key", headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["ok"] is True
+
+    async def test_clear_forbidden_without_rotate_password(
+        self, client, no_role_token_a, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password="pw1")
+        resp = await client.delete(
+            f"{BASE}/{acc.id}/previous_ssh_private_key",
+            headers=_hdr(no_role_token_a),
+        )
+        assert_error(resp, 403, "PERMISSION_DENIED")
+
+    async def test_clear_cross_dept_hidden_404(
+        self, client, admin_token, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_b")
+        acc = await make_account(server_id=srv.id, login="ops", password="pw1")
+        resp = await client.delete(
+            f"{BASE}/{acc.id}/previous_ssh_private_key", headers=_hdr(admin_token),
+        )
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
+
+    async def test_clear_emits_audit(
+        self, client, admin_token, make_server, make_account,
+        captured_dispatch, captured_emits, db,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password="pw1")
+        await self._generate_then_rotate(client, admin_token, acc.id)
+        resp = await client.delete(
+            f"{BASE}/{acc.id}/previous_ssh_private_key", headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        events = [
+            e for e in captured_emits
+            if e["action"] == "server_account.clear_previous_ssh_key"
+        ]
+        assert len(events) == 1, captured_emits
+        assert events[0]["status"] == "success"
+        assert events[0]["details"]["cleared"] is True
+
+
+@pytest.fixture
+def captured_emits(monkeypatch):
+    """Захват audit_service.emit в use-case-слое server_account."""
+    from tests._helpers import make_emit_capture
+
+    return make_emit_capture(monkeypatch)
+
+
+class TestRotateResponseFanout:
+    async def test_rotate_response_lists_present_server_tasks(
+        self, client, admin_token, make_server, make_account, captured_dispatch,
+    ):
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        acc = await make_account(
+            server_ids=[srv1.id, srv2.id], login="ops", password="pw1",
+        )
+        resp = await client.post(
+            f"{BASE}/{acc.id}/rotate_password", headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body["tasks"]) == 2, body
+        assert body["skipped"] == [], body
+        server_ids = {t["server_id"] for t in body["tasks"]}
+        assert server_ids == {srv1.id, srv2.id}
+        for t in body["tasks"]:
+            assert t["task_id"].startswith("tsk_")
+            assert t["status"] == "dispatched"
+
+    async def test_rotate_response_skips_decommissioned(
+        self, client, admin_token, make_server, make_account, captured_dispatch, db,
+    ):
+        from src.core.constants import ServerStatus
+
+        srv_ok = await make_server(department_id="dep_a")
+        srv_dead = await make_server(department_id="dep_a")
+        acc = await make_account(
+            server_ids=[srv_ok.id, srv_dead.id], login="ops", password="pw1",
+        )
+        srv_dead.status = ServerStatus.DECOMMISSIONED
+        await db.commit()
+
+        resp = await client.post(
+            f"{BASE}/{acc.id}/rotate_password", headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert [t["server_id"] for t in body["tasks"]] == [srv_ok.id], body
+        assert len(body["skipped"]) == 1, body
+        assert body["skipped"][0]["server_id"] == srv_dead.id
+        assert body["skipped"][0]["reason"] == "decommissioned"
+
+    async def test_rotate_response_empty_when_no_present(
+        self, client, admin_token, make_server, make_account, captured_dispatch, db,
+    ):
+        from src.models import ServerAccountServer
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password="pw1")
+        link = (
+            await db.execute(
+                select(ServerAccountServer).where(
+                    ServerAccountServer.account_id == acc.id
+                )
+            )
+        ).scalar_one()
+        link.present_on_server = False
+        await db.commit()
+
+        resp = await client.post(
+            f"{BASE}/{acc.id}/rotate_password", headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["tasks"] == []
+        assert body["skipped"] == []

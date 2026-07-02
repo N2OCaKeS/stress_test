@@ -289,7 +289,7 @@ Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404).
 
 ### `POST /server-accounts/{account_id}/rotate_password`
 
-Auth: Bearer + `(server_account, *, rotate_password)`. Body: опц. `password_b64` (`base64.b64encode(plaintext)`, иначе `secrets.token_urlsafe(32)`; политика по декодированному plaintext). Меняет ciphertext в БД, поднимает `credentials_pending_apply` и авто-диспатчит `account.update_on_host` (`apply_password: true` + текущий `ssh_public_key`) на серверы с `present_on_server=True` — пароль/ключ пробрасываются на боксы (best-effort). Plaintext НЕ возвращается. CRITICAL audit.
+Auth: Bearer + `(server_account, *, rotate_password)`. Body: опц. `password_b64` (`base64.b64encode(plaintext)`, иначе `secrets.token_urlsafe(32)`; политика по декодированному plaintext). Меняет ciphertext в БД, поднимает `credentials_pending_apply` и авто-диспатчит `account.update_on_host` (`apply_password: true` + текущий `ssh_public_key`) на серверы с `present_on_server=True` — пароль/ключ пробрасываются на боксы (best-effort). Plaintext НЕ возвращается. Ответ `{id, login, rotated_at, tasks[], skipped[]}` — `tasks`/`skipped` несут результат авто-fan-out'а (куда поехало применение). CRITICAL audit.
 
 Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404), `WEAK_PASSWORD` (422), `RATE_LIMIT_EXCEEDED` (429).
 
@@ -350,6 +350,12 @@ Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` / `ACCOUNT_NO_SSH_PRIVATE
 ### `GET /server-accounts/{account_id}/previous_ssh_private_key`
 
 Auth: Bearer + `(server_account, *, view_password)`. Зеркало `/ssh_private_key`, но отдаёт удержанный ПРЕЖНИЙ приватный ключ (`previous_ssh_private_key_encrypted`) — доступен на время переходного периода ротации ssh-ключа, пока новый не раскатан на серверы. Нет удержанного ключа → 404 `ACCOUNT_NO_PREVIOUS_SSH_KEY`. Тот же reveal-rate-limit. CRITICAL audit `server_account.reveal_previous_ssh_private_key`.
+
+### `DELETE /server-accounts/{account_id}/previous_ssh_private_key`
+
+Auth: Bearer + `(server_account, *, rotate_password)`. Зануляет удержанный ПРЕЖНИЙ приватный ключ (`previous_ssh_private_key_encrypted` + `previous_ssh_key_rotated_at`) — оператор зовёт вручную, когда добил недоступные в момент ротации серверы и прежний ключ больше не нужен. Идемпотентна: нет удержанного ключа → тот же `200 {ok: true}`, без ошибки. Авто-очистки по callback'у нет — previous держится до этой ручной очистки либо следующей ротации ssh-ключа. INFO audit `server_account.clear_previous_ssh_key` (`details.cleared` — реально ли что-то удалили).
+
+Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404).
 
 Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` / `ACCOUNT_NO_PREVIOUS_SSH_KEY` (404), `DECRYPT_FAILED` (422), `RATE_LIMIT_EXCEEDED` (429).
 

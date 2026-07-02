@@ -1,5 +1,7 @@
 """Схемы для internal-эндпоинтов `/secrets/...` — постепенная фоновая ротация."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -115,6 +117,36 @@ class MigrationStatusResponse(BaseModel):
             "Синоним `outbox.pending` на верхнем уровне — для caller'ов"
             " с короткой read-only-страницы."
         ),
+    )
+    # ── Режим и прогресс перешифровки (self-drain + force maintenance) ──────
+    mode: str = Field(
+        "lazy",
+        description=(
+            "`lazy` — фоновая троттлящаяся перешифровка, сервис доступен;"
+            " `force` — активен maintenance-режим (сервис закрыт 503'ами до"
+            " полного осушения). Производное от `force_active`."
+        ),
+    )
+    force_active: bool = Field(
+        False,
+        description=(
+            "Взведён ли durable force-флаг. True → maintenance-gate отбивает"
+            " не-статусные запросы 503 REENCRYPT_IN_PROGRESS."
+        ),
+    )
+    eta_seconds: float = Field(
+        0.0, ge=0.0,
+        description=(
+            "Оценка времени до полного осушения остатка (`remaining` / throughput)."
+        ),
+    )
+    throughput: float = Field(
+        0.0, ge=0.0,
+        description="Оценка пропускной способности перешифровки (строк/сек) из конфига.",
+    )
+    versions_in_keystore: list[int] = Field(
+        default_factory=list,
+        description="Все версии мастер-ключа, известные keystore'у (по возрастанию).",
     )
 
 
@@ -257,6 +289,15 @@ class RotateKeyRequest(BaseModel):
             " `POST /admin/service-keys/generate`."
         ),
     )
+    mode: Literal["lazy", "force"] = Field(
+        "lazy",
+        description=(
+            "`lazy` (default) — фоновая троттлящаяся перешифровка, сервис"
+            " остаётся доступен. `force` — включить maintenance-режим:"
+            " сервис отвечает 503 на всё, кроме статуса и health, пока дренер"
+            " не осушит миграцию; по завершении режим снимается автоматически."
+        ),
+    )
 
 
 class RotateKeyResponse(BaseModel):
@@ -277,6 +318,17 @@ class RotateKeyResponse(BaseModel):
         description=(
             "True, если присланный ключ уже был активным — новая версия не"
             " заведена (повторный вызов rotation-runner'а)."
+        ),
+    )
+    mode: str = Field(
+        "lazy",
+        description="Режим ротации, как его запросил caller (`lazy` | `force`).",
+    )
+    force_active: bool = Field(
+        False,
+        description=(
+            "Взведён ли durable force-флаг по итогу ротации (True только для"
+            " `mode=force`). При True сервис уходит в maintenance до осушения."
         ),
     )
 

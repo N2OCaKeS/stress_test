@@ -562,6 +562,113 @@ class Settings(BaseSettings):
             "в worker'е (два poller'а / loop без back-off'а)."
         ),
     )
+    # ── Фоновый дренер reencrypt-outbox (self-drain внутри server_service) ──
+    # Раньше дренаж делал server_worker через taskiq-scheduler, которого в
+    # проде нет. Теперь каждый инстанс поднимает собственный asyncio-таск,
+    # клеймит батчи через FOR UPDATE SKIP LOCKED (шардинг по репликам) и
+    # перешифровывает секреты под активную версию ключа.
+    reencrypt_drain_enabled: bool = Field(
+        default=True,
+        alias="REENCRYPT_DRAIN_ENABLED",
+        description=(
+            "Поднимать ли фоновый дренер reencrypt-outbox в lifespan. "
+            "True (default) — сервис сам осушает outbox без worker'а. "
+            "False отключает таск (например, если дренаж делает внешний runner)."
+        ),
+    )
+    reencrypt_lazy_batch_size: int = Field(
+        default=25,
+        ge=1,
+        alias="REENCRYPT_LAZY_BATCH_SIZE",
+        description=(
+            "Размер батча claim'а в lazy-режиме (force не активен). Малый — "
+            "чтобы фоновая перешифровка не мешала пользовательской нагрузке."
+        ),
+    )
+    reencrypt_lazy_sleep_seconds: float = Field(
+        default=5.0,
+        gt=0,
+        alias="REENCRYPT_LAZY_SLEEP_SECONDS",
+        description=(
+            "Пауза между итерациями дренера в lazy-режиме, когда работа была. "
+            "Троттлит нагрузку на БД."
+        ),
+    )
+    reencrypt_force_batch_size: int = Field(
+        default=200,
+        ge=1,
+        alias="REENCRYPT_FORCE_BATCH_SIZE",
+        description=(
+            "Размер батча claim'а в force-режиме. Крупнее lazy — дренить надо "
+            "максимально быстро, сервис всё равно закрыт maintenance-gate'ом."
+        ),
+    )
+    reencrypt_force_sleep_seconds: float = Field(
+        default=0.05,
+        ge=0,
+        alias="REENCRYPT_FORCE_SLEEP_SECONDS",
+        description=(
+            "Пауза между итерациями дренера в force-режиме. Минимальная — "
+            "плотный цикл до полного осушения."
+        ),
+    )
+    reencrypt_idle_sleep_seconds: float = Field(
+        default=15.0,
+        gt=0,
+        alias="REENCRYPT_IDLE_SLEEP_SECONDS",
+        description=(
+            "Пауза дренера, когда pending-очередь пуста (нечего делать). "
+            "Опрос outbox'а раз в N секунд без нагрузки на БД."
+        ),
+    )
+    reencrypt_throughput_per_second: float = Field(
+        default=25.0,
+        gt=0,
+        alias="REENCRYPT_THROUGHPUT_PER_SECOND",
+        description=(
+            "Оценка пропускной способности перешифровки (строк/сек) для "
+            "расчёта ETA и заголовка Retry-After в maintenance-gate. "
+            "Консервативная константа; занижать безопаснее (клиент подождёт "
+            "чуть дольше), завышать — рискнуть ранним повтором."
+        ),
+    )
+    reencrypt_retry_after_buffer_seconds: int = Field(
+        default=5,
+        ge=0,
+        alias="REENCRYPT_RETRY_AFTER_BUFFER_SECONDS",
+        description=(
+            "Добавка к расчётному ETA в заголовке Retry-After maintenance-"
+            "gate'а — запас на то, что дренаж чуть медленнее оценки."
+        ),
+    )
+    reencrypt_retry_after_min_seconds: int = Field(
+        default=15,
+        ge=1,
+        alias="REENCRYPT_RETRY_AFTER_MIN_SECONDS",
+        description=(
+            "Нижняя граница Retry-After maintenance-gate'а (сек). Клиент не "
+            "долбит сервис чаще, даже когда остаток крошечный."
+        ),
+    )
+    reencrypt_retry_after_max_seconds: int = Field(
+        default=300,
+        ge=1,
+        alias="REENCRYPT_RETRY_AFTER_MAX_SECONDS",
+        description=(
+            "Потолок Retry-After maintenance-gate'а (сек). На огромном остатке "
+            "клиенту не отдаётся заведомо гигантский обратный отсчёт."
+        ),
+    )
+    reencrypt_gate_cache_ttl_seconds: float = Field(
+        default=2.0,
+        ge=0,
+        alias="REENCRYPT_GATE_CACHE_TTL_SECONDS",
+        description=(
+            "TTL in-process кэша состояния force-флага в maintenance-gate'е. "
+            "Ограничивает частоту read'ов флага из БД под нагрузкой; при снятии "
+            "force gate разблокирует сервис с задержкой не больше этого TTL."
+        ),
+    )
     password_reveal_rate_limit: str = Field(
         default="120/second",
         alias="PASSWORD_REVEAL_RATE_LIMIT",
@@ -715,6 +822,18 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"LOGING_READ_POOL_MAX_KEEPALIVE ({self.loging_read_pool_max_keepalive}) "
                 f"cannot exceed LOGING_READ_POOL_MAX_CONNECTIONS ({self.loging_read_pool_max_connections})"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_reencrypt_retry_after_bounds(self) -> "Settings":
+        """min не может превышать max в окне Retry-After maintenance-gate'а."""
+        if self.reencrypt_retry_after_min_seconds > self.reencrypt_retry_after_max_seconds:
+            raise ValueError(
+                f"REENCRYPT_RETRY_AFTER_MIN_SECONDS "
+                f"({self.reencrypt_retry_after_min_seconds}) cannot exceed "
+                f"REENCRYPT_RETRY_AFTER_MAX_SECONDS "
+                f"({self.reencrypt_retry_after_max_seconds})"
             )
         return self
 

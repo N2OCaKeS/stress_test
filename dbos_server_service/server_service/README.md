@@ -311,6 +311,17 @@ Worker-task'и, зарегистрированные в брокере, с кл�
 | `MASS_ROTATION_MAX_SERVERS` | cap на число серверов в одном mass-rotation запросе (превышение → 413 `MASS_ROTATION_TOO_LARGE`); default `200` |
 | `FANOUT_UPDATE_ON_HOST_MAX` | cap на размер fan-out'а `account.update_on_host` от PATCH аккаунта; default `200` |
 | `WORKER_POOL_RATE_LIMIT` | per-IP rate-limit на `/internal/secrets/reencrypt_outbox/seed` и `/pending` (worker poll-loop); default `120/second` |
+| `REENCRYPT_DRAIN_ENABLED` | поднимать ли фоновый self-drain reencrypt-outbox в lifespan; default `True` |
+| `REENCRYPT_LAZY_BATCH_SIZE` | размер батча дренера в lazy-режиме; default 25 |
+| `REENCRYPT_LAZY_SLEEP_SECONDS` | пауза дренера между итерациями в lazy-режиме; default 5.0 |
+| `REENCRYPT_FORCE_BATCH_SIZE` | размер батча дренера в force-режиме; default 200 |
+| `REENCRYPT_FORCE_SLEEP_SECONDS` | пауза дренера между итерациями в force-режиме; default 0.05 |
+| `REENCRYPT_IDLE_SLEEP_SECONDS` | пауза дренера при пустой очереди; default 15.0 |
+| `REENCRYPT_THROUGHPUT_PER_SECOND` | оценка строк/сек для расчёта ETA / Retry-After maintenance-gate'а; default 25.0 |
+| `REENCRYPT_RETRY_AFTER_BUFFER_SECONDS` | добавка к ETA в Retry-After maintenance-gate; default 5 |
+| `REENCRYPT_RETRY_AFTER_MIN_SECONDS` | нижняя граница Retry-After maintenance-gate; default 15 |
+| `REENCRYPT_RETRY_AFTER_MAX_SECONDS` | потолок Retry-After maintenance-gate; default 300 |
+| `REENCRYPT_GATE_CACHE_TTL_SECONDS` | TTL in-process кэша force-флага в maintenance-gate; default 2.0 |
 | `IPMI_VERIFY_MAX_AGE_SECONDS` | максимальный возраст `verified_at` в `IpmiCredentialsRotatedRequest`; default 60 |
 | `VERIFY_FUTURE_SKEW_SECONDS` | допустимое окно в будущем для `verified_at` при verify-after-rotate (NTP-drift tolerance); default 60 |
 | `ROTATED_AT_SKEW_SECONDS` | допустимый перекос между worker'овым `rotated_at` и локальным временем для `record_ipmi_credentials_rotated`; default 600 (NTP-drift tolerance) |

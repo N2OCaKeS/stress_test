@@ -54,27 +54,67 @@ def _validate_key_b64(key_b64: str) -> None:
         )
 
 
-async def rotate(db: AsyncSession, *, new_key_b64: str) -> dict:
+_ROTATE_MODE_LAZY = "lazy"
+_ROTATE_MODE_FORCE = "force"
+
+
+async def _apply_force_mode(db: AsyncSession, mode: str) -> bool:
+    """При ``mode=force`` взвести durable force-флаг + записать audit.
+
+    ``lazy`` — no-op: force-флаг НЕ снимается, чтобы одна lazy-ротация не
+    разблокировала сервис посреди уже идущей force-миграции (флаг снимает
+    только дренер по факту полного осушения).
+    """
+    if mode != _ROTATE_MODE_FORCE:
+        return False
+    await secrets_migration_service.set_force_active(db, True)
+    audit_service.emit(
+        "encryption.force_reencrypt_enabled",
+        target_id=None,
+        target_type="secret",
+        status="success",
+        allowed=True,
+        details={"mode": mode},
+    )
+    return True
+
+
+async def rotate(
+    db: AsyncSession, *, new_key_b64: str, mode: str = _ROTATE_MODE_LAZY
+) -> dict:
     """Ввести новую версию ключа активной и засидить outbox.
 
-    Возвращает ``{new_version, previous_version, seeded, idempotent}``.
+    ``mode`` управляет каденсом дренажа:
+
+    * ``lazy`` (default) — фоновая перешифровка троттлится, сервис доступен;
+    * ``force`` — взводится durable force-флаг: maintenance-gate закрывает
+      сервис 503'ами, дренер осушает outbox максимально быстро, по завершении
+      флаг снимается автоматически.
+
+    Возвращает ``{new_version, previous_version, seeded, idempotent, mode,
+    force_active}``.
     """
     _validate_key_b64(new_key_b64)
     ks = get_keystore()
     previous_version = ks.get_active_version()
 
     # Идемпотентность: если активный материал уже совпадает с присланным —
-    # ротация уже состоялась (retryrotation-runner'а), не плодим версию.
+    # ротация уже состоялась (retryrotation-runner'а), не плодим версию. Но
+    # force-флаг всё равно применяем: повтор force-ротации должен вернуть
+    # сервис в maintenance-режим, даже если версию заводить не надо.
     try:
         current_material = ks.get_key(previous_version).decode()
     except AppException:
         current_material = None
     if current_material == new_key_b64:
+        force_active = await _apply_force_mode(db, mode)
         return {
             "new_version": previous_version,
             "previous_version": previous_version,
             "seeded": {"inserted": 0, "scanned": 0, "active_version": previous_version},
             "idempotent": True,
+            "mode": mode,
+            "force_active": force_active,
         }
 
     new_version = max(ks.list_versions(), default=previous_version) + 1
@@ -82,11 +122,14 @@ async def rotate(db: AsyncSession, *, new_key_b64: str) -> dict:
     ks.set_active(new_version)
 
     seeded = await secrets_migration_service.seed_outbox(db)
+    force_active = await _apply_force_mode(db, mode)
     return {
         "new_version": new_version,
         "previous_version": previous_version,
         "seeded": seeded,
         "idempotent": False,
+        "mode": mode,
+        "force_active": force_active,
     }
 
 

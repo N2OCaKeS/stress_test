@@ -82,7 +82,9 @@ async def admin_rotate_encryption_key(
 
     Audit: `encryption.admin_rotate` (CRITICAL, actor = account_admin).
     """
-    data = await key_rotation_service.rotate(db, new_key_b64=payload.new_key_b64)
+    data = await key_rotation_service.rotate(
+        db, new_key_b64=payload.new_key_b64, mode=payload.mode
+    )
     audit_service.emit(
         "encryption.admin_rotate",
         target_id=None,
@@ -94,6 +96,8 @@ async def admin_rotate_encryption_key(
             "previous_version": data["previous_version"],
             "seeded_inserted": data["seeded"]["inserted"],
             "idempotent": data["idempotent"],
+            "mode": data["mode"],
+            "force_active": data["force_active"],
         },
     )
     return RotateKeyResponse(**data)

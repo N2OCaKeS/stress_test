@@ -8,6 +8,7 @@ from src.models.management_user_config import ManagementUserConfig
 from src.models.os_version import OsVersion
 from src.models.resource_role_permission import ResourceRolePermission
 from src.models.server import Server
+from src.models.secrets_migration_state import SecretsMigrationState
 from src.models.secrets_outbox import ReencryptOutboxEntry
 from src.models.server_account import ServerAccount, ServerAccountServer
 from src.models.server_account_ignored_login import ServerAccountIgnoredLogin
@@ -22,6 +23,7 @@ __all__ = [
     "OsVersion",
     "ReencryptOutboxEntry",
     "ResourceRolePermission",
+    "SecretsMigrationState",
     "Server",
     "ServerAccount",
     "ServerAccountIgnoredLogin",

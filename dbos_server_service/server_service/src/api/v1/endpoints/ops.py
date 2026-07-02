@@ -106,7 +106,9 @@ async def rotate_encryption_key(
 
     Audit: `ops.encryption_rotate` (CRITICAL).
     """
-    data = await key_rotation_service.rotate(db, new_key_b64=payload.new_key_b64)
+    data = await key_rotation_service.rotate(
+        db, new_key_b64=payload.new_key_b64, mode=payload.mode
+    )
     audit_service.emit(
         "ops.encryption_rotate",
         target_id=None,
@@ -119,6 +121,8 @@ async def rotate_encryption_key(
             "previous_version": data["previous_version"],
             "seeded_inserted": data["seeded"]["inserted"],
             "idempotent": data["idempotent"],
+            "mode": data["mode"],
+            "force_active": data["force_active"],
         },
     )
     return RotateKeyResponse(**data)

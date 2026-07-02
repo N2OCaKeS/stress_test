@@ -31,7 +31,14 @@ from src.core.logging import configure_logging, request_id_var
 from src.dependencies import auth as auth_deps
 from src.middleware.https_guard import HTTPSRequiredMiddleware
 from src.middleware.platform_admin_guard import platform_admin_guard
-from src.services import audit_context, audit_service, http_pool, worker_client
+from src.middleware.reencrypt_gate import reencrypt_maintenance_gate
+from src.services import (
+    audit_context,
+    audit_service,
+    http_pool,
+    secrets_drainer,
+    worker_client,
+)
 from src.services.audit_context import AuditContext
 from src.services.audit_events import register_events
 
@@ -247,9 +254,24 @@ def create_application() -> FastAPI:
                 type(exc).__name__,
                 exc,
             )
+        # Фоновый self-drain reencrypt-outbox. Осушает миграцию секретов без
+        # server_worker'а (taskiq-scheduler'а в проде нет). Реплики шардятся
+        # через `FOR UPDATE SKIP LOCKED` в `claim_pending`. Отключается
+        # `REENCRYPT_DRAIN_ENABLED=false`.
+        drain_loop: secrets_drainer.DrainLoop | None = None
+        if settings.reencrypt_drain_enabled:
+            drain_loop = secrets_drainer.DrainLoop(settings)
+            drain_loop.start()
+            app.state.reencrypt_drain_loop = drain_loop
+
         try:
             yield
         finally:
+            # Дренер останавливаем ПЕРВЫМ: он ходит в БД через AsyncSessionLocal,
+            # надо погасить его до dispose'а главного engine ниже.
+            if drain_loop is not None:
+                await drain_loop.stop()
+
             # Shutdown order:
             #
             #   1. `introspect_client` — закрываем ПЕРВЫМИ. После закрытия
@@ -437,6 +459,14 @@ def create_application() -> FastAPI:
     # Starlette. Логика middleware и обоснование — в
     # `src/middleware/platform_admin_guard.py`.
     app.middleware("http")(platform_admin_guard)
+
+    # Maintenance-gate форсированной перешифровки. Регистрируется ПОСЛЕ
+    # platform_admin_guard (значит в стеке — снаружи него и audit_access), но
+    # ВНУТРЬ attach_request_id_and_context ниже: 503 REENCRYPT_IN_PROGRESS
+    # короткозамкнут до audit_access (не флудим `http.server_error`), но уже
+    # имеет request_id в envelope. Логика и exempt-пути — в
+    # `middleware/reencrypt_gate.py`.
+    app.middleware("http")(reencrypt_maintenance_gate)
 
     @app.middleware("http")
     async def attach_request_id_and_context(request: Request, call_next):

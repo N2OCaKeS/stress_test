@@ -31,7 +31,9 @@ WHERE status IN ('pending','processing')` запрещает дубли акти
 from __future__ import annotations
 
 import logging
+import math
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -41,7 +43,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.keystore import get_keystore
-from src.models import IpmiController, ReencryptOutboxEntry, ServerAccount
+from src.models import (
+    IpmiController,
+    ReencryptOutboxEntry,
+    SecretsMigrationState,
+    ServerAccount,
+)
 from src.services import audit_service, metrics, secrets_service
 
 logger = logging.getLogger(__name__)
@@ -61,6 +68,168 @@ STATUS_PENDING = "pending"
 STATUS_PROCESSING = "processing"
 STATUS_DONE = "done"
 STATUS_FAILED = "failed"
+
+# Единственная строка `secrets_migration_state`.
+SINGLETON_STATE_ID = "singleton"
+
+
+# ── Force-режим: durable флаг + in-process кэш под maintenance-gate ──────────
+#
+# `force_active` живёт в БД (общий для реплик, переживает рестарт). Gate читает
+# его на каждый запрос, поэтому поверх лежит короткий TTL-кэш: под нагрузкой
+# флаг не долбит БД, при снятии force сервис разблокируется с задержкой не
+# больше TTL. Кэш инвалидируется явно из `set_force_active` в том же процессе.
+_gate_cache: dict[str, object] = {"data": None, "ts": 0.0}
+
+
+def _invalidate_gate_cache() -> None:
+    _gate_cache["data"] = None
+    _gate_cache["ts"] = 0.0
+
+
+async def get_force_active(db: AsyncSession) -> bool:
+    """Прочитать durable флаг force-режима из singleton-строки.
+
+    Отсутствие строки (старая БД без миграции) трактуется как выключенный
+    force — fail-open, чтобы отсутствие state-таблицы не блокировало сервис.
+    """
+    row = await db.get(SecretsMigrationState, SINGLETON_STATE_ID)
+    return bool(row.force_active) if row is not None else False
+
+
+async def set_force_active(db: AsyncSession, active: bool) -> None:
+    """Взвести/снять durable флаг force-режима (upsert singleton + commit)."""
+    now = datetime.now(timezone.utc)
+    stmt = (
+        pg_insert(SecretsMigrationState.__table__)
+        .values(id=SINGLETON_STATE_ID, force_active=active, updated_at=now)
+        .on_conflict_do_update(
+            index_elements=["id"],
+            set_={"force_active": active, "updated_at": now},
+        )
+    )
+    await db.execute(stmt)
+    await db.commit()
+    _invalidate_gate_cache()
+
+
+def throughput_per_second() -> float:
+    """Оценка пропускной способности перешифровки (строк/сек) из конфига."""
+    return float(get_settings().reencrypt_throughput_per_second)
+
+
+def compute_eta_seconds(remaining: int) -> float:
+    """ETA осушения `remaining` строк при текущей оценке throughput'а."""
+    if remaining <= 0:
+        return 0.0
+    tp = throughput_per_second()
+    if tp <= 0:
+        return float(remaining)
+    return remaining / tp
+
+
+def compute_retry_after(remaining: int) -> int:
+    """Значение заголовка Retry-After: ceil(eta)+буфер, зажатое в [min, max]."""
+    settings = get_settings()
+    eta = compute_eta_seconds(remaining)
+    value = math.ceil(eta) + settings.reencrypt_retry_after_buffer_seconds
+    value = max(value, settings.reencrypt_retry_after_min_seconds)
+    value = min(value, settings.reencrypt_retry_after_max_seconds)
+    return int(value)
+
+
+async def remaining_legacy(db: AsyncSession) -> int:
+    """Сколько owner-строк ещё под не-активной версией ключа (обе таблицы)."""
+    active = get_keystore().get_active_version()
+    by_version = await _count_by_version(db)
+    return sum(c for v, c in by_version.items() if v != active)
+
+
+async def force_gate_state_cached() -> dict:
+    """Снимок состояния force-режима для maintenance-gate'а (с TTL-кэшем).
+
+    Возвращает `{force_active, remaining, retry_after, eta_seconds}`. Открывает
+    собственную короткую сессию (gate работает вне request-scoped DI). Любая
+    ошибка чтения трактуется как выключенный force — сбой БД не должен ронять
+    весь сервис в 503.
+    """
+    settings = get_settings()
+    ttl = settings.reencrypt_gate_cache_ttl_seconds
+    now = time.monotonic()
+    cached = _gate_cache["data"]
+    if cached is not None and (now - float(_gate_cache["ts"])) < ttl:
+        return cached  # type: ignore[return-value]
+
+    from src.db.session import AsyncSessionLocal
+
+    force = False
+    remaining = 0
+    try:
+        async with AsyncSessionLocal() as session:
+            force = await get_force_active(session)
+            if force:
+                remaining = await remaining_legacy(session)
+    except Exception as exc:  # noqa: BLE001 — fail-open: gate не валит сервис
+        logger.warning(
+            "reencrypt gate state read failed (%s) — treating force as inactive",
+            type(exc).__name__,
+        )
+        force = False
+        remaining = 0
+
+    if force:
+        retry_after = compute_retry_after(remaining)
+        eta = compute_eta_seconds(remaining)
+    else:
+        retry_after = settings.reencrypt_retry_after_min_seconds
+        eta = 0.0
+    data = {
+        "force_active": force,
+        "remaining": remaining,
+        "retry_after": retry_after,
+        "eta_seconds": eta,
+    }
+    _gate_cache["data"] = data
+    _gate_cache["ts"] = now
+    return data
+
+
+async def finish_if_drained(db: AsyncSession) -> bool:
+    """Если миграция осушена целиком — вывести старые ключи и снять force.
+
+    «Осушена» = 0 owner-строк под не-активными версиями И пустой outbox
+    (pending+processing == 0). Тогда:
+
+    * best-effort авто-retire всех опустевших не-активных версий keystore
+      (жёсткий инвариант «0 строк на версии» проверяется внутри `retire`);
+    * если был взведён force — снять его (разблокировать сервис) и записать
+      `encryption.force_reencrypt_cleared`.
+
+    Возвращает True, если миграция завершена (независимо от того, был ли
+    force). Идемпотентно.
+    """
+    active = get_keystore().get_active_version()
+    by_version = await _count_by_version(db)
+    remaining = sum(c for v, c in by_version.items() if v != active)
+    outbox = await _outbox_counts_by_status(db)
+    open_outbox = outbox.get(STATUS_PENDING, 0) + outbox.get(STATUS_PROCESSING, 0)
+    if remaining > 0 or open_outbox > 0:
+        return False
+
+    await _maybe_auto_retire(db, None)
+    if await get_force_active(db):
+        await set_force_active(db, False)
+        audit_service.emit(
+            "encryption.force_reencrypt_cleared",
+            actor_id=None,
+            actor_type="system",
+            target_id=None,
+            target_type="secret",
+            status="success",
+            allowed=True,
+            details={"active_version": active},
+        )
+    return True
 
 
 def _parse_version(token: str | None) -> int | None:
@@ -271,10 +440,12 @@ async def status(db: AsyncSession) -> dict:
       чтобы caller'у с lazy-страницы не лезть в nested-объект.
     """
     settings = get_settings()
-    active = get_keystore().get_active_version()
+    keystore = get_keystore()
+    active = keystore.get_active_version()
     by_version = await _count_by_version(db)
     total = await _total(db)
     remaining = sum(c for v, c in by_version.items() if v != active)
+    force_active = await get_force_active(db)
     outbox_counts = await _outbox_counts_by_status(db)
     outbox_snapshot = {
         STATUS_PENDING: outbox_counts.get(STATUS_PENDING, 0),
@@ -310,6 +481,13 @@ async def status(db: AsyncSession) -> dict:
         "remaining_legacy_total": remaining_legacy_total,
         "migrated_pct": migrated_pct,
         "outbox_pending": outbox_snapshot[STATUS_PENDING],
+        # Режим и прогресс перешифровки для UI/gate: `mode` производный от
+        # force-флага, `eta_seconds` / `throughput` — для обратного отсчёта.
+        "mode": "force" if force_active else "lazy",
+        "force_active": force_active,
+        "eta_seconds": compute_eta_seconds(remaining),
+        "throughput": throughput_per_second(),
+        "versions_in_keystore": keystore.list_versions(),
     }
 
 

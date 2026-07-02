@@ -104,9 +104,11 @@ import {
   installedPackagesBulk,
   packagesBulkAction,
 } from "@/api/server/misc";
+import { listServers } from "@/api/server/servers";
 
 const installedPackagesBulkMock = vi.mocked(installedPackagesBulk);
 const packagesBulkActionMock = vi.mocked(packagesBulkAction);
+const listServersMock = vi.mocked(listServers);
 
 function renderPage() {
   return render(
@@ -127,6 +129,7 @@ describe("ServerPackages", () => {
     window.localStorage.clear();
     installedPackagesBulkMock.mockClear();
     packagesBulkActionMock.mockClear();
+    listServersMock.mockClear();
   });
 
   it("показывает подсказку про мультипаттерн", async () => {
@@ -135,6 +138,34 @@ describe("ServerPackages", () => {
     expect(
       screen.getByPlaceholderText("ssh* bash* *libs*"),
     ).toBeInTheDocument();
+  });
+
+  it("сервер в селекторе показывается по имени, без сырого IP", async () => {
+    listServersMock.mockResolvedValueOnce({
+      items: [
+        {
+          ...mkServer("srv_named", "raw-host"),
+          display_name: "Красивое имя",
+          ip_address: "10.9.9.9",
+        },
+      ],
+      total: 1,
+      limit: 200,
+      offset: 0,
+    });
+    renderPage();
+    // Основной текст строки — display_name, а не hostname/IP.
+    await screen.findByText("Красивое имя");
+    expect(screen.queryByText("raw-host")).not.toBeInTheDocument();
+    expect(screen.queryByText("10.9.9.9")).not.toBeInTheDocument();
+  });
+
+  it("без display_name сервер в селекторе показывается по hostname", async () => {
+    renderPage();
+    // display_name у host-a/host-b пуст — падаем на hostname, IP не выводим.
+    await screen.findByText("host-a");
+    await screen.findByText("host-b");
+    expect(screen.queryByText("10.10.20.11")).not.toBeInTheDocument();
   });
 
   it("шлёт patterns (split по пробелам) в installedPackagesBulk", async () => {

@@ -171,6 +171,8 @@ const ACTION_LABEL: Record<PackagesBulkActionKind, string> = {
 interface ActionServerState {
   serverId: string;
   hostname: string;
+  /** Человекочитаемое имя сервера (если задано) — показываем его как основное. */
+  displayName: string | null;
   status: PackagesBulkActionServerStatus;
   taskId: string | null;
   /** Терминальный статус задачи, когда она досчитана (succeeded/failed/cancelled). */
@@ -525,11 +527,11 @@ function ServerPickRow({
     >
       <input type="checkbox" checked={checked} onChange={onToggle} />
       <div className="flex-1 min-w-0">
-        <div className="text-sm truncate">{name}</div>
-        <div className="text-[11px] text-dim flex items-center gap-2">
-          <span className="mono truncate">{server.ip_address}</span>
-          <span>·</span>
-          <span className="truncate">ОС: {osLabel(server.os_version_id)}</span>
+        <div className="text-sm truncate" title={server.ip_address}>
+          {name}
+        </div>
+        <div className="text-[11px] text-dim truncate">
+          ОС: {osLabel(server.os_version_id)}
         </div>
       </div>
       {!server.is_managed && (
@@ -633,6 +635,8 @@ function PackageActionPanel({
       const init: ActionServerState[] = res.results.map((r) => ({
         serverId: r.server_id,
         hostname: r.hostname ?? hostnameOf(r.server_id),
+        displayName:
+          servers.find((s) => s.id === r.server_id)?.display_name ?? null,
         status: r.status,
         taskId: r.task_id ?? null,
         taskStatus: null,
@@ -793,8 +797,11 @@ function ActionStatusRow({ state }: { state: ActionServerState }) {
   const kind = ACTION_STATUS_KIND[state.status] ?? "";
   return (
     <div className="surface-2 border border-token rounded px-2 py-1 text-[11px] flex items-center gap-2">
-      <span className="mono truncate flex-1" title={state.serverId}>
-        {state.hostname}
+      <span
+        className="truncate flex-1"
+        title={`${state.hostname} · ${state.serverId}`}
+      >
+        {state.displayName ?? state.hostname}
       </span>
       <span className={`badge${kind ? ` badge-${kind}` : ""}`}>
         {ACTION_STATUS_LABEL[state.status] ?? state.status}

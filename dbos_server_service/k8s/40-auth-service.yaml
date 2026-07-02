@@ -126,6 +126,13 @@ spec:
             - name: INITIAL_ADMIN_EMAIL
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_EMAIL }
+            # Отключение форс-смены пароля admin при первом входе. Дефолт "false"
+            # (форс включён). Оператор ставит "true" через deploy.env
+            # (DBOS_BOOTSTRAP_FORCE_PASSWORD_CHANGE=false), если хочет входить под
+            # заранее заданным паролем без обязательной смены.
+            - name: DBOS_BOOTSTRAP_NO_FORCE_CHANGE
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: DBOS_BOOTSTRAP_NO_FORCE_CHANGE }
             # Готовый bot-токен воркера. auth_service на старте идемпотентно
             # заводит под него системный отдел, роль worker_bot@server_service
             # и бота server_worker — оператору не нужно делать это руками.

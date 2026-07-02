@@ -50,6 +50,10 @@ KEYSTORE_OUT="$K8S_DIR/21-keystore-secrets.yaml"
 INGRESS_OUT="$K8S_DIR/50-ingress.yaml"
 INGRESS_TEMPLATE="$K8S_DIR/50-ingress.yaml.template"
 ENV_FILE="$K8S_DIR/.env.k8s"
+# Operator-конфиг с предсказуемыми кредами (admin-пароль, force-change и т.д.).
+# Оператор копирует его из deploy.env.example и заполняет ДО make k8s-zero.
+# Скрипт этот файл только читает и НИКОГДА не перезаписывает (в отличие от .env.k8s).
+DEPLOY_ENV_FILE="$K8S_DIR/deploy.env"
 
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 SUMMARY_OUT="/tmp/dbos-secrets-${TS}.txt"
@@ -309,6 +313,26 @@ if [[ -f "$SECRETS_OUT" ]] || [[ -f "$INGRESS_OUT" ]]; then
     [[ "$yn" == "yes" ]] || { echo "Отменено."; exit 0; }
 fi
 
+# ── Operator-конфиг deploy.env ────────────────────────────────────────────────
+# Сорсим ПОСЛЕ .env.k8s, отдельным блоком. Даёт оператору задать предсказуемые
+# значения (INITIAL_ADMIN_USERNAME/PASSWORD, DBOS_BOOTSTRAP_FORCE_PASSWORD_CHANGE,
+# при желании — WORKER_BOT_TOKEN, *_DB_PASSWORD, master-ключи) ДО генерации.
+# Всё, что оператор не задал, ниже генерится как раньше. Файла нет — пропускаем.
+if [[ -f "$DEPLOY_ENV_FILE" ]]; then
+    echo "→ Читаю operator-конфиг $DEPLOY_ENV_FILE"
+    # shellcheck source=/dev/null
+    . "$DEPLOY_ENV_FILE"
+fi
+
+# force-change при первом входе admin'а. Оператор задаёт человекочитаемый флаг
+# DBOS_BOOTSTRAP_FORCE_PASSWORD_CHANGE (default true); в env сервиса кладётся
+# инвертированный DBOS_BOOTSTRAP_NO_FORCE_CHANGE, который читает bootstrap_service.
+if [[ "${DBOS_BOOTSTRAP_FORCE_PASSWORD_CHANGE:-true}" == "false" ]]; then
+    DBOS_BOOTSTRAP_NO_FORCE_CHANGE="true"
+else
+    DBOS_BOOTSTRAP_NO_FORCE_CHANGE="false"
+fi
+
 # ── Генератор случайных строк ─────────────────────────────────────────────────
 rand() {
     local n=$1
@@ -317,16 +341,19 @@ rand() {
 rand_b64() { openssl rand -base64 "$1" | tr -d '\n'; }
 rand_hex() { openssl rand -hex "$1"; }
 
-# Postgres credentials (per-service)
-AUTH_DB_PASSWORD=$(rand "$RAND_DB_PASS_LEN")
-LOGGING_DB_PASSWORD=$(rand "$RAND_DB_PASS_LEN")
-SERVER_DB_PASSWORD=$(rand "$RAND_DB_PASS_LEN")
-WORKER_DB_PASSWORD=$(rand "$RAND_DB_PASS_LEN")
-SECRET_DB_PASSWORD=$(rand "$RAND_DB_PASS_LEN")
+# Postgres credentials (per-service). Оператор может запиннить любой из паролей
+# в deploy.env; пустое значение → генерится случайный, как раньше.
+AUTH_DB_PASSWORD="${AUTH_DB_PASSWORD:-$(rand "$RAND_DB_PASS_LEN")}"
+LOGGING_DB_PASSWORD="${LOGGING_DB_PASSWORD:-$(rand "$RAND_DB_PASS_LEN")}"
+SERVER_DB_PASSWORD="${SERVER_DB_PASSWORD:-$(rand "$RAND_DB_PASS_LEN")}"
+WORKER_DB_PASSWORD="${WORKER_DB_PASSWORD:-$(rand "$RAND_DB_PASS_LEN")}"
+SECRET_DB_PASSWORD="${SECRET_DB_PASSWORD:-$(rand "$RAND_DB_PASS_LEN")}"
 
-# auth_service
-AUTH_SECRET_KEY=$(rand "$RAND_AUTH_SECRET_LEN")
-INITIAL_ADMIN_PASSWORD=$(rand "$RAND_ADMIN_PASS_LEN")
+# auth_service. INITIAL_ADMIN_USERNAME/PASSWORD оператор задаёт в deploy.env,
+# чтобы знать креды заранее; пусто → admin + случайный 16-симв. пароль.
+AUTH_SECRET_KEY="${AUTH_SECRET_KEY:-$(rand "$RAND_AUTH_SECRET_LEN")}"
+INITIAL_ADMIN_USERNAME="${INITIAL_ADMIN_USERNAME:-admin}"
+INITIAL_ADMIN_PASSWORD="${INITIAL_ADMIN_PASSWORD:-$(rand "$RAND_ADMIN_PASS_LEN")}"
 
 # loging_service service-to-service
 LOGGING_SERVICE_API_KEY_AUTH=$(rand "$RAND_S2S_KEY_LEN")
@@ -339,15 +366,17 @@ LOGGING_SERVICE_API_KEY_SECRET=$(rand "$RAND_S2S_KEY_LEN")
 LOGGING_SERVICE_API_KEY="$LOGGING_SERVICE_API_KEY_AUTH"
 LOGGING_INTROSPECT_SERVICE_API_KEY=$(rand "$RAND_INTROSPECT_KEY_LEN")
 
-# server_service envelope encryption
-SERVER_ENCRYPTION_KEY=$(rand_b64 "$RAND_MASTER_KEY_BYTES")
+# server_service envelope encryption. Master-ключи оператор обычно НЕ пиннит
+# (deploy.env оставляет пустыми) — генерятся здесь. Запиннить можно для
+# восстановления деплоя из бэкапа ключей.
+SERVER_ENCRYPTION_KEY="${SERVER_ENCRYPTION_KEY:-$(rand_b64 "$RAND_MASTER_KEY_BYTES")}"
 SERVER_ENCRYPTION_KEY_VERSION=2
-HKDF_SALT_HEX=$(rand_hex "$RAND_HKDF_SALT_BYTES")
+HKDF_SALT_HEX="${HKDF_SALT_HEX:-$(rand_hex "$RAND_HKDF_SALT_BYTES")}"
 
 # Redis-stash envelope encryption (общий между server_service и server_worker)
 # Ключ отдельный от SERVER_ENCRYPTION_KEY: тот живёт только в server_service
 # (БД ciphertext'ы), этот — симметрично в обоих сервисах (provision-stash).
-REDIS_STASH_ENCRYPTION_KEY=$(rand_b64 "$RAND_MASTER_KEY_BYTES")
+REDIS_STASH_ENCRYPTION_KEY="${REDIS_STASH_ENCRYPTION_KEY:-$(rand_b64 "$RAND_MASTER_KEY_BYTES")}"
 REDIS_STASH_ENCRYPTION_KEY_VERSION=1
 
 # Legacy SERVICE_API_KEY (один общий секрет для всех caller'ов; в коде
@@ -357,7 +386,7 @@ SERVICE_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
 # server_service / worker service-to-service
 SERVER_SERVICE_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
 WORKER_SERVICE_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
-WORKER_BOT_TOKEN="dbos_bot_$(rand "$RAND_S2S_KEY_LEN")"
+WORKER_BOT_TOKEN="${WORKER_BOT_TOKEN:-dbos_bot_$(rand "$RAND_S2S_KEY_LEN")}"
 # rotation_runner identity — ключ, под которым CronJob rotation-scheduler ходит
 # в /internal/migration_status для гейтинга `--auto-finalize` master-ротаций.
 ROTATION_RUNNER_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
@@ -366,7 +395,7 @@ ROTATION_RUNNER_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
 SERVER_INBOUND_SERVICE_API_KEYS="worker_bot:${WORKER_BOT_TOKEN},rotation_runner:${ROTATION_RUNNER_API_KEY}"
 
 # secret_service envelope encryption (HKDF_SALT_HEX переиспользуется общий)
-SECRET_ENCRYPTION_KEY=$(rand_b64 "$RAND_MASTER_KEY_BYTES")
+SECRET_ENCRYPTION_KEY="${SECRET_ENCRYPTION_KEY:-$(rand_b64 "$RAND_MASTER_KEY_BYTES")}"
 SECRET_ENCRYPTION_KEY_VERSION=2
 
 # secret_service: introspect ключ для исходящих /authorization/introspect
@@ -458,9 +487,13 @@ EOF
     echo "$RSA_PEM" | sed 's/^/    /'
 cat <<EOF
 
-  INITIAL_ADMIN_USERNAME: admin
+  INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME}
   INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD}
   INITIAL_ADMIN_EMAIL: ${ADMIN_EMAIL}
+  # Отключение форс-смены пароля admin при первом входе. "true" ← оператор
+  # задал в deploy.env DBOS_BOOTSTRAP_FORCE_PASSWORD_CHANGE=false (admin входит
+  # под своим паролем, smoke его не перетирает). Дефолт "false" = форс включён.
+  DBOS_BOOTSTRAP_NO_FORCE_CHANGE: "${DBOS_BOOTSTRAP_NO_FORCE_CHANGE}"
 
   # loging_service: outbound + inbound map + introspect
   # `LOGGING_SERVICE_API_KEY` — legacy общий outbound для backward-compat
@@ -607,7 +640,7 @@ domain:    ${DOMAIN}
 ============================================================
 ADMIN (initial bootstrap, после первого старта смени пароль)
 ============================================================
-  username: admin
+  username: ${INITIAL_ADMIN_USERNAME}
   password: ${INITIAL_ADMIN_PASSWORD}
   email:    ${ADMIN_EMAIL}
 
@@ -667,7 +700,7 @@ echo "    $ENV_FILE          (домен для повторных запуск�
 echo "    $SUMMARY_OUT       (summary — admin-пароль + master-key + DB-passwords)"
 echo ""
 echo "  ⚠ Запомни / перенеси в password manager:"
-echo "    admin / ${INITIAL_ADMIN_PASSWORD}"
+echo "    ${INITIAL_ADMIN_USERNAME} / ${INITIAL_ADMIN_PASSWORD}"
 echo ""
 echo "  После переноса:  shred -u ${SUMMARY_OUT}"
 echo ""

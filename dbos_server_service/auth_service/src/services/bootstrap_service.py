@@ -54,9 +54,10 @@ async def bootstrap_admin(db: AsyncSession) -> None:
     # Пароль виден оператору в k8s-секрете и сертификатах развёртывания, пока
     # admin не сменит его сам. До первой самостоятельной смены через
     # POST /users/me/password middleware режет доступ ко всем endpoint'ам.
-    # Dev-режим: env `DBOS_BOOTSTRAP_NO_FORCE_CHANGE=true` отключает требование
-    # смены пароля при первом логине. Включён только в docker-compose.dev.yml;
-    # для k8s/prod-манифестов остаётся дефолт True.
+    # Env `DBOS_BOOTSTRAP_NO_FORCE_CHANGE=true` отключает требование смены
+    # пароля при первом логине. В docker-compose.dev.yml включён всегда; в k8s
+    # управляется через `deploy.env` (DBOS_BOOTSTRAP_FORCE_PASSWORD_CHANGE=false
+    # → gen_secrets кладёт NO_FORCE=true в секрет). Дефолт — форс-смена включена.
     force_change = (
         os.environ.get("DBOS_BOOTSTRAP_NO_FORCE_CHANGE", "").lower() != "true"
     )

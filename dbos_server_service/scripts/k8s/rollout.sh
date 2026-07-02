@@ -17,8 +17,11 @@ K3S_BIN="$(command -v k3s || echo /usr/local/bin/k3s)"
 build_one() {
     local svc=$1
     local dir=$2
+    # web_ui держит Dockerfile в корне, бэкенды — в docker/. Третьим аргументом
+    # можно передать явный путь, иначе дефолт docker/Dockerfile.
+    local dockerfile="${3:-$dir/docker/Dockerfile}"
     echo "→ Пересобираем dbos/${svc}:latest..."
-    docker build -t "dbos/${svc}:latest" -f "$dir/docker/Dockerfile" "$dir"
+    docker build -t "dbos/${svc}:latest" -f "$dockerfile" "$dir"
     local tmp=$(mktemp)
     docker save "dbos/${svc}:latest" -o "$tmp"
     sudo "$K3S_BIN" ctr images import "$tmp"
@@ -66,6 +69,13 @@ case "$TARGET" in
     secret|all)
         build_one "secret-service" "$ROOT_DIR/secret_service"
         rollout_one "secret-service"
+        ;;
+esac
+
+case "$TARGET" in
+    web|web-ui|all)
+        build_one "web-ui" "$ROOT_DIR/web_ui" "$ROOT_DIR/web_ui/Dockerfile"
+        rollout_one "web-ui"
         ;;
 esac
 

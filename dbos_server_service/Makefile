@@ -596,7 +596,7 @@ k8s-zero: ## [VM, sudo] Полный deploy с нуля. Без аргумент
 	@echo "═══════════════════════════════════════════════════════════════════"
 	@$(K8S) get pods
 
-k8s-rollout: ## Пересобрать образы и сделать rolling update. SVC=auth|logging|all (default: all)
+k8s-rollout: ## Пересобрать образы и сделать rolling update. SVC=auth|logging|server|worker|secret|web|all (default: all)
 	bash scripts/k8s/rollout.sh $(SVC)
 
 k8s-rollback: ## Откатить deployment. SVC=auth|logging, REV=<revision> (по умолчанию предыдущая)

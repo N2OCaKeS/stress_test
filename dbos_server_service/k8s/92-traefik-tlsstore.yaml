@@ -1,0 +1,17 @@
+# Дефолтный TLS-сертификат traefik.
+#
+# При заходе по IP браузер не шлёт SNI, и без совпадения по хосту traefik отдал бы
+# свой самоподписанный TRAEFIK DEFAULT CERT (браузер ему не доверяет). Указываем
+# наш CA-issued лист (в SAN есть и DNS, и IP) как defaultCertificate — тогда и
+# IP-заход получает валидный лист, который проверяется импортированным CA.
+#
+# Secret dbos-ingress-tls в kube-system (namespace traefik'а) заливает deploy.sh
+# копией из namespace dbos, где его наполняет cert-manager.
+apiVersion: traefik.io/v1alpha1
+kind: TLSStore
+metadata:
+  name: default
+  namespace: kube-system
+spec:
+  defaultCertificate:
+    secretName: dbos-ingress-tls

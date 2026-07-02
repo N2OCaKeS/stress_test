@@ -77,6 +77,21 @@ if ! kubectl -n dbos wait --for=condition=Ready certificate/dbos-ingress-cert --
     kubectl -n dbos describe certificate dbos-ingress-cert 2>/dev/null | tail -20 || true
 fi
 
+# Дефолтный cert traefik: по IP-заходу браузер не шлёт SNI, и traefik без
+# совпадения по хосту отдаёт свой TRAEFIK DEFAULT CERT. Копируем наш лист в
+# namespace traefik'а (kube-system) и вешаем TLSStore default — тогда и IP-заход
+# получает валидный CA-issued лист (IP есть в его SAN).
+if kubectl -n dbos get secret dbos-ingress-tls >/dev/null 2>&1; then
+    echo "→ Edge-TLS: ставим ingress-cert дефолтным для traefik (IP-заход без SNI)..."
+    kubectl -n dbos get secret dbos-ingress-tls -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/dbos-edge.crt
+    kubectl -n dbos get secret dbos-ingress-tls -o jsonpath='{.data.tls\.key}' | base64 -d > /tmp/dbos-edge.key
+    kubectl -n kube-system create secret tls dbos-ingress-tls \
+        --cert=/tmp/dbos-edge.crt --key=/tmp/dbos-edge.key \
+        --dry-run=client -o yaml | kubectl apply -f -
+    rm -f /tmp/dbos-edge.crt /tmp/dbos-edge.key
+    kubectl apply -f "$K8S_DIR/92-traefik-tlsstore.yaml"
+fi
+
 # Базы данных поднимаем ДО миграций и ДО сервисов: migration-Job'у нужна живая
 # БД, а схема-зависимые сервисы (auth-service делает SELECT count(*) FROM users
 # в bootstrap'е и крашится, если таблицы нет) не должны ждать готовности раньше,

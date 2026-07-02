@@ -13,6 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { CertHelpModal } from "@/components/CertHelpModal";
 import { Tabs } from "@/components/ui/Tabs";
 import {
   changeMyPassword,
@@ -61,21 +62,34 @@ export function MyAccount() {
   // and its useQuery refetches.
   const [sessionsRefreshKey, setSessionsRefreshKey] = useState(0);
   const bumpSessions = () => setSessionsRefreshKey((k) => k + 1);
+  // Модалку установки CA-сертификата открывают и с экрана логина, и отсюда —
+  // залогиненному юзеру она нужна, чтобы поставить сертификат на другом
+  // устройстве или переустановить после переустановки браузера/ОС.
+  const [certHelpOpen, setCertHelpOpen] = useState(false);
 
   return (
     <Shell breadcrumb="Главная / Личные настройки">
       <main className="flex-1 overflow-hidden flex flex-col min-w-0">
-        <div className="px-8 pt-6 pb-2 max-w-5xl w-full mx-auto">
-          <div className="text-2xl font-bold mb-1">
-            {user?.username ?? "— (не авторизован)"}
+        <div className="px-8 pt-6 pb-2 max-w-5xl w-full mx-auto flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-2xl font-bold mb-1">
+              {user?.username ?? "— (не авторизован)"}
+            </div>
+            <div className="text-dim text-sm">
+              {user?.platform_role ?? "user"} ·{" "}
+              <HeaderDeptLabel
+                deptName={user?.department_name}
+                deptId={user?.department_id}
+              />
+            </div>
           </div>
-          <div className="text-dim text-sm">
-            {user?.platform_role ?? "user"} ·{" "}
-            <HeaderDeptLabel
-              deptName={user?.department_name}
-              deptId={user?.department_id}
-            />
-          </div>
+          <button
+            type="button"
+            className="btn flex items-center gap-1.5 shrink-0"
+            onClick={() => setCertHelpOpen(true)}
+          >
+            <ShieldCheck className="w-4 h-4" /> Установить сертификат
+          </button>
         </div>
 
         <div className="max-w-5xl w-full mx-auto px-8">
@@ -106,6 +120,11 @@ export function MyAccount() {
           {tab === "perms" && <PermissionsCard mockMode={mockMode} />}
         </div>
       </main>
+
+      <CertHelpModal
+        open={certHelpOpen}
+        onClose={() => setCertHelpOpen(false)}
+      />
     </Shell>
   );
 }

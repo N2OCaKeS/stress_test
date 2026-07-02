@@ -114,6 +114,14 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
   // Config тоже скрыт — кнопка «Администрирование» внизу уже ведёт на /admin.
   // account_admin сюда не доходит: для него выше рендерится AdminOnlyPanel.
   const serviceList = [...persona.accessible_services];
+  // Аудит-чип завязан на read-доступ к журналу, а не на подключение отдела к
+  // loging_service. У dep_admin / loging_reader_dep отдел к логированию не
+  // подключён, поэтому `logging` не попадает в accessible_services — но раздел
+  // им доступен (backend режет выдачу их отделом). Дотягиваем чип вручную,
+  // фильтры ниже его уже не срежут.
+  if (hasAuditLogAccess(persona) && !serviceList.includes("logging")) {
+    serviceList.push("logging");
+  }
   const chips: ServiceChip[] = serviceList
     // worker — часть server-зоны; задачи под «Серверами» (/server/tasks),
     // отдельного чипа нет. auth/config тоже без чипа.

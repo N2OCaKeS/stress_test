@@ -58,7 +58,7 @@ from src.schemas.internal import (
 )
 from src.schemas.internal import PowerStateCallbackRequest
 from src.schemas.server import ServerPrepareCallbackRequest
-from src.services import audit_service, metrics, permissions, secrets_service
+from src.services import audit_service, auto_inventory, metrics, permissions, secrets_service
 from src.utils.ids import os_version_id, server_disk_id
 
 logger = logging.getLogger(__name__)
@@ -1684,11 +1684,59 @@ async def record_server_prepared(
             "caller_type": identity.subject_type,
         },
     )
+    # Авто-обновление inventory + power сразу после prepare: оператору не надо
+    # жать вручную. Best-effort — фейл диспатчей не откатывает уже завершённый
+    # prepare-callback (сервер managed). Свои audit'ы эмитятся внутри
+    # (`server.inventory_sync` / `server.power_status`, source=auto_prepared).
+    try:
+        await auto_inventory.refresh_server(
+            db, server,
+            source=auto_inventory.SOURCE_PREPARED,
+            actor_id=identity.user_id,
+        )
+    except Exception:  # noqa: BLE001 — авто-рефреш не должен валить callback
+        logger.warning(
+            "auto inventory/power refresh after prepare failed server_id=%s",
+            server_id, exc_info=True,
+        )
     return {
         "ok": True,
         "is_managed": True,
         "prepared_at": prepared_at.isoformat(),
     }
+
+
+async def run_auto_inventory_sweep(
+    db: AsyncSession,
+    identity: IdentityContext,
+) -> dict:
+    """Плановый авто-inventory прогон по всем managed-серверам (callback воркера).
+
+    Триггерится worker-scheduler'ом (`auto_inventory.sweep`) по cron'у: воркер
+    даёт лишь расписание, а сам фан-аут (список managed + dispatch inventory.sync
+    + power.status на каждый) идёт здесь, через штатный `worker_client` с outbox'ом.
+    Так воркер не дублирует БД server_service — он лишь дёргает internal-эндпоинт.
+
+    Право: `(server, *, prepare_callback)` — тот же глобальный callback-грант
+    worker_bot'а, что у `prepared`/`power-state`; прогон платформенный, не привязан
+    к отделу, поэтому X-Target-Department-Id здесь не требуется.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server.inventory_sync",
+            target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "source": "auto_scheduled"},
+        )
+        raise
+    summary = await auto_inventory.fanout_auto_inventory(
+        db, actor_id=identity.user_id,
+    )
+    return {"ok": True, **summary}
 
 
 async def record_ipmi_credentials_rotated(

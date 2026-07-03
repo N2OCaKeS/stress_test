@@ -539,6 +539,20 @@ class Settings(BaseSettings):
             "fan-out'ов — учётка одна на всю платформу."
         ),
     )
+    auto_inventory_fanout_max: int = Field(
+        default=500,
+        ge=1,
+        alias="AUTO_INVENTORY_FANOUT_MAX",
+        description=(
+            "Cap на размер планового авто-inventory прогона (worker-scheduler → "
+            "internal /servers/auto-inventory-sweep): по всем подготовленным "
+            "(`is_managed`) серверам платформы ставится inventory.sync + "
+            "power.status. Работает как throttle против шторма задач; при "
+            "превышении режем хвост и эмитим `auto_inventory_sweep.truncated`, "
+            "недобитые серверы выровняются следующим прогоном. Дефолт совпадает "
+            "с `management_user_sync_fanout_max` — оба бьют по всей платформе."
+        ),
+    )
     installed_packages_bulk_max_servers: int = Field(
         default=50,
         ge=1,

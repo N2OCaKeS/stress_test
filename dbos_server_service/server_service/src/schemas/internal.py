@@ -461,6 +461,16 @@ class PowerStateCallbackResponse(BaseModel):
     checked_at: str = Field(description="ISO-8601 UTC момент приёма результата пробы.")
 
 
+class AutoInventorySweepResponse(BaseModel):
+    """Сводка планового авто-inventory прогона (POST /internal/servers/auto-inventory-sweep)."""
+
+    ok: bool = True
+    total_managed: int = Field(description="Всего подготовленных (is_managed) серверов.")
+    processed: int = Field(description="Серверов, по которым прошёл фан-аут (после cap'а).")
+    dispatched_tasks: int = Field(description="Сколько задач (inventory.sync + power.status) реально поставлено.")
+    truncated: int = Field(description="Сколько серверов отрезано cap'ом AUTO_INVENTORY_FANOUT_MAX.")
+
+
 # ── IPMI credentials_rotated callback ───────────────────────────────────────
 
 class IpmiCredentialsRotatedRequest(BaseModel):

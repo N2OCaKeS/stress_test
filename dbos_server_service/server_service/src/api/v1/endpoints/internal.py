@@ -46,6 +46,7 @@ from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.schemas.internal import (
     AccountPasswordResponse,
+    AutoInventorySweepResponse,
     InventoryCallbackRequest,
     InventoryCallbackResponse,
     IpmiCredentialsResponse,
@@ -365,6 +366,32 @@ async def record_power_state(
         target_department_id=x_target_department_id,
     )
     return PowerStateCallbackResponse(**data)
+
+
+@router.post(
+    "/servers/auto-inventory-sweep",
+    response_model=AutoInventorySweepResponse,
+    responses={403: _INTERNAL_RESPONSES_BASE[403]},
+)
+async def auto_inventory_sweep(
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> AutoInventorySweepResponse:
+    """Плановый прогон: inventory.sync + power.status по всем managed-серверам.
+
+    Триггерится worker-scheduler'ом (`auto_inventory.sweep`) по cron'у. Воркер
+    даёт только расписание; фан-аут (список managed + dispatch каждой пары
+    задач) идёт здесь, через штатный `worker_client` — воркер не дублирует БД
+    server_service. Прогон платформенный, не привязан к отделу: заголовок
+    `X-Target-Department-Id` не требуется.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: per-server `server.inventory_sync` / `server.power_status`
+    (source=auto_scheduled); превышение cap'а — `auto_inventory_sweep.truncated`.
+    """
+    data = await internal_service.run_auto_inventory_sweep(db, identity)
+    return AutoInventorySweepResponse(**data)
 
 
 @router.post(

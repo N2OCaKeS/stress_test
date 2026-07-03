@@ -310,6 +310,7 @@ Worker-task'и, зарегистрированные в брокере, с кл�
 | `MASS_ROTATE_DISPATCH_RATE_LIMIT` | per-IP rate-limit на POST `/server-accounts/{id}/rotate` (mass-rotation dispatch через worker); default `120/second` |
 | `MASS_ROTATION_MAX_SERVERS` | cap на число серверов в одном mass-rotation запросе (превышение → 413 `MASS_ROTATION_TOO_LARGE`); default `200` |
 | `FANOUT_UPDATE_ON_HOST_MAX` | cap на размер fan-out'а `account.update_on_host` от PATCH аккаунта; default `200` |
+| `AUTO_INVENTORY_FANOUT_MAX` | cap на плановый авто-inventory прогон (inventory.sync + power.status по всем managed-серверам через internal /servers/auto-inventory-sweep); превышение режет хвост и эмитит `auto_inventory_sweep.truncated`; default `500` |
 | `WORKER_POOL_RATE_LIMIT` | per-IP rate-limit на `/internal/secrets/reencrypt_outbox/seed` и `/pending` (worker poll-loop); default `120/second` |
 | `REENCRYPT_DRAIN_ENABLED` | поднимать ли фоновый self-drain reencrypt-outbox в lifespan; default `True` |
 | `REENCRYPT_LAZY_BATCH_SIZE` | размер батча дренера в lazy-режиме; default 25 |

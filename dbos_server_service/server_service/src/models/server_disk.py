@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db.base import Base
@@ -26,6 +26,10 @@ class ServerDisk(Base):
     )
     device_name: Mapped[str] = mapped_column(String(64), nullable=False)
     size_gb: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Занятость диска с последней инвентаризации (сумма used всех его ФС из df).
+    # Обе NULL, пока диск не смонтирован либо df недоступен / до первого probe'а.
+    used_gb: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    used_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
     model: Mapped[str | None] = mapped_column(String(256), nullable=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

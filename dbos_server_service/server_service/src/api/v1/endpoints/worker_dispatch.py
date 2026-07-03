@@ -53,12 +53,19 @@ SSH-apply). Дисптачи через `worker_client.dispatch_task`:
 """
 
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
-from src.core.constants import AccountSource, Action, EntityType, ServerStatus
+from src.core.constants import (
+    AccountSource,
+    Action,
+    BusyState,
+    EntityType,
+    ServerStatus,
+)
 from src.core.limiter import endpoint_limiter, per_account_key
 from src.core.exceptions import (
     AppException,
@@ -71,10 +78,16 @@ from src.core.exceptions import (
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.dependencies.idempotency import read_idempotency_key
-from src.api.v1.endpoints._dispatch import dispatch_server_ssh_task
+from src.api.v1.endpoints._dispatch import (
+    build_ssh_task_payload,
+    dispatch_server_ssh_task,
+)
 from src.repositories import ipmi_controller as ipmi_repo
+from src.repositories import os_version as os_version_repo
+from src.repositories import server as server_repo
 from src.repositories import server_account as account_repo
 from src.schemas.server import (
+    ServerAstraUpdateRequest,
     ServerBatchDispatched,
     ServerBatchFailed,
     ServerCleanActionResult,
@@ -299,6 +312,11 @@ async def _dispatch_for_server(
             error_code="SERVER_DECOMMISSIONED",
             message="Server is decommissioned and cannot accept worker operations",
         )
+
+    # 3.5. Гейт обновления ОС: пока сервер `updating`, никакие worker-операции
+    # к нему не адресуем (даже power.status / inventory) — параллель посреди
+    # astra-update опасна. Блокирует всех, включая владельца брони и админа.
+    reservation.ensure_not_updating(identity, server, action=audit_action)
 
     # 4. IPMI-row gate для тех task-kinds, которые ходят в BMC.
     if require_ipmi:
@@ -1301,6 +1319,221 @@ async def inventory_sync_dispatch(
     return ServerTaskDispatchResponse(**result)
 
 
+# ── /servers/{id}/astra-update — обновление ОС до версии каталога ────────────
+
+
+@router_servers.post(
+    "/astra-update",
+    response_model=ServerTaskDispatchResponse,
+    status_code=202,
+    summary="Обновить ОС Astra до версии каталога через worker (202)",
+    description=(
+        "Публикует задачу `server.astra_update` в taskiq-broker. Воркер заходит "
+        "на сервер по SSH под управляющим пользователем (сервер обязан быть "
+        "`is_managed`), ПОЛНОСТЬЮ перезаписывает `/etc/apt/sources.list` "
+        "репозиториями выбранной версии ОС (`OsVersion.repositories`) и гонит "
+        "`apt update && astra-update -A -T -r`.\n\n"
+        "На время обновления сервер помечается `busy_state='updating'` — "
+        "системная блокировка, отбивающая ЛЮБЫЕ другие операции над сервером "
+        "(prepare / inventory / power / account-ops / console) с 409 "
+        "`SERVER_UPDATING`, включая владельца брони и админа. Блокировку "
+        "снимает callback воркера (успех/ошибка); при успехе сервер "
+        "привязывается к целевой версии и запускается inventory.sync.\n\n"
+        "Задача одноразовая (max_attempts=1): упавшее обновление не "
+        "повторяется автоматически.\n\n"
+        "Доступ: `(server, *, update)` — как у prepare/rotate. Аудит — WARNING."
+    ),
+    responses={
+        202: {"description": "Задача принята, возвращается task_id."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
+        403: {"description": "Нет роли с `update` либо чужой department."},
+        404: {"description": "Сервер не найден / чужой dept (скрыто за 404) либо OS_VERSION_NOT_FOUND."},
+        409: {"description": "SERVER_DECOMMISSIONED / SERVER_UPDATING (уже идёт обновление) / SERVER_RESERVED / PREPARE_REQUIRED / OS_VERSION_NO_REPOSITORIES / TASK_IDEMPOTENT_CONFLICT."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def server_astra_update_dispatch(
+    server_id: str,
+    body: ServerAstraUpdateRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> ServerTaskDispatchResponse:
+    """Ставит `server.astra_update` (обновление ОС) в очередь worker'а.
+
+    Доступ: `(server, *, update)`. Порядок проверок — как у prepare:
+    permission → visibility → decommissioned → not-reserved/not-updating →
+    prepared → каталог-версия с непустыми репозиториями. Ставит
+    `busy_state='updating'` и диспатчит задачу; на фейле dispatch'а
+    блокировка откатывается.
+
+    Связано: `server_worker/src/tasks/astra_update.py::server_astra_update`,
+    callback `record_server_astra_updated`.
+    """
+    audit_action = "server.astra_update"
+    task_kind = "server.astra_update"
+
+    # 1. Role-check (resource-level, как prepare). Идёт первой по канону
+    # permission → visibility: не делает existence-oracle на 403.
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+        identity=identity,
+    ):
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.UPDATE
+        )
+
+    # 2. Visibility + dept isolation.
+    try:
+        server = await server_svc.get_server(db, identity, server_id)
+    except (NotFoundError, AuthorizationError) as exc:
+        if isinstance(exc, NotFoundError):
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept"},
+            )
+        else:
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="denied", allowed=False,
+                details={"reason": "no_view_permission"},
+            )
+        raise
+
+    # 3. Decommissioned-gate.
+    if server.status == ServerStatus.DECOMMISSIONED:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "decommissioned"},
+        )
+        raise ConflictError(
+            error_code="SERVER_DECOMMISSIONED",
+            message="Server is decommissioned and cannot accept worker operations",
+        )
+
+    # 3.5. Уже идёт обновление → 409 SERVER_UPDATING; чужая бронь → 409
+    # SERVER_RESERVED. Оба через общий гейт (updating-check внутри блокирует
+    # всех, reserved-check пропускает владельца/админа).
+    reservation.ensure_not_reserved_for(identity, server, action=audit_action)
+
+    # 4. Prepared-gate: обновление идёт по SSH под управляющим ключом, до
+    # prepare заходить нечем.
+    require_server_prepared(server, audit_action=audit_action)
+
+    # 5. Каталог-версия обязана существовать и иметь непустой список
+    # репозиториев — иначе sources.list переписать нечем.
+    os_version = await os_version_repo.get_by_id(db, body.os_version_id)
+    if os_version is None:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "os_version_not_found", "os_version_id": body.os_version_id},
+        )
+        raise NotFoundError(
+            error_code="OS_VERSION_NOT_FOUND",
+            message="Target OS version not found in catalog",
+        )
+    repositories = list(os_version.repositories or [])
+    if not repositories:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "os_version_no_repositories",
+                "os_version_id": body.os_version_id,
+            },
+        )
+        raise ConflictError(
+            error_code="OS_VERSION_NO_REPOSITORIES",
+            message=(
+                "Target OS version has an empty repositories list; nothing to "
+                "write into sources.list"
+            ),
+        )
+
+    # 6. Ставим системную блокировку updating и диспатчим задачу. Блокировку
+    # ставим ДО dispatch'а (никто не должен вклиниться между), но на фейле
+    # dispatch'а откатываем — иначе сервер завис бы в updating без задачи.
+    now = datetime.now(timezone.utc)
+    await server_repo.update(db, server, {
+        "busy_state": BusyState.UPDATING,
+        "busy_user_id": identity.user_id,
+        "busy_since": now,
+        "busy_note": f"Обновление ОС Astra до {os_version.name}",
+    })
+    await db.commit()
+
+    extra_payload = {
+        "os_version_id": os_version.id,
+        "repositories": repositories,
+    }
+    idempotency_key = read_idempotency_key(request)
+    try:
+        task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+            db=db,
+            task_kind=task_kind,
+            target_server_id=server.id,
+            payload=build_ssh_task_payload(
+                server=server,
+                resolved_account_id=None,
+                extra_payload=extra_payload,
+            ),
+            created_by=identity.user_id,
+            request_id=getattr(request.state, "request_id", None),
+            idempotency_key=idempotency_key,
+            max_attempts=1,
+        )
+        await db.commit()
+    except (ConflictError, ServiceUnavailableError) as exc:
+        # Dispatch не прошёл — снимаем только что поставленную блокировку,
+        # иначе сервер завис бы в updating без задачи, которая его освободит.
+        await db.rollback()
+        server = await server_repo.get_by_id(db, server_id)
+        if server is not None and server.busy_state == BusyState.UPDATING:
+            await server_repo.update(db, server, {
+                "busy_state": BusyState.FREE,
+                "busy_user_id": None,
+                "busy_since": None,
+                "busy_note": None,
+            })
+            await db.commit()
+        reason = (
+            "idempotent_conflict"
+            if isinstance(exc, ConflictError)
+            else "worker_unreachable"
+        )
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": reason,
+                "task_kind": task_kind,
+                "os_version_id": os_version.id,
+                "department_id": server.department_id if server else None,
+            },
+        )
+        raise
+    audit_service.emit(
+        audit_action, target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "task_id": task_id,
+            "task_kind": task_kind,
+            "os_version_id": os_version.id,
+            "os_version_name": os_version.name,
+            "repositories_count": len(repositories),
+            "department_id": server.department_id,
+            "idempotent_hit": idempotent_hit,
+        },
+    )
+    return ServerTaskDispatchResponse(task_id=task_id, status="queued")
+
+
 # ── /servers/{id}/prepare — bootstrap управления (онбординг) ────────────────
 
 
@@ -1568,6 +1801,11 @@ async def _prepare_resolve_and_dispatch(
             error_code="SERVER_DECOMMISSIONED",
             message="Server is decommissioned and cannot accept worker operations",
         )
+
+    # Гейт обновления ОС: пока сервер `updating`, повторный prepare отбиваем —
+    # bootstrap посреди astra-update раскатал бы управляющую учётку на
+    # полуобновлённый бокс. Блокирует всех, включая владельца брони и админа.
+    reservation.ensure_not_updating(identity, server, action=audit_action)
 
     # Креды собирает caller-specific резолвер: single поддерживает account- и
     # ручной режимы, bulk — только ручной (у каждого бокса свои). Резолвер сам

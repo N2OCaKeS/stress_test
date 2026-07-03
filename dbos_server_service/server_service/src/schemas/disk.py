@@ -58,6 +58,8 @@ class DiskResponse(BaseModel):
     id: str = Field(description="Disk ID (prefix dsk_).")
     slot: str = Field(description="Слот диска (он же device_name).")
     size_gb: int = Field(description="Размер в гигабайтах.")
+    used_gb: int | None = Field(default=None, description="Занято в гигабайтах (с инвентаризации). None — неизвестно.")
+    used_percent: float | None = Field(default=None, description="Процент занятости диска. None — неизвестно.")
     model: str | None = Field(default=None, description="Модель диска.")
     is_system: bool = Field(description="Системный диск.")
     created_at: datetime = Field(description="Когда запись создана.")
@@ -70,6 +72,8 @@ class DiskResponse(BaseModel):
             id=disk.id,
             slot=disk.device_name,
             size_gb=disk.size_gb,
+            used_gb=disk.used_gb,
+            used_percent=disk.used_percent,
             model=disk.model,
             is_system=disk.is_system,
             created_at=disk.created_at,

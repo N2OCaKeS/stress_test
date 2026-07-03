@@ -52,6 +52,51 @@ def is_reserved_for_other(identity: IdentityContext, server: Server) -> bool:
     return not is_server_admin(identity, server)
 
 
+def ensure_not_updating(
+    identity: IdentityContext,
+    server: Server,
+    *,
+    action: str,
+) -> None:
+    """Отбить любую операцию над сервером, пока идёт обновление ОС.
+
+    Пока `busy_state='updating'` (системная блокировка на время astra_update),
+    менять состояние сервера нельзя НИКОМУ — ни владельцу брони, ни админу:
+    посреди `astra-update` любой параллельный prepare/power/inventory/account-op
+    может сломать бокс. Отличие от `ensure_not_reserved_for`, где владелец и
+    админ проходят.
+
+    Пишет WARNING-аудит `server.astra_update_locked` и бросает 409
+    `SERVER_UPDATING`. Снимает блокировку только callback воркера (успех/ошибка).
+    """
+    if server.busy_state != BusyState.UPDATING:
+        return
+    details = {
+        "blocked_action": action,
+        "server_id": server.id,
+        "department_id": server.department_id,
+        "busy_note": server.busy_note,
+    }
+    if identity.subject_type is not None:
+        details["subject_type"] = identity.subject_type
+    audit_service.emit(
+        "server.astra_update_locked",
+        target_id=server.id,
+        target_type="server",
+        status="denied",
+        allowed=False,
+        details=details,
+    )
+    raise ConflictError(
+        error_code="SERVER_UPDATING",
+        message=(
+            "Server is being updated (astra_update in progress); all other "
+            "operations are blocked until the update completes"
+        ),
+        details={"busy_note": server.busy_note},
+    )
+
+
 def ensure_not_reserved_for(
     identity: IdentityContext,
     server: Server,
@@ -59,16 +104,19 @@ def ensure_not_reserved_for(
     action: str,
 ) -> None:
     """Пропустить деструктивную операцию `action` только если сервер не занят
-    под чужого владельца.
+    под чужого владельца или системным обновлением ОС.
 
-    Если `busy_state='busy'` и caller не владелец брони и не админ — пишет
-    WARNING-аудит `server.reservation_denied` и бросает 409 `SERVER_RESERVED`
-    с указанием, кто держит бронь (`busy_user_id`, `busy_note`). В остальных
-    случаях возвращается молча.
+    Сначала — жёсткий гейт обновления ОС (`ensure_not_updating`): пока сервер
+    `updating`, операция отбивается 409 `SERVER_UPDATING` для всех без
+    исключения. Затем — обычная бронь: если `busy_state='busy'` и caller не
+    владелец брони и не админ — пишет WARNING-аудит `server.reservation_denied`
+    и бросает 409 `SERVER_RESERVED` с указанием, кто держит бронь
+    (`busy_user_id`, `busy_note`). В остальных случаях возвращается молча.
 
     `action` — машинный ключ операции (например `server.power_on`,
     `server_account.delete`), попадает в детали аудита для трассировки.
     """
+    ensure_not_updating(identity, server, action=action)
     if not is_reserved_for_other(identity, server):
         return
     details = {

@@ -64,6 +64,8 @@ from src.schemas.internal import (
     UsersInventoryCallbackResponse,
 )
 from src.schemas.server import (
+    ServerAstraUpdateCallbackRequest,
+    ServerAstraUpdateCallbackResponse,
     ServerPrepareCallbackRequest,
     ServerPrepareCallbackResponse,
 )
@@ -420,6 +422,35 @@ async def record_server_prepared(
         target_department_id=x_target_department_id,
     )
     return ServerPrepareCallbackResponse(**data)
+
+
+@router.post(
+    "/servers/{server_id}/astra-updated",
+    response_model=ServerAstraUpdateCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def record_server_astra_updated(
+    server_id: str,
+    body: ServerAstraUpdateCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> ServerAstraUpdateCallbackResponse:
+    """Worker сообщает исход обновления ОС (astra_update).
+
+    Снимает updating-блокировку сервера. При `succeeded=True` также привязывает
+    сервер к целевой версии ОС и запускает inventory.sync; при `succeeded=False`
+    версию не трогает.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `server.astra_updated`.
+    """
+    data = await internal_service.record_server_astra_updated(
+        db, identity, server_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return ServerAstraUpdateCallbackResponse(**data)
 
 
 @router.post(

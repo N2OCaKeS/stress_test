@@ -4,7 +4,7 @@ from datetime import datetime
 from ipaddress import IPv4Address, IPv6Address
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import INET
+from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.constants import BusyState, PowerState, ServerStatus
@@ -81,6 +81,11 @@ class Server(Base):
     cpu_frequency_ghz: Mapped[float | None] = mapped_column(Float, nullable=True)
     ram_total_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     network_interface_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Полный список активных сетевых интерфейсов с бокса (inventory box→DB).
+    # `network_interface_name` держит основной (первый) интерфейс и остаётся
+    # admin-editable; здесь — все имена одним JSONB-списком. NULL до первой
+    # инвентаризации; пустой список воркера существующее значение не затирает.
+    network_interfaces: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     decommissioned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Бутстрап управления (#14): после успешного prepare worker заводит
     # управляющего пользователя DBOS и кладёт ему публичный ключ. is_managed

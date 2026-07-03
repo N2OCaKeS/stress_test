@@ -212,6 +212,53 @@ class TestInventorySystemDiskInvariant:
         assert "is_system" in str(exc.value)
 
 
+class TestInventoryNetworkMemoryDisks:
+    def test_new_fields_default_absent(self):
+        # Старый воркер не шлёт ram/network/used — back-compat: дефолты.
+        m = InventoryCallbackRequest(**_BASE)
+        assert m.ram_total_mb is None
+        assert m.network_interfaces == []
+
+    def test_ram_and_interfaces_accepted(self):
+        m = InventoryCallbackRequest(**{
+            **_BASE,
+            "ram_total_mb": 16384,
+            "network_interfaces": ["ens192", "eno1"],
+        })
+        assert m.ram_total_mb == 16384
+        assert m.network_interfaces == ["ens192", "eno1"]
+
+    def test_negative_ram_rejected(self):
+        with pytest.raises(ValidationError):
+            InventoryCallbackRequest(**{**_BASE, "ram_total_mb": -1})
+
+    def test_bad_interface_name_rejected(self):
+        with pytest.raises(ValidationError):
+            InventoryCallbackRequest(**{**_BASE, "network_interfaces": ["eth 0;rm"]})
+
+    def test_disk_usage_fields_accepted(self):
+        m = InventoryCallbackRequest(**{**_BASE, "disks": [
+            {"name": "sda", "size_gb": 500, "used_gb": 225,
+             "used_percent": 48.4, "is_system": True},
+        ]})
+        d = m.disks[0]
+        assert d.used_gb == 225
+        assert d.used_percent == 48.4
+
+    def test_disk_usage_optional(self):
+        m = InventoryCallbackRequest(**{**_BASE, "disks": [
+            {"name": "sda", "size_gb": 500, "is_system": False},
+        ]})
+        assert m.disks[0].used_gb is None
+        assert m.disks[0].used_percent is None
+
+    def test_used_percent_over_100_rejected(self):
+        with pytest.raises(ValidationError):
+            InventoryCallbackRequest(**{**_BASE, "disks": [
+                {"name": "sda", "size_gb": 500, "used_percent": 101},
+            ]})
+
+
 class TestUsersInventoryCap:
     def _user(self, idx: int) -> dict:
         return {

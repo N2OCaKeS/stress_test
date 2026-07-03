@@ -81,6 +81,18 @@ class InventoryDiskItem(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=64, description="device_name (sda, nvme0n1).")
     size_gb: int = Field(..., ge=0, description="Размер диска в гигабайтах.")
+    used_gb: int | None = Field(
+        default=None, ge=0,
+        description=(
+            "Занято на диске в гигабайтах (сумма used всех его ФС из df). "
+            "None — диск не смонтирован или df недоступен (back-compat со "
+            "старым воркером, который поле не слал)."
+        ),
+    )
+    used_percent: float | None = Field(
+        default=None, ge=0, le=100,
+        description="Процент занятости диска (used/size). None — если used неизвестен.",
+    )
     model: str | None = Field(default=None, max_length=256, description="Модель диска.")
     serial: str | None = Field(default=None, max_length=128, description="Serial number.")
     device_path: str | None = Field(default=None, max_length=128, description="Полный путь устройства (/dev/sda).")
@@ -125,6 +137,39 @@ class InventoryCallbackRequest(BaseModel):
             "(back-compat), тогда существующее значение сервера не трогается."
         ),
     )
+    ram_total_mb: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Объём ОЗУ в МБ (MemTotal из /proc/meminfo). Подчиняется модели "
+            "warn-on-drift как CPU-поля: first-write сохраняется, расхождение с "
+            "БД-истиной эмитит WARNING и не перетирается. Опционально — старый "
+            "воркер поле не шлёт (back-compat)."
+        ),
+    )
+    network_interfaces: list[str] = Field(
+        default_factory=list,
+        max_length=64,
+        description=(
+            "Активные сетевые интерфейсы бокса без lo (ip -o link show). "
+            "Box-authoritative: непустой список перезаписывает хранимый. "
+            "Пустой/отсутствует — существующий не трогается (back-compat)."
+        ),
+    )
+
+    @field_validator("network_interfaces")
+    @classmethod
+    def _validate_network_interfaces(cls, value: list[str]) -> list[str]:
+        # Имя интерфейса Linux — до 15 символов, тот же безопасный набор, что и
+        # device_name дисков. Мусор из битого ip-output не должен раздувать
+        # JSONB-колонку или лезть в UI как есть.
+        pattern = re.compile(r"^[A-Za-z0-9._\-]+$")
+        for name in value:
+            if len(name) > 32 or not pattern.match(name):
+                raise ValueError(
+                    f"network interface '{name}' не соответствует ожидаемому шаблону"
+                )
+        return value
     repositories: list[str] = Field(
         default_factory=list,
         max_length=128,

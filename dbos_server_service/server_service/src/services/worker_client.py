@@ -463,8 +463,15 @@ async def _insert_task_row(
     request_id: str | None,
     idempotency_key: str | None = None,
     priority: int = TASK_PRIORITY_NORMAL,
+    max_attempts: int = 3,
 ) -> None:
-    """Сырая INSERT-операция в `dev_server_worker.tasks`. Параметры через bound."""
+    """Сырая INSERT-операция в `dev_server_worker.tasks`. Параметры через bound.
+
+    `max_attempts` — сколько раз воркер повторит задачу до terminal FAILED.
+    Дефолт 3 (совпадает с column-default модели воркера). Разовые операции,
+    которым авто-retry вреден (astra_update переписывает sources.list и гонит
+    OS-upgrade — повтор доломал бы полуобновлённый бокс), передают `1`.
+    """
     session_factory = _engine_factory()
     async with session_factory() as session:
         await session.execute(
@@ -476,7 +483,7 @@ async def _insert_task_row(
                     created_by, request_id, idempotency_key
                 ) VALUES (
                     :id, :task_kind, :target_server_id, :target_resource_id,
-                    CAST(:payload AS jsonb), 'queued', 0, 3, :priority,
+                    CAST(:payload AS jsonb), 'queued', 0, :max_attempts, :priority,
                     :created_by, :request_id, :idempotency_key
                 )
                 """
@@ -488,6 +495,7 @@ async def _insert_task_row(
                 "target_resource_id": target_resource_id,
                 "payload": json.dumps(payload),
                 "priority": priority,
+                "max_attempts": max_attempts,
                 "created_by": created_by,
                 "request_id": request_id,
                 "idempotency_key": idempotency_key,
@@ -1116,6 +1124,7 @@ async def _dispatch_task_inner(
     target_resource_id: str | None,
     idempotency_key: str | None,
     priority: int = TASK_PRIORITY_NORMAL,
+    max_attempts: int = 3,
 ) -> tuple[str, bool]:
     """Общее ядро dispatch'а. Возвращает `(task_id, idempotent_hit)`.
 
@@ -1149,6 +1158,7 @@ async def _dispatch_task_inner(
             request_id=request_id,
             idempotency_key=idempotency_key,
             priority=priority,
+            max_attempts=max_attempts,
         )
     except IntegrityError:
         # Race на UNIQUE(idempotency_key): другой процесс успел вставить
@@ -1246,6 +1256,7 @@ async def dispatch_task(
     target_resource_id: str | None = None,
     idempotency_key: str | None = None,
     priority: int = TASK_PRIORITY_NORMAL,
+    max_attempts: int = 3,
 ) -> str:
     """INSERT task row + INSERT outbox row. Возвращает новый task_id.
 
@@ -1293,6 +1304,7 @@ async def dispatch_task(
         target_resource_id=target_resource_id,
         idempotency_key=idempotency_key,
         priority=priority,
+        max_attempts=max_attempts,
     )
     return new_id
 
@@ -1308,6 +1320,7 @@ async def dispatch_task_with_hit(
     target_resource_id: str | None = None,
     idempotency_key: str | None = None,
     priority: int = TASK_PRIORITY_NORMAL,
+    max_attempts: int = 3,
 ) -> tuple[str, bool]:
     """Как `dispatch_task`, но возвращает `(task_id, idempotent_hit)`.
 
@@ -1316,6 +1329,9 @@ async def dispatch_task_with_hit(
     `server_prepare_dispatch`) кладёт флаг в audit details, чтобы SIEM
     отличал «новая task» от «idempotent replay» — иначе оба сценария
     неразличимы и нельзя посчитать долю реальных повторов.
+
+    `max_attempts` — cap на авто-retry задачи (дефолт 3). Разовые операции
+    вроде astra_update передают `1`, чтобы упавшее обновление не повторялось.
     """
     return await _dispatch_task_inner(
         db=db,
@@ -1327,4 +1343,5 @@ async def dispatch_task_with_hit(
         target_resource_id=target_resource_id,
         idempotency_key=idempotency_key,
         priority=priority,
+        max_attempts=max_attempts,
     )

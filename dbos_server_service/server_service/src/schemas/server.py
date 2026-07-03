@@ -5,7 +5,7 @@ from datetime import datetime
 from ipaddress import IPv4Address, IPv6Address
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from src.core.b64 import decode_b64 as _decode_b64
 from src.core.constants import ManagementMode
@@ -177,7 +177,11 @@ class ServerResponse(BaseModel):
     cpu_threads: int | None = Field(default=None, description="Потоки CPU.")
     cpu_frequency_ghz: float | None = Field(default=None, description="Базовая частота CPU в ГГц.")
     ram_total_mb: int | None = Field(default=None, description="RAM в МБ.")
-    network_interface_name: str | None = Field(default=None, description="Имя сетевого интерфейса.")
+    network_interface_name: str | None = Field(default=None, description="Имя основного сетевого интерфейса.")
+    network_interfaces: list[str] = Field(
+        default_factory=list,
+        description="Все активные сетевые интерфейсы с последней инвентаризации (без lo).",
+    )
     decommissioned_at: datetime | None = Field(default=None, description="Когда сервер выведен из эксплуатации.")
     is_managed: bool = Field(default=False, description="Прошёл ли сервер бутстрап управления (prepare).")
     management_user: str | None = Field(default=None, description="Имя управляющего пользователя DBOS (после prepare).")
@@ -190,6 +194,22 @@ class ServerResponse(BaseModel):
     created_at: datetime = Field(description="Когда карточка создана.")
     updated_at: datetime = Field(description="Когда карточка изменена в последний раз.")
     created_by: str | None = Field(default=None, description="user_id, создавший карточку.")
+
+    @field_validator("network_interfaces", mode="before")
+    @classmethod
+    def _coerce_network_interfaces(cls, value):
+        # В БД колонка nullable JSONB: до первой инвентаризации там None.
+        # model_validate(server) прочитает атрибут как есть — приводим к [].
+        return value or []
+
+    @computed_field
+    @property
+    def ram_total_gb(self) -> float | None:
+        """RAM в ГБ — производная от `ram_total_mb` для удобства UI. None, если
+        объём не известен."""
+        if self.ram_total_mb is None:
+            return None
+        return round(self.ram_total_mb / 1024, 1)
 
     @classmethod
     def from_server(cls, server, disks) -> "ServerResponse":
@@ -481,6 +501,22 @@ class PackageHistoryEntry(BaseModel):
     )
     last_error: str | None = Field(
         default=None, description="Текст ошибки для failed-запросов.",
+    )
+
+
+class ServerAstraUpdateRequest(BaseModel):
+    """Тело POST /servers/{id}/astra-update — обновление ОС до версии каталога.
+
+    `os_version_id` — целевая версия из глобального каталога `OsVersion`.
+    server_service берёт её `repositories`, полностью перезаписывает ими
+    `/etc/apt/sources.list` на сервере и гонит `apt update && astra-update`.
+    Версия обязана существовать и иметь непустой список репозиториев — иначе
+    422 / 409 ещё до постановки задачи.
+    """
+
+    os_version_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="Целевая OS-версия из каталога (prefix osv_).",
     )
 
 
@@ -944,3 +980,33 @@ class ServerPrepareCallbackResponse(BaseModel):
     prepared_at: str | None = Field(
         default=None, description="ISO-8601 UTC момент подготовки.",
     )
+
+
+class ServerAstraUpdateCallbackRequest(BaseModel):
+    """Тело POST /internal/servers/{id}/astra-updated — callback воркера.
+
+    Воркер сообщает исход обновления ОС. `succeeded=True` — `apt update &&
+    astra-update` отработали: server_service привязывает сервер к целевой
+    версии (`os_version_id`), снимает updating-блокировку и запускает
+    inventory.sync. `succeeded=False` — обновление упало: блокировку снимаем
+    (сервер снова доступен операторам), версию не трогаем, inventory не гоним.
+    """
+
+    os_version_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="Целевая OS-версия, до которой обновлялись (prefix osv_).",
+    )
+    succeeded: bool = Field(
+        description="True — обновление прошло; False — упало (снять блокировку).",
+    )
+
+
+class ServerAstraUpdateCallbackResponse(BaseModel):
+    """Подтверждение записи astra-updated callback'а."""
+
+    ok: bool = True
+    os_version_id: str | None = Field(
+        default=None,
+        description="Привязанная версия ОС (None, если обновление упало).",
+    )
+    busy_state: str = Field(description="Итоговое busy_state сервера (обычно free).")

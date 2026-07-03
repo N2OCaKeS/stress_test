@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
-from src.core.constants import AccountSource, Action, EntityType
+from src.core.constants import AccountSource, Action, BusyState, EntityType
 from src.core.exceptions import (
     AppException,
     AuthorizationError,
@@ -57,7 +57,10 @@ from src.schemas.internal import (
     UsersInventoryCallbackRequest,
 )
 from src.schemas.internal import PowerStateCallbackRequest
-from src.schemas.server import ServerPrepareCallbackRequest
+from src.schemas.server import (
+    ServerAstraUpdateCallbackRequest,
+    ServerPrepareCallbackRequest,
+)
 from src.services import audit_service, auto_inventory, metrics, permissions, secrets_service
 from src.utils.ids import os_version_id, server_disk_id
 
@@ -922,6 +925,8 @@ async def _upsert_disks(
             "server_id": server_id,
             "device_name": item.name,
             "size_gb": item.size_gb,
+            "used_gb": item.used_gb,
+            "used_percent": item.used_percent,
             "model": item.model,
             "is_system": item.is_system,
         })
@@ -948,6 +953,7 @@ _INVENTORY_DRIFT_FIELDS = (
     "cpu_cores",
     "cpu_threads",
     "cpu_frequency_ghz",
+    "ram_total_mb",
 )
 
 
@@ -1068,6 +1074,17 @@ async def receive_inventory(
     # симметрично семантике repositories.
     if payload.os_security_mode is not None:
         server_update["os_security_mode"] = payload.os_security_mode
+
+    # Сетевые интерфейсы — box-authoritative факт (как os_version_id): непустой
+    # список с бокса перезаписывает хранимый, пустой/отсутствующий (старый
+    # воркер) существующее не трогает. Основной интерфейс
+    # (`network_interface_name`) остаётся admin-editable: заполняем его первым
+    # именем только first-write (когда в БД пусто), уже заданное вручную не
+    # перетираем.
+    if payload.network_interfaces:
+        server_update["network_interfaces"] = payload.network_interfaces
+        if getattr(server, "network_interface_name", None) is None:
+            server_update["network_interface_name"] = payload.network_interfaces[0]
 
     first_write, drift = _inventory_field_changes(server, payload)
     server_update.update(first_write)
@@ -1703,6 +1720,114 @@ async def record_server_prepared(
         "ok": True,
         "is_managed": True,
         "prepared_at": prepared_at.isoformat(),
+    }
+
+
+async def record_server_astra_updated(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+    payload: ServerAstraUpdateCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Зафиксировать исход обновления ОС (callback воркера astra_update).
+
+    Право: `(server, *, prepare_callback)` — узкий грант worker_bot'а, общий с
+    prepared-callback'ом.
+
+    Снимает updating-блокировку (busy → free) в любом исходе. При
+    `succeeded=True` дополнительно привязывает сервер к целевой версии ОС
+    (если она ещё есть в каталоге) и best-effort запускает inventory.sync,
+    чтобы освежить факты/режим после обновления. При `succeeded=False`
+    версию не трогает и inventory не гоняет — сервер просто освобождается.
+    Идемпотентно: повторный callback на уже освобождённом сервере снова
+    выставит те же поля.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server.astra_updated",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+    server = await server_repo.get_by_id(db, server_id)
+    if server is None:
+        audit_service.emit(
+            "server.astra_updated",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found"},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND", message="Server not found",
+        )
+    _check_target_department_for_server(
+        audit_action="server.astra_updated",
+        target_id=server_id,
+        server_department_id=server.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+    )
+
+    # Блокировку снимаем всегда — сервер снова доступен операторам. Прочие
+    # busy-поля обнуляем симметрично clear_busy.
+    updates: dict = {
+        "busy_state": BusyState.FREE,
+        "busy_user_id": None,
+        "busy_since": None,
+        "busy_note": None,
+    }
+    applied_os_version_id: str | None = None
+    if payload.succeeded:
+        # Привязываем сервер к целевой версии, только если она ещё в каталоге:
+        # прямая запись несуществующего FK упала бы IntegrityError'ом. Версию
+        # мог удалить админ, пока шло обновление — тогда просто не трогаем
+        # os_version_id, inventory.sync позже переопределит по факту с бокса.
+        target_version = await osv_repo.get_by_id(db, payload.os_version_id)
+        if target_version is not None:
+            updates["os_version_id"] = target_version.id
+            updates["os_last_synced_at"] = datetime.now(timezone.utc)
+            applied_os_version_id = target_version.id
+    await server_repo.update(db, server, updates)
+    await db.commit()
+
+    audit_service.emit(
+        "server.astra_updated",
+        target_id=server_id, target_type="server",
+        status="success" if payload.succeeded else "failure",
+        allowed=True,
+        details={
+            "succeeded": payload.succeeded,
+            "os_version_id": applied_os_version_id,
+            "requested_os_version_id": payload.os_version_id,
+            "department_id": server.department_id,
+            "caller_type": identity.subject_type,
+        },
+    )
+    # Успешное обновление — освежаем inventory + power, чтобы подхватить новую
+    # версию/режим с бокса. Best-effort: фейл диспатчей не откатывает уже
+    # снятую блокировку. На проваленном обновлении inventory не гоняем.
+    if payload.succeeded:
+        try:
+            await auto_inventory.refresh_server(
+                db, server,
+                source=auto_inventory.SOURCE_PREPARED,
+                actor_id=identity.user_id,
+            )
+        except Exception:  # noqa: BLE001 — авто-рефреш не должен валить callback
+            logger.warning(
+                "auto inventory/power refresh after astra_update failed server_id=%s",
+                server_id, exc_info=True,
+            )
+    return {
+        "ok": True,
+        "os_version_id": applied_os_version_id,
+        "busy_state": BusyState.FREE.value,
     }
 
 

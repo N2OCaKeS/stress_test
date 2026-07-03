@@ -29,11 +29,19 @@ class ServerStatus(StrEnum):
 
 
 class BusyState(StrEnum):
-    """Состояние «занятости» — кто-то взял сервер тестом."""
+    """Состояние «занятости» — кто-то взял сервер тестом.
+
+    `updating` — системная блокировка на время обновления ОС (astra_update):
+    в отличие от `busy`/`testing` её ставит не оператор, а сам сервис, и снять
+    её может только callback воркера (успех/ошибка). Пока сервер `updating`,
+    любые управляющие операции над ним отбиваются 409 SERVER_UPDATING —
+    включая владельца брони и админа (см. `services/reservation.py`).
+    """
 
     FREE = "free"
     BUSY = "busy"
     TESTING = "testing"
+    UPDATING = "updating"
 
 
 class PowerState(StrEnum):

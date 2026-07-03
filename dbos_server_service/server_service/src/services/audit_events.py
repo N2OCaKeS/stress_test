@@ -45,6 +45,10 @@ SERVICE_EVENTS = [
     # Бутстрап управления (prepare): dispatch и callback воркера.
     {"action": "server.prepare", "description": "Server management bootstrap dispatched to worker (server.prepare; useradd management user + authorized_keys)", "default_severity": "CRITICAL"},
     {"action": "server.prepared", "description": "Worker confirmed server management bootstrap completed (callback marks is_managed)", "default_severity": "CRITICAL"},
+    # Обновление ОС Astra (astra_update): dispatch, callback воркера, блокировка операций.
+    {"action": "server.astra_update", "description": "OS update dispatched to worker (server.astra_update; rewrite sources.list from OsVersion.repositories + apt update && astra-update). Sets busy_state=updating", "default_severity": "WARNING"},
+    {"action": "server.astra_updated", "description": "Worker reported OS update outcome (callback clears updating-lock; on success binds os_version and triggers inventory)", "default_severity": "WARNING"},
+    {"action": "server.astra_update_locked", "description": "Operation blocked because the server is being updated (busy_state=updating); all operations rejected with SERVER_UPDATING until the update completes", "default_severity": "WARNING"},
     {"action": "server_account.bootstrap_resolved", "description": "Linked server account credentials decrypted to bootstrap server.prepare (account-mode prepare instead of manual creds)", "default_severity": "CRITICAL"},
     # Per-server управляющие креды (#3): генерация на prepare, ротация, раскрытие воркеру.
     {"action": "server.management_creds_generated", "description": "Per-server management credentials (Ed25519 key + dbos password) generated and stored on server.prepare dispatch (first generation; sticky reuse does not emit)", "default_severity": "CRITICAL"},

@@ -84,6 +84,8 @@ async def upsert_by_device(db: AsyncSession, data: dict) -> ServerDisk:
             constraint="uq_server_disk_device",
             set_={
                 "size_gb": data["size_gb"],
+                "used_gb": data.get("used_gb"),
+                "used_percent": data.get("used_percent"),
                 "model": data["model"],
                 "is_system": data["is_system"],
                 "updated_at": func.now(),

@@ -177,6 +177,22 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
                 await websocket.close(code=_WS_CLOSE_CONFLICT, reason="SERVER_DECOMMISSIONED")
                 return
 
+            # Гейт обновления ОС: пока сервер `updating`, интерактивную консоль
+            # не отдаём никому (даже владельцу/админу) — сессия посреди
+            # astra-update мешала бы обновлению. Снимается callback'ом воркера.
+            if server.busy_state == BusyState.UPDATING:
+                audit_service.emit(
+                    "ssh_console.session_open", target_id=server_id, target_type="server",
+                    status="denied", allowed=False,
+                    details={
+                        "reason": "server_updating",
+                        "department_id": server.department_id,
+                        "account_id": account_id,
+                    },
+                )
+                await websocket.close(code=_WS_CLOSE_CONFLICT, reason="SERVER_UPDATING")
+                return
+
             # Бронь-гейт: сервер, занятый другим пользователем, консоль не
             # отдаёт никому — даже админу. Чтобы подключиться, админ сначала
             # снимает бронь (`busy_release`), сервер освобождается, дальше он

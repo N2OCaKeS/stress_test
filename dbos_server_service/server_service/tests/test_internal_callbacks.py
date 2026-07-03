@@ -440,6 +440,174 @@ class TestInventoryCallback:
         )).scalar_one()
         assert srv_row2.os_security_mode == "Voronezh"
 
+    async def test_inventory_network_memory_disk_usage_persist_and_read(
+        self, client, admin_role_token_a, make_server, db, dept_a,
+    ):
+        """Callback принимает сеть/память/занятость дисков, хранит и отдаёт в
+        read-схеме сервера."""
+        srv = await make_server(department_id=dept_a)
+        payload = {
+            "hostname": "hw-box",
+            "kernel": "5.15.0",
+            "cpu_brand": "Intel",
+            "cpu_model": "Xeon",
+            "cpu_cores": 8,
+            "os_version": "1.8.1.6",
+            "ram_total_mb": 16384,
+            "network_interfaces": ["ens192", "ens224"],
+            "disks": [
+                {"name": "sda", "size_gb": 500, "used_gb": 225,
+                 "used_percent": 48.4, "model": "SSD", "is_system": True},
+                {"name": "sdb", "size_gb": 1000, "used_gb": 465,
+                 "used_percent": 50.0, "is_system": False},
+            ],
+        }
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["disks_upserted"] == 2
+
+        await db.commit()
+        srv_row = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert srv_row.ram_total_mb == 16384
+        assert srv_row.network_interfaces == ["ens192", "ens224"]
+        # first-write: основной интерфейс подхватился из первого имени.
+        assert srv_row.network_interface_name == "ens192"
+
+        disks = (await db.execute(
+            select(ServerDisk).where(ServerDisk.server_id == srv.id)
+        )).scalars().all()
+        sda = next(d for d in disks if d.device_name == "sda")
+        assert sda.is_system is True
+        assert sda.used_gb == 225
+        assert sda.used_percent == 48.4
+
+        # Read-схема сервера отдаёт новые поля.
+        read = await client.get(
+            f"/api/server/v1/servers/{srv.id}",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert read.status_code == 200, read.text
+        body = read.json()
+        assert body["ram_total_mb"] == 16384
+        assert body["ram_total_gb"] == 16.0
+        assert body["network_interfaces"] == ["ens192", "ens224"]
+        sda_resp = next(d for d in body["storage"] if d["slot"] == "sda")
+        assert sda_resp["is_system"] is True
+        assert sda_resp["used_gb"] == 225
+        assert sda_resp["used_percent"] == 48.4
+
+    async def test_inventory_without_network_memory_backcompat(
+        self, client, admin_role_token_a, make_server, db, dept_a,
+    ):
+        """Старый воркер без ram/network/used: callback не падает, поля пустые."""
+        srv = await make_server(department_id=dept_a)
+        payload = {
+            "hostname": "legacy-hw",
+            "kernel": "5.15.0",
+            "cpu_brand": "Intel",
+            "cpu_model": "Xeon",
+            "cpu_cores": 4,
+            "os_version": "1.8.1.6",
+            "disks": [{"name": "sda", "size_gb": 500, "is_system": False}],
+        }
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+
+        await db.commit()
+        srv_row = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert srv_row.ram_total_mb is None
+        assert srv_row.network_interfaces is None
+
+        read = await client.get(
+            f"/api/server/v1/servers/{srv.id}",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert read.status_code == 200, read.text
+        body = read.json()
+        assert body["ram_total_gb"] is None
+        assert body["network_interfaces"] == []
+        assert body["storage"][0]["used_gb"] is None
+
+    async def test_inventory_network_empty_does_not_wipe(
+        self, client, admin_role_token_a, make_server, db, dept_a,
+    ):
+        """Повторный inventory с пустым network_interfaces не затирает сохранённый
+        список (сбой ip-probe / старый воркер)."""
+        srv = await make_server(department_id=dept_a)
+        base = {
+            "hostname": "net-box",
+            "kernel": "5.15.0",
+            "cpu_brand": "Intel",
+            "cpu_model": "Xeon",
+            "cpu_cores": 4,
+            "os_version": "1.8.1.6",
+            "disks": [],
+        }
+        r1 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a),
+            json={**base, "network_interfaces": ["eno1"]},
+        )
+        assert r1.status_code == 200, r1.text
+        r2 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a),
+            json={**base, "network_interfaces": []},
+        )
+        assert r2.status_code == 200, r2.text
+        await db.commit()
+        srv_row = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert srv_row.network_interfaces == ["eno1"]
+
+    async def test_ram_drift_not_overwritten_emits_warning(
+        self, client, admin_role_token_a, make_server, db, dept_a, captured_emits,
+    ):
+        """RAM подчиняется warn-on-drift: расхождение с БД не перетирается, летит
+        WARNING inventory.drift_detected."""
+        srv = await make_server(department_id=dept_a)
+        base = {
+            "hostname": "ram-box",
+            "kernel": "5.15.0",
+            "cpu_brand": "Intel",
+            "cpu_model": "Xeon",
+            "cpu_cores": 4,
+            "os_version": "1.8.1.6",
+            "disks": [],
+        }
+        r1 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a),
+            json={**base, "ram_total_mb": 16384},
+        )
+        assert r1.status_code == 200, r1.text
+        r2 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a),
+            json={**base, "ram_total_mb": 8192},
+        )
+        assert r2.status_code == 200, r2.text
+        assert "ram_total_mb" in r2.json()["drift_fields"]
+
+        await db.commit()
+        srv_row = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert srv_row.ram_total_mb == 16384  # НЕ перетёрто
+        drift_events = _by_action(captured_emits, "inventory.drift_detected")
+        assert any("ram_total_mb" in e["details"]["fields"] for e in drift_events)
+
     async def test_worker_bot_can_callback_inventory(
         self, client, worker_bot_token_a, make_server, dept_a,
     ):

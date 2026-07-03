@@ -189,7 +189,9 @@ spec:
   commonName: ${DOMAIN}
   subject:
     organizations:
-      - DBOS Server Manager
+      - Astra Linux
+    organizationalUnits:
+      - 'DBOS\DTQC'
   privateKey:
     algorithm: RSA
     size: 2048

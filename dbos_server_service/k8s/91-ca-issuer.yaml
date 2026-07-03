@@ -32,7 +32,9 @@ spec:
   commonName: EMM Internal CA
   subject:
     organizations:
-      - Astra Linux SE
+      - Astra Linux
+    organizationalUnits:
+      - DBOS
     countries:
       - RU
   # 10 лет. Корневой CA меняем редко; для leaf'ов отдельный 1-летний цикл.

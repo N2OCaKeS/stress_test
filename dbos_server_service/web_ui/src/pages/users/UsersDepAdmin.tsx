@@ -35,7 +35,6 @@ import {
 } from "@/api/auth/users";
 import { listBotsWithTotal } from "@/api/auth/bots";
 import { listGroupsWithTotal } from "@/api/auth/groups";
-import { listDepartments } from "@/api/auth/departments";
 import { PASSWORD_POLICY_MESSAGE } from "@/lib/passwordPolicy";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
@@ -48,7 +47,6 @@ import { formatMskDate, formatMskShort } from "@/lib/datetime";
 import { userMutationCaps, groupMutationCaps, botMutationCaps, personaDeptId } from "@/lib/rbac";
 import type {
   Bot as ApiBot,
-  Department,
   Group as ApiGroup,
   User as ApiUser,
 } from "@/api/auth/types";
@@ -152,7 +150,6 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
     { enabled: !!myDept },
   );
 
-  const deptsQ = useQuery<Department[]>(() => listDepartments(), []);
   const groupsQ = useQuery(
     () => listGroupsWithTotal({ limit: 200 }),
     [],
@@ -241,13 +238,14 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
   }, [botsQ.data, targetUser]);
 
   // Create-user форма должна работать только в рамках своего отдела — передаём
-  // в depts ровно один (свой) отдел, так dep_admin не выберет чужой.
-  const deptsLite = useMemo(() => {
-    const all = deptsQ.data ?? [];
-    return all
-      .filter((d) => d.id === myDept)
-      .map((d) => ({ id: d.id, name: d.name }));
-  }, [deptsQ.data, myDept]);
+  // в depts ровно один (свой) отдел, так dep_admin не выберет чужой. Имя берём
+  // из identity через LabelsProvider: глобальный список отделов dep_admin'у
+  // недоступен (auth_service отдаёт 403 на /departments), да и не нужен.
+  const deptName = useDeptLabel(myDept);
+  const deptsLite = useMemo(
+    () => (myDept ? [{ id: myDept, name: deptName }] : []),
+    [myDept, deptName],
+  );
 
   async function runAction(label: string, fn: () => Promise<unknown>) {
     setBusy(label);
@@ -301,7 +299,6 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
     );
   }
 
-  const deptName = useDeptLabel(myDept);
   const usersCount = usersQ.data?.total ?? users.length;
 
   return (

@@ -731,8 +731,27 @@ function BotLiveView({
 }
 
 function BotCreateForm({ onDone }: { onDone: () => void }) {
-  const deptsQ = useQuery<Department[]>(() => listDepartments(), []);
-  const depts = deptsQ.data ?? [];
+  const { persona } = usePersona();
+  // Полный список отделов доступен только account_admin — dep_admin и держатели
+  // сервис-admin ролей заводят бота строго в своём отделе, поэтому им список из
+  // одного отдела (имя — из LabelsProvider), а глобальный endpoint не дёргаем.
+  const platformAdmin = isPlatformWideAdmin(persona);
+  const ownDeptName = useDeptLabel(persona.dept_id);
+  const deptsQ = useQuery<Department[]>(() => listDepartments(), [], {
+    enabled: platformAdmin,
+  });
+  const depts: Department[] = platformAdmin
+    ? deptsQ.data ?? []
+    : persona.dept_id
+      ? [
+          {
+            id: persona.dept_id,
+            name: ownDeptName,
+            user_count: 0,
+            created_at: "",
+          },
+        ]
+      : [];
   const [name, setName] = useState("");
   const [dept, setDept] = useState("");
   useEffect(() => {
@@ -829,7 +848,7 @@ function BotCreateForm({ onDone }: { onDone: () => void }) {
               className="input"
               value={dept}
               onChange={(e) => setDept(e.target.value)}
-              disabled={deptsQ.loading || depts.length === 0}
+              disabled={deptsQ.loading || depts.length === 0 || !platformAdmin}
             >
               {deptsQ.loading && <option>загрузка…</option>}
               {!deptsQ.loading && depts.length === 0 && (

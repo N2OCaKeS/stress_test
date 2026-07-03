@@ -117,6 +117,11 @@ export function LabelsProvider({ children }: { children: ReactNode }) {
   // иначе свой dep_* показывался бы сырым id в nav/карточках/задачах.
   const ownDeptId = auth?.user?.department_id ?? null;
   const ownDeptName = auth?.user?.department_name ?? null;
+  // Глобальный список отделов отдаёт только account_admin — остальным ролям
+  // auth_service отвечает 403 на /departments. Не дёргаем endpoint у них
+  // вовсе: собственный отдел приходит из identity и досеивается ниже, а
+  // чужие отделы этим ролям всё равно не показываются.
+  const canListDepts = auth?.user?.platform_role === "account_admin";
 
   const [depts, setDepts] = useState<Map<string, string>>(new Map());
   const [groups, setGroups] = useState<Map<string, string>>(new Map());
@@ -139,7 +144,7 @@ export function LabelsProvider({ children }: { children: ReactNode }) {
 
   const refreshAll = useCallback(async () => {
     const [d, g, s] = await Promise.all([
-      loadDepts(),
+      canListDepts ? loadDepts() : Promise.resolve(new Map<string, string>()),
       loadGroups(),
       loadServices(),
     ]);
@@ -148,14 +153,16 @@ export function LabelsProvider({ children }: { children: ReactNode }) {
     setGroups(g);
     setServices(s);
     setReady(true);
-  }, [ownDeptId, ownDeptName]);
+  }, [ownDeptId, ownDeptName, canListDepts]);
 
   const invalidate = useCallback(
     async (domain: Domain = "all") => {
       if (USE_MOCK_AUTH) return;
       if (domain === "all") return refreshAll();
       if (domain === "depts") {
-        const d = await loadDepts();
+        const d = canListDepts
+          ? await loadDepts()
+          : new Map<string, string>();
         if (ownDeptId && ownDeptName && !d.has(ownDeptId)) d.set(ownDeptId, ownDeptName);
         setDepts(d);
       } else if (domain === "groups") setGroups(await loadGroups());
@@ -166,7 +173,7 @@ export function LabelsProvider({ children }: { children: ReactNode }) {
         if (serversRequested.current) await refreshServers();
       }
     },
-    [refreshAll, refreshServers, ownDeptId, ownDeptName],
+    [refreshAll, refreshServers, ownDeptId, ownDeptName, canListDepts],
   );
 
   useEffect(() => {

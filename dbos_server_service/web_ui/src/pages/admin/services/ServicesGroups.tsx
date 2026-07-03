@@ -13,7 +13,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
-import { useLabelsInvalidate, useLabelMaps } from "@/lib/labels";
+import { useLabelsInvalidate, useLabelMaps, useDeptLabel } from "@/lib/labels";
 import { formatMskDate, formatMskShort } from "@/lib/datetime";
 import { InlineEditor, FormRow, StatRow, useInlineState } from "./_inline";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
@@ -184,10 +184,29 @@ function ServicesGroupsLive() {
     }
   }, [hasMore, listFn, loadingMore, offset]);
 
-  const deptsQ = useQuery(() => listDepartments(), []);
+  // Полный список отделов доступен только account_admin — dep_admin получит 403.
+  // Ему собираем список из его единственного отдела: имя берём из LabelsProvider
+  // (досеяно из identity), для форм/детали нужны лишь id и name.
+  const deptsQ = useQuery(() => listDepartments(), [], {
+    enabled: isAccountAdmin,
+  });
+  const ownDeptName = useDeptLabel(persona.dept_id);
 
   const rawItems = accum;
-  const depts = deptsQ.data ?? [];
+  const depts = useMemo<Department[]>(() => {
+    if (isAccountAdmin) return deptsQ.data ?? [];
+    if (persona.dept_id) {
+      return [
+        {
+          id: persona.dept_id,
+          name: ownDeptName,
+          user_count: 0,
+          created_at: "",
+        },
+      ];
+    }
+    return [];
+  }, [isAccountAdmin, deptsQ.data, persona.dept_id, ownDeptName]);
   const deptById = useMemo(() => {
     const m = new Map<string, Department>();
     for (const d of depts) m.set(d.id, d);

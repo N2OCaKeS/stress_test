@@ -167,18 +167,22 @@ export function ServicesUsers() {
   // статуса в UserForm иначе оставляет осиротевшие service-роли в детали).
   const [detailSignal, setDetailSignal] = useState(0);
 
-  // Departments — used by forms and labels.
+  // Departments — used by forms and labels. Глобальный список отдаёт только
+  // account_admin; dep_admin получил бы 403, да и работает лишь в своём отделе,
+  // поэтому ему собираем список из одного его отдела (имя — из LabelsProvider).
+  const scopeDeptName = useDeptLabel(scopeDeptId);
   const deptsQ = useQuery<Department[]>(
     () => listDepartments(),
     [],
-    { enabled: !mockMode },
+    { enabled: !mockMode && platformWide },
   );
   const depts: Array<Pick<Department, "id" | "name">> = mockMode
     ? MOCK_DEPTS.map((d) => ({ id: d.id, name: d.name }))
-    : (deptsQ.data ?? []).map((d) => ({
-        id: d.id,
-        name: d.name,
-      }));
+    : platformWide
+      ? (deptsQ.data ?? []).map((d) => ({ id: d.id, name: d.name }))
+      : scopeDeptId
+        ? [{ id: scopeDeptId, name: scopeDeptName }]
+        : [];
 
   // List users. include_banned всегда true — фильтрация по статусу делается
   // отдельным dropdown'ом, при «все» backend должен отдать всех (включая banned).

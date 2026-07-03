@@ -45,6 +45,8 @@ SERVICE_EVENTS = [
     # Инвентаризация и bootstrap — tasks/inventory.py, tasks/prepare.py
     {"action": "server.inventory_sync", "description": "Снятие hardware-фактов сервера по SSH", "default_severity": "INFO"},
     {"action": "server.prepare", "description": "Бутстрап управляющей учётки на сервере (useradd + authorized_keys)", "default_severity": "INFO"},
+    # Обновление ОС — tasks/astra_update.py
+    {"action": "server.astra_update", "description": "Обновление ОС Astra по SSH: перезапись sources.list + apt update && astra-update", "default_severity": "WARNING"},
     # Установленные пакеты — tasks/installed_packages.py
     {"action": "installed_packages.list", "description": "Список установленных пакетов снят по SSH (dpkg-query/rpm)", "default_severity": "INFO"},
     {"action": "server.packages_install", "description": "Пакеты установлены на сервере по SSH под sudo", "default_severity": "WARNING"},

@@ -18,6 +18,7 @@ class TestTaskKind:
             "account.rotate_password", "ipmi.rotate_password",
             "account.provision", "account.update_on_host", "account.deprovision",
             "server.prepare", "server.rotate_management_creds",
+            "server.astra_update",
             "installed_packages.list", "installed_packages.install",
             "installed_packages.remove", "installed_packages.update",
             "management_user_sync",

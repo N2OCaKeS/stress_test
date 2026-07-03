@@ -1620,7 +1620,12 @@ class SshClient:
         * `hostname` — короткое имя ноды;
         * `uname -a` — kernel + arch;
         * `lscpu -J` — JSON cpu (модель/ядра/сокеты);
-        * `lsblk -J -o NAME,SIZE,TYPE,MODEL,SERIAL` — диски;
+        * `lsblk -b -J -o NAME,SIZE,TYPE,MODEL,SERIAL,MOUNTPOINT` — диски
+          (размер в байтах + точки монтирования для определения системного);
+        * `df -B1 --output=source,target,size,used,pcent` — занятость
+          смонтированных ФС (байты), для used/used_percent по каждому диску;
+        * `cat /proc/meminfo` — объём ОЗУ (строка MemTotal);
+        * `ip -o link show` — сетевые интерфейсы (имена активных, без lo);
         * `cat /etc/os-release` — KEY=VALUE с дистрибутивом;
         * `lspci -mm` — PCI-устройства (одной строкой `class "vendor"
           "device" ...`);
@@ -1644,10 +1649,21 @@ class SshClient:
         # 2. lscpu -J → JSON.
         facts["cpu"] = await self._capture_json("lscpu -J")
 
-        # 3. lsblk -J → JSON.
+        # 3. lsblk -b → JSON. `-b` даёт размеры в байтах (нужны для процента
+        # занятости), MOUNTPOINT — чтобы найти диск с примонтированным `/`.
         facts["disks"] = await self._capture_json(
-            "lsblk -J -o NAME,SIZE,TYPE,MODEL,SERIAL"
+            "lsblk -b -J -o NAME,SIZE,TYPE,MODEL,SERIAL,MOUNTPOINT"
         )
+        # df по смонтированным ФС в байтах — источник used/used_percent.
+        # `-x tmpfs -x devtmpfs` не ставим: маппер сам матчит источники к
+        # физическим дискам по имени устройства, псевдо-ФС отсеются.
+        facts["df"] = await self._capture_text(
+            "df -B1 --output=source,target,size,used,pcent"
+        )
+        # Память: MemTotal из /proc/meminfo (kB) — маппер сконвертит в МБ/ГБ.
+        facts["meminfo"] = await self._capture_text("cat /proc/meminfo")
+        # Сетевые интерфейсы: активные имена без loopback.
+        facts["net_interfaces"] = await self._capture_text("ip -o link show")
 
         # 4. /etc/os-release — KEY=VALUE (часть в кавычках).
         # `_capture_text` всегда возвращает dict (см. сигнатуру), `isinstance`

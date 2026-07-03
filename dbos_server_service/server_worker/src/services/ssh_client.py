@@ -913,37 +913,185 @@ def _normalize_cpu_vendor(value: str) -> str | None:
     return norm
 
 
-def _extract_disks(disks_block: dict) -> list[dict]:
-    """Из `lsblk -J -o NAME,SIZE,TYPE,MODEL,SERIAL` JSON собрать список
-    `InventoryDiskItem`-словарей.
+def _node_mountpoints(node: dict) -> list[str]:
+    """Собрать точки монтирования одного lsblk-узла.
 
-    Берём только `type == "disk"` (без partitions); если `model` пустой —
-    оставляем None. `is_system` остаётся False — определять системный диск
-    по mount-point'у нужно отдельной командой (lsblk -o MOUNTPOINT), здесь
-    не делаем.
+    lsblk до util-linux 2.37 отдаёт одиночный `mountpoint`, новее — список
+    `mountpoints` (с возможными null внутри). Поддерживаем оба формата.
+    """
+    out: list[str] = []
+    single = node.get("mountpoint")
+    if single:
+        out.append(single)
+    multi = node.get("mountpoints")
+    if isinstance(multi, list):
+        out.extend(mp for mp in multi if mp)
+    return out
+
+
+def _collect_mountpoints(node: dict) -> list[str]:
+    """Все точки монтирования поддерева устройства (сам узел + дети рекурсивно).
+
+    Раздел, LVM-том или crypt-контейнер могут лежать на несколько уровней
+    глубже физического диска — обходим `children` до конца.
+    """
+    mps = list(_node_mountpoints(node))
+    for child in node.get("children") or []:
+        if isinstance(child, dict):
+            mps.extend(_collect_mountpoints(child))
+    return mps
+
+
+def _disk_size_bytes(raw) -> int:
+    """`lsblk -b` даёт размер в байтах (числом или строкой). 0 при мусоре."""
+    try:
+        return max(0, int(str(raw).strip()))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _parse_df_used_by_disk(df_block: Any, disk_names: list[str]) -> dict[str, int]:
+    """`df -B1 --output=source,target,size,used,pcent` → занятые байты на диск.
+
+    Каждую строку df матчим к физическому диску по имени устройства-источника
+    (`/dev/sda1` → `sda`), суммируя `used` всех ФС этого диска. Псевдо-ФС
+    (`tmpfs`, `/dev/mapper/...`, `overlay`) ни к одному диску не привязываются
+    и в сумму не попадают — used по такому диску останется неизвестным.
+    """
+    used_by_disk: dict[str, int] = {}
+    text = _capture_stdout(df_block)
+    if not text:
+        return used_by_disk
+    lines = text.splitlines()
+    for raw in lines[1:]:  # первая строка — заголовок df
+        parts = raw.split()
+        if len(parts) < 4:
+            continue
+        source = parts[0]
+        if not source.startswith("/dev/"):
+            continue
+        dev = source[len("/dev/"):]
+        try:
+            used = int(parts[3])
+        except ValueError:
+            continue
+        disk = _disk_of_device(dev, disk_names)
+        if disk is None:
+            continue
+        used_by_disk[disk] = used_by_disk.get(disk, 0) + max(0, used)
+    return used_by_disk
+
+
+def _disk_of_device(device: str, disk_names: list[str]) -> str | None:
+    """К какому физическому диску относится устройство-раздел (`sda1` → `sda`).
+
+    Сопоставляем по самому длинному подходящему префиксу, чтобы `nvme0n1p1`
+    ушёл к `nvme0n1`, а не к более короткому совпадению.
+    """
+    match: str | None = None
+    for name in disk_names:
+        if device == name or device.startswith(name):
+            if match is None or len(name) > len(match):
+                match = name
+    return match
+
+
+def _extract_disks(disks_block: dict, df_block: Any = None) -> list[dict]:
+    """Из `lsblk -b -J` JSON + `df` собрать список `InventoryDiskItem`-словарей.
+
+    Берём только `type == "disk"` (без partitions). По каждому диску:
+
+    * `size_gb` — из lsblk (байты → ГБ);
+    * `is_system` — True, если в поддереве диска есть раздел с mountpoint `/`;
+    * `used_gb` / `used_percent` — из df: сумма занятых байт всех ФС диска,
+      процент — относительно полного объёма. df нет / диск не смонтирован →
+      обе величины None (частичный inventory лучше полного фейла).
     """
     data = disks_block.get("data") if isinstance(disks_block, dict) else None
     if not isinstance(data, dict):
         return []
     devices = data.get("blockdevices", [])
+    disks = [
+        dev for dev in devices
+        if isinstance(dev, dict) and dev.get("type") == "disk"
+        and (dev.get("name") or "").strip()
+    ]
+    disk_names = [(dev.get("name") or "").strip() for dev in disks]
+    used_by_disk = _parse_df_used_by_disk(df_block, disk_names)
+
     out: list[dict] = []
-    for dev in devices:
-        if not isinstance(dev, dict):
-            continue
-        if dev.get("type") != "disk":
-            continue
+    for dev in disks:
         name = (dev.get("name") or "").strip()
-        if not name:
-            continue
+        size_bytes = _disk_size_bytes(dev.get("size"))
         size_gb = _parse_size_to_gb(str(dev.get("size") or ""))
+        is_system = "/" in _collect_mountpoints(dev)
+        used_bytes = used_by_disk.get(name)
+        used_gb: int | None = None
+        used_percent: float | None = None
+        if used_bytes is not None:
+            used_gb = max(0, int(used_bytes / (1024 ** 3)))
+            if size_bytes > 0:
+                used_percent = round(min(100.0, used_bytes / size_bytes * 100), 1)
         out.append({
             "name": name,
             "size_gb": size_gb,
+            "used_gb": used_gb,
+            "used_percent": used_percent,
             "model": (dev.get("model") or None) or None,
             "serial": (dev.get("serial") or None) or None,
             "device_path": f"/dev/{name}",
-            "is_system": False,
+            "is_system": is_system,
         })
+    return out
+
+
+def _extract_memory_mb(meminfo_block: Any) -> int | None:
+    """Объём ОЗУ в МБ из `MemTotal` (`/proc/meminfo`, значение в kB).
+
+    None, если файла нет или строка не распознана — память в БД останется как
+    была (first-write наступит на следующей успешной инвентаризации).
+    """
+    text = _capture_stdout(meminfo_block)
+    if not text:
+        return None
+    for line in text.splitlines():
+        if not line.startswith("MemTotal:"):
+            continue
+        parts = line.split()
+        # Формат: "MemTotal:       16307128 kB"
+        if len(parts) >= 2:
+            try:
+                kb = int(parts[1])
+            except ValueError:
+                return None
+            return max(0, kb // 1024)
+    return None
+
+
+def _extract_network_interfaces(net_block: Any) -> list[str]:
+    """Имена активных сетевых интерфейсов из `ip -o link show` (без lo).
+
+    Формат строки: `2: ens192: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu ...`.
+    Берём имя (обрезая `@ifX` у VLAN/veth), пропускаем loopback и интерфейсы
+    без флага UP. Порядок сохраняем, дубли схлопываем.
+    """
+    text = _capture_stdout(net_block)
+    if not text:
+        return []
+    out: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        m = re.match(r"^\d+:\s*([^:@]+)(?:@\S+)?:\s*<([^>]*)>", line)
+        if not m:
+            continue
+        name = m.group(1).strip()
+        flags = m.group(2).split(",")
+        if name == "lo" or "UP" not in flags:
+            continue
+        if name not in out:
+            out.append(name)
     return out
 
 
@@ -1094,7 +1242,8 @@ def inventory_facts_to_payload(facts: dict) -> dict:
     JSON и parsed os-release, плюс `astra_build`/`astra_license`/`apt_sources`).
     server_service ждёт flat-schema: `hostname`, `kernel`, `cpu_brand`,
     `cpu_model`, `cpu_cores`, `cpu_threads`, `cpu_frequency_ghz`, `os_version`,
-    `os_security_mode?`, `disks: [...]`, `lspci?`, `repositories: [...]`.
+    `os_security_mode?`, `ram_total_mb?`, `network_interfaces: [...]`,
+    `disks: [...]`, `lspci?`, `repositories: [...]`.
 
     Для Astra Linux `os_version` — версия сборки (`1.7.5`) из
     `/etc/astra/build_version`, а режим защищённости уходит отдельным полем
@@ -1126,7 +1275,9 @@ def inventory_facts_to_payload(facts: dict) -> dict:
             facts.get("astra_build"),
         ),
         "os_security_mode": _extract_os_security_mode(facts.get("astra_license")),
-        "disks": _extract_disks(facts.get("disks", {})),
+        "ram_total_mb": _extract_memory_mb(facts.get("meminfo")),
+        "network_interfaces": _extract_network_interfaces(facts.get("net_interfaces")),
+        "disks": _extract_disks(facts.get("disks", {}), facts.get("df")),
         "lspci": _extract_lspci(facts.get("pci", {})),
         "repositories": _extract_repositories(facts.get("apt_sources")),
     }

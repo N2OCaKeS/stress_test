@@ -568,6 +568,17 @@ _ASTRA_BUILD = "1.7.5\n"
 _ASTRA_LICENSE = "Лицензия Astra Linux SE ... Смоленск ...\n"
 _APT_SOURCES = "deb http://dl.astralinux.ru/ smolensk main\n# off\n"
 
+_DF = (
+    "Filesystem Mounted 1B-blocks Used Use%\n"
+    "/dev/sda1 / 500107862016 100021572403 20%\n"
+    "tmpfs /run 8388608 0 0%\n"
+)
+_MEMINFO = "MemTotal:       16307128 kB\nMemFree:  512000 kB\n"
+_IP_LINK = (
+    "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN\n"
+    "2: ens192: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP\n"
+)
+
 
 class TestSshClientGetInventory:
     async def test_collects_all_blocks(self, monkeypatch):
@@ -577,6 +588,9 @@ class TestSshClientGetInventory:
             _run_result("Linux srv-test-01 5.15.0-91-generic ...\n"),
             _run_result(_LSCPU_JSON),
             _run_result(_LSBLK_JSON),
+            _run_result(_DF),
+            _run_result(_MEMINFO),
+            _run_result(_IP_LINK),
             _run_result(_OS_RELEASE),
             _run_result(_LSPCI),
             _run_result(_ASTRA_BUILD),
@@ -603,6 +617,9 @@ class TestSshClientGetInventory:
             _run_result("Linux ...\n"),
             _run_result("", "lscpu: command not found", 127),
             _run_result(_LSBLK_JSON),
+            _run_result(_DF),
+            _run_result(_MEMINFO),
+            _run_result(_IP_LINK),
             _run_result(_OS_RELEASE),
             _run_result(_LSPCI),
             _run_result(_ASTRA_BUILD),
@@ -626,6 +643,9 @@ class TestSshClientGetInventory:
             _run_result("Linux\n"),
             _run_result("not json at all"),
             _run_result(_LSBLK_JSON),
+            _run_result(_DF),
+            _run_result(_MEMINFO),
+            _run_result(_IP_LINK),
             _run_result(_OS_RELEASE),
             _run_result(_LSPCI),
             _run_result(_ASTRA_BUILD),
@@ -648,6 +668,9 @@ class TestSshClientGetInventory:
             _run_result("Linux\n"),
             _run_result(_LSCPU_JSON),
             _run_result(_LSBLK_JSON),
+            _run_result(_DF),
+            _run_result(_MEMINFO),
+            _run_result(_IP_LINK),
             _run_result(_OS_RELEASE),
             _run_result(_LSPCI),
             _run_result(_ASTRA_BUILD),

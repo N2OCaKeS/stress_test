@@ -606,6 +606,15 @@ def _inventory_conn():
         _run_result("Linux srv-01 5.15.0-91-generic\n"),
         _run_result('{"lscpu":[{"field":"Architecture:","data":"x86_64"}]}'),
         _run_result('{"blockdevices":[{"name":"sda","size":"500G","type":"disk"}]}'),
+        _run_result(
+            "Filesystem Mounted 1B-blocks Used Use%\n"
+            "/dev/sda1 / 500107862016 100021572403 20%\n"
+        ),
+        _run_result("MemTotal:       16307128 kB\nMemFree: 100 kB\n"),
+        _run_result(
+            "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536\n"
+            "2: ens192: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500\n"
+        ),
         _run_result('NAME="Astra Linux"\nVERSION_ID="1.7"\n'),
         _run_result('00:00.0 "Host bridge" "Intel"\n'),
         _run_result("1.7.5\n"),

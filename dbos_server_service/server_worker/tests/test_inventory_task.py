@@ -21,8 +21,8 @@ from tests._ssh_mock_helpers import run_result as _run_result
 def _conn_with_inventory_output():
     """SSHClientConnection-like mock с canned-результатами inventory-команд.
 
-    Очерёдность: hostname, uname, lscpu, lsblk, os-release, lspci,
-    build_version, astra_license, apt-sources.
+    Очерёдность: hostname, uname, lscpu, lsblk, df, meminfo, net-interfaces,
+    os-release, lspci, build_version, astra_license, apt-sources.
     """
     conn = MagicMock(spec=asyncssh.SSHClientConnection)
     conn.close = MagicMock()
@@ -31,7 +31,20 @@ def _conn_with_inventory_output():
         _run_result("srv-01\n"),
         _run_result("Linux srv-01 5.15.0-91-generic ...\n"),
         _run_result('{"lscpu":[{"field":"Architecture:","data":"x86_64"}]}'),
-        _run_result('{"blockdevices":[{"name":"sda","size":"500G","type":"disk","model":"X","serial":"S1"}]}'),
+        _run_result(
+            '{"blockdevices":[{"name":"sda","size":"500107862016","type":"disk",'
+            '"model":"X","serial":"S1","children":[{"name":"sda1","type":"part",'
+            '"mountpoint":"/"}]}]}'
+        ),
+        _run_result(
+            "Filesystem Mounted 1B-blocks Used Use%\n"
+            "/dev/sda1 / 500107862016 100021572403 20%\n"
+        ),
+        _run_result("MemTotal:       16307128 kB\nMemFree: 100 kB\n"),
+        _run_result(
+            "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536\n"
+            "2: ens192: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500\n"
+        ),
         _run_result('NAME="Astra Linux"\nVERSION_ID="1.7"\n'),
         _run_result('00:00.0 "Host bridge" "Intel"\n'),
         _run_result("1.7.5\n"),
@@ -98,6 +111,17 @@ class TestInventoryHappyPath:
         # Только активная deb-строка, закомментированная отброшена.
         assert payload["repositories"] == ["deb http://dl.astralinux.ru/ smolensk main"]
         assert isinstance(payload["disks"], list)
+        # Память: MemTotal 16307128 kB → 15925 МБ.
+        assert payload["ram_total_mb"] == 16307128 // 1024
+        # Сеть: активный ens192 без lo.
+        assert payload["network_interfaces"] == ["ens192"]
+        # Диск sda: раздел sda1 смонтирован в / → системный, занятость из df.
+        assert len(payload["disks"]) == 1
+        sda = payload["disks"][0]
+        assert sda["name"] == "sda"
+        assert sda["is_system"] is True
+        assert sda["used_percent"] == 20.0
+        assert sda["used_gb"] == 93  # 100021572403 B ≈ 93 ГБ
         # сырые facts больше не в payload — только flat-schema fields.
         assert "facts" not in payload
 

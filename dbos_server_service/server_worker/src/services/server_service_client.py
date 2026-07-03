@@ -451,6 +451,39 @@ async def submit_prepared(
     )
 
 
+async def submit_astra_update_result(
+    server_id: str,
+    os_version_id: str,
+    succeeded: bool,
+    target_department_id: str | None = None,
+) -> dict:
+    """Сообщить server_service исход обновления ОС (astra_update).
+
+    Финал `server.astra_update` task'а. `succeeded=True` — `apt update &&
+    astra-update` прошли; server_service привязывает сервер к целевой версии
+    и запускает inventory.sync. `succeeded=False` — обновление упало; вызывается
+    из except-ветки handler'а, чтобы снять updating-блокировку (иначе сервер
+    завис бы «в обновлении» до ручного release'а). В обоих случаях server_service
+    переводит `busy_state` обратно в `free`.
+
+    Возвращает: `{ok, os_version_id, busy_state}` от
+    `POST /api/server/v1/internal/servers/{id}/astra-updated`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `ASTRA_UPDATE_STATUS_REJECTED` — server_service вернул не 2xx.
+    """
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/astra-updated",
+        reject_code="ASTRA_UPDATE_STATUS_REJECTED",
+        target_department_id=target_department_id,
+        json={"os_version_id": os_version_id, "succeeded": succeeded},
+        details={"server_id": server_id},
+        allow_empty_body=True,
+    )
+
+
 async def submit_rotated_ipmi_password(
     ipmi_controller_id: str,
     new_password: str,

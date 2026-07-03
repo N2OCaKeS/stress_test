@@ -78,6 +78,7 @@ worker'а и владеет бизнес-смыслом операции.
 | `server.power_status` | `tasks/power.py` | `server` |
 | `server.inventory_sync` | `tasks/inventory.py` | `server` |
 | `server.prepare` | `tasks/prepare.py` | `server` |
+| `server.astra_update` | `tasks/astra_update.py` | `server` |
 | `management_user.sync` | `tasks/management_user.py` | `server` |
 | `installed_packages.list` | `tasks/installed_packages.py` | `server` |
 | `server.packages_install` | `tasks/installed_packages.py` | `server` |

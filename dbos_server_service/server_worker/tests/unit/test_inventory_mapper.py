@@ -15,6 +15,9 @@ from __future__ import annotations
 
 from src.services.ssh_client import (
     _detect_astra_mode,
+    _extract_disks,
+    _extract_memory_mb,
+    _extract_network_interfaces,
     _extract_repositories,
     _normalize_cpu_vendor,
     _parse_size_to_gb,
@@ -303,3 +306,133 @@ class TestExtractRepositories:
         assert payload["repositories"] == [
             "deb http://dl.astralinux.ru/ smolensk main",
         ]
+
+
+# ── Память ───────────────────────────────────────────────────────────────────
+
+
+class TestExtractMemory:
+    def test_memtotal_kb_to_mb(self):
+        block = {"stdout": "MemTotal:       16307128 kB\nMemFree: 512 kB\n"}
+        # 16307128 kB // 1024 = 15925 МБ
+        assert _extract_memory_mb(block) == 16307128 // 1024
+
+    def test_missing_block_returns_none(self):
+        assert _extract_memory_mb(None) is None
+        assert _extract_memory_mb({"error": "no file", "returncode": 1}) is None
+
+    def test_no_memtotal_line_returns_none(self):
+        assert _extract_memory_mb({"stdout": "MemFree: 100 kB\n"}) is None
+
+    def test_garbage_value_returns_none(self):
+        assert _extract_memory_mb({"stdout": "MemTotal: notanumber kB\n"}) is None
+
+    def test_payload_includes_ram(self):
+        facts = dict(_FULL_FACTS)
+        facts["meminfo"] = {"stdout": "MemTotal: 8000000 kB\n"}
+        payload = inventory_facts_to_payload(facts)
+        assert payload["ram_total_mb"] == 8000000 // 1024
+
+    def test_payload_ram_none_when_absent(self):
+        payload = inventory_facts_to_payload(_FULL_FACTS)
+        assert payload["ram_total_mb"] is None
+
+
+# ── Сетевые интерфейсы ───────────────────────────────────────────────────────
+
+
+class TestExtractNetworkInterfaces:
+    def test_active_interfaces_without_lo(self):
+        block = {"stdout": (
+            "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 state UNKNOWN\n"
+            "2: ens192: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP\n"
+            "3: ens224: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP\n"
+        )}
+        assert _extract_network_interfaces(block) == ["ens192", "ens224"]
+
+    def test_down_interface_skipped(self):
+        block = {"stdout": (
+            "2: eth0: <BROADCAST,MULTICAST> mtu 1500 state DOWN\n"
+        )}
+        assert _extract_network_interfaces(block) == []
+
+    def test_vlan_suffix_stripped(self):
+        block = {"stdout": (
+            "5: eth0.100@eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500\n"
+        )}
+        assert _extract_network_interfaces(block) == ["eth0.100"]
+
+    def test_missing_block_returns_empty(self):
+        assert _extract_network_interfaces(None) == []
+        assert _extract_network_interfaces({"error": "no ip", "returncode": 1}) == []
+
+    def test_payload_includes_interfaces(self):
+        facts = dict(_FULL_FACTS)
+        facts["net_interfaces"] = {"stdout": (
+            "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536\n"
+            "2: eno1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500\n"
+        )}
+        payload = inventory_facts_to_payload(facts)
+        assert payload["network_interfaces"] == ["eno1"]
+
+
+# ── Диски: системный + занятость ────────────────────────────────────────────
+
+
+class TestExtractDisksSystemAndUsage:
+    _LSBLK = {"data": {"blockdevices": [
+        {
+            "name": "sda", "size": "500107862016", "type": "disk", "model": "SSD",
+            "serial": "S1", "children": [
+                {"name": "sda1", "type": "part", "mountpoint": "/boot"},
+                {"name": "sda2", "type": "part", "mountpoint": "/"},
+            ],
+        },
+        {
+            "name": "sdb", "size": "1000204886016", "type": "disk", "model": "HDD",
+            "serial": "S2", "children": [
+                {"name": "sdb1", "type": "part", "mountpoint": "/data"},
+            ],
+        },
+    ]}}
+    _DF = {"stdout": (
+        "Filesystem Mounted 1B-blocks Used Use%\n"
+        "/dev/sda2 / 480000000000 240000000000 50%\n"
+        "/dev/sda1 /boot 20000000000 2000000000 10%\n"
+        "/dev/sdb1 /data 1000204886016 500102443008 50%\n"
+        "tmpfs /run 8388608 0 0%\n"
+    )}
+
+    def test_system_disk_detected_from_root_mount(self):
+        disks = _extract_disks(self._LSBLK, self._DF)
+        sda = next(d for d in disks if d["name"] == "sda")
+        sdb = next(d for d in disks if d["name"] == "sdb")
+        assert sda["is_system"] is True
+        assert sdb["is_system"] is False
+
+    def test_used_summed_per_disk(self):
+        disks = _extract_disks(self._LSBLK, self._DF)
+        sda = next(d for d in disks if d["name"] == "sda")
+        # 240e9 + 2e9 = 242e9 байт → 225 ГБ, процент от 500107862016
+        assert sda["used_gb"] == int(242_000_000_000 / (1024 ** 3))
+        assert sda["used_percent"] == round(242_000_000_000 / 500107862016 * 100, 1)
+
+    def test_mountpoints_list_format_supported(self):
+        lsblk = {"data": {"blockdevices": [
+            {"name": "nvme0n1", "size": "256060514304", "type": "disk",
+             "children": [
+                 {"name": "nvme0n1p1", "type": "part", "mountpoints": ["/", None]},
+             ]},
+        ]}}
+        disks = _extract_disks(lsblk, {"stdout": ""})
+        assert disks[0]["is_system"] is True
+
+    def test_no_df_leaves_usage_none(self):
+        disks = _extract_disks(self._LSBLK, None)
+        for d in disks:
+            assert d["used_gb"] is None
+            assert d["used_percent"] is None
+
+    def test_partition_filtered_disks_only(self):
+        disks = _extract_disks(self._LSBLK, self._DF)
+        assert {d["name"] for d in disks} == {"sda", "sdb"}

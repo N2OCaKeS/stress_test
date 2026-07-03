@@ -148,6 +148,25 @@ export function prepareServer(
 }
 
 /**
+ * `POST /api/server/v1/servers/{id}/astra-update` — обновить ОС Astra до
+ * версии каталога.
+ *
+ * Backend перезаписывает `/etc/apt/sources.list` репозиториями выбранной
+ * `OsVersion` и гонит `apt update && astra-update`. На время обновления
+ * сервер помечается `busy_state='updating'`, любые другие операции над ним
+ * отбиваются 409 `SERVER_UPDATING` до завершения. Ответ — `task_id` задачи.
+ */
+export function astraUpdate(
+  id: string,
+  body: { os_version_id: string },
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(
+    `/server/v1/servers/${id}/astra-update`,
+    body,
+  );
+}
+
+/**
  * `POST /api/server/v1/servers/prepare/bulk` — массовый prepare.
  *
  * Принимает per-server bootstrap-креды (`username_b64` / `password_b64` в

@@ -36,6 +36,7 @@ import {
   KeyRound,
   Eraser,
   X,
+  ArrowUpCircle,
 } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
@@ -46,6 +47,7 @@ import { isDepAdmin } from "@/lib/rbac";
 import { useUserLabel } from "@/lib/labels";
 import { sshKeyFingerprint } from "@/lib/sshFingerprint";
 import {
+  astraUpdate,
   clearBusy,
   deleteServer,
   getServer,
@@ -121,6 +123,10 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
   // mgmt-карточке, чтобы не пересекаться с lifecycle-исходом.
   const rotateOutcome = useTaskOutcome();
   const rotateHandledRef = useRef<string | null>(null);
+  // Обновление ОС Astra: свой трекер, чтобы по succeeded перечитать карточку
+  // (backend снял updating-блокировку, сменил версию и запустил inventory).
+  const astraOutcome = useTaskOutcome();
+  const astraHandledRef = useRef<string | null>(null);
   const [current, setCurrent] = useState<Server | undefined>(server);
   // Когда родитель прислал свежий объект (мутация в соседней вкладке) —
   // подхватываем его, чтобы не залипнуть на устаревшей локальной копии.
@@ -155,7 +161,25 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
     }
   }, [rotateOutcome.tracked, view, applyServer]);
 
+  // Обновление ОС завершилось — перечитываем карточку: сервер уже свободен
+  // (updating снят), версия и факты обновлены. Ref гасит повторный refetch.
+  useEffect(() => {
+    const t = astraOutcome.tracked;
+    if (!t || t.polling || t.status !== "succeeded") return;
+    if (astraHandledRef.current === t.taskId) return;
+    astraHandledRef.current = t.taskId;
+    if (view) {
+      getServer(view.id)
+        .then((next) => applyServer(next))
+        .catch(() => {});
+    }
+  }, [astraOutcome.tracked, view, applyServer]);
+
   const allowBasic = canManageBasic(persona, view);
+  // Пока идёт обновление ОС — сервер под системной блокировкой: все
+  // управляющие операции backend отобьёт 409 SERVER_UPDATING. Гейтим кнопки
+  // на клиенте, чтобы не слать заведомо отбиваемые запросы.
+  const updating = view?.busy_state === "updating";
   // os_version CRUD и server:delete — только admin-плоскость (dep_admin своего
   // dept либо server.admin). operator их не получает по дефолтной матрице.
   const allowOsCatalog =
@@ -212,6 +236,7 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
       <LifecycleCard
         server={view}
         allowed={allowBasic}
+        locked={updating}
         busyLabel={busy}
         outcome={taskOutcome.tracked}
         onCancelled={taskOutcome.reset}
@@ -249,9 +274,46 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
         }}
       />
 
+      <AstraUpdateCard
+        server={view}
+        allowed={allowBasic}
+        locked={updating}
+        busyLabel={busy}
+        outcome={astraOutcome.tracked}
+        onCancelled={astraOutcome.reset}
+        onUpdate={async (osVersionId) => {
+          if (!view) return;
+          if (
+            !(await confirm({
+              title: "Обновить ОС Astra",
+              message: `Обновить ОС на ${view.hostname}? sources.list будет полностью перезаписан репозиториями выбранной версии, затем пойдёт apt update && astra-update. На время обновления все операции с сервером блокируются.`,
+              confirmLabel: "Обновить",
+              danger: true,
+            }))
+          )
+            return;
+          astraOutcome.reset();
+          astraHandledRef.current = null;
+          const res = await run("astra_update", () =>
+            astraUpdate(view.id, { os_version_id: osVersionId }),
+          );
+          if (res) {
+            astraOutcome.track("astra_update", res.task_id, res.status);
+            // Оптимистично метим updating — карточка сразу заблокирует кнопки,
+            // refetch по succeeded вернёт реальное состояние.
+            applyServer({
+              ...view,
+              busy_state: "updating",
+              busy_note: "Обновление ОС Astra",
+            });
+          }
+        }}
+      />
+
       <ManagementCredsCard
         server={view}
         allowed={allowBasic}
+        locked={updating}
         busyLabel={busy}
         outcome={rotateOutcome.tracked}
         onCancelled={rotateOutcome.reset}
@@ -312,6 +374,7 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
 
       <CleanCard
         allowed={allowBasic}
+        locked={updating}
         busyLabel={busy}
         onClean={() => setCleanOpen(true)}
       />
@@ -484,6 +547,7 @@ function OsSyncModal({
 function LifecycleCard({
   server,
   allowed,
+  locked = false,
   busyLabel,
   outcome,
   onCancelled,
@@ -494,6 +558,8 @@ function LifecycleCard({
 }: {
   server: Server | undefined;
   allowed: boolean;
+  /** Сервер под системной блокировкой обновления ОС — операции заблокированы. */
+  locked?: boolean;
   busyLabel: string | null;
   outcome: TrackedTask | null;
   onCancelled: () => void;
@@ -502,7 +568,7 @@ function LifecycleCard({
   onOsSync: () => void;
   onUsersInventory: () => Promise<void>;
 }) {
-  const disabled = !allowed || busyLabel !== null || !server;
+  const disabled = !allowed || locked || busyLabel !== null || !server;
   // Инвентаризация идёт по SSH под управляющим ключом — до prepare заходить
   // нечем, backend вернёт 409 PREPARE_REQUIRED. Гейтим кнопки и подсказываем,
   // что сначала надо prepare. OS sync — локальный UPDATE, prepare не требует.
@@ -527,6 +593,12 @@ function LifecycleCard({
           </Link>
         )}
       </div>
+      {locked && (
+        <div className="alert alert-warn text-xs mb-3 flex items-center gap-2">
+          <ArrowUpCircle className="w-4 h-4" />
+          Идёт обновление ОС — операции с сервером заблокированы до завершения.
+        </div>
+      )}
       {server && !prepared && (
         <div className="text-[11px] text-dim italic mb-3">
           Сервер не подготовлен (нет management-пользователя). Инвентаризация
@@ -602,6 +674,7 @@ function LifecycleCard({
 function ManagementCredsCard({
   server,
   allowed,
+  locked = false,
   busyLabel,
   outcome,
   onCancelled,
@@ -609,6 +682,8 @@ function ManagementCredsCard({
 }: {
   server: Server | undefined;
   allowed: boolean;
+  /** Сервер под системной блокировкой обновления ОС — ротация недоступна. */
+  locked?: boolean;
   busyLabel: string | null;
   outcome: TrackedTask | null;
   onCancelled: () => void;
@@ -620,7 +695,7 @@ function ManagementCredsCard({
   const pending =
     !!server?.mgmt_creds_pending_apply || (outcome?.polling ?? false);
   const disabled =
-    !allowed || busyLabel !== null || !prepared || pending || !server;
+    !allowed || locked || busyLabel !== null || !prepared || pending || !server;
 
   const [fingerprint, setFingerprint] = useState<string | null>(null);
   const pubKey = server?.mgmt_ssh_public_key ?? null;
@@ -705,6 +780,123 @@ function ManagementCredsCard({
         <div className="text-[11px] text-dim italic mt-3">
           Нет прав на ротацию управляющих кред (нужна роль server.operator+ или
           dep_admin своего департамента).
+        </div>
+      )}
+
+      {outcome && (
+        <TaskOutcomeBanner
+          outcome={outcome}
+          className="mt-3"
+          onCancelled={onCancelled}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Обновление ОС Astra (astra_update)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function AstraUpdateCard({
+  server,
+  allowed,
+  locked = false,
+  busyLabel,
+  outcome,
+  onCancelled,
+  onUpdate,
+}: {
+  server: Server | undefined;
+  allowed: boolean;
+  /** Сервер уже под updating-блокировкой — кнопка «идёт обновление». */
+  locked?: boolean;
+  busyLabel: string | null;
+  outcome: TrackedTask | null;
+  onCancelled: () => void;
+  onUpdate: (osVersionId: string) => Promise<void>;
+}) {
+  const prepared = !!server && server.is_managed;
+  const q = useQuery<OffsetPaginatedResponse<OsVersion>>(
+    () => listOsVersions({ limit: 200 }),
+    [],
+  );
+  const items = useMemo(() => q.data?.items ?? [], [q.data]);
+  const [selected, setSelected] = useState("");
+  const disabled =
+    !allowed || locked || busyLabel !== null || !prepared || !server;
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <ArrowUpCircle className="w-4 h-4 text-accent" /> Обновление ОС Astra
+        {locked && (
+          <span className="badge badge-warn text-[11px]">идёт обновление…</span>
+        )}
+      </h3>
+
+      {!prepared ? (
+        <div className="text-[11px] text-dim italic">
+          Обновление идёт по управляющему ключу — сначала выполните prepare.
+        </div>
+      ) : (
+        <>
+          <div className="text-xs text-dim mb-3">
+            Обновляет сервер до выбранной версии ОС из каталога: полностью
+            перезаписывает <span className="mono">/etc/apt/sources.list</span>{" "}
+            репозиториями версии и выполняет{" "}
+            <span className="mono">apt update &amp;&amp; astra-update</span>. На
+            время обновления любые операции с сервером блокируются.
+          </div>
+          <div className="flex items-end gap-2 flex-wrap">
+            <label className="flex flex-col gap-1 text-sm flex-1 min-w-[200px]">
+              <span className="text-dim text-xs">Целевая версия ОС</span>
+              {q.loading ? (
+                <div className="text-xs text-dim">Загрузка каталога…</div>
+              ) : (
+                <select
+                  className="input"
+                  value={selected}
+                  onChange={(e) => setSelected(e.target.value)}
+                  disabled={disabled}
+                >
+                  <option value="">— выберите версию —</option>
+                  {items.map((v) => (
+                    <option key={v.id} value={v.id} title={v.id}>
+                      {v.name}
+                      {v.repositories.length === 0 ? " (нет репозиториев)" : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+            {allowed && (
+              <button
+                className="btn btn-danger flex items-center gap-1"
+                disabled={disabled || !selected}
+                onClick={() => onUpdate(selected)}
+                title={
+                  prepared
+                    ? "Обновить ОС до выбранной версии"
+                    : "Сначала prepare"
+                }
+              >
+                <ArrowUpCircle className="w-4 h-4" />
+                {locked
+                  ? "Обновление идёт…"
+                  : busyLabel === "astra_update"
+                    ? "Запускаем…"
+                    : "Обновить ОС"}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {!allowed && (
+        <div className="text-[11px] text-dim italic mt-3">
+          Нет прав на обновление ОС (нужна роль server.operator+ или dep_admin
+          своего департамента).
         </div>
       )}
 
@@ -1153,10 +1345,13 @@ function OsVersionForm({
 
 function CleanCard({
   allowed,
+  locked = false,
   busyLabel,
   onClean,
 }: {
   allowed: boolean;
+  /** Сервер под системной блокировкой обновления ОС — очистка недоступна. */
+  locked?: boolean;
   busyLabel: string | null;
   onClean: () => void;
 }) {
@@ -1174,7 +1369,7 @@ function CleanCard({
         {allowed && (
           <button
             className="btn btn-danger flex items-center gap-1"
-            disabled={busyLabel !== null}
+            disabled={locked || busyLabel !== null}
             onClick={onClean}
             title="Очистка сервера после переустановки ОС"
           >

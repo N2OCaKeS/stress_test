@@ -48,7 +48,7 @@ export type ServerStatus =
   | "decommissioned";
 
 /** BusyState enum (`servers.busy_state`). */
-export type BusyState = "free" | "busy" | "testing";
+export type BusyState = "free" | "busy" | "testing" | "updating";
 
 /** PowerState enum (`servers.power_state`). */
 export type PowerState = "on" | "off" | "unknown";
@@ -69,6 +69,10 @@ export interface DiskResponse {
   id: string;
   slot: string;
   size_gb: number;
+  /** Занято, ГБ (с последней инвентаризации). `null` — неизвестно. */
+  used_gb: number | null;
+  /** Процент занятости диска. `null` — неизвестно. */
+  used_percent: number | null;
   model: string | null;
   is_system: boolean;
   created_at: Iso8601;
@@ -118,7 +122,11 @@ export interface Server {
   cpu_threads: number | null;
   cpu_frequency_ghz: number | null;
   ram_total_mb: number | null;
+  /** RAM в ГБ — производная от `ram_total_mb`, считает backend. */
+  ram_total_gb?: number | null;
   network_interface_name: string | null;
+  /** Все активные сетевые интерфейсы с последней инвентаризации (без lo). */
+  network_interfaces?: string[];
   decommissioned_at: Iso8601 | null;
   is_managed: boolean;
   management_user: string | null;

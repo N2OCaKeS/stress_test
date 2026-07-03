@@ -65,12 +65,14 @@ const BUSY_LABEL: Record<BusyState, string> = {
   free: "Свободен",
   busy: "Занят",
   testing: "В тесте",
+  updating: "Обновление ОС",
 };
 
 const BUSY_KIND: Record<BusyState, "ok" | "warn" | "danger"> = {
   free: "ok",
   busy: "warn",
   testing: "warn",
+  updating: "warn",
 };
 
 interface ServerDetailProps {

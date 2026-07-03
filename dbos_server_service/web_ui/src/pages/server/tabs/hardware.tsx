@@ -182,6 +182,22 @@ function HardwareView({
             }
           />
           <StatRow
+            k="interfaces"
+            v={
+              server.network_interfaces && server.network_interfaces.length > 0 ? (
+                <span className="flex flex-wrap gap-1">
+                  {server.network_interfaces.map((iface) => (
+                    <span key={iface} className="badge mono">
+                      {iface}
+                    </span>
+                  ))}
+                </span>
+              ) : (
+                <span className="text-dim">—</span>
+              )
+            }
+          />
+          <StatRow
             k="ip_address"
             v={<span className="mono">{server.ip_address}</span>}
           />
@@ -214,6 +230,8 @@ function HardwareView({
                 <tr className="text-dim text-xs border-b border-token">
                   <th className="text-left py-2 pr-3">slot</th>
                   <th className="text-left py-2 pr-3">size, GB</th>
+                  <th className="text-left py-2 pr-3">used, GB</th>
+                  <th className="text-left py-2 pr-3">used, %</th>
                   <th className="text-left py-2 pr-3">model</th>
                   <th className="text-left py-2 pr-3">system</th>
                   <th className="text-left py-2 pr-3">id</th>
@@ -224,6 +242,16 @@ function HardwareView({
                   <tr key={d.id} className="border-b border-dashed border-token last:border-b-0">
                     <td className="py-1.5 pr-3 mono">{d.slot}</td>
                     <td className="py-1.5 pr-3 mono">{d.size_gb}</td>
+                    <td className="py-1.5 pr-3 mono">
+                      {d.used_gb != null ? d.used_gb : <span className="text-dim">—</span>}
+                    </td>
+                    <td className="py-1.5 pr-3 mono">
+                      {d.used_percent != null ? (
+                        `${d.used_percent}%`
+                      ) : (
+                        <span className="text-dim">—</span>
+                      )}
+                    </td>
                     <td className="py-1.5 pr-3">
                       {d.model ?? <span className="text-dim">—</span>}
                     </td>

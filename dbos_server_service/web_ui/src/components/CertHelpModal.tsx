@@ -95,8 +95,18 @@ function WindowsHelp() {
 }
 
 function LinuxHelp() {
+  const caUrl =
+    typeof window !== "undefined" ? `${window.location.origin}${CA_URL}` : CA_URL;
   return (
     <div className="space-y-3">
+      <div>
+        <div className="text-sm text-dim mb-1">
+          1. Скачать сертификат в <span className="mono">~/Downloads</span>{" "}
+          (если кнопка выше не подходит):
+        </div>
+        <CmdLine cmd={`curl -k ${caUrl} -o ~/Downloads/emm-ca.crt`} />
+      </div>
+
       <div className="text-sm text-dim">
         Браузеры на Linux не читают системное хранилище
         (<span className="mono">update-ca-certificates</span>). Chrome, Chromium
@@ -106,7 +116,7 @@ function LinuxHelp() {
       </div>
 
       <div>
-        <div className="text-sm text-dim mb-1">1. Установить certutil:</div>
+        <div className="text-sm text-dim mb-1">2. Установить certutil:</div>
         <CmdLine cmd="sudo apt install -y libnss3-tools" />
       </div>
 

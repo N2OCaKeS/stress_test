@@ -17,7 +17,7 @@ import type { TaskStatus } from "@/api/server/types";
 const PANEL_WIDTH = 360;
 const GAP = 6;
 
-type Pos = { top: number; left: number };
+type Pos = { top?: number; bottom?: number; left: number; maxHeight: number };
 
 const STATUS_BADGE: Record<string, string> = {
   queued: "badge",
@@ -66,7 +66,16 @@ export function NotificationCenter({
     // Прижимаем правый край панели к правому краю якоря, но не даём вылезти
     // за левый край окна.
     const left = Math.max(GAP, Math.min(r.right - PANEL_WIDTH, window.innerWidth - PANEL_WIDTH - GAP));
-    setPos({ top: r.bottom + GAP, left });
+    const spaceBelow = window.innerHeight - r.bottom - GAP;
+    const spaceAbove = r.top - GAP;
+    // Открываем вниз, если снизу места не меньше, чем сверху; иначе разворачиваем
+    // вверх, чтобы панель не уходила за нижний край. Высоту в любом случае
+    // ограничиваем доступным местом — длинный список скроллится внутри.
+    if (spaceBelow >= spaceAbove) {
+      setPos({ top: r.bottom + GAP, left, maxHeight: Math.max(GAP, spaceBelow) });
+    } else {
+      setPos({ bottom: window.innerHeight - r.top + GAP, left, maxHeight: Math.max(GAP, spaceAbove) });
+    }
   }, [anchorRef]);
 
   useLayoutEffect(() => {
@@ -113,10 +122,17 @@ export function NotificationCenter({
       ref={panelRef}
       role="dialog"
       aria-label="Уведомления о задачах"
-      style={{ position: "fixed", top: pos.top, left: pos.left, width: PANEL_WIDTH }}
-      className="z-[1000] surface border border-token rounded shadow-lg text-sm text-text"
+      style={{
+        position: "fixed",
+        top: pos.top,
+        bottom: pos.bottom,
+        left: pos.left,
+        width: PANEL_WIDTH,
+        maxHeight: pos.maxHeight,
+      }}
+      className="z-[1000] surface border border-token rounded shadow-lg text-sm text-text flex flex-col"
     >
-      <div className="flex items-center justify-between px-3 py-2 border-b border-token">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-token shrink-0">
         <span className="font-semibold">Мои задачи</span>
         <button
           type="button"
@@ -133,7 +149,7 @@ export function NotificationCenter({
           Пока нет уведомлений
         </div>
       ) : (
-        <ul className="max-h-96 overflow-auto">
+        <ul className="flex-1 min-h-0 overflow-auto">
           {notifications.map((n) => {
             const note = summary(n);
             return (
@@ -170,7 +186,7 @@ export function NotificationCenter({
         </ul>
       )}
 
-      <div className="px-3 py-2 border-t border-token text-center">
+      <div className="px-3 py-2 border-t border-token text-center shrink-0">
         <button
           type="button"
           className="text-xs text-accent hover:underline"

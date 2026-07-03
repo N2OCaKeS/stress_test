@@ -262,8 +262,32 @@ let refreshInFlight: Promise<boolean> | null = null;
 const REFRESH_MAX_RETRIES = 2;
 const REFRESH_BACKOFF_CAP_MS = 3000;
 
+// Ретрай GET/HEAD при network-fail (TypeError без ответа — DNS/TCP-ошибка).
+// POST/PATCH/PUT/DELETE не ретраятся — не идемпотентны.
+const FETCH_MAX_RETRIES = 2;
+const FETCH_BACKOFF_BASE_MS = 200;
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  method: string,
+): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetch(url, init);
+    } catch (err) {
+      const retryable =
+        err instanceof TypeError &&
+        (method === "GET" || method === "HEAD") &&
+        attempt < FETCH_MAX_RETRIES;
+      if (!retryable) throw err;
+      await sleep(FETCH_BACKOFF_BASE_MS * (attempt + 1));
+    }
+  }
 }
 
 // Из `Retry-After` (секунды) считаем паузу, но не больше потолка; если заголовка
@@ -337,13 +361,11 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
     body = JSON.stringify(opts.body);
   }
 
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(
+    url,
+    { method, headers, body, signal: opts.signal, credentials: "same-origin" },
     method,
-    headers,
-    body,
-    signal: opts.signal,
-    credentials: "same-origin",
-  });
+  );
 
   // 401 with auth attached → attempt single refresh + retry. Refresh-токен
   // в HttpOnly cookie — браузер его прикрепит автоматически. Если cookie

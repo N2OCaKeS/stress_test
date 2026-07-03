@@ -44,6 +44,8 @@ import type {
 import type { Department } from "@/api/auth/types";
 import { ServerDetail } from "./ServerDetail";
 
+const FOCUS_REFETCH_THROTTLE_MS = 12_000;
+
 const STATUS_LABEL: Record<ServerStatus, string> = {
   unknown: "unknown",
   online: "online",
@@ -115,6 +117,7 @@ export function Server() {
   // (useCallback в хуке), поэтому держим его в ref и не пересоздаём интервал.
   const refetchRef = useRef(listQ.refetch);
   refetchRef.current = listQ.refetch;
+  const lastRefetchRef = useRef(0);
   useEffect(() => {
     if (zoneBlocked) return;
     const RESERVE_REFRESH_MS = 8_000;
@@ -123,7 +126,12 @@ export function Server() {
       // возврате.
       if (document.visibilityState === "visible") refetchRef.current();
     }, RESERVE_REFRESH_MS);
-    const onFocus = () => refetchRef.current();
+    const onFocus = () => {
+      const now = Date.now();
+      if (now - lastRefetchRef.current < FOCUS_REFETCH_THROTTLE_MS) return;
+      lastRefetchRef.current = now;
+      refetchRef.current();
+    };
     window.addEventListener("focus", onFocus);
     return () => {
       window.clearInterval(id);

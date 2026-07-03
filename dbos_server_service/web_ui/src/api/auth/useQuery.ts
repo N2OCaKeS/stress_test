@@ -23,6 +23,7 @@ export interface QueryState<T> {
   data: T | undefined;
   error: ApiError | Error | null;
   loading: boolean;
+  isFetching: boolean;
   refetch: () => void;
 }
 
@@ -41,18 +42,22 @@ export function useQuery<T>(
   const keepPreviousDataOnError = opts.keepPreviousDataOnError === true;
   const [data, setData] = useState<T | undefined>(undefined);
   const [error, setError] = useState<ApiError | Error | null>(null);
-  const [loading, setLoading] = useState<boolean>(enabled);
+  const [isFetching, setIsFetching] = useState<boolean>(enabled);
   const [tick, setTick] = useState(0);
+
+  // loading=true только при первичной загрузке (нет данных); при рефетче
+  // с существующими данными остаётся false — список не моргает.
+  const loading = isFetching && data === undefined;
 
   const refetch = useCallback(() => setTick((t) => t + 1), []);
 
   useEffect(() => {
     if (!enabled) {
-      setLoading(false);
+      setIsFetching(false);
       return;
     }
     let cancelled = false;
-    setLoading(true);
+    setIsFetching(true);
     setError(null);
     fn()
       .then((res) => {
@@ -69,7 +74,7 @@ export function useQuery<T>(
         else setError(new Error(String(err)));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setIsFetching(false);
       });
     return () => {
       cancelled = true;
@@ -77,5 +82,5 @@ export function useQuery<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick, enabled]);
 
-  return { data, error, loading, refetch };
+  return { data, error, loading, isFetching, refetch };
 }

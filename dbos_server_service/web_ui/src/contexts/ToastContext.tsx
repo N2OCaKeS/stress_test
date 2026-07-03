@@ -62,7 +62,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col-reverse gap-2 max-h-[calc(100vh-2rem)] overflow-hidden pointer-events-none">
         {toasts.map((t) => (
           <div key={t.id} className={`toast toast-${t.kind} pointer-events-auto`}>
             <span className="text-sm font-medium">{t.message}</span>

@@ -65,20 +65,33 @@ function RepoBadges({ repositories }: { repositories: string[] }) {
     return <span className="text-[11px] text-dim">репозитории не указаны</span>;
   }
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {repositories.map((url, i) => (
-        <a
-          key={`${url}-${i}`}
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          title={url}
-          className="badge flex items-center gap-1 max-w-full hover-bg transition-colors"
-        >
-          <Link2 className="w-3 h-3 shrink-0" />
-          <span className="truncate mono text-[11px]">{url}</span>
-        </a>
-      ))}
+    <div className="flex flex-col gap-1">
+      {repositories.map((repo, i) => {
+        // Репозиторий приходит строкой sources.list (`deb <url> <suite> <components>`),
+        // а не голым URL — ссылку вешаем только на извлечённый http(s)-адрес,
+        // саму строку показываем как текст.
+        const url = repo.match(/https?:\/\/[^\s]+/)?.[0];
+        return (
+          <div
+            key={`${repo}-${i}`}
+            title={repo}
+            className="badge flex items-center gap-1 max-w-full"
+          >
+            <span className="truncate mono text-[11px] flex-1">{repo}</span>
+            {url && (
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                title={`Открыть ${url}`}
+                className="shrink-0 text-dim hover:text-accent"
+              >
+                <Link2 className="w-3 h-3" />
+              </a>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

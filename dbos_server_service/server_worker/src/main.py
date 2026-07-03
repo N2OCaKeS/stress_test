@@ -1276,6 +1276,46 @@ async def audit_outbox_cleanup_published_old() -> None:
         )
 
 
+@broker.task(
+    "auto_inventory.sweep",
+    # Раз в сутки по AUTO_INVENTORY_CRON (default 04:00 MSK = 01:00 UTC).
+    # Регистрируем cron только когда включён и scheduler, и сам авто-inventory —
+    # иначе task висит на broker'е без расписания (для ручного kiq / testkit'а).
+    schedule=(
+        [{"cron": _settings.auto_inventory_cron}]
+        if _settings.scheduler_enabled and _settings.auto_inventory_enabled
+        else []
+    ),
+)
+async def auto_inventory_sweep() -> None:
+    """Плановый авто-inventory + power по всем подготовленным серверам.
+
+    Воркер даёт только расписание: дёргает server_service internal-эндпоинт
+    `/servers/auto-inventory-sweep`, а тот сам берёт список managed-серверов и
+    ставит inventory.sync + power.status на каждый через штатный dispatch
+    (outbox + идемпотентность). Так воркер не дублирует БД server_service.
+
+    Ошибки логируются с redact'ом и НЕ пробрасываются — один пропущенный tick
+    не должен валить scheduler-loop (симметрично housekeeping-cron'ам).
+    """
+    from src.services import server_service_client
+    from src.utils.redaction import redact_error_message
+
+    try:
+        summary = await server_service_client.trigger_auto_inventory_sweep()
+    except Exception as exc:  # noqa: BLE001 — periodic не должен крэшить scheduler
+        redacted = redact_error_message(f"{type(exc).__name__}: {exc}")
+        logger.warning("auto_inventory.sweep failed: %s", redacted)
+        return
+    logger.info(
+        "auto_inventory.sweep: managed=%s processed=%s dispatched=%s truncated=%s",
+        summary.get("total_managed"),
+        summary.get("processed"),
+        summary.get("dispatched_tasks"),
+        summary.get("truncated"),
+    )
+
+
 @broker.task("dispatch_outbox.poll")
 async def dispatch_outbox_poll_task() -> None:
     """Operator-ручка / ad-hoc kick'нуть один проход publisher'а.

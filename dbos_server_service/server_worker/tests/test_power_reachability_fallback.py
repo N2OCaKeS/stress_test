@@ -210,6 +210,131 @@ class TestPowerStatusReachabilityFallback:
         assert called["probe"] is False
 
 
+class TestPowerStatusNoIpmiFallback:
+    """Сервер без IPMI: fetch_ipmi_credentials падает до BMC-пробы.
+
+    Для managed-серверов без BMC power-state раньше вис `unknown` — таска
+    падала на `fetch_ipmi_credentials` ещё до reachability-fallback'а. Теперь
+    `IPMI_CREDENTIALS_UNAVAILABLE` уводит в сетевую пробу, а `power_state`
+    сохраняется через writeback (source ping/ssh).
+    """
+
+    def _capture_writeback(self, monkeypatch):
+        calls: list[dict] = []
+
+        async def fake_submit(server_id, power_state, source, target_department_id=None):
+            calls.append({
+                "server_id": server_id,
+                "power_state": power_state,
+                "source": source,
+            })
+            return {"ok": True, "power_state": power_state, "checked_at": "x"}
+
+        monkeypatch.setattr(
+            "src.tasks.power.server_service_client.submit_power_state", fake_submit,
+        )
+        return calls
+
+    async def test_no_ipmi_but_ssh_open_reports_on_and_writes_back(
+        self, make_task, fetch_task, monkeypatch,
+    ):
+        from src.core.exceptions import CredentialFetchError
+
+        tid = await make_task(
+            task_kind="power.status",
+            target_server_id="srv_1",
+            payload={"server_id": "srv_1", "host": "10.0.0.9"},
+        )
+
+        async def fake_fetch(server_id, target_department_id=None):
+            raise CredentialFetchError(
+                error_code="IPMI_CREDENTIALS_UNAVAILABLE",
+                message="no ipmi",
+            )
+
+        async def fake_probe(host, *, ssh_port, ping_timeout, tcp_timeout):
+            assert host == "10.0.0.9"
+            return "ssh"
+
+        monkeypatch.setattr(
+            "src.tasks.power.server_service_client.fetch_ipmi_credentials", fake_fetch,
+        )
+        monkeypatch.setattr("src.tasks.power.probe_power_reachability", fake_probe)
+        writes = self._capture_writeback(monkeypatch)
+
+        await power.power_status.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result == {"power_state": "on", "source": "ssh"}
+        # power_state реально уходит обратно в server_service, а не только в result.
+        assert writes == [{"server_id": "srv_1", "power_state": "on", "source": "ssh"}]
+
+    async def test_no_ipmi_and_unreachable_reports_unknown(
+        self, make_task, fetch_task, monkeypatch,
+    ):
+        from src.core.exceptions import CredentialFetchError
+
+        tid = await make_task(
+            task_kind="power.status",
+            target_server_id="srv_1",
+            payload={"server_id": "srv_1", "host": "10.0.0.9"},
+        )
+
+        async def fake_fetch(server_id, target_department_id=None):
+            raise CredentialFetchError(
+                error_code="IPMI_CREDENTIALS_UNAVAILABLE", message="no ipmi",
+            )
+
+        async def fake_probe(host, *, ssh_port, ping_timeout, tcp_timeout):
+            return None
+
+        monkeypatch.setattr(
+            "src.tasks.power.server_service_client.fetch_ipmi_credentials", fake_fetch,
+        )
+        monkeypatch.setattr("src.tasks.power.probe_power_reachability", fake_probe)
+        writes = self._capture_writeback(monkeypatch)
+
+        await power.power_status.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result == {"power_state": "unknown", "source": "bmc"}
+        assert writes == [{"server_id": "srv_1", "power_state": "unknown", "source": "bmc"}]
+
+    async def test_server_service_unreachable_fails_task(
+        self, make_task, fetch_task, monkeypatch,
+    ):
+        """Транспортный сбой server_service — реально временный, идём в retry/FAILED,
+        а не выдаём ложный fallback."""
+        from src.core.exceptions import CredentialFetchError
+
+        tid = await make_task(
+            task_kind="power.status",
+            target_server_id="srv_1",
+            payload={"server_id": "srv_1", "host": "10.0.0.9"},
+        )
+
+        async def fake_fetch(server_id, target_department_id=None):
+            raise CredentialFetchError(
+                error_code="SERVER_SERVICE_UNREACHABLE", message="down",
+            )
+
+        called = {"probe": False}
+
+        async def fake_probe(*a, **k):
+            called["probe"] = True
+            return "ssh"
+
+        monkeypatch.setattr(
+            "src.tasks.power.server_service_client.fetch_ipmi_credentials", fake_fetch,
+        )
+        monkeypatch.setattr("src.tasks.power.probe_power_reachability", fake_probe)
+
+        await power.power_status.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status != TaskStatus.SUCCEEDED
+        assert called["probe"] is False
+
+
 class TestProbeReachabilityUnit:
     def test_strip_host_variants(self):
         assert _reachability._strip_host("10.0.0.1") == "10.0.0.1"

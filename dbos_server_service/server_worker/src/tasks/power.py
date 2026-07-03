@@ -31,7 +31,7 @@ from src.clients.ipmitool import IpmitoolError
 from src.clients.redfish import RedfishError
 from src.core.config import get_settings
 from src.core.constants import STASH_TTL_SECONDS
-from src.core.exceptions import AppException
+from src.core.exceptions import AppException, CredentialFetchError
 from src.core.identifiers import validate_task_id
 from src.main import broker
 from src.services import redis_pool
@@ -436,7 +436,24 @@ async def power_status(task_id: str) -> None:
     async def _impl(payload: dict) -> dict:
         server_id = payload["server_id"]
         target_dept = payload.get("target_department_id")
-        creds = await server_service_client.fetch_ipmi_credentials(server_id, target_dept)
+        try:
+            creds = await server_service_client.fetch_ipmi_credentials(server_id, target_dept)
+        except CredentialFetchError as exc:
+            # У сервера нет IPMI-контроллера (либо dept-mismatch/authz) —
+            # состояние по BMC определить нечем. Для managed-серверов без BMC
+            # это штатная ситуация: определяем питание по сетевой достижимости
+            # самого сервера, а не валим read-only запрос. Транспортный сбой
+            # server_service (`SERVER_SERVICE_UNREACHABLE`) — реально временный,
+            # его пробрасываем в retry.
+            if exc.error_code == "SERVER_SERVICE_UNREACHABLE":
+                raise
+            logger.info(
+                "power.status: IPMI credentials unavailable (%s), trying "
+                "reachability fallback", exc.error_code,
+            )
+            result = await _power_status_via_reachability(payload)
+            await _writeback_power_state(server_id, result, target_dept)
+            return result
         host = _extract_bmc_host(creds["endpoint_url"])
         try:
             await _breaker.check(host)

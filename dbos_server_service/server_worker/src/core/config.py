@@ -347,6 +347,29 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Плановый авто-inventory + power подготовленных серверов ──────────
+    # Периодик `auto_inventory.sweep` по cron'у дёргает server_service
+    # internal-эндпоинт /servers/auto-inventory-sweep — тот ставит inventory.sync
+    # + power.status на все managed-серверы. Воркер лишь даёт расписание,
+    # фан-аут и throttle живут на стороне server_service. Регистрируется только
+    # при `scheduler_enabled AND auto_inventory_enabled`.
+    auto_inventory_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enable the periodic auto-inventory/power sweep task "
+            "(`auto_inventory.sweep`). Requires SCHEDULER_ENABLED as well."
+        ),
+    )
+    auto_inventory_cron: str = Field(
+        # 04:00 MSK = 01:00 UTC. taskiq читает cron в UTC; 04:00 МСК — ночной
+        # низкий traffic, со сдвигом от housekeeping-cleanup'ов (00:00-00:30 UTC).
+        default="0 1 * * *",
+        description=(
+            "Cron for the periodic auto-inventory/power sweep (UTC, taskiq). "
+            "Default `0 1 * * *` = 04:00 MSK, once a day."
+        ),
+    )
+
     # ── Worker identity / heartbeat / orphan sweep ──────────────────────
     # `worker_id` — стабильный идентификатор replica. В k8s достаточно
     # hostname (== pod name); для bare-metal или dev — явно задаваемое

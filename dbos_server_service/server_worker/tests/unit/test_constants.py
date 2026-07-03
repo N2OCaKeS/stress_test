@@ -45,6 +45,7 @@ class TestTaskKind:
 # outbox-движок, heartbeat'ы. `TaskKind` — каталог именно server-dispatch'абельных
 # kind'ов, не всех зарегистрированных тасков.
 _NON_DISPATCH_BROKER_TASKS = frozenset({
+    "auto_inventory.sweep",
     "audit_outbox.cleanup_published_old",
     "dispatch_outbox.cleanup_old",
     "dispatch_outbox.poll",

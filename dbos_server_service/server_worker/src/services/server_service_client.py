@@ -329,6 +329,28 @@ async def submit_power_state(
     )
 
 
+async def trigger_auto_inventory_sweep() -> dict:
+    """Запустить плановый авто-inventory прогон на стороне server_service.
+
+    Периодик `auto_inventory.sweep` (worker-scheduler) даёт лишь расписание;
+    сам фан-аут (список managed-серверов + dispatch inventory.sync + power.status
+    на каждый) делает server_service — воркер не дублирует его БД. Прогон
+    платформенный, без привязки к отделу, поэтому `X-Target-Department-Id` не шлём.
+
+    Возвращает: `{ok, total_managed, processed, dispatched_tasks, truncated}` от
+    `POST /api/server/v1/internal/servers/auto-inventory-sweep`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `AUTO_INVENTORY_SWEEP_REJECTED` — server_service вернул не 2xx.
+    """
+    return await _request(
+        "post",
+        "/api/server/v1/internal/servers/auto-inventory-sweep",
+        reject_code="AUTO_INVENTORY_SWEEP_REJECTED",
+    )
+
+
 async def fetch_management_credentials(
     server_id: str,
     target_department_id: str | None = None,

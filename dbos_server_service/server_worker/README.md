@@ -195,6 +195,7 @@ taskiq scheduler src.main:scheduler
 | `tasks.cleanup_completed_old` | `0 0 * * *` (03:00 MSK) | DELETE SUCCEEDED/FAILED task'ов старше `TASKS_RETENTION_DAYS` (default 30d); bounded growth `tasks`. QUEUED/RUNNING не трогаем — это работа orphan-sweep'а. |
 | `audit_outbox.cleanup_published_old` | `30 0 * * *` (03:30 MSK) | DELETE published outbox-row'ов (как delivered, так и DLQ-poisoned) старше `AUDIT_OUTBOX_RETENTION_DAYS` (default 90d). Сдвиг от `tasks.cleanup_completed_old` чтобы не пересекаться по DB-write нагрузке. |
 | `tasks.recover_scheduled_retries` | `*/1 * * * *` | periodic recovery «зависших» retry-row'ов: `status='queued' AND scheduled_retry_at <= now()` re-kick'ается через CAS `list_due_scheduled_retries` (SKIP LOCKED). Закрывает дыру startup-only recovery: если фоновая `_RETRY_TASKS`-task молча отменилась (GC / event-loop / чужой cancel), без minute-cron'а row застряла бы до рестарта. |
+| `auto_inventory.sweep` | `AUTO_INVENTORY_CRON` (default `0 1 * * *` = 04:00 MSK) | Плановый авто-inventory: дёргает server_service internal `/servers/auto-inventory-sweep`, тот ставит inventory.sync + power.status на все managed-серверы. Регистрируется с cron'ом только при `SCHEDULER_ENABLED AND AUTO_INVENTORY_ENABLED`. |
 
 Cron в taskiq читается в UTC; MSK-времена в комментариях для оператора. Расписания планируем по московскому времени (Europe/Moscow, UTC+3), а в БД и брокер всё уходит в UTC. Hardware-handlers (`power.*`, `ipmi.rotate_password`) используют BMC dispatcher из `tasks/_bmc_helpers.py`: HEAD-probe `/redfish/v1/` → Redfish-клиент, иначе fallback на `ipmitool` (`clients/ipmitool.py`).
 
@@ -243,6 +244,8 @@ make test-worker
 |---|---|---|
 | `WORKER_SHUTDOWN_TIMEOUT_SECONDS` | `30.0` | grace при SIGTERM/`WORKER_SHUTDOWN`. После таймаута survivors → `mark_pending_for_retry` (если attempts < max) или `mark_failed("worker_shutdown")` |
 | `SCHEDULER_ENABLED` | `false` | при `true` periodic'и регистрируются с cron-label; при `false` task'и есть на broker'е (нужны для `find_task`), но не дёргаются автоматически |
+| `AUTO_INVENTORY_ENABLED` | `true` | регистрировать ли периодик `auto_inventory.sweep` с cron-label (требует и `SCHEDULER_ENABLED=true`) |
+| `AUTO_INVENTORY_CRON` | `0 1 * * *` (04:00 MSK) | cron (UTC) планового авто-inventory прогона `auto_inventory.sweep` |
 | `WORKER_ID` | hostname-pid | стабильный идентификатор replica для heartbeat и orphan-sweep'а |
 | `WORKER_ORPHAN_THRESHOLD_SECONDS` | `1800.0` | мин. длительность `status='running'` чтобы task считался orphan-кандидатом (потолок realistic impl-runtime) |
 | `WORKER_HEARTBEAT_STALE_SECONDS` | `300.0` | через сколько без heartbeat'а worker_id считается мёртвым; должно быть заметно больше cron-периода (60s) |

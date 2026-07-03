@@ -12,10 +12,11 @@ function err(
   message = "raw backend message",
   details?: Record<string, unknown>,
   retryAfter?: number,
+  requestId?: string,
 ): ApiError {
   return new ApiError(
     status,
-    { error: "x", error_code: code, message, details },
+    { error: "x", error_code: code, message, details, request_id: requestId },
     retryAfter,
   );
 }
@@ -85,6 +86,29 @@ describe("apiErrMsg integration", () => {
     expect(apiErrMsg(err(404, "WIDGET_NOT_FOUND", "no widget"))).toBe(
       "WIDGET_NOT_FOUND: no widget",
     );
+  });
+
+  it("surfaces the backend message for unmapped codes instead of a generic text", () => {
+    const out = apiErrMsg(
+      err(500, "SOME_UNMAPPED_CODE", "database is on fire"),
+      "Ошибка",
+    );
+    expect(out).toContain("database is on fire");
+    expect(out).not.toBe("Ошибка");
+  });
+
+  it("keeps request_id in the tail for support diagnostics", () => {
+    const unmapped = apiErrMsg(
+      err(404, "WIDGET_NOT_FOUND", "no widget", undefined, undefined, "req_42"),
+    );
+    expect(unmapped).toContain("no widget");
+    expect(unmapped).toContain("req_42");
+
+    const mapped = apiErrMsg(
+      err(409, "LAST_ACCOUNT_ADMIN", "m", undefined, undefined, "req_99"),
+    );
+    expect(mapped).toContain("LAST_ACCOUNT_ADMIN");
+    expect(mapped).toContain("req_99");
   });
 
   it("falls back for plain errors and non-errors", () => {

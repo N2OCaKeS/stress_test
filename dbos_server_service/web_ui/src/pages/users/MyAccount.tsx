@@ -30,7 +30,7 @@ import {
   revokeToken,
 } from "@/api/auth/tokens";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -181,8 +181,7 @@ function ProfileCard({
       // получают новый display_name без перезагрузки страницы.
       await reloadIdentity?.();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`${e.errorCode}: ${e.message}`);
-      else toast.error("Не удалось обновить профиль");
+      toast.error(apiErrMsg(e, "Не удалось обновить профиль"));
     } finally {
       setSaving(false);
     }
@@ -201,8 +200,7 @@ function ProfileCard({
       // просим родителя пере-смонтировать карточку и обновить useQuery.
       onSessionsInvalidated?.();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось отозвать сессии");
+      toast.error(apiErrMsg(e, "Не удалось отозвать сессии"));
     } finally {
       setBusy(false);
     }
@@ -387,8 +385,7 @@ function PasswordCard({ mockMode }: { mockMode: boolean }) {
       setNewPwd("");
       setConfirm("");
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`${e.errorCode}: ${e.message}`);
-      else toast.error(String(e));
+      toast.error(apiErrMsg(e, String(e)));
     } finally {
       setBusy(false);
     }
@@ -490,8 +487,7 @@ function TokensCard({ mockMode }: { mockMode: boolean }) {
       if (oneShot?.token_id === t.token_id) setOneShot(null);
       q.refetch();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось отозвать токен");
+      toast.error(apiErrMsg(e, "Не удалось отозвать токен"));
     }
   }
 
@@ -661,8 +657,7 @@ function CreatePatForm({
       });
       onCreated(resp);
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось создать токен");
+      toast.error(apiErrMsg(e, "Не удалось создать токен"));
     } finally {
       setPending(false);
     }
@@ -844,8 +839,7 @@ function SessionsCard({ mockMode }: { mockMode: boolean }) {
       toast.success("Сессия завершена");
       sessQ.refetch();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось завершить сессию");
+      toast.error(apiErrMsg(e, "Не удалось завершить сессию"));
     } finally {
       setBusy(null);
     }
@@ -862,8 +856,7 @@ function SessionsCard({ mockMode }: { mockMode: boolean }) {
       toast.success(`Отозвано: ${r.revoked_count}`);
       sessQ.refetch();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось отозвать сессии");
+      toast.error(apiErrMsg(e, "Не удалось отозвать сессии"));
     } finally {
       setBusy(null);
     }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Layers, Plus, Trash2, Wrench } from "lucide-react";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import {
   createService,
   deleteService,
@@ -90,7 +90,7 @@ function PlatformServicesCatalog() {
     try {
       setItems(await listServices());
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Не удалось загрузить сервисы";
+      const msg = apiErrMsg(e, "Не удалось загрузить сервисы");
       setLoadErr(msg);
       toast.error(msg);
     } finally {
@@ -197,8 +197,7 @@ function ServiceRow({
       void invalidateLabels("services");
       await onChange();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось удалить сервис");
+      toast.error(apiErrMsg(e, "Не удалось удалить сервис"));
     } finally {
       setPending(false);
     }
@@ -255,8 +254,7 @@ function CreateForm({
       void invalidateLabels("services");
       onCreated();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось создать сервис");
+      toast.error(apiErrMsg(e, "Не удалось создать сервис"));
     } finally {
       setPending(false);
     }

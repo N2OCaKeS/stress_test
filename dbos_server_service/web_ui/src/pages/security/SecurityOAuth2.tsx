@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Copy, Plus, Trash2, Unplug } from "lucide-react";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import {
   buildAuthorizeUrl,
   createClient,
@@ -33,7 +33,7 @@ export function SecurityOAuth2() {
     try {
       setItems(await listClients());
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Не удалось загрузить клиентов";
+      const msg = apiErrMsg(e, "Не удалось загрузить клиентов");
       setLoadErr(msg);
       toast.error(msg);
     } finally {
@@ -157,8 +157,7 @@ function ClientRow({
       toast.success("Клиент деактивирован");
       await onChange();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось удалить клиента");
+      toast.error(apiErrMsg(e, "Не удалось удалить клиента"));
     } finally {
       setPending(false);
     }
@@ -248,8 +247,7 @@ function ClientForm({
       });
       onCreated(r);
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось создать клиента");
+      toast.error(apiErrMsg(e, "Не удалось создать клиента"));
     } finally {
       setPending(false);
     }
@@ -531,8 +529,7 @@ function TokenTester() {
       setResult(r);
       toast.success("Токен получен");
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Ошибка получения токена");
+      toast.error(apiErrMsg(e, "Ошибка получения токена"));
     } finally {
       setPending(false);
     }

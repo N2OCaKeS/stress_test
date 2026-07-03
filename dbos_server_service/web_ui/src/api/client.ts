@@ -88,12 +88,15 @@ export class ApiError extends Error {
  * Для топовых actionable-кодов (см. `@/api/errorMessages`) показываем
  * человекочитаемую подсказку «что произошло и что делать», а сырой код —
  * приглушённым хвостом для саппорта. Незнакомые коды деградируют к прежнему
- * формату `CODE: message`.
+ * формату `CODE: message`. Если бэк прислал `request_id` — добавляем его в
+ * тот же хвост, чтобы юзер мог назвать трассировку при обращении в саппорт.
  */
 export function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
   if (e instanceof ApiError) {
     const hint = humanErrMsg(e);
-    if (hint) return `${hint} (${e.errorCode})`;
+    const tail = e.requestId ? `${e.errorCode} · ${e.requestId}` : e.errorCode;
+    if (hint) return `${hint} (${tail})`;
+    if (e.requestId) return `${e.errorCode}: ${e.message} (${e.requestId})`;
     return `${e.errorCode}: ${e.message}`;
   }
   if (e instanceof Error) return e.message;

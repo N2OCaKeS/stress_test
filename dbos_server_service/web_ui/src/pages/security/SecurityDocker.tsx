@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Container, FileText, KeyRound, Loader2, RefreshCcw } from "lucide-react";
-import { ApiError } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
 import {
   deleteRegistry,
   getDockerCerts,
@@ -19,9 +19,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 
 function errToMessage(e: unknown): string {
-  if (e instanceof ApiError) return e.message;
-  if (e instanceof Error) return e.message;
-  return String(e);
+  return apiErrMsg(e, String(e));
 }
 
 function parseIdList(input: string): string[] {
@@ -454,7 +452,7 @@ function CertsAndJwks() {
     try {
       setPem(await getDockerCerts());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Ошибка загрузки PEM");
+      toast.error(apiErrMsg(e, "Ошибка загрузки PEM"));
     } finally {
       setPendingPem(false);
     }
@@ -464,7 +462,7 @@ function CertsAndJwks() {
     try {
       setJwks(await getDockerJwks());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Ошибка загрузки JWKS");
+      toast.error(apiErrMsg(e, "Ошибка загрузки JWKS"));
     } finally {
       setPendingJwks(false);
     }

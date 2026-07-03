@@ -241,6 +241,33 @@ class TestRotateManagementCredentials:
             aad=secrets_service.aad_for_server_mgmt_ssh_key(row.id),
         ) == creds_old["private_key"]
 
+    async def test_rotate_rejected_when_pending(
+        self, client, operator_token_a, make_server, db, monkeypatch,
+    ):
+        # Первая ротация повесила pending. Повторный dispatch до applied должен
+        # отбиться 409, не тронув previous (реально стоящий на боксе ключ).
+        srv, creds_old = await self._seed_prepared(db, make_server)
+        make_dispatch_capture(monkeypatch)
+        first = await client.post(
+            f"{BASE}/{srv.id}/management-credentials/rotate",
+            headers=_hdr(operator_token_a),
+        )
+        assert first.status_code == 202, first.text
+        row = (await db.execute(select(Server).where(Server.id == srv.id))).scalar_one()
+        assert row.mgmt_creds_pending_apply is True
+        previous_before = row.previous_mgmt_ssh_private_key_encrypted
+        current_before = row.mgmt_ssh_private_key_encrypted
+
+        second = await client.post(
+            f"{BASE}/{srv.id}/management-credentials/rotate",
+            headers=_hdr(operator_token_a),
+        )
+        assert_error(second, 409, "MGMT_ROTATION_PENDING")
+
+        row2 = (await db.execute(select(Server).where(Server.id == srv.id))).scalar_one()
+        assert row2.previous_mgmt_ssh_private_key_encrypted == previous_before
+        assert row2.mgmt_ssh_private_key_encrypted == current_before
+
     async def test_rotate_requires_prepared(
         self, client, operator_token_a, make_server, db, monkeypatch,
     ):

@@ -137,6 +137,7 @@ POST-CREATE эндпоинты (`POST /servers`, `POST /server-accounts`, `POST 
 | `ACTION_NOT_INSTANCE_GRANTABLE` | 422 | инстанс-grant на глобально-только action (`create`, callback'и воркера, `view_management_credentials`, `manage_ignored_logins`) |
 | `WEAK_PASSWORD` | 422 | пароль не прошёл политику |
 | `PREPARE_REQUIRED` | 409 | inventory.sync / users.inventory / installed-packages на неподготовленный сервер (`is_managed=False`) — сначала prepare |
+| `MGMT_ROTATION_PENDING` | 409 | ротация управляющих кред при незавершённой предыдущей (`mgmt_creds_pending_apply=True`) — дождаться applied или расстопорить |
 | `ACCOUNT_NOT_LINKED` | 404 | prepare account-режим: `account_id` не привязан к этому серверу |
 | `ACCOUNT_HAS_NO_PASSWORD` | 409 | prepare account-режим: у выбранного аккаунта нет сохранённого пароля |
 | `RATE_LIMIT_EXCEEDED` | 429 | per-IP или global rate-limit пробит |
@@ -541,7 +542,9 @@ Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403, весь б�
 
 Auth: Bearer + `(server, *, update)` (тот же гейт, что у prepare). Сервер обязан быть prepared (`is_managed`). Dispatch'ит `server.rotate_management_creds`: server_service генерит новую Ed25519-пару + пароль управляющего пользователя, переносит текущий ciphertext в `previous_mgmt_*` (анти-локаут), пишет новый в `mgmt_*`, ставит `mgmt_creds_pending_apply=True` и кладёт новый материал в Redis-stash. Worker заходит ДЕЙСТВУЮЩИМ ключом (internal-fetch отдаёт previous, пока pending), ставит новый pubkey + chpasswd, проверяет вход новым ключом, затем POST'ит `/internal/servers/{id}/management-credentials/applied`, после чего server_service снимает pending и зануляет previous. 202. CRITICAL audit `server.management_creds_rotated`.
 
-Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `PREPARE_REQUIRED` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `WORKER_REDIS_UNAVAILABLE` / `WORKER_UNREACHABLE` / `WORKER_REDIS_NOT_CONFIGURED` (503).
+Пока предыдущая ротация не подтверждена (`mgmt_creds_pending_apply=True`) — новая отбивается `409 MGMT_ROTATION_PENDING`: повторный перенос `mgmt_*`→`previous_*` затёр бы реально стоящий на боксе ключ ещё не раскатанным материалом. Расстопорить — дождаться applied-callback'а или сбросить застрявшую ротацию вручную.
+
+Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `PREPARE_REQUIRED` / `MGMT_ROTATION_PENDING` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `WORKER_REDIS_UNAVAILABLE` / `WORKER_UNREACHABLE` / `WORKER_REDIS_NOT_CONFIGURED` (503).
 
 ---
 

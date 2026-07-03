@@ -16,7 +16,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import DomainValidationError
+from src.core.exceptions import ConflictError, DomainValidationError
 from src.models import Server
 from src.services import secrets_service
 from src.services.server_account import (
@@ -117,7 +117,26 @@ async def rotate_management_credentials(
     пишется в `mgmt_*`, ставится `mgmt_creds_pending_apply=True`. Flush в этой
     же транзакции, commit делает caller. Возвращает `{public_key, private_key,
     password}` нового материала для dispatch-stash'а воркер-таски.
+
+    Если предыдущая ротация ещё не подтверждена боксом
+    (`mgmt_creds_pending_apply=True`) — новую не запускаем: `previous_mgmt_*`
+    сейчас хранит реально стоящий на сервере ключ, а `mgmt_*` — ещё не
+    раскатанный. Повторный перенос затёр бы рабочий previous не установленным
+    материалом, и после этого fetch отдал бы воркеру ключ, которого на боксе
+    нет (потеря управляющего доступа). Поднимаем `ConflictError` — оператор
+    должен дождаться applied-callback'а или расстопорить застрявшую ротацию.
     """
+    if server.mgmt_creds_pending_apply:
+        raise ConflictError(
+            error_code="MGMT_ROTATION_PENDING",
+            message=(
+                "Management credentials rotation is already in progress or "
+                "stuck (pending apply). Wait for it to be applied on the box "
+                "or reset it before starting a new rotation."
+            ),
+            details={"server_id": server.id},
+        )
+
     aad_ssh = secrets_service.aad_for_server_mgmt_ssh_key(server.id)
     aad_pwd = secrets_service.aad_for_server_mgmt_password(server.id)
 

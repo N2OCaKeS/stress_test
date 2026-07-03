@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.core.exceptions import AppException
+from src.core.exceptions import AppException, ConflictError
 from src.services import management_creds as mgmt
 from src.services import secrets_service
 
@@ -96,3 +96,29 @@ class TestRotateManagementCredentials:
             srv.mgmt_ssh_private_key_encrypted,
             aad=secrets_service.aad_for_server_mgmt_ssh_key(srv.id),
         ) == new_creds["private_key"]
+
+    async def test_rejects_when_previous_rotation_still_pending(self, db, make_server):
+        # Первая ротация оставила pending_apply=True (apply не доехал). Повторная
+        # не должна двигать mgmt_*→previous_*, иначе затрёт реально стоящий на
+        # боксе ключ ещё не раскатанным материалом.
+        srv = await make_server(department_id="dep_a")
+        _, creds1, _ = await mgmt.ensure_management_credentials(db, srv)
+        srv.mgmt_creds_pending_apply = False
+        await db.flush()
+        await mgmt.rotate_management_credentials(db, srv)
+        assert srv.mgmt_creds_pending_apply is True
+
+        # Снимок previous до попытки повторной ротации.
+        previous_priv_before = srv.previous_mgmt_ssh_private_key_encrypted
+        previous_pwd_before = srv.previous_mgmt_password_encrypted
+        current_priv_before = srv.mgmt_ssh_private_key_encrypted
+
+        with pytest.raises(ConflictError) as exc_info:
+            await mgmt.rotate_management_credentials(db, srv)
+        assert exc_info.value.error_code == "MGMT_ROTATION_PENDING"
+
+        # previous не затёрт: анти-локаут держит прежний рабочий ключ.
+        assert srv.previous_mgmt_ssh_private_key_encrypted == previous_priv_before
+        assert srv.previous_mgmt_password_encrypted == previous_pwd_before
+        # current тоже не тронут — нового материала не сгенерилось.
+        assert srv.mgmt_ssh_private_key_encrypted == current_priv_before

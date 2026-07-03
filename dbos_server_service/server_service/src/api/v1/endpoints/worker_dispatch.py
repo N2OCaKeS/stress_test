@@ -1794,7 +1794,7 @@ async def _prepare_resolve_and_dispatch(
         400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
         403: {"description": "Нет роли с `update` либо чужой department."},
         404: {"description": "Сервер не найден / чужой dept (скрыто за 404)."},
-        409: {"description": "SERVER_DECOMMISSIONED / PREPARE_REQUIRED (сервер не prepared) / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
+        409: {"description": "SERVER_DECOMMISSIONED / PREPARE_REQUIRED (сервер не prepared) / MGMT_ROTATION_PENDING (предыдущая ротация не подтверждена) / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
         503: {"description": "Worker недоступен — WORKER_REDIS_UNAVAILABLE (Redis-stash) или WORKER_UNREACHABLE / WORKER_REDIS_NOT_CONFIGURED."},
     },
 )
@@ -1865,6 +1865,24 @@ async def server_rotate_management_credentials_dispatch(
             message=(
                 "Server is not prepared for management; run POST "
                 "/servers/{id}/prepare before rotating management credentials"
+            ),
+        )
+
+    # Предыдущая ротация ещё висит неподтверждённой — новую не запускаем.
+    # Иначе перенос `mgmt_*`→`previous_*` затёр бы реально стоящий на боксе
+    # ключ не установленным материалом (см. rotate_management_credentials).
+    if server.mgmt_creds_pending_apply:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "rotation_pending", "department_id": server.department_id},
+        )
+        raise ConflictError(
+            error_code="MGMT_ROTATION_PENDING",
+            message=(
+                "Management credentials rotation is already in progress or "
+                "stuck (pending apply). Wait for it to be applied on the box "
+                "or reset it before starting a new rotation."
             ),
         )
 

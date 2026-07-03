@@ -118,7 +118,7 @@ class TestUsersInventoryTrigger:
         assert captured_dispatch[0]["payload"] == {
             "server_id": srv.id,
             "target_department_id": "dep_a",
-            "host": srv.hostname,
+            "host": str(srv.ip_address),
             "ssh_port": srv.ssh_port,
             "is_managed": True,
             "management_user": "dbos",
@@ -158,10 +158,12 @@ class TestUsersInventoryTrigger:
     ):
         # Симметрия с `_dispatch_for_server`: dispatch payload должен нести
         # `host`/`ssh_port`, иначе SSH-клиент воркера фоллбэкается на
-        # `server_id` (UUID) и ходит в несуществующий хост.
+        # `server_id` (UUID) и ходит в несуществующий хост. В host едет IP,
+        # а не hostname — короткие имена не резолвятся из пода воркера.
         srv = await make_server(
             department_id="dep_a",
             hostname="srv-with-host.example.local",
+            ip_address="10.177.103.155",
         )
         await _prepared(db, srv)
         resp = await client.post(
@@ -169,7 +171,7 @@ class TestUsersInventoryTrigger:
         )
         assert resp.status_code == 202, resp.text
         payload = captured_dispatch[0]["payload"]
-        assert payload["host"] == "srv-with-host.example.local"
+        assert payload["host"] == "10.177.103.155"
         assert payload["host"] != srv.id
         assert payload["ssh_port"] == srv.ssh_port
 

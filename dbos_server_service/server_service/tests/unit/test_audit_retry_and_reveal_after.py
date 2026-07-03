@@ -461,6 +461,7 @@ def test_installed_packages_handler_passes_max_rows(monkeypatch):
     class _Server:
         id = "srv_1"
         hostname = "h"
+        ip_address = "10.20.30.40"
         ssh_port = 22
         department_id = "dep_a"
         status = "active"
@@ -504,6 +505,8 @@ def test_installed_packages_handler_passes_max_rows(monkeypatch):
     )
 
     assert captured["payload"]["max_rows"] == ip._MAX_INSTALLED_PACKAGES_ROWS
+    # Таргет воркера — IP сервера, не короткий hostname.
+    assert captured["payload"]["host"] == "10.20.30.40"
 
 
 # ── 10. ipmi_controller view-success после reveal'а ─────────────────────────

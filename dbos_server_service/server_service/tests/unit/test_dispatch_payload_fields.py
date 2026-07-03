@@ -68,7 +68,7 @@ class TestServerDispatchPayloadHasSshFields:
         assert "ssh_port" in p
         assert "is_managed" in p
         assert "management_user" in p
-        assert p["host"] == srv.hostname
+        assert p["host"] == str(srv.ip_address)
         assert p["ssh_port"] == srv.ssh_port
         assert p["is_managed"] is False
         assert p["management_user"] is None
@@ -84,7 +84,7 @@ class TestServerDispatchPayloadHasSshFields:
             f"{BASE}/servers/{srv.id}/inventory/sync", headers=_hdr(operator_token_a),
         )
         p = captured_dispatch[0]["payload"]
-        assert p["host"] == srv.hostname
+        assert p["host"] == str(srv.ip_address)
         assert p["ssh_port"] == srv.ssh_port
         assert p["is_managed"] is True
 
@@ -145,7 +145,7 @@ class TestInstalledPackagesPayloadSshFields:
         )
         assert len(captured_dispatch) == 1
         p = captured_dispatch[0]["payload"]
-        assert p["host"] == srv.hostname
+        assert p["host"] == str(srv.ip_address)
         assert p["ssh_port"] == srv.ssh_port
         assert p["pattern"] == "*"
         # Managed-сервер — вход по ключу, аккаунта в payload нет.
@@ -198,7 +198,7 @@ class TestAccountTaskPayloadSshFields:
         )
         assert resp.status_code == 202, resp.text
         p = captured_dispatch[0]["payload"]
-        assert p["host"] == srv.hostname
+        assert p["host"] == str(srv.ip_address)
         assert p["ssh_port"] == srv.ssh_port
         assert p["is_managed"] is False
         assert p["management_user"] is None
@@ -219,7 +219,7 @@ class TestAccountTaskPayloadSshFields:
             headers=_hdr(operator_token_a),
         )
         p = captured_dispatch[0]["payload"]
-        assert p["host"] == srv.hostname
+        assert p["host"] == str(srv.ip_address)
         assert "has_sudo" not in p, "rotate не включает sudo-атрибуты"
         assert "shell" not in p
 
@@ -237,4 +237,4 @@ class TestAccountTaskPayloadSshFields:
         assert len(captured_dispatch) == 1
         p = captured_dispatch[0]["payload"]
         assert p["remove_home"] is True
-        assert p["host"] == srv.hostname
+        assert p["host"] == str(srv.ip_address)

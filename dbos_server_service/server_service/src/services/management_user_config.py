@@ -149,7 +149,8 @@ def _sync_payload(server, config: ManagementUserConfigResponse) -> dict:
     return {
         "server_id": server.id,
         "target_department_id": server.department_id,
-        "host": server.hostname,
+        # SSH — по IP, не по hostname (короткие имена не резолвятся из пода).
+        "host": str(server.ip_address),
         "ssh_port": server.ssh_port,
         "is_managed": server.is_managed,
         "management_user": server.management_user,

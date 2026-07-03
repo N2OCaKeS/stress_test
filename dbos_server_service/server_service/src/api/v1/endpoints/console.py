@@ -330,13 +330,14 @@ async def _bridge(
     pubsub = client.pubsub()
     await pubsub.subscribe(ctl_ch, out_ch)
     try:
-        # Старт PTY на worker'е. host / port server_service знает из server-row;
+        # Старт PTY на worker'е. host (IP, не hostname — короткие имена не
+        # резолвятся из пода) / port server_service знает из server-row;
         # логин/пароль аккаунта лежат в Redis-stash, в start едет только ссылка
         # `creds_stash_key` — worker коннектится под аккаунтом по password-auth.
         await client.publish(ctl_ch, json.dumps({
             "action": "start",
             "server_id": server.id,
-            "host": server.hostname,
+            "host": str(server.ip_address),
             "ssh_port": server.ssh_port,
             "creds_stash_key": creds_stash_key,
             "account_id": account_id,

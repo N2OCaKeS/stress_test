@@ -154,9 +154,11 @@ def _build_account_task_payload(
         "account_id": account.id,
         "target_department_id": server.department_id,
         # Адресация по SSH: ключи `host`/`ssh_port` читает воркер в
-        # ssh_client._extract_host / _extract_port; без них fallback на
-        # server_id (UUID) рвёт DNS-резолв на dev-стендах.
-        "host": server.hostname,
+        # ssh_client._extract_host / _extract_port. В host кладём IP, а не
+        # hostname — короткие имена не резолвятся из пода воркера (resolv.conf
+        # только с k8s CoreDNS), IP достижим без резолва. Без host воркер
+        # фоллбэчится на server_id (UUID) и вовсе рвёт подключение.
+        "host": str(server.ip_address),
         "ssh_port": server.ssh_port,
         "login": account.login,
         # На подготовленном сервере worker заходит под управляющим пользователем
@@ -1685,7 +1687,8 @@ async def _prepare_resolve_and_dispatch(
     payload: dict = {
         "server_id": server_id,
         "target_department_id": server.department_id,
-        "host": server.hostname,
+        # SSH — по IP, не по hostname (короткие имена не резолвятся из пода).
+        "host": str(server.ip_address),
         "ssh_port": server.ssh_port,
         "is_managed": server.is_managed,
         "management_user": server.management_user,
@@ -1917,7 +1920,8 @@ async def server_rotate_management_credentials_dispatch(
     payload: dict = {
         "server_id": server.id,
         "target_department_id": server.department_id,
-        "host": server.hostname,
+        # SSH — по IP, не по hostname (короткие имена не резолвятся из пода).
+        "host": str(server.ip_address),
         "ssh_port": server.ssh_port,
         "is_managed": server.is_managed,
         "management_user": server.management_user,

@@ -75,7 +75,7 @@ class TestAutoRefreshAfterPrepare:
         assert all(c["target_server_id"] == srv.id for c in captured_dispatch)
         # power.status payload несёт host/ssh_port для reachability-пробы.
         power = next(c for c in captured_dispatch if c["task_kind"] == "power.status")
-        assert power["payload"]["host"] == srv.hostname
+        assert power["payload"]["host"] == str(srv.ip_address)
         assert power["payload"]["ssh_port"] == srv.ssh_port
 
     async def test_prepared_stays_ok_when_dispatch_fails(

@@ -47,7 +47,10 @@ def build_ssh_task_payload(
     payload: dict = {
         "server_id": server.id,
         "target_department_id": server.department_id,
-        "host": server.hostname,
+        # SSH идёт по IP, а не по hostname: короткие имена серверов не
+        # резолвятся из пода воркера (в resolv.conf только k8s CoreDNS без
+        # корп-DNS), а IP достижим без резолва.
+        "host": str(server.ip_address),
         "ssh_port": server.ssh_port,
         "is_managed": server.is_managed,
         "management_user": server.management_user,

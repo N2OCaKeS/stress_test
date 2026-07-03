@@ -52,12 +52,13 @@ def _auto_payload(server) -> dict:
     Тот же набор, что строит `build_ssh_task_payload` в endpoint-слое
     (`host`/`ssh_port` — SSH-адресация; `is_managed`/`management_user` — вход
     под управляющим ключом). power.status использует только `host`/`ssh_port`
-    для reachability-пробы, лишние ключи игнорирует.
+    для reachability-пробы, лишние ключи игнорирует. В host — IP, а не hostname:
+    короткие имена не резолвятся из пода воркера, IP достижим без резолва.
     """
     return {
         "server_id": server.id,
         "target_department_id": server.department_id,
-        "host": server.hostname,
+        "host": str(server.ip_address),
         "ssh_port": server.ssh_port,
         "is_managed": server.is_managed,
         "management_user": server.management_user,

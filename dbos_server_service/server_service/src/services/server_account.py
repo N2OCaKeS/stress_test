@@ -1648,7 +1648,8 @@ async def _dispatch_deprovision_after_unlink(
             "server_id": server.id,
             "account_id": account_id,
             "target_department_id": server.department_id,
-            "host": server.hostname,
+            # SSH — по IP, не по hostname (короткие имена не резолвятся из пода).
+            "host": str(server.ip_address),
             "ssh_port": server.ssh_port,
             "login": login,
             "is_managed": server.is_managed,

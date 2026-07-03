@@ -135,6 +135,7 @@ def _make_server(
     return SimpleNamespace(
         id="srv_console1",
         hostname="host.example",
+        ip_address="10.20.30.40",
         ssh_port=22,
         is_managed=is_managed,
         management_user="dbos",
@@ -468,6 +469,8 @@ async def test_bridge_publishes_input_and_relays_output(monkeypatch, _patch_cons
     assert start, "start control message not published"
     start_obj = json.loads(start[0])
     assert start_obj["server_id"] == "srv_console1"
+    # Worker коннектится по IP, а не по короткому hostname.
+    assert start_obj["host"] == "10.20.30.40"
     assert start_obj["actor_id"] == "usr_1"
     assert start_obj["account_id"] == "acc_1"
     # Креды едут ссылкой на Redis-stash, не plaintext'ом.

@@ -116,7 +116,7 @@ class TestDispatchSuccess:
         assert call["target_resource_id"] is None
         assert call["payload"] == {
             "server_id": srv.id,
-            "host": srv.hostname,
+            "host": str(srv.ip_address),
             "ssh_port": srv.ssh_port,
             "patterns": ["linux-image*"],
             "pattern": "linux-image*",

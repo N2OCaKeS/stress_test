@@ -19,9 +19,12 @@ import {
   PanelLeftOpen,
   BookOpen,
   HardDrive,
+  ExternalLink,
   type LucideIcon,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
+import { useQuery } from "@/api/auth/useQuery";
+import { getNavLinks } from "@/api/auth/navLinks";
 import {
   hasServerZoneAccess,
   hasAuditLogAccess,
@@ -92,6 +95,17 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
   // Хук обязан вызываться до любого условного return (rules-of-hooks): иначе
   // при смене роли в рамках сессии счётчик хуков разъезжается.
   const deptLabel = useDeptLabelOpt(persona.dept_id);
+
+  // Настраиваемые кнопки (напр. «allta»): backend отдаёт только те, что видны
+  // отделу пользователя. Хук зовём безусловно (rules-of-hooks), но для
+  // account_admin выключаем — он видит развёрнутый AdminOnlyPanel без сервис-
+  // навигации, кнопка ему не показывается. Ошибку/пустоту тихо гасим — кнопки
+  // просто нет.
+  const navLinksQ = useQuery(() => getNavLinks(), [], {
+    enabled: persona.platform_role !== "account_admin",
+    keepPreviousDataOnError: true,
+  });
+  const customNavLinks = navLinksQ.data ?? [];
 
   // account_admin живёт целиком в админ-каталоге — для него превращаем левую
   // панель в развёрнутый навигатор по /admin без «Главной» и сервис-чипов.
@@ -212,6 +226,19 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
           <HardDrive className="w-5 h-5 text-accent shrink-0" />
           {!collapsed && <div className="flex-1 text-sm">ОС</div>}
         </Link>
+        {customNavLinks.map((link) => (
+          <a
+            key={`${link.label}-${link.url}`}
+            href={link.url}
+            target="_blank"
+            rel="noreferrer"
+            title={collapsed ? link.label : undefined}
+            className={`chip ${collapsed ? "justify-center" : ""}`}
+          >
+            <ExternalLink className="w-5 h-5 text-accent shrink-0" />
+            {!collapsed && <div className="flex-1 text-sm">{link.label}</div>}
+          </a>
+        ))}
       </nav>
 
       {!collapsed && (

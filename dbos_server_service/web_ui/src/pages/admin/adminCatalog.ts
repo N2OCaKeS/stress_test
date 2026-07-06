@@ -7,6 +7,7 @@ import {
   Building2,
   Clock,
   Container,
+  ExternalLink,
   EyeOff,
   FileText,
   HardDrive,
@@ -41,6 +42,7 @@ import { ServicesServerPermissions } from "./services/ServicesServerPermissions"
 import { ServicesOsVersions } from "./services/ServicesOsVersions";
 import { ServicesIgnoredLogins } from "./services/ServicesIgnoredLogins";
 import { ServicesManagementUser } from "./services/ServicesManagementUser";
+import { ServicesNavLink } from "./services/ServicesNavLink";
 import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
 import { ServicesSecretPermissions } from "./services/ServicesSecretPermissions";
 import { ServicesLogingRules } from "./services/ServicesLogingRules";
@@ -180,6 +182,18 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "auth",
     content: ServicesCatalog,
+    visibleFor: (p) => isAccountAdmin(p),
+  },
+  {
+    id: "services.nav_link",
+    label: "Кнопка «allta»",
+    hint: "настраиваемая кнопка левой панели",
+    icon: ExternalLink,
+    block: "services",
+    group: "auth",
+    content: ServicesNavLink,
+    // Конфиг платформенный: подпись/URL/видимость по отделам. Гейтится
+    // account_admin; остальным backend отвечает 403 на /admin/nav-links.
     visibleFor: (p) => isAccountAdmin(p),
   },
 

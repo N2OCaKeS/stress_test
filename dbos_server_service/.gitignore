@@ -27,6 +27,10 @@ htmlcov/
 .env
 .env.local
 
+# Prod-compose стек: секреты и TLS-серты (генерятся scripts/compose/*.sh)
+.env.prod
+certs/
+
 # k8s secrets + ingress (генерируется scripts/k8s/gen_secrets.sh, содержит prod-секреты и домен)
 k8s/20-secrets.yaml
 k8s/21-keystore-secrets.yaml

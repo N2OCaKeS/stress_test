@@ -61,6 +61,11 @@ E2E     = docker compose -f tests/integration/docker-compose.test.yml
 DEV     = docker compose -f docker-compose.dev.yml
 K8S     = kubectl -n dbos
 
+# Prod-подобный стек в docker-compose (без k8s). Секреты — из .env.prod
+# (--env-file), TLS — из ./certs. См. docker-compose.prod.yml.
+PROD_ENV = .env.prod
+PROD     = docker compose -f docker-compose.prod.yml --env-file $(PROD_ENV)
+
 # Prod DNS-имя для будущего DNS-доступа. По умолчанию запекается в SAN
 # self-signed сертификата вместе с auto-IP, чтобы тот же cert валидировался
 # и сейчас (по IP), и позже (когда DNS пропишется), без перевыпуска.
@@ -111,7 +116,8 @@ _DEV_WORKER_BOT_TOKEN = dbos_bot_dev_worker_local_token_do_not_use_in_prod
         k8s-rotation-disable k8s-rotation-enable \
         k8s-backup-secret-full k8s-tls-renew \
         k8s-cronjob-list k8s-cronjob-history k8s-cronjob-suspend k8s-cronjob-resume \
-        prod-deploy deploy
+        prod-deploy deploy \
+        prod-up prod-down prod-down-v prod-logs prod-ps prod-build
 
 ##@ Dev: стек в Docker (без devcontainer)
 
@@ -775,6 +781,49 @@ prod-deploy: ## Meta: build → check secrets → deploy (вкл. миграци
 	@echo "✓ prod-deploy завершён."
 
 deploy: prod-deploy ## Алиас prod-deploy: одна команда поднимает всё (build → secrets-check → deploy+keystore+migrate → openapi → smoke).
+
+##@ Prod-стек в docker-compose (без k8s)
+
+prod-up: ## Поднять prod-подобный стек: gen секретов+сертов → build → up → миграции → показать доступ. PROD_HOST=/PROD_IP= для SAN сертификата.
+	@echo "→ [1/5] Секреты (.env.prod)..."
+	@bash scripts/compose/gen_prod_env.sh
+	@echo ""
+	@echo "→ [2/5] TLS-сертификаты (внутренний CA + leaf)..."
+	@PROD_HOST="$(PROD_HOST)" PROD_IP="$(PROD_IP)" bash scripts/compose/gen_certs.sh
+	@echo ""
+	@echo "→ [3/5] Сборка образов..."
+	@$(PROD) build
+	@echo ""
+	@echo "→ [4/5] Подъём стека (миграции — one-shot, ждём готовности сервисов)..."
+	@$(PROD) up -d --wait
+	@echo ""
+	@echo "→ [5/5] Готово."
+	@echo "═══════════════════════════════════════════════════════════════════"
+	@echo "  DBOS Server Manager — prod-стек поднят"
+	@echo "═══════════════════════════════════════════════════════════════════"
+	@printf "  URL:      https://%s/\n" "$(if $(PROD_HOST),$(PROD_HOST),$(if $(PROD_IP),$(PROD_IP),localhost))"
+	@printf "  Логин:    %s\n" "$$(grep -E '^INITIAL_ADMIN_USERNAME=' $(PROD_ENV) | cut -d= -f2-)"
+	@printf "  Пароль:   %s   (СМЕНИТЬ при первом входе)\n" "$$(grep -E '^INITIAL_ADMIN_PASSWORD=' $(PROD_ENV) | cut -d= -f2-)"
+	@echo ""
+	@echo "  TLS — самоподписанный внутренний CA. Импортируй в доверенные корневые:"
+	@printf "    curl -k https://%s/emm-ca.crt -o emm-ca.crt   (или http://.../emm-ca.crt без TLS)\n" "$(if $(PROD_HOST),$(PROD_HOST),$(if $(PROD_IP),$(PROD_IP),localhost))"
+	@echo "  Пока CA не импортирован — обращайся с curl -k / verify=False."
+	@echo "═══════════════════════════════════════════════════════════════════"
+
+prod-build: ## Пересобрать образы prod-стека (без подъёма)
+	@$(PROD) build
+
+prod-down: ## Остановить prod-стек (данные в volume'ах сохраняются)
+	@$(PROD) down
+
+prod-down-v: ## Остановить prod-стек И удалить volume'ы (БД, keystore, redis — полная очистка)
+	@$(PROD) down -v
+
+prod-logs: ## tail -f логов всех сервисов prod-стека (Ctrl+C для выхода)
+	@$(PROD) logs -f
+
+prod-ps: ## Статус контейнеров prod-стека
+	@$(PROD) ps
 
 ##@ Справка
 

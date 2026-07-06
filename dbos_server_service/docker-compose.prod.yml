@@ -1,0 +1,521 @@
+# Prod-подобный стек в docker-compose (аналог make k8s-zero, но без k8s).
+#
+# Самодостаточен для изолированных сред: свой reverse-proxy с TLS, свой CA,
+# все секреты — из .env.prod (scripts/compose/gen_prod_env.sh). Наружу торчит
+# только reverse-proxy (443 + 80→редирект). Backend'ы слушают plain http
+# внутри compose-сети (их HTTPS-guard отключён так же, как в k8s за ingress'ом),
+# TLS терминирует reverse-proxy.
+#
+# Запуск — через Makefile (он подставляет --env-file .env.prod):
+#   make prod-up        сгенерить env+серты, собрать, поднять, показать доступ
+#   make prod-down      остановить (данные в volume'ах сохраняются)
+#   make prod-down-v    остановить + удалить volume'ы (полная очистка)
+#   make prod-logs / prod-ps / prod-build
+#
+# Порядок старта: postgres (healthcheck) → *_migrate (alembic upgrade head,
+# один shot на сервис) → сервисы (depends_on migrate completed) → reverse-proxy.
+
+services:
+  # ── PostgreSQL: по кластеру на сервис ───────────────────────────────────────
+  auth-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${AUTH_DB_USER}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD}
+      POSTGRES_DB: auth_db
+    volumes:
+      - auth_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d auth_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  logging-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${LOGGING_DB_USER}
+      POSTGRES_PASSWORD: ${LOGGING_DB_PASSWORD}
+      POSTGRES_DB: logging_db
+    volumes:
+      - logging_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d logging_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  server-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${SERVER_DB_USER}
+      POSTGRES_PASSWORD: ${SERVER_DB_PASSWORD}
+      POSTGRES_DB: server_db
+    volumes:
+      - server_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d server_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  worker-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${WORKER_DB_USER}
+      POSTGRES_PASSWORD: ${WORKER_DB_PASSWORD}
+      POSTGRES_DB: worker_db
+    volumes:
+      - worker_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d worker_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  secret-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${SECRET_DB_USER}
+      POSTGRES_PASSWORD: ${SECRET_DB_PASSWORD}
+      POSTGRES_DB: secret_db
+    volumes:
+      - secret_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d secret_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # ── Redis: broker (0) + auth rate-limit (1) + secret rate-limit (2) ─────────
+  redis:
+    image: redis:7-alpine
+    command:
+      - "sh"
+      - "-c"
+      - "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # ── Миграции: один shot на сервис (alembic upgrade head), затем exit 0 ──────
+  auth-migrate:
+    build:
+      context: ./auth_service
+      dockerfile: docker/Dockerfile
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    env_file: [.env.prod]
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql+psycopg://${AUTH_DB_USER}:${AUTH_DB_PASSWORD}@auth-postgres:5432/auth_db
+      SECRET_KEY: ${AUTH_SECRET_KEY}
+      LOGGING_SERVICE_URL: http://logging_service:8001
+      LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY_AUTH}
+      SERVICE_API_KEYS: ${AUTH_INBOUND_SERVICE_API_KEYS_JSON}
+      RATE_LIMIT_STORAGE_URI: redis://:${REDIS_PASSWORD}@redis:6379/1
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  logging-migrate:
+    build:
+      context: ./loging_service
+      dockerfile: docker/Dockerfile
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    env_file: [.env.prod]
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql+psycopg://${LOGGING_DB_USER}:${LOGGING_DB_PASSWORD}@logging-postgres:5432/logging_db
+      AUTH_SERVICE_URL: http://auth_service:8000
+      SERVICE_API_KEYS: ${LOGGING_SERVICE_API_KEYS_JSON}
+      INTROSPECT_SERVICE_API_KEY: ${LOGGING_INTROSPECT_SERVICE_API_KEY}
+    depends_on:
+      logging-postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  server-migrate:
+    build:
+      context: ./server_service
+      dockerfile: docker/Dockerfile
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    env_file: [.env.prod]
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql+psycopg://${SERVER_DB_USER}:${SERVER_DB_PASSWORD}@server-postgres:5432/server_db
+      SERVER_WORKER_DATABASE_URL: postgresql+psycopg://${WORKER_DB_USER}:${WORKER_DB_PASSWORD}@worker-postgres:5432/worker_db
+      SERVER_WORKER_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_SERVICE_URL: http://logging_service:8001
+      SERVICE_API_KEY: ${SERVER_SERVICE_API_KEY}
+      SERVICE_API_KEYS: ${SERVER_INBOUND_SERVICE_API_KEYS}
+      LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY_SERVER}
+    depends_on:
+      server-postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  worker-migrate:
+    build:
+      context: ./server_worker
+      dockerfile: docker/Dockerfile
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    env_file: [.env.prod]
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql+psycopg://${WORKER_DB_USER}:${WORKER_DB_PASSWORD}@worker-postgres:5432/worker_db
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_SERVICE_URL: http://logging_service:8001
+      SERVER_SERVICE_URL: http://server_service:8002
+      LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY_WORKER}
+      SERVICE_API_KEY: ${WORKER_SERVICE_API_KEY}
+      WORKER_ID: migrate-job
+    depends_on:
+      worker-postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  secret-migrate:
+    build:
+      context: ./secret_service
+      dockerfile: docker/Dockerfile
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    env_file: [.env.prod]
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql+psycopg://${SECRET_DB_USER}:${SECRET_DB_PASSWORD}@secret-postgres:5432/secret_db
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_SERVICE_URL: http://logging_service:8001
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+      SERVICE_API_KEYS: ${SECRET_INBOUND_SERVICE_API_KEYS}
+      LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY_SECRET}
+      INTROSPECT_SERVICE_API_KEY: ${SECRET_INTROSPECT_SERVICE_API_KEY}
+    depends_on:
+      secret-postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  # ── loging_service ──────────────────────────────────────────────────────────
+  logging_service:
+    build:
+      context: ./loging_service
+      dockerfile: docker/Dockerfile
+    init: true
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001", "--proxy-headers", "--forwarded-allow-ips=*"]
+    env_file: [.env.prod]
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DBOS_HTTPS_GUARD_DISABLED: "true"
+      APP_LOG_LEVEL: INFO
+      INGEST_RATE_LIMIT: "1000/minute"
+      DATABASE_URL: postgresql+psycopg://${LOGGING_DB_USER}:${LOGGING_DB_PASSWORD}@logging-postgres:5432/logging_db
+      AUTH_SERVICE_URL: http://auth_service:8000
+      SERVICE_API_KEYS: ${LOGGING_SERVICE_API_KEYS_JSON}
+      INTROSPECT_SERVICE_API_KEY: ${LOGGING_INTROSPECT_SERVICE_API_KEY}
+      LOGGING_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME}
+      LOGGING_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD}
+    depends_on:
+      logging-postgres:
+        condition: service_healthy
+      logging-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 http://localhost:8001/api/logging/v1/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  # ── auth_service ──────────────────────────────────────────────────────────────
+  auth_service:
+    build:
+      context: ./auth_service
+      dockerfile: docker/Dockerfile
+    init: true
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+    env_file: [.env.prod]
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DBOS_HTTPS_GUARD_DISABLED: "true"
+      APP_LOG_LEVEL: INFO
+      ACCESS_TOKEN_TTL_MINUTES: "10"
+      REFRESH_TOKEN_TTL_DAYS: "14"
+      DATABASE_URL: postgresql+psycopg://${AUTH_DB_USER}:${AUTH_DB_PASSWORD}@auth-postgres:5432/auth_db
+      SECRET_KEY: ${AUTH_SECRET_KEY}
+      LOGGING_SERVICE_URL: http://logging_service:8001
+      LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY_AUTH}
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+      SERVICE_API_KEYS: ${AUTH_INBOUND_SERVICE_API_KEYS_JSON}
+      # Каскад lifecycle (delete user/dept) в secret_service. Host без точки —
+      # intracluster, prod-guard пропускает http (см. auth config _is_intracluster_host).
+      SECRET_SERVICE_URL: http://secret_service:8003
+      SECRET_INTERNAL_API_KEY: ${SECRET_INTERNAL_API_KEY}
+      SECRET_SERVICE_TLS_VERIFY: "false"
+      # Docker registry token-flow.
+      DOCKER_REGISTRY_ISSUER: auth_service
+      DOCKER_TOKEN_TTL_MINUTES: "5"
+      DOCKER_REGISTRY_SERVICE: registry.local:5000
+      DOCKER_RSA_PRIVATE_KEY: ${DOCKER_RSA_PRIVATE_KEY}
+      RATE_LIMIT_STORAGE_URI: redis://:${REDIS_PASSWORD}@redis:6379/1
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth-migrate:
+        condition: service_completed_successfully
+      logging_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 http://localhost:8000/api/auth/v1/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  # ── server_service ────────────────────────────────────────────────────────────
+  server_service:
+    build:
+      context: ./server_service
+      dockerfile: docker/Dockerfile
+    init: true
+    env_file: [.env.prod]
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DBOS_HTTPS_GUARD_DISABLED: "true"
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8002"
+      APP_LOG_LEVEL: INFO
+      INTERNAL_REQUIRE_DEPT_HEADER: "true"
+      INTROSPECT_TLS_VERIFY: "false"
+      SLOWAPI_RATE_LIMIT: "500/minute"
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_SERVICE_URL: http://logging_service:8001
+      DATABASE_URL: postgresql+psycopg://${SERVER_DB_USER}:${SERVER_DB_PASSWORD}@server-postgres:5432/server_db
+      SERVER_WORKER_DATABASE_URL: postgresql+psycopg://${WORKER_DB_USER}:${WORKER_DB_PASSWORD}@worker-postgres:5432/worker_db
+      SERVER_WORKER_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      SERVICE_API_KEY: ${SERVER_SERVICE_API_KEY}
+      SERVICE_API_KEYS: ${SERVER_INBOUND_SERVICE_API_KEYS}
+      LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY_SERVER}
+      # Файловый keystore мастер-ключей на volume — ключи ротации переживают
+      # пересоздание контейнера (в k8s ту же роль играет KEYSTORE_BACKEND=k8s).
+      KEYSTORE_BACKEND: file
+      KEYSTORE_PATH: /data/keystore.json
+    volumes:
+      - server_keystore:/data
+    depends_on:
+      server-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      server-migrate:
+        condition: service_completed_successfully
+      auth_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 http://localhost:8002/api/server/v1/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  # ── secret_service ────────────────────────────────────────────────────────────
+  secret_service:
+    build:
+      context: ./secret_service
+      dockerfile: docker/Dockerfile
+    init: true
+    env_file: [.env.prod]
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DBOS_HTTPS_GUARD_DISABLED: "true"
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8003"
+      APP_LOG_LEVEL: INFO
+      INTROSPECT_TLS_VERIFY: "false"
+      SLOWAPI_RATE_LIMIT: "500/minute"
+      SWEEP_ENABLED: "true"
+      SWEEP_INTERVAL_SECONDS: "3600"
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_SERVICE_URL: http://logging_service:8001
+      DATABASE_URL: postgresql+psycopg://${SECRET_DB_USER}:${SECRET_DB_PASSWORD}@secret-postgres:5432/secret_db
+      RATE_LIMIT_STORAGE_URI: redis://:${REDIS_PASSWORD}@redis:6379/2
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+      SERVICE_API_KEYS: ${SECRET_INBOUND_SERVICE_API_KEYS}
+      LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY_SECRET}
+      INTROSPECT_SERVICE_API_KEY: ${SECRET_INTROSPECT_SERVICE_API_KEY}
+      KEYSTORE_BACKEND: file
+      KEYSTORE_PATH: /data/keystore.json
+    volumes:
+      - secret_keystore:/data
+    depends_on:
+      secret-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      secret-migrate:
+        condition: service_completed_successfully
+      auth_service:
+        condition: service_healthy
+      logging_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 http://localhost:8003/api/secret/v1/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  # ── server_worker (taskiq consumer) ─────────────────────────────────────────
+  server_worker:
+    build:
+      context: ./server_worker
+      dockerfile: docker/Dockerfile
+    init: true
+    command: ["taskiq", "worker", "src.main:broker", "--workers", "2"]
+    env_file: [.env.prod]
+    environment:
+      APP_ENV: production
+      WORKER_LOG_LEVEL: INFO
+      REDFISH_VERIFY_TLS: "false"
+      SECRETS_REENCRYPT_ENABLED: "true"
+      SCHEDULER_ENABLED: "false"
+      DATABASE_URL: postgresql+psycopg://${WORKER_DB_USER}:${WORKER_DB_PASSWORD}@worker-postgres:5432/worker_db
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      SERVER_SERVICE_DATABASE_URL: postgresql+psycopg://${SERVER_DB_USER}:${SERVER_DB_PASSWORD}@server-postgres:5432/server_db
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_SERVICE_URL: http://logging_service:8001
+      SERVER_SERVICE_URL: http://server_service:8002
+      LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY_WORKER}
+      SERVICE_API_KEY: ${WORKER_SERVICE_API_KEY}
+      USER: worker
+      LOGNAME: worker
+    depends_on:
+      worker-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      worker-migrate:
+        condition: service_completed_successfully
+      server_service:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -aql taskiq /proc/[0-9]*/cmdline 2>/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── server-worker-scheduler (ровно 1, фаерит периодику в broker) ────────────
+  server_worker_scheduler:
+    build:
+      context: ./server_worker
+      dockerfile: docker/Dockerfile
+    init: true
+    command: ["taskiq", "scheduler", "src.main:scheduler"]
+    env_file: [.env.prod]
+    environment:
+      APP_ENV: production
+      WORKER_LOG_LEVEL: INFO
+      SCHEDULER_ENABLED: "true"
+      DATABASE_URL: postgresql+psycopg://${WORKER_DB_USER}:${WORKER_DB_PASSWORD}@worker-postgres:5432/worker_db
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      SERVER_SERVICE_DATABASE_URL: postgresql+psycopg://${SERVER_DB_USER}:${SERVER_DB_PASSWORD}@server-postgres:5432/server_db
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_SERVICE_URL: http://logging_service:8001
+      SERVER_SERVICE_URL: http://server_service:8002
+      LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY_WORKER}
+      SERVICE_API_KEY: ${WORKER_SERVICE_API_KEY}
+      USER: worker
+      LOGNAME: worker
+    depends_on:
+      worker-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      worker-migrate:
+        condition: service_completed_successfully
+      server_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -aql taskiq /proc/[0-9]*/cmdline 2>/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── web-ui (nginx со собранным SPA) ─────────────────────────────────────────
+  web_ui:
+    build:
+      context: ./web_ui
+      dockerfile: Dockerfile
+    init: true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # ── reverse-proxy: единственная точка входа (TLS-терминация + роутинг) ──────
+  reverse_proxy:
+    image: nginx:1.27-alpine
+    init: true
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./docker/compose-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      auth_service:
+        condition: service_healthy
+      logging_service:
+        condition: service_healthy
+      server_service:
+        condition: service_healthy
+      secret_service:
+        condition: service_healthy
+      web_ui:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/emm-ca.crt || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  auth_pg:
+  logging_pg:
+  server_pg:
+  worker_pg:
+  secret_pg:
+  redis_data:
+  server_keystore:
+  secret_keystore:

@@ -12,7 +12,7 @@ import { Link } from "react-router-dom";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
-import { hasAuditLogAccess, isLogingAdmin, isReadOnlyForCluster } from "@/lib/rbac";
+import { hasAuditLogAccess, isLogingAdmin } from "@/lib/rbac";
 import { formatMsk } from "@/lib/datetime";
 import { useTimeoutRef } from "@/lib/useTimeoutRef";
 import { exportEvents, getEventStats } from "@/api/loging/events";
@@ -40,7 +40,6 @@ const numFmt = new Intl.NumberFormat("ru-RU");
 
 export function ClusterAuditOverview() {
   const { persona } = usePersona();
-  const readonly = isReadOnlyForCluster(persona);
   const mockMode = useMockMode();
 
   const canAudit = hasAuditLogAccess(persona);
@@ -60,15 +59,6 @@ export function ClusterAuditOverview() {
       {mockMode && mockToast && (
         <div className="toast toast-success absolute top-2 right-2 z-30">
           <span className="text-sm font-medium">{mockToast}</span>
-        </div>
-      )}
-      {readonly && (
-        <div className="readonly-bar">
-          <ShieldAlert className="w-3.5 h-3.5" />
-          <span>
-            <b>Read-only · logging_reader.</b> Доступен только просмотр статистики
-            и переход в полный лог. Менять правила и retention нельзя.
-          </span>
         </div>
       )}
       {!mockMode && (canAudit ? <LiveAudit canConfigureRules={canConfigureRules} /> : <NoAuditRole />)}

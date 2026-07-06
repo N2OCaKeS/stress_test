@@ -6,13 +6,10 @@ import {
   LockKeyhole,
   RefreshCw,
   ServerIcon,
-  ShieldAlert,
 } from "lucide-react";
 import { CLUSTER_PODS } from "@/mocks/cluster";
 import { pingCluster, type ServicePing } from "@/api/cluster/health";
-import { usePersona } from "@/contexts/PersonaContext";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
-import { isReadOnlyForCluster } from "@/lib/rbac";
 
 const ICONS = {
   lock: LockKeyhole,
@@ -55,8 +52,6 @@ function PingRow({ p }: { p: ServicePing }) {
 }
 
 export function ClusterHealth() {
-  const { persona } = usePersona();
-  const readonly = isReadOnlyForCluster(persona);
   const mockMode = useMockMode();
 
   // pingCluster никогда не бросает — error-ветка useQuery здесь не сработает,
@@ -69,15 +64,6 @@ export function ClusterHealth() {
 
   return (
     <div className="space-y-4 w-full">
-      {readonly && (
-        <div className="readonly-bar">
-          <ShieldAlert className="w-3.5 h-3.5" />
-          <span>
-            <b>Read-only · logging_reader.</b> Доступен только просмотр статуса
-            кластера.
-          </span>
-        </div>
-      )}
       {!mockMode && (
         <div className="card">
           <div className="flex items-center justify-between mb-3">

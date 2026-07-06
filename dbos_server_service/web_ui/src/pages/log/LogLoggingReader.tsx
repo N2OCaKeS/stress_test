@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   TriangleAlert,
-  ShieldAlert,
   Download,
   Filter,
   Cog,
@@ -21,14 +20,6 @@ export function LogLoggingReader() {
   return (
     <Shell breadcrumb="loging_service / events">
       <div className="flex flex-col flex-1 min-w-0">
-        <div className="readonly-bar">
-          <ShieldAlert className="w-3.5 h-3.5" />
-          <span>
-            <b>Read-only · loging_reader доступ.</b> Создавать ruleset, помечать
-            события и менять retention нельзя. Доступен только просмотр и
-            экспорт JSON.
-          </span>
-        </div>
         <div className="flex-1 flex min-h-0">
           <LogMiddle
             selected={selected}

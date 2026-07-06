@@ -38,6 +38,16 @@ export function isLogingAdmin(persona: Persona): boolean {
 }
 
 /**
+ * True для любой платформенной роли логирования (logging_admin / logging_reader
+ * / logging_reader_dep, плюс legacy-написание loging_*). Всё, что им нужно,
+ * лежит в чипах левой панели — кнопка «Администрирование» им не показывается.
+ */
+export function isLogingRole(persona: Persona): boolean {
+  const role = persona.platform_role ?? "";
+  return role.startsWith("logging") || role.startsWith("loging");
+}
+
+/**
  * True для платформенных ролей, которым сервисы бизнес-данных отказывают в
  * доступе целиком: `account_admin`, `logging_admin`, `logging_reader`. У этих
  * ролей нет департамента, а server/secret/worker — dept-scoped. server_service

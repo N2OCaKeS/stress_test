@@ -29,6 +29,7 @@ import {
   hasServerZoneAccess,
   hasAuditLogAccess,
   hasSecretZoneAccess,
+  isLogingRole,
 } from "@/lib/rbac";
 import type { ServiceName } from "@/types/persona";
 import { useDeptLabelOpt } from "@/lib/labels";
@@ -280,7 +281,7 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
       </nav>
 
       <div className="mt-auto shrink-0 flex flex-col">
-        {persona.has_admin && (
+        {persona.has_admin && !isLogingRole(persona) && (
           <div className="p-2 border-t border-token flex flex-col gap-0.5">
             <Link
               to="/admin"

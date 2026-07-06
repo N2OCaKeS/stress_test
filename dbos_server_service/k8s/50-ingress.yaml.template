@@ -108,3 +108,25 @@ spec:
   redirectScheme:
     scheme: https
     permanent: true
+
+---
+# Раздача CA по ПЛЕЙН-HTTP без редиректа — для bootstrap доверия в
+# автоматизациях: скрипт качает `http://<host>/emm-ca.crt` и передаёт файл в
+# verify (например requests verify=...), после чего ходит по HTTPS. Exact-Path
+# + высокий priority, чтобы этот роут матчился раньше catch-all redirect'а на
+# entryPoint web. Без host — работает и по IP, и по DNS.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: dbos-ca-http
+  namespace: dbos
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Path(`/emm-ca.crt`)
+      kind: Rule
+      priority: 1000
+      services:
+        - name: web-ui
+          port: 8080

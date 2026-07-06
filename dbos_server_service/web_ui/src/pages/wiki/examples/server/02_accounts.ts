@@ -426,5 +426,89 @@ print(resp.json()["task_id"])  # tsk_…`,
       notes:
         "Ответ 202: { operation: 'deprovision', server_id, task_id, status }. Нет delete → 403. Аккаунт не найден / server_id не привязан → 404. Списанный сервер / idempotent-конфликт → 409. Worker недоступен → 503. Связка аккаунт↔сервер остаётся — это только удаление с бокса.",
     },
+    {
+      id: "account-apply-credentials",
+      title: "Пробросить текущие пароль+ssh-ключ на серверы (apply)",
+      method: "POST",
+      path: "/api/server/v1/server-accounts/{account_id}/apply",
+      auth: "Bearer + (server_account, *, rotate_password)",
+      description:
+        "Ручной проброс: ставит account.update_on_host на все серверы, где аккаунт присутствует (present_on_server=true), донося сохранённые в БД пароль и ssh-ключ (chpasswd + authorized_keys). Тот же apply, что авто-запускается после смены/ротации пароля или ssh-ключа — зовут вручную, чтобы добить серверы, недоступные в момент ротации. Best-effort: недоступный/списанный/не-present сервер уходит в skipped, не валит остальные. Ответ 202 со сводкой { tasks, skipped } — не один task_id, а по задаче на каждый затронутый сервер.",
+      curl: `curl -X POST {{BASE_URL}}/api/server/v1/server-accounts/acc_a6a30466eb0e42f4926782acd5c3b5e4/apply \\
+  -H "Authorization: Bearer {{TOKEN}}"`,
+      python: `import requests
+
+base_url = "{{BASE_URL}}"
+token = "{{TOKEN}}"
+account_id = "acc_a6a30466eb0e42f4926782acd5c3b5e4"
+
+resp = requests.post(
+    f"{base_url}/api/server/v1/server-accounts/{account_id}/apply",
+    headers={"Authorization": f"Bearer {token}"},
+)
+resp.raise_for_status()
+result = resp.json()
+
+for t in result["tasks"]:
+    print("queued:", t["server_id"], t["task_id"])
+for s in result["skipped"]:
+    print("skipped:", s["server_id"], s["reason"])  # decommissioned | not_present | worker_unreachable`,
+      notes:
+        "Ответ 202: { id, login, tasks[], skipped[] }. Гейт — та же плоскость, что у ротации пароля (rotate_password). Каждую поставленную задачу можно доопрашивать через GET /tasks/{id}. Нет rotate_password → 403. Аккаунт не найден / чужой dept → 404. Аудит server_account.apply_credentials.",
+    },
+    {
+      id: "account-previous-ssh-key-get",
+      title: "Скачать ПРЕЖНИЙ приватный SSH-ключ (переходный период)",
+      method: "GET",
+      path: "/api/server/v1/server-accounts/{account_id}/previous_ssh_private_key",
+      auth: "Bearer + (server_account, *, view_password)",
+      description:
+        "Отдаёт удержанный прежний приватный ssh-ключ аккаунта (previous_ssh_private_key_encrypted) в PEM — он доступен на время переходного периода ротации ssh-ключа, пока новый не раскатан на все серверы. Зеркало /ssh_private_key, но для прежней пары. Гейт — view_password (то же право, что у раскрытия пароля и текущего ключа). Раскрытие пишет CRITICAL-аудит server_account.reveal_previous_ssh_private_key и проходит per-IP+account reveal-rate-limit (PASSWORD_REVEAL_RATE_LIMIT, default 10/min).",
+      curl: `curl "{{BASE_URL}}/api/server/v1/server-accounts/acc_a6a30466eb0e42f4926782acd5c3b5e4/previous_ssh_private_key" \\
+  -H "Authorization: Bearer {{TOKEN}}"`,
+      python: `import requests
+
+base_url = "{{BASE_URL}}"
+token = "{{TOKEN}}"
+account_id = "acc_a6a30466eb0e42f4926782acd5c3b5e4"
+
+resp = requests.get(
+    f"{base_url}/api/server/v1/server-accounts/{account_id}/previous_ssh_private_key",
+    headers={"Authorization": f"Bearer {token}"},
+)
+resp.raise_for_status()
+data = resp.json()
+
+# ssh_private_key — PEM прежней пары; ssh_public_key — её публичная часть
+print(data["ssh_private_key"])
+print(data["ssh_public_key"])`,
+      notes:
+        "Ответ 200: { id, login, ssh_private_key (PEM), ssh_public_key }. Нет view_password → 403. Аккаунт не найден / чужой dept, либо нет удержанного прежнего ключа (ротации не было или период закрыт) → 404 ACCOUNT_NO_PREVIOUS_SSH_KEY. Сломанный ciphertext → 422 DECRYPT_FAILED. Перебор reveal-лимита → 429 RATE_LIMIT_EXCEEDED.",
+    },
+    {
+      id: "account-previous-ssh-key-clear",
+      title: "Забыть удержанный ПРЕЖНИЙ SSH-ключ (очистка)",
+      method: "DELETE",
+      path: "/api/server/v1/server-accounts/{account_id}/previous_ssh_private_key",
+      auth: "Bearer + (server_account, *, rotate_password)",
+      description:
+        "Зануляет удержанный прежний приватный ключ (previous_ssh_private_key_encrypted + previous_ssh_key_rotated_at). Оператор зовёт, когда добил серверы, недоступные в момент ротации, и прежний ключ переходного периода больше не нужен. Гейт — rotate_password (та же плоскость, что у ротации / apply). Идемпотентна: если удержанного ключа нет — тот же 200 без ошибки. Авто-очистки по callback'у нет — previous держится до этой ручной очистки либо до следующей ротации ssh-ключа.",
+      curl: `curl -X DELETE "{{BASE_URL}}/api/server/v1/server-accounts/acc_a6a30466eb0e42f4926782acd5c3b5e4/previous_ssh_private_key" \\
+  -H "Authorization: Bearer {{TOKEN}}"`,
+      python: `import requests
+
+base_url = "{{BASE_URL}}"
+token = "{{TOKEN}}"
+account_id = "acc_a6a30466eb0e42f4926782acd5c3b5e4"
+
+resp = requests.delete(
+    f"{base_url}/api/server/v1/server-accounts/{account_id}/previous_ssh_private_key",
+    headers={"Authorization": f"Bearer {token}"},
+)
+resp.raise_for_status()
+print(resp.json())  # {"ok": true}`,
+      notes:
+        "Ответ 200: { ok: true } (в т.ч. когда удержанного ключа и не было — идемпотентно). Нет rotate_password → 403. Аккаунт не найден / чужой dept → 404. Аудит INFO server_account.clear_previous_ssh_key.",
+    },
   ],
 };

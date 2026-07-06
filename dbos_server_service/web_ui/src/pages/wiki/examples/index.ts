@@ -12,12 +12,14 @@ import { ACCOUNTS } from "./server/02_accounts";
 import { IPMI } from "./server/03_ipmi";
 import { INVENTORY_TASKS } from "./server/04_inventory_packages_tasks";
 import { OS_VERSIONS } from "./server/05_os_versions";
+import { ADMIN_ENCRYPTION as SERVER_ADMIN_ENCRYPTION } from "./server/06_admin_encryption";
 import { SERVER_FLOWS as SERVER_FLOWS_DATA } from "./server/flows";
 import { CREDENTIALS } from "./secret/01_credentials";
 import { REVEAL_TRANSFER_RECOVER } from "./secret/02_reveal_transfer_recover";
 import { ROLE_ACL } from "./secret/03_role_acl";
 import { DEPT_GRANT } from "./secret/04_dept_grant";
 import { INTERNAL } from "./secret/05_internal";
+import { ADMIN_ENCRYPTION as SECRET_ADMIN_ENCRYPTION } from "./secret/06_admin_encryption";
 import { SECRET_FLOWS as SECRET_FLOWS_DATA } from "./secret/flows";
 import { EVENTS } from "./loging/01_events";
 import { EXPORT } from "./loging/02_export";
@@ -43,6 +45,7 @@ export const SERVER_SECTIONS: ApiSection[] = [
   IPMI,
   INVENTORY_TASKS,
   OS_VERSIONS,
+  SERVER_ADMIN_ENCRYPTION,
 ];
 
 export const SERVER_FLOWS: ApiFlow[] = SERVER_FLOWS_DATA;
@@ -53,6 +56,7 @@ export const SECRET_SECTIONS: ApiSection[] = [
   ROLE_ACL,
   DEPT_GRANT,
   INTERNAL,
+  SECRET_ADMIN_ENCRYPTION,
 ];
 
 export const SECRET_FLOWS: ApiFlow[] = SECRET_FLOWS_DATA;

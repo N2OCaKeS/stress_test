@@ -178,11 +178,23 @@ export const SERVERS: ApiSection = {
         '    headers={"Authorization": f"Bearer {token}"},\n' +
         ')\n' +
         's = r.json()\n' +
-        'print(r.status_code, s["hostname"], s["status"], s["is_managed"])',
+        'print(r.status_code, s["hostname"], s["status"], s["is_managed"])\n' +
+        '# инвентарные поля — заполняются после inventory.sync\n' +
+        'print(s["os_security_mode"], s["ram_total_mb"], s["ram_total_gb"])\n' +
+        'print(s["network_interfaces"])  # список активных интерфейсов, без lo\n' +
+        'for d in s["storage"]:\n' +
+        '    print(d["slot"], d["size_gb"], d["is_system"], d["used_percent"])',
       notes:
-        "Ответ 200: ServerResponse (включая storage, busy_*, power_state, " +
-        "is_managed/management_user/prepared_at). Ошибки: 403 PERMISSION_DENIED, " +
-        "404 SERVER_NOT_FOUND (в т.ч. чужой department).",
+        "Ответ 200: ServerResponse. Помимо базовой карточки несёт инвентарные " +
+        "поля, снятые последней inventory.sync: os_security_mode (режим " +
+        "безопасности Astra — Smolensk/Orel/Voronezh, UI склеивает с именем " +
+        "версии), ram_total_mb и производное ram_total_gb, network_interfaces " +
+        "(все активные интерфейсы без lo), а у каждого диска в storage — " +
+        "is_system и used_percent/used_gb. Плюс busy_*, power_state, " +
+        "is_managed/management_user/prepared_at, mgmt_ssh_public_key, " +
+        "mgmt_creds_rotated_at, mgmt_creds_pending_apply. До первой " +
+        "инвентаризации инвентарные поля пустые (null / []). Ошибки: " +
+        "403 PERMISSION_DENIED, 404 SERVER_NOT_FOUND (в т.ч. чужой department).",
     },
     {
       id: "servers-update",
@@ -357,6 +369,96 @@ export const SERVERS: ApiSection = {
         "Ответ 200: ServerResponse с обновлённым os_version_id. id версии — из " +
         "группы OS-версий (osv_<...>). Ошибки: 403 PERMISSION_DENIED, " +
         "404 SERVER_NOT_FOUND, 422 INVALID_OS_VERSION (нет такой строки в os_versions).",
+    },
+    {
+      id: "servers-astra-update",
+      title: "Обновить ОС Astra до версии каталога (worker)",
+      method: "POST",
+      path: "{{BASE_URL}}/api/server/v1/servers/{server_id}/astra-update",
+      auth: "Bearer + (server, *, update)",
+      description:
+        "Публикует задачу server.astra_update: worker заходит на сервер по SSH " +
+        "под управляющим пользователем (сервер обязан быть is_managed), " +
+        "ПОЛНОСТЬЮ перезаписывает /etc/apt/sources.list репозиториями выбранной " +
+        "версии ОС (OsVersion.repositories) и гонит apt update && astra-update " +
+        "-A -T -r. Тело — {os_version_id} (целевая версия каталога, osv_...). " +
+        "На время обновления сервер уходит в busy_state='updating' — системная " +
+        "блокировка отбивает ЛЮБЫЕ другие операции над сервером (prepare / " +
+        "inventory / power / account-ops / console) с 409 SERVER_UPDATING, " +
+        "включая владельца брони и админа. Блокировку снимает callback worker'а; " +
+        "при успехе сервер привязывается к целевой версии и запускается " +
+        "inventory.sync. Асинхронный: 202 с task_id.",
+      curl:
+        'base_url="{{BASE_URL}}"\n' +
+        'token="{{TOKEN}}"\n' +
+        'server_id="srv_..."\n\n' +
+        'curl -X POST "$base_url/api/server/v1/servers/$server_id/astra-update" \\\n' +
+        '  -H "Authorization: Bearer $token" \\\n' +
+        '  -H "Content-Type: application/json" \\\n' +
+        '  -d "{\\"os_version_id\\": \\"osv_...\\"}"',
+      python:
+        'import requests\n\n' +
+        'base_url = "{{BASE_URL}}"\n' +
+        'token = "{{TOKEN}}"\n' +
+        'server_id = "srv_..."\n\n' +
+        'r = requests.post(\n' +
+        '    f"{base_url}/api/server/v1/servers/{server_id}/astra-update",\n' +
+        '    json={"os_version_id": "osv_..."},\n' +
+        '    headers={"Authorization": f"Bearer {token}"},\n' +
+        ')\n' +
+        'print(r.status_code, r.json())  # 202 {"task_id": "tsk_...", "status": "queued"}',
+      notes:
+        "202, не 200: задача только поставлена. Одноразовая (max_attempts=1) — " +
+        "упавшее обновление автоматически не повторяется. Ошибки: " +
+        "403 PERMISSION_DENIED, 404 SERVER_NOT_FOUND / OS_VERSION_NOT_FOUND, " +
+        "409 SERVER_DECOMMISSIONED / SERVER_UPDATING (обновление уже идёт) / " +
+        "SERVER_RESERVED / PREPARE_REQUIRED / OS_VERSION_NO_REPOSITORIES " +
+        "(у версии пустой список репозиториев — sources.list переписать нечем), " +
+        "503 WORKER_UNREACHABLE. Исход обновления worker постит через " +
+        "internal-callback (server.astra_updated).",
+      asyncTask: true,
+    },
+    {
+      id: "servers-mgmt-creds-rotate",
+      title: "Ротация управляющих кред сервера (worker)",
+      method: "POST",
+      path: "{{BASE_URL}}/api/server/v1/servers/{server_id}/management-credentials/rotate",
+      auth: "Bearer + (server, *, update)",
+      description:
+        "Публикует задачу server.rotate_management_creds. server_service генерит " +
+        "новую Ed25519-пару + пароль управляющего пользователя, переносит текущий " +
+        "материал в previous_mgmt_* (анти-локаут) и ставит " +
+        "mgmt_creds_pending_apply=true. Worker заходит ДЕЙСТВУЮЩИМ ключом, ставит " +
+        "новый pubkey + chpasswd, проверяет вход новым ключом и колбэчит " +
+        "/internal/.../management-credentials/applied — server_service снимает " +
+        "pending и зануляет previous. Сервер обязан быть prepared (is_managed). " +
+        "Асинхронный: 202 с task_id.",
+      curl:
+        'base_url="{{BASE_URL}}"\n' +
+        'token="{{TOKEN}}"\n' +
+        'server_id="srv_..."\n\n' +
+        'curl -X POST "$base_url/api/server/v1/servers/$server_id/management-credentials/rotate" \\\n' +
+        '  -H "Authorization: Bearer $token"',
+      python:
+        'import requests\n\n' +
+        'base_url = "{{BASE_URL}}"\n' +
+        'token = "{{TOKEN}}"\n' +
+        'server_id = "srv_..."\n\n' +
+        'r = requests.post(\n' +
+        '    f"{base_url}/api/server/v1/servers/{server_id}/management-credentials/rotate",\n' +
+        '    headers={"Authorization": f"Bearer {token}"},\n' +
+        ')\n' +
+        'print(r.status_code, r.json())  # 202 {"task_id": "tsk_...", "status": "queued"}',
+      notes:
+        "202: задача поставлена, ротация подтверждается callback'ом worker'а. " +
+        "Повтор, пока предыдущая ротация не подтверждена (mgmt_creds_pending_apply " +
+        "ещё true), отбивается 409 MGMT_ROTATION_PENDING — дождись применения на " +
+        "боксе (в карточке сервера mgmt_creds_pending_apply вернётся в false) или " +
+        "сбрось зависшую ротацию перед новой. Прочие ошибки: 403 PERMISSION_DENIED, " +
+        "404 SERVER_NOT_FOUND, 409 SERVER_DECOMMISSIONED / PREPARE_REQUIRED " +
+        "(сервер не prepared) / TASK_IDEMPOTENT_CONFLICT, 503 " +
+        "WORKER_REDIS_UNAVAILABLE / WORKER_UNREACHABLE. Аудит — CRITICAL.",
+      asyncTask: true,
     },
     {
       id: "servers-drift",

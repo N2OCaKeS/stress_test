@@ -15,7 +15,6 @@ import {
   Search,
   AlertCircle,
   AlertTriangle,
-  ShieldAlert,
   User,
   Filter,
   Cog,
@@ -148,7 +147,6 @@ const numFmt = new Intl.NumberFormat("ru-RU");
 
 export function LogEventsLive() {
   const { persona } = usePersona();
-  const isReader = persona.platform_role === "logging_reader";
   const canAudit = hasAuditLogAccess(persona);
 
   const [filters, setFilters] = useState<LogFilters>(EMPTY_FILTERS);
@@ -460,14 +458,6 @@ export function LogEventsLive() {
 
   return (
     <Shell breadcrumb="loging_service / events" middle={aside}>
-      {isReader && (
-        <div className="readonly-bar">
-          <ShieldAlert className="w-3.5 h-3.5" />
-          <span>
-            <b>Read-only · loging_reader.</b> Доступен только просмотр событий.
-          </span>
-        </div>
-      )}
       {selected ? (
         <EventDetailPane event={selected} />
       ) : canAudit ? (

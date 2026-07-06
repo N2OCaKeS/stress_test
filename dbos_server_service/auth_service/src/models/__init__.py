@@ -11,6 +11,7 @@ from src.models.department_service_access import DepartmentServiceAccess
 from src.models.group_service_access import GroupServiceAccess
 from src.models.group_service_role import GroupServiceRole
 from src.models.lockout_policy import LockoutPolicy
+from src.models.nav_link import NavLink
 from src.models.oauth_authorization_code import OAuthAuthorizationCode
 from src.models.oauth_client import OAuthClient
 from src.models.oauth_refresh_token import OAuthRefreshToken
@@ -35,6 +36,7 @@ __all__ = [
     "GroupServiceAccess",
     "GroupServiceRole",
     "LockoutPolicy",
+    "NavLink",
     "OAuthAuthorizationCode",
     "OAuthClient",
     "OAuthRefreshToken",

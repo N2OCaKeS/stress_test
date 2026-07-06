@@ -997,6 +997,34 @@ Errors: `ROLE_REQUIRED` (403), `422` — `max_failed_attempts` / `lockout_minute
 
 ---
 
+## Nav-links (`/nav-links`)
+
+Настраиваемая кнопка левой панели web-UI (по умолчанию «allta»). Один конфиг на всю платформу: account_admin задаёт подпись, внешний URL, флаг включения и правило видимости (все отделы либо явный список `department_ids`).
+
+### `GET /nav-links`
+
+Auth: любой аутентифицированный пользователь. Возвращает включённые кнопки, видимые отделу из его identity. Кнопка отдаётся только если она `enabled=True`, у неё задан `url` и выполнено правило видимости (`all_departments=True` — всем; иначе — только если `department_id` есть в списке). Персоны без отдела (account_admin / платформенные) видят кнопку лишь по правилу `all_departments`.
+
+Response: `[ { "label": "allta", "url": "https://…" } ]` (0 или 1 элемент). Доменного аудит-события не эмитит.
+
+### `GET /admin/nav-links`
+
+Auth: `account_admin`. Полная конфигурация кнопки.
+
+Response (`NavLinkConfig`): `{ "enabled": bool, "label": str, "url": str|null, "all_departments": bool, "department_ids": [str], "updated_at": str|null, "updated_by": str|null }`.
+
+Errors: `ROLE_REQUIRED` (403).
+
+### `PUT /admin/nav-links`
+
+Auth: `account_admin`. Полная замена конфигурации. Body (`NavLinkConfigUpdate`): `{ "enabled": bool, "label": str, "url": str|null, "all_departments": bool, "department_ids": [str] }`. `url` валидируется как абсолютный http(s) (≤ 2048 символов). Response: `NavLinkConfig`.
+
+Audit: `nav_link.update` (INFO) с `enabled`, `label`, `url`, `all_departments`, `department_count`.
+
+Errors: `ROLE_REQUIRED` (403), `NAV_LINK_URL_REQUIRED` (422) — `enabled=True` без `url`, `VALIDATION_ERROR` (422) — `url` не http(s)/слишком длинный.
+
+---
+
 ## Каталог error_codes
 
 Только коды, реально поднимаемые `auth_service`. Источник — `grep error_code= src/` (исключения `core/exceptions.py` и raise-сайты сервисов).
@@ -1008,6 +1036,7 @@ Errors: `ROLE_REQUIRED` (403), `422` — `max_failed_attempts` / `lockout_minute
 - `UNSUPPORTED_RESPONSE_TYPE` (400) — `response_type` отличается от `code`.
 - `INVALID_TOKEN_EXPIRY` (422) — `expires_at` в прошлом / битый формат.
 - `INVALID_STATUS_FILTER` (422) — `?status=` на `GET /users` / `GET /users/department/{id}` не из набора `active`/`banned`/`blocked`.
+- `NAV_LINK_URL_REQUIRED` (422) — `PUT /admin/nav-links` с `enabled=True`, но пустым `url`.
 - `VALIDATION_ERROR` (422) — обёртка над pydantic `RequestValidationError` (см. `src/main.py`). В `details` — список pydantic-issues; per-field коды (`redirect_uri_invalid`, ...) сохраняются.
 - Pydantic 422: `redirect_uri_invalid`, `redirect_uri_has_fragment`, `redirect_uri_not_https`, `redirect_uri_scheme_invalid` — валидация `redirect_uris` на регистрации OAuth-клиента.
 

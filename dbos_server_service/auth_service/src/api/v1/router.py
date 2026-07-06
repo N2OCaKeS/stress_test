@@ -9,6 +9,7 @@ from src.api.v1.endpoints.bots import router as bots_router
 from src.api.v1.endpoints.departments import router as departments_router
 from src.api.v1.endpoints.docker_registry import router as docker_router
 from src.api.v1.endpoints.groups import router as groups_router
+from src.api.v1.endpoints.nav_links import router as nav_links_router
 from src.api.v1.endpoints.oauth2 import router as oauth2_router
 from src.api.v1.endpoints.service_roles import router as service_roles_router
 from src.api.v1.endpoints.services import router as services_router
@@ -27,4 +28,5 @@ router.include_router(bots_router, tags=["bots"])
 router.include_router(authorization_router, tags=["authorization"])
 router.include_router(oauth2_router, tags=["oauth2"])
 router.include_router(docker_router, tags=["docker-registry"])
+router.include_router(nav_links_router, tags=["nav-links"])
 router.include_router(admin_router, tags=["admin"])

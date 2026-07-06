@@ -70,6 +70,7 @@ SERVICE_EVENTS = [
     # Service encryption keys (generator for runtime key rotation in server/secret services)
     {"action": "service_key.generate", "description": "account_admin generated a fresh AES-256 master key (base64) for distribution to a service keystore rotation; auth_service does not store it", "default_severity": "CRITICAL"},
     {"action": "lockout_policy.update", "description": "account_admin updated the platform brute-force lockout policy (max_failed_attempts / lockout_minutes) via PUT /admin/lockout-policy", "default_severity": "CRITICAL"},
+    {"action": "nav_link.update", "description": "account_admin updated the configurable web-UI left-panel nav button (label / url / enabled / departments) via PUT /admin/nav-links", "default_severity": "INFO"},
     # Departments
     {"action": "department.create", "description": "New department created", "default_severity": "CRITICAL"},
     {"action": "department.updated", "description": "Department metadata updated (PATCH /departments/{id})", "default_severity": "INFO"},

@@ -370,6 +370,22 @@ async def get_server(
     return obj
 
 
+async def get_server_by_number(
+    db: AsyncSession,
+    identity: IdentityContext,
+    number: int,
+) -> Server:
+    """SELECT сервера по номеру + permission/visibility (через get_server).
+
+    Номер глобально уникален в паре servers+vm. Не найдено / чужой отдел →
+    404 SERVER_NOT_FOUND (тот же маск, что и у get_server).
+    """
+    obj = await repo.get_by_number(db, number)
+    if obj is None:
+        raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
+    return await get_server(db, identity, obj.id)
+
+
 async def query_drift_summary(
     db: AsyncSession,
     identity: IdentityContext,

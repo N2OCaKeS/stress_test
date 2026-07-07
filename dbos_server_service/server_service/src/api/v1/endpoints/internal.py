@@ -69,6 +69,12 @@ from src.schemas.server import (
     ServerPrepareCallbackRequest,
     ServerPrepareCallbackResponse,
 )
+from src.schemas.vm import (
+    VmsHubStateCallbackRequest,
+    VmsHubStateCallbackResponse,
+    VmStateCallbackRequest,
+    VmStateCallbackResponse,
+)
 from src.services import internal_service
 
 router = APIRouter(prefix="/internal", include_in_schema=False)
@@ -484,5 +490,64 @@ async def ipmi_credentials_rotated_callback(
         target_department_id=x_target_department_id,
     )
     return IpmiCredentialsRotatedResponse(**data)
+
+
+# ── VM-домен: callback'и воркера ─────────────────────────────────────────────
+
+
+@router.post(
+    "/vms/{vm_id}/state",
+    response_model=VmStateCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def record_vm_state(
+    vm_id: str,
+    body: VmStateCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> VmStateCallbackResponse:
+    """Worker пишет состояние ВМ (power/ip/status/busy_state/error).
+
+    Идемпотентно, частичное обновление. `busy_state` снимается через
+    `clear_busy_state=true`.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `vm.state_updated` (INFO).
+    """
+    data = await internal_service.record_vm_state(
+        db, identity, vm_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return VmStateCallbackResponse(**data)
+
+
+@router.post(
+    "/servers/{server_id}/vms-hub-state",
+    response_model=VmsHubStateCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def record_vms_hub_state(
+    server_id: str,
+    body: VmsHubStateCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> VmsHubStateCallbackResponse:
+    """Worker сообщает исход подготовки сервера как VMS-hub (prepared/phy_if/error).
+
+    `prepared=True` → `is_vms_hub=True`, `virtualization=True`, phy_if в
+    network_interface_name.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `vms_hub.prepared`.
+    """
+    data = await internal_service.record_vms_hub_state(
+        db, identity, server_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return VmsHubStateCallbackResponse(**data)
 
 

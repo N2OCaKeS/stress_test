@@ -282,6 +282,34 @@ class Settings(BaseSettings):
             "`DISPATCH_STASH_MISSING`, оператор инициирует новый dispatch."
         ),
     )
+    os_releases_index_url: str = Field(
+        default="https://releases.devos.astralinux.ru/index.json",
+        alias="OS_RELEASES_INDEX_URL",
+        description=(
+            "URL индекса релизов ОС (index.json), из которого строятся repo-URL "
+            "для os_version по build-версии. Базис раздачи релизов берётся как "
+            "dirname этого URL (mount_point дописывается к нему)."
+        ),
+    )
+    os_releases_index_cache_ttl_seconds: int = Field(
+        default=3600,
+        ge=0,
+        alias="OS_RELEASES_INDEX_CACHE_TTL_SECONDS",
+        description=(
+            "TTL in-process кэша индекса релизов (секунды). Индекс большой и "
+            "общий для всех версий, поэтому держим его в памяти. 0 отключает "
+            "кэш (каждый резолв тянет индекс заново)."
+        ),
+    )
+    os_releases_index_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        alias="OS_RELEASES_INDEX_TIMEOUT_SECONDS",
+        description=(
+            "HTTP-таймаут на загрузку индекса релизов. Индекс крупный, поэтому "
+            "запас больше обычных s2s-таймаутов."
+        ),
+    )
     logging_service_url: str = Field(
         default="",
         description=(

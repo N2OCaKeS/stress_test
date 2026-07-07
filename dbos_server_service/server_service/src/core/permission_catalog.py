@@ -40,6 +40,10 @@ ENTITY_DESCRIPTIONS: dict[str, str] = {
         "Worker-таска (power, inventory, prepare, rotate и т.д.) в dev_server_worker.tasks. "
         "Под матрицей доступен только cancel — отмена pending/running задачи."
     ),
+    EntityType.VM: (
+        "Виртуальная машина на hub-сервере: создание, питание, бронь под тест, "
+        "диски и снимки. Подготовка сервера как VMS-hub — тоже действие этой зоны."
+    ),
 }
 
 ACTION_DESCRIPTIONS: dict[str, str] = {
@@ -111,6 +115,23 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
         "Массово ставить, удалять и обновлять пакеты на серверах через worker "
         "по SSH (apt-get/dnf/apk под sudo). Деструктив на боксе — поверх view."
     ),
+    Action.VMS_HUB_PREPARE: (
+        "Подготовить сервер как VMS-hub (libvirt/kvm, мост, пул образов) — "
+        "dispatch задачи воркеру. Действие зоны vm, таргетит сервер."
+    ),
+    Action.VM_POWER: (
+        "Управлять питанием ВМ: start/shutdown/reboot/reset/destroy через worker."
+    ),
+    Action.VM_RESERVE: "Забронировать ВМ под тест (run test / debug test / свой логин).",
+    Action.VM_RELEASE: "Снять бронь с ВМ (status → free).",
+    Action.VM_DISK_MANAGE: "Управлять дисками ВМ: создать/подключить/отключить/resize.",
+    Action.VM_SNAPSHOT_MANAGE: "Управлять снимками ВМ: создать/удалить/откатить.",
+    Action.VM_PREPARE: "Забутстрапить управление на ВМ (mgmt-креды, per-VM).",
+    Action.VM_ASTRA_UPDATE: "Обновить ОС ВМ до версии каталога (astra-update).",
+    Action.VM_ALLTA_UPDATE: "Обновить guest-allta на ВМ по всем снимкам.",
+    Action.VM_PASSWD: "Сменить пароль пользователя ВМ (перекатка снимков).",
+    Action.VM_NET_MANAGE: "Управлять сетью ВМ и IP-пулами (IPAM).",
+    Action.VM_PRESET_MANAGE: "Управлять пресетами стандартных ВМ (vm_preset).",
 }
 
 # Чувствительные действия — раскрытие/ротация секретов, управление питанием,

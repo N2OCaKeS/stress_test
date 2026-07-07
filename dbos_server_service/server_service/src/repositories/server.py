@@ -211,6 +211,12 @@ async def get_by_id(db: AsyncSession, server_id: str) -> Server | None:
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def get_by_number(db: AsyncSession, number: int) -> Server | None:
+    """SELECT по номеру стенда (глобально уникален в паре servers+vm)."""
+    stmt = select(Server).where(Server.number == number)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def get_for_update(db: AsyncSession, server_id: str) -> Server | None:
     """SELECT по PK с FOR UPDATE row-lock.
 

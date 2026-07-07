@@ -13,7 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.dependencies.auth import AuthenticatedIdentity, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
-from src.schemas.os_version import OsVersionCreate, OsVersionResponse, OsVersionUpdate
+from src.schemas.os_version import (
+    OsVersionCreate,
+    OsVersionResolveRequest,
+    OsVersionResponse,
+    OsVersionUpdate,
+)
 from src.services import os_version_service as svc
 
 router = APIRouter(prefix="/os-versions")
@@ -155,6 +160,32 @@ async def update_os_version(
 ) -> OsVersionResponse:
     """PATCH OS-версии. Доступ: `(os_version, *, update)`."""
     obj = await svc.update_os_version(db, identity, os_version_id, body)
+    return OsVersionResponse.model_validate(obj)
+
+
+@router.post(
+    "/{os_version_id}/resolve-repositories",
+    response_model=OsVersionResponse,
+    summary="Перестроить репозитории версии из индекса релизов",
+    description=(
+        "Тянет индекс релизов (кэш), строит repo-строки sources.list по "
+        "build-версии и записывает их в `repositories`. Требует то же право "
+        "`update`. Неизвестная версия → 404, недоступный индекс → 503."
+    ),
+    responses={
+        403: {"description": "Нет `update`."},
+        404: {"description": "Версия каталога / build-версия в индексе не найдена."},
+        503: {"description": "Индекс релизов недоступен."},
+    },
+)
+async def resolve_repositories(
+    os_version_id: str,
+    body: OsVersionResolveRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> OsVersionResponse:
+    """Перерезолв repo-строк версии. Доступ: `(os_version, *, update)`."""
+    obj = await svc.resolve_repositories(db, identity, os_version_id, body.build_version)
     return OsVersionResponse.model_validate(obj)
 
 

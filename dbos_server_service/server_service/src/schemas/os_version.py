@@ -13,8 +13,20 @@ _MAX_REPOSITORIES = 64
 _MAX_REPOSITORY_URL_LEN = 2048
 
 
+def _is_http_url(value: str) -> bool:
+    """True для непустого http(s)-URL с хостом."""
+    parsed = urlparse(value.strip())
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
 def _validate_repositories(value: list[str] | None) -> list[str] | None:
-    """Каждый элемент — непустой http(s)-URL с хостом, в разумных лимитах."""
+    """Каждый элемент — голый http(s)-URL либо строка sources.list.
+
+    Резолвер репозиториев (`os_version_repo_resolver`) кладёт сюда строки вида
+    `deb <url> <suite> <components...>`, поэтому кроме голого URL принимаем и
+    deb/deb-src-строку, второй токен которой — валидный http(s)-URL. Оба формата
+    в разумных лимитах.
+    """
     if value is None:
         return value
     if len(value) > _MAX_REPOSITORIES:
@@ -24,10 +36,36 @@ def _validate_repositories(value: list[str] | None) -> list[str] | None:
             raise ValueError("repository must be a string")
         if len(item) > _MAX_REPOSITORY_URL_LEN:
             raise ValueError(f"repository URL too long (max {_MAX_REPOSITORY_URL_LEN})")
-        parsed = urlparse(item.strip())
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        stripped = item.strip()
+        if stripped.startswith(("deb ", "deb-src ")):
+            parts = stripped.split()
+            if len(parts) < 3 or not _is_http_url(parts[1]):
+                raise ValueError(f"repository is not a valid sources.list line: {item!r}")
+            continue
+        if not _is_http_url(stripped):
             raise ValueError(f"repository must be a valid http(s) URL: {item!r}")
     return value
+
+
+_MAX_BUILD_VERSION_LEN = 64
+
+
+def _validate_build_version(value: str | None) -> str | None:
+    """Build-версия: минимум три dot-сегмента, непустые части, разумная длина.
+
+    `1.7.5.6` и легаси `1.7.3.UU.1` валидны; `1.7` — нет.
+    """
+    if value is None:
+        return value
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError("build_version must not be empty")
+    if len(stripped) > _MAX_BUILD_VERSION_LEN:
+        raise ValueError(f"build_version too long (max {_MAX_BUILD_VERSION_LEN})")
+    parts = stripped.split(".")
+    if len(parts) < 3 or any(not p for p in parts):
+        raise ValueError("build_version must look like X.Y.Z or X.Y.Z.W")
+    return stripped
 
 
 class OsVersionCreate(BaseModel):
@@ -44,11 +82,24 @@ class OsVersionCreate(BaseModel):
         default_factory=list,
         description="URL-адреса репозиториев версии (apt/yum/...).",
     )
+    build_version: str | None = Field(
+        default=None,
+        description=(
+            "Build-версия ОС (X.Y.Z.W). Если задана и repositories пуст — сервис "
+            "сам построит repo-строки из индекса релизов. Само значение не "
+            "хранится, только результат резолва."
+        ),
+    )
 
     @field_validator("repositories")
     @classmethod
     def _check_repositories(cls, value: list[str]) -> list[str]:
         return _validate_repositories(value)
+
+    @field_validator("build_version")
+    @classmethod
+    def _check_build_version(cls, value: str | None) -> str | None:
+        return _validate_build_version(value)
 
 
 class OsVersionUpdate(BaseModel):
@@ -67,6 +118,23 @@ class OsVersionUpdate(BaseModel):
     @classmethod
     def _check_repositories(cls, value: list[str] | None) -> list[str] | None:
         return _validate_repositories(value)
+
+
+class OsVersionResolveRequest(BaseModel):
+    """Тело POST /os-versions/{id}/resolve-repositories.
+
+    Перестроить `repositories` версии из индекса релизов по build-версии.
+    """
+
+    build_version: str = Field(
+        ...,
+        description="Build-версия ОС (X.Y.Z.W), по которой резолвятся repo-строки.",
+    )
+
+    @field_validator("build_version")
+    @classmethod
+    def _check_build_version(cls, value: str) -> str:
+        return _validate_build_version(value)
 
 
 class OsVersionResponse(BaseModel):

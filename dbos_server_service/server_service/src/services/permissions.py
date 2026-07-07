@@ -36,7 +36,9 @@ from src.schemas.identity import IdentityContext
 # Типы ресурсов, где view включается автоматически при наличии любого другого
 # права: достаточно уметь что-то делать с сервером/учёткой, чтобы видеть его
 # карточку и листинг. Для остального (permission, task) view остаётся явным.
-_IMPLIED_VIEW_TYPES = frozenset({EntityType.SERVER, EntityType.SERVER_ACCOUNT})
+_IMPLIED_VIEW_TYPES = frozenset(
+    {EntityType.SERVER, EntityType.SERVER_ACCOUNT, EntityType.VM}
+)
 
 
 async def has_action(

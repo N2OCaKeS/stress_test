@@ -43,6 +43,10 @@ from src.api.v1.endpoints.secrets_migration import router as secrets_migration_r
 from src.api.v1.endpoints.server_accounts import router as server_accounts_router
 from src.api.v1.endpoints.servers import router as servers_router
 from src.api.v1.endpoints.tasks import router as tasks_router
+from src.api.v1.endpoints.vms import (
+    router as vms_router,
+    router_servers as vms_servers_router,
+)
 from src.api.v1.endpoints.worker_dispatch import (
     router_accounts as worker_dispatch_accounts_router,
     router_ipmi as worker_dispatch_ipmi_router,
@@ -54,6 +58,11 @@ router = APIRouter()
 router.include_router(health_router, tags=["health"])
 router.include_router(servers_router, tags=["servers"])
 router.include_router(server_accounts_router, tags=["server-accounts"])
+# VM-домен: /vms (CRUD + питание + бронь + by-number) и prepare-vms-hub под
+# /servers/{id}. Регистрируется после servers_router — пути не коллидируют
+# (by-number сервера живёт в самом servers_router перед /{server_id}).
+router.include_router(vms_router, tags=["vms"])
+router.include_router(vms_servers_router, tags=["vms"])
 router.include_router(ipmi_router, tags=["ipmi"])
 router.include_router(ipmi_list_router, tags=["ipmi"])
 # Legacy snake_case `/ipmi_controllers` — алиас на тот же handler, скрыт из

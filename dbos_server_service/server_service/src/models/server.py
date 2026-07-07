@@ -30,6 +30,10 @@ class Server(Base):
         INET, unique=True, nullable=False, index=True
     )
     mgmt_ip_address: Mapped[IPv4Address | IPv6Address | None] = mapped_column(INET, nullable=True)
+    # Опциональный человекочитаемый номер стенда. Глобально уникален в паре
+    # servers+vm (один номер = одна сущность) → lookup по номеру однозначен.
+    # UNIQUE автоматически создаёт b-tree, отдельный index=True не пишем.
+    number: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True)
     ssh_port: Mapped[int] = mapped_column(Integer, default=22, nullable=False)
     os_version_id: Mapped[str | None] = mapped_column(
         String(64),
@@ -107,6 +111,15 @@ class Server(Base):
     # инвентаризации; пустой список воркера существующее значение не затирает.
     network_interfaces: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     decommissioned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Виртуализация: `virtualization` — детект способности хоста нести ВМ
+    # (KVM/`/dev/kvm` + флаги CPU); гейтит `prepare-vms-hub`. `is_vms_hub` —
+    # факт успешной подготовки хоста как VMS-hub (ставит callback воркера),
+    # `vms_hub_prepared_at` — момент подтверждения. Все nullable/False до пробы.
+    virtualization: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    is_vms_hub: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    vms_hub_prepared_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Бутстрап управления (#14): после успешного prepare worker заводит
     # управляющего пользователя DBOS и кладёт ему публичный ключ. is_managed
     # фиксирует факт онбординга, management_user — имя заведённого аккаунта,

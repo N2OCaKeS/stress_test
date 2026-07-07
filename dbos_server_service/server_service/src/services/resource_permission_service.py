@@ -119,6 +119,9 @@ async def _load_resource_department(
     """Вернуть department_id ресурса или None, если ресурса нет."""
     if resource_type == EntityType.SERVER:
         obj = await server_repo.get_by_id(db, resource_id)
+    elif resource_type == EntityType.VM:
+        from src.repositories import vm as vm_repo
+        obj = await vm_repo.get_by_id(db, resource_id)
     else:
         obj = await account_repo.get_by_id(db, resource_id)
     return obj.department_id if obj is not None else None

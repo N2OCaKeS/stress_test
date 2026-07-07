@@ -13,6 +13,7 @@ from src.models.secrets_outbox import ReencryptOutboxEntry
 from src.models.server_account import ServerAccount, ServerAccountServer
 from src.models.server_account_ignored_login import ServerAccountIgnoredLogin
 from src.models.server_disk import ServerDisk
+from src.models.vm import Vm
 
 __all__ = [
     "ConsoleMacro",
@@ -29,4 +30,5 @@ __all__ = [
     "ServerAccountIgnoredLogin",
     "ServerAccountServer",
     "ServerDisk",
+    "Vm",
 ]

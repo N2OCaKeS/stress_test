@@ -204,6 +204,21 @@ SERVICE_EVENTS = [
     {"action": "ssh_console.session_open", "description": "Пользователь открыл интерактивную SSH-консоль к серверу (WebSocket подключился, PTY-сессия запрошена у worker'а). target_type=server", "default_severity": "INFO"},
     {"action": "ssh_console.session_close", "description": "Интерактивная SSH-консоль закрыта (WS disconnect / таймаут бездействия / ошибка PTY). details несут reason. target_type=server", "default_severity": "INFO"},
     {"action": "ssh_console.command", "description": "Команда, введённая в интерактивной SSH-консоли (одна строка по Enter); эмитится worker'ом на PTY-мосте. details: command (redacted), session_id, server_id. WARNING при ненулевом exit-коде, если он доступен. target_type=server", "default_severity": "INFO"},
+    # VM-домен (волна 1). CRITICAL — create/delete/prepare-hub (появление/снос
+    # виртуалки, подготовка хоста); WARNING — питание/бронь/отказ по брони;
+    # INFO — просмотр и рутинные callback-апдейты состояния.
+    {"action": "vm.create", "description": "VM create requested (dispatch vm.create): permission/capacity/hub-readiness checks. failure reasons: department_isolation / hub_not_found_or_cross_dept / hub_not_prepared / duplicate / worker_unreachable", "default_severity": "CRITICAL"},
+    {"action": "vm.created", "description": "VM record created and vm.create dispatched to worker (busy_state=creating)", "default_severity": "CRITICAL"},
+    {"action": "vm.view", "description": "VM card viewed (emitted on denied/not-found)", "default_severity": "INFO"},
+    {"action": "vm.deleted", "description": "VM deleted: record removed and vm.delete dispatched to worker to clean up the hypervisor domain", "default_severity": "CRITICAL"},
+    {"action": "vm.powered", "description": "VM power action dispatched to worker (vm.power: start/shutdown/reboot/reset/destroy)", "default_severity": "WARNING"},
+    {"action": "vm.reserved", "description": "VM reserved (status set to run test / debug test / <login>) for a test/lease", "default_severity": "WARNING"},
+    {"action": "vm.released", "description": "VM released (status back to free)", "default_severity": "WARNING"},
+    {"action": "vm.status_updated", "description": "VM booking status set directly (PATCH /vms/{id}/status)", "default_severity": "WARNING"},
+    {"action": "vm.reservation_denied", "description": "VM operation blocked because it is reserved by another user and caller is neither the reservation owner nor a department/service admin", "default_severity": "WARNING"},
+    {"action": "vm.busy_denied", "description": "VM operation blocked because a lifecycle operation is in progress (busy_state creating/deleting/updating/powering)", "default_severity": "WARNING"},
+    {"action": "vm.state_updated", "description": "Worker wrote VM state back to server cache (POST /internal/vms/{id}/state): power_state / ip / status / busy_state / error (partial, idempotent)", "default_severity": "INFO"},
+    {"action": "vms_hub.prepared", "description": "Prepare server as VMS-hub: (a) dispatch vms_hub.prepare (permission/prepared/virtualization gate); (b) worker callback POST /internal/servers/{id}/vms-hub-state marks is_vms_hub + virtualization + phy_if. failure reasons: not_found_or_cross_dept / prepare_required / virtualization_unsupported / worker_unreachable", "default_severity": "CRITICAL"},
 ]
 
 

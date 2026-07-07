@@ -132,7 +132,7 @@ class TestGuestBaselineGrants:
         assert body["total"] == len(rows)
         assert body["described"] is False
         actual = {(r["entity_type"], r["action"]) for r in rows}
-        assert actual == {("server", "view")}
+        assert actual == {("server", "view"), ("vm", "view")}
 
 
 class TestReaderOnlyViewGrants:

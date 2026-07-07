@@ -44,6 +44,8 @@ class ServerCreate(BaseModel):
 
     hostname: str = Field(..., max_length=255, description="Уникальное hostname сервера (FQDN, ровно один).")
     display_name: str | None = Field(default=None, max_length=256, description="Опциональное человекочитаемое имя для UI.")
+    number: int | None = Field(default=None, ge=0, description="Опциональный номер стенда. Глобально уникален в паре servers+vm.")
+    virtualization: bool | None = Field(default=None, description="Поддержка виртуализации (KVM). Гейт для prepare-vms-hub. Обычно ставит inventory.")
     ip_address: IPv4Address | IPv6Address = Field(description="Основной IP сервера. UNIQUE в БД (INET-тип).")
     mgmt_ip_address: IPv4Address | IPv6Address | None = Field(default=None, description="Management IP (BMC/iDRAC), если отделён от основного.")
     ssh_port: int = Field(default=22, ge=1, le=65535, description="SSH-порт для worker-операций (default 22).")
@@ -87,6 +89,8 @@ class ServerUpdate(BaseModel):
     """Тело PATCH /servers/{id}. Все поля опциональны — `model_dump(exclude_unset=True)` даёт диф."""
 
     display_name: str | None = Field(default=None, description="Опциональное человекочитаемое имя.")
+    number: int | None = Field(default=None, ge=0, description="Сменить номер стенда (UNIQUE в паре servers+vm).")
+    virtualization: bool | None = Field(default=None, description="Отметить поддержку виртуализации (KVM). Гейт для prepare-vms-hub.")
     ip_address: IPv4Address | IPv6Address | None = Field(default=None, description="Сменить основной IP.")
     mgmt_ip_address: IPv4Address | IPv6Address | None = Field(default=None, description="Сменить management IP.")
     ssh_port: int | None = Field(default=None, ge=1, le=65535, description="Сменить SSH-порт.")
@@ -145,6 +149,10 @@ class ServerResponse(BaseModel):
     id: str = Field(description="Server ID (prefix srv_).")
     hostname: str = Field(description="Уникальное hostname.")
     display_name: str | None = Field(default=None, description="Человекочитаемое имя.")
+    number: int | None = Field(default=None, description="Номер стенда (глобально уникален в паре servers+vm).")
+    virtualization: bool | None = Field(default=None, description="Поддержка виртуализации (KVM). None — пробы ещё не было.")
+    is_vms_hub: bool = Field(default=False, description="Подготовлен ли сервер как VMS-hub (callback prepare-vms-hub).")
+    vms_hub_prepared_at: datetime | None = Field(default=None, description="Когда сервер подготовлен как VMS-hub.")
     ip_address: IPv4Address | IPv6Address = Field(description="Основной IP.")
     mgmt_ip_address: IPv4Address | IPv6Address | None = Field(default=None, description="Management IP (BMC).")
     ssh_port: int = Field(description="SSH-порт.")

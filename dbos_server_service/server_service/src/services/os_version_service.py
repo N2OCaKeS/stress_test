@@ -24,7 +24,7 @@ from src.models import OsVersion
 from src.repositories import os_version as repo
 from src.schemas.identity import IdentityContext
 from src.schemas.os_version import OsVersionCreate, OsVersionUpdate
-from src.services import audit_service, permissions
+from src.services import audit_service, os_version_repo_resolver, permissions
 from src.utils.ids import os_version_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,14 @@ async def create_os_version(
         raise
 
     data = payload.model_dump(mode="json")
+    # build_version — транзиентный вход резолвера, в модели колонки под него нет.
+    build_version = data.pop("build_version", None)
+    if build_version and not data.get("repositories"):
+        # Неизвестная версия / недоступный индекс поднимутся наружу (404/503) —
+        # осознанно не создаём запись с пустыми репозиториями молча.
+        data["repositories"] = await os_version_repo_resolver.resolve_repository_urls(
+            build_version
+        )
     data["id"] = new_id()
     try:
         obj = await repo.create(db, data)
@@ -216,6 +224,59 @@ async def update_os_version(
             "fields": list(changes.keys()),
             "changed_fields": list(changes.keys()),
             "name": obj.name,
+        },
+    )
+    return obj
+
+
+async def resolve_repositories(
+    db: AsyncSession,
+    identity: IdentityContext,
+    os_version_id: str,
+    build_version: str,
+) -> OsVersion:
+    """Перестроить `repositories` версии из индекса релизов по build-версии.
+
+    То же право, что и штатный `update` (пишем в repositories). Неизвестная
+    версия → 404 OS_RELEASE_NOT_FOUND, недоступный индекс → 503.
+    """
+    try:
+        await permissions.require_action(db, identity, EntityType.OS_VERSION, Action.UPDATE)
+    except AuthorizationError:
+        audit_service.emit(
+            "os_version.update",
+            target_id=os_version_id, target_type="os_version",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+    obj = await repo.get_by_id(db, os_version_id)
+    if obj is None:
+        audit_service.emit(
+            "os_version.update",
+            target_id=os_version_id, target_type="os_version",
+            status="failure", allowed=True,
+            details={"reason": "not_found"},
+        )
+        raise NotFoundError(
+            error_code="OS_VERSION_NOT_FOUND",
+            message="OS version not found",
+        )
+
+    resolved = await os_version_repo_resolver.resolve_repository_urls(build_version)
+    await repo.update(db, obj, {"repositories": resolved})
+    await db.commit()
+    await db.refresh(obj)
+    audit_service.emit(
+        "os_version.update",
+        target_id=obj.id, target_type="os_version",
+        status="success", allowed=True,
+        details={
+            "fields": ["repositories"],
+            "changed_fields": ["repositories"],
+            "name": obj.name,
+            "resolved_from": build_version,
+            "repositories_count": len(resolved),
         },
     )
     return obj

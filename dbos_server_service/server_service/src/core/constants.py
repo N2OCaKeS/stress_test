@@ -151,6 +151,9 @@ class EntityType(StrEnum):
     # Полноценного CRUD нет: server_service задачи только читает и отменяет,
     # пишет их таблицу сам worker.
     TASK = "task"
+    # Виртуальная машина на hub-сервере: создание, питание, бронь под тест,
+    # диски и снимки. Отдельная зона матрицы прав со своим набором действий.
+    VM = "vm"
 
 
 class Action(StrEnum):
@@ -239,6 +242,27 @@ class Action(StrEnum):
     # следующий. Force-kill через cancel нет.
     CANCEL = "cancel"
 
+    # ── VM-зона ─────────────────────────────────────────────────────────────
+    # Подготовить сервер как VMS-hub (libvirt/kvm/мост/пул образов). Действие
+    # зоны vm, но таргетит сервер: dispatch VMS_HUB_PREPARE. Тип-wide (инстанс
+    # ВМ на момент вызова ещё нет), гейтит `POST /servers/{id}/prepare-vms-hub`.
+    VMS_HUB_PREPARE = "vms_hub_prepare"
+    # Питание ВМ: start/shutdown/reboot/reset/destroy — dispatch VM_POWER.
+    VM_POWER = "vm_power"
+    # Бронь ВМ под тест (status → run test/debug test/<login>).
+    VM_RESERVE = "vm_reserve"
+    # Снять бронь ВМ (status → free).
+    VM_RELEASE = "vm_release"
+    # Задел на следующие волны (диски/снимки/prepare/обновления/сеть/пресеты).
+    VM_DISK_MANAGE = "vm_disk_manage"
+    VM_SNAPSHOT_MANAGE = "vm_snapshot_manage"
+    VM_PREPARE = "vm_prepare"
+    VM_ASTRA_UPDATE = "vm_astra_update"
+    VM_ALLTA_UPDATE = "vm_allta_update"
+    VM_PASSWD = "vm_passwd"
+    VM_NET_MANAGE = "vm_net_manage"
+    VM_PRESET_MANAGE = "vm_preset_manage"
+
 
 # Whitelist валидных пар (entity_type, action). Несовпадение → 422
 # INVALID_ACTION_FOR_ENTITY в permission_service.grant_action.
@@ -301,6 +325,18 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.VIEW,
         Action.CANCEL,
     }),
+    # VM-зона: CRUD-минимум + питание/бронь + подготовка hub'а. Остальные
+    # (диски/снимки/обновления/сеть/пресеты) — задел под следующие волны.
+    EntityType.VM: frozenset({
+        Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
+        Action.VMS_HUB_PREPARE,
+        Action.VM_POWER,
+        Action.VM_RESERVE, Action.VM_RELEASE,
+        Action.VM_DISK_MANAGE, Action.VM_SNAPSHOT_MANAGE,
+        Action.VM_PREPARE,
+        Action.VM_ASTRA_UPDATE, Action.VM_ALLTA_UPDATE, Action.VM_PASSWD,
+        Action.VM_NET_MANAGE, Action.VM_PRESET_MANAGE,
+    }),
 }
 
 
@@ -318,6 +354,7 @@ def is_valid_action(entity_type: str, action: str) -> bool:
 RESOURCE_ACL_TYPES: frozenset[str] = frozenset({
     EntityType.SERVER,
     EntityType.SERVER_ACCOUNT,
+    EntityType.VM,
 })
 
 # Действия, которые НЕЛЬЗЯ привязать к конкретному инстансу — они остаются
@@ -338,6 +375,9 @@ _NON_INSTANCE_ACTIONS: frozenset[str] = frozenset({
     Action.PREPARE_CALLBACK,
     Action.VIEW_MANAGEMENT_CREDENTIALS,
     Action.MANAGE_IGNORED_LOGINS,
+    # Подготовка сервера как VMS-hub таргетит сервер, а не инстанс ВМ —
+    # инстанс-грант на конкретную ВМ тут смысла не имеет.
+    Action.VMS_HUB_PREPARE,
 })
 
 # Инстанс-грантуемые действия на каждый resource_type — производное от
@@ -358,3 +398,70 @@ def is_instance_grantable(resource_type: str, action: str) -> bool:
     """
     allowed = INSTANCE_GRANTABLE_ACTIONS.get(resource_type)
     return allowed is not None and action in allowed
+
+
+class VmNetworkMode(StrEnum):
+    """Сетевой режим ВМ: мост в реальный LAN либо NAT libvirt."""
+
+    BRIDGE = "bridge"
+    NAT = "nat"
+
+
+class VmPowerState(StrEnum):
+    """Последнее известное состояние питания ВМ (из `virsh domstate`)."""
+
+    ON = "on"
+    OFF = "off"
+    UNKNOWN = "unknown"
+
+
+class VmCredStrategy(StrEnum):
+    """Стратегия связи mgmt-кред со снимками ВМ (§6 дизайна).
+
+    `per_snapshot` (дефолт) — каждый снимок хранит свои креды; `reroll` —
+    единый текущий пароль перекатывается по всем снимкам при ротации.
+    """
+
+    PER_SNAPSHOT = "per_snapshot"
+    REROLL = "reroll"
+
+
+class VmBusyState(StrEnum):
+    """Lifecycle-lock ВМ на время долгой операции (создание/удаление/апдейт).
+
+    Отдельно от `status` (бронь под тест): пока busy_state непустой, любые
+    управляющие операции над ВМ отбиваются, пока не придёт callback воркера
+    (или не сработает TTL-recovery). NULL = свободна от lifecycle-лока.
+    """
+
+    CREATING = "creating"
+    DELETING = "deleting"
+    UPDATING = "updating"
+    POWERING = "powering"
+
+
+# Бронь ВМ: свободная и служебные статусы под тест. Любое другое значение —
+# это `<login>` забронировавшего (см. §2 дизайна). Здесь только зарезервированные.
+VM_STATUS_FREE = "free"
+VM_STATUS_RUN_TEST = "run test"
+VM_STATUS_DEBUG_TEST = "debug test"
+
+
+class VmTaskKind(StrEnum):
+    """task_kind'ы, которые server_service диспатчит воркеру для VM-домена.
+
+    Строки едут в `dev_server_worker.tasks.task_kind` и в `dispatch_outbox`;
+    poller публикует их в taskiq-очередь, где живут handler'ы server_worker'а.
+    """
+
+    VMS_HUB_PREPARE = "vms_hub.prepare"
+    VM_CREATE = "vm.create"
+    VM_POWER = "vm.power"
+    VM_DELETE = "vm.delete"
+
+
+# Действия питания ВМ, принимаемые `POST /vms/{id}/power`. Едут в payload
+# VM_POWER как `action`; воркер мапит на virsh start/shutdown/reboot/reset/destroy.
+VM_POWER_ACTIONS: frozenset[str] = frozenset({
+    "start", "shutdown", "reboot", "reset", "destroy",
+})

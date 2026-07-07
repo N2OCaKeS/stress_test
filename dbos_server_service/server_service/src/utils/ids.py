@@ -58,6 +58,11 @@ def server_disk_id() -> str:
     return _new_id("dsk_")
 
 
+def vm_id() -> str:
+    """`vm_<uuid>` — для таблицы vms (виртуальные машины на hub-серверах)."""
+    return _new_id("vm_")
+
+
 def task_id() -> str:
     """`tsk_<uuid>` — для строк worker-БД `dev_server_worker.tasks`.
 

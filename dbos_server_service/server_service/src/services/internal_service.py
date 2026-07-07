@@ -49,6 +49,7 @@ from src.repositories import server as server_repo
 from src.repositories import server_account as account_repo
 from src.repositories import server_account_ignored_login as ignored_login_repo
 from src.repositories import server_disk as disk_repo
+from src.repositories import vm as vm_repo
 from src.schemas.identity import IdentityContext
 from src.schemas.internal import (
     InventoryCallbackRequest,
@@ -60,6 +61,10 @@ from src.schemas.internal import PowerStateCallbackRequest
 from src.schemas.server import (
     ServerAstraUpdateCallbackRequest,
     ServerPrepareCallbackRequest,
+)
+from src.schemas.vm import (
+    VmsHubStateCallbackRequest,
+    VmStateCallbackRequest,
 )
 from src.services import (
     audit_service,
@@ -2163,5 +2168,157 @@ async def record_ipmi_credentials_rotated(
         },
     )
     return {"ok": True, "rotated_at": rotated_at.isoformat()}
+
+
+# ── VM-домен: callback'и воркера (worker → server_service) ───────────────────
+
+
+async def record_vm_state(
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    payload: VmStateCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Callback воркера: состояние ВМ (power/ip/status/busy_state/error).
+
+    Идемпотентно и частично: применяем только присланные (не None) поля.
+    `busy_state=<value>` ставит lifecycle-lock; `clear_busy_state=True` снимает
+    его (null в busy_state неотличим от «не прислано», поэтому отдельный флаг).
+    `error` пишется в `last_error`.
+
+    Доступ: `(server, *, prepare_callback)` — тот же callback-грант worker_bot'а,
+    что и у серверных callback'ов; авторизуем в зоне server. Аудит:
+    `vm.state_updated` (INFO — рутинный кэш-апдейт).
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "vm.state_updated", target_id=vm_id, target_type="vm",
+            status="denied", allowed=False, details={"reason": "permission_denied"},
+        )
+        raise
+    vm = await vm_repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            "vm.state_updated", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "vm_not_found"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    _check_target_department(
+        audit_action="vm.state_updated",
+        target_id=vm_id, target_type="vm",
+        server_department_id=vm.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        not_found_error_code="VM_NOT_FOUND",
+        not_found_message="VM not found",
+    )
+    checked_at = datetime.now(timezone.utc)
+    if payload.power_state is not None:
+        vm.power_state = payload.power_state.value
+        vm.power_state_checked_at = checked_at
+    if payload.ip_address is not None:
+        vm.ip_address = str(payload.ip_address)
+    if payload.status is not None:
+        vm.status = payload.status
+    # busy_state: явный clear имеет приоритет; иначе — новое значение, если прислано.
+    if payload.clear_busy_state:
+        vm.busy_state = None
+        vm.busy_since = None
+    elif payload.busy_state is not None:
+        vm.busy_state = payload.busy_state.value
+        vm.busy_since = checked_at
+    if payload.ping_reachable is not None:
+        vm.ping_reachable = payload.ping_reachable
+        vm.ping_checked_at = checked_at
+    if payload.ssh_reachable is not None:
+        vm.ssh_reachable = payload.ssh_reachable
+        vm.ssh_checked_at = checked_at
+    if payload.error is not None:
+        vm.last_error = payload.error
+    await db.commit()
+    await db.refresh(vm)
+    audit_service.emit(
+        "vm.state_updated", target_id=vm_id, target_type="vm",
+        status="success", allowed=True,
+        details={
+            "power_state": vm.power_state,
+            "busy_state": vm.busy_state,
+            "department_id": vm.department_id,
+            "has_error": payload.error is not None,
+        },
+    )
+    return {
+        "ok": True, "vm_id": vm.id,
+        "power_state": vm.power_state, "busy_state": vm.busy_state,
+    }
+
+
+async def record_vms_hub_state(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+    payload: VmsHubStateCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Callback воркера: исход подготовки сервера как VMS-hub (vms_hub.prepare).
+
+    `prepared=True` → `is_vms_hub=True`, `vms_hub_prepared_at=now`,
+    `virtualization=True`; `phy_if` (если прислан) пишется в
+    `network_interface_name`. `prepared=False` → флаг hub'а не ставится,
+    `error` фиксируется в аудите.
+
+    Доступ: `(server, *, prepare_callback)`. Аудит: `vms_hub.prepared`.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "vms_hub.prepared", target_id=server_id, target_type="server",
+            status="denied", allowed=False, details={"reason": "permission_denied"},
+        )
+        raise
+    server = await server_repo.get_by_id(db, server_id)
+    if server is None:
+        audit_service.emit(
+            "vms_hub.prepared", target_id=server_id, target_type="server",
+            status="failure", allowed=True, details={"reason": "server_not_found"},
+        )
+        raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
+    _check_target_department_for_server(
+        audit_action="vms_hub.prepared",
+        target_id=server_id,
+        server_department_id=server.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+    )
+    update: dict = {}
+    if payload.prepared:
+        update["is_vms_hub"] = True
+        update["vms_hub_prepared_at"] = datetime.now(timezone.utc)
+        update["virtualization"] = True
+        if payload.phy_if is not None:
+            update["network_interface_name"] = payload.phy_if
+    if update:
+        await server_repo.update(db, server, update)
+        await db.commit()
+    audit_service.emit(
+        "vms_hub.prepared", target_id=server_id, target_type="server",
+        status="success" if payload.prepared else "failure",
+        allowed=True,
+        details={
+            "prepared": payload.prepared,
+            "phy_if": payload.phy_if,
+            "department_id": server.department_id,
+            "error": payload.error,
+        },
+    )
+    return {"ok": True, "server_id": server.id, "is_vms_hub": server.is_vms_hub}
 
 

@@ -21,8 +21,10 @@ from src.core.constants import (
     ServiceRole,
     VM_POWER_ACTIONS,
     VM_STATUS_FREE,
+    VM_SYSTEM_SNAPSHOT_SUFFIX,
     VmBusyState,
     VmPowerState,
+    VmSnapshotState,
     VmTaskKind,
 )
 from src.core.constants import VmDiskState
@@ -34,18 +36,30 @@ from src.core.exceptions import (
     NotFoundError,
 )
 from src.dependencies.idempotency import read_idempotency_key
-from src.models import Vm, VmDisk
+from src.models import Vm, VmDisk, VmSnapshot
+from src.repositories import os_version as os_version_repo
 from src.repositories import server as server_repo
 from src.repositories import server_disk as disk_repo
 from src.repositories import vm as repo
 from src.repositories import vm_disk as vm_disk_repo
 from src.repositories import vm_image as vm_image_repo
+from src.repositories import vm_snapshot as vm_snapshot_repo
 from src.schemas.identity import IdentityContext
-from src.schemas.vm import VmCreate, VmDiskCreate, VmUpdateRequest
-from src.services import audit_service, permissions, worker_client
+from src.schemas.vm import (
+    VmAlltaUpdateRequest,
+    VmAstraUpdateRequest,
+    VmCreate,
+    VmDiskCreate,
+    VmPasswdRequest,
+    VmSnapshotCreate,
+    VmCredStrategyRequest,
+    VmUpdateRequest,
+)
+from src.services import audit_service, permissions, secrets_service, worker_client
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.utils.ids import vm_disk_id as new_vm_disk_id
 from src.utils.ids import vm_id as new_vm_id
+from src.utils.ids import vm_snapshot_id as new_vm_snapshot_id
 
 logger = logging.getLogger(__name__)
 
@@ -456,6 +470,40 @@ def _capacity_check_update(hub, existing: dict[str, int], vm: Vm, new: dict) -> 
             )
 
 
+async def set_cred_strategy(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    payload: VmCredStrategyRequest,
+) -> Vm:
+    """Синхронно сменить режим mgmt-кред ВМ (per_snapshot/reroll).
+
+    Право `(vm, update)`. Метаданные — без задачи воркеру.
+    """
+    with emit_denied_on_authz_error(
+        "vm.updated", target_id=vm_id, target_type="vm",
+        extra_details={"vm_id": vm_id}, identity=identity,
+    ):
+        await permissions.require_resource_action(
+            db, identity, EntityType.VM, vm_id, Action.UPDATE
+        )
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+    vm.cred_strategy = payload.cred_strategy.value
+    await db.commit()
+    await db.refresh(vm)
+    audit_service.emit(
+        "vm.updated", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"field": "cred_strategy", "cred_strategy": vm.cred_strategy,
+                 "department_id": vm.department_id},
+    )
+    return vm
+
+
 async def update_vm(
     db: AsyncSession,
     identity: IdentityContext,
@@ -741,6 +789,478 @@ async def resize_disk(
         details={"task_id": task_id, "op": "disk_resize", "disk_id": disk.id, "size_gb": size_gb, "department_id": vm.department_id},
     )
     return disk, task_id
+
+
+# ── snapshots (create / list / revert / delete) ──────────────────────────────
+
+
+async def _load_vm_for_managed_op(
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    *,
+    action_perm: str,
+    audit_action: str,
+    op: str,
+) -> tuple[Vm, object]:
+    """Общий пролог управляющих VM-операций: право + видимость + бронь/lock + hub.
+
+    `action_perm` — action матрицы (vm_snapshot_manage / vm_astra_update / …),
+    `audit_action` — action-key для denied/failure-аудита.
+    """
+    with emit_denied_on_authz_error(
+        audit_action, target_id=vm_id, target_type="vm",
+        extra_details={"vm_id": vm_id, "op": op}, identity=identity,
+    ):
+        await permissions.require_resource_action(
+            db, identity, EntityType.VM, vm_id, action_perm
+        )
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            audit_action, target_id=vm_id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "not_found_or_cross_dept", "op": op},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+    _ensure_not_busy(vm, action=f"vm.{op}")
+    _ensure_bookable(identity, vm, action=f"vm.{op}")
+    hub = await server_repo.get_by_id(db, vm.hub_server_id)
+    if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+        raise ConflictError(
+            error_code="HUB_UNAVAILABLE",
+            message="Hub server is unavailable (missing or decommissioned)",
+        )
+    return vm, hub
+
+
+def _is_system_snapshot_name(name: str) -> bool:
+    """True для имён системных golden-снимков (`<ver>_build`)."""
+    return name.endswith(VM_SYSTEM_SNAPSHOT_SUFFIX)
+
+
+def _copy_snapshot_creds(
+    src: VmSnapshot | None, dst_id: str
+) -> dict[str, str | None]:
+    """Перешифровать mgmt-креды текущего снимка под AAD нового (режим per_snapshot).
+
+    Контент нового снимка идентичен текущему, поэтому креды наследуются. Ключ
+    есть только у server_service — decrypt старого AAD + encrypt под новым.
+    Нет текущего снимка / кред → пустой набор (первый снимок ВМ).
+    """
+    if src is None or src.mgmt_password_encrypted is None:
+        return {"mgmt_user": None, "mgmt_password_encrypted": None,
+                "mgmt_ssh_private_key_encrypted": None}
+    out: dict[str, str | None] = {"mgmt_user": src.mgmt_user}
+    plain = secrets_service.decrypt(
+        src.mgmt_password_encrypted,
+        aad=secrets_service.aad_for_vm_snapshot_password(src.id),
+    )
+    out["mgmt_password_encrypted"] = secrets_service.encrypt(
+        plain, aad=secrets_service.aad_for_vm_snapshot_password(dst_id)
+    )
+    if src.mgmt_ssh_private_key_encrypted is not None:
+        key_plain = secrets_service.decrypt(
+            src.mgmt_ssh_private_key_encrypted,
+            aad=secrets_service.aad_for_vm_snapshot_ssh_key(src.id),
+        )
+        out["mgmt_ssh_private_key_encrypted"] = secrets_service.encrypt(
+            key_plain, aad=secrets_service.aad_for_vm_snapshot_ssh_key(dst_id)
+        )
+    else:
+        out["mgmt_ssh_private_key_encrypted"] = None
+    return out
+
+
+async def list_snapshots(
+    db: AsyncSession, identity: IdentityContext, vm_id: str,
+) -> list[VmSnapshot]:
+    """Список снимков ВМ (системные `<ver>_build` скрыты). Право `(vm, view)`."""
+    await permissions.require_resource_action(
+        db, identity, EntityType.VM, vm_id, Action.VIEW
+    )
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+    return await vm_snapshot_repo.list_for_vm(db, vm_id, include_system=False)
+
+
+async def create_snapshot(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    payload: VmSnapshotCreate,
+) -> tuple[VmSnapshot, str]:
+    """INSERT снимка (state=creating) + dispatch VM_SNAPSHOT_CREATE.
+
+    Право `(vm, vm_snapshot_manage)`. Имя с суффиксом `_build` руками завести
+    нельзя (403 — зарезервировано под системные). Дубль имени → 409. В режиме
+    per_snapshot новый снимок наследует mgmt-креды текущего снимка (перешифровка).
+    """
+    vm, hub = await _load_vm_for_managed_op(
+        db, identity, vm_id,
+        action_perm=Action.VM_SNAPSHOT_MANAGE,
+        audit_action="vm.snapshot_created", op="snapshot_create",
+    )
+    if _is_system_snapshot_name(payload.name):
+        audit_service.emit(
+            "vm.snapshot_created", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "system_snapshot_protected", "name": payload.name},
+        )
+        raise AuthorizationError(
+            error_code="VM_SNAPSHOT_SYSTEM_PROTECTED",
+            message="Snapshot names ending with _build are reserved for system golden snapshots",
+        )
+    snapshot_id = new_vm_snapshot_id()
+    creds = {"mgmt_user": None, "mgmt_password_encrypted": None,
+             "mgmt_ssh_private_key_encrypted": None}
+    if vm.cred_strategy == "per_snapshot":
+        current = await vm_snapshot_repo.get_current(db, vm.id)
+        creds = _copy_snapshot_creds(current, snapshot_id)
+    parent = await vm_snapshot_repo.get_current(db, vm.id)
+    data = {
+        "id": snapshot_id,
+        "vm_id": vm.id,
+        "name": payload.name,
+        "description": payload.description,
+        "parent_snapshot_id": parent.id if parent is not None else None,
+        "kind": payload.kind.value,
+        "is_system": False,
+        "state": VmSnapshotState.CREATING.value,
+        "is_current": False,
+        "created_by": identity.user_id,
+        **creds,
+    }
+    try:
+        snapshot = await vm_snapshot_repo.create(db, data)
+    except IntegrityError as exc:
+        await db.rollback()
+        audit_service.emit(
+            "vm.snapshot_created", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "duplicate", "name": payload.name},
+        )
+        raise ConflictError(
+            error_code="VM_SNAPSHOT_EXISTS",
+            message="A snapshot with this name already exists on the VM",
+        ) from exc
+    payload_task = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "snapshot_id": snapshot.id,
+        "snapshot_name": snapshot.name,
+        "kind": snapshot.kind,
+        "description": snapshot.description,
+        "parent_snapshot_name": parent.name if parent is not None else None,
+    }
+    vm.busy_state = VmBusyState.SNAPSHOTTING.value
+    vm.busy_since = datetime.now(timezone.utc)
+    task_id = await _dispatch_vm_task(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_SNAPSHOT_CREATE, hub=hub, vm=vm,
+        payload=payload_task, audit_action="vm.snapshot_created",
+    )
+    await db.commit()
+    await db.refresh(snapshot)
+    audit_service.emit(
+        "vm.snapshot_created", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "snapshot_id": snapshot.id, "name": snapshot.name, "department_id": vm.department_id},
+    )
+    return snapshot, task_id
+
+
+async def _load_snapshot_for_op(
+    db: AsyncSession, vm: Vm, snapshot_id: str, *, audit_action: str, op: str,
+) -> VmSnapshot:
+    """Загрузить снимок, проверить принадлежность ВМ и защиту системных `_build`."""
+    snapshot = await vm_snapshot_repo.get_by_id(db, snapshot_id)
+    if snapshot is None or snapshot.vm_id != vm.id:
+        audit_service.emit(
+            audit_action, target_id=vm.id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "snapshot_not_found", "op": op, "snapshot_id": snapshot_id},
+        )
+        raise NotFoundError(
+            error_code="VM_SNAPSHOT_NOT_FOUND",
+            message="Snapshot not found on this VM",
+        )
+    if snapshot.is_system:
+        audit_service.emit(
+            audit_action, target_id=vm.id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "system_snapshot_protected", "op": op, "snapshot_id": snapshot_id},
+        )
+        raise AuthorizationError(
+            error_code="VM_SNAPSHOT_SYSTEM_PROTECTED",
+            message="System golden snapshots (_build) cannot be reverted or deleted manually",
+        )
+    return snapshot
+
+
+async def revert_snapshot(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    snapshot_id: str,
+) -> tuple[VmSnapshot, str]:
+    """Dispatch VM_SNAPSHOT_REVERT. Право `(vm, vm_snapshot_manage)`.
+
+    Системные `<ver>_build` откатывать руками нельзя (403). В режиме per_snapshot
+    активные креды ВМ переключаются на «снимковые» — переключение подтверждает
+    callback `POST /internal/vms/{id}/snapshots` (is_current=true на снимке).
+    """
+    vm, hub = await _load_vm_for_managed_op(
+        db, identity, vm_id,
+        action_perm=Action.VM_SNAPSHOT_MANAGE,
+        audit_action="vm.snapshot_reverted", op="snapshot_revert",
+    )
+    snapshot = await _load_snapshot_for_op(
+        db, vm, snapshot_id, audit_action="vm.snapshot_reverted", op="snapshot_revert",
+    )
+    payload_task = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "snapshot_id": snapshot.id,
+        "snapshot_name": snapshot.name,
+        "cred_strategy": vm.cred_strategy,
+    }
+    vm.busy_state = VmBusyState.REVERTING.value
+    vm.busy_since = datetime.now(timezone.utc)
+    task_id = await _dispatch_vm_task(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_SNAPSHOT_REVERT, hub=hub, vm=vm,
+        payload=payload_task, audit_action="vm.snapshot_reverted",
+    )
+    await db.commit()
+    await db.refresh(snapshot)
+    audit_service.emit(
+        "vm.snapshot_reverted", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "snapshot_id": snapshot.id, "name": snapshot.name, "cred_strategy": vm.cred_strategy, "department_id": vm.department_id},
+    )
+    return snapshot, task_id
+
+
+async def delete_snapshot(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    snapshot_id: str,
+) -> tuple[VmSnapshot, str]:
+    """Dispatch VM_SNAPSHOT_DELETE + удалить строку снимка. Право `vm_snapshot_manage`.
+
+    Системные `<ver>_build` удалять руками нельзя (403).
+    """
+    vm, hub = await _load_vm_for_managed_op(
+        db, identity, vm_id,
+        action_perm=Action.VM_SNAPSHOT_MANAGE,
+        audit_action="vm.snapshot_deleted", op="snapshot_delete",
+    )
+    snapshot = await _load_snapshot_for_op(
+        db, vm, snapshot_id, audit_action="vm.snapshot_deleted", op="snapshot_delete",
+    )
+    name = snapshot.name
+    payload_task = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "snapshot_id": snapshot.id,
+        "snapshot_name": snapshot.name,
+    }
+    task_id = await _dispatch_vm_task(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_SNAPSHOT_DELETE, hub=hub, vm=vm,
+        payload=payload_task, audit_action="vm.snapshot_deleted",
+    )
+    await vm_snapshot_repo.delete(db, snapshot)
+    await db.commit()
+    audit_service.emit(
+        "vm.snapshot_deleted", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "snapshot_id": snapshot_id, "name": name, "department_id": vm.department_id},
+    )
+    return snapshot, task_id
+
+
+# ── astra-update / allta-update / passwd ─────────────────────────────────────
+
+
+def _base_snapshot_family(rc: str) -> str:
+    """Семейство базового golden-снимка по RC (major.minor, напр. 1.7.5.6 → 1.7).
+
+    Воркер по семейству находит конкретный `<ver>_build` (1.7*→1.7.5.9_build,
+    1.8*→1.8.1.6_build) — точная привязка golden'а живёт на hub'е.
+    """
+    parts = rc.split(".")
+    return ".".join(parts[:2]) if len(parts) >= 2 else rc
+
+
+async def astra_update(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    payload: VmAstraUpdateRequest,
+) -> tuple[Vm, str]:
+    """Dispatch VM_ASTRA_UPDATE (revert <ver>_build → repo → astra-update → снимок rc).
+
+    Право `(vm, vm_astra_update)`. Снимок с именем `rc` не должен существовать
+    (409). repository_urls берутся из зарегистрированной OS-версии `rc`
+    (404, если версия не заведена). Ставит busy_state=updating.
+    """
+    vm, hub = await _load_vm_for_managed_op(
+        db, identity, vm_id,
+        action_perm=Action.VM_ASTRA_UPDATE,
+        audit_action="vm.astra_updated", op="astra_update",
+    )
+    existing = await vm_snapshot_repo.get_by_name(db, vm.id, payload.rc)
+    if existing is not None:
+        audit_service.emit(
+            "vm.astra_updated", target_id=vm.id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "snapshot_exists", "rc": payload.rc},
+        )
+        raise ConflictError(
+            error_code="VM_SNAPSHOT_EXISTS",
+            message=f"A snapshot named '{payload.rc}' already exists; RC already applied",
+            details={"rc": payload.rc},
+        )
+    osv = await os_version_repo.get_by_name(db, payload.rc)
+    if osv is None:
+        audit_service.emit(
+            "vm.astra_updated", target_id=vm.id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "os_version_not_registered", "rc": payload.rc},
+        )
+        raise NotFoundError(
+            error_code="OS_VERSION_NOT_FOUND",
+            message=f"OS version '{payload.rc}' is not registered; add it first to resolve repositories",
+            details={"rc": payload.rc},
+        )
+    strategy = payload.cred_strategy.value if payload.cred_strategy is not None else vm.cred_strategy
+    payload_task = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "rc": payload.rc,
+        "repository_urls": list(osv.repositories or []),
+        "base_snapshot_family": _base_snapshot_family(payload.rc),
+        "target_snapshot": payload.rc,
+        "password": payload.password,
+        "cred_strategy": strategy,
+    }
+    vm.busy_state = VmBusyState.UPDATING.value
+    vm.busy_since = datetime.now(timezone.utc)
+    task_id = await _dispatch_vm_task(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_ASTRA_UPDATE, hub=hub, vm=vm,
+        payload=payload_task, audit_action="vm.astra_updated",
+    )
+    await db.commit()
+    await db.refresh(vm)
+    audit_service.emit(
+        "vm.astra_updated", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "rc": payload.rc, "repositories_count": len(osv.repositories or []), "department_id": vm.department_id},
+    )
+    return vm, task_id
+
+
+async def _rotate_guest(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    *,
+    task_kind: str,
+    audit_action: str,
+    op: str,
+    action_perm: str,
+    password: str | None,
+    cred_strategy_override: str | None,
+) -> tuple[Vm, str]:
+    """Общий флоу allta-update / passwd: обновить гостевую allta + опц. пароль `u`.
+
+    Идентичный op (§2.5 референса). В reroll воркер проходит по всем не-`_build`
+    снимкам (revert→update→resnapshot), в per_snapshot трогает только текущий.
+    server_service передаёт список не-системных снимков и стратегию.
+    """
+    vm, hub = await _load_vm_for_managed_op(
+        db, identity, vm_id,
+        action_perm=action_perm, audit_action=audit_action, op=op,
+    )
+    strategy = cred_strategy_override if cred_strategy_override is not None else vm.cred_strategy
+    snapshots = await vm_snapshot_repo.list_for_vm(db, vm.id, include_system=False)
+    payload_task = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "password": password,
+        "cred_strategy": strategy,
+        "snapshots": [
+            {"snapshot_id": s.id, "name": s.name} for s in snapshots
+        ],
+    }
+    vm.busy_state = VmBusyState.UPDATING.value
+    vm.busy_since = datetime.now(timezone.utc)
+    task_id = await _dispatch_vm_task(
+        db=db, identity=identity, request=request,
+        task_kind=task_kind, hub=hub, vm=vm,
+        payload=payload_task, audit_action=audit_action,
+    )
+    await db.commit()
+    await db.refresh(vm)
+    audit_service.emit(
+        audit_action, target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "cred_strategy": strategy, "password_changed": password is not None, "department_id": vm.department_id},
+    )
+    return vm, task_id
+
+
+async def allta_update(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    payload: VmAlltaUpdateRequest,
+) -> tuple[Vm, str]:
+    """Dispatch VM_ALLTA_UPDATE. Право `(vm, vm_allta_update)`. Пароль опционален."""
+    return await _rotate_guest(
+        db, identity, request, vm_id,
+        task_kind=VmTaskKind.VM_ALLTA_UPDATE,
+        audit_action="vm.allta_updated", op="allta_update",
+        action_perm=Action.VM_ALLTA_UPDATE,
+        password=payload.password,
+        cred_strategy_override=payload.cred_strategy.value if payload.cred_strategy is not None else None,
+    )
+
+
+async def passwd(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    payload: VmPasswdRequest,
+) -> tuple[Vm, str]:
+    """Dispatch VM_PASSWD (тот же op, пароль обязателен). Право `(vm, vm_passwd)`."""
+    return await _rotate_guest(
+        db, identity, request, vm_id,
+        task_kind=VmTaskKind.VM_PASSWD,
+        audit_action="vm.passwd_changed", op="passwd",
+        action_perm=Action.VM_PASSWD,
+        password=payload.password,
+        cred_strategy_override=payload.cred_strategy.value if payload.cred_strategy is not None else None,
+    )
 
 
 # ── power / delete ───────────────────────────────────────────────────────────

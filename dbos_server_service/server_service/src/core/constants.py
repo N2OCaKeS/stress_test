@@ -451,6 +451,36 @@ class VmImageKind(StrEnum):
     SINGLE = "single"
 
 
+class VmSnapshotKind(StrEnum):
+    """Тип снимка ВМ.
+
+    `disk_only` — только диск (`virsh snapshot-create-as --disk-only`);
+    `full` — диск + состояние RAM/устройств.
+    """
+
+    DISK_ONLY = "disk_only"
+    FULL = "full"
+
+
+class VmSnapshotState(StrEnum):
+    """Жизненный цикл снимка ВМ. Источник истины — hub; БД зеркалит.
+
+    `creating` — строка заведена, задача снятия снимка в работе;
+    `ready` — снимок снят на гипервизоре (callback воркера);
+    `error` — операция на hub'е упала (текст — в `last_error` ВМ).
+    """
+
+    CREATING = "creating"
+    READY = "ready"
+    ERROR = "error"
+
+
+# Суффикс имени системных golden-снимков (`<ver>_build`). Такие снимки создаёт
+# сам сборочный флоу vm.create, они несут дефолт-креды образа (`u:1`) и в UI
+# скрыты; руками их нельзя удалять/откатывать (403).
+VM_SYSTEM_SNAPSHOT_SUFFIX = "_build"
+
+
 class VmBusyState(StrEnum):
     """Lifecycle-lock ВМ на время долгой операции (создание/удаление/апдейт).
 
@@ -463,6 +493,8 @@ class VmBusyState(StrEnum):
     DELETING = "deleting"
     UPDATING = "updating"
     POWERING = "powering"
+    SNAPSHOTTING = "snapshotting"
+    REVERTING = "reverting"
 
 
 # Бронь ВМ: свободная и служебные статусы под тест. Любое другое значение —
@@ -489,6 +521,17 @@ class VmTaskKind(StrEnum):
     VM_DISK_ATTACH = "vm.disk_attach"
     VM_DISK_DELETE = "vm.disk_delete"
     VM_DISK_RESIZE = "vm.disk_resize"
+    # Снимки ВМ: снять / удалить / откатить (virsh snapshot-create-as/-delete/
+    # -revert). Системные `<ver>_build` — только через сборочный флоу, не руками.
+    VM_SNAPSHOT_CREATE = "vm.snapshot_create"
+    VM_SNAPSHOT_DELETE = "vm.snapshot_delete"
+    VM_SNAPSHOT_REVERT = "vm.snapshot_revert"
+    # Обновление ОС ВМ по RC (revert <ver>_build → repo → astra-update → снимок
+    # <rc>). Смена гостевой allta + пароля `u` (allta_update и passwd — один op,
+    # у passwd пароль обязателен).
+    VM_ASTRA_UPDATE = "vm.astra_update"
+    VM_ALLTA_UPDATE = "vm.allta_update"
+    VM_PASSWD = "vm.passwd"
 
 
 # Действия питания ВМ, принимаемые `POST /vms/{id}/power`. Едут в payload

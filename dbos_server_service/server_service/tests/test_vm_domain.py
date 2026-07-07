@@ -726,3 +726,349 @@ async def test_vm_disks_callback_syncs(
     assert disk["state"] == "ready"
     assert disk["path"] == "/vms/d.qcow2"
     assert disk["target_dev"] == "vdb"
+
+
+# ── волна 3: снимки + astra/allta/passwd ─────────────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def make_snapshot(db):
+    """Снимок ВМ напрямую в БД (для list/revert/delete/creds тестов)."""
+    from src.models import VmSnapshot
+    from src.services import secrets_service
+    from src.utils.ids import vm_snapshot_id as new_id
+
+    async def _factory(
+        *, vm, name: str, is_system: bool = False, is_current: bool = False,
+        password: str | None = None, kind: str = "disk_only", state: str = "ready",
+    ) -> VmSnapshot:
+        sid = new_id()
+        pwd_enc = None
+        if password is not None:
+            pwd_enc = secrets_service.encrypt(
+                password, aad=secrets_service.aad_for_vm_snapshot_password(sid)
+            )
+        snap = VmSnapshot(
+            id=sid, vm_id=vm.id, name=name, is_system=is_system,
+            is_current=is_current, kind=kind, state=state,
+            mgmt_user="u" if password else None, mgmt_password_encrypted=pwd_enc,
+        )
+        db.add(snap)
+        await db.flush()
+        await db.refresh(snap)
+        return snap
+
+    return _factory
+
+
+@pytest.mark.asyncio
+async def test_snapshot_create_list_hides_build(
+    client, admin_role_token_a, make_hub, make_vm, make_snapshot, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    # системный golden — должен быть скрыт из выдачи
+    await make_snapshot(vm=vm, name="1.8.1.6_build", is_system=True, is_current=True)
+
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/snapshots", json={"name": "before-test", "kind": "full"},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    snap_id = resp.json()["snapshot_id"]
+    assert snap_id.startswith("snp_")
+    assert calls[-1]["task_kind"] == "vm.snapshot_create"
+    assert calls[-1]["target_server_id"] == hub.id
+    assert calls[-1]["payload"]["snapshot_name"] == "before-test"
+    assert calls[-1]["payload"]["kind"] == "full"
+
+    resp = await client.get(f"{BASE}/vms/{vm.id}/snapshots", headers=_hdr(admin_role_token_a))
+    assert resp.status_code == 200
+    names = {s["name"] for s in resp.json()}
+    assert "before-test" in names
+    assert "1.8.1.6_build" not in names  # _build скрыт
+
+
+@pytest.mark.asyncio
+async def test_snapshot_create_system_name_forbidden(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/snapshots", json={"name": "1.8.1.6_build"},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 403, "VM_SNAPSHOT_SYSTEM_PROTECTED")
+
+
+@pytest.mark.asyncio
+async def test_snapshot_revert_dispatch(
+    client, admin_role_token_a, make_hub, make_vm, make_snapshot, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    snap = await make_snapshot(vm=vm, name="checkpoint")
+
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/snapshots/{snap.id}/revert", headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[-1]["task_kind"] == "vm.snapshot_revert"
+    assert calls[-1]["payload"]["snapshot_name"] == "checkpoint"
+    assert calls[-1]["payload"]["cred_strategy"] == "per_snapshot"
+    # busy_state=reverting выставлен (снимет callback воркера).
+    resp = await client.get(f"{BASE}/vms/{vm.id}", headers=_hdr(admin_role_token_a))
+    assert resp.json()["busy_state"] == "reverting"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_delete_dispatch(
+    client, admin_role_token_a, make_hub, make_vm, make_snapshot, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    snap = await make_snapshot(vm=vm, name="checkpoint")
+
+    resp = await client.delete(
+        f"{BASE}/vms/{vm.id}/snapshots/{snap.id}", headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[-1]["task_kind"] == "vm.snapshot_delete"
+
+    resp = await client.get(f"{BASE}/vms/{vm.id}/snapshots", headers=_hdr(admin_role_token_a))
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_build_snapshot_delete_revert_forbidden(
+    client, admin_role_token_a, make_hub, make_vm, make_snapshot, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    build = await make_snapshot(vm=vm, name="1.7.5.9_build", is_system=True)
+
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/snapshots/{build.id}/revert", headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 403, "VM_SNAPSHOT_SYSTEM_PROTECTED")
+
+    resp = await client.delete(
+        f"{BASE}/vms/{vm.id}/snapshots/{build.id}", headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 403, "VM_SNAPSHOT_SYSTEM_PROTECTED")
+
+
+@pytest.mark.asyncio
+async def test_snapshot_requires_grant(
+    client, guest_token_a, make_hub, make_vm, make_snapshot, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    await make_snapshot(vm=vm, name="s1")
+    # guest видит список (view), но не снимает (нет vm_snapshot_manage)
+    resp = await client.get(f"{BASE}/vms/{vm.id}/snapshots", headers=_hdr(guest_token_a))
+    assert resp.status_code == 200
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/snapshots", json={"name": "x"}, headers=_hdr(guest_token_a),
+    )
+    assert_error(resp, 403, "PERMISSION_DENIED")
+
+
+@pytest.mark.asyncio
+async def test_snapshots_cascade_on_vm_delete(
+    client, admin_role_token_a, make_hub, make_vm, make_snapshot, db, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    await make_snapshot(vm=vm, name="s1")
+    await make_snapshot(vm=vm, name="1.8.1.6_build", is_system=True)
+
+    resp = await client.delete(f"{BASE}/vms/{vm.id}", headers=_hdr(admin_role_token_a))
+    assert resp.status_code == 202, resp.text
+
+    from src.repositories import vm_snapshot as vm_snapshot_repo
+    remaining = await vm_snapshot_repo.list_all_for_vm(db, vm.id)
+    assert remaining == []
+
+
+# ── astra-update / passwd ────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def make_os_version(db):
+    """Зарегистрировать OS-версию с repository_urls напрямую."""
+    from src.models import OsVersion
+    from src.utils.ids import os_version_id as new_id
+
+    async def _factory(*, name: str, repositories=None):
+        osv = OsVersion(
+            id=new_id(), name=name,
+            repositories=repositories or [f"deb https://r/{name} main"],
+        )
+        db.add(osv)
+        await db.flush()
+        return osv
+
+    return _factory
+
+
+@pytest.mark.asyncio
+async def test_astra_update_dispatch_with_repos(
+    client, admin_role_token_a, make_hub, make_vm, make_os_version, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    await make_os_version(name="1.7.5.6", repositories=["deb https://releases/x 1.7_x86-64 main"])
+
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/astra-update", json={"rc": "1.7.5.6"},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[-1]["task_kind"] == "vm.astra_update"
+    assert calls[-1]["payload"]["rc"] == "1.7.5.6"
+    assert calls[-1]["payload"]["repository_urls"] == ["deb https://releases/x 1.7_x86-64 main"]
+    assert calls[-1]["payload"]["base_snapshot_family"] == "1.7"
+
+
+@pytest.mark.asyncio
+async def test_astra_update_duplicate_rc(
+    client, admin_role_token_a, make_hub, make_vm, make_snapshot, make_os_version, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    await make_os_version(name="1.8.1.6")
+    await make_snapshot(vm=vm, name="1.8.1.6")  # снимок RC уже есть
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/astra-update", json={"rc": "1.8.1.6"},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 409, "VM_SNAPSHOT_EXISTS")
+
+
+@pytest.mark.asyncio
+async def test_astra_update_unregistered_os(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/astra-update", json={"rc": "9.9.9.9"},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 404, "OS_VERSION_NOT_FOUND")
+
+
+@pytest.mark.asyncio
+async def test_passwd_empty_rejected(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/passwd", json={"password": ""},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_passwd_dispatch(
+    client, admin_role_token_a, make_hub, make_vm, make_snapshot, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    await make_snapshot(vm=vm, name="s1")
+    await make_snapshot(vm=vm, name="1.8.1.6_build", is_system=True)
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/passwd", json={"password": "newpass"},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[-1]["task_kind"] == "vm.passwd"
+    assert calls[-1]["payload"]["password"] == "newpass"
+    # только не-_build снимки едут в payload
+    names = {s["name"] for s in calls[-1]["payload"]["snapshots"]}
+    assert names == {"s1"}
+
+
+@pytest.mark.asyncio
+async def test_per_snapshot_revert_switches_creds_callback(
+    client, worker_bot_token_a, make_hub, make_vm, make_snapshot, db,
+):
+    # per_snapshot: два снимка со своими кредами; revert-callback переключает
+    # текущий и креды ВМ = креды нового текущего снимка.
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    s_old = await make_snapshot(vm=vm, name="old", is_current=True, password="oldpw")
+    s_new = await make_snapshot(vm=vm, name="new", is_current=False, password="newpw")
+
+    resp = await client.post(
+        f"{BASE}/internal/vms/{vm.id}/snapshots",
+        json={"snapshots": [{"name": "new", "is_current": True}]},
+        headers=_hdr(worker_bot_token_a, dept="dep_a"),
+    )
+    assert resp.status_code == 200, resp.text
+
+    from src.repositories import vm_snapshot as vm_snapshot_repo
+    from src.services import secrets_service
+    current = await vm_snapshot_repo.get_current(db, vm.id)
+    assert current is not None
+    assert current.id == s_new.id
+    # старый снимок больше не текущий
+    old = await vm_snapshot_repo.get_by_id(db, s_old.id)
+    assert old.is_current is False
+    # активные креды = креды нового текущего снимка
+    plain = secrets_service.decrypt(
+        current.mgmt_password_encrypted,
+        aad=secrets_service.aad_for_vm_snapshot_password(current.id),
+    )
+    assert plain == "newpw"
+
+
+@pytest.mark.asyncio
+async def test_snapshots_callback_creates_and_encrypts(
+    client, worker_bot_token_a, make_hub, make_vm, db,
+):
+    # worker создаёт _build/<ver> снимки в ходе vm.create + шлёт креды plaintext.
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.post(
+        f"{BASE}/internal/vms/{vm.id}/snapshots",
+        json={"snapshots": [
+            {"name": "1.8.1.6_build", "is_system": True, "state": "ready"},
+            {"name": "1.8.1.6", "parent": "1.8.1.6_build", "is_current": True,
+             "mgmt_user": "u", "mgmt_password": "clientpw", "size_bytes": 1024},
+        ]},
+        headers=_hdr(worker_bot_token_a, dept="dep_a"),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["created"] == 2
+
+    from src.repositories import vm_snapshot as vm_snapshot_repo
+    from src.services import secrets_service
+    snaps = {s.name: s for s in await vm_snapshot_repo.list_all_for_vm(db, vm.id)}
+    assert snaps["1.8.1.6_build"].is_system is True
+    ver = snaps["1.8.1.6"]
+    assert ver.parent_snapshot_id == snaps["1.8.1.6_build"].id
+    assert ver.is_current is True
+    assert ver.size_bytes == 1024
+    plain = secrets_service.decrypt(
+        ver.mgmt_password_encrypted,
+        aad=secrets_service.aad_for_vm_snapshot_password(ver.id),
+    )
+    assert plain == "clientpw"

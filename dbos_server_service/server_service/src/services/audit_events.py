@@ -225,6 +225,14 @@ SERVICE_EVENTS = [
     # Каталог боксов-образов ВМ.
     {"action": "vm_image.refresh", "description": "VM image catalog synced from the FTP box config (POST /vm-images/refresh, libvirt_box section). details: source/synced/created/updated. denied: permission_denied", "default_severity": "INFO"},
     {"action": "vms_hub.prepared", "description": "Prepare server as VMS-hub: (a) dispatch vms_hub.prepare (permission/prepared/virtualization gate); (b) worker callback POST /internal/servers/{id}/vms-hub-state marks is_vms_hub + virtualization + phy_if. failure reasons: not_found_or_cross_dept / prepare_required / virtualization_unsupported / worker_unreachable", "default_severity": "CRITICAL"},
+    # Снимки ВМ + обновления ОС / гостевой allta / пароль (волна 3).
+    {"action": "vm.snapshot_created", "description": "VM snapshot create dispatched (vm.snapshot_create), busy_state=snapshotting. per_snapshot: new snapshot inherits current mgmt creds. failure reasons: not_found_or_cross_dept / system_snapshot_protected / duplicate / worker_unreachable", "default_severity": "WARNING"},
+    {"action": "vm.snapshot_reverted", "description": "VM revert to snapshot dispatched (vm.snapshot_revert), busy_state=reverting. per_snapshot switches VM active creds to the snapshot's. failure reasons: snapshot_not_found / system_snapshot_protected / worker_unreachable", "default_severity": "WARNING"},
+    {"action": "vm.snapshot_deleted", "description": "VM snapshot delete dispatched (vm.snapshot_delete) and row removed. system _build snapshots cannot be deleted manually (403 VM_SNAPSHOT_SYSTEM_PROTECTED). failure reasons: snapshot_not_found / worker_unreachable", "default_severity": "WARNING"},
+    {"action": "vm.snapshots_synced", "description": "Worker synced VM snapshots back (POST /internal/vms/{id}/snapshots): batch upsert by name (name/parent/kind/is_system/state/size_bytes/is_current + per-snapshot creds). is_current=true moves the current flag", "default_severity": "INFO"},
+    {"action": "vm.astra_updated", "description": "VM OS update by RC dispatched (vm.astra_update: revert <ver>_build → repo → astra-update → snapshot <rc>), busy_state=updating. repository_urls resolved from the registered os_version. failure reasons: not_found_or_cross_dept / snapshot_exists / os_version_not_registered / worker_unreachable", "default_severity": "WARNING"},
+    {"action": "vm.allta_updated", "description": "VM guest allta update (+ optional u password) dispatched (vm.allta_update), busy_state=updating. reroll walks all non-_build snapshots. failure reasons: not_found_or_cross_dept / worker_unreachable", "default_severity": "WARNING"},
+    {"action": "vm.passwd_changed", "description": "VM guest u password change dispatched (vm.passwd; same op as allta-update, password mandatory), busy_state=updating. failure reasons: not_found_or_cross_dept / worker_unreachable", "default_severity": "WARNING"},
 ]
 
 

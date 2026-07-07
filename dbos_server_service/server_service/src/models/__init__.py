@@ -16,6 +16,7 @@ from src.models.server_disk import ServerDisk
 from src.models.vm import Vm
 from src.models.vm_disk import VmDisk
 from src.models.vm_image import VmImage
+from src.models.vm_snapshot import VmSnapshot
 
 __all__ = [
     "ConsoleMacro",
@@ -35,4 +36,5 @@ __all__ = [
     "Vm",
     "VmDisk",
     "VmImage",
+    "VmSnapshot",
 ]

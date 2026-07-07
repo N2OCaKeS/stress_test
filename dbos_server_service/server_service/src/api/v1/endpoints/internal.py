@@ -74,6 +74,8 @@ from src.schemas.vm import (
     VmDisksCallbackResponse,
     VmsHubStateCallbackRequest,
     VmsHubStateCallbackResponse,
+    VmSnapshotsCallbackRequest,
+    VmSnapshotsCallbackResponse,
     VmStateCallbackRequest,
     VmStateCallbackResponse,
 )
@@ -551,6 +553,36 @@ async def record_vm_disks(
         target_department_id=x_target_department_id,
     )
     return VmDisksCallbackResponse(**data)
+
+
+@router.post(
+    "/vms/{vm_id}/snapshots",
+    response_model=VmSnapshotsCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def record_vm_snapshots(
+    vm_id: str,
+    body: VmSnapshotsCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> VmSnapshotsCallbackResponse:
+    """Worker синкает снимки ВМ по имени (батч upsert + креды-по-снимку).
+
+    Известный снимок обновляется, незнакомый заводится (worker создаёт
+    `<ver>_build`/`<ver>` в ходе vm.create). Поля креды приходят plaintext'ом —
+    server_service шифрует их под AAD снимка (per_snapshot). `is_current=true`
+    делает снимок текущим и снимает флаг с остальных (revert).
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `vm.snapshots_synced` (INFO).
+    """
+    data = await internal_service.record_vm_snapshots(
+        db, identity, vm_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return VmSnapshotsCallbackResponse(**data)
 
 
 @router.post(

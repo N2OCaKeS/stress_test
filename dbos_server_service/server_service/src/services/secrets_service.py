@@ -180,6 +180,24 @@ def aad_for_server_mgmt_password(server_id: str) -> bytes:
     return f"server_mgmt_password|servers|{server_id}".encode()
 
 
+def aad_for_vm_snapshot_password(snapshot_id: str) -> bytes:
+    """AAD для `vm_snapshots.mgmt_password_encrypted` строки `snapshot_id`.
+
+    Формат — `"vm_snapshot_password|vm_snapshots|<id>"`. Привязывает ciphertext
+    к конкретному снимку: swap кред между снимками → InvalidTag.
+    """
+    return f"vm_snapshot_password|vm_snapshots|{snapshot_id}".encode()
+
+
+def aad_for_vm_snapshot_ssh_key(snapshot_id: str) -> bytes:
+    """AAD для `vm_snapshots.mgmt_ssh_private_key_encrypted` строки `snapshot_id`.
+
+    Формат — `"vm_snapshot_ssh_key|vm_snapshots|<id>"`. Отдельный kind от
+    пароля, чтобы swap password↔private_key в одной строке тоже отбивался.
+    """
+    return f"vm_snapshot_ssh_key|vm_snapshots|{snapshot_id}".encode()
+
+
 def aad_for_ipmi_credential(controller_id: str) -> bytes:
     """AAD для `ipmi_controllers.password_encrypted` строки `controller_id`.
 

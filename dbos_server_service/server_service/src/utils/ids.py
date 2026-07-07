@@ -73,6 +73,11 @@ def vm_image_id() -> str:
     return _new_id("vmi_")
 
 
+def vm_snapshot_id() -> str:
+    """`snp_<uuid>` — для таблицы vm_snapshots (снимки виртуальных машин)."""
+    return _new_id("snp_")
+
+
 def task_id() -> str:
     """`tsk_<uuid>` — для строк worker-БД `dev_server_worker.tasks`.
 

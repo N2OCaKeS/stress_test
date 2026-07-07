@@ -51,6 +51,7 @@ from src.repositories import server_account_ignored_login as ignored_login_repo
 from src.repositories import server_disk as disk_repo
 from src.repositories import vm as vm_repo
 from src.repositories import vm_disk as vm_disk_repo
+from src.repositories import vm_snapshot as vm_snapshot_repo
 from src.schemas.identity import IdentityContext
 from src.schemas.internal import (
     InventoryCallbackRequest,
@@ -66,6 +67,7 @@ from src.schemas.server import (
 from src.schemas.vm import (
     VmDisksCallbackRequest,
     VmsHubStateCallbackRequest,
+    VmSnapshotsCallbackRequest,
     VmStateCallbackRequest,
 )
 from src.services import (
@@ -76,7 +78,7 @@ from src.services import (
     secrets_service,
 )
 from src.services import server as server_svc
-from src.utils.ids import os_version_id, server_disk_id
+from src.utils.ids import os_version_id, server_disk_id, vm_snapshot_id
 
 logger = logging.getLogger(__name__)
 
@@ -2388,5 +2390,112 @@ async def record_vm_disks_state(
         details={"synced": synced, "department_id": vm.department_id},
     )
     return {"ok": True, "vm_id": vm.id, "synced": synced}
+
+
+async def record_vm_snapshots(
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    payload: VmSnapshotsCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Callback воркера: батч-синк снимков ВМ по имени (+ креды-по-снимку).
+
+    Матчинг по имени в пределах ВМ: известный снимок обновляется, незнакомый
+    заводится (worker создаёт `<ver>_build`/`<ver>` в ходе vm.create). Креды
+    (`mgmt_password`/`mgmt_ssh_private_key`) приходят plaintext'ом — шифруем под
+    AAD снимка (per_snapshot). `is_current=True` делает снимок текущим и снимает
+    флаг с остальных снимков ВМ (revert).
+
+    Доступ: `(server, *, prepare_callback)`. Аудит: `vm.snapshots_synced` (INFO).
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "vm.snapshots_synced", target_id=vm_id, target_type="vm",
+            status="denied", allowed=False, details={"reason": "permission_denied"},
+        )
+        raise
+    vm = await vm_repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            "vm.snapshots_synced", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "vm_not_found"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    _check_target_department(
+        audit_action="vm.snapshots_synced",
+        target_id=vm_id, target_type="vm",
+        server_department_id=vm.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        not_found_error_code="VM_NOT_FOUND",
+        not_found_message="VM not found",
+    )
+    existing = {s.name: s for s in await vm_snapshot_repo.list_all_for_vm(db, vm.id)}
+    created = 0
+    updated = 0
+    current_name: str | None = None
+    for item in payload.snapshots:
+        snap = existing.get(item.name)
+        if snap is None:
+            snap = await vm_snapshot_repo.create(db, {
+                "id": vm_snapshot_id(),
+                "vm_id": vm.id,
+                "name": item.name,
+                "kind": item.kind or "disk_only",
+                "is_system": bool(item.is_system) if item.is_system is not None else item.name.endswith("_build"),
+                "state": item.state or "ready",
+                "is_current": False,
+            })
+            existing[item.name] = snap
+            created += 1
+        else:
+            if item.kind is not None:
+                snap.kind = item.kind
+            if item.is_system is not None:
+                snap.is_system = item.is_system
+            if item.state is not None:
+                snap.state = item.state
+            updated += 1
+        if item.size_bytes is not None:
+            snap.size_bytes = item.size_bytes
+        if item.parent is not None:
+            parent = existing.get(item.parent)
+            snap.parent_snapshot_id = parent.id if parent is not None else None
+        if item.mgmt_user is not None:
+            snap.mgmt_user = item.mgmt_user
+        if item.mgmt_password is not None:
+            snap.mgmt_password_encrypted = secrets_service.encrypt(
+                item.mgmt_password,
+                aad=secrets_service.aad_for_vm_snapshot_password(snap.id),
+            )
+        if item.mgmt_ssh_private_key is not None:
+            snap.mgmt_ssh_private_key_encrypted = secrets_service.encrypt(
+                item.mgmt_ssh_private_key,
+                aad=secrets_service.aad_for_vm_snapshot_ssh_key(snap.id),
+            )
+        if item.is_current:
+            current_name = item.name
+    # Ровно один текущий снимок: переносим флаг на присланный, снимаем с остальных.
+    if current_name is not None:
+        for name, snap in existing.items():
+            snap.is_current = (name == current_name)
+    await db.commit()
+    audit_service.emit(
+        "vm.snapshots_synced", target_id=vm_id, target_type="vm",
+        status="success", allowed=True,
+        details={
+            "synced": created + updated, "created": created, "updated": updated,
+            "current": current_name, "department_id": vm.department_id,
+        },
+    )
+    return {
+        "ok": True, "vm_id": vm.id,
+        "synced": created + updated, "created": created, "updated": updated,
+    }
 
 

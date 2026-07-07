@@ -12,6 +12,7 @@ from src.core.constants import (
     VmCredStrategy,
     VmNetworkMode,
     VmPowerState,
+    VmSnapshotKind,
 )
 
 
@@ -207,6 +208,73 @@ class VmsHubPrepareResponse(BaseModel):
     status: str = Field(description="Статус: queued.")
 
 
+# ── снимки ВМ (волна 3) ──────────────────────────────────────────────────────
+
+
+class VmSnapshotCreate(BaseModel):
+    """Тело POST /vms/{id}/snapshots — снять снимок (202 → VM_SNAPSHOT_CREATE)."""
+
+    name: str = Field(..., min_length=1, max_length=255, description="Имя снимка (уникально в пределах ВМ). Суффикс _build зарезервирован под системные снимки.")
+    description: str | None = Field(default=None, max_length=1024, description="Описание снимка (опционально).")
+    kind: VmSnapshotKind = Field(default=VmSnapshotKind.DISK_ONLY, description="disk_only (только диск) или full (диск + RAM/устройства).")
+
+
+class VmSnapshotResponse(BaseModel):
+    """Карточка снимка ВМ в ответе GET/list. Системные `<ver>_build` в выдаче скрыты."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(description="Snapshot ID (prefix snp_).")
+    vm_id: str = Field(description="ID ВМ-владельца.")
+    name: str = Field(description="Имя снимка.")
+    description: str | None = Field(default=None, description="Описание снимка.")
+    parent_snapshot_id: str | None = Field(default=None, description="Родительский снимок в цепочке (или None).")
+    kind: str = Field(description="disk_only / full.")
+    is_system: bool = Field(default=False, description="Системный golden-снимок (`<ver>_build`). В штатной выдаче не появляется.")
+    state: str = Field(description="creating / ready / error.")
+    size_bytes: int | None = Field(default=None, description="Размер снимка в байтах (None до синка с hub'а).")
+    is_current: bool = Field(default=False, description="Текущий снимок ВМ (на него указывает активное состояние диска).")
+    created_at: datetime = Field(description="Когда строка снимка заведена.")
+    created_by: str | None = Field(default=None, description="user_id, снявший снимок.")
+
+
+class VmSnapshotDispatchResponse(BaseModel):
+    """Ответ на dispatch VM_SNAPSHOT_* — vm_id + snapshot_id + task_id."""
+
+    vm_id: str = Field(description="ID ВМ (prefix vm_).")
+    snapshot_id: str | None = Field(default=None, description="ID снимка (prefix snp_); None для revert/delete по имени существующего.")
+    task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
+    status: str = Field(description="Статус: queued.")
+
+
+class VmCredStrategyRequest(BaseModel):
+    """Тело PATCH /vms/{id}/cred-strategy — режим mgmt-кред ВМ (синхронно)."""
+
+    cred_strategy: VmCredStrategy = Field(..., description="per_snapshot / reroll.")
+
+
+class VmAstraUpdateRequest(BaseModel):
+    """Тело POST /vms/{id}/astra-update — обновить ОС ВМ по RC (202 → VM_ASTRA_UPDATE)."""
+
+    rc: str = Field(..., min_length=1, max_length=64, description="Целевой RC (build-версия, напр. 1.7.5.6). Снимок с этим именем не должен существовать (409).")
+    password: str | None = Field(default=None, description="Новый пароль гостевого `u` после обновления (опционально).")
+    cred_strategy: VmCredStrategy | None = Field(default=None, description="Override стратегии кред на эту операцию (по умолчанию — cred_strategy ВМ).")
+
+
+class VmAlltaUpdateRequest(BaseModel):
+    """Тело POST /vms/{id}/allta-update — обновить гостевую allta + опц. пароль."""
+
+    password: str | None = Field(default=None, description="Новый пароль гостевого `u` (опционально для allta-update).")
+    cred_strategy: VmCredStrategy | None = Field(default=None, description="Override стратегии кред на эту операцию (по умолчанию — cred_strategy ВМ).")
+
+
+class VmPasswdRequest(BaseModel):
+    """Тело POST /vms/{id}/passwd — сменить пароль гостевого `u` (тот же op, пароль обязателен)."""
+
+    password: str = Field(..., min_length=1, description="Новый пароль гостевого `u`. Обязателен.")
+    cred_strategy: VmCredStrategy | None = Field(default=None, description="Override стратегии кред на эту операцию (по умолчанию — cred_strategy ВМ).")
+
+
 # ── Internal callbacks (worker → server_service) ────────────────────────────
 
 
@@ -286,3 +354,47 @@ class VmsHubStateCallbackResponse(BaseModel):
     ok: bool = True
     server_id: str = Field(description="Сервер-hub.")
     is_vms_hub: bool = Field(description="Текущее значение флага VMS-hub.")
+
+
+class VmSnapshotSyncItem(BaseModel):
+    """Один снимок в батч-синке `POST /internal/vms/{id}/snapshots`.
+
+    Матчинг — по имени (`name`) в пределах ВМ: известный снимок обновляется,
+    незнакомый заводится (worker создаёт `<ver>_build`/`<ver>` в ходе vm.create).
+    Поля креды (`mgmt_user`/`mgmt_password`/`mgmt_ssh_private_key`) приходят
+    plaintext'ом (у воркера нет ключа) — server_service шифрует их под AAD
+    снимка (режим per_snapshot). `is_current=True` делает снимок текущим и
+    снимает флаг с остальных (revert).
+    """
+
+    name: str = Field(..., min_length=1, max_length=255, description="Имя снимка (ключ матчинга в пределах ВМ).")
+    parent: str | None = Field(default=None, max_length=255, description="Имя родительского снимка в цепочке (резолвится в parent_snapshot_id).")
+    kind: str | None = Field(default=None, max_length=16, description="disk_only / full.")
+    is_system: bool | None = Field(default=None, description="Системный `<ver>_build` (скрыт, защищён от ручного delete/revert).")
+    state: str | None = Field(default=None, max_length=16, description="creating / ready / error.")
+    size_bytes: int | None = Field(default=None, ge=0, description="Размер снимка в байтах.")
+    is_current: bool | None = Field(default=None, description="True — снимок стал текущим (revert); флаг снимается с остальных снимков ВМ.")
+    mgmt_user: str | None = Field(default=None, max_length=64, description="Гостевой аккаунт кред снимка (обычно `u`).")
+    mgmt_password: str | None = Field(default=None, description="Пароль кред снимка (plaintext; server_service шифрует).")
+    mgmt_ssh_private_key: str | None = Field(default=None, description="Приватный SSH-ключ кред снимка (plaintext; server_service шифрует).")
+
+
+class VmSnapshotsCallbackRequest(BaseModel):
+    """Тело POST /internal/vms/{id}/snapshots — воркер синкает снимки ВМ по имени.
+
+    Частичный, идемпотентный upsert по имени. Незнакомые снимки заводятся,
+    известные обновляются. Снимки, не пришедшие в батче, не трогаются (воркер
+    сам решает, слать полный список или дельту).
+    """
+
+    snapshots: list[VmSnapshotSyncItem] = Field(default_factory=list, description="Список снимков с актуальными фактами (и опц. кредами).")
+
+
+class VmSnapshotsCallbackResponse(BaseModel):
+    """Подтверждение записи snapshot-sync callback'а."""
+
+    ok: bool = True
+    vm_id: str = Field(description="ID ВМ.")
+    synced: int = Field(description="Сколько снимков обработано (created + updated).")
+    created: int = Field(description="Сколько снимков заведено.")
+    updated: int = Field(description="Сколько снимков обновлено.")

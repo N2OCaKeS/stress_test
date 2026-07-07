@@ -13,6 +13,8 @@ from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import PaginatedResponse
 from src.schemas.vm import (
+    VmAlltaUpdateRequest,
+    VmAstraUpdateRequest,
     VmCreate,
     VmDiskCreate,
     VmDiskDispatchResponse,
@@ -20,10 +22,15 @@ from src.schemas.vm import (
     VmDiskResponse,
     VmImageRefreshResponse,
     VmImageResponse,
+    VmPasswdRequest,
     VmPowerRequest,
     VmReserveRequest,
+    VmCredStrategyRequest,
     VmResponse,
     VmsHubPrepareResponse,
+    VmSnapshotCreate,
+    VmSnapshotDispatchResponse,
+    VmSnapshotResponse,
     VmStatusUpdate,
     VmTaskDispatchResponse,
     VmUpdateRequest,
@@ -99,6 +106,27 @@ async def update_vm(
     """PATCH /vms/{id} — изменить cpu/ram + dispatch VM_UPDATE."""
     vm, task_id = await svc.update_vm(db, identity, request, vm_id, body)
     return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
+
+
+@router.patch(
+    "/{vm_id}/cred-strategy",
+    response_model=VmResponse,
+    summary="Сменить режим управляющих кред ВМ (per_snapshot/reroll, синхронно)",
+    responses={
+        403: {"description": "Нет `update`."},
+        404: {"description": "VM_NOT_FOUND."},
+    },
+)
+async def set_vm_cred_strategy(
+    vm_id: str,
+    body: VmCredStrategyRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmResponse:
+    """PATCH /vms/{id}/cred-strategy — режим mgmt-кред ВМ (синхронно, без задачи)."""
+    vm = await svc.set_cred_strategy(db, identity, request, vm_id, body)
+    return VmResponse.model_validate(vm)
 
 
 @router.get(
@@ -418,6 +446,211 @@ async def resize_vm_disk(
     """POST /vms/{id}/disks/{disk_id}/resize."""
     disk, task_id = await svc.resize_disk(db, identity, request, vm_id, disk_id, body.size_gb)
     return VmDiskDispatchResponse(vm_id=disk.vm_id, disk_id=disk.id, task_id=task_id, status="queued")
+
+
+# ── снимки ВМ ────────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/{vm_id}/snapshots",
+    response_model=list[VmSnapshotResponse],
+    summary="Список снимков ВМ (системные _build скрыты)",
+    description="Гейтит право `(vm, view)`. Системные golden-снимки (`<ver>_build`) в выдаче не показываются. Cross-dept / нет ВМ → 404.",
+    responses={403: {"description": "Нет `view`."}, 404: {"description": "VM_NOT_FOUND."}},
+)
+async def list_vm_snapshots(
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> list[VmSnapshotResponse]:
+    """GET /vms/{id}/snapshots."""
+    snapshots = await svc.list_snapshots(db, identity, vm_id)
+    return [VmSnapshotResponse.model_validate(s) for s in snapshots]
+
+
+@router.post(
+    "/{vm_id}/snapshots",
+    response_model=VmSnapshotDispatchResponse,
+    status_code=202,
+    summary="Снять снимок ВМ (202, dispatch VM_SNAPSHOT_CREATE)",
+    description=(
+        "Гейтит право `(vm, vm_snapshot_manage)`, бронь и lifecycle-lock. Имя с "
+        "суффиксом `_build` руками завести нельзя (403 — зарезервировано). Пишет "
+        "строку снимка (`state=creating`) и диспатчит `vm.snapshot_create`. В "
+        "режиме per_snapshot новый снимок наследует mgmt-креды текущего."
+    ),
+    responses={
+        202: {"description": "Задача поставлена, строка снимка создана."},
+        403: {"description": "Нет `vm_snapshot_manage` / VM_SNAPSHOT_SYSTEM_PROTECTED."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / VM_SNAPSHOT_EXISTS / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def create_vm_snapshot(
+    vm_id: str,
+    body: VmSnapshotCreate,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmSnapshotDispatchResponse:
+    """POST /vms/{id}/snapshots."""
+    snapshot, task_id = await svc.create_snapshot(db, identity, request, vm_id, body)
+    return VmSnapshotDispatchResponse(vm_id=snapshot.vm_id, snapshot_id=snapshot.id, task_id=task_id, status="queued")
+
+
+@router.post(
+    "/{vm_id}/snapshots/{snapshot_id}/revert",
+    response_model=VmSnapshotDispatchResponse,
+    status_code=202,
+    summary="Откатить ВМ к снимку (202, dispatch VM_SNAPSHOT_REVERT)",
+    description=(
+        "Гейтит право `(vm, vm_snapshot_manage)`, бронь и lifecycle-lock. "
+        "Системные `<ver>_build` откатывать руками нельзя (403). В режиме "
+        "per_snapshot активные креды ВМ переключаются на снимковые."
+    ),
+    responses={
+        202: {"description": "Задача поставлена."},
+        403: {"description": "Нет `vm_snapshot_manage` / VM_SNAPSHOT_SYSTEM_PROTECTED."},
+        404: {"description": "VM_NOT_FOUND / VM_SNAPSHOT_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def revert_vm_snapshot(
+    vm_id: str,
+    snapshot_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmSnapshotDispatchResponse:
+    """POST /vms/{id}/snapshots/{snapshot_id}/revert."""
+    snapshot, task_id = await svc.revert_snapshot(db, identity, request, vm_id, snapshot_id)
+    return VmSnapshotDispatchResponse(vm_id=snapshot.vm_id, snapshot_id=snapshot.id, task_id=task_id, status="queued")
+
+
+@router.delete(
+    "/{vm_id}/snapshots/{snapshot_id}",
+    response_model=VmSnapshotDispatchResponse,
+    status_code=202,
+    summary="Удалить снимок ВМ (202, dispatch VM_SNAPSHOT_DELETE)",
+    description=(
+        "Гейтит право `(vm, vm_snapshot_manage)`, бронь и lifecycle-lock. "
+        "Системные `<ver>_build` удалять руками нельзя (403). Диспатчит "
+        "`vm.snapshot_delete` и сносит строку снимка."
+    ),
+    responses={
+        202: {"description": "Задача поставлена, строка снимка удалена."},
+        403: {"description": "Нет `vm_snapshot_manage` / VM_SNAPSHOT_SYSTEM_PROTECTED."},
+        404: {"description": "VM_NOT_FOUND / VM_SNAPSHOT_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def delete_vm_snapshot(
+    vm_id: str,
+    snapshot_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmSnapshotDispatchResponse:
+    """DELETE /vms/{id}/snapshots/{snapshot_id}."""
+    snapshot, task_id = await svc.delete_snapshot(db, identity, request, vm_id, snapshot_id)
+    return VmSnapshotDispatchResponse(vm_id=snapshot.vm_id, snapshot_id=snapshot.id, task_id=task_id, status="queued")
+
+
+# ── обновления ОС / гостевой allta / пароль ──────────────────────────────────
+
+
+@router.post(
+    "/{vm_id}/astra-update",
+    response_model=VmTaskDispatchResponse,
+    status_code=202,
+    summary="Обновить ОС ВМ по RC (202, dispatch VM_ASTRA_UPDATE)",
+    description=(
+        "Гейтит право `(vm, vm_astra_update)`, бронь и lifecycle-lock. Снимок с "
+        "именем `rc` не должен существовать (409). repository_urls берутся из "
+        "зарегистрированной OS-версии `rc` (404, если не заведена). Ставит "
+        "busy_state=updating и диспатчит `vm.astra_update`."
+    ),
+    responses={
+        202: {"description": "Задача поставлена."},
+        403: {"description": "Нет `vm_astra_update`."},
+        404: {"description": "VM_NOT_FOUND / OS_VERSION_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / VM_SNAPSHOT_EXISTS / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def astra_update_vm(
+    vm_id: str,
+    body: VmAstraUpdateRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmTaskDispatchResponse:
+    """POST /vms/{id}/astra-update."""
+    vm, task_id = await svc.astra_update(db, identity, request, vm_id, body)
+    return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
+
+
+@router.post(
+    "/{vm_id}/allta-update",
+    response_model=VmTaskDispatchResponse,
+    status_code=202,
+    summary="Обновить гостевую allta + опц. пароль (202, dispatch VM_ALLTA_UPDATE)",
+    description=(
+        "Гейтит право `(vm, vm_allta_update)`, бронь и lifecycle-lock. Пароль "
+        "опционален. Диспатчит `vm.allta_update` (обновление guest-allta .deb + "
+        "опц. смена пароля `u`; в reroll — по всем не-`_build` снимкам)."
+    ),
+    responses={
+        202: {"description": "Задача поставлена."},
+        403: {"description": "Нет `vm_allta_update`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def allta_update_vm(
+    vm_id: str,
+    body: VmAlltaUpdateRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmTaskDispatchResponse:
+    """POST /vms/{id}/allta-update."""
+    vm, task_id = await svc.allta_update(db, identity, request, vm_id, body)
+    return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
+
+
+@router.post(
+    "/{vm_id}/passwd",
+    response_model=VmTaskDispatchResponse,
+    status_code=202,
+    summary="Сменить пароль гостевого `u` (202, dispatch VM_PASSWD)",
+    description=(
+        "Тот же op, что allta-update, но пароль обязателен (пустой → 422). "
+        "Гейтит право `(vm, vm_passwd)`, бронь и lifecycle-lock."
+    ),
+    responses={
+        202: {"description": "Задача поставлена."},
+        403: {"description": "Нет `vm_passwd`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / HUB_UNAVAILABLE."},
+        422: {"description": "password пуст/не передан."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def passwd_vm(
+    vm_id: str,
+    body: VmPasswdRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmTaskDispatchResponse:
+    """POST /vms/{id}/passwd."""
+    vm, task_id = await svc.passwd(db, identity, request, vm_id, body)
+    return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
 
 
 # ── каталог боксов-образов ───────────────────────────────────────────────────

@@ -9,7 +9,7 @@
  * `server_service`.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search,
   Server as ServerIcon,
@@ -18,14 +18,19 @@ import {
   AlertCircle,
   Play,
   ListChecks,
+  MonitorPlay,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
-import { useQuery } from "@/api/auth/useQuery";
+import { useQuery, useMockMode } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
+import { listVms, type Vm } from "@/api/server/vms";
+import { MOCK_VMS } from "@/mocks/vm";
 import {
   createServer,
   deleteServer,
@@ -113,6 +118,26 @@ export function Server() {
     enabled: isAccountAdmin,
   });
 
+  // ВМ в общем списке: отдельная свёрнутая группа после серверов. Домен `vm`
+  // в server_service; backend в работе — в mock-режиме берём фикстуры, в live
+  // тихо деградируем (keepPreviousDataOnError), если маршрут ещё не готов.
+  const mock = useMockMode();
+  const navigate = useNavigate();
+  const vmsQ = useQuery(
+    () =>
+      mock
+        ? Promise.resolve({
+            items: MOCK_VMS,
+            total: MOCK_VMS.length,
+            limit: 500,
+            offset: 0,
+          })
+        : listVms({ limit: 500 }),
+    [mock],
+    { enabled: !zoneBlocked, keepPreviousDataOnError: true },
+  );
+  const [vmGroupOpen, setVmGroupOpen] = useState(false);
+
   // Бронь сервера (busy_state / busy_user_id) меняется и другими пользователями,
   // а useQuery без авто-рефетча показывал бы устаревший индикатор до перезахода.
   // Тихо переопрашиваем список на интервале и при возврате фокуса на вкладку,
@@ -181,6 +206,19 @@ export function Server() {
     });
     return sorted;
   }, [items, search, sort, filterDept, filterStatus, filterBusy]);
+
+  const vmItems = useMemo(() => vmsQ.data?.items ?? [], [vmsQ.data]);
+  const filteredVms = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return vmItems;
+    return vmItems.filter(
+      (v) =>
+        v.name.toLowerCase().includes(term) ||
+        (v.ip_address?.toLowerCase().includes(term) ?? false) ||
+        String(v.number ?? "").includes(term) ||
+        v.id.toLowerCase().includes(term),
+    );
+  }, [vmItems, search]);
 
   const grouped = useMemo(() => {
     if (group !== "department") return [{ key: "all", items: filtered }];
@@ -386,6 +424,14 @@ export function Server() {
             Список пуст.
           </div>
         )}
+        {/* Когда есть ВМ — помечаем блок серверов заголовком, чтобы группировка
+            «серверы → ВМ» читалась. При отдельной dept-группировке свои
+            заголовки уже есть, лишний не добавляем. */}
+        {filteredVms.length > 0 && group !== "department" && (
+          <div className="group-header px-3 mt-1 text-[11px] uppercase text-dim">
+            Серверы · {filtered.length}
+          </div>
+        )}
         {grouped.map((bucket) => (
           <ServerGroup
             key={bucket.key}
@@ -399,6 +445,18 @@ export function Server() {
             onToggleChecked={toggleSelected}
           />
         ))}
+        {filteredVms.length > 0 && (
+          <VmGroup
+            vms={filteredVms}
+            open={vmGroupOpen}
+            onToggle={() => setVmGroupOpen((v) => !v)}
+            onOpenVm={(vm) =>
+              navigate(
+                `/vm?hub=${encodeURIComponent(vm.hub_server_id)}&id=${encodeURIComponent(vm.id)}`,
+              )
+            }
+          />
+        )}
         {!listQ.loading && !listQ.error && (
           <TruncationNotice
             shown={items.length}
@@ -634,6 +692,8 @@ function ServerRow({
         <div className="flex-1 min-w-0">
           <div className="text-sm truncate">{name}</div>
           <div className="text-[11px] text-dim flex items-center gap-2">
+            <span className="uppercase tracking-wide text-[10px]">сервер</span>
+            <span>·</span>
             <span className="truncate">{deptLabel}</span>
             <span>·</span>
             <span className="mono">{server.ip_address}</span>
@@ -647,6 +707,76 @@ function ServerRow({
         </div>
       </button>
     </div>
+  );
+}
+
+/**
+ * Свёрнутая группа ВМ в общем списке серверов. По умолчанию закрыта — место
+ * отдаётся серверам. Клик по строке уводит в зону «Виртуализация» (карточка ВМ),
+ * а не в ServerDetail: ВМ — отдельная сущность со своим набором операций.
+ */
+function VmGroup({
+  vms,
+  open,
+  onToggle,
+  onOpenVm,
+}: {
+  vms: Vm[];
+  open: boolean;
+  onToggle: () => void;
+  onOpenVm: (vm: Vm) => void;
+}) {
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center gap-1 px-3 py-1 text-[11px] uppercase text-dim hover-bg"
+      >
+        {open ? (
+          <ChevronDown className="w-3.5 h-3.5" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5" />
+        )}
+        <MonitorPlay className="w-3.5 h-3.5" />
+        <span>Виртуальные машины · {vms.length}</span>
+      </button>
+      {open && (
+        <div className="px-2 flex flex-col gap-0.5 mt-1">
+          {vms.map((v) => (
+            <VmRow key={v.id} vm={v} onOpen={() => onOpenVm(v)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VmRow({ vm, onOpen }: { vm: Vm; onOpen: () => void }) {
+  const deptLabel = useDeptLabel(vm.department_id);
+  const powerKind =
+    vm.power_state === "on" ? "ok" : vm.power_state === "off" ? "danger" : "";
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="cred-row text-left flex items-center gap-2"
+    >
+      <MonitorPlay className="w-4 h-4 text-dim shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm truncate">{vm.name}</div>
+        <div className="text-[11px] text-dim flex items-center gap-2">
+          <span className="uppercase tracking-wide text-[10px]">ВМ</span>
+          <span>·</span>
+          <span className="truncate">{deptLabel}</span>
+          <span>·</span>
+          <span className="mono">{vm.ip_address ?? "—"}</span>
+        </div>
+      </div>
+      <span className={`badge${powerKind ? ` badge-${powerKind}` : ""}`}>
+        {vm.power_state}
+      </span>
+    </button>
   );
 }
 

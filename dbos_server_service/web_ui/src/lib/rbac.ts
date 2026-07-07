@@ -105,6 +105,39 @@ export function hasServerZoneAccess(persona: Persona): boolean {
   return role === "admin" || role === "operator" || role === "reader";
 }
 
+/**
+ * True если персоне доступна зона «Виртуализация» (`/vm`). Домен `vm` живёт в
+ * server_service (dept-scoped), поэтому доступ ровно тот же, что к server-зоне:
+ * dep_admin своего отдела и любой носитель server.* роли; платформенные роли
+ * без отдела (account_admin / logging_*) отрезаны backend'ом. Гейт для чипа
+ * «Виртуализация» и RouteGuard'а.
+ */
+export function hasVmZoneAccess(persona: Persona): boolean {
+  return hasServerZoneAccess(persona);
+}
+
+/**
+ * True если персона может управлять ВМ (create/delete/power/reserve/status).
+ * Wave 1 маппит `vm.*`-действия на серверную роль: server.admin / server.operator
+ * или dep_admin. Тонкая матрица `vm.*` (см. дизайн §2) в persona ещё не приходит —
+ * это клиентский proxy, backend перепроверит фактические права.
+ */
+export function canManageVms(persona: Persona): boolean {
+  if (isServerZoneBlocked(persona)) return false;
+  if (persona.platform_role === "dep_admin") return true;
+  const role = persona.service_roles?.server;
+  return role === "admin" || role === "operator";
+}
+
+/**
+ * True если персона может подготовить сервер как VMS-hub (`vms_hub.prepare`).
+ * Admin-плоскость: dep_admin своего отдела либо server.admin/operator. Backend
+ * перепроверит.
+ */
+export function canPrepareVmsHub(persona: Persona): boolean {
+  return canManageVms(persona);
+}
+
 /** True if persona has any logging-only role (view-only on aux services). */
 export function isLoggingOnly(persona: Persona): boolean {
   return (

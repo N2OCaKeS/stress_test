@@ -20,6 +20,7 @@ import {
   BookOpen,
   HardDrive,
   ExternalLink,
+  MonitorPlay,
   type LucideIcon,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
@@ -55,6 +56,7 @@ const SERVICE_CATALOG: Record<ServiceName, ServiceChip> = {
     label: "Серверы",
     subItems: [
       { to: "/server", icon: Server, label: "Серверы" },
+      { to: "/vm", icon: MonitorPlay, label: "Виртуализация" },
       { to: "/server/users", icon: Users, label: "Пользователи" },
       { to: "/server/packages", icon: Package, label: "Пакеты" },
       { to: "/server/tasks", icon: ListChecks, label: "Задачи" },

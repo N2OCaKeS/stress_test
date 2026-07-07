@@ -36,6 +36,9 @@ const ServerPackages = lazy(() =>
 const Secret = lazy(() =>
   import("@/pages/secret/Secret").then((m) => ({ default: m.Secret }))
 );
+const Vm = lazy(() =>
+  import("@/pages/vm/Vm").then((m) => ({ default: m.Vm }))
+);
 const Users = lazy(() =>
   import("@/pages/users/Users").then((m) => ({ default: m.Users }))
 );
@@ -162,6 +165,14 @@ export function App() {
                 карточки сервера. Старый маршрут редиректим на список серверов;
                 IpmiFleet больше не монтируется. */}
             <Route path="/server/ipmi" element={<Navigate to="/server" replace />} />
+            <Route
+              path="/vm"
+              element={
+                <RouteGuard service="server">
+                  <Vm />
+                </RouteGuard>
+              }
+            />
             <Route
               path="/server/users"
               element={

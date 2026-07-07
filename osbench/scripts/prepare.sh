@@ -44,7 +44,7 @@ done
 
 
 if [[ "$PM" == "apt-get" ]]; then
-    wget -nv ftp://10.177.103.10/allta*.deb || { echo "❌ Ошибка скачивания"; exit 1; }
+    wget -nv ftp://10.177.103.10/allta*.deb 2>/dev/null || { echo "❌ Ошибка скачивания"; exit 1; }
     sudo "$PM" install ./allta*.deb
 fi
 
@@ -58,7 +58,7 @@ fi
 
 sudo mkdir -p /home/u/python
 cd /home/u/python || exit 1
-sudo wget -nv -P /home/u/python ftp://10.177.103.10/python/* || { echo "❌ Ошибка скачивания"; exit 1; }
+sudo wget -nv -P /home/u/python ftp://10.177.103.10/python/* 2>/dev/null || { echo "❌ Ошибка скачивания"; exit 1; }
 tar -xf Python-3.12.1.tar.xz || { echo "❌ Ошибка распаковки"; exit 1; }
 cd Python-3.12.1 || exit 1
 ./configure --enable-optimizations 2>&1 | grep -v "warning:" | grep -v "find:" | grep -v "Ошибка 1" || true

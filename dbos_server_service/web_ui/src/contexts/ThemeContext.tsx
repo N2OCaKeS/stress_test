@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import type { ThemeName } from "@/types/persona";
+import { emmLogoSvg } from "@/components/Logo";
 
 const STORAGE_KEY = "dbos-theme";
 const DEFAULT_THEME: ThemeName = "vscode-dark";
@@ -38,12 +39,28 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemeName>(readStored);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+    const root = document.documentElement;
+    root.setAttribute("data-theme", theme);
     try {
       window.localStorage.setItem(STORAGE_KEY, theme);
     } catch {
       // ignore quota / private mode
     }
+    // Favicon вкладки не читает CSS-переменные (standalone-SVG), поэтому
+    // перегенерируем его из токенов текущей темы при каждой смене.
+    const cs = getComputedStyle(root);
+    const accent = cs.getPropertyValue("--accent").trim() || "#2a8fc9";
+    const ok = cs.getPropertyValue("--ok").trim() || "#4ec9b0";
+    const href =
+      "data:image/svg+xml," + encodeURIComponent(emmLogoSvg(accent, ok));
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+    link.type = "image/svg+xml";
+    link.href = href;
   }, [theme]);
 
   const value = useMemo<ThemeContextValue>(

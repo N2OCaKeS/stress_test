@@ -5,6 +5,7 @@ metadata:
   namespace: dbos
 data:
   APP_ENV: production
+  TRUSTED_PROXY_IPS: '["10.42.0.0/16"]'   # доверяем ingress-прокси (traefik pod-CIDR) для X-Forwarded-For
   DBOS_HTTPS_GUARD_DISABLED: "true"  # intra-cluster only deploy; внешний доступ только через Ingress
   APP_HOST: 0.0.0.0
   APP_PORT: "8000"

@@ -215,7 +215,12 @@ class TestPowerOn:
         _patch_power_redfish(monkeypatch, fake)
         await power.power_status.original_func(tid)
         t = await fetch_task(tid)
-        assert t.result["power_state"] == "powering_on"
+        # Переходное `PoweringOn` нормализуется в snake-case `powering_on`,
+        # но это не definite on/off — power.status сводит ipmi-сигнал к unknown.
+        # Host в payload нет, ping/ssh не мерялись, поэтому и legacy-пара unknown.
+        assert t.result["ipmi_power_state"] == "unknown"
+        assert t.result["power_state"] == "unknown"
+        assert t.result["source"] == "bmc"
 
     async def test_credentials_fetch_failure_marks_failed(
         self, make_task, fetch_task, captured_audit, monkeypatch,

@@ -300,16 +300,27 @@ async def submit_power_state(
     power_state: str,
     source: str,
     target_department_id: str | None = None,
+    *,
+    ping_reachable: bool | None = None,
+    ping_latency_ms: float | None = None,
+    ssh_reachable: bool | None = None,
+    ssh_latency_ms: float | None = None,
+    ipmi_power_state: str | None = None,
 ) -> dict:
-    """Отдать определённое состояние питания обратно в server_service.
+    """Отдать собранные сигналы состояния питания обратно в server_service.
 
-    Финал `power.status` task'а: после живой пробы (BMC либо reachability-
-    fallback) worker сообщает результат, и server_service обновляет кэш
-    `servers.power_state`. Без этого round-trip'а кэш всегда `unknown` —
-    никто его не пишет.
+    Финал `power.status` task'а: worker меряет три независимых сигнала (ping и
+    ssh с latency, ipmi) и шлёт их все. server_service обновляет кэш
+    `servers.power_state` и свежие сигналы; anti-clobber (не перетирать
+    закэшированное `on`/`off` транзиентным `unknown`) он решает сам, видя все
+    три сигнала. Без этого round-trip'а кэш всегда `unknown` — писать некому.
 
-    `power_state` — `on` / `off` / `unknown`. `source` — откуда взято:
-    `bmc` / `ping` / `ssh`.
+    `power_state` — legacy first-wins `on`/`off`/`unknown`; `source` —
+    `bmc`/`ping`/`ssh`. Новые сигналы: `ping_reachable`/`ping_latency_ms`,
+    `ssh_reachable`/`ssh_latency_ms`, `ipmi_power_state` (`on`/`off`/`unknown`).
+    Latency — в миллисекундах либо `None` при недоступности. Параметры сигналов
+    опциональны (старый вызов без них шлёт `null`), но `power.status` передаёт
+    их все.
 
     Возвращает: `{ok, power_state, checked_at}` от
     `POST /api/server/v1/internal/servers/{id}/power-state`.
@@ -323,7 +334,15 @@ async def submit_power_state(
         f"/api/server/v1/internal/servers/{server_id}/power-state",
         reject_code="POWER_STATE_REJECTED",
         target_department_id=target_department_id,
-        json={"power_state": power_state, "source": source},
+        json={
+            "power_state": power_state,
+            "source": source,
+            "ping_reachable": ping_reachable,
+            "ping_latency_ms": ping_latency_ms,
+            "ssh_reachable": ssh_reachable,
+            "ssh_latency_ms": ssh_latency_ms,
+            "ipmi_power_state": ipmi_power_state,
+        },
         details={"server_id": server_id},
         allow_empty_body=True,
     )

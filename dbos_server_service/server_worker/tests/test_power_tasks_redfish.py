@@ -254,8 +254,16 @@ class TestPowerStatusRedfishIntegration:
 
         await power.power_status.original_func(tid)
         t = await fetch_task(tid)
-        assert t.result == {"power_state": "off", "source": "bmc"}
-        # Только один GET — никаких POST'ов на status
+        assert t.result == {
+            "power_state": "off",
+            "source": "bmc",
+            "ping_reachable": False,
+            "ping_latency_ms": None,
+            "ssh_reachable": False,
+            "ssh_latency_ms": None,
+            "ipmi_power_state": "off",
+        }
+        # Только один GET на BMC — никаких POST'ов на сам status.
         assert all(method == "GET" for method, _ in seen)
 
 

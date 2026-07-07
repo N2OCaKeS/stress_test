@@ -1,9 +1,10 @@
 """Тесты writeback'а состояния питания из power.status в server_service.
 
-После живой пробы (BMC либо reachability-fallback) power.status шлёт
-`submit_power_state` обратно — server_service обновляет кэш
-`servers.power_state`. Callback best-effort: его фейл не валит read-only
-power.status, результат всё равно уходит в task.result.
+power.status собирает три независимых сигнала (ping/ssh reachability + latency,
+ipmi) и шлёт их все через `submit_power_state`. server_service обновляет кэш
+`servers.power_state` и свежие сигналы; anti-clobber (не перетирать `on`/`off`
+транзиентным `unknown`) решает уже он. Callback best-effort: его фейл не валит
+read-only power.status, результат всё равно уходит в task.result.
 """
 
 from __future__ import annotations
@@ -37,15 +38,18 @@ def _neutralize_breaker(monkeypatch):
 
 
 def _capture_writeback(monkeypatch):
-    """Подменить submit_power_state на захватывающий аргументы стаб."""
+    """Подменить submit_power_state на захватывающий все аргументы стаб."""
     calls: list[dict] = []
 
-    async def fake_submit(server_id, power_state, source, target_department_id=None):
+    async def fake_submit(
+        server_id, power_state, source, target_department_id=None, **kwargs,
+    ):
         calls.append({
             "server_id": server_id,
             "power_state": power_state,
             "source": source,
             "target_department_id": target_department_id,
+            **kwargs,
         })
         return {"ok": True, "power_state": power_state, "checked_at": "2026-06-29T00:00:00Z"}
 
@@ -53,6 +57,16 @@ def _capture_writeback(monkeypatch):
         "src.tasks.power.server_service_client.submit_power_state", fake_submit,
     )
     return calls
+
+
+def _no_signals() -> dict:
+    """Нейтральный набор сетевых сигналов (host в payload нет / probe не звали)."""
+    return {
+        "ping_reachable": False,
+        "ping_latency_ms": None,
+        "ssh_reachable": False,
+        "ssh_latency_ms": None,
+    }
 
 
 def _patch_bmc_ok(monkeypatch, state: str):
@@ -76,7 +90,7 @@ def _patch_bmc_ok(monkeypatch, state: str):
 
 
 def _patch_bmc_failure(monkeypatch):
-    """Креды + фабрика клиента + падающий get_power_state (для fallback-веток)."""
+    """Креды + фабрика клиента + падающий get_power_state (ipmi → unknown)."""
     _neutralize_breaker(monkeypatch)
 
     async def fake_fetch(server_id, target_department_id=None):
@@ -96,9 +110,11 @@ def _patch_bmc_failure(monkeypatch):
 
 
 class TestPowerStatusWriteback:
-    async def test_bmc_on_writes_back_on_source_bmc(
+    async def test_bmc_on_writes_back_all_signals_source_bmc(
         self, make_task, fetch_task, monkeypatch,
     ):
+        # Нет host в payload → ping/ssh недоступны, но ipmi=on: writeback шлёт
+        # все три сигнала, legacy-пара считается по first-wins (bmc).
         tid = await make_task(
             task_kind="power.status",
             target_server_id="srv_1",
@@ -114,17 +130,32 @@ class TestPowerStatusWriteback:
 
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
-        assert t.result == {"power_state": "on", "source": "bmc"}
+        assert t.result == {
+            "power_state": "on",
+            "source": "bmc",
+            "ping_reachable": False,
+            "ping_latency_ms": None,
+            "ssh_reachable": False,
+            "ssh_latency_ms": None,
+            "ipmi_power_state": "on",
+        }
         assert calls == [{
             "server_id": "srv_1",
             "power_state": "on",
             "source": "bmc",
             "target_department_id": "dep_42",
+            "ping_reachable": False,
+            "ping_latency_ms": None,
+            "ssh_reachable": False,
+            "ssh_latency_ms": None,
+            "ipmi_power_state": "on",
         }]
 
-    async def test_fallback_ssh_on_writes_back_on_source_ssh(
+    async def test_ssh_on_ipmi_unknown_writes_back_source_ssh(
         self, make_task, fetch_task, monkeypatch,
     ):
+        # BMC не ответил (ipmi=unknown), но ssh-порт открыт с latency — сигналы
+        # собираются независимо, legacy-пара падает на ssh.
         tid = await make_task(
             task_kind="power.status",
             target_server_id="srv_1",
@@ -137,29 +168,49 @@ class TestPowerStatusWriteback:
         _patch_bmc_failure(monkeypatch)
         calls = _capture_writeback(monkeypatch)
 
-        async def fake_probe(host, *, ssh_port, ping_timeout, tcp_timeout):
-            return "ssh"
+        async def fake_signals(host, *, ssh_port, ping_timeout, tcp_timeout):
+            return {
+                "ping_reachable": False,
+                "ping_latency_ms": None,
+                "ssh_reachable": True,
+                "ssh_latency_ms": 4.56,
+            }
 
-        monkeypatch.setattr("src.tasks.power.probe_power_reachability", fake_probe)
+        monkeypatch.setattr(
+            "src.tasks.power.probe_reachability_signals", fake_signals,
+        )
 
         await power.power_status.original_func(tid)
 
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
-        assert t.result == {"power_state": "on", "source": "ssh"}
+        assert t.result == {
+            "power_state": "on",
+            "source": "ssh",
+            "ping_reachable": False,
+            "ping_latency_ms": None,
+            "ssh_reachable": True,
+            "ssh_latency_ms": 4.56,
+            "ipmi_power_state": "unknown",
+        }
         assert calls == [{
             "server_id": "srv_1",
             "power_state": "on",
             "source": "ssh",
             "target_department_id": "dep_42",
+            "ping_reachable": False,
+            "ping_latency_ms": None,
+            "ssh_reachable": True,
+            "ssh_latency_ms": 4.56,
+            "ipmi_power_state": "unknown",
         }]
 
-    async def test_unknown_does_not_writeback(
+    async def test_unknown_still_writes_back(
         self, make_task, fetch_task, monkeypatch,
     ):
-        """Неопределённое состояние обратно НЕ пишется — иначе `unknown`
-        перетёр бы закэшированное `on`/`off` в server_service. Результат
-        уходит только в task.result."""
+        """Даже когда все сигналы «слепые» (unknown), writeback ВСЁ РАВНО шлётся:
+        ping_reachable=False / ipmi=unknown — валидные сигналы. Anti-clobber
+        (не перетереть закэшированное on/off) теперь решает server_service."""
         tid = await make_task(
             task_kind="power.status",
             target_server_id="srv_1",
@@ -168,18 +219,37 @@ class TestPowerStatusWriteback:
         _patch_bmc_failure(monkeypatch)
         calls = _capture_writeback(monkeypatch)
 
-        async def fake_probe(host, *, ssh_port, ping_timeout, tcp_timeout):
-            return None
+        async def fake_signals(host, *, ssh_port, ping_timeout, tcp_timeout):
+            return _no_signals()
 
-        monkeypatch.setattr("src.tasks.power.probe_power_reachability", fake_probe)
+        monkeypatch.setattr(
+            "src.tasks.power.probe_reachability_signals", fake_signals,
+        )
 
         await power.power_status.original_func(tid)
 
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
-        assert t.result == {"power_state": "unknown", "source": "bmc"}
-        # unknown не перетирает кэш — writeback не вызывается вовсе.
-        assert calls == []
+        assert t.result == {
+            "power_state": "unknown",
+            "source": "bmc",
+            "ping_reachable": False,
+            "ping_latency_ms": None,
+            "ssh_reachable": False,
+            "ssh_latency_ms": None,
+            "ipmi_power_state": "unknown",
+        }
+        assert calls == [{
+            "server_id": "srv_1",
+            "power_state": "unknown",
+            "source": "bmc",
+            "target_department_id": None,
+            "ping_reachable": False,
+            "ping_latency_ms": None,
+            "ssh_reachable": False,
+            "ssh_latency_ms": None,
+            "ipmi_power_state": "unknown",
+        }]
 
     async def test_writeback_failure_does_not_fail_task(
         self, make_task, fetch_task, monkeypatch,
@@ -191,7 +261,9 @@ class TestPowerStatusWriteback:
         )
         _patch_bmc_ok(monkeypatch, "On")
 
-        async def boom(server_id, power_state, source, target_department_id=None):
+        async def boom(
+            server_id, power_state, source, target_department_id=None, **kwargs,
+        ):
             raise CredentialFetchError(
                 error_code="POWER_STATE_REJECTED",
                 message="nope",
@@ -206,4 +278,12 @@ class TestPowerStatusWriteback:
         t = await fetch_task(tid)
         # Фейл callback'а не валит read-only power.status.
         assert t.status == TaskStatus.SUCCEEDED
-        assert t.result == {"power_state": "on", "source": "bmc"}
+        assert t.result == {
+            "power_state": "on",
+            "source": "bmc",
+            "ping_reachable": False,
+            "ping_latency_ms": None,
+            "ssh_reachable": False,
+            "ssh_latency_ms": None,
+            "ipmi_power_state": "on",
+        }

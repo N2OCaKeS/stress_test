@@ -227,7 +227,16 @@ class TestPowerStatusIpmitool:
 
         await power.power_status.original_func(tid)
         t = await fetch_task(tid)
-        assert t.result == {"power_state": "on", "source": "bmc"}
+        # Нет host в payload → ping/ssh неизмеримы; ipmitool отдал on.
+        assert t.result == {
+            "power_state": "on",
+            "source": "bmc",
+            "ping_reachable": False,
+            "ping_latency_ms": None,
+            "ssh_reachable": False,
+            "ssh_latency_ms": None,
+            "ipmi_power_state": "on",
+        }
 
     async def test_status_returns_off(
         self, make_task, fetch_task, captured_audit, monkeypatch,
@@ -241,7 +250,16 @@ class TestPowerStatusIpmitool:
 
         await power.power_status.original_func(tid)
         t = await fetch_task(tid)
-        assert t.result == {"power_state": "off", "source": "bmc"}
+        # Нет host в payload → ping/ssh неизмеримы; ipmitool отдал off.
+        assert t.result == {
+            "power_state": "off",
+            "source": "bmc",
+            "ping_reachable": False,
+            "ping_latency_ms": None,
+            "ssh_reachable": False,
+            "ssh_latency_ms": None,
+            "ipmi_power_state": "off",
+        }
 
 
 # ── error mapping: ipmitool stderr → BMC_* ──────────────────────────────────

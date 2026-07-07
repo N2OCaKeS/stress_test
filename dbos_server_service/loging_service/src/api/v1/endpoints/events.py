@@ -416,6 +416,15 @@ def list_events(
     if action is not None:
         action = normalize_identifier(action)
 
+    # `timestamp` — timestamptz; naive-границы без tzinfo Postgres трактует по
+    # session TimeZone. `/stats` и `/export` уже форсят UTC через `_resolve_window`,
+    # а `GET /events` гнал границы as-is — при TZ ≠ UTC выборка расходилась со
+    # stats. Приводим к UTC тем же путём.
+    if from_time is not None:
+        from_time = _aware(from_time)
+    if to_time is not None:
+        to_time = _aware(to_time)
+
     return event_service.query(
         db,
         department_id=department_id,
@@ -469,6 +478,18 @@ _EXPORT_COLUMNS = (
 )
 
 
+def _aware(dt: datetime) -> datetime:
+    """Naive datetime трактуем как UTC, aware — оставляем как есть.
+
+    Колонка `AuditEvent.timestamp` — `timestamptz`; сравнение с naive-значением
+    Postgres трактует по session `TimeZone`, поэтому при TZ ≠ UTC результат
+    расходится. Приводим границы окна к UTC симметрично ingest-валидатору
+    `EventCreate._normalize_timestamp_tz`, чтобы `GET /events` совпадал с
+    `/stats` / `/export`.
+    """
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
 def _resolve_window(
     from_time: datetime | None,
     to_time: datetime | None,
@@ -482,9 +503,6 @@ def _resolve_window(
     `[now - window_hours, now]`. Naive datetime трактуем как UTC,
     симметрично ingest-валидатору.
     """
-    def _aware(dt: datetime) -> datetime:
-        return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
-
     span = timedelta(hours=window_hours)
     if from_time is not None and to_time is not None:
         return _aware(from_time), _aware(to_time)
@@ -577,6 +595,27 @@ def events_stats(
     )
 
 
+# Ведущие символы, с которых Excel/LibreOffice начинают трактовать ячейку как
+# формулу. `user_agent` и `department_name` приходят из недоверенного источника
+# и проходят только control-scrub (без charset-whitelist'а), поэтому могут
+# начинаться с `=cmd|'/C calc'!A0` и т.п. Часть whitelisted-полей (id/ip/username)
+# по своим charset'ам тоже допускают ведущий `-`/`@`. Префиксуем одинарной
+# кавычкой — стандартная нейтрализация CSV formula injection.
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_sanitize_cell(text: str) -> str:
+    """Нейтрализует CSV formula-injection в текстовой ячейке.
+
+    Если строка начинается с символа, который Excel/LibreOffice читают как
+    начало формулы, префиксуем её одинарной кавычкой — ячейка отображается
+    как есть, но не исполняется.
+    """
+    if text and text[0] in _CSV_FORMULA_PREFIXES:
+        return "'" + text
+    return text
+
+
 def _csv_value(value) -> str:
     """Приводит значение колонки к строке для CSV-ячейки.
 
@@ -585,15 +624,20 @@ def _csv_value(value) -> str:
     (запятые, кавычки, перевод строки) экранирует сам `csv.writer`. Поля
     события уже отфильтрованы charset-валидаторами схемы на ingest'е (без
     CR/LF в action/username/id), так что расщепления строк не происходит.
+    Текстовые ячейки дополнительно проходят через `_csv_sanitize_cell` —
+    ведущие formula-символы префиксуются, чтобы `user_agent`/`department_name`
+    (недоверенный источник) не исполнились при открытии CSV в Excel.
     """
     if value is None:
         return ""
     if isinstance(value, dict):
         import json
+        # JSON-ячейка всегда начинается с `{` — formula-триггером быть не может,
+        # экранирование здесь избыточно.
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
     if isinstance(value, datetime):
         return value.isoformat()
-    return str(value)
+    return _csv_sanitize_cell(str(value))
 
 
 @router.get(

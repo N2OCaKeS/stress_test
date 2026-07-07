@@ -259,6 +259,51 @@ class TestExport:
     def test_requires_auth(self, client):
         assert client.get(EXPORT_URL).status_code == 401
 
+    def test_user_agent_formula_injection_prefixed(
+        self, client, admin_client, auth_headers
+    ):
+        """Недоверенный `user_agent` с ведущим `=` префиксуется `'`, чтобы
+        Excel/LibreOffice не исполнили ячейку как формулу."""
+        payload = "=cmd|'/C calc'!A0"
+        _ingest(client, auth_headers, user_agent=payload)
+        r = admin_client.get(EXPORT_URL)
+        header, rows = _parse_csv(r.text)
+        cell = rows[0][header.index("user_agent")]
+        assert cell == "'" + payload
+        assert not cell.startswith("=")
+
+    def test_department_name_formula_injection_prefixed(
+        self, client, admin_client, auth_headers
+    ):
+        """`department_name` (free-form, недоверенный) с ведущим `@` тоже
+        префиксуется."""
+        payload = "@SUM(1+1)*cmd"
+        _ingest(client, auth_headers, department_name=payload)
+        r = admin_client.get(EXPORT_URL)
+        header, rows = _parse_csv(r.text)
+        cell = rows[0][header.index("department_name")]
+        assert cell == "'" + payload
+
+    def test_plus_and_minus_leading_prefixed(
+        self, client, admin_client, auth_headers
+    ):
+        """Ведущие `+` и `-` тоже нейтрализуются."""
+        _ingest(client, auth_headers, user_agent="+1+1", department_name="-2-2")
+        r = admin_client.get(EXPORT_URL)
+        header, rows = _parse_csv(r.text)
+        assert rows[0][header.index("user_agent")] == "'+1+1"
+        assert rows[0][header.index("department_name")] == "'-2-2"
+
+    def test_benign_user_agent_not_modified(
+        self, client, admin_client, auth_headers
+    ):
+        """Обычный UA без ведущего formula-символа не трогается."""
+        ua = "Mozilla/5.0 (X11; Linux x86_64)"
+        _ingest(client, auth_headers, user_agent=ua)
+        r = admin_client.get(EXPORT_URL)
+        header, rows = _parse_csv(r.text)
+        assert rows[0][header.index("user_agent")] == ua
+
     def test_non_loging_role_forbidden(self, client):
         ctx = _mock_reader(None, service_roles={"config_service": ["reader"]},
                            department_id="dep_a")

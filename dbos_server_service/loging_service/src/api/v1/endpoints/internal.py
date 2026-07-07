@@ -16,16 +16,25 @@ shared-secret, что и write-канал.
 internal-канал не превращался в неограниченный дамп журнала под
 service-key'ом. Если хотя бы один из них отсутствует — `422`
 (`VALIDATION_ERROR`).
+
+Read привязан к identity: `service` в запросе должен совпасть с
+`X-Service-Identity` caller'а (тем же значением, что `require_service_token`
+верифицировал по `SERVICE_API_KEYS`). Иначе держатель любого internal-ключа
+читал бы аудит чужого сервиса — cross-service leak. Симметрично write-пути
+(`SERVICE_IDENTITY_PAYLOAD_MISMATCH` на `POST /events`).
 """
 
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request, Response
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
+from src.core.config import get_settings
 from src.core.constants import Severity
-from src.core.exceptions import DomainValidationError
+from src.core.exceptions import AppException, DomainValidationError
+from src.core.limiter import limiter
 from src.core.limits import MAX_QUERY_LIMIT, MAX_QUERY_OFFSET
 from src.dependencies.auth import require_service_token
 from src.dependencies.db import get_db
@@ -40,8 +49,29 @@ router = APIRouter(
 )
 
 
+def _internal_read_rate_limit_key(request: Request) -> str:
+    """Key-функция для rate-limit на `GET /internal/events`.
+
+    Все internal caller'ы идут через один k8s ingress — per-IP bucket дал бы
+    общий лимит на все сервисы, и один флудящий выжал бы бюджет остальных.
+    Ключуемся по верифицированной `service_identity`, которую
+    `require_service_token` положил в `request.state` после `compare_digest`.
+    Fallback на IP — до аутентификации (когда state ещё не выставлен).
+    """
+    advertised = getattr(request.state, "service_identity", None)
+    if advertised:
+        return f"svc:{advertised}"
+    return f"ip:{get_remote_address(request)}"
+
+
 @router.get("/events", response_model=EventListResponse)
+@limiter.limit(
+    lambda: get_settings().audit_query_rate_limit,
+    key_func=_internal_read_rate_limit_key,
+)
 def list_events_internal(
+    request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     department_id: str | None = Query(default=None),
     service: str | None = Query(default=None),
@@ -59,7 +89,7 @@ def list_events_internal(
     offset: int = Query(default=0, ge=0, le=MAX_QUERY_OFFSET),
     include_total: bool = Query(default=False),
 ) -> EventListResponse:
-    """Service-to-service чтение событий аудита.
+    """Service-to-service чтение СВОЕГО среза аудита.
 
     Контракт фильтров повторяет публичный `GET /events`, но аутентификация
     идёт по `SERVICE_API_KEYS` вместо user-bearer'а. `service` и `action`
@@ -67,6 +97,15 @@ def list_events_internal(
     журнала под service-key'ом; отсутствие любого из них → `422`. Нормализуем
     их зеркально ingest'у — иначе запрос с raw-строкой (`AUTH_SERVICE`,
     confusable-юникод) не нашёл бы уже канонизированные в БД записи.
+
+    `service` привязан к identity caller'а: нормализованное значение должно
+    совпасть с верифицированным `X-Service-Identity`. Иначе держатель любого
+    internal-ключа (их минимум 4 в `SERVICE_API_KEYS`) читал бы аудит другого
+    сервиса — cross-service leak. Гард симметричен write-пути
+    (`SERVICE_IDENTITY_PAYLOAD_MISMATCH`). `department_id` остаётся обычным
+    фильтром: собственный срез сервиса легитимно охватывает его события во всех
+    отделах (например `server_service` читает `server_account.drift_detected`
+    по своим серверам из разных отделов).
     """
     if service is None or action is None:
         raise DomainValidationError(
@@ -75,6 +114,21 @@ def list_events_internal(
         )
     service = normalize_identifier(service)
     action = normalize_identifier(action)
+
+    # Привязка к identity: caller читает только собственный срез. `require_service_token`
+    # уже нормализовал identity перед stash'ем, `service` нормализован выше — сравнение
+    # идёт в канонической форме, Unicode/confusable-обход закрыт.
+    advertised = getattr(request.state, "service_identity", None)
+    if advertised is not None and service != advertised:
+        raise AppException(
+            http_status=403,
+            error_code="SERVICE_IDENTITY_QUERY_MISMATCH",
+            message=(
+                f"X-Service-Identity does not match query 'service' "
+                f"(identity={advertised!r}, service={service!r}); a service-token "
+                "caller may only read audit events for its own service"
+            ),
+        )
 
     return event_service.query(
         db,

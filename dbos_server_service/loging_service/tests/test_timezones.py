@@ -14,6 +14,7 @@ from datetime import datetime, timezone, timedelta
 from tests.conftest import make_event
 
 EVENTS_URL = "/api/logging/v1/events"
+STATS_URL = "/api/logging/v1/events/stats"
 
 
 def _now_utc() -> datetime:
@@ -101,3 +102,44 @@ class TestTimestampFilterTimezones:
         })
         assert r.status_code == 200
         assert r.json()["total"] == 1
+
+    def test_events_matches_stats_with_naive_window_non_utc_session(
+        self, admin_client, auth_headers, db
+    ):
+        """`GET /events` и `/stats` дают одинаковую выборку по naive-окну даже
+        когда session TimeZone ≠ UTC.
+
+        Колонка `timestamp` — timestamptz; naive-границу Postgres трактует по
+        session TZ. `/stats` уже форсит UTC (`_resolve_window`), а `/events`
+        гнал границы as-is — при не-UTC сессии выборки расходились. После фикса
+        оба приводят naive-границы к UTC и совпадают.
+        """
+        from sqlalchemy import text
+
+        base = _now_utc()
+        for delta in (-30, -15, -5):
+            ts = (base + timedelta(minutes=delta)).isoformat()
+            r = admin_client.post(
+                EVENTS_URL,
+                json=make_event(timestamp=ts, action="user.login"),
+                headers=auth_headers,
+            )
+            assert r.status_code == 201, r.text
+
+        # Сессия в зоне UTC+5:30 (без DST) — не совпадает с UTC.
+        db.execute(text("SET TIME ZONE 'Asia/Kolkata'"))
+        try:
+            # Naive-границы (UTC wall-clock): окно [-20, 0) мин → события -15 и -5.
+            frm = (base + timedelta(minutes=-20)).replace(tzinfo=None).isoformat()
+            to = base.replace(tzinfo=None).isoformat()
+            common = {"from_time": frm, "to_time": to, "action": "user.login"}
+
+            events_total = admin_client.get(
+                EVENTS_URL, params={**common, "include_total": "true"}
+            ).json()["total"]
+            stats_total = admin_client.get(STATS_URL, params=common).json()["total"]
+
+            assert events_total == 2
+            assert stats_total == events_total
+        finally:
+            db.execute(text("SET TIME ZONE 'UTC'"))

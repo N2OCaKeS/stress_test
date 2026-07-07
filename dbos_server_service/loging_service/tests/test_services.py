@@ -1,7 +1,6 @@
 """Тесты: /api/logging/v1/services — реестр событий и статистика сервисов."""
 
 import httpx
-import pytest
 
 from src.dependencies import auth as _auth_deps
 from tests.conftest import TEST_API_KEY, make_event, make_event_def
@@ -537,23 +536,20 @@ class TestRuleMatchActionValidation:
         assert se_repo.action_is_registered(db, "user.unknown") is False
 
 
-# ── GET /services — global cross-dept aggregate ─────────────────────────────
+# ── GET /services — dept-scope зеркалит /events ─────────────────────────────
 
 
 class TestListServicesAccess:
-    """`GET /services` отдаёт глобальный GROUP BY service агрегат по
-    ``audit_events`` без dept-фильтра. Эндпоинт доступен любой из пяти
-    read-ролей (`loging_admin` / `loging_reader` / `account_admin` /
-    `loging_reader_dep` / `department_admin`); даже dept-scoped роли видят
-    общий реестр имён сервисов — это не пер-dept данные событий, dept-scope
-    живёт на `/events` / `/stats` / `/export`. Service-роль в loging_service
-    и пользователь без платформенной роли отбиваются `INSUFFICIENT_ROLE` в
-    `require_reader`.
-
-    Тесты под прежний scope-фильтр на endpoint'е сняты — фильтр в
-    `events_repo.list_services` всё ещё доступен через API репозитория
-    (см. `test_repo_list_services_with_dept_scope_unit`), но endpoint его
-    больше не использует.
+    """`GET /services` отдаёт GROUP BY service агрегат по ``audit_events``.
+    Эндпоинт доступен любой из пяти read-ролей (`loging_admin` /
+    `loging_reader` / `account_admin` / `loging_reader_dep` /
+    `department_admin`). Cross-dept роли (`loging_admin` / `loging_reader` /
+    `account_admin`) видят глобальный реестр; dept-scoped роли
+    (`loging_reader_dep` / `department_admin`) видят `event_count` /
+    `last_event_at` только по своему отделу — scope зеркалит
+    `/events` / `/stats` / `/export` (см. `_scoped_department_id`).
+    Service-роль в loging_service и пользователь без платформенной роли
+    отбиваются `INSUFFICIENT_ROLE` в `require_reader`.
     """
 
     def test_loging_reader_sees_all_services_cross_dept(
@@ -628,9 +624,10 @@ class TestListServicesAccess:
         assert r.status_code == 200
         assert r.json()["total"] == 1
 
-    def test_department_admin_sees_all_services(self, client, auth_headers):
-        """`department_admin` (dept-scoped reader) видит общий реестр имён
-        сервисов — этот эндпоинт не применяет dept-scope (не пер-dept данные)."""
+    def test_department_admin_scoped_to_own_dept(self, client, auth_headers):
+        """`department_admin` (dept-scoped reader) видит только события своего
+        отдела: событие чужого отдела в агрегат не попадает."""
+        # Событие только в dep_b — для reader'а из dep_a невидимо.
         client.post(EVENTS_URL,
                     headers=auth_headers | {"X-Service-Identity": "auth_service"},
                     json=make_event(service="auth_service", department_id="dep_b"))
@@ -645,7 +642,62 @@ class TestListServicesAccess:
         finally:
             p.stop()
         assert r.status_code == 200
-        assert r.json()["total"] == 1
+        assert r.json()["total"] == 0
+
+    def test_dept_scoped_reader_sees_only_own_dept_counts(
+        self, client, auth_headers
+    ):
+        """`loging_reader_dep` из dep_a: видит `auth_service` (2 события dep_a),
+        но не `config_service` (только dep_b); `event_count` — по своему отделу.
+        Cross-dept агрегат (3 auth + 1 config) наружу не утекает."""
+        for dept in ("dep_a", "dep_a", "dep_b"):
+            client.post(
+                EVENTS_URL,
+                headers=auth_headers | {"X-Service-Identity": "auth_service"},
+                json=make_event(service="auth_service", department_id=dept),
+            )
+        client.post(
+            EVENTS_URL,
+            headers=auth_headers | {"X-Service-Identity": "config_service"},
+            json=make_event(service="config_service", department_id="dep_b"),
+        )
+        p = _mock_identity({
+            "user_id": "u_lrd",
+            "username": "reader_dep",
+            "platform_role": "loging_reader_dep",
+            "department_id": "dep_a",
+        })
+        try:
+            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        body = r.json()
+        services = {s["service"]: s for s in body["items"]}
+        assert set(services) == {"auth_service"}
+        assert services["auth_service"]["event_count"] == 2
+        assert body["total"] == 1
+
+    def test_dept_scoped_reader_without_dept_id_fail_closed(
+        self, client, auth_headers
+    ):
+        """`loging_reader_dep` без `department_id` в identity → 403
+        (fail-closed, симметрично `/events`); не отдаём глобальный агрегат."""
+        client.post(EVENTS_URL,
+                    headers=auth_headers | {"X-Service-Identity": "auth_service"},
+                    json=make_event(service="auth_service", department_id="dep_a"))
+        p = _mock_identity({
+            "user_id": "u_lrd2",
+            "username": "reader_dep2",
+            "platform_role": "loging_reader_dep",
+            "department_id": None,
+        })
+        try:
+            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 
     def test_service_role_in_loging_service_403(self, client, auth_headers):
         """Service-роль в `loging_service` больше не пускает к чтению — нужна

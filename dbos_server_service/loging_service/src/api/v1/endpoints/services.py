@@ -17,6 +17,7 @@ from src.core.config import get_settings
 from src.core.constants import RESERVED_SERVICE_NAMES
 from src.core.exceptions import AppException
 from src.core.limits import MAX_QUERY_LIMIT, MAX_QUERY_OFFSET
+from src.api.v1.endpoints.events import _scoped_department_id
 from src.dependencies.auth import ReaderIdentity, require_service_token
 from src.dependencies.db import get_db
 from src.repositories import events as events_repo
@@ -88,9 +89,11 @@ def _register_events_rate_limit_key(request: Request) -> str:
         "`total = len(items)`.\n\n"
         "**Доступ:** как `GET /events` — любая из пяти read-ролей "
         "(`loging_admin` / `loging_reader` / `account_admin` / "
-        "`loging_reader_dep` / `department_admin`). Агрегат GROUP BY service "
-        "отдаётся cross-dept целиком (реестр имён сервисов, не пер-dept "
-        "данные событий).\n\n"
+        "`loging_reader_dep` / `department_admin`). Cross-dept роли видят "
+        "агрегат GROUP BY service целиком; для dept-scoped ролей "
+        "(`loging_reader_dep` / `department_admin`) `event_count` и "
+        "`last_event_at` считаются только по событиям своего отдела — "
+        "симметрично dept-scope на `GET /events`.\n\n"
         "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-user, fallback на IP; "
         "см. README).\n\n"
         "**Связано:** `GET /services/{service}/events` — каталог action'ов "
@@ -117,14 +120,15 @@ def list_services(
     identity: ReaderIdentity,
     db: Session = Depends(get_db),
 ) -> ServiceListResponse:
-    # Реестр имён сервисов — глобальный GROUP BY service агрегат без
-    # dept-фильтра для всех read-ролей (включая dept-scoped
-    # `loging_reader_dep` / `department_admin`). Это не пер-dept данные
-    # событий, а список сервисов, когда-либо писавших в журнал; dept-scope
-    # здесь не применяется — симметрично тому, как dept-scoped reader всё
-    # равно видит общий реестр. Пер-dept ограничение живёт на
-    # `/events` / `/stats` / `/export` (см. `_scoped_department_id`).
-    rows = events_repo.list_services(db)
+    # Dept-scope зеркалит `/events` / `/stats` / `/export`: для
+    # `loging_reader_dep` / `department_admin` агрегат считается только по
+    # событиям своего отдела (иначе `event_count` / `last_event_at` утекали бы
+    # активностью чужих отделов). Cross-dept роли (`loging_admin` /
+    # `loging_reader` / `account_admin`) получают глобальный реестр — им
+    # `_scoped_department_id` вернёт None. Отсутствие `department_id` у
+    # dept-scoped роли → 403 (fail-closed, там же, что и у `/events`).
+    scoped_dept = _scoped_department_id(identity, None)
+    rows = events_repo.list_services(db, department_id=scoped_dept)
     items = [
         ServiceInfo(service=r.service, event_count=r.event_count, last_event_at=r.last_event_at)
         for r in rows

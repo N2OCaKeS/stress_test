@@ -137,3 +137,100 @@ class TestInternalEventsRead:
             headers=headers_for("server_service"),
         ).json()
         assert body["items"] == []
+
+
+class TestInternalEventsIdentityScope:
+    """`GET /internal/events` привязан к identity caller'а: сервис читает
+    только собственный срез. Держатель любого internal-ключа не может
+    прочитать аудит чужого сервиса, подставив `service=<чужой>` в query.
+    """
+
+    def test_own_service_read_allowed(self, client):
+        _ingest(client, "server_service", action="server_account.drift_detected")
+        resp = client.get(
+            INTERNAL,
+            params={"service": "server_service", "action": "server_account.drift_detected"},
+            headers=headers_for("server_service"),
+        )
+        assert resp.status_code == 200
+        assert len(resp.json()["items"]) == 1
+
+    def test_cross_service_read_denied_403(self, client):
+        # auth_service пишет свои login-события; server_service ими владеть не должен.
+        _ingest(client, "auth_service", action="user.login")
+        resp = client.get(
+            INTERNAL,
+            params={"service": "auth_service", "action": "user.login"},
+            headers=headers_for("server_service"),
+        )
+        assert resp.status_code == 403
+        assert resp.json()["error_code"] == "SERVICE_IDENTITY_QUERY_MISMATCH"
+
+    def test_cross_service_read_leaks_nothing(self, client):
+        """Даже если у чужого сервиса есть события — 403 приходит ДО выборки,
+        тело не содержит items."""
+        _ingest(client, "auth_service", action="user.login")
+        _ingest(client, "auth_service", action="user.login")
+        resp = client.get(
+            INTERNAL,
+            params={"service": "auth_service", "action": "user.login"},
+            headers=headers_for("server_service"),
+        )
+        assert resp.status_code == 403
+        assert "items" not in resp.json()
+
+    def test_confusable_service_query_denied(self, client):
+        """`AUTH_SERVICE` нормализуется к `auth_service` и всё равно != identity
+        server_service → 403 (обход casing'ом закрыт)."""
+        resp = client.get(
+            INTERNAL,
+            params={"service": "AUTH_SERVICE", "action": "user.login"},
+            headers=headers_for("server_service"),
+        )
+        assert resp.status_code == 403
+        assert resp.json()["error_code"] == "SERVICE_IDENTITY_QUERY_MISMATCH"
+
+
+class TestInternalEventsRateLimit:
+    """У `GET /internal/events` есть per-service-identity rate-limit — раньше
+    это был единственный read-путь без лимита (burst COUNT/SELECT по журналу).
+    """
+
+    def test_burst_triggers_429(self, client, monkeypatch):
+        monkeypatch.setenv("AUDIT_QUERY_RATE_LIMIT", "3/minute")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+        from src.main import limiter
+        limiter.reset()
+
+        params = {"service": "server_service", "action": "server_account.drift_detected"}
+        for i in range(3):
+            r = client.get(INTERNAL, params=params, headers=headers_for("server_service"))
+            assert r.status_code == 200, f"#{i} got {r.status_code}: {r.text}"
+
+        r = client.get(INTERNAL, params=params, headers=headers_for("server_service"))
+        assert r.status_code == 429, r.text
+        assert r.json()["error_code"] == "RATE_LIMIT_EXCEEDED"
+
+    def test_different_identities_independent_buckets(self, client, monkeypatch):
+        monkeypatch.setenv("AUDIT_QUERY_RATE_LIMIT", "2/minute")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+        from src.main import limiter
+        limiter.reset()
+
+        # Выжимаем бюджет server_service.
+        srv_params = {"service": "server_service", "action": "server_account.drift_detected"}
+        for _ in range(2):
+            assert client.get(
+                INTERNAL, params=srv_params, headers=headers_for("server_service")
+            ).status_code == 200
+        assert client.get(
+            INTERNAL, params=srv_params, headers=headers_for("server_service")
+        ).status_code == 429
+
+        # config_service со своим bucket'ом ещё проходит (читает свой срез).
+        cfg_params = {"service": "config_service", "action": "config.update"}
+        assert client.get(
+            INTERNAL, params=cfg_params, headers=headers_for("config_service")
+        ).status_code == 200

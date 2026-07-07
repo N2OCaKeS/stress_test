@@ -127,8 +127,8 @@ class system:
         if not console:
             log.set_console(True)
         if process.returncode == 0:
-            log.info(f"Команда '{command}' завершена с кодом: {process.returncode}")
-        else: log.error(f"Команда '{command}' завершена с кодом: {process.returncode}")
+            log.info(f"Команда '{command}' завершена с кодом: {process.returncode}\n")
+        else: log.error(f"Команда '{command}' завершена с кодом: {process.returncode}\n")
 
         output = '\n'.join(output_lines)
         errors = '\n'.join(error_lines)

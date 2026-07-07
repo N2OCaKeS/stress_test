@@ -42,7 +42,7 @@ if args.COLORS:
 if args.PREP:
     log.info("Настройка окружения\n")
     system.leave_command(f'sudo bash scripts/prepare.sh', returncode=True, console=False)
-    log.info("\nНастройка бенчмарков\n")
+    log.info("Настройка бенчмарков\n")
     system.leave_command(f'sudo bash scripts/install_bench.sh', returncode=True, console=False)
 elif args.RUN:
     log.info(f"\n{OSBENCH_LOGO}\n")

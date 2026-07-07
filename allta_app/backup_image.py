@@ -318,6 +318,7 @@ freeipa_test = f'-tt {args.FREEIPA}'
 vpn = f'--test {args.VPN}'
 mail = f'-tt {args.MAIL}'
 psql_olap = f'-olap {args.PSQL_OLAP}'
+psql_info_sys = f'-tt info-sys'
 
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
@@ -328,6 +329,9 @@ elif args.PSQL_VANILLA:
 elif args.TANTOR_VANILLA:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {tantor_pkg} {tantor_vanilla}'
+elif args.PSQL_BALANCE == "info-sys":
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv} {balance_vbox} {psql_info_sys}'
 elif args.PSQL_BALANCE or args.PSQL_OOM:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} {balance_vbox}'

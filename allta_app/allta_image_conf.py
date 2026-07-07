@@ -107,7 +107,7 @@ modes = {
 #Симлинки на страницы с местами хранения результатов
 #################################################################################################################################################
 tests_list = {'PostgreSQL':     ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance', 'PSQL OLAP-hq',
-                                 'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom'],
+                                 'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom', 'psql info-sys'],
             'Файловые системы': ['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec'],
             'Системные службы': ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl', 'AOpenVPNcc',
                                  'Dovecot-IMAP', 'Exim4-SMTP', 'SegFault', "XFS mem leak"],
@@ -212,6 +212,7 @@ branches = {
     'postgresql benchmark olap':'postgresql',
     'xfs memory leak':'kernel',
     'Raw spin lock benchmark':'parsec',
+    'postgresql benchmark info-sys':'postgresql'
 }
 
 
@@ -284,6 +285,7 @@ tests = {
     'postgresql benchmark olap':'PSQL OLAP-hq',
     'xfs memory leak': 'XFS mem leak',
     'Raw spin lock benchmark': 'raw-spin-lock',
+    'postgresql benchmark info-sys':'psql info-sys'
 }
 
 
@@ -316,7 +318,7 @@ main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
               'apache-rp', 'apache-bp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
               'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio', 'FreeIPA c-users', 'CEPH parsec', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP',
-              'FIO large', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'FreeIPA plugin', 'XFS mem leak', 'raw-spin-lock']
+              'FIO large', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'FreeIPA plugin', 'XFS mem leak', 'raw-spin-lock', 'psql info-sys']
 
 
 
@@ -412,7 +414,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
             'orel_stand13':     ['syslog-ng-cwl'],
             'smolensk_stand13': [],
             'orel_stand14':     [],
-            'smolensk_stand14': []
+            'smolensk_stand14': ['psql info-sys']
         }
 
 
@@ -433,7 +435,7 @@ stands_groups = {
 
     'stand13_group':['syslog-ng-cwl'],
 
-    'stand14_group':[]
+    'stand14_group':['psql info-sys']
 }
 
 test_run_stands = [f'stand{x}' for x in ['3', '4', '10', '11', '12', '13', '14']] #range(3, 6, 1)]
@@ -493,7 +495,8 @@ tests_case_zefir_key = {
     'PSQL OLAP-hq':'BT-T19100',
     'FreeIPA plugin':'BT-T19492',
     'XFS mem leak':'BT-T19753',
-    'raw-spin-lock': 'BT-T19967'
+    'raw-spin-lock': 'BT-T19967',
+    'psql info-sys':'BT-T20710'
 }
 
 
@@ -527,7 +530,8 @@ testname_columns = {
                     'postgresql benchmark olap':'PSQL_OLAP-hq',
                     'freeipa plugin test':'FreeIPA_plugin',
                     'xfs memory leak':'XFS_mem_leak',
-                    'Raw spin lock benchmark': 'Raw_spin-lock'
+                    'Raw spin lock benchmark': 'Raw_spin-lock',
+                    'postgresql benchmark info-sys': 'PSQL_info-sys'
                     }
 
 

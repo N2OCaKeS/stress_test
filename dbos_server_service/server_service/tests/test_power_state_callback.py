@@ -4,13 +4,19 @@
 сервера. До этого callback'а `servers.power_state` никогда не обновлялось —
 UI всегда видел дефолтный unknown.
 
+Одним callback'ом приходят три независимых сигнала — ping / ssh / ipmi. Legacy
+power_state остаётся, но unknown его не затирает (anti-clobber).
+
 Покрывается:
 - happy path: power_state + source + checked_at пишутся в БД (worker_bot);
 - unknown принимается;
+- приём и сохранение трёх наборов сигналов (ping/ssh/ipmi);
+- anti-clobber: unknown не перетирает закэшированное on/off, но пишет ping/ssh;
+- back-compat: старый payload (только power_state/source) не трогает новые колонки;
 - RBAC: worker_bot ок (грант prepare_callback), admin/reader — 403, без токена — 401;
 - невалидные power_state / source → 422;
 - несуществующий server_id → 404;
-- ServerResponse отдаёт power_state_source / power_state_checked_at;
+- ServerResponse отдаёт power_state_source / power_state_checked_at + ping/ssh/ipmi;
 - audit `server.power_state_updated` (success).
 """
 
@@ -194,3 +200,134 @@ class TestPowerStateCallback:
         assert body["power_state"] == "off"
         assert body["power_state_source"] == "ping"
         assert body["power_state_checked_at"] is not None
+
+    async def test_three_signals_persisted(
+        self, client, worker_bot_token_a, make_server, db, dept_a,
+    ):
+        """Один callback с ping/ssh/ipmi — все три набора ложатся в свои колонки."""
+        srv = await make_server(department_id=dept_a)
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/power-state",
+            headers=_hdr(worker_bot_token_a),
+            json={
+                "power_state": "on",
+                "source": "bmc",
+                "ping_reachable": True,
+                "ping_latency_ms": 1.5,
+                "ssh_reachable": True,
+                "ssh_latency_ms": 12.0,
+                "ipmi_power_state": "on",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+
+        await db.commit()
+        refreshed = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert refreshed.ping_reachable is True
+        assert refreshed.ping_latency_ms == 1.5
+        assert refreshed.ping_checked_at is not None
+        assert refreshed.ssh_reachable is True
+        assert refreshed.ssh_latency_ms == 12.0
+        assert refreshed.ssh_checked_at is not None
+        assert refreshed.ipmi_power_state == "on"
+        assert refreshed.ipmi_checked_at is not None
+        # legacy-тройка тоже обновилась — power_state определённый.
+        assert refreshed.power_state == "on"
+        assert refreshed.power_state_source == "bmc"
+
+    async def test_unknown_does_not_clobber_cached_power_state(
+        self, client, worker_bot_token_a, make_server, db, dept_a,
+    ):
+        """unknown-callback не затирает ранее закэшированное on/off, но пишет ping/ssh."""
+        srv = await make_server(department_id=dept_a)
+        # Первый callback: определённое состояние on по bmc.
+        await client.post(
+            f"{BASE_INT}/servers/{srv.id}/power-state",
+            headers=_hdr(worker_bot_token_a),
+            json={"power_state": "on", "source": "bmc"},
+        )
+        # Второй callback: сводное unknown, но ping/ssh достучались.
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/power-state",
+            headers=_hdr(worker_bot_token_a),
+            json={
+                "power_state": "unknown",
+                "source": "bmc",
+                "ping_reachable": True,
+                "ping_latency_ms": 2.0,
+                "ssh_reachable": False,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        # Ответ отдаёт закэшированное состояние, а не unknown.
+        assert resp.json()["power_state"] == "on"
+
+        await db.commit()
+        refreshed = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        # legacy-тройка осталась прежней.
+        assert refreshed.power_state == "on"
+        assert refreshed.power_state_source == "bmc"
+        # новые сигналы записаны.
+        assert refreshed.ping_reachable is True
+        assert refreshed.ping_latency_ms == 2.0
+        assert refreshed.ssh_reachable is False
+        assert refreshed.ssh_checked_at is not None
+
+    async def test_legacy_payload_leaves_new_columns_untouched(
+        self, client, worker_bot_token_a, make_server, db, dept_a,
+    ):
+        """Старый payload (только power_state/source) не трогает ping/ssh/ipmi-колонки."""
+        srv = await make_server(department_id=dept_a)
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/power-state",
+            headers=_hdr(worker_bot_token_a),
+            json={"power_state": "on", "source": "ssh"},
+        )
+        assert resp.status_code == 200, resp.text
+
+        await db.commit()
+        refreshed = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert refreshed.power_state == "on"
+        assert refreshed.power_state_source == "ssh"
+        # Новые колонки не заполнялись — сигналы не слались.
+        assert refreshed.ping_reachable is None
+        assert refreshed.ping_checked_at is None
+        assert refreshed.ssh_reachable is None
+        assert refreshed.ipmi_power_state is None
+        assert refreshed.ipmi_checked_at is None
+
+    async def test_server_response_exposes_split_signals(
+        self, client, worker_bot_token_a, admin_role_token_a, make_server, dept_a,
+    ):
+        """Список/карточка сервера отдаёт ping/ssh/ipmi-поля."""
+        srv = await make_server(department_id=dept_a)
+        await client.post(
+            f"{BASE_INT}/servers/{srv.id}/power-state",
+            headers=_hdr(worker_bot_token_a),
+            json={
+                "power_state": "on",
+                "source": "ping",
+                "ping_reachable": True,
+                "ping_latency_ms": 3.25,
+                "ssh_reachable": True,
+                "ssh_latency_ms": 8.0,
+                "ipmi_power_state": "on",
+            },
+        )
+        resp = await client.get(f"{BASE_SRV}/{srv.id}", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["ping_reachable"] is True
+        assert body["ping_latency_ms"] == 3.25
+        assert body["ping_checked_at"] is not None
+        assert body["ssh_reachable"] is True
+        assert body["ssh_latency_ms"] == 8.0
+        assert body["ssh_checked_at"] is not None
+        assert body["ipmi_power_state"] == "on"
+        assert body["ipmi_checked_at"] is not None

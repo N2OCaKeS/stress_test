@@ -763,10 +763,16 @@ async def record_power_state(
 ) -> dict:
     """Callback воркера: результат живой пробы питания (`power.status`).
 
-    Пишет в кэш сервера `power_state` + источник (`power_state_source`) и момент
-    приёма (`power_state_checked_at`, UTC). До этого callback'а поле никогда не
-    обновлялось и UI всегда видел дефолтный unknown. Idempotent best-effort —
-    повторный вызов просто перезаписывает кэш.
+    Одним callback'ом приходят три независимых сигнала доступности — ping, ssh
+    и питание по BMC (ipmi). Каждый присланный (не None) сигнал пишется в свою
+    тройку колонок с моментом приёма (UTC): `ping_*`, `ssh_*`, `ipmi_*`.
+    Доступность в списке серверов ведётся по `ping_reachable`.
+
+    Legacy-тройка `power_state`/`power_state_source`/`power_state_checked_at`
+    остаётся рабочей, но anti-clobber: воркер шлёт callback всегда, в т.ч. с
+    `power_state="unknown"`, и unknown НЕ должен затирать ранее закэшированное
+    on/off. Поэтому legacy-тройку обновляем только когда `power_state != unknown`;
+    ping/ssh/ipmi при этом записываются в любом случае.
 
     Доступ: `(server, *, prepare_callback)` — тот же callback-грант worker_bot'а,
     что и у `prepared`/`management-credentials/applied`. Аудит:
@@ -801,12 +807,36 @@ async def record_power_state(
         actor_department_id=identity.department_id,
     )
     checked_at = datetime.now(timezone.utc)
-    await server_repo.update(db, server, {
-        "power_state": payload.power_state,
-        "power_state_source": payload.source,
-        "power_state_checked_at": checked_at,
-    })
-    await db.commit()
+    update: dict = {}
+
+    # Legacy-тройка: обновляем только на определённом состоянии. unknown не
+    # затирает ранее закэшированное on/off — воркер шлёт callback всегда, а
+    # неизвестность не должна стирать последний достоверный факт.
+    if payload.power_state != "unknown":
+        update["power_state"] = payload.power_state
+        update["power_state_source"] = payload.source
+        update["power_state_checked_at"] = checked_at
+
+    # Каждый присланный сигнал пишется независимо со своим временем приёма.
+    if payload.ping_reachable is not None:
+        update["ping_reachable"] = payload.ping_reachable
+        update["ping_latency_ms"] = payload.ping_latency_ms
+        update["ping_checked_at"] = checked_at
+    if payload.ssh_reachable is not None:
+        update["ssh_reachable"] = payload.ssh_reachable
+        update["ssh_latency_ms"] = payload.ssh_latency_ms
+        update["ssh_checked_at"] = checked_at
+    if payload.ipmi_power_state is not None:
+        update["ipmi_power_state"] = payload.ipmi_power_state
+        update["ipmi_checked_at"] = checked_at
+
+    if update:
+        await server_repo.update(db, server, update)
+        await db.commit()
+
+    # Итоговое сводное состояние в кэше: свежее, если legacy-тройку обновили,
+    # иначе то, что уже лежало (на unknown-callback'е кэш не трогали).
+    cached_power_state = update.get("power_state", server.power_state)
     audit_service.emit(
         "server.power_state_updated",
         target_id=server_id, target_type="server",
@@ -814,6 +844,9 @@ async def record_power_state(
         details={
             "power_state": payload.power_state,
             "source": payload.source,
+            "ping_reachable": payload.ping_reachable,
+            "ssh_reachable": payload.ssh_reachable,
+            "ipmi_power_state": payload.ipmi_power_state,
             "checked_at": checked_at.isoformat(),
             "department_id": server.department_id,
             "caller_type": identity.subject_type,
@@ -821,7 +854,7 @@ async def record_power_state(
     )
     return {
         "ok": True,
-        "power_state": payload.power_state,
+        "power_state": cached_power_state,
         "checked_at": checked_at.isoformat(),
     }
 

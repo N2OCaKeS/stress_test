@@ -59,6 +59,26 @@ class Server(Base):
     power_state_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Три независимых сигнала доступности с одной живой пробы `power.status`:
+    # ping, ssh и питание по BMC (ipmi). Приходят одним internal-callback'ом
+    # воркера. Список серверов ведёт «доступность» по ping_reachable. latency —
+    # в миллисекундах; checked_at — момент приёма (UTC) соответствующего
+    # сигнала. До первой пробы всё NULL. Legacy power_state_* остаётся рабочим
+    # (сводное состояние питания), эти колонки его дополняют, а не заменяют.
+    ping_reachable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    ping_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ping_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ssh_reachable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    ssh_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ssh_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ipmi_power_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    ipmi_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     busy_state: Mapped[str] = mapped_column(
         String(32), default=BusyState.FREE, nullable=False
     )

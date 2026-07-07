@@ -482,19 +482,47 @@ class ProvisionStatusResponse(BaseModel):
 class PowerStateCallbackRequest(BaseModel):
     """Тело POST /internal/servers/{id}/power-state.
 
-    Воркер пишет результат живой пробы питания (`power.status`) обратно в кэш
-    сервера. server_service проставляет `servers.power_state`, источник
-    (`power_state_source`) и момент приёма (`power_state_checked_at`, UTC).
+    Воркер шлёт результат живой пробы `power.status` одним callback'ом с тремя
+    независимыми сигналами доступности: ping, ssh и питание по BMC (ipmi).
+    Каждый из них опционален — приходит только если проба его измеряла.
+    server_service пишет присланные сигналы в свои тройки колонок
+    (`ping_*`/`ssh_*`/`ipmi_*`) с моментом приёма (UTC).
+
+    `power_state` + `source` — legacy-тройка сводного состояния питания. Воркер
+    теперь шлёт callback ВСЕГДА, даже когда `power_state="unknown"`; приёмная
+    сторона на unknown не перетирает ранее закэшированные legacy-значения, а
+    новые ping/ssh/ipmi сигналы записывает в любом случае.
+
     Idempotent best-effort: повторный callback просто перезаписывает кэш.
     """
 
     power_state: Literal["on", "off", "unknown"] = Field(
         ...,
-        description="Состояние питания с пробы: on / off / unknown.",
+        description="Сводное состояние питания (legacy): on / off / unknown.",
     )
     source: Literal["bmc", "ping", "ssh"] = Field(
         ...,
-        description="Чем мерили: bmc (Redfish/ipmitool) / ping / ssh.",
+        description="Чем получено сводное power_state (legacy): bmc (Redfish/ipmitool) / ping / ssh.",
+    )
+    ping_reachable: bool | None = Field(
+        default=None,
+        description="Ответил ли сервер на ping. None — ping в этой пробе не мерился.",
+    )
+    ping_latency_ms: float | None = Field(
+        default=None,
+        description="RTT ping в миллисекундах. None — недоступен либо не мерился.",
+    )
+    ssh_reachable: bool | None = Field(
+        default=None,
+        description="Доступен ли SSH-порт. None — ssh в этой пробе не мерился.",
+    )
+    ssh_latency_ms: float | None = Field(
+        default=None,
+        description="Задержка SSH-пробы в миллисекундах. None — недоступен либо не мерился.",
+    )
+    ipmi_power_state: Literal["on", "off", "unknown"] | None = Field(
+        default=None,
+        description="Питание по BMC/IPMI: on / off / unknown. None — BMC в этой пробе не опрашивался.",
     )
 
 

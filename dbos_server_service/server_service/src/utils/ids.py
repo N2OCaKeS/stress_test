@@ -63,6 +63,16 @@ def vm_id() -> str:
     return _new_id("vm_")
 
 
+def vm_disk_id() -> str:
+    """`vmd_<uuid>` — для таблицы vm_disks (диски виртуальных машин)."""
+    return _new_id("vmd_")
+
+
+def vm_image_id() -> str:
+    """`vmi_<uuid>` — для таблицы vm_images (каталог боксов-образов ВМ)."""
+    return _new_id("vmi_")
+
+
 def task_id() -> str:
     """`tsk_<uuid>` — для строк worker-БД `dev_server_worker.tasks`.
 

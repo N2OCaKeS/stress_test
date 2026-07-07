@@ -33,6 +33,34 @@ class VmCreate(BaseModel):
     cred_strategy: VmCredStrategy = Field(default=VmCredStrategy.PER_SNAPSHOT, description="Связь mgmt-кред со снимками: per_snapshot (дефолт) или reroll.")
 
 
+class VmUpdateRequest(BaseModel):
+    """Тело PATCH /vms/{id} — изменить ресурсы ВМ (202 → dispatch VM_UPDATE).
+
+    Меняются только cpu / ram_mb (stop→правка XML→start на воркере). Оба поля
+    опциональны; пустое тело → 422 (нечего менять). Увеличение проверяется на
+    ёмкость hub'а.
+    """
+
+    cpu: int | None = Field(default=None, ge=1, description="Новое число vCPU ВМ.")
+    ram_mb: int | None = Field(default=None, ge=1, description="Новый объём RAM ВМ в МБ.")
+
+
+class VmDiskCreate(BaseModel):
+    """Тело POST /vms/{id}/disks — создать+подключить диск (202 → VM_DISK_ATTACH)."""
+
+    name: str = Field(..., min_length=1, max_length=255, description="Имя диска (уникально в пределах ВМ, входит в serial).")
+    size_gb: int = Field(..., ge=1, description="Размер диска в ГБ.")
+    fs: str | None = Field(default=None, max_length=32, description="ФС для форматирования (ext4/xfs/...), опционально.")
+    mount: str | None = Field(default=None, max_length=255, description="Точка монтирования в госте, опционально.")
+    target_dev: str | None = Field(default=None, max_length=16, description="Желаемое имя устройства (vdb/vdc); по умолчанию воркер назначает следующее свободное.")
+
+
+class VmDiskResizeRequest(BaseModel):
+    """Тело POST /vms/{id}/disks/{disk_id}/resize (202 → VM_DISK_RESIZE)."""
+
+    size_gb: int = Field(..., ge=1, description="Новый размер диска в ГБ (только увеличение).")
+
+
 class VmPowerRequest(BaseModel):
     """Тело POST /vms/{id}/power — питание ВМ (202 → dispatch VM_POWER)."""
 
@@ -118,6 +146,59 @@ class VmTaskDispatchResponse(BaseModel):
     status: str = Field(description="Статус: queued.")
 
 
+class VmDiskResponse(BaseModel):
+    """Карточка диска ВМ в ответе GET/list."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(description="Disk ID (prefix vmd_).")
+    vm_id: str = Field(description="ID ВМ-владельца.")
+    name: str = Field(description="Имя диска.")
+    size_gb: int = Field(description="Размер диска в ГБ.")
+    path: str | None = Field(default=None, description="Путь к qcow2 в пуле hub'а (None до создания).")
+    target_dev: str | None = Field(default=None, description="Устройство в госте (vdb/...), None до attach'а.")
+    serial: str | None = Field(default=None, description="Serial устройства (<vm>_<disk>).")
+    is_system: bool = Field(default=False, description="Системный диск ВМ (root).")
+    fs: str | None = Field(default=None, description="Файловая система.")
+    mount: str | None = Field(default=None, description="Точка монтирования.")
+    state: str = Field(description="creating / ready / error.")
+    created_at: datetime = Field(description="Когда строка диска заведена.")
+
+
+class VmDiskDispatchResponse(BaseModel):
+    """Ответ на dispatch VM_DISK_* — vm_id + disk_id + task_id."""
+
+    vm_id: str = Field(description="ID ВМ (prefix vm_).")
+    disk_id: str = Field(description="ID диска (prefix vmd_).")
+    task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
+    status: str = Field(description="Статус: queued.")
+
+
+class VmImageResponse(BaseModel):
+    """Карточка бокса-образа из каталога vm_images."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(description="Image ID (prefix vmi_).")
+    name: str = Field(description="Имя бокса (vm_station / single-бокс).")
+    url: str = Field(description="URL артефакта .tar.gz.")
+    kind: str = Field(description="universal / single.")
+    hub_server_id: str | None = Field(default=None, description="Привязка к hub'у (None — глобальный образ).")
+    os_versions: list[str] = Field(default_factory=list, description="ОС внутри universal-бокса (для single — пусто).")
+    created_at: datetime = Field(description="Когда запись добавлена.")
+    updated_at: datetime = Field(description="Когда запись изменена.")
+
+
+class VmImageRefreshResponse(BaseModel):
+    """Ответ на POST /vm-images/refresh — итог синка с FTP-конфига."""
+
+    ok: bool = True
+    synced: int = Field(description="Сколько записей обработано (created + updated).")
+    created: int = Field(description="Сколько образов добавлено.")
+    updated: int = Field(description="Сколько образов обновлено.")
+    source: str = Field(description="URL конфига боксов, с которого синкали.")
+
+
 class VmsHubPrepareResponse(BaseModel):
     """Ответ на dispatch VMS_HUB_PREPARE — task_id подготовки hub'а."""
 
@@ -154,6 +235,35 @@ class VmStateCallbackResponse(BaseModel):
     vm_id: str = Field(description="ID ВМ.")
     power_state: str = Field(description="Итоговое состояние питания.")
     busy_state: str | None = Field(default=None, description="Итоговый lifecycle-lock (или None).")
+
+
+class VmDiskStateItem(BaseModel):
+    """Один диск в callback'е синка дисков ВМ."""
+
+    disk_id: str = Field(description="ID диска (prefix vmd_), которому принадлежат факты.")
+    state: str | None = Field(default=None, max_length=16, description="Новое состояние диска: ready / error (или creating).")
+    path: str | None = Field(default=None, max_length=512, description="Путь к созданному qcow2 в пуле.")
+    target_dev: str | None = Field(default=None, max_length=16, description="Назначенное устройство в госте (vdb/...).")
+    serial: str | None = Field(default=None, max_length=128, description="Serial подключённого устройства.")
+    size_gb: int | None = Field(default=None, ge=1, description="Фактический размер после resize.")
+
+
+class VmDisksCallbackRequest(BaseModel):
+    """Тело POST /internal/vms/{id}/disks — воркер синкает факты дисков ВМ.
+
+    Частичный, идемпотентный апдейт: применяем присланные поля к перечисленным
+    дискам (по `disk_id`). Незнакомые disk_id пропускаются (диск мог быть удалён).
+    """
+
+    disks: list[VmDiskStateItem] = Field(default_factory=list, description="Список дисков с их актуальными фактами.")
+
+
+class VmDisksCallbackResponse(BaseModel):
+    """Подтверждение записи disk-sync callback'а."""
+
+    ok: bool = True
+    vm_id: str = Field(description="ID ВМ.")
+    synced: int = Field(description="Сколько дисков фактически обновлено.")
 
 
 class VmsHubStateCallbackRequest(BaseModel):

@@ -218,6 +218,12 @@ SERVICE_EVENTS = [
     {"action": "vm.reservation_denied", "description": "VM operation blocked because it is reserved by another user and caller is neither the reservation owner nor a department/service admin", "default_severity": "WARNING"},
     {"action": "vm.busy_denied", "description": "VM operation blocked because a lifecycle operation is in progress (busy_state creating/deleting/updating/powering)", "default_severity": "WARNING"},
     {"action": "vm.state_updated", "description": "Worker wrote VM state back to server cache (POST /internal/vms/{id}/state): power_state / ip / status / busy_state / error (partial, idempotent)", "default_severity": "INFO"},
+    # VM update (cpu/ram) + диски (волна 2).
+    {"action": "vm.updated", "description": "VM resources changed (dispatch vm.update: cpu/ram; stop→edit XML→start), busy_state=updating. failure reasons: not_found_or_cross_dept / worker_unreachable", "default_severity": "WARNING"},
+    {"action": "vm.disk_managed", "description": "VM disk create/delete/resize dispatched to worker (vm.disk_attach / vm.disk_delete / vm.disk_resize). details.op distinguishes the operation. failure reasons: not_found_or_cross_dept / disk_not_found / duplicate / worker_unreachable", "default_severity": "WARNING"},
+    {"action": "vm.disks_synced", "description": "Worker synced VM disk facts back (POST /internal/vms/{id}/disks): state/path/target_dev/serial/size per disk_id (partial, idempotent)", "default_severity": "INFO"},
+    # Каталог боксов-образов ВМ.
+    {"action": "vm_image.refresh", "description": "VM image catalog synced from the FTP box config (POST /vm-images/refresh, libvirt_box section). details: source/synced/created/updated. denied: permission_denied", "default_severity": "INFO"},
     {"action": "vms_hub.prepared", "description": "Prepare server as VMS-hub: (a) dispatch vms_hub.prepare (permission/prepared/virtualization gate); (b) worker callback POST /internal/servers/{id}/vms-hub-state marks is_vms_hub + virtualization + phy_if. failure reasons: not_found_or_cross_dept / prepare_required / virtualization_unsupported / worker_unreachable", "default_severity": "CRITICAL"},
 ]
 

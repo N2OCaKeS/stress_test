@@ -14,19 +14,29 @@ from src.dependencies.db import get_db
 from src.schemas.common import PaginatedResponse
 from src.schemas.vm import (
     VmCreate,
+    VmDiskCreate,
+    VmDiskDispatchResponse,
+    VmDiskResizeRequest,
+    VmDiskResponse,
+    VmImageRefreshResponse,
+    VmImageResponse,
     VmPowerRequest,
     VmReserveRequest,
     VmResponse,
     VmsHubPrepareResponse,
     VmStatusUpdate,
     VmTaskDispatchResponse,
+    VmUpdateRequest,
 )
 from src.services import vm as svc
+from src.services import vm_image_service as image_svc
 
 router = APIRouter(prefix="/vms")
 # prepare-vms-hub живёт под /servers/{id}; отдельный роутер, чтобы не тащить
 # в servers.py VM-зависимости.
 router_servers = APIRouter(prefix="/servers/{server_id}")
+# Каталог боксов-образов ВМ (глобальный, зеркало FTP-конфига).
+router_images = APIRouter(prefix="/vm-images")
 
 
 @router.post(
@@ -56,6 +66,38 @@ async def create_vm(
 ) -> VmTaskDispatchResponse:
     """POST /vms — создать ВМ + dispatch VM_CREATE. Аудит: vm.created."""
     vm, task_id = await svc.create_vm(db, identity, request, body)
+    return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
+
+
+@router.patch(
+    "/{vm_id}",
+    response_model=VmTaskDispatchResponse,
+    status_code=202,
+    summary="Изменить ресурсы ВМ (cpu/ram, 202, dispatch VM_UPDATE)",
+    description=(
+        "Меняет cpu и/или ram_mb. Гейтит право `(vm, update)`, бронь и "
+        "lifecycle-lock; при увеличении проверяет ёмкость hub'а. Ставит "
+        "`busy_state=updating` и диспатчит `vm.update` воркеру (stop→правка "
+        "XML→start)."
+    ),
+    responses={
+        202: {"description": "Задача поставлена, busy_state=updating."},
+        403: {"description": "Нет `update`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / VM_CAPACITY_EXCEEDED / HUB_UNAVAILABLE."},
+        422: {"description": "VM_UPDATE_EMPTY — не передан ни cpu, ни ram_mb."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def update_vm(
+    vm_id: str,
+    body: VmUpdateRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmTaskDispatchResponse:
+    """PATCH /vms/{id} — изменить cpu/ram + dispatch VM_UPDATE."""
+    vm, task_id = await svc.update_vm(db, identity, request, vm_id, body)
     return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
 
 
@@ -264,3 +306,163 @@ async def prepare_vms_hub(
     """POST /servers/{id}/prepare-vms-hub."""
     sid, task_id = await svc.prepare_vms_hub(db, identity, request, server_id)
     return VmsHubPrepareResponse(server_id=sid, task_id=task_id, status="queued")
+
+
+# ── диски ВМ ─────────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/{vm_id}/disks",
+    response_model=list[VmDiskResponse],
+    summary="Список дисков ВМ",
+    description="Гейтит право `(vm, view)`. Cross-dept / нет ВМ → 404.",
+    responses={403: {"description": "Нет `view`."}, 404: {"description": "VM_NOT_FOUND."}},
+)
+async def list_vm_disks(
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> list[VmDiskResponse]:
+    """GET /vms/{id}/disks."""
+    disks = await svc.list_disks(db, identity, vm_id)
+    return [VmDiskResponse.model_validate(d) for d in disks]
+
+
+@router.post(
+    "/{vm_id}/disks",
+    response_model=VmDiskDispatchResponse,
+    status_code=202,
+    summary="Создать и подключить диск ВМ (202, dispatch VM_DISK_ATTACH)",
+    description=(
+        "Гейтит право `(vm, vm_disk_manage)`, бронь и lifecycle-lock. Пишет "
+        "строку диска (`state=creating`) и диспатчит `vm.disk_attach` воркеру "
+        "(qemu-img create + attach-disk --persistent --targetbus virtio "
+        "--serial <vm>_<disk>)."
+    ),
+    responses={
+        202: {"description": "Задача поставлена, строка диска создана."},
+        403: {"description": "Нет `vm_disk_manage`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / VM_DISK_DUPLICATE / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def create_vm_disk(
+    vm_id: str,
+    body: VmDiskCreate,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmDiskDispatchResponse:
+    """POST /vms/{id}/disks."""
+    disk, task_id = await svc.create_disk(db, identity, request, vm_id, body)
+    return VmDiskDispatchResponse(vm_id=disk.vm_id, disk_id=disk.id, task_id=task_id, status="queued")
+
+
+@router.delete(
+    "/{vm_id}/disks/{disk_id}",
+    response_model=VmDiskDispatchResponse,
+    status_code=202,
+    summary="Отключить и удалить диск ВМ (202, dispatch VM_DISK_DELETE)",
+    description=(
+        "Гейтит право `(vm, vm_disk_manage)`, бронь и lifecycle-lock. Диспатчит "
+        "`vm.disk_delete` (detach + rm qcow2) и сносит строку диска."
+    ),
+    responses={
+        202: {"description": "Задача поставлена, строка диска удалена."},
+        403: {"description": "Нет `vm_disk_manage`."},
+        404: {"description": "VM_NOT_FOUND / VM_DISK_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def delete_vm_disk(
+    vm_id: str,
+    disk_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmDiskDispatchResponse:
+    """DELETE /vms/{id}/disks/{disk_id}."""
+    disk, task_id = await svc.delete_disk(db, identity, request, vm_id, disk_id)
+    return VmDiskDispatchResponse(vm_id=disk.vm_id, disk_id=disk.id, task_id=task_id, status="queued")
+
+
+@router.post(
+    "/{vm_id}/disks/{disk_id}/resize",
+    response_model=VmDiskDispatchResponse,
+    status_code=202,
+    summary="Расширить диск ВМ (202, dispatch VM_DISK_RESIZE)",
+    description=(
+        "Только увеличение. Гейтит право `(vm, vm_disk_manage)`, бронь и "
+        "lifecycle-lock. Диспатчит `vm.disk_resize` (qemu-img resize + growpart/"
+        "resize2fs в госте)."
+    ),
+    responses={
+        202: {"description": "Задача поставлена."},
+        403: {"description": "Нет `vm_disk_manage`."},
+        404: {"description": "VM_NOT_FOUND / VM_DISK_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / HUB_UNAVAILABLE."},
+        422: {"description": "VM_DISK_SHRINK_FORBIDDEN — новый размер не больше текущего."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def resize_vm_disk(
+    vm_id: str,
+    disk_id: str,
+    body: VmDiskResizeRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmDiskDispatchResponse:
+    """POST /vms/{id}/disks/{disk_id}/resize."""
+    disk, task_id = await svc.resize_disk(db, identity, request, vm_id, disk_id, body.size_gb)
+    return VmDiskDispatchResponse(vm_id=disk.vm_id, disk_id=disk.id, task_id=task_id, status="queued")
+
+
+# ── каталог боксов-образов ───────────────────────────────────────────────────
+
+
+@router_images.get(
+    "",
+    response_model=PaginatedResponse[VmImageResponse],
+    summary="Список боксов-образов ВМ (каталог)",
+    description="Глобальный каталог образов. Гейтит право `(vm, view)`.",
+    responses={403: {"description": "Нет `view`."}},
+)
+async def list_vm_images(
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedResponse[VmImageResponse]:
+    """GET /vm-images."""
+    items, total = await image_svc.list_images(db, identity, limit=limit, offset=offset)
+    return PaginatedResponse[VmImageResponse](
+        items=[VmImageResponse.model_validate(i) for i in items],
+        total=total, limit=limit, offset=offset,
+    )
+
+
+@router_images.post(
+    "/refresh",
+    response_model=VmImageRefreshResponse,
+    summary="Синхронизировать каталог образов с FTP-конфигом",
+    description=(
+        "Тянет `test-box-config.json` с FTP (секция `libvirt_box`) и upsert'ит "
+        "глобальные образы. Гейтит право `(vm, vm_preset_manage)`. Недоступный/"
+        "битый конфиг → 503."
+    ),
+    responses={
+        200: {"description": "Каталог синхронизирован."},
+        403: {"description": "Нет `vm_preset_manage`."},
+        503: {"description": "VM_BOX_CONFIG_UNAVAILABLE / VM_BOX_CONFIG_INVALID."},
+    },
+)
+async def refresh_vm_images(
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> VmImageRefreshResponse:
+    """POST /vm-images/refresh."""
+    data = await image_svc.refresh_catalog(db, identity)
+    return VmImageRefreshResponse(**data)

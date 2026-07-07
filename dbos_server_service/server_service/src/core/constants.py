@@ -426,6 +426,31 @@ class VmCredStrategy(StrEnum):
     REROLL = "reroll"
 
 
+class VmDiskState(StrEnum):
+    """Жизненный цикл диска ВМ. Источник истины — hub; БД зеркалит.
+
+    `creating` — строка заведена, задача создания/подключения диска в работе;
+    `ready` — диск создан и подключён к домену (callback воркера);
+    `error` — операция на hub'е упала (текст — в `last_error` ВМ).
+    """
+
+    CREATING = "creating"
+    READY = "ready"
+    ERROR = "error"
+
+
+class VmImageKind(StrEnum):
+    """Тип бокса-образа в каталоге `vm_images`.
+
+    `universal` — `vm_station`: один артефакт с внутренними qemu-снимками
+    нескольких ОС; версия при create не выбирается. `single` — бокс под
+    конкретную ОС/ФС/размер.
+    """
+
+    UNIVERSAL = "universal"
+    SINGLE = "single"
+
+
 class VmBusyState(StrEnum):
     """Lifecycle-lock ВМ на время долгой операции (создание/удаление/апдейт).
 
@@ -458,6 +483,12 @@ class VmTaskKind(StrEnum):
     VM_CREATE = "vm.create"
     VM_POWER = "vm.power"
     VM_DELETE = "vm.delete"
+    # Изменение ресурсов ВМ (cpu/ram): stop → правка XML → start.
+    VM_UPDATE = "vm.update"
+    # Диски ВМ: создать+подключить / отключить+удалить / расширить.
+    VM_DISK_ATTACH = "vm.disk_attach"
+    VM_DISK_DELETE = "vm.disk_delete"
+    VM_DISK_RESIZE = "vm.disk_resize"
 
 
 # Действия питания ВМ, принимаемые `POST /vms/{id}/power`. Едут в payload

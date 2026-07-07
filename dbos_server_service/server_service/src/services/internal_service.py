@@ -50,6 +50,7 @@ from src.repositories import server_account as account_repo
 from src.repositories import server_account_ignored_login as ignored_login_repo
 from src.repositories import server_disk as disk_repo
 from src.repositories import vm as vm_repo
+from src.repositories import vm_disk as vm_disk_repo
 from src.schemas.identity import IdentityContext
 from src.schemas.internal import (
     InventoryCallbackRequest,
@@ -63,6 +64,7 @@ from src.schemas.server import (
     ServerPrepareCallbackRequest,
 )
 from src.schemas.vm import (
+    VmDisksCallbackRequest,
     VmsHubStateCallbackRequest,
     VmStateCallbackRequest,
 )
@@ -2320,5 +2322,71 @@ async def record_vms_hub_state(
         },
     )
     return {"ok": True, "server_id": server.id, "is_vms_hub": server.is_vms_hub}
+
+
+async def record_vm_disks_state(
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    payload: VmDisksCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Callback воркера: синк фактов дисков ВМ (state/path/target_dev/serial/size).
+
+    Частичный, идемпотентный апдейт по `disk_id`. Диски, не принадлежащие ВМ или
+    уже удалённые, тихо пропускаются (счётчик `synced` считает только реально
+    обновлённые строки).
+
+    Доступ: `(server, *, prepare_callback)`. Аудит: `vm.disks_synced` (INFO).
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "vm.disks_synced", target_id=vm_id, target_type="vm",
+            status="denied", allowed=False, details={"reason": "permission_denied"},
+        )
+        raise
+    vm = await vm_repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            "vm.disks_synced", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "vm_not_found"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    _check_target_department(
+        audit_action="vm.disks_synced",
+        target_id=vm_id, target_type="vm",
+        server_department_id=vm.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        not_found_error_code="VM_NOT_FOUND",
+        not_found_message="VM not found",
+    )
+    synced = 0
+    for item in payload.disks:
+        disk = await vm_disk_repo.get_by_id(db, item.disk_id)
+        if disk is None or disk.vm_id != vm.id:
+            continue
+        if item.state is not None:
+            disk.state = item.state
+        if item.path is not None:
+            disk.path = item.path
+        if item.target_dev is not None:
+            disk.target_dev = item.target_dev
+        if item.serial is not None:
+            disk.serial = item.serial
+        if item.size_gb is not None:
+            disk.size_gb = item.size_gb
+        synced += 1
+    await db.commit()
+    audit_service.emit(
+        "vm.disks_synced", target_id=vm_id, target_type="vm",
+        status="success", allowed=True,
+        details={"synced": synced, "department_id": vm.department_id},
+    )
+    return {"ok": True, "vm_id": vm.id, "synced": synced}
 
 

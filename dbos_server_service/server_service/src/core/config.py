@@ -310,6 +310,22 @@ class Settings(BaseSettings):
             "запас больше обычных s2s-таймаутов."
         ),
     )
+    vm_box_config_url: str = Field(
+        default="ftp://10.177.103.10/boxes/test-box-config.json",
+        alias="VM_BOX_CONFIG_URL",
+        description=(
+            "URL конфига боксов-образов ВМ (`test-box-config.json`) на анонимном "
+            "FTP. Секция `libvirt_box` (имя→url .tar.gz) синкается в каталог "
+            "`vm_images` эндпоинтом POST /vm-images/refresh. Поддерживаются "
+            "схемы ftp:// и http(s)://."
+        ),
+    )
+    vm_box_config_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        alias="VM_BOX_CONFIG_TIMEOUT_SECONDS",
+        description="Таймаут загрузки конфига боксов-образов ВМ с FTP/HTTP.",
+    )
     logging_service_url: str = Field(
         default="",
         description=(

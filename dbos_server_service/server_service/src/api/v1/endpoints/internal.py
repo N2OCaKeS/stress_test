@@ -70,6 +70,8 @@ from src.schemas.server import (
     ServerPrepareCallbackResponse,
 )
 from src.schemas.vm import (
+    VmDisksCallbackRequest,
+    VmDisksCallbackResponse,
     VmsHubStateCallbackRequest,
     VmsHubStateCallbackResponse,
     VmStateCallbackRequest,
@@ -521,6 +523,34 @@ async def record_vm_state(
         target_department_id=x_target_department_id,
     )
     return VmStateCallbackResponse(**data)
+
+
+@router.post(
+    "/vms/{vm_id}/disks",
+    response_model=VmDisksCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def record_vm_disks(
+    vm_id: str,
+    body: VmDisksCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> VmDisksCallbackResponse:
+    """Worker синкает факты дисков ВМ (state/path/target_dev/serial/size).
+
+    Частичный, идемпотентный апдейт по disk_id. Незнакомые/удалённые диски
+    пропускаются.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `vm.disks_synced` (INFO).
+    """
+    data = await internal_service.record_vm_disks_state(
+        db, identity, vm_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return VmDisksCallbackResponse(**data)
 
 
 @router.post(

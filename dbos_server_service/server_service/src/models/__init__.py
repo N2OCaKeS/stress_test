@@ -14,6 +14,8 @@ from src.models.server_account import ServerAccount, ServerAccountServer
 from src.models.server_account_ignored_login import ServerAccountIgnoredLogin
 from src.models.server_disk import ServerDisk
 from src.models.vm import Vm
+from src.models.vm_disk import VmDisk
+from src.models.vm_image import VmImage
 
 __all__ = [
     "ConsoleMacro",
@@ -31,4 +33,6 @@ __all__ = [
     "ServerAccountServer",
     "ServerDisk",
     "Vm",
+    "VmDisk",
+    "VmImage",
 ]

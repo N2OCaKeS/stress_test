@@ -411,3 +411,318 @@ async def test_vm_state_callback_requires_dept_header(client, worker_bot_token_a
         headers=_hdr(worker_bot_token_a),  # без X-Target-Department-Id
     )
     assert_error(resp, 403, "TARGET_DEPARTMENT_HEADER_REQUIRED")
+
+
+# ── волна 2: update (cpu/ram) ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_update_dispatches_vm_update(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub(cpu_threads=16)
+    vm = await make_vm(hub=hub, cpu=4, ram_mb=4096)
+    resp = await client.patch(
+        f"{BASE}/vms/{vm.id}", json={"cpu": 8, "ram_mb": 8192},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert len(calls) == 1
+    assert calls[0]["task_kind"] == "vm.update"
+    assert calls[0]["target_server_id"] == hub.id
+    assert calls[0]["payload"]["cpu"] == 8
+    assert calls[0]["payload"]["ram_mb"] == 8192
+    assert calls[0]["payload"]["vm_id"] == vm.id
+
+    # busy_state=updating выставлен.
+    resp = await client.get(f"{BASE}/vms/{vm.id}", headers=_hdr(admin_role_token_a))
+    assert resp.json()["busy_state"] == "updating"
+
+
+@pytest.mark.asyncio
+async def test_update_empty_rejected(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.patch(f"{BASE}/vms/{vm.id}", json={}, headers=_hdr(admin_role_token_a))
+    assert_error(resp, 422, "VM_UPDATE_EMPTY")
+
+
+@pytest.mark.asyncio
+async def test_update_capacity_exceeded(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub(cpu_threads=16)
+    vm = await make_vm(hub=hub, cpu=4)
+    # 16 - 4(own) + 20 = 32 > 16
+    resp = await client.patch(
+        f"{BASE}/vms/{vm.id}", json={"cpu": 20}, headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 409, "VM_CAPACITY_EXCEEDED")
+
+
+@pytest.mark.asyncio
+async def test_update_shrink_ok(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    # Уменьшение не проверяется на ёмкость — всегда проходит.
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub(cpu_threads=16)
+    vm = await make_vm(hub=hub, cpu=8)
+    resp = await client.patch(
+        f"{BASE}/vms/{vm.id}", json={"cpu": 2}, headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[0]["payload"]["cpu"] == 2
+
+
+# ── волна 2: диски ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_disk_create_list_delete(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, name="myvm")
+
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/disks", json={"name": "data", "size_gb": 50},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    disk_id = resp.json()["disk_id"]
+    assert disk_id.startswith("vmd_")
+    assert calls[-1]["task_kind"] == "vm.disk_attach"
+    assert calls[-1]["target_server_id"] == hub.id
+    assert calls[-1]["payload"]["vm_id"] == vm.id
+    assert calls[-1]["payload"]["disk_id"] == disk_id
+    assert calls[-1]["payload"]["size_gb"] == 50
+    assert calls[-1]["payload"]["serial"] == "myvm_data"
+
+    resp = await client.get(f"{BASE}/vms/{vm.id}/disks", headers=_hdr(admin_role_token_a))
+    assert resp.status_code == 200
+    disks = resp.json()
+    assert len(disks) == 1
+    assert disks[0]["id"] == disk_id
+    assert disks[0]["state"] == "creating"
+
+    resp = await client.delete(
+        f"{BASE}/vms/{vm.id}/disks/{disk_id}", headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[-1]["task_kind"] == "vm.disk_delete"
+    assert calls[-1]["payload"]["disk_id"] == disk_id
+
+    resp = await client.get(f"{BASE}/vms/{vm.id}/disks", headers=_hdr(admin_role_token_a))
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_disk_resize_dispatch(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/disks", json={"name": "d", "size_gb": 20},
+        headers=_hdr(admin_role_token_a),
+    )
+    disk_id = resp.json()["disk_id"]
+
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/disks/{disk_id}/resize", json={"size_gb": 40},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[-1]["task_kind"] == "vm.disk_resize"
+    assert calls[-1]["payload"]["size_gb"] == 40
+
+    # shrink запрещён
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/disks/{disk_id}/resize", json={"size_gb": 10},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 422, "VM_DISK_SHRINK_FORBIDDEN")
+
+
+@pytest.mark.asyncio
+async def test_disk_manage_requires_grant(
+    client, guest_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    # guest видит диски (view), но не создаёт (нет vm_disk_manage)
+    resp = await client.get(f"{BASE}/vms/{vm.id}/disks", headers=_hdr(guest_token_a))
+    assert resp.status_code == 200
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/disks", json={"name": "x", "size_gb": 10},
+        headers=_hdr(guest_token_a),
+    )
+    assert_error(resp, 403, "PERMISSION_DENIED")
+
+
+@pytest.mark.asyncio
+async def test_disks_cascade_on_vm_delete(
+    client, admin_role_token_a, make_hub, make_vm, db, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/disks", json={"name": "d", "size_gb": 10},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202
+
+    resp = await client.delete(f"{BASE}/vms/{vm.id}", headers=_hdr(admin_role_token_a))
+    assert resp.status_code == 202, resp.text
+
+    from src.repositories import vm_disk as vm_disk_repo
+    remaining = await vm_disk_repo.list_for_vm(db, vm.id)
+    assert remaining == []
+
+
+# ── волна 2: каталог образов + box→box_url резолв ─────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def make_image(db):
+    """Создать глобальный образ в каталоге напрямую."""
+    from src.models import VmImage
+    from src.utils.ids import vm_image_id as new_id
+
+    async def _factory(*, name: str, url: str, kind: str = "single", os_versions=None):
+        img = VmImage(
+            id=new_id(), name=name, url=url, kind=kind,
+            hub_server_id=None, os_versions=os_versions or [],
+        )
+        db.add(img)
+        await db.flush()
+        return img
+
+    return _factory
+
+
+@pytest.mark.asyncio
+async def test_create_resolves_box_url(
+    client, admin_role_token_a, make_hub, make_image, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    await make_image(name="vm_station", url="ftp://boxes/vm_station.tar.gz", kind="universal")
+    resp = await client.post(
+        f"{BASE}/vms", json=_create_body(hub, box="vm_station"),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[0]["task_kind"] == "vm.create"
+    assert calls[0]["payload"]["box"] == "vm_station"
+    assert calls[0]["payload"]["box_url"] == "ftp://boxes/vm_station.tar.gz"
+
+
+@pytest.mark.asyncio
+async def test_create_box_not_in_catalog(
+    client, admin_role_token_a, make_hub, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    resp = await client.post(
+        f"{BASE}/vms", json=_create_body(hub, box="ghost"),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 400, "VM_BOX_NOT_IN_CATALOG")
+
+
+@pytest.mark.asyncio
+async def test_create_without_box_no_box_url(
+    client, admin_role_token_a, make_hub, monkeypatch,
+):
+    # box не задан → резолв пропускается, box_url=None, дисптач проходит.
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    resp = await client.post(
+        f"{BASE}/vms", json=_create_body(hub), headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[0]["payload"]["box_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_images_refresh_and_list(
+    client, admin_role_token_a, guest_token_a, monkeypatch,
+):
+    import src.services.vm_image_service as image_mod
+
+    def fake_fetch():
+        return {
+            "libvirt_box": {
+                "vm_station": "ftp://boxes/vm_station.tar.gz",
+                "1.8.1.o": {"url": "ftp://boxes/1.8.1.o.tar.gz", "kind": "single"},
+            }
+        }
+
+    monkeypatch.setattr(image_mod, "_fetch_box_config_from_network", fake_fetch)
+
+    resp = await client.post(f"{BASE}/vm-images/refresh", headers=_hdr(admin_role_token_a))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["synced"] == 2
+    assert body["created"] == 2
+
+    # повторный refresh — обновление, не создание
+    resp = await client.post(f"{BASE}/vm-images/refresh", headers=_hdr(admin_role_token_a))
+    assert resp.json()["updated"] == 2
+
+    # list доступен guest'у (vm.view)
+    resp = await client.get(f"{BASE}/vm-images", headers=_hdr(guest_token_a))
+    assert resp.status_code == 200
+    names = {i["name"] for i in resp.json()["items"]}
+    assert names == {"vm_station", "1.8.1.o"}
+    station = next(i for i in resp.json()["items"] if i["name"] == "vm_station")
+    assert station["kind"] == "universal"
+
+
+@pytest.mark.asyncio
+async def test_images_refresh_requires_preset_manage(
+    client, guest_token_a, monkeypatch,
+):
+    import src.services.vm_image_service as image_mod
+    monkeypatch.setattr(image_mod, "_fetch_box_config_from_network", lambda: {"libvirt_box": {}})
+    resp = await client.post(f"{BASE}/vm-images/refresh", headers=_hdr(guest_token_a))
+    assert_error(resp, 403, "PERMISSION_DENIED")
+
+
+@pytest.mark.asyncio
+async def test_vm_disks_callback_syncs(
+    client, worker_bot_token_a, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/disks", json={"name": "d", "size_gb": 10},
+        headers=_hdr(admin_role_token_a),
+    )
+    disk_id = resp.json()["disk_id"]
+
+    resp = await client.post(
+        f"{BASE}/internal/vms/{vm.id}/disks",
+        json={"disks": [{"disk_id": disk_id, "state": "ready", "path": "/vms/d.qcow2", "target_dev": "vdb"}]},
+        headers=_hdr(worker_bot_token_a, dept="dep_a"),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["synced"] == 1
+
+    resp = await client.get(f"{BASE}/vms/{vm.id}/disks", headers=_hdr(admin_role_token_a))
+    disk = resp.json()[0]
+    assert disk["state"] == "ready"
+    assert disk["path"] == "/vms/d.qcow2"
+    assert disk["target_dev"] == "vdb"

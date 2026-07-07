@@ -25,21 +25,26 @@ from src.core.constants import (
     VmPowerState,
     VmTaskKind,
 )
+from src.core.constants import VmDiskState
 from src.core.exceptions import (
     AuthorizationError,
+    BadRequestError,
     ConflictError,
     DomainValidationError,
     NotFoundError,
 )
 from src.dependencies.idempotency import read_idempotency_key
-from src.models import Vm
+from src.models import Vm, VmDisk
 from src.repositories import server as server_repo
 from src.repositories import server_disk as disk_repo
 from src.repositories import vm as repo
+from src.repositories import vm_disk as vm_disk_repo
+from src.repositories import vm_image as vm_image_repo
 from src.schemas.identity import IdentityContext
-from src.schemas.vm import VmCreate
+from src.schemas.vm import VmCreate, VmDiskCreate, VmUpdateRequest
 from src.services import audit_service, permissions, worker_client
 from src.services.audit_helpers import emit_denied_on_authz_error
+from src.utils.ids import vm_disk_id as new_vm_disk_id
 from src.utils.ids import vm_id as new_vm_id
 
 logger = logging.getLogger(__name__)
@@ -281,6 +286,10 @@ async def create_vm(
     existing = await repo.sum_resources_for_hub(db, hub.id)
     _capacity_check(hub, existing, payload)
 
+    # Резолв box→box_url из каталога образов ДО INSERT'а: воркеру нужен URL,
+    # откуда скачивать образ. Нет записи в каталоге → 400 (карточку не заводим).
+    box_url = await _resolve_box_url(db, payload.box, hub.id)
+
     data = {
         "id": new_vm_id(),
         "name": payload.name,
@@ -321,6 +330,7 @@ async def create_vm(
         "vm_id": vm.id,
         "name": vm.name,
         "box": vm.box,
+        "box_url": box_url,
         "os_version": vm.os_version,
         "network_mode": vm.network_mode,
         "ip_address": data["ip_address"],
@@ -387,6 +397,350 @@ async def _dispatch_vm_task(
             details={"reason": reason, "task_kind": task_kind, "hub_server_id": hub.id},
         )
         raise
+
+
+async def _resolve_box_url(
+    db: AsyncSession, box: str | None, hub_id: str
+) -> str | None:
+    """Резолв box→url из каталога `vm_images`. box=None → None (нечего резолвить).
+
+    Сначала ищем hub-специфичную запись, потом глобальную. Нет записи (каталог
+    пуст либо бокс не синкнут) → 400 VM_BOX_NOT_IN_CATALOG — воркер без URL
+    образ не скачает.
+    """
+    if not box:
+        return None
+    image = await vm_image_repo.resolve(db, box, hub_id)
+    if image is None:
+        audit_service.emit(
+            "vm.create", target_type="vm", status="failure", allowed=True,
+            details={"reason": "box_not_in_catalog", "box": box},
+        )
+        raise BadRequestError(
+            error_code="VM_BOX_NOT_IN_CATALOG",
+            message=(
+                f"Box image '{box}' is not in the catalog; refresh the image "
+                "catalog (POST /vm-images/refresh) or register the box first"
+            ),
+            details={"box": box},
+        )
+    return image.url
+
+
+# ── update (cpu/ram) ─────────────────────────────────────────────────────────
+
+
+def _capacity_check_update(hub, existing: dict[str, int], vm: Vm, new: dict) -> None:
+    """Ёмкость при изменении ресурсов ВМ: Σ(hub) − текущее ВМ + запрошенное ≤ hub.
+
+    `existing` включает саму ВМ, поэтому её текущий вклад вычитаем перед
+    добавлением нового значения. Проверяем только измерения из `new`.
+    """
+    hub_cpu = hub.cpu_threads or hub.cpu_cores
+    hub_ram = hub.ram_total_mb
+    dims = {
+        "cpu": (hub_cpu, vm.cpu or 0),
+        "ram_mb": (hub_ram, vm.ram_mb or 0),
+    }
+    for dim, requested in new.items():
+        capacity, own_current = dims[dim]
+        total = existing[dim] - own_current + requested
+        if capacity and total > capacity:
+            raise ConflictError(
+                error_code="VM_CAPACITY_EXCEEDED",
+                message=(
+                    f"Hub {dim} capacity exceeded: requested total {total} "
+                    f"> hub {capacity}"
+                ),
+                details={"dimension": dim, "hub_capacity": capacity, "requested_total": total},
+            )
+
+
+async def update_vm(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    payload: VmUpdateRequest,
+) -> tuple[Vm, str]:
+    """Dispatch VM_UPDATE (cpu/ram). Гейт брони+lock, ёмкость при увеличении.
+
+    Право `(vm, update)`. Пустое тело → 422. Меняем только присланные cpu/ram_mb;
+    воркер делает stop→правка XML→start. Ставит busy_state=updating.
+    """
+    changes: dict = {}
+    if payload.cpu is not None:
+        changes["cpu"] = payload.cpu
+    if payload.ram_mb is not None:
+        changes["ram_mb"] = payload.ram_mb
+    if not changes:
+        raise DomainValidationError(
+            error_code="VM_UPDATE_EMPTY",
+            message="provide at least one of cpu / ram_mb to update",
+        )
+    with emit_denied_on_authz_error(
+        "vm.updated", target_id=vm_id, target_type="vm",
+        extra_details={"vm_id": vm_id}, identity=identity,
+    ):
+        await permissions.require_resource_action(
+            db, identity, EntityType.VM, vm_id, Action.UPDATE
+        )
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            "vm.updated", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "not_found_or_cross_dept"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+    _ensure_not_busy(vm, action="vm.update")
+    _ensure_bookable(identity, vm, action="vm.update")
+
+    hub = await server_repo.get_by_id(db, vm.hub_server_id)
+    if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+        raise ConflictError(
+            error_code="HUB_UNAVAILABLE",
+            message="Hub server is unavailable (missing or decommissioned)",
+        )
+    # Ёмкость только при увеличении измерения; уменьшение всегда проходит.
+    increasing = {
+        dim: val for dim, val in changes.items()
+        if val > (getattr(vm, dim) or 0)
+    }
+    if increasing:
+        existing = await repo.sum_resources_for_hub(db, hub.id)
+        _capacity_check_update(hub, existing, vm, increasing)
+
+    payload_task = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "name": vm.name,
+        "cpu": changes.get("cpu", vm.cpu),
+        "ram_mb": changes.get("ram_mb", vm.ram_mb),
+    }
+    vm.busy_state = VmBusyState.UPDATING.value
+    vm.busy_since = datetime.now(timezone.utc)
+    for dim, val in changes.items():
+        setattr(vm, dim, val)
+    task_id = await _dispatch_vm_task(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_UPDATE, hub=hub, vm=vm,
+        payload=payload_task, audit_action="vm.updated",
+    )
+    await db.commit()
+    await db.refresh(vm)
+    audit_service.emit(
+        "vm.updated", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "changed": sorted(changes.keys()), "department_id": vm.department_id},
+    )
+    return vm, task_id
+
+
+# ── disks (create / list / delete / resize) ──────────────────────────────────
+
+
+def _disk_serial(vm: Vm, disk_name: str) -> str:
+    """Serial устройства для attach'а: `<vm>_<disk>` (§7 дизайна)."""
+    return f"{vm.name}_{disk_name}"
+
+
+async def _load_vm_for_disk_op(
+    db: AsyncSession, identity: IdentityContext, vm_id: str, *, action: str,
+) -> tuple[Vm, object]:
+    """Общий пролог disk-операций: право vm_disk_manage + видимость + бронь/lock + hub."""
+    with emit_denied_on_authz_error(
+        "vm.disk_managed", target_id=vm_id, target_type="vm",
+        extra_details={"vm_id": vm_id, "op": action}, identity=identity,
+    ):
+        await permissions.require_resource_action(
+            db, identity, EntityType.VM, vm_id, Action.VM_DISK_MANAGE
+        )
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            "vm.disk_managed", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "not_found_or_cross_dept", "op": action},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+    _ensure_not_busy(vm, action=f"vm.{action}")
+    _ensure_bookable(identity, vm, action=f"vm.{action}")
+    hub = await server_repo.get_by_id(db, vm.hub_server_id)
+    if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+        raise ConflictError(
+            error_code="HUB_UNAVAILABLE",
+            message="Hub server is unavailable (missing or decommissioned)",
+        )
+    return vm, hub
+
+
+async def list_disks(
+    db: AsyncSession, identity: IdentityContext, vm_id: str,
+) -> list[VmDisk]:
+    """Список дисков ВМ. Право `(vm, view)` + видимость (cross-dept → 404)."""
+    await permissions.require_resource_action(
+        db, identity, EntityType.VM, vm_id, Action.VIEW
+    )
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+    return await vm_disk_repo.list_for_vm(db, vm_id)
+
+
+async def create_disk(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    payload: VmDiskCreate,
+) -> tuple[VmDisk, str]:
+    """INSERT диска (state=creating) + dispatch VM_DISK_ATTACH. Право `vm_disk_manage`."""
+    vm, hub = await _load_vm_for_disk_op(db, identity, vm_id, action="disk_attach")
+    disk_data = {
+        "id": new_vm_disk_id(),
+        "vm_id": vm.id,
+        "name": payload.name,
+        "size_gb": payload.size_gb,
+        "target_dev": payload.target_dev,
+        "serial": _disk_serial(vm, payload.name),
+        "is_system": False,
+        "fs": payload.fs,
+        "mount": payload.mount,
+        "state": VmDiskState.CREATING.value,
+    }
+    try:
+        disk = await vm_disk_repo.create(db, disk_data)
+    except IntegrityError as exc:
+        await db.rollback()
+        audit_service.emit(
+            "vm.disk_managed", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "duplicate", "op": "disk_attach", "name": payload.name},
+        )
+        raise ConflictError(
+            error_code="VM_DISK_DUPLICATE",
+            message="A disk with this name already exists on the VM",
+        ) from exc
+    payload_task = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "disk_id": disk.id,
+        "disk_name": disk.name,
+        "size_gb": disk.size_gb,
+        "target_dev": disk.target_dev,
+        "serial": disk.serial,
+        "fs": disk.fs,
+        "mount": disk.mount,
+    }
+    task_id = await _dispatch_vm_task(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_DISK_ATTACH, hub=hub, vm=vm,
+        payload=payload_task, audit_action="vm.disk_managed",
+    )
+    await db.commit()
+    await db.refresh(disk)
+    audit_service.emit(
+        "vm.disk_managed", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "op": "disk_attach", "disk_id": disk.id, "name": disk.name, "department_id": vm.department_id},
+    )
+    return disk, task_id
+
+
+async def delete_disk(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    disk_id: str,
+) -> tuple[VmDisk, str]:
+    """Dispatch VM_DISK_DELETE + удалить строку диска. Право `vm_disk_manage`."""
+    vm, hub = await _load_vm_for_disk_op(db, identity, vm_id, action="disk_delete")
+    disk = await vm_disk_repo.get_by_id(db, disk_id)
+    if disk is None or disk.vm_id != vm.id:
+        audit_service.emit(
+            "vm.disk_managed", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "disk_not_found", "op": "disk_delete", "disk_id": disk_id},
+        )
+        raise NotFoundError(error_code="VM_DISK_NOT_FOUND", message="Disk not found on this VM")
+    payload_task = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "disk_id": disk.id,
+        "disk_name": disk.name,
+        "target_dev": disk.target_dev,
+        "serial": disk.serial,
+        "path": disk.path,
+    }
+    name = disk.name
+    task_id = await _dispatch_vm_task(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_DISK_DELETE, hub=hub, vm=vm,
+        payload=payload_task, audit_action="vm.disk_managed",
+    )
+    await vm_disk_repo.delete(db, disk)
+    await db.commit()
+    audit_service.emit(
+        "vm.disk_managed", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "op": "disk_delete", "disk_id": disk_id, "name": name, "department_id": vm.department_id},
+    )
+    return disk, task_id
+
+
+async def resize_disk(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    disk_id: str,
+    size_gb: int,
+) -> tuple[VmDisk, str]:
+    """Dispatch VM_DISK_RESIZE (qemu-img resize + growpart в госте). Только увеличение."""
+    vm, hub = await _load_vm_for_disk_op(db, identity, vm_id, action="disk_resize")
+    disk = await vm_disk_repo.get_by_id(db, disk_id)
+    if disk is None or disk.vm_id != vm.id:
+        audit_service.emit(
+            "vm.disk_managed", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "disk_not_found", "op": "disk_resize", "disk_id": disk_id},
+        )
+        raise NotFoundError(error_code="VM_DISK_NOT_FOUND", message="Disk not found on this VM")
+    if size_gb <= disk.size_gb:
+        raise DomainValidationError(
+            error_code="VM_DISK_SHRINK_FORBIDDEN",
+            message=f"disk can only grow: new size {size_gb} must exceed current {disk.size_gb}",
+            details={"current_gb": disk.size_gb, "requested_gb": size_gb},
+        )
+    payload_task = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "disk_id": disk.id,
+        "disk_name": disk.name,
+        "target_dev": disk.target_dev,
+        "serial": disk.serial,
+        "path": disk.path,
+        "size_gb": size_gb,
+    }
+    disk.size_gb = size_gb
+    disk.state = VmDiskState.CREATING.value
+    task_id = await _dispatch_vm_task(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_DISK_RESIZE, hub=hub, vm=vm,
+        payload=payload_task, audit_action="vm.disk_managed",
+    )
+    await db.commit()
+    await db.refresh(disk)
+    audit_service.emit(
+        "vm.disk_managed", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "op": "disk_resize", "disk_id": disk.id, "size_gb": size_gb, "department_id": vm.department_id},
+    )
+    return disk, task_id
 
 
 # ── power / delete ───────────────────────────────────────────────────────────

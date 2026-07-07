@@ -154,9 +154,12 @@ class TestPowerStatusWriteback:
             "target_department_id": "dep_42",
         }]
 
-    async def test_unknown_writes_back_unknown_source_bmc(
+    async def test_unknown_does_not_writeback(
         self, make_task, fetch_task, monkeypatch,
     ):
+        """Неопределённое состояние обратно НЕ пишется — иначе `unknown`
+        перетёр бы закэшированное `on`/`off` в server_service. Результат
+        уходит только в task.result."""
         tid = await make_task(
             task_kind="power.status",
             target_server_id="srv_1",
@@ -175,13 +178,8 @@ class TestPowerStatusWriteback:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         assert t.result == {"power_state": "unknown", "source": "bmc"}
-        # target_department_id отсутствует в payload — деградируем graceful.
-        assert calls == [{
-            "server_id": "srv_1",
-            "power_state": "unknown",
-            "source": "bmc",
-            "target_department_id": None,
-        }]
+        # unknown не перетирает кэш — writeback не вызывается вовсе.
+        assert calls == []
 
     async def test_writeback_failure_does_not_fail_task(
         self, make_task, fetch_task, monkeypatch,

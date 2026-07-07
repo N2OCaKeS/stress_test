@@ -950,13 +950,43 @@ def _disk_size_bytes(raw) -> int:
         return 0
 
 
-def _parse_df_used_by_disk(df_block: Any, disk_names: list[str]) -> dict[str, int]:
+def _index_devices_to_disk(disks: list[dict]) -> dict[str, str]:
+    """Каждый потомок физического диска (раздел, LVM-том, crypt) → имя диска.
+
+    df-источник смонтированного тома называется не так, как несущий диск:
+    штатная разметка Astra SE (LVM, а под luks — тем более) монтирует `/` с
+    `/dev/mapper/vg-root`, а не с `/dev/sda2`. Префиксом такое к `sda` не
+    свести. lsblk-дерево связывает mapper/LV-узел с физическим диском —
+    индексируем имена (`name`) и kernel-имена (`kname`) всех узлов поддерева.
+    """
+    index: dict[str, str] = {}
+
+    def _walk(node: dict, disk_name: str) -> None:
+        for key in (node.get("name"), node.get("kname")):
+            k = (key or "").strip()
+            if k:
+                index.setdefault(k, disk_name)
+        for child in node.get("children") or []:
+            if isinstance(child, dict):
+                _walk(child, disk_name)
+
+    for dev in disks:
+        name = (dev.get("name") or "").strip()
+        if name:
+            _walk(dev, name)
+    return index
+
+
+def _parse_df_used_by_disk(
+    df_block: Any, disk_names: list[str], device_index: dict[str, str],
+) -> dict[str, int]:
     """`df -B1 --output=source,target,size,used,pcent` → занятые байты на диск.
 
-    Каждую строку df матчим к физическому диску по имени устройства-источника
-    (`/dev/sda1` → `sda`), суммируя `used` всех ФС этого диска. Псевдо-ФС
-    (`tmpfs`, `/dev/mapper/...`, `overlay`) ни к одному диску не привязываются
-    и в сумму не попадают — used по такому диску останется неизвестным.
+    Каждую строку df матчим к физическому диску через lsblk-дерево
+    (`device_index`): `/dev/sda2` → `sda`, `/dev/mapper/vg-root` → диск, на
+    котором лежит этот LV. Суммируем `used` всех ФС диска. Псевдо-ФС (`tmpfs`,
+    `overlay`) и mapper-тома, которых нет в дереве, ни к одному диску не
+    привязываются и в сумму не попадают.
     """
     used_by_disk: dict[str, int] = {}
     text = _capture_stdout(df_block)
@@ -975,19 +1005,28 @@ def _parse_df_used_by_disk(df_block: Any, disk_names: list[str]) -> dict[str, in
             used = int(parts[3])
         except ValueError:
             continue
-        disk = _disk_of_device(dev, disk_names)
+        disk = _disk_of_device(dev, disk_names, device_index)
         if disk is None:
             continue
         used_by_disk[disk] = used_by_disk.get(disk, 0) + max(0, used)
     return used_by_disk
 
 
-def _disk_of_device(device: str, disk_names: list[str]) -> str | None:
-    """К какому физическому диску относится устройство-раздел (`sda1` → `sda`).
+def _disk_of_device(
+    device: str, disk_names: list[str], device_index: dict[str, str],
+) -> str | None:
+    """К какому физическому диску относится устройство из df-строки.
 
-    Сопоставляем по самому длинному подходящему префиксу, чтобы `nvme0n1p1`
-    ушёл к `nvme0n1`, а не к более короткому совпадению.
+    Сначала ищем узел в lsblk-дереве по имени как есть и по basename'у
+    (`mapper/vg-root` → `vg-root`, `dm-0`) — так ловятся LVM/luks-тома, чьё
+    имя не совпадает с именем диска. Если в дереве узла нет (частично битый
+    lsblk), падаем на исторический матч по самому длинному префиксу имени
+    диска, чтобы `nvme0n1p1` ушёл к `nvme0n1`.
     """
+    for cand in (device, device.rsplit("/", 1)[-1]):
+        disk = device_index.get(cand)
+        if disk is not None:
+            return disk
     match: str | None = None
     for name in disk_names:
         if device == name or device.startswith(name):
@@ -1017,7 +1056,8 @@ def _extract_disks(disks_block: dict, df_block: Any = None) -> list[dict]:
         and (dev.get("name") or "").strip()
     ]
     disk_names = [(dev.get("name") or "").strip() for dev in disks]
-    used_by_disk = _parse_df_used_by_disk(df_block, disk_names)
+    device_index = _index_devices_to_disk(disks)
+    used_by_disk = _parse_df_used_by_disk(df_block, disk_names, device_index)
 
     out: list[dict] = []
     for dev in disks:

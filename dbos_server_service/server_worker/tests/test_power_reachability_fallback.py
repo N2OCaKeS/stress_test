@@ -298,7 +298,9 @@ class TestPowerStatusNoIpmiFallback:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         assert t.result == {"power_state": "unknown", "source": "bmc"}
-        assert writes == [{"server_id": "srv_1", "power_state": "unknown", "source": "bmc"}]
+        # unknown обратно не пишем — иначе перетёрли бы закэшированное
+        # on/off в server_service транзиентной слепотой BMC+сети.
+        assert writes == []
 
     async def test_server_service_unreachable_fails_task(
         self, make_task, fetch_task, monkeypatch,

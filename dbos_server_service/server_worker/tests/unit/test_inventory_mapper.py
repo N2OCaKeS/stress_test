@@ -436,3 +436,68 @@ class TestExtractDisksSystemAndUsage:
     def test_partition_filtered_disks_only(self):
         disks = _extract_disks(self._LSBLK, self._DF)
         assert {d["name"] for d in disks} == {"sda", "sdb"}
+
+
+class TestExtractDisksLvmMapper:
+    """Штатная разметка Astra SE: `/` на LVM (и/или под luks) → df-источник
+    `/dev/mapper/...`, а не `/dev/sdaN`. Занятость должна привязываться к
+    несущему физическому диску через lsblk-дерево, а не по префиксу имени."""
+
+    _LSBLK_LVM = {"data": {"blockdevices": [
+        {
+            "name": "sda", "size": "500107862016", "type": "disk", "model": "SSD",
+            "serial": "S1", "children": [
+                {"name": "sda1", "type": "part", "mountpoint": "/boot"},
+                {
+                    "name": "sda2", "type": "part", "children": [
+                        {"name": "vg-root", "type": "lvm", "mountpoint": "/"},
+                        {"name": "vg-swap", "type": "lvm", "mountpoint": "[SWAP]"},
+                    ],
+                },
+            ],
+        },
+    ]}}
+    _DF_LVM = {"stdout": (
+        "Filesystem Mounted 1B-blocks Used Use%\n"
+        "/dev/mapper/vg-root / 480000000000 240000000000 50%\n"
+        "/dev/sda1 /boot 20000000000 2000000000 10%\n"
+        "tmpfs /run 8388608 0 0%\n"
+    )}
+
+    def test_mapper_usage_attributed_to_physical_disk(self):
+        disks = _extract_disks(self._LSBLK_LVM, self._DF_LVM)
+        sda = next(d for d in disks if d["name"] == "sda")
+        assert sda["is_system"] is True
+        # 240e9 (LV root через mapper) + 2e9 (/boot) = 242e9 байт.
+        assert sda["used_gb"] == int(242_000_000_000 / (1024 ** 3))
+        assert sda["used_percent"] == round(242_000_000_000 / 500107862016 * 100, 1)
+
+    def test_luks_lvm_root_attributed_to_disk(self):
+        """`/` на LVM поверх luks: sda3 → crypt → lvm, df-источник — mapper."""
+        lsblk = {"data": {"blockdevices": [
+            {
+                "name": "sda", "size": "500107862016", "type": "disk",
+                "children": [
+                    {"name": "sda1", "type": "part", "mountpoint": "/boot"},
+                    {
+                        "name": "sda3", "type": "part", "children": [
+                            {
+                                "name": "luks-abcd", "type": "crypt",
+                                "children": [
+                                    {"name": "vg-root", "type": "lvm",
+                                     "mountpoint": "/"},
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ]}}
+        df = {"stdout": (
+            "Filesystem Mounted 1B-blocks Used Use%\n"
+            "/dev/mapper/vg-root / 480000000000 100000000000 21%\n"
+        )}
+        disks = _extract_disks(lsblk, df)
+        sda = next(d for d in disks if d["name"] == "sda")
+        assert sda["is_system"] is True
+        assert sda["used_gb"] == int(100_000_000_000 / (1024 ** 3))

@@ -238,6 +238,99 @@ class TestRebootApplyFailLeavesNoMarker:
         assert await power._read_reboot_issued(tid) is False
 
 
+class TestRebootStoreFailureNoDoubleReset:
+    async def test_store_failure_leaves_reset_unissued(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Redis упал на записи маркера. Маркер ставится ДО reset'а, поэтому
+        reset ещё не выдан — задача падает, но второго reboot'а на повторе не
+        будет: retry просто выдаст reset заново."""
+        import redis.exceptions
+
+        from tests.test_task_handlers import _make_task_max1, _patch_no_retry
+
+        tid = await _make_task_max1(
+            make_task, task_kind="power.reboot", target_server_id="srv_store",
+        )
+        _patch_no_retry(monkeypatch)
+        await power._delete_reboot_issued(tid)
+
+        async def boom(task_id):
+            raise redis.exceptions.ConnectionError("redis down")
+
+        monkeypatch.setattr(power, "_store_reboot_issued", boom)
+
+        bmc = _RebootBmc()
+        _patch_bmc(monkeypatch, bmc)
+
+        await power.power_reboot.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert bmc.power_actions == [], (
+            "store маркера упал ДО reset'а — reset не должен быть выдан"
+        )
+        assert await power._read_reboot_issued(tid) is False
+
+    async def test_retry_after_store_failure_issues_single_reset(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Полный цикл: попытка 1 падает на store маркера (reset не выдан),
+        попытка 2 с живым Redis выдаёт reset ровно один раз."""
+        import redis.exceptions
+
+        tid = await make_task(
+            task_kind="power.reboot",
+            target_server_id="srv_store_retry",
+            payload={"server_id": "srv_store_retry"},
+        )
+        await power._delete_reboot_issued(tid)
+
+        from src.tasks import _runner
+
+        async def noop(*a, **kw):
+            pass
+
+        monkeypatch.setattr(_runner, "_schedule_retry", noop)
+
+        # Попытка 1: store маркера падает.
+        async def boom(task_id):
+            raise redis.exceptions.ConnectionError("redis down")
+
+        monkeypatch.setattr(power, "_store_reboot_issued", boom)
+        bmc1 = _RebootBmc()
+        _patch_bmc(monkeypatch, bmc1)
+        await power.power_reboot.original_func(tid)
+        assert bmc1.power_actions == []
+        assert await power._read_reboot_issued(tid) is False
+
+        # Вернём task в QUEUED для второго захода с живым Redis.
+        monkeypatch.undo()
+        from sqlalchemy import update
+        from src.db.session import AsyncSessionLocal
+        from src.models import Task
+
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Task)
+                .where(Task.id == tid)
+                .values(status=TaskStatus.QUEUED, attempt=0, max_attempts=3)
+            )
+            await session.commit()
+
+        monkeypatch.setattr(_runner, "_schedule_retry", noop)
+        bmc2 = _RebootBmc()
+        _patch_bmc(monkeypatch, bmc2)
+        await power.power_reboot.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert bmc2.power_actions == ["ForceRestart"], (
+            "после store-фейла retry обязан выдать reset ровно один раз"
+        )
+        assert await power._read_reboot_issued(tid) is False
+
+
 class TestRebootHappyPath:
     async def test_first_reboot_issues_once_and_clears_marker(
         self, make_task, fetch_task, captured_audit, monkeypatch,

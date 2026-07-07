@@ -72,12 +72,16 @@ AUDIT_SAFE_FIELDS: set[str] = {
 # предыдущая попытка успела выдать reset на BMC, но упала на последующем
 # `get_power_state` или commit'е терминального статуса. Без guard'а второй
 # reset влетит в сервер, который может ещё грузить ОС после первого — окно
-# для повреждения FS. Маркер ставим сразу после того, как BMC принял reset:
-# повторный заход видит маркер, пропускает reset и идёт сразу к verify.
+# для повреждения FS. Повторный заход видит маркер, пропускает reset и идёт
+# сразу к verify.
 #
-# Если упал САМ reset (BMC отбил/недоступен) — маркер не выставлен, retry
-# честно повторяет reset. Guard срабатывает только против повторной выдачи
-# ПОСЛЕ успешного reset'а.
+# Порядок важен: маркер ставим ДО выдачи reset'а. Если запись в Redis упадёт
+# (блип), reset ещё не выдан — retry честно повторит его, и второго reset в
+# грузящийся сервер не будет. Обратная сторона — reset выдаётся только после
+# успешной записи маркера (на мёртвом Redis reboot ждёт восстановления, а не
+# бьёт вслепую). Если упал САМ reset (BMC отбил/недоступен) — маркер снимаем в
+# except, чтобы retry честно повторил reset. Guard срабатывает только против
+# повторной выдачи ПОСЛЕ успешно принятого reset'а.
 _REBOOT_ISSUED_KEY_PREFIX = "dbos:power_reboot_issued:"
 
 
@@ -269,10 +273,12 @@ async def power_reboot(task_id: str) -> None:
     Возвращает: `{power_state, rebooted: True}`.
 
     One-shot guard: reset выдаётся ровно один раз на dispatch. Маркер в
-    Redis (`_REBOOT_ISSUED_KEY_PREFIX + task_id`) ставится сразу после
-    того, как BMC принял reset; durable-retry, поднявший `_impl` заново
-    после фейла на get_power_state/commit, видит маркер и пропускает
-    повторный reset. on/off такого guard'а не требуют — они идемпотентны.
+    Redis (`_REBOOT_ISSUED_KEY_PREFIX + task_id`) ставится ДО выдачи reset'а;
+    durable-retry, поднявший `_impl` заново после фейла на get_power_state/
+    commit, видит маркер и пропускает повторный reset. Сбой записи маркера
+    оставляет reset невыданным (retry повторит безопасно), а фейл самого
+    reset'а снимает маркер (retry повторит reset). on/off такого guard'а не
+    требуют — они идемпотентны.
 
     Возможные ошибки: `CredentialFetchError`, `AppException(BMC_*)`.
 
@@ -295,11 +301,18 @@ async def power_reboot(task_id: str) -> None:
         try:
             try:
                 if not already_issued:
-                    await dispatch_power_action(client, "ForceRestart")
-                    # Маркер ставим сразу после того, как BMC принял reset, но
-                    # до get_power_state: если verify/commit упадут и пойдёт
-                    # retry, он увидит маркер и не выдаст второй reset.
+                    # Маркер ставим ДО reset'а. Если запись в Redis упадёт,
+                    # исключение уйдёт в retry, а reset при этом ещё не выдан —
+                    # повтор безопасен. store после reset'а (fail-open) на
+                    # блипе Redis привёл бы ко второму reset'у на повторе.
                     await _store_reboot_issued(task_id)
+                    try:
+                        await dispatch_power_action(client, "ForceRestart")
+                    except (RedfishError, IpmitoolError, ValueError, RuntimeError):
+                        # Сам reset не прошёл — маркер снимаем, иначе retry
+                        # пропустит reset и сервер не перезагрузится.
+                        await _delete_reboot_issued(task_id)
+                        raise
                 state = await dispatch_get_power_state(client)
             except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
                 await _breaker.record_failure(host)
@@ -390,9 +403,24 @@ async def _writeback_power_state(
     `task.result` и audit. Пробрось мы её — таска ушла бы в retry/queued, а
     состояние, которое уже определили, потерялось бы.
 
+    Неопределённое состояние (`unknown`) обратно НЕ пишем: и BMC, и
+    reachability-проба промолчали — это транзиентная слепота, а не факт. Writeback
+    `unknown` перетёр бы в server_service ранее закэшированное `on`/`off`, и
+    оператор увидел бы регресс до следующего успешного опроса. Оставляем
+    прежнее значение в кэше, `unknown` уходит только в `task.result`/audit.
+
     `target_dept` отсутствует в payload → `_headers` просто не добавит
     `X-Target-Department-Id`, как у соседних callback'ов; не падаем.
     """
+    state = result.get("power_state")
+    if state in (None, "unknown"):
+        logger.info(
+            "power.status: state undetermined (%s) server_id=%s; skipping "
+            "writeback to preserve cached power_state",
+            state,
+            server_id,
+        )
+        return
     try:
         await server_service_client.submit_power_state(
             server_id,

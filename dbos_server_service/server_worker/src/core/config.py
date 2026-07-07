@@ -1,11 +1,19 @@
 """Настройки приложения."""
 
+import logging
 import re
+from datetime import datetime, timezone
 from functools import lru_cache
 from urllib.parse import urlparse
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+# Дефолт cron'а авто-inventory: 04:00 MSK = 01:00 UTC (taskiq читает cron в UTC).
+# Ночной низкий traffic, со сдвигом от housekeeping-cleanup'ов (00:00-00:30 UTC).
+_AUTO_INVENTORY_CRON_DEFAULT = "0 1 * * *"
 
 
 # Матчит DSN `redis://[user]:<password>@host:port/db`. Без password
@@ -361,9 +369,7 @@ class Settings(BaseSettings):
         ),
     )
     auto_inventory_cron: str = Field(
-        # 04:00 MSK = 01:00 UTC. taskiq читает cron в UTC; 04:00 МСК — ночной
-        # низкий traffic, со сдвигом от housekeeping-cleanup'ов (00:00-00:30 UTC).
-        default="0 1 * * *",
+        default=_AUTO_INVENTORY_CRON_DEFAULT,
         description=(
             "Cron for the periodic auto-inventory/power sweep (UTC, taskiq). "
             "Default `0 1 * * *` = 04:00 MSK, once a day."
@@ -952,6 +958,36 @@ class Settings(BaseSettings):
                     f"(got scheme={scheme!r}, host={host!r}); plain http "
                     "exposes worker traffic to MITM/sniff in the cluster"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _fallback_invalid_auto_inventory_cron(self) -> "Settings":
+        """Кривой `AUTO_INVENTORY_CRON` заменяем дефолтом, а не роняем scheduler.
+
+        taskiq на каждом тике гоняет `pycron.is_now(cron)`; строку, которую
+        pycron не парсит (неверное число полей, мусор, пусто), он выкидывает
+        исключением прямо в scheduler-loop — а это останавливает ВСЕ периодики
+        (heartbeat, cleanup, sweep), не только auto-inventory. Опечатка
+        оператора в одной env-переменной не должна стоить всего расписания:
+        валидируем той же проверкой, что и taskiq, и на ошибке откатываемся на
+        дефолт с WARNING'ом в лог.
+        """
+        expr = (self.auto_inventory_cron or "").strip()
+        try:
+            import pycron
+
+            pycron.is_now(expr, datetime.now(timezone.utc))
+        except Exception as exc:  # noqa: BLE001 — любую parse-ошибку трактуем как битый cron
+            logger.warning(
+                "AUTO_INVENTORY_CRON=%r is not a valid cron expression (%s); "
+                "falling back to default %r",
+                self.auto_inventory_cron,
+                type(exc).__name__,
+                _AUTO_INVENTORY_CRON_DEFAULT,
+            )
+            self.auto_inventory_cron = _AUTO_INVENTORY_CRON_DEFAULT
+        else:
+            self.auto_inventory_cron = expr
         return self
 
 

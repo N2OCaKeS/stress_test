@@ -114,6 +114,8 @@ class TaskKind(StrEnum):
     VMS_HUB_PREPARE = "vms_hub.prepare"
     VM_CREATE = "vm.create"
     VM_POWER = "vm.power"
+    VM_PREPARE = "vm.prepare"
+    VM_SET_NETWORK = "vm.set_network"
     VM_UPDATE = "vm.update"
     VM_DISK_ATTACH = "vm.disk_attach"
     VM_DISK_DELETE = "vm.disk_delete"

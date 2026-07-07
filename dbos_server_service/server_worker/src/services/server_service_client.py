@@ -561,6 +561,40 @@ async def submit_vm_state(
     )
 
 
+async def submit_vm_prepared(
+    vm_id: str,
+    management_user: str,
+    target_department_id: str | None = None,
+) -> dict:
+    """Подтвердить, что per-VM управляющие креды установлены на госте.
+
+    Финал `vm.prepare` task'а: worker зашёл на гостя дефолтными кредами образа
+    (`u`/`1`), завёл управляющего пользователя, положил ему публичный ключ и
+    пароль (их сгенерил и прислал server_service), проверил вход по ключу,
+    захардил sshd и удалил базовую учётку `u`. По этому callback'у server_service
+    помечает ВМ управляемой (`is_managed=True`, `management_user`) — зеркало
+    `submit_prepared` для физсервера. Зашифрованный материал server_service уже
+    держит у себя (он его выдал в dispatch-stash), worker ничего секретного
+    обратно не шлёт.
+
+    Возвращает: тело
+    `POST /api/server/v1/internal/vms/{vm_id}/prepared`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `VM_PREPARE_STATUS_REJECTED` — server_service вернул не 2xx.
+    """
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/vms/{vm_id}/prepared",
+        reject_code="VM_PREPARE_STATUS_REJECTED",
+        target_department_id=target_department_id,
+        json={"management_user": management_user},
+        details={"vm_id": vm_id},
+        allow_empty_body=True,
+    )
+
+
 async def submit_vm_disk_state(
     vm_id: str,
     disk_id: str,

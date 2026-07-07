@@ -281,6 +281,28 @@ def guest_ssh(ip: str, remote_cmd: str, *, sudo: bool = False) -> str:
     )
 
 
+def guest_ssh_key(
+    ip: str, user: str, key_path: str, remote_cmd: str, *, sudo: bool = False,
+) -> str:
+    """Собрать вход на гостя по приватному ключу (не по паролю).
+
+    Используется в `vm.prepare` уже после установки управляющей пары: проверить
+    вход под управляющим пользователем и добить пост-хардинг шаги (удалить
+    базовую учётку `u`), когда парольный вход на госте уже выключен. `key_path`
+    — путь к временному файлу с приватным ключом на самом hub'е (его пишет и
+    подчищает caller). `BatchMode=yes` + `PreferredAuthentications=publickey` —
+    отбиваем любой fallback на пароль/интерактив (чётко фейлимся, если ключ не
+    пускает). Известный хост не проверяем — гость только что развёрнут.
+    """
+    inner = f"sudo {remote_cmd}" if sudo else remote_cmd
+    return (
+        f"ssh -i {key_path} -o StrictHostKeyChecking=no "
+        "-o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 "
+        "-o BatchMode=yes -o PreferredAuthentications=publickey "
+        f"{user}@{ip} {inner!r}"
+    )
+
+
 def bridge_label() -> str:
     return VMS_BRIDGE
 
@@ -452,6 +474,7 @@ __all__ = [
     "box_url_from_catalog",
     "resolve_box_url",
     "guest_ssh",
+    "guest_ssh_key",
     "bridge_label",
     "POWER_VERBS",
 ]

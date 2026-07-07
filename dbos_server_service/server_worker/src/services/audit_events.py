@@ -72,6 +72,8 @@ SERVICE_EVENTS = [
     {"action": "vm.astra_update", "description": "Обновление ОС ВМ по SSH: revert _build → sources.list → astra-update → reboot → снимок новой версии", "default_severity": "CRITICAL"},
     {"action": "vm.allta_update", "description": "Обновление guest-allta по снимкам ВМ по SSH: revert → wget/apt install deb → пересъёмка", "default_severity": "WARNING"},
     {"action": "vm.passwd", "description": "Смена пароля гостевого u по снимкам ВМ по SSH: chpasswd + пересъёмка", "default_severity": "WARNING"},
+    {"action": "vm.prepare", "description": "Подготовка ВМ по SSH: заведение управляющей учётки (ключ+sudo), hardening sshd, удаление базовой учётки", "default_severity": "CRITICAL"},
+    {"action": "vm.set_network", "description": "Смена сети ВМ по SSH: статика в госте + перевод домена на bridge br0 либо NAT", "default_severity": "WARNING"},
     # Управляющая учётка — tasks/management_user.py, tasks/management_creds.py
     {"action": "management_user.sync", "description": "Недеструктивный re-bootstrap управляющей учётки на хосте", "default_severity": "INFO"},
     {"action": "server.management_creds_rotated", "description": "Ротация per-server управляющих кредов применена на хосте + callback", "default_severity": "CRITICAL"},

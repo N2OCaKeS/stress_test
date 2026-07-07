@@ -81,7 +81,7 @@ class OSBLogger:
         self,
         name: str = "OSBench",
         log_file: Optional[str] = f"{MAIN_DIR}/logs/osbench.log",
-        log_level: str = "DEBUG",
+        log_level: str = "INFO",
         console: bool = True,
         colored_console: bool = True
     ):

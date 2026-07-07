@@ -1,5 +1,7 @@
 #!/bin/bash
-set -x
+
+set -e
+export CFLAGS="-Wno-all -Wno-format-overflow -Wno-stringop-truncation"
 
 install_deps() {
     if command -v apt-get &> /dev/null; then

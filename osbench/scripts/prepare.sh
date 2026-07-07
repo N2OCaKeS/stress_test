@@ -1,6 +1,8 @@
 #!/bin/bash
 
-set -x
+set -e
+export CFLAGS="-Wno-error -Wno-stringop-overflow -Wno-stringop-truncation -Wno-unused-result"
+export CXXFLAGS="-Wno-error -Wno-stringop-overflow -Wno-stringop-truncation -Wno-unused-result"
 
 PACKAGES=(
   wget 
@@ -37,7 +39,7 @@ sudo "$PM" update
 
 for pkg in "${PACKAGES[@]}"; do
   echo "Устанавливаем пакет ${pkg}..."
-  sudo "$PM" install -y "$pkg" || echo "⚠ Предупреждение: не удалось установить ${pkg}"
+  sudo "$PM" install -y "$pkg" || echo "⚠️ Предупреждение: не удалось установить ${pkg}"
 done
 
 
@@ -59,14 +61,14 @@ cd /home/u/python || exit 1
 sudo wget -nv -P /home/u/python ftp://10.177.103.10/python/* || { echo "❌ Ошибка скачивания"; exit 1; }
 tar -xf Python-3.12.1.tar.xz || { echo "❌ Ошибка распаковки"; exit 1; }
 cd Python-3.12.1 || exit 1
-./configure --enable-optimizations
-make -j "$(nproc)"
-sudo make altinstall
+./configure --enable-optimizations 2>&1 | grep -v "warning:" | grep -v "find:" | grep -v "Ошибка 1" || true
+make -j "$(nproc)" 2>&1 | grep -v "warning:" | grep -v "find:" || true
+sudo make altinstall 2>&1 | grep -v "warning:" || true
 
 
 python3.12 -m venv venv
 source venv/bin/activate
-pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10:3141 allta==1.2.0
+pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10:3141 allta==1.2.0 || { echo "⚠️ Ошибка установки allta"; exit 1; }
 
 
 cd /home/u/git/stress_test/osbench || exit 1

@@ -10,19 +10,25 @@
  * `@/api/server/vms`. Тонкая матрица прав `vm.*` (дизайн §2) ещё не приходит в
  * persona — гейтим серверной ролью через `@/lib/rbac`.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   AlertCircle,
   ArrowLeft,
+  Cpu,
+  HardDrive,
+  Maximize2,
   MonitorPlay,
   Play,
   Plus,
   Power,
+  RefreshCw,
   RotateCcw,
   Search,
   Server as ServerIcon,
   Square,
+  Trash2,
   Lock,
   Unlock,
 } from "lucide-react";
@@ -44,25 +50,37 @@ import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import { listServers } from "@/api/server/servers";
 import {
   createVm,
+  createVmDisk,
   deleteVm,
+  deleteVmDisk,
   getVmByNumber,
   getServerByNumber,
+  listVmDisks,
+  listVmImages,
   listVms,
   prepareVmsHub,
+  refreshVmImages,
   releaseVm,
   reserveVm,
+  resizeVmDisk,
+  updateVm,
   vmPower,
   type Vm,
   type VmCreateRequest,
+  type VmDisk,
+  type VmDiskCreateRequest,
   type VmHub,
+  type VmImage,
   type VmNetworkMode,
   type VmPowerAction,
+  type VmUpdateRequest,
 } from "@/api/server/vms";
 import type { TaskDispatchResponse } from "@/api/server/types";
 import {
   MOCK_HUB_CANDIDATES,
-  MOCK_VM_BOXES,
+  MOCK_VM_DISKS,
   MOCK_VM_HUBS,
+  MOCK_VM_IMAGES,
   MOCK_VMS,
   type MockHubCandidate,
 } from "@/mocks/vm";
@@ -156,6 +174,38 @@ export function Vm() {
   );
 
   const prepareOutcome = useTaskOutcome();
+
+  // Каталог образов для модалки создания. Живой режим ходит в `/vm-images`;
+  // при пустом ответе/сбое остаётся mock-фолбэк, чтобы модалка была рабочей.
+  const imagesQ = useQuery<VmImage[]>(
+    async () => {
+      if (mock) return MOCK_VM_IMAGES;
+      const res = await listVmImages();
+      return res.items;
+    },
+    [mock],
+    { enabled: !zoneBlocked, keepPreviousDataOnError: true },
+  );
+  const images = useMemo(
+    () =>
+      imagesQ.data && imagesQ.data.length > 0 ? imagesQ.data : MOCK_VM_IMAGES,
+    [imagesQ.data],
+  );
+
+  async function handleRefreshImages() {
+    if (mock) {
+      imagesQ.refetch();
+      toast.info("Каталог образов (mock) обновлён");
+      return;
+    }
+    try {
+      await refreshVmImages();
+      imagesQ.refetch();
+      toast.success("Каталог образов обновлён");
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось обновить каталог образов"));
+    }
+  }
 
   function selectHub(id: string | null) {
     const next = new URLSearchParams(params);
@@ -312,7 +362,8 @@ export function Vm() {
       {action === "new" && selectedHub && canManage ? (
         <CreateVmPane
           hub={selectedHub}
-          boxes={MOCK_VM_BOXES}
+          images={images}
+          onRefreshImages={handleRefreshImages}
           onCancel={closeAction}
           onSubmit={handleCreate}
         />
@@ -597,12 +648,38 @@ function VmCard({
   const { confirm, prompt } = useConfirm();
   const deptLabel = useDeptLabel(vm.department_id);
   const powerOutcome = useTaskOutcome();
+  const resourceOutcome = useTaskOutcome();
   const [local, setLocal] = useState<Vm>(vm);
   const [pending, setPending] = useState(false);
+  const [resourceModal, setResourceModal] = useState(false);
 
   // vm prop меняется при refetch — подхватываем свежую копию.
   const view = local.id === vm.id ? local : vm;
   const reserved = view.busy_state !== "free" || !!view.busy_note;
+
+  async function handleUpdateResources(body: VmUpdateRequest) {
+    resourceOutcome.reset();
+    try {
+      const res = mock ? fakeDispatch() : await updateVm(view.id, body);
+      resourceOutcome.track(
+        `update cpu/ram · ${view.name}`,
+        res.task_id,
+        res.status,
+      );
+      toast.success(`Изменение ресурсов ${view.name} — задача поставлена`);
+      setResourceModal(false);
+      if (mock) {
+        setLocal({
+          ...view,
+          cpu: body.cpu ?? view.cpu,
+          ram_mb: body.ram_mb ?? view.ram_mb,
+        });
+      }
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось изменить ресурсы"));
+    }
+  }
 
   async function power(action: VmPowerAction, danger = false) {
     const ok = await confirm({
@@ -808,7 +885,18 @@ function VmCard({
         )}
 
         <div className="card">
-          <h3 className="font-semibold text-base mb-3">Параметры</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-base">Параметры</h3>
+            {canManage && (
+              <button
+                className="btn btn-sm flex items-center gap-1"
+                onClick={() => setResourceModal(true)}
+                title="Изменить vCPU и RAM"
+              >
+                <Cpu className="w-3.5 h-3.5" /> Изменить CPU/RAM
+              </button>
+            )}
+          </div>
           <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm">
             <Field k="ОС" v={view.os_version ?? "—"} />
             <Field k="box" v={view.box} />
@@ -822,7 +910,22 @@ function VmCard({
             <Field k="Питание" v={view.power_state} />
             <Field k="Занятость" v={view.busy_state} />
           </dl>
+          {resourceOutcome.tracked && (
+            <TaskOutcomeBanner
+              outcome={resourceOutcome.tracked}
+              className="mt-3"
+              successText="Ресурсы применены."
+              onCancelled={resourceOutcome.reset}
+            />
+          )}
         </div>
+
+        <DisksSection
+          vm={view}
+          mock={mock}
+          canManage={canManage}
+          onChanged={onChanged}
+        />
 
         {canManage && (
           <div className="card" style={{ border: "1px solid var(--danger, #b91c1c)" }}>
@@ -843,6 +946,14 @@ function VmCard({
           </div>
         )}
       </div>
+
+      {resourceModal && (
+        <ResourcesModal
+          vm={view}
+          onClose={() => setResourceModal(false)}
+          onSubmit={handleUpdateResources}
+        />
+      )}
     </section>
   );
 }
@@ -881,12 +992,14 @@ function PingBadge({ vm }: { vm: Vm }) {
 
 function CreateVmPane({
   hub,
-  boxes,
+  images,
+  onRefreshImages,
   onCancel,
   onSubmit,
 }: {
   hub: VmHub;
-  boxes: string[];
+  images: VmImage[];
+  onRefreshImages: () => void | Promise<void>;
   onCancel: () => void;
   onSubmit: (body: VmCreateRequest) => void | Promise<void>;
 }) {
@@ -894,7 +1007,8 @@ function CreateVmPane({
   const [cpu, setCpu] = useState("2");
   const [ramMb, setRamMb] = useState("4096");
   const [diskGb, setDiskGb] = useState("40");
-  const [box, setBox] = useState(boxes[0] ?? "vm_station");
+  const [box, setBox] = useState(images[0]?.name ?? "vm_station");
+  const selectedImage = images.find((im) => im.name === box) ?? null;
   const [networkMode, setNetworkMode] = useState<VmNetworkMode>("bridge");
   const [ipMode, setIpMode] = useState<"auto" | "manual">("auto");
   const [ip, setIp] = useState("");
@@ -1009,14 +1123,33 @@ function CreateVmPane({
           </div>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">box (образ) *</span>
+            <span className="text-dim text-xs flex items-center justify-between">
+              <span>Образ (каталог) *</span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm flex items-center gap-1"
+                onClick={() => onRefreshImages()}
+                title="Перечитать каталог образов с FTP"
+              >
+                <RefreshCw className="w-3 h-3" /> Обновить каталог
+              </button>
+            </span>
             <select className="input" value={box} onChange={(e) => setBox(e.target.value)}>
-              {boxes.map((b) => (
-                <option key={b} value={b}>
-                  {b}
+              {images.map((im) => (
+                <option key={im.name} value={im.name}>
+                  {im.name}
+                  {im.kind === "universal" ? " · universal" : ""}
                 </option>
               ))}
             </select>
+            {selectedImage && (
+              <span className="text-[11px] text-dim">
+                {selectedImage.description ?? selectedImage.name}
+                {selectedImage.os_versions && selectedImage.os_versions.length > 0
+                  ? ` · ОС: ${selectedImage.os_versions.join(", ")}`
+                  : ""}
+              </span>
+            )}
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
@@ -1098,6 +1231,515 @@ function CreateVmPane({
         </form>
       </div>
     </section>
+  );
+}
+
+// ── disks ─────────────────────────────────────────────────────────────────────
+
+function DisksSection({
+  vm,
+  mock,
+  canManage,
+  onChanged,
+}: {
+  vm: Vm;
+  mock: boolean;
+  canManage: boolean;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const diskOutcome = useTaskOutcome();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [resizeTarget, setResizeTarget] = useState<VmDisk | null>(null);
+
+  const disksQ = useQuery<VmDisk[]>(
+    async () => {
+      if (mock) return MOCK_VM_DISKS[vm.id] ?? [];
+      const res = await listVmDisks(vm.id);
+      return res.items;
+    },
+    [vm.id, mock],
+    { keepPreviousDataOnError: true },
+  );
+
+  // В mock-режиме операции не ходят на backend — держим локальную копию, чтобы
+  // список отражал создание/удаление/resize сразу.
+  const [mockDisks, setMockDisks] = useState<VmDisk[] | null>(null);
+  useEffect(() => {
+    setMockDisks(null);
+  }, [vm.id]);
+  const disks = mock ? (mockDisks ?? disksQ.data ?? []) : (disksQ.data ?? []);
+
+  async function handleCreate(body: VmDiskCreateRequest) {
+    diskOutcome.reset();
+    try {
+      const res = mock ? fakeDispatch() : await createVmDisk(vm.id, body);
+      diskOutcome.track(`disk create · ${body.name}`, res.task_id, res.status);
+      toast.success(`Создание диска ${body.name} — задача поставлена`);
+      setCreateOpen(false);
+      if (mock) {
+        const next: VmDisk = {
+          id: `disk-mock-${Date.now()}`,
+          vm_id: vm.id,
+          name: body.name,
+          size_gb: body.size_gb,
+          path: null,
+          target_dev: null,
+          serial: `${vm.id}_${body.name}`,
+          is_system: false,
+          fs: body.fs ?? null,
+          mount: body.mount ?? null,
+          state: "creating",
+        };
+        setMockDisks([...disks, next]);
+      } else {
+        disksQ.refetch();
+        onChanged();
+      }
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Создание диска не удалось"));
+    }
+  }
+
+  async function handleDelete(disk: VmDisk) {
+    const ok = await confirm({
+      title: "Удалить диск",
+      message: `Отвязать и удалить диск ${disk.name} (${disk.size_gb} ГБ)? Данные на нём будут потеряны.`,
+      confirmLabel: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
+    diskOutcome.reset();
+    try {
+      const res = mock
+        ? fakeDispatch()
+        : await deleteVmDisk(vm.id, disk.id, { reason: "ui" });
+      diskOutcome.track(`disk delete · ${disk.name}`, res.task_id, res.status);
+      toast.success(`Удаление диска ${disk.name} — задача поставлена`);
+      if (mock) setMockDisks(disks.filter((d) => d.id !== disk.id));
+      else {
+        disksQ.refetch();
+        onChanged();
+      }
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Удаление диска не удалось"));
+    }
+  }
+
+  async function handleResize(disk: VmDisk, sizeGb: number) {
+    diskOutcome.reset();
+    try {
+      const res = mock
+        ? fakeDispatch()
+        : await resizeVmDisk(vm.id, disk.id, { size_gb: sizeGb });
+      diskOutcome.track(`disk resize · ${disk.name}`, res.task_id, res.status);
+      toast.success(`Resize диска ${disk.name} → ${sizeGb} ГБ — задача поставлена`);
+      setResizeTarget(null);
+      if (mock)
+        setMockDisks(
+          disks.map((d) =>
+            d.id === disk.id ? { ...d, size_gb: sizeGb, state: "resizing" } : d,
+          ),
+        );
+      else {
+        disksQ.refetch();
+        onChanged();
+      }
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Resize диска не удался"));
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-base flex items-center gap-2">
+          <HardDrive className="w-4 h-4 text-accent" /> Диски
+        </h3>
+        {canManage && (
+          <button
+            className="btn btn-sm btn-primary flex items-center gap-1"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="w-3.5 h-3.5" /> Создать диск
+          </button>
+        )}
+      </div>
+
+      {disksQ.loading ? (
+        <div className="text-xs text-dim">Загрузка…</div>
+      ) : disksQ.error && disks.length === 0 ? (
+        <div className="alert alert-danger flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 mt-0.5" />
+          <div className="flex-1 text-xs">
+            <div>{apiErrMsg(disksQ.error, "Список дисков не загрузился")}</div>
+            <button className="btn btn-ghost mt-2" onClick={() => disksQ.refetch()}>
+              Повторить
+            </button>
+          </div>
+        </div>
+      ) : disks.length === 0 ? (
+        <div className="text-xs text-dim">Дисков нет.</div>
+      ) : (
+        <div className="surface-2 border border-token rounded overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[11px] uppercase text-dim border-b border-token">
+                <th className="text-left px-3 py-2 font-medium">Имя</th>
+                <th className="text-left px-3 py-2 font-medium">Размер</th>
+                <th className="text-left px-3 py-2 font-medium">target</th>
+                <th className="text-left px-3 py-2 font-medium">ФС / mount</th>
+                <th className="text-left px-3 py-2 font-medium">serial</th>
+                <th className="text-left px-3 py-2 font-medium">Тип</th>
+                {canManage && <th className="px-3 py-2" />}
+              </tr>
+            </thead>
+            <tbody>
+              {disks.map((d) => (
+                <tr key={d.id} className="border-b border-token last:border-b-0">
+                  <td className="px-3 py-1.5">{d.name}</td>
+                  <td className="px-3 py-1.5 mono">{d.size_gb} ГБ</td>
+                  <td className="px-3 py-1.5 mono text-dim">{d.target_dev ?? "—"}</td>
+                  <td className="px-3 py-1.5 text-xs">
+                    {d.fs ?? "—"}
+                    {d.mount ? ` · ${d.mount}` : ""}
+                  </td>
+                  <td className="px-3 py-1.5 mono text-dim text-xs">{d.serial ?? "—"}</td>
+                  <td className="px-3 py-1.5">
+                    {d.is_system ? (
+                      <span className="badge">системный</span>
+                    ) : (
+                      <span className="badge badge-ok">доп.</span>
+                    )}
+                  </td>
+                  {canManage && (
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          className="btn btn-sm flex items-center gap-1"
+                          title="Изменить размер (только рост)"
+                          onClick={() => setResizeTarget(d)}
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" /> Resize
+                        </button>
+                        {!d.is_system && (
+                          <button
+                            className="btn btn-sm btn-danger flex items-center gap-1"
+                            title="Удалить диск"
+                            onClick={() => handleDelete(d)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {diskOutcome.tracked && (
+        <TaskOutcomeBanner
+          outcome={diskOutcome.tracked}
+          className="mt-3"
+          successText="Операция с диском применена."
+          onCancelled={diskOutcome.reset}
+        />
+      )}
+
+      {createOpen && (
+        <DiskCreateModal onClose={() => setCreateOpen(false)} onSubmit={handleCreate} />
+      )}
+      {resizeTarget && (
+        <DiskResizeModal
+          disk={resizeTarget}
+          onClose={() => setResizeTarget(null)}
+          onSubmit={(size) => handleResize(resizeTarget, size)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── modals ────────────────────────────────────────────────────────────────────
+
+function Modal({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Dialog.Root
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="modal-overlay" />
+        <Dialog.Content className="modal-content" aria-describedby={undefined}>
+          <div className="modal-header">
+            <Dialog.Title className="text-base font-semibold">{title}</Dialog.Title>
+          </div>
+          {children}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function ResourcesModal({
+  vm,
+  onClose,
+  onSubmit,
+}: {
+  vm: Vm;
+  onClose: () => void;
+  onSubmit: (body: VmUpdateRequest) => void | Promise<void>;
+}) {
+  const [cpu, setCpu] = useState(String(vm.cpu));
+  const [ramMb, setRamMb] = useState(String(vm.ram_mb));
+  const [submitting, setSubmitting] = useState(false);
+
+  const cpuN = Number.parseInt(cpu, 10);
+  const ramN = Number.parseInt(ramMb, 10);
+  const valid =
+    Number.isFinite(cpuN) && cpuN > 0 && Number.isFinite(ramN) && ramN >= 256;
+  const changed = cpuN !== vm.cpu || ramN !== vm.ram_mb;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valid || !changed || submitting) return;
+    const body: VmUpdateRequest = {};
+    if (cpuN !== vm.cpu) body.cpu = cpuN;
+    if (ramN !== vm.ram_mb) body.ram_mb = ramN;
+    setSubmitting(true);
+    try {
+      await Promise.resolve(onSubmit(body));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal title={`Ресурсы ВМ ${vm.name}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="modal-body flex flex-col gap-3">
+          <div className="text-xs text-dim">
+            Изменение остановит ВМ, применит новые значения и запустит её заново.
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">vCPU *</span>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                value={cpu}
+                onChange={(e) => setCpu(e.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">RAM, МБ *</span>
+              <input
+                className="input"
+                type="number"
+                min={256}
+                step={256}
+                value={ramMb}
+                onChange={(e) => setRamMb(e.target.value)}
+              />
+            </label>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={!valid || !changed || submitting}
+          >
+            {submitting ? "Применяем…" : "Применить"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DiskCreateModal({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void;
+  onSubmit: (body: VmDiskCreateRequest) => void | Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [sizeGb, setSizeGb] = useState("20");
+  const [fs, setFs] = useState("ext4");
+  const [mount, setMount] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const sizeN = Number.parseInt(sizeGb, 10);
+  const nameError =
+    name.trim() && !/^[a-zA-Z0-9._-]+$/.test(name.trim())
+      ? "Имя: латиница, цифры, точка, дефис, подчёркивание"
+      : null;
+  const valid = !!name.trim() && !nameError && Number.isFinite(sizeN) && sizeN > 0;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valid || submitting) return;
+    const body: VmDiskCreateRequest = {
+      name: name.trim(),
+      size_gb: sizeN,
+      fs: fs === "none" ? null : fs,
+      mount: mount.trim() ? mount.trim() : null,
+    };
+    setSubmitting(true);
+    try {
+      await Promise.resolve(onSubmit(body));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal title="Новый диск" onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="modal-body flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Имя *</span>
+            <input
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="data"
+              autoFocus
+            />
+            {nameError && <span className="text-[11px] text-danger">{nameError}</span>}
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Размер, ГБ *</span>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              value={sizeGb}
+              onChange={(e) => setSizeGb(e.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Файловая система</span>
+            <select className="input" value={fs} onChange={(e) => setFs(e.target.value)}>
+              <option value="ext4">ext4</option>
+              <option value="xfs">xfs</option>
+              <option value="btrfs">btrfs</option>
+              <option value="none">не форматировать</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Точка монтирования</span>
+            <input
+              className="input"
+              value={mount}
+              onChange={(e) => setMount(e.target.value)}
+              placeholder="/data (опционально)"
+            />
+          </label>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={!valid || submitting}
+          >
+            {submitting ? "Создаём…" : "Создать диск"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DiskResizeModal({
+  disk,
+  onClose,
+  onSubmit,
+}: {
+  disk: VmDisk;
+  onClose: () => void;
+  onSubmit: (sizeGb: number) => void | Promise<void>;
+}) {
+  const [sizeGb, setSizeGb] = useState(String(disk.size_gb));
+  const [submitting, setSubmitting] = useState(false);
+
+  const sizeN = Number.parseInt(sizeGb, 10);
+  const valid = Number.isFinite(sizeN) && sizeN > disk.size_gb;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valid || submitting) return;
+    setSubmitting(true);
+    try {
+      await Promise.resolve(onSubmit(sizeN));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal title={`Resize диска ${disk.name}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="modal-body flex flex-col gap-3">
+          <div className="text-xs text-dim">
+            Текущий размер: <b className="mono">{disk.size_gb} ГБ</b>. Диск можно
+            только увеличить (`qemu-img resize` + growpart/resize2fs в госте).
+          </div>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Новый размер, ГБ *</span>
+            <input
+              className="input"
+              type="number"
+              min={disk.size_gb + 1}
+              value={sizeGb}
+              onChange={(e) => setSizeGb(e.target.value)}
+              autoFocus
+            />
+            {!valid && sizeGb.trim() !== "" && (
+              <span className="text-[11px] text-danger">
+                Должно быть больше {disk.size_gb} ГБ
+              </span>
+            )}
+          </label>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={!valid || submitting}
+          >
+            {submitting ? "Применяем…" : "Увеличить"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

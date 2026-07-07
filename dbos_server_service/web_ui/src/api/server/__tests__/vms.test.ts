@@ -7,13 +7,20 @@ vi.mock("@/api/client", () => ({
   apiDelete: vi.fn(() => Promise.resolve({ task_id: "task-2", status: "queued" })),
 }));
 
-import { apiDelete, apiGet, apiPost } from "@/api/client";
+import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
 import {
   createVm,
+  createVmDisk,
   deleteVm,
+  deleteVmDisk,
   getVmByNumber,
   getServerByNumber,
+  listVmDisks,
+  listVmImages,
   prepareVmsHub,
+  refreshVmImages,
+  resizeVmDisk,
+  updateVm,
   vmPower,
 } from "@/api/server/vms";
 
@@ -65,5 +72,48 @@ describe("vms api client", () => {
     expect(apiGet).toHaveBeenCalledWith("/server/v1/vms/by-number/101");
     await getServerByNumber(5);
     expect(apiGet).toHaveBeenCalledWith("/server/v1/servers/by-number/5");
+  });
+
+  it("updateVm PATCH'ит /vms/{id} с cpu/ram", async () => {
+    await updateVm("vm-101", { cpu: 8, ram_mb: 16384 });
+    expect(apiPatch).toHaveBeenCalledWith("/server/v1/vms/vm-101", {
+      cpu: 8,
+      ram_mb: 16384,
+    });
+  });
+
+  it("listVmDisks GET'ит /vms/{id}/disks", async () => {
+    await listVmDisks("vm-101");
+    expect(apiGet).toHaveBeenCalledWith("/server/v1/vms/vm-101/disks");
+  });
+
+  it("createVmDisk POST'ит /vms/{id}/disks с телом", async () => {
+    const body = { name: "data", size_gb: 20, fs: "ext4", mount: "/data" };
+    const res = await createVmDisk("vm-101", body);
+    expect(apiPost).toHaveBeenCalledWith("/server/v1/vms/vm-101/disks", body);
+    expect(res).toEqual({ task_id: "task-1", status: "queued" });
+  });
+
+  it("deleteVmDisk шлёт reason и уходит на /vms/{id}/disks/{disk}", async () => {
+    await deleteVmDisk("vm-101", "disk-9", { reason: "ui" });
+    expect(apiDelete).toHaveBeenCalledWith(
+      "/server/v1/vms/vm-101/disks/disk-9",
+      { reason: "ui" },
+    );
+  });
+
+  it("resizeVmDisk POST'ит /vms/{id}/disks/{disk}/resize", async () => {
+    await resizeVmDisk("vm-101", "disk-9", { size_gb: 60 });
+    expect(apiPost).toHaveBeenCalledWith(
+      "/server/v1/vms/vm-101/disks/disk-9/resize",
+      { size_gb: 60 },
+    );
+  });
+
+  it("каталог образов: list и refresh", async () => {
+    await listVmImages();
+    expect(apiGet).toHaveBeenCalledWith("/server/v1/vm-images");
+    await refreshVmImages();
+    expect(apiPost).toHaveBeenCalledWith("/server/v1/vm-images/refresh");
   });
 });

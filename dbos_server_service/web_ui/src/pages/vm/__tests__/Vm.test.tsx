@@ -69,6 +69,48 @@ describe("Vm zone (mock mode)", () => {
     expect(submit).not.toBeDisabled();
   });
 
+  it("карточка ВМ рендерит раздел «Диски» со списком дисков", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    expect(await screen.findByRole("heading", { name: /Диски/ })).toBeInTheDocument();
+    // Системный и доп. диск из фикстур.
+    expect(await screen.findByText("system")).toBeInTheDocument();
+    expect(screen.getByText("data")).toBeInTheDocument();
+    // Системный диск не удаляется — кнопка удаления только у доп. диска.
+    expect(screen.getAllByTitle("Удалить диск").length).toBe(1);
+  });
+
+  it("открывает модалку создания диска", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    fireEvent.click(await screen.findByRole("button", { name: /Создать диск/ }));
+    expect(await screen.findByText("Новый диск")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("data")).toBeInTheDocument();
+  });
+
+  it("открывает модалку resize диска", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    const resizeBtns = await screen.findAllByRole("button", { name: /Resize/ });
+    fireEvent.click(resizeBtns[0]);
+    expect(await screen.findByText(/Resize диска/)).toBeInTheDocument();
+  });
+
+  it("открывает модалку изменения CPU/RAM", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    fireEvent.click(await screen.findByRole("button", { name: /Изменить CPU\/RAM/ }));
+    expect(await screen.findByText(/Ресурсы ВМ/)).toBeInTheDocument();
+  });
+
+  it("модалка создания ВМ показывает каталог образов", async () => {
+    renderVm("/vm?hub=srv-07&action=new");
+    // Универсальный образ из каталога и его описание.
+    expect(
+      await screen.findByRole("option", { name: /vm_station · universal/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Universal-станция/)).toBeInTheDocument();
+    expect(
+      screen.getByTitle("Перечитать каталог образов с FTP"),
+    ).toBeInTheDocument();
+  });
+
   it("блокирует зону для logging-роли (dave)", async () => {
     window.localStorage.setItem("dbos-persona", "dave");
     renderVm("/vm");

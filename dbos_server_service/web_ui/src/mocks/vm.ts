@@ -7,7 +7,7 @@
  * `@/api/server/vms`.
  */
 
-import type { Vm, VmHub } from "@/api/server/vms";
+import type { Vm, VmDisk, VmHub, VmImage } from "@/api/server/vms";
 
 /**
  * Кандидаты в VMS-hub — серверы, ещё НЕ подготовленные под виртуализацию.
@@ -173,3 +173,128 @@ export const MOCK_VM_BOXES: string[] = [
   "xfs.15GB",
   "15GB.single",
 ];
+
+/**
+ * Каталог образов `vm_images` — mock-фолбэк для модалки создания ВМ в
+ * mock-режиме (живой режим ходит в `GET /vm-images`).
+ */
+export const MOCK_VM_IMAGES: VmImage[] = [
+  {
+    name: "vm_station",
+    kind: "universal",
+    description: "Universal-станция (обе ОС в снимках)",
+    os_versions: ["1.7.5.9", "1.8.1.6"],
+    size_bytes: 21_000_000_000,
+  },
+  {
+    name: "1.8.1.o",
+    kind: "single",
+    description: "Astra 1.8.1 Орёл",
+    size_bytes: 9_000_000_000,
+  },
+  {
+    name: "xfs.15GB",
+    kind: "single",
+    description: "XFS, 15 ГБ",
+    size_bytes: 4_500_000_000,
+  },
+  {
+    name: "15GB.single",
+    kind: "single",
+    description: "Single 15 ГБ",
+    size_bytes: 4_500_000_000,
+  },
+];
+
+/**
+ * Диски ВМ (`vm_disks`), keyed по `vm.id` — mock-фолбэк раздела «Диски» в
+ * карточке ВМ. Системный диск помечен `is_system` и не удаляется отдельно.
+ */
+export const MOCK_VM_DISKS: Record<string, VmDisk[]> = {
+  "vm-101": [
+    {
+      id: "disk-101-sys",
+      vm_id: "vm-101",
+      name: "system",
+      size_gb: 80,
+      path: "/vms/vm-101.qcow2",
+      target_dev: "vda",
+      serial: "vm-101_system",
+      is_system: true,
+      fs: null,
+      mount: "/",
+      state: "ready",
+    },
+    {
+      id: "disk-101-data",
+      vm_id: "vm-101",
+      name: "data",
+      size_gb: 40,
+      path: "/vms/vm-101_data.qcow2",
+      target_dev: "vdb",
+      serial: "vm-101_data",
+      is_system: false,
+      fs: "ext4",
+      mount: "/data",
+      state: "ready",
+    },
+  ],
+  "vm-102": [
+    {
+      id: "disk-102-sys",
+      vm_id: "vm-102",
+      name: "system",
+      size_gb: 40,
+      path: "/vms/vm-102.qcow2",
+      target_dev: "vda",
+      serial: "vm-102_system",
+      is_system: true,
+      fs: null,
+      mount: "/",
+      state: "ready",
+    },
+  ],
+  "vm-103": [
+    {
+      id: "disk-103-sys",
+      vm_id: "vm-103",
+      name: "system",
+      size_gb: 15,
+      path: "/vms/vm-103.qcow2",
+      target_dev: "vda",
+      serial: "vm-103_system",
+      is_system: true,
+      fs: "xfs",
+      mount: "/",
+      state: "ready",
+    },
+  ],
+  "vm-201": [
+    {
+      id: "disk-201-sys",
+      vm_id: "vm-201",
+      name: "system",
+      size_gb: 120,
+      path: "/vms/vm-201.qcow2",
+      target_dev: "vda",
+      serial: "vm-201_system",
+      is_system: true,
+      fs: null,
+      mount: "/",
+      state: "ready",
+    },
+    {
+      id: "disk-201-scratch",
+      vm_id: "vm-201",
+      name: "scratch",
+      size_gb: 200,
+      path: "/vms/vm-201_scratch.qcow2",
+      target_dev: "vdb",
+      serial: "vm-201_scratch",
+      is_system: false,
+      fs: "xfs",
+      mount: "/scratch",
+      state: "ready",
+    },
+  ],
+};

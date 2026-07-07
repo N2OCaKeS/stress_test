@@ -15,6 +15,15 @@
  *   GET    /servers/by-number/{n}
  *   POST   /servers/{id}/prepare-vms-hub  (202 task)
  *
+ * Волна 2 добавляет управление дисками, изменение ресурсов и каталог образов:
+ *   GET    /vms/{id}/disks
+ *   POST   /vms/{id}/disks               (202 task)
+ *   DELETE /vms/{id}/disks/{disk_id}     (202 task)
+ *   POST   /vms/{id}/disks/{disk_id}/resize  (202 task)
+ *   PATCH  /vms/{id}                     (202 task, cpu/ram)
+ *   GET    /vm-images
+ *   POST   /vm-images/refresh
+ *
  * Backend домена `vm` в разработке (волна 1). Пока сервис не отдаёт эти
  * маршруты, страница `/vm` работает на mock-данных (`@/mocks/vm`) в
  * mock-режиме; типы полей сверяются с доменным агентом на интеграции.
@@ -133,6 +142,98 @@ export interface VmStatusPatch {
   status: string;
 }
 
+/** Тело PATCH /vms/{id} — изменение ресурсов ВМ (cpu/ram). 202-задача. */
+export interface VmUpdateRequest {
+  cpu?: number;
+  ram_mb?: number;
+}
+
+/**
+ * Жизненный цикл диска ВМ (`vm_disks.state`). `ready` — привязан и готов;
+ * промежуточные — во время worker-операции; `error` — операция упала. Хвост
+ * строкой — backend может расширить набор.
+ */
+export type VmDiskState =
+  | "creating"
+  | "ready"
+  | "resizing"
+  | "deleting"
+  | "error"
+  | (string & {});
+
+/**
+ * Диск ВМ (`vm_disks`). Системный диск (`is_system`) — образный root-диск ВМ,
+ * его нельзя удалить отдельно (сносится только с самой ВМ).
+ */
+export interface VmDisk {
+  id: string;
+  vm_id: string;
+  name: string;
+  size_gb: number;
+  /** Путь qcow2 на хабе. null — ещё не создан. */
+  path: string | null;
+  /** Целевое устройство в домене (`vda`/`vdb`…). */
+  target_dev: string | null;
+  /** Серийник для сопоставления в госте (`<vm>_<disk>`). */
+  serial: string | null;
+  is_system: boolean;
+  /** Файловая система (`ext4`/`xfs`/…). null — не форматировался. */
+  fs: string | null;
+  /** Точка монтирования в госте. null — не монтируется. */
+  mount: string | null;
+  state: VmDiskState;
+  created_at?: Iso8601;
+  updated_at?: Iso8601;
+}
+
+/** Envelope GET /vms/{id}/disks. */
+export interface VmDiskListResponse {
+  items: VmDisk[];
+}
+
+/** Тело POST /vms/{id}/disks — создать и привязать доп. диск. 202-задача. */
+export interface VmDiskCreateRequest {
+  name: string;
+  size_gb: number;
+  /** Файловая система для форматирования (`ext4`/`xfs`/…). null — не форматировать. */
+  fs?: string | null;
+  /** Точка монтирования в госте. null — не монтировать. */
+  mount?: string | null;
+}
+
+/** Тело POST /vms/{id}/disks/{disk_id}/resize — новый размер (только рост). */
+export interface VmDiskResizeRequest {
+  size_gb: number;
+}
+
+/**
+ * Семейство образа каталога:
+ *  - `universal` — `vm_station` с внутренними qemu-img снимками нескольких ОС;
+ *  - `single` — бокс под конкретную ОС/ФС/размер.
+ */
+export type VmImageKind = "universal" | "single" | (string & {});
+
+/**
+ * Образ каталога `vm_images` (источник — `test-box-config.json` на FTP).
+ * `name` — то же значение, что уходит в `VmCreateRequest.box`.
+ */
+export interface VmImage {
+  name: string;
+  kind: VmImageKind;
+  description?: string | null;
+  /** Для `universal` — версии ОС, запечённые снимками в образе. */
+  os_versions?: string[];
+  /** Размер артефакта в байтах (если известен). */
+  size_bytes?: number | null;
+  /** URL `.tar.gz` в каталоге (обычно не нужен UI). */
+  url?: string | null;
+}
+
+/** Envelope GET /vm-images. */
+export interface VmImageListResponse {
+  items: VmImage[];
+}
+
 /** Параметры фильтрации GET /vms. */
 export interface ListVmsQuery {
   hub_server_id?: string;
@@ -230,4 +331,71 @@ export function prepareVmsHub(
   return apiPost<TaskDispatchResponse>(
     `/server/v1/servers/${serverId}/prepare-vms-hub`,
   );
+}
+
+// ── ресурсы (cpu/ram) ────────────────────────────────────────────────────────
+
+/**
+ * `PATCH /api/server/v1/vms/{id}` — изменение ресурсов ВМ (cpu/ram). Backend
+ * останавливает домен, правит XML и запускает заново — поэтому это 202-задача.
+ */
+export function updateVm(
+  id: string,
+  body: VmUpdateRequest,
+): Promise<TaskDispatchResponse> {
+  return apiPatch<TaskDispatchResponse>(`/server/v1/vms/${id}`, body);
+}
+
+// ── диски ─────────────────────────────────────────────────────────────────────
+
+/** `GET /api/server/v1/vms/{id}/disks` — диски ВМ. */
+export function listVmDisks(vmId: string): Promise<VmDiskListResponse> {
+  return apiGet<VmDiskListResponse>(`/server/v1/vms/${vmId}/disks`);
+}
+
+/** `POST /api/server/v1/vms/{id}/disks` — создать и привязать диск (202). */
+export function createVmDisk(
+  vmId: string,
+  body: VmDiskCreateRequest,
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(`/server/v1/vms/${vmId}/disks`, body);
+}
+
+/** `DELETE /api/server/v1/vms/{id}/disks/{disk_id}` — отвязать и снести диск (202). */
+export function deleteVmDisk(
+  vmId: string,
+  diskId: string,
+  body?: ReasonBody,
+): Promise<TaskDispatchResponse> {
+  return apiDelete<TaskDispatchResponse>(
+    `/server/v1/vms/${vmId}/disks/${diskId}`,
+    body,
+  );
+}
+
+/** `POST /api/server/v1/vms/{id}/disks/{disk_id}/resize` — увеличить диск (202). */
+export function resizeVmDisk(
+  vmId: string,
+  diskId: string,
+  body: VmDiskResizeRequest,
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(
+    `/server/v1/vms/${vmId}/disks/${diskId}/resize`,
+    body,
+  );
+}
+
+// ── каталог образов ───────────────────────────────────────────────────────────
+
+/** `GET /api/server/v1/vm-images` — каталог образов (для модалки создания ВМ). */
+export function listVmImages(): Promise<VmImageListResponse> {
+  return apiGet<VmImageListResponse>("/server/v1/vm-images");
+}
+
+/**
+ * `POST /api/server/v1/vm-images/refresh` — перечитать каталог с FTP
+ * (`test-box-config.json`) и вернуть свежий список.
+ */
+export function refreshVmImages(): Promise<VmImageListResponse> {
+  return apiPost<VmImageListResponse>("/server/v1/vm-images/refresh");
 }

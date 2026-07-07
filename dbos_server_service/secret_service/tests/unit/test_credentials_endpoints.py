@@ -370,6 +370,41 @@ async def test_update_secret_reencrypts(http_client, adb):
 
 
 @pytest.mark.asyncio
+async def test_update_toggles_visible_to_dept(http_client):
+    # dep_admin заводит department-кред'у (по умолчанию visible_to_dept=False).
+    _set_identity(_identity(roles=["operator"], platform_role="department_admin"))
+    create_resp = await http_client.post(
+        "/api/secret/v1/credentials",
+        json={
+            "name": "vis_toggle",
+            "service": "jira",
+            "scope": "department",
+            "secret_b64": b64("s"),
+            "owner_dept_id": OWNER_DEPT,
+        },
+    )
+    assert create_resp.status_code == 201, create_resp.text
+    cred_id = create_resp.json()["id"]
+    assert create_resp.json()["visible_to_dept"] is False
+
+    # PATCH включает флаг.
+    resp = await http_client.patch(
+        f"/api/secret/v1/credentials/{cred_id}",
+        json={"visible_to_dept": True},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["visible_to_dept"] is True
+
+    # И выключает обратно.
+    resp = await http_client.patch(
+        f"/api/secret/v1/credentials/{cred_id}",
+        json={"visible_to_dept": False},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["visible_to_dept"] is False
+
+
+@pytest.mark.asyncio
 async def test_update_not_found(http_client):
     resp = await http_client.patch(
         "/api/secret/v1/credentials/cred_missing", json={"name": "x"}

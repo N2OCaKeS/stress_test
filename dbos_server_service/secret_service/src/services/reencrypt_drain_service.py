@@ -30,6 +30,7 @@ from src.core.config import get_settings
 from src.core.keystore import get_keystore
 from src.db.session import AsyncSessionLocal
 from src.services import (
+    audit_service,
     key_rotation_service,
     migration_status_service,
     reencrypt_state_service,
@@ -89,6 +90,20 @@ async def drain_tick(db: AsyncSession) -> dict:
             retired = await key_rotation_service.auto_retire_drained(db)
             if retired:
                 logger.info("self-drain auto-retired versions %s", retired)
+                # Вывод версии мастер-ключа — CRITICAL-событие. В проде дренаж
+                # живёт только в этом loop'е (отдельного worker'а нет), поэтому
+                # без эмиссии здесь ретайр вообще не попадал бы в аудит.
+                for item in retired:
+                    audit_service.emit(
+                        "secrets.encryption_auto_retire",
+                        actor_id=None,
+                        actor_type="service",
+                        target_id=None,
+                        target_type="secret",
+                        status="success",
+                        allowed=True,
+                        details={"version": item["version"], "caller": "self_drain"},
+                    )
         except Exception:  # noqa: BLE001 — тик не должен падать
             logger.exception("self-drain auto-retire failed")
         if force_active:

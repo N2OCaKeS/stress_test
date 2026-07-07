@@ -100,6 +100,33 @@ async def test_force_tick_clears_flag_when_done(adb):
 
 
 @pytest.mark.asyncio
+async def test_self_drain_auto_retire_emits_critical_audit(adb, monkeypatch):
+    await _clean(adb)
+    ks = get_keystore()
+    old = ks.get_active_version()
+
+    await _make_cred(adb, "cred_dr_audit")
+    await key_rotation_service.rotate(adb, new_key_b64=_fresh_key_b64())
+
+    events: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        reencrypt_drain_service.audit_service,
+        "emit",
+        lambda action, **kw: events.append((action, kw)),
+    )
+
+    tick = await reencrypt_drain_service.drain_tick(adb)
+    assert tick["remaining"] == 0
+    assert old not in ks.list_versions()
+
+    retire_events = [e for e in events if e[0] == "secrets.encryption_auto_retire"]
+    assert len(retire_events) == 1
+    kw = retire_events[0][1]
+    assert kw["details"]["version"] == old
+    assert kw["details"]["caller"] == "self_drain"
+
+
+@pytest.mark.asyncio
 async def test_tick_keeps_version_when_remaining(adb, monkeypatch):
     await _clean(adb)
     ks = get_keystore()

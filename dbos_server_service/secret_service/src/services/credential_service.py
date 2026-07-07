@@ -383,10 +383,11 @@ async def list_visible(
     Это не самая эффективная стратегия, но safe и читаема. Под нагрузкой
     можно перейти на JOIN через DeptGrant в репо.
 
-    Guest-role: отдельный путь. Видит метаданные всех department/
-    cross_department-кред своего dep'а (`owner_dept_id == identity.department_id`).
-    Никаких ACL, никаких DeptGrant'ов, никаких personal чужих. Caller-endpoint
-    сериализует через CredentialGuestRead (урезанная проекция, без значения).
+    Guest-role: отдельный путь. Видит метаданные department/cross_department-кред
+    своего dep'а (`owner_dept_id == identity.department_id`), помеченных
+    `visible_to_dept=True` и не blocked. Никаких ACL, никаких DeptGrant'ов,
+    никаких personal чужих. Caller-endpoint сериализует через CredentialGuestRead
+    (урезанная проекция, без значения).
     """
     if _is_guest_only(identity):
         if not identity.department_id:
@@ -401,7 +402,11 @@ async def list_visible(
             limit=limit * 2,
             cursor=cursor,
         )
-        guest_visible = list(dept_creds)
+        # Флаг visible_to_dept гейтит guest-видимость; blocked-кред'ы guest'у
+        # тоже не показываем (совпадает с check_access).
+        guest_visible = [
+            c for c in dept_creds if c.visible_to_dept and c.status != "blocked"
+        ]
         guest_visible.sort(key=lambda c: (c.created_at, c.id), reverse=True)
         sliced = guest_visible[:limit]
         next_cursor = None
@@ -585,8 +590,10 @@ async def load_for_action(
 
     Защита от brute-force: каждый denied access инкрементит счётчик в
     `lockout_service`; превышение порога — 429 + Retry-After. Перед load'ом
-    проверяем существующий lockout и сразу отбиваем 429. На успехе clear'им
-    счётчик, чтобы случайные denied'ы не накапливались.
+    проверяем существующий lockout и сразу отбиваем 429. Счётчик denied живёт в
+    скользящем окне и на успешном доступе НЕ обнуляется — иначе перебор чужих
+    cred_id, перемежаемый легитимным доступом к своей кред'е, никогда не набрал
+    бы порог.
     """
     actor_id = identity.user_id
     if lockout_service.is_locked(actor_id):
@@ -691,9 +698,11 @@ async def load_for_action(
     # Доступ есть; если cred blocked И action != read — отдаём 410 явно.
     if cred.status == "blocked" and action != "read" and action != "manage_status":
         _ensure_active_or_raise(cred)
-    # Успешный access сбрасывает lockout-счётчик: одна случайная denied-попытка
-    # не накапливается до бесконечности.
-    lockout_service.clear(actor_id)
+    # Счётчик denied НЕ обнуляем на успешном доступе: иначе атакующий,
+    # перемежающий перебор чужих cred_id одним GET'ом по своей кред'е, держал бы
+    # окно ниже порога бесконечно, и lockout никогда бы не срабатывал. Окно и
+    # так скользящее — старые denied выпадают по времени (`_prune`), так что
+    # счётчик отражает именно денай-паттерн, а не общее число запросов.
     return cred
 
 
@@ -726,6 +735,8 @@ async def update(
             fields["login"] = payload.login
         if payload.secret is not None:
             fields["secret_encrypted"] = _to_envelope(payload.secret, cred.id)
+        if payload.visible_to_dept is not None:
+            fields["visible_to_dept"] = payload.visible_to_dept
         if payload.valid_from is not None:
             fields["valid_from"] = payload.valid_from
         if payload.valid_to is not None:

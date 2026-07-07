@@ -118,7 +118,7 @@
 | `secrets.encryption_rotate` | failure | **CRITICAL** | `{ error_code, message }`. |
 | `secrets.encryption_retire` | success | **CRITICAL** | `{ retired_key_version }`. Rotation-runner убрал старую версию мастер-ключа из keystore после полной ре-шифрации (0 строк на версии). |
 | `secrets.encryption_retire` | failure | **CRITICAL** | `{ error_code, message, key_version }`. |
-| `secrets.encryption_auto_retire` | success | **CRITICAL** | `{ version, caller }`. Версия мастер-ключа выведена автоматически после reencrypt-batch'а (`/internal/reencrypt_outbox/process`), как только на ней не осталось строк и pending-задач. Actor = service/worker, не человек. |
+| `secrets.encryption_auto_retire` | success | **CRITICAL** | `{ version, caller }`. Версия мастер-ключа выведена автоматически, как только на ней не осталось строк и pending-задач. Источник: ручной `/internal/reencrypt_outbox/process` (`caller` = вызвавшая identity) либо фоновый self-drain loop (`caller = "self_drain"`). Actor = service/worker, не человек. |
 | `secrets.admin_encryption_rotate` | success | **CRITICAL** | `{ new_key_version, seeded_rows }`. `account_admin` ввёл новую версию мастер-ключа активной через UI (`/admin/encryption/rotate`); keystore-bump + reencrypt-outbox seed. |
 | `secrets.admin_encryption_rotate` | failure | **CRITICAL** | `{ error_code, message }`. |
 | `secrets.admin_encryption_retire` | success | **CRITICAL** | `{ retired_key_version }`. `account_admin` убрал старую версию мастер-ключа из keystore через UI (`/admin/encryption/retire`) после полной ре-шифрации. |

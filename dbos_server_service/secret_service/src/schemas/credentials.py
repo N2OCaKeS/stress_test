@@ -118,6 +118,8 @@ class CredentialUpdate(BaseModel):
         max_length=_SECRET_B64_MAX,
         description="base64(plaintext-secret) или None (не менять). Декодированный секрет — 1..8192 символов UTF-8.",
     )
+    # Гейт guest-видимости общей кред'ы. None = не менять.
+    visible_to_dept: bool | None = None
     valid_from: datetime | None = None
     valid_to: datetime | None = None
 

@@ -139,10 +139,10 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 
 ### PATCH /credentials/{cred_id}
 
-Изменить `name` / `login` / `secret_b64`. На `secret_b64` — декод base64 → повторно шифрует.
+Изменить `name` / `login` / `secret_b64` / `visible_to_dept`. На `secret_b64` — декод base64 → повторно шифрует.
 
 **Auth:** Bearer (owner / dep_admin / admin secret_service своего dept'а — per scope).
-**Body (`CredentialUpdate`):** все поля optional, partial update. `secret_b64` — base64(plaintext), как в create (опущен или null → секрет не меняется). Размеры — те же, что в create. Дополнительно `valid_from` / `valid_to` (datetime UTC) — позволяет admin'у продлить срок действия. NULL через PATCH не сбрасывает значение (если поле опущено — не трогаем); чтобы убрать окно — пересоздать креду.
+**Body (`CredentialUpdate`):** все поля optional, partial update. `secret_b64` — base64(plaintext), как в create (опущен или null → секрет не меняется). Размеры — те же, что в create. `visible_to_dept` (bool) — переключает guest-видимость общей кред'ы (гейтит, видят ли её носители роли `guest` отдела); опущен → не меняем. Дополнительно `valid_from` / `valid_to` (datetime UTC) — позволяет admin'у продлить срок действия. NULL через PATCH не сбрасывает значение (если поле опущено — не трогаем); чтобы убрать окно — пересоздать креду.
 **Response 200:** `CredentialRead`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `409 NAME_DUPLICATE`, `410 CREDENTIAL_BLOCKED`, `422 VALIDATION_ERROR`.
 
@@ -219,7 +219,7 @@ ACL даёт видеть метаданные (`can_view`), читать зна
 | `can_write` | bool | default `false`. Изменение/удаление; влечёт `can_read` и `can_view`. |
 
 **Response 201:** `RoleACLRead` (с `id`, `granted_by_user_id`, `granted_at`).
-**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `409 ROLE_ACL_DUPLICATE`, `422 DEPT_GRANT_REQUIRED`, `422 PERSONAL_ACL_OWNER_DEPT_ONLY`.
+**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, `403 CREDENTIAL_ACCESS_DENIED`, `403 ROLE_ACL_FOREIGN_DEPT`, `404 CREDENTIAL_NOT_FOUND`, `409 ROLE_ACL_DUPLICATE`, `422 DEPT_GRANT_REQUIRED`, `422 PERSONAL_ACL_OWNER_DEPT_ONLY`.
 
 > **Порядок проверок:** `grant_acl` сначала проходит `load_for_action` (visibility/access-check). Recipient dep_admin БЕЗ `DeptGrant` не видит cross-dep креду вовсе → отдаётся `404 CREDENTIAL_NOT_FOUND` (visibility-miss маскируется в 404, info-leak protection), а не `422 DEPT_GRANT_REQUIRED`. `422 DEPT_GRANT_REQUIRED` срабатывает позже — когда actor уже имеет доступ к кред'е, но пытается выдать ACL на ещё один dept без `DeptGrant` для него.
 
@@ -239,7 +239,7 @@ ACL даёт видеть метаданные (`can_view`), читать зна
 
 **Audit:** создание/обновление → `tokens.role_acl_added`; снятие (both-false) → `tokens.role_acl_revoked`.
 
-**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `422 DEPT_GRANT_REQUIRED`, `422 PERSONAL_ACL_OWNER_DEPT_ONLY`.
+**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, `403 CREDENTIAL_ACCESS_DENIED`, `403 ROLE_ACL_FOREIGN_DEPT`, `404 CREDENTIAL_NOT_FOUND`, `422 DEPT_GRANT_REQUIRED`, `422 PERSONAL_ACL_OWNER_DEPT_ONLY`.
 
 ### GET /credentials/{cred_id}/acl
 
@@ -255,7 +255,7 @@ Revoke `RoleACL`.
 
 **Auth:** Bearer (owner для personal / `department_admin` соответствующей стороны — owner-dep или recipient-dep). Гейт — action `grant_acl`; service-роль `admin` сюда НЕ проходит (она даёт только read-override).
 **Response 200:** `OkResponse = { ok: true }`.
-**Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `404 ROLE_ACL_NOT_FOUND`.
+**Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `403 ROLE_ACL_FOREIGN_DEPT`, `404 CREDENTIAL_NOT_FOUND`, `404 ROLE_ACL_NOT_FOUND`.
 
 ## UserACL (поимённый доступ, только `personal`)
 
@@ -484,6 +484,7 @@ Outbox-паттерн поверх lazy-пути: lazy перешифровыв�
 | `DEPT_GRANT_NOT_FOUND` | 404 | Revoke по неизвестному `grant_id`. |
 | `ROLE_ACL_DUPLICATE` | 409 | UNIQUE collision `(cred_id, dept_id, role_name)`. |
 | `ROLE_ACL_NOT_FOUND` | 404 | Revoke по неизвестному `acl_id`. |
+| `ROLE_ACL_FOREIGN_DEPT` | 403 | Recipient dep_admin cross_dep-кред'ы пытается выдать/снять RoleACL ЧУЖОГО отдела. Recipient рулит только ACL'ями своего `dept_id`; любой отдел с `DeptGrant` адресует лишь owner-side dep_admin. |
 | `USER_ACL_DUPLICATE` | 409 | UNIQUE collision `(cred_id, user_id)` для поимённого доступа. |
 | `USER_ACL_NOT_FOUND` | 404 | Revoke user-ACL по неизвестному `acl_id`. |
 | `USER_ACL_SCOPE_NOT_PERSONAL` | 422 | Поимённый доступ выдан на не-`personal` креду. |

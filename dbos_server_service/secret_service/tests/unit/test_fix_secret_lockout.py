@@ -120,8 +120,12 @@ async def test_locked_actor_gets_429(adb, _low_threshold) -> None:
 
 
 @pytest.mark.asyncio
-async def test_successful_access_clears_lockout(adb, _low_threshold) -> None:
-    # Owner — успешный read.
+async def test_success_does_not_reset_denied_window(adb, _low_threshold) -> None:
+    """Успех на своей кред'е НЕ обнуляет денай-окно.
+
+    Иначе атакующий, перемежающий перебор чужих cred_id одним GET'ом по своей
+    кред'е, держал бы счётчик ниже порога вечно — lockout не сработал бы.
+    """
     owner = _identity(user_id="usr_owner0002")
     cred = await cred_repo.create(
         adb,
@@ -137,9 +141,6 @@ async def test_successful_access_clears_lockout(adb, _low_threshold) -> None:
         status="active",
         created_by=owner.user_id,
     )
-    await adb.commit()
-
-    # «Накопим» одну denied (через другую креду).
     other = await cred_repo.create(
         adb,
         id="cred_lockfix02b",
@@ -156,12 +157,16 @@ async def test_successful_access_clears_lockout(adb, _low_threshold) -> None:
     )
     await adb.commit()
 
+    # threshold=3: перемежаем denied по чужой кред'е с успехом по своей.
     with patch.object(credential_service.audit_service, "emit", lambda *a, **k: None):
         with pytest.raises(NotFoundError):
             await credential_service.load_for_action(adb, owner, other.id, "read")
-        # Успешный read на своей креде — должен clear'ить счётчик.
-        cred_loaded = await credential_service.load_for_action(adb, owner, cred.id, "read")
+        await credential_service.load_for_action(adb, owner, cred.id, "read")
+        with pytest.raises(NotFoundError):
+            await credential_service.load_for_action(adb, owner, other.id, "read")
+        await credential_service.load_for_action(adb, owner, cred.id, "read")
+        with pytest.raises(NotFoundError):
+            await credential_service.load_for_action(adb, owner, other.id, "read")
 
-    assert cred_loaded.id == cred.id
-    # state у этого user'а полностью удалён.
-    assert owner.user_id not in lockout_service._state
+    # 3 denied накопились несмотря на перемежающиеся успехи — actor залочен.
+    assert lockout_service.is_locked(owner.user_id)

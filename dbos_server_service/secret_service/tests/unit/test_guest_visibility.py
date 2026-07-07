@@ -1,15 +1,16 @@
 """Guest-visibility: видимость кред'ов для системной роли `guest`.
 
-Контракт (уровень `view` на весь отдел):
-* guest видит в списке метаданные ВСЕХ department/cross_department-кред своего
-  dep'а — флаг `visible_to_dept` больше не фильтрует;
+Контракт (уровень `view` на отмеченные общие кред'ы отдела):
+* guest видит в списке метаданные department/cross_department-кред своего
+  dep'а, помеченных `visible_to_dept=True`; кред'ы с флагом False и blocked —
+  не видны (404-маска);
 * shape ответа — `CredentialGuestList`: id/name/service/scope/login/
   visible_to_dept, без owner_*/created_by/timestamps/blocked-полей и значения;
-* GET карточки своей dep-cred'ы → 200 с той же урезанной проекцией;
-* reveal/write/delete на своей dep-cred'е → 403 (видит, но не значение/не
-  правит); на чужой dep / personal — 404-маска;
-* для access_service: read/list_guest на dep-cred'е своего отдела → True;
-  value-actions → отказ.
+* GET карточки видимой dep-cred'ы → 200 с той же урезанной проекцией;
+* reveal/write/delete на видимой dep-cred'е → 403 (видит, но не значение/не
+  правит); на чужой dep / personal / hidden — 404-маска;
+* для access_service: read/list_guest на видимой dep-cred'е своего отдела →
+  True; hidden/blocked/value-actions → отказ.
 """
 
 from __future__ import annotations
@@ -112,7 +113,7 @@ async def _create_dept_cred(
 
 
 @pytest.mark.asyncio
-async def test_guest_sees_all_own_dept_creds(http_client, adb):
+async def test_guest_sees_only_visible_own_dept_creds(http_client, adb):
     own_visible = await _create_dept_cred(
         adb,
         id="cred_dept_visible01",
@@ -133,12 +134,42 @@ async def test_guest_sees_all_own_dept_creds(http_client, adb):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     names = {item["name"] for item in body["items"]}
-    # visible_to_dept больше не фильтрует — guest видит обе cred'ы отдела.
-    assert names == {"own_visible", "own_hidden"}
+    # visible_to_dept гейтит guest-видимость — hidden в список не попадает.
+    assert names == {"own_visible"}
     item = next(i for i in body["items"] if i["id"] == own_visible.id)
     assert set(item.keys()) == {
         "id", "name", "service", "scope", "login", "visible_to_dept"
     }
+
+
+@pytest.mark.asyncio
+async def test_guest_does_not_see_blocked_own_dept_cred(http_client, adb):
+    await _create_dept_cred(
+        adb,
+        id="cred_dept_visible02",
+        owner_dept_id=GUEST_DEPT,
+        visible_to_dept=True,
+        name="active_visible",
+    )
+    blocked = await _create_dept_cred(
+        adb,
+        id="cred_dept_blocked01",
+        owner_dept_id=GUEST_DEPT,
+        visible_to_dept=True,
+        name="blocked_visible",
+    )
+    blocked.status = "blocked"
+    await adb.commit()
+
+    resp = await http_client.get("/api/secret/v1/credentials")
+    assert resp.status_code == 200, resp.text
+    names = {item["name"] for item in resp.json()["items"]}
+    # blocked-кред'а guest'у не видна, даже с visible_to_dept=True.
+    assert names == {"active_visible"}
+
+    # Прямой GET blocked-кред'ы — 404-маска (guest не отличает от несуществующей).
+    resp = await http_client.get(f"/api/secret/v1/credentials/{blocked.id}")
+    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -319,7 +350,7 @@ async def test_access_service_list_guest_allows_own_dept(adb):
 
 
 @pytest.mark.asyncio
-async def test_access_service_list_guest_allows_own_dept_even_if_hidden(adb):
+async def test_access_service_list_guest_denies_hidden_own_dept(adb):
     cred = await _create_dept_cred(
         adb,
         id="cred_acc_guest_hidden01",
@@ -328,8 +359,40 @@ async def test_access_service_list_guest_allows_own_dept_even_if_hidden(adb):
     )
     actor = _identity()
     allowed, reason = await access_service.check_access(adb, actor, cred, "list_guest")
-    assert allowed is True
-    assert reason == "guest_visible_to_dept"
+    assert allowed is False
+    assert reason == "guest_not_visible"
+
+
+@pytest.mark.asyncio
+async def test_access_service_guest_read_denies_hidden_own_dept(adb):
+    cred = await _create_dept_cred(
+        adb,
+        id="cred_acc_guest_hidden_read01",
+        owner_dept_id=GUEST_DEPT,
+        visible_to_dept=False,
+    )
+    actor = _identity()
+    allowed, reason = await access_service.check_access(adb, actor, cred, "read")
+    # hidden → маскируем существование (404), не отдаём метаданные.
+    assert allowed is False
+    assert reason == "guest_role_no_access"
+
+
+@pytest.mark.asyncio
+async def test_access_service_guest_read_denies_blocked_own_dept(adb):
+    cred = await _create_dept_cred(
+        adb,
+        id="cred_acc_guest_blocked01",
+        owner_dept_id=GUEST_DEPT,
+        visible_to_dept=True,
+    )
+    cred.status = "blocked"
+    await adb.flush()
+    actor = _identity()
+    allowed, reason = await access_service.check_access(adb, actor, cred, "read")
+    # blocked-кред'а guest'у не видна — 404-маска, а не "blocked".
+    assert allowed is False
+    assert reason == "guest_role_no_access"
 
 
 @pytest.mark.asyncio

@@ -24,9 +24,11 @@
        cross-dept привилегий у роли тоже нет. Исключение — blocked-кред'ы: их
        admin своего dept'а читает и recover'ит для аудита (включая personal
        своего отдела), это узкий lifecycle-канал.
-     - `guest` своего dept'а — уровень `view`: метаданные/листинг всех
-       department/cross_department-кред отдела (read/list_guest), без значения
-       и без записи.
+     - `guest` своего dept'а — уровень `view`: метаданные/листинг
+       department/cross_department-кред отдела, помеченных
+       `visible_to_dept=True` (read/list_guest), без значения и без записи.
+       Кред'ы с `visible_to_dept=False` и blocked-кред'ы guest'у не видны
+       (маскируются под 404).
 
 account_admin (платформенная роль) в этой матрице НЕ получает доступа: ни
 read, ни reveal/write/delete — это зона ответственности dept-уровня (см.
@@ -95,9 +97,10 @@ from src.services import _identity_roles
 # Literal даёт mypy подсветить опечатку.
 #
 # `list_guest` — отдельная проверка для guest-роли в листинге. Возвращает True
-# на любой department/cross_department-кред'е своего dep'а (owner_dept ==
-# identity.dept). guest тем же путём проходит `read` (метаданные карточки);
-# value-actions (reveal/write/...) для guest всегда False.
+# на department/cross_department-кред'е своего dep'а (owner_dept ==
+# identity.dept), помеченной visible_to_dept и не blocked. guest тем же путём
+# проходит `read` (метаданные карточки); value-actions (reveal/write/...) для
+# guest всегда False.
 Action = Literal[
     "read",
     "reveal",
@@ -410,27 +413,32 @@ async def check_access(
     «410 vs 404» на blocked-кред'ах.
     """
     effective_status = status_override if status_override is not None else cred.status
-    # 0. Guest-роль — это уровень `view` на весь отдел: видит метаданные всех
-    # department/cross_department-кред своего dep'а (листинг и карточку), но не
-    # значение и ничего не меняет. Personal чужих и cred'ы других отделов — мимо.
+    # 0. Guest-роль — это уровень `view` на общие кред'ы отдела, помеченные
+    # `visible_to_dept=True`: видит их метаданные (листинг и карточку), но не
+    # значение и ничего не меняет. Personal чужих, cred'ы других отделов,
+    # флаг visible_to_dept=False и blocked-кред'ы — мимо (404-маска). Проверка
+    # blocked внутри guest-ветки, а не после неё, чтобы guest не отличал
+    # заблокированную кред'у от несуществующей.
     if _is_guest_only(identity):
-        own_dept_shared = (
+        guest_visible = (
             cred.scope in ("department", "cross_department")
             and cred.owner_dept_id is not None
             and cred.owner_dept_id == identity.department_id
+            and cred.visible_to_dept
+            and effective_status != "blocked"
         )
         if action == "list_guest":
-            if own_dept_shared:
+            if guest_visible:
                 return True, "guest_visible_to_dept"
             return False, "guest_not_visible"
         if action == "read":
-            if own_dept_shared:
+            if guest_visible:
                 return True, "guest_visible_to_dept"
-            # Не своя dep-cred'а — маскируем существование под 404.
+            # Не видимая guest'у кред'а — маскируем существование под 404.
             return False, "guest_role_no_access"
-        # reveal/write/delete/grant/manage_status. На своей dep-cred'е guest её
-        # видит, поэтому отказ — честный 403; на чужой/personal — 404-маска.
-        if own_dept_shared:
+        # reveal/write/delete/grant/manage_status. На видимой кред'е отказ —
+        # честный 403 (guest её видит); иначе — 404-маска.
+        if guest_visible:
             return False, "guest_no_value_access"
         return False, "guest_role_no_access"
 

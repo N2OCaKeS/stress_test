@@ -20,7 +20,11 @@ from sqlalchemy import text
 from src.core.exceptions import ConflictError
 from src.core.keystore import get_keystore
 from src.repositories import credentials as repo
-from src.services import key_rotation_service, secrets_service
+from src.services import (
+    key_rotation_service,
+    reencrypt_outbox_service,
+    secrets_service,
+)
 
 
 def _fresh_key_b64() -> str:
@@ -131,3 +135,52 @@ async def test_retire_unknown_version_is_idempotent(adb):
     await adb.flush()
     result = await key_rotation_service.retire(adb, version=987)
     assert result["retired"] is False
+
+
+async def _pending_count(adb) -> int:
+    row = await adb.execute(
+        text(
+            "SELECT count(*) FROM reencrypt_outbox_entries WHERE status = 'pending'"
+        )
+    )
+    return int(row.scalar_one())
+
+
+@pytest.mark.asyncio
+async def test_rotate_reseeds_outbox_after_seed_failure(adb, monkeypatch):
+    """seed_outbox упал ПОСЛЕ set_active → ретрай тем же материалом досевает.
+
+    Иначе холодные легаси-креды застряли бы под старой версией навсегда:
+    keystore уже переключён, а повтор уходит в идемпотентную ветку.
+    """
+    await adb.execute(text("DELETE FROM reencrypt_outbox_entries"))
+    await adb.execute(text("DELETE FROM credentials"))
+    await adb.flush()
+
+    old = get_keystore().get_active_version()
+    aad = secrets_service.aad_for_credential("cred_seedfail")
+    blob = secrets_service.encrypt("x", aad=aad)
+    await _make_cred(adb, "cred_seedfail", blob)
+    await adb.flush()
+
+    new_key = _fresh_key_b64()
+
+    async def _flaky_seed(db, **kw):
+        raise RuntimeError("boom")
+
+    real_seed = reencrypt_outbox_service.seed_outbox
+    monkeypatch.setattr(reencrypt_outbox_service, "seed_outbox", _flaky_seed)
+
+    with pytest.raises(RuntimeError):
+        await key_rotation_service.rotate(adb, new_key_b64=new_key)
+
+    # keystore переключён, но outbox не засеян.
+    assert get_keystore().get_active_version() == old + 1
+    assert await _pending_count(adb) == 0
+
+    # Ретрай тем же материалом: идемпотентная ветка теперь досевает outbox.
+    monkeypatch.setattr(reencrypt_outbox_service, "seed_outbox", real_seed)
+    result = await key_rotation_service.rotate(adb, new_key_b64=new_key)
+    assert result["idempotent"] is True
+    assert result["seeded"]["inserted"] >= 1
+    assert await _pending_count(adb) >= 1

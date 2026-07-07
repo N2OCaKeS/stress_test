@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import threading
+import time
 from functools import lru_cache
 from typing import Protocol
 
@@ -39,6 +40,13 @@ logger = logging.getLogger(__name__)
 _ACTIVE_KEY_ENV = "SECRET_ENCRYPTION_KEY"
 _LEGACY_KEY_ENV_PREFIX = "SECRET_ENCRYPTION_KEY__v"
 _DEFAULT_KEYSTORE_PATH = "/tmp/dbos_secret_keystore.json"
+
+# Короткий TTL кэша материала k8s-Secret'а: reveal + lazy-reencrypt делает
+# 2-6 обращений к keystore, каждое — синхронный round-trip к API-серверу,
+# который блокирует event loop. Кэш схлопывает их в одно чтение на TTL-окно;
+# мутации (rotate/retire) кэш сбрасывают сразу, так что свежая версия видна
+# без задержки.
+_K8S_CACHE_TTL_SECONDS = float(os.environ.get("KEYSTORE_K8S_CACHE_TTL_SECONDS", "5"))
 
 
 class KeyStore(Protocol):
@@ -167,6 +175,10 @@ class K8sSecretKeyStore:
         self._namespace = namespace
         self._lock = threading.Lock()
         self._api = self._build_api()
+        # Кэш декодированного Secret'а под тем же lock'ом. None = пусто/сброшено.
+        self._cache: dict[str, str] | None = None
+        self._cache_ts = 0.0
+        self._cache_ttl = _K8S_CACHE_TTL_SECONDS
 
     def _build_api(self):
         from kubernetes import client, config  # lazy
@@ -180,12 +192,23 @@ class K8sSecretKeyStore:
     def _read_secret(self) -> dict[str, str]:
         import base64
 
+        now = time.monotonic()
         with self._lock:
+            if (
+                self._cache is not None
+                and now - self._cache_ts < self._cache_ttl
+            ):
+                return self._cache
             secret = self._api.read_namespaced_secret(
                 self._secret_name, self._namespace
             )
-        data = secret.data or {}
-        return {k: base64.b64decode(v).decode("utf-8") for k, v in data.items()}
+            data = secret.data or {}
+            decoded = {
+                k: base64.b64decode(v).decode("utf-8") for k, v in data.items()
+            }
+            self._cache = decoded
+            self._cache_ts = now
+            return decoded
 
     def _patch_secret(self, fields: dict[str, str | None]) -> None:
         import base64
@@ -200,6 +223,9 @@ class K8sSecretKeyStore:
             self._api.patch_namespaced_secret(
                 self._secret_name, self._namespace, {"data": encoded}
             )
+            # Мутация меняет содержимое Secret'а — сбрасываем кэш, чтобы
+            # следующий read увидел новую активную версию/материал сразу.
+            self._cache = None
 
     def get_active_version(self) -> int:
         return int(self._read_secret()[self._ACTIVE_FIELD])

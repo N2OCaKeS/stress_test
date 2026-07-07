@@ -88,15 +88,16 @@ async def rotate(
         current_material = None
     if current_material == new_key_b64:
         # Материал уже активен — версию не плодим и force-окно не открываем
-        # (перешифровывать нечего).
+        # (перешифровывать нечего). Но seed_outbox всё равно вызываем: если
+        # прошлый rotate упал между set_active и seed'ом (сбой БД), очередь
+        # осталась непросеянной, и холодные легаси-креды застряли бы под
+        # старой версией. Досев идемпотентен (partial-UNIQUE не даёт дублей),
+        # так что на «чистом» повторе это просто scanned=0.
+        seeded = await reencrypt_outbox_service.seed_outbox(db)
         return {
             "new_version": previous_version,
             "previous_version": previous_version,
-            "seeded": {
-                "inserted": 0,
-                "scanned": 0,
-                "active_version": previous_version,
-            },
+            "seeded": seeded,
             "idempotent": True,
             "mode": "lazy",
         }

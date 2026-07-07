@@ -17,6 +17,7 @@ from src.repositories import role_acls as acls_repo
 OWNER_USER_ID = "usr_owner000000000000000000000001"
 OWNER_DEPT = "dep_owner00000000000000000000001"
 RECIPIENT_DEPT = "dep_recip00000000000000000000001"
+THIRD_DEPT = "dep_third00000000000000000000001"
 
 
 def _identity(
@@ -399,6 +400,126 @@ async def test_list_acls(http_client, dept_cred, adb):
 async def test_list_acls_cred_not_found(http_client):
     resp = await http_client.get("/api/secret/v1/credentials/cred_missing/acl")
     assert resp.status_code == 404
+
+
+# ── cross-recipient isolation ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_recipient_dep_admin_cannot_grant_for_foreign_dept(
+    http_client, cross_dep_cred, adb
+):
+    # Оба recipient-отдела имеют DeptGrant на кред'у.
+    await grants_repo.create(
+        adb,
+        id="dgr_iso_x",
+        cred_id=cross_dep_cred.id,
+        recipient_dept_id=RECIPIENT_DEPT,
+        granted_by_user_id=OWNER_USER_ID,
+    )
+    await grants_repo.create(
+        adb,
+        id="dgr_iso_y",
+        cred_id=cross_dep_cred.id,
+        recipient_dept_id=THIRD_DEPT,
+        granted_by_user_id=OWNER_USER_ID,
+    )
+    await adb.commit()
+
+    # dep_admin отдела X (RECIPIENT_DEPT) пытается выдать RoleACL отделу Y.
+    _set_identity(_identity(
+        department_id=RECIPIENT_DEPT,
+        platform_role="department_admin",
+    ))
+    resp = await http_client.post(
+        f"/api/secret/v1/credentials/{cross_dep_cred.id}/acl",
+        json={
+            "dept_id": THIRD_DEPT,
+            "role_name": "reader",
+            "can_read": True,
+            "can_write": True,
+        },
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["error_code"] == "ROLE_ACL_FOREIGN_DEPT"
+
+    # Строка ACL для Y не создалась.
+    rows = await acls_repo.get_for_cred(adb, cross_dep_cred.id)
+    assert all(r.dept_id != THIRD_DEPT for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_recipient_dep_admin_cannot_revoke_foreign_dept_acl(
+    http_client, cross_dep_cred, adb
+):
+    await grants_repo.create(
+        adb,
+        id="dgr_iso_rx",
+        cred_id=cross_dep_cred.id,
+        recipient_dept_id=RECIPIENT_DEPT,
+        granted_by_user_id=OWNER_USER_ID,
+    )
+    await grants_repo.create(
+        adb,
+        id="dgr_iso_ry",
+        cred_id=cross_dep_cred.id,
+        recipient_dept_id=THIRD_DEPT,
+        granted_by_user_id=OWNER_USER_ID,
+    )
+    # ACL отдела Y (owner-side его завёл).
+    acl_y = await acls_repo.create(
+        adb,
+        id="acl_iso_y",
+        cred_id=cross_dep_cred.id,
+        dept_id=THIRD_DEPT,
+        role_name="reader",
+        can_read=True,
+        can_write=False,
+        granted_by_user_id=OWNER_USER_ID,
+    )
+    await adb.commit()
+
+    # dep_admin отдела X пытается снести ACL отдела Y.
+    _set_identity(_identity(
+        department_id=RECIPIENT_DEPT,
+        platform_role="department_admin",
+    ))
+    resp = await http_client.delete(
+        f"/api/secret/v1/credentials/{cross_dep_cred.id}/acl/{acl_y.id}"
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["error_code"] == "ROLE_ACL_FOREIGN_DEPT"
+
+    # ACL отдела Y на месте.
+    rows = await acls_repo.get_for_cred(adb, cross_dep_cred.id)
+    assert any(r.id == acl_y.id for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_owner_dep_admin_can_manage_any_recipient_acl(
+    http_client, cross_dep_cred, adb
+):
+    # Owner-side dep_admin по-прежнему адресует любой recipient с DeptGrant.
+    await grants_repo.create(
+        adb,
+        id="dgr_iso_owner_y",
+        cred_id=cross_dep_cred.id,
+        recipient_dept_id=THIRD_DEPT,
+        granted_by_user_id=OWNER_USER_ID,
+    )
+    await adb.commit()
+
+    # http_client по умолчанию — owner dep_admin (OWNER_DEPT).
+    resp = await http_client.post(
+        f"/api/secret/v1/credentials/{cross_dep_cred.id}/acl",
+        json={
+            "dept_id": THIRD_DEPT,
+            "role_name": "reader",
+            "can_read": True,
+            "can_write": False,
+        },
+    )
+    assert resp.status_code == 201, resp.text
 
 
 # ── REVOKE ────────────────────────────────────────────────────────────────

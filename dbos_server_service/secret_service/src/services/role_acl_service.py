@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import (
+    AuthorizationError,
     ConflictError,
     DomainValidationError,
     NotFoundError,
@@ -96,8 +97,26 @@ async def _check_dept_target(db, identity, cred, dept_id: str) -> None:
                 details={"dept_id": dept_id, "owner_dept_id": owner_dept},
             )
 
-    # cross_dep: если ACL выдаётся НЕ owner_dep'у — нужен DeptGrant.
+    # cross_dep: если ACL выдаётся НЕ owner_dep'у — это recipient-сторона.
     if cred.scope == "cross_department" and dept_id != cred.owner_dept_id:
+        # Recipient dep_admin рулит только ACL'ями СВОЕГО отдела: без этой
+        # проверки он мог бы через DeptGrant на кред'у выдать/переписать роли
+        # другому recipient-отделу. Owner-side dep_admin (его отдел владеет
+        # кред'ой) по-прежнему адресует любой отдел с DeptGrant — штатный
+        # owner-flow.
+        is_owner_side = identity.department_id == cred.owner_dept_id
+        if not is_owner_side and dept_id != identity.department_id:
+            raise AuthorizationError(
+                error_code="ROLE_ACL_FOREIGN_DEPT",
+                message=(
+                    "recipient department admin may manage RoleACL only for "
+                    "its own department"
+                ),
+                details={
+                    "dept_id": dept_id,
+                    "actor_dept_id": identity.department_id,
+                },
+            )
         has_grant = await dept_grants_repo.exists_for(db, cred.id, dept_id)
         if not has_grant:
             raise DomainValidationError(
@@ -316,16 +335,26 @@ async def revoke(
 
         # Для cross_dep recipient'а revoke ACL'я разрешён только локальному
         # dep_admin'у этого dep'а. owner-side dep_admin тоже может (он мощнее).
+        # check_access(grant_acl) пропускает любого recipient dep_admin'а с
+        # DeptGrant'ом, поэтому здесь дополнительно гарантируем, что recipient
+        # не снесёт ACL ЧУЖОГО отдела: он вправе трогать только строки своего.
         if (
             cred.scope == "cross_department"
             and target.dept_id != cred.owner_dept_id
         ):
-            # Локальный recipient dep_admin: identity.department_id == target.dept_id.
-            # Owner dep_admin: identity.department_id == cred.owner_dept_id (он
-            # удовлетворил check_access(grant_acl) выше — это путь scope=cross →
-            # owner-dep с dep_admin).
-            # Здесь добавочной проверки нет: check_access уже разрулил.
-            pass
+            is_owner_side = identity.department_id == cred.owner_dept_id
+            if not is_owner_side and target.dept_id != identity.department_id:
+                raise AuthorizationError(
+                    error_code="ROLE_ACL_FOREIGN_DEPT",
+                    message=(
+                        "recipient department admin may revoke RoleACL only "
+                        "for its own department"
+                    ),
+                    details={
+                        "dept_id": target.dept_id,
+                        "actor_dept_id": identity.department_id,
+                    },
+                )
 
         target_id = target.id
         target_dept = target.dept_id

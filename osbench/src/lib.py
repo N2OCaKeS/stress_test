@@ -124,6 +124,10 @@ class system:
             log.warning(f"Команда прервана пользователем: {command}")
             raise
         
+        logger = log._get_logger()
+        for handler in logger.handlers:
+            handler.flush()
+
         if not console:
             log.set_console(True)
         if process.returncode == 0:

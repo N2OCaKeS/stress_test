@@ -163,36 +163,28 @@ class OSBLogger:
             self.logger.addHandler(console_handler)
     
     @classmethod
-    def _log(cls, level: str, msg: str):
-        """Универсальный метод логирования с автоматическим flush"""
-        logger = cls()._get_logger()
-        getattr(logger, level)(msg)
-        for handler in logger.handlers:
-            handler.flush()
-
-    @classmethod
     def set_console(cls, enabled: bool):
         cls().enable_console(enabled)
         
     @classmethod
     def debug(cls, msg: str):
-        cls._log('debug', msg)
+        cls()._get_logger().debug(msg)
     
     @classmethod
     def info(cls, msg: str):
-        cls._log('info', msg)
+        cls()._get_logger().info(msg)
     
     @classmethod
     def warning(cls, msg: str):
-        cls._log('warning', msg)
+        cls()._get_logger().warning(msg)
     
     @classmethod
     def error(cls, msg: str):
-        cls._log('error', msg)
+        cls()._get_logger().error(msg)
     
     @classmethod
     def critical(cls, msg: str):
-        cls._log('critical', msg)
+        cls()._get_logger().critical(msg)
 
 
 log = OSBLogger()

@@ -13,4 +13,5 @@ from src.tasks import (  # noqa: F401
     users,
     vms,
     vms_disks,
+    vms_snapshots,
 )

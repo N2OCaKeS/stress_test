@@ -24,6 +24,8 @@ class TestTaskKind:
             "management_user_sync",
             "vms_hub.prepare", "vm.create", "vm.power",
             "vm.update", "vm.disk_attach", "vm.disk_delete", "vm.disk_resize",
+            "vm.snapshot_create", "vm.snapshot_delete", "vm.snapshot_revert",
+            "vm.astra_update", "vm.allta_update", "vm.passwd",
         }
 
     def test_dot_namespaced(self):

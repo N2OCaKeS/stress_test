@@ -608,6 +608,45 @@ async def submit_vm_disk_state(
     )
 
 
+async def submit_vm_snapshots(
+    vm_id: str,
+    snapshots: list[dict],
+    target_department_id: str | None = None,
+) -> dict:
+    """Отдать server_service состояние снимков ВМ (финал snapshot-тасок).
+
+    По этому callback'у server_service синкает строки `vm_snapshots` по
+    `snapshot_id`/`name`: `state` (`ready`/`deleted`/`error`), `kind`,
+    `is_current` и (для reroll/astra) свежий набор пересозданных снимков.
+    Формат тела симметричен disk-callback'у — батч `{snapshots: [...]}`.
+
+    `snapshot_create` шлёт один снимок `state='ready'` (`is_current=True`),
+    `snapshot_delete` — `state='deleted'`, `snapshot_revert` — реверт-цель с
+    `is_current=True`, `astra_update` — новый `<rc>`-снимок, `allta_update`/
+    `passwd` — все пересозданные (не-`_build`) снимки. Для режима `per_snapshot`
+    server_service по `is_current`-снимку переключает активные mgmt-креды ВМ.
+
+    Каждый элемент — dict с обязательным `name` и опциональными `snapshot_id`,
+    `state`, `kind`, `is_current`, `error`. `None`-поля не кладём.
+
+    Возвращает: тело
+    `POST /api/server/v1/internal/vms/{vm_id}/snapshots`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `VM_SNAPSHOT_STATE_REJECTED` — server_service вернул не 2xx.
+    """
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/vms/{vm_id}/snapshots",
+        reject_code="VM_SNAPSHOT_STATE_REJECTED",
+        target_department_id=target_department_id,
+        json={"snapshots": snapshots},
+        details={"vm_id": vm_id},
+        allow_empty_body=True,
+    )
+
+
 async def submit_vms_hub_state(
     server_id: str,
     prepared: bool,

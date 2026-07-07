@@ -66,6 +66,12 @@ SERVICE_EVENTS = [
     {"action": "vm.disk_attach", "description": "Подключение диска к ВМ по SSH: qemu-img create + virsh attach-disk (опц. mkfs+fstab в госте)", "default_severity": "WARNING"},
     {"action": "vm.disk_delete", "description": "Отключение и удаление диска ВМ по SSH: virsh detach-disk + rm qcow2", "default_severity": "WARNING"},
     {"action": "vm.disk_resize", "description": "Увеличение диска ВМ по SSH: qemu-img resize + growpart/resize2fs в госте", "default_severity": "WARNING"},
+    {"action": "vm.snapshot_create", "description": "Создание снимка ВМ по SSH: virsh snapshot-create-as (disk-only/live)", "default_severity": "WARNING"},
+    {"action": "vm.snapshot_delete", "description": "Удаление снимка ВМ по SSH: virsh snapshot-delete", "default_severity": "WARNING"},
+    {"action": "vm.snapshot_revert", "description": "Откат ВМ на снимок по SSH: virsh snapshot-revert", "default_severity": "WARNING"},
+    {"action": "vm.astra_update", "description": "Обновление ОС ВМ по SSH: revert _build → sources.list → astra-update → reboot → снимок новой версии", "default_severity": "CRITICAL"},
+    {"action": "vm.allta_update", "description": "Обновление guest-allta по снимкам ВМ по SSH: revert → wget/apt install deb → пересъёмка", "default_severity": "WARNING"},
+    {"action": "vm.passwd", "description": "Смена пароля гостевого u по снимкам ВМ по SSH: chpasswd + пересъёмка", "default_severity": "WARNING"},
     # Управляющая учётка — tasks/management_user.py, tasks/management_creds.py
     {"action": "management_user.sync", "description": "Недеструктивный re-bootstrap управляющей учётки на хосте", "default_severity": "INFO"},
     {"action": "server.management_creds_rotated", "description": "Ротация per-server управляющих кредов применена на хосте + callback", "default_severity": "CRITICAL"},

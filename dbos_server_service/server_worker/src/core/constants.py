@@ -63,6 +63,11 @@ VMS_ADDITIONAL_POOL_DIR = "additional_disk"
 # страховку, если server_service не положил `box_url` в payload `vm.create`.
 VMS_BOX_CATALOG_URL = f"{VMS_FTP_BOXES_URL}/test-box-config.json"
 
+# Свежий guest-allta `.deb` лежит в корне того же FTP (не в `/boxes`). Reroll
+# (`vm.allta_update`/`vm.passwd`) тянет его в гость и переустанавливает, чтобы
+# обновить клиентскую allta-CLI внутри снимка. Glob разворачивает сам ftp/wget.
+VMS_FTP_ALLTA_DEB_URL = "ftp://10.177.103.10/allta_*_amd64.deb"
+
 
 class TaskKind(StrEnum):
     """Поддерживаемые типы task'ов. Значения совпадают с taskiq broker labels.
@@ -113,6 +118,12 @@ class TaskKind(StrEnum):
     VM_DISK_ATTACH = "vm.disk_attach"
     VM_DISK_DELETE = "vm.disk_delete"
     VM_DISK_RESIZE = "vm.disk_resize"
+    VM_SNAPSHOT_CREATE = "vm.snapshot_create"
+    VM_SNAPSHOT_DELETE = "vm.snapshot_delete"
+    VM_SNAPSHOT_REVERT = "vm.snapshot_revert"
+    VM_ASTRA_UPDATE = "vm.astra_update"
+    VM_ALLTA_UPDATE = "vm.allta_update"
+    VM_PASSWD = "vm.passwd"
 
 
 class TaskStatus(StrEnum):

@@ -779,6 +779,32 @@ async def refresh_token_grant(
         # (client_id, user_id). Иначе — просто неизвестный/revoked токен.
         rotated = await refresh_repo.find_rotated_by_old_hash(token_hash)
         if rotated is not None:
+            if refresh_repo.is_grace_window_rotation(
+                rotated, token_hash, get_settings().refresh_race_grace_seconds
+            ):
+                # Benign-гонка: проигравший ретраит непосредственно-предыдущим
+                # (только что ротированным) refresh'ем в пределах grace-окна.
+                # Победитель уже получил свежую пару, цепочка жива — НЕ reuse:
+                # не зовём kill-switch. Отдаём RACE. Здесь были только
+                # SELECT'ы — pending-записей нет, rollback не нужен.
+                audit_service.emit(
+                    "oauth.refresh_race",
+                    rotated.user_id,
+                    target_id=rotated.client_id,
+                    target_type="oauth_client",
+                    status="failure",
+                    allowed=False,
+                    details={
+                        "client_id": rotated.client_id,
+                        "token_id": rotated.id,
+                        "reason": "grace_window_retry",
+                    },
+                    request_id=request_id,
+                )
+                raise AuthenticationError(
+                    error_code="REFRESH_TOKEN_RACE",
+                    message="Refresh token was rotated by a concurrent request; retry with the new token.",
+                )
             await refresh_repo.mark_suspicious(rotated)
             await refresh_repo.revoke_chain(rotated.client_id, rotated.user_id)
             await db.commit()

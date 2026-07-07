@@ -5,7 +5,7 @@ reuse-detection по sliding-window истории и kill-switch по всей 
 (client_id, user_id).
 """
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.oauth_refresh_token import PREVIOUS_TOKEN_HASH_WINDOW, OAuthRefreshToken
@@ -44,6 +44,30 @@ class OAuthRefreshTokenRepository:
                 OAuthRefreshToken.previous_token_hashes.contains([token_hash])
             )
         )
+
+    @staticmethod
+    def is_grace_window_rotation(
+        token: OAuthRefreshToken, token_hash: str, grace_seconds: int
+    ) -> bool:
+        """Проигравший benign-гонку ретраит непосредственно-предыдущим hash'ем?
+
+        Зеркало `SessionRepository.is_grace_window_rotation`: True только если
+        цепочка активна, `token_hash` — хвост `previous_token_hashes` (только
+        что ротированный), а с момента ротации прошло не больше `grace_seconds`.
+        Иначе (окно выключено / не последний hash / вне окна) — False, и caller
+        бьёт kill-switch по цепочке как раньше.
+        """
+        if grace_seconds <= 0 or not token.is_active or token.last_used_at is None:
+            return False
+        window = list(token.previous_token_hashes or [])
+        immediately_prev = window[-1] if window else None
+        if immediately_prev is None or token_hash != immediately_prev:
+            return False
+        last_used = token.last_used_at
+        if last_used.tzinfo is None:
+            from datetime import timezone
+            last_used = last_used.replace(tzinfo=timezone.utc)
+        return (utcnow() - last_used).total_seconds() <= grace_seconds
 
     async def create(
         self,

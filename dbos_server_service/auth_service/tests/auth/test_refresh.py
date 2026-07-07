@@ -30,12 +30,19 @@ async def test_refresh_old_token_invalid_after_rotation(client, account_admin):
 
 
 async def test_refresh_reuse_revokes_all_sessions(client, account_admin):
-    """Using an already-rotated token should revoke ALL sessions (reuse detection)."""
+    """Using an already-rotated token should revoke ALL sessions (reuse detection).
+
+    Ротируем дважды, чтобы `old_rt` перестал быть непосредственно-предыдущим
+    (не хвост истории) — тогда его повтор ловится как reuse, а не как benign-
+    гонка в grace-окне.
+    """
     s1 = await _login(client)
     s2 = await _login(client)
     old_rt = s1["refresh_token"]
-    await client.post(URL, json={"refresh_token": old_rt})  # rotate once
-    await client.post(URL, json={"refresh_token": old_rt})  # reuse → triggers revocation
+    r = await client.post(URL, json={"refresh_token": old_rt})   # rotate once
+    rt2 = r.json()["refresh_token"]
+    await client.post(URL, json={"refresh_token": rt2})          # rotate again → old_rt not-last
+    await client.post(URL, json={"refresh_token": old_rt})       # reuse → triggers revocation
     resp = await client.post(URL, json={"refresh_token": s2["refresh_token"]})
     assert resp.status_code == 401
 

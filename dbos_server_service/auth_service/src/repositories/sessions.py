@@ -1,12 +1,19 @@
 """DAO для `Session` — CRUD refresh-сессий + CAS rotate (reuse-detection)."""
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.session import PREVIOUS_TOKEN_HASH_WINDOW, Session
 from src.repositories._cas import atomic_transition
 from src.utils.ids import session_id
 from src.utils.time import utcnow
+
+# Namespace-константа для transaction-level advisory-lock'а вокруг login'а.
+# `pg_advisory_xact_lock(ns, hashtext(user_id))` сериализует конкурентные
+# login'ы одного юзера, чтобы enforce_concurrent_limit видел уже закоммиченные
+# чужие сессии (см. docstring метода). Фиксированный namespace отделяет эти
+# локи от любых других advisory-локов в БД.
+_LOGIN_LOCK_NAMESPACE = 0x4C4F474E  # "LOGN"
 
 
 class SessionRepository:
@@ -63,6 +70,36 @@ class SessionRepository:
                 )
             )
         )
+
+    @staticmethod
+    def is_grace_window_rotation(sess: Session, token_hash: str, grace_seconds: int) -> bool:
+        """Проигравший benign-гонку ретраит непосредственно-предыдущим hash'ем?
+
+        True только если ВСЕ условия выполнены:
+
+        * `grace_seconds > 0` — окно включено;
+        * сессия ещё активна (benign-гонка не могла её погасить — победитель
+          лишь ротировал токен, сессия жива);
+        * `token_hash` — именно НЕПОСРЕДСТВЕННО-предыдущий (только что
+          ротированный) hash, т.е. хвост `previous_token_hashes`. Более старый
+          hash из середины окна сюда не проходит — он трактуется как настоящий
+          reuse;
+        * с момента ротации (`last_used_at`) прошло не больше `grace_seconds`.
+
+        Вне окна / не последний hash → False, и caller бьёт kill-switch как
+        раньше.
+        """
+        if grace_seconds <= 0 or not sess.is_active or sess.last_used_at is None:
+            return False
+        window = list(sess.previous_token_hashes or [])
+        immediately_prev = window[-1] if window else sess.previous_token_hash
+        if immediately_prev is None or token_hash != immediately_prev:
+            return False
+        last_used = sess.last_used_at
+        if last_used.tzinfo is None:
+            from datetime import timezone
+            last_used = last_used.replace(tzinfo=timezone.utc)
+        return (utcnow() - last_used).total_seconds() <= grace_seconds
 
     async def create(
         self,
@@ -205,19 +242,31 @@ class SessionRepository:
     ) -> list[Session]:
         """Подрезать число активных сессий юзера до `limit` (sliding window).
 
-        Берёт активные сессии под `FOR UPDATE` — это сериализует параллельные
-        login'ы одного юзера: второй login ждёт коммита первого и пересчитывает
-        лимит уже на актуальном наборе, без длительного «лишнего» хвоста.
-        Сортирует от старых к новым по `created_at` и отзывает самые старые
-        лишние, чтобы осталось ровно `limit`. Только что созданная сессия
-        (`keep_session_id`) из кандидатов на вытеснение исключается — она
-        остаётся всегда.
+        Сериализация конкурентных login'ов одного юзера — через
+        transaction-level advisory-lock по `user_id`. Второй login блокируется
+        на локе, пока первый не закоммитит; после разблокировки его SELECT
+        (новый snapshot под READ COMMITTED) уже видит закоммиченную чужую
+        сессию, поэтому лимит не пробивается «невидимой» соседней вставкой.
+        Одного `FOR UPDATE` для этого мало: свежесозданная сессия соседа не
+        закоммичена и в его snapshot невидима.
+
+        Дальше берёт активные сессии под `FOR UPDATE`, сортирует от старых к
+        новым по `created_at` и отзывает самые старые лишние, чтобы осталось
+        ровно `limit`. Только что созданная сессия (`keep_session_id`) из
+        кандидатов на вытеснение исключается — она остаётся всегда.
 
         `limit <= 0` трактуется как «лимит выключен» — ничего не делаем.
         Возвращает список вытесненных сессий (для audit).
         """
         if limit <= 0:
             return []
+        # Сериализуем login'ы одного юзера. Лок держится до конца транзакции
+        # (commit/rollback в login), поэтому SELECT ниже идёт уже после того,
+        # как конкурент отпустил лок и закоммитил свою сессию.
+        await self._db.execute(
+            text("SELECT pg_advisory_xact_lock(:ns, hashtext(:uid))"),
+            {"ns": _LOGIN_LOCK_NAMESPACE, "uid": user_id},
+        )
         now = utcnow()
         result = await self._db.scalars(
             select(Session)

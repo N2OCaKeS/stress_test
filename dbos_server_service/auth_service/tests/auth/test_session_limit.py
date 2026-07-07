@@ -5,14 +5,19 @@
 PAT и bot-токены сессиями не являются.
 """
 
+import asyncio
+import os
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, text, update
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from src.core.config import get_settings
-from src.core.security import hash_password
+from src.core.security import generate_refresh_token, hash_password, hash_refresh_token
 from src.models import Session, User
-from src.utils.ids import _new_id
+from src.repositories.sessions import _LOGIN_LOCK_NAMESPACE, SessionRepository
+from src.utils.ids import _new_id, session_id
+from src.utils.time import expires_at, utcnow
 from tests._helpers.http import login as _login
 
 REFRESH_URL = "/api/auth/v1/refresh"
@@ -41,12 +46,28 @@ async def _make_active_user(db, username: str) -> str:
     return user.id
 
 
+async def _backdate_session(db, refresh_token: str, created_at) -> None:
+    """Проставить `created_at` сессии по её refresh-токену.
+
+    В тест-транзакции `now()` заморожен, поэтому у всех логинов одинаковый
+    `created_at`, и порядок вытеснения (created_at, id) вырождается в случайный
+    id-tiebreak. Явно разносим время, чтобы «самая старая» была детерминирована.
+    """
+    await db.execute(
+        update(Session)
+        .where(Session.refresh_token_hash == hash_refresh_token(refresh_token))
+        .values(created_at=created_at)
+    )
+
+
 async def test_third_login_evicts_oldest(client, db):
     """3-й логин → активных ровно 2, отозвана самая старая."""
     user_id = await _make_active_user(db, "sl_user")
 
     s1 = await _login(client, "sl_user", "Pass12345678!")
+    await _backdate_session(db, s1["refresh_token"], utcnow() - timedelta(hours=2))
     s2 = await _login(client, "sl_user", "Pass12345678!")
+    await _backdate_session(db, s2["refresh_token"], utcnow() - timedelta(hours=1))
     s3 = await _login(client, "sl_user", "Pass12345678!")
 
     active = await _active_sessions(db, user_id)
@@ -109,6 +130,105 @@ async def test_limit_is_per_user(client, db):
 
     assert len(await _active_sessions(db, user_one_id)) == 2
     assert len(await _active_sessions(db, user_two_id)) == 2
+
+
+async def test_enforce_holds_advisory_lock_for_user(client, db):
+    """enforce_concurrent_limit держит transaction-level advisory-lock по
+    user_id: пока транзакция login'а открыта, второй коннект НЕ может взять
+    тот же лок. Это и есть сериализация, не дающая двум параллельным login'ам
+    пробить лимит невидимой (некоммитнутой) чужой сессией.
+    """
+    user_id = await _make_active_user(db, "sl_lock")
+    repo = SessionRepository(db)
+    sess = await repo.create(
+        user_id=user_id,
+        refresh_token_hash=hash_refresh_token("lock_probe_token"),
+        expires_at=expires_at(days=14),
+    )
+    # enforce берёт advisory-lock на текущем (никогда не коммитящемся в тесте)
+    # соединении фикстуры — лок держится до конца транзакции.
+    await repo.enforce_concurrent_limit(user_id=user_id, keep_session_id=sess.id, limit=2)
+
+    # Со второго независимого соединения тот же лок должен быть недоступен.
+    probe_engine = create_async_engine(os.environ["DATABASE_URL"])
+    try:
+        async with probe_engine.connect() as conn:
+            await conn.begin()
+            got = await conn.scalar(
+                text("SELECT pg_try_advisory_xact_lock(:ns, hashtext(:uid))"),
+                {"ns": _LOGIN_LOCK_NAMESPACE, "uid": user_id},
+            )
+            await conn.rollback()
+    finally:
+        await probe_engine.dispose()
+
+    assert got is False, (
+        "enforce_concurrent_limit должен держать advisory-lock по user_id "
+        "(без него два параллельных login'а пробивают лимит)"
+    )
+
+
+async def test_concurrent_logins_do_not_exceed_limit():
+    """Два одновременных login'а поверх уже заполненного лимита не пробивают
+    его. Использует ДВА независимых коммитящихся соединения — shared savepoint-
+    фикстура сериализует всё на одном коннекте и гонку не воспроизводит.
+    Advisory-lock в enforce_concurrent_limit удерживает инвариант = limit.
+    """
+    from src.services import auth_service
+
+    limit = get_settings().max_concurrent_sessions
+    username = f"sl_conc_{_new_id('')}"
+    password = "Pass12345678!"
+    engine = create_async_engine(os.environ["DATABASE_URL"])
+    user_id = None
+    try:
+        # Заводим юзера и «забиваем» лимит активными сессиями (committed).
+        async with AsyncSession(engine, expire_on_commit=False) as setup:
+            user = User(
+                id=_new_id("usr_"),
+                username=username,
+                password_hash=hash_password(password),
+                status="active",
+                is_active=True,
+            )
+            setup.add(user)
+            await setup.flush()
+            user_id = user.id
+            for _ in range(limit):
+                _, h = generate_refresh_token()
+                setup.add(Session(
+                    id=session_id(),
+                    user_id=user_id,
+                    refresh_token_hash=h,
+                    expires_at=expires_at(days=14),
+                ))
+            await setup.commit()
+
+        async def _do_login():
+            async with AsyncSession(engine, expire_on_commit=False) as s:
+                return await auth_service.login(s, username, password)
+
+        results = await asyncio.gather(_do_login(), _do_login(), return_exceptions=True)
+        for r in results:
+            assert not isinstance(r, BaseException), f"login упал: {r!r}"
+
+        async with AsyncSession(engine, expire_on_commit=False) as check:
+            active = (await check.scalars(
+                select(Session).where(
+                    Session.user_id == user_id, Session.is_active.is_(True)
+                )
+            )).all()
+        assert len(active) == limit, (
+            f"лимит пробит конкурентными login'ами: {len(active)} активных "
+            f"при лимите {limit}"
+        )
+    finally:
+        if user_id is not None:
+            async with AsyncSession(engine, expire_on_commit=False) as cleanup:
+                await cleanup.execute(delete(Session).where(Session.user_id == user_id))
+                await cleanup.execute(delete(User).where(User.id == user_id))
+                await cleanup.commit()
+        await engine.dispose()
 
 
 async def test_pat_not_counted_as_session(client, db, user_a):

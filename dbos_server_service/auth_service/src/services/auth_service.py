@@ -505,6 +505,28 @@ async def refresh(
         # ломает feature «logout одной сессии без выкидывания остальных».
         old_sess = await session_repo.find_rotated_by_old_hash(token_hash)
         if old_sess:
+            if session_repo.is_grace_window_rotation(
+                old_sess, token_hash, settings.refresh_race_grace_seconds
+            ):
+                # Проигравший benign-гонку ретраит непосредственно-предыдущим
+                # (только что ротированным) hash'ем в пределах grace-окна.
+                # Победитель уже получил свежую пару, сессия жива — это НЕ
+                # reuse: не зовём mark_suspicious/revoke_all_for_user. Отдаём
+                # RACE, чтобы клиент перечитал и повторил новым токеном. В этой
+                # ветке были только SELECT'ы — pending-записей нет, rollback не
+                # нужен.
+                audit_service.emit(
+                    "token.refresh_race",
+                    old_sess.user_id,
+                    status="failure",
+                    allowed=False,
+                    details={"session_id": old_sess.id, "reason": "grace_window_retry"},
+                    request_id=request_id,
+                )
+                raise AuthenticationError(
+                    error_code="REFRESH_TOKEN_RACE",
+                    message="Refresh token was rotated by a concurrent request; retry with the new token.",
+                )
             await session_repo.mark_suspicious(old_sess)
             await session_repo.revoke_all_for_user(old_sess.user_id)
             await db.commit()

@@ -40,7 +40,12 @@ USERS_URL = "/api/auth/v1/users"
 class TestRefreshReuse:
     async def test_reuse_of_rotated_token_revokes_all_sessions(self, client, user_a):
         """Сценарий атаки: украденный refresh-токен. Жертва уже его обменяла,
-        атакующий пытается обменять — должно отозвать все сессии user'а."""
+        атакующий пытается обменять — должно отозвать все сессии user'а.
+
+        Обмениваем дважды, чтобы украденный токен ушёл с позиции
+        непосредственно-предыдущего: тогда его повтор — настоящий reuse, а не
+        benign-гонка в grace-окне.
+        """
         login = await client.post(
             LOGIN_URL,
             json={"username": "t_user_a", "password": "User12345678!"},
@@ -49,14 +54,17 @@ class TestRefreshReuse:
         # Первый обмен — легитимный
         first = await client.post(REFRESH_URL, json={"refresh_token": old_refresh})
         assert first.status_code == 200
+        # Второй обмен — old_refresh больше не последний в истории ротаций
+        mid = await client.post(REFRESH_URL, json={"refresh_token": first.json()["refresh_token"]})
+        assert mid.status_code == 200
+        new_refresh = mid.json()["refresh_token"]
 
-        # Повторное использование старого токена — атака
+        # Повторное использование старого (не последнего) токена — атака
         replay = await client.post(REFRESH_URL, json={"refresh_token": old_refresh})
         assert replay.status_code == 401
         assert replay.json()["error_code"] == "REFRESH_TOKEN_INVALID"
 
-        # Новый refresh, полученный жертвой, теперь тоже невалиден
-        new_refresh = first.json()["refresh_token"]
+        # Свежий refresh, полученный жертвой, после kill-switch тоже невалиден
         replay_new = await client.post(REFRESH_URL, json={"refresh_token": new_refresh})
         assert replay_new.status_code == 401
 
@@ -89,7 +97,10 @@ class TestRefreshReuse:
         login = await client.post(LOGIN_URL,
                                   json={"username": "t_user_a", "password": "User12345678!"})
         raw = login.json()["refresh_token"]
-        await client.post(REFRESH_URL, json={"refresh_token": raw})
+        # Две ротации — raw уходит с позиции непосредственно-предыдущего hash'а,
+        # его повтор ниже трактуется как reuse (а не benign-гонка grace-окна).
+        r = await client.post(REFRESH_URL, json={"refresh_token": raw})
+        await client.post(REFRESH_URL, json={"refresh_token": r.json()["refresh_token"]})
         captured.clear()
 
         await client.post(REFRESH_URL, json={"refresh_token": raw})

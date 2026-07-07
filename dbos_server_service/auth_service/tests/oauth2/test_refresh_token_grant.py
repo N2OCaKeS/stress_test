@@ -162,10 +162,15 @@ class TestRefreshRotation:
         old_refresh = tok["refresh_token"]
         first = await _refresh(client, oauth_client, old_refresh)
         assert first.status_code == 200, first.text
-        # Старый (уже ротированный) refresh — больше не валиден.
+        new_refresh = first.json()["refresh_token"]
+        # Немедленный повтор старого (непосредственно-предыдущего) refresh —
+        # benign-гонка в grace-окне: 401 RACE, но БЕЗ kill-switch по цепочке.
         again = await _refresh(client, oauth_client, old_refresh)
         assert again.status_code == 401, again.text
-        assert again.json()["error_code"] == "REFRESH_TOKEN_INVALID"
+        assert again.json()["error_code"] == "REFRESH_TOKEN_RACE"
+        # Цепочка жива — свежий refresh победителя гонки всё ещё работает.
+        ok = await _refresh(client, oauth_client, new_refresh)
+        assert ok.status_code == 200, ok.text
 
     async def test_scope_preserved_across_refresh(
         self, client, admin_token, user_a_token, dept_a_with_service, service_x,
@@ -191,15 +196,19 @@ class TestRefreshReuseDetection:
         )
         r1 = await _refresh(client, oauth_client, tok["refresh_token"])
         assert r1.status_code == 200, r1.text
-        new_refresh = r1.json()["refresh_token"]
+        # Вторая ротация — исходный refresh уходит с позиции непосредственно-
+        # предыдущего, чтобы его повтор ловился как reuse, а не grace-гонка.
+        r2 = await _refresh(client, oauth_client, r1.json()["refresh_token"])
+        assert r2.status_code == 200, r2.text
+        newer_refresh = r2.json()["refresh_token"]
 
-        # Reuse старого (ротированного) refresh — kill-switch.
+        # Reuse старого (не последнего) refresh — kill-switch.
         reuse = await _refresh(client, oauth_client, tok["refresh_token"])
         assert reuse.status_code == 401, reuse.text
         assert reuse.json()["error_code"] == "REFRESH_TOKEN_INVALID"
 
         # После kill-switch даже «честный» новый refresh из цепочки revoked.
-        after = await _refresh(client, oauth_client, new_refresh)
+        after = await _refresh(client, oauth_client, newer_refresh)
         assert after.status_code == 401, after.text
         assert after.json()["error_code"] == "REFRESH_TOKEN_INVALID"
 

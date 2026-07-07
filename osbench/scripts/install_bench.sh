@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -e
+export CFLAGS="-Wno-all -Wno-format-overflow -Wno-stringop-truncation"
 
 install_deps() {
     if command -v apt-get &> /dev/null; then
@@ -30,7 +31,7 @@ install_perf() {
 build_lmbench() { 
     pushd benchmarks/LMbench/lmbench || { echo "❌ Папка не найдена"; exit 1; }
     chmod -R +x scripts/ 2>/dev/null || true
-    make -j"$(nproc)" CFLAGS="-Wno-all -Wno-format-overflow -Wno-stringop-truncation" || { echo "❌ Ошибка сборки LMbench"; exit 1; }
+    make -j"$(nproc)" || { echo "❌ Ошибка сборки LMbench"; exit 1; }
     popd
     echo "LMBench собран."
 }
@@ -39,14 +40,14 @@ build_unixbench() {
     pushd benchmarks/UnixBench/byte-unixbench/UnixBench || { echo "❌ Папка не найдена"; exit 1; }
     chmod +x pgms/*.sh
     chmod +x Run
-    make -j"$(nproc)" CFLAGS="-Wno-all -Wno-format-overflow -Wno-stringop-truncation" || { echo "❌ Ошибка сборки UnixBench"; exit 1; }
+    make -j"$(nproc)" || { echo "❌ Ошибка сборки UnixBench"; exit 1; }
     popd
     echo "UnixBench собран."
 }
 
 build_fsmark() {
     pushd benchmarks/fs_mark || { echo "❌ Папка не найдена"; exit 1; }
-    make -j"$(nproc)" CFLAGS="-Wno-all -Wno-format-overflow -Wno-stringop-truncation" || { echo "❌ Ошибка сборки FS_Mark"; exit 1; }
+    make -j"$(nproc)" || { echo "❌ Ошибка сборки FS_Mark"; exit 1; }
     popd
     echo "FS_Mark собран."
 }

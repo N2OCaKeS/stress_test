@@ -152,9 +152,10 @@ class OSBLogger:
         
         print(f"[DEBUG] Handlers BEFORE: {self.logger.handlers}", file=sys.stderr)
 
-        # Удаляем все консольные обработчики
+        # Удаляем только консольные обработчики
         self.logger.handlers = [h for h in self.logger.handlers 
-                                if not isinstance(h, logging.StreamHandler)]
+                            if not (isinstance(h, logging.StreamHandler) and 
+                                    not isinstance(h, logging.FileHandler))]
         
         print(f"[DEBUG] Handlers AFTER remove: {self.logger.handlers}", file=sys.stderr)
         
@@ -166,7 +167,7 @@ class OSBLogger:
             ))
             self.logger.addHandler(console_handler)
             print(f"[DEBUG] Handlers AFTER add: {self.logger.handlers}", file=sys.stderr)
-            
+
     
     @classmethod
     def set_console(cls, enabled: bool):

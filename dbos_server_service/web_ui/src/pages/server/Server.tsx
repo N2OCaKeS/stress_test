@@ -31,7 +31,10 @@ import {
   deleteServer,
   listServers,
 } from "@/api/server/servers";
-import { reservedErrorMessage } from "@/pages/server/_serverShared";
+import {
+  formatLatencyMs,
+  reservedErrorMessage,
+} from "@/pages/server/_serverShared";
 import { BulkPrepareModal } from "@/pages/server/_bulkPrepareModal";
 import { listDepartments } from "@/api/auth/departments";
 import { useDeptLabel } from "@/lib/labels";
@@ -636,6 +639,7 @@ function ServerRow({
             <span className="mono">{server.ip_address}</span>
           </div>
         </div>
+          <PingBadge server={server} />
           <span className={`badge${statusKind ? ` badge-${statusKind}` : ""}`}>
             {STATUS_LABEL[server.status] ?? server.status}
           </span>
@@ -643,6 +647,36 @@ function ServerRow({
         </div>
       </button>
     </div>
+  );
+}
+
+/**
+ * Индикатор доступности сервера по ping в строке списка. Три состояния:
+ * доступен (зелёный, latency где есть), недоступен (красный), проба не
+ * снималась (нейтральный «—»). ssh/ipmi в списке не показываем — только в
+ * деталях; здесь важен один сигнал «жив ли бокс».
+ */
+function PingBadge({ server }: { server: Server }) {
+  const reachable = server.ping_reachable;
+  if (reachable == null) {
+    return (
+      <span className="badge" title="ping: не проверялось">
+        —
+      </span>
+    );
+  }
+  if (reachable) {
+    const lat = formatLatencyMs(server.ping_latency_ms);
+    return (
+      <span className="badge badge-ok" title="ping: доступен">
+        {lat ?? "доступен"}
+      </span>
+    );
+  }
+  return (
+    <span className="badge badge-danger" title="ping: недоступен">
+      недоступен
+    </span>
   );
 }
 

@@ -95,6 +95,17 @@ export function filterAccessibleAccounts(
 }
 
 /**
+ * Форматирует latency пробы в миллисекундах для показа рядом с доступностью:
+ * `12.3 мс`. Дробную часть режем до одного знака. null/undefined/NaN → null,
+ * чтобы вызывающий не рисовал пустое «мс».
+ */
+export function formatLatencyMs(ms: number | null | undefined): string | null {
+  if (ms == null || Number.isNaN(ms)) return null;
+  const rounded = Math.round(ms * 10) / 10;
+  return `${rounded} мс`;
+}
+
+/**
  * Человекочитаемая причина отказа в массовом prepare-batch
  * (`ServerBatchFailed.reason`). Незнакомый код отдаём как есть, чтобы новый
  * backend-вариант не терялся.

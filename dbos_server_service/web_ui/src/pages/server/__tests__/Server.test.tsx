@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { PersonaProvider } from "@/contexts/PersonaContext";
 import { ToastProvider } from "@/contexts/ToastContext";
+import type { Server as ServerType } from "@/api/server/types";
 
 // Диалоговый провайдер монтируется в App.tsx; в smoke-рендере страницы он не
 // нужен — мокаем хук no-op'ом, чтобы не тащить Radix-портал в jsdom.
@@ -31,7 +32,46 @@ vi.mock("@/api/auth/departments", () => ({
 }));
 
 import { listDepartments } from "@/api/auth/departments";
+import { listServers } from "@/api/server/servers";
 import { Server } from "@/pages/server/Server";
+
+function mkServer(over: Partial<ServerType> & { id: string }): ServerType {
+  return {
+    hostname: over.id,
+    display_name: null,
+    ip_address: "10.10.20.11",
+    mgmt_ip_address: null,
+    ssh_port: 22,
+    os_version_id: null,
+    os_last_synced_at: null,
+    department_id: "core",
+    status: "online",
+    power_state: "on",
+    busy_state: "free",
+    busy_user_id: null,
+    busy_since: null,
+    busy_note: null,
+    serial_number: null,
+    asset_tag: null,
+    location: null,
+    cpu_brand: null,
+    cpu_model: null,
+    cpu_cores: null,
+    cpu_threads: null,
+    cpu_frequency_ghz: null,
+    ram_total_mb: null,
+    network_interface_name: null,
+    decommissioned_at: null,
+    is_managed: false,
+    management_user: null,
+    prepared_at: null,
+    storage: [],
+    created_at: "2026-06-11T00:00:00Z",
+    updated_at: "2026-06-11T00:00:00Z",
+    created_by: null,
+    ...over,
+  };
+}
 
 function renderServer(entry = "/servers") {
   return render(
@@ -78,5 +118,25 @@ describe("Server (list page) smoke", () => {
       screen.getByText(/сервер создаётся в вашем отделе/),
     ).toBeInTheDocument();
     expect(listDepartments).not.toHaveBeenCalled();
+  });
+
+  it("строка списка показывает ping-индикатор доступности", async () => {
+    vi.mocked(listServers).mockResolvedValueOnce({
+      items: [
+        mkServer({ id: "srv_up", ping_reachable: true, ping_latency_ms: 12.3 }),
+        mkServer({ id: "srv_down", ping_reachable: false }),
+        mkServer({ id: "srv_unknown", ping_reachable: null }),
+      ],
+      total: 3,
+      limit: 200,
+      offset: 0,
+    });
+    renderServer();
+    // Доступный бокс — latency-бейдж; недоступный — «недоступен»; без пробы — «—».
+    expect(await screen.findByText("12.3 мс")).toBeInTheDocument();
+    expect(screen.getByText("недоступен")).toBeInTheDocument();
+    expect(
+      screen.getByTitle("ping: не проверялось"),
+    ).toBeInTheDocument();
   });
 });

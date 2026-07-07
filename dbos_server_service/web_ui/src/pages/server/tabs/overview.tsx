@@ -15,6 +15,7 @@ import { useMemo, useState } from "react";
 import { Pencil } from "lucide-react";
 import type {
   OsVersion,
+  PowerState,
   Server,
   ServerUpdateRequest,
 } from "@/api/server/types";
@@ -26,6 +27,7 @@ import { useDeptLabel, useUserLabel } from "@/lib/labels";
 import { formatMsk } from "@/lib/datetime";
 import { usePersona } from "@/contexts/PersonaContext";
 import { isDepAdmin } from "@/lib/rbac";
+import { formatLatencyMs } from "@/pages/server/_serverShared";
 import { FormRow, StatRow } from "@/pages/admin/services/_inline";
 
 interface Props {
@@ -129,6 +131,35 @@ function OverviewView({
       <div className="card">
         <h3 className="font-semibold text-base mb-3">Состояние</h3>
         <StatRow k="status" v={server.status} />
+        <StatRow
+          k="ping"
+          v={
+            <ReachValue
+              reachable={server.ping_reachable}
+              latencyMs={server.ping_latency_ms}
+              checkedAt={server.ping_checked_at}
+            />
+          }
+        />
+        <StatRow
+          k="ssh"
+          v={
+            <ReachValue
+              reachable={server.ssh_reachable}
+              latencyMs={server.ssh_latency_ms}
+              checkedAt={server.ssh_checked_at}
+            />
+          }
+        />
+        <StatRow
+          k="ipmi"
+          v={
+            <IpmiPowerValue
+              state={server.ipmi_power_state}
+              checkedAt={server.ipmi_checked_at}
+            />
+          }
+        />
         <StatRow k="power_state" v={server.power_state} />
         <StatRow k="busy_state" v={server.busy_state} />
         <StatRow
@@ -265,6 +296,65 @@ function OverviewView({
         />
       </div>
     </div>
+  );
+}
+
+/**
+ * Значение строки доступности (ping / ssh): «доступен» + latency либо
+ * «недоступен», плюс время последней пробы. reachable == null (пробы не было)
+ * рисуем нейтральным «не проверялось».
+ */
+function ReachValue({
+  reachable,
+  latencyMs,
+  checkedAt,
+}: {
+  reachable?: boolean | null;
+  latencyMs?: number | null;
+  checkedAt?: string | null;
+}) {
+  if (reachable == null) {
+    return <span className="text-dim">не проверялось</span>;
+  }
+  const lat = formatLatencyMs(latencyMs);
+  return (
+    <span className="flex items-center gap-2 flex-wrap">
+      <span className={reachable ? "text-ok" : "text-danger"}>
+        {reachable ? "доступен" : "недоступен"}
+      </span>
+      {reachable && lat && <span className="mono text-dim">{lat}</span>}
+      {checkedAt && (
+        <span className="mono text-dim text-xs">{formatMsk(checkedAt)}</span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * Значение строки питания по IPMI/BMC: on/off/unknown (латиницей, как enum) +
+ * время последней пробы. null — пробы BMC ещё не было.
+ */
+function IpmiPowerValue({
+  state,
+  checkedAt,
+}: {
+  state?: PowerState | null;
+  checkedAt?: string | null;
+}) {
+  if (state == null) {
+    return <span className="text-dim">не проверялось</span>;
+  }
+  const kind =
+    state === "on" ? "text-ok" : state === "off" ? "text-danger" : "text-dim";
+  return (
+    <span className="flex items-center gap-2 flex-wrap">
+      <span className={kind}>
+        питание: <span className="mono">{state}</span>
+      </span>
+      {checkedAt && (
+        <span className="mono text-dim text-xs">{formatMsk(checkedAt)}</span>
+      )}
+    </span>
   );
 }
 

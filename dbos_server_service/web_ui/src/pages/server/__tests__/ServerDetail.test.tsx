@@ -29,6 +29,14 @@ const MOCK_SERVER: Server = {
   department_id: "dep_smoke",
   status: "online",
   power_state: "on",
+  ping_reachable: true,
+  ping_latency_ms: 12.3,
+  ping_checked_at: "2026-06-11T00:05:00Z",
+  ssh_reachable: true,
+  ssh_latency_ms: 41,
+  ssh_checked_at: "2026-06-11T00:05:00Z",
+  ipmi_power_state: "on",
+  ipmi_checked_at: "2026-06-11T00:05:00Z",
   busy_state: "free",
   busy_user_id: null,
   busy_since: null,
@@ -132,5 +140,18 @@ describe("ServerDetail smoke", () => {
     ]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
+  });
+
+  it("карточка «Состояние» показывает три поля доступности: ping / ssh / ipmi", async () => {
+    renderDetail();
+    await screen.findAllByText(/Smoke Box/);
+    // StatRow-подписи трёх независимых сигналов.
+    expect(screen.getByText("ping")).toBeInTheDocument();
+    expect(screen.getByText("ssh")).toBeInTheDocument();
+    expect(screen.getByText("ipmi")).toBeInTheDocument();
+    // ping/ssh reachable → «доступен» (header + overview), latency отрисован.
+    expect(screen.getAllByText("доступен").length).toBeGreaterThan(0);
+    expect(screen.getByText("12.3 мс")).toBeInTheDocument();
+    expect(screen.getByText("41 мс")).toBeInTheDocument();
   });
 });

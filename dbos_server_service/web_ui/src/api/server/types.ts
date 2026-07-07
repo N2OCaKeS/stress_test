@@ -109,6 +109,19 @@ export interface Server {
   department_id: string;
   status: ServerStatus;
   power_state: PowerState;
+  /** Доступность по ICMP-ping с последней живой пробы (power.status). null — пробы не было. */
+  ping_reachable?: boolean | null;
+  /** Latency ping в мс. null — недоступен или не измерялось. */
+  ping_latency_ms?: number | null;
+  ping_checked_at?: Iso8601 | null;
+  /** Доступность по TCP SSH-порту. null — пробы не было. */
+  ssh_reachable?: boolean | null;
+  /** Latency SSH-connect в мс. */
+  ssh_latency_ms?: number | null;
+  ssh_checked_at?: Iso8601 | null;
+  /** power_state из BMC (Redfish/ipmitool): on/off/unknown. null — пробы не было. */
+  ipmi_power_state?: PowerState | null;
+  ipmi_checked_at?: Iso8601 | null;
   busy_state: BusyState;
   busy_user_id: string | null;
   busy_since: Iso8601 | null;

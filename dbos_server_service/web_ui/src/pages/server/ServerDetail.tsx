@@ -16,6 +16,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { getServer, setBusy, clearBusy } from "@/api/server/servers";
 import { useDeptLabel, useUserLabel } from "@/lib/labels";
 import { isDepAdmin } from "@/lib/rbac";
+import { formatLatencyMs } from "@/pages/server/_serverShared";
 import { ApiError, apiErrMsg } from "@/api/client";
 import type { Server, ServerStatus, BusyState } from "@/api/server/types";
 import { OverviewTab } from "./tabs/overview";
@@ -207,9 +208,7 @@ function ServerHeader({
           <span className={`badge${busyKind ? ` badge-${busyKind}` : ""}`}>
             {BUSY_LABEL[server.busy_state] ?? server.busy_state}
           </span>
-          <span className="text-xs text-dim">
-            power: <b>{server.power_state}</b>
-          </span>
+          <HeaderPing server={server} />
         </div>
         <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
           <span className="mono">{server.id}</span>
@@ -233,6 +232,32 @@ function ServerHeader({
         />
       </div>
     </div>
+  );
+}
+
+/**
+ * Индикатор доступности сервера по ping в шапке карточки. Один сигнал «жив ли
+ * бокс»: доступен (+latency) / недоступен / проба не снималась. ssh и питание
+ * по IPMI детализированы во вкладке «Обзор».
+ */
+function HeaderPing({ server }: { server: Server }) {
+  const reachable = server.ping_reachable;
+  if (reachable == null) {
+    return (
+      <span className="text-xs text-dim" title="ping: не проверялось">
+        ping: —
+      </span>
+    );
+  }
+  const lat = formatLatencyMs(server.ping_latency_ms);
+  return (
+    <span
+      className={`text-xs ${reachable ? "text-ok" : "text-danger"}`}
+      title="доступность по ping"
+    >
+      ping: <b>{reachable ? "доступен" : "недоступен"}</b>
+      {reachable && lat ? ` · ${lat}` : ""}
+    </span>
   );
 }
 

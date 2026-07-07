@@ -23,11 +23,13 @@ from src.core.constants import (
     VM_STATUS_FREE,
     VM_SYSTEM_SNAPSHOT_SUFFIX,
     VmBusyState,
+    VmNetworkMode,
     VmPowerState,
     VmSnapshotState,
     VmTaskKind,
 )
 from src.core.constants import VmDiskState
+from src.core.config import get_settings
 from src.core.exceptions import (
     AuthorizationError,
     BadRequestError,
@@ -50,13 +52,18 @@ from src.schemas.vm import (
     VmAstraUpdateRequest,
     VmCreate,
     VmDiskCreate,
+    VmNetworkRequest,
     VmPasswdRequest,
     VmSnapshotCreate,
     VmCredStrategyRequest,
     VmUpdateRequest,
 )
 from src.services import audit_service, permissions, secrets_service, worker_client
+from src.services import management_user_config
+from src.services import vm_ip_pool as ip_pool_svc
+from src.services.management_creds import generate_management_material
 from src.services.audit_helpers import emit_denied_on_authz_error
+from src.utils.ids import dispatch_creds_id
 from src.utils.ids import vm_disk_id as new_vm_disk_id
 from src.utils.ids import vm_id as new_vm_id
 from src.utils.ids import vm_snapshot_id as new_vm_snapshot_id
@@ -1331,7 +1338,7 @@ async def delete_vm(
 ) -> tuple[Vm, str]:
     """Dispatch VM_DELETE + удалить запись ВМ. Гейт брони+lock.
 
-    Волна 1: запись сносится сразу (симметрия старому rm-vms-hub), задача
+    Запись сносится сразу (симметрия старому rm-vms-hub), задача
     VM_DELETE чистит домен на гипервизоре. Возвращает (vm, task_id).
     """
     with emit_denied_on_authz_error(
@@ -1572,3 +1579,328 @@ async def prepare_vms_hub(
         details={"task_id": task_id, "department_id": hub.department_id},
     )
     return server_id, task_id
+
+
+# ── vm.prepare / mgmt-креды / сеть ───────────────────────────────────────────
+
+
+async def _stash_vm_mgmt_creds(
+    vm: Vm,
+    creds: dict[str, str],
+    audit_action: str,
+) -> str:
+    """Положить управляющий материал ВМ в Redis-stash, вернуть ключ для payload.
+
+    Симметрично серверному provision/rotate: plaintext ключа+пароля в
+    task-payload не едет, туда кладётся только `creds_stash_key`. Недоступный
+    Redis → 503 (`WORKER_REDIS_NOT_CONFIGURED`); runtime-фейл записи → чистим
+    осиротевший ключ best-effort и отдаём 503.
+    """
+    from src.core.exceptions import ServiceUnavailableError
+
+    stash_key = worker_client.dispatch_creds_key(dispatch_creds_id())
+    try:
+        await worker_client.store_dispatch_creds(stash_key, creds)
+    except ServiceUnavailableError:
+        audit_service.emit(
+            audit_action, target_id=vm.id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "creds_store_unavailable", "department_id": vm.department_id},
+        )
+        raise
+    except Exception as exc:  # noqa: BLE001
+        await worker_client.delete_dispatch_creds(stash_key)
+        audit_service.emit(
+            audit_action, target_id=vm.id, target_type="vm",
+            status="failure", allowed=True,
+            details={
+                "reason": "creds_store_failed",
+                "department_id": vm.department_id,
+                "error_class": type(exc).__name__,
+            },
+        )
+        raise ServiceUnavailableError(
+            error_code="WORKER_REDIS_UNAVAILABLE",
+            message="Failed to stash VM management credentials before dispatch",
+        ) from exc
+    return stash_key
+
+
+def _store_new_mgmt_creds(vm: Vm) -> dict[str, str]:
+    """Сгенерировать per-VM управляющие креды, зашифровать и положить в модель.
+
+    Public-ключ — открытым текстом; private и пароль — envelope AES-256-GCM со
+    своим AAD (привязка к vm_id). Ставит `mgmt_creds_pending_apply=True`.
+    Возвращает plaintext-набор для отдачи воркеру в payload (установка в госте).
+    """
+    private_pem, public_openssh, password = generate_management_material()
+    vm.mgmt_ssh_public_key = public_openssh
+    vm.mgmt_ssh_private_key_encrypted = secrets_service.encrypt(
+        private_pem, aad=secrets_service.aad_for_vm_mgmt_ssh_key(vm.id),
+    )
+    vm.mgmt_password_encrypted = secrets_service.encrypt(
+        password, aad=secrets_service.aad_for_vm_mgmt_password(vm.id),
+    )
+    vm.mgmt_creds_pending_apply = True
+    return {
+        "public_key": public_openssh,
+        "private_key": private_pem,
+        "password": password,
+    }
+
+
+async def prepare_vm(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+) -> tuple[Vm, str]:
+    """Dispatch VM_PREPARE — онбординг управления ВМ. Право `(vm, vm_prepare)`.
+
+    server_service генерит per-VM управляющую SSH-пару + пароль, шифрует и
+    кладёт в `mgmt_*` (`mgmt_creds_pending_apply=True`), а plaintext-материал
+    складывает в Redis-stash (`creds_stash_key`); в payload едет ссылка на
+    stash + дефолт-креды образа (`u:1`). Воркер заходит под образными кредами,
+    читает управляющий материал из stash'а, ставит новый ключ+пароль, сносит
+    базовую учётку и подтверждает callback'ом `POST /internal/vms/{id}/prepared`
+    (→ `is_managed=True`).
+    """
+    vm, hub = await _load_vm_for_managed_op(
+        db, identity, vm_id,
+        action_perm=Action.VM_PREPARE,
+        audit_action="vm.prepared", op="prepare",
+    )
+    if vm.mgmt_creds_pending_apply:
+        audit_service.emit(
+            "vm.prepared", target_id=vm.id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "rotation_pending", "department_id": vm.department_id},
+        )
+        raise ConflictError(
+            error_code="VM_MGMT_ROTATION_PENDING",
+            message=(
+                "Management credentials onboarding/rotation is already in "
+                "progress (pending apply). Wait for the worker callback."
+            ),
+        )
+    settings = get_settings()
+    new_creds = _store_new_mgmt_creds(vm)
+    mgmt_user = (await management_user_config.get_config(db)).login
+    stash_key = await _stash_vm_mgmt_creds(
+        vm,
+        {
+            "management_user": mgmt_user,
+            "public_key": new_creds["public_key"],
+            "private_key": new_creds["private_key"],
+            "password": new_creds["password"],
+        },
+        audit_action="vm.prepared",
+    )
+    payload_task = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "guest_ip": str(vm.ip_address) if vm.ip_address is not None else None,
+        "operation": "prepare",
+        "image_user": settings.vm_image_default_user,
+        "image_password": settings.vm_image_default_password,
+        "creds_stash_key": stash_key,
+    }
+    vm.busy_state = VmBusyState.PREPARING.value
+    vm.busy_since = datetime.now(timezone.utc)
+    try:
+        task_id = await _dispatch_vm_task(
+            db=db, identity=identity, request=request,
+            task_kind=VmTaskKind.VM_PREPARE, hub=hub, vm=vm,
+            payload=payload_task, audit_action="vm.prepared",
+        )
+    except Exception:
+        # Stash осиротел — задача в брокер не доехала, воркер за материалом
+        # не пойдёт; чистим ключ, чтобы plaintext не висел до TTL.
+        await worker_client.delete_dispatch_creds(stash_key)
+        raise
+    await db.commit()
+    await db.refresh(vm)
+    audit_service.emit(
+        "vm.prepared", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "operation": "prepare", "department_id": vm.department_id},
+    )
+    return vm, task_id
+
+
+async def rotate_mgmt_creds(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+) -> tuple[Vm, str]:
+    """Dispatch VM_PREPARE (ротация) — перевыпустить per-VM управляющие креды.
+
+    Право `(vm, vm_prepare)`. 409, если предыдущий онбординг/ротация ещё не
+    подтверждены (`mgmt_creds_pending_apply`). Генерит новый материал, шифрует в
+    `mgmt_*`, plaintext складывает в Redis-stash (в payload — только
+    `creds_stash_key`). Previous-зеркал у ВМ нет — при сбое ВМ перекатывается
+    заново.
+    """
+    vm, hub = await _load_vm_for_managed_op(
+        db, identity, vm_id,
+        action_perm=Action.VM_PREPARE,
+        audit_action="vm.creds_rotated", op="creds_rotate",
+    )
+    if not vm.is_managed:
+        audit_service.emit(
+            "vm.creds_rotated", target_id=vm.id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "prepare_required", "department_id": vm.department_id},
+        )
+        raise ConflictError(
+            error_code="VM_PREPARE_REQUIRED",
+            message="VM is not prepared for management; run POST /vms/{id}/prepare first",
+        )
+    if vm.mgmt_creds_pending_apply:
+        audit_service.emit(
+            "vm.creds_rotated", target_id=vm.id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "rotation_pending", "department_id": vm.department_id},
+        )
+        raise ConflictError(
+            error_code="VM_MGMT_ROTATION_PENDING",
+            message=(
+                "Management credentials rotation is already in progress "
+                "(pending apply). Wait for the worker callback."
+            ),
+        )
+    new_creds = _store_new_mgmt_creds(vm)
+    stash_key = await _stash_vm_mgmt_creds(
+        vm,
+        {
+            "management_user": vm.mgmt_user,
+            "public_key": new_creds["public_key"],
+            "private_key": new_creds["private_key"],
+            "password": new_creds["password"],
+        },
+        audit_action="vm.creds_rotated",
+    )
+    payload_task = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "guest_ip": str(vm.ip_address) if vm.ip_address is not None else None,
+        "operation": "rotate_creds",
+        "creds_stash_key": stash_key,
+    }
+    vm.busy_state = VmBusyState.PREPARING.value
+    vm.busy_since = datetime.now(timezone.utc)
+    try:
+        task_id = await _dispatch_vm_task(
+            db=db, identity=identity, request=request,
+            task_kind=VmTaskKind.VM_PREPARE, hub=hub, vm=vm,
+            payload=payload_task, audit_action="vm.creds_rotated",
+        )
+    except Exception:
+        await worker_client.delete_dispatch_creds(stash_key)
+        raise
+    await db.commit()
+    await db.refresh(vm)
+    audit_service.emit(
+        "vm.creds_rotated", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "department_id": vm.department_id},
+    )
+    return vm, task_id
+
+
+async def set_network(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    payload: VmNetworkRequest,
+) -> tuple[Vm, str]:
+    """Dispatch VM_SET_NETWORK — сменить сетевой режим ВМ. Право `(vm, vm_net_manage)`.
+
+    bridge: адрес берётся из `ip_address` (проверяется на занятость) либо
+    аллоцируется из `pool_id`; провижн статики в госте + правка XML. nat: адрес
+    выдаёт libvirt (domifaddr) — `ip_address` зануляем. Гейт брони + lifecycle-
+    lock. Ставит busy_state=networking.
+    """
+    with emit_denied_on_authz_error(
+        "vm.net_updated", target_id=vm_id, target_type="vm",
+        extra_details={"vm_id": vm_id}, identity=identity,
+    ):
+        await permissions.require_action(db, identity, EntityType.VM, Action.VM_NET_MANAGE)
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            "vm.net_updated", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "not_found_or_cross_dept"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+    _ensure_not_busy(vm, action="vm.set_network")
+    _ensure_bookable(identity, vm, action="vm.set_network")
+    hub = await server_repo.get_by_id(db, vm.hub_server_id)
+    if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+        raise ConflictError(
+            error_code="HUB_UNAVAILABLE",
+            message="Hub server is unavailable (missing or decommissioned)",
+        )
+
+    mode = payload.network_mode.value
+    resolved_ip: str | None = None
+    pool = None
+    if payload.network_mode == VmNetworkMode.BRIDGE:
+        used = await repo.list_used_ips(db, vm.department_id, exclude_vm_id=vm.id)
+        if payload.ip_address is not None:
+            resolved_ip = str(payload.ip_address)
+            if resolved_ip in used:
+                audit_service.emit(
+                    "vm.net_updated", target_id=vm.id, target_type="vm",
+                    status="failure", allowed=True,
+                    details={"reason": "ip_in_use", "ip_address": resolved_ip},
+                )
+                raise ConflictError(
+                    error_code="VM_IP_IN_USE",
+                    message="Requested IP is already assigned to another VM",
+                    details={"ip_address": resolved_ip},
+                )
+            if payload.pool_id is not None:
+                pool = await ip_pool_svc.get_pool(db, identity, payload.pool_id)
+        elif payload.pool_id is not None:
+            pool = await ip_pool_svc.get_pool(db, identity, payload.pool_id)
+            resolved_ip = ip_pool_svc.allocate_ip(pool, used)
+        else:
+            # bridge без нового адреса — оставляем текущий (worker переводит XML).
+            resolved_ip = str(vm.ip_address) if vm.ip_address is not None else None
+
+    payload_task = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "network_mode": mode,
+        "ip_address": resolved_ip,
+        "gateway": str(pool.gateway) if pool is not None and pool.gateway is not None else None,
+        "netmask": pool.netmask if pool is not None else None,
+        "dns": list(pool.dns) if pool is not None and pool.dns is not None else None,
+    }
+    vm.network_mode = mode
+    if payload.network_mode == VmNetworkMode.NAT:
+        vm.ip_address = None
+    elif resolved_ip is not None:
+        vm.ip_address = resolved_ip
+    vm.busy_state = VmBusyState.NETWORKING.value
+    vm.busy_since = datetime.now(timezone.utc)
+    task_id = await _dispatch_vm_task(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_SET_NETWORK, hub=hub, vm=vm,
+        payload=payload_task, audit_action="vm.net_updated",
+    )
+    await db.commit()
+    await db.refresh(vm)
+    audit_service.emit(
+        "vm.net_updated", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "network_mode": mode, "ip_address": resolved_ip, "department_id": vm.department_id},
+    )
+    return vm, task_id

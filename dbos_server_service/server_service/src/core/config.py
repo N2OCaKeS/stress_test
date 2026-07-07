@@ -326,6 +326,24 @@ class Settings(BaseSettings):
         alias="VM_BOX_CONFIG_TIMEOUT_SECONDS",
         description="Таймаут загрузки конфига боксов-образов ВМ с FTP/HTTP.",
     )
+    vm_image_default_user: str = Field(
+        default="u",
+        alias="VM_IMAGE_DEFAULT_USER",
+        description=(
+            "Дефолтная гостевая учётка бокса-образа ВМ (у всех боксов `u`, "
+            "sudo NOPASSWD, SSH :22). vm.prepare заходит под ней, чтобы поставить "
+            "per-VM управляющие креды и снести базовую учётку."
+        ),
+    )
+    vm_image_default_password: str = Field(
+        default="1",
+        alias="VM_IMAGE_DEFAULT_PASSWORD",
+        description=(
+            "Дефолтный пароль гостевой учётки образа ВМ (`1`). Едет воркеру в "
+            "payload vm.prepare для первого входа sshpass. Единый шифр-конфиг "
+            "образа не нужен — значение фиксировано в сборке боксов."
+        ),
+    )
     logging_service_url: str = Field(
         default="",
         description=(

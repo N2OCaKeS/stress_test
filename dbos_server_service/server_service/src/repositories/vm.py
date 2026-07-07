@@ -75,6 +75,24 @@ async def count_by_ids(db: AsyncSession, ids: list[str]) -> int:
     return int((await db.execute(stmt)).scalar_one())
 
 
+async def list_used_ips(
+    db: AsyncSession, department_id: str, *, exclude_vm_id: str | None = None,
+) -> set[str]:
+    """Множество занятых IP отдела (непустые `vms.ip_address`).
+
+    Для аллокатора IPAM: занятость ведём по карточкам ВМ. `exclude_vm_id`
+    исключает саму ВМ (при смене её же IP, чтобы текущий адрес не считался
+    занятым конфликтом с самой собой).
+    """
+    stmt = select(Vm.ip_address).where(
+        Vm.department_id == department_id, Vm.ip_address.is_not(None)
+    )
+    if exclude_vm_id is not None:
+        stmt = stmt.where(Vm.id != exclude_vm_id)
+    rows = (await db.execute(stmt)).scalars()
+    return {str(ip) for ip in rows if ip is not None}
+
+
 async def list_for_hub(db: AsyncSession, hub_server_id: str) -> list[Vm]:
     """Все ВМ конкретного hub'а — для проверки ёмкости и вложенного list'а."""
     stmt = select(Vm).where(Vm.hub_server_id == hub_server_id).order_by(Vm.created_at)

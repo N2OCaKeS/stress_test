@@ -1,6 +1,6 @@
 """vm_snapshots table (snapshots + per-snapshot mgmt creds)
 
-Волна 3 VM-менеджера: таблица снимков ВМ (`vm_snapshots`, каскад с `vms`,
+Снимки VM-менеджера: таблица снимков ВМ (`vm_snapshots`, каскад с `vms`,
 self-FK на цепочку) + шифр mgmt-креды на момент снимка (режим per_snapshot).
 
 Права зоны vm (`vm_snapshot_manage`, `vm_astra_update`, `vm_allta_update`,

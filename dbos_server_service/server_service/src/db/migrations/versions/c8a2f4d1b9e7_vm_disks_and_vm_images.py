@@ -1,6 +1,6 @@
 """vm_disks + vm_images tables
 
-Волна 2 VM-менеджера: таблица дисков ВМ (`vm_disks`, каскад с `vms`) и каталог
+Диски и образы VM-менеджера: таблица дисков ВМ (`vm_disks`, каскад с `vms`) и каталог
 боксов-образов (`vm_images`, зеркало FTP `test-box-config.json`).
 
 Права зоны vm (`vm_disk_manage` и др.) уже засеяны миграцией b3f7d1a2c8e4 —

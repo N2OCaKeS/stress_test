@@ -1,6 +1,6 @@
 """Модель Vm — виртуальная машина на hub-сервере.
 
-Основа VM-домена (волна 1). ВМ живёт на подготовленном как VMS-hub сервере
+Основа VM-домена. ВМ живёт на подготовленном как VMS-hub сервере
 (`hub_server_id`), исполнение — по SSH через worker'а. Два независимых поля
 занятости:
 
@@ -9,7 +9,7 @@
 * `busy_state` — lifecycle-lock на время долгой операции (creating/deleting/
   updating/powering); NULL, когда операция не идёт. Снимает callback воркера.
 
-Диски/снимки/пулы IP — отдельные таблицы следующих волн; здесь только карточка
+Диски/снимки/пулы IP — отдельные таблицы; здесь только карточка
 ВМ с денормализованным «текущим» состоянием (power/ip/ресурсы).
 """
 
@@ -23,6 +23,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     func,
 )
 from sqlalchemy.dialects.postgresql import INET
@@ -102,6 +103,28 @@ class Vm(Base):
     )
     # Последняя ошибка от воркера (create/power/delete) — для UI-диагностики.
     last_error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # ── per-VM управляющие креды (зеркало серверных, §9 дизайна) ──────────────
+    # После vm.prepare гость несёт свою управляющую SSH-пару + пароль (базовая
+    # учётка образа `u:1` снесена). is_managed фиксирует факт онбординга,
+    # mgmt_user — имя управляющего пользователя. Public-ключ — открытым текстом
+    # (кладётся в authorized_keys, показывается отпечатком в UI); private и
+    # пароль — envelope AES-256-GCM через secrets_service со своим AAD. Все
+    # nullable: до prepare ВМ управляющих кред не имеет.
+    is_managed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    mgmt_user: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mgmt_ssh_public_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mgmt_ssh_private_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mgmt_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # True между записью свежего ciphertext'а (prepare/rotate dispatch) и
+    # callback'ом «применено в госте». В отличие от серверных кред, previous-
+    # зеркал у ВМ нет: тестовая ВМ при сбое ротации перекатывается заново или
+    # откатывается снимком, поэтому анти-локаут-окно не держим.
+    mgmt_creds_pending_apply: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    mgmt_creds_rotated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

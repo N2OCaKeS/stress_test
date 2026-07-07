@@ -204,7 +204,7 @@ SERVICE_EVENTS = [
     {"action": "ssh_console.session_open", "description": "Пользователь открыл интерактивную SSH-консоль к серверу (WebSocket подключился, PTY-сессия запрошена у worker'а). target_type=server", "default_severity": "INFO"},
     {"action": "ssh_console.session_close", "description": "Интерактивная SSH-консоль закрыта (WS disconnect / таймаут бездействия / ошибка PTY). details несут reason. target_type=server", "default_severity": "INFO"},
     {"action": "ssh_console.command", "description": "Команда, введённая в интерактивной SSH-консоли (одна строка по Enter); эмитится worker'ом на PTY-мосте. details: command (redacted), session_id, server_id. WARNING при ненулевом exit-коде, если он доступен. target_type=server", "default_severity": "INFO"},
-    # VM-домен (волна 1). CRITICAL — create/delete/prepare-hub (появление/снос
+    # VM-домен. CRITICAL — create/delete/prepare-hub (появление/снос
     # виртуалки, подготовка хоста); WARNING — питание/бронь/отказ по брони;
     # INFO — просмотр и рутинные callback-апдейты состояния.
     {"action": "vm.create", "description": "VM create requested (dispatch vm.create): permission/capacity/hub-readiness checks. failure reasons: department_isolation / hub_not_found_or_cross_dept / hub_not_prepared / duplicate / worker_unreachable", "default_severity": "CRITICAL"},
@@ -218,14 +218,14 @@ SERVICE_EVENTS = [
     {"action": "vm.reservation_denied", "description": "VM operation blocked because it is reserved by another user and caller is neither the reservation owner nor a department/service admin", "default_severity": "WARNING"},
     {"action": "vm.busy_denied", "description": "VM operation blocked because a lifecycle operation is in progress (busy_state creating/deleting/updating/powering)", "default_severity": "WARNING"},
     {"action": "vm.state_updated", "description": "Worker wrote VM state back to server cache (POST /internal/vms/{id}/state): power_state / ip / status / busy_state / error (partial, idempotent)", "default_severity": "INFO"},
-    # VM update (cpu/ram) + диски (волна 2).
+    # VM update (cpu/ram) + диски.
     {"action": "vm.updated", "description": "VM resources changed (dispatch vm.update: cpu/ram; stop→edit XML→start), busy_state=updating. failure reasons: not_found_or_cross_dept / worker_unreachable", "default_severity": "WARNING"},
     {"action": "vm.disk_managed", "description": "VM disk create/delete/resize dispatched to worker (vm.disk_attach / vm.disk_delete / vm.disk_resize). details.op distinguishes the operation. failure reasons: not_found_or_cross_dept / disk_not_found / duplicate / worker_unreachable", "default_severity": "WARNING"},
     {"action": "vm.disks_synced", "description": "Worker synced VM disk facts back (POST /internal/vms/{id}/disks): state/path/target_dev/serial/size per disk_id (partial, idempotent)", "default_severity": "INFO"},
     # Каталог боксов-образов ВМ.
     {"action": "vm_image.refresh", "description": "VM image catalog synced from the FTP box config (POST /vm-images/refresh, libvirt_box section). details: source/synced/created/updated. denied: permission_denied", "default_severity": "INFO"},
     {"action": "vms_hub.prepared", "description": "Prepare server as VMS-hub: (a) dispatch vms_hub.prepare (permission/prepared/virtualization gate); (b) worker callback POST /internal/servers/{id}/vms-hub-state marks is_vms_hub + virtualization + phy_if. failure reasons: not_found_or_cross_dept / prepare_required / virtualization_unsupported / worker_unreachable", "default_severity": "CRITICAL"},
-    # Снимки ВМ + обновления ОС / гостевой allta / пароль (волна 3).
+    # Снимки ВМ + обновления ОС / гостевой allta / пароль.
     {"action": "vm.snapshot_created", "description": "VM snapshot create dispatched (vm.snapshot_create), busy_state=snapshotting. per_snapshot: new snapshot inherits current mgmt creds. failure reasons: not_found_or_cross_dept / system_snapshot_protected / duplicate / worker_unreachable", "default_severity": "WARNING"},
     {"action": "vm.snapshot_reverted", "description": "VM revert to snapshot dispatched (vm.snapshot_revert), busy_state=reverting. per_snapshot switches VM active creds to the snapshot's. failure reasons: snapshot_not_found / system_snapshot_protected / worker_unreachable", "default_severity": "WARNING"},
     {"action": "vm.snapshot_deleted", "description": "VM snapshot delete dispatched (vm.snapshot_delete) and row removed. system _build snapshots cannot be deleted manually (403 VM_SNAPSHOT_SYSTEM_PROTECTED). failure reasons: snapshot_not_found / worker_unreachable", "default_severity": "WARNING"},
@@ -233,6 +233,13 @@ SERVICE_EVENTS = [
     {"action": "vm.astra_updated", "description": "VM OS update by RC dispatched (vm.astra_update: revert <ver>_build → repo → astra-update → snapshot <rc>), busy_state=updating. repository_urls resolved from the registered os_version. failure reasons: not_found_or_cross_dept / snapshot_exists / os_version_not_registered / worker_unreachable", "default_severity": "WARNING"},
     {"action": "vm.allta_updated", "description": "VM guest allta update (+ optional u password) dispatched (vm.allta_update), busy_state=updating. reroll walks all non-_build snapshots. failure reasons: not_found_or_cross_dept / worker_unreachable", "default_severity": "WARNING"},
     {"action": "vm.passwd_changed", "description": "VM guest u password change dispatched (vm.passwd; same op as allta-update, password mandatory), busy_state=updating. failure reasons: not_found_or_cross_dept / worker_unreachable", "default_severity": "WARNING"},
+    {"action": "vm.prepared", "description": "VM management onboarding: (a) dispatch vm.prepare (permission/booking/lock gate) — server_service generates per-VM mgmt ssh key+password, encrypts and hands them to the worker with the image default creds; (b) worker callback POST /internal/vms/{id}/prepared sets is_managed + clears pending. failure reasons: rotation_pending / worker_reported_failure / worker_unreachable", "default_severity": "CRITICAL"},
+    {"action": "vm.creds_rotated", "description": "VM management credentials rotation dispatched (vm.prepare with operation=rotate_creds), busy_state=preparing. Generates fresh key+password, encrypts, hands plaintext to the worker to install. failure reasons: prepare_required / rotation_pending / worker_unreachable", "default_severity": "CRITICAL"},
+    {"action": "vm.mgmt_credentials_revealed", "description": "Decrypted per-VM management credentials (private key + password) revealed to worker via internal fetch GET /internal/vms/{id}/mgmt-credentials. WARNING: routine internal pull before a managed guest op, not a human reveal. failure reasons: vm_not_found / no_creds_stored / decrypt_failed / target_department_mismatch", "default_severity": "WARNING"},
+    {"action": "vm.net_updated", "description": "VM network mode change dispatched (vm.set_network: bridge static from a pool / nat via libvirt), busy_state=networking. bridge allocates or validates the IP against the pool. failure reasons: not_found_or_cross_dept / ip_in_use / pool_exhausted / worker_unreachable", "default_severity": "WARNING"},
+    {"action": "vm_ip_pool.created", "description": "VM IP pool created (IPAM, POST /vm-ip-pools). failure reasons: department_isolation / duplicate / invalid_range", "default_severity": "INFO"},
+    {"action": "vm_ip_pool.updated", "description": "VM IP pool updated (PATCH /vm-ip-pools/{id})", "default_severity": "INFO"},
+    {"action": "vm_ip_pool.deleted", "description": "VM IP pool deleted (DELETE /vm-ip-pools/{id})", "default_severity": "INFO"},
 ]
 
 

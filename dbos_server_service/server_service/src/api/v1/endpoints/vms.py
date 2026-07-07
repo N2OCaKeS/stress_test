@@ -15,6 +15,7 @@ from src.schemas.common import PaginatedResponse
 from src.schemas.vm import (
     VmAlltaUpdateRequest,
     VmAstraUpdateRequest,
+    VmAvailableIpsResponse,
     VmCreate,
     VmDiskCreate,
     VmDiskDispatchResponse,
@@ -22,6 +23,10 @@ from src.schemas.vm import (
     VmDiskResponse,
     VmImageRefreshResponse,
     VmImageResponse,
+    VmIpPoolCreate,
+    VmIpPoolResponse,
+    VmIpPoolUpdate,
+    VmNetworkRequest,
     VmPasswdRequest,
     VmPowerRequest,
     VmReserveRequest,
@@ -37,6 +42,7 @@ from src.schemas.vm import (
 )
 from src.services import vm as svc
 from src.services import vm_image_service as image_svc
+from src.services import vm_ip_pool as ip_pool_svc
 
 router = APIRouter(prefix="/vms")
 # prepare-vms-hub живёт под /servers/{id}; отдельный роутер, чтобы не тащить
@@ -44,6 +50,8 @@ router = APIRouter(prefix="/vms")
 router_servers = APIRouter(prefix="/servers/{server_id}")
 # Каталог боксов-образов ВМ (глобальный, зеркало FTP-конфига).
 router_images = APIRouter(prefix="/vm-images")
+# Пулы IP-адресов ВМ (IPAM, глобальный CRUD под правом vm.net_manage).
+router_ip_pools = APIRouter(prefix="/vm-ip-pools")
 
 
 @router.post(
@@ -167,6 +175,29 @@ async def get_vm_by_number(
     """GET /vms/by-number/{number}."""
     vm = await svc.get_vm_by_number(db, identity, number)
     return VmResponse.from_vm(vm)
+
+
+@router.get(
+    "/available-ips",
+    response_model=VmAvailableIpsResponse,
+    summary="Свободные IP пула (IPAM-аллокатор в режиме read)",
+    description=(
+        "Возвращает свободные адреса пула `pool_id` (диапазон за вычетом gateway "
+        "и занятых `vms.ip_address` отдела). Право `(vm, vm_net_manage)`."
+    ),
+    responses={
+        403: {"description": "Нет `vm_net_manage`."},
+        404: {"description": "VM_IP_POOL_NOT_FOUND / чужой отдел."},
+    },
+)
+async def list_available_ips(
+    identity: CurrentUserIdentity,
+    pool_id: str = Query(..., description="ID пула IP-адресов ВМ."),
+    db: AsyncSession = Depends(get_db),
+) -> VmAvailableIpsResponse:
+    """GET /vms/available-ips?pool_id=."""
+    data = await ip_pool_svc.available_ips(db, identity, pool_id)
+    return VmAvailableIpsResponse(**data)
 
 
 @router.get(
@@ -653,6 +684,99 @@ async def passwd_vm(
     return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
 
 
+# ── prepare / mgmt-креды / сеть ──────────────────────────────────────────────
+
+
+@router.post(
+    "/{vm_id}/prepare",
+    response_model=VmTaskDispatchResponse,
+    status_code=202,
+    summary="Онбординг управления ВМ (202, dispatch VM_PREPARE)",
+    description=(
+        "Гейтит право `(vm, vm_prepare)`, бронь и lifecycle-lock. server_service "
+        "генерит per-VM управляющую SSH-пару + пароль, шифрует и отдаёт их "
+        "воркеру вместе с дефолт-кредами образа (`u:1`); воркер ставит их в "
+        "госте и подтверждает callback'ом. Ставит busy_state=preparing."
+    ),
+    responses={
+        202: {"description": "Задача поставлена, busy_state=preparing."},
+        403: {"description": "Нет `vm_prepare`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / VM_MGMT_ROTATION_PENDING / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def prepare_vm(
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmTaskDispatchResponse:
+    """POST /vms/{id}/prepare."""
+    vm, task_id = await svc.prepare_vm(db, identity, request, vm_id)
+    return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
+
+
+@router.post(
+    "/{vm_id}/mgmt-creds/rotate",
+    response_model=VmTaskDispatchResponse,
+    status_code=202,
+    summary="Ротация per-VM управляющих кред (202, dispatch VM_PREPARE)",
+    description=(
+        "Гейтит право `(vm, vm_prepare)`, бронь и lifecycle-lock. ВМ обязана "
+        "быть prepared (`is_managed`), иначе 409 VM_PREPARE_REQUIRED. Генерит "
+        "новый управляющий материал, шифрует и отдаёт воркеру для установки. "
+        "409 VM_MGMT_ROTATION_PENDING, если предыдущая ротация не подтверждена."
+    ),
+    responses={
+        202: {"description": "Задача поставлена, busy_state=preparing."},
+        403: {"description": "Нет `vm_prepare`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / VM_PREPARE_REQUIRED / VM_MGMT_ROTATION_PENDING / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def rotate_vm_mgmt_creds(
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmTaskDispatchResponse:
+    """POST /vms/{id}/mgmt-creds/rotate."""
+    vm, task_id = await svc.rotate_mgmt_creds(db, identity, request, vm_id)
+    return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
+
+
+@router.post(
+    "/{vm_id}/network",
+    response_model=VmTaskDispatchResponse,
+    status_code=202,
+    summary="Сменить сетевой режим ВМ (202, dispatch VM_SET_NETWORK)",
+    description=(
+        "Гейтит право `(vm, vm_net_manage)`, бронь и lifecycle-lock. bridge: "
+        "адрес из `ip_address` (проверяется на занятость) либо аллоцируется из "
+        "`pool_id`; nat: адрес выдаёт libvirt. Ставит busy_state=networking."
+    ),
+    responses={
+        202: {"description": "Задача поставлена, busy_state=networking."},
+        403: {"description": "Нет `vm_net_manage`."},
+        404: {"description": "VM_NOT_FOUND / VM_IP_POOL_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / VM_IP_IN_USE / VM_IP_POOL_EXHAUSTED / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def set_vm_network(
+    vm_id: str,
+    body: VmNetworkRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmTaskDispatchResponse:
+    """POST /vms/{id}/network."""
+    vm, task_id = await svc.set_network(db, identity, request, vm_id, body)
+    return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
+
+
 # ── каталог боксов-образов ───────────────────────────────────────────────────
 
 
@@ -699,3 +823,110 @@ async def refresh_vm_images(
     """POST /vm-images/refresh."""
     data = await image_svc.refresh_catalog(db, identity)
     return VmImageRefreshResponse(**data)
+
+
+# ── IPAM: пулы IP-адресов ВМ ─────────────────────────────────────────────────
+
+
+@router_ip_pools.get(
+    "",
+    response_model=PaginatedResponse[VmIpPoolResponse],
+    summary="Список пулов IP-адресов ВМ своего отдела",
+    description="Гейтит право `(vm, vm_net_manage)`.",
+    responses={403: {"description": "Нет `vm_net_manage`."}},
+)
+async def list_ip_pools(
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedResponse[VmIpPoolResponse]:
+    """GET /vm-ip-pools."""
+    items, total = await ip_pool_svc.list_pools(db, identity, limit=limit, offset=offset)
+    return PaginatedResponse[VmIpPoolResponse](
+        items=[VmIpPoolResponse.model_validate(p) for p in items],
+        total=total, limit=limit, offset=offset,
+    )
+
+
+@router_ip_pools.post(
+    "",
+    response_model=VmIpPoolResponse,
+    status_code=201,
+    summary="Создать пул IP-адресов ВМ",
+    description="Гейтит право `(vm, vm_net_manage)`, изоляцию отдела, валидацию диапазона.",
+    responses={
+        403: {"description": "Нет `vm_net_manage` / DEPARTMENT_ISOLATION."},
+        409: {"description": "VM_IP_POOL_DUPLICATE."},
+        422: {"description": "VM_IP_POOL_INVALID — диапазон/gateway вне cidr либо start>end."},
+    },
+)
+async def create_ip_pool(
+    body: VmIpPoolCreate,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmIpPoolResponse:
+    """POST /vm-ip-pools."""
+    pool = await ip_pool_svc.create_pool(db, identity, request, body)
+    return VmIpPoolResponse.model_validate(pool)
+
+
+@router_ip_pools.get(
+    "/{pool_id}",
+    response_model=VmIpPoolResponse,
+    summary="Получить пул IP-адресов ВМ",
+    responses={
+        403: {"description": "Нет `vm_net_manage`."},
+        404: {"description": "VM_IP_POOL_NOT_FOUND / чужой отдел."},
+    },
+)
+async def get_ip_pool(
+    pool_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> VmIpPoolResponse:
+    """GET /vm-ip-pools/{id}."""
+    pool = await ip_pool_svc.get_pool(db, identity, pool_id)
+    return VmIpPoolResponse.model_validate(pool)
+
+
+@router_ip_pools.patch(
+    "/{pool_id}",
+    response_model=VmIpPoolResponse,
+    summary="Изменить пул IP-адресов ВМ (частично)",
+    responses={
+        403: {"description": "Нет `vm_net_manage`."},
+        404: {"description": "VM_IP_POOL_NOT_FOUND / чужой отдел."},
+        409: {"description": "VM_IP_POOL_DUPLICATE."},
+        422: {"description": "VM_IP_POOL_UPDATE_EMPTY / VM_IP_POOL_INVALID."},
+    },
+)
+async def update_ip_pool(
+    pool_id: str,
+    body: VmIpPoolUpdate,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmIpPoolResponse:
+    """PATCH /vm-ip-pools/{id}."""
+    pool = await ip_pool_svc.update_pool(db, identity, request, pool_id, body)
+    return VmIpPoolResponse.model_validate(pool)
+
+
+@router_ip_pools.delete(
+    "/{pool_id}",
+    status_code=204,
+    summary="Удалить пул IP-адресов ВМ",
+    responses={
+        403: {"description": "Нет `vm_net_manage`."},
+        404: {"description": "VM_IP_POOL_NOT_FOUND / чужой отдел."},
+    },
+)
+async def delete_ip_pool(
+    pool_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """DELETE /vm-ip-pools/{id}."""
+    await ip_pool_svc.delete_pool(db, identity, pool_id)

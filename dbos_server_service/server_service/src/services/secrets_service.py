@@ -198,6 +198,25 @@ def aad_for_vm_snapshot_ssh_key(snapshot_id: str) -> bytes:
     return f"vm_snapshot_ssh_key|vm_snapshots|{snapshot_id}".encode()
 
 
+def aad_for_vm_mgmt_ssh_key(vm_id: str) -> bytes:
+    """AAD для `vms.mgmt_ssh_private_key_encrypted` строки `vm_id`.
+
+    Формат — `"vm_mgmt_ssh_key|vms|<id>"`. Привязывает ciphertext к конкретной
+    ВМ; отдельный kind от mgmt-пароля, чтобы swap privkey↔password в одной
+    строке ловился InvalidTag'ом.
+    """
+    return f"vm_mgmt_ssh_key|vms|{vm_id}".encode()
+
+
+def aad_for_vm_mgmt_password(vm_id: str) -> bytes:
+    """AAD для `vms.mgmt_password_encrypted` строки `vm_id`.
+
+    Формат — `"vm_mgmt_password|vms|<id>"`. Привязывает ciphertext к
+    конкретной ВМ: swap между ВМ → InvalidTag.
+    """
+    return f"vm_mgmt_password|vms|{vm_id}".encode()
+
+
 def aad_for_ipmi_credential(controller_id: str) -> bytes:
     """AAD для `ipmi_controllers.password_encrypted` строки `controller_id`.
 
@@ -354,6 +373,8 @@ _ALLOWED_LAZY_TARGETS: frozenset[tuple[str, str]] = frozenset({
     ("ipmi_controllers", "password_encrypted"),
     ("servers", "mgmt_ssh_private_key_encrypted"),
     ("servers", "mgmt_password_encrypted"),
+    ("vms", "mgmt_ssh_private_key_encrypted"),
+    ("vms", "mgmt_password_encrypted"),
 })
 
 

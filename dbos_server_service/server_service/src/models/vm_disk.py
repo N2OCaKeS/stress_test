@@ -1,6 +1,6 @@
 """Модель VmDisk — диск виртуальной машины на hub-сервере.
 
-Диски живут отдельной таблицей (волна 2). Строку заводит create-эндпоинт со
+Диски живут отдельной таблицей. Строку заводит create-эндпоинт со
 `state=creating`; воркер создаёт qcow2 в пуле `/vms`, подключает его к домену
 (`attach-disk --persistent --targetbus virtio --serial <vm>_<disk>`) и пишет
 финальные факты (path/target_dev/serial/state) callback'ом. При удалении ВМ

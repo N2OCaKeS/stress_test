@@ -66,6 +66,7 @@ from src.schemas.server import (
 )
 from src.schemas.vm import (
     VmDisksCallbackRequest,
+    VmPreparedCallbackRequest,
     VmsHubStateCallbackRequest,
     VmSnapshotsCallbackRequest,
     VmStateCallbackRequest,
@@ -2497,5 +2498,179 @@ async def record_vm_snapshots(
         "ok": True, "vm_id": vm.id,
         "synced": created + updated, "created": created, "updated": updated,
     }
+
+
+async def fetch_vm_management_credentials(
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    target_department_id: str | None = None,
+) -> dict:
+    """Расшифровать и вернуть per-VM управляющие креды воркеру.
+
+    Зеркало `fetch_management_credentials` серверов: воркер just-in-time тянет
+    приватный ключ + пароль управляющего пользователя ВМ перед managed-операцией
+    по SSH в гость. Авторизация — тем же `(server, view_management_credentials)`,
+    что и у серверного fetch'а (VM-домен переиспользует серверные worker_bot-
+    гранты). Аудит: `vm.mgmt_credentials_revealed` (WARNING — штатный pull).
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.VIEW_MANAGEMENT_CREDENTIALS,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "vm.mgmt_credentials_revealed", target_id=vm_id, target_type="vm",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "caller_type": identity.subject_type},
+        )
+        raise
+    vm = await vm_repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            "vm.mgmt_credentials_revealed", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "vm_not_found"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    _check_target_department(
+        audit_action="vm.mgmt_credentials_revealed",
+        target_id=vm_id, target_type="vm",
+        server_department_id=vm.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        not_found_error_code="VM_NOT_FOUND",
+        not_found_message="VM not found",
+    )
+    if vm.mgmt_ssh_private_key_encrypted is None or vm.mgmt_password_encrypted is None:
+        audit_service.emit(
+            "vm.mgmt_credentials_revealed", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "no_creds_stored", "department_id": vm.department_id},
+        )
+        raise NotFoundError(
+            error_code="VM_MANAGEMENT_CREDS_NOT_FOUND",
+            message="VM has no stored management credentials (not prepared yet)",
+        )
+    try:
+        private_pem = secrets_service.decrypt(
+            vm.mgmt_ssh_private_key_encrypted,
+            aad=secrets_service.aad_for_vm_mgmt_ssh_key(vm.id),
+        )
+        password = secrets_service.decrypt(
+            vm.mgmt_password_encrypted,
+            aad=secrets_service.aad_for_vm_mgmt_password(vm.id),
+        )
+    except AppException:
+        metrics.increment_secrets_decrypt_failures()
+        audit_service.emit(
+            "vm.mgmt_credentials_revealed", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "decrypt_failed", "department_id": vm.department_id},
+        )
+        raise
+    audit_service.emit(
+        "vm.mgmt_credentials_revealed", target_id=vm_id, target_type="vm",
+        status="success", allowed=True,
+        details={
+            "department_id": vm.department_id,
+            "management_user": vm.mgmt_user,
+            "caller_type": identity.subject_type,
+        },
+    )
+    return {
+        "management_user": vm.mgmt_user,
+        "ssh_private_key": private_pem,
+        "password": password,
+    }
+
+
+async def record_vm_prepared(
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    payload: VmPreparedCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Callback воркера: per-VM управляющие креды установлены в госте (vm.prepare/ротация).
+
+    `prepared=True` → `is_managed=True`, `mgmt_creds_pending_apply=False`,
+    `mgmt_creds_rotated_at=now`, снят lifecycle-lock. `management_user` (если
+    прислан) пишется в модель. Опциональные plaintext-креды в payload'е
+    перезаписывают ciphertext под AAD ВМ (worker сообщает реально установленный
+    материал). `prepared=False` → флаги не трогаем, ошибку фиксируем в last_error.
+
+    Доступ: `(server, prepare_callback)`. Аудит: `vm.prepared` (CRITICAL).
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "vm.prepared", target_id=vm_id, target_type="vm",
+            status="denied", allowed=False, details={"reason": "permission_denied"},
+        )
+        raise
+    vm = await vm_repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            "vm.prepared", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "vm_not_found"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    _check_target_department(
+        audit_action="vm.prepared",
+        target_id=vm_id, target_type="vm",
+        server_department_id=vm.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        not_found_error_code="VM_NOT_FOUND",
+        not_found_message="VM not found",
+    )
+    if not payload.prepared:
+        vm.busy_state = None
+        vm.busy_since = None
+        vm.mgmt_creds_pending_apply = False
+        if payload.error is not None:
+            vm.last_error = payload.error
+        await db.commit()
+        audit_service.emit(
+            "vm.prepared", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "worker_reported_failure", "error": payload.error,
+                     "department_id": vm.department_id},
+        )
+        return {"ok": True, "vm_id": vm.id, "is_managed": vm.is_managed}
+
+    if payload.management_user is not None:
+        vm.mgmt_user = payload.management_user
+    if payload.mgmt_ssh_public_key is not None:
+        vm.mgmt_ssh_public_key = payload.mgmt_ssh_public_key
+    if payload.mgmt_password is not None:
+        vm.mgmt_password_encrypted = secrets_service.encrypt(
+            payload.mgmt_password, aad=secrets_service.aad_for_vm_mgmt_password(vm.id),
+        )
+    if payload.mgmt_ssh_private_key is not None:
+        vm.mgmt_ssh_private_key_encrypted = secrets_service.encrypt(
+            payload.mgmt_ssh_private_key,
+            aad=secrets_service.aad_for_vm_mgmt_ssh_key(vm.id),
+        )
+    vm.is_managed = True
+    vm.mgmt_creds_pending_apply = False
+    vm.mgmt_creds_rotated_at = datetime.now(timezone.utc)
+    vm.busy_state = None
+    vm.busy_since = None
+    await db.commit()
+    await db.refresh(vm)
+    audit_service.emit(
+        "vm.prepared", target_id=vm_id, target_type="vm",
+        status="success", allowed=True,
+        details={
+            "management_user": vm.mgmt_user,
+            "department_id": vm.department_id,
+            "caller_type": identity.subject_type,
+        },
+    )
+    return {"ok": True, "vm_id": vm.id, "is_managed": vm.is_managed}
 
 

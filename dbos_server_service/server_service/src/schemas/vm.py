@@ -208,7 +208,7 @@ class VmsHubPrepareResponse(BaseModel):
     status: str = Field(description="Статус: queued.")
 
 
-# ── снимки ВМ (волна 3) ──────────────────────────────────────────────────────
+# ── снимки ВМ ────────────────────────────────────────────────────────────────
 
 
 class VmSnapshotCreate(BaseModel):
@@ -273,6 +273,114 @@ class VmPasswdRequest(BaseModel):
 
     password: str = Field(..., min_length=1, description="Новый пароль гостевого `u`. Обязателен.")
     cred_strategy: VmCredStrategy | None = Field(default=None, description="Override стратегии кред на эту операцию (по умолчанию — cred_strategy ВМ).")
+
+
+# ── prepare / mgmt-creds / сеть ──────────────────────────────────────────────
+
+
+class VmNetworkRequest(BaseModel):
+    """Тело POST /vms/{id}/network — сменить сетевой режим ВМ (202 → VM_SET_NETWORK).
+
+    `network_mode` обязателен (bridge/nat). Для bridge можно задать конкретный
+    `ip_address` (проверяется на занятость) либо `pool_id` (адрес выбирается
+    аллокатором из пула). Для nat адрес выдаёт libvirt (domifaddr) — оба поля
+    опущены.
+    """
+
+    network_mode: VmNetworkMode = Field(..., description="bridge (static из пула) или nat (libvirt).")
+    ip_address: IPv4Address | IPv6Address | None = Field(default=None, description="Конкретный статический IP для bridge (проверяется на занятость). Опционален.")
+    pool_id: str | None = Field(default=None, description="Пул для авто-выбора свободного IP (bridge, если ip_address не задан).")
+
+
+class VmMgmtCredentialsResponse(BaseModel):
+    """Ответ GET /internal/vms/{id}/mgmt-credentials — per-VM управляющие креды worker'у."""
+
+    management_user: str | None = Field(description="Имя управляющего пользователя ВМ. None — ВМ ещё не prepared.")
+    ssh_private_key: str = Field(description="Расшифрованный приватный SSH-ключ управляющего пользователя (PEM, только worker'у).")
+    password: str = Field(description="Расшифрованный пароль управляющего пользователя (plaintext, только worker'у).")
+
+
+class VmPreparedCallbackRequest(BaseModel):
+    """Тело POST /internal/vms/{id}/prepared — worker подтверждает онбординг ВМ.
+
+    После установки per-VM управляющих кред в госте (vm.prepare/ротация) воркер
+    зовёт этот callback. `management_user` — имя заведённого пользователя.
+    Опциональные креды (`mgmt_*` plaintext) дают воркеру перезаписать реально
+    установленный материал — server_service шифрует их под AAD ВМ; если не
+    присланы, остаётся ciphertext, записанный при dispatch'е.
+    """
+
+    prepared: bool = Field(default=True, description="True — управляющие креды установлены в госте; False — prepare упал.")
+    management_user: str | None = Field(default=None, max_length=64, description="Имя управляющего пользователя ВМ (заведён в госте).")
+    mgmt_password: str | None = Field(default=None, description="Реально установленный пароль (plaintext; server_service шифрует). Опционально.")
+    mgmt_ssh_public_key: str | None = Field(default=None, description="Публичный ключ управляющего пользователя (plaintext). Опционально.")
+    mgmt_ssh_private_key: str | None = Field(default=None, description="Приватный ключ управляющего пользователя (plaintext; server_service шифрует). Опционально.")
+    error: str | None = Field(default=None, max_length=1024, description="Текст ошибки (для prepared=False).")
+
+
+class VmPreparedCallbackResponse(BaseModel):
+    """Подтверждение записи prepared-callback'а ВМ."""
+
+    ok: bool = True
+    vm_id: str = Field(description="ID ВМ.")
+    is_managed: bool = Field(description="Текущее значение флага управляемости ВМ.")
+
+
+# ── IPAM: пулы IP-адресов ВМ ─────────────────────────────────────────────────
+
+
+class VmIpPoolCreate(BaseModel):
+    """Тело POST /vm-ip-pools — создать пул IP-адресов bridge-ВМ."""
+
+    name: str = Field(..., min_length=1, max_length=255, description="Имя пула (уникально в пределах отдела).")
+    department_id: str = Field(..., description="Department-владелец пула. Должен совпадать с department'ом caller'а.")
+    cidr: str = Field(..., min_length=1, max_length=64, description="Подсеть пула (10.177.103.0/24).")
+    gateway: IPv4Address | IPv6Address | None = Field(default=None, description="Шлюз по умолчанию для гостя.")
+    netmask: str | None = Field(default=None, max_length=64, description="Маска подсети (255.255.255.0), опционально.")
+    dns: list[str] = Field(default_factory=list, description="DNS-серверы для провижна статики в госте.")
+    range_start: IPv4Address | IPv6Address = Field(..., description="Первый адрес диапазона выдачи (включительно).")
+    range_end: IPv4Address | IPv6Address = Field(..., description="Последний адрес диапазона выдачи (включительно).")
+    server_id: str | None = Field(default=None, description="Override на конкретный hub-сервер (None — пул отдельский).")
+
+
+class VmIpPoolUpdate(BaseModel):
+    """Тело PATCH /vm-ip-pools/{id} — частичное изменение пула (только присланные поля)."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    cidr: str | None = Field(default=None, min_length=1, max_length=64)
+    gateway: IPv4Address | IPv6Address | None = Field(default=None)
+    netmask: str | None = Field(default=None, max_length=64)
+    dns: list[str] | None = Field(default=None)
+    range_start: IPv4Address | IPv6Address | None = Field(default=None)
+    range_end: IPv4Address | IPv6Address | None = Field(default=None)
+    server_id: str | None = Field(default=None)
+
+
+class VmIpPoolResponse(BaseModel):
+    """Карточка пула IP-адресов ВМ."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(description="Pool ID (prefix pool_).")
+    name: str = Field(description="Имя пула.")
+    department_id: str = Field(description="Department-владелец.")
+    cidr: str = Field(description="Подсеть пула.")
+    gateway: IPv4Address | IPv6Address | None = Field(default=None, description="Шлюз.")
+    netmask: str | None = Field(default=None, description="Маска подсети.")
+    dns: list[str] = Field(default_factory=list, description="DNS-серверы.")
+    range_start: IPv4Address | IPv6Address = Field(description="Первый адрес диапазона.")
+    range_end: IPv4Address | IPv6Address = Field(description="Последний адрес диапазона.")
+    server_id: str | None = Field(default=None, description="Override на hub-сервер (или None).")
+    created_at: datetime = Field(description="Когда пул создан.")
+    updated_at: datetime = Field(description="Когда пул изменён в последний раз.")
+
+
+class VmAvailableIpsResponse(BaseModel):
+    """Ответ GET /vms/available-ips — свободные адреса пула."""
+
+    pool_id: str = Field(description="ID пула.")
+    available: list[str] = Field(default_factory=list, description="Свободные IP из диапазона (за вычетом занятых).")
+    total_free: int = Field(description="Сколько адресов свободно всего (может превышать длину available из-за cap'а).")
 
 
 # ── Internal callbacks (worker → server_service) ────────────────────────────

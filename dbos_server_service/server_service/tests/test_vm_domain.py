@@ -17,6 +17,24 @@ from tests._helpers import assert_error, auth_hdr as _hdr, make_dispatch_capture
 BASE = "/api/server/v1"
 
 
+def _capture_dispatch_stash(monkeypatch) -> dict[str, dict]:
+    """Перехватить `store_dispatch_creds` — вернуть `{stash_key: creds-dict}`.
+
+    Управляющий материал ВМ (prepare/rotate) уходит воркеру ссылкой на
+    Redis-stash; хелпер ловит plaintext-словарь до шифрования, чтобы тест мог
+    проверить его состав.
+    """
+    import src.services.worker_client as worker_mod
+
+    stashed: dict[str, dict] = {}
+
+    async def fake_store(stash_key, creds):
+        stashed[stash_key] = creds
+
+    monkeypatch.setattr(worker_mod, "store_dispatch_creds", fake_store)
+    return stashed
+
+
 @pytest_asyncio.fixture
 async def make_hub(db):
     """Сервер-hub в dep_a: is_managed + is_vms_hub + virtualization + ёмкость."""
@@ -75,6 +93,11 @@ async def make_vm(db):
         number: int | None = None, status: str = "free",
         cpu: int = 4, ram_mb: int = 8192, disk_gb: int = 100,
         busy_state: str | None = None,
+        is_managed: bool = False,
+        mgmt_creds_pending_apply: bool = False,
+        mgmt_user: str | None = None,
+        ip_address: str | None = None,
+        network_mode: str = "bridge",
     ) -> Vm:
         vm = Vm(
             id=new_id(),
@@ -85,6 +108,11 @@ async def make_vm(db):
             status=status,
             cpu=cpu, ram_mb=ram_mb, disk_gb=disk_gb,
             busy_state=busy_state,
+            is_managed=is_managed,
+            mgmt_creds_pending_apply=mgmt_creds_pending_apply,
+            mgmt_user=mgmt_user,
+            ip_address=ip_address,
+            network_mode=network_mode,
         )
         db.add(vm)
         await db.flush()
@@ -1072,3 +1100,381 @@ async def test_snapshots_callback_creates_and_encrypts(
         aad=secrets_service.aad_for_vm_snapshot_password(ver.id),
     )
     assert plain == "clientpw"
+
+
+# ── волна 4: vm.prepare + per-VM mgmt-креды ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_prepare_dispatches_vm_prepare(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    stashed = _capture_dispatch_stash(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, ip_address="10.20.30.40")
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/prepare", headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[-1]["task_kind"] == "vm.prepare"
+    assert calls[-1]["target_server_id"] == hub.id
+    p = calls[-1]["payload"]
+    assert p["vm_id"] == vm.id
+    assert p["operation"] == "prepare"
+    assert p["guest_ip"] == "10.20.30.40"
+    assert p["image_user"] == "u"
+    assert p["image_password"] == "1"
+    # Управляющий материал уходит через Redis-stash, не plaintext'ом в payload.
+    assert "mgmt_ssh_public_key" not in p
+    assert "mgmt_ssh_private_key" not in p
+    assert "mgmt_password" not in p
+    stash_key = p["creds_stash_key"]
+    assert stash_key.startswith("dbos:dispatch_creds:")
+    creds = stashed[stash_key]
+    assert creds["management_user"] == "dbos"
+    assert creds["public_key"]
+    assert creds["private_key"]
+    assert creds["password"]
+
+    resp = await client.get(f"{BASE}/vms/{vm.id}", headers=_hdr(admin_role_token_a))
+    assert resp.json()["busy_state"] == "preparing"
+
+
+@pytest.mark.asyncio
+async def test_prepare_requires_grant(
+    client, guest_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.post(f"{BASE}/vms/{vm.id}/prepare", headers=_hdr(guest_token_a))
+    assert_error(resp, 403, "PERMISSION_DENIED")
+
+
+@pytest.mark.asyncio
+async def test_prepare_rotation_pending_conflict(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, mgmt_creds_pending_apply=True)
+    resp = await client.post(f"{BASE}/vms/{vm.id}/prepare", headers=_hdr(admin_role_token_a))
+    assert_error(resp, 409, "VM_MGMT_ROTATION_PENDING")
+
+
+@pytest.mark.asyncio
+async def test_prepare_then_internal_fetch_mgmt_creds(
+    client, admin_role_token_a, worker_bot_token_a, make_hub, make_vm, monkeypatch,
+):
+    # prepare шифрует и кладёт креды → internal fetch отдаёт их расшифрованными.
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.post(f"{BASE}/vms/{vm.id}/prepare", headers=_hdr(admin_role_token_a))
+    assert resp.status_code == 202, resp.text
+
+    resp = await client.get(
+        f"{BASE}/internal/vms/{vm.id}/mgmt-credentials",
+        headers=_hdr(worker_bot_token_a, dept="dep_a"),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["ssh_private_key"]
+    assert body["password"]
+
+
+@pytest.mark.asyncio
+async def test_internal_fetch_mgmt_creds_requires_dept_header(
+    client, worker_bot_token_a, make_hub, make_vm,
+):
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.get(
+        f"{BASE}/internal/vms/{vm.id}/mgmt-credentials",
+        headers=_hdr(worker_bot_token_a),  # без X-Target-Department-Id
+    )
+    assert_error(resp, 403, "TARGET_DEPARTMENT_HEADER_REQUIRED")
+
+
+@pytest.mark.asyncio
+async def test_internal_fetch_mgmt_creds_not_prepared(
+    client, worker_bot_token_a, make_hub, make_vm,
+):
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)  # без prepare — кред нет
+    resp = await client.get(
+        f"{BASE}/internal/vms/{vm.id}/mgmt-credentials",
+        headers=_hdr(worker_bot_token_a, dept="dep_a"),
+    )
+    assert_error(resp, 404, "VM_MANAGEMENT_CREDS_NOT_FOUND")
+
+
+@pytest.mark.asyncio
+async def test_prepared_callback_sets_managed(
+    client, admin_role_token_a, worker_bot_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    await client.post(f"{BASE}/vms/{vm.id}/prepare", headers=_hdr(admin_role_token_a))
+
+    resp = await client.post(
+        f"{BASE}/internal/vms/{vm.id}/prepared",
+        json={"prepared": True, "management_user": "dbos"},
+        headers=_hdr(worker_bot_token_a, dept="dep_a"),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["is_managed"] is True
+
+    resp = await client.get(f"{BASE}/vms/{vm.id}", headers=_hdr(admin_role_token_a))
+    assert resp.json()["busy_state"] is None
+    # management_user виден воркеру через fetch
+    resp = await client.get(
+        f"{BASE}/internal/vms/{vm.id}/mgmt-credentials",
+        headers=_hdr(worker_bot_token_a, dept="dep_a"),
+    )
+    assert resp.json()["management_user"] == "dbos"
+
+
+# ── волна 4: ротация mgmt-кред ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_rotate_requires_managed(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, is_managed=False)
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/mgmt-creds/rotate", headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 409, "VM_PREPARE_REQUIRED")
+
+
+@pytest.mark.asyncio
+async def test_rotate_dispatches(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    stashed = _capture_dispatch_stash(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, is_managed=True, mgmt_user="dbos")
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/mgmt-creds/rotate", headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[-1]["task_kind"] == "vm.prepare"
+    p = calls[-1]["payload"]
+    assert p["operation"] == "rotate_creds"
+    # Управляющий материал — только ссылкой на stash, plaintext'а в payload нет.
+    assert "mgmt_ssh_public_key" not in p
+    assert "mgmt_ssh_private_key" not in p
+    assert "mgmt_password" not in p
+    creds = stashed[p["creds_stash_key"]]
+    assert creds["management_user"] == "dbos"
+    assert creds["public_key"]
+    assert creds["private_key"]
+    assert creds["password"]
+
+    resp = await client.get(f"{BASE}/vms/{vm.id}", headers=_hdr(admin_role_token_a))
+    assert resp.json()["busy_state"] == "preparing"
+
+
+@pytest.mark.asyncio
+async def test_rotate_pending_conflict(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, is_managed=True, mgmt_creds_pending_apply=True)
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/mgmt-creds/rotate", headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 409, "VM_MGMT_ROTATION_PENDING")
+
+
+# ── волна 4: IPAM (пулы + аллокатор + available-ips) ─────────────────────────
+
+
+def _pool_body(**over) -> dict:
+    body = {
+        "name": f"pool-{uuid.uuid4().hex[:6]}",
+        "department_id": "dep_a",
+        "cidr": "10.50.0.0/24",
+        "gateway": "10.50.0.1",
+        "netmask": "255.255.255.0",
+        "dns": ["10.50.0.53"],
+        "range_start": "10.50.0.10",
+        "range_end": "10.50.0.12",
+    }
+    body.update(over)
+    return body
+
+
+@pytest.mark.asyncio
+async def test_ip_pool_crud(client, admin_role_token_a):
+    resp = await client.post(
+        f"{BASE}/vm-ip-pools", json=_pool_body(name="lan-a"),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 201, resp.text
+    pid = resp.json()["id"]
+    assert pid.startswith("pool_")
+
+    resp = await client.get(f"{BASE}/vm-ip-pools", headers=_hdr(admin_role_token_a))
+    assert resp.status_code == 200
+    assert any(p["id"] == pid for p in resp.json()["items"])
+
+    resp = await client.get(f"{BASE}/vm-ip-pools/{pid}", headers=_hdr(admin_role_token_a))
+    assert resp.json()["name"] == "lan-a"
+
+    resp = await client.patch(
+        f"{BASE}/vm-ip-pools/{pid}", json={"range_end": "10.50.0.20"},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["range_end"] == "10.50.0.20"
+
+    resp = await client.delete(f"{BASE}/vm-ip-pools/{pid}", headers=_hdr(admin_role_token_a))
+    assert resp.status_code == 204
+    resp = await client.get(f"{BASE}/vm-ip-pools/{pid}", headers=_hdr(admin_role_token_a))
+    assert_error(resp, 404, "VM_IP_POOL_NOT_FOUND")
+
+
+@pytest.mark.asyncio
+async def test_ip_pool_invalid_range(client, admin_role_token_a):
+    resp = await client.post(
+        f"{BASE}/vm-ip-pools", json=_pool_body(range_start="10.99.0.10", range_end="10.99.0.20"),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 422, "VM_IP_POOL_INVALID")
+
+
+@pytest.mark.asyncio
+async def test_ip_pool_requires_net_manage(client, guest_token_a):
+    resp = await client.post(
+        f"{BASE}/vm-ip-pools", json=_pool_body(), headers=_hdr(guest_token_a),
+    )
+    assert_error(resp, 403, "PERMISSION_DENIED")
+
+
+@pytest.mark.asyncio
+async def test_available_ips_excludes_used_and_gateway(
+    client, admin_role_token_a, make_hub, make_vm,
+):
+    hub = await make_hub()
+    # .11 занят ВМ; .1 (gateway) исключён; диапазон .10-.12 → свободны .10,.12
+    await make_vm(hub=hub, ip_address="10.50.0.11")
+    resp = await client.post(
+        f"{BASE}/vm-ip-pools", json=_pool_body(name="alloc"),
+        headers=_hdr(admin_role_token_a),
+    )
+    pid = resp.json()["id"]
+
+    resp = await client.get(
+        f"{BASE}/vms/available-ips?pool_id={pid}", headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["available"] == ["10.50.0.10", "10.50.0.12"]
+    assert body["total_free"] == 2
+
+
+# ── волна 4: смена сети ───────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_set_network_bridge_ip(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/network",
+        json={"network_mode": "bridge", "ip_address": "10.50.0.77"},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[-1]["task_kind"] == "vm.set_network"
+    assert calls[-1]["payload"]["network_mode"] == "bridge"
+    assert calls[-1]["payload"]["ip_address"] == "10.50.0.77"
+
+    resp = await client.get(f"{BASE}/vms/{vm.id}", headers=_hdr(admin_role_token_a))
+    assert resp.json()["busy_state"] == "networking"
+    assert resp.json()["ip_address"] == "10.50.0.77"
+
+
+@pytest.mark.asyncio
+async def test_set_network_ip_in_use(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    await make_vm(hub=hub, ip_address="10.50.0.80")
+    vm = await make_vm(hub=hub)
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/network",
+        json={"network_mode": "bridge", "ip_address": "10.50.0.80"},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 409, "VM_IP_IN_USE")
+
+
+@pytest.mark.asyncio
+async def test_set_network_nat_clears_ip(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, ip_address="10.50.0.90")
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/network", json={"network_mode": "nat"},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[-1]["payload"]["network_mode"] == "nat"
+    assert calls[-1]["payload"]["ip_address"] is None
+
+    resp = await client.get(f"{BASE}/vms/{vm.id}", headers=_hdr(admin_role_token_a))
+    assert resp.json()["ip_address"] is None
+    assert resp.json()["network_mode"] == "nat"
+
+
+@pytest.mark.asyncio
+async def test_set_network_from_pool_allocates(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.post(
+        f"{BASE}/vm-ip-pools", json=_pool_body(name="netpool"),
+        headers=_hdr(admin_role_token_a),
+    )
+    pid = resp.json()["id"]
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/network",
+        json={"network_mode": "bridge", "pool_id": pid},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    # первый свободный из .10-.12 (gateway .1 не в диапазоне) = .10
+    assert calls[-1]["payload"]["ip_address"] == "10.50.0.10"
+    assert calls[-1]["payload"]["gateway"] == "10.50.0.1"
+
+
+@pytest.mark.asyncio
+async def test_set_network_requires_net_manage(
+    client, guest_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/network", json={"network_mode": "nat"},
+        headers=_hdr(guest_token_a),
+    )
+    assert_error(resp, 403, "PERMISSION_DENIED")

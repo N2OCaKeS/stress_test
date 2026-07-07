@@ -72,6 +72,9 @@ from src.schemas.server import (
 from src.schemas.vm import (
     VmDisksCallbackRequest,
     VmDisksCallbackResponse,
+    VmMgmtCredentialsResponse,
+    VmPreparedCallbackRequest,
+    VmPreparedCallbackResponse,
     VmsHubStateCallbackRequest,
     VmsHubStateCallbackResponse,
     VmSnapshotsCallbackRequest,
@@ -583,6 +586,66 @@ async def record_vm_snapshots(
         target_department_id=x_target_department_id,
     )
     return VmSnapshotsCallbackResponse(**data)
+
+
+@router.get(
+    "/vms/{vm_id}/mgmt-credentials",
+    response_model=VmMgmtCredentialsResponse,
+    responses={**_INTERNAL_RESPONSES_BASE,
+               404: {"description": "VM_NOT_FOUND / VM_MANAGEMENT_CREDS_NOT_FOUND (ВМ не prepared)."},
+               422: {"description": "DECRYPT_FAILED — сломанный/неаутентичный ciphertext."},
+               500: {"description": "ENCRYPTION_KEY_MISSING."}},
+)
+async def get_vm_management_credentials(
+    vm_id: str,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> VmMgmtCredentialsResponse:
+    """Отдать расшифрованные per-VM управляющие креды воркеру (зеркало серверных).
+
+    Читает `vms.mgmt_ssh_private_key_encrypted` + `mgmt_password_encrypted`,
+    расшифровывает и возвращает `{management_user, ssh_private_key, password}`.
+
+    Доступ: `(server, *, view_management_credentials)` — тот же worker_bot-грант,
+    что и у серверного mgmt-fetch'а (VM-домен переиспользует серверные гранты).
+
+    Аудит: `vm.mgmt_credentials_revealed` (WARNING на success).
+    """
+    data = await internal_service.fetch_vm_management_credentials(
+        db, identity, vm_id,
+        target_department_id=x_target_department_id,
+    )
+    return VmMgmtCredentialsResponse(**data)
+
+
+@router.post(
+    "/vms/{vm_id}/prepared",
+    response_model=VmPreparedCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def record_vm_prepared(
+    vm_id: str,
+    body: VmPreparedCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> VmPreparedCallbackResponse:
+    """Worker подтверждает, что per-VM управляющие креды установлены в госте.
+
+    `prepared=True` → `is_managed=True`, `mgmt_creds_pending_apply=False`,
+    `mgmt_creds_rotated_at=now`, снят lifecycle-lock. Опциональные plaintext-
+    креды перезаписывают ciphertext под AAD ВМ.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `vm.prepared` (CRITICAL).
+    """
+    data = await internal_service.record_vm_prepared(
+        db, identity, vm_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return VmPreparedCallbackResponse(**data)
 
 
 @router.post(

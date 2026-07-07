@@ -1,6 +1,6 @@
 """vm domain (vms table) + server number/virtualization/vms-hub columns
 
-Волна 1 VM-менеджера: таблица `vms` (карточка ВМ на hub-сервере), новые
+Базовый слой VM-менеджера: таблица `vms` (карточка ВМ на hub-сервере), новые
 колонки серверов (`number`, `virtualization`, `is_vms_hub`,
 `vms_hub_prepared_at`) и seed прав зоны `vm` (admin — всё, guest — view).
 

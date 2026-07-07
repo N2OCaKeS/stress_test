@@ -78,6 +78,11 @@ def vm_snapshot_id() -> str:
     return _new_id("snp_")
 
 
+def vm_ip_pool_id() -> str:
+    """`pool_<uuid>` — для таблицы vm_ip_pool (пулы IP-адресов ВМ, IPAM)."""
+    return _new_id("pool_")
+
+
 def task_id() -> str:
     """`tsk_<uuid>` — для строк worker-БД `dev_server_worker.tasks`.
 

@@ -253,7 +253,7 @@ class Action(StrEnum):
     VM_RESERVE = "vm_reserve"
     # Снять бронь ВМ (status → free).
     VM_RELEASE = "vm_release"
-    # Задел на следующие волны (диски/снимки/prepare/обновления/сеть/пресеты).
+    # Диски/снимки/prepare/обновления/сеть/пресеты.
     VM_DISK_MANAGE = "vm_disk_manage"
     VM_SNAPSHOT_MANAGE = "vm_snapshot_manage"
     VM_PREPARE = "vm_prepare"
@@ -325,8 +325,8 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.VIEW,
         Action.CANCEL,
     }),
-    # VM-зона: CRUD-минимум + питание/бронь + подготовка hub'а. Остальные
-    # (диски/снимки/обновления/сеть/пресеты) — задел под следующие волны.
+    # VM-зона: CRUD-минимум + питание/бронь + подготовка hub'а, плюс
+    # диски/снимки/обновления/сеть/пресеты.
     EntityType.VM: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
         Action.VMS_HUB_PREPARE,
@@ -495,6 +495,12 @@ class VmBusyState(StrEnum):
     POWERING = "powering"
     SNAPSHOTTING = "snapshotting"
     REVERTING = "reverting"
+    # Онбординг управления ВМ (vm.prepare / ротация mgmt-кред): установка новой
+    # SSH-пары и пароля управляющего пользователя внутри гостя по SSH.
+    PREPARING = "preparing"
+    # Смена сетевого режима ВМ (bridge↔nat, статик из пула): правка XML домена
+    # и провижн статики в госте.
+    NETWORKING = "networking"
 
 
 # Бронь ВМ: свободная и служебные статусы под тест. Любое другое значение —
@@ -532,6 +538,13 @@ class VmTaskKind(StrEnum):
     VM_ASTRA_UPDATE = "vm.astra_update"
     VM_ALLTA_UPDATE = "vm.allta_update"
     VM_PASSWD = "vm.passwd"
+    # Онбординг управления ВМ: SSH на гость под дефолт-кредами образа (`u:1`),
+    # установка per-VM управляющей SSH-пары + пароля, удаление базовой учётки.
+    # Тот же kind обслуживает и ротацию mgmt-кред (payload несёт `operation`).
+    VM_PREPARE = "vm.prepare"
+    # Смена сетевого режима ВМ: NAT (libvirt, IP через domifaddr) ↔ bridge
+    # (br0, статический IP из пула — провижн статики в госте + правка XML).
+    VM_SET_NETWORK = "vm.set_network"
 
 
 # Действия питания ВМ, принимаемые `POST /vms/{id}/power`. Едут в payload

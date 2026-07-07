@@ -40,5 +40,8 @@ class CephStorageCreate():
             status = self.check_ceph_mounted()
         else:
             status = False
-
+        
+        print(f"*****STATUS = {status}*****")
+        with open("ceph_storage_status.txt", "w") as f:
+            f.write(str(status))
         return status

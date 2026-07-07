@@ -10,6 +10,10 @@ from libs.libtable import ReportFIO
 from libs.zefir import UploaderZC
 
 
+class CephMountError(Exception):
+    """Ceph не примонтирован в /mnt на тестовой ВМ."""
+
+
 class Ceph:
 
     restore_snapshot = 'virsh --connect qemu:///system snapshot-revert {host} {snapshot}'
@@ -132,7 +136,10 @@ class Ceph:
         storage = CephStorageCreate(astra_version=self.vbox, 
                                     HOSTS=self.HOSTS,
                                     type_interface_ceph=self.type_interface_ceph)
-        storage.create_storage()
+        status = storage.create_storage()
+        if status == False:
+            self.uzs.upload_test_cycle_status(zefir_status='fail')
+            raise CephMountError("Ceph не примонтирован в /mnt на testvm1")
         
         if self.type_load_test == "fio":
             send_remote_command(command=f"cd /var/tmp && sudo python3 cfs_test_ceph_fio.py -abv {self.vbox}",

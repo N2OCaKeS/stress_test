@@ -53,6 +53,16 @@ VMS_BRIDGE = "br0"
 VMS_DEFAULT_POOL_PATH = "/vms"
 VMS_POOL_NAME = "vms"
 
+# Отдельный dir-pool под дополнительные (data) диски ВМ: `<pool>/additional_disk`.
+# Держим их вне основного пула боксов, чтобы `pool-refresh` каталога образов не
+# подхватывал per-VM qcow2 дисков.
+VMS_ADDITIONAL_POOL_NAME = "additional"
+VMS_ADDITIONAL_POOL_DIR = "additional_disk"
+
+# Каталог образов на FTP: имя бокса → url `.tar.gz`. Воркер тянет его как
+# страховку, если server_service не положил `box_url` в payload `vm.create`.
+VMS_BOX_CATALOG_URL = f"{VMS_FTP_BOXES_URL}/test-box-config.json"
+
 
 class TaskKind(StrEnum):
     """Поддерживаемые типы task'ов. Значения совпадают с taskiq broker labels.
@@ -99,6 +109,10 @@ class TaskKind(StrEnum):
     VMS_HUB_PREPARE = "vms_hub.prepare"
     VM_CREATE = "vm.create"
     VM_POWER = "vm.power"
+    VM_UPDATE = "vm.update"
+    VM_DISK_ATTACH = "vm.disk_attach"
+    VM_DISK_DELETE = "vm.disk_delete"
+    VM_DISK_RESIZE = "vm.disk_resize"
 
 
 class TaskStatus(StrEnum):

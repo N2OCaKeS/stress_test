@@ -511,6 +511,7 @@ async def submit_vm_state(
     ip_address: str | None = None,
     status: str | None = None,
     busy_state: str | None = None,
+    clear_busy_state: bool = False,
     snapshots: list[str] | None = None,
     error: str | None = None,
 ) -> dict:
@@ -524,6 +525,9 @@ async def submit_vm_state(
 
     Все поля опциональны: `vm.power` шлёт лишь `power_state`, `vm.create` —
     полный набор. `None`-поля server_service трактует как «не менять».
+    `clear_busy_state=True` снимает lifecycle-lock (busy_state→NULL) — так
+    `vm.update` завершает операцию (server_service выставлял `updating` на
+    dispatch'е).
 
     Возвращает: тело `POST /api/server/v1/internal/vms/{vm_id}/state`.
 
@@ -540,6 +544,8 @@ async def submit_vm_state(
         body["status"] = status
     if busy_state is not None:
         body["busy_state"] = busy_state
+    if clear_busy_state:
+        body["clear_busy_state"] = True
     if snapshots is not None:
         body["snapshots"] = snapshots
     if error is not None:
@@ -551,6 +557,53 @@ async def submit_vm_state(
         target_department_id=target_department_id,
         json=body,
         details={"vm_id": vm_id},
+        allow_empty_body=True,
+    )
+
+
+async def submit_vm_disk_state(
+    vm_id: str,
+    disk_id: str,
+    state: str,
+    target_department_id: str | None = None,
+    *,
+    target_dev: str | None = None,
+    path: str | None = None,
+    serial: str | None = None,
+    size_gb: int | None = None,
+    error: str | None = None,
+) -> dict:
+    """Отдать server_service состояние диска ВМ (финал disk-тасок).
+
+    По этому callback'у server_service обновляет строку `vm_disks`: `state`
+    (`ready`/`deleted`/`error`) и по факту привязки — `target_dev`, `path`,
+    `serial`, `size_gb`. `attach` шлёт полный набор атрибутов созданного диска,
+    `resize` — новый `size_gb`, `delete` — `state='deleted'`, ошибка любой из
+    них — `state='error'` + `error`. `None`-поля трактуются как «не менять».
+
+    Возвращает: тело
+    `POST /api/server/v1/internal/vms/{vm_id}/disks` (батч-синк по `disk_id`).
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `VM_DISK_STATE_REJECTED` — server_service вернул не 2xx.
+    """
+    disk: dict = {"disk_id": disk_id, "state": state}
+    if target_dev is not None:
+        disk["target_dev"] = target_dev
+    if path is not None:
+        disk["path"] = path
+    if serial is not None:
+        disk["serial"] = serial
+    if size_gb is not None:
+        disk["size_gb"] = size_gb
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/vms/{vm_id}/disks",
+        reject_code="VM_DISK_STATE_REJECTED",
+        target_department_id=target_department_id,
+        json={"disks": [disk]},
+        details={"vm_id": vm_id, "disk_id": disk_id},
         allow_empty_body=True,
     )
 

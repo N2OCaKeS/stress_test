@@ -62,6 +62,10 @@ SERVICE_EVENTS = [
     {"action": "vms_hub.prepare", "description": "Подготовка сервера как VMS-hub по SSH: libvirt + мост br0 + storage-pool + образы", "default_severity": "CRITICAL"},
     {"action": "vm.create", "description": "Создание ВМ на hub'е по SSH: клон диска + virt-install + провижн + снимки", "default_severity": "CRITICAL"},
     {"action": "vm.power", "description": "Управление питанием ВМ на hub'е по SSH (virsh start/shutdown/reboot/reset/destroy)", "default_severity": "WARNING"},
+    {"action": "vm.update", "description": "Изменение cpu/ram ВМ по SSH: dumpxml + правка vcpu/memory + virsh define", "default_severity": "WARNING"},
+    {"action": "vm.disk_attach", "description": "Подключение диска к ВМ по SSH: qemu-img create + virsh attach-disk (опц. mkfs+fstab в госте)", "default_severity": "WARNING"},
+    {"action": "vm.disk_delete", "description": "Отключение и удаление диска ВМ по SSH: virsh detach-disk + rm qcow2", "default_severity": "WARNING"},
+    {"action": "vm.disk_resize", "description": "Увеличение диска ВМ по SSH: qemu-img resize + growpart/resize2fs в госте", "default_severity": "WARNING"},
     # Управляющая учётка — tasks/management_user.py, tasks/management_creds.py
     {"action": "management_user.sync", "description": "Недеструктивный re-bootstrap управляющей учётки на хосте", "default_severity": "INFO"},
     {"action": "server.management_creds_rotated", "description": "Ротация per-server управляющих кредов применена на хосте + callback", "default_severity": "CRITICAL"},

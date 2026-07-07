@@ -46,6 +46,8 @@ from src.tasks._vms_helpers import (
     open_hub_session,
     parse_domifaddr,
     positive_int,
+    resolve_box_url,
+    run_hub_cmd,
     validate_ip,
     validate_iface,
     validate_name,
@@ -78,28 +80,8 @@ AUDIT_SAFE_FIELDS_CREATE: set[str] = {
 AUDIT_SAFE_FIELDS_POWER: set[str] = {"vm_id", "vm_name", "action", "power_state"}
 
 
-async def _run(
-    ssh, cmd: str, host: str, error_code: str, message: str,
-    *, ok: tuple[int, ...] = (0,),
-) -> tuple[int, str, str]:
-    """Выполнить команду на hub'е под sudo; поднять SshError на non-zero.
-
-    Все hub-команды идут под sudo (NOPASSWD управляющей учётки) — virsh
-    работает с `qemu:///system`, файловые операции в пуле — с правами root.
-    `ok` — набор допустимых кодов (например virsh destroy на уже выключенной
-    ВМ отдаёт non-zero, но это не ошибка).
-    """
-    rc, stdout, stderr = await ssh.run(cmd, sudo=True)
-    if rc not in ok:
-        raise SshError(
-            error_code=error_code,
-            host=host,
-            cmd_sanitized=cmd,
-            returncode=rc,
-            stderr=(stderr or stdout).strip(),
-            message=message,
-        )
-    return rc, stdout, stderr
+# hub-команда под sudo с проверкой кода возврата — общий раннер VM-тасок.
+_run = run_hub_cmd
 
 
 # ── vms_hub.prepare ──────────────────────────────────────────────────────────
@@ -682,6 +664,10 @@ async def vm_create(task_id: str) -> None:
                     f"test -f {pool_path}/{box}.qcow2", sudo=True,
                 )
                 if rc != 0:
+                    # server_service обычно шлёт box_url; если нет — тянем
+                    # каталог с FTP и резолвим сами (страховка).
+                    if not box_url:
+                        box_url = await resolve_box_url(ssh, box)
                     if not box_url:
                         raise SshError(
                             error_code="VM_CREATE_FAILED", host=host,

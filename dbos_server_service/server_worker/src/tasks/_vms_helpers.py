@@ -18,11 +18,15 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 
 from src.clients.ssh import SshError
 from src.core.constants import (
+    VMS_ADDITIONAL_POOL_DIR,
+    VMS_ADDITIONAL_POOL_NAME,
+    VMS_BOX_CATALOG_URL,
     VMS_BRIDGE,
     VMS_GUEST_DEFAULT_PASSWORD,
     VMS_GUEST_LOGIN,
@@ -31,6 +35,30 @@ from src.services import ssh_client
 from src.tasks._account_helpers import resolve_ssh_creds
 
 logger = logging.getLogger(__name__)
+
+
+async def run_hub_cmd(
+    ssh, cmd: str, host: str, error_code: str, message: str,
+    *, ok: tuple[int, ...] = (0,),
+) -> tuple[int, str, str]:
+    """Выполнить команду на hub'е под sudo; поднять SshError на неожиданный код.
+
+    Все hub-команды идут под sudo (NOPASSWD управляющей учётки): virsh работает
+    с `qemu:///system`, файловые операции в пуле — с правами root. `ok` — набор
+    допустимых кодов (например `virsh destroy` на уже выключенной ВМ отдаёт
+    non-zero, но это не ошибка).
+    """
+    rc, stdout, stderr = await ssh.run(cmd, sudo=True)
+    if rc not in ok:
+        raise SshError(
+            error_code=error_code,
+            host=host,
+            cmd_sanitized=cmd,
+            returncode=rc,
+            stderr=(stderr or stdout).strip(),
+            message=message,
+        )
+    return rc, stdout, stderr
 
 
 # Connect-фейлы управляющей сессии к hub'у: до сервера дошли, но сессия не
@@ -257,16 +285,173 @@ def bridge_label() -> str:
     return VMS_BRIDGE
 
 
+# ── Диски ────────────────────────────────────────────────────────────────────
+
+
+# target-dev диска (`vda`, `vdb`, ...): буква virtio-слота. Подставляется в
+# `virsh attach-disk/detach-disk`, поэтому фильтруем строго до `vd[a-z]`.
+_TARGET_DEV_RE = re.compile(r"^vd[a-z]$")
+
+
+def validate_target_dev(value: str, host: str) -> str:
+    """Прогнать target-dev через `vd[a-z]`; вернуть или поднять SshError."""
+    if not isinstance(value, str) or not _TARGET_DEV_RE.fullmatch(value.strip()):
+        raise SshError(
+            error_code="VM_INVALID_ARG",
+            host=host,
+            message=f"target_dev {value!r} должен быть вида vd[a-z]",
+        )
+    return value.strip()
+
+
+def next_target_dev(domblklist_out: str, host: str) -> str:
+    """Выбрать свободный `vd<x>` из вывода `virsh domblklist --details`.
+
+    Собираем уже занятые virtio-таргеты (колонка Target), берём первую свободную
+    букву `a..z`. Если все заняты — поднимаем ошибку (24 диска на ВМ — предел,
+    до которого в наших сценариях не доходит).
+    """
+    used: set[str] = set()
+    for raw in (domblklist_out or "").splitlines():
+        for tok in raw.split():
+            m = re.fullmatch(r"vd([a-z])", tok)
+            if m:
+                used.add(m.group(1))
+    for ch in "abcdefghijklmnopqrstuvwxyz":
+        if ch not in used:
+            return f"vd{ch}"
+    raise SshError(
+        error_code="VM_DISK_NO_FREE_SLOT",
+        host=host,
+        message="нет свободного virtio-слота для диска (заняты vda..vdz)",
+    )
+
+
+def additional_pool_path(pool_path: str) -> str:
+    """Каталог dir-pool'а дополнительных дисков: `<pool>/additional_disk`."""
+    return f"{pool_path}/{VMS_ADDITIONAL_POOL_DIR}"
+
+
+async def ensure_additional_pool(ssh, host: str, pool_path: str) -> str:
+    """Идемпотентно поднять dir-pool `additional` под data-диски. Вернуть каталог.
+
+    Симметрия `_ensure_pool` в основном модуле: `pool-define-as ... dir --target
+    <pool>/additional_disk` + build/start/autostart + refresh. Если пул уже
+    определён — только refresh (подхватить внешне созданные qcow2).
+    """
+    target = additional_pool_path(pool_path)
+    rc, _out, _err = await ssh.run(
+        f"virsh pool-info {VMS_ADDITIONAL_POOL_NAME}", sudo=True,
+    )
+    if rc != 0:
+        await run_hub_cmd(ssh, f"mkdir -p {target}", host,
+                          "VM_DISK_POOL_FAILED", "не удалось создать каталог пула дисков")
+        await run_hub_cmd(
+            ssh,
+            f"virsh pool-define-as {VMS_ADDITIONAL_POOL_NAME} dir --target {target}",
+            host, "VM_DISK_POOL_FAILED", "virsh pool-define-as additional упал",
+        )
+        await ssh.run(f"virsh pool-build {VMS_ADDITIONAL_POOL_NAME}", sudo=True)
+        await run_hub_cmd(ssh, f"virsh pool-start {VMS_ADDITIONAL_POOL_NAME}", host,
+                          "VM_DISK_POOL_FAILED", "virsh pool-start additional упал")
+        await ssh.run(f"virsh pool-autostart {VMS_ADDITIONAL_POOL_NAME}", sudo=True)
+    await ssh.run(f"virsh pool-refresh {VMS_ADDITIONAL_POOL_NAME}", sudo=True)
+    return target
+
+
+# ── Гостевой IP ──────────────────────────────────────────────────────────────
+
+
+async def resolve_guest_ip(ssh, host: str, name: str, payload: dict) -> str:
+    """IP гостя для guest-операций (mkfs/growpart): payload > domifaddr.
+
+    Приоритет — явный `guest_ip`/`ip_address` из payload (bridge-ВМ со статикой
+    его знают заранее); иначе спрашиваем libvirt (`domifaddr` lease→agent). None
+    везде → `VM_GUEST_NO_IP`.
+    """
+    ip = payload.get("guest_ip") or payload.get("ip_address")
+    if ip:
+        return validate_ip(str(ip), host).split("/")[0]
+    _rc, out, _err = await ssh.run(
+        f"virsh domifaddr {name} --source lease", sudo=True,
+    )
+    parsed = parse_domifaddr(out)
+    if parsed is None:
+        _rc, out2, _err2 = await ssh.run(
+            f"virsh domifaddr {name} --source agent", sudo=True,
+        )
+        parsed = parse_domifaddr(out2)
+    if parsed is None:
+        raise SshError(
+            error_code="VM_GUEST_NO_IP",
+            host=host,
+            message=f"ВМ {name} не получила IP (нет lease/agent-адреса)",
+        )
+    return parsed
+
+
+# ── Каталог образов (страховка box_url) ──────────────────────────────────────
+
+
+def box_url_from_catalog(raw: str, box: str) -> str | None:
+    """Резолв имени бокса в url по JSON-каталогу `test-box-config.json`.
+
+    Каталог — карта `имя → url .tar.gz`; ключи лежат либо в секции
+    `libvirt_box`, либо на верхнем уровне; значение — строка-url или объект с
+    полем `url`/`box_url`. Кривой JSON / отсутствие бокса → None.
+    """
+    try:
+        data = json.loads(raw or "")
+    except (ValueError, TypeError):
+        return None
+    sources: list = []
+    if isinstance(data, dict):
+        section = data.get("libvirt_box")
+        if isinstance(section, dict):
+            sources.append(section)
+        sources.append(data)
+    for src in sources:
+        if isinstance(src, dict) and box in src:
+            entry = src[box]
+            if isinstance(entry, str) and entry.strip():
+                return entry.strip()
+            if isinstance(entry, dict):
+                url = entry.get("url") or entry.get("box_url")
+                if isinstance(url, str) and url.strip():
+                    return url.strip()
+    return None
+
+
+async def resolve_box_url(ssh, box: str) -> str | None:
+    """Скачать каталог `test-box-config.json` с FTP и резолвить `box`→url.
+
+    Страховка на случай, когда server_service не положил `box_url` в payload
+    `vm.create`: `wget -qO-` каталога на hub'е, парсинг на стороне воркера.
+    Транспорт/парсинг молчаливо возвращает None — caller решает, падать ли.
+    """
+    _rc, out, _err = await ssh.run(f"wget -qO- {VMS_BOX_CATALOG_URL}", sudo=True)
+    return box_url_from_catalog(out, box)
+
+
 __all__ = [
     "open_hub_session",
     "remap_managed_connect_error",
+    "run_hub_cmd",
     "validate_name",
     "validate_iface",
     "validate_path",
     "validate_ip",
+    "validate_target_dev",
     "positive_int",
     "map_domstate",
     "parse_domifaddr",
+    "next_target_dev",
+    "additional_pool_path",
+    "ensure_additional_pool",
+    "resolve_guest_ip",
+    "box_url_from_catalog",
+    "resolve_box_url",
     "guest_ssh",
+    "bridge_label",
     "POWER_VERBS",
 ]

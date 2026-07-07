@@ -351,7 +351,7 @@ async def acquire_server(
     """
     Что делает: атомарным `UPDATE ... WHERE busy_state='free'` помечает сервер
     занятым: `busy_state=busy`, `busy_user_id=identity.user_id`,
-    `busy_since=now()`, `busy_note` (формируется из purpose / lease_until).
+    `busy_since=now()`, `busy_note` (из необязательного purpose).
 
     Доступ: `(server, *, busy_acquire)`. Department-isolation как в GET.
 

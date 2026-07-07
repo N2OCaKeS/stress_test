@@ -27,7 +27,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
-from src.core.constants import ServerStatus
+from src.core.constants import BusyState, ServerStatus
 from src.core.exceptions import ConflictError, ServiceUnavailableError
 from src.repositories import server as server_repo
 from src.services import audit_service, worker_client
@@ -152,11 +152,16 @@ async def refresh_server(
 ) -> dict:
     """Освежить inventory + power-статус одного подготовленного сервера.
 
-    Списанные серверы пропускаем (worker-операции им не адресуем). Обе задачи
-    независимы: фейл одной не мешает второй. Возвращает
+    Списанные серверы пропускаем (worker-операции им не адресуем). Сервер в
+    `busy_state='updating'` тоже пропускаем: во время astra-update блокировка
+    запрещает любые операции над боксом, а плановый SSH-inventory параллельно с
+    apt/astra-update как раз то, что она должна исключать. Обе задачи независимы:
+    фейл одной не мешает второй. Возвращает
     `{server_id, dispatched: {task_kind: task_id}, skipped: bool}`.
     """
     if server.status == ServerStatus.DECOMMISSIONED:
+        return {"server_id": server.id, "dispatched": {}, "skipped": True}
+    if server.busy_state == BusyState.UPDATING:
         return {"server_id": server.id, "dispatched": {}, "skipped": True}
     dispatched: dict[str, str] = {}
     for task_kind, audit_action in _AUTO_TASKS:

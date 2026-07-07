@@ -1,12 +1,13 @@
 """Use cases для серверов — role-проверки, изоляция отделов, persistence-оркестровка."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.constants import Action, BusyState, EntityType, ServerStatus
 from src.core.exceptions import (
     AuthorizationError,
@@ -811,12 +812,7 @@ async def acquire_server(
             error_code="SERVER_DECOMMISSIONED",
             message="Server is decommissioned and cannot be acquired",
         )
-    busy_note_parts: list[str] = []
-    if payload.purpose:
-        busy_note_parts.append(payload.purpose)
-    if payload.lease_until is not None:
-        busy_note_parts.append(f"lease_until={payload.lease_until.isoformat()}")
-    busy_note = " | ".join(busy_note_parts) if busy_note_parts else None
+    busy_note = payload.purpose or None
     now = datetime.now(timezone.utc)
     # Атомарный CAS: UPDATE ... WHERE busy_state='free' AND status<>decommissioned.
     # status в WHERE'е закрывает race: между `load_visible_server` и UPDATE'ом
@@ -897,9 +893,6 @@ async def acquire_server(
         details={
             "department_id": obj.department_id,
             "purpose": payload.purpose,
-            "lease_until": (
-                payload.lease_until.isoformat() if payload.lease_until else None
-            ),
         },
     )
     return obj
@@ -971,6 +964,27 @@ async def release_server(
             error_code="SERVER_NOT_BUSY",
             message="Server is already free",
         )
+    if locked.busy_state == BusyState.UPDATING:
+        # updating — системная блокировка на время astra-update, а не обычная
+        # бронь: снимать её через release нельзя (любой носитель busy_release
+        # разблокировал бы сервер посреди apt/astra-update). Снимает её только
+        # callback воркера `astra-updated`; залипшую (воркер не долетел) чинит
+        # плановый sweep `recover_stuck_updating` по TTL.
+        audit_service.emit(
+            "server.release",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "updating", "department_id": locked.department_id},
+        )
+        raise ConflictError(
+            error_code="SERVER_UPDATING",
+            message=(
+                "Server is being updated (astra_update in progress); the "
+                "updating lock cannot be released manually and clears on the "
+                "worker callback or a TTL recovery sweep"
+            ),
+            details={"busy_note": locked.busy_note},
+        )
     obj = locked
     previous_user_id = obj.busy_user_id
     # Атомарный release из любого non-free состояния (busy / testing). Свежий
@@ -1010,6 +1024,70 @@ async def release_server(
         },
     )
     return obj
+
+
+async def recover_stuck_updating(db: AsyncSession, *, limit: int = 500) -> dict:
+    """Освободить серверы, застрявшие в `busy_state='updating'` дольше TTL.
+
+    Обновление ОС ставит `updating`, а снимает его только callback воркера
+    `astra-updated`. Если воркер упал/потерял задачу и callback не пришёл,
+    сервер завис бы в `updating` навсегда — `ensure_not_updating` отбивает все
+    операции 409 SERVER_UPDATING, включая владельца и админа. Этот sweep — тот
+    самый escape hatch: серверы с `busy_since` старше
+    `astra_update_stuck_ttl_minutes` переводятся в `free`.
+
+    Освобождаем атомарным CAS с тем же условием (`busy_state='updating' AND
+    busy_since < cutoff`), под которым сервер был выбран: если ровно в этот
+    момент долетел легитимный `astra-updated`-callback и уже снял блокировку,
+    rowcount==0 и мы его не трогаем (нет двойного освобождения). На каждый
+    реально освобождённый сервер — WARNING-аудит `server.astra_update_recovered`
+    (actor_type=system, ставится в middleware/скедулере). Возвращает
+    `{recovered, ttl_minutes}`.
+    """
+    ttl_minutes = get_settings().astra_update_stuck_ttl_minutes
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=ttl_minutes)
+    stuck = await repo.list_stuck_updating(db, cutoff, limit)
+    recovered = 0
+    for server in stuck:
+        busy_since = server.busy_since
+        result = await db.execute(
+            sa_update(Server)
+            .where(
+                Server.id == server.id,
+                Server.busy_state == BusyState.UPDATING,
+                Server.busy_since < cutoff,
+            )
+            .values(
+                busy_state=BusyState.FREE,
+                busy_user_id=None,
+                busy_since=None,
+                busy_note=None,
+            )
+        )
+        if result.rowcount == 0:
+            # Callback опередил sweep — блокировка уже снята, пропускаем.
+            continue
+        await db.commit()
+        recovered += 1
+        stuck_minutes = None
+        if busy_since is not None:
+            if busy_since.tzinfo is None:
+                busy_since = busy_since.replace(tzinfo=timezone.utc)
+            stuck_minutes = round(
+                (datetime.now(timezone.utc) - busy_since).total_seconds() / 60, 1
+            )
+        audit_service.emit(
+            "server.astra_update_recovered",
+            target_id=server.id, target_type="server",
+            status="warning", allowed=True,
+            details={
+                "reason": "stuck_updating_ttl",
+                "department_id": server.department_id,
+                "ttl_minutes": ttl_minutes,
+                "stuck_minutes": stuck_minutes,
+            },
+        )
+    return {"recovered": recovered, "ttl_minutes": ttl_minutes}
 
 
 async def update_os_version(

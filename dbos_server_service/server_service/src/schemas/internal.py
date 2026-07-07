@@ -514,6 +514,13 @@ class AutoInventorySweepResponse(BaseModel):
     processed: int = Field(description="Серверов, по которым прошёл фан-аут (после cap'а).")
     dispatched_tasks: int = Field(description="Сколько задач (inventory.sync + power.status) реально поставлено.")
     truncated: int = Field(description="Сколько серверов отрезано cap'ом AUTO_INVENTORY_FANOUT_MAX.")
+    stuck_updating_recovered: int = Field(
+        default=0,
+        description=(
+            "Сколько серверов освобождено из залипшего busy_state=updating по "
+            "TTL перед фан-аутом (astra-updated callback не пришёл)."
+        ),
+    )
 
 
 # ── IPMI credentials_rotated callback ───────────────────────────────────────

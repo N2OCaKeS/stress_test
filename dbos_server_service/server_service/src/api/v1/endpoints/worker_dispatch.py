@@ -1416,6 +1416,24 @@ async def server_astra_update_dispatch(
             message="Server is decommissioned and cannot accept worker operations",
         )
 
+    # 3.4. Row-lock перед гейтами состояния и постановкой updating. Без него два
+    # почти одновременных astra-update прошли бы «не updating»-проверку оба и оба
+    # задиспатчили бы задачу (двойной apt/astra-update на боксе). FOR UPDATE
+    # сериализует переход: второй запрос ждёт коммит первого и видит уже
+    # выставленный updating → отбивается 409 SERVER_UPDATING ниже.
+    db.expire(server)
+    locked = await server_repo.get_for_update(db, server_id)
+    if locked is None:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "vanished"},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND", message="Server not found",
+        )
+    server = locked
+
     # 3.5. Уже идёт обновление → 409 SERVER_UPDATING; чужая бронь → 409
     # SERVER_RESERVED. Оба через общий гейт (updating-check внутри блокирует
     # всех, reserved-check пропускает владельца/админа).
@@ -2079,6 +2097,25 @@ async def server_rotate_management_credentials_dispatch(
             )
         raise
 
+    # Row-lock перед проверкой pending_apply и переносом mgmt_*→previous_*. Без
+    # него две почти одновременных ротации прочитали бы pending_apply=False обе,
+    # обе перенесли бы текущий (ещё стоящий на боксе) ключ в previous, затерев
+    # его новым нераскатанным материалом → fetch отдал бы воркеру ключ, которого
+    # на боксе нет (потеря управляющего доступа). FOR UPDATE сериализует: вторая
+    # ротация ждёт коммит первой и видит pending_apply=True → 409 ниже.
+    db.expire(server)
+    locked = await server_repo.get_for_update(db, server_id)
+    if locked is None:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "vanished"},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND", message="Server not found",
+        )
+    server = locked
+
     if server.status == ServerStatus.DECOMMISSIONED:
         audit_service.emit(
             audit_action, target_id=server_id, target_type="server",
@@ -2089,6 +2126,11 @@ async def server_rotate_management_credentials_dispatch(
             error_code="SERVER_DECOMMISSIONED",
             message="Server is decommissioned and cannot accept worker operations",
         )
+
+    # Ротация перевыпускает SSH-ключ на боксе — деструктивно для активной
+    # управляющей сессии. Пока сервер `updating` (astra-update в полёте) или
+    # занят под чужого — не ротируем: тот же гейт, что у prepare/astra_update.
+    reservation.ensure_not_reserved_for(identity, server, action=audit_action)
 
     # Ротация имеет смысл только на подготовленном сервере: на неуправляемом
     # ещё нет ни ключа, ни управляющего пользователя — сначала prepare.

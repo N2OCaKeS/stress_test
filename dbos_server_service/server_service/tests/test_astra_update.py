@@ -213,6 +213,125 @@ class TestBusyLockDuringUpdate:
 
 
 @pytest.mark.usefixtures("soft_dept_mode")
+class TestAstraUpdateRace:
+    """Гонка перехода в `updating`: без row-lock два astra-update прошли бы оба."""
+
+    async def test_concurrent_astra_update_second_blocked_by_row_lock(
+        self, client, operator_token_a, make_server, db, captured_dispatch,
+        monkeypatch,
+    ):
+        srv = await _make_managed(make_server, db)
+        osv = await _make_os_version(db, name="Astra race", repositories=["deb x y z"])
+        from sqlalchemy import select, update as sa_update
+
+        from src.core.constants import BusyState
+        from src.models import Server
+        from src.services import server as server_svc
+
+        original_get = server_svc.get_server
+
+        async def racy_get(db_, identity, sid):
+            obj = await original_get(db_, identity, sid)
+            # Параллельный astra-update выставил updating и закоммитил между нашим
+            # visibility-чтением и постановкой блокировки. `obj` держит stale
+            # busy_state=free; row-lock (get_for_update) обязан перечитать свежее.
+            await db_.execute(
+                sa_update(Server).where(Server.id == sid).values(
+                    busy_state=BusyState.UPDATING,
+                    busy_note="Обновление ОС Astra (параллельное)",
+                )
+            )
+            await db_.commit()
+            return obj
+
+        monkeypatch.setattr(server_svc, "get_server", racy_get)
+
+        resp = await client.post(
+            f"{BASE}/servers/{srv.id}/astra-update",
+            headers=_hdr(operator_token_a),
+            json={"os_version_id": osv.id},
+        )
+        # Row-lock перечитал updating → 409, вторая задача не задиспатчена
+        # (нет двойного apt/astra-update на боксе).
+        assert_error(resp, 409, "SERVER_UPDATING")
+        assert captured_dispatch == []
+
+        row = (
+            await db.execute(select(Server).where(Server.id == srv.id))
+        ).scalar_one()
+        assert row.busy_state == BusyState.UPDATING
+
+
+@pytest.mark.usefixtures("soft_dept_mode")
+class TestAstraUpdateStuckRecovery:
+    """Залипший `updating` (callback не пришёл) освобождается sweep'ом по TTL."""
+
+    async def test_stuck_updating_recovered_after_ttl(
+        self, client, worker_bot_token_a, make_server, db, dept_a,
+        captured_auto_inventory, monkeypatch,
+    ):
+        from datetime import datetime, timedelta, timezone
+
+        from sqlalchemy import select
+
+        from src.core.constants import BusyState
+        from src.models import Server
+
+        srv = await _make_managed(make_server, db, dept=dept_a)
+        # Обновление началось давно, callback `astra-updated` так и не пришёл.
+        srv.busy_state = BusyState.UPDATING
+        srv.busy_user_id = "usr_op"
+        srv.busy_since = datetime.now(timezone.utc) - timedelta(hours=6)
+        srv.busy_note = "Обновление ОС Astra"
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE_INT}/servers/auto-inventory-sweep",
+            headers=_hdr(worker_bot_token_a),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["stuck_updating_recovered"] == 1
+
+        row = (
+            await db.execute(select(Server).where(Server.id == srv.id))
+        ).scalar_one()
+        assert row.busy_state == BusyState.FREE
+        assert row.busy_user_id is None
+        assert row.busy_since is None
+
+    async def test_recent_updating_not_recovered(
+        self, client, worker_bot_token_a, make_server, db, dept_a,
+        captured_auto_inventory,
+    ):
+        from datetime import datetime, timezone
+
+        from sqlalchemy import select
+
+        from src.core.constants import BusyState
+        from src.models import Server
+
+        srv = await _make_managed(make_server, db, dept=dept_a)
+        # Обновление идёт прямо сейчас — трогать нельзя.
+        srv.busy_state = BusyState.UPDATING
+        srv.busy_since = datetime.now(timezone.utc)
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE_INT}/servers/auto-inventory-sweep",
+            headers=_hdr(worker_bot_token_a),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["stuck_updating_recovered"] == 0
+
+        row = (
+            await db.execute(select(Server).where(Server.id == srv.id))
+        ).scalar_one()
+        assert row.busy_state == BusyState.UPDATING
+        # Sweep-фан-аут пропускает updating (не диспатчит inventory во время апдейта).
+        assert captured_auto_inventory == []
+
+
+@pytest.mark.usefixtures("soft_dept_mode")
 class TestAstraUpdateCallback:
     async def test_success_clears_lock_binds_version_triggers_inventory(
         self, client, worker_bot_token_a, make_server, db, dept_a, captured_auto_inventory,

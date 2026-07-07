@@ -49,6 +49,30 @@ async def list_managed(db: AsyncSession, limit: int) -> list[Server]:
     return list((await db.execute(stmt)).scalars())
 
 
+async def list_stuck_updating(
+    db: AsyncSession, cutoff: datetime, limit: int
+) -> list[Server]:
+    """SELECT серверов, застрявших в `busy_state='updating'` дольше порога.
+
+    Застрявшими считаем те, у кого `busy_since < cutoff` — обновление ОС
+    началось давно, а callback `astra-updated`, который должен снять блокировку,
+    так и не пришёл. `busy_since IS NULL` не берём: без таймстампа возраст
+    блокировки не определить, освобождать вслепую нельзя. Порядок `busy_since` —
+    сначала самые старые.
+    """
+    from src.core.constants import BusyState
+
+    stmt = (
+        select(Server)
+        .where(Server.busy_state == BusyState.UPDATING)
+        .where(Server.busy_since.is_not(None))
+        .where(Server.busy_since < cutoff)
+        .order_by(Server.busy_since)
+        .limit(limit)
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
 async def count_managed(db: AsyncSession) -> int:
     """COUNT подготовленных не-списанных серверов — для truncated-аудита."""
     from src.core.constants import ServerStatus

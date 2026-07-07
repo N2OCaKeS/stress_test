@@ -61,7 +61,14 @@ from src.schemas.server import (
     ServerAstraUpdateCallbackRequest,
     ServerPrepareCallbackRequest,
 )
-from src.services import audit_service, auto_inventory, metrics, permissions, secrets_service
+from src.services import (
+    audit_service,
+    auto_inventory,
+    metrics,
+    permissions,
+    secrets_service,
+)
+from src.services import server as server_svc
 from src.utils.ids import os_version_id, server_disk_id
 
 logger = logging.getLogger(__name__)
@@ -1858,10 +1865,14 @@ async def run_auto_inventory_sweep(
             details={"reason": "permission_denied", "source": "auto_scheduled"},
         )
         raise
+    # Перед фан-аутом освобождаем серверы, застрявшие в updating дольше TTL
+    # (воркер не прислал astra-updated). Иначе они остались бы заблокированы
+    # навсегда. Sweep уже ходит по cron'у — это его естественный хук.
+    recovery = await server_svc.recover_stuck_updating(db)
     summary = await auto_inventory.fanout_auto_inventory(
         db, actor_id=identity.user_id,
     )
-    return {"ok": True, **summary}
+    return {"ok": True, "stuck_updating_recovered": recovery["recovered"], **summary}
 
 
 async def record_ipmi_credentials_rotated(

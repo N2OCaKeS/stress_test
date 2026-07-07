@@ -268,6 +268,71 @@ class TestRotateManagementCredentials:
         assert row2.previous_mgmt_ssh_private_key_encrypted == previous_before
         assert row2.mgmt_ssh_private_key_encrypted == current_before
 
+    async def test_rotate_race_second_blocked_by_row_lock(
+        self, client, operator_token_a, make_server, db, monkeypatch,
+    ):
+        # Гонка: параллельная ротация закоммитила pending_apply=True между нашим
+        # visibility-чтением и проверкой флага. Без row-lock stale-read пропустил
+        # бы вторую ротацию → перенос current→previous затёр бы реально стоящий
+        # на боксе ключ. get_for_update перечитывает свежее → 409, previous цел.
+        srv, creds_old = await self._seed_prepared(db, make_server)
+        make_dispatch_capture(monkeypatch)
+
+        from sqlalchemy import update as sa_update
+
+        from src.services import server as server_svc
+
+        row_before = (
+            await db.execute(select(Server).where(Server.id == srv.id))
+        ).scalar_one()
+        prev_before = row_before.previous_mgmt_ssh_private_key_encrypted
+        cur_before = row_before.mgmt_ssh_private_key_encrypted
+
+        original_get = server_svc.get_server
+
+        async def racy_get(db_, identity, sid):
+            obj = await original_get(db_, identity, sid)
+            await db_.execute(
+                sa_update(Server).where(Server.id == sid).values(
+                    mgmt_creds_pending_apply=True,
+                )
+            )
+            await db_.commit()
+            return obj
+
+        monkeypatch.setattr(server_svc, "get_server", racy_get)
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/management-credentials/rotate",
+            headers=_hdr(operator_token_a),
+        )
+        assert_error(resp, 409, "MGMT_ROTATION_PENDING")
+
+        row_after = (
+            await db.execute(select(Server).where(Server.id == srv.id))
+        ).scalar_one()
+        # previous не затёрт, current не тронут — реально стоящий ключ сохранён.
+        assert row_after.previous_mgmt_ssh_private_key_encrypted == prev_before
+        assert row_after.mgmt_ssh_private_key_encrypted == cur_before
+
+    async def test_rotate_blocked_while_updating(
+        self, client, operator_token_a, make_server, db, monkeypatch,
+    ):
+        # Ротация ключа посреди astra-update деструктивна для активной SSH-сессии
+        # обновления — гейт updating обязан её отбить.
+        from src.core.constants import BusyState
+
+        srv, _ = await self._seed_prepared(db, make_server)
+        srv.busy_state = BusyState.UPDATING
+        await db.flush()
+        make_dispatch_capture(monkeypatch)
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/management-credentials/rotate",
+            headers=_hdr(operator_token_a),
+        )
+        assert_error(resp, 409, "SERVER_UPDATING")
+
     async def test_rotate_requires_prepared(
         self, client, operator_token_a, make_server, db, monkeypatch,
     ):

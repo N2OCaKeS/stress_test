@@ -1,7 +1,7 @@
 """Интеграционные тесты `POST /servers/{id}/busy` и `DELETE /servers/{id}/busy`.
 
 Покрытие:
-* acquire — happy path с purpose/lease_until, без тела, конкурентный acquire
+* acquire — happy path с purpose, без тела, конкурентный acquire
   → 409 SERVER_ALREADY_BUSY (CAS), decommissioned → 409 SERVER_DECOMMISSIONED;
 * release — happy path; уже free → 409 SERVER_NOT_BUSY; releasee может не
   совпадать с заходившим (роль решает);
@@ -69,19 +69,18 @@ class TestAcquireServer:
         assert resp.status_code == 200
         assert resp.json()["busy_state"] == "busy"
 
-    async def test_acquire_with_lease_until_writes_note(
+    async def test_acquire_purpose_writes_note(
         self, client, operator_token_a, make_server,
     ):
         srv = await make_server(department_id="dep_a")
         resp = await client.post(
             f"{BASE}/{srv.id}/busy",
             headers=_hdr(operator_token_a),
-            json={"purpose": "smoke", "lease_until": "2030-01-01T00:00:00Z"},
+            json={"purpose": "smoke"},
         )
         assert resp.status_code == 200
         note = resp.json().get("busy_note") or ""
-        assert "smoke" in note
-        assert "2030-01-01" in note
+        assert note == "smoke"
 
     async def test_already_busy_returns_409(
         self, client, operator_token_a, make_server,
@@ -214,6 +213,29 @@ class TestReleaseServer:
         srv = await make_server(department_id="dep_a")
         resp = await client.delete(f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a))
         assert_error(resp, 409, "SERVER_NOT_BUSY")
+
+    async def test_release_updating_server_returns_409(
+        self, client, admin_role_token_a, make_server, db,
+    ):
+        """updating — системная блокировка astra-update, release её не снимает
+        (иначе любой busy_release разблокировал бы сервер посреди apt)."""
+        from src.core.constants import BusyState
+        from src.models import Server
+        from sqlalchemy import select
+
+        srv = await make_server(department_id="dep_a")
+        srv.busy_state = BusyState.UPDATING
+        await db.flush()
+
+        resp = await client.delete(
+            f"{BASE}/{srv.id}/busy", headers=_hdr(admin_role_token_a),
+        )
+        assert_error(resp, 409, "SERVER_UPDATING")
+
+        row = (
+            await db.execute(select(Server).where(Server.id == srv.id))
+        ).scalar_one()
+        assert row.busy_state == BusyState.UPDATING
 
     async def test_admin_can_release_someone_elses_acquisition(
         self, client, operator_token_a, admin_role_token_a, make_server,

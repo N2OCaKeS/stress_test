@@ -119,14 +119,6 @@ class ServerUpdate(BaseModel):
 class ServerAcquireRequest(BaseModel):
     """Тело POST /servers/{id}/busy — захват сервера под тест/задачу."""
 
-    lease_until: datetime | None = Field(
-        default=None,
-        description=(
-            "Опциональный таймстамп окончания lease'а (UTC). Носит "
-            "информационный характер — auto-release сервером не делается. "
-            "Записывается в `busy_note` через сериализацию вместе с purpose."
-        ),
-    )
     purpose: str | None = Field(
         default=None, max_length=256,
         description="Человекочитаемая метка о причине захвата (теста, сценария).",

@@ -553,6 +553,20 @@ class Settings(BaseSettings):
             "с `management_user_sync_fanout_max` — оба бьют по всей платформе."
         ),
     )
+    astra_update_stuck_ttl_minutes: int = Field(
+        default=60,
+        ge=1,
+        alias="ASTRA_UPDATE_STUCK_TTL_MINUTES",
+        description=(
+            "Порог зависшей OS-update блокировки. Если сервер держит "
+            "`busy_state='updating'` дольше этого времени (по `busy_since`), а "
+            "callback `astra-updated` так и не пришёл (воркер упал/потерял "
+            "задачу), плановый sweep освобождает его в `free` и эмитит "
+            "`server.astra_update_recovered`. Без этого залипший updating "
+            "блокировал бы все операции над сервером навсегда. Считать с запасом "
+            "относительно самого долгого реального обновления ОС."
+        ),
+    )
     installed_packages_bulk_max_servers: int = Field(
         default=50,
         ge=1,

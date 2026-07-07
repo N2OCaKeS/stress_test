@@ -11,4 +11,5 @@ from src.tasks import (  # noqa: F401
     power,
     prepare,
     users,
+    vms,
 )

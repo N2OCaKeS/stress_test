@@ -23,6 +23,37 @@ STASH_TTL_SECONDS = 1800
 SCRUBBED_SENTINEL = "<scrubbed>"
 
 
+# ── VM-менеджер ──────────────────────────────────────────────────────────────
+#
+# Каталог образов лежит на анонимном FTP тестовой инфраструктуры; при
+# hub.prepare воркер тянет `<box>.tar.gz` отсюда и распаковывает в storage-pool.
+# Отдельным полем в payload это не гоняем — адрес общий для всего стенда.
+VMS_FTP_BOXES_URL = "ftp://10.177.103.10/boxes"
+
+# Дефолтные креды образа: единый статичный аккаунт `u`/`1` во всех боксах
+# (sudo NOPASSWD, SSH :22). Пароль — публичный дефолт артефакта, не секрет:
+# смена на клиентский пароль/mgmt-креды ВМ — отдельная операция (`vm.passwd`).
+VMS_GUEST_LOGIN = "u"
+VMS_GUEST_DEFAULT_PASSWORD = "1"
+
+# Universal-бокс `vm_station` несёт внутренние qemu-img снимки нескольких
+# версий ОС на одном диске; переключение версии — `qemu-img snapshot -a <ver>`.
+VMS_UNIVERSAL_BOX = "vm_station"
+
+# `os-variant` для virt-install: для 1.7/1.8 Astra используем alse17 (квирк —
+# отдельного профиля для новых сборок в libosinfo пока нет).
+VMS_OS_VARIANT = "alse17"
+
+# NAT-сеть libvirt для транзита при сборке (провижн статики до перевода на
+# bridge) и `br0` — мост над физическим NIC для боевого доступа в LAN.
+VMS_NAT_NETWORK = "test"
+VMS_BRIDGE = "br0"
+
+# Storage-pool по умолчанию (dir-pool в `/vms`), если payload не задал иной путь.
+VMS_DEFAULT_POOL_PATH = "/vms"
+VMS_POOL_NAME = "vms"
+
+
 class TaskKind(StrEnum):
     """Поддерживаемые типы task'ов. Значения совпадают с taskiq broker labels.
 
@@ -65,6 +96,9 @@ class TaskKind(StrEnum):
     INSTALLED_PACKAGES_REMOVE = "installed_packages.remove"
     INSTALLED_PACKAGES_UPDATE = "installed_packages.update"
     MANAGEMENT_USER_SYNC = "management_user_sync"
+    VMS_HUB_PREPARE = "vms_hub.prepare"
+    VM_CREATE = "vm.create"
+    VM_POWER = "vm.power"
 
 
 class TaskStatus(StrEnum):

@@ -503,6 +503,97 @@ async def submit_astra_update_result(
     )
 
 
+async def submit_vm_state(
+    vm_id: str,
+    target_department_id: str | None = None,
+    *,
+    power_state: str | None = None,
+    ip_address: str | None = None,
+    status: str | None = None,
+    busy_state: str | None = None,
+    snapshots: list[str] | None = None,
+    error: str | None = None,
+) -> dict:
+    """Отдать server_service свежее состояние ВМ (финал `vm.create` / `vm.power`).
+
+    По этому callback'у server_service обновляет строку `vm`: `power_state`
+    (из `virsh domstate`), выданный `ip_address`, `status`/`busy_state`
+    (booking/lock) и зеркалит список снимков (`snapshots` — только plain-имена,
+    без системных `_build`). `error` заполняется только при частичном/неудачном
+    исходе, чтобы оператор увидел причину в карточке ВМ.
+
+    Все поля опциональны: `vm.power` шлёт лишь `power_state`, `vm.create` —
+    полный набор. `None`-поля server_service трактует как «не менять».
+
+    Возвращает: тело `POST /api/server/v1/internal/vms/{vm_id}/state`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `VM_STATE_REJECTED` — server_service вернул не 2xx.
+    """
+    body: dict = {}
+    if power_state is not None:
+        body["power_state"] = power_state
+    if ip_address is not None:
+        body["ip_address"] = ip_address
+    if status is not None:
+        body["status"] = status
+    if busy_state is not None:
+        body["busy_state"] = busy_state
+    if snapshots is not None:
+        body["snapshots"] = snapshots
+    if error is not None:
+        body["error"] = error
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/vms/{vm_id}/state",
+        reject_code="VM_STATE_REJECTED",
+        target_department_id=target_department_id,
+        json=body,
+        details={"vm_id": vm_id},
+        allow_empty_body=True,
+    )
+
+
+async def submit_vms_hub_state(
+    server_id: str,
+    prepared: bool,
+    target_department_id: str | None = None,
+    *,
+    phy_if: str | None = None,
+    error: str | None = None,
+) -> dict:
+    """Сообщить server_service исход подготовки сервера как VMS-hub'а.
+
+    Финал `vms_hub.prepare` task'а. `prepared=True` — libvirt поднят, мост
+    `br0` над физическим NIC настроен, storage-pool и образы на месте;
+    server_service помечает сервер `vms_hub` (`virtualization=True`) и
+    сохраняет `phy_if`. `prepared=False` вызывается из except-ветки handler'а с
+    заполненным `error`, чтобы оператор увидел, на чём подготовка встала.
+
+    Возвращает: тело
+    `POST /api/server/v1/internal/servers/{server_id}/vms-hub-state`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `VMS_HUB_STATE_REJECTED` — server_service вернул не 2xx.
+    """
+    body: dict = {"prepared": prepared}
+    if phy_if is not None:
+        body["phy_if"] = phy_if
+    if error is not None:
+        body["error"] = error
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/vms-hub-state",
+        reject_code="VMS_HUB_STATE_REJECTED",
+        target_department_id=target_department_id,
+        json=body,
+        details={"server_id": server_id},
+        allow_empty_body=True,
+    )
+
+
 async def submit_rotated_ipmi_password(
     ipmi_controller_id: str,
     new_password: str,

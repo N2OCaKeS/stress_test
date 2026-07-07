@@ -58,6 +58,10 @@ SERVICE_EVENTS = [
     {"action": "server_account.deprovision", "description": "Удаление OS-пользователя с хоста (userdel)", "default_severity": "WARNING"},
     {"action": "server_account.users_inventory", "description": "Снятие среза OS-пользователей хоста по SSH (getent)", "default_severity": "INFO"},
     {"action": "server_account.password_rotate", "description": "Ротация пароля сервисной учётки применена по SSH + callback", "default_severity": "WARNING"},
+    # VM-менеджер — tasks/vms.py (исполнение по SSH на hub'е)
+    {"action": "vms_hub.prepare", "description": "Подготовка сервера как VMS-hub по SSH: libvirt + мост br0 + storage-pool + образы", "default_severity": "CRITICAL"},
+    {"action": "vm.create", "description": "Создание ВМ на hub'е по SSH: клон диска + virt-install + провижн + снимки", "default_severity": "CRITICAL"},
+    {"action": "vm.power", "description": "Управление питанием ВМ на hub'е по SSH (virsh start/shutdown/reboot/reset/destroy)", "default_severity": "WARNING"},
     # Управляющая учётка — tasks/management_user.py, tasks/management_creds.py
     {"action": "management_user.sync", "description": "Недеструктивный re-bootstrap управляющей учётки на хосте", "default_severity": "INFO"},
     {"action": "server.management_creds_rotated", "description": "Ротация per-server управляющих кредов применена на хосте + callback", "default_severity": "CRITICAL"},

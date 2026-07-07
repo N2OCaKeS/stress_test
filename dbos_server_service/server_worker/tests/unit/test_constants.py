@@ -22,6 +22,7 @@ class TestTaskKind:
             "installed_packages.list", "installed_packages.install",
             "installed_packages.remove", "installed_packages.update",
             "management_user_sync",
+            "vms_hub.prepare", "vm.create", "vm.power",
         }
 
     def test_dot_namespaced(self):

@@ -31,7 +31,7 @@ describe("Shell middle panel collapse", () => {
     // Развёрнута по умолчанию: содержимое видно, есть кнопка «свернуть».
     expect(screen.getByText("MID-CONTENT")).toBeInTheDocument();
     const collapseBtn = screen.getByRole("button", {
-      name: "Collapse middle panel",
+      name: "Свернуть панель",
     });
 
     fireEvent.click(collapseBtn);
@@ -39,7 +39,7 @@ describe("Shell middle panel collapse", () => {
     // Свёрнута: содержимого нет, осталась кнопка разворота.
     expect(screen.queryByText("MID-CONTENT")).not.toBeInTheDocument();
     const expandBtn = screen.getByRole("button", {
-      name: "Expand middle panel",
+      name: "Развернуть панель",
     });
 
     fireEvent.click(expandBtn);
@@ -55,10 +55,10 @@ describe("Shell middle panel collapse", () => {
       </Shell>,
     );
     expect(
-      screen.queryByRole("button", { name: "Collapse middle panel" }),
+      screen.queryByRole("button", { name: "Свернуть панель" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Expand middle panel" }),
+      screen.queryByRole("button", { name: "Развернуть панель" }),
     ).not.toBeInTheDocument();
   });
 });

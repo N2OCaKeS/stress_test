@@ -170,7 +170,7 @@ function TokenRow({
         <div className="text-sm font-medium truncate">{t.name}</div>
         <div className="text-[11px] text-dim mono truncate">{t.token_id}</div>
         <div className="text-[11px] text-dim">
-          scope: {t.allowed_services.join(", ")}
+          область: {t.allowed_services.join(", ")}
           {t.expires_at && ` · истекает ${formatMskDate(t.expires_at)}`}
         </div>
       </div>
@@ -179,7 +179,7 @@ function TokenRow({
         onClick={onClick}
         disabled={pending}
       >
-        <Trash2 className="w-4 h-4" /> Revoke
+        <Trash2 className="w-4 h-4" /> Отозвать
       </button>
     </div>
   );

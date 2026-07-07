@@ -291,7 +291,7 @@ function RoleForm({
           <ShieldCheck className="w-4 h-4 text-accent" />
           {mode === "new"
             ? `Новая роль · ${serviceName}`
-            : `Edit · ${initial?.role_name}`}
+            : `Изменить · ${initial?.role_name}`}
         </span>
         <button
           className="btn btn-ghost text-xs flex items-center gap-1"

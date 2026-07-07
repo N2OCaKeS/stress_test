@@ -272,7 +272,7 @@ function BotLiveView({
             </span>
             {!canEdit && (
               <span className="badge badge-warn" title={caps.reason}>
-                read-only
+                Только чтение
               </span>
             )}
           </h3>
@@ -282,7 +282,7 @@ function BotLiveView({
                 className="btn flex items-center gap-1"
                 onClick={() => startEdit(bot.id)}
               >
-                <Edit3 className="w-4 h-4" /> Edit
+                <Edit3 className="w-4 h-4" /> Изменить
               </button>
               <button
                 className="btn flex items-center gap-1"
@@ -296,7 +296,7 @@ function BotLiveView({
                 }
               >
                 <Power className="w-4 h-4" />
-                {bot.status === "active" ? "Disable" : "Enable"}
+                {bot.status === "active" ? "Отключить" : "Включить"}
               </button>
             </div>
           )}
@@ -327,7 +327,7 @@ function BotLiveView({
                 className="btn btn-sm flex items-center gap-1"
                 onClick={() => copy(issued.token)}
               >
-                <Copy className="w-3 h-3" /> Copy
+                <Copy className="w-3 h-3" /> Копировать
               </button>
               <button className="btn btn-sm" onClick={() => setIssued(null)}>
                 закрыть
@@ -426,9 +426,9 @@ function BotLiveView({
       <div className="card">
         <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
           <div className="text-xs uppercase text-dim flex items-center gap-2">
-            <KeyRound className="w-3 h-3" /> Token
+            <KeyRound className="w-3 h-3" /> Токен
             {activeTokens.length > 0 && (
-              <span className="text-dim">· {activeTokens.length} active</span>
+              <span className="text-dim">· активных: {activeTokens.length}</span>
             )}
           </div>
           {tokensQ.loading && <span className="text-xs text-dim">…</span>}
@@ -449,7 +449,7 @@ function BotLiveView({
               <div className="mt-3 flex gap-2 flex-wrap items-center">
                 <input
                   className="input flex-1"
-                  placeholder="token name"
+                  placeholder="имя токена"
                   value={tokenName}
                   onChange={(e) => setTokenName(e.target.value)}
                 />
@@ -481,7 +481,7 @@ function BotLiveView({
                     })
                   }
                 >
-                  <KeyRound className="w-4 h-4" /> Issue token
+                  <KeyRound className="w-4 h-4" /> Выпустить токен
                 </button>
               </div>
             )}
@@ -559,7 +559,7 @@ function BotLiveView({
                     })
                   }
                 >
-                  <RotateCw className="w-4 h-4" /> Rotate
+                  <RotateCw className="w-4 h-4" /> Перевыпустить
                 </button>
                 <button
                   className="btn btn-danger flex items-center gap-1"
@@ -574,7 +574,7 @@ function BotLiveView({
                     )
                   }
                 >
-                  <Trash2 className="w-4 h-4" /> Revoke
+                  <Trash2 className="w-4 h-4" /> Отозвать
                 </button>
               </div>
             )}
@@ -594,10 +594,10 @@ function BotLiveView({
             <table className="w-full text-sm">
               <thead className="text-left text-dim text-xs uppercase">
                 <tr>
-                  <th className="pb-2 pr-3">name</th>
-                  <th className="pb-2 pr-3">created</th>
-                  <th className="pb-2 pr-3">expires</th>
-                  <th className="pb-2 pr-3">last used</th>
+                  <th className="pb-2 pr-3">Название</th>
+                  <th className="pb-2 pr-3">Создан</th>
+                  <th className="pb-2 pr-3">Истекает</th>
+                  <th className="pb-2 pr-3">Последнее использование</th>
                   <th className="pb-2"></th>
                 </tr>
               </thead>
@@ -625,7 +625,7 @@ function BotLiveView({
                           )
                         }
                       >
-                        revoke
+                        отозвать
                       </button>
                     </td>
                   </tr>
@@ -673,13 +673,13 @@ function BotLiveView({
       {canEdit && (
         <div className="card" style={{ borderColor: "rgba(244,135,113,0.3)" }}>
           <div className="text-xs uppercase text-danger mb-2 flex items-center gap-2">
-            <AlertTriangle className="w-3 h-3" /> Danger zone
+            <AlertTriangle className="w-3 h-3" /> Опасная зона
           </div>
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="text-sm">
                 <div className="font-medium">
-                  {bot.status === "active" ? "Disable bot" : "Enable bot"}
+                  {bot.status === "active" ? "Отключить бота" : "Включить бота"}
                 </div>
                 <div className="text-xs text-dim">
                   Disable выключает все аутентификации этого бота, не трогая токены и роли.
@@ -697,12 +697,12 @@ function BotLiveView({
                 }
               >
                 <Power className="w-4 h-4" />
-                {bot.status === "active" ? "Disable" : "Enable"}
+                {bot.status === "active" ? "Отключить" : "Включить"}
               </button>
             </div>
             <div className="flex items-center justify-between gap-3 flex-wrap border-t border-token pt-2">
               <div className="text-sm">
-                <div className="font-medium">Delete bot</div>
+                <div className="font-medium">Удалить бота</div>
                 <div className="text-xs text-dim">
                   auth_service не предоставляет DELETE /bots/{"{id}"} —
                   используйте Disable + revoke токенов / ролей.
@@ -720,7 +720,7 @@ function BotLiveView({
                   )
                 }
               >
-                <Trash2 className="w-4 h-4" /> Delete
+                <Trash2 className="w-4 h-4" /> Удалить
               </button>
             </div>
           </div>
@@ -816,7 +816,7 @@ function BotCreateForm({ onDone }: { onDone: () => void }) {
         <div className="flex flex-col gap-3">
           <div className="alert-block">
             <div className="text-xs uppercase mb-1">
-              Bot создан. Токен показывается один раз:
+              Бот создан. Токен показывается один раз:
             </div>
             <div className="flex items-center gap-2">
               <span className="mono text-xs break-all flex-1">
@@ -826,7 +826,7 @@ function BotCreateForm({ onDone }: { onDone: () => void }) {
                 className="btn btn-sm flex items-center gap-1"
                 onClick={() => copy(issued.token)}
               >
-                <Copy className="w-3 h-3" /> Copy
+                <Copy className="w-3 h-3" /> Копировать
               </button>
             </div>
           </div>
@@ -955,7 +955,7 @@ function BotEditForm({
   return (
     <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
-        <Bot className="w-4 h-4 text-accent" /> Edit · {initial.name}
+        <Bot className="w-4 h-4 text-accent" /> Изменить · {initial.name}
       </h3>
       {err && <div className="alert-danger mb-2">{err}</div>}
       <div className="flex flex-col gap-3">
@@ -1036,7 +1036,7 @@ function ServicesBotsMock() {
             <div className="flex-1 min-w-0">
               <div className="text-sm truncate mono">{item.name}</div>
               <div className="text-[11px] text-dim truncate">
-                {item.owner_dept} · last {formatMskDate(item.last_used)}
+                {item.owner_dept} · посл. {formatMskDate(item.last_used)}
               </div>
             </div>
             <span
@@ -1086,19 +1086,19 @@ function MockBotView({
               className="btn flex items-center gap-1"
               onClick={() => startEdit(bot.id)}
             >
-              <Edit3 className="w-4 h-4" /> Edit
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
             <button
               className="btn flex items-center gap-1"
               onClick={() => toast.info("mock: rotate token")}
             >
-              <RotateCw className="w-4 h-4" /> Rotate token
+              <RotateCw className="w-4 h-4" /> Перевыпустить токен
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
               onClick={() => toast.info("mock: revoke")}
             >
-              <Trash2 className="w-4 h-4" /> Revoke
+              <Trash2 className="w-4 h-4" /> Отозвать
             </button>
           </div>
         )}

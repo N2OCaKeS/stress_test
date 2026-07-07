@@ -745,7 +745,7 @@ function PackageActionPanel({
           disabled={busy || serverIds.length === 0}
           title="Установить пакеты"
         >
-          <Download className="w-3.5 h-3.5" /> Install
+          <Download className="w-3.5 h-3.5" /> Установить
         </button>
         <button
           type="button"
@@ -754,7 +754,7 @@ function PackageActionPanel({
           disabled={busy || serverIds.length === 0}
           title="Удалить пакеты"
         >
-          <Trash2 className="w-3.5 h-3.5" /> Remove
+          <Trash2 className="w-3.5 h-3.5" /> Удалить
         </button>
         <button
           type="button"
@@ -763,7 +763,7 @@ function PackageActionPanel({
           disabled={busy || serverIds.length === 0}
           title="Обновить пакеты (пусто = upgrade всех)"
         >
-          <ArrowUpCircle className="w-3.5 h-3.5" /> Update
+          <ArrowUpCircle className="w-3.5 h-3.5" /> Обновить
         </button>
       </div>
 
@@ -1183,7 +1183,7 @@ function PackagesByRows({
         <thead>
           <tr className="text-[11px] uppercase text-dim border-b border-token">
             <th className="text-left px-3 py-2 font-medium sticky left-0 surface-2 z-10">
-              package
+              Пакет
             </th>
             {states.map((s) => (
               <th
@@ -1243,7 +1243,7 @@ function ServersByRows({
         <thead>
           <tr className="text-[11px] uppercase text-dim border-b border-token">
             <th className="text-left px-3 py-2 font-medium sticky left-0 surface-2 z-10">
-              server
+              Сервер
             </th>
             {packageNames.map((name) => (
               <th

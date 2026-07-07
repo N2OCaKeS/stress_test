@@ -465,7 +465,7 @@ function ControllerPane({
               disabled={!caps.admin || editing}
               title={caps.admin ? "" : caps.reason}
             >
-              <Edit3 className="w-4 h-4" /> Edit
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
@@ -772,14 +772,14 @@ function PowerCard({
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-2">
           <Power className="w-5 h-5" />
-          <h3 className="text-base font-semibold">Power</h3>
+          <h3 className="text-base font-semibold">Питание</h3>
         </div>
         <button
           className="btn btn-ghost flex items-center gap-1 text-xs"
           onClick={fetchStatus}
           title="Перечитать кэшированный power_state"
         >
-          <RefreshCw className="w-3 h-3" /> refresh
+          <RefreshCw className="w-3 h-3" /> обновить
         </button>
       </div>
 
@@ -1026,7 +1026,7 @@ function CredentialsCard({
     <div className="card">
       <div className="flex items-center gap-2 mb-3">
         <KeyRound className="w-5 h-5" />
-        <h3 className="text-base font-semibold">Credentials</h3>
+        <h3 className="text-base font-semibold">Учётные данные</h3>
       </div>
 
       {loading && <div className="text-sm text-dim">загружаем…</div>}

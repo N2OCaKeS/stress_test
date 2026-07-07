@@ -167,11 +167,11 @@ function ClientRow({
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium truncate">
           {c.name}{" "}
-          {!c.is_active && <span className="badge">inactive</span>}
+          {!c.is_active && <span className="badge">неактивен</span>}
         </div>
         <div className="text-[11px] text-dim mono truncate">{c.client_id}</div>
         <div className="text-[11px] text-dim truncate">
-          dept: <OAuth2DeptLabel deptId={c.department_id} /> · grants:{" "}
+          отдел: <OAuth2DeptLabel deptId={c.department_id} /> · grants:{" "}
           {c.grant_types.join(", ")} · uris: {c.redirect_uris.length}
         </div>
       </div>
@@ -180,7 +180,7 @@ function ClientRow({
         onClick={onDelete}
         disabled={pending}
       >
-        <Trash2 className="w-4 h-4" /> Delete
+        <Trash2 className="w-4 h-4" /> Удалить
       </button>
     </div>
   );
@@ -432,7 +432,7 @@ function AuthorizeTester() {
 
   return (
     <div className="card">
-      <h3 className="font-semibold mb-3">OAuth2 authorize URL builder</h3>
+      <h3 className="font-semibold mb-3">Построение authorize URL</h3>
       <div className="text-xs text-dim mb-3">
         Endpoint требует пользовательский JWT в заголовке `Authorization`, поэтому
         браузерный редирект здесь только для построения URL — реальный вызов
@@ -612,7 +612,7 @@ function TokenTester() {
       </div>
       {result && (
         <div className="mt-3">
-          <div className="text-xs text-dim mb-1">Response:</div>
+          <div className="text-xs text-dim mb-1">Ответ:</div>
           <pre className="mono text-xs whitespace-pre-wrap break-all border border-token p-2 rounded">
             {JSON.stringify(result, null, 2)}
           </pre>

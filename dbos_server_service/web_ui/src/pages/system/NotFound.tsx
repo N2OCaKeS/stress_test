@@ -69,7 +69,7 @@ export function NotFound() {
             </Link>
             <Link to="/login" className="btn flex items-center gap-2">
               <X className="w-4 h-4" />
-              Logout
+              Выйти
             </Link>
           </div>
 

@@ -151,7 +151,7 @@ export function UserBackendView({
   }
 
   if (!mockMode && userQ.loading && !user) {
-    return <div className="spinner mx-auto my-8" aria-label="Loading" />;
+    return <div className="spinner mx-auto my-8" aria-label="Загрузка" />;
   }
   if (!mockMode && userQ.error) {
     return <div className="alert-danger">{userQ.error.message}</div>;
@@ -214,7 +214,7 @@ export function UserBackendView({
               title={caps.edit ? undefined : caps.reason}
               onClick={() => onStartEdit?.()}
             >
-              <Edit3 className="w-4 h-4" /> Edit
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
             <button
               className="btn flex items-center gap-1"
@@ -235,7 +235,7 @@ export function UserBackendView({
                 );
               }}
             >
-              <KeyRound className="w-4 h-4" /> Reset password
+              <KeyRound className="w-4 h-4" /> Сброс пароля
             </button>
             {normalizeUserStatus(u.status) === "active" ? (
               <button
@@ -244,7 +244,7 @@ export function UserBackendView({
                 title={caps.disable ? undefined : caps.reason}
                 onClick={() => run("disable", () => disableUser(u.id))}
               >
-                <Pause className="w-4 h-4" /> Block
+                <Pause className="w-4 h-4" /> Заблокировать
               </button>
             ) : (
               <button
@@ -253,7 +253,7 @@ export function UserBackendView({
                 title={caps.disable ? undefined : caps.reason}
                 onClick={() => run("enable", () => enableUser(u.id))}
               >
-                <Play className="w-4 h-4" /> Unblock
+                <Play className="w-4 h-4" /> Разблокировать
               </button>
             )}
             <button
@@ -266,11 +266,11 @@ export function UserBackendView({
               }
               onClick={() => run("unlock", () => unlockUser(u.id))}
             >
-              <Unlock className="w-4 h-4" /> Reset lockout
+              <Unlock className="w-4 h-4" /> Сброс lockout
             </button>
             {!caps.edit && !caps.disable && !caps.delete && (
               <span className="badge badge-warn" title={caps.reason}>
-                read-only
+                Только чтение
               </span>
             )}
           </div>
@@ -313,7 +313,7 @@ export function UserBackendView({
           },
           {
             id: "danger",
-            label: "Danger zone",
+            label: "Опасная зона",
             icon: <Trash2 className="w-3 h-3" />,
           },
         ]}
@@ -445,10 +445,10 @@ function ProfileTab({
       {/* Allowed services teaser pulled from /permissions, if available. */}
       <div className="mt-4 pt-3 border-t border-token">
         <div className="text-xs uppercase tracking-wider text-dim mb-2 flex items-center gap-2">
-          <ListTree className="w-3 h-3" /> Allowed services
+          <ListTree className="w-3 h-3" /> Доступные сервисы
         </div>
         {permsLoading && !perms ? (
-          <div className="spinner" aria-label="Loading" />
+          <div className="spinner" aria-label="Загрузка" />
         ) : !perms || perms.allowed_services.length === 0 ? (
           <div className="text-xs text-dim italic">
             ни одного сервиса — пользователь не входит ни в одну группу.
@@ -495,7 +495,7 @@ function RolesTab({
   // Назначение в новом сервисе: сервис выбирается в самой модалке.
   const [assigning, setAssigning] = useState(false);
 
-  if (loading && !perms) return <div className="spinner" aria-label="Loading" />;
+  if (loading && !perms) return <div className="spinner" aria-label="Загрузка" />;
   if (err) return <div className="alert-danger">{err.message}</div>;
 
   const directBySvc = new Map<ServiceName, string[]>();
@@ -516,7 +516,7 @@ function RolesTab({
     <div className="card flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold flex items-center gap-2">
-          <Cog className="w-4 h-4 text-accent" /> Effective service roles
+          <Cog className="w-4 h-4 text-accent" /> Действующие сервис-роли
         </div>
         <div className="text-xs text-dim">
           источник: <span className="mono">GET /users/{userId}/permissions</span>
@@ -530,10 +530,10 @@ function RolesTab({
         <table className="w-full text-sm">
           <thead className="text-left text-dim text-xs uppercase">
             <tr>
-              <th className="pb-2 pr-3">Service</th>
-              <th className="pb-2 pr-3">Effective roles</th>
-              <th className="pb-2 pr-3">Direct</th>
-              <th className="pb-2 pr-3">From groups</th>
+              <th className="pb-2 pr-3">Сервис</th>
+              <th className="pb-2 pr-3">Действующие роли</th>
+              <th className="pb-2 pr-3">Напрямую</th>
+              <th className="pb-2 pr-3">Из групп</th>
               <th className="pb-2 text-right"></th>
             </tr>
           </thead>
@@ -583,7 +583,7 @@ function RolesTab({
                       title={canManage ? "Изменить набор ролей" : capsReason}
                       onClick={() => setEditService(svc)}
                     >
-                      <Edit3 className="w-3 h-3 inline" /> Edit
+                      <Edit3 className="w-3 h-3 inline" /> Изменить
                     </button>
                   </td>
                 </tr>
@@ -721,7 +721,7 @@ function AssignRolesModal({
       ) : (
         <>
           {!mockMode && servicesQ.loading && (
-            <div className="spinner" aria-label="Loading" />
+            <div className="spinner" aria-label="Загрузка" />
           )}
           {!mockMode && servicesQ.error && (
             <div className="alert-danger text-xs">
@@ -765,7 +765,7 @@ function AssignRolesModal({
             </div>
           )}
           {deptId && rolesQ.loading && (
-            <div className="spinner" aria-label="Loading" />
+            <div className="spinner" aria-label="Загрузка" />
           )}
           {deptId && rolesQ.error && (
             <div className="alert-danger text-xs">{rolesQ.error.message}</div>
@@ -812,7 +812,7 @@ function AssignRolesModal({
                   setManual("");
                 }}
               >
-                <Plus className="w-3 h-3" /> add
+                <Plus className="w-3 h-3" /> добавить
               </button>
             </div>
           </div>
@@ -830,7 +830,7 @@ function AssignRolesModal({
                       type="button"
                       className="text-dim hover:text-danger"
                       onClick={() => toggle(r)}
-                      aria-label={`remove ${r}`}
+                      aria-label={`убрать ${r}`}
                     >
                       <XCircle className="w-3 h-3" />
                     </button>
@@ -905,7 +905,7 @@ function GroupsTab({
   const confirm = useConfirm();
   const [adding, setAdding] = useState(false);
 
-  if (loading) return <div className="spinner" aria-label="Loading" />;
+  if (loading) return <div className="spinner" aria-label="Загрузка" />;
   if (err) return <div className="alert-danger">{err.message}</div>;
 
   return (
@@ -931,9 +931,9 @@ function GroupsTab({
         <table className="w-full text-sm">
           <thead className="text-left text-dim text-xs uppercase">
             <tr>
-              <th className="pb-2 pr-3">Group</th>
-              <th className="pb-2 pr-3">Display</th>
-              <th className="pb-2 pr-3">Dept</th>
+              <th className="pb-2 pr-3">Группа</th>
+              <th className="pb-2 pr-3">Отображаемое имя</th>
+              <th className="pb-2 pr-3">Отдел</th>
               <th className="pb-2 text-right"></th>
             </tr>
           </thead>
@@ -1033,7 +1033,7 @@ function AddToGroupModal({
 
   return (
     <ModalShell title="Добавить в группу" onClose={onClose}>
-      {allQ.loading && <div className="spinner" aria-label="Loading" />}
+      {allQ.loading && <div className="spinner" aria-label="Загрузка" />}
       {allQ.error && <div className="alert-danger text-xs">{allQ.error.message}</div>}
       {sorted.length === 0 && !allQ.loading ? (
         <div className="text-sm text-dim italic">
@@ -1051,7 +1051,7 @@ function AddToGroupModal({
             return (
               <option key={g.id} value={g.id}>
                 {g.name} ({deptLabel})
-                {g.department_id === deptId ? " · own dept" : ""}
+                {g.department_id === deptId ? " · свой отдел" : ""}
               </option>
             );
           })}
@@ -1169,7 +1169,7 @@ function SessionsTab({
         </div>
       )}
       {!mockMode && sessQ.loading && (
-        <div className="spinner" aria-label="Loading" />
+        <div className="spinner" aria-label="Загрузка" />
       )}
       {!mockMode && sessQ.error && (
         <div className="alert-danger">{sessQ.error.message}</div>
@@ -1185,9 +1185,9 @@ function SessionsTab({
                 <th className="px-3 py-2">session_id</th>
                 <th className="px-3 py-2">IP</th>
                 <th className="px-3 py-2">UA</th>
-                <th className="px-3 py-2">created</th>
-                <th className="px-3 py-2">last_used</th>
-                <th className="px-3 py-2">expires</th>
+                <th className="px-3 py-2">Создана</th>
+                <th className="px-3 py-2">Последнее использование</th>
+                <th className="px-3 py-2">Истекает</th>
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
@@ -1234,7 +1234,7 @@ function SessionsTab({
       {err && <div className="alert-danger">{err}</div>}
       {info && <div className="text-xs text-ok">{info}</div>}
       {!canRevoke && (
-        <div className="text-xs text-dim italic">Read-only: {capsReason}</div>
+        <div className="text-xs text-dim italic">Только чтение: {capsReason}</div>
       )}
     </div>
   );
@@ -1257,7 +1257,7 @@ function DangerTab({
   return (
     <div className="card flex flex-col gap-3">
       <div className="text-sm font-semibold flex items-center gap-2 text-danger">
-        <Trash2 className="w-4 h-4" /> Danger zone
+        <Trash2 className="w-4 h-4" /> Опасная зона
       </div>
       <div className="flex gap-2 flex-wrap items-center">
         {!user.is_banned ? (

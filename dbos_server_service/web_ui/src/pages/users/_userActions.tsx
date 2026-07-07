@@ -68,7 +68,7 @@ export function Modal({
           <h3 className="font-semibold text-sm flex items-center gap-2">
             {title}
           </h3>
-          <button className="btn btn-ghost p-1" onClick={onClose} aria-label="close">
+          <button className="btn btn-ghost p-1" onClick={onClose} aria-label="Закрыть">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -190,7 +190,7 @@ export function CreateUserForm({
           )}
         </div>
       </Field>
-      <Field label={`initial password (auto-generated) · ${PASSWORD_POLICY_MESSAGE}`}>
+      <Field label={`начальный пароль (сгенерирован) · ${PASSWORD_POLICY_MESSAGE}`}>
         <div className="flex gap-2 items-center">
           <input
             className="input flex-1 mono"
@@ -267,7 +267,7 @@ export function CreateUserForm({
           value={platformRole}
           onChange={(e) => setPlatformRole(e.target.value)}
         >
-          <option value="">— (обычный user)</option>
+          <option value="">— (обычный пользователь)</option>
           {availableRoles.map((r) => (
             <option key={r.value} value={r.value}>
               {r.label}
@@ -366,7 +366,7 @@ export function EditRolesForm({
           value={platformRole}
           onChange={(e) => setPlatformRole(e.target.value)}
         >
-          <option value="">— (обычный user)</option>
+          <option value="">— (обычный пользователь)</option>
           <option value="account_admin">account_admin</option>
           <option value="department_admin">department_admin</option>
           <option value="loging_admin">loging_admin</option>

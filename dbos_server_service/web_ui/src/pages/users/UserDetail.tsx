@@ -358,7 +358,7 @@ export function UserDetail() {
                 );
               }}
             >
-              <KeyRound className="w-4 h-4" /> Reset password
+              <KeyRound className="w-4 h-4" /> Сбросить пароль
             </button>
             <button
               className="btn flex items-center gap-1"
@@ -387,7 +387,7 @@ export function UserDetail() {
                 runAction("force-pwd-change", () => forcePasswordChange(user.id));
               }}
             >
-              <KeyRound className="w-4 h-4" /> Force pwd change
+              <KeyRound className="w-4 h-4" /> Требовать смену пароля
             </button>
             {user.status === "active" ? (
               <button
@@ -396,7 +396,7 @@ export function UserDetail() {
                 title={caps.disable ? undefined : caps.reason}
                 onClick={() => runAction("disable", () => disableUser(user.id))}
               >
-                <Pause className="w-4 h-4" /> Block
+                <Pause className="w-4 h-4" /> Заблокировать
               </button>
             ) : (
               <button
@@ -405,7 +405,7 @@ export function UserDetail() {
                 title={caps.disable ? undefined : caps.reason}
                 onClick={() => runAction("enable", () => enableUser(user.id))}
               >
-                <Play className="w-4 h-4" /> Unblock
+                <Play className="w-4 h-4" /> Разблокировать
               </button>
             )}
             <button
@@ -418,7 +418,7 @@ export function UserDetail() {
               }
               onClick={() => runAction("unlock", () => unlockUser(user.id))}
             >
-              <Unlock className="w-4 h-4" /> Reset lockout
+              <Unlock className="w-4 h-4" /> Снять lockout
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
@@ -428,11 +428,11 @@ export function UserDetail() {
                 runAction("revoke-sessions", () => revokeUserSessions(user.id))
               }
             >
-              <LogOut className="w-4 h-4" /> Revoke sessions
+              <LogOut className="w-4 h-4" /> Завершить сессии
             </button>
             {!caps.edit && !caps.disable && !caps.delete && (
               <span className="badge badge-warn" title={caps.reason}>
-                read-only
+                Только чтение
               </span>
             )}
           </div>
@@ -491,7 +491,7 @@ export function UserDetail() {
                   if (!user.created_by) return <span className="mono">system</span>;
                   const cb = userById(user.created_by);
                   if (cb) return <Link to={`/users/${cb.id}`} className="mono hover-bg">{cb.username}</Link>;
-                  return <span className="mono text-dim" title="user removed or unknown">{user.created_by} (удалён)</span>;
+                  return <span className="mono text-dim" title="пользователь удалён или неизвестен">{user.created_by} (удалён)</span>;
                 })()} />
                 <StatRow k="last_login" v={<span className="mono">{formatMsk(user.last_login)}</span>} />
               </div>
@@ -569,7 +569,7 @@ export function UserDetail() {
                             <span className="text-xs text-dim mt-1">{role.description}</span>
                           </div>
                           <div className="text-xs text-dim text-right">
-                            <div>granted by <GrantedBy id={ra.granted_by} /></div>
+                            <div>Кем выдано <GrantedBy id={ra.granted_by} /></div>
                             <div>{formatMskDate(ra.granted_at)}</div>
                           </div>
                         </div>
@@ -657,8 +657,8 @@ export function UserDetail() {
                     <tr>
                       <th className="pb-2 pr-3">Сервис</th>
                       <th className="pb-2 pr-3">Роль</th>
-                      <th className="pb-2 pr-3">Scope</th>
-                      <th className="pb-2 pr-3">Granted by</th>
+                      <th className="pb-2 pr-3">Область</th>
+                      <th className="pb-2 pr-3">Кем выдано</th>
                       <th className="pb-2"></th>
                     </tr>
                   </thead>
@@ -694,26 +694,26 @@ export function UserDetail() {
           </Section>
 
           {/* 2d. Direct grants */}
-          <Section icon={<KeyRound className="w-4 h-4" />} title="Прямые grants" className="col-span-2">
+          <Section icon={<KeyRound className="w-4 h-4" />} title="Прямые выдачи" className="col-span-2">
             {!mockMode ? (
               <div className="text-sm text-dim italic">
-                Не реализовано — auth_service не выдаёт direct grants на
-                user-уровне (есть только роли и группы). Нужен отдельный
+                Не реализовано — auth_service не выдаёт прямые выдачи на
+                уровне пользователя (есть только роли и группы). Нужен отдельный
                 endpoint GET /users/{"{id}"}/grants.
               </div>
             ) : (() => {
               const grants = DIRECT_GRANTS.filter((g) => g.subject_kind === "user" && g.subject_id === user.id);
               if (grants.length === 0) {
-                return <div className="text-sm text-dim italic">Direct grants отсутствуют.</div>;
+                return <div className="text-sm text-dim italic">Прямые выдачи отсутствуют.</div>;
               }
               return (
                 <table className="w-full text-sm">
                   <thead className="text-left text-dim text-xs uppercase">
                     <tr>
-                      <th className="pb-2 pr-3">Permission</th>
-                      <th className="pb-2 pr-3">Resource</th>
-                      <th className="pb-2 pr-3">Granted by</th>
-                      <th className="pb-2 pr-3">When</th>
+                      <th className="pb-2 pr-3">Право</th>
+                      <th className="pb-2 pr-3">Ресурс</th>
+                      <th className="pb-2 pr-3">Кем выдано</th>
+                      <th className="pb-2 pr-3">Когда</th>
                       <th className="pb-2"></th>
                     </tr>
                   </thead>
@@ -758,7 +758,7 @@ export function UserDetail() {
                                 caps.manageRoles
                                   ? isPreviewed
                                     ? "Подтвердить revoke (mock — лог в консоль)"
-                                    : "Revoke direct grant"
+                                    : "Отозвать прямую выдачу"
                                   : caps.reason
                               }
                               onClick={() => {
@@ -771,9 +771,9 @@ export function UserDetail() {
                                   // фейкового подтверждения.
                                   setActionErr(null);
                                   setActionInfo(
-                                    "Revoke прямого grant ещё не реализован в auth_service " +
+                                    "Отзыв прямой выдачи ещё не реализован в auth_service " +
                                       "(нет endpoint DELETE /users/{id}/grants/{grant_id}). " +
-                                      "Сейчас direct grants можно поменять только переназначив роли/группы.",
+                                      "Сейчас прямые выдачи можно поменять только переназначив роли/группы.",
                                   );
                                   setDiffMutation(null);
                                 } else {
@@ -785,7 +785,7 @@ export function UserDetail() {
                               }}
                             >
                               <XCircle className="w-3 h-3" />{" "}
-                              {isPreviewed ? "Confirm revoke" : "Revoke"}
+                              {isPreviewed ? "Подтвердить отзыв" : "Отозвать"}
                             </button>
                           </td>
                         </tr>
@@ -799,7 +799,7 @@ export function UserDetail() {
 
           {/* 3. Effective permissions (mock-only — permission graph is mock-built) */}
           {mockMode && (
-          <Section icon={<ListTree className="w-4 h-4" />} title={`Effective permissions · ${effective.length}`} className="col-span-2">
+          <Section icon={<ListTree className="w-4 h-4" />} title={`Действующие права · ${effective.length}`} className="col-span-2">
             <div className="flex items-center gap-2 mb-3 text-xs">
               <Filter className="w-3 h-3 text-dim" />
               <span className="text-dim">Сервис:</span>
@@ -819,9 +819,9 @@ export function UserDetail() {
                 <thead className="text-left text-dim text-xs uppercase surface-2">
                   <tr>
                     <th className="px-3 py-2 w-8"></th>
-                    <th className="px-3 py-2">Permission</th>
-                    <th className="px-3 py-2">Service</th>
-                    <th className="px-3 py-2">Scope</th>
+                    <th className="px-3 py-2">Право</th>
+                    <th className="px-3 py-2">Сервис</th>
+                    <th className="px-3 py-2">Область</th>
                     <th className="px-3 py-2">Источники</th>
                   </tr>
                 </thead>
@@ -909,10 +909,10 @@ export function UserDetail() {
               <table className="w-full text-sm">
                 <thead className="text-left text-dim text-xs uppercase">
                   <tr>
-                    <th className="pb-2 pr-3">Time</th>
-                    <th className="pb-2 pr-3">Action</th>
-                    <th className="pb-2 pr-3">Resource</th>
-                    <th className="pb-2 pr-3">Outcome</th>
+                    <th className="pb-2 pr-3">Время</th>
+                    <th className="pb-2 pr-3">Действие</th>
+                    <th className="pb-2 pr-3">Ресурс</th>
+                    <th className="pb-2 pr-3">Исход</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -952,17 +952,17 @@ export function UserDetail() {
           {!mockMode && (
             <Section
               icon={<ListTree className="w-4 h-4" />}
-              title="Backend view (auth_service)"
+              title="Данные бэкенда (auth_service)"
               className="col-span-2"
             >
               {permsQ.loading || groupsApiQ.loading ? (
-                <div className="spinner" aria-label="Loading" />
+                <div className="spinner" aria-label="Загрузка" />
               ) : permsQ.error ? (
                 <div className="alert-danger">{permsQ.error.message}</div>
               ) : permsQ.data ? (
                 <div className="grid grid-cols-2 gap-4 text-xs">
                   <div>
-                    <div className="text-dim mb-1">Allowed services</div>
+                    <div className="text-dim mb-1">Разрешённые сервисы</div>
                     <div className="flex flex-wrap gap-1">
                       {permsQ.data.allowed_services.map((s) => (
                         <span key={s} className="badge">{s}</span>
@@ -973,7 +973,7 @@ export function UserDetail() {
                     </div>
                   </div>
                   <div>
-                    <div className="text-dim mb-1">Groups (API)</div>
+                    <div className="text-dim mb-1">Группы (API)</div>
                     <div className="flex flex-wrap gap-1">
                       {(groupsApiQ.data ?? []).map((g) => (
                         <span key={g.id} className="badge">{g.name}</span>
@@ -984,7 +984,7 @@ export function UserDetail() {
                     </div>
                   </div>
                   <div className="col-span-2">
-                    <div className="text-dim mb-1">Effective service roles</div>
+                    <div className="text-dim mb-1">Действующие сервис-роли</div>
                     <table className="w-full text-xs">
                       <tbody>
                         {Object.entries(permsQ.data.service_roles).map(
@@ -1011,7 +1011,7 @@ export function UserDetail() {
           )}
 
           {/* 7. Danger zone (smaller, footer) */}
-          <Section icon={<Trash2 className="w-4 h-4" />} title="Danger zone" className="col-span-2">
+          <Section icon={<Trash2 className="w-4 h-4" />} title="Опасная зона" className="col-span-2">
             <div className="flex gap-2 flex-wrap">
               <button
                 className="btn btn-danger flex items-center gap-1"
@@ -1019,7 +1019,7 @@ export function UserDetail() {
                 title={caps.disable ? undefined : caps.reason}
                 onClick={async () => {
                   const { ok, reason } = await confirm.prompt({
-                    title: "Ban (permanent)",
+                    title: "Бан (навсегда)",
                     message: `Заблокировать ${user.username} навсегда?`,
                     reason: true,
                     reasonLabel: "Причина бана",
@@ -1033,7 +1033,7 @@ export function UserDetail() {
                   );
                 }}
               >
-                <ShieldOff className="w-4 h-4" /> Ban (permanent)
+                <ShieldOff className="w-4 h-4" /> Бан (навсегда)
               </button>
               <button
                 className="btn"
@@ -1041,7 +1041,7 @@ export function UserDetail() {
                 title={caps.disable ? undefined : caps.reason}
                 onClick={() => runAction("unban", () => unbanUser(user.id))}
               >
-                <ShieldCheck className="w-4 h-4 inline" /> Unban
+                <ShieldCheck className="w-4 h-4 inline" /> Снять бан
               </button>
               <button
                 className="btn btn-danger-solid"
@@ -1049,7 +1049,7 @@ export function UserDetail() {
                 title={caps.delete ? undefined : caps.reason}
                 onClick={async () => {
                   const { ok, reason } = await confirm.prompt({
-                    title: "Hard-delete пользователя",
+                    title: "Полное удаление пользователя",
                     message: `Снести ${user.username} целиком? Укажи причину (Q3 reorg / left / ...):`,
                     reason: true,
                     reasonLabel: "Причина",
@@ -1073,7 +1073,7 @@ export function UserDetail() {
                     .finally(() => setBusy(null));
                 }}
               >
-                Delete user
+                Удалить пользователя
               </button>
               <span className="text-xs text-dim ml-auto">
                 {caps.delete
@@ -1145,7 +1145,7 @@ function PermissionRow({
         <tr className="border-t border-token surface-2">
           <td></td>
           <td colSpan={4} className="px-3 py-2">
-            <div className="text-xs text-dim mb-1">Traceability:</div>
+            <div className="text-xs text-dim mb-1">Трассировка:</div>
             {trace.roots.length === 0 ? (
               <div className="text-xs text-dim italic">источники не найдены</div>
             ) : (
@@ -1170,7 +1170,7 @@ function TraceTree({ nodes }: { nodes: TraceNode[] }) {
               <span>·</span>
               <span>{n.label}</span>
               {n.via && n.via.length > 0 && (
-                <span className="text-dim">({n.via.length} role{n.via.length === 1 ? "" : "s"})</span>
+                <span className="text-dim">({n.via.length} {n.via.length === 1 ? "роль" : "роли"})</span>
               )}
             </summary>
             {n.via && n.via.length > 0 && (
@@ -1274,7 +1274,7 @@ function GrantedBy({ id }: { id: string }) {
   const u = userById(id);
   if (!u) {
     return (
-      <span className="mono text-dim" title="user removed or unknown">
+      <span className="mono text-dim" title="пользователь удалён или неизвестен">
         {id} (удалён)
       </span>
     );
@@ -1410,9 +1410,9 @@ function UserSessionsTab({
                   <th className="px-3 py-2">session_id</th>
                   <th className="px-3 py-2">IP</th>
                   <th className="px-3 py-2">UA</th>
-                  <th className="px-3 py-2">created</th>
+                  <th className="px-3 py-2">создан</th>
                   <th className="px-3 py-2">last_used</th>
-                  <th className="px-3 py-2">expires</th>
+                  <th className="px-3 py-2">истекает</th>
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
@@ -1465,7 +1465,7 @@ function UserSessionsTab({
         )}
         {!canRevoke && (
           <div className="text-xs text-dim italic mt-3">
-            Read-only: {canRevokeReason}
+            Только чтение: {canRevokeReason}
           </div>
         )}
       </div>

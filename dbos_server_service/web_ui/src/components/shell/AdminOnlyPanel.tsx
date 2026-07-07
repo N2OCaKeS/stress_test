@@ -193,7 +193,7 @@ export function AdminOnlyPanel({ width, collapsed, onToggleCollapsed }: AdminOnl
         <div className="p-2 border-t border-token">
           <Link
             to="/log"
-            title={collapsed ? "Журнал аудита (read-only)" : undefined}
+            title={collapsed ? "Журнал аудита (только чтение)" : undefined}
             className={`chip ${isActive("/log") ? "active" : ""} ${collapsed ? "justify-center" : ""}`}
           >
             <FileText className="w-5 h-5 text-accent shrink-0" />
@@ -208,11 +208,11 @@ export function AdminOnlyPanel({ width, collapsed, onToggleCollapsed }: AdminOnl
         <div className="p-2 border-t border-token">
           <Link
             to="/wiki"
-            title={collapsed ? "Wiki — примеры API" : undefined}
+            title={collapsed ? "Вики — примеры API" : undefined}
             className={`chip ${isActive("/wiki") ? "active" : ""} ${collapsed ? "justify-center" : ""}`}
           >
             <BookOpen className="w-5 h-5 text-accent shrink-0" />
-            {!collapsed && <div className="flex-1 text-sm">Wiki</div>}
+            {!collapsed && <div className="flex-1 text-sm">Вики</div>}
           </Link>
         </div>
         <div className="p-2 border-t border-token flex flex-col gap-2">
@@ -257,7 +257,7 @@ export function AdminOnlyPanel({ width, collapsed, onToggleCollapsed }: AdminOnl
               type="button"
               onClick={onToggleCollapsed}
               title={collapsed ? "Развернуть панель" : "Свернуть панель"}
-              aria-label={collapsed ? "Expand left panel" : "Collapse left panel"}
+              aria-label={collapsed ? "Развернуть панель" : "Свернуть панель"}
               className="btn flex items-center justify-center gap-1.5 shrink-0"
             >
               <ToggleIcon className="w-4 h-4" />
@@ -269,15 +269,15 @@ export function AdminOnlyPanel({ width, collapsed, onToggleCollapsed }: AdminOnl
                 className="btn flex-1 flex items-center justify-center gap-1.5"
               >
                 <LogOut className="w-4 h-4" />
-                Logout
+                Выйти
               </button>
             )}
             {collapsed && (
               <button
                 type="button"
                 onClick={onLogout}
-                title="Logout"
-                aria-label="Logout"
+                title="Выйти"
+                aria-label="Выйти"
                 className="btn flex items-center justify-center gap-1.5"
               >
                 <LogOut className="w-4 h-4" />

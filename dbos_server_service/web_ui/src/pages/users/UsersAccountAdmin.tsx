@@ -191,12 +191,12 @@ type Tab = "users" | "groups" | "bots";
 type WorkzoneTab = "profile" | "roles" | "sessions" | "pats" | "bots" | "audit";
 
 const WORKZONE_TABS: { id: WorkzoneTab; label: string }[] = [
-  { id: "profile", label: "Profile" },
-  { id: "roles", label: "Roles & Grants" },
-  { id: "sessions", label: "Sessions" },
+  { id: "profile", label: "Профиль" },
+  { id: "roles", label: "Роли и выдачи" },
+  { id: "sessions", label: "Сессии" },
   { id: "pats", label: "PATs" },
-  { id: "bots", label: "Bots created" },
-  { id: "audit", label: "Audit" },
+  { id: "bots", label: "Созданные боты" },
+  { id: "audit", label: "Аудит" },
 ];
 
 export function UsersAccountAdmin() {
@@ -368,7 +368,7 @@ export function UsersAccountAdmin() {
 
   async function handleRevokeSessions() {
     if (!targetUser) return;
-    if (!(await confirm.confirm({ message: `Revoke all sessions для ${tgtLabel}?`, danger: true, confirmLabel: "Завершить сессии" }))) return;
+    if (!(await confirm.confirm({ message: `Завершить все сессии для ${tgtLabel}?`, danger: true, confirmLabel: "Завершить сессии" }))) return;
     runAction("revoke-sessions", () => revokeUserSessions(targetUser.id));
   }
 
@@ -471,9 +471,9 @@ export function UsersAccountAdmin() {
       <aside className="w-[360px] shrink-0 border-r border-token surface flex flex-col min-h-0">
         <div className="border-b border-token px-3 py-2 flex flex-col gap-2">
           <div className="flex gap-1">
-            <TabBtn icon={<User className="w-3 h-3" />} active={tab === "users"} onClick={() => setTab("users")}>Users · {usersCount}</TabBtn>
-            <TabBtn icon={<UsersRound className="w-3 h-3" />} active={tab === "groups"} onClick={() => setTab("groups")}>Groups · {groupsCount}</TabBtn>
-            <TabBtn icon={<Bot className="w-3 h-3" />} active={tab === "bots"} onClick={() => setTab("bots")}>Bots · {botsCount}</TabBtn>
+            <TabBtn icon={<User className="w-3 h-3" />} active={tab === "users"} onClick={() => setTab("users")}>Пользователи · {usersCount}</TabBtn>
+            <TabBtn icon={<UsersRound className="w-3 h-3" />} active={tab === "groups"} onClick={() => setTab("groups")}>Группы · {groupsCount}</TabBtn>
+            <TabBtn icon={<Bot className="w-3 h-3" />} active={tab === "bots"} onClick={() => setTab("bots")}>Боты · {botsCount}</TabBtn>
           </div>
           <div className="flex items-center gap-2">
             <Search className="w-4 h-4 text-dim" />
@@ -488,7 +488,7 @@ export function UsersAccountAdmin() {
             Матрицы доступа теперь живут внутри карточки пользователя — вкладка «Матрица доступа».
           </div>
           {!mockMode && apiUsersQ.loading && (
-            <div className="spinner" aria-label="Loading" />
+            <div className="spinner" aria-label="Загрузка" />
           )}
           {!mockMode && apiUsersQ.error && (
             <div className="alert-danger text-[11px]">
@@ -601,7 +601,7 @@ export function UsersAccountAdmin() {
                     </Link>
                   ))
                 : apiGroupsQ.loading
-                  ? <div className="spinner mx-3" aria-label="Loading" />
+                  ? <div className="spinner mx-3" aria-label="Загрузка" />
                   : apiGroupsQ.error
                     ? <div className="alert-danger text-[11px] mx-3">{apiGroupsQ.error.message}</div>
                     : filteredApiGroups.length === 0
@@ -642,7 +642,7 @@ export function UsersAccountAdmin() {
                     </Link>
                   ))
                 : apiBotsQ.loading
-                  ? <div className="spinner mx-3" aria-label="Loading" />
+                  ? <div className="spinner mx-3" aria-label="Загрузка" />
                   : apiBotsQ.error
                     ? <div className="alert-danger text-[11px] mx-3">{apiBotsQ.error.message}</div>
                     : filteredApiBots.length === 0
@@ -758,7 +758,7 @@ export function UsersAccountAdmin() {
               title={caps.edit ? undefined : caps.reason}
               onClick={handleResetPassword}
             >
-              <KeyRound className="w-4 h-4" /> Reset password
+              <KeyRound className="w-4 h-4" /> Сбросить пароль
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
@@ -766,7 +766,7 @@ export function UsersAccountAdmin() {
               title={caps.disable ? undefined : caps.reason}
               onClick={handleBlock}
             >
-              <Pause className="w-4 h-4" /> Block
+              <Pause className="w-4 h-4" /> Заблокировать
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
@@ -774,7 +774,7 @@ export function UsersAccountAdmin() {
               title={caps.disable ? undefined : caps.reason}
               onClick={handleRevokeSessions}
             >
-              <LogOut className="w-4 h-4" /> Revoke sessions
+              <LogOut className="w-4 h-4" /> Завершить сессии
             </button>
             <button
               className="btn flex items-center gap-1"
@@ -782,7 +782,7 @@ export function UsersAccountAdmin() {
               title={caps.manageRoles ? undefined : caps.reason}
               onClick={() => setEditRolesOpen(true)}
             >
-              <Edit3 className="w-4 h-4" /> Edit roles
+              <Edit3 className="w-4 h-4" /> Изменить роли
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
@@ -790,7 +790,7 @@ export function UsersAccountAdmin() {
               title={caps.delete ? undefined : caps.reason}
               onClick={handleDelete}
             >
-              <Trash2 className="w-4 h-4" /> Delete
+              <Trash2 className="w-4 h-4" /> Удалить
             </button>
           </div>
         </div>
@@ -904,8 +904,8 @@ export function UsersAccountAdmin() {
                     <tr>
                       <th className="pb-2 pr-3">IP</th>
                       <th className="pb-2 pr-3">UA</th>
-                      <th className="pb-2 pr-3">Started</th>
-                      <th className="pb-2 pr-3">Last seen</th>
+                      <th className="pb-2 pr-3">Начало</th>
+                      <th className="pb-2 pr-3">Последняя активность</th>
                       <th className="pb-2"></th>
                     </tr>
                   </thead>
@@ -926,7 +926,7 @@ export function UsersAccountAdmin() {
                           title={caps.disable ? undefined : caps.reason}
                           onClick={() => handleSessionRevoke("ses_demo_active")}
                         >
-                          revoke
+                          отозвать
                         </button>
                       </td>
                     </tr>
@@ -946,7 +946,7 @@ export function UsersAccountAdmin() {
                   </tbody>
                 </table>
               ) : sessionsQ.loading ? (
-                <div className="spinner" aria-label="Loading" />
+                <div className="spinner" aria-label="Загрузка" />
               ) : sessionsQ.error ? (
                 <div className="alert-danger text-[11px]">{sessionsQ.error.message}</div>
               ) : (sessionsQ.data?.items ?? []).length === 0 ? (
@@ -957,8 +957,8 @@ export function UsersAccountAdmin() {
                     <tr>
                       <th className="pb-2 pr-3">IP</th>
                       <th className="pb-2 pr-3">UA</th>
-                      <th className="pb-2 pr-3">Started</th>
-                      <th className="pb-2 pr-3">Last seen</th>
+                      <th className="pb-2 pr-3">Начало</th>
+                      <th className="pb-2 pr-3">Последняя активность</th>
                       <th className="pb-2"></th>
                     </tr>
                   </thead>
@@ -980,7 +980,7 @@ export function UsersAccountAdmin() {
                             title={caps.disable ? undefined : caps.reason}
                             onClick={() => handleSessionRevoke(s.session_id)}
                           >
-                            revoke
+                            отозвать
                           </button>
                         </td>
                       </tr>
@@ -1000,10 +1000,10 @@ export function UsersAccountAdmin() {
                 <table className="w-full text-sm">
                   <thead className="text-left text-dim text-xs uppercase">
                     <tr>
-                      <th className="pb-2 pr-3">Name</th>
-                      <th className="pb-2 pr-3">Created</th>
-                      <th className="pb-2 pr-3">Last used</th>
-                      <th className="pb-2 pr-3">Scopes</th>
+                      <th className="pb-2 pr-3">Название</th>
+                      <th className="pb-2 pr-3">Создан</th>
+                      <th className="pb-2 pr-3">Последнее использование</th>
+                      <th className="pb-2 pr-3">Области</th>
                       <th className="pb-2"></th>
                     </tr>
                   </thead>
@@ -1023,7 +1023,7 @@ export function UsersAccountAdmin() {
                           title={caps.delete ? undefined : caps.reason}
                           onClick={() => handlePatRevoke("pat_grafana_loki")}
                         >
-                          revoke
+                          отозвать
                         </button>
                       </td>
                     </tr>
@@ -1048,7 +1048,7 @@ export function UsersAccountAdmin() {
                   mock: список ботов будет подтянут из API в live-mode.
                 </div>
               ) : apiBotsQ.loading ? (
-                <div className="spinner" aria-label="Loading" />
+                <div className="spinner" aria-label="Загрузка" />
               ) : apiBotsQ.error ? (
                 <div className="alert-danger text-[11px]">{apiBotsQ.error.message}</div>
               ) : botsCreatedByTarget.length === 0 ? (
@@ -1059,10 +1059,10 @@ export function UsersAccountAdmin() {
                 <table className="w-full text-sm">
                   <thead className="text-left text-dim text-xs uppercase">
                     <tr>
-                      <th className="pb-2 pr-3">Name</th>
-                      <th className="pb-2 pr-3">Dept</th>
-                      <th className="pb-2 pr-3">Status</th>
-                      <th className="pb-2 pr-3">Created</th>
+                      <th className="pb-2 pr-3">Название</th>
+                      <th className="pb-2 pr-3">Отдел</th>
+                      <th className="pb-2 pr-3">Статус</th>
+                      <th className="pb-2 pr-3">Создан</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1095,7 +1095,7 @@ export function UsersAccountAdmin() {
           {workzoneTab === "audit" && targetUser && (
             <div className="surface border border-token rounded-lg p-4 col-span-2">
               <div className="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
-                <Clock className="w-4 h-4" /> Audit
+                <Clock className="w-4 h-4" /> Аудит
               </div>
               <div className="text-sm text-dim">
                 Лента audit-событий по этому пользователю живёт в loging_service.
@@ -1171,7 +1171,7 @@ export function UsersAccountAdmin() {
 
       {editRolesOpen && targetUser && (
         <Modal
-          title={`Edit roles · ${targetUser.username}`}
+          title={`Изменить роли · ${targetUser.username}`}
           onClose={() => setEditRolesOpen(false)}
         >
           <EditRolesForm

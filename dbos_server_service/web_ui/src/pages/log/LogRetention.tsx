@@ -22,16 +22,16 @@ interface AuditRow {
 }
 
 const AUDIT_ROWS: AuditRow[] = [
-  { time: "сегодня 03:17", action: "sweep_completed", actor: "dbos_bot_audit_export", detail: "removed 14 312 rows · freed 94 MB", status: "ok", statusKind: "ok" },
-  { time: "сегодня 03:15", action: "sweep_started", actor: "dbos_bot_audit_export", detail: "scheduled · cron 0 3 * * *", status: "info", statusKind: "" },
-  { time: "2 дн назад", action: "rule_updated", actor: "carol", detail: "CRITICAL → 365 days (было 180)", status: "change", statusKind: "warn" },
-  { time: "2 дн назад 03:18", action: "sweep_completed", actor: "dbos_bot_audit_export", detail: "removed 13 891 rows · freed 88 MB", status: "ok", statusKind: "ok" },
-  { time: "5 дн назад", action: "manual_sweep", actor: "carol", detail: 'reason: "before quarterly export"', status: "ok", statusKind: "ok" },
-  { time: "9 дн назад", action: "rule_added", actor: "carol", detail: "INFO worker/healthcheck → 30 days", status: "new", statusKind: "accent" },
-  { time: "14 дн назад", action: "sweep_failed", actor: "dbos_bot_audit_export", detail: "lock timeout · retried 03:35 → ok", status: "warn", statusKind: "warn" },
-  { time: "21 дн назад", action: "rule_removed", actor: "carol", detail: '"TRACE → 1 day" удалено (нет источников)', status: "change", statusKind: "" },
-  { time: "28 дн назад", action: "policy_changed", actor: "carol", detail: "default 60 → 90 days", status: "change", statusKind: "warn" },
-  { time: "42 дн назад", action: "partition_plan_deferred", actor: "carol", detail: "decision: hold (sweep укладывается в SLA)", status: "decision", statusKind: "" },
+  { time: "сегодня 03:17", action: "sweep_completed", actor: "dbos_bot_audit_export", detail: "удалено 14 312 строк · освобождено 94 MB", status: "ok", statusKind: "ok" },
+  { time: "сегодня 03:15", action: "sweep_started", actor: "dbos_bot_audit_export", detail: "по расписанию · cron 0 3 * * *", status: "info", statusKind: "" },
+  { time: "2 дн назад", action: "rule_updated", actor: "carol", detail: "CRITICAL → 365 дней (было 180)", status: "изменение", statusKind: "warn" },
+  { time: "2 дн назад 03:18", action: "sweep_completed", actor: "dbos_bot_audit_export", detail: "удалено 13 891 строк · освобождено 88 MB", status: "ok", statusKind: "ok" },
+  { time: "5 дн назад", action: "manual_sweep", actor: "carol", detail: 'причина: "before quarterly export"', status: "ok", statusKind: "ok" },
+  { time: "9 дн назад", action: "rule_added", actor: "carol", detail: "INFO worker/healthcheck → 30 дней", status: "новое", statusKind: "accent" },
+  { time: "14 дн назад", action: "sweep_failed", actor: "dbos_bot_audit_export", detail: "таймаут блокировки · повтор 03:35 → ok", status: "warn", statusKind: "warn" },
+  { time: "21 дн назад", action: "rule_removed", actor: "carol", detail: '"TRACE → 1 day" удалено (нет источников)', status: "изменение", statusKind: "" },
+  { time: "28 дн назад", action: "policy_changed", actor: "carol", detail: "default 60 → 90 дней", status: "изменение", statusKind: "warn" },
+  { time: "42 дн назад", action: "partition_plan_deferred", actor: "carol", detail: "решение: hold (sweep укладывается в SLA)", status: "решение", statusKind: "" },
 ];
 
 export function LogRetention() {
@@ -45,7 +45,7 @@ export function LogRetention() {
         <div className="scroll-block w-full px-8 py-8">
           <section className="mb-6">
             <div className="text-2xl font-bold mb-1 flex items-center gap-2">
-              <Archive className="w-6 h-6 text-accent" /> Retention policy
+              <Archive className="w-6 h-6 text-accent" /> Политика хранения
             </div>
             <div className="text-dim text-sm">
               Управление сроком хранения audit-событий. Каждый sweep сам пишется
@@ -56,44 +56,44 @@ export function LogRetention() {
           <section className="grid gap-4 md:grid-cols-2 mb-6">
             <div className="card">
               <div className="stat-label flex items-center gap-2">
-                <Archive className="w-3 h-3" /> Текущий policy
+                <Archive className="w-3 h-3" /> Текущая политика
               </div>
-              <div className="stat-big">default 90 days</div>
-              <div className="text-xs text-dim mt-3 mb-2">custom rules:</div>
+              <div className="stat-big">default 90 дней</div>
+              <div className="text-xs text-dim mt-3 mb-2">свои правила:</div>
               <div className="text-sm flex flex-col gap-2">
                 <div className="surface-2 border border-token rounded px-3 py-2 flex items-center justify-between">
                   <span>
                     <span className="badge badge-danger">CRITICAL</span> любого
                     сервиса
                   </span>
-                  <span className="mono">→ 365 days</span>
+                  <span className="mono">→ 365 дней</span>
                 </div>
                 <div className="surface-2 border border-token rounded px-3 py-2 flex items-center justify-between">
                   <span>
                     <span className="badge">INFO</span> в worker / healthcheck
                   </span>
-                  <span className="mono">→ 30 days</span>
+                  <span className="mono">→ 30 дней</span>
                 </div>
                 <div className="surface-2 border border-token rounded px-3 py-2 flex items-center justify-between">
                   <span>
                     <span className="badge">DEBUG</span> любого сервиса
                   </span>
-                  <span className="mono">→ 7 days</span>
+                  <span className="mono">→ 7 дней</span>
                 </div>
               </div>
               <div className="mt-4 flex gap-2">
                 <button className="btn flex items-center gap-1">
-                  <Edit3 className="w-4 h-4" /> Edit policy
+                  <Edit3 className="w-4 h-4" /> Изменить политику
                 </button>
                 <button className="btn flex items-center gap-1">
-                  <Filter className="w-4 h-4" /> Add rule
+                  <Filter className="w-4 h-4" /> Добавить правило
                 </button>
               </div>
             </div>
 
             <div className="card">
               <div className="stat-label flex items-center gap-2">
-                <Clock className="w-3 h-3" /> Last sweep
+                <Clock className="w-3 h-3" /> Последняя очистка
               </div>
               <div className="stat-big">03:17</div>
               <div className="text-xs text-dim mt-2">2026-06-10 · ok</div>
@@ -119,16 +119,16 @@ export function LogRetention() {
 
             <div className="card">
               <div className="stat-label flex items-center gap-2">
-                <Play className="w-3 h-3" /> Next sweep
+                <Play className="w-3 h-3" /> Следующая очистка
               </div>
               <div className="stat-big">завтра · 03:00 UTC</div>
               <div className="text-xs text-dim mt-2">
-                schedule: daily 03:00 UTC · runner{" "}
+                расписание: ежедневно 03:00 UTC · исполнитель{" "}
                 <span className="mono">dbos_bot_audit_export</span>
               </div>
               <div className="text-sm mt-3">
                 <div className="stat-row">
-                  <span className="text-dim">est. rows</span>
+                  <span className="text-dim">оценка строк</span>
                   <span className="mono">~12 800</span>
                 </div>
                 <div className="stat-row">
@@ -140,31 +140,31 @@ export function LogRetention() {
 
             <div className="card">
               <div className="stat-label flex items-center gap-2">
-                <Archive className="w-3 h-3" /> Size
+                <Archive className="w-3 h-3" /> Размер
               </div>
               <div className="stat-big">3.42 GB</div>
               <div className="text-xs text-dim mt-2">
-                events table · 8 472 строки за 24ч
+                таблица events · 8 472 строки за 24ч
               </div>
               <div className="text-sm mt-3">
                 <div className="stat-row">
-                  <span className="text-dim">total rows</span>
+                  <span className="text-dim">всего строк</span>
                   <span className="mono">2 184 119</span>
                 </div>
                 <div className="stat-row">
-                  <span className="text-dim">oldest event</span>
+                  <span className="text-dim">старейшее событие</span>
                   <span className="mono">2026-03-10</span>
                 </div>
                 <div className="stat-row">
-                  <span className="text-dim">disk usage</span>
+                  <span className="text-dim">использование диска</span>
                   <span>
                     <span className="mono">3.42 GB</span> / 50 GB
                   </span>
                 </div>
                 <div className="stat-row">
-                  <span className="text-dim">growth</span>
+                  <span className="text-dim">рост</span>
                   <span>
-                    <span className="text-ok">+38 MB / day</span>
+                    <span className="text-ok">+38 MB / день</span>
                   </span>
                 </div>
               </div>
@@ -174,11 +174,11 @@ export function LogRetention() {
           <section className="grid gap-4 md:grid-cols-2 mb-6">
             <div className="card">
               <div className="stat-label flex items-center gap-2">
-                <GitBranch className="w-3 h-3" /> Partition plan
+                <GitBranch className="w-3 h-3" /> План партиционирования
               </div>
               <div className="text-sm mt-1">
-                monthly partitions{" "}
-                <span className="badge badge-warn">deferred</span>
+                помесячные партиции{" "}
+                <span className="badge badge-warn">отложено</span>
               </div>
               <div className="text-xs text-dim mt-2">
                 При росте &gt;10 GB / месяц планируется разбить таблицу events на
@@ -195,7 +195,7 @@ export function LogRetention() {
 
             <div className="card">
               <div className="stat-label flex items-center gap-2">
-                <Play className="w-3 h-3" /> Manual sweep
+                <Play className="w-3 h-3" /> Ручная очистка
               </div>
               <div className="text-sm mt-1">Запустить вне расписания</div>
               <div className="text-xs text-dim mt-2">
@@ -206,10 +206,10 @@ export function LogRetention() {
               <div className="mt-3 flex flex-col gap-2">
                 <input
                   className="surface-2 border border-token rounded px-3 py-2 text-sm"
-                  placeholder="audit reason: 'before quarterly export'"
+                  placeholder="причина для аудита: 'before quarterly export'"
                 />
                 <button className="btn btn-primary flex items-center justify-center gap-2">
-                  <Play className="w-4 h-4" /> Run sweep сейчас
+                  <Play className="w-4 h-4" /> Запустить очистку сейчас
                 </button>
               </div>
             </div>
@@ -218,17 +218,17 @@ export function LogRetention() {
           <section>
             <div className="card">
               <div className="stat-label flex items-center gap-2 mb-3">
-                <FileText className="w-3 h-3" /> Audit — retention events (last
-                10)
+                <FileText className="w-3 h-3" /> Аудит — события хранения
+                (последние 10)
               </div>
               <table className="w-full text-sm">
                 <thead className="text-left text-dim text-xs uppercase">
                   <tr>
-                    <th className="pb-2 pr-3">time</th>
-                    <th className="pb-2 pr-3">action</th>
-                    <th className="pb-2 pr-3">actor</th>
-                    <th className="pb-2 pr-3">detail</th>
-                    <th className="pb-2">status</th>
+                    <th className="pb-2 pr-3">время</th>
+                    <th className="pb-2 pr-3">действие</th>
+                    <th className="pb-2 pr-3">инициатор</th>
+                    <th className="pb-2 pr-3">детали</th>
+                    <th className="pb-2">статус</th>
                   </tr>
                 </thead>
                 <tbody>

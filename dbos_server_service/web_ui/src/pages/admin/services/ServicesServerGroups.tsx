@@ -87,10 +87,10 @@ function GroupView({
         {canEdit && (
           <div className="flex items-center gap-2">
             <button className="btn flex items-center gap-1" onClick={() => startEdit(group.id)}>
-              <Edit3 className="w-4 h-4" /> Edit
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
             <button className="btn btn-danger flex items-center gap-1" onClick={notWired}>
-              <Trash2 className="w-4 h-4" /> Delete
+              <Trash2 className="w-4 h-4" /> Удалить
             </button>
           </div>
         )}
@@ -126,7 +126,7 @@ function GroupForm({
     <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <Layers className="w-4 h-4 text-accent" />
-        {mode === "new" ? "Новая группа" : `Edit · ${initial?.name}`}
+        {mode === "new" ? "Новая группа" : `Изменить · ${initial?.name}`}
       </h3>
       <div className="flex flex-col gap-3">
         <FormRow label="name">

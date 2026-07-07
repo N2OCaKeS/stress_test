@@ -209,7 +209,7 @@ function ServiceDetail({
             disabled={busy}
             onClick={onDelete}
           >
-            <Trash2 className="w-4 h-4" /> Delete
+            <Trash2 className="w-4 h-4" /> Удалить
           </button>
         )}
       </div>

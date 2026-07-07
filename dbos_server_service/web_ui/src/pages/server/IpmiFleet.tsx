@@ -226,7 +226,7 @@ function ControllerRow({ controller }: { controller: IpmiController }) {
           </div>
         </div>
         <div className="hidden sm:flex flex-col items-end text-[11px] text-dim shrink-0">
-          <span>probe</span>
+          <span>опрос</span>
           <span>{formatMsk(controller.last_probed_at)}</span>
         </div>
         <StatusBadge status={controller.last_status} />

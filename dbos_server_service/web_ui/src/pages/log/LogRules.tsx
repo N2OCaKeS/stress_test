@@ -38,18 +38,18 @@ const RULES: Rule[] = [
   { id: "r7", group: "severity-override", pattern: "migration.failed", detail: "CRITICAL", badge: "CRITICAL", badgeKind: "danger", status: "muted" },
   { id: "r8", group: "severity-override", pattern: "audit.chain_break", detail: "CRITICAL", badge: "CRITICAL", badgeKind: "danger", status: "active" },
   // suppression
-  { id: "r9", group: "suppression", pattern: "healthcheck.*", detail: "healthchecks drop", badge: "", badgeKind: "", status: "active" },
-  { id: "r10", group: "suppression", pattern: "worker.heartbeat", detail: "noisy", badge: "", badgeKind: "", status: "active" },
+  { id: "r9", group: "suppression", pattern: "healthcheck.*", detail: "сброс healthcheck", badge: "", badgeKind: "", status: "active" },
+  { id: "r10", group: "suppression", pattern: "worker.heartbeat", detail: "шумно", badge: "", badgeKind: "", status: "active" },
   { id: "r11", group: "suppression", pattern: "metrics.scrape", detail: "prom-scrape", badge: "", badgeKind: "", status: "active" },
-  { id: "r12", group: "suppression", pattern: "cache.miss", detail: "noisy debug", badge: "", badgeKind: "", status: "active" },
+  { id: "r12", group: "suppression", pattern: "cache.miss", detail: "шумный debug", badge: "", badgeKind: "", status: "active" },
   { id: "r13", group: "suppression", pattern: "session.refresh", detail: "не интересно", badge: "", badgeKind: "", status: "active" },
-  { id: "r14", group: "suppression", pattern: "debug.trace.*", detail: "debug-канал off", badge: "", badgeKind: "", status: "muted" },
+  { id: "r14", group: "suppression", pattern: "debug.trace.*", detail: "debug-канал выкл.", badge: "", badgeKind: "", status: "muted" },
   // mark-as-known
   { id: "r15", group: "mark-as-known", pattern: "test.dry_run.*", detail: "CI smoke", badge: "", badgeKind: "", status: "active" },
   { id: "r16", group: "mark-as-known", pattern: "cert.renewed", detail: "acme bot", badge: "", badgeKind: "", status: "active" },
-  { id: "r17", group: "mark-as-known", pattern: "backup.completed", detail: "nightly", badge: "", badgeKind: "", status: "active" },
+  { id: "r17", group: "mark-as-known", pattern: "backup.completed", detail: "ночной", badge: "", badgeKind: "", status: "active" },
   { id: "r18", group: "mark-as-known", pattern: "cron.tick", detail: "CronJob heartbeat", badge: "", badgeKind: "", status: "active" },
-  { id: "r19", group: "mark-as-known", pattern: "rotation.scheduled", detail: "plan event", badge: "", badgeKind: "", status: "active" },
+  { id: "r19", group: "mark-as-known", pattern: "rotation.scheduled", detail: "плановое событие", badge: "", badgeKind: "", status: "active" },
   // forward
   { id: "r20", group: "forward-to-extern", pattern: "CRITICAL → siem", detail: "syslog/tcp", badge: "", badgeKind: "", status: "active" },
   { id: "r21", group: "forward-to-extern", pattern: "user.banned → siem", detail: "syslog/tcp", badge: "", badgeKind: "", status: "active" },
@@ -202,16 +202,16 @@ export function LogRules() {
           </div>
           <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
             <button className="btn flex items-center gap-1">
-              <Play className="w-4 h-4" /> Test
+              <Play className="w-4 h-4" /> Проверить
             </button>
             <button className="btn flex items-center gap-1">
-              <Edit3 className="w-4 h-4" /> Edit
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
             <button className="btn flex items-center gap-1">
-              <EyeOff className="w-4 h-4" /> Mute
+              <EyeOff className="w-4 h-4" /> Заглушить
             </button>
             <button className="btn btn-danger flex items-center gap-1">
-              <Trash2 className="w-4 h-4" /> Delete
+              <Trash2 className="w-4 h-4" /> Удалить
             </button>
           </div>
         </div>
@@ -221,9 +221,9 @@ export function LogRules() {
             className="px-3 py-2 text-sm border-b-2 -mb-px"
             style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
           >
-            Definition
+            Определение
           </button>
-          {["Test", "History", "Audit"].map((t) => (
+          {["Проверка", "История", "Аудит"].map((t) => (
             <button
               key={t}
               className="px-3 py-2 text-sm border-b-2 -mb-px border-transparent text-dim hover-bg"
@@ -236,20 +236,21 @@ export function LogRules() {
         <div className="scroll-block p-5 grid grid-cols-2 gap-5 content-start">
           <div className="surface border border-token rounded-lg p-4">
             <div className="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
-              <Search className="w-4 h-4" /> Pattern
+              <Search className="w-4 h-4" /> Шаблон
             </div>
             <div className="surface-2 border border-token rounded p-3 mono text-sm">
               action.match:{" "}
               <span className="text-accent">^secret\.master_key_rotated$</span>
             </div>
             <div className="text-xs text-dim mt-2">
-              regex по полю <span className="mono">action</span> · case-sensitive
+              regex по полю <span className="mono">action</span> · с учётом
+              регистра
             </div>
           </div>
 
           <div className="surface border border-token rounded-lg p-4">
             <div className="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" /> Action
+              <AlertTriangle className="w-4 h-4" /> Действие
             </div>
             <div className="text-sm">
               <div className="stat-row">
@@ -271,7 +272,7 @@ export function LogRules() {
 
           <div className="surface border border-token rounded-lg p-4 col-span-2">
             <div className="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
-              <GitBranch className="w-4 h-4" /> Conditions
+              <GitBranch className="w-4 h-4" /> Условия
             </div>
             <div className="grid grid-cols-2 gap-x-6 text-sm">
               <div>
@@ -307,16 +308,16 @@ export function LogRules() {
 
           <div className="surface border border-token rounded-lg p-4 col-span-2">
             <div className="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
-              <Clock className="w-4 h-4" /> Last 5 matches
+              <Clock className="w-4 h-4" /> Последние 5 совпадений
             </div>
             <table className="w-full text-sm">
               <thead className="text-left text-dim text-xs uppercase">
                 <tr>
-                  <th className="pb-2 pr-3">time</th>
-                  <th className="pb-2 pr-3">actor</th>
-                  <th className="pb-2 pr-3">dept</th>
-                  <th className="pb-2 pr-3">target</th>
-                  <th className="pb-2">severity</th>
+                  <th className="pb-2 pr-3">время</th>
+                  <th className="pb-2 pr-3">инициатор</th>
+                  <th className="pb-2 pr-3">отдел</th>
+                  <th className="pb-2 pr-3">объект</th>
+                  <th className="pb-2">важность</th>
                 </tr>
               </thead>
               <tbody>

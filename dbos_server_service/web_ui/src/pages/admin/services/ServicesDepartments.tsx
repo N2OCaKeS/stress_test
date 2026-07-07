@@ -277,7 +277,7 @@ function DeptView({
               className="btn flex items-center gap-1"
               onClick={() => startEdit(dept.id)}
             >
-              <Edit3 className="w-4 h-4" /> Edit
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
@@ -289,7 +289,7 @@ function DeptView({
               }
               onClick={onDelete}
             >
-              <Trash2 className="w-4 h-4" /> Delete
+              <Trash2 className="w-4 h-4" /> Удалить
             </button>
           </div>
         )}
@@ -448,7 +448,7 @@ function DeptServicesSection({
                 <div className="flex items-center justify-between gap-2 text-sm">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="mono truncate">{s.service_name}</span>
-                    <span className="badge">granted</span>
+                    <span className="badge">выдан</span>
                   </div>
                   <div className="flex gap-1">
                     <button
@@ -461,7 +461,7 @@ function DeptServicesSection({
                       ) : (
                         <X className="w-3 h-3" />
                       )}
-                      revoke
+                      отозвать
                     </button>
                   </div>
                 </div>
@@ -485,7 +485,7 @@ function DeptServicesSection({
       )}
       {grantedServices.length === 0 && !grantedLoading && (
         <div className="text-[11px] text-dim italic mb-2">
-          Ни одного сервиса не привязано. Выбери ниже и нажми Grant.
+          Ни одного сервиса не привязано. Выбери ниже и нажми «Выдать».
         </div>
       )}
       <div className="flex items-end gap-2">
@@ -514,7 +514,7 @@ function DeptServicesSection({
           ) : (
             <Plus className="w-4 h-4" />
           )}
-          Grant
+          Выдать
         </button>
       </div>
     </div>
@@ -578,7 +578,7 @@ function DeptForm({
     <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <Building2 className="w-4 h-4 text-accent" />
-        {mode === "new" ? "Новый отдел" : `Edit · ${initial?.name}`}
+        {mode === "new" ? "Новый отдел" : `Изменить · ${initial?.name}`}
       </h3>
       <div className="flex flex-col gap-3">
         <FormRow label="name" hint="человеческое имя отдела (уникально)">
@@ -672,7 +672,7 @@ function DeptRolesNav({
         сервис — выдай grant в «Сервисы отдела» выше.
       </div>
       {(servicesQ.loading || grantedLoading) && (
-        <Loader2 className="w-3 h-3 animate-spin text-dim" aria-label="Loading" />
+        <Loader2 className="w-3 h-3 animate-spin text-dim" aria-label="Загрузка" />
       )}
       {(servicesQ.error || grantedError) && (
         <div className="alert-danger text-[11px] mb-2">
@@ -726,7 +726,7 @@ function DeptRolesNav({
                   </Link>
                 ) : adminItem && isLoging ? (
                   <span className="text-[11px] text-dim italic">
-                    platform_role only
+                    только platform_role
                   </span>
                 ) : (
                   <span className="text-[11px] text-dim italic">

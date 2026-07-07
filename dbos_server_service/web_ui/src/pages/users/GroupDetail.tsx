@@ -180,7 +180,7 @@ export function GroupDetail() {
           <div className="flex items-center gap-2">
             {!caps.edit && !caps.delete && !caps.manageMembers && (
               <span className="badge badge-warn" title={caps.reason}>
-                read-only
+                Только чтение
               </span>
             )}
           </div>
@@ -216,7 +216,7 @@ export function GroupDetail() {
           />
           {mockMode && group && <>
           {/* Members */}
-          <Section icon={<UsersRound className="w-4 h-4" />} title={`Members · ${members.length}`}>
+          <Section icon={<UsersRound className="w-4 h-4" />} title={`Участники · ${members.length}`}>
             {members.length === 0 && orphanMembers.length === 0 ? (
               <div className="text-sm text-dim italic">Пусто.</div>
             ) : (
@@ -277,19 +277,19 @@ export function GroupDetail() {
             return (
               <Section
                 icon={<KeyRound className="w-4 h-4" />}
-                title={`Прямые grants на группу · ${groupGrants.length}`}
+                title={`Прямые выдачи на группу · ${groupGrants.length}`}
                 className="col-span-2"
               >
                 <div className="text-xs text-dim mb-2">
-                  Эти permissions унаследуют все члены группы.
+                  Эти права унаследуют все члены группы.
                 </div>
                 <table className="w-full text-sm">
                   <thead className="text-left text-dim text-xs uppercase">
                     <tr>
-                      <th className="pb-2 pr-3">Permission</th>
-                      <th className="pb-2 pr-3">Resource</th>
-                      <th className="pb-2 pr-3">Granted by</th>
-                      <th className="pb-2 pr-3">When</th>
+                      <th className="pb-2 pr-3">Право</th>
+                      <th className="pb-2 pr-3">Ресурс</th>
+                      <th className="pb-2 pr-3">Кем выдано</th>
+                      <th className="pb-2 pr-3">Когда</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -312,7 +312,7 @@ export function GroupDetail() {
                                 {grantor.username}
                               </Link>
                             ) : (
-                              <span className="mono text-dim" title="user removed or unknown">
+                              <span className="mono text-dim" title="пользователь удалён или неизвестен">
                                 {g.granted_by} (удалён)
                               </span>
                             )}
@@ -330,13 +330,13 @@ export function GroupDetail() {
           })()}
 
           {/* Effective for group */}
-          <Section icon={<ListTree className="w-4 h-4" />} title={`Effective permissions (group) · ${effective.length}`} className="col-span-2">
+          <Section icon={<ListTree className="w-4 h-4" />} title={`Действующие права (группа) · ${effective.length}`} className="col-span-2">
             <table className="w-full text-sm">
               <thead className="text-left text-dim text-xs uppercase surface-2">
                 <tr>
-                  <th className="px-3 py-2">Permission</th>
-                  <th className="px-3 py-2">Service</th>
-                  <th className="px-3 py-2">Scope</th>
+                  <th className="px-3 py-2">Право</th>
+                  <th className="px-3 py-2">Сервис</th>
+                  <th className="px-3 py-2">Область</th>
                   <th className="px-3 py-2">Источник</th>
                 </tr>
               </thead>
@@ -372,7 +372,7 @@ export function GroupDetail() {
               <table className="w-full text-sm">
                 <thead className="text-left text-dim text-xs uppercase">
                   <tr>
-                    <th className="pb-2 pr-3">User</th>
+                    <th className="pb-2 pr-3">Пользователь</th>
                     <th className="pb-2 pr-3">Перм. всего</th>
                     <th className="pb-2 pr-3">Из них даёт эта группа</th>
                     <th className="pb-2 pr-3"></th>
@@ -419,7 +419,7 @@ export function GroupDetail() {
                   <div key={user.id} className="border border-token rounded p-3" style={{ background: "rgba(244,135,113,0.05)" }}>
                     <div className="flex items-center gap-2 mb-2">
                       <Link to={`/users/${user.id}`} className="font-medium text-sm">{user.username}</Link>
-                      <span className="text-xs text-dim">потеряет {diff.length} permission'ов</span>
+                      <span className="text-xs text-dim">потеряет {diff.length} прав</span>
                     </div>
                     {diff.length === 0 ? (
                       <div className="text-xs text-dim italic">Ничего — у юзера эти права остались бы из других источников.</div>
@@ -551,7 +551,7 @@ function GroupLiveData({
   return (
     <Section
       icon={<Plug className="w-4 h-4" />}
-      title="Live data · auth_service"
+      title="Живые данные · auth_service"
       className="col-span-2"
     >
       {loading && <div className="spinner">Загрузка…</div>}
@@ -605,7 +605,7 @@ function GroupLiveData({
                   disabled={!caps.delete || pending}
                   title={
                     caps.delete
-                      ? "Все participants потеряют роли группы"
+                      ? "Все участники потеряют роли группы"
                       : caps.reason
                   }
                   onClick={async () => {
@@ -784,7 +784,7 @@ function GroupLiveData({
           {/* Services + roles live */}
           <div>
             <div className="text-xs uppercase text-dim mb-2">
-              Service-access · {(services.data ?? []).length}
+              Доступ к сервисам · {(services.data ?? []).length}
             </div>
             {(services.data ?? []).length === 0 ? (
               <div className="empty-card">Нет доступа к сервисам.</div>
@@ -810,7 +810,7 @@ function GroupLiveData({
                         )
                       }
                     >
-                      revoke
+                      отозвать
                     </button>
                   </li>
                 ))}
@@ -833,7 +833,7 @@ function GroupLiveData({
                   })
                 }
               >
-                <Plug className="w-4 h-4" /> Grant access
+                <Plug className="w-4 h-4" /> Выдать доступ
               </button>
             </div>
           </div>
@@ -849,8 +849,8 @@ function GroupLiveData({
               <table className="w-full text-sm">
                 <thead className="text-left text-dim text-xs uppercase">
                   <tr>
-                    <th className="pb-2 pr-3">service</th>
-                    <th className="pb-2 pr-3">roles</th>
+                    <th className="pb-2 pr-3">сервис</th>
+                    <th className="pb-2 pr-3">роли</th>
                     <th className="pb-2"></th>
                   </tr>
                 </thead>
@@ -874,7 +874,7 @@ function GroupLiveData({
                             )
                           }
                         >
-                          revoke
+                          отозвать
                         </button>
                       </td>
                     </tr>
@@ -936,7 +936,7 @@ function RoleAssignRow({
           setRolesCsv("");
         }}
       >
-        <ShieldCheck className="w-4 h-4" /> Assign (replace)
+        <ShieldCheck className="w-4 h-4" /> Назначить (заменить)
       </button>
     </div>
   );
@@ -989,7 +989,7 @@ function GroupMetaEditForm({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="text-xs uppercase text-dim">Edit · {group.name}</div>
+      <div className="text-xs uppercase text-dim">Изменить · {group.name}</div>
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-xs text-dim">name</span>
         <input

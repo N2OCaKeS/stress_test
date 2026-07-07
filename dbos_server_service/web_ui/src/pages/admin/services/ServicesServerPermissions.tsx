@@ -1370,7 +1370,7 @@ function EntityMatrix({
               <thead className="text-left text-dim text-xs uppercase">
                 <tr>
                   <th className="pb-2 pt-2 px-3 sticky left-0 top-0 z-20 bg-[var(--bg-soft)]">
-                    role
+                    роль
                   </th>
                   {visibleActions.map((a) => (
                     <th

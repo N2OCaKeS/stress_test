@@ -168,7 +168,7 @@ function RegistryConfig() {
           ) : (
             <RefreshCcw className="w-4 h-4" />
           )}{" "}
-          Reload
+          Обновить
         </button>
       </div>
       {cfg && !editing && (
@@ -181,7 +181,7 @@ function RegistryConfig() {
               onClick={toggle}
               disabled={busyToggle}
             >
-              {busyToggle ? <Loader2 className="w-3 h-3 animate-spin inline" /> : "toggle"}
+              {busyToggle ? <Loader2 className="w-3 h-3 animate-spin inline" /> : "переключить"}
             </button>
           </div>
           <div className="text-sm">
@@ -202,7 +202,7 @@ function RegistryConfig() {
               onClick={() => setEditing(true)}
               disabled={busyDelete || busyToggle}
             >
-              Редактировать
+              Изменить
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
@@ -214,7 +214,7 @@ function RegistryConfig() {
             </button>
           </div>
           <div className="text-[11px] text-dim mt-2">
-            «Редактировать» отправляет `PATCH /docker/registry/{"{dept}"}` с
+            «Изменить» отправляет `PATCH /docker/registry/{"{dept}"}` с
             изменёнными полями. Полная замена (PUT) — через пересоздание после
             удаления.
           </div>
@@ -430,7 +430,7 @@ function TokenIssuer() {
       </div>
       {result && (
         <div className="mt-3">
-          <div className="text-xs text-dim mb-1">Response:</div>
+          <div className="text-xs text-dim mb-1">Ответ:</div>
           <pre className="mono text-xs whitespace-pre-wrap break-all border border-token p-2 rounded">
             {JSON.stringify(result, null, 2)}
           </pre>
@@ -471,7 +471,7 @@ function CertsAndJwks() {
   return (
     <div className="card">
       <h3 className="font-semibold flex items-center gap-2 mb-3">
-        <FileText className="w-4 h-4 text-accent" /> Certs &amp; JWKS
+        <FileText className="w-4 h-4 text-accent" /> Сертификаты и JWKS
       </h3>
       <div className="flex gap-2 mb-3">
         <button

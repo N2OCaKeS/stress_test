@@ -30,28 +30,28 @@ interface Row {
 }
 
 const CORE: Row[] = [
-  { id: "core-postgres-replica", name: "core-postgres-replica", kindLabel: "db-password", tail: "owner: alice", badge: "active", badgeKind: "ok", icon: Database },
+  { id: "core-postgres-replica", name: "core-postgres-replica", kindLabel: "db-password", tail: "владелец: alice", badge: "active", badgeKind: "ok", icon: Database },
   { id: "github-deploy-token", name: "github-deploy-token", kindLabel: "api-token", tail: "bot: ci_runner", badge: "active", badgeKind: "ok", icon: Github },
   { id: "vault-bootstrap-root", name: "vault-bootstrap-root", kindLabel: "root-token", tail: "bot: bootstrap", badge: "expired", badgeKind: "danger", icon: KeyRound },
-  { id: "bmc-rack-A-ipmi", name: "bmc-rack-A-ipmi", kindLabel: "ipmi-pass", tail: "shared", badge: "active", badgeKind: "ok", icon: ServerIcon },
+  { id: "bmc-rack-A-ipmi", name: "bmc-rack-A-ipmi", kindLabel: "ipmi-pass", tail: "общий", badge: "active", badgeKind: "ok", icon: ServerIcon },
   { id: "grafana-admin", name: "grafana-admin", kindLabel: "password", tail: "2 нед назад", badge: "must_rotate", badgeKind: "warn", icon: Lock },
 ];
 
 const DTKK: Row[] = [
-  { id: "prod-postgres-master", name: "prod-postgres-master", kindLabel: "db-password", tail: "owner: carol", badge: "истекает через 3д", badgeKind: "warn", icon: Database },
-  { id: "dtkk-jira-api", name: "dtkk-jira-api", kindLabel: "api-token", tail: "owner: igor", badge: "active", badgeKind: "ok", icon: Key },
+  { id: "prod-postgres-master", name: "prod-postgres-master", kindLabel: "db-password", tail: "владелец: carol", badge: "истекает через 3д", badgeKind: "warn", icon: Database },
+  { id: "dtkk-jira-api", name: "dtkk-jira-api", kindLabel: "api-token", tail: "владелец: igor", badge: "active", badgeKind: "ok", icon: Key },
   { id: "dtkk-pagerduty-webhook", name: "dtkk-pagerduty-webhook", kindLabel: "webhook", tail: "2 мес назад", badge: "active", badgeKind: "ok", icon: Webhook },
-  { id: "dtkk-s3-backups", name: "dtkk-s3-backups", kindLabel: "aws-key", tail: "shared", badge: "active", badgeKind: "ok", icon: Cloud },
+  { id: "dtkk-s3-backups", name: "dtkk-s3-backups", kindLabel: "aws-key", tail: "общий", badge: "active", badgeKind: "ok", icon: Cloud },
 ];
 
 const INFRA: Row[] = [
-  { id: "aws-readonly-monitoring", name: "aws-readonly-monitoring", kindLabel: "aws-key", tail: "owner: pavel", badge: "active", badgeKind: "ok", icon: Cloud },
-  { id: "shared-monitoring-readonly", name: "shared-monitoring-readonly", kindLabel: "db-password", tail: "shared", badge: "active", badgeKind: "ok", icon: Database },
-  { id: "infra-bmc-rack-B", name: "infra-bmc-rack-B", kindLabel: "ipmi-pass", tail: "owner: pavel", badge: "must_rotate", badgeKind: "warn", icon: ServerIcon },
+  { id: "aws-readonly-monitoring", name: "aws-readonly-monitoring", kindLabel: "aws-key", tail: "владелец: pavel", badge: "active", badgeKind: "ok", icon: Cloud },
+  { id: "shared-monitoring-readonly", name: "shared-monitoring-readonly", kindLabel: "db-password", tail: "общий", badge: "active", badgeKind: "ok", icon: Database },
+  { id: "infra-bmc-rack-B", name: "infra-bmc-rack-B", kindLabel: "ipmi-pass", tail: "владелец: pavel", badge: "must_rotate", badgeKind: "warn", icon: ServerIcon },
 ];
 
 const GUEST: Row[] = [
-  { id: "guest-network-wifi", name: "guest-network-wifi", kindLabel: "password", tail: "everyone", badge: "active", badgeKind: "ok", icon: Key },
+  { id: "guest-network-wifi", name: "guest-network-wifi", kindLabel: "password", tail: "все", badge: "active", badgeKind: "ok", icon: Key },
   { id: "guest-printer-pin", name: "guest-printer-pin", kindLabel: "pin", tail: "год назад", badge: "active", badgeKind: "ok", icon: Key },
 ];
 
@@ -98,19 +98,19 @@ export function SecretAccountAdmin() {
             <Search className="w-4 h-4 text-dim" />
             <input
               className="bg-transparent outline-none flex-1 text-sm"
-              placeholder="Поиск credentials..."
+              placeholder="Поиск учётных данных..."
             />
-            <button className="btn" title="filter">
+            <button className="btn" title="Фильтр">
               <Filter className="w-3 h-3 inline-block" />
             </button>
           </div>
           <div className="mt-2 flex items-center gap-2 text-xs text-dim">
             <span>Группировка:</span>
             <select className="surface-2 border border-token rounded px-2 py-0.5">
-              <option>by dept</option>
-              <option>scope (my / my_dep / cross_dep)</option>
-              <option>type</option>
-              <option>owner</option>
+              <option>по отделам</option>
+              <option>область (my / my_dep / cross_dep)</option>
+              <option>тип</option>
+              <option>владелец</option>
             </select>
             <span className="ml-auto">70 шт</span>
           </div>
@@ -122,7 +122,7 @@ export function SecretAccountAdmin() {
           </div>
           <div className="px-2 flex flex-col gap-0.5">{renderGroup(CORE)}</div>
           <div className="cred-row text-dim text-xs px-3 py-2">
-            + 19 ещё в Ядро DBOS · click чтобы развернуть
+            + 19 ещё в Ядро DBOS · нажмите чтобы развернуть
           </div>
 
           <div className="group-header flex items-center gap-2 mt-3">
@@ -130,7 +130,7 @@ export function SecretAccountAdmin() {
           </div>
           <div className="px-2 flex flex-col gap-0.5">{renderGroup(DTKK)}</div>
           <div className="cred-row text-dim text-xs px-3 py-2">
-            + 24 ещё в ДТКК · click чтобы развернуть
+            + 24 ещё в ДТКК · нажмите чтобы развернуть
           </div>
 
           <div className="group-header flex items-center gap-2 mt-3">
@@ -138,7 +138,7 @@ export function SecretAccountAdmin() {
           </div>
           <div className="px-2 flex flex-col gap-0.5">{renderGroup(INFRA)}</div>
           <div className="cred-row text-dim text-xs px-3 py-2">
-            + 13 ещё в Инфра · click чтобы развернуть
+            + 13 ещё в Инфра · нажмите чтобы развернуть
           </div>
 
           <div className="group-header flex items-center gap-2 mt-3">
@@ -149,7 +149,7 @@ export function SecretAccountAdmin() {
 
         <div className="border-t border-token p-3">
           <button className="btn btn-primary w-full flex items-center justify-center gap-2">
-            <Plus className="w-4 h-4" /> Создать credential
+            <Plus className="w-4 h-4" /> Создать учётные данные
           </button>
         </div>
       </section>
@@ -160,15 +160,15 @@ export function SecretAccountAdmin() {
           <span className="badge badge-warn">истекает через 3д</span>
         }
         scope="ДТКК"
-        scopePrefix="dept: "
+        scopePrefix="отдел: "
         idStr="cred_a42f1c8b9e02d144"
         kind="db-password"
         ownerLine="owner: carol@dbos.local"
         revealValue="pg_prod_x9F2k1L0wQ8m...DEMO"
         revealNote={
           <>
-            account_admin может смотреть любые credentials любого dept, но
-            reveal эмитится в audit с пометкой{" "}
+            account_admin может смотреть любые учётные данные любого отдела, но
+            показ эмитится в аудит с пометкой{" "}
             <span className="mono">actor_role=account_admin</span>.
           </>
         }
@@ -186,7 +186,7 @@ export function SecretAccountAdmin() {
           explicitGrants: "alice (Ядро DBOS, ro)",
           bots: "prod_db_migrator (ДТКК)",
           accountAdmin: (
-            <span className="text-warn">audit-read only (вы)</span>
+            <span className="text-warn">только чтение аудита (вы)</span>
           ),
         }}
         auditRows={[
@@ -199,13 +199,13 @@ export function SecretAccountAdmin() {
         actions={
           <>
             <button className="btn">
-              <Edit3 className="w-4 h-4 inline-block" /> Edit
+              <Edit3 className="w-4 h-4 inline-block" /> Изменить
             </button>
             <button className="btn">
-              <RotateCw className="w-4 h-4 inline-block" /> Rotate
+              <RotateCw className="w-4 h-4 inline-block" /> Ротация
             </button>
             <button className="btn btn-danger">
-              <Trash2 className="w-4 h-4 inline-block" /> Revoke
+              <Trash2 className="w-4 h-4 inline-block" /> Удалить
             </button>
           </>
         }

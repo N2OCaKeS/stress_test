@@ -860,7 +860,7 @@ function CreatePane({
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">display name</span>
+            <span className="text-dim text-xs">Отображаемое имя</span>
             <input
               className="surface-2 border border-token rounded px-2 py-1"
               value={displayName}
@@ -869,7 +869,7 @@ function CreatePane({
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">department *</span>
+            <span className="text-dim text-xs">Отдел *</span>
             {isAccountAdmin ? (
               <select
                 className="surface-2 border border-token rounded px-2 py-1"
@@ -901,7 +901,7 @@ function CreatePane({
             )}
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">IP address *</span>
+            <span className="text-dim text-xs">IP-адрес *</span>
             <input
               className="surface-2 border border-token rounded px-2 py-1"
               value={ipAddress}
@@ -914,7 +914,7 @@ function CreatePane({
             )}
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">SSH port</span>
+            <span className="text-dim text-xs">SSH-порт</span>
             <input
               className="surface-2 border border-token rounded px-2 py-1"
               type="number"

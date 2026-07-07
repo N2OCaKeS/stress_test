@@ -85,7 +85,7 @@ export function SecurityIntrospect() {
             {result.subject_type && (
               <span className="badge">{result.subject_type}</span>
             )}
-            {result.is_banned && <span className="badge danger">banned</span>}
+            {result.is_banned && <span className="badge danger">забанен</span>}
             {result.must_change_password && (
               <span className="badge warn">must_change_password</span>
             )}

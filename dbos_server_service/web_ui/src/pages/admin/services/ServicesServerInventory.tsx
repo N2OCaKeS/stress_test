@@ -88,13 +88,13 @@ function ServerView({
         {canEdit && (
           <div className="flex items-center gap-2">
             <button className="btn flex items-center gap-1" onClick={() => startEdit(server.id)}>
-              <Edit3 className="w-4 h-4" /> Edit
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
             <button className="btn flex items-center gap-1">
-              <Power className="w-4 h-4" /> Power cycle
+              <Power className="w-4 h-4" /> Перезагрузить питание
             </button>
             <button className="btn btn-danger flex items-center gap-1">
-              <Trash2 className="w-4 h-4" /> Decommission
+              <Trash2 className="w-4 h-4" /> Вывести из эксплуатации
             </button>
           </div>
         )}
@@ -138,7 +138,7 @@ function ServerForm({
     <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <ServerIcon className="w-4 h-4 text-accent" />
-        {mode === "new" ? "Новый сервер" : `Edit · ${initial?.hostname}`}
+        {mode === "new" ? "Новый сервер" : `Изменить · ${initial?.hostname}`}
       </h3>
       <div className="grid grid-cols-2 gap-3">
         <FormRow label="hostname">

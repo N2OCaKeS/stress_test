@@ -263,9 +263,9 @@ export function LogEventsLive() {
                 className="surface-2 border border-token rounded px-1 py-0.5"
                 value={filters.severity}
                 onChange={(e) => setFilter("severity", e.target.value)}
-                title="Severity"
+                title="Важность"
               >
-                <option value="">severity</option>
+                <option value="">важность</option>
                 {SEVERITIES.map((s) => (
                   <option key={s} value={s}>
                     {s}
@@ -642,9 +642,9 @@ function StatsBody({ stats }: { stats: EventStatsResponse }) {
       </div>
 
       <div className="card">
-        <h3 className="font-semibold mb-3">Severity distribution</h3>
+        <h3 className="font-semibold mb-3">Распределение по важности</h3>
         {sevRows.length === 0 ? (
-          <div className="text-xs text-dim">Нет данных по severity.</div>
+          <div className="text-xs text-dim">Нет данных по важности.</div>
         ) : (
           sevRows.map((r) => (
             <div key={r.sev} className="sev-bar">
@@ -725,23 +725,23 @@ function EventDetailPane({ event }: { event: EventDetail }) {
           <div className="flex items-center gap-2 mb-3">
             <User className="w-4 h-4 text-accent" />
             <div className="text-xs uppercase tracking-wider text-dim">
-              Actor
+              Инициатор
             </div>
           </div>
           <div className="text-sm">
             <DetailRowNameId
-              label="Actor"
+              label="Инициатор"
               name={event.username}
               id={event.actor_id}
             />
-            <DetailRow label="Type" value={event.actor_type} />
+            <DetailRow label="Тип" value={event.actor_type} />
             <DetailRowNameId
-              label="Department"
+              label="Отдел"
               name={deptName}
               id={event.department_id}
             />
-            <DetailRow label="Allowed" value={event.allowed ? "yes" : "no"} />
-            <DetailRow label="Actor IP" value={event.actor_ip} mono />
+            <DetailRow label="Разрешено" value={event.allowed ? "да" : "нет"} />
+            <DetailRow label="IP инициатора" value={event.actor_ip} mono />
             <DetailRow label="User-Agent" value={event.user_agent} mono />
           </div>
         </div>
@@ -750,19 +750,19 @@ function EventDetailPane({ event }: { event: EventDetail }) {
           <div className="flex items-center gap-2 mb-3">
             <Cog className="w-4 h-4 text-dim" />
             <div className="text-xs uppercase tracking-wider text-dim">
-              Target / Service
+              Объект / Сервис
             </div>
           </div>
           <div className="text-sm">
-            <DetailRow label="Service" value={event.service} />
-            <DetailRow label="Action" value={event.action} mono />
-            <DetailRow label="Status" value={event.status} />
-            <DetailRow label="Severity" value={event.severity} />
-            <DetailRow label="Target type" value={event.target_type} />
-            <DetailRow label="Target ID" value={event.target_id} mono />
-            <DetailRow label="When (MSK)" value={formatMsk(event.timestamp)} mono />
-            <DetailRow label="Received" value={formatMsk(event.received_at)} mono />
-            <DetailRow label="Request ID" value={event.request_id} mono />
+            <DetailRow label="Сервис" value={event.service} />
+            <DetailRow label="Действие" value={event.action} mono />
+            <DetailRow label="Статус" value={event.status} />
+            <DetailRow label="Важность" value={event.severity} />
+            <DetailRow label="Тип объекта" value={event.target_type} />
+            <DetailRow label="ID объекта" value={event.target_id} mono />
+            <DetailRow label="Когда (MSK)" value={formatMsk(event.timestamp)} mono />
+            <DetailRow label="Получено" value={formatMsk(event.received_at)} mono />
+            <DetailRow label="ID запроса" value={event.request_id} mono />
           </div>
         </div>
 
@@ -770,7 +770,7 @@ function EventDetailPane({ event }: { event: EventDetail }) {
           <div className="flex items-center gap-2 mb-3">
             <Filter className="w-4 h-4 text-dim" />
             <div className="text-xs uppercase tracking-wider text-dim">
-              Details JSON
+              Детали JSON
             </div>
           </div>
           <pre className="json-block mono whitespace-pre-wrap break-all">

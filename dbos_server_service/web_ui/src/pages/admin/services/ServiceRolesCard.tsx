@@ -480,7 +480,7 @@ function LiveRoleView({
               title={lockedReason}
               onClick={() => startEdit(role.role_name)}
             >
-              <Edit3 className="w-4 h-4" /> Edit
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
@@ -488,7 +488,7 @@ function LiveRoleView({
               title={lockedReason}
               onClick={onDelete}
             >
-              <Trash2 className="w-4 h-4" /> Delete
+              <Trash2 className="w-4 h-4" /> Удалить
             </button>
           </div>
         )}
@@ -651,7 +651,7 @@ function BulkAssignSection({
 
   return (
     <div className="mt-4 border-t border-token pt-3 flex flex-col gap-3">
-      <div className="text-xs uppercase text-dim">Bulk assign / revoke</div>
+      <div className="text-xs uppercase text-dim">Массовое назначение / отзыв</div>
 
       <SearchableMultiSelect<User>
         label="Пользователи"
@@ -731,14 +731,14 @@ function BulkAssignSection({
           disabled={busy || !hasSelection}
           onClick={() => void submit("assign")}
         >
-          <UserPlus className="w-4 h-4" /> assign
+          <UserPlus className="w-4 h-4" /> назначить
         </button>
         <button
           className="btn btn-danger flex items-center gap-1"
           disabled={busy || !hasSelection}
           onClick={() => void submit("revoke")}
         >
-          <UserMinus className="w-4 h-4" /> revoke
+          <UserMinus className="w-4 h-4" /> отозвать
         </button>
         {hasSelection && (
           <button
@@ -996,7 +996,7 @@ function LiveRoleForm({
     <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <ShieldCheck className="w-4 h-4 text-accent" />
-        {mode === "new" ? "Новая роль" : `Edit · ${initial?.role_name}`}
+        {mode === "new" ? "Новая роль" : `Изменить · ${initial?.role_name}`}
       </h3>
       <div className="flex flex-col gap-3">
         <FormRow
@@ -1069,7 +1069,7 @@ function MockServiceRolesCard({
             <div className="flex-1 min-w-0">
               <div className="text-sm truncate mono">{item.name}</div>
               <div className="text-[11px] text-dim truncate">
-                {item.level} · {item.assigned} assigned
+                {item.level} · назначений: {item.assigned}
               </div>
             </div>
           </div>
@@ -1097,13 +1097,13 @@ function MockRoleView({ role, canEdit }: { role: ServiceRoleDef; canEdit: boolea
         {canEdit && (
           <div className="flex items-center gap-2">
             <button className="btn flex items-center gap-1" onClick={() => startEdit(role.id)}>
-              <Edit3 className="w-4 h-4" /> Edit
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
               onClick={() => toast.warn(SERVICE_ROLES_SCOPE_MISSING)}
             >
-              <Trash2 className="w-4 h-4" /> Delete
+              <Trash2 className="w-4 h-4" /> Удалить
             </button>
           </div>
         )}
@@ -1139,7 +1139,7 @@ function MockRoleForm({
     <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <ShieldCheck className="w-4 h-4 text-accent" />
-        {mode === "new" ? "Новая роль" : `Edit · ${initial?.name}`}
+        {mode === "new" ? "Новая роль" : `Изменить · ${initial?.name}`}
       </h3>
       <div className="flex flex-col gap-3">
         <FormRow label="name" hint="например server.deploy или secret.rotator">

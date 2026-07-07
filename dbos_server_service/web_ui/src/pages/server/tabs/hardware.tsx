@@ -85,7 +85,7 @@ function HardwareView({
             className="btn btn-ghost flex items-center gap-1"
             onClick={onEdit}
           >
-            <Pencil className="w-4 h-4" /> Редактировать
+            <Pencil className="w-4 h-4" /> Изменить
           </button>
         )}
       </div>
@@ -228,12 +228,12 @@ function HardwareView({
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-dim text-xs border-b border-token">
-                  <th className="text-left py-2 pr-3">slot</th>
-                  <th className="text-left py-2 pr-3">size, GB</th>
-                  <th className="text-left py-2 pr-3">used, GB</th>
-                  <th className="text-left py-2 pr-3">used, %</th>
-                  <th className="text-left py-2 pr-3">model</th>
-                  <th className="text-left py-2 pr-3">system</th>
+                  <th className="text-left py-2 pr-3">Слот</th>
+                  <th className="text-left py-2 pr-3">Размер, ГБ</th>
+                  <th className="text-left py-2 pr-3">Занято, ГБ</th>
+                  <th className="text-left py-2 pr-3">Занято, %</th>
+                  <th className="text-left py-2 pr-3">Модель</th>
+                  <th className="text-left py-2 pr-3">Тип</th>
                   <th className="text-left py-2 pr-3">id</th>
                 </tr>
               </thead>
@@ -378,7 +378,7 @@ function HardwareEditForm({
     <div className="p-5">
       <div className="card w-full">
         <h3 className="font-semibold mb-3 flex items-center gap-2">
-          <Pencil className="w-4 h-4 text-accent" /> Hardware ·{" "}
+          <Pencil className="w-4 h-4 text-accent" /> Железо ·{" "}
           <span className="mono">{initial.hostname}</span>
         </h3>
         {err && <div className="alert-danger mb-2">{err}</div>}

@@ -136,14 +136,14 @@ function SettingsPanel() {
               <>
                 <FieldInput
                   id="wiki-username"
-                  label="Username"
+                  label="Имя пользователя"
                   value={s.username}
                   onChange={s.setUsername}
                   placeholder="admin"
                 />
                 <FieldInput
                   id="wiki-password"
-                  label="Password"
+                  label="Пароль"
                   type="password"
                   value={s.password}
                   onChange={s.setPassword}
@@ -439,7 +439,7 @@ function WikiBody() {
     <main className="flex-1 overflow-y-auto min-w-0">
       <div className="px-8 py-6 w-full flex flex-col gap-6">
         <div>
-          <h1 className="text-2xl font-bold mb-1">Wiki — примеры API</h1>
+          <h1 className="text-2xl font-bold mb-1">Вики — примеры API</h1>
           <p className="text-sm text-dim">
             Готовые curl и python-сниппеты по endpoint'ам платформы. Заполните
             настройки — каждый пример станет самодостаточным: с auth-преамбулой,
@@ -483,7 +483,7 @@ function WikiBody() {
 
 export function WikiExamples() {
   return (
-    <Shell breadcrumb="Главная / Wiki — примеры API">
+    <Shell breadcrumb="Главная / Вики — примеры API">
       <WikiSettingsProvider>
         <WikiBody />
       </WikiSettingsProvider>

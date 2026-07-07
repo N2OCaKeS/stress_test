@@ -353,8 +353,8 @@ function ServicesGroupsLive() {
                 value={sortKey}
                 onChange={(e) => setSortKey(e.target.value as GroupsSortKey)}
               >
-                <option value="name_asc">name ↑</option>
-                <option value="name_desc">name ↓</option>
+                <option value="name_asc">название ↑</option>
+                <option value="name_desc">название ↓</option>
                 <option value="dept">по отделу</option>
                 <option value="created_desc">создан ↓</option>
                 <option value="created_asc">создан ↑</option>
@@ -547,7 +547,7 @@ function GroupDetailView({
                 className="badge badge-warn"
                 title="Группа не в вашем отделе"
               >
-                read-only
+                Только чтение
               </span>
             )}
           </h3>
@@ -556,7 +556,7 @@ function GroupDetailView({
               className="btn flex items-center gap-1"
               onClick={() => startEdit(group.id)}
             >
-              <Edit3 className="w-4 h-4" /> Edit
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
           )}
         </div>
@@ -629,7 +629,7 @@ function GroupDetailView({
       {canEdit && (
         <div className="card" style={{ borderColor: "rgba(244,135,113,0.3)" }}>
           <div className="text-xs uppercase text-danger mb-2 flex items-center gap-2">
-            <AlertTriangle className="w-3 h-3" /> Danger zone
+            <AlertTriangle className="w-3 h-3" /> Опасная зона
           </div>
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="text-sm">
@@ -736,9 +736,9 @@ function MembersCard({
         <table className="w-full text-sm">
           <thead className="text-left text-dim text-xs uppercase">
             <tr>
-              <th className="pb-2 pr-3">тип</th>
-              <th className="pb-2 pr-3">id / name</th>
-              <th className="pb-2 pr-3">added</th>
+              <th className="pb-2 pr-3">Тип</th>
+              <th className="pb-2 pr-3">id / имя</th>
+              <th className="pb-2 pr-3">Добавлен</th>
               <th className="pb-2"></th>
             </tr>
           </thead>
@@ -747,7 +747,7 @@ function MembersCard({
               <tr key={`u:${u.user_id}`} className="border-t border-token">
                 <td className="py-2">
                   <span className="badge badge-accent flex items-center gap-1 w-fit">
-                    <UserIcon className="w-3 h-3" /> user
+                    <UserIcon className="w-3 h-3" /> пользователь
                   </span>
                 </td>
                 <td>
@@ -767,7 +767,7 @@ function MembersCard({
                       )
                     }
                   >
-                    remove
+                    убрать
                   </button>
                 </td>
               </tr>
@@ -776,7 +776,7 @@ function MembersCard({
               <tr key={`b:${b.bot_id}`} className="border-t border-token">
                 <td className="py-2">
                   <span className="badge flex items-center gap-1 w-fit">
-                    <Bot className="w-3 h-3" /> bot
+                    <Bot className="w-3 h-3" /> бот
                   </span>
                 </td>
                 <td>
@@ -794,7 +794,7 @@ function MembersCard({
                       run(() => groupsApi.removeGroupBot(group.id, b.bot_id))
                     }
                   >
-                    remove
+                    убрать
                   </button>
                 </td>
               </tr>
@@ -813,8 +813,8 @@ function MembersCard({
               setPickerId("");
             }}
           >
-            <option value="user">user</option>
-            <option value="bot">bot</option>
+            <option value="user">пользователь</option>
+            <option value="bot">бот</option>
           </select>
           <select
             className="input flex-1 mono"
@@ -931,8 +931,8 @@ function ServicesCard({
         <table className="w-full text-sm">
           <thead className="text-left text-dim text-xs uppercase">
             <tr>
-              <th className="pb-2 pr-3">service</th>
-              <th className="pb-2 pr-3">granted</th>
+              <th className="pb-2 pr-3">Сервис</th>
+              <th className="pb-2 pr-3">Выдан</th>
               <th className="pb-2"></th>
             </tr>
           </thead>
@@ -963,7 +963,7 @@ function ServicesCard({
                       );
                     }}
                   >
-                    revoke
+                    отозвать
                   </button>
                 </td>
               </tr>
@@ -1054,8 +1054,8 @@ function RolesCard({
         <table className="w-full text-sm mb-3">
           <thead className="text-left text-dim text-xs uppercase">
             <tr>
-              <th className="pb-2 pr-3">service</th>
-              <th className="pb-2 pr-3">roles</th>
+              <th className="pb-2 pr-3">Сервис</th>
+              <th className="pb-2 pr-3">Роли</th>
               <th className="pb-2"></th>
             </tr>
           </thead>
@@ -1091,7 +1091,7 @@ function RolesCard({
                       )
                     }
                   >
-                    revoke all
+                    отозвать все
                   </button>
                 </td>
               </tr>
@@ -1205,7 +1205,7 @@ function RoleAssigner({
                   onChange={() => toggleRole(r.role_name)}
                 />
                 {r.role_name}
-                {isExisting && <span className="text-dim ml-1">·current</span>}
+                {isExisting && <span className="text-dim ml-1">·текущая</span>}
               </label>
             );
           })}
@@ -1379,7 +1379,7 @@ function GroupEditForm({
   return (
     <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
-        <UsersRound className="w-4 h-4 text-accent" /> Edit · {initial.name}
+        <UsersRound className="w-4 h-4 text-accent" /> Изменить · {initial.name}
       </h3>
       {err && <div className="alert-danger mb-2">{err}</div>}
       <div className="flex flex-col gap-3">
@@ -1464,7 +1464,7 @@ function DeleteGroupButton({
         disabled={disabled || pending}
         onClick={submit}
       >
-        <Trash2 className="w-4 h-4" /> Delete
+        <Trash2 className="w-4 h-4" /> Удалить
       </button>
     </div>
   );

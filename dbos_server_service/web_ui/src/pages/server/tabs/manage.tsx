@@ -504,7 +504,7 @@ function OsSyncModal({
             Привязать сервер к OS-версии из каталога. Пусто = сбросить привязку.
           </div>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">OS version</span>
+            <span className="text-dim text-xs">Версия ОС</span>
             {q.loading ? (
               <div className="text-xs text-dim">Загрузка каталога…</div>
             ) : (
@@ -581,7 +581,7 @@ function LifecycleCard({
     <div className="card">
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <h3 className="font-semibold text-base flex items-center gap-2">
-          <Settings className="w-4 h-4 text-accent" /> Lifecycle
+          <Settings className="w-4 h-4 text-accent" /> Жизненный цикл
         </h3>
         {server && (
           <Link
@@ -946,7 +946,7 @@ function BusyCard({
   return (
     <div className="card">
       <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-        <Pause className="w-4 h-4 text-accent" /> Busy lease
+        <Pause className="w-4 h-4 text-accent" /> Бронь
       </h3>
       {isBusy ? (
         <div className="alert flex items-start gap-2">
@@ -1107,7 +1107,7 @@ function OsCatalogBody() {
     setPendingId(v.id);
     try {
       await deleteOsVersion(v.id);
-      toast.success(`OS version ${v.name} удалён`);
+      toast.success(`OS-версия ${v.name} удалена`);
       q.refetch();
     } catch (e) {
       toast.error(apiErrMsg(e, "Удаление не удалось"));
@@ -1154,10 +1154,10 @@ function OsCatalogBody() {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-[11px] uppercase text-dim border-b border-token">
-              <th className="text-left px-3 py-2 font-medium">name</th>
-              <th className="text-left px-3 py-2 font-medium">description</th>
-              <th className="text-left px-3 py-2 font-medium">repositories</th>
-              <th className="text-left px-3 py-2 font-medium">discovered</th>
+              <th className="text-left px-3 py-2 font-medium">Название</th>
+              <th className="text-left px-3 py-2 font-medium">Описание</th>
+              <th className="text-left px-3 py-2 font-medium">Репозитории</th>
+              <th className="text-left px-3 py-2 font-medium">Обнаружен</th>
               <th className="text-right px-3 py-2 font-medium">действия</th>
             </tr>
           </thead>
@@ -1210,7 +1210,7 @@ function OsCatalogBody() {
                           className="btn btn-ghost flex items-center gap-1"
                           disabled={pendingId !== null || editingId !== null}
                           onClick={() => setEditingId(v.id)}
-                          title="Edit"
+                          title="Изменить"
                         >
                           <Edit3 className="w-4 h-4" />
                         </button>
@@ -1218,7 +1218,7 @@ function OsCatalogBody() {
                           className="btn btn-danger flex items-center gap-1"
                           disabled={pendingId !== null}
                           onClick={() => handleDelete(v)}
-                          title="Delete"
+                          title="Удалить"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -1273,14 +1273,14 @@ function OsVersionForm({
           description: description.trim() ? description.trim() : null,
           repositories: repos,
         });
-        toast.success(`OS version ${name.trim()} создан`);
+        toast.success(`OS-версия ${name.trim()} создана`);
       } else if (initial) {
         await updateOsVersion(initial.id, {
           name: name.trim(),
           description: description.trim() ? description.trim() : null,
           repositories: repos,
         });
-        toast.success(`OS version ${name.trim()} обновлён`);
+        toast.success(`OS-версия ${name.trim()} обновлена`);
       }
       onSaved();
     } catch (e) {
@@ -1373,7 +1373,7 @@ function CleanCard({
             onClick={onClean}
             title="Очистка сервера после переустановки ОС"
           >
-            <Eraser className="w-4 h-4" /> Clean
+            <Eraser className="w-4 h-4" /> Очистить
           </button>
         )}
       </div>
@@ -1410,7 +1410,7 @@ function DangerCard({
       style={{ border: "1px solid var(--danger, #b91c1c)" }}
     >
       <div className="text-sm font-semibold flex items-center gap-2 text-danger mb-2">
-        <AlertTriangle className="w-4 h-4" /> Danger zone
+        <AlertTriangle className="w-4 h-4" /> Опасная зона
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex-1 text-xs text-dim">

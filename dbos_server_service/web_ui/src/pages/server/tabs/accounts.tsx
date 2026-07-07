@@ -471,7 +471,7 @@ function AccountDetail({
             <span className={`badge${prov.kind ? ` badge-${prov.kind}` : ""}`}>
               {prov.label}
             </span>
-            {!account.is_active && <span className="badge badge-warn">inactive</span>}
+            {!account.is_active && <span className="badge badge-warn">неактивен</span>}
           </h3>
           <div className="flex items-center gap-2 flex-wrap">
             {canManage && (
@@ -480,7 +480,7 @@ function AccountDetail({
                 onClick={() => setEditing(true)}
                 disabled={pending}
               >
-                <Edit3 className="w-4 h-4" /> Edit
+                <Edit3 className="w-4 h-4" /> Изменить
               </button>
             )}
             <button
@@ -653,7 +653,7 @@ function AccountDetail({
       {/* ── Rotate password ── */}
       <div className="card">
         <div className="text-xs uppercase text-dim mb-2 flex items-center gap-2">
-          <KeyRound className="w-3 h-3" /> Rotate password
+          <KeyRound className="w-3 h-3" /> Ротация пароля
         </div>
         <div className="text-xs text-dim mb-3">
           Sync — генерирует новый пароль в БД, на боксы не уезжает. Worker —
@@ -722,7 +722,7 @@ function AccountDetail({
       {/* ── Danger zone ── */}
       <div className="card" style={{ borderColor: "rgba(244,135,113,0.3)" }}>
         <div className="text-xs uppercase text-danger mb-2 flex items-center gap-2">
-          <AlertTriangle className="w-3 h-3" /> Danger zone
+          <AlertTriangle className="w-3 h-3" /> Опасная зона
         </div>
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -792,7 +792,7 @@ function AccountDetail({
                 }, `Аккаунт ${account.login} удалён`);
               }}
             >
-              <Trash2 className="w-4 h-4" /> Delete
+              <Trash2 className="w-4 h-4" /> Удалить
             </button>
           </div>
         </div>

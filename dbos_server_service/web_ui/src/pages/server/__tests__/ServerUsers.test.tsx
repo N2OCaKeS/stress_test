@@ -253,7 +253,7 @@ describe("ServerUsers (fleet account list)", () => {
     // Правая рабочая зона показывает управляющие кнопки наверху.
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: /Редактировать/ }),
+        screen.getByRole("button", { name: /Изменить/ }),
       ).toBeInTheDocument();
     });
     expect(

@@ -20,8 +20,8 @@ export function HomeLoggingReader() {
         title={<>Привет, {persona.username} 👋</>}
         subtitle={
           <>
-            Read-only доступ к audit-каналу. Просмотр и поиск, без правил и
-            retention.
+            Доступ только на чтение к audit-каналу. Просмотр и поиск, без
+            правил и хранения.
           </>
         }
       >
@@ -35,7 +35,7 @@ export function HomeLoggingReader() {
                 <Eye className="w-5 h-5 text-accent" />
                 <span className="text-sm font-medium">Открыть лог</span>
               </div>
-              <div className="text-xs text-dim">audit read-only</div>
+              <div className="text-xs text-dim">audit — только чтение</div>
             </Link>
             <div className="quick-tile opacity-60 cursor-not-allowed">
               <div className="flex items-center gap-2">
@@ -47,7 +47,7 @@ export function HomeLoggingReader() {
             <div className="quick-tile opacity-60 cursor-not-allowed">
               <div className="flex items-center gap-2">
                 <Lock className="w-5 h-5 text-dim" />
-                <span className="text-sm font-medium">Retention</span>
+                <span className="text-sm font-medium">Хранение</span>
               </div>
               <div className="text-xs text-dim">Только loging_admin</div>
             </div>
@@ -65,7 +65,7 @@ export function HomeLoggingReader() {
           <div className="card">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold">Что доступно</h3>
-              <span className="badge">read-only</span>
+              <span className="badge">только чтение</span>
             </div>
             <div className="space-y-2 text-sm">
               <div className="flex items-start gap-3 p-2 surface-2 rounded">
@@ -78,7 +78,7 @@ export function HomeLoggingReader() {
               <div className="flex items-start gap-3 p-2 surface-2 rounded">
                 <Search className="w-4 h-4 text-ok shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <div>Поиск по полям event&apos;а</div>
+                  <div>Поиск по полям события</div>
                   <div className="text-xs text-dim">
                     request_id · actor · severity · сервис
                   </div>
@@ -96,7 +96,7 @@ export function HomeLoggingReader() {
               <div className="flex items-start gap-3 p-2 surface-2 rounded">
                 <Lock className="w-4 h-4 text-dim shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <div>Без правил, retention, экспорта</div>
+                  <div>Без правил, хранения, экспорта</div>
                   <div className="text-xs text-dim">нужна роль loging_admin</div>
                 </div>
               </div>
@@ -114,8 +114,8 @@ export function HomeLoggingReader() {
       title={<>Привет, {persona.username} 👋</>}
       subtitle={
         <>
-          Read-only доступ к audit-каналу. Просмотр и поиск, без правил и
-          retention.
+          Доступ только на чтение к audit-каналу. Просмотр и поиск, без
+          правил и хранения.
         </>
       }
     >
@@ -130,7 +130,7 @@ export function HomeLoggingReader() {
                   <Eye className="w-5 h-5 text-accent" />
                   <span className="text-sm font-medium">Открыть фид</span>
                 </div>
-                <div className="text-xs text-dim">Поток событий read-only</div>
+                <div className="text-xs text-dim">Поток событий только на чтение</div>
               </Link>
               <div className="quick-tile opacity-60 cursor-not-allowed">
                 <div className="flex items-center gap-2">
@@ -142,7 +142,7 @@ export function HomeLoggingReader() {
               <div className="quick-tile opacity-60 cursor-not-allowed">
                 <div className="flex items-center gap-2">
                   <Lock className="w-5 h-5 text-dim" />
-                  <span className="text-sm font-medium">Retention</span>
+                  <span className="text-sm font-medium">Хранение</span>
                 </div>
                 <div className="text-xs text-dim">Только loging_admin</div>
               </div>
@@ -159,14 +159,14 @@ export function HomeLoggingReader() {
           {/* Stats row */}
           <section className="mb-8 grid gap-4 md:grid-cols-2">
             <div className="card">
-              <div className="stat-label">Events 24ч</div>
+              <div className="stat-label">События 24ч</div>
               <div className="stat-big">
                 {AUDIT_EVENTS.length.toLocaleString("ru-RU")}
               </div>
               <div className="text-xs text-dim mt-2">по всей платформе</div>
             </div>
             <div className="card">
-              <div className="stat-label">Last critical</div>
+              <div className="stat-label">Последний критический</div>
               <div className="stat-big text-danger">16:04</div>
               <div className="text-xs text-dim mt-2">
                 <span className="mono">auth-service</span> · brute-force-detect
@@ -180,7 +180,7 @@ export function HomeLoggingReader() {
             <div className="card">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold">Что доступно</h3>
-                <span className="badge">read-only</span>
+                <span className="badge">только чтение</span>
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex items-start gap-3 p-2 surface-2 rounded">
@@ -193,7 +193,7 @@ export function HomeLoggingReader() {
                 <div className="flex items-start gap-3 p-2 surface-2 rounded">
                   <Search className="w-4 h-4 text-ok shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <div>Поиск по полям event&apos;а</div>
+                    <div>Поиск по полям события</div>
                     <div className="text-xs text-dim">
                       request_id · actor · severity · сервис
                     </div>
@@ -211,7 +211,7 @@ export function HomeLoggingReader() {
                 <div className="flex items-start gap-3 p-2 surface-2 rounded">
                   <Lock className="w-4 h-4 text-dim shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <div>Без правил, retention, экспорта</div>
+                    <div>Без правил, хранения, экспорта</div>
                     <div className="text-xs text-dim">нужна роль loging_admin</div>
                   </div>
                 </div>

@@ -67,7 +67,7 @@ export function ClusterAuditOverview() {
           <div className="card">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold flex items-center gap-2">
-                <FileText className="w-4 h-4 text-accent" /> Audit overview
+                <FileText className="w-4 h-4 text-accent" /> Обзор аудита
               </h3>
               <Link to="/log" className="text-xs text-accent flex items-center gap-1">
                 открыть полный лог <ChevronRight className="w-3 h-3" />
@@ -75,22 +75,22 @@ export function ClusterAuditOverview() {
             </div>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div>
-                <div className="stat-label">events / 24h</div>
+                <div className="stat-label">события / 24ч</div>
                 <div className="stat-big">12 487</div>
               </div>
               <div>
-                <div className="stat-label">CRITICAL / week</div>
+                <div className="stat-label">CRITICAL / неделя</div>
                 <div className="stat-big text-danger">14</div>
               </div>
             </div>
             <div className="mt-3 pt-3 border-t border-token grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-sm">
-              <div className="text-dim">top action</div>
+              <div className="text-dim">Топ действие</div>
               <div className="mono">credential.read</div>
-              <div className="text-dim">count</div>
+              <div className="text-dim">Количество</div>
               <div>4 192</div>
-              <div className="text-dim">top actor</div>
+              <div className="text-dim">Топ инициатор</div>
               <div className="mono">worker_bot</div>
-              <div className="text-dim">count</div>
+              <div className="text-dim">Количество</div>
               <div>2 871</div>
             </div>
             <div className="mt-3 pt-3 border-t border-token flex gap-2 flex-wrap items-center">
@@ -117,7 +117,7 @@ export function ClusterAuditOverview() {
 
           <div className="card">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Severity distribution · 24h</h3>
+              <h3 className="font-semibold">Распределение по важности · 24ч</h3>
               <span className="text-xs text-dim">live</span>
             </div>
             {[
@@ -155,7 +155,7 @@ function NoAuditRole() {
     <div className="card">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold flex items-center gap-2">
-          <FileText className="w-4 h-4 text-dim" /> Audit overview
+          <FileText className="w-4 h-4 text-dim" /> Обзор аудита
         </h3>
       </div>
       <div className="empty-card text-xs flex items-start gap-2">
@@ -211,7 +211,7 @@ function LiveAudit({ canConfigureRules }: { canConfigureRules: boolean }) {
     <div className="card">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold flex items-center gap-2">
-          <FileText className="w-4 h-4 text-accent" /> Audit overview
+          <FileText className="w-4 h-4 text-accent" /> Обзор аудита
         </h3>
         <Link to="/log" className="text-xs text-accent flex items-center gap-1">
           открыть полный лог <ChevronRight className="w-3 h-3" />
@@ -309,11 +309,11 @@ function AuditStatsBody({ stats }: { stats: EventStatsResponse }) {
           <div className="stat-big">{numFmt.format(stats.total)}</div>
         </div>
         <div>
-          <div className="stat-label">success</div>
+          <div className="stat-label">успешно</div>
           <div className="stat-big">{numFmt.format(success)}</div>
         </div>
         <div>
-          <div className="stat-label">failure</div>
+          <div className="stat-label">сбои</div>
           <div className={`stat-big ${failure > 0 ? "text-danger" : ""}`}>
             {numFmt.format(failure)}
           </div>
@@ -323,7 +323,7 @@ function AuditStatsBody({ stats }: { stats: EventStatsResponse }) {
       {sevRows.length > 0 && (
         <div className="mt-3 pt-3 border-t border-token">
           <div className="text-xs uppercase tracking-wider text-dim mb-2">
-            Severity distribution
+            Распределение по важности
           </div>
           {sevRows.map((r) => (
             <div key={r.sev} className="sev-bar">

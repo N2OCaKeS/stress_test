@@ -136,5 +136,5 @@ export function SecurityServiceAccess() {
 
 function ResultDeptBadge({ deptId }: { deptId: string }) {
   const label = useDeptLabel(deptId);
-  return <span className="badge">dept: {label}</span>;
+  return <span className="badge">отдел: {label}</span>;
 }

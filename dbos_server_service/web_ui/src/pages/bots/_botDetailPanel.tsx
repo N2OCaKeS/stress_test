@@ -125,7 +125,7 @@ export function BotDetailFullPanel({
             <span className="badge">bot</span>
             {!canEdit && (
               <span className="badge badge-warn" title={caps.reason}>
-                read-only
+                Только чтение
               </span>
             )}
           </div>
@@ -167,7 +167,7 @@ export function BotDetailFullPanel({
               run(() => botsApi.patchBot(bot.id, { description: next }));
             }}
           >
-            <Edit3 className="w-4 h-4" /> Edit
+            <Edit3 className="w-4 h-4" /> Изменить
           </button>
           <button
             className="btn flex items-center gap-1"
@@ -186,7 +186,7 @@ export function BotDetailFullPanel({
             ) : (
               <Power className="w-4 h-4" />
             )}
-            {bot.status === "active" ? "Disable" : "Enable"}
+            {bot.status === "active" ? "Отключить" : "Включить"}
           </button>
           <button
             className="btn btn-danger flex items-center gap-1"
@@ -200,7 +200,7 @@ export function BotDetailFullPanel({
               )
             }
           >
-            <Trash2 className="w-4 h-4" /> Delete
+            <Trash2 className="w-4 h-4" /> Удалить
           </button>
         </div>
       </div>
@@ -230,7 +230,7 @@ export function BotDetailFullPanel({
                 className="btn btn-sm flex items-center gap-1"
                 onClick={() => copy(issued.token)}
               >
-                <Copy className="w-3 h-3" /> Copy
+                <Copy className="w-3 h-3" /> Копировать
               </button>
               <button className="btn btn-sm" onClick={() => setIssued(null)}>
                 закрыть
@@ -305,7 +305,7 @@ export function BotDetailFullPanel({
                 );
               }}
             >
-              <Edit3 className="w-3 h-3" /> Edit
+              <Edit3 className="w-3 h-3" /> Изменить
             </button>
           </div>
           <div className="flex flex-wrap gap-1">
@@ -326,7 +326,7 @@ export function BotDetailFullPanel({
           <div className="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
             <KeyRound className="w-4 h-4" /> Tokens
             {activeTokens.length > 0 && (
-              <span className="text-dim">· {activeTokens.length} active</span>
+              <span className="text-dim">· {activeTokens.length} активн.</span>
             )}
             {tokensQ.loading && <span className="text-dim">…</span>}
           </div>
@@ -348,11 +348,11 @@ export function BotDetailFullPanel({
             <table className="w-full text-sm">
               <thead className="text-left text-dim text-xs uppercase">
                 <tr>
-                  <th className="pb-2 pr-3">name</th>
-                  <th className="pb-2 pr-3">created</th>
-                  <th className="pb-2 pr-3">expires</th>
-                  <th className="pb-2 pr-3">last used</th>
-                  <th className="pb-2 pr-3">status</th>
+                  <th className="pb-2 pr-3">имя</th>
+                  <th className="pb-2 pr-3">создан</th>
+                  <th className="pb-2 pr-3">истекает</th>
+                  <th className="pb-2 pr-3">посл. использование</th>
+                  <th className="pb-2 pr-3">статус</th>
                   <th className="pb-2"></th>
                 </tr>
               </thead>
@@ -406,7 +406,7 @@ export function BotDetailFullPanel({
                             );
                           }}
                         >
-                          revoke
+                          отозвать
                         </button>
                       </td>
                     </tr>
@@ -505,11 +505,11 @@ export function BotDetailFullPanel({
               >
                 {activeTokens.length === 0 ? (
                   <>
-                    <KeyRound className="w-4 h-4" /> Issue
+                    <KeyRound className="w-4 h-4" /> Выпустить
                   </>
                 ) : (
                   <>
-                    <RotateCw className="w-4 h-4" /> Rotate
+                    <RotateCw className="w-4 h-4" /> Ротировать
                   </>
                 )}
               </button>

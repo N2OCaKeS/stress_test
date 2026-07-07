@@ -13,7 +13,7 @@ export function ThemeSwitcher() {
       value={theme}
       onChange={(e) => setTheme(e.target.value as ThemeName)}
       className="surface-2 border border-token rounded px-2 py-1 text-sm w-full"
-      aria-label="Theme"
+      aria-label="Тема"
     >
       {THEME_OPTIONS.map((o) => (
         <option key={o.value} value={o.value}>

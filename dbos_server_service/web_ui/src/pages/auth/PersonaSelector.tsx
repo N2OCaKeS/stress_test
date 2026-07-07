@@ -24,11 +24,11 @@ const SERVICE_CHIPS: Record<
   string,
   { icon: LucideIcon; label: string }
 > = {
-  auth: { icon: Users, label: "Users" },
-  server: { icon: Server, label: "Servers" },
-  secret: { icon: Lock, label: "Secrets" },
+  auth: { icon: Users, label: "Пользователи" },
+  server: { icon: Server, label: "Серверы" },
+  secret: { icon: Lock, label: "Секреты" },
   worker: { icon: Cog, label: "Workers" },
-  logging: { icon: FileText, label: "Audit" },
+  logging: { icon: FileText, label: "Аудит" },
   config: { icon: Cog, label: "Config" },
 };
 
@@ -106,11 +106,11 @@ function PersonaTile({
             <>
               <span className="chip-small">
                 <Filter className="w-3 h-3" />
-                Rules
+                Правила
               </span>
               <span className="chip-small">
                 <Trash className="w-3 h-3" />
-                Retention
+                Хранение
               </span>
             </>
           )}
@@ -121,7 +121,7 @@ function PersonaTile({
             </span>
           )}
           {persona.id === "dave" && (
-            <span className="chip-small text-warn">Read-only</span>
+            <span className="chip-small text-warn">Только чтение</span>
           )}
         </div>
         <div className="mt-2 text-[11px] text-dim">{persona.tagline}</div>
@@ -160,7 +160,7 @@ export function PersonaSelector() {
               доступными сервисами.
             </p>
             <p className="text-xs text-dim mt-2">
-              В боевом режиме это будет обычный login screen{" "}
+              В боевом режиме это будет обычный экран входа{" "}
               <span className="mono">POST /api/auth/v1/login</span>.
             </p>
           </div>
@@ -179,7 +179,7 @@ export function PersonaSelector() {
 
           <div className="text-center mt-6">
             <Link to="/login" className="text-xs text-accent">
-              → Перейти к боевому login screen
+              → Перейти к боевому экрану входа
             </Link>
           </div>
         </div>

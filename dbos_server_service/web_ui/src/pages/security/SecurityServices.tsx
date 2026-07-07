@@ -106,7 +106,7 @@ function PlatformServicesCatalog() {
     <div className="flex-1 min-h-0 overflow-auto p-6 flex flex-col gap-4">
       {!canEdit && (
         <div className="readonly-bar">
-          <span className="ro-label">read-only</span>
+          <span className="ro-label">только чтение</span>
           <span>
             Регистрация и удаление сервисов — только account_admin. Список
             доступен всем admin-ролям.
@@ -219,7 +219,7 @@ function ServiceRow({
           onClick={onDelete}
           disabled={pending}
         >
-          <Trash2 className="w-4 h-4" /> Delete
+          <Trash2 className="w-4 h-4" /> Удалить
         </button>
       )}
     </div>

@@ -78,8 +78,8 @@ export function BotRolesPanel({
         <table className="w-full text-sm">
           <thead className="text-left text-dim text-xs uppercase">
             <tr>
-              <th className="pb-2 pr-3">service</th>
-              <th className="pb-2 pr-3">roles</th>
+              <th className="pb-2 pr-3">сервис</th>
+              <th className="pb-2 pr-3">роли</th>
               <th className="pb-2"></th>
             </tr>
           </thead>
@@ -115,7 +115,7 @@ export function BotRolesPanel({
                       title={canManage ? undefined : reason}
                       onClick={() => onRevoke(r.service_name)}
                     >
-                      revoke
+                      отозвать
                     </button>
                   </td>
                 </tr>

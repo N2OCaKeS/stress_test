@@ -8,7 +8,7 @@ import type { NavLinkItem } from "@/api/auth/navLinks";
  * Аудит-чип на левой панели гейтится read-доступом к журналу
  * (`hasAuditLogAccess`), а не подключением отдела к loging_service. У dep_admin
  * его отдел к логированию обычно НЕ подключён, поэтому `logging` не попадает в
- * accessible_services — но раздел ему доступен. Проверяем, что чип «Audit log»
+ * accessible_services — но раздел ему доступен. Проверяем, что чип «Журнал аудита»
  * появляется по доступу и не дублируется у платформенных logging-ролей.
  */
 
@@ -113,7 +113,7 @@ describe("LeftPanel — настраиваемая кнопка allta", () => {
 });
 
 describe("LeftPanel — аудит-чип", () => {
-  it("dep_admin без logging в accessible_services видит «Audit log»", () => {
+  it("dep_admin без logging в accessible_services видит «Журнал аудита»", () => {
     renderPanel(
       makePersona({
         username: "dep_admin1",
@@ -123,10 +123,10 @@ describe("LeftPanel — аудит-чип", () => {
         has_admin: true,
       }),
     );
-    expect(screen.getByText("Audit log")).toBeInTheDocument();
+    expect(screen.getByText("Журнал аудита")).toBeInTheDocument();
   });
 
-  it("обычный dept-пользователь без audit-доступа не видит «Audit log»", () => {
+  it("обычный dept-пользователь без audit-доступа не видит «Журнал аудита»", () => {
     renderPanel(
       makePersona({
         username: "regular",
@@ -135,7 +135,7 @@ describe("LeftPanel — аудит-чип", () => {
         accessible_services: ["server"] as ServiceName[],
       }),
     );
-    expect(screen.queryByText("Audit log")).not.toBeInTheDocument();
+    expect(screen.queryByText("Журнал аудита")).not.toBeInTheDocument();
   });
 
   it("logging_admin с logging в accessible_services получает ровно один чип", () => {
@@ -148,6 +148,6 @@ describe("LeftPanel — аудит-чип", () => {
         has_admin: true,
       }),
     );
-    expect(screen.getAllByText("Audit log")).toHaveLength(1);
+    expect(screen.getAllByText("Журнал аудита")).toHaveLength(1);
   });
 });

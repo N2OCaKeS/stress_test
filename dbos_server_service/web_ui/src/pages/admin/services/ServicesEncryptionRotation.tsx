@@ -512,7 +512,7 @@ function ServiceRotationCard({
         <div className="flex items-center gap-2">
           {status && (
             <span className="badge" title="активная версия ключа">
-              active v{status.activeVersion}
+              активна v{status.activeVersion}
             </span>
           )}
           {status?.forceActive && (
@@ -638,7 +638,7 @@ function ServiceRotationCard({
                     <div className="flex items-center gap-2">
                       <span className="mono">v{v}</span>
                       {isActive && (
-                        <span className="badge badge-ok">active</span>
+                        <span className="badge badge-ok">активна</span>
                       )}
                     </div>
                     <div className="flex items-center gap-3">

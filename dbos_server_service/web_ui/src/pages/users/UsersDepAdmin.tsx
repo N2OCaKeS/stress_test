@@ -105,12 +105,12 @@ type Tab = "users" | "groups" | "bots";
 type WorkzoneTab = "profile" | "roles" | "sessions" | "pats" | "bots" | "audit";
 
 const WORKZONE_TABS: { id: WorkzoneTab; label: string }[] = [
-  { id: "profile", label: "Profile" },
-  { id: "roles", label: "Roles & Grants" },
-  { id: "sessions", label: "Sessions" },
+  { id: "profile", label: "Профиль" },
+  { id: "roles", label: "Роли и выдачи" },
+  { id: "sessions", label: "Сессии" },
   { id: "pats", label: "PATs" },
-  { id: "bots", label: "Bots created" },
-  { id: "audit", label: "Audit" },
+  { id: "bots", label: "Созданные боты" },
+  { id: "audit", label: "Аудит" },
 ];
 
 
@@ -288,7 +288,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
 
   async function handleRevokeSessions() {
     if (!targetUser) return;
-    if (!(await confirm.confirm({ message: `Revoke all sessions для ${tgtLabel}?`, danger: true, confirmLabel: "Завершить сессии" }))) return;
+    if (!(await confirm.confirm({ message: `Завершить все сессии для ${tgtLabel}?`, danger: true, confirmLabel: "Завершить сессии" }))) return;
     runAction("revoke-sessions", () => revokeUserSessions(targetUser.id));
   }
 
@@ -306,9 +306,9 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
       <aside className="w-[360px] shrink-0 border-r border-token surface flex flex-col min-h-0">
         <div className="border-b border-token px-3 py-2 flex flex-col gap-2">
           <div className="flex gap-1">
-            <TabBtn icon={<User className="w-3 h-3" />} active={tab === "users"} onClick={() => setTab("users")}>Users · {usersCount}</TabBtn>
-            <TabBtn icon={<UsersRound className="w-3 h-3" />} active={tab === "groups"} onClick={() => setTab("groups")}>Groups · {deptGroups.length}</TabBtn>
-            <TabBtn icon={<Bot className="w-3 h-3" />} active={tab === "bots"} onClick={() => setTab("bots")}>Bots · {deptBots.length}</TabBtn>
+            <TabBtn icon={<User className="w-3 h-3" />} active={tab === "users"} onClick={() => setTab("users")}>Пользователи · {usersCount}</TabBtn>
+            <TabBtn icon={<UsersRound className="w-3 h-3" />} active={tab === "groups"} onClick={() => setTab("groups")}>Группы · {deptGroups.length}</TabBtn>
+            <TabBtn icon={<Bot className="w-3 h-3" />} active={tab === "bots"} onClick={() => setTab("bots")}>Боты · {deptBots.length}</TabBtn>
           </div>
           <div className="flex items-center gap-2">
             <Search className="w-4 h-4 text-dim" />
@@ -322,7 +322,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
           <div className="text-[10px] text-dim text-center pt-1">
             Матрицы доступа — внутри карточки пользователя (вкладка «Матрица доступа»).
           </div>
-          {usersQ.loading && <div className="spinner" aria-label="Loading" />}
+          {usersQ.loading && <div className="spinner" aria-label="Загрузка" />}
           {usersQ.error && (
             <div className="alert-danger text-[11px]">{usersQ.error.message}</div>
           )}
@@ -389,7 +389,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                 <UsersRound className="w-3 h-3" /> Группы депа · {deptGroups.length}
               </div>
               {groupsQ.loading ? (
-                <div className="spinner mx-3" aria-label="Loading" />
+                <div className="spinner mx-3" aria-label="Загрузка" />
               ) : groupsQ.error ? (
                 <div className="alert-danger text-[11px] mx-3">{groupsQ.error.message}</div>
               ) : deptGroups.length === 0 ? (
@@ -415,7 +415,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                 <Bot className="w-3 h-3" /> Боты депа · {deptBots.length}
               </div>
               {botsQ.loading ? (
-                <div className="spinner mx-3" aria-label="Loading" />
+                <div className="spinner mx-3" aria-label="Загрузка" />
               ) : botsQ.error ? (
                 <div className="alert-danger text-[11px] mx-3">{botsQ.error.message}</div>
               ) : deptBots.length === 0 ? (
@@ -527,7 +527,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
               title={caps.edit ? undefined : caps.reason}
               onClick={handleResetPassword}
             >
-              <KeyRound className="w-4 h-4" /> Reset password
+              <KeyRound className="w-4 h-4" /> Сбросить пароль
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
@@ -541,7 +541,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
               }
               onClick={handleBlock}
             >
-              <Pause className="w-4 h-4" /> Block
+              <Pause className="w-4 h-4" /> Заблокировать
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
@@ -549,7 +549,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
               title={caps.disable ? undefined : caps.reason}
               onClick={handleRevokeSessions}
             >
-              <LogOut className="w-4 h-4" /> Revoke sessions
+              <LogOut className="w-4 h-4" /> Завершить сессии
             </button>
           </div>
         </div>
@@ -659,7 +659,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                 <Monitor className="w-4 h-4" /> Последние сессии
               </div>
               {sessionsQ.loading ? (
-                <div className="spinner" aria-label="Loading" />
+                <div className="spinner" aria-label="Загрузка" />
               ) : sessionsQ.error ? (
                 <div className="alert-danger text-[11px]">{sessionsQ.error.message}</div>
               ) : (sessionsQ.data?.items ?? []).length === 0 ? (
@@ -670,8 +670,8 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                     <tr>
                       <th className="pb-2 pr-3">IP</th>
                       <th className="pb-2 pr-3">UA</th>
-                      <th className="pb-2 pr-3">Started</th>
-                      <th className="pb-2 pr-3">Last seen</th>
+                      <th className="pb-2 pr-3">Начало</th>
+                      <th className="pb-2 pr-3">Последняя активность</th>
                       <th className="pb-2"></th>
                     </tr>
                   </thead>
@@ -693,7 +693,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                             title={caps.disable ? undefined : caps.reason}
                             onClick={() => handleSessionRevoke(s.session_id)}
                           >
-                            revoke
+                            отозвать
                           </button>
                         </td>
                       </tr>
@@ -721,7 +721,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                 <Bot className="w-4 h-4" /> Боты, созданные {tgtLabel}
               </div>
               {botsQ.loading ? (
-                <div className="spinner" aria-label="Loading" />
+                <div className="spinner" aria-label="Загрузка" />
               ) : botsQ.error ? (
                 <div className="alert-danger text-[11px]">{botsQ.error.message}</div>
               ) : botsCreatedByTarget.length === 0 ? (
@@ -732,10 +732,10 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                 <table className="w-full text-sm">
                   <thead className="text-left text-dim text-xs uppercase">
                     <tr>
-                      <th className="pb-2 pr-3">Name</th>
-                      <th className="pb-2 pr-3">Dept</th>
-                      <th className="pb-2 pr-3">Status</th>
-                      <th className="pb-2 pr-3">Created</th>
+                      <th className="pb-2 pr-3">Название</th>
+                      <th className="pb-2 pr-3">Отдел</th>
+                      <th className="pb-2 pr-3">Статус</th>
+                      <th className="pb-2 pr-3">Создан</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -766,7 +766,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
           {workzoneTab === "audit" && targetUser && (
             <div className="surface border border-token rounded-lg p-4 col-span-2">
               <div className="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
-                <Clock className="w-4 h-4" /> Audit
+                <Clock className="w-4 h-4" /> Аудит
               </div>
               <div className="text-sm text-dim">
                 Лента audit-событий по этому пользователю живёт в loging_service.
@@ -832,7 +832,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
 
       {editRolesOpen && targetUser && (
         <Modal
-          title={`Edit roles · ${targetUser.username}`}
+          title={`Изменить роли · ${targetUser.username}`}
           onClose={() => setEditRolesOpen(false)}
         >
           <EditRolesForm
@@ -1012,9 +1012,9 @@ function UsersDepAdminMock() {
       <aside className="w-[360px] shrink-0 border-r border-token surface flex flex-col min-h-0">
         <div className="border-b border-token px-3 py-2 flex flex-col gap-2">
           <div className="flex gap-1">
-            <TabBtn icon={<User className="w-3 h-3" />} active={tab === "users"} onClick={() => setTab("users")}>Users · 8</TabBtn>
-            <TabBtn icon={<UsersRound className="w-3 h-3" />} active={tab === "groups"} onClick={() => setTab("groups")}>Groups · {coreGroups.length}</TabBtn>
-            <TabBtn icon={<Bot className="w-3 h-3" />} active={tab === "bots"} onClick={() => setTab("bots")}>Bots · {coreBots.length}</TabBtn>
+            <TabBtn icon={<User className="w-3 h-3" />} active={tab === "users"} onClick={() => setTab("users")}>Пользователи · 8</TabBtn>
+            <TabBtn icon={<UsersRound className="w-3 h-3" />} active={tab === "groups"} onClick={() => setTab("groups")}>Группы · {coreGroups.length}</TabBtn>
+            <TabBtn icon={<Bot className="w-3 h-3" />} active={tab === "bots"} onClick={() => setTab("bots")}>Боты · {coreBots.length}</TabBtn>
           </div>
           <div className="flex items-center gap-2">
             <Search className="w-4 h-4 text-dim" />
@@ -1186,7 +1186,7 @@ function UsersDepAdminMock() {
               title={caps.edit ? undefined : caps.reason}
               onClick={() => toast.info("mock: reset-password")}
             >
-              <KeyRound className="w-4 h-4" /> Reset password
+              <KeyRound className="w-4 h-4" /> Сбросить пароль
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
@@ -1194,7 +1194,7 @@ function UsersDepAdminMock() {
               title={caps.disable ? undefined : caps.reason}
               onClick={() => toast.info("mock: disable")}
             >
-              <Pause className="w-4 h-4" /> Block
+              <Pause className="w-4 h-4" /> Заблокировать
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
@@ -1202,7 +1202,7 @@ function UsersDepAdminMock() {
               title={caps.disable ? undefined : caps.reason}
               onClick={() => toast.info("mock: revoke-sessions")}
             >
-              <LogOut className="w-4 h-4" /> Revoke sessions
+              <LogOut className="w-4 h-4" /> Завершить сессии
             </button>
           </div>
         </div>
@@ -1302,8 +1302,8 @@ function UsersDepAdminMock() {
                   <tr>
                     <th className="pb-2 pr-3">IP</th>
                     <th className="pb-2 pr-3">UA</th>
-                    <th className="pb-2 pr-3">Started</th>
-                    <th className="pb-2 pr-3">Last seen</th>
+                    <th className="pb-2 pr-3">Начало</th>
+                    <th className="pb-2 pr-3">Последняя активность</th>
                     <th className="pb-2"></th>
                   </tr>
                 </thead>
@@ -1324,7 +1324,7 @@ function UsersDepAdminMock() {
                         title={caps.disable ? undefined : caps.reason}
                         onClick={() => toast.info("mock: revoke-session")}
                       >
-                        revoke
+                        отозвать
                       </button>
                     </td>
                   </tr>
@@ -1358,7 +1358,7 @@ function UsersDepAdminMock() {
           {workzoneTab === "audit" && targetUser && (
             <div className="surface border border-token rounded-lg p-4 col-span-2">
               <div className="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
-                <Clock className="w-4 h-4" /> Audit
+                <Clock className="w-4 h-4" /> Аудит
               </div>
               <div className="text-sm text-dim">
                 Лента audit-событий по этому пользователю живёт в loging_service.
@@ -1420,7 +1420,7 @@ function UsersDepAdminMock() {
 
       {editRolesOpen && targetUser && (
         <Modal
-          title={`Edit roles · ${targetUser.username}`}
+          title={`Изменить роли · ${targetUser.username}`}
           onClose={() => setEditRolesOpen(false)}
         >
           <EditRolesForm

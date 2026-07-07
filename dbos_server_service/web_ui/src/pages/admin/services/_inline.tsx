@@ -68,7 +68,7 @@ export function LogingPlatformRoleBanner({ compact = false }: { compact?: boolea
         <span className="mono">loging_reader</span>. Создавать service-роли
         здесь нельзя — guards внутри loging_service их игнорируют. Назначайте
         платформенную роль через карточку пользователя
-        (<span className="mono">/users/&lt;id&gt;</span> → Edit profile →
+        (<span className="mono">/users/&lt;id&gt;</span> → Изменить профиль →
         platform_role) или при создании юзера.
       </div>
     </div>
@@ -244,7 +244,7 @@ export function InlineEditor<T>({
 
       {readonlyNote && (
         <div className="readonly-bar shrink-0">
-          <span className="ro-label">read-only</span>
+          <span className="ro-label">Только чтение</span>
           <span>{readonlyNote}</span>
         </div>
       )}

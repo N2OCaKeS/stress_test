@@ -343,7 +343,7 @@ export function ServicesUsers() {
 
       {!canEdit && (
         <div className="readonly-bar shrink-0">
-          <span className="ro-label">read-only</span>
+          <span className="ro-label">Только чтение</span>
           <span>Просмотр без права изменения</span>
         </div>
       )}
@@ -817,7 +817,7 @@ function UserForm({
     <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <UserCog className="w-4 h-4 text-accent" />
-        {mode === "new" ? "Новый пользователь" : `Edit · ${initial?.username}`}
+        {mode === "new" ? "Новый пользователь" : `Изменить · ${initial?.username}`}
       </h3>
       <div className="grid grid-cols-2 gap-3">
         <FormRow label="username">

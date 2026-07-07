@@ -179,10 +179,10 @@ function RuleView({ rule, onDelete }: { rule: Rule; onDelete: () => void }) {
         </h3>
         <div className="flex items-center gap-2">
           <button className="btn flex items-center gap-1" onClick={() => startEdit(rule.id)}>
-            <Edit3 className="w-4 h-4" /> Edit
+            <Edit3 className="w-4 h-4" /> Изменить
           </button>
           <button className="btn btn-danger flex items-center gap-1" onClick={onDelete}>
-            <Trash2 className="w-4 h-4" /> Delete
+            <Trash2 className="w-4 h-4" /> Удалить
           </button>
         </div>
       </div>
@@ -287,7 +287,7 @@ function RuleForm({
     <form onSubmit={handleSubmit} className="card w-full flex flex-col gap-3">
       <h3 className="font-semibold flex items-center gap-2">
         <Filter className="w-4 h-4 text-accent" />
-        {initial ? `Edit · ${initial.name}` : "Новое правило"}
+        {initial ? `Изменить · ${initial.name}` : "Новое правило"}
       </h3>
       <FormRow
         label="name *"
@@ -506,7 +506,7 @@ function MockRuleView({ rule, canEdit }: { rule: AlertRule; canEdit: boolean }) 
         {canEdit && (
           <div className="flex items-center gap-2">
             <button className="btn flex items-center gap-1" onClick={() => startEdit(rule.id)}>
-              <Edit3 className="w-4 h-4" /> Edit
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
           </div>
         )}
@@ -537,7 +537,7 @@ function MockRuleForm({
     <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <AlertTriangle className="w-4 h-4 text-warn" />
-        {mode === "new" ? "Новое правило" : `Edit · ${initial?.expr}`}
+        {mode === "new" ? "Новое правило" : `Изменить · ${initial?.expr}`}
       </h3>
       <div className="flex flex-col gap-3">
         <FormRow label="expression" hint="DSL: action OP value [WINDOW] · напр. login.failed × 5">

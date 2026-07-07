@@ -553,11 +553,11 @@ function TokensCard({ mockMode }: { mockMode: boolean }) {
           <table className="w-full text-sm">
             <thead className="text-left text-dim text-xs uppercase">
               <tr>
-                <th className="pb-2 pr-3">name</th>
-                <th className="pb-2 pr-3">scopes</th>
-                <th className="pb-2 pr-3">created</th>
-                <th className="pb-2 pr-3">expires</th>
-                <th className="pb-2 pr-3">last used</th>
+                <th className="pb-2 pr-3">имя</th>
+                <th className="pb-2 pr-3">области</th>
+                <th className="pb-2 pr-3">создан</th>
+                <th className="pb-2 pr-3">истекает</th>
+                <th className="pb-2 pr-3">посл. использование</th>
                 <th className="pb-2"></th>
               </tr>
             </thead>
@@ -579,7 +579,7 @@ function TokensCard({ mockMode }: { mockMode: boolean }) {
                       className="btn btn-danger btn-sm flex items-center gap-1"
                       onClick={() => onRevoke(t)}
                     >
-                      <Trash2 className="w-3 h-3" /> revoke
+                      <Trash2 className="w-3 h-3" /> отозвать
                     </button>
                   </td>
                 </tr>
@@ -899,9 +899,9 @@ function SessionsCard({ mockMode }: { mockMode: boolean }) {
             <tr>
               <th className="pb-2 pr-3">IP</th>
               <th className="pb-2 pr-3">UA</th>
-              <th className="pb-2 pr-3">created</th>
-              <th className="pb-2 pr-3">last used</th>
-              <th className="pb-2 pr-3">expires</th>
+              <th className="pb-2 pr-3">создана</th>
+              <th className="pb-2 pr-3">посл. активность</th>
+              <th className="pb-2 pr-3">истекает</th>
               <th className="pb-2"></th>
             </tr>
           </thead>
@@ -924,7 +924,7 @@ function SessionsCard({ mockMode }: { mockMode: boolean }) {
                       disabled={busy !== null}
                       onClick={() => revokeOne(s.session_id)}
                     >
-                      <LogOut className="w-3 h-3" /> revoke
+                      <LogOut className="w-3 h-3" /> отозвать
                     </button>
                   )}
                 </td>
@@ -981,10 +981,10 @@ function GroupsCard({ mockMode }: { mockMode: boolean }) {
         <table className="w-full text-sm">
           <thead className="text-left text-dim text-xs uppercase">
             <tr>
-              <th className="pb-2 pr-3">group</th>
-              <th className="pb-2 pr-3">department</th>
-              <th className="pb-2 pr-3">description</th>
-              <th className="pb-2 pr-3">created</th>
+              <th className="pb-2 pr-3">группа</th>
+              <th className="pb-2 pr-3">отдел</th>
+              <th className="pb-2 pr-3">описание</th>
+              <th className="pb-2 pr-3">создана</th>
             </tr>
           </thead>
           <tbody>
@@ -1109,10 +1109,10 @@ function PermissionsView({ data }: { data: UserPermissionsResponse }) {
           <table className="w-full text-sm">
             <thead className="text-left text-dim text-xs uppercase">
               <tr>
-                <th className="pb-2 pr-3">service</th>
-                <th className="pb-2 pr-3">role</th>
-                <th className="pb-2 pr-3">source</th>
-                <th className="pb-2 pr-3">since</th>
+                <th className="pb-2 pr-3">сервис</th>
+                <th className="pb-2 pr-3">роль</th>
+                <th className="pb-2 pr-3">источник</th>
+                <th className="pb-2 pr-3">выдана</th>
               </tr>
             </thead>
             <tbody>
@@ -1139,10 +1139,10 @@ function PermissionsView({ data }: { data: UserPermissionsResponse }) {
           <table className="w-full text-sm">
             <thead className="text-left text-dim text-xs uppercase">
               <tr>
-                <th className="pb-2 pr-3">group</th>
-                <th className="pb-2 pr-3">department</th>
-                <th className="pb-2 pr-3">services</th>
-                <th className="pb-2 pr-3">joined</th>
+                <th className="pb-2 pr-3">группа</th>
+                <th className="pb-2 pr-3">отдел</th>
+                <th className="pb-2 pr-3">сервисы</th>
+                <th className="pb-2 pr-3">вступил</th>
               </tr>
             </thead>
             <tbody>

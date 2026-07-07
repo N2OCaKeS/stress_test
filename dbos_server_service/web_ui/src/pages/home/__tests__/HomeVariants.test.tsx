@@ -32,7 +32,7 @@ describe("Home dispatcher", () => {
   it("renders HomeDepAdmin for alice (default)", () => {
     renderHome();
     expect(screen.getByText(/Привет, alice/)).toBeInTheDocument();
-    expect(screen.getByText(/Departament/)).toBeInTheDocument();
+    expect(screen.getByText(/Отдел/)).toBeInTheDocument();
     // dep_admin читает аудит своего отдела → блок логов на home виден.
     expect(screen.getByText(/Активность в депе/)).toBeInTheDocument();
     expect(screen.getByText(/Открыть полный лог/)).toBeInTheDocument();
@@ -50,7 +50,7 @@ describe("Home dispatcher", () => {
     window.localStorage.setItem("dbos-persona", "dave");
     renderHome();
     expect(screen.getByText(/Привет, dave/)).toBeInTheDocument();
-    expect(screen.getByText(/Read-only доступ/)).toBeInTheDocument();
+    expect(screen.getByText(/Доступ только на чтение к audit-каналу/)).toBeInTheDocument();
     expect(screen.getByText(/Что доступно/)).toBeInTheDocument();
   });
 
@@ -58,7 +58,7 @@ describe("Home dispatcher", () => {
     window.localStorage.setItem("dbos-persona", "erin");
     renderHome();
     expect(screen.getByText(/Привет, erin/)).toBeInTheDocument();
-    expect(screen.getByText(/Read-only доступ/)).toBeInTheDocument();
+    expect(screen.getByText(/Доступ только на чтение к audit-каналу/)).toBeInTheDocument();
     expect(screen.getByText(/Что доступно/)).toBeInTheDocument();
   });
 

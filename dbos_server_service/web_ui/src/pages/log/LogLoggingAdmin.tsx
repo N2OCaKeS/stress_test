@@ -67,13 +67,13 @@ export function LogLoggingAdmin() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button className="btn flex items-center gap-1">
-              <Bell className="w-4 h-4" /> Add to ruleset
+              <Bell className="w-4 h-4" /> Добавить в правила
             </button>
             <button className="btn flex items-center gap-1">
-              <ShieldCheck className="w-4 h-4" /> Mark as known
+              <ShieldCheck className="w-4 h-4" /> Отметить как известное
             </button>
             <button className="btn btn-primary flex items-center gap-1">
-              <Download className="w-4 h-4" /> Export JSON
+              <Download className="w-4 h-4" /> Экспорт JSON
             </button>
           </div>
         </div>
@@ -115,10 +115,10 @@ export function LogMiddle({
             defaultValue="24h"
             className="surface-2 border border-token rounded px-2 py-0.5 text-xs"
           >
-            <option value="1h">last 1h</option>
-            <option value="24h">last 24h</option>
-            <option value="7d">last 7d</option>
-            <option value="custom">custom...</option>
+            <option value="1h">за 1ч</option>
+            <option value="24h">за 24ч</option>
+            <option value="7d">за 7д</option>
+            <option value="custom">произвольно…</option>
           </select>
           {showLive ? (
             <button
@@ -126,22 +126,22 @@ export function LogMiddle({
               className="btn ml-auto flex items-center gap-1.5 text-xs py-0.5 px-2"
             >
               {live && <span className="live-dot" />}
-              <span>{live ? "Live" : "Paused"}</span>
+              <span>{live ? "Онлайн" : "Пауза"}</span>
             </button>
           ) : (
             <span className="ml-auto text-[10px] text-dim flex items-center gap-1">
-              static
+              статично
             </span>
           )}
         </div>
       </div>
 
       <div className="border-b border-token px-2 py-2 flex flex-col gap-1 text-xs">
-        <Facets title="Severity" items={SEVERITY_FACETS} severityFacets />
-        <Facets title="Action" hint="(top 8)" items={ACTION_FACETS} mono />
-        <Facets title="Actor" hint="(top 5)" items={ACTOR_FACETS} icon="user" />
-        <Facets title="Target type" items={TARGET_FACETS} />
-        <Facets title="Status" items={STATUS_FACETS} />
+        <Facets title="Важность" items={SEVERITY_FACETS} severityFacets />
+        <Facets title="Действие" hint="(топ-8)" items={ACTION_FACETS} mono />
+        <Facets title="Инициатор" hint="(топ-5)" items={ACTOR_FACETS} icon="user" />
+        <Facets title="Тип объекта" items={TARGET_FACETS} />
+        <Facets title="Статус" items={STATUS_FACETS} />
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -172,11 +172,11 @@ function EventDetail() {
       <div className="surface border border-token rounded-lg p-4">
         <div className="flex items-center gap-2 mb-3">
           <User className="w-4 h-4 text-accent" />
-          <div className="text-xs uppercase tracking-wider text-dim">Actor</div>
+          <div className="text-xs uppercase tracking-wider text-dim">Инициатор</div>
         </div>
         <div className="text-sm">
           <div className="stat-row">
-            <span className="text-dim">Username</span>
+            <span className="text-dim">Имя пользователя</span>
             <span>carol</span>
           </div>
           <div className="stat-row">
@@ -192,7 +192,7 @@ function EventDetail() {
             <span className="text-xs">DBOS-CLI/1.4.2 · Linux</span>
           </div>
           <div className="stat-row">
-            <span className="text-dim">Identity type</span>
+            <span className="text-dim">Тип субъекта</span>
             <span>
               <span className="badge">user</span>
             </span>
@@ -204,12 +204,12 @@ function EventDetail() {
         <div className="flex items-center gap-2 mb-3">
           <LockKeyhole className="w-4 h-4 text-warn" />
           <div className="text-xs uppercase tracking-wider text-dim">
-            Target
+            Объект
           </div>
         </div>
         <div className="text-sm">
           <div className="stat-row">
-            <span className="text-dim">Type</span>
+            <span className="text-dim">Тип</span>
             <span>
               <span className="badge">master_key</span>
             </span>
@@ -219,15 +219,15 @@ function EventDetail() {
             <span className="mono text-xs">mkey_v3_b1aef02c</span>
           </div>
           <div className="stat-row">
-            <span className="text-dim">Name</span>
-            <span>master_key (current)</span>
+            <span className="text-dim">Название</span>
+            <span>master_key (текущий)</span>
           </div>
           <div className="stat-row">
-            <span className="text-dim">Department</span>
+            <span className="text-dim">Отдел</span>
             <span>ДТКК</span>
           </div>
           <div className="stat-row">
-            <span className="text-dim">Previous version</span>
+            <span className="text-dim">Предыдущая версия</span>
             <span className="mono text-xs">mkey_v2_47ab819f</span>
           </div>
         </div>
@@ -237,7 +237,7 @@ function EventDetail() {
         <div className="flex items-center gap-2 mb-3">
           <Filter className="w-4 h-4 text-dim" />
           <div className="text-xs uppercase tracking-wider text-dim">
-            Details JSON
+            Детали JSON
           </div>
         </div>
         <pre className="json-block mono whitespace-pre">{`{
@@ -258,12 +258,12 @@ function EventDetail() {
         <div className="flex items-center gap-2 mb-3">
           <Cog className="w-4 h-4 text-dim" />
           <div className="text-xs uppercase tracking-wider text-dim">
-            Service
+            Сервис
           </div>
         </div>
         <div className="text-sm">
           <div className="stat-row">
-            <span className="text-dim">Emitter</span>
+            <span className="text-dim">Источник</span>
             <span>
               <span className="badge badge-warn">secret_service</span>
             </span>
@@ -277,7 +277,7 @@ function EventDetail() {
             <span className="mono text-xs">req_a8f9c12b4e6d4711</span>
           </div>
           <div className="stat-row">
-            <span className="text-dim">Version</span>
+            <span className="text-dim">Версия</span>
             <span className="mono">1.5.2</span>
           </div>
           <div className="stat-row">
@@ -291,16 +291,16 @@ function EventDetail() {
         <div className="flex items-center gap-2 mb-3">
           <Share2 className="w-4 h-4 text-dim" />
           <div className="text-xs uppercase tracking-wider text-dim">
-            Related events
+            Связанные события
           </div>
           <span className="text-[10px] text-dim ml-auto">по request_id</span>
         </div>
         <table className="w-full related-tbl">
           <thead>
             <tr>
-              <th>Time</th>
-              <th>Action</th>
-              <th>Sev</th>
+              <th>Время</th>
+              <th>Действие</th>
+              <th>Важн.</th>
             </tr>
           </thead>
           <tbody>

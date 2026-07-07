@@ -90,7 +90,7 @@ export function HomeDepAdmin() {
         title={<>Привет, {persona.username} 👋</>}
         subtitle={
           persona.dept_id ? (
-            <>Departament <b>{deptName}</b></>
+            <>Отдел <b>{deptName}</b></>
           ) : (
             <>Платформа</>
           )
@@ -134,17 +134,17 @@ export function HomeDepAdmin() {
 
         <section className="mb-8 grid gap-4 md:grid-cols-3">
           <div className="card">
-            <div className="stat-label">Users (scope)</div>
+            <div className="stat-label">Пользователи (область)</div>
             <div className="stat-big">{anyLoading ? "—" : liveUsers}</div>
             <div className="text-xs text-dim mt-2">auth_service</div>
           </div>
           <div className="card">
-            <div className="stat-label">Groups</div>
+            <div className="stat-label">Группы</div>
             <div className="stat-big">{anyLoading ? "—" : liveGroups}</div>
             <div className="text-xs text-dim mt-2">auth_service</div>
           </div>
           <div className="card">
-            <div className="stat-label">Bots</div>
+            <div className="stat-label">Боты</div>
             <div className="stat-big">{anyLoading ? "—" : liveBots}</div>
             <div className="text-xs text-dim mt-2">auth_service</div>
           </div>
@@ -235,14 +235,14 @@ export function HomeDepAdmin() {
       subtitle={
         persona.dept_id ? (
           <>
-            Departament <b>{deptName}</b> · {usersInScope.length}{" "}
+            Отдел <b>{deptName}</b> · {usersInScope.length}{" "}
             пользователей · {serversInScope.length} серверов ·{" "}
-            {credsInScope.length} доступных credential&apos;ов
+            {credsInScope.length} доступных учётных данных
           </>
         ) : (
           <>
             Платформа · {USERS.length} пользователей · {SERVERS.length}{" "}
-            серверов · {CREDENTIALS.length} credential&apos;ов
+            серверов · {CREDENTIALS.length} учётных данных
           </>
         )
       }
@@ -272,9 +272,9 @@ export function HomeDepAdmin() {
           <Link to="/secret" className="quick-tile">
             <div className="flex items-center gap-2">
               <KeyRound className="w-5 h-5 text-accent" />
-              <span className="text-sm font-medium">Создать credential</span>
+              <span className="text-sm font-medium">Создать учётные данные</span>
             </div>
-            <div className="text-xs text-dim">Token / password / key</div>
+            <div className="text-xs text-dim">Токен / пароль / ключ</div>
           </Link>
           <Link to="/admin" className="quick-tile">
             <div className="flex items-center gap-2">
@@ -289,7 +289,7 @@ export function HomeDepAdmin() {
       {/* Stats row */}
       <section className="mb-8 grid gap-4 md:grid-cols-4">
         <div className="card">
-          <div className="stat-label">Servers Up</div>
+          <div className="stat-label">Серверы онлайн</div>
           <div className="stat-big text-ok">
             {serversUp}{" "}
             <span className="text-base text-dim">
@@ -301,23 +301,23 @@ export function HomeDepAdmin() {
           </div>
         </div>
         <div className="card">
-          <div className="stat-label">Tasks за 24ч</div>
+          <div className="stat-label">Задачи за 24ч</div>
           <div className="stat-big">{TASKS.length * 3 - 3}</div>
           <div className="text-xs text-dim mt-2">
-            {failed} failed · {retry} retry
+            {failed} провалено · {retry} повтор
           </div>
         </div>
         <div className="card">
-          <div className="stat-label">Audit events</div>
+          <div className="stat-label">События аудита</div>
           <div className="stat-big">
             {AUDIT_EVENTS.length.toLocaleString("ru-RU")}
           </div>
           <div className="text-xs text-dim mt-2">
-            {critical} critical · {warning} warning
+            {critical} критических · {warning} предупреждений
           </div>
         </div>
         <div className="card">
-          <div className="stat-label">Credentials</div>
+          <div className="stat-label">Учётные данные</div>
           <div className="stat-big">{credsInScope.length}</div>
           <div className="text-xs text-dim mt-2">
             {expiring} истекает на этой неделе
@@ -338,7 +338,7 @@ export function HomeDepAdmin() {
               <AlertTriangle className="w-4 h-4 text-warn shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <div>
-                  Истекает credential{" "}
+                  Истекают учётные данные{" "}
                   <span className="mono">grafana-admin</span>
                 </div>
                 <div className="text-xs text-dim">
@@ -350,8 +350,8 @@ export function HomeDepAdmin() {
               <AlertCircle className="w-4 h-4 text-danger shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <div>
-                  Server <span className="mono">srv-node-17</span> — IPMI
-                  unreachable
+                  Сервер <span className="mono">srv-node-17</span> — IPMI
+                  недоступен
                 </div>
                 <div className="text-xs text-dim">
                   с 14:22 · 2 ретрая в очереди
@@ -362,10 +362,10 @@ export function HomeDepAdmin() {
               <ShieldAlert className="w-4 h-4 text-warn shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <div>
-                  User <span className="mono">charlie</span> заблокирован
+                  Пользователь <span className="mono">charlie</span> заблокирован
                 </div>
                 <div className="text-xs text-dim">
-                  5 failed login за 10 мин · ручной разбор
+                  5 неудачных входов за 10 мин · ручной разбор
                 </div>
               </div>
             </div>
@@ -424,7 +424,7 @@ export function HomeDepAdmin() {
           <b>Совет:</b> используй{" "}
           <span className="mono surface-2 px-1 rounded">⌘K</span> для
           быстрого поиска по всему депу — пользователи, серверы,
-          credential&apos;ы, события.
+          учётные данные, события.
         </div>
       </section>
     </HomeShell>
@@ -442,10 +442,10 @@ interface ActivityRow {
 }
 
 const SAMPLE_ACTIVITY: ActivityRow[] = [
-  { ts: "15:42", actor: "bob", action: "создал user", target: "igor", req: "req_7e9f...", badge: "success", badgeKind: "ok" },
-  { ts: "14:18", actor: "alice", action: "revealed", target: "prod-postgres-master", req: "req_4ab1...", badge: "success", badgeKind: "ok" },
-  { ts: "12:55", actor: "worker_bot", action: "завершил task", target: "tsk_fa12...", req: "req_aa10...", badge: "success", badgeKind: "ok" },
-  { ts: "11:32", actor: "charlie", action: "failed login ×5", target: "", req: "req_22c8...", badge: "429", badgeKind: "warn" },
+  { ts: "15:42", actor: "bob", action: "создал пользователя", target: "igor", req: "req_7e9f...", badge: "success", badgeKind: "ok" },
+  { ts: "14:18", actor: "alice", action: "раскрыл", target: "prod-postgres-master", req: "req_4ab1...", badge: "success", badgeKind: "ok" },
+  { ts: "12:55", actor: "worker_bot", action: "завершил задачу", target: "tsk_fa12...", req: "req_aa10...", badge: "success", badgeKind: "ok" },
+  { ts: "11:32", actor: "charlie", action: "неудачный вход ×5", target: "", req: "req_22c8...", badge: "429", badgeKind: "warn" },
   { ts: "10:01", actor: "cron", action: "запустил pg-backup", target: "", req: "job_aut...", badge: "done", badgeKind: "ok" },
-  { ts: "09:12", actor: "alice", action: "обновил role ACL", target: "", req: "req_001f...", badge: "success", badgeKind: "ok" },
+  { ts: "09:12", actor: "alice", action: "обновил ACL роли", target: "", req: "req_001f...", badge: "success", badgeKind: "ok" },
 ];

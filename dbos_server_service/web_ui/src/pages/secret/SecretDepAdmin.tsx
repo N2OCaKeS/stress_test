@@ -38,10 +38,10 @@ const MY: CredRow[] = [
 ];
 
 const MY_DEP: CredRow[] = [
-  { id: "prod-postgres-master", name: "prod-postgres-master", kindLabel: "db-password", tail: "last reveal — bob, 2 ч назад", badge: "истекает через 3д", badgeKind: "warn", icon: Database },
+  { id: "prod-postgres-master", name: "prod-postgres-master", kindLabel: "db-password", tail: "последний показ — bob, 2 ч назад", badge: "истекает через 3д", badgeKind: "warn", icon: Database },
   { id: "github-deploy-token", name: "github-deploy-token", kindLabel: "api-token", tail: "bot: ci_runner", badge: "active", badgeKind: "ok", icon: Github },
   { id: "aws-readonly-monitoring", name: "aws-readonly-monitoring", kindLabel: "aws-key", tail: "год назад", badge: "active", badgeKind: "ok", icon: Cloud },
-  { id: "bmc-rack-A-ipmi", name: "bmc-rack-A-ipmi", kindLabel: "ipmi-pass", tail: "shared с server_service", badge: "active", badgeKind: "ok", icon: ServerIcon },
+  { id: "bmc-rack-A-ipmi", name: "bmc-rack-A-ipmi", kindLabel: "ipmi-pass", tail: "общий с server_service", badge: "active", badgeKind: "ok", icon: ServerIcon },
   { id: "grafana-admin", name: "grafana-admin", kindLabel: "password", tail: "2 нед назад", badge: "must_rotate", badgeKind: "warn", icon: Lock },
   { id: "slack-bot-webhook", name: "slack-bot-webhook", kindLabel: "webhook", tail: "год назад", badge: "active", badgeKind: "ok", icon: Webhook },
   { id: "vault-bootstrap-root", name: "vault-bootstrap-root", kindLabel: "root-token", tail: "bot: bootstrap", badge: "expired", badgeKind: "danger", icon: KeyRound },
@@ -59,9 +59,9 @@ interface CrossRow {
 }
 
 const CROSS: CrossRow[] = [
-  { id: "dtkk-jira-api", name: "dtkk-jira-api", dept: "ДТКК", note: "read-only access", noteClass: "text-warn", badge: "active", badgeKind: "ok", icon: Key },
-  { id: "shared-monitoring-readonly", name: "shared-monitoring-readonly", dept: "Инфра", note: "shared", badge: "active", badgeKind: "ok", icon: Database },
-  { id: "guest-network-wifi", name: "guest-network-wifi", dept: "Гость", note: "everyone", badge: "active", badgeKind: "ok", icon: Key },
+  { id: "dtkk-jira-api", name: "dtkk-jira-api", dept: "ДТКК", note: "только чтение", noteClass: "text-warn", badge: "active", badgeKind: "ok", icon: Key },
+  { id: "shared-monitoring-readonly", name: "shared-monitoring-readonly", dept: "Инфра", note: "общий", badge: "active", badgeKind: "ok", icon: Database },
+  { id: "guest-network-wifi", name: "guest-network-wifi", dept: "Гость", note: "все", badge: "active", badgeKind: "ok", icon: Key },
 ];
 
 export function SecretDepAdmin() {
@@ -75,15 +75,15 @@ export function SecretDepAdmin() {
             <Search className="w-4 h-4 text-dim" />
             <input
               className="bg-transparent outline-none flex-1 text-sm"
-              placeholder="Поиск credentials..."
+              placeholder="Поиск учётных данных..."
             />
           </div>
           <div className="mt-2 flex items-center gap-2 text-xs text-dim">
             <span>Группировка:</span>
             <select className="surface-2 border border-token rounded px-2 py-0.5">
-              <option>scope (my / my_dep / cross_dep)</option>
-              <option>type</option>
-              <option>owner</option>
+              <option>область (my / my_dep / cross_dep)</option>
+              <option>тип</option>
+              <option>владелец</option>
             </select>
             <span className="ml-auto">12 шт</span>
           </div>
@@ -137,7 +137,7 @@ export function SecretDepAdmin() {
                       <div className="text-sm truncate">{row.name}</div>
                       <div className="text-[11px] text-dim flex items-center gap-2">
                         <span>
-                          dept: <b>{row.dept}</b>
+                          отдел: <b>{row.dept}</b>
                         </span>
                         <span>·</span>
                         <span className={row.noteClass}>{row.note}</span>
@@ -155,7 +155,7 @@ export function SecretDepAdmin() {
 
         <div className="border-t border-token p-3">
           <button className="btn btn-primary w-full flex items-center justify-center gap-2">
-            <Plus className="w-4 h-4" /> Создать credential
+            <Plus className="w-4 h-4" /> Создать учётные данные
           </button>
         </div>
       </section>
@@ -171,7 +171,7 @@ export function SecretDepAdmin() {
         revealValue="atk_e8f2c901a3b54c7e_abc12...DEMO"
         revealNote={
           <>
-            При reveal эмитится audit-событие{" "}
+            При показе эмитится событие аудита{" "}
             <span className="mono">credential.read</span> с request_id и actor_id.
           </>
         }
@@ -186,9 +186,9 @@ export function SecretDepAdmin() {
         accessMatrix={{
           scopeBadge: "personal (my)",
           ownerRole: "read + write + revoke",
-          deptAdmins: "— (personal cred)",
-          explicitGrants: "none",
-          bots: "none",
+          deptAdmins: "— (личная креда)",
+          explicitGrants: "нет",
+          bots: "нет",
         }}
         auditRows={[
           { ts: "15:42:11", action: "credential.read", actionClass: "text-ok", actor: "alice", req: "req_7e9f..." },
@@ -200,13 +200,13 @@ export function SecretDepAdmin() {
         actions={
           <>
             <button className="btn">
-              <Edit3 className="w-4 h-4 inline-block" /> Edit
+              <Edit3 className="w-4 h-4 inline-block" /> Изменить
             </button>
             <button className="btn">
-              <RotateCw className="w-4 h-4 inline-block" /> Rotate
+              <RotateCw className="w-4 h-4 inline-block" /> Ротация
             </button>
             <button className="btn btn-danger">
-              <Trash2 className="w-4 h-4 inline-block" /> Revoke
+              <Trash2 className="w-4 h-4 inline-block" /> Удалить
             </button>
           </>
         }
@@ -325,7 +325,7 @@ export function SecretDetailPanel({
             <h1 className="text-xl font-semibold truncate">{title}</h1>
             {statusBadge}
             <span className="text-xs text-dim">
-              {scopePrefix}scope: <b>{scope}</b>
+              {scopePrefix}область: <b>{scope}</b>
               {rightHeaderExtra}
             </span>
           </div>
@@ -347,9 +347,9 @@ export function SecretDetailPanel({
           className="px-3 py-2 text-sm border-b-2 -mb-px"
           style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
         >
-          Overview
+          Обзор
         </button>
-        {["Access matrix", "Audit log", "Validity"].map((t) => (
+        {["Матрица доступа", "Журнал аудита", "Срок действия"].map((t) => (
           <button
             key={t}
             className="px-3 py-2 text-sm border-b-2 -mb-px border-transparent text-dim hover-bg"
@@ -372,7 +372,7 @@ export function SecretDetailPanel({
                 className="btn"
               >
                 <Eye className="w-4 h-4 inline-block" />{" "}
-                <span>{revealed ? "Hide" : "Reveal"}</span>
+                <span>{revealed ? "Скрыть" : "Показать"}</span>
               </button>
               <button className="btn">
                 <Copy className="w-4 h-4 inline-block" />
@@ -396,22 +396,22 @@ export function SecretDetailPanel({
           </div>
           <div className="text-sm">
             <div className="stat-row">
-              <span className="text-dim">Department</span>
+              <span className="text-dim">Отдел</span>
               <span>{meta.dept}</span>
             </div>
             <div className="stat-row">
-              <span className="text-dim">Owner</span>
+              <span className="text-dim">Владелец</span>
               <span>
                 {meta.owner}{" "}
                 <span className="text-dim">({meta.ownerId})</span>
               </span>
             </div>
             <div className="stat-row">
-              <span className="text-dim">Created</span>
+              <span className="text-dim">Создан</span>
               <span>{meta.created}</span>
             </div>
             <div className="stat-row">
-              <span className="text-dim">Encrypt version</span>
+              <span className="text-dim">Версия шифрования</span>
               <span className="mono">
                 {meta.encryptVersion ?? "v3 · HKDF-SHA256 · AES-256-GCM"}
               </span>
@@ -435,30 +435,30 @@ export function SecretDetailPanel({
           </div>
           <div className="text-sm">
             <div className="stat-row">
-              <span className="text-dim">Scope</span>
+              <span className="text-dim">Область</span>
               <span className="badge">{accessMatrix.scopeBadge}</span>
             </div>
             {accessMatrix.ownerRole && (
               <div className="stat-row">
-                <span className="text-dim">Owner role</span>
+                <span className="text-dim">Роль владельца</span>
                 <span>{accessMatrix.ownerRole}</span>
               </div>
             )}
             {accessMatrix.deptAdmins !== undefined && (
               <div className="stat-row">
-                <span className="text-dim">Dept admins</span>
+                <span className="text-dim">Админы отдела</span>
                 <span>{accessMatrix.deptAdmins}</span>
               </div>
             )}
             {accessMatrix.explicitGrants !== undefined && (
               <div className="stat-row">
-                <span className="text-dim">Explicit grants</span>
+                <span className="text-dim">Явные выдачи</span>
                 <span>{accessMatrix.explicitGrants}</span>
               </div>
             )}
             {accessMatrix.bots !== undefined && (
               <div className="stat-row">
-                <span className="text-dim">Bots с доступом</span>
+                <span className="text-dim">Боты с доступом</span>
                 <span>{accessMatrix.bots}</span>
               </div>
             )}
@@ -470,20 +470,20 @@ export function SecretDetailPanel({
             )}
             {accessMatrix.lastGrant !== undefined && (
               <div className="stat-row">
-                <span className="text-dim">Last grant</span>
+                <span className="text-dim">Последняя выдача</span>
                 <span>{accessMatrix.lastGrant}</span>
               </div>
             )}
             {accessMatrix.serverBinding !== undefined && (
               <div className="stat-row">
-                <span className="text-dim">Server binding</span>
+                <span className="text-dim">Привязка к серверу</span>
                 <span>{accessMatrix.serverBinding}</span>
               </div>
             )}
           </div>
           {accessMatrix.primaryButton ?? (
             <button className="btn mt-3 w-full">
-              Открыть Access matrix tab
+              Открыть вкладку «Матрица доступа»
             </button>
           )}
         </div>
@@ -495,16 +495,16 @@ export function SecretDetailPanel({
               {auditSubtitle ?? "Последние 5 событий"}
             </div>
             <button className="text-xs text-accent">
-              Открыть полный audit log →
+              Открыть полный журнал аудита →
             </button>
           </div>
           <table className="w-full text-sm">
             <thead className="text-left text-dim text-xs uppercase">
               <tr>
                 <th className="pb-2 pr-3">Время</th>
-                <th className="pb-2 pr-3">Action</th>
-                <th className="pb-2 pr-3">Actor</th>
-                <th className="pb-2">Request</th>
+                <th className="pb-2 pr-3">Действие</th>
+                <th className="pb-2 pr-3">Инициатор</th>
+                <th className="pb-2">Запрос</th>
               </tr>
             </thead>
             <tbody className="text-sm">

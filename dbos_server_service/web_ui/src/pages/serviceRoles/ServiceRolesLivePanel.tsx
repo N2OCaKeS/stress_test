@@ -155,15 +155,15 @@ export function ServiceRolesLivePanel({
         <>
           {(rolesQ.data ?? []).length === 0 ? (
             <div className="empty-card">
-              В scope `({departmentId}, {serviceName})` ролей нет.
+              В области `({departmentId}, {serviceName})` ролей нет.
             </div>
           ) : (
             <table className="w-full text-sm">
               <thead className="text-left text-dim text-xs uppercase">
                 <tr>
                   <th className="pb-2 pr-3">role_name</th>
-                  <th className="pb-2 pr-3">description</th>
-                  <th className="pb-2 pr-3">system</th>
+                  <th className="pb-2 pr-3">описание</th>
+                  <th className="pb-2 pr-3">тип</th>
                   <th className="pb-2"></th>
                 </tr>
               </thead>
@@ -204,7 +204,7 @@ export function ServiceRolesLivePanel({
                           );
                         }}
                       >
-                        edit
+                        изменить
                       </button>
                       <button
                         className="btn btn-sm btn-danger"
@@ -280,7 +280,7 @@ export function ServiceRolesLivePanel({
 
           <div className="mt-4 border-t border-token pt-3">
             <div className="text-xs uppercase text-dim mb-2">
-              Bulk assign / revoke
+              Массовое назначение / отзыв
             </div>
             <div className="grid grid-cols-2 gap-2">
               <input
@@ -315,7 +315,7 @@ export function ServiceRolesLivePanel({
                   );
                 }}
               >
-                <UserPlus className="w-4 h-4" /> assign
+                <UserPlus className="w-4 h-4" /> назначить
               </button>
               <button
                 className="btn btn-danger flex items-center gap-1"
@@ -335,7 +335,7 @@ export function ServiceRolesLivePanel({
                   );
                 }}
               >
-                <UserMinus className="w-4 h-4" /> revoke
+                <UserMinus className="w-4 h-4" /> отозвать
               </button>
             </div>
           </div>

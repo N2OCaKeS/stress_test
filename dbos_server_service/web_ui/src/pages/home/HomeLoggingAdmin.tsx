@@ -64,7 +64,7 @@ export function HomeLoggingAdmin() {
             <Link to="/admin" className="quick-tile">
               <div className="flex items-center gap-2">
                 <History className="w-5 h-5 text-warn" />
-                <span className="text-sm font-medium">Retention</span>
+                <span className="text-sm font-medium">Хранение</span>
               </div>
               <div className="text-xs text-dim">политики хранения</div>
             </Link>
@@ -87,8 +87,8 @@ export function HomeLoggingAdmin() {
       title={<>Привет, {persona.username} 👋</>}
       subtitle={
         <>
-          Доступ к audit-каналу платформы · <b>read</b> + <b>rules</b> +{" "}
-          <b>retention</b>
+          Доступ к audit-каналу платформы · <b>чтение</b> + <b>правила</b> +{" "}
+          <b>хранение</b>
         </>
       }
     >
@@ -103,7 +103,7 @@ export function HomeLoggingAdmin() {
                   <Activity className="w-5 h-5 text-accent" />
                   <span className="text-sm font-medium">Live-фид</span>
                 </div>
-                <div className="text-xs text-dim">Открыть real-time stream</div>
+                <div className="text-xs text-dim">Открыть поток в реальном времени</div>
               </Link>
               <Link to="/log?q=req_id" className="quick-tile">
                 <div className="flex items-center gap-2">
@@ -119,14 +119,14 @@ export function HomeLoggingAdmin() {
                     Создать правило severity
                   </span>
                 </div>
-                <div className="text-xs text-dim">CRITICAL / WARN auto-rule</div>
+                <div className="text-xs text-dim">CRITICAL / WARN авто-правило</div>
               </Link>
               <Link to="/admin#retention" className="quick-tile">
                 <div className="flex items-center gap-2">
                   <History className="w-5 h-5 text-warn" />
-                  <span className="text-sm font-medium">Retention status</span>
+                  <span className="text-sm font-medium">Статус хранения</span>
                 </div>
-                <div className="text-xs text-dim">Sweep, политики, объёмы</div>
+                <div className="text-xs text-dim">Очистка, политики, объёмы</div>
               </Link>
             </div>
           </section>
@@ -134,7 +134,7 @@ export function HomeLoggingAdmin() {
           {/* Stats row */}
           <section className="mb-8 grid gap-4 md:grid-cols-4">
             <div className="card">
-              <div className="stat-label">Events 24ч</div>
+              <div className="stat-label">События 24ч</div>
               <div className="stat-big">
                 {AUDIT_EVENTS.length.toLocaleString("ru-RU")}
               </div>
@@ -146,12 +146,12 @@ export function HomeLoggingAdmin() {
               <div className="text-xs text-dim mt-2">7 из auth-service</div>
             </div>
             <div className="card">
-              <div className="stat-label">Rules active</div>
+              <div className="stat-label">Активных правил</div>
               <div className="stat-big text-ok">23</div>
-              <div className="text-xs text-dim mt-2">2 muted</div>
+              <div className="text-xs text-dim mt-2">2 приглушены</div>
             </div>
             <div className="card">
-              <div className="stat-label">Last sweep</div>
+              <div className="stat-label">Последняя очистка</div>
               <div className="stat-big">03:17</div>
               <div className="text-xs text-dim mt-2">
                 удалено 14 312 строк &gt; 90 дней
@@ -183,7 +183,7 @@ export function HomeLoggingAdmin() {
                   <AlertTriangle className="w-4 h-4 text-warn shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <div>
-                      Retention для <span className="mono">debug</span> до 7 дней
+                      Хранение для <span className="mono">debug</span> до 7 дней
                     </div>
                     <div className="text-xs text-dim">
                       диск-квота &gt;80% · стоит подкрутить
@@ -194,7 +194,7 @@ export function HomeLoggingAdmin() {
                   <ShieldAlert className="w-4 h-4 text-warn shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <div>
-                      Rule <span className="mono">brute-force-detect</span> muted
+                      Правило <span className="mono">brute-force-detect</span> приглушено
                       dave
                     </div>
                     <div className="text-xs text-dim">проверить причину</div>

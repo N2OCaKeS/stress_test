@@ -1258,7 +1258,7 @@ function AccountWorkzone({
             </span>
           )}
           {!account.is_active && (
-            <span className="badge badge-warn">inactive</span>
+            <span className="badge badge-warn">неактивен</span>
           )}
           <SourceBadge source={account.source} />
         </div>
@@ -1273,7 +1273,7 @@ function AccountWorkzone({
               title={canManage ? undefined : "Нет прав на редактирование"}
               onClick={() => setEditing(true)}
             >
-              <Edit3 className="w-4 h-4" /> Редактировать
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
             <button
               className="btn btn-sm flex items-center gap-1"
@@ -1867,7 +1867,7 @@ function ServersSection({
       <div className="text-xs text-dim mb-3">
         Per-server lifecycle OS-юзера: Provision (`useradd`), Update on host
         (`usermod`), Deprovision (`userdel`), Unbind (снять связку без удаления
-        на боксе). Атрибуты (sudo/группы/shell) меняются через «Редактировать» с
+        на боксе). Атрибуты (sudo/группы/shell) меняются через «Изменить» с
         авто-рассылкой на привязанные серверы.
       </div>
 

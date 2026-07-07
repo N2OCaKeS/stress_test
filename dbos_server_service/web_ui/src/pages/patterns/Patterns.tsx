@@ -65,11 +65,11 @@ export function Patterns() {
 
         <section className="demo-section">
           <div className="section-title">
-            <Bell className="w-5 h-5 text-accent" /> Toast notifications
+            <Bell className="w-5 h-5 text-accent" /> Тосты
           </div>
           <div className="section-sub">
             4 варианта: success / warning / error / info. Появляются в правом
-            нижнем углу, автоматически прячутся через 5s.
+            нижнем углу, автоматически прячутся через 5 сек.
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 max-w-3xl">
@@ -92,7 +92,7 @@ export function Patterns() {
               icon={
                 <XOctagon className="w-5 h-5 text-danger shrink-0 mt-0.5" />
               }
-              title="Rotate failed"
+              title="Ошибка ротации"
               meta="cred_a791 · BMC unreachable (ipmitool timeout 30s)"
             />
             <ToastDemo
@@ -106,7 +106,7 @@ export function Patterns() {
 
         <section className="demo-section">
           <div className="section-title">
-            <LayoutTemplate className="w-5 h-5 text-accent" /> Modal dialogs
+            <LayoutTemplate className="w-5 h-5 text-accent" /> Модальные окна
           </div>
           <div className="section-sub">
             Клик по кнопке открывает мок-модалку. Без логики — только видимая
@@ -122,7 +122,7 @@ export function Patterns() {
 
         <section className="demo-section">
           <div className="section-title">
-            <Inbox className="w-5 h-5 text-accent" /> Empty states
+            <Inbox className="w-5 h-5 text-accent" /> Пустые состояния
           </div>
           <div className="section-sub">
             3 варианта: «можно создать», «просто пусто», «сервис недоступен».
@@ -160,7 +160,7 @@ export function Patterns() {
                 рестарт.
               </div>
               <button className="btn btn-danger inline-flex items-center gap-1">
-                <RotateCw className="w-4 h-4" /> Retry
+                <RotateCw className="w-4 h-4" /> Повторить
               </button>
             </div>
           </div>
@@ -168,7 +168,7 @@ export function Patterns() {
 
         <section className="demo-section">
           <div className="section-title">
-            <Loader className="w-5 h-5 text-accent" /> Loading states
+            <Loader className="w-5 h-5 text-accent" /> Состояния загрузки
           </div>
           <div className="section-sub">
             3 варианта: spinner в карточке, skeleton-список, inline-spinner в
@@ -191,7 +191,7 @@ export function Patterns() {
 
             <div className="demo-card">
               <div className="text-xs text-dim mb-3 uppercase tracking-wider">
-                Servers (loading)
+                Серверы (загрузка)
               </div>
               <div className="flex flex-col gap-3">
                 {[
@@ -230,7 +230,7 @@ export function Patterns() {
 
             <div className="demo-card flex flex-col gap-3 items-start">
               <div className="text-xs text-dim uppercase tracking-wider">
-                Inline button spinner
+                Спиннер в кнопке
               </div>
               <button
                 className="btn btn-primary flex items-center gap-2"
@@ -241,7 +241,7 @@ export function Patterns() {
                   className="spinner"
                   style={{ width: 14, height: 14, borderWidth: 2 }}
                 />
-                Saving...
+                Сохранение...
               </button>
               <button
                 className="btn flex items-center gap-2"
@@ -263,7 +263,7 @@ export function Patterns() {
                   className="spinner"
                   style={{ width: 14, height: 14, borderWidth: 2 }}
                 />
-                Discarding...
+                Сброс...
               </button>
             </div>
           </div>
@@ -271,8 +271,8 @@ export function Patterns() {
 
         <section className="demo-section">
           <div className="section-title">
-            <ShieldAlert className="w-5 h-5 text-danger" /> Confirmation
-            patterns (destructive)
+            <ShieldAlert className="w-5 h-5 text-danger" /> Паттерны
+            подтверждения (опасные)
           </div>
           <div className="section-sub">
             kubectl-style: чтобы подтвердить опасное действие — введи имя
@@ -352,7 +352,7 @@ function ToastDemo({ kind, icon, title, meta }: ToastDemoProps) {
       </div>
       <button
         className="text-dim hover-bg rounded p-1"
-        aria-label="dismiss"
+        aria-label="скрыть"
         type="button"
       >
         <X className="w-4 h-4" />
@@ -366,7 +366,7 @@ function CreateCredentialModal() {
     <Dialog.Root>
       <Dialog.Trigger asChild>
         <button className="btn btn-primary flex items-center gap-1">
-          <Plus className="w-4 h-4" /> Create credential
+          <Plus className="w-4 h-4" /> Создать credential
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>
@@ -375,12 +375,12 @@ function CreateCredentialModal() {
           <div className="modal-header">
             <PlusCircle className="w-5 h-5 text-accent" />
             <Dialog.Title className="text-base font-semibold">
-              Create credential
+              Создать credential
             </Dialog.Title>
             <Dialog.Close asChild>
               <button
                 className="ml-auto text-dim hover-bg rounded p-1"
-                aria-label="close"
+                aria-label="закрыть"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -443,7 +443,7 @@ function DeleteUserModal() {
     <Dialog.Root>
       <Dialog.Trigger asChild>
         <button className="btn btn-danger flex items-center gap-1">
-          <UserMinus className="w-4 h-4" /> Delete user (confirm)
+          <UserMinus className="w-4 h-4" /> Удалить пользователя (подтверждение)
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>
@@ -457,7 +457,7 @@ function DeleteUserModal() {
             <Dialog.Close asChild>
               <button
                 className="ml-auto text-dim hover-bg rounded p-1"
-                aria-label="close"
+                aria-label="закрыть"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -501,7 +501,7 @@ function RotateCredentialModal() {
     <Dialog.Root>
       <Dialog.Trigger asChild>
         <button className="btn flex items-center gap-1">
-          <RefreshCw className="w-4 h-4" /> Rotate now
+          <RefreshCw className="w-4 h-4" /> Ротировать сейчас
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>
@@ -510,12 +510,12 @@ function RotateCredentialModal() {
           <div className="modal-header">
             <RefreshCw className="w-5 h-5 text-accent" />
             <Dialog.Title className="text-base font-semibold">
-              Rotate credential cred_8f2a
+              Ротация credential cred_8f2a
             </Dialog.Title>
             <Dialog.Close asChild>
               <button
                 className="ml-auto text-dim hover-bg rounded p-1"
-                aria-label="close"
+                aria-label="закрыть"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -530,8 +530,8 @@ function RotateCredentialModal() {
               <div>
                 <label className="field-label">Генерация</label>
                 <select className="field-input">
-                  <option>random 32 символа</option>
-                  <option>random 24 символа</option>
+                  <option>случайные 32 символа</option>
+                  <option>случайные 24 символа</option>
                   <option>задать вручную</option>
                 </select>
               </div>
@@ -558,7 +558,7 @@ function RotateCredentialModal() {
               <button className="btn">Отмена</button>
             </Dialog.Close>
             <button className="btn btn-primary flex items-center gap-1">
-              <RefreshCw className="w-4 h-4" /> Rotate now
+              <RefreshCw className="w-4 h-4" /> Ротировать сейчас
             </button>
           </div>
         </Dialog.Content>

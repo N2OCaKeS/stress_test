@@ -282,13 +282,13 @@ function RuleView({
         {canWrite && (
           <div className="flex items-center gap-2 shrink-0">
             <button className="btn flex items-center gap-1" onClick={onEdit}>
-              <Edit3 className="w-4 h-4" /> Edit
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
             <button
               className="btn btn-danger flex items-center gap-1"
               onClick={onDelete}
             >
-              <Trash2 className="w-4 h-4" /> Delete
+              <Trash2 className="w-4 h-4" /> Удалить
             </button>
           </div>
         )}
@@ -296,7 +296,7 @@ function RuleView({
       <div className="scroll-block p-5 grid grid-cols-2 gap-5 content-start">
         <div className="surface border border-token rounded-lg p-4">
           <div className="text-xs uppercase tracking-wider text-dim mb-3">
-            Match
+            Совпадение
           </div>
           <div className="text-sm">
             <Row label="service" value={rule.match_service} />
@@ -317,7 +317,7 @@ function RuleView({
         </div>
         <div className="surface border border-token rounded-lg p-4">
           <div className="text-xs uppercase tracking-wider text-dim mb-3">
-            Effect
+            Эффект
           </div>
           <div className="text-sm">
             <Row label="effect" value={rule.effect} />

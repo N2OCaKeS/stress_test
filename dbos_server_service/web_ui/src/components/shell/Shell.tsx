@@ -83,7 +83,7 @@ export function Shell({ breadcrumb, middle, children }: ShellProps) {
           min={LEFT_MIN}
           max={LEFT_MAX}
           resetTo={LEFT_DEFAULT}
-          ariaLabel="Resize left panel"
+          ariaLabel="Изменить ширину левой панели"
         />
         {middle && !middleCollapsed && (
           <>
@@ -96,7 +96,7 @@ export function Shell({ breadcrumb, middle, children }: ShellProps) {
                 type="button"
                 onClick={() => setMiddleCollapsed(true)}
                 title="Свернуть панель"
-                aria-label="Collapse middle panel"
+                aria-label="Свернуть панель"
                 className="absolute top-1/2 right-0 -translate-y-1/2 z-20 h-10 w-4 flex items-center justify-center rounded-l surface-2 border border-r-0 border-token text-dim hover-bg transition-colors"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
@@ -108,7 +108,7 @@ export function Shell({ breadcrumb, middle, children }: ShellProps) {
               min={MID_MIN}
               max={MID_MAX}
               resetTo={MID_DEFAULT}
-              ariaLabel="Resize middle panel"
+              ariaLabel="Изменить ширину средней панели"
             />
           </>
         )}
@@ -118,7 +118,7 @@ export function Shell({ breadcrumb, middle, children }: ShellProps) {
               type="button"
               onClick={() => setMiddleCollapsed(false)}
               title="Развернуть панель"
-              aria-label="Expand middle panel"
+              aria-label="Развернуть панель"
               className="h-10 w-4 flex items-center justify-center rounded-r surface-2 border border-l-0 border-token text-dim hover-bg transition-colors"
             >
               <ChevronRight className="w-3.5 h-3.5" />

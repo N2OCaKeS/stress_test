@@ -47,20 +47,20 @@ interface ServiceChip {
 }
 
 const SERVICE_CATALOG: Record<ServiceName, ServiceChip> = {
-  auth: { service: "auth", to: "/users", icon: Users, label: "Users" },
+  auth: { service: "auth", to: "/users", icon: Users, label: "Пользователи" },
   server: {
     service: "server",
     to: "/server",
     icon: Server,
-    label: "Servers",
+    label: "Серверы",
     subItems: [
-      { to: "/server", icon: Server, label: "Servers" },
+      { to: "/server", icon: Server, label: "Серверы" },
       { to: "/server/users", icon: Users, label: "Пользователи" },
       { to: "/server/packages", icon: Package, label: "Пакеты" },
       { to: "/server/tasks", icon: ListChecks, label: "Задачи" },
     ],
   },
-  secret: { service: "secret", to: "/secret", icon: LockKeyhole, label: "Secrets" },
+  secret: { service: "secret", to: "/secret", icon: LockKeyhole, label: "Секреты" },
   // server_worker — часть server-зоны; задачи живут под «Серверами»
   // (/server/tasks), отдельного чипа нет. Запись остаётся ради полноты
   // ServiceName-каталога, в nav не рендерится.
@@ -74,10 +74,10 @@ const SERVICE_CATALOG: Record<ServiceName, ServiceChip> = {
     service: "logging",
     to: "/log",
     icon: FileText,
-    label: "Audit log",
+    label: "Журнал аудита",
     subItems: [
-      { to: "/log/rules", icon: Filter, label: "Rules" },
-      { to: "/log/retention", icon: Trash, label: "Retention" },
+      { to: "/log/rules", icon: Filter, label: "Правила" },
+      { to: "/log/retention", icon: Trash, label: "Хранение" },
     ],
   },
   config: { service: "config", to: "/admin", icon: Cog, label: "Config" },
@@ -213,11 +213,11 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
         </Link>
         <Link
           to="/wiki"
-          title={collapsed ? "Wiki — примеры API" : undefined}
+          title={collapsed ? "Вики — примеры API" : undefined}
           className={`chip ${isActive("/wiki") ? "active" : ""} ${collapsed ? "justify-center" : ""}`}
         >
           <BookOpen className="w-5 h-5 text-accent shrink-0" />
-          {!collapsed && <div className="flex-1 text-sm">Wiki</div>}
+          {!collapsed && <div className="flex-1 text-sm">Вики</div>}
         </Link>
         <Link
           to="/os"
@@ -343,7 +343,7 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
               type="button"
               onClick={onToggleCollapsed}
               title={collapsed ? "Развернуть панель" : "Свернуть панель"}
-              aria-label={collapsed ? "Expand left panel" : "Collapse left panel"}
+              aria-label={collapsed ? "Развернуть панель" : "Свернуть панель"}
               className="btn flex items-center justify-center gap-1.5 shrink-0"
             >
               <ToggleIcon className="w-4 h-4" />
@@ -355,15 +355,15 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
                 className="btn flex-1 flex items-center justify-center gap-1.5"
               >
                 <LogOut className="w-4 h-4" />
-                Logout
+                Выйти
               </button>
             )}
             {collapsed && (
               <button
                 type="button"
                 onClick={onLogout}
-                title="Logout"
-                aria-label="Logout"
+                title="Выйти"
+                aria-label="Выйти"
                 className="btn flex items-center justify-center gap-1.5"
               >
                 <LogOut className="w-4 h-4" />

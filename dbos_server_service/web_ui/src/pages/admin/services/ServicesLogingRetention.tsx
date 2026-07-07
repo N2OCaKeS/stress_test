@@ -187,7 +187,7 @@ function LiveRetention() {
               </div>
               {policy ? (
                 <>
-                  <div className="stat-big">{policy.retain_days} days</div>
+                  <div className="stat-big">{policy.retain_days} дней</div>
                   <div className="text-sm mt-3">
                     <StatRow k="severity" v={<span className="mono">{policy.severity ?? "все"}</span>} />
                     <StatRow k="service" v={<span className="mono">{policy.service ?? "все"}</span>} />
@@ -339,9 +339,9 @@ function MockRetentionView({ policy, canEdit }: { policy: RetentionPolicyMock; c
         {canEdit && (
           <div className="flex items-center gap-2">
             <button className="btn flex items-center gap-1" onClick={() => startEdit(policy.id)}>
-              <Edit3 className="w-4 h-4" /> Edit
+              <Edit3 className="w-4 h-4" /> Изменить
             </button>
-            <button className="btn">Force sweep</button>
+            <button className="btn">Принудительная очистка</button>
           </div>
         )}
       </div>
@@ -370,7 +370,7 @@ function MockRetentionForm({
     <div className="card w-full">
       <h3 className="font-semibold mb-3 flex items-center gap-2">
         <Clock className="w-4 h-4 text-accent" />
-        {mode === "new" ? "Новая политика retention" : `Edit · ${initial?.id}`}
+        {mode === "new" ? "Новая политика retention" : `Изменить · ${initial?.id}`}
       </h3>
       <div className="flex flex-col gap-3">
         <FormRow label="scope" hint="например audit · severity=ERROR или metrics · 1h aggregated">

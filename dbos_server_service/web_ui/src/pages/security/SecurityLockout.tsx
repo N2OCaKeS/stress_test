@@ -246,11 +246,11 @@ function LockedRow({
         <div className="text-sm font-medium truncate flex items-center gap-2">
           {u.username}
           {u.is_banned ? (
-            <span className="badge danger">banned</span>
+            <span className="badge danger">забанен</span>
           ) : locked ? (
-            <span className="badge badge-warn">locked</span>
+            <span className="badge badge-warn">залочен</span>
           ) : (
-            <span className="badge">failing</span>
+            <span className="badge">копит попытки</span>
           )}
         </div>
         <div className="text-[11px] text-dim truncate">

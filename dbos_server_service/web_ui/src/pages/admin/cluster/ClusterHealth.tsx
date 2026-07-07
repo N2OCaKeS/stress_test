@@ -36,12 +36,12 @@ function PingRow({ p }: { p: ServicePing }) {
             )}
             {p.ok ? (
               <span className="pod">
-                <span className="health-led led-ok" /> up · HTTP {p.status}
+                <span className="health-led led-ok" /> онлайн · HTTP {p.status}
               </span>
             ) : (
               <span className="pod text-danger">
                 <span className="health-led led-danger" />{" "}
-                down · {p.error ?? `HTTP ${p.status}`}
+                офлайн · {p.error ?? `HTTP ${p.status}`}
               </span>
             )}
           </>
@@ -68,7 +68,7 @@ export function ClusterHealth() {
         <div className="card">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold flex items-center gap-2">
-              <Activity className="w-4 h-4 text-dim" /> Cluster health · прямой
+              <Activity className="w-4 h-4 text-dim" /> Состояние кластера · прямой
               пинг
             </h3>
             <button
@@ -102,13 +102,13 @@ export function ClusterHealth() {
         <div className="card">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold flex items-center gap-2">
-              <Activity className="w-4 h-4 text-ok" /> Cluster health
+              <Activity className="w-4 h-4 text-ok" /> Состояние кластера
             </h3>
-            <span className="badge badge-ok">healthy</span>
+            <span className="badge badge-ok">в норме</span>
           </div>
           <div className="flex items-center gap-3 mb-3">
             <span className="health-led led-ok" />
-            <div className="text-2xl font-bold text-ok">All green</div>
+            <div className="text-2xl font-bold text-ok">Всё в норме</div>
           </div>
           <div className="space-y-2">
             {CLUSTER_PODS.map((p) => {
@@ -127,15 +127,15 @@ export function ClusterHealth() {
           </div>
           <div className="mt-3 pt-3 border-t border-token grid grid-cols-3 gap-2 text-center text-xs">
             <div>
-              <div className="text-dim">CPU avg</div>
+              <div className="text-dim">CPU (сред.)</div>
               <div className="text-base font-semibold">27%</div>
             </div>
             <div>
-              <div className="text-dim">Mem avg</div>
+              <div className="text-dim">Память (сред.)</div>
               <div className="text-base font-semibold">41%</div>
             </div>
             <div>
-              <div className="text-dim">Uptime</div>
+              <div className="text-dim">Время работы</div>
               <div className="text-base font-semibold">17д</div>
             </div>
           </div>

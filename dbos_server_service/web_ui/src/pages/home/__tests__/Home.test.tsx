@@ -19,6 +19,6 @@ describe("Home (reference port)", () => {
 
     expect(screen.getByText(/Привет, alice/)).toBeInTheDocument();
     expect(screen.getByText(/Быстрые действия/)).toBeInTheDocument();
-    expect(screen.getByText(/Servers Up/)).toBeInTheDocument();
+    expect(screen.getByText(/Серверы онлайн/)).toBeInTheDocument();
   });
 });

@@ -195,7 +195,7 @@ describe("ServerPackages", () => {
     // Блок действий с пакетами доступен под dep_admin.
     const pkgInput = screen.getByPlaceholderText("htop nginx git");
     fireEvent.change(pkgInput, { target: { value: "htop nginx" } });
-    fireEvent.click(screen.getByRole("button", { name: /Install/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Установить/ }));
     await waitFor(() => expect(packagesBulkActionMock).toHaveBeenCalledTimes(1));
     const body = packagesBulkActionMock.mock.calls[0][0] as {
       action: string;
@@ -211,7 +211,7 @@ describe("ServerPackages", () => {
     renderPage();
     await screen.findByText("host-a");
     fireEvent.click(screen.getAllByRole("checkbox")[0]);
-    fireEvent.click(screen.getByRole("button", { name: /Install/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Установить/ }));
     await screen.findByText(/Укажите хотя бы один пакет/);
     expect(packagesBulkActionMock).not.toHaveBeenCalled();
   });

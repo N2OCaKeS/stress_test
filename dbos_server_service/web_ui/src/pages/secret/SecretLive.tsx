@@ -220,7 +220,7 @@ export function SecretLive() {
   async function handleCreate(body: CredentialCreateRequest) {
     try {
       const created = await createCredential(body);
-      toast.success(`Credential ${created.name} создан`);
+      toast.success(`Учётные данные ${created.name} созданы`);
       listQ.refetch();
       const next = new URLSearchParams(params);
       next.set("id", created.id);
@@ -233,8 +233,8 @@ export function SecretLive() {
 
   async function handleDelete(cred: Credential) {
     const { ok, reason } = await prompt({
-      title: "Удалить credential",
-      message: `Удалить credential ${cred.name}? Операция необратима.`,
+      title: "Удалить учётные данные",
+      message: `Удалить учётные данные ${cred.name}? Операция необратима.`,
       reason: true,
       reasonLabel: "Причина (обязательна для admin-override)",
       confirmLabel: "Удалить",
@@ -245,7 +245,7 @@ export function SecretLive() {
       await deleteCredential(cred.id, {
         reason: reason.trim() || undefined,
       });
-      toast.success(`Credential ${cred.name} удалён`);
+      toast.success(`Учётные данные ${cred.name} удалены`);
       selectId(null);
       listQ.refetch();
     } catch (e) {
@@ -260,7 +260,7 @@ export function SecretLive() {
           <Search className="w-4 h-4 text-dim" />
           <input
             className="bg-transparent outline-none flex-1 text-sm"
-            placeholder={`Поиск по ${items.length} credentials…`}
+            placeholder={`Поиск по ${items.length} учётным данным…`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -270,9 +270,9 @@ export function SecretLive() {
             className="surface-2 border border-token rounded px-1 py-0.5"
             value={filterScope}
             onChange={(e) => setFilterScope(e.target.value)}
-            title="Фильтр по scope"
+            title="Фильтр по области"
           >
-            <option value="">все scope</option>
+            <option value="">все области</option>
             <option value="personal">personal</option>
             <option value="department">department</option>
             <option value="cross_department">cross_department</option>
@@ -342,7 +342,7 @@ export function SecretLive() {
             className="btn btn-primary w-full flex items-center justify-center gap-2"
             onClick={startCreate}
           >
-            <Plus className="w-4 h-4" /> Создать credential
+            <Plus className="w-4 h-4" /> Создать учётные данные
           </button>
         </div>
       )}
@@ -456,14 +456,14 @@ function EmptyPane({
       <div className="empty-card max-w-md text-center">
         <Key className="w-10 h-10 mx-auto text-dim mb-3" />
         <div className="text-sm text-dim mb-3">
-          Выберите credential слева для просмотра деталей.
+          Выберите учётные данные слева для просмотра деталей.
         </div>
         {canCreate && (
           <button
             className="btn btn-primary inline-flex items-center gap-1"
             onClick={onCreate}
           >
-            <Plus className="w-4 h-4" /> Создать credential
+            <Plus className="w-4 h-4" /> Создать учётные данные
           </button>
         )}
       </div>
@@ -570,9 +570,9 @@ function DetailPane({
         const secs = e.retryAfter ?? 300;
         setThrottleUntil(Date.now() + secs * 1000);
         setNow(Date.now());
-        toast.error(`Throttled: повторите через ${secs} сек`);
+        toast.error(`Слишком часто, повторите через ${secs} сек`);
       } else {
-        toast.error(apiErrMsg(e, "Reveal не удался"));
+        toast.error(apiErrMsg(e, "Показ не удался"));
       }
     } finally {
       setRevealing(false);
@@ -584,12 +584,12 @@ function DetailPane({
     setActing(true);
     try {
       await recoverCredential(credId);
-      toast.success("Credential разблокирован");
+      toast.success("Учётные данные разблокированы");
       setRevealed(null);
       credQ.refetch();
       onChanged();
     } catch (e) {
-      toast.error(apiErrMsg(e, "Recover не удался"));
+      toast.error(apiErrMsg(e, "Разблокировка не удалась"));
     } finally {
       setActing(false);
     }
@@ -598,7 +598,7 @@ function DetailPane({
   async function handleEditSubmit(body: CredentialUpdateRequest) {
     try {
       await updateCredential(credId, body);
-      toast.success("Credential обновлён");
+      toast.success("Учётные данные обновлены");
       setEditing(false);
       setRevealed(null);
       credQ.refetch();
@@ -611,7 +611,7 @@ function DetailPane({
   async function handleTransferSubmit(body: TransferRequest) {
     try {
       await transferCredential(credId, body);
-      toast.success("Ownership передан, credential разблокирован");
+      toast.success("Владение передано, учётные данные разблокированы");
       setTransferring(false);
       // Владелец сменился — раскрытый plaintext больше не должен висеть
       // на карточке, маскируем обратно.
@@ -619,7 +619,7 @@ function DetailPane({
       credQ.refetch();
       onChanged();
     } catch (e) {
-      toast.error(apiErrMsg(e, "Transfer не удался"));
+      toast.error(apiErrMsg(e, "Передача не удалась"));
     }
   }
 
@@ -743,14 +743,14 @@ function DetailPane({
               {cred.status}
             </span>
             <span className="text-xs text-dim">
-              scope: <b>{SCOPE_LABEL[cred.scope] ?? cred.scope}</b>
+              область: <b>{SCOPE_LABEL[cred.scope] ?? cred.scope}</b>
             </span>
           </div>
           <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
             <span className="mono">{cred.id}</span>
             <span>·</span>
             <span>
-              service: <b>{cred.service}</b>
+              сервис: <b>{cred.service}</b>
             </span>
           </div>
         </div>
@@ -761,9 +761,9 @@ function DetailPane({
                 className="btn"
                 onClick={() => setEditing(true)}
                 disabled={acting}
-                title="Редактировать"
+                title="Изменить"
               >
-                <Pencil className="w-4 h-4 inline-block" /> Edit
+                <Pencil className="w-4 h-4 inline-block" /> Изменить
               </button>
             )}
             {blocked && (
@@ -772,17 +772,17 @@ function DetailPane({
                   className="btn"
                   onClick={handleRecover}
                   disabled={acting}
-                  title="Recover"
+                  title="Разблокировать"
                 >
-                  <RotateCcw className="w-4 h-4 inline-block" /> Recover
+                  <RotateCcw className="w-4 h-4 inline-block" /> Разблокировать
                 </button>
                 <button
                   className="btn"
                   onClick={() => setTransferring(true)}
                   disabled={acting}
-                  title="Transfer ownership"
+                  title="Передать владение"
                 >
-                  <ArrowRightLeft className="w-4 h-4 inline-block" /> Transfer
+                  <ArrowRightLeft className="w-4 h-4 inline-block" /> Передать
                 </button>
               </>
             )}
@@ -792,7 +792,7 @@ function DetailPane({
               disabled={acting}
               title="Удалить"
             >
-              <Trash2 className="w-4 h-4 inline-block" /> Revoke
+              <Trash2 className="w-4 h-4 inline-block" /> Удалить
             </button>
           </div>
         )}
@@ -828,13 +828,13 @@ function DetailPane({
             </div>
             {isGuest ? (
               <span className="text-[11px] text-dim">
-                guest: reveal недоступен
+                guest: показ недоступен
               </span>
             ) : (
               <div className="flex items-center gap-2">
                 {throttleLeft > 0 && (
                   <span className="text-[11px] text-warn">
-                    rate-limited: {throttleLeft}с
+                    лимит: {throttleLeft}с
                   </span>
                 )}
                 {revealed !== null ? (
@@ -858,7 +858,7 @@ function DetailPane({
                         ? "…"
                         : throttleLeft > 0
                         ? `${throttleLeft}с`
-                        : "Reveal"}
+                        : "Показать"}
                     </span>
                   </button>
                 )}
@@ -881,7 +881,7 @@ function DetailPane({
           </div>
           {isGuest && (
             <div className="text-xs text-dim mt-2">
-              Guest видит метаданные; reveal закрыт — запросите доступ у dep_admin.
+              Guest видит метаданные; показ закрыт — запросите доступ у dep_admin.
             </div>
           )}
         </div>
@@ -893,7 +893,7 @@ function DetailPane({
           </div>
           <div className="text-sm">
             <MetaRow
-              label="Owner dept"
+              label="Отдел-владелец"
               value={
                 cred.owner_dept_id
                   ? depts.get(cred.owner_dept_id) ?? cred.owner_dept_id
@@ -901,17 +901,17 @@ function DetailPane({
               }
             />
             <MetaRow
-              label="Owner user"
+              label="Владелец-пользователь"
               value={cred.owner_user_id ? ownerUserName : "—"}
               title={cred.owner_user_id ?? undefined}
             />
             <MetaRow
-              label="Created by"
+              label="Кем создан"
               value={createdByName}
               title={cred.created_by}
             />
-            <MetaRow label="Created" value={formatMsk(cred.created_at)} />
-            <MetaRow label="Updated" value={formatMsk(cred.updated_at)} />
+            <MetaRow label="Создан" value={formatMsk(cred.created_at)} />
+            <MetaRow label="Обновлён" value={formatMsk(cred.updated_at)} />
             <MetaRow label="visible_to_dept" value={String(cred.visible_to_dept)} />
             <MetaRow label="valid_from" value={formatMsk(cred.valid_from)} />
             <MetaRow label="valid_to" value={formatMsk(cred.valid_to)} />
@@ -1181,7 +1181,7 @@ function CreatePane({
           >
             <ArrowLeft className="w-4 h-4" /> Назад
           </button>
-          <div className="text-sm text-dim">Создание credential</div>
+          <div className="text-sm text-dim">Создание учётных данных</div>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -1453,7 +1453,7 @@ function EditModal({
   }
 
   return (
-    <ModalShell title={`Редактировать ${cred.name}`} onClose={onClose}>
+    <ModalShell title={`Изменить ${cred.name}`} onClose={onClose}>
       <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">name</span>
@@ -1475,7 +1475,7 @@ function EditModal({
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-dim text-xs">new secret (re-encrypt)</span>
+          <span className="text-dim text-xs">новый секрет (перешифровать)</span>
           <input
             className="surface-2 border border-token rounded px-2 py-1 mono"
             type="password"
@@ -1555,10 +1555,10 @@ function TransferModal({
   }
 
   return (
-    <ModalShell title="Transfer ownership" onClose={onClose}>
+    <ModalShell title="Передать владение" onClose={onClose}>
       <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
         <div className="text-xs text-dim">
-          Transfer допустим только для заблокированной кред'ы и снимает блокировку.
+          Передача допустима только для заблокированной кред'ы и снимает блокировку.
           Гейтится admin secret_service владеющего dept'а.
         </div>
         <label className="flex flex-col gap-1 text-sm">

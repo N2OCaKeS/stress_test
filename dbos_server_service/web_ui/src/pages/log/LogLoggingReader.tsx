@@ -45,7 +45,7 @@ export function LogLoggingReader() {
                     user.login_failed
                   </h1>
                   <span className="sev sev-WARNING">WARNING</span>
-                  <span className="ro-label">read-only</span>
+                  <span className="ro-label">только чтение</span>
                 </div>
                 <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
                   <span className="mono">req_f3b2c91a8e7d4022</span>
@@ -57,7 +57,7 @@ export function LogLoggingReader() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button className="btn btn-primary flex items-center gap-1">
-                  <Download className="w-4 h-4" /> Export JSON
+                  <Download className="w-4 h-4" /> Экспорт JSON
                 </button>
               </div>
             </div>
@@ -67,18 +67,18 @@ export function LogLoggingReader() {
                 <div className="flex items-center gap-2 mb-3">
                   <User className="w-4 h-4 text-accent" />
                   <div className="text-xs uppercase tracking-wider text-dim">
-                    Actor
+                    Инициатор
                   </div>
                 </div>
                 <div className="text-sm">
                   <div className="stat-row">
-                    <span className="text-dim">Username</span>
+                    <span className="text-dim">Имя пользователя</span>
                     <span>
                       <i>unknown</i>
                     </span>
                   </div>
                   <div className="stat-row">
-                    <span className="text-dim">Attempted</span>
+                    <span className="text-dim">Попытка</span>
                     <span className="mono">igor</span>
                   </div>
                   <div className="stat-row">
@@ -90,7 +90,7 @@ export function LogLoggingReader() {
                     <span className="text-xs">Chrome/124.0 · Linux</span>
                   </div>
                   <div className="stat-row">
-                    <span className="text-dim">Identity type</span>
+                    <span className="text-dim">Тип субъекта</span>
                     <span>
                       <span className="badge">anonymous</span>
                     </span>
@@ -102,12 +102,12 @@ export function LogLoggingReader() {
                 <div className="flex items-center gap-2 mb-3">
                   <User className="w-4 h-4 text-warn" />
                   <div className="text-xs uppercase tracking-wider text-dim">
-                    Target
+                    Объект
                   </div>
                 </div>
                 <div className="text-sm">
                   <div className="stat-row">
-                    <span className="text-dim">Type</span>
+                    <span className="text-dim">Тип</span>
                     <span>
                       <span className="badge">user</span>
                     </span>
@@ -117,15 +117,15 @@ export function LogLoggingReader() {
                     <span className="mono text-xs">usr_e5d8c91a4b227710</span>
                   </div>
                   <div className="stat-row">
-                    <span className="text-dim">Name</span>
+                    <span className="text-dim">Имя</span>
                     <span>igor</span>
                   </div>
                   <div className="stat-row">
-                    <span className="text-dim">Department</span>
+                    <span className="text-dim">Отдел</span>
                     <span>ДТКК</span>
                   </div>
                   <div className="stat-row">
-                    <span className="text-dim">Status</span>
+                    <span className="text-dim">Статус</span>
                     <span>
                       <span className="badge badge-danger">blocked</span>
                     </span>
@@ -137,7 +137,7 @@ export function LogLoggingReader() {
                 <div className="flex items-center gap-2 mb-3">
                   <Filter className="w-4 h-4 text-dim" />
                   <div className="text-xs uppercase tracking-wider text-dim">
-                    Details JSON
+                    Детали JSON
                   </div>
                 </div>
                 <pre className="json-block mono whitespace-pre">{`{
@@ -158,12 +158,12 @@ export function LogLoggingReader() {
                 <div className="flex items-center gap-2 mb-3">
                   <Cog className="w-4 h-4 text-dim" />
                   <div className="text-xs uppercase tracking-wider text-dim">
-                    Service
+                    Сервис
                   </div>
                 </div>
                 <div className="text-sm">
                   <div className="stat-row">
-                    <span className="text-dim">Emitter</span>
+                    <span className="text-dim">Источник</span>
                     <span>
                       <span className="badge badge-warn">auth_service</span>
                     </span>
@@ -179,7 +179,7 @@ export function LogLoggingReader() {
                     <span className="mono text-xs">req_f3b2c91a8e7d4022</span>
                   </div>
                   <div className="stat-row">
-                    <span className="text-dim">Version</span>
+                    <span className="text-dim">Версия</span>
                     <span className="mono">1.5.2</span>
                   </div>
                   <div className="stat-row">
@@ -195,7 +195,7 @@ export function LogLoggingReader() {
                 <div className="flex items-center gap-2 mb-3">
                   <Share2 className="w-4 h-4 text-dim" />
                   <div className="text-xs uppercase tracking-wider text-dim">
-                    Related events
+                    Связанные события
                   </div>
                   <span className="text-[10px] text-dim ml-auto">
                     по request_id
@@ -204,9 +204,9 @@ export function LogLoggingReader() {
                 <table className="w-full related-tbl">
                   <thead>
                     <tr>
-                      <th>Time</th>
-                      <th>Action</th>
-                      <th>Sev</th>
+                      <th>Время</th>
+                      <th>Действие</th>
+                      <th>Важн.</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -104,7 +104,7 @@ export function BotDetail() {
       <Shell breadcrumb="auth_service / users / bot">
         <section className="flex-1 overflow-y-auto p-8">
           <div className="empty-card danger">
-            Bot <span className="mono">{id}</span> не найден.
+            Бот <span className="mono">{id}</span> не найден.
             <div className="mt-3">
               <Link to="/users" className="btn">
                 <ArrowLeft className="w-4 h-4 inline mr-1" /> К пользователям
@@ -185,7 +185,7 @@ export function BotDetail() {
           <div className="flex items-center gap-2">
             {!caps.rotateToken && !caps.revokeToken && !caps.delete && (
               <span className="badge badge-warn" title={caps.reason}>
-                read-only
+                Только чтение
               </span>
             )}
           </div>
@@ -193,14 +193,14 @@ export function BotDetail() {
 
         <div className="flex-1 overflow-y-auto p-5 grid grid-cols-2 gap-5 auto-rows-min">
           {!mockMode && liveBotQ.loading && (
-            <div className="col-span-2"><div className="spinner" aria-label="Loading" /></div>
+            <div className="col-span-2"><div className="spinner" aria-label="Загрузка" /></div>
           )}
           {!mockMode && liveBotQ.error && (
             <div className="col-span-2 alert-danger">{liveBotQ.error.message}</div>
           )}
           {!mockMode && !liveBotQ.loading && !liveBotQ.error && !liveBot && (
             <div className="col-span-2 empty-card danger">
-              Bot <span className="mono">{id}</span> не найден в auth_service.
+              Бот <span className="mono">{id}</span> не найден в auth_service.
             </div>
           )}
           <BotLiveData key={headerId} botId={headerId} caps={caps} />
@@ -239,8 +239,8 @@ export function BotDetail() {
                   <tr>
                     <th className="pb-2 pr-3">Сервис</th>
                     <th className="pb-2 pr-3">Роль</th>
-                    <th className="pb-2 pr-3">Scope</th>
-                    <th className="pb-2 pr-3">Granted by</th>
+                    <th className="pb-2 pr-3">Область</th>
+                    <th className="pb-2 pr-3">Кем выдано</th>
                     <th className="pb-2 pr-3"></th>
                   </tr>
                 </thead>
@@ -275,17 +275,17 @@ export function BotDetail() {
           </Section>
 
           {/* Direct grants */}
-          <Section icon={<KeyRound className="w-4 h-4" />} title={`Прямые grants · ${grants.length}`} className="col-span-2">
+          <Section icon={<KeyRound className="w-4 h-4" />} title={`Прямые выдачи · ${grants.length}`} className="col-span-2">
             {grants.length === 0 ? (
-              <div className="text-sm text-dim italic">Прямых grants нет.</div>
+              <div className="text-sm text-dim italic">Прямых выдач нет.</div>
             ) : (
               <table className="w-full text-sm">
                 <thead className="text-left text-dim text-xs uppercase">
                   <tr>
-                    <th className="pb-2 pr-3">Permission</th>
-                    <th className="pb-2 pr-3">Resource</th>
-                    <th className="pb-2 pr-3">Granted by</th>
-                    <th className="pb-2 pr-3">When</th>
+                    <th className="pb-2 pr-3">Право</th>
+                    <th className="pb-2 pr-3">Ресурс</th>
+                    <th className="pb-2 pr-3">Кем выдано</th>
+                    <th className="pb-2 pr-3">Когда</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -308,15 +308,15 @@ export function BotDetail() {
           </Section>
 
           {/* Effective */}
-          <Section icon={<ListTree className="w-4 h-4" />} title={`Effective permissions · ${effective.length}`} className="col-span-2">
+          <Section icon={<ListTree className="w-4 h-4" />} title={`Действующие права · ${effective.length}`} className="col-span-2">
             <div className="border border-token rounded overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="text-left text-dim text-xs uppercase surface-2">
                   <tr>
                     <th className="px-3 py-2 w-8"></th>
-                    <th className="px-3 py-2">Permission</th>
-                    <th className="px-3 py-2">Service</th>
-                    <th className="px-3 py-2">Scope</th>
+                    <th className="px-3 py-2">Право</th>
+                    <th className="px-3 py-2">Сервис</th>
+                    <th className="px-3 py-2">Область</th>
                     <th className="px-3 py-2">Источники</th>
                   </tr>
                 </thead>
@@ -371,7 +371,7 @@ export function BotDetail() {
           </Section>
 
           {/* Diff: remove a role */}
-          <Section icon={<GitCompareArrows className="w-4 h-4" />} title="Diff: simulated removal of role" className="col-span-2">
+          <Section icon={<GitCompareArrows className="w-4 h-4" />} title="Diff: симуляция снятия роли" className="col-span-2">
             {!removeRoleDiff ? (
               <div className="text-sm text-dim italic">Нет ролей для симуляции.</div>
             ) : (
@@ -542,7 +542,7 @@ function BotLiveData({
   return (
     <Section
       icon={<Plug className="w-4 h-4" />}
-      title="Live data · auth_service"
+      title="Живые данные · auth_service"
       className="col-span-2"
     >
       {loading && <div className="spinner">Загрузка…</div>}
@@ -595,7 +595,7 @@ function BotLiveData({
                   className="btn btn-sm flex items-center gap-1"
                   onClick={() => copyToken(issued.token)}
                 >
-                  <Copy className="w-3 h-3" /> Copy
+                  <Copy className="w-3 h-3" /> Копировать
                 </button>
                 <button
                   className="btn btn-sm"
@@ -648,7 +648,7 @@ function BotLiveData({
                   title={caps.manageRoles ? undefined : caps.reason}
                   onClick={async () => {
                     const { ok, reason: next } = await confirm.prompt({
-                      title: "Edit description",
+                      title: "Изменить описание",
                       message: "Новое description:",
                       reason: true,
                       defaultReason: live.description ?? "",
@@ -660,7 +660,7 @@ function BotLiveData({
                     );
                   }}
                 >
-                  <Edit3 className="w-4 h-4" /> Edit description
+                  <Edit3 className="w-4 h-4" /> Изменить описание
                 </button>
                 <button
                   className="btn flex items-center gap-1"
@@ -668,7 +668,7 @@ function BotLiveData({
                   title={caps.manageRoles ? undefined : caps.reason}
                   onClick={async () => {
                     const { ok, reason: next } = await confirm.prompt({
-                      title: "Edit allowed_services",
+                      title: "Изменить allowed_services",
                       message: "allowed_services (csv):",
                       reason: true,
                       defaultReason: live.allowed_services.join(","),
@@ -684,7 +684,7 @@ function BotLiveData({
                     );
                   }}
                 >
-                  <Edit3 className="w-4 h-4" /> Edit allowed_services
+                  <Edit3 className="w-4 h-4" /> Изменить allowed_services
                 </button>
                 <button
                   className="btn flex items-center gap-1"
@@ -699,7 +699,7 @@ function BotLiveData({
                   }
                 >
                   <Power className="w-4 h-4" />
-                  {live.status === "active" ? "Disable" : "Enable"}
+                  {live.status === "active" ? "Отключить" : "Включить"}
                 </button>
               </div>
               {canHardDelete && (
@@ -772,7 +772,7 @@ function BotLiveData({
             return (
               <div>
                 <div className="text-xs uppercase text-dim mb-2">
-                  Token{active.length > 0 && ` · ${active.length} active`}
+                  Token{active.length > 0 && ` · ${active.length} активн.`}
                 </div>
 
                 {active.length === 0 && (
@@ -781,7 +781,7 @@ function BotLiveData({
                     <div className="flex gap-2 mt-2 flex-wrap items-center">
                       <input
                         className="input"
-                        placeholder="token name"
+                        placeholder="название токена"
                         value={newName}
                         onChange={(e) => setNewName(e.target.value)}
                       />
@@ -818,7 +818,7 @@ function BotLiveData({
                           })
                         }
                       >
-                        <KeyRound className="w-4 h-4" /> Issue token
+                        <KeyRound className="w-4 h-4" /> Выпустить токен
                       </button>
                     </div>
                   </>
@@ -960,10 +960,10 @@ function BotLiveData({
                     <table className="w-full text-sm">
                       <thead className="text-left text-dim text-xs uppercase">
                         <tr>
-                          <th className="pb-2 pr-3">name</th>
-                          <th className="pb-2 pr-3">created</th>
-                          <th className="pb-2 pr-3">expires</th>
-                          <th className="pb-2 pr-3">last used</th>
+                          <th className="pb-2 pr-3">имя</th>
+                          <th className="pb-2 pr-3">создан</th>
+                          <th className="pb-2 pr-3">истекает</th>
+                          <th className="pb-2 pr-3">посл. использование</th>
                           <th className="pb-2"></th>
                         </tr>
                       </thead>
@@ -1002,7 +1002,7 @@ function BotLiveData({
                                   );
                                 }}
                               >
-                                revoke
+                                отозвать
                               </button>
                             </td>
                           </tr>
@@ -1044,8 +1044,8 @@ function BotLiveData({
               <table className="w-full text-sm">
                 <thead className="text-left text-dim text-xs uppercase">
                   <tr>
-                    <th className="pb-2 pr-3">service</th>
-                    <th className="pb-2 pr-3">roles</th>
+                    <th className="pb-2 pr-3">сервис</th>
+                    <th className="pb-2 pr-3">роли</th>
                     <th className="pb-2"></th>
                   </tr>
                 </thead>
@@ -1086,7 +1086,7 @@ function BotLiveData({
                             );
                           }}
                         >
-                          revoke
+                          отозвать
                         </button>
                       </td>
                     </tr>

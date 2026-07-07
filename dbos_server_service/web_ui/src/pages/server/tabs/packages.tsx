@@ -487,9 +487,9 @@ export function PackagesTab({ serverId, server, onServerUpdated }: Props) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-[11px] uppercase text-dim border-b border-token">
-              <th className="text-left px-3 py-2 font-medium">name</th>
-              <th className="text-left px-3 py-2 font-medium">version</th>
-              <th className="text-left px-3 py-2 font-medium">arch</th>
+              <th className="text-left px-3 py-2 font-medium">Название</th>
+              <th className="text-left px-3 py-2 font-medium">Версия</th>
+              <th className="text-left px-3 py-2 font-medium">Архитектура</th>
             </tr>
           </thead>
           <tbody>
@@ -750,8 +750,8 @@ function HistoryRow({
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-[11px] uppercase text-dim border-b border-token">
-                  <th className="text-left px-2 py-1 font-medium">name</th>
-                  <th className="text-left px-2 py-1 font-medium">version</th>
+                  <th className="text-left px-2 py-1 font-medium">Название</th>
+                  <th className="text-left px-2 py-1 font-medium">Версия</th>
                 </tr>
               </thead>
               <tbody>

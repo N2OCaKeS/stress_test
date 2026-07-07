@@ -106,7 +106,7 @@ function OverviewView({
               className="btn btn-ghost flex items-center gap-1"
               onClick={onEdit}
             >
-              <Pencil className="w-4 h-4" /> Редактировать
+              <Pencil className="w-4 h-4" /> Изменить
             </button>
           )}
         </div>
@@ -436,7 +436,7 @@ function OverviewEditForm({
     <div className="p-5">
       <div className="card w-full">
         <h3 className="font-semibold mb-3 flex items-center gap-2">
-          <Pencil className="w-4 h-4 text-accent" /> Редактировать ·{" "}
+          <Pencil className="w-4 h-4 text-accent" /> Изменить ·{" "}
           <span className="mono">{initial.hostname}</span>
         </h3>
         {err && <div className="alert-danger mb-2">{err}</div>}

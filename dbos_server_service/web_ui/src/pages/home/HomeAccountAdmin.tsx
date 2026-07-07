@@ -75,7 +75,7 @@ export function HomeAccountAdmin() {
                 <Building2 className="w-5 h-5 text-accent" />
                 <span className="text-sm font-medium">Управление платформой</span>
               </div>
-              <div className="text-xs text-dim">depts · users · bots · roles</div>
+              <div className="text-xs text-dim">отделы · пользователи · боты · роли</div>
             </Link>
             <Link to="/users" className="quick-tile">
               <div className="flex items-center gap-2">
@@ -103,22 +103,22 @@ export function HomeAccountAdmin() {
 
         <section className="mb-8 grid gap-4 md:grid-cols-4">
           <div className="card">
-            <div className="stat-label">Users</div>
+            <div className="stat-label">Пользователи</div>
             <div className="stat-big">{anyLoading ? "—" : liveUsers}</div>
             <div className="text-xs text-dim mt-2">auth_service</div>
           </div>
           <div className="card">
-            <div className="stat-label">Departments</div>
+            <div className="stat-label">Отделы</div>
             <div className="stat-big">{anyLoading ? "—" : liveDepts}</div>
             <div className="text-xs text-dim mt-2">auth_service</div>
           </div>
           <div className="card">
-            <div className="stat-label">Bots</div>
+            <div className="stat-label">Боты</div>
             <div className="stat-big">{anyLoading ? "—" : liveBots}</div>
             <div className="text-xs text-dim mt-2">auth_service</div>
           </div>
           <div className="card">
-            <div className="stat-label">Groups</div>
+            <div className="stat-label">Группы</div>
             <div className="stat-big">{anyLoading ? "—" : liveGroups}</div>
             <div className="text-xs text-dim mt-2">auth_service</div>
           </div>
@@ -141,9 +141,9 @@ export function HomeAccountAdmin() {
       title={<>Привет, {persona.username} 👋</>}
       subtitle={
         <>
-          Платформа целиком · <b>{DEPTS.length}</b> dept · <b>{USERS.length}</b>{" "}
-          users · <b>{SERVERS.length}</b> servers ·{" "}
-          <b>{CREDENTIALS.length}</b> credentials
+          Платформа целиком · <b>{DEPTS.length}</b> отделов · <b>{USERS.length}</b>{" "}
+          пользователей · <b>{SERVERS.length}</b> серверов ·{" "}
+          <b>{CREDENTIALS.length}</b> учётных данных
         </>
       }
     >
@@ -156,14 +156,14 @@ export function HomeAccountAdmin() {
           <Link to="/admin" className="quick-tile">
             <div className="flex items-center gap-2">
               <Building2 className="w-5 h-5 text-accent" />
-              <span className="text-sm font-medium">Создать dept</span>
+              <span className="text-sm font-medium">Создать отдел</span>
             </div>
             <div className="text-xs text-dim">Новый изолированный отдел</div>
           </Link>
           <Link to="/users" className="quick-tile">
             <div className="flex items-center gap-2">
               <UserPlus className="w-5 h-5 text-accent" />
-              <span className="text-sm font-medium">Завести user</span>
+              <span className="text-sm font-medium">Завести пользователя</span>
             </div>
             <div className="text-xs text-dim">Любой деп · любая роль</div>
           </Link>
@@ -172,7 +172,7 @@ export function HomeAccountAdmin() {
               <FileText className="w-5 h-5 text-accent" />
               <span className="text-sm font-medium">Аудит платформы</span>
             </div>
-            <div className="text-xs text-dim">Cross-dept · полный канал</div>
+            <div className="text-xs text-dim">Все отделы · полный канал</div>
           </Link>
           <Link to="/worker" className="quick-tile">
             <div className="flex items-center gap-2">
@@ -187,28 +187,28 @@ export function HomeAccountAdmin() {
       {/* Stats row */}
       <section className="mb-8 grid gap-4 md:grid-cols-4">
         <div className="card">
-          <div className="stat-label">Cluster pods</div>
+          <div className="stat-label">Поды кластера</div>
           <div className="stat-big text-ok">
             17 <span className="text-base text-dim">/ 17</span>
           </div>
           <div className="text-xs text-dim mt-2">все Running</div>
         </div>
         <div className="card">
-          <div className="stat-label">Audit events 24ч</div>
+          <div className="stat-label">События аудита 24ч</div>
           <div className="stat-big">
             {AUDIT_EVENTS.length.toLocaleString("ru-RU")}
           </div>
           <div className="text-xs text-dim mt-2">
-            {critical} critical · {warning} warning
+            {critical} критических · {warning} предупреждений
           </div>
         </div>
         <div className="card">
-          <div className="stat-label">Pending rotations</div>
+          <div className="stat-label">Ротаций в ожидании</div>
           <div className="stat-big text-warn">5</div>
           <div className="text-xs text-dim mt-2">2 просрочены</div>
         </div>
         <div className="card">
-          <div className="stat-label">Backups OK</div>
+          <div className="stat-label">Бэкапы в норме</div>
           <div className="stat-big text-ok">
             6 <span className="text-base text-dim">/ 6</span>
           </div>
@@ -255,7 +255,7 @@ export function HomeAccountAdmin() {
             <div className="flex items-start gap-3 p-2 surface-2 rounded">
               <AlertTriangle className="w-4 h-4 text-warn shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <div>Disk usage worker-node-04 → 87%</div>
+                <div>Использование диска worker-node-04 → 87%</div>
                 <div className="text-xs text-dim">логи postgres переполняются</div>
               </div>
             </div>
@@ -328,10 +328,10 @@ interface ActivityRow {
 }
 
 const PLATFORM_ACTIVITY: ActivityRow[] = [
-  { ts: "16:04", actor: "bob", action: "создал dept", target: "qa-stenders", req: "req_9b21...", badge: "success", badgeKind: "ok" },
-  { ts: "15:42", actor: "alice", action: "завела user", target: "igor", req: "req_7e9f...", badge: "success", badgeKind: "ok" },
+  { ts: "16:04", actor: "bob", action: "создал отдел", target: "qa-stenders", req: "req_9b21...", badge: "success", badgeKind: "ok" },
+  { ts: "15:42", actor: "alice", action: "завела пользователя", target: "igor", req: "req_7e9f...", badge: "success", badgeKind: "ok" },
   { ts: "14:18", actor: "worker_bot", action: "ротация", target: "vault-token-ci", req: "req_4ab1...", badge: "success", badgeKind: "ok" },
-  { ts: "13:54", actor: "k8s", action: "restart pod", target: "auth-service-2", req: "req_kx12...", badge: "crash", badgeKind: "danger" },
-  { ts: "12:01", actor: "cron", action: "backup snapshot", target: "pg-master", req: "job_b0c1...", badge: "done", badgeKind: "ok" },
-  { ts: "10:38", actor: "pavel", action: "добавил server", target: "srv-edge-19", req: "req_fa10...", badge: "success", badgeKind: "ok" },
+  { ts: "13:54", actor: "k8s", action: "рестарт пода", target: "auth-service-2", req: "req_kx12...", badge: "crash", badgeKind: "danger" },
+  { ts: "12:01", actor: "cron", action: "бэкап-снапшот", target: "pg-master", req: "job_b0c1...", badge: "done", badgeKind: "ok" },
+  { ts: "10:38", actor: "pavel", action: "добавил сервер", target: "srv-edge-19", req: "req_fa10...", badge: "success", badgeKind: "ok" },
 ];

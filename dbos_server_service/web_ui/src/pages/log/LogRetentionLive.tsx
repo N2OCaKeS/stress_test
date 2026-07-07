@@ -152,7 +152,7 @@ export function LogRetentionLive() {
         <div className="scroll-block w-full px-8 py-8">
           <section className="mb-6">
             <div className="text-2xl font-bold mb-1 flex items-center gap-2">
-              <Archive className="w-6 h-6 text-accent" /> Retention policy
+              <Archive className="w-6 h-6 text-accent" /> Политика хранения
             </div>
             <div className="text-dim text-sm">
               Срок хранения audit-событий. Фоновая ротация — 00:00 MSK. События
@@ -186,7 +186,7 @@ export function LogRetentionLive() {
                 </div>
                 {policy ? (
                   <>
-                    <div className="stat-big">{policy.retain_days} days</div>
+                    <div className="stat-big">{policy.retain_days} дн.</div>
                     <div className="text-sm mt-3">
                       <div className="stat-row">
                         <span className="text-dim">severity</span>

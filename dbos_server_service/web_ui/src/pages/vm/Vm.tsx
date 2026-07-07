@@ -16,8 +16,12 @@ import * as Dialog from "@radix-ui/react-dialog";
 import {
   AlertCircle,
   ArrowLeft,
+  ArrowUpCircle,
+  Boxes,
+  Camera,
   Cpu,
   HardDrive,
+  KeyRound,
   Maximize2,
   MonitorPlay,
   Play,
@@ -29,6 +33,7 @@ import {
   Server as ServerIcon,
   Square,
   Trash2,
+  Undo2,
   Lock,
   Unlock,
 } from "lucide-react";
@@ -48,39 +53,54 @@ import { formatLatencyMs } from "@/pages/server/_serverShared";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import { listServers } from "@/api/server/servers";
+import { listOsVersions } from "@/api/server/osVersions";
 import {
+  alltaUpdateVm,
+  astraUpdateVm,
   createVm,
   createVmDisk,
+  createVmSnapshot,
   deleteVm,
   deleteVmDisk,
+  deleteVmSnapshot,
   getVmByNumber,
   getServerByNumber,
   listVmDisks,
   listVmImages,
+  listVmSnapshots,
   listVms,
   prepareVmsHub,
   refreshVmImages,
   releaseVm,
   reserveVm,
   resizeVmDisk,
+  revertVmSnapshot,
+  setVmCredStrategy,
   updateVm,
+  vmPasswd,
   vmPower,
   type Vm,
   type VmCreateRequest,
+  type VmCredStrategy,
   type VmDisk,
   type VmDiskCreateRequest,
   type VmHub,
   type VmImage,
   type VmNetworkMode,
   type VmPowerAction,
+  type VmSnapshot,
+  type VmSnapshotCreateRequest,
+  type VmSnapshotKind,
   type VmUpdateRequest,
 } from "@/api/server/vms";
-import type { TaskDispatchResponse } from "@/api/server/types";
+import type { OsVersion, TaskDispatchResponse } from "@/api/server/types";
 import {
   MOCK_HUB_CANDIDATES,
   MOCK_VM_DISKS,
   MOCK_VM_HUBS,
   MOCK_VM_IMAGES,
+  MOCK_VM_OS_VERSIONS,
+  MOCK_VM_SNAPSHOTS,
   MOCK_VMS,
   type MockHubCandidate,
 } from "@/mocks/vm";
@@ -927,6 +947,26 @@ function VmCard({
           onChanged={onChanged}
         />
 
+        <SnapshotsSection
+          vm={view}
+          mock={mock}
+          canManage={canManage}
+          onChanged={onChanged}
+        />
+
+        {canManage && (
+          <OsOpsSection vm={view} mock={mock} onChanged={onChanged} />
+        )}
+
+        {canManage && (
+          <CredStrategyCard
+            vm={view}
+            mock={mock}
+            onApplied={(next) => setLocal(next)}
+            onChanged={onChanged}
+          />
+        )}
+
         {canManage && (
           <div className="card" style={{ border: "1px solid var(--danger, #b91c1c)" }}>
             <div className="text-sm font-semibold flex items-center gap-2 text-danger mb-2">
@@ -1465,6 +1505,454 @@ function DisksSection({
   );
 }
 
+// ── snapshots ─────────────────────────────────────────────────────────────────
+
+function SnapshotsSection({
+  vm,
+  mock,
+  canManage,
+  onChanged,
+}: {
+  vm: Vm;
+  mock: boolean;
+  canManage: boolean;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const snapOutcome = useTaskOutcome();
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const snapsQ = useQuery<VmSnapshot[]>(
+    async () => {
+      if (mock) return MOCK_VM_SNAPSHOTS[vm.id] ?? [];
+      const res = await listVmSnapshots(vm.id);
+      return res.items;
+    },
+    [vm.id, mock],
+    { keepPreviousDataOnError: true },
+  );
+
+  const [mockSnaps, setMockSnaps] = useState<VmSnapshot[] | null>(null);
+  useEffect(() => {
+    setMockSnaps(null);
+  }, [vm.id]);
+  const raw = mock ? (mockSnaps ?? snapsQ.data ?? []) : (snapsQ.data ?? []);
+  // Системные `<ver>_build` в UI не показываем (дизайн §6, NQ4).
+  const snapshots = raw.filter((s) => !s.is_system);
+
+  async function handleCreate(body: VmSnapshotCreateRequest) {
+    snapOutcome.reset();
+    try {
+      const res = mock ? fakeDispatch() : await createVmSnapshot(vm.id, body);
+      snapOutcome.track(`snapshot create · ${body.name}`, res.task_id, res.status);
+      toast.success(`Создание снимка ${body.name} — задача поставлена`);
+      setCreateOpen(false);
+      if (mock) {
+        const next: VmSnapshot = {
+          id: `snap-mock-${Date.now()}`,
+          vm_id: vm.id,
+          name: body.name,
+          description: body.description ?? null,
+          parent_snapshot_id: null,
+          kind: body.kind,
+          is_system: false,
+          state: "creating",
+          size_bytes: null,
+          is_current: false,
+          created_at: new Date().toISOString(),
+          created_by: null,
+        };
+        setMockSnaps([...raw, next]);
+      } else {
+        snapsQ.refetch();
+        onChanged();
+      }
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Создание снимка не удалось"));
+    }
+  }
+
+  async function handleRevert(snap: VmSnapshot) {
+    const ok = await confirm({
+      title: "Откатить на снимок",
+      message: `Откатить ВМ ${vm.name} на снимок «${snap.name}»? Текущее состояние диска (и памяти для full) будет заменено на снимковое.`,
+      confirmLabel: "Откатить",
+      danger: true,
+    });
+    if (!ok) return;
+    snapOutcome.reset();
+    try {
+      const res = mock ? fakeDispatch() : await revertVmSnapshot(vm.id, snap.id);
+      snapOutcome.track(`snapshot revert · ${snap.name}`, res.task_id, res.status);
+      toast.success(`Откат на «${snap.name}» — задача поставлена`);
+      if (mock)
+        setMockSnaps(
+          raw.map((s) => ({ ...s, is_current: s.id === snap.id })),
+        );
+      else {
+        snapsQ.refetch();
+        onChanged();
+      }
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Откат на снимок не удался"));
+    }
+  }
+
+  async function handleDelete(snap: VmSnapshot) {
+    const ok = await confirm({
+      title: "Удалить снимок",
+      message: `Удалить снимок «${snap.name}»? Действие необратимо.`,
+      confirmLabel: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
+    snapOutcome.reset();
+    try {
+      const res = mock ? fakeDispatch() : await deleteVmSnapshot(vm.id, snap.id);
+      snapOutcome.track(`snapshot delete · ${snap.name}`, res.task_id, res.status);
+      toast.success(`Удаление снимка «${snap.name}» — задача поставлена`);
+      if (mock) setMockSnaps(raw.filter((s) => s.id !== snap.id));
+      else {
+        snapsQ.refetch();
+        onChanged();
+      }
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Удаление снимка не удалось"));
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-base flex items-center gap-2">
+          <Camera className="w-4 h-4 text-accent" /> Снимки
+        </h3>
+        {canManage && (
+          <button
+            className="btn btn-sm btn-primary flex items-center gap-1"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="w-3.5 h-3.5" /> Создать снимок
+          </button>
+        )}
+      </div>
+
+      {snapsQ.loading ? (
+        <div className="text-xs text-dim">Загрузка…</div>
+      ) : snapsQ.error && snapshots.length === 0 ? (
+        <div className="alert alert-danger flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 mt-0.5" />
+          <div className="flex-1 text-xs">
+            <div>{apiErrMsg(snapsQ.error, "Список снимков не загрузился")}</div>
+            <button className="btn btn-ghost mt-2" onClick={() => snapsQ.refetch()}>
+              Повторить
+            </button>
+          </div>
+        </div>
+      ) : snapshots.length === 0 ? (
+        <div className="text-xs text-dim">Снимков нет.</div>
+      ) : (
+        <div className="surface-2 border border-token rounded overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[11px] uppercase text-dim border-b border-token">
+                <th className="text-left px-3 py-2 font-medium">Имя</th>
+                <th className="text-left px-3 py-2 font-medium">Описание</th>
+                <th className="text-left px-3 py-2 font-medium">Тип</th>
+                <th className="text-left px-3 py-2 font-medium">Создан</th>
+                <th className="text-left px-3 py-2 font-medium">Текущий</th>
+                {canManage && <th className="px-3 py-2" />}
+              </tr>
+            </thead>
+            <tbody>
+              {snapshots.map((s) => (
+                <tr key={s.id} className="border-b border-token last:border-b-0">
+                  <td className="px-3 py-1.5">
+                    {s.name}
+                    {s.state !== "ready" && (
+                      <span className="badge ml-2 text-[11px]">{s.state}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5 text-xs text-dim">
+                    {s.description ?? "—"}
+                  </td>
+                  <td className="px-3 py-1.5">
+                    <span className="badge">
+                      {s.kind === "full" ? "full" : "disk-only"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-1.5 text-xs mono text-dim">
+                    {formatSnapDate(s.created_at)}
+                  </td>
+                  <td className="px-3 py-1.5">
+                    {s.is_current ? (
+                      <span className="badge badge-ok">текущий</span>
+                    ) : (
+                      <span className="text-dim text-xs">—</span>
+                    )}
+                  </td>
+                  {canManage && (
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          className="btn btn-sm flex items-center gap-1"
+                          title="Откатить ВМ на этот снимок"
+                          disabled={s.is_current}
+                          onClick={() => handleRevert(s)}
+                        >
+                          <Undo2 className="w-3.5 h-3.5" /> Откат
+                        </button>
+                        <button
+                          className="btn btn-sm btn-danger flex items-center gap-1"
+                          title="Удалить снимок"
+                          onClick={() => handleDelete(s)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {snapOutcome.tracked && (
+        <TaskOutcomeBanner
+          outcome={snapOutcome.tracked}
+          className="mt-3"
+          successText="Операция со снимком применена."
+          onCancelled={snapOutcome.reset}
+        />
+      )}
+
+      {createOpen && (
+        <SnapshotCreateModal
+          onClose={() => setCreateOpen(false)}
+          onSubmit={handleCreate}
+        />
+      )}
+    </div>
+  );
+}
+
+function formatSnapDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("ru-RU", {
+    timeZone: "Europe/Moscow",
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
+// ── OS / креды операции (astra-update / allta-update / passwd) ──────────────────
+
+function OsOpsSection({
+  vm,
+  mock,
+  onChanged,
+}: {
+  vm: Vm;
+  mock: boolean;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const opsOutcome = useTaskOutcome();
+  const [astraOpen, setAstraOpen] = useState(false);
+  const [passwdOpen, setPasswdOpen] = useState(false);
+
+  async function handleAstra(_osVersionId: string, label: string) {
+    opsOutcome.reset();
+    try {
+      const res = mock
+        ? fakeDispatch()
+        : await astraUpdateVm(vm.id, { rc: label });
+      opsOutcome.track(`astra-update · ${label}`, res.task_id, res.status);
+      toast.success(`Обновление ОС до ${label} — задача поставлена`);
+      setAstraOpen(false);
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Обновление ОС не удалось"));
+    }
+  }
+
+  async function handleAllta() {
+    const ok = await confirm({
+      title: "Обновить allta",
+      message: `Обновить guest-allta на ВМ ${vm.name}? Пройдёт по всем не-«_build» снимкам, переустановит .deb и переснимет их.`,
+      confirmLabel: "Обновить",
+    });
+    if (!ok) return;
+    opsOutcome.reset();
+    try {
+      const res = mock ? fakeDispatch() : await alltaUpdateVm(vm.id);
+      opsOutcome.track(`allta-update · ${vm.name}`, res.task_id, res.status);
+      toast.success(`Обновление allta ${vm.name} — задача поставлена`);
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Обновление allta не удалось"));
+    }
+  }
+
+  async function handlePasswd(password: string) {
+    opsOutcome.reset();
+    try {
+      const res = mock ? fakeDispatch() : await vmPasswd(vm.id, { password });
+      opsOutcome.track(`passwd · ${vm.name}`, res.task_id, res.status);
+      toast.success(`Смена пароля на ${vm.name} — задача поставлена`);
+      setPasswdOpen(false);
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Смена пароля не удалась"));
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <ArrowUpCircle className="w-4 h-4 text-accent" /> ОС и учётные данные
+      </h3>
+      <div className="text-xs text-dim mb-3">
+        Обновление версии ОС переснимает снимок под выбранную версию; обновление
+        allta и смена пароля идут по не-«_build» снимкам согласно режиму кред ВМ.
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        <button
+          className="btn flex items-center gap-1"
+          onClick={() => setAstraOpen(true)}
+        >
+          <ArrowUpCircle className="w-4 h-4" /> Обновить ОС (astra-update)
+        </button>
+        <button
+          className="btn flex items-center gap-1"
+          onClick={handleAllta}
+        >
+          <Boxes className="w-4 h-4" /> Обновить allta
+        </button>
+        <button
+          className="btn flex items-center gap-1"
+          onClick={() => setPasswdOpen(true)}
+        >
+          <KeyRound className="w-4 h-4" /> Обновить пароль
+        </button>
+      </div>
+
+      {opsOutcome.tracked && (
+        <TaskOutcomeBanner
+          outcome={opsOutcome.tracked}
+          className="mt-3"
+          successText="Операция применена."
+          onCancelled={opsOutcome.reset}
+        />
+      )}
+
+      {astraOpen && (
+        <AstraUpdateModal
+          vm={vm}
+          mock={mock}
+          onClose={() => setAstraOpen(false)}
+          onSubmit={handleAstra}
+        />
+      )}
+      {passwdOpen && (
+        <PasswdModal
+          vm={vm}
+          onClose={() => setPasswdOpen(false)}
+          onSubmit={handlePasswd}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── режим кред ──────────────────────────────────────────────────────────────────
+
+function CredStrategyCard({
+  vm,
+  mock,
+  onApplied,
+  onChanged,
+}: {
+  vm: Vm;
+  mock: boolean;
+  onApplied: (next: Vm) => void;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const [strategy, setStrategy] = useState<VmCredStrategy>(vm.cred_strategy);
+  const [pending, setPending] = useState(false);
+  useEffect(() => {
+    setStrategy(vm.cred_strategy);
+  }, [vm.id, vm.cred_strategy]);
+
+  const changed = strategy !== vm.cred_strategy;
+
+  async function apply() {
+    if (!changed || pending) return;
+    setPending(true);
+    try {
+      const next = mock
+        ? { ...vm, cred_strategy: strategy }
+        : await setVmCredStrategy(vm.id, strategy);
+      onApplied(next as Vm);
+      onChanged();
+      toast.success(
+        `Режим кред ВМ ${vm.name} → ${credStrategyLabel(strategy)}`,
+      );
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось сменить режим кред"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <KeyRound className="w-4 h-4 text-accent" /> Режим управляющих кред
+      </h3>
+      <div className="text-xs text-dim mb-3">
+        Наследуется от отдела; здесь — override на конкретную ВМ.{" "}
+        <b>per_snapshot</b> — каждый снимок хранит свои креды (дёшево, дефолт);{" "}
+        <b>reroll</b> — единый пароль во всех снимках (перекатывает снимки при
+        смене).
+      </div>
+      <div className="flex items-end gap-2 flex-wrap">
+        <label className="flex flex-col gap-1 text-sm flex-1 min-w-[220px]">
+          <span className="text-dim text-xs">Режим</span>
+          <select
+            className="input"
+            value={strategy}
+            onChange={(e) => setStrategy(e.target.value as VmCredStrategy)}
+            disabled={pending}
+          >
+            <option value="per_snapshot">
+              per_snapshot — креды на снимок
+            </option>
+            <option value="reroll">reroll — единый пароль (паритет)</option>
+          </select>
+        </label>
+        <button
+          className="btn btn-primary"
+          onClick={apply}
+          disabled={!changed || pending}
+        >
+          {pending ? "Применяем…" : "Применить"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function credStrategyLabel(s: VmCredStrategy): string {
+  return s === "reroll" ? "reroll" : "per_snapshot";
+}
+
 // ── modals ────────────────────────────────────────────────────────────────────
 
 function Modal({
@@ -1736,6 +2224,268 @@ function DiskResizeModal({
             disabled={!valid || submitting}
           >
             {submitting ? "Применяем…" : "Увеличить"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function SnapshotCreateModal({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void;
+  onSubmit: (body: VmSnapshotCreateRequest) => void | Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [kind, setKind] = useState<VmSnapshotKind>("disk_only");
+  const [submitting, setSubmitting] = useState(false);
+
+  const nameError =
+    name.trim() && !/^[a-zA-Z0-9._-]+$/.test(name.trim())
+      ? "Имя: латиница, цифры, точка, дефис, подчёркивание"
+      : null;
+  // `_build`-суффикс зарезервирован под системные снимки — не даём его занять.
+  const reservedError = /_build$/.test(name.trim())
+    ? "Суффикс _build зарезервирован под системные снимки"
+    : null;
+  const valid = !!name.trim() && !nameError && !reservedError;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valid || submitting) return;
+    const body: VmSnapshotCreateRequest = {
+      name: name.trim(),
+      description: description.trim() ? description.trim() : null,
+      kind,
+    };
+    setSubmitting(true);
+    try {
+      await Promise.resolve(onSubmit(body));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal title="Новый снимок" onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="modal-body flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Имя *</span>
+            <input
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="pre-regress"
+              autoFocus
+            />
+            {(nameError || reservedError) && (
+              <span className="text-[11px] text-danger">
+                {nameError ?? reservedError}
+              </span>
+            )}
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Описание</span>
+            <input
+              className="input"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="опционально"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Тип</span>
+            <select
+              className="input"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as VmSnapshotKind)}
+            >
+              <option value="disk_only">disk-only (только диск)</option>
+              <option value="full">full (диск + память/состояние)</option>
+            </select>
+          </label>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={!valid || submitting}
+          >
+            {submitting ? "Создаём…" : "Создать снимок"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function AstraUpdateModal({
+  vm,
+  mock,
+  onClose,
+  onSubmit,
+}: {
+  vm: Vm;
+  mock: boolean;
+  onClose: () => void;
+  onSubmit: (osVersionId: string, label: string) => void | Promise<void>;
+}) {
+  const versionsQ = useQuery<{ id: string; name: string }[]>(
+    async () => {
+      if (mock) return MOCK_VM_OS_VERSIONS;
+      const res = await listOsVersions({ limit: 200 });
+      return res.items.map((v: OsVersion) => ({ id: v.id, name: v.name }));
+    },
+    [mock],
+    { keepPreviousDataOnError: true },
+  );
+  const versions = versionsQ.data ?? [];
+  const [selected, setSelected] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const selectedLabel = versions.find((v) => v.id === selected)?.name ?? selected;
+  const valid = !!selected;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valid || submitting) return;
+    setSubmitting(true);
+    try {
+      await Promise.resolve(onSubmit(selected, selectedLabel));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal title={`Обновление ОС · ${vm.name}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="modal-body flex flex-col gap-3">
+          <div className="text-xs text-dim">
+            Выберите целевую версию ОС (RC). Worker откатится на нужный{" "}
+            <span className="mono">_build</span>-снимок, перезапишет sources.list
+            репозиториями версии, выполнит{" "}
+            <span className="mono">astra-update -A -T -r</span> и переснимет
+            снимок под новую версию.
+          </div>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Версия ОС *</span>
+            {versionsQ.loading ? (
+              <div className="text-xs text-dim">Загрузка каталога…</div>
+            ) : (
+              <select
+                className="input"
+                value={selected}
+                onChange={(e) => setSelected(e.target.value)}
+                autoFocus
+              >
+                <option value="">— выберите версию —</option>
+                {versions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </label>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={!valid || submitting}
+          >
+            {submitting ? "Запускаем…" : "Обновить ОС"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function PasswdModal({
+  vm,
+  onClose,
+  onSubmit,
+}: {
+  vm: Vm;
+  onClose: () => void;
+  onSubmit: (password: string) => void | Promise<void>;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const tooShort = password.length > 0 && password.length < 8;
+  const mismatch = confirmPw.length > 0 && confirmPw !== password;
+  const valid = password.length >= 8 && confirmPw === password;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valid || submitting) return;
+    setSubmitting(true);
+    try {
+      await Promise.resolve(onSubmit(password));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal title={`Смена пароля · ${vm.name}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="modal-body flex flex-col gap-3">
+          <div className="text-xs text-dim">
+            Новый пароль учётки <span className="mono">u</span>. По режиму{" "}
+            <b>{vm.cred_strategy}</b> worker либо сохранит его в снимковых кредах,
+            либо перекатает по всем не-«_build» снимкам.
+          </div>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Новый пароль *</span>
+            <input
+              className="input"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoFocus
+            />
+            {tooShort && (
+              <span className="text-[11px] text-danger">Минимум 8 символов</span>
+            )}
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Повтор пароля *</span>
+            <input
+              className="input"
+              type="password"
+              value={confirmPw}
+              onChange={(e) => setConfirmPw(e.target.value)}
+            />
+            {mismatch && (
+              <span className="text-[11px] text-danger">Пароли не совпадают</span>
+            )}
+          </label>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={!valid || submitting}
+          >
+            {submitting ? "Применяем…" : "Сменить пароль"}
           </button>
         </div>
       </form>

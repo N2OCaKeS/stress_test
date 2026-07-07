@@ -24,6 +24,16 @@
  *   GET    /vm-images
  *   POST   /vm-images/refresh
  *
+ * Волна 3 добавляет снимки, обновление ОС/allta/пароля и режим кред:
+ *   GET    /vms/{id}/snapshots
+ *   POST   /vms/{id}/snapshots               (202 task)
+ *   POST   /vms/{id}/snapshots/{snap}/revert (202 task)
+ *   DELETE /vms/{id}/snapshots/{snap}        (202 task)
+ *   POST   /vms/{id}/astra-update            (202 task)
+ *   POST   /vms/{id}/allta-update            (202 task)
+ *   POST   /vms/{id}/passwd                  (202 task)
+ *   PATCH  /vms/{id}/cred-strategy           (режим кред, синхронно)
+ *
  * Backend домена `vm` в разработке (волна 1). Пока сервис не отдаёт эти
  * маршруты, страница `/vm` работает на mock-данных (`@/mocks/vm`) в
  * mock-режиме; типы полей сверяются с доменным агентом на интеграции.
@@ -234,6 +244,78 @@ export interface VmImageListResponse {
   items: VmImage[];
 }
 
+/**
+ * Тип снимка (`vm_snapshots.kind`):
+ *  - `disk_only` — только диск (`virsh snapshot-create-as --disk-only`);
+ *  - `full` — диск + память/состояние домена.
+ */
+export type VmSnapshotKind = "disk_only" | "full" | (string & {});
+
+/**
+ * Состояние снимка (`vm_snapshots.state`). `ready` — готов; промежуточные —
+ * во время worker-операции; `error` — операция упала. Хвост строкой — backend
+ * может расширить набор.
+ */
+export type VmSnapshotState =
+  | "creating"
+  | "ready"
+  | "deleting"
+  | "reverting"
+  | "error"
+  | (string & {});
+
+/**
+ * Снимок ВМ (`vm_snapshots`). Системные golden-снимки (`is_system`, имена
+ * `<ver>_build`) в UI скрыты — их не показываем и не даём трогать (дизайн §6,
+ * NQ4). Цепочка родителей — `parent_snapshot_id`; текущий активный — `is_current`.
+ */
+export interface VmSnapshot {
+  id: string;
+  vm_id: string;
+  name: string;
+  description: string | null;
+  parent_snapshot_id: string | null;
+  kind: VmSnapshotKind;
+  is_system: boolean;
+  state: VmSnapshotState;
+  /** Размер снимка в байтах (если известен). */
+  size_bytes: number | null;
+  is_current: boolean;
+  created_at: Iso8601;
+  created_by?: string | null;
+}
+
+/** Envelope GET /vms/{id}/snapshots. */
+export interface VmSnapshotListResponse {
+  items: VmSnapshot[];
+}
+
+/** Тело POST /vms/{id}/snapshots — создать снимок. 202-задача. */
+export interface VmSnapshotCreateRequest {
+  name: string;
+  description?: string | null;
+  kind: VmSnapshotKind;
+}
+
+/**
+ * Тело POST /vms/{id}/astra-update — обновление ОС до выбранной версии
+ * каталога. Worker резолвит rc/репозитории по `os_version_id`, гоняет
+ * `astra-update -A -T -r` и переснимает снимок под новую версию (дизайн §7,
+ * референс §2.3).
+ */
+export interface VmAstraUpdateRequest {
+  rc: string;
+}
+
+/**
+ * Тело POST /vms/{id}/passwd — смена пароля учётки `u`. По режиму кред ВМ
+ * (`per_snapshot`/`reroll`) worker либо хранит креды на снимок, либо
+ * перекатывает пароль по всем не-`_build` снимкам (дизайн §6).
+ */
+export interface VmPasswdRequest {
+  password: string;
+}
+
 /** Параметры фильтрации GET /vms. */
 export interface ListVmsQuery {
   hub_server_id?: string;
@@ -398,4 +480,96 @@ export function listVmImages(): Promise<VmImageListResponse> {
  */
 export function refreshVmImages(): Promise<VmImageListResponse> {
   return apiPost<VmImageListResponse>("/server/v1/vm-images/refresh");
+}
+
+// ── снимки ────────────────────────────────────────────────────────────────────
+
+/**
+ * `GET /api/server/v1/vms/{id}/snapshots` — снимки ВМ. Backend отдаёт и
+ * системные `_build`, но UI их прячет (дизайн §6, NQ4).
+ */
+export function listVmSnapshots(vmId: string): Promise<VmSnapshotListResponse> {
+  return apiGet<VmSnapshotListResponse>(`/server/v1/vms/${vmId}/snapshots`);
+}
+
+/** `POST /api/server/v1/vms/{id}/snapshots` — создать снимок (202). */
+export function createVmSnapshot(
+  vmId: string,
+  body: VmSnapshotCreateRequest,
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(
+    `/server/v1/vms/${vmId}/snapshots`,
+    body,
+  );
+}
+
+/** `POST /api/server/v1/vms/{id}/snapshots/{snap}/revert` — откат на снимок (202). */
+export function revertVmSnapshot(
+  vmId: string,
+  snapshotId: string,
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(
+    `/server/v1/vms/${vmId}/snapshots/${snapshotId}/revert`,
+  );
+}
+
+/** `DELETE /api/server/v1/vms/{id}/snapshots/{snap}` — удалить снимок (202). */
+export function deleteVmSnapshot(
+  vmId: string,
+  snapshotId: string,
+): Promise<TaskDispatchResponse> {
+  return apiDelete<TaskDispatchResponse>(
+    `/server/v1/vms/${vmId}/snapshots/${snapshotId}`,
+  );
+}
+
+// ── обновление ОС / allta / пароль ─────────────────────────────────────────────
+
+/**
+ * `POST /api/server/v1/vms/{id}/astra-update` — обновить ОС ВМ до выбранной
+ * версии каталога (202). Worker переснимает снимок под новую версию.
+ */
+export function astraUpdateVm(
+  vmId: string,
+  body: VmAstraUpdateRequest,
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(
+    `/server/v1/vms/${vmId}/astra-update`,
+    body,
+  );
+}
+
+/**
+ * `POST /api/server/v1/vms/{id}/allta-update` — обновить guest-allta `.deb`
+ * по всем не-`_build` снимкам ВМ (202).
+ */
+export function alltaUpdateVm(vmId: string): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(`/server/v1/vms/${vmId}/allta-update`);
+}
+
+/**
+ * `POST /api/server/v1/vms/{id}/passwd` — сменить пароль учётки `u` (202).
+ * Поведение зависит от режима кред ВМ (`per_snapshot`/`reroll`).
+ */
+export function vmPasswd(
+  vmId: string,
+  body: VmPasswdRequest,
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(`/server/v1/vms/${vmId}/passwd`, body);
+}
+
+// ── режим кред ──────────────────────────────────────────────────────────────────
+
+/**
+ * `PATCH /api/server/v1/vms/{id}/cred-strategy` — сменить режим управляющих
+ * кред ВМ (`per_snapshot`/`reroll`). Это метаданные (не libvirt-операция),
+ * поэтому синхронный ответ с обновлённой карточкой ВМ.
+ */
+export function setVmCredStrategy(
+  vmId: string,
+  strategy: VmCredStrategy,
+): Promise<Vm> {
+  return apiPatch<Vm>(`/server/v1/vms/${vmId}/cred-strategy`, {
+    cred_strategy: strategy,
+  });
 }

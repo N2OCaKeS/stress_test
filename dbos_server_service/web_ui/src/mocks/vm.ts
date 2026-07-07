@@ -7,7 +7,13 @@
  * `@/api/server/vms`.
  */
 
-import type { Vm, VmDisk, VmHub, VmImage } from "@/api/server/vms";
+import type {
+  Vm,
+  VmDisk,
+  VmHub,
+  VmImage,
+  VmSnapshot,
+} from "@/api/server/vms";
 
 /**
  * Кандидаты в VMS-hub — серверы, ещё НЕ подготовленные под виртуализацию.
@@ -295,6 +301,83 @@ export const MOCK_VM_DISKS: Record<string, VmDisk[]> = {
       fs: "xfs",
       mount: "/scratch",
       state: "ready",
+    },
+  ],
+};
+
+/**
+ * OS-версии каталога — mock-фолбэк для дропдауна в модалке astra-update ВМ
+ * (живой режим ходит в `GET /os-versions`).
+ */
+export const MOCK_VM_OS_VERSIONS: { id: string; name: string }[] = [
+  { id: "osv_1_7_5_9", name: "1.7.5.9" },
+  { id: "osv_1_8_1_6", name: "1.8.1.6" },
+];
+
+/**
+ * Снимки ВМ (`vm_snapshots`), keyed по `vm.id` — mock-фолбэк раздела «Снимки»
+ * в карточке ВМ. Системные `<ver>_build` (`is_system`) в UI скрыты — держим их
+ * в фикстуре, чтобы проверять фильтрацию.
+ */
+export const MOCK_VM_SNAPSHOTS: Record<string, VmSnapshot[]> = {
+  "vm-101": [
+    {
+      id: "snap-101-18build",
+      vm_id: "vm-101",
+      name: "1.8.1.6_build",
+      description: "golden build 1.8.1.6",
+      parent_snapshot_id: null,
+      kind: "disk_only",
+      is_system: true,
+      state: "ready",
+      size_bytes: 2_400_000_000,
+      is_current: false,
+      created_at: NOW,
+      created_by: "system",
+    },
+    {
+      id: "snap-101-18",
+      vm_id: "vm-101",
+      name: "1.8.1.6",
+      description: "deliverable 1.8.1.6",
+      parent_snapshot_id: "snap-101-18build",
+      kind: "disk_only",
+      is_system: false,
+      state: "ready",
+      size_bytes: 2_600_000_000,
+      is_current: true,
+      created_at: NOW,
+      created_by: "alice",
+    },
+    {
+      id: "snap-101-pre-regress",
+      vm_id: "vm-101",
+      name: "pre-regress",
+      description: "перед regress-циклом",
+      parent_snapshot_id: "snap-101-18",
+      kind: "full",
+      is_system: false,
+      state: "ready",
+      size_bytes: 3_100_000_000,
+      is_current: false,
+      created_at: NOW,
+      created_by: "alice",
+    },
+  ],
+  "vm-201": [
+    {
+      id: "snap-201-build",
+      vm_id: "vm-201",
+      name: "1.8.1.6_build",
+      description: null,
+      parent_snapshot_id: null,
+      kind: "disk_only",
+      is_system: true,
+      state: "ready",
+      size_bytes: 2_400_000_000,
+      is_current: true,
+      created_at: NOW,
+      created_by: "system",
     },
   ],
 };

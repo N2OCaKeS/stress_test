@@ -9,18 +9,26 @@ vi.mock("@/api/client", () => ({
 
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
 import {
+  alltaUpdateVm,
+  astraUpdateVm,
   createVm,
   createVmDisk,
+  createVmSnapshot,
   deleteVm,
   deleteVmDisk,
+  deleteVmSnapshot,
   getVmByNumber,
   getServerByNumber,
   listVmDisks,
   listVmImages,
+  listVmSnapshots,
   prepareVmsHub,
   refreshVmImages,
   resizeVmDisk,
+  revertVmSnapshot,
+  setVmCredStrategy,
   updateVm,
+  vmPasswd,
   vmPower,
 } from "@/api/server/vms";
 
@@ -115,5 +123,65 @@ describe("vms api client", () => {
     expect(apiGet).toHaveBeenCalledWith("/server/v1/vm-images");
     await refreshVmImages();
     expect(apiPost).toHaveBeenCalledWith("/server/v1/vm-images/refresh");
+  });
+
+  it("listVmSnapshots GET'ит /vms/{id}/snapshots", async () => {
+    await listVmSnapshots("vm-101");
+    expect(apiGet).toHaveBeenCalledWith("/server/v1/vms/vm-101/snapshots");
+  });
+
+  it("createVmSnapshot POST'ит /vms/{id}/snapshots с телом", async () => {
+    const body = {
+      name: "pre-regress",
+      description: "перед прогоном",
+      kind: "disk_only" as const,
+    };
+    const res = await createVmSnapshot("vm-101", body);
+    expect(apiPost).toHaveBeenCalledWith(
+      "/server/v1/vms/vm-101/snapshots",
+      body,
+    );
+    expect(res).toEqual({ task_id: "task-1", status: "queued" });
+  });
+
+  it("revertVmSnapshot POST'ит /vms/{id}/snapshots/{snap}/revert", async () => {
+    await revertVmSnapshot("vm-101", "snap-9");
+    expect(apiPost).toHaveBeenCalledWith(
+      "/server/v1/vms/vm-101/snapshots/snap-9/revert",
+    );
+  });
+
+  it("deleteVmSnapshot DELETE'ит /vms/{id}/snapshots/{snap}", async () => {
+    await deleteVmSnapshot("vm-101", "snap-9");
+    expect(apiDelete).toHaveBeenCalledWith(
+      "/server/v1/vms/vm-101/snapshots/snap-9",
+    );
+  });
+
+  it("astraUpdateVm POST'ит /vms/{id}/astra-update с rc", async () => {
+    await astraUpdateVm("vm-101", { rc: "1.8.1.6" });
+    expect(apiPost).toHaveBeenCalledWith("/server/v1/vms/vm-101/astra-update", {
+      rc: "1.8.1.6",
+    });
+  });
+
+  it("alltaUpdateVm POST'ит /vms/{id}/allta-update", async () => {
+    await alltaUpdateVm("vm-101");
+    expect(apiPost).toHaveBeenCalledWith("/server/v1/vms/vm-101/allta-update");
+  });
+
+  it("vmPasswd POST'ит /vms/{id}/passwd с паролем", async () => {
+    await vmPasswd("vm-101", { password: "s3cret-pass" });
+    expect(apiPost).toHaveBeenCalledWith("/server/v1/vms/vm-101/passwd", {
+      password: "s3cret-pass",
+    });
+  });
+
+  it("setVmCredStrategy PATCH'ит /vms/{id}/cred-strategy", async () => {
+    await setVmCredStrategy("vm-101", "reroll");
+    expect(apiPatch).toHaveBeenCalledWith(
+      "/server/v1/vms/vm-101/cred-strategy",
+      { cred_strategy: "reroll" },
+    );
   });
 });

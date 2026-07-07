@@ -13,21 +13,29 @@ import {
   astraUpdateVm,
   createVm,
   createVmDisk,
+  createVmIpPool,
   createVmSnapshot,
   deleteVm,
   deleteVmDisk,
+  deleteVmIpPool,
   deleteVmSnapshot,
+  getAvailableIps,
   getVmByNumber,
   getServerByNumber,
   listVmDisks,
   listVmImages,
+  listVmIpPools,
   listVmSnapshots,
+  prepareVm,
   prepareVmsHub,
   refreshVmImages,
   resizeVmDisk,
   revertVmSnapshot,
+  rotateVmMgmtCreds,
   setVmCredStrategy,
+  setVmNetwork,
   updateVm,
+  updateVmIpPool,
   vmPasswd,
   vmPower,
 } from "@/api/server/vms";
@@ -183,5 +191,87 @@ describe("vms api client", () => {
       "/server/v1/vms/vm-101/cred-strategy",
       { cred_strategy: "reroll" },
     );
+  });
+
+  it("prepareVm POST'ит /vms/{id}/prepare", async () => {
+    const res = await prepareVm("vm-103");
+    expect(apiPost).toHaveBeenCalledWith("/server/v1/vms/vm-103/prepare");
+    expect(res).toEqual({ task_id: "task-1", status: "queued" });
+  });
+
+  it("rotateVmMgmtCreds POST'ит /vms/{id}/mgmt-creds/rotate", async () => {
+    await rotateVmMgmtCreds("vm-101");
+    expect(apiPost).toHaveBeenCalledWith(
+      "/server/v1/vms/vm-101/mgmt-creds/rotate",
+    );
+  });
+
+  it("setVmNetwork POST'ит /vms/{id}/network с телом", async () => {
+    const body = {
+      network_mode: "bridge" as const,
+      ip_address: "10.177.103.55",
+      pool_id: "pool-core",
+    };
+    await setVmNetwork("vm-101", body);
+    expect(apiPost).toHaveBeenCalledWith("/server/v1/vms/vm-101/network", body);
+  });
+
+  it("getAvailableIps GET'ит /vms/available-ips с pool_id", async () => {
+    await getAvailableIps("pool-core");
+    expect(apiGet).toHaveBeenCalledWith("/server/v1/vms/available-ips", {
+      query: { pool_id: "pool-core" },
+    });
+  });
+
+  it("listVmIpPools GET'ит /vm-ip-pools с фильтрами", async () => {
+    await listVmIpPools({ department_id: "core" });
+    expect(apiGet).toHaveBeenCalledWith("/server/v1/vm-ip-pools", {
+      query: { department_id: "core", server_id: undefined },
+    });
+  });
+
+  it("createVmIpPool POST'ит /vm-ip-pools с телом", async () => {
+    const body = {
+      name: "core-lan",
+      cidr: "10.177.103.0/24",
+      gateway: "10.177.103.1",
+      netmask: "255.255.255.0",
+      dns: ["10.177.100.10"],
+      range_start: "10.177.103.50",
+      range_end: "10.177.103.99",
+      department_id: "core",
+      server_id: null,
+    };
+    await createVmIpPool(body);
+    expect(apiPost).toHaveBeenCalledWith("/server/v1/vm-ip-pools", body);
+  });
+
+  it("updateVmIpPool PATCH'ит /vm-ip-pools/{id}", async () => {
+    await updateVmIpPool("pool-core", { range_end: "10.177.103.120" });
+    expect(apiPatch).toHaveBeenCalledWith("/server/v1/vm-ip-pools/pool-core", {
+      range_end: "10.177.103.120",
+    });
+  });
+
+  it("deleteVmIpPool DELETE'ит /vm-ip-pools/{id}", async () => {
+    await deleteVmIpPool("pool-core");
+    expect(apiDelete).toHaveBeenCalledWith("/server/v1/vm-ip-pools/pool-core");
+  });
+
+  it("createVm с bridge несёт pool_id и ip_address", async () => {
+    const body = {
+      hub_server_id: "srv-07",
+      name: "alse",
+      cpu: 2,
+      ram_mb: 4096,
+      disk_gb: 40,
+      box: "vm_station",
+      network_mode: "bridge" as const,
+      ip_address: "10.177.103.55",
+      pool_id: "pool-core",
+      number: null,
+    };
+    await createVm(body);
+    expect(apiPost).toHaveBeenCalledWith("/server/v1/vms", body);
   });
 });

@@ -167,6 +167,90 @@ describe("Vm zone (mock mode)", () => {
     ).toBeInTheDocument();
   });
 
+  it("подготовленная ВМ показывает mgmt-учётку и кнопку ротации кред", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    expect(
+      await screen.findByRole("heading", {
+        name: /Подготовка и управляющие креды/,
+      }),
+    ).toBeInTheDocument();
+    // mgmt-учётка из фикстуры и кнопка ротации.
+    expect(await screen.findByText("dbosmgr")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Ротировать креды/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("неподготовленная ВМ показывает кнопку «Подготовить»", async () => {
+    // vm-103 в фикстуре is_managed=false.
+    renderVm("/vm?hub=srv-07&id=vm-103");
+    expect(
+      await screen.findByRole("button", { name: /Подготовить/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("карточка ВМ несёт раздел «Сеть» и открывает модалку смены сети", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    expect(await screen.findByRole("heading", { name: /^Сеть$/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Изменить сеть/ }));
+    expect(await screen.findByText(/Сеть ВМ/)).toBeInTheDocument();
+    // bridge по умолчанию — виден селектор пула IPAM.
+    expect(screen.getByText(/Пул IPAM/)).toBeInTheDocument();
+  });
+
+  it("открывает раздел IP-пулов и рендерит список из фикстур", async () => {
+    renderVm("/vm");
+    fireEvent.click(await screen.findByRole("button", { name: /IP-пулы \(IPAM\)/ }));
+    expect(
+      await screen.findByRole("heading", { name: /IP-пулы \(IPAM\)/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("core-lan")).toBeInTheDocument();
+    expect(screen.getByText("dtkk-lan")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Создать пул/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("открывает модалку создания IP-пула и валидирует поля", async () => {
+    renderVm("/vm?zone=pools");
+    const createBtn = await screen.findByRole("button", { name: /Создать пул/ });
+    fireEvent.click(createBtn);
+    expect(await screen.findByText("Новый IP-пул")).toBeInTheDocument();
+    // После открытия модалки «Создать пул» есть и в шапке, и как сабмит формы —
+    // берём сабмит (последний).
+    const submitButtons = screen.getAllByRole("button", { name: /Создать пул/ });
+    const submit = submitButtons[submitButtons.length - 1];
+    // Пустая форма — сабмит disabled.
+    expect(submit).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText("core-lan"), {
+      target: { value: "new-pool" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("10.177.103.0/24"), {
+      target: { value: "10.10.0.0/24" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("10.177.103.1"), {
+      target: { value: "10.10.0.1" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("10.177.103.50"), {
+      target: { value: "10.10.0.50" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("10.177.103.99"), {
+      target: { value: "10.10.0.99" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("core"), {
+      target: { value: "core" },
+    });
+    expect(submit).not.toBeDisabled();
+  });
+
+  it("модалка создания ВМ показывает выбор пула IPAM для bridge", async () => {
+    renderVm("/vm?hub=srv-07&action=new");
+    // bridge по умолчанию → селектор пула и радио выбора IP.
+    expect(await screen.findByText(/Пул IPAM/)).toBeInTheDocument();
+    expect(screen.getByText(/свободный автоматически/)).toBeInTheDocument();
+    expect(screen.getByText(/выбрать из пула/)).toBeInTheDocument();
+  });
+
   it("блокирует зону для logging-роли (dave)", async () => {
     window.localStorage.setItem("dbos-persona", "dave");
     renderVm("/vm");

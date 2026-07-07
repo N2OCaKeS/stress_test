@@ -1,7 +1,7 @@
 /**
  * Mock-данные VM-зоны для dev/mock-режима (`VITE_USE_MOCK_AUTH=true`).
  *
- * Backend домена `vm` в разработке (волна 1). Пока сервис не отдаёт `/vms`
+ * Пока сервис не отдаёт `/vms`
  * и `/servers/{id}/prepare-vms-hub`, страница `/vm` и VM-группа в списке
  * серверов рендерятся на этих данных. Живой режим (`false`) ходит в
  * `@/api/server/vms`.
@@ -12,6 +12,7 @@ import type {
   VmDisk,
   VmHub,
   VmImage,
+  VmIpPool,
   VmSnapshot,
 } from "@/api/server/vms";
 
@@ -87,6 +88,10 @@ export const MOCK_VMS: Vm[] = [
     busy_since: null,
     ping_reachable: true,
     ping_latency_ms: 0.6,
+    is_managed: true,
+    mgmt_user: "dbosmgr",
+    mgmt_creds_rotated_at: "2026-07-05T11:20:00Z",
+    mgmt_creds_pending_apply: false,
     created_at: NOW,
     updated_at: NOW,
     created_by: "alice",
@@ -139,6 +144,10 @@ export const MOCK_VMS: Vm[] = [
     busy_since: null,
     ping_reachable: false,
     ping_latency_ms: null,
+    is_managed: false,
+    mgmt_user: null,
+    mgmt_creds_rotated_at: null,
+    mgmt_creds_pending_apply: false,
     created_at: NOW,
     updated_at: NOW,
     created_by: "alice",
@@ -380,4 +389,64 @@ export const MOCK_VM_SNAPSHOTS: Record<string, VmSnapshot[]> = {
       created_by: "system",
     },
   ],
+};
+
+/**
+ * IPAM-пулы (`vm_ip_pool`) — mock-фолбэк раздела «IP-пулы» (живой режим ходит в
+ * `GET /vm-ip-pools`). Пул `core` привязан к отделу; `core-hub07` — override на
+ * конкретный хаб.
+ */
+export const MOCK_VM_IP_POOLS: VmIpPool[] = [
+  {
+    id: "pool-core",
+    name: "core-lan",
+    cidr: "10.177.103.0/24",
+    gateway: "10.177.103.1",
+    netmask: "255.255.255.0",
+    dns: ["10.177.100.10", "8.8.8.8"],
+    range_start: "10.177.103.50",
+    range_end: "10.177.103.99",
+    department_id: "core",
+    server_id: null,
+    created_at: NOW,
+    updated_at: NOW,
+  },
+  {
+    id: "pool-core-hub07",
+    name: "core-hub07-only",
+    cidr: "10.177.103.0/24",
+    gateway: "10.177.103.1",
+    netmask: "255.255.255.0",
+    dns: ["10.177.100.10"],
+    range_start: "10.177.103.150",
+    range_end: "10.177.103.180",
+    department_id: "core",
+    server_id: "srv-07",
+    created_at: NOW,
+    updated_at: NOW,
+  },
+  {
+    id: "pool-dtkk",
+    name: "dtkk-lan",
+    cidr: "10.177.101.0/24",
+    gateway: "10.177.101.1",
+    netmask: "255.255.255.0",
+    dns: ["10.177.100.10"],
+    range_start: "10.177.101.40",
+    range_end: "10.177.101.80",
+    department_id: "dtkk",
+    server_id: null,
+  },
+];
+
+/** Свободные адреса по пулу — mock для `GET /vms/available-ips`. */
+export const MOCK_AVAILABLE_IPS: Record<string, string[]> = {
+  "pool-core": [
+    "10.177.103.53",
+    "10.177.103.54",
+    "10.177.103.55",
+    "10.177.103.56",
+  ],
+  "pool-core-hub07": ["10.177.103.151", "10.177.103.152"],
+  "pool-dtkk": ["10.177.101.45", "10.177.101.46", "10.177.101.47"],
 };

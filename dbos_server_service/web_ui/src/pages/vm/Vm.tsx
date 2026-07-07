@@ -4,7 +4,7 @@
  * Раскладка как у /server: Shell + Aside (по-номеру lookup + список хабов +
  * кандидаты на prepare) + Workzone (список ВМ хаба или карточка ВМ).
  *
- * Волна 1 VM-менеджера: hub.prepare, список/создание/питание/бронь ВМ,
+ * Базовый функционал VM-менеджера: hub.prepare, список/создание/питание/бронь ВМ,
  * lookup по номеру, статус задач. Backend домена `vm` в разработке — в
  * mock-режиме данные берутся из `@/mocks/vm`, живой режим ходит в
  * `@/api/server/vms`. Тонкая матрица прав `vm.*` (дизайн §2) ещё не приходит в
@@ -24,6 +24,8 @@ import {
   KeyRound,
   Maximize2,
   MonitorPlay,
+  Network,
+  Pencil,
   Play,
   Plus,
   Power,
@@ -31,9 +33,11 @@ import {
   RotateCcw,
   Search,
   Server as ServerIcon,
+  ShieldCheck,
   Square,
   Trash2,
   Undo2,
+  Waypoints,
   Lock,
   Unlock,
 } from "lucide-react";
@@ -45,6 +49,7 @@ import { useQuery, useMockMode } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { useDeptLabel } from "@/lib/labels";
 import {
+  canManageVmNet,
   canManageVms,
   canPrepareVmsHub,
   hasVmZoneAccess,
@@ -59,24 +64,32 @@ import {
   astraUpdateVm,
   createVm,
   createVmDisk,
+  createVmIpPool,
   createVmSnapshot,
   deleteVm,
   deleteVmDisk,
+  deleteVmIpPool,
   deleteVmSnapshot,
+  getAvailableIps,
   getVmByNumber,
   getServerByNumber,
   listVmDisks,
   listVmImages,
+  listVmIpPools,
   listVmSnapshots,
   listVms,
+  prepareVm,
   prepareVmsHub,
   refreshVmImages,
   releaseVm,
   reserveVm,
   resizeVmDisk,
   revertVmSnapshot,
+  rotateVmMgmtCreds,
   setVmCredStrategy,
+  setVmNetwork,
   updateVm,
+  updateVmIpPool,
   vmPasswd,
   vmPower,
   type Vm,
@@ -86,7 +99,11 @@ import {
   type VmDiskCreateRequest,
   type VmHub,
   type VmImage,
+  type VmIpPool,
+  type VmIpPoolCreateRequest,
+  type VmIpPoolUpdateRequest,
   type VmNetworkMode,
+  type VmNetworkRequest,
   type VmPowerAction,
   type VmSnapshot,
   type VmSnapshotCreateRequest,
@@ -95,10 +112,12 @@ import {
 } from "@/api/server/vms";
 import type { OsVersion, TaskDispatchResponse } from "@/api/server/types";
 import {
+  MOCK_AVAILABLE_IPS,
   MOCK_HUB_CANDIDATES,
   MOCK_VM_DISKS,
   MOCK_VM_HUBS,
   MOCK_VM_IMAGES,
+  MOCK_VM_IP_POOLS,
   MOCK_VM_OS_VERSIONS,
   MOCK_VM_SNAPSHOTS,
   MOCK_VMS,
@@ -130,10 +149,12 @@ export function Vm() {
   const zoneBlocked = !hasVmZoneAccess(persona);
   const canManage = canManageVms(persona);
   const canPrepare = canPrepareVmsHub(persona);
+  const canNet = canManageVmNet(persona);
 
   const selectedHubId = params.get("hub");
   const selectedVmId = params.get("id");
   const action = params.get("action"); // "new" | null
+  const zone = params.get("zone"); // "pools" | null
 
   // Хабы: derived из серверов с virtualization=true (+ счётчик ВМ). В
   // mock-режиме — фикстуры. Backend флага ещё не отдаёт (домен vm в работе).
@@ -231,6 +252,15 @@ export function Vm() {
     const next = new URLSearchParams(params);
     if (id) next.set("hub", id);
     else next.delete("hub");
+    next.delete("id");
+    next.delete("action");
+    next.delete("zone");
+    setParams(next, { replace: true });
+  }
+  function selectPools() {
+    const next = new URLSearchParams(params);
+    next.set("zone", "pools");
+    next.delete("hub");
     next.delete("id");
     next.delete("action");
     setParams(next, { replace: true });
@@ -366,6 +396,22 @@ export function Vm() {
           />
         )}
       </div>
+
+      {canNet && (
+        <div className="border-t border-token px-2 py-2 shrink-0">
+          <button
+            type="button"
+            onClick={selectPools}
+            className={`cred-row w-full text-left flex items-center gap-2 ${zone === "pools" ? "active" : ""}`}
+            title="Настройка IPAM-пулов"
+          >
+            <Waypoints
+              className={`w-4 h-4 ${zone === "pools" ? "text-accent" : "text-dim"}`}
+            />
+            <span className="flex-1 text-sm">IP-пулы (IPAM)</span>
+          </button>
+        </div>
+      )}
     </aside>
   );
 
@@ -379,10 +425,13 @@ export function Vm() {
 
   return (
     <Shell breadcrumb="server_service / виртуализация" middle={aside}>
-      {action === "new" && selectedHub && canManage ? (
+      {zone === "pools" && canNet ? (
+        <IpPoolsPane mock={mock} />
+      ) : action === "new" && selectedHub && canManage ? (
         <CreateVmPane
           hub={selectedHub}
           images={images}
+          mock={mock}
           onRefreshImages={handleRefreshImages}
           onCancel={closeAction}
           onSubmit={handleCreate}
@@ -940,6 +989,19 @@ function VmCard({
           )}
         </div>
 
+        {canManage && (
+          <PrepareMgmtCard
+            vm={view}
+            mock={mock}
+            onApplied={(next) => setLocal(next)}
+            onChanged={onChanged}
+          />
+        )}
+
+        {canManage && (
+          <NetworkCard vm={view} mock={mock} onChanged={onChanged} />
+        )}
+
         <DisksSection
           vm={view}
           mock={mock}
@@ -1033,12 +1095,14 @@ function PingBadge({ vm }: { vm: Vm }) {
 function CreateVmPane({
   hub,
   images,
+  mock,
   onRefreshImages,
   onCancel,
   onSubmit,
 }: {
   hub: VmHub;
   images: VmImage[];
+  mock: boolean;
   onRefreshImages: () => void | Promise<void>;
   onCancel: () => void;
   onSubmit: (body: VmCreateRequest) => void | Promise<void>;
@@ -1050,7 +1114,8 @@ function CreateVmPane({
   const [box, setBox] = useState(images[0]?.name ?? "vm_station");
   const selectedImage = images.find((im) => im.name === box) ?? null;
   const [networkMode, setNetworkMode] = useState<VmNetworkMode>("bridge");
-  const [ipMode, setIpMode] = useState<"auto" | "manual">("auto");
+  const [poolId, setPoolId] = useState("");
+  const [ipMode, setIpMode] = useState<"auto" | "pool" | "manual">("auto");
   const [ip, setIp] = useState("");
   const [number, setNumber] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -1065,10 +1130,13 @@ function CreateVmPane({
     name.trim() && !/^[a-zA-Z0-9._-]+$/.test(name.trim())
       ? "Имя: латиница, цифры, точка, дефис, подчёркивание"
       : null;
-  const ipError =
-    ipMode === "manual" && ip.trim() && !isLikelyIpv4(ip.trim())
-      ? "Ожидается IPv4-адрес"
-      : null;
+  // Сеть валидна: NAT — всегда; bridge — авто, либо выбранный из пула, либо
+  // корректный ручной IPv4.
+  const ipValid =
+    networkMode === "nat" ||
+    ipMode === "auto" ||
+    (ipMode === "pool" && !!ip) ||
+    (ipMode === "manual" && isLikelyIpv4(ip.trim()));
   const valid =
     !!name.trim() &&
     !nameError &&
@@ -1078,12 +1146,12 @@ function CreateVmPane({
     ramN > 0 &&
     Number.isFinite(diskN) &&
     diskN > 0 &&
-    !ipError &&
-    (ipMode === "auto" || !!ip.trim());
+    ipValid;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting || !valid) return;
+    const bridge = networkMode === "bridge";
     const body: VmCreateRequest = {
       hub_server_id: hub.id,
       name: name.trim(),
@@ -1092,7 +1160,14 @@ function CreateVmPane({
       disk_gb: diskN,
       box,
       network_mode: networkMode,
-      ip_address: ipMode === "manual" ? ip.trim() : null,
+      ip_address: !bridge
+        ? null
+        : ipMode === "manual"
+          ? ip.trim()
+          : ipMode === "pool"
+            ? ip
+            : null,
+      pool_id: bridge && poolId ? poolId : null,
       number: numberN,
     };
     setSubmitting(true);
@@ -1204,38 +1279,23 @@ function CreateVmPane({
             </select>
           </label>
 
-          <fieldset className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">IP-адрес</span>
-            <div className="flex items-center gap-3 flex-wrap">
-              <label className="flex items-center gap-1 text-xs">
-                <input
-                  type="radio"
-                  checked={ipMode === "auto"}
-                  onChange={() => setIpMode("auto")}
-                />
-                свободный из пула (авто)
-              </label>
-              <label className="flex items-center gap-1 text-xs">
-                <input
-                  type="radio"
-                  checked={ipMode === "manual"}
-                  onChange={() => setIpMode("manual")}
-                />
-                задать вручную
-              </label>
+          {networkMode === "bridge" ? (
+            <PoolIpPicker
+              mock={mock}
+              departmentId={hub.department_id}
+              serverId={hub.id}
+              poolId={poolId}
+              onPoolChange={setPoolId}
+              ipMode={ipMode}
+              onIpModeChange={setIpMode}
+              ip={ip}
+              onIpChange={setIp}
+            />
+          ) : (
+            <div className="text-xs text-dim">
+              NAT: адрес назначит libvirt (DHCP), пул не используется.
             </div>
-            {ipMode === "manual" && (
-              <>
-                <input
-                  className="input mt-1"
-                  value={ip}
-                  onChange={(e) => setIp(e.target.value)}
-                  placeholder="10.177.103.51"
-                />
-                {ipError && <span className="text-[11px] text-danger">{ipError}</span>}
-              </>
-            )}
-          </fieldset>
+          )}
 
           <button
             type="button"
@@ -1255,7 +1315,7 @@ function CreateVmPane({
                 placeholder="опционально"
               />
               <span className="text-[11px] text-dim">
-                Прочие параметры (снимки, диски, autostart) — в следующих волнах.
+                Прочие параметры (снимки, диски, autostart) — в отдельных разделах.
               </span>
             </label>
           )}
@@ -1951,6 +2011,852 @@ function CredStrategyCard({
 
 function credStrategyLabel(s: VmCredStrategy): string {
   return s === "reroll" ? "reroll" : "per_snapshot";
+}
+
+// ── prepare / mgmt-креды ВМ ─────────────────────────────────────────────────────
+
+function PrepareMgmtCard({
+  vm,
+  mock,
+  onApplied,
+  onChanged,
+}: {
+  vm: Vm;
+  mock: boolean;
+  onApplied: (next: Vm) => void;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const outcome = useTaskOutcome();
+  const [pending, setPending] = useState(false);
+
+  const managed = vm.is_managed === true;
+  // pending — либо backend ещё применяет ротацию, либо мы поллим задачу.
+  const applying =
+    vm.mgmt_creds_pending_apply === true || (outcome.tracked?.polling ?? false);
+
+  async function handlePrepare() {
+    const ok = await confirm({
+      title: "Подготовить ВМ",
+      message: `Подготовить ВМ ${vm.name}? Worker зайдёт по базовой учётке u:1, выполнит bootstrap, снесёт базовую учётку и заведёт управляющие креды.`,
+      confirmLabel: "Подготовить",
+    });
+    if (!ok) return;
+    outcome.reset();
+    setPending(true);
+    try {
+      const res = mock ? fakeDispatch() : await prepareVm(vm.id);
+      outcome.track(`prepare · ${vm.name}`, res.task_id, res.status);
+      toast.success(`Подготовка ВМ ${vm.name} — задача поставлена`);
+      if (mock) {
+        onApplied({
+          ...vm,
+          is_managed: true,
+          mgmt_user: "dbosmgr",
+          mgmt_creds_rotated_at: new Date().toISOString(),
+          mgmt_creds_pending_apply: false,
+        });
+      }
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Подготовка ВМ не удалась"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleRotate() {
+    const ok = await confirm({
+      title: "Ротировать управляющие креды",
+      message: `Сгенерировать новые управляющие креды ВМ ${vm.name} и применить их через worker? Старый материал будет отозван.`,
+      confirmLabel: "Ротировать",
+      danger: true,
+    });
+    if (!ok) return;
+    outcome.reset();
+    setPending(true);
+    try {
+      const res = mock ? fakeDispatch() : await rotateVmMgmtCreds(vm.id);
+      outcome.track(`mgmt rotate · ${vm.name}`, res.task_id, res.status);
+      toast.success(`Ротация кред ВМ ${vm.name} — задача поставлена`);
+      if (mock) {
+        onApplied({ ...vm, mgmt_creds_pending_apply: true });
+      }
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Ротация кред не удалась"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <ShieldCheck className="w-4 h-4 text-accent" /> Подготовка и управляющие
+        креды
+        {applying && (
+          <span className="badge badge-warn text-[11px]">
+            ротация применяется…
+          </span>
+        )}
+      </h3>
+
+      {!managed ? (
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex-1 text-xs text-dim">
+            ВМ ещё не подготовлена: базовая учётка <span className="mono">u:1</span>{" "}
+            не снята, управляющих кред нет. Подготовка заведёт per-VM креды и
+            уберёт базовый доступ.
+          </div>
+          <button
+            className="btn btn-primary flex items-center gap-1"
+            onClick={handlePrepare}
+            disabled={pending}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            {pending ? "Ставим задачу…" : "Подготовить"}
+          </button>
+        </div>
+      ) : (
+        <>
+          <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm mb-3">
+            <Field k="Состояние" v="подготовлена" />
+            <Field k="mgmt-учётка" v={vm.mgmt_user ?? "—"} mono />
+            <Field
+              k="Креды ротированы"
+              v={
+                vm.mgmt_creds_rotated_at
+                  ? formatSnapDate(vm.mgmt_creds_rotated_at)
+                  : "—"
+              }
+              mono
+            />
+          </dl>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex-1 text-xs text-dim">
+              Ротация генерирует новую управляющую пару/пароль ВМ и применяет их
+              через worker.
+            </div>
+            <button
+              className="btn btn-danger flex items-center gap-1"
+              onClick={handleRotate}
+              disabled={pending || applying}
+              title="Ротировать управляющие креды ВМ"
+            >
+              <KeyRound className="w-4 h-4" />
+              {applying ? "Ротация идёт…" : "Ротировать креды"}
+            </button>
+          </div>
+        </>
+      )}
+
+      {outcome.tracked && (
+        <TaskOutcomeBanner
+          outcome={outcome.tracked}
+          className="mt-3"
+          successText="Операция применена."
+          onCancelled={outcome.reset}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── сеть ВМ ─────────────────────────────────────────────────────────────────────
+
+function NetworkCard({
+  vm,
+  mock,
+  onChanged,
+}: {
+  vm: Vm;
+  mock: boolean;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const outcome = useTaskOutcome();
+  const [open, setOpen] = useState(false);
+
+  async function handleApply(body: VmNetworkRequest) {
+    outcome.reset();
+    try {
+      const res = mock ? fakeDispatch() : await setVmNetwork(vm.id, body);
+      outcome.track(`network · ${vm.name}`, res.task_id, res.status);
+      toast.success(`Смена сети ВМ ${vm.name} — задача поставлена`);
+      setOpen(false);
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Смена сети не удалась"));
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-base flex items-center gap-2">
+          <Network className="w-4 h-4 text-accent" /> Сеть
+        </h3>
+        <button
+          className="btn btn-sm flex items-center gap-1"
+          onClick={() => setOpen(true)}
+        >
+          <Pencil className="w-3.5 h-3.5" /> Изменить сеть
+        </button>
+      </div>
+      <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm">
+        <Field k="Режим" v={vm.network_mode} />
+        <Field k="IP-адрес" v={vm.ip_address ?? "— (авто / NAT)"} mono />
+      </dl>
+      <div className="text-xs text-dim mt-2">
+        Смена режима перекладывает домен на bridge/NAT; для статики адрес
+        прописывается в госте с последующим reboot.
+      </div>
+
+      {outcome.tracked && (
+        <TaskOutcomeBanner
+          outcome={outcome.tracked}
+          className="mt-3"
+          successText="Сеть применена."
+          onCancelled={outcome.reset}
+        />
+      )}
+
+      {open && (
+        <NetworkModal
+          vm={vm}
+          mock={mock}
+          onClose={() => setOpen(false)}
+          onSubmit={handleApply}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Селектор пула + свободного IP для bridge. Полностью управляемый: пулы и
+ * свободные адреса тянет сам (mock ↔ live), значения поднимает наверх.
+ */
+function PoolIpPicker({
+  mock,
+  departmentId,
+  serverId,
+  poolId,
+  onPoolChange,
+  ipMode,
+  onIpModeChange,
+  ip,
+  onIpChange,
+}: {
+  mock: boolean;
+  departmentId: string;
+  serverId: string;
+  poolId: string;
+  onPoolChange: (v: string) => void;
+  ipMode: "auto" | "pool" | "manual";
+  onIpModeChange: (v: "auto" | "pool" | "manual") => void;
+  ip: string;
+  onIpChange: (v: string) => void;
+}) {
+  const poolsQ = useQuery<VmIpPool[]>(
+    async () => {
+      if (mock) return MOCK_VM_IP_POOLS;
+      const res = await listVmIpPools({ department_id: departmentId });
+      return res.items;
+    },
+    [mock, departmentId],
+    { keepPreviousDataOnError: true },
+  );
+  // Применимы пулы отдела без override и пулы, привязанные к этому хабу.
+  const pools = (poolsQ.data ?? []).filter(
+    (p) => !p.server_id || p.server_id === serverId,
+  );
+
+  const ipsQ = useQuery<string[]>(
+    async () => {
+      if (!poolId) return [];
+      if (mock) return MOCK_AVAILABLE_IPS[poolId] ?? [];
+      const res = await getAvailableIps(poolId);
+      return res.ips;
+    },
+    [mock, poolId],
+    { enabled: !!poolId && ipMode === "pool", keepPreviousDataOnError: true },
+  );
+  const availableIps = ipsQ.data ?? [];
+
+  const ipError =
+    ipMode === "manual" && ip.trim() && !isLikelyIpv4(ip.trim())
+      ? "Ожидается IPv4-адрес"
+      : null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-dim text-xs">Пул IPAM</span>
+        <select
+          className="input"
+          value={poolId}
+          onChange={(e) => {
+            onPoolChange(e.target.value);
+            onIpChange("");
+          }}
+        >
+          <option value="">— авто-выбор пула —</option>
+          {pools.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} · {p.cidr}
+              {p.server_id ? " · хаб-override" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <fieldset className="flex flex-col gap-1 text-sm">
+        <span className="text-dim text-xs">IP-адрес</span>
+        <div className="flex items-center gap-3 flex-wrap">
+          <label className="flex items-center gap-1 text-xs">
+            <input
+              type="radio"
+              checked={ipMode === "auto"}
+              onChange={() => onIpModeChange("auto")}
+            />
+            свободный автоматически
+          </label>
+          <label className="flex items-center gap-1 text-xs">
+            <input
+              type="radio"
+              checked={ipMode === "pool"}
+              onChange={() => onIpModeChange("pool")}
+              disabled={!poolId}
+            />
+            выбрать из пула
+          </label>
+          <label className="flex items-center gap-1 text-xs">
+            <input
+              type="radio"
+              checked={ipMode === "manual"}
+              onChange={() => onIpModeChange("manual")}
+            />
+            вручную
+          </label>
+        </div>
+
+        {ipMode === "pool" &&
+          (ipsQ.loading ? (
+            <div className="text-xs text-dim mt-1">Загрузка свободных IP…</div>
+          ) : availableIps.length === 0 ? (
+            <div className="text-xs text-warn mt-1">
+              В пуле нет свободных адресов.
+            </div>
+          ) : (
+            <select
+              className="input mt-1"
+              value={ip}
+              onChange={(e) => onIpChange(e.target.value)}
+            >
+              <option value="">— выберите адрес —</option>
+              {availableIps.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+          ))}
+
+        {ipMode === "manual" && (
+          <>
+            <input
+              className="input mt-1"
+              value={ip}
+              onChange={(e) => onIpChange(e.target.value)}
+              placeholder="10.177.103.51"
+            />
+            {ipError && (
+              <span className="text-[11px] text-danger">{ipError}</span>
+            )}
+          </>
+        )}
+      </fieldset>
+    </div>
+  );
+}
+
+function NetworkModal({
+  vm,
+  mock,
+  onClose,
+  onSubmit,
+}: {
+  vm: Vm;
+  mock: boolean;
+  onClose: () => void;
+  onSubmit: (body: VmNetworkRequest) => void | Promise<void>;
+}) {
+  const [mode, setMode] = useState<VmNetworkMode>(vm.network_mode);
+  const [poolId, setPoolId] = useState("");
+  const [ipMode, setIpMode] = useState<"auto" | "pool" | "manual">("auto");
+  const [ip, setIp] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const ipValid =
+    mode === "nat" ||
+    ipMode === "auto" ||
+    (ipMode === "pool" && !!ip) ||
+    (ipMode === "manual" && isLikelyIpv4(ip.trim()));
+  const valid = ipValid && !submitting;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valid) return;
+    const body: VmNetworkRequest =
+      mode === "nat"
+        ? { network_mode: "nat", ip_address: null, pool_id: null }
+        : {
+            network_mode: "bridge",
+            ip_address:
+              ipMode === "manual"
+                ? ip.trim()
+                : ipMode === "pool"
+                  ? ip
+                  : null,
+            pool_id: poolId || null,
+          };
+    setSubmitting(true);
+    try {
+      await Promise.resolve(onSubmit(body));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal title={`Сеть ВМ ${vm.name}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="modal-body flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Режим *</span>
+            <select
+              className="input"
+              value={mode}
+              onChange={(e) => setMode(e.target.value as VmNetworkMode)}
+            >
+              <option value="bridge">bridge (static IP из пула)</option>
+              <option value="nat">nat (libvirt)</option>
+            </select>
+          </label>
+          {mode === "bridge" && (
+            <PoolIpPicker
+              mock={mock}
+              departmentId={vm.department_id}
+              serverId={vm.hub_server_id}
+              poolId={poolId}
+              onPoolChange={setPoolId}
+              ipMode={ipMode}
+              onIpModeChange={setIpMode}
+              ip={ip}
+              onIpChange={setIp}
+            />
+          )}
+          {mode === "nat" && (
+            <div className="text-xs text-dim">
+              Адрес назначит libvirt (DHCP), IP читается через{" "}
+              <span className="mono">domifaddr</span>.
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={!valid}
+          >
+            {submitting ? "Применяем…" : "Применить сеть"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ── IPAM: пулы ──────────────────────────────────────────────────────────────────
+
+function IpPoolsPane({ mock }: { mock: boolean }) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<VmIpPool | null>(null);
+
+  const poolsQ = useQuery<VmIpPool[]>(
+    async () => {
+      if (mock) return MOCK_VM_IP_POOLS;
+      const res = await listVmIpPools();
+      return res.items;
+    },
+    [mock],
+    { keepPreviousDataOnError: true },
+  );
+
+  const [mockPools, setMockPools] = useState<VmIpPool[] | null>(null);
+  const pools = mock ? (mockPools ?? poolsQ.data ?? []) : (poolsQ.data ?? []);
+
+  async function handleCreate(body: VmIpPoolCreateRequest) {
+    try {
+      if (mock) {
+        const next: VmIpPool = { id: `pool-mock-${Date.now()}`, ...body };
+        setMockPools([...(mockPools ?? poolsQ.data ?? []), next]);
+      } else {
+        await createVmIpPool(body);
+        poolsQ.refetch();
+      }
+      toast.success(`Пул ${body.name} создан`);
+      setCreateOpen(false);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Создание пула не удалось"));
+    }
+  }
+
+  async function handleUpdate(id: string, body: VmIpPoolUpdateRequest) {
+    try {
+      if (mock) {
+        setMockPools(
+          (mockPools ?? poolsQ.data ?? []).map((p) =>
+            p.id === id ? { ...p, ...body } : p,
+          ),
+        );
+      } else {
+        await updateVmIpPool(id, body);
+        poolsQ.refetch();
+      }
+      toast.success("Пул обновлён");
+      setEditTarget(null);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Изменение пула не удалось"));
+    }
+  }
+
+  async function handleDelete(pool: VmIpPool) {
+    const ok = await confirm({
+      title: "Удалить пул",
+      message: `Удалить IP-пул ${pool.name} (${pool.cidr})? Выданные адреса останутся на ВМ, но новые из него выделяться не будут.`,
+      confirmLabel: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      if (mock) {
+        setMockPools(
+          (mockPools ?? poolsQ.data ?? []).filter((p) => p.id !== pool.id),
+        );
+      } else {
+        await deleteVmIpPool(pool.id);
+        poolsQ.refetch();
+      }
+      toast.success(`Пул ${pool.name} удалён`);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Удаление пула не удалось"));
+    }
+  }
+
+  return (
+    <section className="flex-1 min-w-0 overflow-y-auto">
+      <div className="border-b border-token p-5 flex items-start gap-4 shrink-0">
+        <div className="w-12 h-12 rounded bg-accent flex items-center justify-center">
+          <Waypoints className="w-7 h-7" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl font-semibold">IP-пулы (IPAM)</h1>
+          <div className="text-sm text-dim mt-1">
+            Диапазоны статических адресов для bridge-ВМ. Привязка — отдел, с
+            override на конкретный хаб.
+          </div>
+        </div>
+        <button
+          className="btn btn-primary flex items-center gap-1"
+          onClick={() => setCreateOpen(true)}
+        >
+          <Plus className="w-4 h-4" /> Создать пул
+        </button>
+      </div>
+
+      <div className="p-5">
+        {poolsQ.loading ? (
+          <div className="text-xs text-dim">Загрузка…</div>
+        ) : poolsQ.error && pools.length === 0 ? (
+          <div className="alert alert-danger flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 mt-0.5" />
+            <div className="flex-1 text-xs">
+              <div>{apiErrMsg(poolsQ.error, "Список пулов не загрузился")}</div>
+              <button className="btn btn-ghost mt-2" onClick={() => poolsQ.refetch()}>
+                Повторить
+              </button>
+            </div>
+          </div>
+        ) : pools.length === 0 ? (
+          <div className="empty-card text-center text-sm text-dim">
+            Пулов пока нет. Создайте первый, чтобы выделять адреса bridge-ВМ.
+          </div>
+        ) : (
+          <div className="surface-2 border border-token rounded overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] uppercase text-dim border-b border-token">
+                  <th className="text-left px-3 py-2 font-medium">Имя</th>
+                  <th className="text-left px-3 py-2 font-medium">CIDR</th>
+                  <th className="text-left px-3 py-2 font-medium">Шлюз</th>
+                  <th className="text-left px-3 py-2 font-medium">Диапазон</th>
+                  <th className="text-left px-3 py-2 font-medium">DNS</th>
+                  <th className="text-left px-3 py-2 font-medium">Отдел / хаб</th>
+                  <th className="px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {pools.map((p) => (
+                  <tr key={p.id} className="border-b border-token last:border-b-0">
+                    <td className="px-3 py-1.5">{p.name}</td>
+                    <td className="px-3 py-1.5 mono text-xs">{p.cidr}</td>
+                    <td className="px-3 py-1.5 mono text-xs">{p.gateway}</td>
+                    <td className="px-3 py-1.5 mono text-xs">
+                      {p.range_start} – {p.range_end}
+                    </td>
+                    <td className="px-3 py-1.5 mono text-xs text-dim">
+                      {p.dns.join(", ") || "—"}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs">
+                      {p.department_id}
+                      {p.server_id ? (
+                        <span className="badge ml-1 text-[11px]">хаб {p.server_id}</span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          className="btn btn-sm flex items-center gap-1"
+                          title="Изменить пул"
+                          onClick={() => setEditTarget(p)}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          className="btn btn-sm btn-danger flex items-center gap-1"
+                          title="Удалить пул"
+                          onClick={() => handleDelete(p)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {createOpen && (
+        <IpPoolModal onClose={() => setCreateOpen(false)} onSubmit={handleCreate} />
+      )}
+      {editTarget && (
+        <IpPoolModal
+          pool={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSubmit={(body) => handleUpdate(editTarget.id, body)}
+        />
+      )}
+    </section>
+  );
+}
+
+/**
+ * Модалка создания/редактирования IPAM-пула. Без пула на входе — режим
+ * создания (нужен department_id); с пулом — редактирование (department_id не
+ * меняем).
+ */
+function IpPoolModal({
+  pool,
+  onClose,
+  onSubmit,
+}: {
+  pool?: VmIpPool;
+  onClose: () => void;
+  onSubmit: (body: VmIpPoolCreateRequest) => void | Promise<void>;
+}) {
+  const editing = !!pool;
+  const [name, setName] = useState(pool?.name ?? "");
+  const [cidr, setCidr] = useState(pool?.cidr ?? "");
+  const [gateway, setGateway] = useState(pool?.gateway ?? "");
+  const [netmask, setNetmask] = useState(pool?.netmask ?? "255.255.255.0");
+  const [dns, setDns] = useState((pool?.dns ?? []).join(", "));
+  const [rangeStart, setRangeStart] = useState(pool?.range_start ?? "");
+  const [rangeEnd, setRangeEnd] = useState(pool?.range_end ?? "");
+  const [departmentId, setDepartmentId] = useState(pool?.department_id ?? "");
+  const [serverId, setServerId] = useState(pool?.server_id ?? "");
+  const [submitting, setSubmitting] = useState(false);
+
+  const cidrError =
+    cidr.trim() && !/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(cidr.trim())
+      ? "Ожидается CIDR, напр. 10.177.103.0/24"
+      : null;
+  const gwError =
+    gateway.trim() && !isLikelyIpv4(gateway.trim())
+      ? "Ожидается IPv4-адрес"
+      : null;
+  const rangeError =
+    (rangeStart.trim() && !isLikelyIpv4(rangeStart.trim())) ||
+    (rangeEnd.trim() && !isLikelyIpv4(rangeEnd.trim()))
+      ? "Границы диапазона — IPv4-адреса"
+      : null;
+  const valid =
+    !!name.trim() &&
+    !!cidr.trim() &&
+    !cidrError &&
+    !!gateway.trim() &&
+    !gwError &&
+    !!rangeStart.trim() &&
+    !!rangeEnd.trim() &&
+    !rangeError &&
+    (editing || !!departmentId.trim());
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valid || submitting) return;
+    const body: VmIpPoolCreateRequest = {
+      name: name.trim(),
+      cidr: cidr.trim(),
+      gateway: gateway.trim(),
+      netmask: netmask.trim(),
+      dns: dns
+        .split(",")
+        .map((d) => d.trim())
+        .filter(Boolean),
+      range_start: rangeStart.trim(),
+      range_end: rangeEnd.trim(),
+      department_id: departmentId.trim(),
+      server_id: serverId.trim() ? serverId.trim() : null,
+    };
+    setSubmitting(true);
+    try {
+      await Promise.resolve(onSubmit(body));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal title={editing ? `Пул ${pool!.name}` : "Новый IP-пул"} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="modal-body flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Имя *</span>
+            <input
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="core-lan"
+              autoFocus
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">CIDR *</span>
+              <input
+                className="input"
+                value={cidr}
+                onChange={(e) => setCidr(e.target.value)}
+                placeholder="10.177.103.0/24"
+              />
+              {cidrError && <span className="text-[11px] text-danger">{cidrError}</span>}
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">Маска</span>
+              <input
+                className="input"
+                value={netmask}
+                onChange={(e) => setNetmask(e.target.value)}
+                placeholder="255.255.255.0"
+              />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Шлюз *</span>
+            <input
+              className="input"
+              value={gateway}
+              onChange={(e) => setGateway(e.target.value)}
+              placeholder="10.177.103.1"
+            />
+            {gwError && <span className="text-[11px] text-danger">{gwError}</span>}
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">Начало диапазона *</span>
+              <input
+                className="input"
+                value={rangeStart}
+                onChange={(e) => setRangeStart(e.target.value)}
+                placeholder="10.177.103.50"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">Конец диапазона *</span>
+              <input
+                className="input"
+                value={rangeEnd}
+                onChange={(e) => setRangeEnd(e.target.value)}
+                placeholder="10.177.103.99"
+              />
+            </label>
+          </div>
+          {rangeError && <span className="text-[11px] text-danger">{rangeError}</span>}
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">DNS (через запятую)</span>
+            <input
+              className="input"
+              value={dns}
+              onChange={(e) => setDns(e.target.value)}
+              placeholder="10.177.100.10, 8.8.8.8"
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">
+                Отдел {editing ? "" : "*"}
+              </span>
+              <input
+                className="input"
+                value={departmentId}
+                onChange={(e) => setDepartmentId(e.target.value)}
+                placeholder="core"
+                disabled={editing}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">Override-хаб (server_id)</span>
+              <input
+                className="input"
+                value={serverId ?? ""}
+                onChange={(e) => setServerId(e.target.value)}
+                placeholder="опционально"
+              />
+            </label>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={!valid || submitting}>
+            {submitting ? "Сохраняем…" : editing ? "Сохранить" : "Создать пул"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
 }
 
 // ── modals ────────────────────────────────────────────────────────────────────

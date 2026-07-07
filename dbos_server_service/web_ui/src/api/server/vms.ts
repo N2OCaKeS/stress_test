@@ -1,7 +1,7 @@
 /**
  * Thin wrappers для `server_service` домена `vm` (виртуализация).
  *
- * База `/api/server/v1`. Контракт волны 1 (согласован с дизайном
+ * База `/api/server/v1`. Базовый контракт (согласован с дизайном
  * `obsidian/VM-менеджер — дизайн (ФИНАЛ).md` §1/§12):
  *   GET    /vms
  *   GET    /vms/{id}
@@ -15,7 +15,7 @@
  *   GET    /servers/by-number/{n}
  *   POST   /servers/{id}/prepare-vms-hub  (202 task)
  *
- * Волна 2 добавляет управление дисками, изменение ресурсов и каталог образов:
+ * Управление дисками, изменение ресурсов и каталог образов:
  *   GET    /vms/{id}/disks
  *   POST   /vms/{id}/disks               (202 task)
  *   DELETE /vms/{id}/disks/{disk_id}     (202 task)
@@ -24,7 +24,7 @@
  *   GET    /vm-images
  *   POST   /vm-images/refresh
  *
- * Волна 3 добавляет снимки, обновление ОС/allta/пароля и режим кред:
+ * Снимки, обновление ОС/allta/пароля и режим кред:
  *   GET    /vms/{id}/snapshots
  *   POST   /vms/{id}/snapshots               (202 task)
  *   POST   /vms/{id}/snapshots/{snap}/revert (202 task)
@@ -34,9 +34,18 @@
  *   POST   /vms/{id}/passwd                  (202 task)
  *   PATCH  /vms/{id}/cred-strategy           (режим кред, синхронно)
  *
- * Backend домена `vm` в разработке (волна 1). Пока сервис не отдаёт эти
- * маршруты, страница `/vm` работает на mock-данных (`@/mocks/vm`) в
- * mock-режиме; типы полей сверяются с доменным агентом на интеграции.
+ * Prepare ВМ, mgmt-креды, сеть и IPAM-пулы:
+ *   POST   /vms/{id}/prepare                 (202 task)
+ *   POST   /vms/{id}/mgmt-creds/rotate       (202 task)
+ *   POST   /vms/{id}/network                 (202 task)
+ *   GET    /vms/available-ips?pool_id=       (свободные IP пула)
+ *   GET    /vm-ip-pools
+ *   POST   /vm-ip-pools
+ *   PATCH  /vm-ip-pools/{id}
+ *   DELETE /vm-ip-pools/{id}
+ *
+ * Пока сервис не отдаёт эти маршруты, страница `/vm` работает на mock-данных
+ * (`@/mocks/vm`) в mock-режиме.
  *
  * Типы VM-сущности живут здесь же, а не в общем `./types.ts`: домен молодой,
  * держим его самодостаточным, чтобы не разносить правки по файлам, пока форма
@@ -113,6 +122,17 @@ export interface Vm {
   /** Доступность по ICMP-ping с последней пробы. null — пробы не было. */
   ping_reachable?: boolean | null;
   ping_latency_ms?: number | null;
+  /**
+   * Подготовлена ли ВМ (`vm.prepare` пройден): базовая учётка `u:1` снята,
+   * заведены per-VM управляющие креды. До prepare mgmt-кред нет.
+   */
+  is_managed?: boolean;
+  /** Логин управляющей учётки ВМ (появляется после prepare). null — нет. */
+  mgmt_user?: string | null;
+  /** Момент последней ротации управляющих кред. null — не ротировались. */
+  mgmt_creds_rotated_at?: Iso8601 | null;
+  /** true, пока worker применяет свежую ротацию управляющих кред. */
+  mgmt_creds_pending_apply?: boolean;
   created_at: Iso8601;
   updated_at: Iso8601;
   created_by?: string | null;
@@ -144,6 +164,11 @@ export interface VmCreateRequest {
   box: string;
   network_mode: VmNetworkMode;
   ip_address?: string | null;
+  /**
+   * Пул IPAM, из которого берётся адрес для bridge. null — авто-выбор пула
+   * бекендом (по отделу/хабу). Для `nat` не используется.
+   */
+  pool_id?: string | null;
   number?: number | null;
 }
 
@@ -332,6 +357,74 @@ export interface ListVmsQuery {
 export type ByNumberResult =
   | { kind: "vm"; vm: Vm }
   | { kind: "server"; server: Server };
+
+/**
+ * Пул IPAM (`vm_ip_pool`) — диапазон статических адресов для bridge-ВМ.
+ * Привязан к отделу; `server_id` — опциональный override на конкретный хаб
+ * (пул действует только на нём). Учёт занятости ведёт сервис по `vm.ip_address`.
+ */
+export interface VmIpPool {
+  id: string;
+  name: string;
+  /** CIDR подсети, например `10.177.103.0/24`. */
+  cidr: string;
+  /** Шлюз по умолчанию. */
+  gateway: string;
+  /** Маска (dotted), напр. `255.255.255.0`. Может дублировать префикс CIDR. */
+  netmask: string;
+  /** DNS-серверы. */
+  dns: string[];
+  /** Начало выделяемого диапазона (включительно). */
+  range_start: string;
+  /** Конец выделяемого диапазона (включительно). */
+  range_end: string;
+  department_id: string;
+  /** Override: пул только для этого хаба. null — на весь отдел. */
+  server_id?: string | null;
+  created_at?: Iso8601;
+  updated_at?: Iso8601;
+}
+
+/** Envelope GET /vm-ip-pools. */
+export interface VmIpPoolListResponse {
+  items: VmIpPool[];
+}
+
+/** Тело POST /vm-ip-pools — создать пул. */
+export interface VmIpPoolCreateRequest {
+  name: string;
+  cidr: string;
+  gateway: string;
+  netmask: string;
+  dns: string[];
+  range_start: string;
+  range_end: string;
+  department_id: string;
+  server_id?: string | null;
+}
+
+/** Тело PATCH /vm-ip-pools/{id} — частичное изменение пула. */
+export type VmIpPoolUpdateRequest = Partial<
+  Omit<VmIpPoolCreateRequest, "department_id">
+>;
+
+/** Ответ GET /vms/available-ips — свободные адреса выбранного пула. */
+export interface AvailableIpsResponse {
+  pool_id: string;
+  ips: string[];
+}
+
+/**
+ * Тело POST /vms/{id}/network — сменить сетевой режим/адрес ВМ. Backend
+ * перекладывает домен на bridge/NAT (правка XML, статика через гостя, reboot),
+ * поэтому это 202-задача. Для `bridge` берётся `ip_address` или свободный из
+ * `pool_id`; `null`/`null` — авто.
+ */
+export interface VmNetworkRequest {
+  network_mode: VmNetworkMode;
+  ip_address?: string | null;
+  pool_id?: string | null;
+}
 
 // ── client ──────────────────────────────────────────────────────────────────
 
@@ -572,4 +665,89 @@ export function setVmCredStrategy(
   return apiPatch<Vm>(`/server/v1/vms/${vmId}/cred-strategy`, {
     cred_strategy: strategy,
   });
+}
+
+// ── prepare / mgmt-креды ────────────────────────────────────────────────────────
+
+/**
+ * `POST /api/server/v1/vms/{id}/prepare` — подготовить ВМ (202). Worker заходит
+ * по базовой учётке `u:1`, гоняет подмножество серверного bootstrap, сносит
+ * базовую учётку и заводит per-VM управляющие креды (дизайн §9). После успеха
+ * `is_managed=true`.
+ */
+export function prepareVm(vmId: string): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(`/server/v1/vms/${vmId}/prepare`);
+}
+
+/**
+ * `POST /api/server/v1/vms/{id}/mgmt-creds/rotate` — ротация управляющих кред
+ * ВМ (202). Генерирует новую пару/пароль, применяет через worker и отзывает
+ * старый материал. ВМ обязана быть подготовлена (`is_managed`).
+ */
+export function rotateVmMgmtCreds(vmId: string): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(
+    `/server/v1/vms/${vmId}/mgmt-creds/rotate`,
+  );
+}
+
+// ── сеть ────────────────────────────────────────────────────────────────────────
+
+/**
+ * `POST /api/server/v1/vms/{id}/network` — сменить сетевой режим/адрес (202).
+ * Backend перекладывает домен на bridge/NAT и, для статики, прописывает адрес
+ * в госте с последующим reboot (дизайн §8).
+ */
+export function setVmNetwork(
+  vmId: string,
+  body: VmNetworkRequest,
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(`/server/v1/vms/${vmId}/network`, body);
+}
+
+/**
+ * `GET /api/server/v1/vms/available-ips` — свободные адреса выбранного пула.
+ * Сервис считает занятость по `vm.ip_address` и резервам (опц. ARP-проба).
+ */
+export function getAvailableIps(poolId: string): Promise<AvailableIpsResponse> {
+  return apiGet<AvailableIpsResponse>("/server/v1/vms/available-ips", {
+    query: { pool_id: poolId },
+  });
+}
+
+// ── IPAM: пулы (vm_ip_pool) ─────────────────────────────────────────────────────
+
+/** Параметры фильтрации GET /vm-ip-pools. */
+export interface ListVmIpPoolsQuery {
+  department_id?: string;
+  server_id?: string;
+}
+
+/** `GET /api/server/v1/vm-ip-pools` — список IPAM-пулов. */
+export function listVmIpPools(
+  query: ListVmIpPoolsQuery = {},
+): Promise<VmIpPoolListResponse> {
+  return apiGet<VmIpPoolListResponse>("/server/v1/vm-ip-pools", {
+    query: {
+      department_id: query.department_id,
+      server_id: query.server_id,
+    },
+  });
+}
+
+/** `POST /api/server/v1/vm-ip-pools` — создать пул. */
+export function createVmIpPool(body: VmIpPoolCreateRequest): Promise<VmIpPool> {
+  return apiPost<VmIpPool>("/server/v1/vm-ip-pools", body);
+}
+
+/** `PATCH /api/server/v1/vm-ip-pools/{id}` — изменить пул. */
+export function updateVmIpPool(
+  poolId: string,
+  body: VmIpPoolUpdateRequest,
+): Promise<VmIpPool> {
+  return apiPatch<VmIpPool>(`/server/v1/vm-ip-pools/${poolId}`, body);
+}
+
+/** `DELETE /api/server/v1/vm-ip-pools/{id}` — удалить пул. */
+export function deleteVmIpPool(poolId: string): Promise<void> {
+  return apiDelete<void>(`/server/v1/vm-ip-pools/${poolId}`);
 }

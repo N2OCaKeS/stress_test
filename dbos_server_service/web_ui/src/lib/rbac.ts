@@ -118,7 +118,7 @@ export function hasVmZoneAccess(persona: Persona): boolean {
 
 /**
  * True если персона может управлять ВМ (create/delete/power/reserve/status).
- * Wave 1 маппит `vm.*`-действия на серверную роль: server.admin / server.operator
+ * Маппит `vm.*`-действия на серверную роль: server.admin / server.operator
  * или dep_admin. Тонкая матрица `vm.*` (см. дизайн §2) в persona ещё не приходит —
  * это клиентский proxy, backend перепроверит фактические права.
  */
@@ -135,6 +135,15 @@ export function canManageVms(persona: Persona): boolean {
  * перепроверит.
  */
 export function canPrepareVmsHub(persona: Persona): boolean {
+  return canManageVms(persona);
+}
+
+/**
+ * True если персона может настраивать IPAM-пулы ВМ (`vm.net_manage`). Дизайн §8
+ * отдаёт это dep_admin / service_admin; маппим на серверную
+ * admin/operator-роль или dep_admin своего отдела. Backend перепроверит.
+ */
+export function canManageVmNet(persona: Persona): boolean {
   return canManageVms(persona);
 }
 

@@ -106,7 +106,14 @@ ADD COLUMN stand13_cpu_user VARCHAR(255),
 ADD COLUMN stand13_temp_cpu VARCHAR(255),
 ADD COLUMN stand10_temp_cpu VARCHAR(255),
 ADD COLUMN stand11_temp_cpu VARCHAR(255),
-ADD COLUMN stand12_temp_cpu VARCHAR(255);
+ADD COLUMN stand12_temp_cpu VARCHAR(255),
+ADD COLUMN stand14_nvme VARCHAR(255), 
+ADD COLUMN stand14_sda VARCHAR(255),
+ADD COLUMN stand14_cpu VARCHAR(255), 
+ADD COLUMN stand14_ram VARCHAR(255),
+ADD COLUMN stand14_cpu_system VARCHAR(255),
+ADD COLUMN stand14_cpu_user VARCHAR(255), 
+ADD COLUMN stand14_temp_cpu VARCHAR(255);
 
 
 INSERT INTO main_table (
@@ -133,7 +140,9 @@ INSERT INTO main_table (
     stand9_cpu_system, stand9_cpu_user, stand9_temp_cpu,
     stand13_nvme, stand13_sda, stand13_cpu, stand13_ram,
     stand13_cpu_system, stand13_cpu_user, stand13_temp_cpu,
-    stand10_temp_cpu, stand11_temp_cpu, stand12_temp_cpu
+    stand10_temp_cpu, stand11_temp_cpu, stand12_temp_cpu,
+    stand14_nvme, stand14_sda, stand14_cpu, stand14_ram,
+    stand14_cpu_system, stand14_cpu_user, stand14_temp_cpu
 ) VALUES (
     '1_cpu', '1_ram', '2_cpu', '2_ram',
     '3_cpu', '3_ram', '4_cpu', '4_ram',
@@ -158,6 +167,8 @@ INSERT INTO main_table (
     '9_cpu_system', '9_cpu_user', '9_temp_cpu',
     '13_nvme', '13_sda', '13_cpu', '13_ram',
     '13_cpu_system', '13_cpu_user', '13_temp_cpu',
-    '10_temp_cpu', '11_temp_cpu', '12_temp_cpu'
+    '10_temp_cpu', '11_temp_cpu', '12_temp_cpu',
+    '14_nvme', '14_sda', '14_cpu', '14_ram',
+    '14_cpu_system', '14_cpu_user', '14_temp_cpu'
 );
 

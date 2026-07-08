@@ -13,6 +13,9 @@ import { useSearchParams } from "react-router-dom";
 import {
   Search,
   Server as ServerIcon,
+  ServerCog,
+  ServerOff,
+  Boxes,
   Plus,
   ArrowLeft,
   AlertCircle,
@@ -21,6 +24,7 @@ import {
   MonitorPlay,
   ChevronDown,
   ChevronRight,
+  type LucideIcon,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -735,6 +739,29 @@ function ServerSection({
   );
 }
 
+/**
+ * Иконка строки сервера по его типу/статусу: VMS-hub несёт ВМ (Boxes),
+ * выведенный из эксплуатации — ServerOff, на обслуживании — ServerCog, обычный
+ * рабочий — Server. Заголовок дублируется в aria-label для доступности/тестов.
+ */
+function serverRowIcon(server: Server): { Icon: LucideIcon; title: string } {
+  if (server.is_vms_hub) return { Icon: Boxes, title: "VMS-hub (несёт ВМ)" };
+  if (server.status === "decommissioned") {
+    return { Icon: ServerOff, title: "выведен из эксплуатации" };
+  }
+  if (server.status === "maintenance") {
+    return { Icon: ServerCog, title: "на обслуживании" };
+  }
+  return { Icon: ServerIcon, title: "сервер" };
+}
+
+/** Оттенок иконки для неактивной строки: приглушаем «мёртвые» статусы. */
+function serverIconTint(server: Server): string {
+  if (server.status === "decommissioned") return "text-dim opacity-60";
+  if (server.status === "offline") return "text-danger";
+  return "text-dim";
+}
+
 function ServerRow({
   server,
   active,
@@ -759,6 +786,9 @@ function ServerRow({
         ? "test"
         : "busy";
   const name = server.display_name ?? server.hostname;
+  const { Icon: RowIcon, title: iconTitle } = serverRowIcon(server);
+  // VMS-hub — не обычный сервер, а несущий ВМ узел: помечаем и подписью.
+  const kindLabel = server.is_vms_hub ? "VMS-hub" : "сервер";
   return (
     <div className={`cred-row text-left flex items-center gap-2 ${active ? "active" : ""}`}>
       {selectable && (
@@ -777,14 +807,16 @@ function ServerRow({
         className="flex-1 min-w-0 text-left"
       >
         <div className="flex items-center gap-2">
-        <ServerIcon
-          className={`w-4 h-4 shrink-0 ${active ? "text-accent" : "text-dim"}`}
+        <RowIcon
+          data-testid="server-row-icon"
+          aria-label={iconTitle}
+          className={`w-4 h-4 shrink-0 ${active ? "text-accent" : serverIconTint(server)}`}
         />
         <div className="flex-1 min-w-0">
           <div className="text-sm truncate">{name}</div>
           <div className="text-[11px] text-dim flex items-center gap-1.5 min-w-0">
             <span className="uppercase tracking-wide text-[10px] shrink-0">
-              сервер
+              {kindLabel}
             </span>
             <span className="shrink-0">·</span>
             <span className="truncate">{deptLabel}</span>

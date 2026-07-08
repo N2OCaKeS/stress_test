@@ -27,8 +27,10 @@ import {
   HardDrive,
   KeyRound,
   Maximize2,
+  MemoryStick,
   MonitorPlay,
   Network,
+  Package,
   Pencil,
   Play,
   Plus,
@@ -43,6 +45,7 @@ import {
   TerminalSquare,
   Copy,
   Users,
+  Wrench,
   XCircle,
   Zap,
   Trash2,
@@ -88,8 +91,10 @@ import {
   getVmByNumber,
   getServerByNumber,
   listVmDisks,
+  listVmAccounts,
   listVmImages,
   listVmIpPools,
+  listVmPackages,
   listVmPresets,
   listVmSnapshots,
   listVms,
@@ -125,6 +130,7 @@ import {
   type VmIpPoolUpdateRequest,
   type VmNetworkMode,
   type VmNetworkRequest,
+  type VmPackage,
   type VmPowerAction,
   type VmPreset,
   type VmPresetCreateRequest,
@@ -150,9 +156,11 @@ import {
   MOCK_VM_IMAGES,
   MOCK_VM_IP_POOLS,
   MOCK_VM_OS_VERSIONS,
+  MOCK_VM_PACKAGES,
   MOCK_VM_PRESETS,
   MOCK_VM_SNAPSHOTS,
   MOCK_VMS,
+  mockVmAccounts,
   mockVmConsole,
 } from "@/mocks/vm";
 
@@ -720,18 +728,26 @@ function PowerBadge({ state }: { state: Vm["power_state"] }) {
 
 type VmTabId =
   | "overview"
+  | "hardware"
   | "power"
-  | "snapshots"
-  | "disks"
   | "network"
-  | "maintenance";
+  | "disks"
+  | "snapshots"
+  | "accounts"
+  | "packages"
+  | "console"
+  | "maintenance"
+  | "manage";
 
 /**
  * Карточка конкретной ВМ — раскладка вкладками по образцу карточки сервера
  * (`ServerDetail`). Общая шапка с именем/номером/питанием, ниже — таб-бар и
- * содержимое активной вкладки. Управляющие вкладки (питание, сеть,
- * обслуживание) видны только при праве на управление; обзор, снимки и диски
- * доступны и на чтение.
+ * содержимое активной вкладки. Набор повторяет применимые вкладки сервера
+ * (железо, аккаунты, пакеты, консоль, управление) плюс VM-специфичные (питание,
+ * сеть, диски, снимки, обслуживание). IPMI у ВМ нет (нет BMC), вкладку не
+ * показываем. Управляющие вкладки (питание, сеть, обслуживание, управление)
+ * видны только при праве на управление; обзор, железо, диски, снимки, аккаунты,
+ * пакеты и консоль доступны и на чтение.
  */
 export function VmDetail({
   vm,
@@ -896,10 +912,12 @@ export function VmDetail({
     }
   }
 
-  // Вкладки: обзор/снимки/диски доступны на чтение; питание, сеть и
-  // обслуживание — только при праве на управление.
+  // Вкладки: обзор/железо/диски/снимки/аккаунты/пакеты/консоль доступны на
+  // чтение; питание, сеть, обслуживание и управление — только при праве на
+  // управление.
   const tabs: { id: VmTabId; label: string; icon: React.ReactNode }[] = [
     { id: "overview", label: "Обзор", icon: <MonitorPlay className="w-4 h-4" /> },
+    { id: "hardware", label: "Железо", icon: <Cpu className="w-4 h-4" /> },
     ...(canManage
       ? [
           {
@@ -907,20 +925,32 @@ export function VmDetail({
             label: "Питание",
             icon: <Power className="w-4 h-4" />,
           },
-        ]
-      : []),
-    { id: "snapshots", label: "Снимки", icon: <Camera className="w-4 h-4" /> },
-    { id: "disks", label: "Диски", icon: <HardDrive className="w-4 h-4" /> },
-    ...(canManage
-      ? [
           {
             id: "network" as const,
             label: "Сеть",
             icon: <Network className="w-4 h-4" />,
           },
+        ]
+      : []),
+    { id: "disks", label: "Диски", icon: <HardDrive className="w-4 h-4" /> },
+    { id: "snapshots", label: "Снимки", icon: <Camera className="w-4 h-4" /> },
+    { id: "accounts", label: "Аккаунты", icon: <Users className="w-4 h-4" /> },
+    { id: "packages", label: "Пакеты", icon: <Package className="w-4 h-4" /> },
+    {
+      id: "console",
+      label: "Консоль",
+      icon: <TerminalSquare className="w-4 h-4" />,
+    },
+    ...(canManage
+      ? [
           {
             id: "maintenance" as const,
             label: "Обслуживание",
+            icon: <Wrench className="w-4 h-4" />,
+          },
+          {
+            id: "manage" as const,
+            label: "Управление",
             icon: <ShieldCheck className="w-4 h-4" />,
           },
         ]
@@ -1004,6 +1034,8 @@ export function VmDetail({
               )}
             </div>
           )}
+
+          {activeTab === "hardware" && <VmHardwareCard vm={view} />}
 
           {activeTab === "power" && canManage && (
             <>
@@ -1144,7 +1176,21 @@ export function VmDetail({
             <NetworkCard vm={view} mock={mock} onChanged={onChanged} />
           )}
 
+          {activeTab === "accounts" && (
+            <VmAccountsSection vm={view} mock={mock} />
+          )}
+
+          {activeTab === "packages" && (
+            <VmPackagesSection vm={view} mock={mock} />
+          )}
+
+          {activeTab === "console" && <ConsoleCard vm={view} mock={mock} />}
+
           {activeTab === "maintenance" && canManage && (
+            <OsOpsSection vm={view} mock={mock} onChanged={onChanged} />
+          )}
+
+          {activeTab === "manage" && canManage && (
             <>
               <PrepareMgmtCard
                 vm={view}
@@ -1152,8 +1198,6 @@ export function VmDetail({
                 onApplied={(next) => setLocal(next)}
                 onChanged={onChanged}
               />
-              <OsOpsSection vm={view} mock={mock} onChanged={onChanged} />
-              <ConsoleCard vm={view} mock={mock} />
               <div
                 className="card"
                 style={{ border: "1px solid var(--danger, #b91c1c)" }}
@@ -2926,12 +2970,13 @@ function NetworkCard({
 // ── консоль ВМ ──────────────────────────────────────────────────────────────────
 
 /**
- * Панель консоли ВМ: выбор вида (SSH / VNC / serial) и получение данных
- * подключения. Для SSH показываем готовую команду и креды; для VNC/serial —
- * ws-эндпоинт прокси. noVNC-вьювер не встраиваем (пакета нет в бандле, внешние
- * CDN запрещены CSP) — показываем адрес/порт прокси с пометкой.
+ * Панель консоли ВМ: выбор вида (SSH / VNC / serial / SPICE) и получение данных
+ * подключения. Дефолт — SSH. Для SSH показываем готовую команду и креды; для
+ * VNC/SPICE/serial — ws-эндпоинт прокси. Графический вьювер не встраиваем
+ * (пакета нет в бандле, внешние CDN запрещены CSP) — показываем адрес/порт
+ * прокси с пометкой.
  */
-function ConsoleCard({ vm, mock }: { vm: Vm; mock: boolean }) {
+export function ConsoleCard({ vm, mock }: { vm: Vm; mock: boolean }) {
   const toast = useToast();
   const [kind, setKind] = useState<VmConsoleKind>("ssh");
   const [session, setSession] = useState<VmConsoleResponse | null>(null);
@@ -2960,6 +3005,7 @@ function ConsoleCard({ vm, mock }: { vm: Vm; mock: boolean }) {
     { value: "ssh", label: "SSH" },
     { value: "vnc", label: "VNC" },
     { value: "serial", label: "Serial" },
+    { value: "spice", label: "SPICE" },
   ];
 
   return (
@@ -3022,21 +3068,52 @@ function ConsoleSession({ session }: { session: VmConsoleResponse }) {
     );
   }
 
-  const isVnc = session.kind === "vnc";
-  const port = isVnc ? session.port : null;
+  if (session.kind === "serial") {
+    return (
+      <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
+        <div className="text-xs text-dim">
+          Последовательная консоль (serial) через прокси.
+        </div>
+        <div className="border border-dashed border-token rounded p-4 text-center bg-black/5 dark:bg-white/5">
+          <TerminalSquare className="w-8 h-8 mx-auto text-dim mb-2" />
+          {session.proxy_ready && session.ws_url ? (
+            <>
+              <div className="text-xs">
+                Прокси поднят. Подключайтесь websocket-клиентом к эндпоинту:
+              </div>
+              <div className="mono text-xs break-all mt-1">{session.ws_url}</div>
+            </>
+          ) : (
+            <div className="text-xs text-warn">
+              Прокси-эндпоинт разворачивается инфраструктурно. Встроенный вьювер
+              появится после его поднятия.
+            </div>
+          )}
+        </div>
+        {session.ws_url && (
+          <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
+            <Field k="ws-прокси" v={session.ws_url} mono />
+          </dl>
+        )}
+        <div className="text-xs text-dim">Локальный доступ на хабе:</div>
+        <CopyableCommand text={session.command} />
+      </div>
+    );
+  }
+
+  // vnc | spice — графическая консоль через websockify/прокси.
+  const proto = session.kind === "vnc" ? "VNC" : "SPICE";
   return (
     <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
       <div className="text-xs text-dim">
-        {isVnc
-          ? "Графическая консоль (VNC) через websockify-прокси."
-          : "Последовательная консоль (serial) через прокси."}
+        Графическая консоль ({proto}) через websockify-прокси.
       </div>
       <div className="border border-dashed border-token rounded p-4 text-center bg-black/5 dark:bg-white/5">
         <TerminalSquare className="w-8 h-8 mx-auto text-dim mb-2" />
         {session.proxy_ready && session.ws_url ? (
           <>
             <div className="text-xs">
-              Прокси поднят. Подключайтесь noVNC/websocket-клиентом к эндпоинту:
+              Прокси поднят. Подключайтесь {proto}/websocket-клиентом к эндпоинту:
             </div>
             <div className="mono text-xs break-all mt-1">{session.ws_url}</div>
           </>
@@ -3048,20 +3125,12 @@ function ConsoleSession({ session }: { session: VmConsoleResponse }) {
         )}
       </div>
       <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
-        {isVnc && port != null && (
-          <Field k="host" v={`${session.host}:${port}`} mono />
-        )}
+        <Field k="host" v={`${session.host}:${session.port}`} mono />
         {session.ws_url && <Field k="ws-прокси" v={session.ws_url} mono />}
-        {isVnc && session.password && (
-          <Field k="Пароль VNC" v={session.password} mono />
+        {session.password && (
+          <Field k={`Пароль ${proto}`} v={session.password} mono />
         )}
       </dl>
-      {!isVnc && (
-        <>
-          <div className="text-xs text-dim">Локальный доступ на хабе:</div>
-          <CopyableCommand text={session.command} />
-        </>
-      )}
     </div>
   );
 }
@@ -3089,6 +3158,261 @@ function CopyableCommand({ text }: { text: string }) {
       >
         <Copy className="w-3.5 h-3.5" />
       </button>
+    </div>
+  );
+}
+
+// ── железо ВМ ─────────────────────────────────────────────────────────────────
+
+/**
+ * Read-only сводка по «железу» ВМ — виртуальные ресурсы домена (vCPU / RAM /
+ * системный диск / сеть). По образцу серверной вкладки «Железо», но данные
+ * берутся прямо из VM-объекта; правка ресурсов — во вкладке «Обзор»
+ * (кнопка «Изменить CPU/RAM»), доп. диски — во вкладке «Диски».
+ */
+function VmHardwareCard({ vm }: { vm: Vm }) {
+  const ramGb = (vm.ram_mb / 1024).toFixed(vm.ram_mb % 1024 === 0 ? 0 : 1);
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="card">
+        <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+          <Cpu className="w-4 h-4 text-accent" /> CPU
+        </h3>
+        <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-sm">
+          <Field k="vCPU" v={String(vm.cpu)} mono />
+        </dl>
+      </div>
+
+      <div className="card">
+        <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+          <MemoryStick className="w-4 h-4 text-accent" /> RAM
+        </h3>
+        <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-sm">
+          <Field k="RAM, МБ" v={String(vm.ram_mb)} mono />
+          <Field k="RAM, ГБ" v={`${ramGb} ГБ`} mono />
+        </dl>
+      </div>
+
+      <div className="card">
+        <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+          <HardDrive className="w-4 h-4 text-accent" /> Диск
+        </h3>
+        <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-sm">
+          <Field k="Системный, ГБ" v={`${vm.disk_gb} ГБ`} mono />
+          <Field k="box" v={vm.box} />
+        </dl>
+        <div className="mt-2 text-[11px] text-dim">
+          Дополнительные диски — во вкладке «Диски».
+        </div>
+      </div>
+
+      <div className="card">
+        <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+          <Network className="w-4 h-4 text-accent" /> Сеть
+        </h3>
+        <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-sm">
+          <Field k="Режим" v={vm.network_mode} />
+          <Field k="IP-адрес" v={vm.ip_address ?? "— (авто / NAT)"} mono />
+        </dl>
+      </div>
+    </div>
+  );
+}
+
+// ── учётки ВМ ─────────────────────────────────────────────────────────────────
+
+/**
+ * Read-only список учёток (`server_account`), привязанных к ВМ. По образцу
+ * серверной вкладки «Аккаунты», но упрощённый: привязка учёток к ВМ идёт при
+ * создании ВМ (мультиселект в форме create), поэтому здесь — только просмотр.
+ * Backend домена `vm` ещё не отдаёт `/vms/{id}/accounts`, в mock-режиме данные
+ * из `@/mocks/vm`.
+ */
+function VmAccountsSection({ vm, mock }: { vm: Vm; mock: boolean }) {
+  const accountsQ = useQuery<ServerAccount[]>(
+    async () => {
+      if (mock) return mockVmAccounts(vm);
+      const res = await listVmAccounts(vm.id);
+      return res.items;
+    },
+    [vm.id, mock],
+    { keepPreviousDataOnError: true },
+  );
+  const accounts = accountsQ.data ?? [];
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-base flex items-center gap-2">
+          <Users className="w-4 h-4 text-accent" /> Учётки
+        </h3>
+        <button
+          className="btn btn-sm flex items-center gap-1"
+          onClick={() => accountsQ.refetch()}
+          disabled={accountsQ.loading}
+          title="Обновить список учёток"
+        >
+          <RefreshCw
+            className={`w-3.5 h-3.5 ${accountsQ.loading ? "animate-spin" : ""}`}
+          />
+          Обновить
+        </button>
+      </div>
+      <div className="text-xs text-dim mb-3">
+        Учётки отдела, провижнящиеся OS-юзерами в госте ВМ. Привязка задаётся при
+        создании ВМ.
+      </div>
+
+      {accountsQ.loading ? (
+        <div className="text-xs text-dim">Загрузка…</div>
+      ) : accountsQ.error && accounts.length === 0 ? (
+        <div className="alert alert-danger flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 mt-0.5" />
+          <div className="flex-1 text-xs">
+            <div>{apiErrMsg(accountsQ.error, "Список учёток не загрузился")}</div>
+            <button
+              className="btn btn-ghost mt-2"
+              onClick={() => accountsQ.refetch()}
+            >
+              Повторить
+            </button>
+          </div>
+        </div>
+      ) : accounts.length === 0 ? (
+        <div className="text-xs text-dim">К ВМ не привязано ни одной учётки.</div>
+      ) : (
+        <div className="surface-2 border border-token rounded overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[11px] uppercase text-dim border-b border-token">
+                <th className="text-left px-3 py-2 font-medium">Логин</th>
+                <th className="text-left px-3 py-2 font-medium">sudo</th>
+                <th className="text-left px-3 py-2 font-medium">Группы</th>
+                <th className="text-left px-3 py-2 font-medium">Источник</th>
+                <th className="text-left px-3 py-2 font-medium">Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              {accounts.map((a) => (
+                <tr key={a.id} className="border-b border-token last:border-b-0">
+                  <td className="px-3 py-1.5 mono">{a.login}</td>
+                  <td className="px-3 py-1.5">
+                    {a.has_sudo ? (
+                      <span className="badge badge-warn text-[11px]">sudo</span>
+                    ) : (
+                      <span className="text-dim">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5 text-xs text-dim">
+                    {a.unix_groups.join(", ") || "—"}
+                  </td>
+                  <td className="px-3 py-1.5 text-xs">{a.source}</td>
+                  <td className="px-3 py-1.5">
+                    {a.is_active ? (
+                      <span className="badge badge-ok text-[11px]">активна</span>
+                    ) : (
+                      <span className="badge text-[11px]">неактивна</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── пакеты гостя ВМ ──────────────────────────────────────────────────────────
+
+/**
+ * Read-only список установленных в госте пакетов ВМ. По образцу серверной
+ * вкладки «Пакеты», но без live-SSH-probe: показываем последний срез из
+ * `/vms/{id}/packages`. Backend домена `vm` его ещё не отдаёт — в mock-режиме
+ * данные из `@/mocks/vm`.
+ */
+function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
+  const pkgsQ = useQuery<VmPackage[]>(
+    async () => {
+      if (mock) return MOCK_VM_PACKAGES[vm.id] ?? [];
+      const res = await listVmPackages(vm.id);
+      return res.items;
+    },
+    [vm.id, mock],
+    { keepPreviousDataOnError: true },
+  );
+  const packages = pkgsQ.data ?? [];
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-base flex items-center gap-2">
+          <Package className="w-4 h-4 text-accent" /> Пакеты
+          <span className="text-xs text-dim font-normal">
+            ({packages.length})
+          </span>
+        </h3>
+        <button
+          className="btn btn-sm flex items-center gap-1"
+          onClick={() => pkgsQ.refetch()}
+          disabled={pkgsQ.loading}
+          title="Обновить список пакетов"
+        >
+          <RefreshCw
+            className={`w-3.5 h-3.5 ${pkgsQ.loading ? "animate-spin" : ""}`}
+          />
+          Обновить
+        </button>
+      </div>
+      <div className="text-xs text-dim mb-3">
+        Установленные в госте пакеты (`dpkg-query` / `rpm -qa`), последний срез.
+      </div>
+
+      {pkgsQ.loading ? (
+        <div className="text-xs text-dim">Загрузка…</div>
+      ) : pkgsQ.error && packages.length === 0 ? (
+        <div className="alert alert-danger flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 mt-0.5" />
+          <div className="flex-1 text-xs">
+            <div>{apiErrMsg(pkgsQ.error, "Список пакетов не загрузился")}</div>
+            <button
+              className="btn btn-ghost mt-2"
+              onClick={() => pkgsQ.refetch()}
+            >
+              Повторить
+            </button>
+          </div>
+        </div>
+      ) : packages.length === 0 ? (
+        <div className="text-xs text-dim">Данных о пакетах пока нет.</div>
+      ) : (
+        <div className="surface-2 border border-token rounded overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[11px] uppercase text-dim border-b border-token">
+                <th className="text-left px-3 py-2 font-medium">Название</th>
+                <th className="text-left px-3 py-2 font-medium">Версия</th>
+                <th className="text-left px-3 py-2 font-medium">Архитектура</th>
+              </tr>
+            </thead>
+            <tbody>
+              {packages.map((p) => (
+                <tr
+                  key={`${p.name}-${p.version}-${p.arch ?? ""}`}
+                  className="border-b border-token last:border-b-0"
+                >
+                  <td className="px-3 py-1.5 mono text-xs">{p.name}</td>
+                  <td className="px-3 py-1.5 mono text-xs">{p.version}</td>
+                  <td className="px-3 py-1.5 mono text-xs text-dim">
+                    {p.arch ?? "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

@@ -68,6 +68,7 @@ import type {
   OffsetPaginatedResponse,
   ReasonBody,
   Server,
+  ServerAccount,
   TaskDispatchResponse,
 } from "@/api/server/types";
 
@@ -556,15 +557,17 @@ export interface ListVmPresetsQuery {
   department_id?: string;
 }
 
-// ── консоль ВМ (SSH / VNC / serial) ─────────────────────────────────────────
+// ── консоль ВМ (SSH / VNC / serial / SPICE) ─────────────────────────────────
 
 /**
  * Вид консоли ВМ (`POST /vms/{id}/console`):
- *  - `ssh` — доступ по SSH (команда + креды mgmt/базовой учётки);
+ *  - `ssh` — доступ по SSH (команда + креды mgmt/базовой учётки), дефолт;
  *  - `vnc` — графическая консоль через websockify+noVNC-прокси;
- *  - `serial` — последовательная консоль (`virsh console`).
+ *  - `serial` — последовательная консоль (`virsh console`);
+ *  - `spice` — графическая консоль SPICE через прокси (нужен `graphics=spice`
+ *    в домене на этапе create + подготовка консоли на хабе).
  */
-export type VmConsoleKind = "ssh" | "vnc" | "serial";
+export type VmConsoleKind = "ssh" | "vnc" | "serial" | "spice";
 
 /** Тело POST /vms/{id}/console. */
 export interface VmConsoleRequest {
@@ -607,11 +610,28 @@ export interface VmConsoleSerialResponse {
   proxy_ready: boolean;
 }
 
+/**
+ * SPICE-консоль: ws(s)-эндпоинт прокси для SPICE-вьювера (аналог VNC, но по
+ * протоколу SPICE). Домен ВМ должен быть создан с `graphics=spice`. Если прокси
+ * ещё не поднят — `proxy_ready=false`, UI показывает адрес/порт с пометкой.
+ */
+export interface VmConsoleSpiceResponse {
+  kind: "spice";
+  /** ws(s)-URL прокси. null — прокси не развёрнут. */
+  ws_url: string | null;
+  host: string;
+  port: number;
+  /** Одноразовый пароль SPICE (если задан). */
+  password?: string | null;
+  proxy_ready: boolean;
+}
+
 /** Ответ POST /vms/{id}/console (дискриминатор — `kind`). */
 export type VmConsoleResponse =
   | VmConsoleSshResponse
   | VmConsoleVncResponse
-  | VmConsoleSerialResponse;
+  | VmConsoleSerialResponse
+  | VmConsoleSpiceResponse;
 
 // ── client ──────────────────────────────────────────────────────────────────
 
@@ -1052,4 +1072,44 @@ export function openVmConsole(
   kind: VmConsoleKind,
 ): Promise<VmConsoleResponse> {
   return apiPost<VmConsoleResponse>(`/server/v1/vms/${vmId}/console`, { kind });
+}
+
+// ── учётки ВМ ─────────────────────────────────────────────────────────────────
+
+/** Envelope GET /vms/{id}/accounts. */
+export interface VmAccountListResponse {
+  items: ServerAccount[];
+}
+
+/**
+ * `GET /api/server/v1/vms/{id}/accounts` — учётки (`server_account`),
+ * привязанные к ВМ (worker провижнит их OS-юзерами в госте). Форма учётки — та
+ * же `ServerAccount`, что и у сервера. Контракт согласован, но backend домена
+ * `vm` его ещё не отдаёт — в mock-режиме страница берёт данные из `@/mocks/vm`.
+ */
+export function listVmAccounts(vmId: string): Promise<VmAccountListResponse> {
+  return apiGet<VmAccountListResponse>(`/server/v1/vms/${vmId}/accounts`);
+}
+
+// ── пакеты гостя ВМ ──────────────────────────────────────────────────────────
+
+/** Установленный пакет в госте ВМ (`dpkg-query` / `rpm -qa`). */
+export interface VmPackage {
+  name: string;
+  version: string;
+  arch?: string | null;
+}
+
+/** Envelope GET /vms/{id}/packages. */
+export interface VmPackageListResponse {
+  items: VmPackage[];
+}
+
+/**
+ * `GET /api/server/v1/vms/{id}/packages` — установленные в госте пакеты
+ * (последний снятый срез). Контракт согласован, но backend домена `vm` его ещё
+ * не отдаёт — в mock-режиме данные берутся из `@/mocks/vm`.
+ */
+export function listVmPackages(vmId: string): Promise<VmPackageListResponse> {
+  return apiGet<VmPackageListResponse>(`/server/v1/vms/${vmId}/packages`);
 }

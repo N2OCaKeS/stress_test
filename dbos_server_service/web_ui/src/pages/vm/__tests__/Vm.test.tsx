@@ -265,7 +265,7 @@ describe("Vm zone (mock mode)", () => {
 
   it("подготовленная ВМ показывает mgmt-учётку и кнопку ротации кред", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
-    await openVmTab("Обслуживание");
+    await openVmTab("Управление");
     expect(
       await screen.findByRole("heading", {
         name: /Подготовка и управляющие креды/,
@@ -281,7 +281,7 @@ describe("Vm zone (mock mode)", () => {
   it("неподготовленная ВМ показывает кнопку «Подготовить»", async () => {
     // vm-103 в фикстуре is_managed=false.
     renderVm("/vm?hub=srv-07&id=vm-103");
-    await openVmTab("Обслуживание");
+    await openVmTab("Управление");
     expect(
       await screen.findByRole("button", { name: /Подготовить/ }),
     ).toBeInTheDocument();
@@ -385,18 +385,19 @@ describe("Vm zone (mock mode)", () => {
     ).toHaveAttribute("aria-checked", "false");
   });
 
-  it("вкладка «Обслуживание» несёт панель консоли с выбором SSH/VNC/serial", async () => {
+  it("вкладка «Консоль» несёт панель консоли с выбором SSH/VNC/serial/SPICE", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
-    await openVmTab("Обслуживание");
+    await openVmTab("Консоль");
     expect(await screen.findByRole("heading", { name: /Консоль/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^SSH$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^VNC$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Serial$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^SPICE$/ })).toBeInTheDocument();
   });
 
   it("консоль SSH показывает команду подключения", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
-    await openVmTab("Обслуживание");
+    await openVmTab("Консоль");
     await screen.findByRole("heading", { name: /Консоль/ });
     fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
     // SSH по умолчанию — видна команда ssh.
@@ -405,7 +406,7 @@ describe("Vm zone (mock mode)", () => {
 
   it("консоль VNC показывает ws-эндпоинт прокси (без внешнего вьювера)", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
-    await openVmTab("Обслуживание");
+    await openVmTab("Консоль");
     await screen.findByRole("heading", { name: /Консоль/ });
     fireEvent.click(screen.getByRole("button", { name: /^VNC$/ }));
     fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));

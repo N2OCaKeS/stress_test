@@ -27,6 +27,8 @@ vi.mock("@/api/server/vms", async (importOriginal) => {
     vmPower: vi.fn(() => Promise.resolve({ task_id: "t1", status: "queued" })),
     listVmDisks: vi.fn(() => Promise.resolve({ items: [] })),
     listVmSnapshots: vi.fn(() => Promise.resolve({ items: [] })),
+    listVmAccounts: vi.fn(() => Promise.resolve({ items: [] })),
+    listVmPackages: vi.fn(() => Promise.resolve({ items: [] })),
   };
 });
 
@@ -36,7 +38,13 @@ vi.mock("@/api/server/misc", () => ({
 }));
 
 import { VmDetail } from "@/pages/vm/Vm";
-import { vmPower, listVmDisks, listVmSnapshots } from "@/api/server/vms";
+import {
+  vmPower,
+  listVmDisks,
+  listVmSnapshots,
+  listVmAccounts,
+  listVmPackages,
+} from "@/api/server/vms";
 
 const MOCK_VM: VmType = {
   id: "vm-x1",
@@ -168,5 +176,71 @@ describe("VmDetail (tabbed, live mode)", () => {
     expect(
       await screen.findByRole("heading", { name: /^Сеть$/ }),
     ).toBeInTheDocument();
+  });
+
+  it("рендерит новые серверные вкладки (Железо/Аккаунты/Пакеты/Консоль/Управление)", async () => {
+    renderDetail(true);
+    for (const label of [
+      "Железо",
+      "Аккаунты",
+      "Пакеты",
+      "Консоль",
+      "Управление",
+    ]) {
+      expect(
+        await screen.findByRole("button", { name: label }),
+      ).toBeInTheDocument();
+    }
+    // IPMI у ВМ не применимо — вкладки нет.
+    expect(screen.queryByRole("button", { name: "IPMI" })).not.toBeInTheDocument();
+  });
+
+  it("вкладка «Железо» показывает виртуальные ресурсы (read-only)", async () => {
+    renderDetail(true);
+    await openTab("Железо");
+    expect(await screen.findByRole("heading", { name: /CPU/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /RAM/ })).toBeInTheDocument();
+  });
+
+  it("вкладка «Аккаунты» монтирует секцию и грузит учётки", async () => {
+    renderDetail(true);
+    await openTab("Аккаунты");
+    expect(
+      await screen.findByRole("heading", { name: /Учётки/ }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(listVmAccounts).toHaveBeenCalledWith(MOCK_VM.id),
+    );
+  });
+
+  it("вкладка «Пакеты» монтирует секцию и грузит пакеты", async () => {
+    renderDetail(true);
+    await openTab("Пакеты");
+    expect(
+      await screen.findByRole("heading", { name: /Пакеты/ }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(listVmPackages).toHaveBeenCalledWith(MOCK_VM.id),
+    );
+  });
+
+  it("вкладка «Управление» показывает опасную зону удаления", async () => {
+    renderDetail(true);
+    await openTab("Управление");
+    expect(await screen.findByText(/Опасная зона/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Удалить ВМ/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("для роли без управления прячет вкладку «Управление», оставляет читаемые", async () => {
+    renderDetail(false);
+    expect(await screen.findByRole("button", { name: "Железо" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Аккаунты" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Пакеты" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Консоль" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Управление" }),
+    ).not.toBeInTheDocument();
   });
 });

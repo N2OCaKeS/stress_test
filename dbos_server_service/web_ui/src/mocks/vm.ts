@@ -15,6 +15,7 @@ import type {
   VmHub,
   VmImage,
   VmIpPool,
+  VmPackage,
   VmPreset,
   VmSnapshot,
 } from "@/api/server/vms";
@@ -654,8 +655,9 @@ export const MOCK_VM_PRESETS: VmPreset[] = [
 
 /**
  * Данные консоли ВМ для mock-режима (`POST /vms/{id}/console`). VNC отдаёт
- * поднятый прокси (для демонстрации панели-вьювера), serial — ещё не поднятый
- * (пометка про инфраструктурное развёртывание).
+ * поднятый прокси (для демонстрации панели-вьювера), SPICE — тоже поднятый
+ * прокси (другой протокол/порт), serial — ещё не поднятый (пометка про
+ * инфраструктурное развёртывание).
  */
 export function mockVmConsole(vm: Vm, kind: VmConsoleKind): VmConsoleResponse {
   const host = vm.ip_address ?? "10.177.103.51";
@@ -680,6 +682,16 @@ export function mockVmConsole(vm: Vm, kind: VmConsoleKind): VmConsoleResponse {
       proxy_ready: true,
     };
   }
+  if (kind === "spice") {
+    return {
+      kind: "spice",
+      ws_url: `wss://vms-console.local/vms/${vm.id}/spice`,
+      host,
+      port: 5900,
+      password: "mock-spice-7c1b",
+      proxy_ready: true,
+    };
+  }
   return {
     kind: "serial",
     ws_url: null,
@@ -687,3 +699,34 @@ export function mockVmConsole(vm: Vm, kind: VmConsoleKind): VmConsoleResponse {
     proxy_ready: false,
   };
 }
+
+/**
+ * Учётки, привязанные к ВМ (`GET /vms/{id}/accounts`) — mock-фолбэк вкладки
+ * «Аккаунты» карточки ВМ. Берём учётки отдела ВМ (в проде это те, что worker
+ * провижнит OS-юзерами в госте).
+ */
+export function mockVmAccounts(vm: Vm): ServerAccount[] {
+  return MOCK_VM_ACCOUNTS.filter((a) => a.department_id === vm.department_id);
+}
+
+/**
+ * Пакеты гостя ВМ (`GET /vms/{id}/packages`), keyed по `vm.id` — mock-фолбэк
+ * вкладки «Пакеты» карточки ВМ.
+ */
+export const MOCK_VM_PACKAGES: Record<string, VmPackage[]> = {
+  "vm-101": [
+    { name: "astra-version", version: "1.8.1.6", arch: "all" },
+    { name: "linux-image-6.1.0", version: "6.1.90-1", arch: "amd64" },
+    { name: "openssh-server", version: "1:9.2p1-2", arch: "amd64" },
+    { name: "allta-agent", version: "2.4.1", arch: "amd64" },
+  ],
+  "vm-102": [
+    { name: "astra-version", version: "1.7.5.9", arch: "all" },
+    { name: "linux-image-5.15.0", version: "5.15.120-1", arch: "amd64" },
+    { name: "openssh-server", version: "1:8.4p1-5", arch: "amd64" },
+  ],
+  "vm-201": [
+    { name: "astra-version", version: "1.8.1.6", arch: "all" },
+    { name: "xfsprogs", version: "6.1.0-1", arch: "amd64" },
+  ],
+};

@@ -8,10 +8,11 @@ sudo NOPASSWD — libvirt/kvm без пароля):
   `libvirtd`, мост `br0` над физическим NIC, firewall (FORWARD/DOCKER-USER
   ACCEPT br0 + `bridge-nf-call-iptables=0`), storage-pool и скачивание образов
   с FTP. Идемпотентна.
-* `vm.create` — создать ВМ: клон диска бокса + `virt-install`, провижн гостя,
-  снимки. Universal-бокс (`vm_station`) несёт несколько версий ОС на одном
-  диске — для каждой строим `<ver>_build` (golden) + `<ver>` (deliverable);
-  single-бокс — один снимок `build`.
+* `vm.create` — создать ВМ: клон диска бокса (virt-resize при disk_gb) +
+  `virt-install`, провижн гостя (hostname, привязанные учётки), снимки.
+  Universal-бокс (`vm_station`) несёт несколько версий ОС на одном диске — для
+  каждой строим скрытый golden `<ver>_orel_build` + deliverable `<ver>_oryol`
+  (Орёл) и `<ver>_smolensk` (Смоленск); single-бокс — один снимок `build`.
 * `vm.power` — `virsh start|shutdown|reboot|reset|destroy` + чтение
   `domstate`.
 * `vm.delete` — снести домен ВМ: `virsh destroy` (глушим non-zero) +
@@ -26,6 +27,8 @@ durable-retry на уровне `_runner`. Guest доступен по `sshpass`
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import logging
 import re
 
@@ -43,7 +46,10 @@ from src.main import broker
 from src.services import server_service_client
 from src.tasks._runner import run_task
 from src.tasks._vms_helpers import (
+    MODE_OREL,
+    MODE_SMOLENSK,
     POWER_VERBS,
+    SNAPSHOT_KIND_OS_BASELINE,
     VMS_DEFAULT_GATEWAY,
     VMS_DEFAULT_NETMASK,
     bridge_label,
@@ -55,6 +61,7 @@ from src.tasks._vms_helpers import (
     positive_int,
     resolve_box_url,
     run_hub_cmd,
+    switch_guest_to_smolensk,
     validate_ip,
     validate_iface,
     validate_name,
@@ -98,6 +105,34 @@ AUDIT_SAFE_FIELDS_DELETE: set[str] = {"vm_id", "vm_name", "destroyed", "undefine
 
 # hub-команда под sudo с проверкой кода возврата — общий раннер VM-тасок.
 _run = run_hub_cmd
+
+# Корневой раздел бокса для virt-resize (подтверждено на боксе: vda1 — 2M
+# BIOS-boot, vda2 — ext4 root). libguestfs адресует диск как /dev/sda.
+_ROOT_PARTITION = "/dev/sda2"
+
+# Суффикс скрытого golden-снимка версии (сырой бокс-стейт, служебный). Кончается
+# на `_build` — reroll/passwd его защищают (см. `vms_snapshots._BUILD_SUFFIX`).
+_GOLDEN_SUFFIX = "_orel_build"
+
+
+def _validate_guest_password(value: str, host: str) -> str:
+    """Отбить пароль гостя с символами, ломающими inline-`chpasswd`.
+
+    Пароль уходит в `bash -c 'echo <login>:<pwd> | chpasswd'` внутри вложенной
+    guest-сессии; перевод строки/кавычки/подстановка расклеили бы команду.
+    """
+    if not isinstance(value, str) or not value:
+        raise SshError(
+            error_code="VM_INVALID_ARG", host=host,
+            message="пароль гостя должен быть непустой строкой",
+        )
+    for bad in ("\n", "\r", "\0", "'", '"', "`", "$", ";"):
+        if bad in value:
+            raise SshError(
+                error_code="VM_INVALID_ARG", host=host,
+                message="пароль гостя содержит недопустимый символ",
+            )
+    return value
 
 
 # ── vms_hub.prepare ──────────────────────────────────────────────────────────
@@ -675,12 +710,27 @@ async def _wait_guest_ssh(
     )
 
 
-async def _provision_guest_base(ssh, host: str, name: str, guest_ip: str) -> None:
-    """Базовый провижн гостя: hostname, ntp, установка зависимостей."""
+async def _provision_guest_base(
+    ssh, host: str, hostname: str, guest_ip: str,
+) -> None:
+    """Базовый провижн гостя: hostname (+ /etc/hosts), ntp, зависимости."""
     await _wait_guest_ssh(ssh, host, guest_ip)
     await _run(
-        ssh, guest_ssh(guest_ip, f"hostnamectl set-hostname {name}", sudo=True),
+        ssh,
+        guest_ssh(guest_ip, f"hostnamectl set-hostname {hostname}", sudo=True),
         host, "VM_PROVISION_FAILED", "не удалось задать hostname гостю",
+    )
+    # Без записи в /etc/hosts sudo ругается «unable to resolve host <hostname>»
+    # и каждая привилегированная команда тянет за собой таймаут резолва.
+    await _run(
+        ssh,
+        guest_ssh(
+            guest_ip,
+            f"bash -c 'grep -q \" {hostname}$\" /etc/hosts "
+            f"|| echo \"127.0.1.1 {hostname}\" >> /etc/hosts'",
+            sudo=True,
+        ),
+        host, "VM_PROVISION_FAILED", "не удалось прописать hostname в /etc/hosts",
     )
     await ssh.run(
         guest_ssh(guest_ip, "timedatectl set-ntp true", sudo=True), sudo=True,
@@ -693,6 +743,145 @@ async def _provision_guest_base(ssh, host: str, name: str, guest_ip: str) -> Non
             sudo=True,
         ),
         host, "VM_PROVISION_FAILED", "не удалось поставить зависимости в гостя",
+    )
+
+
+# Публичный SSH-ключ аккаунта: base64/PEM-безопасный набор для отбоя shell-мета
+# до заливки в госте (сам ключ уходит base64-обёрнутым, здесь — вход-валидатор).
+_PUBKEY_RE = re.compile(r"^[A-Za-z0-9+/=@:.,_ \-]+$")
+
+
+async def _provision_guest_accounts(
+    ssh, host: str, guest_ip: str, accounts, host_label: str,
+    target_dept: str | None,
+) -> list[str]:
+    """Завести привязанные к ВМ учётки в госте (`useradd` + пароль/ключ/группы).
+
+    Каждый элемент `accounts` — dict привязанного `server_account`:
+    `{login, password?, ssh_public_key?, has_sudo?, unix_groups?, account_id?,
+    server_id?}`. Пароль берём из `password` (server_service расшифровал при
+    dispatch'е — как гостевой `password` у `u`); если его нет, но есть
+    `account_id`+`server_id` — тянем через internal (`fetch_account_password`,
+    как серверный `server_account.provision`). Заводим идемпотентно; фейл
+    любого шага критичен (падаем `VM_CREATE_FAILED`). Возвращаем список
+    заведённых логинов.
+    """
+    provisioned: list[str] = []
+    for acc in accounts or []:
+        if not isinstance(acc, dict):
+            continue
+        login = validate_name(str(acc.get("login") or ""), host_label, "account login")
+        password = acc.get("password")
+        account_id = acc.get("account_id") or acc.get("id")
+        source_server_id = acc.get("server_id")
+        if password is None and account_id and source_server_id:
+            creds = await server_service_client.fetch_account_password(
+                str(source_server_id), str(account_id), target_dept,
+            )
+            password = creds.get("password")
+
+        groups = [
+            validate_name(str(g), host_label, "unix group")
+            for g in (acc.get("unix_groups") or [])
+        ]
+        if acc.get("has_sudo") and "sudo" not in groups:
+            groups.append("sudo")
+        gopt = f" -G {','.join(groups)}" if groups else ""
+        # useradd идемпотентно (уже есть — не падаем); группы добиваем usermod'ом.
+        await _run(
+            ssh,
+            guest_ssh(
+                guest_ip,
+                f"bash -c 'id {login} >/dev/null 2>&1 "
+                f"|| useradd -m{gopt} {login}'",
+                sudo=True,
+            ),
+            host, "VM_CREATE_FAILED",
+            f"не удалось завести пользователя {login} в госте",
+        )
+        if groups:
+            await _run(
+                ssh,
+                guest_ssh(
+                    guest_ip, f"usermod -aG {','.join(groups)} {login}", sudo=True,
+                ),
+                host, "VM_CREATE_FAILED",
+                f"не удалось добавить группы пользователю {login}",
+            )
+        if password:
+            password = _validate_guest_password(str(password), host_label)
+            await _run(
+                ssh,
+                guest_ssh(
+                    guest_ip,
+                    f"bash -c 'echo {login}:{password} | chpasswd'",
+                    sudo=True,
+                ),
+                host, "VM_CREATE_FAILED",
+                f"не удалось задать пароль пользователю {login}",
+            )
+        public_key = acc.get("ssh_public_key")
+        if public_key:
+            if not _PUBKEY_RE.fullmatch(str(public_key)):
+                raise SshError(
+                    error_code="VM_INVALID_ARG", host=host_label,
+                    message=f"публичный ключ {login} содержит недопустимые символы",
+                )
+            # Ключ несёт пробелы — заливаем base64-обёрткой, чтобы не расклеить
+            # вложенную guest-команду.
+            b64 = base64.b64encode(str(public_key).encode()).decode()
+            await _run(
+                ssh,
+                guest_ssh(
+                    guest_ip,
+                    f"bash -c 'umask 077 && mkdir -p ~{login}/.ssh && "
+                    f"echo {b64} | base64 -d >> ~{login}/.ssh/authorized_keys && "
+                    f"chown -R {login}: ~{login}/.ssh'",
+                    sudo=True,
+                ),
+                host, "VM_CREATE_FAILED",
+                f"не удалось положить ключ пользователю {login}",
+            )
+        provisioned.append(login)
+    return provisioned
+
+
+async def _box_virtual_gb(ssh, host: str, box_path: str) -> int | None:
+    """Виртуальный размер диска бокса в ГБ (`qemu-img info`). None — не распарсили."""
+    _rc, out, _err = await ssh.run(
+        f"qemu-img info --output=json {box_path}", sudo=True,
+    )
+    try:
+        data = json.loads(out or "")
+        vsize = int(data["virtual-size"])
+    except (ValueError, TypeError, KeyError):
+        return None
+    return vsize // (1024 ** 3)
+
+
+async def _clone_disk_resized(
+    ssh, host: str, box_path: str, target_path: str, disk_gb: int,
+) -> None:
+    """Клонировать диск бокса в новый qcow2 целевого размера через virt-resize.
+
+    Создаём пустой целевой диск на `disk_gb` ГБ и переносим в него разметку+ФС
+    бокса, растягивая (`--expand`) либо ужимая (`--shrink`) корневой раздел.
+    virt-resize безопасно пересобирает таблицу разделов — обычный `cp`+`qemu-img
+    resize` этого не умеет (рост оставлял хвост неразмеченным, сжатие рушило ФС).
+    Сжать ниже занятого места нельзя: virt-resize упадёт, отдаём `VM_CREATE_FAILED`.
+    """
+    box_gb = await _box_virtual_gb(ssh, host, box_path)
+    await _run(
+        ssh, f"qemu-img create -f qcow2 {target_path} {disk_gb}G", host,
+        "VM_CREATE_FAILED", "не удалось создать целевой диск ВМ",
+    )
+    mode = "--expand" if (box_gb is None or disk_gb >= box_gb) else "--shrink"
+    await _run(
+        ssh,
+        f"virt-resize {mode} {_ROOT_PARTITION} {box_path} {target_path}",
+        host, "VM_CREATE_FAILED",
+        "virt-resize не смог изменить размер диска ВМ "
+        "(запрошенный размер меньше занятого места бокса?)",
     )
 
 
@@ -725,21 +914,44 @@ async def _snapshot(ssh, host: str, name: str, snap: str) -> None:
     )
 
 
+def _os_baseline_entry(
+    name: str, os_version: str, mode: str, *, is_system: bool = False,
+) -> dict:
+    """Rich-элемент снимка версии ОС для callback'а `submit_vm_snapshots`.
+
+    Несёт `mode` (oryol/smolensk), `os_version` и `kind=os_baseline` — по этим
+    полям server_service группирует «чистые» снимки версий (контракт снимков).
+    golden помечаем `is_system` (скрыт, защищён от ручного delete/revert).
+    """
+    entry: dict = {
+        "name": name,
+        "state": "ready",
+        "kind": SNAPSHOT_KIND_OS_BASELINE,
+        "mode": mode,
+        "os_version": os_version,
+    }
+    if is_system:
+        entry["is_system"] = True
+    return entry
+
+
 async def _build_universal(
-    ssh, host: str, name: str, pool_path: str, ip_address: str,
-    os_versions: list[str], password: str | None,
-) -> list[str]:
-    """Построить universal-ВМ: per version снимки `<ver>_build` + `<ver>`.
+    ssh, host: str, name: str, hostname: str, pool_path: str, ip_address: str,
+    os_versions: list[str], password: str | None, accounts,
+    host_label: str, target_dept: str | None,
+) -> list[dict]:
+    """Построить universal-ВМ: на каждую версию — golden + Орёл + Смоленск.
 
     Для каждой версии: переключаем внутренний qemu-img снимок ОС, поднимаем ВМ
-    на NAT, провижним (hostname/ntp/deps), снимаем golden `<ver>_build`,
-    прописываем статику + переводим NIC на `br0`, переснимаем `<ver>_build`
-    (prepared+bridged), опционально меняем пароль `u` и снимаем deliverable
-    `<ver>`. В БД (callback) уходят только plain-имена версий.
+    на NAT, провижним (hostname/ntp/deps + привязанные учётки), снимаем скрытый
+    golden `<ver>_orel_build`, прописываем статику + переводим NIC на `br0`,
+    опционально меняем пароль `u`, снимаем deliverable Орла `<ver>_oryol`,
+    переводим гостя в Смоленск (astra-modeswitch + МРД/МКЦ + reboot) и снимаем
+    deliverable Смоленска `<ver>_smolensk`. Возвращаем rich-снимки (с golden).
     """
-    plain: list[str] = []
+    snapshots: list[dict] = []
     for raw_ver in os_versions:
-        ver = validate_name(str(raw_ver), host, "os_version")
+        ver = validate_name(str(raw_ver), host_label, "os_version")
         await ssh.run(f"virsh destroy {name}", sudo=True)  # stop (может быть off)
         await _run(
             ssh, f"qemu-img snapshot -a {ver} {pool_path}/{name}.qcow2", host,
@@ -748,9 +960,17 @@ async def _build_universal(
         await _run(ssh, f"virsh start {name}", host,
                    "VM_CREATE_FAILED", f"не удалось запустить ВМ на версии {ver}")
         guest_ip = await _guest_ip(ssh, host, name)
-        await _provision_guest_base(ssh, host, name, guest_ip)
-        # golden-снимок текущей версии (креды u:1, чистая система)
-        await _snapshot(ssh, host, name, f"{ver}_build")
+        await _provision_guest_base(ssh, host, hostname, guest_ip)
+        await _provision_guest_accounts(
+            ssh, host, guest_ip, accounts, host_label, target_dept,
+        )
+        # скрытый golden текущей версии (сырой бокс-стейт, креды u:1)
+        await _snapshot(ssh, host, name, f"{ver}{_GOLDEN_SUFFIX}")
+        snapshots.append(
+            _os_baseline_entry(
+                f"{ver}{_GOLDEN_SUFFIX}", ver, MODE_OREL, is_system=True,
+            ),
+        )
         # статика + перевод NIC на bridge br0
         await _apply_static_ip(ssh, host, guest_ip, ip_address)
         await _run(
@@ -761,34 +981,39 @@ async def _build_universal(
         await ssh.run(f"virsh destroy {name}", sudo=True)
         await _run(ssh, f"virsh start {name}", host,
                    "VM_CREATE_FAILED", "ВМ не поднялась на bridge")
-        # переснять golden в bridged-состоянии
-        await ssh.run(
-            f"virsh snapshot-delete {name} --snapshotname {ver}_build", sudo=True,
-        )
-        await _snapshot(ssh, host, name, f"{ver}_build")
+        bridged_ip = ip_address.split("/")[0]
         if password:
             await ssh.run(
                 guest_ssh(
-                    ip_address.split("/")[0],
+                    bridged_ip,
                     f"bash -c 'echo {VMS_GUEST_LOGIN}:{password} | chpasswd'",
                     sudo=True,
                 ),
                 sudo=True,
             )
-        # deliverable-снимок версии
-        await _snapshot(ssh, host, name, ver)
-        plain.append(ver)
-    return plain
+        # deliverable Орла
+        await _snapshot(ssh, host, name, f"{ver}_{MODE_OREL}")
+        snapshots.append(_os_baseline_entry(f"{ver}_{MODE_OREL}", ver, MODE_OREL))
+        # перевод гостя в Смоленск (уровень 2 + МРД/МКЦ + reboot) → deliverable
+        await switch_guest_to_smolensk(
+            ssh, host, bridged_ip, error_code="VM_CREATE_FAILED",
+        )
+        await _snapshot(ssh, host, name, f"{ver}_{MODE_SMOLENSK}")
+        snapshots.append(
+            _os_baseline_entry(f"{ver}_{MODE_SMOLENSK}", ver, MODE_SMOLENSK),
+        )
+    return snapshots
 
 
 async def _build_single(
-    ssh, host: str, name: str, box: str, pool_path: str,
-    network_mode: str, ip_address: str | None,
-) -> list[str]:
+    ssh, host: str, name: str, hostname: str, box: str, pool_path: str,
+    network_mode: str, ip_address: str | None, os_version: str | None,
+    accounts, host_label: str, target_dept: str | None,
+) -> list[dict]:
     """Построить single-ВМ из конкретного бокса: провижн + снимок `build`.
 
-    Диск уже увеличен до virt-install (offline) в `vm.create` — тут только
-    провижн гостя и снимок.
+    Диск уже приведён к нужному размеру до virt-install (offline, virt-resize) в
+    `vm.create` — тут только провижн гостя (hostname/ntp/deps + учётки) и снимок.
     """
     if network_mode == "bridge" and ip_address:
         # bridge: статику залили в диск offline (virt-customize до virt-install),
@@ -796,34 +1021,39 @@ async def _build_single(
         guest_ip = ip_address.split("/")[0]
     else:
         guest_ip = await _guest_ip(ssh, host, name)
-    await _provision_guest_base(ssh, host, name, guest_ip)
-    # single-боксы под конкретную ОС уже несут репозитории; растим ФС под гостём.
-    await ssh.run(
-        guest_ssh(guest_ip, "bash -c 'growpart /dev/vda 1 || true; "
-                            "resize2fs /dev/vda1 || true'", sudo=True),
-        sudo=True,
+    await _provision_guest_base(ssh, host, hostname, guest_ip)
+    await _provision_guest_accounts(
+        ssh, host, guest_ip, accounts, host_label, target_dept,
     )
     await _snapshot(ssh, host, name, "build")
-    return ["build"]
+    entry: dict = {"name": "build", "state": "ready"}
+    if os_version:
+        entry["os_version"] = os_version
+    return [entry]
 
 
 @broker.task("vm.create")
 async def vm_create(task_id: str) -> None:
     """Создать ВМ на hub'е (порт флоу референса).
 
-    Что делает: клонирует диск бокса в пул, собирает домен `virt-install
-    --import`, провижнит гостя по SSH (`u`/`1`) и снимает снимки. Universal-бокс
-    (`vm_station`) несёт несколько версий ОС на одном диске — для каждой строит
-    `<ver>_build` (golden) + `<ver>` (deliverable); single-бокс — один снимок
-    `build`. Исход докладывает server_service (`vms/{id}/state`).
+    Что делает: клонирует диск бокса в пул (с disk_gb — через virt-resize,
+    рост/сжатие; иначе cp), собирает домен `virt-install --import`, провижнит
+    гостя по SSH (`u`/`1` + hostname из `hostname or name`, привязанные учётки) и
+    снимает снимки. Universal-бокс (`vm_station`) несёт несколько версий ОС на
+    одном диске — для каждой строит скрытый golden `<ver>_orel_build` +
+    deliverable `<ver>_oryol` (Орёл) + `<ver>_smolensk` (Смоленск, после
+    astra-modeswitch + МРД/МКЦ + reboot); single-бокс — один снимок `build`.
+    Снимки докладывает `vms/{id}/snapshots` (с kind/mode/os_version), состояние —
+    `vms/{id}/state`.
 
-    Параметры: `task_id`. Payload — `vm_id`, `hub_host` (str ip), `name`, `cpu`,
-    `ram_mb`, `disk_gb`, `box`, `network_mode` (`bridge`|`nat`), `ip_address`,
-    `box_url` (для скачивания single-бокса), `os_versions` (для universal),
-    опц. `password`, management-хинты.
+    Параметры: `task_id`. Payload — `vm_id`, `hub_host` (str ip), `name`,
+    `hostname` (опц.), `cpu`, `ram_mb`, `disk_gb`, `box`, `network_mode`
+    (`bridge`|`nat`), `ip_address`, `box_url` (для скачивания single-бокса),
+    `os_versions` (для universal), `os_version` (single), `accounts` (список
+    привязанных учёток), опц. `password`, management-хинты.
 
     Возвращает: `{vm_id, name, box, network_mode, power_state, status,
-    ip_address, snapshots}` — snapshots только plain (без `_build`).
+    ip_address, snapshots}` — snapshots только plain (без скрытого golden).
 
     Возможные ошибки: `VM_INVALID_ARG`, `VM_CREATE_FAILED`, `VM_SNAPSHOT_FAILED`,
     `VM_GUEST_NO_IP`, `VM_PROVISION_FAILED`. На любой ошибке — best-effort
@@ -837,10 +1067,16 @@ async def vm_create(task_id: str) -> None:
             or payload.get("hub_server_id") or "hub",
         )
         name = validate_name(payload["name"], host_label, "name")
+        # hostname — отдельное поле; пусто → имя ВМ (валидатор тот же).
+        hostname = validate_name(
+            str(payload.get("hostname") or payload["name"]), host_label, "hostname",
+        )
         box = validate_name(payload["box"], host_label, "box")
         cpu = positive_int(payload["cpu"], host_label, "cpu")
         ram_mb = positive_int(payload["ram_mb"], host_label, "ram_mb")
         disk_gb = int(payload.get("disk_gb") or 0)
+        accounts = payload.get("accounts") or []
+        os_version = payload.get("os_version")
         network_mode = payload.get("network_mode", "bridge")
         if network_mode not in ("bridge", "nat"):
             raise SshError(
@@ -890,18 +1126,22 @@ async def vm_create(task_id: str) -> None:
                 # (best-effort, диск перезальём клоном ниже).
                 await ssh.run(f"virsh destroy {name}", sudo=True)
                 await ssh.run(f"virsh undefine {name} --snapshots-metadata", sudo=True)
-                # клон диска бокса под ВМ (COW-исходник — готовый qcow2 бокса).
-                await _run(
-                    ssh, f"cp {pool_path}/{box}.qcow2 {pool_path}/{name}.qcow2", host,
-                    "VM_CREATE_FAILED", "не удалось клонировать диск бокса",
-                )
-                # Диск растим ПОКА ОН OFFLINE (до virt-install): у запущенного
-                # домена qcow2 залочен, и qemu-img resize падает «image in use».
+                box_path = f"{pool_path}/{box}.qcow2"
+                target_path = f"{pool_path}/{name}.qcow2"
+                # Клон диска под ВМ идёт ПОКА ОН OFFLINE (до virt-install): у
+                # запущенного домена qcow2 залочен. Если задан disk_gb — клонируем
+                # через virt-resize (рост И сжатие без порчи разметки); иначе
+                # обычный cp сохраняет исходный размер бокса. Universal несёт
+                # внутренние qemu-img снимки версий, virt-resize их сломал бы —
+                # для него только cp.
                 if disk_gb and not is_universal:
+                    await _clone_disk_resized(
+                        ssh, host, box_path, target_path, disk_gb,
+                    )
+                else:
                     await _run(
-                        ssh,
-                        f"qemu-img resize {pool_path}/{name}.qcow2 {disk_gb}G",
-                        host, "VM_CREATE_FAILED", "не удалось увеличить диск ВМ",
+                        ssh, f"cp {box_path} {target_path}", host,
+                        "VM_CREATE_FAILED", "не удалось клонировать диск бокса",
                     )
                 if network_mode == "bridge" and ip_address and not is_universal:
                     # single-bridge: LAN статический, DHCP-сервера нет — на br0
@@ -932,13 +1172,14 @@ async def vm_create(task_id: str) -> None:
                             message="universal-ВМ требует непустой os_versions",
                         )
                     snapshots = await _build_universal(
-                        ssh, host, name, pool_path, ip_address or "",
-                        os_versions, password,
+                        ssh, host, name, hostname, pool_path, ip_address or "",
+                        os_versions, password, accounts, host_label, target_dept,
                     )
                 else:
                     snapshots = await _build_single(
-                        ssh, host, name, box, pool_path,
-                        network_mode, ip_address,
+                        ssh, host, name, hostname, box, pool_path,
+                        network_mode, ip_address, os_version, accounts,
+                        host_label, target_dept,
                     )
                 _rc, dom_out, _err = await ssh.run(
                     f"virsh domstate {name}", sudo=True,
@@ -958,10 +1199,18 @@ async def vm_create(task_id: str) -> None:
                 )
             raise
 
+        # Снимки уходят отдельным rich-callback'ом (`vms/{id}/snapshots`): у него
+        # есть kind/mode/os_version/is_system, а `vms/{id}/state` их не принимает
+        # (раньше снимки слались в state и молча терялись — базовый снимок не был
+        # виден в UI). Plain-имена (без скрытого golden) — в state и в result.
+        plain = [s["name"] for s in snapshots if not s.get("is_system")]
+        await server_service_client.submit_vm_snapshots(
+            vm_id, snapshots, target_department_id=target_dept,
+        )
         await server_service_client.submit_vm_state(
             vm_id, target_department_id=target_dept,
             power_state=power_state, ip_address=ip_address, status="free",
-            snapshots=snapshots,
+            snapshots=plain,
         )
         return {
             "vm_id": vm_id,
@@ -971,7 +1220,7 @@ async def vm_create(task_id: str) -> None:
             "power_state": power_state,
             "status": "free",
             "ip_address": ip_address,
-            "snapshots": snapshots,
+            "snapshots": plain,
         }
 
     await run_task(

@@ -62,7 +62,7 @@ def stub_session_and_callbacks(monkeypatch):
     списками вызовов callback'ов.
     """
     holder: dict = {"ssh": None}
-    calls: dict = {"vm_state": [], "hub_state": []}
+    calls: dict = {"vm_state": [], "hub_state": [], "snapshots": []}
 
     async def _open(payload):  # noqa: ARG001
         fake = holder["ssh"]
@@ -78,8 +78,16 @@ def stub_session_and_callbacks(monkeypatch):
         calls["hub_state"].append({"server_id": server_id, "prepared": prepared, "target_department_id": target_department_id, **kw})
         return {"ok": True}
 
+    async def _snapshots(vm_id, snapshots, target_department_id=None, **kw):
+        calls["snapshots"].append({"vm_id": vm_id, "snapshots": snapshots, "target_department_id": target_department_id, **kw})
+        return {"ok": True}
+
     monkeypatch.setattr(vms.server_service_client, "submit_vm_state", _vm_state)
     monkeypatch.setattr(vms.server_service_client, "submit_vms_hub_state", _hub_state)
+    monkeypatch.setattr(vms.server_service_client, "submit_vm_snapshots", _snapshots)
+    # Смена режима гостя ребутит его — реальное ожидание минуты, в тестах 0.
+    monkeypatch.setattr(_vms_helpers, "GUEST_MODE_REBOOT_SETTLE_S", 0)
+    monkeypatch.setattr(_vms_helpers, "GUEST_MODE_REBOOT_POLL_DELAY_S", 0)
     return {"holder": holder, "calls": calls}
 
 
@@ -356,7 +364,7 @@ def _create_fake():
 
 
 class TestVmCreateUniversal:
-    async def test_universal_builds_build_and_plain_snapshots(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+    async def test_universal_builds_golden_orel_smolensk(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _create_fake()
         stub_session_and_callbacks["holder"]["ssh"] = fake
         payload = {
@@ -372,15 +380,35 @@ class TestVmCreateUniversal:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         cmds = fake.commands
+        # disk_gb=0 → обычный cp (без virt-resize)
         assert any("cp /vms/vm_station.qcow2 /vms/station-a.qcow2" in c for c in cmds)
+        assert not any("virt-resize" in c for c in cmds)
         assert any("virt-install -n station-a" in c and "--cpu host-model" in c for c in cmds)
         assert any("qemu-img snapshot -a 1.7.5.9 /vms/station-a.qcow2" in c for c in cmds)
-        assert any("snapshot-create-as station-a --name 1.7.5.9_build" in c for c in cmds)
-        assert any("snapshot-create-as station-a --name 1.7.5.9 " in c for c in cmds)
+        # golden (скрытый) + Орёл + Смоленск
+        assert any("snapshot-create-as station-a --name 1.7.5.9_orel_build" in c for c in cmds)
+        assert any("snapshot-create-as station-a --name 1.7.5.9_oryol" in c for c in cmds)
+        assert any("snapshot-create-as station-a --name 1.7.5.9_smolensk" in c for c in cmds)
         assert any("virt-xml station-a --edit --network bridge=br0" in c for c in cmds)
-        # callback: только plain-снимок, без _build
+        # смена режима на Смоленск: modeswitch + МРД + МКЦ (и порядок до снимка)
+        assert any("astra-modeswitch set 2" in c for c in cmds)
+        assert any("astra-mac-control enable" in c for c in cmds)
+        assert any("astra-mic-control enable" in c for c in cmds)
+        i_switch = next(i for i, c in enumerate(cmds) if "astra-modeswitch set 2" in c)
+        i_smol = next(i for i, c in enumerate(cmds) if "--name 1.7.5.9_smolensk" in c)
+        assert i_switch < i_smol
+        # rich snapshot-callback: golden(is_system) + oryol + smolensk c mode/kind/os_version
+        snaps = stub_session_and_callbacks["calls"]["snapshots"][0]["snapshots"]
+        by_name = {s["name"]: s for s in snaps}
+        assert by_name["1.7.5.9_orel_build"]["is_system"] is True
+        assert by_name["1.7.5.9_orel_build"]["mode"] == "oryol"
+        assert by_name["1.7.5.9_oryol"]["mode"] == "oryol"
+        assert by_name["1.7.5.9_oryol"]["kind"] == "os_baseline"
+        assert by_name["1.7.5.9_oryol"]["os_version"] == "1.7.5.9"
+        assert by_name["1.7.5.9_smolensk"]["mode"] == "smolensk"
+        # state-callback: plain-снимки без скрытого golden
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
-        assert state["snapshots"] == ["1.7.5.9"]
+        assert state["snapshots"] == ["1.7.5.9_oryol", "1.7.5.9_smolensk"]
         assert state["power_state"] == "on"
         assert state["status"] == "free"
         assert state["ip_address"] == "10.177.103.101"
@@ -404,12 +432,48 @@ class TestVmCreateUniversal:
 
 
 class TestVmCreateSingle:
-    async def test_single_box_build_snapshot(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+    async def test_single_box_grow_via_virt_resize(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _create_fake()
+        # бокс 10G, запрошено 15G → рост (--expand)
+        fake.set_response("qemu-img info", 0, '{"virtual-size": 10737418240}')
         stub_session_and_callbacks["holder"]["ssh"] = fake
         payload = {
             "vm_id": "vm2", "hub_host": "10.0.0.7", "name": "xfs-1",
             "cpu": 8, "ram_mb": 8192, "disk_gb": 15, "box": "xfs.box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "os_version": "1.8.1.6", "storage_pool_path": "/vms", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        # virt-resize вместо cp+qemu-img resize; корневой раздел /dev/sda2
+        assert any("qemu-img create -f qcow2 /vms/xfs-1.qcow2 15G" in c for c in cmds)
+        assert any("virt-resize --expand /dev/sda2 /vms/xfs.box.qcow2 /vms/xfs-1.qcow2" in c for c in cmds)
+        assert not any("cp /vms/xfs.box.qcow2" in c for c in cmds)
+        assert not any("qemu-img resize" in c for c in cmds)
+        # growpart-костыль убран
+        assert not any("growpart" in c for c in cmds)
+        assert any("network=test" in c for c in cmds)  # nat
+        assert any("snapshot-create-as xfs-1 --name build" in c for c in cmds)
+        # nat-режим статику в диск не льёт
+        assert not any("virt-customize" in c for c in cmds)
+        state = stub_session_and_callbacks["calls"]["vm_state"][0]
+        assert state["snapshots"] == ["build"]
+        snaps = stub_session_and_callbacks["calls"]["snapshots"][0]["snapshots"]
+        assert snaps[0]["name"] == "build"
+        assert snaps[0]["os_version"] == "1.8.1.6"
+
+    async def test_single_box_shrink_via_virt_resize(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _create_fake()
+        # бокс 20G, запрошено 10G → сжатие (--shrink)
+        fake.set_response("qemu-img info", 0, '{"virtual-size": 21474836480}')
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm2", "hub_host": "10.0.0.7", "name": "xfs-1",
+            "cpu": 8, "ram_mb": 8192, "disk_gb": 10, "box": "xfs.box",
             "network_mode": "nat", "ip_address": None, "os_versions": [],
             "storage_pool_path": "/vms", "is_managed": True,
         }
@@ -419,13 +483,8 @@ class TestVmCreateSingle:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         cmds = fake.commands
-        assert any("qemu-img resize /vms/xfs-1.qcow2 15G" in c for c in cmds)
-        assert any("network=test" in c for c in cmds)  # nat
-        assert any("snapshot-create-as xfs-1 --name build" in c for c in cmds)
-        # nat-режим статику в диск не льёт
-        assert not any("virt-customize" in c for c in cmds)
-        state = stub_session_and_callbacks["calls"]["vm_state"][0]
-        assert state["snapshots"] == ["build"]
+        assert any("qemu-img create -f qcow2 /vms/xfs-1.qcow2 10G" in c for c in cmds)
+        assert any("virt-resize --shrink /dev/sda2 /vms/xfs.box.qcow2 /vms/xfs-1.qcow2" in c for c in cmds)
 
     async def test_single_bridge_injects_static_before_install(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _create_fake()
@@ -465,6 +524,101 @@ class TestVmCreateSingle:
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state["ip_address"] == "10.177.103.108"
         assert state["snapshots"] == ["build"]
+
+
+class TestVmCreateHostnameAndAccounts:
+    async def test_hostname_from_payload_and_etc_hosts(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm5", "hub_host": "10.0.0.7", "name": "vm-5",
+            "hostname": "station-hostname", "cpu": 4, "ram_mb": 4096,
+            "disk_gb": 0, "box": "single-box", "network_mode": "nat",
+            "ip_address": None, "os_versions": [], "storage_pool_path": "/vms",
+            "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        assert any("hostnamectl set-hostname station-hostname" in c for c in cmds)
+        # /etc/hosts запись, чтобы sudo не ругался unable to resolve host
+        assert any("127.0.1.1 station-hostname" in c and "/etc/hosts" in c for c in cmds)
+        # hostname != имя ВМ → домен всё равно зовётся vm-5
+        assert any("virt-install -n vm-5" in c for c in cmds)
+
+    async def test_hostname_defaults_to_name(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm6", "hub_host": "10.0.0.7", "name": "vm-6",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "single-box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "storage_pool_path": "/vms", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert any("hostnamectl set-hostname vm-6" in c for c in fake.commands)
+
+    async def test_bound_accounts_provisioned_in_guest(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm7", "hub_host": "10.0.0.7", "name": "vm-7",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "single-box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "storage_pool_path": "/vms", "is_managed": True,
+            "accounts": [
+                {"account_id": "acc1", "login": "alice", "password": "pw-alice",
+                 "has_sudo": True, "unix_groups": ["dev"]},
+                {"account_id": "acc2", "login": "bob", "password": "pw-bob"},
+            ],
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        # useradd по каждому аккаунту (идемпотентно через id-guard)
+        assert any("id alice" in c and "useradd -m" in c and "alice" in c for c in cmds)
+        assert any("id bob" in c and "useradd -m" in c for c in cmds)
+        # sudo + доп.группа для alice
+        assert any("usermod -aG dev,sudo alice" in c for c in cmds)
+        # bob без групп → usermod не звался по нему для групп
+        assert not any("usermod -aG" in c and "bob" in c for c in cmds)
+        # пароли обоих через chpasswd
+        assert any("alice:pw-alice | chpasswd" in c for c in cmds)
+        assert any("bob:pw-bob | chpasswd" in c for c in cmds)
+
+    async def test_account_password_fetched_via_internal(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch):
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+
+        async def _fetch(server_id, account_id, target_department_id=None):  # noqa: ARG001
+            return {"login": "carol", "password": "fetched-pw"}
+
+        monkeypatch.setattr(vms.server_service_client, "fetch_account_password", _fetch)
+        payload = {
+            "vm_id": "vm8", "hub_host": "10.0.0.7", "name": "vm-8",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "single-box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "storage_pool_path": "/vms", "is_managed": True,
+            "accounts": [
+                {"account_id": "acc3", "server_id": "srv1", "login": "carol"},
+            ],
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert any("carol:fetched-pw | chpasswd" in c for c in fake.commands)
 
 
 # ── vm.power ─────────────────────────────────────────────────────────────────

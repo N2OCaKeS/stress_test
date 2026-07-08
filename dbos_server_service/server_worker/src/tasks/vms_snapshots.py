@@ -5,7 +5,7 @@
 `sshpass` (`u`/`1`). Хендлеры:
 
 * `vm.snapshot_create` — `virsh snapshot-create-as` (`--disk-only`/`--live` по
-  `kind`); callback снимок→`ready`.
+  `snapshot_type`); callback снимок→`ready` (`kind='user'`).
 * `vm.snapshot_delete` — `virsh snapshot-delete`.
 * `vm.snapshot_revert` — `virsh snapshot-revert`; в режиме `per_snapshot`
   server_service сам переключит активные креды ВМ по callback'у.
@@ -31,11 +31,15 @@ from src.main import broker
 from src.services import server_service_client
 from src.tasks._runner import run_task
 from src.tasks._vms_helpers import (
+    MODE_OREL,
+    MODE_SMOLENSK,
+    SNAPSHOT_KIND_OS_BASELINE,
     guest_ssh,
     map_domstate,
     open_hub_session,
     resolve_guest_ip,
     run_hub_cmd,
+    switch_guest_to_smolensk,
     validate_name,
 )
 
@@ -43,7 +47,8 @@ logger = logging.getLogger(__name__)
 
 
 AUDIT_SAFE_FIELDS_SNAPSHOT: set[str] = {
-    "vm_id", "snapshot_id", "name", "kind", "state", "is_current", "power_state",
+    "vm_id", "snapshot_id", "name", "kind", "snapshot_type", "state",
+    "is_current", "power_state",
 }
 AUDIT_SAFE_FIELDS_ASTRA: set[str] = {
     "vm_id", "vm_name", "rc", "snapshot_id", "power_state", "password_changed",
@@ -74,16 +79,16 @@ def _host_label(payload: dict) -> str:
 # ── общие билдеры snapshot-команд ────────────────────────────────────────────
 
 
-def _snapshot_create_cmd(vm_name: str, snap: str, kind: str | None) -> str:
-    """Собрать `virsh snapshot-create-as` с флагом по типу снимка.
+def _snapshot_create_cmd(vm_name: str, snap: str, snapshot_type: str | None) -> str:
+    """Собрать `virsh snapshot-create-as` с флагом по способу снятия.
 
     `disk_only` → внешний disk-only снимок (`--disk-only --atomic`), `full`
     (и дефолт) → полный снимок работающего домена (`--live`).
     """
     cmd = f"virsh snapshot-create-as --domain {vm_name} --name {snap}"
-    if kind == "disk_only":
+    if snapshot_type == "disk_only":
         cmd += " --disk-only --atomic"
-    elif kind == "full":
+    elif snapshot_type == "full":
         cmd += " --live"
     return cmd
 
@@ -151,15 +156,16 @@ async def _report_snapshot_error(
 async def vm_snapshot_create(task_id: str) -> None:
     """Создать снимок ВМ на hub'е (`virsh snapshot-create-as`).
 
-    Что делает: заходит на hub по SSH, снимает снимок домена с флагом по типу
+    Что делает: заходит на hub по SSH, снимает снимок домена с флагом по способу
     (`disk_only` → `--disk-only`, `full` → `--live`). Исход докладывает
     server_service батчем `vms/{id}/snapshots` (`state='ready'`,
-    `is_current=True`).
+    `is_current=True`, `kind='user'`).
 
     Параметры: `task_id`. Payload — `vm_id`, `vm_name`/`name`, `snapshot_id`,
-    `snapshot_name`/`name`, опц. `kind` (`disk_only`|`full`), hub-блок.
+    `snapshot_name`/`name`, опц. `snapshot_type` (`disk_only`|`full`), hub-блок.
 
-    Возвращает: `{vm_id, snapshot_id, name, kind, state, is_current}`.
+    Возвращает: `{vm_id, snapshot_id, name, kind, snapshot_type, state,
+    is_current}`.
 
     Возможные ошибки: `VM_INVALID_ARG`, `VM_SNAPSHOT_FAILED`. На ошибке —
     best-effort `state='error'`.
@@ -176,13 +182,13 @@ async def vm_snapshot_create(task_id: str) -> None:
             payload.get("snapshot_name") or payload["name"], host_label,
             "snapshot_name",
         )
-        kind = payload.get("kind")
+        snapshot_type = payload.get("snapshot_type")
 
         try:
             session, host = await open_hub_session(payload)
             async with session as ssh:
                 await run_hub_cmd(
-                    ssh, _snapshot_create_cmd(vm_name, snap, kind), host,
+                    ssh, _snapshot_create_cmd(vm_name, snap, snapshot_type), host,
                     "VM_SNAPSHOT_FAILED", f"не удалось создать снимок {snap}",
                 )
         except Exception as exc:
@@ -191,11 +197,14 @@ async def vm_snapshot_create(task_id: str) -> None:
             )
             raise
 
-        entry: dict = {"name": snap, "state": "ready", "is_current": True}
+        # Снятые пользователем снимки — всегда категория `user`, режим не несут.
+        entry: dict = {
+            "name": snap, "state": "ready", "is_current": True, "kind": "user",
+        }
         if snapshot_id is not None:
             entry["snapshot_id"] = snapshot_id
-        if kind is not None:
-            entry["kind"] = kind
+        if snapshot_type is not None:
+            entry["snapshot_type"] = snapshot_type
         await server_service_client.submit_vm_snapshots(
             vm_id, [entry], target_department_id=target_dept,
         )
@@ -203,7 +212,8 @@ async def vm_snapshot_create(task_id: str) -> None:
             "vm_id": vm_id,
             "snapshot_id": snapshot_id,
             "name": snap,
-            "kind": kind,
+            "kind": "user",
+            "snapshot_type": snapshot_type,
             "state": "ready",
             "is_current": True,
         }
@@ -438,14 +448,15 @@ async def vm_astra_update(task_id: str) -> None:
     Что делает: реверт golden-снимка `<major>_build` (`base_snapshot` из
     payload), в госте перезаписывает `/etc/apt/sources.list` репозиториями
     целевой версии, гонит `astra-update -A -T -r`, перезагружает гостя и ждёт
-    его, меняет пароль `u` на новый и снимает deliverable-снимок `<rc>`. Исход
-    докладывает server_service (`vms/{id}/snapshots` новый снимок +
-    `vms/{id}/state` power/ip).
+    его, меняет пароль `u` на новый, снимает deliverable Орла `<rc>`, переводит
+    гостя в Смоленск (astra-modeswitch + МРД/МКЦ + reboot) и снимает `<rc>_smolensk`.
+    Оба снимка (mode oryol/smolensk) докладывает `vms/{id}/snapshots`, состояние
+    — `vms/{id}/state` power/ip.
 
     Параметры: `task_id`. Payload — `vm_id`, `vm_name`/`name`, `rc`,
     `repository_urls` (непустой список), `base_snapshot` (`<major>_build`),
-    опц. `snapshot_id` (id создаваемого `<rc>`-снимка), `kind`, `password`
-    (новый пароль `u`), `ip_address`/`guest_ip`, hub-блок.
+    опц. `snapshot_id` (id создаваемого `<rc>`-снимка), `snapshot_type`,
+    `password` (новый пароль `u`), `ip_address`/`guest_ip`, hub-блок.
 
     Возвращает: `{vm_id, vm_name, rc, snapshot_id, power_state, password_changed}`.
 
@@ -461,7 +472,7 @@ async def vm_astra_update(task_id: str) -> None:
             payload.get("vm_name") or payload["name"], host_label, "vm_name",
         )
         snapshot_id = payload.get("snapshot_id")
-        kind = payload.get("kind")
+        snapshot_type = payload.get("snapshot_type")
 
         try:
             # Валидацию payload'а держим внутри try: server_service выставил
@@ -508,10 +519,20 @@ async def vm_astra_update(task_id: str) -> None:
                 # 4. смена пароля `u`
                 if password:
                     await _change_guest_password(ssh, host, guest_ip, password)
-                # 5. deliverable-снимок целевой версии
+                # 5. deliverable Орла `<rc>`
                 await run_hub_cmd(
-                    ssh, _snapshot_create_cmd(vm_name, rc_ver, kind), host,
+                    ssh, _snapshot_create_cmd(vm_name, rc_ver, snapshot_type), host,
                     "VM_SNAPSHOT_FAILED", f"не удалось снять снимок {rc_ver}",
+                )
+                # 6. перевод гостя в Смоленск + deliverable `<rc>_smolensk`
+                smolensk_snap = f"{rc_ver}_{MODE_SMOLENSK}"
+                await switch_guest_to_smolensk(
+                    ssh, host, guest_ip, error_code="VM_ASTRA_UPDATE_FAILED",
+                )
+                await run_hub_cmd(
+                    ssh, _snapshot_create_cmd(vm_name, smolensk_snap, snapshot_type),
+                    host, "VM_SNAPSHOT_FAILED",
+                    f"не удалось снять снимок {smolensk_snap}",
                 )
                 _rc, dom_out, _err = await ssh.run(
                     f"virsh domstate {vm_name}", sudo=True,
@@ -531,13 +552,27 @@ async def vm_astra_update(task_id: str) -> None:
                 )
             raise
 
-        entry: dict = {"name": rc_ver, "state": "ready", "is_current": True}
+        # Оба deliverable'а версии: Орёл (`<rc>`, текущий) + Смоленск
+        # (`<rc>_smolensk`). Несут kind=os_baseline + mode + os_version — по ним
+        # server_service группирует чистые снимки версий (контракт снимков).
+        orel_entry: dict = {
+            "name": rc_ver, "state": "ready", "is_current": True,
+            "kind": SNAPSHOT_KIND_OS_BASELINE, "mode": MODE_OREL,
+            "os_version": rc_ver,
+        }
         if snapshot_id is not None:
-            entry["snapshot_id"] = snapshot_id
-        if kind is not None:
-            entry["kind"] = kind
+            orel_entry["snapshot_id"] = snapshot_id
+        if snapshot_type is not None:
+            orel_entry["snapshot_type"] = snapshot_type
+        smolensk_entry: dict = {
+            "name": smolensk_snap, "state": "ready",
+            "kind": SNAPSHOT_KIND_OS_BASELINE, "mode": MODE_SMOLENSK,
+            "os_version": rc_ver,
+        }
+        if snapshot_type is not None:
+            smolensk_entry["snapshot_type"] = snapshot_type
         await server_service_client.submit_vm_snapshots(
-            vm_id, [entry], target_department_id=target_dept,
+            vm_id, [orel_entry, smolensk_entry], target_department_id=target_dept,
         )
         await server_service_client.submit_vm_state(
             vm_id, target_department_id=target_dept,
@@ -604,9 +639,9 @@ async def _reroll_impl(payload: dict, *, require_password: bool) -> dict:
                 if isinstance(raw, dict):
                     snap_name = raw.get("snapshot_name") or raw.get("name")
                     snap_id = raw.get("snapshot_id")
-                    kind = raw.get("kind")
+                    snapshot_type = raw.get("snapshot_type")
                 else:
-                    snap_name, snap_id, kind = raw, None, None
+                    snap_name, snap_id, snapshot_type = raw, None, None
                 snap = validate_name(str(snap_name), host, "snapshot_name")
                 # `_build` — защищённые golden-снимки: пропускаем целиком.
                 if snap.endswith(_BUILD_SUFFIX):
@@ -644,14 +679,16 @@ async def _reroll_impl(payload: dict, *, require_password: bool) -> dict:
                     f"не удалось удалить снимок {snap} перед пересъёмкой",
                 )
                 await run_hub_cmd(
-                    ssh, _snapshot_create_cmd(vm_name, snap, kind), host,
+                    ssh, _snapshot_create_cmd(vm_name, snap, snapshot_type), host,
                     "VM_SNAPSHOT_FAILED", f"не удалось пересоздать снимок {snap}",
                 )
+                # Пересъёмка не меняет категорию/режим снимка — их server_service
+                # хранит по имени; шлём только способ снятия, если он известен.
                 entry: dict = {"name": snap, "state": "ready"}
                 if snap_id is not None:
                     entry["snapshot_id"] = snap_id
-                if kind is not None:
-                    entry["kind"] = kind
+                if snapshot_type is not None:
+                    entry["snapshot_type"] = snapshot_type
                 rerolled.append(entry)
     except Exception as exc:
         error_text = getattr(exc, "error_code", type(exc).__name__)
@@ -693,8 +730,8 @@ async def vm_allta_update(task_id: str) -> None:
     server_service (`vms/{id}/snapshots` пересозданные + снятие lock).
 
     Параметры: `task_id`. Payload — `vm_id`, `vm_name`/`name`, `snapshots`
-    (список `{snapshot_id?, name/snapshot_name, kind?}`), опц. `password`,
-    `ip_address`/`guest_ip`, hub-блок.
+    (список `{snapshot_id?, name/snapshot_name, snapshot_type?}`), опц.
+    `password`, `ip_address`/`guest_ip`, hub-блок.
 
     Возвращает: `{vm_id, vm_name, snapshots, password_updated_vms,
     password_changed}`.

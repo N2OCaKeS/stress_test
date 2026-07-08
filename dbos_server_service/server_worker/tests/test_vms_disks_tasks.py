@@ -110,8 +110,13 @@ def stub_vms(monkeypatch):
         calls["vm_state"].append({"vm_id": vm_id, **kw})
         return {"ok": True}
 
+    async def _snapshots(vm_id, snapshots, target_department_id=None, **kw):
+        calls.setdefault("snapshots", []).append({"vm_id": vm_id, "snapshots": snapshots, **kw})
+        return {"ok": True}
+
     monkeypatch.setattr(vms, "open_hub_session", _open)
     monkeypatch.setattr(vms.server_service_client, "submit_vm_state", _vm_state)
+    monkeypatch.setattr(vms.server_service_client, "submit_vm_snapshots", _snapshots)
     return {"holder": holder, "calls": calls}
 
 

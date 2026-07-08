@@ -14,7 +14,7 @@ from sqlalchemy import update
 from src.core.constants import TaskStatus
 from src.db.session import AsyncSessionLocal
 from src.models import Task
-from src.tasks import vms_snapshots
+from src.tasks import _vms_helpers, vms_snapshots
 
 
 # ── SSH mock ─────────────────────────────────────────────────────────────────
@@ -85,6 +85,9 @@ def stub_session_and_callbacks(monkeypatch):
     # реальная перезагрузка гостя идёт минуты — в тестах обнуляем окна ожидания.
     monkeypatch.setattr(vms_snapshots, "_GUEST_REBOOT_SETTLE_S", 0)
     monkeypatch.setattr(vms_snapshots, "_GUEST_REBOOT_POLL_DELAY_S", 0)
+    # окна ожидания смены режима на Смоленск (общий хелпер) — тоже 0.
+    monkeypatch.setattr(_vms_helpers, "GUEST_MODE_REBOOT_SETTLE_S", 0)
+    monkeypatch.setattr(_vms_helpers, "GUEST_MODE_REBOOT_POLL_DELAY_S", 0)
     return {"holder": holder, "calls": calls}
 
 
@@ -109,19 +112,20 @@ def _hub_block(**extra):
 
 
 class TestSnapshotCreate:
-    @pytest.mark.parametrize("kind,flag", [
+    @pytest.mark.parametrize("snapshot_type,flag", [
         ("disk_only", "--disk-only --atomic"),
         ("full", "--live"),
         (None, None),
     ])
     async def test_create_kind_flags(
-        self, kind, flag, make_task, fetch_task, captured_audit,
+        self, snapshot_type, flag, make_task, fetch_task, captured_audit,
         stub_session_and_callbacks,
     ):
         fake = _FakeSshClient()
         stub_session_and_callbacks["holder"]["ssh"] = fake
         payload = _hub_block(
-            snapshot_id="snp1", snapshot_name="daily-1", kind=kind,
+            snapshot_id="snp1", snapshot_name="daily-1",
+            snapshot_type=snapshot_type,
         )
         tid = await make_task(
             task_kind="vm.snapshot_create", target_server_id="hub1", payload=payload,
@@ -141,6 +145,10 @@ class TestSnapshotCreate:
         assert snap_cb["snapshots"][0]["name"] == "daily-1"
         assert snap_cb["snapshots"][0]["state"] == "ready"
         assert snap_cb["snapshots"][0]["is_current"] is True
+        # снятый пользователем снимок — всегда категория user
+        assert snap_cb["snapshots"][0]["kind"] == "user"
+        if snapshot_type is not None:
+            assert snap_cb["snapshots"][0]["snapshot_type"] == snapshot_type
 
     async def test_create_failure_reports_error(
         self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
@@ -234,7 +242,7 @@ class TestAstraUpdate:
         payload = _hub_block(
             rc="1.8.1.6", base_snapshot="1.8_build", snapshot_id="snp-rc",
             repository_urls=["deb http://repo/astra 1.8 main"],
-            password="newpass", ip_address="10.177.103.101", kind="full",
+            password="newpass", ip_address="10.177.103.101", snapshot_type="full",
         )
         tid = await make_task(
             task_kind="vm.astra_update", target_server_id="hub1", payload=payload,
@@ -256,14 +264,32 @@ class TestAstraUpdate:
         assert any("reboot" in c for c in cmds)
         # 4. chpasswd
         assert any("chpasswd" in c and "u:newpass" in c for c in cmds)
-        # 5. новый снимок <rc>
+        # 5. снимок Орла <rc>
         assert any(
-            "snapshot-create-as --domain station-a --name 1.8.1.6" in c
+            "snapshot-create-as --domain station-a --name 1.8.1.6 " in c
             for c in cmds
         )
+        # 6. перевод в Смоленск + снимок <rc>_smolensk
+        assert any("astra-modeswitch set 2" in c for c in cmds)
+        assert any("astra-mac-control enable" in c for c in cmds)
+        assert any("astra-mic-control enable" in c for c in cmds)
+        assert any(
+            "snapshot-create-as --domain station-a --name 1.8.1.6_smolensk" in c
+            for c in cmds
+        )
+        i_orel = next(i for i, c in enumerate(cmds) if "--name 1.8.1.6 " in c)
+        i_switch = next(i for i, c in enumerate(cmds) if "astra-modeswitch set 2" in c)
+        i_smol = next(i for i, c in enumerate(cmds) if "--name 1.8.1.6_smolensk" in c)
+        assert i_orel < i_switch < i_smol
+        # callback несёт оба deliverable'а с mode/kind/os_version
         snap_cb = stub_session_and_callbacks["calls"]["snapshots"][0]
-        assert snap_cb["snapshots"][0]["name"] == "1.8.1.6"
-        assert snap_cb["snapshots"][0]["is_current"] is True
+        snaps = {s["name"]: s for s in snap_cb["snapshots"]}
+        assert snaps["1.8.1.6"]["is_current"] is True
+        assert snaps["1.8.1.6"]["mode"] == "oryol"
+        assert snaps["1.8.1.6"]["kind"] == "os_baseline"
+        assert snaps["1.8.1.6"]["snapshot_type"] == "full"
+        assert snaps["1.8.1.6"]["os_version"] == "1.8.1.6"
+        assert snaps["1.8.1.6_smolensk"]["mode"] == "smolensk"
         state_cb = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state_cb["power_state"] == "on"
         assert state_cb["ip_address"] == "10.177.103.101"
@@ -311,8 +337,8 @@ class TestReroll:
         payload = _hub_block(
             ip_address="10.177.103.101",
             snapshots=[
-                {"snapshot_id": "b", "name": "1.8.1.6_build", "kind": "full"},
-                {"snapshot_id": "p", "name": "1.8.1.6", "kind": "full"},
+                {"snapshot_id": "b", "name": "1.8.1.6_build", "snapshot_type": "full"},
+                {"snapshot_id": "p", "name": "1.8.1.6", "snapshot_type": "full"},
             ],
         )
         tid = await make_task(

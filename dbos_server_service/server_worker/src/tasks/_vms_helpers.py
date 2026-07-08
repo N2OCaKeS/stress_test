@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -318,6 +319,62 @@ def guest_ssh_key(
 
 def bridge_label() -> str:
     return VMS_BRIDGE
+
+
+# ── Режимы безопасности Astra (Орёл ↔ Смоленск) ──────────────────────────────
+
+
+# Режим безопасности в БД — латиницей (отображаемое имя выбирает UI). Орёл —
+# уровень 0 (бокс приходит в нём), Смоленск — уровень 2.
+MODE_OREL = "oryol"
+MODE_SMOLENSK = "smolensk"
+
+# Классификация снимка для группировки в UI: чистые снимки версий ОС после
+# сборки/обновления против пользовательских.
+SNAPSHOT_KIND_OS_BASELINE = "os_baseline"
+
+# Перевод гостя из Орла в Смоленск (референс — ветка cli, modeswitch): смена
+# уровня + включение МРД (mac-control) и МКЦ (mic-control); уровень применяется
+# после перезагрузки.
+SMOLENSK_MODE_CMDS = (
+    "astra-modeswitch set 2",
+    "astra-mac-control enable",
+    "astra-mic-control enable",
+)
+
+# Ожидание гостя после reboot смены режима. Реальная перезагрузка Astra идёт
+# минуты — тесты обнуляют окна.
+GUEST_MODE_REBOOT_SETTLE_S = 15.0
+GUEST_MODE_REBOOT_POLL_DELAY_S = 10.0
+GUEST_MODE_REBOOT_MAX_POLLS = 60
+
+
+async def switch_guest_to_smolensk(
+    ssh, host: str, guest_ip: str, *, error_code: str,
+) -> None:
+    """Перевести гостя в режим Смоленск и дождаться его после перезагрузки.
+
+    Выполняет в госте команды смены уровня + включения МРД/МКЦ, ребутит гостя
+    (уровень применяется только после перезагрузки) и поллит SSH до отклика.
+    `error_code` — код, под которым падает caller (`VM_CREATE_FAILED` в сборке,
+    `VM_ASTRA_UPDATE_FAILED` в обновлении версии).
+    """
+    for cmd in SMOLENSK_MODE_CMDS:
+        await run_hub_cmd(
+            ssh, guest_ssh(guest_ip, cmd, sudo=True), host, error_code,
+            f"не удалось выполнить смену режима в госте ({cmd})",
+        )
+    await ssh.run(guest_ssh(guest_ip, "reboot", sudo=True), sudo=True)
+    await asyncio.sleep(GUEST_MODE_REBOOT_SETTLE_S)
+    for _ in range(GUEST_MODE_REBOOT_MAX_POLLS):
+        rc, _out, _err = await ssh.run(guest_ssh(guest_ip, "true"), sudo=True)
+        if rc == 0:
+            return
+        await asyncio.sleep(GUEST_MODE_REBOOT_POLL_DELAY_S)
+    raise SshError(
+        error_code=error_code, host=host,
+        message=f"гость {guest_ip} не поднялся после перевода в Смоленск",
+    )
 
 
 # ── Диски ────────────────────────────────────────────────────────────────────
@@ -631,5 +688,10 @@ __all__ = [
     "guest_ssh",
     "guest_ssh_key",
     "bridge_label",
+    "switch_guest_to_smolensk",
+    "MODE_OREL",
+    "MODE_SMOLENSK",
+    "SNAPSHOT_KIND_OS_BASELINE",
+    "SMOLENSK_MODE_CMDS",
     "POWER_VERBS",
 ]

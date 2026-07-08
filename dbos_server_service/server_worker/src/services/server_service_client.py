@@ -688,7 +688,9 @@ async def submit_vm_snapshots(
     server_service по `is_current`-снимку переключает активные mgmt-креды ВМ.
 
     Каждый элемент — dict с обязательным `name` и опциональными `snapshot_id`,
-    `state`, `kind`, `is_current`, `error`. `None`-поля не кладём.
+    `state`, `snapshot_type` (способ снятия disk_only/full), `kind` (категория
+    os_baseline/user), `mode` (oryol/smolensk), `os_version`, `is_system`,
+    `is_current`, `error`. `None`-поля не кладём.
 
     Возвращает: тело
     `POST /api/server/v1/internal/vms/{vm_id}/snapshots`.

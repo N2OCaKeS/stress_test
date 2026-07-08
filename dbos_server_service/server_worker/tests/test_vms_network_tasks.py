@@ -99,6 +99,8 @@ def stub_session_and_callbacks(monkeypatch):
     monkeypatch.setattr(vms_network, "_GUEST_REBOOT_SETTLE_S", 0)
     monkeypatch.setattr(vms_network, "_GUEST_REBOOT_POLL_DELAY_S", 0)
     monkeypatch.setattr(vms_network, "_GUEST_REBOOT_MAX_POLLS", 3)
+    monkeypatch.setattr(vms_network, "_GUEST_SSH_PROBE_ATTEMPTS", 2)
+    monkeypatch.setattr(vms_network, "_GUEST_SSH_PROBE_DELAY_S", 0)
 
     async def _prepared(vm_id, management_user, target_department_id=None, **kw):
         calls["prepared"].append({
@@ -181,6 +183,24 @@ class TestVmPrepare:
         assert stub_session_and_callbacks["calls"]["prepared"] == [
             {"vm_id": "vm1", "management_user": "dbos", "target_department_id": "dep1"},
         ]
+
+    async def test_installs_guest_agent(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
+    ):
+        fake = _prepare_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        tid = await make_task(
+            task_kind="vm.prepare", target_server_id="hub1",
+            payload=_prepare_payload(),
+        )
+        await vms_network.vm_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # qemu-guest-agent ставится в гостя и включается — под парольной сессией.
+        assert any(
+            "qemu-guest-agent" in c and "enable --now" in c for c in fake.commands
+        )
 
     async def test_verify_failure_preserves_base_user(
         self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
@@ -315,6 +335,82 @@ class TestVmSetNetworkBridge:
         assert t.last_error and "VM_INVALID_ARG" in t.last_error
 
 
+class TestVmSetNetworkBridgeFallback:
+    async def test_virt_customize_when_guest_unreachable(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
+    ):
+        fake = _FakeSshClient()
+        fake.set_response("virsh domstate", 0, "running")
+        # Гость на NAT-адресе по SSH не отвечает → уходим в offline-фолбэк.
+        fake.set_response("u@192.168.100.24", 255)
+        fake.set_response(
+            "virsh domblklist", 0,
+            " Target   Source\n"
+            "---------------------------------\n"
+            " vda      /vms/station-a.qcow2\n",
+        )
+        fake.set_response("command -v virt-customize", 0)  # libguestfs уже стоит
+        fake.set_response("mktemp", 0, "/tmp/dbos-if")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm1", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "network_mode": "bridge", "ip_address": "10.177.103.101",
+            "guest_ip": "192.168.100.24", "target_department_id": "dep1",
+        }
+        tid = await make_task(
+            task_kind="vm.set_network", target_server_id="hub1", payload=payload,
+        )
+        await vms_network.vm_set_network.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        # статик-конфиг ушёл на stdin mktemp-файла, а не в госта по SSH
+        assert not any(
+            "printf" in c and "/etc/network/interfaces" in c for c in cmds
+        )
+        # offline-заливка правильного qcow2 через virt-customize
+        i_customize = _idx(
+            cmds,
+            "virt-customize -a /vms/station-a.qcow2 "
+            "--upload /tmp/dbos-if:/etc/network/interfaces",
+        )
+        # порядок: destroy → virt-customize → start
+        i_destroy = _idx(cmds, "virsh destroy station-a")
+        i_start = _idx(cmds, "virsh start station-a")
+        assert i_destroy < i_customize < i_start
+        # NIC всё равно переведён на bridge
+        assert any("virt-xml station-a --edit --network bridge=br0" in c for c in cmds)
+        state = stub_session_and_callbacks["calls"]["vm_state"][0]
+        assert state["ip_address"] == "10.177.103.101"
+
+    async def test_missing_virt_customize_fails(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
+    ):
+        fake = _FakeSshClient()
+        fake.set_response("u@192.168.100.24", 255)  # гость недостижим
+        fake.set_response(
+            "virsh domblklist", 0, " vda      /vms/station-a.qcow2\n",
+        )
+        fake.set_response("command -v virt-customize", 1)  # бинаря нет и не встал
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm1", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "network_mode": "bridge", "ip_address": "10.177.103.101",
+            "guest_ip": "192.168.100.24",
+        }
+        tid = await make_task(
+            task_kind="vm.set_network", target_server_id="hub1", payload=payload,
+        )
+        await _set_single_attempt(tid)
+        await vms_network.vm_set_network.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert t.last_error and "VM_NET_APPLY_FAILED" in t.last_error
+        # best-effort доустановка libguestfs-tools была попытана
+        assert any("libguestfs-tools" in c for c in fake.commands)
+
+
 class TestVmSetNetworkNat:
     async def test_nat_reads_domifaddr(
         self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
@@ -383,3 +479,14 @@ class TestHelpers:
         ) == ["1.1.1.1", "1.0.0.1"]
         # дефолт стенда, если не задано
         assert vms_network._normalize_dns({}, "h") == ["10.177.180.246"]
+
+    def test_first_qcow2_path(self):
+        out = (
+            " Target   Source\n"
+            "-------------------------------\n"
+            " vda      /vms/station-a.qcow2\n"
+            " sda      -\n"
+        )
+        assert vms_network._first_qcow2_path(out) == "/vms/station-a.qcow2"
+        assert vms_network._first_qcow2_path(" hda   -\n") is None
+        assert vms_network._first_qcow2_path("") is None

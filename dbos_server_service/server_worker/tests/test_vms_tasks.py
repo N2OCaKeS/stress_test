@@ -174,6 +174,8 @@ class TestVmsHubPrepare:
         assert t.status == TaskStatus.SUCCEEDED
         cmds = fake.commands
         assert any("apt-get install -y astra-kvm virtinst qemu-utils" in c for c in cmds)
+        # libguestfs-tools (virt-customize для offline-фолбэка статики)
+        assert any("apt-get install -y" in c and "libguestfs-tools" in c for c in cmds)
         assert any("usermod -aG" in c and "dbos" in c for c in cmds)
         assert any("qemu.conf" in c for c in cmds)
         assert any("systemctl enable --now libvirtd" in c for c in cmds)
@@ -199,6 +201,7 @@ class TestVmsHubPrepare:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         assert any("dnf install -y qemu-kvm libvirt virt-install" in c for c in fake.commands)
+        assert any("dnf install -y" in c and "libguestfs-tools" in c for c in fake.commands)
         assert not any("apt-get install" in c for c in fake.commands)
         # dnf-мост через nmcli
         assert any("nmcli con add type bridge ifname br0" in c for c in fake.commands)

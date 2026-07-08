@@ -11,10 +11,13 @@ libvirt/kvm без пароля), гость — по `sshpass` (`u`/`1`), по�
   только после подтверждения удаляем базовую учётку `u`. Порядок безопасный —
   доступ не теряем до успешной проверки нового входа.
 * `vm.set_network` — перевод ВМ на статику в LAN (bridge `br0`) или на NAT-сеть
-  libvirt. bridge: в госте переписываем `/etc/network/interfaces`
-  (address/netmask/gateway/dns из payload — порт `provision.sh`/`static_ip.sh`),
-  переводим NIC домена на `br0` (`virt-xml`) и рестартуем домен. NAT: переводим
-  NIC на сеть `test`, рестартуем и читаем выданный адрес через `domifaddr`.
+  libvirt. bridge: основной путь — в живом госте по SSH переписываем
+  `/etc/network/interfaces` (address/netmask/gateway/dns из payload — порт
+  `provision.sh`/`static_ip.sh`); если гость по SSH недостижим — фолбэк через
+  `virt-customize` (offline-правка qcow2-диска: `virsh destroy` → заливка
+  interfaces в образ → старт). Дальше переводим NIC домена на `br0` (`virt-xml`)
+  и рестартуем. NAT: переводим NIC на сеть `test`, рестартуем и читаем выданный
+  адрес через `domifaddr`.
 
 Длинные операции идут как `astra_update`: без per-команда timeout'а,
 durable-retry на уровне `_runner`. Исход докладывается server_service через
@@ -49,6 +52,7 @@ from src.tasks._vms_helpers import (
     run_hub_cmd,
     validate_ip,
     validate_name,
+    validate_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,6 +76,11 @@ _DEFAULT_DNS = ("10.177.180.246",)
 _GUEST_REBOOT_SETTLE_S = 15.0
 _GUEST_REBOOT_POLL_DELAY_S = 10.0
 _GUEST_REBOOT_MAX_POLLS = 60
+
+# Проба доступности гостя по SSH до записи статики: несколько коротких попыток.
+# Не поднялся за это окно → уходим в offline-фолбэк (virt-customize).
+_GUEST_SSH_PROBE_ATTEMPTS = 12
+_GUEST_SSH_PROBE_DELAY_S = 5.0
 
 # Формат ключа dispatch-stash'а — общий с provision/rotate (`worker_client
 # .dispatch_creds_key`). Жёсткий guard: скомпрометированный payload не должен
@@ -259,6 +268,24 @@ async def _set_mgmt_password(
         ssh, guest_ssh(guest_ip, cmd, sudo=True), host,
         "VM_PREPARE_FAILED", "не удалось поставить пароль управляющему пользователю",
     )
+
+
+async def _install_guest_agent(ssh, host: str, guest_ip: str) -> None:
+    """Доустановить qemu-guest-agent в гостя (best-effort).
+
+    Нужен для graceful `virsh shutdown` (ACPI/agent-канал) и для чтения адреса
+    через `domifaddr --source agent`. Ставим по семейству пакетника гостя и
+    поднимаем сервис. Провал не валит bootstrap — агент не критичен для входа
+    по ключу.
+    """
+    cmd = (
+        "bash -c 'if command -v apt-get >/dev/null 2>&1; then "
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y qemu-guest-agent; "
+        "elif command -v dnf >/dev/null 2>&1; then "
+        "dnf install -y qemu-guest-agent; fi; "
+        "systemctl enable --now qemu-guest-agent 2>/dev/null || true'"
+    )
+    await ssh.run(guest_ssh(guest_ip, cmd, sudo=True), sudo=True)
 
 
 async def _install_authorized_key(
@@ -460,6 +487,9 @@ async def vm_prepare(task_id: str) -> None:
                         await _install_authorized_key(
                             ssh, host, guest_ip, management_user, public_key,
                         )
+                        # qemu-guest-agent для graceful shutdown/domifaddr —
+                        # best-effort, пока держим парольный доступ к гостю.
+                        await _install_guest_agent(ssh, host, guest_ip)
                         # Анти-локаут: доступ по ключу подтверждён до деструктива.
                         await _verify_key_login(
                             ssh, host, guest_ip, management_user, key_path,
@@ -535,6 +565,20 @@ def _normalize_dns(payload: dict, host: str) -> list[str]:
     return out or [str(d) for d in _DEFAULT_DNS]
 
 
+def _static_interfaces_lines(
+    addr: str, netmask: str, gateway: str, dns: list[str],
+) -> list[str]:
+    """Строки `/etc/network/interfaces` со статикой — порт `provision.sh`."""
+    return [
+        "auto eth0",
+        "iface eth0 inet static",
+        f"    address {addr}",
+        f"    netmask {netmask}",
+        f"    gateway {gateway}",
+        f"    dns-nameservers {' '.join(dns)}",
+    ]
+
+
 async def _write_static_interfaces(
     ssh, host: str, guest_ip: str, addr: str, netmask: str,
     gateway: str, dns: list[str],
@@ -545,20 +589,128 @@ async def _write_static_interfaces(
     `addr`/`netmask` с `gateway`/`dns`. После перевода NIC домена на `br0` гость
     окажется в боевом LAN с этим адресом.
     """
-    lines = [
-        "auto eth0",
-        "iface eth0 inet static",
-        f"    address {addr}",
-        f"    netmask {netmask}",
-        f"    gateway {gateway}",
-        f"    dns-nameservers {' '.join(dns)}",
-    ]
-    cfg = "\\n".join(lines) + "\\n"
+    cfg = "\\n".join(_static_interfaces_lines(addr, netmask, gateway, dns)) + "\\n"
     cmd = f"bash -c 'printf \"{cfg}\" > /etc/network/interfaces'"
     await run_hub_cmd(
         ssh, guest_ssh(guest_ip, cmd, sudo=True), host,
         "VM_NET_APPLY_FAILED", "не удалось прописать статику гостю",
     )
+
+
+async def _guest_ssh_reachable(ssh, guest_ip: str) -> bool:
+    """Проба доступности гостя по SSH (несколько коротких попыток)."""
+    for _ in range(_GUEST_SSH_PROBE_ATTEMPTS):
+        rc, _out, _err = await ssh.run(guest_ssh(guest_ip, "true"), sudo=True)
+        if rc == 0:
+            return True
+        await asyncio.sleep(_GUEST_SSH_PROBE_DELAY_S)
+    return False
+
+
+def _first_qcow2_path(domblklist_out: str) -> str | None:
+    """Первый qcow2-диск из вывода `virsh domblklist`.
+
+    Формат таблицы libvirt (`Target`/`Source`): берём первый абсолютный путь,
+    заканчивающийся на `.qcow2`. None — если диска нет (CDROM/пусто).
+    """
+    for raw in (domblklist_out or "").splitlines():
+        for tok in raw.split():
+            if tok.startswith("/") and tok.endswith(".qcow2"):
+                return tok
+    return None
+
+
+async def _resolve_vm_disk(ssh, host: str, vm_name: str) -> str:
+    """Путь qcow2-диска домена (`virsh domblklist`) для offline-правки."""
+    _rc, out, _err = await ssh.run(f"virsh domblklist {vm_name}", sudo=True)
+    disk = _first_qcow2_path(out)
+    if disk is None:
+        raise SshError(
+            error_code="VM_NET_APPLY_FAILED", host=host,
+            message=f"не удалось определить qcow2-диск ВМ {vm_name} для offline-правки",
+        )
+    return validate_path(disk, host)
+
+
+async def _ensure_virt_customize(ssh, host: str) -> None:
+    """Убедиться, что на hub'е есть virt-customize (libguestfs-tools).
+
+    Обычно ставится в `vms_hub.prepare`. Если бинаря нет — best-effort
+    доустановка (apt|dnf); всё равно нет → внятная ошибка.
+    """
+    rc, _out, _err = await ssh.run("command -v virt-customize", sudo=True)
+    if rc == 0:
+        return
+    await ssh.run(
+        "sh -c 'if command -v apt-get >/dev/null 2>&1; then "
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y libguestfs-tools; "
+        "elif command -v dnf >/dev/null 2>&1; then "
+        "dnf install -y libguestfs-tools || dnf install -y libguestfs-tools-c; fi'",
+        sudo=True,
+    )
+    rc, _out, _err = await ssh.run("command -v virt-customize", sudo=True)
+    if rc != 0:
+        raise SshError(
+            error_code="VM_NET_APPLY_FAILED", host=host,
+            message=(
+                "на hub'е нет virt-customize (libguestfs-tools) для offline-правки "
+                "статики — доустановите пакет или повторите prepare сервера"
+            ),
+        )
+
+
+async def _write_interfaces_tmp(
+    ssh, host: str, addr: str, netmask: str, gateway: str, dns: list[str],
+) -> str:
+    """Сгенерить статик-конфиг во временный файл на hub'е; вернуть путь.
+
+    Содержимое подаём на stdin (`tee`), а не в shell-строку — не расклеивает
+    команду. Caller обязан подчистить файл.
+    """
+    content = "\n".join(_static_interfaces_lines(addr, netmask, gateway, dns)) + "\n"
+    rc, out, err = await ssh.run("mktemp", sudo=True)
+    if rc != 0 or not (out or "").strip():
+        raise SshError(
+            error_code="VM_NET_APPLY_FAILED", host=host, returncode=rc,
+            stderr=(err or "").strip(),
+            message="не удалось создать временный файл для статик-конфига",
+        )
+    path = out.strip()
+    rc, _out, err = await ssh.run(
+        f"tee {path} > /dev/null", sudo=True, stdin_payload=content,
+    )
+    if rc != 0:
+        raise SshError(
+            error_code="VM_NET_APPLY_FAILED", host=host, returncode=rc,
+            stderr=(err or "").strip(),
+            message="не удалось записать статик-конфиг во временный файл",
+        )
+    return path
+
+
+async def _apply_static_offline(
+    ssh, host: str, vm_name: str, addr: str, netmask: str,
+    gateway: str, dns: list[str],
+) -> None:
+    """Фолбэк статики через offline-правку диска (`virt-customize`).
+
+    Гость недостижим по SSH → глушим домен, находим его qcow2-диск и заливаем
+    готовый `/etc/network/interfaces` прямо в образ (libguestfs), не заходя в
+    гостя. Домен остаётся выключенным — caller переводит NIC и стартует.
+    """
+    await ssh.run(f"virsh destroy {vm_name}", sudo=True)  # offline-правка требует off
+    disk = await _resolve_vm_disk(ssh, host, vm_name)
+    await _ensure_virt_customize(ssh, host)
+    tmp = await _write_interfaces_tmp(ssh, host, addr, netmask, gateway, dns)
+    try:
+        await run_hub_cmd(
+            ssh,
+            f"virt-customize -a {disk} --upload {tmp}:/etc/network/interfaces",
+            host, "VM_NET_APPLY_FAILED",
+            "virt-customize не смог записать статику в диск ВМ",
+        )
+    finally:
+        await ssh.run(f"rm -f {tmp}", sudo=True)
 
 
 async def _switch_domain_network(
@@ -622,11 +774,12 @@ async def vm_set_network(task_id: str) -> None:
 
     Что делает: заходит на hub по SSH. Для `bridge` — переписывает статику в
     госте (`/etc/network/interfaces`: address/netmask/gateway/dns из payload,
-    порт `provision.sh`/`static_ip.sh`), переводит NIC домена на `br0`
-    (`virt-xml`) и рестартует домен, гость поднимается с боевым адресом. Для
-    `nat` — переводит NIC на сеть `test`, рестартует и читает выданный адрес
-    через `domifaddr`. Исход докладывает server_service (`vms/{id}/state` с
-    `ip_address`/`power_state`).
+    порт `provision.sh`/`static_ip.sh`); если гость по SSH недостижим — фолбэк
+    через `virt-customize` (offline-заливка interfaces в qcow2-диск). Затем
+    переводит NIC домена на `br0` (`virt-xml`) и рестартует домен, гость
+    поднимается с боевым адресом. Для `nat` — переводит NIC на сеть `test`,
+    рестартует и читает выданный адрес через `domifaddr`. Исход докладывает
+    server_service (`vms/{id}/state` с `ip_address`/`power_state`).
 
     Параметры: `task_id`. Payload — `vm_id`, `vm_name`/`name`, `network_mode`
     (`bridge`|`nat`); для `bridge` — `ip_address`, опц. `netmask`/`gateway`/`dns`
@@ -672,11 +825,28 @@ async def vm_set_network(task_id: str) -> None:
                     )
                     dns = _normalize_dns(payload, host)
                     # Текущий адрес гостя для входа (NAT/DHCP), пока он ещё на
-                    # старой сети; статику пишем по нему до перевода NIC.
-                    guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
-                    await _write_static_interfaces(
-                        ssh, host, guest_ip, addr, netmask, gateway, dns,
+                    # старой сети; статику пишем по нему до перевода NIC. Нет
+                    # адреса — сразу в offline-фолбэк (по SSH зайти всё равно
+                    # некуда).
+                    try:
+                        guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
+                    except SshError as exc:
+                        if exc.error_code != "VM_GUEST_NO_IP":
+                            raise
+                        guest_ip = None
+                    reachable = bool(guest_ip) and await _guest_ssh_reachable(
+                        ssh, guest_ip,
                     )
+                    if reachable:
+                        # Основной путь: статику пишем в живом госте по SSH.
+                        await _write_static_interfaces(
+                            ssh, host, guest_ip, addr, netmask, gateway, dns,
+                        )
+                    else:
+                        # Гость по SSH не поднялся — offline-правка диска.
+                        await _apply_static_offline(
+                            ssh, host, vm_name, addr, netmask, gateway, dns,
+                        )
                     await _switch_domain_network(
                         ssh, host, vm_name,
                         f"bridge={bridge_label()},model=virtio",

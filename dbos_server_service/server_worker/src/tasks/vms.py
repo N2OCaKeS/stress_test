@@ -62,9 +62,15 @@ logger = logging.getLogger(__name__)
 
 # Пакеты hub'а по семейству ОС. apt-набор — из референса
 # (`Libvirt.prepare`): astra-kvm тянет qemu/libvirt зависимостями. dnf-аналог —
-# ручной список для RHEL/RedOS.
-_APT_PACKAGES = "astra-kvm virtinst qemu-utils wget tar sshpass bridge-utils"
-_DNF_PACKAGES = "qemu-kvm libvirt virt-install qemu-img wget tar sshpass bridge-utils"
+# ручной список для RHEL/RedOS. libguestfs-tools нужен для virt-customize —
+# offline-правки диска ВМ (фолбэк статики в `vm.set_network`).
+_APT_PACKAGES = (
+    "astra-kvm virtinst qemu-utils wget tar sshpass bridge-utils libguestfs-tools"
+)
+_DNF_PACKAGES = (
+    "qemu-kvm libvirt virt-install qemu-img wget tar sshpass bridge-utils "
+    "libguestfs-tools"
+)
 
 # Группы libvirt/kvm, в которые доклеиваем управляющего пользователя hub'а.
 _LIBVIRT_GROUPS = ("kvm", "libvirt", "libvirt-qemu", "libvirt-admin")

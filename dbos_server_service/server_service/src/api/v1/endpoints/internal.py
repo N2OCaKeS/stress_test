@@ -58,6 +58,7 @@ from src.schemas.internal import (
     PasswordRotateResponse,
     PowerStateCallbackRequest,
     PowerStateCallbackResponse,
+    PowerSweepResponse,
     ProvisionStatusRequest,
     ProvisionStatusResponse,
     UsersInventoryCallbackRequest,
@@ -407,6 +408,32 @@ async def auto_inventory_sweep(
     """
     data = await internal_service.run_auto_inventory_sweep(db, identity)
     return AutoInventorySweepResponse(**data)
+
+
+@router.post(
+    "/servers/power-sweep",
+    response_model=PowerSweepResponse,
+    responses={403: _INTERNAL_RESPONSES_BASE[403]},
+)
+async def power_sweep(
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> PowerSweepResponse:
+    """Частый прогон живой пробы питания по всем серверам: только power.status.
+
+    Триггерится worker-scheduler'ом (`power.sweep`) по частому cron'у. В отличие
+    от auto-inventory-sweep, тут нет inventory.sync и нет фильтра `is_managed`:
+    ping/ssh/ipmi снимаются для ЛЮБОГО не-списанного сервера, чтобы доступность
+    и питание были актуальны. Прогон платформенный, `X-Target-Department-Id` не
+    требуется.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: per-server `server.power_status` (source=auto_power_sweep);
+    превышение cap'а — `power_sweep.truncated`.
+    """
+    data = await internal_service.run_power_sweep(db, identity)
+    return PowerSweepResponse(**data)
 
 
 @router.post(

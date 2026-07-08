@@ -181,3 +181,91 @@ class TestAutoInventorySweep:
     async def test_sweep_no_token_401(self, client):
         resp = await client.post(f"{BASE_INT}/servers/auto-inventory-sweep")
         assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
+
+
+@pytest.mark.usefixtures("soft_dept_mode")
+class TestPowerSweep:
+    """Частый power-sweep: только power.status, по ВСЕМ активным серверам."""
+
+    async def test_sweep_probes_every_active_server_power_only(
+        self, client, worker_bot_token_a, make_server, db, captured_dispatch,
+    ):
+        managed = await _make_managed(make_server, db)
+        # Неподготовленные серверы тоже пробуются — это ключевое отличие от
+        # auto-inventory-sweep (там их пропускают).
+        raw1 = await make_server(department_id="dep_a")
+        raw2 = await make_server(department_id="dep_b")
+        # Decommissioned пропускается.
+        dead = await _make_managed(make_server, db)
+        dead.status = ServerStatus.DECOMMISSIONED
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE_INT}/servers/power-sweep",
+            headers=_hdr(worker_bot_token_a),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["total_servers"] == 3  # managed + 2 raw, dead исключён
+        assert body["processed"] == 3
+        assert body["dispatched_tasks"] == 3
+        assert body["truncated"] == 0
+
+        # Только power.status, ни одной inventory.sync.
+        kinds = {c["task_kind"] for c in captured_dispatch}
+        assert kinds == {"power.status"}
+        targets = {c["target_server_id"] for c in captured_dispatch}
+        assert targets == {managed.id, raw1.id, raw2.id}
+        # payload несёт host/ssh_port для reachability-пробы.
+        for c in captured_dispatch:
+            assert "host" in c["payload"]
+            assert "ssh_port" in c["payload"]
+
+    async def test_sweep_truncates_over_cap(
+        self, client, worker_bot_token_a, make_server, db, captured_dispatch,
+        monkeypatch,
+    ):
+        await make_server(department_id="dep_a")
+        await make_server(department_id="dep_a")
+        await make_server(department_id="dep_a")
+        monkeypatch.setattr(get_settings(), "auto_inventory_fanout_max", 1)
+
+        resp = await client.post(
+            f"{BASE_INT}/servers/power-sweep",
+            headers=_hdr(worker_bot_token_a),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total_servers"] == 3
+        assert body["processed"] == 1
+        assert body["dispatched_tasks"] == 1
+        assert body["truncated"] == 2
+        assert len(captured_dispatch) == 1
+
+    async def test_sweep_empty_when_no_servers(
+        self, client, worker_bot_token_a, captured_dispatch,
+    ):
+        resp = await client.post(
+            f"{BASE_INT}/servers/power-sweep",
+            headers=_hdr(worker_bot_token_a),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["processed"] == 0
+        assert body["dispatched_tasks"] == 0
+        assert captured_dispatch == []
+
+    async def test_sweep_admin_forbidden(
+        self, client, admin_role_token_a, captured_dispatch,
+    ):
+        resp = await client.post(
+            f"{BASE_INT}/servers/power-sweep",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert_error(resp, 403, "PERMISSION_DENIED")
+        assert captured_dispatch == []
+
+    async def test_sweep_no_token_401(self, client):
+        resp = await client.post(f"{BASE_INT}/servers/power-sweep")
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")

@@ -37,6 +37,11 @@ logger = logging.getLogger(__name__)
 # Триггеры авто-обновления — идут в `details.source` каждого audit-события.
 SOURCE_PREPARED = "auto_prepared"
 SOURCE_SCHEDULED = "auto_scheduled"
+# Частый power-sweep (ping/ssh/ipmi по всем серверам) — свой маркер источника.
+SOURCE_POWER_SWEEP = "auto_power_sweep"
+
+# Одиночная пара для power-only прогона (без inventory.sync).
+_POWER_TASK: tuple[str, str] = ("power.status", "server.power_status")
 
 # Пары (task_kind, audit_action) авто-обновления. inventory.sync — SSH-сбор,
 # power.status — живая проба питания c ping/ssh fallback'ом на стороне воркера.
@@ -177,6 +182,91 @@ async def refresh_server(
         if task_id is not None:
             dispatched[task_kind] = task_id
     return {"server_id": server.id, "dispatched": dispatched, "skipped": False}
+
+
+async def probe_server_power(
+    db: AsyncSession,
+    server,
+    *,
+    source: str,
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> str | None:
+    """Поставить только живую пробу питания (`power.status`) для одного сервера.
+
+    В отличие от `refresh_server`, inventory.sync НЕ ставим: проба ping/ssh/ipmi
+    read-only и снимается для ЛЮБОГО сервера — неподготовленного, обновляющегося,
+    без IPMI. Единственный skip — списанный сервер (worker-операции ему не шлём).
+    Возвращает task_id либо None (skip / best-effort фейл диспатча).
+    """
+    if server.status == ServerStatus.DECOMMISSIONED:
+        return None
+    task_kind, audit_action = _POWER_TASK
+    return await _dispatch_one(
+        db,
+        server=server,
+        task_kind=task_kind,
+        audit_action=audit_action,
+        source=source,
+        actor_id=actor_id,
+        request_id=request_id,
+    )
+
+
+async def fanout_power_sweep(
+    db: AsyncSession,
+    *,
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> dict:
+    """Частый прогон живой пробы питания по ВСЕМ не-списанным серверам.
+
+    Отличие от `fanout_auto_inventory`: населённость — все активные серверы
+    (`list_all_active`, без фильтра `is_managed`), а ставится только
+    `power.status` — ping/ssh/ipmi. Так доступность и питание держатся
+    актуальными для каждого сервера, включая неподготовленные и те, у кого нет
+    IPMI (там ipmi_power_state=unknown, без шума). inventory.sync сюда не входит:
+    его гоняет редкий `fanout_auto_inventory`.
+
+    Cap `auto_inventory_fanout_max` тот же throttle против шторма; при
+    превышении режем хвост и эмитим `power_sweep.truncated`. Возвращает
+    `{total_servers, processed, dispatched_tasks, truncated}`.
+    """
+    cap = get_settings().auto_inventory_fanout_max
+    servers = await server_repo.list_all_active(db, limit=cap)
+    total_servers = await server_repo.count_all_active(db)
+    truncated = max(0, total_servers - cap)
+    if truncated:
+        audit_service.emit(
+            "power_sweep.truncated",
+            target_id=None, target_type="server",
+            status="warning", allowed=True,
+            details={
+                "total_servers": total_servers,
+                "cap": cap,
+                "truncated_count": truncated,
+            },
+        )
+
+    processed = 0
+    dispatched_tasks = 0
+    for server in servers:
+        task_id = await probe_server_power(
+            db, server,
+            source=SOURCE_POWER_SWEEP,
+            actor_id=actor_id,
+            request_id=request_id,
+        )
+        processed += 1
+        if task_id is not None:
+            dispatched_tasks += 1
+
+    return {
+        "total_servers": total_servers,
+        "processed": processed,
+        "dispatched_tasks": dispatched_tasks,
+        "truncated": truncated,
+    }
 
 
 async def fanout_auto_inventory(

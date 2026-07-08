@@ -1918,6 +1918,40 @@ async def run_auto_inventory_sweep(
     return {"ok": True, "stuck_updating_recovered": recovery["recovered"], **summary}
 
 
+async def run_power_sweep(
+    db: AsyncSession,
+    identity: IdentityContext,
+) -> dict:
+    """Частый прогон живой пробы питания по всем серверам (callback воркера).
+
+    Триггерится worker-scheduler'ом (`power.sweep`) по частому cron'у: воркер
+    даёт лишь расписание, а фан-аут (список всех активных серверов + dispatch
+    `power.status` на каждый) идёт здесь. В отличие от auto-inventory-sweep, тут
+    нет inventory.sync и нет фильтра `is_managed` — ping/ssh/ipmi снимаются для
+    ЛЮБОГО сервера, чтобы доступность и питание были актуальны, а не «прочерк».
+
+    Право: `(server, *, prepare_callback)` — тот же глобальный callback-грант
+    worker_bot'а, что у auto-inventory-sweep; прогон платформенный, не привязан
+    к отделу, поэтому X-Target-Department-Id здесь не требуется.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server.power_status",
+            target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "source": "auto_power_sweep"},
+        )
+        raise
+    summary = await auto_inventory.fanout_power_sweep(
+        db, actor_id=identity.user_id,
+    )
+    return {"ok": True, **summary}
+
+
 async def record_ipmi_credentials_rotated(
     db: AsyncSession,
     identity: IdentityContext,

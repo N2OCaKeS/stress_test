@@ -164,6 +164,7 @@ ops-runner'ских ротаций, но action-name'ы отдельные — a
 | `management_user_config.sync` | WARNING | фан-аут `management_user_sync` (high-priority) на конкретный managed-сервер при изменении конфига. success: задача поставлена; failure: `reason in {idempotent_conflict, worker_unreachable}` (allowed=True — best-effort, остальные серверы продолжают) | `server` | success: `task_id`, `task_kind=management_user_sync`, `server_id`, `source=config_fanout`, `management_login`, `rename_pending`, `department_id`, `idempotent_hit`. failure: `reason`, `task_kind`, `server_id`, `source`, `department_id` |
 | `management_user_sync_fanout.truncated` | WARNING | фан-аут превысил `MANAGEMENT_USER_SYNC_FANOUT_MAX` — хвост managed-серверов вырезан, выровняется на следующем PUT/prepare | `management_user_config` | `total_managed`, `cap`, `truncated_count` |
 | `auto_inventory_sweep.truncated` | WARNING | плановый авто-inventory прогон превысил `AUTO_INVENTORY_FANOUT_MAX` — хвост managed-серверов вырезан, выровняется на следующем прогоне | `server` | `total_managed`, `cap`, `truncated_count` |
+| `power_sweep.truncated` | WARNING | частый power-sweep (ping/ssh/ipmi по всем серверам) превысил `AUTO_INVENTORY_FANOUT_MAX` — хвост серверов вырезан, выровняется на следующем прогоне | `server` | `total_servers`, `cap`, `truncated_count` |
 
 ---
 

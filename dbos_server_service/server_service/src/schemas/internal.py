@@ -551,6 +551,16 @@ class AutoInventorySweepResponse(BaseModel):
     )
 
 
+class PowerSweepResponse(BaseModel):
+    """Сводка частого power-прогона (POST /internal/servers/power-sweep)."""
+
+    ok: bool = True
+    total_servers: int = Field(description="Всего не-списанных серверов платформы.")
+    processed: int = Field(description="Серверов, по которым прошёл фан-аут (после cap'а).")
+    dispatched_tasks: int = Field(description="Сколько power.status-задач реально поставлено.")
+    truncated: int = Field(description="Сколько серверов отрезано cap'ом AUTO_INVENTORY_FANOUT_MAX.")
+
+
 # ── IPMI credentials_rotated callback ───────────────────────────────────────
 
 class IpmiCredentialsRotatedRequest(BaseModel):

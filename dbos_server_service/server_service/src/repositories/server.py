@@ -49,6 +49,37 @@ async def list_managed(db: AsyncSession, limit: int) -> list[Server]:
     return list((await db.execute(stmt)).scalars())
 
 
+async def list_all_active(db: AsyncSession, limit: int) -> list[Server]:
+    """SELECT всех не-списанных серверов платформы, capped по limit.
+
+    В отличие от `list_managed` — БЕЗ фильтра `is_managed`: живая проба
+    достижимости (ping/ssh) и опрос IPMI-питания идут для ЛЮБОГО сервера, в том
+    числе неподготовленного, а не только для онбордингнутых. Списанные
+    исключаем — worker-операции они не принимают. Порядок `created_at` —
+    детерминированный срез при срабатывании cap'а.
+    """
+    from src.core.constants import ServerStatus
+
+    stmt = (
+        select(Server)
+        .where(Server.status != ServerStatus.DECOMMISSIONED)
+        .order_by(Server.created_at)
+        .limit(limit)
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def count_all_active(db: AsyncSession) -> int:
+    """COUNT не-списанных серверов платформы — для truncated-аудита power-sweep'а."""
+    from src.core.constants import ServerStatus
+
+    stmt = (
+        select(func.count(Server.id))
+        .where(Server.status != ServerStatus.DECOMMISSIONED)
+    )
+    return int((await db.execute(stmt)).scalar_one())
+
+
 async def list_stuck_updating(
     db: AsyncSession, cutoff: datetime, limit: int
 ) -> list[Server]:

@@ -147,6 +147,15 @@ export function canManageVmNet(persona: Persona): boolean {
   return canManageVms(persona);
 }
 
+/**
+ * True если персона может управлять пресетами стандартных ВМ
+ * (`vm.preset_manage`, дизайн §2). Админ-плоскость: dep_admin своего отдела
+ * либо server.admin/operator. Backend перепроверит.
+ */
+export function canManageVmPresets(persona: Persona): boolean {
+  return canManageVms(persona);
+}
+
 /** True if persona has any logging-only role (view-only on aux services). */
 export function isLoggingOnly(persona: Persona): boolean {
   return (

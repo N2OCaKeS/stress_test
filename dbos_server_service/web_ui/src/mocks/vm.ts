@@ -9,10 +9,13 @@
 
 import type {
   Vm,
+  VmConsoleKind,
+  VmConsoleResponse,
   VmDisk,
   VmHub,
   VmImage,
   VmIpPool,
+  VmPreset,
   VmSnapshot,
 } from "@/api/server/vms";
 
@@ -450,3 +453,90 @@ export const MOCK_AVAILABLE_IPS: Record<string, string[]> = {
   "pool-core-hub07": ["10.177.103.151", "10.177.103.152"],
   "pool-dtkk": ["10.177.101.45", "10.177.101.46", "10.177.101.47"],
 };
+
+/**
+ * Пресеты стандартных ВМ (`vm_preset`) — mock-фолбэк раздела «Пресеты» (живой
+ * режим ходит в `GET /vm-presets`). Bridge-пресет несёт статик-IP/номер
+ * (разворачивается один раз глобально), NAT-пресет — один раз на хаб.
+ */
+export const MOCK_VM_PRESETS: VmPreset[] = [
+  {
+    id: "preset-core-rc",
+    name: "core-rc-bridge",
+    department_id: "core",
+    box: "vm_station",
+    os_version: null,
+    cpu: 4,
+    ram_mb: 8192,
+    disk_gb: 80,
+    network_mode: "bridge",
+    fixed_ip: "10.177.103.60",
+    number: 900,
+    created_at: NOW,
+    updated_at: NOW,
+  },
+  {
+    id: "preset-core-sandbox",
+    name: "core-sandbox-nat",
+    department_id: "core",
+    box: "1.8.1.o",
+    os_version: "1.8.1.6",
+    cpu: 2,
+    ram_mb: 4096,
+    disk_gb: 40,
+    network_mode: "nat",
+    fixed_ip: null,
+    number: null,
+    created_at: NOW,
+    updated_at: NOW,
+  },
+  {
+    id: "preset-dtkk-xfs",
+    name: "dtkk-xfs-nat",
+    department_id: "dtkk",
+    box: "xfs.15GB",
+    os_version: "1.8.1.6",
+    cpu: 2,
+    ram_mb: 2048,
+    disk_gb: 15,
+    network_mode: "nat",
+    fixed_ip: null,
+    number: null,
+  },
+];
+
+/**
+ * Данные консоли ВМ для mock-режима (`POST /vms/{id}/console`). VNC отдаёт
+ * поднятый прокси (для демонстрации панели-вьювера), serial — ещё не поднятый
+ * (пометка про инфраструктурное развёртывание).
+ */
+export function mockVmConsole(vm: Vm, kind: VmConsoleKind): VmConsoleResponse {
+  const host = vm.ip_address ?? "10.177.103.51";
+  const user = vm.mgmt_user ?? "u";
+  if (kind === "ssh") {
+    return {
+      kind: "ssh",
+      host,
+      port: 22,
+      username: user,
+      password: null,
+      command: `ssh ${user}@${host}`,
+    };
+  }
+  if (kind === "vnc") {
+    return {
+      kind: "vnc",
+      ws_url: `wss://vms-console.local/vms/${vm.id}/vnc`,
+      host,
+      port: 5901,
+      password: "mock-otp-9f3a",
+      proxy_ready: true,
+    };
+  }
+  return {
+    kind: "serial",
+    ws_url: null,
+    command: `virsh console ${vm.name}`,
+    proxy_ready: false,
+  };
+}

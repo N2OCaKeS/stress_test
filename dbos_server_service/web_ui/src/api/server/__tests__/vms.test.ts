@@ -11,13 +11,16 @@ import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
 import {
   alltaUpdateVm,
   astraUpdateVm,
+  createDefaultVms,
   createVm,
   createVmDisk,
   createVmIpPool,
+  createVmPreset,
   createVmSnapshot,
   deleteVm,
   deleteVmDisk,
   deleteVmIpPool,
+  deleteVmPreset,
   deleteVmSnapshot,
   getAvailableIps,
   getVmByNumber,
@@ -25,17 +28,22 @@ import {
   listVmDisks,
   listVmImages,
   listVmIpPools,
+  listVmPresets,
   listVmSnapshots,
+  openVmConsole,
   prepareVm,
   prepareVmsHub,
   refreshVmImages,
   resizeVmDisk,
   revertVmSnapshot,
   rotateVmMgmtCreds,
+  setVmAutostart,
   setVmCredStrategy,
   setVmNetwork,
+  teardownVmsHub,
   updateVm,
   updateVmIpPool,
+  updateVmPreset,
   vmPasswd,
   vmPower,
 } from "@/api/server/vms";
@@ -256,6 +264,61 @@ describe("vms api client", () => {
   it("deleteVmIpPool DELETE'ит /vm-ip-pools/{id}", async () => {
     await deleteVmIpPool("pool-core");
     expect(apiDelete).toHaveBeenCalledWith("/server/v1/vm-ip-pools/pool-core");
+  });
+
+  it("пресеты: list / create / update / delete", async () => {
+    await listVmPresets({ department_id: "core" });
+    expect(apiGet).toHaveBeenCalledWith("/server/v1/vm-presets", {
+      query: { department_id: "core" },
+    });
+    const body = {
+      name: "core-rc",
+      department_id: "core",
+      box: "vm_station",
+      cpu: 4,
+      ram_mb: 8192,
+      disk_gb: 80,
+      network_mode: "bridge" as const,
+      fixed_ip: "10.177.103.60",
+      number: 900,
+    };
+    await createVmPreset(body);
+    expect(apiPost).toHaveBeenCalledWith("/server/v1/vm-presets", body);
+    await updateVmPreset("preset-1", { cpu: 8 });
+    expect(apiPatch).toHaveBeenCalledWith("/server/v1/vm-presets/preset-1", {
+      cpu: 8,
+    });
+    await deleteVmPreset("preset-1");
+    expect(apiDelete).toHaveBeenCalledWith("/server/v1/vm-presets/preset-1");
+  });
+
+  it("createDefaultVms POST'ит create-default-vms сервера", async () => {
+    const res = await createDefaultVms("srv-07");
+    expect(apiPost).toHaveBeenCalledWith(
+      "/server/v1/servers/srv-07/create-default-vms",
+    );
+    expect(res).toEqual({ task_id: "task-1", status: "queued" });
+  });
+
+  it("setVmAutostart POST'ит /vms/{id}/autostart с enabled", async () => {
+    await setVmAutostart("vm-101", true);
+    expect(apiPost).toHaveBeenCalledWith("/server/v1/vms/vm-101/autostart", {
+      enabled: true,
+    });
+  });
+
+  it("teardownVmsHub DELETE'ит /servers/{id}/vms-hub с reason", async () => {
+    await teardownVmsHub("srv-07", { reason: "reclaim" });
+    expect(apiDelete).toHaveBeenCalledWith("/server/v1/servers/srv-07/vms-hub", {
+      reason: "reclaim",
+    });
+  });
+
+  it("openVmConsole POST'ит /vms/{id}/console с kind", async () => {
+    await openVmConsole("vm-101", "vnc");
+    expect(apiPost).toHaveBeenCalledWith("/server/v1/vms/vm-101/console", {
+      kind: "vnc",
+    });
   });
 
   it("createVm с bridge несёт pool_id и ip_address", async () => {

@@ -251,6 +251,104 @@ describe("Vm zone (mock mode)", () => {
     expect(screen.getByText(/выбрать из пула/)).toBeInTheDocument();
   });
 
+  it("хаб показывает кнопки «Развернуть стандартные ВМ» и «Разобрать VMS-hub»", async () => {
+    // srv-24 без ВМ — teardown активен; на srv-07 есть ВМ (teardown disabled).
+    renderVm("/vm?hub=srv-24");
+    expect(
+      await screen.findByRole("button", { name: /Развернуть стандартные ВМ/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Разобрать VMS-hub/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("разбор хаба с ВМ заблокирован, пустого — разрешён", async () => {
+    renderVm("/vm?hub=srv-07");
+    const teardown = await screen.findByRole("button", {
+      name: /Разобрать VMS-hub/,
+    });
+    // На srv-07 три ВМ — кнопка disabled.
+    expect(teardown).toBeDisabled();
+  });
+
+  it("развёртывание стандартных ВМ требует подтверждения", async () => {
+    renderVm("/vm?hub=srv-24");
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Развернуть стандартные ВМ/ }),
+    );
+    // Открылся confirm-диалог.
+    expect(
+      await screen.findByText(/Развернуть на хабе/),
+    ).toBeInTheDocument();
+  });
+
+  it("карточка ВМ несёт тумблер автозапуска и переключает его", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    // vm-101 в фикстуре autostart=true.
+    const toggle = await screen.findByRole("switch", { name: /Автозапуск/ });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(toggle);
+    // После клика (mock) — выключен.
+    expect(
+      await screen.findByRole("switch", { name: /Автозапуск/ }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("карточка ВМ несёт панель консоли с выбором SSH/VNC/serial", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    expect(await screen.findByRole("heading", { name: /Консоль/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^SSH$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^VNC$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Serial$/ })).toBeInTheDocument();
+  });
+
+  it("консоль SSH показывает команду подключения", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    await screen.findByRole("heading", { name: /Консоль/ });
+    fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
+    // SSH по умолчанию — видна команда ssh.
+    expect(await screen.findByText(/ssh dbosmgr@/)).toBeInTheDocument();
+  });
+
+  it("консоль VNC показывает ws-эндпоинт прокси (без внешнего вьювера)", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    await screen.findByRole("heading", { name: /Консоль/ });
+    fireEvent.click(screen.getByRole("button", { name: /^VNC$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
+    expect(
+      (await screen.findAllByText(/wss:\/\/vms-console\.local/)).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("открывает раздел «Пресеты ВМ» и рендерит список из фикстур", async () => {
+    renderVm("/vm");
+    fireEvent.click(await screen.findByRole("button", { name: /Пресеты ВМ/ }));
+    expect(
+      await screen.findByRole("heading", { name: /Пресеты стандартных ВМ/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("core-rc-bridge")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Создать пресет/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("открывает модалку создания пресета и валидирует поля", async () => {
+    renderVm("/vm?zone=presets");
+    fireEvent.click(await screen.findByRole("button", { name: /Создать пресет/ }));
+    expect(await screen.findByText("Новый пресет ВМ")).toBeInTheDocument();
+    const submits = screen.getAllByRole("button", { name: /Создать пресет/ });
+    const submit = submits[submits.length - 1];
+    // Имя есть по умолчанию пустое, но box и cpu заполнены — не хватает имени и отдела.
+    expect(submit).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText("core-rc-bridge"), {
+      target: { value: "new-preset" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("core"), {
+      target: { value: "core" },
+    });
+    expect(submit).not.toBeDisabled();
+  });
+
   it("блокирует зону для logging-роли (dave)", async () => {
     window.localStorage.setItem("dbos-persona", "dave");
     renderVm("/vm");

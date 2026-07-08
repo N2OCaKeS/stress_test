@@ -44,6 +44,16 @@
  *   PATCH  /vm-ip-pools/{id}
  *   DELETE /vm-ip-pools/{id}
  *
+ * Пресеты стандартных ВМ, autostart, teardown хаба и консоль:
+ *   GET    /vm-presets
+ *   POST   /vm-presets
+ *   PATCH  /vm-presets/{id}
+ *   DELETE /vm-presets/{id}
+ *   POST   /servers/{id}/create-default-vms  (202 task)
+ *   POST   /vms/{id}/autostart               (202 task)
+ *   DELETE /servers/{id}/vms-hub             (202 task)
+ *   POST   /vms/{id}/console                 (данные для подключения)
+ *
  * Пока сервис не отдаёт эти маршруты, страница `/vm` работает на mock-данных
  * (`@/mocks/vm`) в mock-режиме.
  *
@@ -426,6 +436,119 @@ export interface VmNetworkRequest {
   pool_id?: string | null;
 }
 
+// ── пресеты стандартных ВМ (vm_preset) ──────────────────────────────────────
+
+/**
+ * Пресет «стандартной ВМ» (`vm_preset`) — шаблон для массового развёртывания
+ * (дизайн §1). Разворачивается кнопкой «Развернуть стандартные ВМ» на хабе:
+ * bridge-пресет со статикой — один раз глобально (уникальный `fixed_ip`/
+ * `number`), NAT-пресет — один раз на хаб-сервер.
+ */
+export interface VmPreset {
+  id: string;
+  name: string;
+  department_id: string;
+  box: string;
+  /** Версия ОS для single-боксов; null — определяется образом (universal). */
+  os_version: string | null;
+  cpu: number;
+  ram_mb: number;
+  disk_gb: number;
+  network_mode: VmNetworkMode;
+  /** Для bridge — статический IP (разворачивается один раз глобально). */
+  fixed_ip: string | null;
+  /** Глобально уникальный номер, присваиваемый развёрнутой ВМ. */
+  number: number | null;
+  created_at?: Iso8601;
+  updated_at?: Iso8601;
+}
+
+/** Envelope GET /vm-presets. */
+export interface VmPresetListResponse {
+  items: VmPreset[];
+}
+
+/** Тело POST /vm-presets — создать пресет. */
+export interface VmPresetCreateRequest {
+  name: string;
+  department_id: string;
+  box: string;
+  os_version?: string | null;
+  cpu: number;
+  ram_mb: number;
+  disk_gb: number;
+  network_mode: VmNetworkMode;
+  fixed_ip?: string | null;
+  number?: number | null;
+}
+
+/** Тело PATCH /vm-presets/{id} — частичное изменение (department_id не меняем). */
+export type VmPresetUpdateRequest = Partial<
+  Omit<VmPresetCreateRequest, "department_id">
+>;
+
+/** Параметры фильтрации GET /vm-presets. */
+export interface ListVmPresetsQuery {
+  department_id?: string;
+}
+
+// ── консоль ВМ (SSH / VNC / serial) ─────────────────────────────────────────
+
+/**
+ * Вид консоли ВМ (`POST /vms/{id}/console`):
+ *  - `ssh` — доступ по SSH (команда + креды mgmt/базовой учётки);
+ *  - `vnc` — графическая консоль через websockify+noVNC-прокси;
+ *  - `serial` — последовательная консоль (`virsh console`).
+ */
+export type VmConsoleKind = "ssh" | "vnc" | "serial";
+
+/** Тело POST /vms/{id}/console. */
+export interface VmConsoleRequest {
+  kind: VmConsoleKind;
+}
+
+/** SSH-доступ: готовая команда и параметры подключения. */
+export interface VmConsoleSshResponse {
+  kind: "ssh";
+  host: string;
+  port: number;
+  username: string;
+  /** Пароль учётки; null — доступ по ключу. */
+  password?: string | null;
+  /** Готовая строка подключения (`ssh user@host`). */
+  command: string;
+}
+
+/**
+ * VNC-консоль: ws(s)-эндпоинт прокси (websockify) для noVNC-вьювера. Если
+ * прокси ещё не поднят инфраструктурно — `proxy_ready=false`, UI показывает
+ * заглушку с адресом/портом.
+ */
+export interface VmConsoleVncResponse {
+  kind: "vnc";
+  /** ws(s)-URL прокси. null — прокси не развёрнут. */
+  ws_url: string | null;
+  host: string;
+  port: number;
+  /** Одноразовый пароль VNC (если задан). */
+  password?: string | null;
+  proxy_ready: boolean;
+}
+
+/** Serial-консоль: ws(s)-эндпоинт прокси и локальная команда `virsh console`. */
+export interface VmConsoleSerialResponse {
+  kind: "serial";
+  ws_url: string | null;
+  command: string;
+  proxy_ready: boolean;
+}
+
+/** Ответ POST /vms/{id}/console (дискриминатор — `kind`). */
+export type VmConsoleResponse =
+  | VmConsoleSshResponse
+  | VmConsoleVncResponse
+  | VmConsoleSerialResponse;
+
 // ── client ──────────────────────────────────────────────────────────────────
 
 /** `GET /api/server/v1/vms` — страница ВМ (offset envelope). */
@@ -750,4 +873,90 @@ export function updateVmIpPool(
 /** `DELETE /api/server/v1/vm-ip-pools/{id}` — удалить пул. */
 export function deleteVmIpPool(poolId: string): Promise<void> {
   return apiDelete<void>(`/server/v1/vm-ip-pools/${poolId}`);
+}
+
+// ── пресеты стандартных ВМ ──────────────────────────────────────────────────
+
+/** `GET /api/server/v1/vm-presets` — список пресетов стандартных ВМ. */
+export function listVmPresets(
+  query: ListVmPresetsQuery = {},
+): Promise<VmPresetListResponse> {
+  return apiGet<VmPresetListResponse>("/server/v1/vm-presets", {
+    query: { department_id: query.department_id },
+  });
+}
+
+/** `POST /api/server/v1/vm-presets` — создать пресет. */
+export function createVmPreset(
+  body: VmPresetCreateRequest,
+): Promise<VmPreset> {
+  return apiPost<VmPreset>("/server/v1/vm-presets", body);
+}
+
+/** `PATCH /api/server/v1/vm-presets/{id}` — изменить пресет. */
+export function updateVmPreset(
+  presetId: string,
+  body: VmPresetUpdateRequest,
+): Promise<VmPreset> {
+  return apiPatch<VmPreset>(`/server/v1/vm-presets/${presetId}`, body);
+}
+
+/** `DELETE /api/server/v1/vm-presets/{id}` — удалить пресет. */
+export function deleteVmPreset(presetId: string): Promise<void> {
+  return apiDelete<void>(`/server/v1/vm-presets/${presetId}`);
+}
+
+/**
+ * `POST /api/server/v1/servers/{id}/create-default-vms` — развернуть на хабе
+ * стандартные ВМ из пресетов отдела (202, task_id). Backend применяет правила
+ * «bridge — один раз глобально / NAT — один раз на хаб».
+ */
+export function createDefaultVms(
+  serverId: string,
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(
+    `/server/v1/servers/${serverId}/create-default-vms`,
+  );
+}
+
+// ── autostart / teardown / консоль ──────────────────────────────────────────
+
+/**
+ * `POST /api/server/v1/vms/{id}/autostart` — включить/выключить автозапуск ВМ
+ * (`virsh autostart`). Worker правит домен по SSH — поэтому 202-задача.
+ */
+export function setVmAutostart(
+  vmId: string,
+  enabled: boolean,
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(`/server/v1/vms/${vmId}/autostart`, {
+    enabled,
+  });
+}
+
+/**
+ * `DELETE /api/server/v1/servers/{id}/vms-hub` — разобрать VMS-hub (снести
+ * libvirt-конфигурацию/мост/pool, вернуть сервер в обычное состояние). 202,
+ * task_id. Привилегированное действие уровня prepare.
+ */
+export function teardownVmsHub(
+  serverId: string,
+  body?: ReasonBody,
+): Promise<TaskDispatchResponse> {
+  return apiDelete<TaskDispatchResponse>(
+    `/server/v1/servers/${serverId}/vms-hub`,
+    body,
+  );
+}
+
+/**
+ * `POST /api/server/v1/vms/{id}/console` — получить данные для подключения к
+ * консоли ВМ выбранного вида (ssh/vnc/serial). Для VNC/serial бэк возвращает
+ * ws(s)-эндпоинт прокси (websockify); для SSH — команду и параметры.
+ */
+export function openVmConsole(
+  vmId: string,
+  kind: VmConsoleKind,
+): Promise<VmConsoleResponse> {
+  return apiPost<VmConsoleResponse>(`/server/v1/vms/${vmId}/console`, { kind });
 }

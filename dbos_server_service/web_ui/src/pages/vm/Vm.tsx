@@ -31,10 +31,15 @@ import {
   Power,
   RefreshCw,
   RotateCcw,
+  Rocket,
   Search,
   Server as ServerIcon,
   ShieldCheck,
   Square,
+  Layers,
+  TerminalSquare,
+  Copy,
+  Zap,
   Trash2,
   Undo2,
   Waypoints,
@@ -50,6 +55,7 @@ import { apiErrMsg } from "@/api/client";
 import { useDeptLabel } from "@/lib/labels";
 import {
   canManageVmNet,
+  canManageVmPresets,
   canManageVms,
   canPrepareVmsHub,
   hasVmZoneAccess,
@@ -62,13 +68,16 @@ import { listOsVersions } from "@/api/server/osVersions";
 import {
   alltaUpdateVm,
   astraUpdateVm,
+  createDefaultVms,
   createVm,
   createVmDisk,
   createVmIpPool,
+  createVmPreset,
   createVmSnapshot,
   deleteVm,
   deleteVmDisk,
   deleteVmIpPool,
+  deleteVmPreset,
   deleteVmSnapshot,
   getAvailableIps,
   getVmByNumber,
@@ -76,8 +85,10 @@ import {
   listVmDisks,
   listVmImages,
   listVmIpPools,
+  listVmPresets,
   listVmSnapshots,
   listVms,
+  openVmConsole,
   prepareVm,
   prepareVmsHub,
   refreshVmImages,
@@ -86,13 +97,18 @@ import {
   resizeVmDisk,
   revertVmSnapshot,
   rotateVmMgmtCreds,
+  setVmAutostart,
   setVmCredStrategy,
   setVmNetwork,
+  teardownVmsHub,
   updateVm,
   updateVmIpPool,
+  updateVmPreset,
   vmPasswd,
   vmPower,
   type Vm,
+  type VmConsoleKind,
+  type VmConsoleResponse,
   type VmCreateRequest,
   type VmCredStrategy,
   type VmDisk,
@@ -105,6 +121,9 @@ import {
   type VmNetworkMode,
   type VmNetworkRequest,
   type VmPowerAction,
+  type VmPreset,
+  type VmPresetCreateRequest,
+  type VmPresetUpdateRequest,
   type VmSnapshot,
   type VmSnapshotCreateRequest,
   type VmSnapshotKind,
@@ -119,8 +138,10 @@ import {
   MOCK_VM_IMAGES,
   MOCK_VM_IP_POOLS,
   MOCK_VM_OS_VERSIONS,
+  MOCK_VM_PRESETS,
   MOCK_VM_SNAPSHOTS,
   MOCK_VMS,
+  mockVmConsole,
   type MockHubCandidate,
 } from "@/mocks/vm";
 
@@ -150,11 +171,12 @@ export function Vm() {
   const canManage = canManageVms(persona);
   const canPrepare = canPrepareVmsHub(persona);
   const canNet = canManageVmNet(persona);
+  const canPresets = canManageVmPresets(persona);
 
   const selectedHubId = params.get("hub");
   const selectedVmId = params.get("id");
   const action = params.get("action"); // "new" | null
-  const zone = params.get("zone"); // "pools" | null
+  const zone = params.get("zone"); // "pools" | "presets" | null
 
   // Хабы: derived из серверов с virtualization=true (+ счётчик ВМ). В
   // mock-режиме — фикстуры. Backend флага ещё не отдаёт (домен vm в работе).
@@ -260,6 +282,14 @@ export function Vm() {
   function selectPools() {
     const next = new URLSearchParams(params);
     next.set("zone", "pools");
+    next.delete("hub");
+    next.delete("id");
+    next.delete("action");
+    setParams(next, { replace: true });
+  }
+  function selectPresets() {
+    const next = new URLSearchParams(params);
+    next.set("zone", "presets");
     next.delete("hub");
     next.delete("id");
     next.delete("action");
@@ -397,19 +427,34 @@ export function Vm() {
         )}
       </div>
 
-      {canNet && (
-        <div className="border-t border-token px-2 py-2 shrink-0">
-          <button
-            type="button"
-            onClick={selectPools}
-            className={`cred-row w-full text-left flex items-center gap-2 ${zone === "pools" ? "active" : ""}`}
-            title="Настройка IPAM-пулов"
-          >
-            <Waypoints
-              className={`w-4 h-4 ${zone === "pools" ? "text-accent" : "text-dim"}`}
-            />
-            <span className="flex-1 text-sm">IP-пулы (IPAM)</span>
-          </button>
+      {(canNet || canPresets) && (
+        <div className="border-t border-token px-2 py-2 shrink-0 flex flex-col gap-0.5">
+          {canNet && (
+            <button
+              type="button"
+              onClick={selectPools}
+              className={`cred-row w-full text-left flex items-center gap-2 ${zone === "pools" ? "active" : ""}`}
+              title="Настройка IPAM-пулов"
+            >
+              <Waypoints
+                className={`w-4 h-4 ${zone === "pools" ? "text-accent" : "text-dim"}`}
+              />
+              <span className="flex-1 text-sm">IP-пулы (IPAM)</span>
+            </button>
+          )}
+          {canPresets && (
+            <button
+              type="button"
+              onClick={selectPresets}
+              className={`cred-row w-full text-left flex items-center gap-2 ${zone === "presets" ? "active" : ""}`}
+              title="Пресеты стандартных ВМ"
+            >
+              <Layers
+                className={`w-4 h-4 ${zone === "presets" ? "text-accent" : "text-dim"}`}
+              />
+              <span className="flex-1 text-sm">Пресеты ВМ</span>
+            </button>
+          )}
         </div>
       )}
     </aside>
@@ -427,6 +472,8 @@ export function Vm() {
     <Shell breadcrumb="server_service / виртуализация" middle={aside}>
       {zone === "pools" && canNet ? (
         <IpPoolsPane mock={mock} />
+      ) : zone === "presets" && canPresets ? (
+        <PresetsPane mock={mock} />
       ) : action === "new" && selectedHub && canManage ? (
         <CreateVmPane
           hub={selectedHub}
@@ -448,9 +495,16 @@ export function Vm() {
         <HubDetail
           hub={selectedHub}
           vms={hubVms}
+          mock={mock}
           canManage={canManage}
+          canPrepare={canPrepare}
           onOpenVm={selectVm}
           onCreate={startCreate}
+          onChanged={() => hubsAndVmsQ.refetch()}
+          onTornDown={() => {
+            selectHub(null);
+            hubsAndVmsQ.refetch();
+          }}
         />
       ) : (
         <EmptyPane />
@@ -596,18 +650,81 @@ function EmptyPane() {
 function HubDetail({
   hub,
   vms,
+  mock,
   canManage,
+  canPrepare,
   onOpenVm,
   onCreate,
+  onChanged,
+  onTornDown,
 }: {
   hub: VmHub;
   vms: Vm[];
+  mock: boolean;
   canManage: boolean;
+  canPrepare: boolean;
   onOpenVm: (vm: Vm) => void;
   onCreate: () => void;
+  onChanged: () => void;
+  onTornDown: () => void;
 }) {
+  const toast = useToast();
+  const { confirm, prompt } = useConfirm();
   const deptLabel = useDeptLabel(hub.department_id);
+  const defaultsOutcome = useTaskOutcome();
+  const [pending, setPending] = useState(false);
   const name = hub.display_name ?? hub.hostname;
+
+  async function handleCreateDefaults() {
+    const ok = await confirm({
+      title: "Развернуть стандартные ВМ",
+      message: `Развернуть на хабе ${name} стандартные ВМ из пресетов отдела? Bridge-пресет со статикой разворачивается один раз глобально, NAT-пресет — один раз на хаб.`,
+      confirmLabel: "Развернуть",
+    });
+    if (!ok) return;
+    defaultsOutcome.reset();
+    setPending(true);
+    try {
+      const res = mock ? fakeDispatch() : await createDefaultVms(hub.id);
+      defaultsOutcome.track(
+        `create-default-vms · ${name}`,
+        res.task_id,
+        res.status,
+      );
+      toast.success(`Развёртывание стандартных ВМ на ${name} — задача поставлена`);
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось развернуть стандартные ВМ"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleTeardown() {
+    const { ok, reason } = await prompt({
+      title: "Разобрать VMS-hub",
+      message: `Разобрать хаб ${name}? Будут снесены libvirt-конфигурация, мост br0 и storage-pool; сервер вернётся в обычное состояние. ВМ на хабе быть не должно.`,
+      reason: true,
+      reasonLabel: "Причина",
+      reasonRequired: true,
+      confirmLabel: "Разобрать",
+      danger: true,
+    });
+    if (!ok) return;
+    setPending(true);
+    try {
+      const res = mock
+        ? fakeDispatch()
+        : await teardownVmsHub(hub.id, { reason: reason.trim() });
+      toast.success(`Разбор хаба ${name} — задача поставлена (${res.task_id})`);
+      onTornDown();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось разобрать хаб"));
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <section className="flex-1 min-w-0 overflow-y-auto">
       <div className="border-b border-token p-5 flex items-start gap-4 shrink-0">
@@ -630,14 +747,33 @@ function HubDetail({
           </div>
         </div>
         {canManage && (
-          <button
-            className="btn btn-primary flex items-center gap-1"
-            onClick={onCreate}
-          >
-            <Plus className="w-4 h-4" /> Создать ВМ
-          </button>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <button
+              className="btn flex items-center gap-1"
+              onClick={handleCreateDefaults}
+              disabled={pending}
+              title="Развернуть стандартные ВМ из пресетов отдела"
+            >
+              <Rocket className="w-4 h-4" /> Развернуть стандартные ВМ
+            </button>
+            <button
+              className="btn btn-primary flex items-center gap-1"
+              onClick={onCreate}
+            >
+              <Plus className="w-4 h-4" /> Создать ВМ
+            </button>
+          </div>
         )}
       </div>
+
+      {defaultsOutcome.tracked && (
+        <TaskOutcomeBanner
+          outcome={defaultsOutcome.tracked}
+          className="mx-5 mt-4"
+          successText="Стандартные ВМ развёрнуты."
+          onCancelled={defaultsOutcome.reset}
+        />
+      )}
 
       <div className="p-5">
         {vms.length === 0 ? (
@@ -685,6 +821,40 @@ function HubDetail({
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {canPrepare && (
+          <div
+            className="card mt-5"
+            style={{ border: "1px solid var(--danger, #b91c1c)" }}
+          >
+            <div className="text-sm font-semibold flex items-center gap-2 text-danger mb-2">
+              Опасная зона
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex-1 text-xs text-dim">
+                Разбор хаба сносит libvirt-конфигурацию, мост br0 и storage-pool.
+                {vms.length > 0 && (
+                  <>
+                    {" "}
+                    Сначала удалите все ВМ хаба (<b>{vms.length}</b>).
+                  </>
+                )}
+              </div>
+              <button
+                className="btn btn-danger flex items-center gap-1"
+                onClick={handleTeardown}
+                disabled={pending || vms.length > 0}
+                title={
+                  vms.length > 0
+                    ? "Нельзя разобрать хаб, пока на нём есть ВМ"
+                    : "Разобрать VMS-hub"
+                }
+              >
+                <Trash2 className="w-4 h-4" /> Разобрать VMS-hub
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -765,6 +935,30 @@ function VmCard({
       toast.success(`Питание «${action}» — задача поставлена`);
     } catch (e) {
       toast.error(apiErrMsg(e, "Операция питания не удалась"));
+    }
+  }
+
+  async function handleToggleAutostart() {
+    if (pending) return;
+    const next = !view.autostart;
+    setPending(true);
+    powerOutcome.reset();
+    try {
+      const res = mock ? fakeDispatch() : await setVmAutostart(view.id, next);
+      powerOutcome.track(
+        `autostart ${next ? "on" : "off"} · ${view.name}`,
+        res.task_id,
+        res.status,
+      );
+      setLocal({ ...view, autostart: next });
+      toast.success(
+        `Автозапуск ВМ ${view.name} — ${next ? "включён" : "выключен"} (задача поставлена)`,
+      );
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось изменить автозапуск"));
+    } finally {
+      setPending(false);
     }
   }
 
@@ -911,6 +1105,27 @@ function VmCard({
                 <Power className="w-4 h-4" /> Destroy
               </button>
             </div>
+            <div className="flex items-center gap-3 mt-3 pt-3 border-t border-token flex-wrap">
+              <Zap
+                className={`w-4 h-4 ${view.autostart ? "text-accent" : "text-dim"}`}
+              />
+              <div className="flex-1 text-xs text-dim">
+                Автозапуск при старте хаба (<span className="mono">virsh autostart</span>):{" "}
+                <b>{view.autostart ? "включён" : "выключен"}</b>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={view.autostart}
+                aria-label="Автозапуск"
+                onClick={handleToggleAutostart}
+                disabled={pending}
+                className={`btn btn-sm ${view.autostart ? "btn-primary" : ""}`}
+                title="Включить/выключить автозапуск ВМ"
+              >
+                {view.autostart ? "Автозапуск: вкл" : "Автозапуск: выкл"}
+              </button>
+            </div>
             {powerOutcome.tracked && (
               <TaskOutcomeBanner
                 outcome={powerOutcome.tracked}
@@ -1001,6 +1216,8 @@ function VmCard({
         {canManage && (
           <NetworkCard vm={view} mock={mock} onChanged={onChanged} />
         )}
+
+        {canManage && <ConsoleCard vm={view} mock={mock} />}
 
         <DisksSection
           vm={view}
@@ -2235,6 +2452,176 @@ function NetworkCard({
   );
 }
 
+// ── консоль ВМ ──────────────────────────────────────────────────────────────────
+
+/**
+ * Панель консоли ВМ: выбор вида (SSH / VNC / serial) и получение данных
+ * подключения. Для SSH показываем готовую команду и креды; для VNC/serial —
+ * ws-эндпоинт прокси. noVNC-вьювер не встраиваем (пакета нет в бандле, внешние
+ * CDN запрещены CSP) — показываем адрес/порт прокси с пометкой.
+ */
+function ConsoleCard({ vm, mock }: { vm: Vm; mock: boolean }) {
+  const toast = useToast();
+  const [kind, setKind] = useState<VmConsoleKind>("ssh");
+  const [session, setSession] = useState<VmConsoleResponse | null>(null);
+  const [pending, setPending] = useState(false);
+
+  function pick(next: VmConsoleKind) {
+    setKind(next);
+    setSession(null);
+  }
+
+  async function open() {
+    setPending(true);
+    try {
+      const res = mock
+        ? mockVmConsole(vm, kind)
+        : await openVmConsole(vm.id, kind);
+      setSession(res);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось получить данные консоли"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  const kinds: { value: VmConsoleKind; label: string }[] = [
+    { value: "ssh", label: "SSH" },
+    { value: "vnc", label: "VNC" },
+    { value: "serial", label: "Serial" },
+  ];
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <TerminalSquare className="w-4 h-4 text-accent" /> Консоль
+      </h3>
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <div className="flex items-center gap-1">
+          {kinds.map((k) => (
+            <button
+              key={k.value}
+              type="button"
+              className={`btn btn-sm ${kind === k.value ? "btn-primary" : ""}`}
+              onClick={() => pick(k.value)}
+            >
+              {k.label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="btn btn-sm flex items-center gap-1"
+          onClick={open}
+          disabled={pending}
+        >
+          <TerminalSquare className="w-3.5 h-3.5" />
+          {pending ? "Готовим…" : "Открыть консоль"}
+        </button>
+      </div>
+
+      {session && <ConsoleSession session={session} />}
+      {!session && (
+        <div className="text-xs text-dim">
+          Выберите вид консоли и нажмите «Открыть консоль».
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConsoleSession({ session }: { session: VmConsoleResponse }) {
+  if (session.kind === "ssh") {
+    return (
+      <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
+        <div className="text-xs text-dim">
+          Доступ по SSH под учёткой <span className="mono">{session.username}</span>.
+        </div>
+        <CopyableCommand text={session.command} />
+        <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
+          <Field k="host" v={`${session.host}:${session.port}`} mono />
+          <Field k="Логин" v={session.username} mono />
+          {session.password ? (
+            <Field k="Пароль" v={session.password} mono />
+          ) : (
+            <Field k="Пароль" v="— (по ключу)" />
+          )}
+        </dl>
+      </div>
+    );
+  }
+
+  const isVnc = session.kind === "vnc";
+  const port = isVnc ? session.port : null;
+  return (
+    <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
+      <div className="text-xs text-dim">
+        {isVnc
+          ? "Графическая консоль (VNC) через websockify-прокси."
+          : "Последовательная консоль (serial) через прокси."}
+      </div>
+      <div className="border border-dashed border-token rounded p-4 text-center bg-black/5 dark:bg-white/5">
+        <TerminalSquare className="w-8 h-8 mx-auto text-dim mb-2" />
+        {session.proxy_ready && session.ws_url ? (
+          <>
+            <div className="text-xs">
+              Прокси поднят. Подключайтесь noVNC/websocket-клиентом к эндпоинту:
+            </div>
+            <div className="mono text-xs break-all mt-1">{session.ws_url}</div>
+          </>
+        ) : (
+          <div className="text-xs text-warn">
+            Прокси-эндпоинт разворачивается инфраструктурно. Встроенный вьювер
+            появится после его поднятия.
+          </div>
+        )}
+      </div>
+      <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
+        {isVnc && port != null && (
+          <Field k="host" v={`${session.host}:${port}`} mono />
+        )}
+        {session.ws_url && <Field k="ws-прокси" v={session.ws_url} mono />}
+        {isVnc && session.password && (
+          <Field k="Пароль VNC" v={session.password} mono />
+        )}
+      </dl>
+      {!isVnc && (
+        <>
+          <div className="text-xs text-dim">Локальный доступ на хабе:</div>
+          <CopyableCommand text={session.command} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function CopyableCommand({ text }: { text: string }) {
+  const toast = useToast();
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.info("Скопировано в буфер");
+    } catch {
+      toast.warn("Не удалось скопировать — выделите вручную");
+    }
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <code className="mono text-xs flex-1 break-all bg-black/5 dark:bg-white/5 rounded px-2 py-1">
+        {text}
+      </code>
+      <button
+        type="button"
+        className="btn btn-sm flex items-center gap-1"
+        onClick={copy}
+        title="Скопировать"
+      >
+        <Copy className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
 /**
  * Селектор пула + свободного IP для bridge. Полностью управляемый: пулы и
  * свободные адреса тянет сам (mock ↔ live), значения поднимает наверх.
@@ -2852,6 +3239,417 @@ function IpPoolModal({
           </button>
           <button type="submit" className="btn btn-primary" disabled={!valid || submitting}>
             {submitting ? "Сохраняем…" : editing ? "Сохранить" : "Создать пул"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ── пресеты стандартных ВМ ──────────────────────────────────────────────────────
+
+function PresetsPane({ mock }: { mock: boolean }) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<VmPreset | null>(null);
+
+  const presetsQ = useQuery<VmPreset[]>(
+    async () => {
+      if (mock) return MOCK_VM_PRESETS;
+      const res = await listVmPresets();
+      return res.items;
+    },
+    [mock],
+    { keepPreviousDataOnError: true },
+  );
+
+  const [mockPresets, setMockPresets] = useState<VmPreset[] | null>(null);
+  const presets = mock
+    ? (mockPresets ?? presetsQ.data ?? [])
+    : (presetsQ.data ?? []);
+
+  async function handleCreate(body: VmPresetCreateRequest) {
+    try {
+      if (mock) {
+        const next: VmPreset = {
+          id: `preset-mock-${Date.now()}`,
+          name: body.name,
+          department_id: body.department_id,
+          box: body.box,
+          os_version: body.os_version ?? null,
+          cpu: body.cpu,
+          ram_mb: body.ram_mb,
+          disk_gb: body.disk_gb,
+          network_mode: body.network_mode,
+          fixed_ip: body.fixed_ip ?? null,
+          number: body.number ?? null,
+        };
+        setMockPresets([...(mockPresets ?? presetsQ.data ?? []), next]);
+      } else {
+        await createVmPreset(body);
+        presetsQ.refetch();
+      }
+      toast.success(`Пресет ${body.name} создан`);
+      setCreateOpen(false);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Создание пресета не удалось"));
+    }
+  }
+
+  async function handleUpdate(id: string, body: VmPresetUpdateRequest) {
+    try {
+      if (mock) {
+        setMockPresets(
+          (mockPresets ?? presetsQ.data ?? []).map((p) =>
+            p.id === id ? { ...p, ...body } : p,
+          ),
+        );
+      } else {
+        await updateVmPreset(id, body);
+        presetsQ.refetch();
+      }
+      toast.success("Пресет обновлён");
+      setEditTarget(null);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Изменение пресета не удалось"));
+    }
+  }
+
+  async function handleDelete(preset: VmPreset) {
+    const ok = await confirm({
+      title: "Удалить пресет",
+      message: `Удалить пресет ${preset.name}? Уже развёрнутые из него ВМ не затрагиваются.`,
+      confirmLabel: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      if (mock) {
+        setMockPresets(
+          (mockPresets ?? presetsQ.data ?? []).filter((p) => p.id !== preset.id),
+        );
+      } else {
+        await deleteVmPreset(preset.id);
+        presetsQ.refetch();
+      }
+      toast.success(`Пресет ${preset.name} удалён`);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Удаление пресета не удалось"));
+    }
+  }
+
+  return (
+    <section className="flex-1 min-w-0 overflow-y-auto">
+      <div className="border-b border-token p-5 flex items-start gap-4 shrink-0">
+        <div className="w-12 h-12 rounded bg-accent flex items-center justify-center">
+          <Layers className="w-7 h-7" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl font-semibold">Пресеты стандартных ВМ</h1>
+          <div className="text-sm text-dim mt-1">
+            Шаблоны для кнопки «Развернуть стандартные ВМ» на хабе. Bridge-пресет
+            со статикой — один раз глобально, NAT-пресет — один раз на хаб.
+          </div>
+        </div>
+        <button
+          className="btn btn-primary flex items-center gap-1"
+          onClick={() => setCreateOpen(true)}
+        >
+          <Plus className="w-4 h-4" /> Создать пресет
+        </button>
+      </div>
+
+      <div className="p-5">
+        {presetsQ.loading ? (
+          <div className="text-xs text-dim">Загрузка…</div>
+        ) : presetsQ.error && presets.length === 0 ? (
+          <div className="alert alert-danger flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 mt-0.5" />
+            <div className="flex-1 text-xs">
+              <div>{apiErrMsg(presetsQ.error, "Список пресетов не загрузился")}</div>
+              <button className="btn btn-ghost mt-2" onClick={() => presetsQ.refetch()}>
+                Повторить
+              </button>
+            </div>
+          </div>
+        ) : presets.length === 0 ? (
+          <div className="empty-card text-center text-sm text-dim">
+            Пресетов пока нет. Создайте первый, чтобы разворачивать стандартные ВМ.
+          </div>
+        ) : (
+          <div className="surface-2 border border-token rounded overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] uppercase text-dim border-b border-token">
+                  <th className="text-left px-3 py-2 font-medium">Имя</th>
+                  <th className="text-left px-3 py-2 font-medium">ОС / box</th>
+                  <th className="text-left px-3 py-2 font-medium">Ресурсы</th>
+                  <th className="text-left px-3 py-2 font-medium">Сеть</th>
+                  <th className="text-left px-3 py-2 font-medium">Отдел</th>
+                  <th className="px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {presets.map((p) => (
+                  <tr key={p.id} className="border-b border-token last:border-b-0">
+                    <td className="px-3 py-1.5">{p.name}</td>
+                    <td className="px-3 py-1.5 text-xs">
+                      {p.os_version ?? "—"} · <span className="text-dim">{p.box}</span>
+                    </td>
+                    <td className="px-3 py-1.5 text-xs mono text-dim">
+                      {p.cpu} vCPU · {Math.round(p.ram_mb / 1024)} ГБ · {p.disk_gb} ГБ
+                    </td>
+                    <td className="px-3 py-1.5 text-xs">
+                      <span className="badge">{p.network_mode}</span>{" "}
+                      {p.network_mode === "bridge" && (
+                        <span className="mono">{p.fixed_ip ?? "авто"}</span>
+                      )}
+                      {p.number != null && (
+                        <span className="text-dim"> · №{p.number}</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs">{p.department_id}</td>
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          className="btn btn-sm flex items-center gap-1"
+                          title="Изменить пресет"
+                          onClick={() => setEditTarget(p)}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          className="btn btn-sm btn-danger flex items-center gap-1"
+                          title="Удалить пресет"
+                          onClick={() => handleDelete(p)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {createOpen && (
+        <PresetModal onClose={() => setCreateOpen(false)} onSubmit={handleCreate} />
+      )}
+      {editTarget && (
+        <PresetModal
+          preset={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSubmit={(body) => handleUpdate(editTarget.id, body)}
+        />
+      )}
+    </section>
+  );
+}
+
+/**
+ * Модалка создания/редактирования пресета. Без пресета — режим создания (нужен
+ * department_id); с пресетом — редактирование (department_id не меняем).
+ */
+function PresetModal({
+  preset,
+  onClose,
+  onSubmit,
+}: {
+  preset?: VmPreset;
+  onClose: () => void;
+  onSubmit: (body: VmPresetCreateRequest) => void | Promise<void>;
+}) {
+  const editing = !!preset;
+  const [name, setName] = useState(preset?.name ?? "");
+  const [box, setBox] = useState(preset?.box ?? "vm_station");
+  const [osVersion, setOsVersion] = useState(preset?.os_version ?? "");
+  const [cpu, setCpu] = useState(String(preset?.cpu ?? 2));
+  const [ramMb, setRamMb] = useState(String(preset?.ram_mb ?? 4096));
+  const [diskGb, setDiskGb] = useState(String(preset?.disk_gb ?? 40));
+  const [networkMode, setNetworkMode] = useState<VmNetworkMode>(
+    preset?.network_mode ?? "bridge",
+  );
+  const [fixedIp, setFixedIp] = useState(preset?.fixed_ip ?? "");
+  const [number, setNumber] = useState(
+    preset?.number != null ? String(preset.number) : "",
+  );
+  const [departmentId, setDepartmentId] = useState(preset?.department_id ?? "");
+  const [submitting, setSubmitting] = useState(false);
+
+  const cpuN = Number.parseInt(cpu, 10);
+  const ramN = Number.parseInt(ramMb, 10);
+  const diskN = Number.parseInt(diskGb, 10);
+  const numberN = number.trim() ? Number.parseInt(number.trim(), 10) : null;
+
+  const nameError =
+    name.trim() && !/^[a-zA-Z0-9._-]+$/.test(name.trim())
+      ? "Имя: латиница, цифры, точка, дефис, подчёркивание"
+      : null;
+  const ipError =
+    networkMode === "bridge" && fixedIp.trim() && !isLikelyIpv4(fixedIp.trim())
+      ? "Ожидается IPv4-адрес"
+      : null;
+  const valid =
+    !!name.trim() &&
+    !nameError &&
+    !!box.trim() &&
+    Number.isFinite(cpuN) &&
+    cpuN > 0 &&
+    Number.isFinite(ramN) &&
+    ramN >= 256 &&
+    Number.isFinite(diskN) &&
+    diskN > 0 &&
+    !ipError &&
+    (editing || !!departmentId.trim());
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valid || submitting) return;
+    const bridge = networkMode === "bridge";
+    const body: VmPresetCreateRequest = {
+      name: name.trim(),
+      department_id: departmentId.trim(),
+      box: box.trim(),
+      os_version: osVersion.trim() ? osVersion.trim() : null,
+      cpu: cpuN,
+      ram_mb: ramN,
+      disk_gb: diskN,
+      network_mode: networkMode,
+      fixed_ip: bridge && fixedIp.trim() ? fixedIp.trim() : null,
+      number: numberN,
+    };
+    setSubmitting(true);
+    try {
+      await Promise.resolve(onSubmit(body));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal title={editing ? `Пресет ${preset!.name}` : "Новый пресет ВМ"} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="modal-body flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Имя *</span>
+            <input
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="core-rc-bridge"
+              autoFocus
+            />
+            {nameError && <span className="text-[11px] text-danger">{nameError}</span>}
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">Box (образ) *</span>
+              <input
+                className="input"
+                value={box}
+                onChange={(e) => setBox(e.target.value)}
+                placeholder="vm_station"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">Версия ОС</span>
+              <input
+                className="input"
+                value={osVersion}
+                onChange={(e) => setOsVersion(e.target.value)}
+                placeholder="1.8.1.6 (опц.)"
+              />
+            </label>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">vCPU *</span>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                value={cpu}
+                onChange={(e) => setCpu(e.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">RAM, МБ *</span>
+              <input
+                className="input"
+                type="number"
+                min={256}
+                step={256}
+                value={ramMb}
+                onChange={(e) => setRamMb(e.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">Диск, ГБ *</span>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                value={diskGb}
+                onChange={(e) => setDiskGb(e.target.value)}
+              />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Сеть *</span>
+            <select
+              className="input"
+              value={networkMode}
+              onChange={(e) => setNetworkMode(e.target.value as VmNetworkMode)}
+            >
+              <option value="bridge">bridge (static IP)</option>
+              <option value="nat">nat (libvirt)</option>
+            </select>
+          </label>
+          {networkMode === "bridge" && (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">Статический IP (fixed_ip)</span>
+              <input
+                className="input"
+                value={fixedIp}
+                onChange={(e) => setFixedIp(e.target.value)}
+                placeholder="10.177.103.60 (опц.)"
+              />
+              {ipError && <span className="text-[11px] text-danger">{ipError}</span>}
+            </label>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">Номер (глоб. уникальный)</span>
+              <input
+                className="input"
+                type="number"
+                value={number}
+                onChange={(e) => setNumber(e.target.value)}
+                placeholder="опционально"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">Отдел {editing ? "" : "*"}</span>
+              <input
+                className="input"
+                value={departmentId}
+                onChange={(e) => setDepartmentId(e.target.value)}
+                placeholder="core"
+                disabled={editing}
+              />
+            </label>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={!valid || submitting}>
+            {submitting ? "Сохраняем…" : editing ? "Сохранить" : "Создать пресет"}
           </button>
         </div>
       </form>

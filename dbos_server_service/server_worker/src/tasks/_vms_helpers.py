@@ -22,6 +22,7 @@ import asyncio
 import json
 import logging
 import re
+import shlex
 
 from src.clients.ssh import SshError
 from src.core.constants import (
@@ -286,12 +287,16 @@ def guest_ssh(ip: str, remote_cmd: str, *, sudo: bool = False) -> str:
     а не аргументом `-p`, чтобы он не оседал в списке процессов и в тексте
     команды/ошибки. `StrictHostKeyChecking=no` + `/dev/null` known_hosts — гость
     только что развёрнут, host-key меняется на каждой пересборке.
+
+    Удалённую команду заворачиваем через `shlex.quote`: она сама несёт
+    `bash -c '...'` с одинарными кавычками, а `repr` экранировал бы их как
+    `\'`, что внутри shell-одинарных кавычек не работает и рвёт команду.
     """
     inner = f"sudo {remote_cmd}" if sudo else remote_cmd
     return (
         f"SSHPASS={VMS_GUEST_DEFAULT_PASSWORD} sshpass -e ssh "
         "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
-        f"-o ConnectTimeout=15 {VMS_GUEST_LOGIN}@{ip} {inner!r}"
+        f"-o ConnectTimeout=15 {VMS_GUEST_LOGIN}@{ip} {shlex.quote(inner)}"
     )
 
 
@@ -313,7 +318,7 @@ def guest_ssh_key(
         f"ssh -i {key_path} -o StrictHostKeyChecking=no "
         "-o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 "
         "-o BatchMode=yes -o PreferredAuthentications=publickey "
-        f"{user}@{ip} {inner!r}"
+        f"{user}@{ip} {shlex.quote(inner)}"
     )
 
 

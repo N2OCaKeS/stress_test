@@ -157,6 +157,32 @@ async def fetch_account_password(
     )
 
 
+async def fetch_account_password_by_id(
+    account_id: str,
+    target_department_id: str | None = None,
+) -> dict:
+    """Запросить пароль аккаунта по одному `account_id` (без server_id).
+
+    Нужно провижну привязанных к ВМ учёток: dispatch `vm.create` несёт только
+    `account_id`/`login`, исходный сервер аккаунта неизвестен. server_service
+    резолвит аккаунт по глобально-уникальному id и отдаёт `{login, password}`.
+
+    Возвращает: `{login, password}` от
+    `GET /api/server/v1/internal/accounts/{account_id}/password`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport.
+      * `ACCOUNT_PASSWORD_UNAVAILABLE` — server_service вернул не 200.
+    """
+    return await _request(
+        "get",
+        f"/api/server/v1/internal/accounts/{account_id}/password",
+        reject_code="ACCOUNT_PASSWORD_UNAVAILABLE",
+        target_department_id=target_department_id,
+        details={"account_id": account_id},
+    )
+
+
 async def submit_rotated_password(
     server_id: str,
     account_id: str,

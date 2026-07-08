@@ -466,10 +466,12 @@ class TestVmCreateSingle:
         assert snaps[0]["name"] == "build"
         assert snaps[0]["os_version"] == "1.8.1.6"
 
-    async def test_single_box_shrink_via_virt_resize(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+    async def test_single_box_shrink_offline_fs_then_virt_resize(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _create_fake()
-        # бокс 20G, запрошено 10G → сжатие (--shrink)
+        # бокс 20G, запрошено 10G → сжатие. ФС ужимается заранее в overlay бокса.
         fake.set_response("qemu-img info", 0, '{"virtual-size": 21474836480}')
+        # минимум ФС ~5G — запрос на 10G проходит гард
+        fake.set_response("vfs-minimum-size", 0, "5427978240\n")
         stub_session_and_callbacks["holder"]["ssh"] = fake
         payload = {
             "vm_id": "vm2", "hub_host": "10.0.0.7", "name": "xfs-1",
@@ -483,8 +485,44 @@ class TestVmCreateSingle:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         cmds = fake.commands
-        assert any("qemu-img create -f qcow2 /vms/xfs-1.qcow2 10G" in c for c in cmds)
-        assert any("virt-resize --shrink /dev/sda2 /vms/xfs.box.qcow2 /vms/xfs-1.qcow2" in c for c in cmds)
+        work = "/vms/xfs-1.qcow2.shrink-src"
+        # COW-overlay над боксом (сам бокс не трогаем — нет прямого virt-resize по нему)
+        i_overlay = next(i for i, c in enumerate(cmds) if f"qemu-img create -f qcow2 -b /vms/xfs.box.qcow2 -F qcow2 {work}" in c)
+        # offline-ужатие ext4 в overlay: e2fsck + resize2fs-size (10G - 256MiB)
+        i_shrinkfs = next(i for i, c in enumerate(cmds) if f"guestfish -a {work} run" in c and "resize2fs-size /dev/sda2 10468982784" in c)
+        # целевой диск на 10G + virt-resize --shrink из overlay (не из бокса)
+        i_create = next(i for i, c in enumerate(cmds) if "qemu-img create -f qcow2 /vms/xfs-1.qcow2 10G" in c)
+        i_resize = next(i for i, c in enumerate(cmds) if f"virt-resize --shrink /dev/sda2 {work} /vms/xfs-1.qcow2" in c)
+        assert i_overlay < i_shrinkfs < i_create < i_resize
+        # overlay бокса virt-resize'ом напрямую не сжимаем
+        assert not any("virt-resize --shrink /dev/sda2 /vms/xfs.box.qcow2" in c for c in cmds)
+        # overlay подчищается
+        assert any(f"rm -f {work}" in c for c in cmds)
+
+    async def test_single_box_shrink_below_used_rejected_before_work(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _create_fake()
+        fake.set_response("qemu-img info", 0, '{"virtual-size": 21474836480}')
+        # минимум ФС ~5G, запрос на 5G < минимум+буфер → отбой ДО overlay/virt-resize
+        fake.set_response("vfs-minimum-size", 0, "5427978240\n")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm2b", "hub_host": "10.0.0.7", "name": "tiny-1",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 5, "box": "xfs.box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "storage_pool_path": "/vms", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await _set_single_attempt(tid)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert t.last_error and "VM_CREATE_FAILED" in t.last_error
+        cmds = fake.commands
+        # никакой тяжёлой работы: ни overlay, ни ужатия ФС, ни virt-resize
+        assert not any("shrink-src" in c for c in cmds)
+        assert not any("resize2fs-size" in c for c in cmds)
+        assert not any("virt-resize" in c for c in cmds)
 
     async def test_single_bridge_injects_static_before_install(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _create_fake()
@@ -619,6 +657,95 @@ class TestVmCreateHostnameAndAccounts:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         assert any("carol:fetched-pw | chpasswd" in c for c in fake.commands)
+
+    async def test_account_password_fetched_by_id_when_no_server(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch):
+        # dispatch vm.create несёт только account_id/login (без server_id) →
+        # пароль тянем по одному account_id.
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        seen: dict = {}
+
+        async def _fetch_by_id(account_id, target_department_id=None):
+            seen["account_id"] = account_id
+            seen["dept"] = target_department_id
+            return {"login": "dave", "password": "byid-pw"}
+
+        monkeypatch.setattr(vms.server_service_client, "fetch_account_password_by_id", _fetch_by_id)
+        payload = {
+            "vm_id": "vm9", "hub_host": "10.0.0.7", "name": "vm-9",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "single-box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "storage_pool_path": "/vms", "is_managed": True,
+            "target_department_id": "dep9",
+            "accounts": [{"account_id": "acc9", "login": "dave"}],
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert seen == {"account_id": "acc9", "dept": "dep9"}
+        cmds = fake.commands
+        assert any("id dave" in c and "useradd -m" in c for c in cmds)
+        assert any("dave:byid-pw | chpasswd" in c for c in cmds)
+
+    async def test_account_created_even_when_password_unavailable(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch):
+        # Пароль недоступен (нет эндпоинта/доступа) → учётку всё равно заводим,
+        # только без chpasswd. Провал fetch НЕ роняет vm.create.
+        from src.core.exceptions import CredentialFetchError
+
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+
+        async def _boom(account_id, target_department_id=None):  # noqa: ARG001
+            raise CredentialFetchError(
+                error_code="ACCOUNT_PASSWORD_UNAVAILABLE", message="nope",
+            )
+
+        monkeypatch.setattr(vms.server_service_client, "fetch_account_password_by_id", _boom)
+        payload = {
+            "vm_id": "vm10", "hub_host": "10.0.0.7", "name": "vm-10",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "single-box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "storage_pool_path": "/vms", "is_managed": True,
+            "accounts": [{"account_id": "acc10", "login": "erin"}],
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        assert any("id erin" in c and "useradd -m" in c for c in cmds)
+        assert not any("erin:" in c and "chpasswd" in c for c in cmds)
+
+    async def test_guest_commands_are_posix_quoted(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        # Регрессия на реальный прод-баг: guest-команда с вложенным `bash -c '...'`
+        # должна быть валидным одним shell-словом. repr давал `\'` внутри
+        # одинарных кавычек и рвал команду на hub'е ещё до гостя.
+        import shlex
+
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm11", "hub_host": "10.0.0.7", "name": "vm-11",
+            "hostname": "host11", "cpu": 4, "ram_mb": 4096, "disk_gb": 0,
+            "box": "single-box", "network_mode": "nat", "ip_address": None,
+            "os_versions": [], "storage_pool_path": "/vms", "is_managed": True,
+            "accounts": [{"account_id": "acc11", "login": "frank", "password": "pw"}],
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        guest_cmds = [c for c in fake.commands if "sshpass -e ssh" in c]
+        assert guest_cmds
+        for c in guest_cmds:
+            # ни одной shell-невалидной последовательности \' внутри кавычек
+            assert "\\'" not in c
+            # весь argv парсится как валидные слова (иначе ValueError)
+            shlex.split(c)
 
 
 # ── vm.power ─────────────────────────────────────────────────────────────────

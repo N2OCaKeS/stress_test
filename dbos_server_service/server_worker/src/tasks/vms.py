@@ -30,9 +30,11 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import re
 
 from src.clients.ssh import SshError
+from src.core.exceptions import CredentialFetchError
 from src.core.constants import (
     VMS_DEFAULT_POOL_PATH,
     VMS_FTP_BOXES_URL,
@@ -109,6 +111,16 @@ _run = run_hub_cmd
 # Корневой раздел бокса для virt-resize (подтверждено на боксе: vda1 — 2M
 # BIOS-boot, vda2 — ext4 root). libguestfs адресует диск как /dev/sda.
 _ROOT_PARTITION = "/dev/sda2"
+
+# Сжатие диска: работаем через COW-overlay бокса, чтобы сам бокс остался
+# нетронутым (`qemu-img create -b`). Суффикс временного overlay-файла рядом с
+# целевым диском.
+_SHRINK_WORK_SUFFIX = ".shrink-src"
+# Зазор между целевым размером диска и размером, до которого ужимаем ФС перед
+# virt-resize. Должен перекрывать sda1 (2M BIOS-boot) + выравнивание таблицы
+# разделов; virt-resize потом сам растянет ФС обратно на весь новый раздел, так
+# что этот зазор не теряется. 256 МиБ — с запасом.
+_SHRINK_FS_MARGIN_BYTES = 256 * 1024 * 1024
 
 # Суффикс скрытого golden-снимка версии (сырой бокс-стейт, служебный). Кончается
 # на `_build` — reroll/passwd его защищают (см. `vms_snapshots._BUILD_SUFFIX`).
@@ -759,12 +771,13 @@ async def _provision_guest_accounts(
 
     Каждый элемент `accounts` — dict привязанного `server_account`:
     `{login, password?, ssh_public_key?, has_sudo?, unix_groups?, account_id?,
-    server_id?}`. Пароль берём из `password` (server_service расшифровал при
-    dispatch'е — как гостевой `password` у `u`); если его нет, но есть
-    `account_id`+`server_id` — тянем через internal (`fetch_account_password`,
-    как серверный `server_account.provision`). Заводим идемпотентно; фейл
-    любого шага критичен (падаем `VM_CREATE_FAILED`). Возвращаем список
-    заведённых логинов.
+    server_id?}`. Пароль берём из `password` (если server_service положил его в
+    dispatch); иначе тянем через internal: по `server_id`+`account_id`
+    (`fetch_account_password`) или, когда исходный сервер неизвестен — по одному
+    `account_id` (`fetch_account_password_by_id`). Заводить учётку важнее пароля:
+    если пароль вытянуть не удалось (нет доступа/эндпоинта), пользователя всё
+    равно создаём, только без `chpasswd`. useradd/группы идемпотентны; их фейл
+    критичен (падаем `VM_CREATE_FAILED`). Возвращаем список заведённых логинов.
     """
     provisioned: list[str] = []
     for acc in accounts or []:
@@ -774,11 +787,22 @@ async def _provision_guest_accounts(
         password = acc.get("password")
         account_id = acc.get("account_id") or acc.get("id")
         source_server_id = acc.get("server_id")
-        if password is None and account_id and source_server_id:
-            creds = await server_service_client.fetch_account_password(
-                str(source_server_id), str(account_id), target_dept,
-            )
-            password = creds.get("password")
+        if password is None and account_id:
+            try:
+                if source_server_id:
+                    creds = await server_service_client.fetch_account_password(
+                        str(source_server_id), str(account_id), target_dept,
+                    )
+                else:
+                    creds = await server_service_client.fetch_account_password_by_id(
+                        str(account_id), target_dept,
+                    )
+                password = creds.get("password")
+            except CredentialFetchError:
+                logger.warning(
+                    "vm provision: пароль учётки %s недоступен — заводим без пароля",
+                    login,
+                )
 
         groups = [
             validate_name(str(g), host_label, "unix group")
@@ -859,29 +883,100 @@ async def _box_virtual_gb(ssh, host: str, box_path: str) -> int | None:
     return vsize // (1024 ** 3)
 
 
+async def _fs_minimum_bytes(ssh, host: str, box_path: str) -> int | None:
+    """Минимальный размер ФС корневого раздела бокса в байтах (libguestfs).
+
+    `guestfish vfs-minimum-size` считает, до скольки можно ужать ext4 с учётом
+    занятых блоков и метаданных. Читаем в read-only (guestfish сам делает
+    write-overlay для e2fsck). None — не распарсили (нет числа в выводе).
+    """
+    _rc, out, _err = await ssh.run(
+        f"guestfish --ro -a {box_path} run : e2fsck-f {_ROOT_PARTITION} : "
+        f"vfs-minimum-size {_ROOT_PARTITION}",
+        sudo=True,
+    )
+    nums = re.findall(r"\d+", out or "")
+    if not nums:
+        return None
+    return int(nums[-1])
+
+
+async def _clone_disk_shrink(
+    ssh, host: str, box_path: str, target_path: str, disk_gb: int,
+) -> None:
+    """Сжать диск бокса до `disk_gb` ГБ, не порушив ext4.
+
+    virt-resize сам ФС не ужимает, а `--shrink`/`--resize-force` на разделе, где
+    ext4 занимает весь объём, рушат данные. Поэтому: (1) считаем минимальный
+    размер ФС и отбиваем понятной ошибкой запрос меньше занятого места ДО работы;
+    (2) поднимаем COW-overlay над боксом (сам бокс не трогаем); (3) offline
+    ужимаем ext4 в overlay (`e2fsck` + `resize2fs`) до целевого минус зазор;
+    (4) `virt-resize --shrink` переносит разметку в целевой диск и растягивает ФС
+    обратно на весь новый раздел; (5) убираем overlay.
+    """
+    target_bytes = disk_gb * (1024 ** 3)
+    fs_target = target_bytes - _SHRINK_FS_MARGIN_BYTES
+    min_bytes = await _fs_minimum_bytes(ssh, host, box_path)
+    if min_bytes is not None and fs_target <= min_bytes:
+        need_gb = math.ceil((min_bytes + _SHRINK_FS_MARGIN_BYTES) / (1024 ** 3))
+        raise SshError(
+            error_code="VM_CREATE_FAILED", host=host,
+            message=(
+                f"запрошенный размер диска {disk_gb}G меньше занятого места "
+                f"бокса — нужно минимум {need_gb}G"
+            ),
+        )
+
+    work = f"{target_path}{_SHRINK_WORK_SUFFIX}"
+    await ssh.run(f"rm -f {work}", sudo=True)
+    await _run(
+        ssh, f"qemu-img create -f qcow2 -b {box_path} -F qcow2 {work}", host,
+        "VM_CREATE_FAILED", "не удалось создать overlay бокса для сжатия диска",
+    )
+    try:
+        await _run(
+            ssh,
+            f"guestfish -a {work} run : e2fsck-f {_ROOT_PARTITION} : "
+            f"resize2fs-size {_ROOT_PARTITION} {fs_target}",
+            host, "VM_CREATE_FAILED",
+            "не удалось ужать файловую систему бокса перед сжатием диска",
+        )
+        await _run(
+            ssh, f"qemu-img create -f qcow2 {target_path} {disk_gb}G", host,
+            "VM_CREATE_FAILED", "не удалось создать целевой диск ВМ",
+        )
+        await _run(
+            ssh,
+            f"virt-resize --shrink {_ROOT_PARTITION} {work} {target_path}",
+            host, "VM_CREATE_FAILED", "virt-resize не смог сжать диск ВМ",
+        )
+    finally:
+        await ssh.run(f"rm -f {work}", sudo=True)
+
+
 async def _clone_disk_resized(
     ssh, host: str, box_path: str, target_path: str, disk_gb: int,
 ) -> None:
     """Клонировать диск бокса в новый qcow2 целевого размера через virt-resize.
 
     Создаём пустой целевой диск на `disk_gb` ГБ и переносим в него разметку+ФС
-    бокса, растягивая (`--expand`) либо ужимая (`--shrink`) корневой раздел.
-    virt-resize безопасно пересобирает таблицу разделов — обычный `cp`+`qemu-img
-    resize` этого не умеет (рост оставлял хвост неразмеченным, сжатие рушило ФС).
-    Сжать ниже занятого места нельзя: virt-resize упадёт, отдаём `VM_CREATE_FAILED`.
+    бокса. Рост (`--expand`) virt-resize делает в один проход. Сжатие идёт
+    отдельным путём (`_clone_disk_shrink`): virt-resize сам ФС не ужимает, надо
+    сначала offline ужать ext4 в overlay бокса.
     """
     box_gb = await _box_virtual_gb(ssh, host, box_path)
+    if box_gb is not None and disk_gb < box_gb:
+        await _clone_disk_shrink(ssh, host, box_path, target_path, disk_gb)
+        return
     await _run(
         ssh, f"qemu-img create -f qcow2 {target_path} {disk_gb}G", host,
         "VM_CREATE_FAILED", "не удалось создать целевой диск ВМ",
     )
-    mode = "--expand" if (box_gb is None or disk_gb >= box_gb) else "--shrink"
     await _run(
         ssh,
-        f"virt-resize {mode} {_ROOT_PARTITION} {box_path} {target_path}",
+        f"virt-resize --expand {_ROOT_PARTITION} {box_path} {target_path}",
         host, "VM_CREATE_FAILED",
-        "virt-resize не смог изменить размер диска ВМ "
-        "(запрошенный размер меньше занятого места бокса?)",
+        "virt-resize не смог расширить диск ВМ",
     )
 
 

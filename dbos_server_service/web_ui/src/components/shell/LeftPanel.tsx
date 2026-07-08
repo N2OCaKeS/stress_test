@@ -20,6 +20,7 @@ import {
   BookOpen,
   HardDrive,
   ExternalLink,
+  MonitorPlay,
   type LucideIcon,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
@@ -54,7 +55,8 @@ const SERVICE_CATALOG: Record<ServiceName, ServiceChip> = {
     icon: Server,
     label: "Серверы",
     subItems: [
-      { to: "/server", icon: Server, label: "Серверы" },
+      { to: "/server?only=servers", icon: Server, label: "Серверы" },
+      { to: "/server?only=vms", icon: MonitorPlay, label: "ВМ" },
       { to: "/server/users", icon: Users, label: "Пользователи" },
       { to: "/server/packages", icon: Package, label: "Пакеты" },
       { to: "/server/tasks", icon: ListChecks, label: "Задачи" },
@@ -179,9 +181,17 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
     navLinks.push(chip.to);
     for (const s of chip.subItems ?? []) navLinks.push(s.to);
   }
-  const matches = (to: string) =>
-    location.pathname === to ||
-    (to !== "/home" && location.pathname.startsWith(to + "/"));
+  // Пункты с query-фильтром («Серверы»/«ВМ» на одном пути /server) подсвечиваем
+  // только при точном совпадении пути со строкой запроса — иначе оба подпункта
+  // и родитель горели бы одновременно на общем префиксе /server.
+  const current = location.pathname + location.search;
+  const matches = (to: string) => {
+    if (to.includes("?")) return current === to;
+    return (
+      location.pathname === to ||
+      (to !== "/home" && location.pathname.startsWith(to + "/"))
+    );
+  };
   let activeTo: string | null = null;
   for (const to of navLinks) {
     if (matches(to) && (activeTo === null || to.length > activeTo.length)) {

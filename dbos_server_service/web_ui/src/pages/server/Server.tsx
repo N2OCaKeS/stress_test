@@ -61,6 +61,11 @@ export function Server() {
 
   const selectedId = params.get("id");
   const action = params.get("action"); // "new" | "edit" | null
+  // Фильтр состава списка из левой навигации: подпункт «Серверы» → only=servers,
+  // «ВМ» → only=vms. Пустое значение (пункт «Серверы») — общий смешанный список.
+  const only = params.get("only"); // "servers" | "vms" | null
+  const showServers = only !== "vms";
+  const showVms = only !== "servers";
 
   // account_admin / logging_admin отрезаны от server_service на уровне
   // backend-middleware (PLATFORM_ADMIN_BUSINESS_DATA_DENIED) — даже GET-список
@@ -116,7 +121,9 @@ export function Server() {
     [mock],
     { enabled: !zoneBlocked, keepPreviousDataOnError: true },
   );
-  const [vmGroupOpen, setVmGroupOpen] = useState(false);
+  // Обе группы общего списка сворачиваемые; по умолчанию развёрнуты.
+  const [serverGroupOpen, setServerGroupOpen] = useState(true);
+  const [vmGroupOpen, setVmGroupOpen] = useState(true);
 
   // Бронь сервера (busy_state / busy_user_id) меняется и другими пользователями,
   // а useQuery без авто-рефетча показывал бы устаревший индикатор до перезахода.
@@ -399,33 +406,46 @@ export function Server() {
             </div>
           </div>
         )}
-        {!listQ.loading && !listQ.error && filtered.length === 0 && (
-          <div className="px-3 py-6 text-xs text-dim text-center">
-            Список пуст.
-          </div>
-        )}
-        {/* Когда есть ВМ — помечаем блок серверов заголовком, чтобы группировка
-            «серверы → ВМ» читалась. При отдельной dept-группировке свои
-            заголовки уже есть, лишний не добавляем. */}
-        {filteredVms.length > 0 && group !== "department" && (
-          <div className="group-header px-3 mt-1 text-[11px] uppercase text-dim">
-            Серверы · {filtered.length}
-          </div>
-        )}
-        {grouped.map((bucket) => (
-          <ServerGroup
-            key={bucket.key}
-            groupKey={bucket.key}
-            showHeader={group === "department"}
-            items={bucket.items}
-            selectedId={selectedId}
-            onSelect={selectId}
-            selectable={canManage && selectMode}
-            checkedIds={selected}
-            onToggleChecked={toggleSelected}
-          />
-        ))}
-        {filteredVms.length > 0 && (
+        {!listQ.loading &&
+          !listQ.error &&
+          (!showServers || filtered.length === 0) &&
+          (!showVms || filteredVms.length === 0) && (
+            <div className="px-3 py-6 text-xs text-dim text-center">
+              Список пуст.
+            </div>
+          )}
+        {/* Общий список: сервера и ВМ отдельными группами. При dept-группировке
+            у серверов свои заголовки по отделам, поэтому сворачиваемую шапку не
+            навешиваем — она осталась бы поверх нескольких блоков. */}
+        {showServers &&
+          (group === "department"
+            ? grouped.map((bucket) => (
+                <ServerGroup
+                  key={bucket.key}
+                  groupKey={bucket.key}
+                  showHeader
+                  items={bucket.items}
+                  selectedId={selectedId}
+                  onSelect={selectId}
+                  selectable={canManage && selectMode}
+                  checkedIds={selected}
+                  onToggleChecked={toggleSelected}
+                />
+              ))
+            : filtered.length > 0 && (
+                <ServerSection
+                  count={filtered.length}
+                  open={serverGroupOpen}
+                  onToggle={() => setServerGroupOpen((v) => !v)}
+                  items={filtered}
+                  selectedId={selectedId}
+                  onSelect={selectId}
+                  selectable={canManage && selectMode}
+                  checkedIds={selected}
+                  onToggleChecked={toggleSelected}
+                />
+              ))}
+        {showVms && filteredVms.length > 0 && (
           <VmGroup
             vms={filteredVms}
             open={vmGroupOpen}
@@ -623,6 +643,66 @@ function ServerGroup({
   );
 }
 
+/**
+ * Свёрнутая группа серверов в общем списке: тумблер-заголовок со счётчиком и
+ * плоский список строк. Используется вне dept-группировки — там заголовки идут
+ * по отделам через ServerGroup.
+ */
+function ServerSection({
+  count,
+  open,
+  onToggle,
+  items,
+  selectedId,
+  onSelect,
+  selectable,
+  checkedIds,
+  onToggleChecked,
+}: {
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  items: Server[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  selectable: boolean;
+  checkedIds: Set<string>;
+  onToggleChecked: (id: string) => void;
+}) {
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center gap-1 px-3 py-1 text-[11px] uppercase text-dim hover-bg"
+      >
+        {open ? (
+          <ChevronDown className="w-3.5 h-3.5" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5" />
+        )}
+        <ServerIcon className="w-3.5 h-3.5" />
+        <span>Серверы · {count}</span>
+      </button>
+      {open && (
+        <div className="px-2 flex flex-col gap-0.5 mt-1">
+          {items.map((s) => (
+            <ServerRow
+              key={s.id}
+              server={s}
+              active={selectedId === s.id}
+              onSelect={() => onSelect(s.id)}
+              selectable={selectable}
+              checked={checkedIds.has(s.id)}
+              onToggleChecked={() => onToggleChecked(s.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ServerRow({
   server,
   active,
@@ -666,20 +746,24 @@ function ServerRow({
       >
         <div className="flex items-center gap-2">
         <ServerIcon
-          className={`w-4 h-4 ${active ? "text-accent" : "text-dim"}`}
+          className={`w-4 h-4 shrink-0 ${active ? "text-accent" : "text-dim"}`}
         />
         <div className="flex-1 min-w-0">
           <div className="text-sm truncate">{name}</div>
-          <div className="text-[11px] text-dim flex items-center gap-2">
-            <span className="uppercase tracking-wide text-[10px]">сервер</span>
-            <span>·</span>
+          <div className="text-[11px] text-dim flex items-center gap-1.5 min-w-0">
+            <span className="uppercase tracking-wide text-[10px] shrink-0">
+              сервер
+            </span>
+            <span className="shrink-0">·</span>
             <span className="truncate">{deptLabel}</span>
-            <span>·</span>
-            <span className="mono">{server.ip_address}</span>
+            <span className="shrink-0">·</span>
+            <span className="mono truncate">{server.ip_address}</span>
           </div>
         </div>
-          <PingBadge server={server} />
-          <span className={`badge badge-${busyChipKind}`}>{busyChipLabel}</span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <PingBadge server={server} />
+            <span className={`badge badge-${busyChipKind}`}>{busyChipLabel}</span>
+          </div>
         </div>
       </button>
     </div>
@@ -687,9 +771,9 @@ function ServerRow({
 }
 
 /**
- * Свёрнутая группа ВМ в общем списке серверов. По умолчанию закрыта — место
- * отдаётся серверам. Клик по строке уводит в зону «Виртуализация» (карточка ВМ),
- * а не в ServerDetail: ВМ — отдельная сущность со своим набором операций.
+ * Сворачиваемая группа ВМ в общем списке серверов. Клик по строке уводит в
+ * карточку ВМ (`/vm`), а не в ServerDetail: ВМ — отдельная сущность со своим
+ * набором операций.
  */
 function VmGroup({
   vms,
@@ -741,15 +825,17 @@ function VmRow({ vm, onOpen }: { vm: Vm; onOpen: () => void }) {
       <MonitorPlay className="w-4 h-4 text-dim shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="text-sm truncate">{vm.name}</div>
-        <div className="text-[11px] text-dim flex items-center gap-2">
-          <span className="uppercase tracking-wide text-[10px]">ВМ</span>
-          <span>·</span>
+        <div className="text-[11px] text-dim flex items-center gap-1.5 min-w-0">
+          <span className="uppercase tracking-wide text-[10px] shrink-0">ВМ</span>
+          <span className="shrink-0">·</span>
           <span className="truncate">{deptLabel}</span>
-          <span>·</span>
-          <span className="mono">{vm.ip_address ?? "—"}</span>
+          <span className="shrink-0">·</span>
+          <span className="mono truncate">{vm.ip_address ?? "—"}</span>
         </div>
       </div>
-      <span className={`badge${powerKind ? ` badge-${powerKind}` : ""}`}>
+      <span
+        className={`badge shrink-0${powerKind ? ` badge-${powerKind}` : ""}`}
+      >
         {vm.power_state}
       </span>
     </button>

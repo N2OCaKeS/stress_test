@@ -24,15 +24,15 @@ function renderServer() {
 }
 
 describe("Server list — VM group (mock mode)", () => {
-  it("показывает свёрнутую группу ВМ; имена ВМ скрыты до раскрытия", async () => {
+  it("показывает раскрытую группу ВМ по умолчанию; тумблер сворачивает её", async () => {
     renderServer();
-    // Группа ВМ есть, свёрнута по умолчанию.
+    // Группа ВМ есть и по умолчанию развёрнута — имена ВМ сразу видны.
     const header = await screen.findByText(/Виртуальные машины ·/);
     expect(header).toBeInTheDocument();
-    expect(screen.queryByText("alse-1.8-rc")).not.toBeInTheDocument();
-    // Раскрываем — ВМ появляются с подписью типа «ВМ».
-    fireEvent.click(header);
     expect(await screen.findByText("alse-1.8-rc")).toBeInTheDocument();
     expect(screen.getAllByText("ВМ").length).toBeGreaterThan(0);
+    // Клик по заголовку сворачивает группу — имена ВМ исчезают.
+    fireEvent.click(header);
+    expect(screen.queryByText("alse-1.8-rc")).not.toBeInTheDocument();
   });
 });

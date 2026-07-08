@@ -112,6 +112,25 @@ describe("LeftPanel — настраиваемая кнопка allta", () => {
   });
 });
 
+describe("LeftPanel — server-подменю", () => {
+  it("не содержит пункт «Виртуализация» (переехал в карточку сервера)", async () => {
+    renderPanel(
+      makePersona({
+        username: "regular",
+        service_roles: { server: "operator" },
+        accessible_services: ["server"] as ServiceName[],
+      }),
+    );
+    // Подменю «Серверы» отрисовалось.
+    expect(await screen.findByText("Пакеты")).toBeInTheDocument();
+    // Пункта «Виртуализация» и ссылки на /vm в панели больше нет.
+    expect(screen.queryByText("Виртуализация")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /Виртуализация/ }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("LeftPanel — аудит-чип", () => {
   it("dep_admin без logging в accessible_services видит «Журнал аудита»", () => {
     renderPanel(

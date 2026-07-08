@@ -145,6 +145,15 @@ export interface Server {
   management_user: string | null;
   prepared_at: Iso8601 | null;
   /**
+   * Способность хоста нести ВМ (KVM / `/dev/kvm`), определяется инвентаризацией.
+   * Гейт для подготовки сервера как VMS-hub. null — пробы ещё не было.
+   */
+  virtualization?: boolean | null;
+  /** Подготовлен ли сервер как VMS-hub (libvirt/мост/pool развёрнуты). */
+  is_vms_hub?: boolean;
+  /** Момент подготовки сервера как VMS-hub. null — не подготовлен. */
+  vms_hub_prepared_at?: Iso8601 | null;
+  /**
    * Управляющие креды per-server (фича #3). На момент написания backend
    * (`server_service/src/schemas/server.py::ServerResponse`) ещё не сериализует
    * эти поля — они есть в ORM-модели, но не в response-схеме. Поэтому держим их

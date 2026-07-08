@@ -33,7 +33,6 @@ import {
   RotateCcw,
   Rocket,
   Search,
-  Server as ServerIcon,
   ShieldCheck,
   Square,
   Layers,
@@ -57,7 +56,6 @@ import {
   canManageVmNet,
   canManageVmPresets,
   canManageVms,
-  canPrepareVmsHub,
   hasVmZoneAccess,
 } from "@/lib/rbac";
 import { formatLatencyMs } from "@/pages/server/_serverShared";
@@ -90,7 +88,6 @@ import {
   listVms,
   openVmConsole,
   prepareVm,
-  prepareVmsHub,
   refreshVmImages,
   releaseVm,
   reserveVm,
@@ -100,7 +97,6 @@ import {
   setVmAutostart,
   setVmCredStrategy,
   setVmNetwork,
-  teardownVmsHub,
   updateVm,
   updateVmIpPool,
   updateVmPreset,
@@ -132,7 +128,6 @@ import {
 import type { OsVersion, TaskDispatchResponse } from "@/api/server/types";
 import {
   MOCK_AVAILABLE_IPS,
-  MOCK_HUB_CANDIDATES,
   MOCK_VM_DISKS,
   MOCK_VM_HUBS,
   MOCK_VM_IMAGES,
@@ -142,18 +137,9 @@ import {
   MOCK_VM_SNAPSHOTS,
   MOCK_VMS,
   mockVmConsole,
-  type MockHubCandidate,
 } from "@/mocks/vm";
 
 // ── data helpers (mock ↔ live) ──────────────────────────────────────────────
-
-interface HubCandidate {
-  id: string;
-  hostname: string;
-  display_name: string | null;
-  ip_address: string;
-  department_id: string;
-}
 
 function fakeDispatch(): TaskDispatchResponse {
   return { task_id: `task-mock-${Date.now()}`, status: "queued" };
@@ -169,7 +155,6 @@ export function Vm() {
 
   const zoneBlocked = !hasVmZoneAccess(persona);
   const canManage = canManageVms(persona);
-  const canPrepare = canPrepareVmsHub(persona);
   const canNet = canManageVmNet(persona);
   const canPresets = canManageVmPresets(persona);
 
@@ -178,16 +163,13 @@ export function Vm() {
   const action = params.get("action"); // "new" | null
   const zone = params.get("zone"); // "pools" | "presets" | null
 
-  // Хабы: derived из серверов с virtualization=true (+ счётчик ВМ). В
-  // mock-режиме — фикстуры. Backend флага ещё не отдаёт (домен vm в работе).
-  const hubsAndVmsQ = useQuery<{ hubs: VmHub[]; vms: Vm[]; candidates: HubCandidate[] }>(
+  // Хабы: derived из серверов с is_vms_hub=true (+ счётчик ВМ). В mock-режиме —
+  // фикстуры. Подготовка/разбор хаба живут в карточке сервера (вкладка
+  // «Управление»), здесь только просмотр хабов и работа с их ВМ.
+  const hubsAndVmsQ = useQuery<{ hubs: VmHub[]; vms: Vm[] }>(
     async () => {
       if (mock) {
-        return {
-          hubs: MOCK_VM_HUBS,
-          vms: MOCK_VMS,
-          candidates: MOCK_HUB_CANDIDATES as MockHubCandidate[],
-        };
+        return { hubs: MOCK_VM_HUBS, vms: MOCK_VMS };
       }
       const [srv, vmsPage] = await Promise.all([
         listServers({ limit: 200 }),
@@ -197,26 +179,17 @@ export function Vm() {
       for (const v of vmsPage.items) {
         counts.set(v.hub_server_id, (counts.get(v.hub_server_id) ?? 0) + 1);
       }
-      const isHub = (s: (typeof srv.items)[number]) =>
-        (s as { virtualization?: boolean }).virtualization === true;
-      const hubs: VmHub[] = srv.items.filter(isHub).map((s) => ({
-        id: s.id,
-        hostname: s.hostname,
-        display_name: s.display_name,
-        ip_address: s.ip_address,
-        department_id: s.department_id,
-        vm_count: counts.get(s.id) ?? 0,
-      }));
-      const candidates: HubCandidate[] = srv.items
-        .filter((s) => !isHub(s))
+      const hubs: VmHub[] = srv.items
+        .filter((s) => (s as { is_vms_hub?: boolean }).is_vms_hub === true)
         .map((s) => ({
           id: s.id,
           hostname: s.hostname,
           display_name: s.display_name,
           ip_address: s.ip_address,
           department_id: s.department_id,
+          vm_count: counts.get(s.id) ?? 0,
         }));
-      return { hubs, vms: vmsPage.items, candidates };
+      return { hubs, vms: vmsPage.items };
     },
     [mock],
     { enabled: !zoneBlocked, keepPreviousDataOnError: true },
@@ -224,10 +197,6 @@ export function Vm() {
 
   const hubs = useMemo(() => hubsAndVmsQ.data?.hubs ?? [], [hubsAndVmsQ.data]);
   const allVms = useMemo(() => hubsAndVmsQ.data?.vms ?? [], [hubsAndVmsQ.data]);
-  const candidates = useMemo(
-    () => hubsAndVmsQ.data?.candidates ?? [],
-    [hubsAndVmsQ.data],
-  );
 
   const selectedHub = hubs.find((h) => h.id === selectedHubId) ?? null;
   const selectedVm = allVms.find((v) => v.id === selectedVmId) ?? null;
@@ -235,8 +204,6 @@ export function Vm() {
     () => (selectedHubId ? allVms.filter((v) => v.hub_server_id === selectedHubId) : []),
     [allVms, selectedHubId],
   );
-
-  const prepareOutcome = useTaskOutcome();
 
   // Каталог образов для модалки создания. Живой режим ходит в `/vm-images`;
   // при пустом ответе/сбое остаётся mock-фолбэк, чтобы модалка была рабочей.
@@ -315,17 +282,6 @@ export function Vm() {
     setParams(next, { replace: true });
   }
 
-  async function handlePrepare(serverId: string, hostname: string) {
-    prepareOutcome.reset();
-    try {
-      const res = mock ? fakeDispatch() : await prepareVmsHub(serverId);
-      prepareOutcome.track(`prepare-vms-hub · ${hostname}`, res.task_id, res.status);
-      toast.success(`Подготовка ${hostname} как VMS-hub — задача поставлена`);
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось поставить подготовку хаба"));
-    }
-  }
-
   async function handleCreate(body: VmCreateRequest) {
     try {
       const res = mock ? fakeDispatch() : await createVm(body);
@@ -400,31 +356,12 @@ export function Vm() {
             />
           ))}
           {!hubsAndVmsQ.loading && hubs.length === 0 && (
-            <div className="px-3 py-3 text-xs text-dim">Нет подготовленных хабов.</div>
+            <div className="px-3 py-3 text-xs text-dim">
+              Нет подготовленных хабов. Подготовить сервер как VMS-hub можно в
+              карточке сервера (вкладка «Управление»).
+            </div>
           )}
         </div>
-
-        {canPrepare && candidates.length > 0 && (
-          <>
-            <div className="group-header px-3 mt-4 text-[11px] uppercase text-dim">
-              Кандидаты в hub · {candidates.length}
-            </div>
-            <div className="px-2 flex flex-col gap-1">
-              {candidates.map((c) => (
-                <CandidateRow key={c.id} candidate={c} onPrepare={handlePrepare} />
-              ))}
-            </div>
-          </>
-        )}
-
-        {prepareOutcome.tracked && (
-          <TaskOutcomeBanner
-            outcome={prepareOutcome.tracked}
-            className="mx-3 mt-3"
-            successText="Хаб подготовлен."
-            onCancelled={prepareOutcome.reset}
-          />
-        )}
       </div>
 
       {(canNet || canPresets) && (
@@ -497,14 +434,9 @@ export function Vm() {
           vms={hubVms}
           mock={mock}
           canManage={canManage}
-          canPrepare={canPrepare}
           onOpenVm={selectVm}
           onCreate={startCreate}
           onChanged={() => hubsAndVmsQ.refetch()}
-          onTornDown={() => {
-            selectHub(null);
-            hubsAndVmsQ.refetch();
-          }}
         />
       ) : (
         <EmptyPane />
@@ -572,49 +504,6 @@ function HubRow({
   );
 }
 
-function CandidateRow({
-  candidate,
-  onPrepare,
-}: {
-  candidate: HubCandidate;
-  onPrepare: (serverId: string, hostname: string) => void | Promise<void>;
-}) {
-  const { confirm } = useConfirm();
-  const [pending, setPending] = useState(false);
-  const name = candidate.display_name ?? candidate.hostname;
-  return (
-    <div className="surface-2 border border-token rounded px-2 py-1.5 flex items-center gap-2">
-      <ServerIcon className="w-4 h-4 text-dim shrink-0" />
-      <div className="flex-1 min-w-0">
-        <div className="text-sm truncate">{name}</div>
-        <div className="text-[11px] text-dim mono truncate">{candidate.ip_address}</div>
-      </div>
-      <button
-        type="button"
-        className="btn btn-sm flex items-center gap-1"
-        disabled={pending}
-        title="Подготовить сервер как VMS-hub"
-        onClick={async () => {
-          const ok = await confirm({
-            title: "Подготовить как VMS-hub",
-            message: `Подготовить ${candidate.hostname} как VMS-hub? Установит libvirt/kvm, настроит мост br0 и storage-pool, скачает образы каталога.`,
-            confirmLabel: "Подготовить",
-          });
-          if (!ok) return;
-          setPending(true);
-          try {
-            await onPrepare(candidate.id, candidate.hostname);
-          } finally {
-            setPending(false);
-          }
-        }}
-      >
-        <Play className="w-3.5 h-3.5" /> Hub
-      </button>
-    </div>
-  );
-}
-
 // ── workzone panes ──────────────────────────────────────────────────────────
 
 function BlockedPane() {
@@ -652,24 +541,20 @@ function HubDetail({
   vms,
   mock,
   canManage,
-  canPrepare,
   onOpenVm,
   onCreate,
   onChanged,
-  onTornDown,
 }: {
   hub: VmHub;
   vms: Vm[];
   mock: boolean;
   canManage: boolean;
-  canPrepare: boolean;
   onOpenVm: (vm: Vm) => void;
   onCreate: () => void;
   onChanged: () => void;
-  onTornDown: () => void;
 }) {
   const toast = useToast();
-  const { confirm, prompt } = useConfirm();
+  const { confirm } = useConfirm();
   const deptLabel = useDeptLabel(hub.department_id);
   const defaultsOutcome = useTaskOutcome();
   const [pending, setPending] = useState(false);
@@ -695,31 +580,6 @@ function HubDetail({
       onChanged();
     } catch (e) {
       toast.error(apiErrMsg(e, "Не удалось развернуть стандартные ВМ"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function handleTeardown() {
-    const { ok, reason } = await prompt({
-      title: "Разобрать VMS-hub",
-      message: `Разобрать хаб ${name}? Будут снесены libvirt-конфигурация, мост br0 и storage-pool; сервер вернётся в обычное состояние. ВМ на хабе быть не должно.`,
-      reason: true,
-      reasonLabel: "Причина",
-      reasonRequired: true,
-      confirmLabel: "Разобрать",
-      danger: true,
-    });
-    if (!ok) return;
-    setPending(true);
-    try {
-      const res = mock
-        ? fakeDispatch()
-        : await teardownVmsHub(hub.id, { reason: reason.trim() });
-      toast.success(`Разбор хаба ${name} — задача поставлена (${res.task_id})`);
-      onTornDown();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось разобрать хаб"));
     } finally {
       setPending(false);
     }
@@ -821,40 +681,6 @@ function HubDetail({
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-
-        {canPrepare && (
-          <div
-            className="card mt-5"
-            style={{ border: "1px solid var(--danger, #b91c1c)" }}
-          >
-            <div className="text-sm font-semibold flex items-center gap-2 text-danger mb-2">
-              Опасная зона
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex-1 text-xs text-dim">
-                Разбор хаба сносит libvirt-конфигурацию, мост br0 и storage-pool.
-                {vms.length > 0 && (
-                  <>
-                    {" "}
-                    Сначала удалите все ВМ хаба (<b>{vms.length}</b>).
-                  </>
-                )}
-              </div>
-              <button
-                className="btn btn-danger flex items-center gap-1"
-                onClick={handleTeardown}
-                disabled={pending || vms.length > 0}
-                title={
-                  vms.length > 0
-                    ? "Нельзя разобрать хаб, пока на нём есть ВМ"
-                    : "Разобрать VMS-hub"
-                }
-              >
-                <Trash2 className="w-4 h-4" /> Разобрать VMS-hub
-              </button>
-            </div>
           </div>
         )}
       </div>

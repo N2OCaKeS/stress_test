@@ -37,13 +37,14 @@ import {
   Eraser,
   X,
   ArrowUpCircle,
+  MonitorPlay,
 } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
 import { apiErrMsg } from "@/api/client";
 import { formatMskShort } from "@/lib/datetime";
-import { isDepAdmin } from "@/lib/rbac";
+import { isDepAdmin, canPrepareVmsHub } from "@/lib/rbac";
 import { useUserLabel } from "@/lib/labels";
 import { sshKeyFingerprint } from "@/lib/sshFingerprint";
 import {
@@ -57,6 +58,7 @@ import {
   setBusy,
 } from "@/api/server/servers";
 import { usersInventory } from "@/api/server/misc";
+import { prepareVmsHub, teardownVmsHub } from "@/api/server/vms";
 import { useTaskOutcome, type TrackedTask } from "@/api/server/useTaskOutcome";
 import { listAccounts } from "@/api/server/accounts";
 import {
@@ -113,7 +115,7 @@ function canManageBasic(
 export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
-  const { confirm } = useConfirm();
+  const { confirm, prompt } = useConfirm();
   const [busy, setBusyLocal] = useState<string | null>(null);
   // Поллинг исхода lifecycle-задач (prepare / inventory / users-inventory):
   // worker может закрыть их FAILED (битые bootstrap-креды, недоступный BMC),
@@ -127,6 +129,10 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
   // (backend снял updating-блокировку, сменил версию и запустил inventory).
   const astraOutcome = useTaskOutcome();
   const astraHandledRef = useRef<string | null>(null);
+  // Подготовка/разбор VMS-hub: свой трекер, по succeeded перечитываем карточку
+  // (backend флипает is_vms_hub на callback после завершения задачи).
+  const vmsHubOutcome = useTaskOutcome();
+  const vmsHubHandledRef = useRef<string | null>(null);
   const [current, setCurrent] = useState<Server | undefined>(server);
   // Когда родитель прислал свежий объект (мутация в соседней вкладке) —
   // подхватываем его, чтобы не залипнуть на устаревшей локальной копии.
@@ -175,7 +181,22 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
     }
   }, [astraOutcome.tracked, view, applyServer]);
 
+  // Подготовка VMS-hub завершилась — перечитываем карточку, чтобы подхватить
+  // is_vms_hub/vms_hub_prepared_at. Ref гасит повторный refetch.
+  useEffect(() => {
+    const t = vmsHubOutcome.tracked;
+    if (!t || t.polling || t.status !== "succeeded") return;
+    if (vmsHubHandledRef.current === t.taskId) return;
+    vmsHubHandledRef.current = t.taskId;
+    if (view) {
+      getServer(view.id)
+        .then((next) => applyServer(next))
+        .catch(() => {});
+    }
+  }, [vmsHubOutcome.tracked, view, applyServer]);
+
   const allowBasic = canManageBasic(persona, view);
+  const allowVmsHub = canPrepareVmsHub(persona);
   // Пока идёт обновление ОС — сервер под системной блокировкой: все
   // управляющие операции backend отобьёт 409 SERVER_UPDATING. Гейтим кнопки
   // на клиенте, чтобы не слать заведомо отбиваемые запросы.
@@ -271,6 +292,53 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
             usersInventory(view.id),
           );
           if (res) taskOutcome.track("users_inventory", res.task_id, res.status);
+        }}
+      />
+
+      <VmsHubCard
+        server={view}
+        allowed={allowVmsHub}
+        locked={updating}
+        busyLabel={busy}
+        outcome={vmsHubOutcome.tracked}
+        onCancelled={vmsHubOutcome.reset}
+        onPrepare={async () => {
+          if (!view) return;
+          if (
+            !(await confirm({
+              title: "Подготовить как VMS-hub",
+              message: `Подготовить ${view.hostname} как VMS-hub? Установит libvirt/kvm, настроит мост br0 и storage-pool, скачает образы каталога.`,
+              confirmLabel: "Подготовить",
+            }))
+          )
+            return;
+          vmsHubOutcome.reset();
+          vmsHubHandledRef.current = null;
+          const res = await run("prepare_vms_hub", () =>
+            prepareVmsHub(view.id),
+          );
+          if (res)
+            vmsHubOutcome.track("prepare_vms_hub", res.task_id, res.status);
+        }}
+        onTeardown={async () => {
+          if (!view) return;
+          const { ok, reason } = await prompt({
+            title: "Разобрать VMS-hub",
+            message: `Разобрать VMS-hub ${view.hostname}? Будут снесены libvirt-конфигурация, мост br0 и storage-pool; сервер вернётся в обычное состояние. ВМ на хабе быть не должно.`,
+            reason: true,
+            reasonLabel: "Причина",
+            reasonRequired: true,
+            confirmLabel: "Разобрать",
+            danger: true,
+          });
+          if (!ok) return;
+          vmsHubOutcome.reset();
+          vmsHubHandledRef.current = null;
+          const res = await run("teardown_vms_hub", () =>
+            teardownVmsHub(view.id, { reason: reason.trim() }),
+          );
+          if (res)
+            vmsHubOutcome.track("teardown_vms_hub", res.task_id, res.status);
         }}
       />
 
@@ -656,6 +724,112 @@ function LifecycleCard({
           dep_admin своего департамента).
         </div>
       )}
+      {outcome && (
+        <TaskOutcomeBanner
+          outcome={outcome}
+          className="mt-3"
+          onCancelled={onCancelled}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Виртуализация — подготовка/разбор VMS-hub
+// ─────────────────────────────────────────────────────────────────────────────
+
+function VmsHubCard({
+  server,
+  allowed,
+  locked = false,
+  busyLabel,
+  outcome,
+  onCancelled,
+  onPrepare,
+  onTeardown,
+}: {
+  server: Server | undefined;
+  /** Персона вправе готовить/разбирать hub (`canPrepareVmsHub`). */
+  allowed: boolean;
+  /** Сервер под системной блокировкой обновления ОС — операции недоступны. */
+  locked?: boolean;
+  busyLabel: string | null;
+  outcome: TrackedTask | null;
+  onCancelled: () => void;
+  onPrepare: () => Promise<void>;
+  onTeardown: () => Promise<void>;
+}) {
+  // Карточка имеет смысл только когда сервер умеет виртуализацию или уже hub.
+  if (!server || (!server.virtualization && !server.is_vms_hub)) return null;
+  const isHub = !!server.is_vms_hub;
+  const disabled = !allowed || locked || busyLabel !== null;
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <MonitorPlay className="w-4 h-4 text-accent" /> Виртуализация
+        {isHub && <span className="badge badge-ok text-[11px]">VMS-hub</span>}
+      </h3>
+
+      {isHub ? (
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex-1 text-xs text-dim">
+            Сервер подготовлен как VMS-hub: развёрнуты libvirt/kvm, мост br0 и
+            storage-pool. Виртуальные машины этого хаба — в разделе
+            «Виртуализация».
+          </div>
+          <Link
+            to={`/vm?hub=${encodeURIComponent(server.id)}`}
+            className="btn flex items-center gap-1"
+            title="Открыть ВМ этого hub'а"
+          >
+            <MonitorPlay className="w-4 h-4" /> ВМ этого hub'а
+          </Link>
+          {allowed && (
+            <button
+              className="btn btn-danger flex items-center gap-1"
+              disabled={disabled}
+              onClick={onTeardown}
+              title="Разобрать VMS-hub — снести libvirt/мост/pool"
+            >
+              <Trash2 className="w-4 h-4" />
+              {busyLabel === "teardown_vms_hub"
+                ? "Запускаем…"
+                : "Разобрать VMS-hub"}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex-1 text-xs text-dim">
+            Сервер поддерживает виртуализацию (KVM). Подготовка развернёт
+            libvirt/kvm, мост br0 и storage-pool и скачает образы каталога —
+            после этого на нём можно создавать ВМ.
+          </div>
+          {allowed && (
+            <button
+              className="btn btn-primary flex items-center gap-1"
+              disabled={disabled}
+              onClick={onPrepare}
+              title="Подготовить сервер как VMS-hub"
+            >
+              <MonitorPlay className="w-4 h-4" />
+              {busyLabel === "prepare_vms_hub"
+                ? "Запускаем…"
+                : "Подготовить как VMS-hub"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {!allowed && (
+        <div className="text-[11px] text-dim italic mt-3">
+          Нет прав на подготовку/разбор VMS-hub (нужна роль server.operator+ или
+          dep_admin своего департамента).
+        </div>
+      )}
+
       {outcome && (
         <TaskOutcomeBanner
           outcome={outcome}

@@ -31,14 +31,17 @@ describe("Vm zone (mock mode)", () => {
     window.localStorage.clear();
   });
 
-  it("рендерит список хабов и кандидатов на prepare для dep_admin (alice)", async () => {
+  it("рендерит список хабов; подготовка/кандидаты переехали в карточку сервера", async () => {
     renderVm("/vm");
     // Хаб-заголовок и хаб из фикстур.
     expect(await screen.findByText(/VMS-hub · 2/)).toBeInTheDocument();
     expect(screen.getByText("kvm-hub-core-1")).toBeInTheDocument();
-    // Кандидаты + кнопка prepare (Hub) видны носителю права.
-    expect(screen.getByText(/Кандидаты в hub/)).toBeInTheDocument();
-    expect(screen.getAllByTitle(/Подготовить сервер как VMS-hub/).length).toBeGreaterThan(0);
+    // Секции «Кандидаты в hub» и кнопки prepare в /vm больше нет —
+    // подготовка живёт в ServerDetail (вкладка «Управление»).
+    expect(screen.queryByText(/Кандидаты в hub/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByTitle(/Подготовить сервер как VMS-hub/),
+    ).not.toBeInTheDocument();
   });
 
   it("показывает ВМ хаба с индикатором питания при выборе хаба", async () => {
@@ -251,24 +254,15 @@ describe("Vm zone (mock mode)", () => {
     expect(screen.getByText(/выбрать из пула/)).toBeInTheDocument();
   });
 
-  it("хаб показывает кнопки «Развернуть стандартные ВМ» и «Разобрать VMS-hub»", async () => {
-    // srv-24 без ВМ — teardown активен; на srv-07 есть ВМ (teardown disabled).
+  it("хаб показывает «Развернуть стандартные ВМ»; teardown переехал в карточку сервера", async () => {
     renderVm("/vm?hub=srv-24");
     expect(
       await screen.findByRole("button", { name: /Развернуть стандартные ВМ/ }),
     ).toBeInTheDocument();
+    // Разбор хаба (teardown) больше не в /vm — он в ServerDetail.
     expect(
-      screen.getByRole("button", { name: /Разобрать VMS-hub/ }),
-    ).toBeInTheDocument();
-  });
-
-  it("разбор хаба с ВМ заблокирован, пустого — разрешён", async () => {
-    renderVm("/vm?hub=srv-07");
-    const teardown = await screen.findByRole("button", {
-      name: /Разобрать VMS-hub/,
-    });
-    // На srv-07 три ВМ — кнопка disabled.
-    expect(teardown).toBeDisabled();
+      screen.queryByRole("button", { name: /Разобрать VMS-hub/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("развёртывание стандартных ВМ требует подтверждения", async () => {

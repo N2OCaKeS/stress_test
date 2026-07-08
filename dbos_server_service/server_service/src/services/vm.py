@@ -320,6 +320,32 @@ async def create_vm(
     # откуда скачивать образ. Нет записи в каталоге → 400 (карточку не заводим).
     box_url = await _resolve_box_url(db, payload.box, hub.id)
 
+    # Bridge-ВМ нужен статический адрес: берём заданный ip_address (с проверкой
+    # занятости) либо авто-выбираем свободный из пула. nat — адрес выдаёт libvirt,
+    # ничего не резолвим. Без адреса и без пула bridge создать нельзя.
+    resolved_ip: str | None = None
+    net_pool = None
+    if payload.network_mode == VmNetworkMode.BRIDGE:
+        resolved_ip, net_pool = await ip_pool_svc.resolve_bridge_ip(
+            db, identity,
+            department_id=payload.department_id,
+            ip_address=str(payload.ip_address) if payload.ip_address is not None else None,
+            pool_id=payload.pool_id,
+            audit_action="vm.create",
+        )
+        if resolved_ip is None:
+            audit_service.emit(
+                "vm.create", target_type="vm", status="failure", allowed=True,
+                details={"reason": "bridge_ip_required", "department_id": payload.department_id},
+            )
+            raise BadRequestError(
+                error_code="VM_BRIDGE_IP_REQUIRED",
+                message=(
+                    "Bridge VMs need a static IP: pass ip_address or a pool_id "
+                    "with free addresses"
+                ),
+            )
+
     data = {
         "id": new_vm_id(),
         "name": payload.name,
@@ -329,7 +355,7 @@ async def create_vm(
         "os_version": payload.os_version,
         "box": payload.box,
         "network_mode": payload.network_mode.value,
-        "ip_address": str(payload.ip_address) if payload.ip_address is not None else None,
+        "ip_address": resolved_ip,
         "status": VM_STATUS_FREE,
         "power_state": VmPowerState.UNKNOWN.value,
         "cpu": payload.cpu,
@@ -364,6 +390,9 @@ async def create_vm(
         "os_version": vm.os_version,
         "network_mode": vm.network_mode,
         "ip_address": data["ip_address"],
+        "gateway": str(net_pool.gateway) if net_pool is not None and net_pool.gateway is not None else None,
+        "netmask": net_pool.netmask if net_pool is not None else None,
+        "dns": list(net_pool.dns) if net_pool is not None and net_pool.dns is not None else None,
         "cpu": vm.cpu,
         "ram_mb": vm.ram_mb,
         "disk_gb": vm.disk_gb,
@@ -1860,26 +1889,16 @@ async def set_network(
     resolved_ip: str | None = None
     pool = None
     if payload.network_mode == VmNetworkMode.BRIDGE:
-        used = await repo.list_used_ips(db, vm.department_id, exclude_vm_id=vm.id)
-        if payload.ip_address is not None:
-            resolved_ip = str(payload.ip_address)
-            if resolved_ip in used:
-                audit_service.emit(
-                    "vm.net_updated", target_id=vm.id, target_type="vm",
-                    status="failure", allowed=True,
-                    details={"reason": "ip_in_use", "ip_address": resolved_ip},
-                )
-                raise ConflictError(
-                    error_code="VM_IP_IN_USE",
-                    message="Requested IP is already assigned to another VM",
-                    details={"ip_address": resolved_ip},
-                )
-            if payload.pool_id is not None:
-                pool = await ip_pool_svc.get_pool(db, identity, payload.pool_id)
-        elif payload.pool_id is not None:
-            pool = await ip_pool_svc.get_pool(db, identity, payload.pool_id)
-            resolved_ip = ip_pool_svc.allocate_ip(pool, used)
-        else:
+        resolved_ip, pool = await ip_pool_svc.resolve_bridge_ip(
+            db, identity,
+            department_id=vm.department_id,
+            ip_address=str(payload.ip_address) if payload.ip_address is not None else None,
+            pool_id=payload.pool_id,
+            exclude_vm_id=vm.id,
+            audit_action="vm.net_updated",
+            audit_target_id=vm.id,
+        )
+        if resolved_ip is None:
             # bridge без нового адреса — оставляем текущий (worker переводит XML).
             resolved_ip = str(vm.ip_address) if vm.ip_address is not None else None
 

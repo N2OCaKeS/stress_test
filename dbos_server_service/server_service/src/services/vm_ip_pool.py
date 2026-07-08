@@ -269,3 +269,48 @@ async def available_ips(
     used = await vm_repo.list_used_ips(db, pool.department_id)
     listed, total = free_ips(pool, used)
     return {"pool_id": pool.id, "available": listed, "total_free": total}
+
+
+async def resolve_bridge_ip(
+    db: AsyncSession,
+    identity: IdentityContext,
+    *,
+    department_id: str,
+    ip_address: str | None,
+    pool_id: str | None,
+    exclude_vm_id: str | None = None,
+    audit_action: str,
+    audit_target_id: str | None = None,
+) -> tuple[str | None, VmIpPool | None]:
+    """Разрешить статический IP bridge-ВМ: заданный адрес либо авто-выбор из пула.
+
+    Возвращает `(ip, pool)`. Заданный `ip_address` проверяется на конфликт с
+    занятыми адресами отдела (409 VM_IP_IN_USE); если при этом передан `pool_id`,
+    пул подгружается ради gateway/netmask/dns. Без `ip_address`, но с `pool_id` —
+    берётся первый свободный адрес аллокатором (409 VM_IP_POOL_EXHAUSTED). Если не
+    задано ни то, ни другое — `(None, None)`: решение о fallback принимает
+    вызывающий (create требует адрес, смена сети сохраняет текущий).
+
+    Общий аллокатор для vm.create и смены сети — занятость ведётся по карточкам
+    ВМ отдела, `exclude_vm_id` исключает саму ВМ при смене её же адреса.
+    """
+    used = await vm_repo.list_used_ips(db, department_id, exclude_vm_id=exclude_vm_id)
+    if ip_address is not None:
+        resolved = str(ip_address)
+        if resolved in used:
+            audit_service.emit(
+                audit_action, target_id=audit_target_id, target_type="vm",
+                status="failure", allowed=True,
+                details={"reason": "ip_in_use", "ip_address": resolved},
+            )
+            raise ConflictError(
+                error_code="VM_IP_IN_USE",
+                message="Requested IP is already assigned to another VM",
+                details={"ip_address": resolved},
+            )
+        pool = await get_pool(db, identity, pool_id) if pool_id is not None else None
+        return resolved, pool
+    if pool_id is not None:
+        pool = await get_pool(db, identity, pool_id)
+        return allocate_ip(pool, used), pool
+    return None, None

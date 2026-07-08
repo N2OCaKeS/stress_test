@@ -75,14 +75,17 @@ router_presets = APIRouter(prefix="/vm-presets")
     description=(
         "Проверяет право `(vm, create)`, изоляцию отдела, готовность hub'а "
         "(`is_vms_hub`) и ёмкость hub'а (Σ vCPU/RAM/disk ВМ + запрос ≤ ресурсы "
-        "hub'а → 409 VM_CAPACITY_EXCEEDED). Пишет карточку ВМ с "
+        "hub'а → 409 VM_CAPACITY_EXCEEDED). Для bridge разрешает IP: заданный "
+        "`ip_address` (проверка занятости) либо авто-выбор из `pool_id`; без "
+        "адреса и пула → 400 VM_BRIDGE_IP_REQUIRED. Пишет карточку ВМ с "
         "`busy_state=creating` и диспатчит `vm.create` воркеру."
     ),
     responses={
         202: {"description": "ВМ создана, задача поставлена."},
+        400: {"description": "VM_BOX_NOT_IN_CATALOG / VM_BRIDGE_IP_REQUIRED — bridge без ip_address и без пула."},
         403: {"description": "Нет `create` либо чужой отдел (DEPARTMENT_ISOLATION)."},
-        404: {"description": "HUB_NOT_FOUND — hub не найден / чужой отдел."},
-        409: {"description": "HUB_NOT_PREPARED / VM_CAPACITY_EXCEEDED / VM_DUPLICATE."},
+        404: {"description": "HUB_NOT_FOUND — hub не найден / чужой отдел / VM_IP_POOL_NOT_FOUND."},
+        409: {"description": "HUB_NOT_PREPARED / VM_CAPACITY_EXCEEDED / VM_IP_IN_USE / VM_IP_POOL_EXHAUSTED / VM_DUPLICATE."},
         503: {"description": "Worker недоступен."},
     },
 )

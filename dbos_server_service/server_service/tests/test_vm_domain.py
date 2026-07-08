@@ -128,6 +128,8 @@ def _create_body(hub, **over) -> dict:
         "name": f"vm-{uuid.uuid4().hex[:6]}",
         "department_id": "dep_a",
         "cpu": 4, "ram_mb": 8192, "disk_gb": 100,
+        # nat по умолчанию — bridge требует ip_address/pool_id, задаём точечно.
+        "network_mode": "nat",
     }
     body.update(over)
     return body
@@ -1493,3 +1495,81 @@ async def test_set_network_requires_net_manage(
         headers=_hdr(guest_token_a),
     )
     assert_error(resp, 403, "PERMISSION_DENIED")
+
+
+# ── create: IPAM-авто-аллокация bridge ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_bridge_allocates_ip_from_pool(
+    client, admin_role_token_a, make_hub, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    resp = await client.post(
+        f"{BASE}/vm-ip-pools", json=_pool_body(name="create-pool"),
+        headers=_hdr(admin_role_token_a),
+    )
+    pid = resp.json()["id"]
+    resp = await client.post(
+        f"{BASE}/vms",
+        json=_create_body(hub, network_mode="bridge", pool_id=pid),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    vm_id = resp.json()["vm_id"]
+    # первый свободный из .10-.12 (gateway .1 вне диапазона) = .10
+    assert calls[-1]["task_kind"] == "vm.create"
+    assert calls[-1]["payload"]["ip_address"] == "10.50.0.10"
+    assert calls[-1]["payload"]["gateway"] == "10.50.0.1"
+
+    resp = await client.get(f"{BASE}/vms/{vm_id}", headers=_hdr(admin_role_token_a))
+    assert resp.json()["ip_address"] == "10.50.0.10"
+    assert resp.json()["network_mode"] == "bridge"
+
+
+@pytest.mark.asyncio
+async def test_create_bridge_explicit_ip_in_use(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    await make_vm(hub=hub, ip_address="10.50.0.55")
+    resp = await client.post(
+        f"{BASE}/vms",
+        json=_create_body(hub, network_mode="bridge", ip_address="10.50.0.55"),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 409, "VM_IP_IN_USE")
+
+
+@pytest.mark.asyncio
+async def test_create_bridge_without_ip_or_pool_rejected(
+    client, admin_role_token_a, make_hub, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    resp = await client.post(
+        f"{BASE}/vms", json=_create_body(hub, network_mode="bridge"),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 400, "VM_BRIDGE_IP_REQUIRED")
+
+
+@pytest.mark.asyncio
+async def test_create_nat_leaves_ip_null(
+    client, admin_role_token_a, make_hub, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    resp = await client.post(
+        f"{BASE}/vms", json=_create_body(hub, network_mode="nat"),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    vm_id = resp.json()["vm_id"]
+    assert calls[-1]["payload"]["ip_address"] is None
+
+    resp = await client.get(f"{BASE}/vms/{vm_id}", headers=_hdr(admin_role_token_a))
+    assert resp.json()["ip_address"] is None
+    assert resp.json()["network_mode"] == "nat"

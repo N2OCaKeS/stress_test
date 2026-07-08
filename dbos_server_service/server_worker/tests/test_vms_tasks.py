@@ -342,3 +342,57 @@ class TestVmPower:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.FAILED
         assert t.last_error and "VM_INVALID_ARG" in t.last_error
+
+
+# ── vm.delete ────────────────────────────────────────────────────────────────
+
+
+class TestVmDelete:
+    async def test_destroy_then_undefine(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _FakeSshClient()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm9", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "is_managed": True, "target_department_id": "dep1",
+        }
+        tid = await make_task(task_kind="vm.delete", target_server_id="hub1", payload=payload)
+        await vms.vm_delete.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        di = next(i for i, c in enumerate(cmds) if "virsh destroy station-a" in c)
+        ui = next(i for i, c in enumerate(cmds) if "virsh undefine station-a --remove-all-storage --snapshots-metadata" in c)
+        assert di < ui
+        assert t.result == {"vm_id": "vm9", "vm_name": "station-a", "destroyed": True, "undefined": True}
+        # карточка ВМ снесена в БД до dispatch'а — state-callback'а нет.
+        assert stub_session_and_callbacks["calls"]["vm_state"] == []
+
+    async def test_destroy_nonzero_tolerated(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        # destroy на уже выключенной ВМ отдаёт non-zero, undefine — код 1: обе ок.
+        fake = _FakeSshClient()
+        fake.set_response("virsh destroy", 1, stderr="domain is not running")
+        fake.set_response("virsh undefine", 1, stderr="already gone")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm9", "hub_host": "10.0.0.7", "vm_name": "station-a", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.delete", target_server_id="hub1", payload=payload)
+        await vms.vm_delete.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["undefined"] is True
+
+    async def test_undefine_failure_reports_error(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _FakeSshClient()
+        fake.set_response("virsh undefine", 2, stderr="in use")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm9", "hub_host": "10.0.0.7", "vm_name": "station-a", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.delete", target_server_id="hub1", payload=payload)
+        await _set_single_attempt(tid)
+        await vms.vm_delete.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert t.last_error and "VM_DELETE_FAILED" in t.last_error

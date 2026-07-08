@@ -264,6 +264,19 @@ def parse_domifaddr(stdout: str) -> str | None:
 # ── Гостевой доступ по sshpass ───────────────────────────────────────────────
 
 
+def parse_vncdisplay(stdout: str) -> int | None:
+    """Достать TCP-порт VNC из вывода `virsh vncdisplay`.
+
+    libvirt отдаёт номер дисплея вида `:0` или `127.0.0.1:0` — реальный порт
+    равен `5900 + <дисплей>`. None — если домен без VNC (пустой вывод) или
+    формат неожиданный.
+    """
+    m = re.search(r":(\d+)\s*$", (stdout or "").strip())
+    if m is None:
+        return None
+    return 5900 + int(m.group(1))
+
+
 def guest_ssh(ip: str, remote_cmd: str, *, sudo: bool = False) -> str:
     """Собрать команду входа на гостя по `sshpass` из hub-сессии.
 
@@ -467,6 +480,7 @@ __all__ = [
     "positive_int",
     "map_domstate",
     "parse_domifaddr",
+    "parse_vncdisplay",
     "next_target_dev",
     "additional_pool_path",
     "ensure_additional_pool",

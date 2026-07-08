@@ -62,6 +62,7 @@ SERVICE_EVENTS = [
     {"action": "vms_hub.prepare", "description": "Подготовка сервера как VMS-hub по SSH: libvirt + мост br0 + storage-pool + образы", "default_severity": "CRITICAL"},
     {"action": "vm.create", "description": "Создание ВМ на hub'е по SSH: клон диска + virt-install + провижн + снимки", "default_severity": "CRITICAL"},
     {"action": "vm.power", "description": "Управление питанием ВМ на hub'е по SSH (virsh start/shutdown/reboot/reset/destroy)", "default_severity": "WARNING"},
+    {"action": "vm.delete", "description": "Удаление ВМ на hub'е по SSH: virsh destroy + virsh undefine --remove-all-storage --snapshots-metadata", "default_severity": "CRITICAL"},
     {"action": "vm.update", "description": "Изменение cpu/ram ВМ по SSH: dumpxml + правка vcpu/memory + virsh define", "default_severity": "WARNING"},
     {"action": "vm.disk_attach", "description": "Подключение диска к ВМ по SSH: qemu-img create + virsh attach-disk (опц. mkfs+fstab в госте)", "default_severity": "WARNING"},
     {"action": "vm.disk_delete", "description": "Отключение и удаление диска ВМ по SSH: virsh detach-disk + rm qcow2", "default_severity": "WARNING"},
@@ -74,6 +75,9 @@ SERVICE_EVENTS = [
     {"action": "vm.passwd", "description": "Смена пароля гостевого u по снимкам ВМ по SSH: chpasswd + пересъёмка", "default_severity": "WARNING"},
     {"action": "vm.prepare", "description": "Подготовка ВМ по SSH: заведение управляющей учётки (ключ+sudo), hardening sshd, удаление базовой учётки", "default_severity": "CRITICAL"},
     {"action": "vm.set_network", "description": "Смена сети ВМ по SSH: статика в госте + перевод домена на bridge br0 либо NAT", "default_severity": "WARNING"},
+    {"action": "vm.set_autostart", "description": "Смена флага автозапуска ВМ по SSH: virsh autostart / autostart --disable", "default_severity": "WARNING"},
+    {"action": "vm.console_prep", "description": "Подготовка консоли ВМ по SSH: VNC-graphics (+ serial) + чтение VNC-порта (virsh vncdisplay)", "default_severity": "INFO"},
+    {"action": "vms_hub.teardown", "description": "Разбор VMS-hub по SSH: destroy/undefine ВМ отдела + снос storage-pool/образов + опц. purge пакетов и br0", "default_severity": "CRITICAL"},
     # Управляющая учётка — tasks/management_user.py, tasks/management_creds.py
     {"action": "management_user.sync", "description": "Недеструктивный re-bootstrap управляющей учётки на хосте", "default_severity": "INFO"},
     {"action": "server.management_creds_rotated", "description": "Ротация per-server управляющих кредов применена на хосте + callback", "default_severity": "CRITICAL"},

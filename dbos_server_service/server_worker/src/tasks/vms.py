@@ -14,6 +14,9 @@ sudo NOPASSWD — libvirt/kvm без пароля):
   single-бокс — один снимок `build`.
 * `vm.power` — `virsh start|shutdown|reboot|reset|destroy` + чтение
   `domstate`.
+* `vm.delete` — снести домен ВМ: `virsh destroy` (глушим non-zero) +
+  `virsh undefine --remove-all-storage --snapshots-metadata`. Карточку ВМ
+  server_service удаляет из БД сразу при dispatch'е, воркер добивает хост.
 
 Длинные операции идут как `astra_update`: без per-команда timeout'а,
 durable-retry на уровне `_runner`. Guest доступен по `sshpass` (`u`/`1`).
@@ -78,6 +81,7 @@ AUDIT_SAFE_FIELDS_CREATE: set[str] = {
     "ip_address", "snapshots",
 }
 AUDIT_SAFE_FIELDS_POWER: set[str] = {"vm_id", "vm_name", "action", "power_state"}
+AUDIT_SAFE_FIELDS_DELETE: set[str] = {"vm_id", "vm_name", "destroyed", "undefined"}
 
 
 # hub-команда под sudo с проверкой кода возврата — общий раннер VM-тасок.
@@ -779,7 +783,9 @@ async def vm_power(task_id: str) -> None:
             payload.get("host") or payload.get("hub_host")
             or payload.get("hub_server_id") or "hub",
         )
-        vm_name = validate_name(payload["vm_name"], host_label, "vm_name")
+        vm_name = validate_name(
+            payload.get("vm_name") or payload["name"], host_label, "vm_name",
+        )
         action = payload.get("action")
         if action not in POWER_VERBS:
             raise SshError(
@@ -821,4 +827,64 @@ async def vm_power(task_id: str) -> None:
         audit_target_type="vm",
         impl=_impl,
         audit_safe_fields=AUDIT_SAFE_FIELDS_POWER,
+    )
+
+
+# ── vm.delete ────────────────────────────────────────────────────────────────
+
+
+@broker.task("vm.delete")
+async def vm_delete(task_id: str) -> None:
+    """Снести домен ВМ на hub'е (`virsh destroy` + `virsh undefine`).
+
+    Что делает: заходит на hub по SSH, жёстко гасит домен (`virsh destroy` —
+    non-zero на уже выключенной ВМ глушим) и удаляет его вместе с дисками и
+    метаданными снимков (`virsh undefine <vm> --remove-all-storage
+    --snapshots-metadata`, допустимые коды 0/1). Карточку ВМ server_service
+    удаляет из БД сразу при dispatch'е, поэтому финального state-callback'а нет —
+    обновлять уже нечего.
+
+    Параметры: `task_id`. Payload — `vm_id`, `vm_name`/`name`, hub-блок,
+    `target_department_id`.
+
+    Возвращает: `{vm_id, vm_name, destroyed, undefined}`.
+
+    Возможные ошибки: `VM_INVALID_ARG` (нет/битое имя),
+    `VM_DELETE_FAILED` (undefine упал на неожиданном коде).
+    """
+    async def _impl(payload: dict) -> dict:
+        vm_id = payload["vm_id"]
+        host_label = str(
+            payload.get("host") or payload.get("hub_host")
+            or payload.get("hub_server_id") or "hub",
+        )
+        vm_name = validate_name(
+            payload.get("vm_name") or payload["name"], host_label, "vm_name",
+        )
+
+        session, host = await open_hub_session(payload)
+        async with session as ssh:
+            # destroy на уже выключенном домене отдаёт non-zero — это не ошибка.
+            await ssh.run(f"virsh destroy {vm_name}", sudo=True)
+            await _run(
+                ssh,
+                f"virsh undefine {vm_name} --remove-all-storage "
+                "--snapshots-metadata",
+                host, "VM_DELETE_FAILED",
+                f"не удалось удалить домен {vm_name}",
+                ok=(0, 1),
+            )
+        return {
+            "vm_id": vm_id,
+            "vm_name": vm_name,
+            "destroyed": True,
+            "undefined": True,
+        }
+
+    await run_task(
+        task_id,
+        audit_action="vm.delete",
+        audit_target_type="vm",
+        impl=_impl,
+        audit_safe_fields=AUDIT_SAFE_FIELDS_DELETE,
     )

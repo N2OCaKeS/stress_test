@@ -513,14 +513,16 @@ async def submit_vm_state(
     busy_state: str | None = None,
     clear_busy_state: bool = False,
     snapshots: list[str] | None = None,
+    autostart: bool | None = None,
     error: str | None = None,
 ) -> dict:
     """Отдать server_service свежее состояние ВМ (финал `vm.create` / `vm.power`).
 
     По этому callback'у server_service обновляет строку `vm`: `power_state`
     (из `virsh domstate`), выданный `ip_address`, `status`/`busy_state`
-    (booking/lock) и зеркалит список снимков (`snapshots` — только plain-имена,
-    без системных `_build`). `error` заполняется только при частичном/неудачном
+    (booking/lock), зеркалит список снимков (`snapshots` — только plain-имена,
+    без системных `_build`) и `autostart` (флаг автозапуска ВМ при старте hub'а,
+    финал `vm.set_autostart`). `error` заполняется только при частичном/неудачном
     исходе, чтобы оператор увидел причину в карточке ВМ.
 
     Все поля опциональны: `vm.power` шлёт лишь `power_state`, `vm.create` —
@@ -548,6 +550,8 @@ async def submit_vm_state(
         body["clear_busy_state"] = True
     if snapshots is not None:
         body["snapshots"] = snapshots
+    if autostart is not None:
+        body["autostart"] = autostart
     if error is not None:
         body["error"] = error
     return await _request(
@@ -681,6 +685,49 @@ async def submit_vm_snapshots(
     )
 
 
+async def submit_vm_console(
+    vm_id: str,
+    target_department_id: str | None = None,
+    *,
+    vnc_port: int | None = None,
+    vnc_listen: str | None = None,
+    serial_ready: bool | None = None,
+    error: str | None = None,
+) -> dict:
+    """Отдать server_service параметры доступа к консоли ВМ (финал `vm.console_prep`).
+
+    По этому callback'у server_service сохраняет на строке `vm` данные для
+    websockify/noVNC-прокси: `vnc_port` (TCP-порт дисплея, `5900 + display` из
+    `virsh vncdisplay`), `vnc_listen` (адрес прослушивания graphics) и
+    `serial_ready` (готова ли serial-консоль домена). `error` заполняется на
+    неудачном исходе. `None`-поля трактуются как «не менять».
+
+    Возвращает: тело `POST /api/server/v1/internal/vms/{vm_id}/console`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `VM_CONSOLE_REJECTED` — server_service вернул не 2xx.
+    """
+    body: dict = {}
+    if vnc_port is not None:
+        body["vnc_port"] = vnc_port
+    if vnc_listen is not None:
+        body["vnc_listen"] = vnc_listen
+    if serial_ready is not None:
+        body["serial_ready"] = serial_ready
+    if error is not None:
+        body["error"] = error
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/vms/{vm_id}/console",
+        reject_code="VM_CONSOLE_REJECTED",
+        target_department_id=target_department_id,
+        json=body,
+        details={"vm_id": vm_id},
+        allow_empty_body=True,
+    )
+
+
 async def submit_vms_hub_state(
     server_id: str,
     prepared: bool,
@@ -713,6 +760,47 @@ async def submit_vms_hub_state(
         "post",
         f"/api/server/v1/internal/servers/{server_id}/vms-hub-state",
         reject_code="VMS_HUB_STATE_REJECTED",
+        target_department_id=target_department_id,
+        json=body,
+        details={"server_id": server_id},
+        allow_empty_body=True,
+    )
+
+
+async def submit_vms_hub_torn_down(
+    server_id: str,
+    torn_down: bool,
+    target_department_id: str | None = None,
+    *,
+    removed_vms: list[str] | None = None,
+    error: str | None = None,
+) -> dict:
+    """Сообщить server_service исход teardown'а VMS-hub'а (финал `vms_hub.teardown`).
+
+    Зеркало `submit_vms_hub_state`, но обратное: `torn_down=True` — ВМ отдела
+    сняты и удалены, storage-pool и образы снесены, опционально выпилены пакеты
+    виртуализации и мост `br0`; server_service снимает с сервера роль hub'а
+    (`virtualization=False`, статус обратно из `vms_hub`). `removed_vms` —
+    имена доменов, которые воркер реально снёс (для сверки/аудита).
+    `torn_down=False` едет из except-ветки handler'а с заполненным `error`,
+    чтобы оператор увидел, на чём teardown встал.
+
+    Возвращает: тело
+    `POST /api/server/v1/internal/servers/{server_id}/vms-hub-teardown`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `VMS_HUB_TEARDOWN_REJECTED` — server_service вернул не 2xx.
+    """
+    body: dict = {"torn_down": torn_down}
+    if removed_vms is not None:
+        body["removed_vms"] = removed_vms
+    if error is not None:
+        body["error"] = error
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/vms-hub-teardown",
+        reject_code="VMS_HUB_TEARDOWN_REJECTED",
         target_department_id=target_department_id,
         json=body,
         details={"server_id": server_id},

@@ -68,6 +68,11 @@ VMS_BOX_CATALOG_URL = f"{VMS_FTP_BOXES_URL}/test-box-config.json"
 # обновить клиентскую allta-CLI внутри снимка. Glob разворачивает сам ftp/wget.
 VMS_FTP_ALLTA_DEB_URL = "ftp://10.177.103.10/allta_*_amd64.deb"
 
+# Адрес прослушивания VNC-graphics по умолчанию для `vm.console_prep`, если
+# payload не задал иной. `0.0.0.0` — чтобы носк websockify/noVNC-прокси мог
+# дотянуться до дисплея с самого hub'а; сузить до конкретного IP можно из UI.
+VMS_VNC_DEFAULT_LISTEN = "0.0.0.0"
+
 
 class TaskKind(StrEnum):
     """Поддерживаемые типы task'ов. Значения совпадают с taskiq broker labels.
@@ -112,8 +117,12 @@ class TaskKind(StrEnum):
     INSTALLED_PACKAGES_UPDATE = "installed_packages.update"
     MANAGEMENT_USER_SYNC = "management_user_sync"
     VMS_HUB_PREPARE = "vms_hub.prepare"
+    VMS_HUB_TEARDOWN = "vms_hub.teardown"
     VM_CREATE = "vm.create"
     VM_POWER = "vm.power"
+    VM_DELETE = "vm.delete"
+    VM_SET_AUTOSTART = "vm.set_autostart"
+    VM_CONSOLE_PREP = "vm.console_prep"
     VM_PREPARE = "vm.prepare"
     VM_SET_NETWORK = "vm.set_network"
     VM_UPDATE = "vm.update"

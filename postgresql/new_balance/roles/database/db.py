@@ -338,6 +338,50 @@ EOF"""
         }
 
         provider.execute(commands=wal_folder, vms_dates=VMS_DATES,
-                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)     
+                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
+    def setup_protopack(self):
+        """Создаёт БД protopack внутри кластера contrprimer (порт POSTGRES_PORT) и наполняет её
+        данными из ftp://10.177.103.205/upload/ — источник тот же, что в psb_db_prep_stand12_olap.sh.
+        Вызывать после settings(), только для type_test == "info-sys": web/db.py::setup_mac()
+        расставляет MAC-метки на этих таблицах уже после того, как эта функция отработает."""
+        provider = self.provider
+
+        scp_protopack = {
+            'database1': [
+                {
+                    'mode': 'push',
+                    'path_host': './new_balance/roles/database/template/protopack_schema.sql',
+                    'path_vm': '/tmp/protopack_schema.sql'
+                }
+            ]
+        }
+        provider.scp(scp_settings=scp_protopack, vms_dates=VMS_DATES,
+                     username=USERNAME, password=PASSWORD)
+
+        protopack = {
+            'database1': {
+                'create protopack db': {
+                    # Сигналы Libvirt.execute живут только в рамках одного вызова execute(),
+                    # поэтому 'CreateDB' из settings() (отдельный вызов) сюда не пробрасывается.
+                    # Зависимость не нужна: контракт метода — вызывать после settings(),
+                    # когда кластер contrprimer уже поднят.
+                    'command': f'sudo su - postgres -c "createdb -p {POSTGRES_PORT} --encoding=UTF8 --locale=C --template=template0 protopack"',
+                    'signal set': 'protopack db created',
+                    'signal get': ''
+                },
+                'protopack schema': {
+                    'command': f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/protopack_schema.sql"',
+                    'signal set': 'protopack schema',
+                    'signal get': ['protopack db created']
+                },
+                'protopack import data': {
+                    'command': f'sudo wget -P /tmp ftp://10.177.103.10/postgresql/build_* && for FILE in build_info build_packages_new build_sourses; do if [ -f "/tmp/$FILE" ]; then sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/$FILE"; fi; done',
+                    'signal set': 'protopack imported',
+                    'signal get': ['protopack schema']
+                },
+            },
+        }
+        provider.execute(commands=protopack, vms_dates=VMS_DATES,
+                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 

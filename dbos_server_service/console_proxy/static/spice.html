@@ -1,0 +1,39 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SPICE-консоль ВМ __VM_ID__</title>
+<link rel="stylesheet" href="__PREFIX__/assets/app.css" />
+<div id="status" class="status">Подключение…</div>
+<div id="spice-area"></div>
+<div id="message-div" class="spice-message"></div>
+<script type="module">
+  import { SpiceMainConn } from "__PREFIX__/assets/spice-html5/main.js";
+
+  const statusEl = document.getElementById("status");
+  const token = new URLSearchParams(location.search).get("token") || "";
+  const scheme = location.protocol === "https:" ? "wss" : "ws";
+  const uri =
+    `${scheme}://${location.host}__PREFIX__/__KIND__/__VM_ID__` +
+    `?token=${encodeURIComponent(token)}`;
+
+  function setStatus(text) {
+    statusEl.textContent = text;
+  }
+
+  let sc;
+  try {
+    sc = new SpiceMainConn({
+      uri,
+      screen_id: "spice-area",
+      message_id: "message-div",
+      onerror: () => setStatus("Ошибка SPICE-соединения."),
+      onsuccess: () => setStatus(""),
+      onagent: () => {},
+    });
+  } catch (err) {
+    setStatus("Не удалось инициализировать SPICE-консоль.");
+  }
+
+  window.addEventListener("beforeunload", () => {
+    if (sc) sc.stop();
+  });
+</script>

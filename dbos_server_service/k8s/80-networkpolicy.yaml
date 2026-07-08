@@ -927,3 +927,56 @@ spec:
           port: 873
         - protocol: TCP
           port: 22
+
+---
+# console-proxy (VNC/SPICE): вход только от ingress-контроллера (Traefik в
+# kube-system) на публичный префикс /vm-console.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: console-proxy-ingress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: console-proxy
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8085
+
+---
+# console-proxy egress: server_service (/internal mgmt-credentials в ssh-режиме)
+# плюс сами хабы. Порт VNC/SPICE и SSH хаба произвольный per-server, поэтому,
+# как и у server-worker, разрешаем любой исходящий TCP на 0.0.0.0/0. Operator
+# сузит ipBlock'ом в отдельной NP, когда CIDR стендов зафиксируется. DNS —
+# через общий allow-dns-egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: console-proxy-egress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: console-proxy
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: server-service
+      ports:
+        - protocol: TCP
+          port: 8002
+    # Хабы: SSH-туннель (произвольный SSH-порт) и/или прямой VNC/SPICE-порт.
+    - to: []
+      ports:
+        - protocol: TCP

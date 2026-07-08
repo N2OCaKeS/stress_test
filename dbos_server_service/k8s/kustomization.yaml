@@ -31,6 +31,7 @@ resources:
   - 50-ingress.yaml          # edge-TLS (dbos-ingress-tls) выписывает cert-manager по 51-ingress-cert.yaml (issuer 91-ca-issuer)
   - 55-swagger-ui.yaml       # общий Swagger UI для трёх сервисов на /docs
   - 65-web-ui.yaml           # nginx-раздача собранного web_ui (SPA) на catch-all /
+  - 66-console-proxy.yaml    # веб-прокси графической консоли ВМ (VNC/SPICE) на /vm-console
   - 70-hpa.yaml              # HPA: автомасштабирование сервисов + web-ui (2..5 реплик по CPU)
   - 100-postgres-backup.yaml # CronJob pg_dump для auth/logging кластеров
   - 101-backup-pvc.yaml      # PV под бэкапы (общий на оба CronJob'а)

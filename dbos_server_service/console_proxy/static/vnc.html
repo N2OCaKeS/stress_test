@@ -1,0 +1,42 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Консоль ВМ __VM_ID__</title>
+<link rel="stylesheet" href="__PREFIX__/assets/app.css" />
+<div id="status" class="status">Подключение…</div>
+<div id="screen"></div>
+<script type="module">
+  import RFB from "__PREFIX__/assets/novnc/core/rfb.js";
+
+  const statusEl = document.getElementById("status");
+  const token = new URLSearchParams(location.search).get("token") || "";
+  const scheme = location.protocol === "https:" ? "wss" : "ws";
+  const url =
+    `${scheme}://${location.host}__PREFIX__/__KIND__/__VM_ID__` +
+    `?token=${encodeURIComponent(token)}`;
+
+  function setStatus(text) {
+    statusEl.textContent = text;
+  }
+
+  let rfb;
+  try {
+    rfb = new RFB(document.getElementById("screen"), url, {
+      wsProtocols: ["binary"],
+    });
+    rfb.viewOnly = false;
+    rfb.scaleViewport = true;
+    rfb.addEventListener("connect", () => setStatus(""));
+    rfb.addEventListener("disconnect", (e) => {
+      setStatus(
+        e.detail && e.detail.clean
+          ? "Сессия завершена."
+          : "Соединение разорвано.",
+      );
+    });
+    rfb.addEventListener("securityfailure", () =>
+      setStatus("Отказ в доступе к консоли."),
+    );
+  } catch (err) {
+    setStatus("Не удалось инициализировать консоль.");
+  }
+</script>

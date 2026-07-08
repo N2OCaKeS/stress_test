@@ -61,6 +61,15 @@ spec:
                 name: dbos-swagger-ui
                 port:
                   number: 8080
+          # Веб-консоль ВМ (VNC/SPICE) — WebSocket-мост + self-hosted статика.
+          # Идёт до catch-all '/': traefik матчит длинный префикс первым.
+          - path: /vm-console
+            pathType: Prefix
+            backend:
+              service:
+                name: console-proxy
+                port:
+                  number: 8085
           # Catch-all на статику web_ui. Идёт ПОСЛЕ специфичных /api и /docs:
           # traefik матчит более длинный префикс первым, так что API и Swagger
           # не перехватываются этим '/'.

@@ -1,0 +1,135 @@
+# console_proxy — веб-прокси графической консоли ВМ (VNC/SPICE).
+#
+# Браузер открывает `wss://<host>/vm-console/<kind>/<vm_id>?token=<jwt>`; ingress
+# отдаёт этот префикс сюда. Прокси проверяет JWT (тем же секретом, что подписывает
+# server_service), резолвит TCP-таргет консоли на хабе и мостит байты в WebSocket.
+# Статика noVNC + spice-html5 вшита в образ (CSP='self', без CDN).
+#
+# Образ собирается из console_proxy/docker/Dockerfile (vendor-слой тянет
+# пинованные noVNC/spice-html5 в static/assets).
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: console-proxy-config
+  namespace: dbos
+data:
+  CONSOLE_PROXY_HOST: 0.0.0.0
+  CONSOLE_PROXY_PORT: "8085"
+  CONSOLE_PATH_PREFIX: /vm-console
+  CONSOLE_STATIC_DIR: /app/static
+  # Как прокси достаёт порт консоли на хабе:
+  #   ssh    — qemu слушает на 127.0.0.1 хаба (безопасный дефолт libvirt),
+  #            прокси открывает SSH-туннель под управляющей учёткой хаба и
+  #            резолвит дисплей через virsh. Требует mgmt-креды из server_service.
+  #   direct — libvirt слушает VNC/SPICE на mgmt-LAN, порт берётся из токена;
+  #            годится только для доверенного сегмента.
+  CONSOLE_TARGET_MODE: ssh
+  SERVER_SERVICE_BASE_URL: http://server-service:8002
+  SERVER_SERVICE_API_KEY_NAME: console_proxy
+  # iss в токене — должен совпадать с тем, что ставит server_service.
+  VM_CONSOLE_TOKEN_ISSUER: dbos-server-service
+  # Верхний cap на длительность одной консольной сессии (защита от утечки
+  # висящих SSH-туннелей). 30 минут.
+  CONSOLE_IDLE_TIMEOUT_SECONDS: "1800"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: console-proxy
+  namespace: dbos
+  labels:
+    app: console-proxy
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: console-proxy
+  template:
+    metadata:
+      labels:
+        app: console-proxy
+    spec:
+      terminationGracePeriodSeconds: 30
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: console-proxy
+          image: dbos/console-proxy:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 8085
+          envFrom:
+            - configMapRef:
+                name: console-proxy-config
+          env:
+            # Общий с server_service HMAC-секрет подписи консольного JWT.
+            - name: VM_CONSOLE_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dbos-secrets
+                  key: VM_CONSOLE_TOKEN_SECRET
+            # Ключ для inbound SERVICE_API_KEYS-map server_service (запись
+            # console_proxy) — им прокси тянет mgmt-креды хаба в ssh-режиме.
+            - name: SERVER_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dbos-secrets
+                  key: CONSOLE_PROXY_SERVER_API_KEY
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: 8085
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8085
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8085
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests: { cpu: "20m", memory: "64Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: console-proxy
+  namespace: dbos
+spec:
+  type: ClusterIP
+  selector:
+    app: console-proxy
+  ports:
+    - port: 8085
+      targetPort: 8085

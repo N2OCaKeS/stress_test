@@ -375,7 +375,7 @@ async def create_vm(
 
     # Резолв box→box_url из каталога образов ДО INSERT'а: воркеру нужен URL,
     # откуда скачивать образ. Нет записи в каталоге → 400 (карточку не заводим).
-    box_url = await _resolve_box_url(db, payload.box, hub.id)
+    box_url, box_os_versions = await _resolve_box_url(db, payload.box, hub.id)
 
     # Bridge-ВМ нужен статический адрес: берём заданный ip_address (с проверкой
     # занятости) либо авто-выбираем свободный из пула. nat — адрес выдаёт libvirt,
@@ -464,6 +464,7 @@ async def create_vm(
         "box": vm.box,
         "box_url": box_url,
         "os_version": vm.os_version,
+        "os_versions": box_os_versions,
         "network_mode": vm.network_mode,
         "ip_address": data["ip_address"],
         "gateway": str(net_pool.gateway) if net_pool is not None and net_pool.gateway is not None else None,
@@ -626,15 +627,16 @@ async def _dispatch_vm_task(
 
 async def _resolve_box_url(
     db: AsyncSession, box: str | None, hub_id: str
-) -> str | None:
-    """Резолв box→url из каталога `vm_images`. box=None → None (нечего резолвить).
+) -> tuple[str | None, list[str]]:
+    """Резолв box→(url, os_versions) из каталога `vm_images`.
 
-    Сначала ищем hub-специфичную запись, потом глобальную. Нет записи (каталог
-    пуст либо бокс не синкнут) → 400 VM_BOX_NOT_IN_CATALOG — воркер без URL
-    образ не скачает.
+    box=None → `(None, [])`. Сначала ищем hub-специфичную запись, потом
+    глобальную. Нет записи (каталог пуст либо бокс не синкнут) → 400
+    VM_BOX_NOT_IN_CATALOG — воркер без URL образ не скачает. `os_versions`
+    (для universal-бокса) едет воркеру, чтобы он собрал снимки по версиям.
     """
     if not box:
-        return None
+        return None, []
     image = await vm_image_repo.resolve(db, box, hub_id)
     if image is None:
         audit_service.emit(
@@ -649,7 +651,7 @@ async def _resolve_box_url(
             ),
             details={"box": box},
         )
-    return image.url
+    return image.url, list(image.os_versions or [])
 
 
 # ── update (cpu/ram) ─────────────────────────────────────────────────────────
@@ -2298,7 +2300,7 @@ async def create_default_vms(
 
     created: list[dict] = []
     for preset in deployable:
-        box_url = await _resolve_box_url(db, preset.box, hub.id)
+        box_url, box_os_versions = await _resolve_box_url(db, preset.box, hub.id)
         vm_data = {
             "id": new_vm_id(),
             "name": preset.name,
@@ -2344,6 +2346,7 @@ async def create_default_vms(
             "box": vm.box,
             "box_url": box_url,
             "os_version": vm.os_version,
+            "os_versions": box_os_versions,
             "network_mode": vm.network_mode,
             "ip_address": vm_data["ip_address"],
             "cpu": vm.cpu,

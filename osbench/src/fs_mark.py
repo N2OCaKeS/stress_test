@@ -195,13 +195,13 @@ class FSMark(Test, FsMarkParser):
                     system.command(f"sudo parted -s /dev/{storage_name} select && sudo parted -s /dev/{storage_name} rm 1", returncode=True)
 
             if self.fs == "xfs":
-                system.leave_command(f"sudo parted -s /dev/{storage_name} mklabel gpt mkpart primary xfs 0% 100%")
-                system.leave_command(f"sudo mkfs -t {self.fs} -f /dev/{storage_name}1")
+                system.leave_command(f"sudo parted -s /dev/{storage_name} mklabel gpt mkpart primary xfs 0% 100%", console=False)
+                system.leave_command(f"sudo mkfs -t {self.fs} -f /dev/{storage_name}1", console=False)
             else:
-                system.leave_command(f"sudo parted -s /dev/{storage_name} mklabel gpt mkpart primary {self.fs} 0% 100%")
-                system.leave_command(f"sudo mkfs -t {self.fs} {INODE_COUNT} -F /dev/{storage_name}1")
+                system.leave_command(f"sudo parted -s /dev/{storage_name} mklabel gpt mkpart primary {self.fs} 0% 100%", console=False)
+                system.leave_command(f"sudo mkfs -t {self.fs} {INODE_COUNT} -F /dev/{storage_name}1", console=False)
 
-            system.leave_command(f"mount /dev/{storage_name}1 {STORAGE_MOUNT_DIR}")
+            system.leave_command(f"mount /dev/{storage_name}1 {STORAGE_MOUNT_DIR}", console=False)
 
             mkdir(f"{STORAGE_MOUNT_DIR}/{self.t_dir1}", mode=0o755)
             mkdir(f"{STORAGE_MOUNT_DIR}/{self.t_dir2}", mode=0o755)
@@ -220,7 +220,7 @@ class FSMark(Test, FsMarkParser):
         files_count_list = list(range(self.f_count, self.f_limit, self.f_step))
 
         chdir(fs_mark_dir)
-        system.leave_command("sudo chmod +x fs_mark", returncode=True)
+        system.leave_command("sudo chmod +x fs_mark", returncode=True, console=False)
 
         for count in files_count_list:
             result, code = system.leave_command(run_bench.format(
@@ -229,7 +229,7 @@ class FSMark(Test, FsMarkParser):
                 test_dir3=f"{STORAGE_MOUNT_DIR}/{self.t_dir3}",
                 f_size=self.f_size,
                 f_count=count
-            ), returncode=True)
+            ), returncode=True, console=False)
             status.append(code)
 
             self.writer.wrs(

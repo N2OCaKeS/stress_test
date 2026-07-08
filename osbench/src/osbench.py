@@ -2,6 +2,7 @@
 import sys
 
 from pathlib import Path
+from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from unixbench import UnixBench
@@ -11,6 +12,8 @@ from perfbench import PerfBench
 from aggregator import BenchmarkAggregator
 from index_calc import IndexCalculator
 
+
+start_time = datetime.now()
 
 """
 Назначение:
@@ -56,5 +59,5 @@ aggregator.print_summary()
 aggregator.export_to_json()
 
 # ==================== БЛОК Index Calculator ==========================
-index.total_index_calculator()
+index.total_index_calculator(start_time=start_time)
 

@@ -48,7 +48,7 @@ class PerfBench(Test):
         else:
             cmd = f"perf bench {test_args}"
         
-        result, code = system.leave_command(cmd, returncode=True)
+        result, code = system.leave_command(cmd, returncode=True, console=False)
         return result, code
 
     @status_check  
@@ -81,7 +81,7 @@ class PerfBench(Test):
         # Очищаем файл результатов
         with open(self.results_file, 'w') as f:
             f.write("Perf Bench Results\n")
-            f.write(f"Started: {system.leave_command('date', returncode=True)[0]}\n")
+            f.write(f"Started: {system.leave_command('date', returncode=True, console=False)[0]}\n")
             f.write(f"{'='*60}\n\n")
         
         for concur in CONCURRENCY:

@@ -3,6 +3,7 @@ import json
 from allta import MathModel
 from pathlib import Path
 from os.path import isfile
+from datetime import datetime
 
 from osb_logger import log
 from lib import system
@@ -162,8 +163,9 @@ class IndexCalculator:
 
 
     def total_index_calculator(self, 
+                               start_time = None,
                                power_calc: bool = False):
-        
+                
         if power_calc:
             return log.debug(f"\n\n{self.start_subsystem_calc(power_calc=True)}")
 
@@ -184,11 +186,23 @@ class IndexCalculator:
         
         geo_mean = weighted_geo_mean 
 
+        if start_time:
+            end_time = datetime.now()
+            elapsed = end_time - start_time
+            total_seconds = int(elapsed.total_seconds())
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            seconds = total_seconds % 60
+            test_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        else:
+            test_time = "00:00:00"
+
         log.info(TOTAL_TEMPLATE_COLOR.format(test="TEST",
                                              source="BENCH", 
                                              guideline="GUIDELINE", 
                                              result="RESULT",
                                              ratio="RATIO",
+                                             test_time=test_time,
                                              kernel=subsystem_dates['kernel']['total_rating'],
                                              processes_ipc=subsystem_dates['processes_ipc']['total_rating'],
                                              filesystem=subsystem_dates['filesystem']['total_rating'],

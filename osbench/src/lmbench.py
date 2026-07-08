@@ -47,7 +47,7 @@ class LMBench(Test):
         else:
             cmd = f"{self.bin_path}/{test_name}".strip()
 
-        result, code = system.leave_command(cmd, returncode=True)
+        result, code = system.leave_command(cmd, returncode=True, console=False)
 
         with open(self.results_file, 'a') as f:
             f.write(f"\n{'='*60}\n")
@@ -72,7 +72,7 @@ class LMBench(Test):
         iterations = ITERATIONS_COUNT
         
         log.debug(f"Создание тестового файла: {self.test_file}")
-        system.leave_command(f"dd if=/dev/zero of={self.test_file} bs=1M count=100", returncode=True)
+        system.leave_command(f"dd if=/dev/zero of={self.test_file} bs=1M count=100", returncode=True, console=False)
 
         tests = [
             # ========== ЯДРО И СИСТЕМНЫЕ ВЫЗОВЫ ==========
@@ -104,7 +104,7 @@ class LMBench(Test):
 
         with open(self.results_file, 'w') as f:
             f.write(f"LMbench Results\n")
-            f.write(f"Started: {system.leave_command('date', returncode=True)[0]}\n")
+            f.write(f"Started: {system.leave_command('date', returncode=True, console=False)[0]}\n")
             f.write(f"{'='*60}\n\n")
 
         for iteration in range(1, iterations + 1):

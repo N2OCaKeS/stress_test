@@ -233,8 +233,8 @@ class UnixBench(Test, UnixBenchParser):
         run_cmd_args = ' '.join(f"-c {c}" for c in CONCURRENCY)
 
         chdir(ub_dir)
-        system.leave_command("sudo chmod +x Run", returncode=True)
-        result, code = system.leave_command(f"./Run {run_cmd_args}", returncode=True)
+        system.leave_command("sudo chmod +x Run", returncode=True, console=False)
+        result, code = system.leave_command(f"./Run {run_cmd_args}", returncode=True, console=False)
 
         self.writer.wrs(cl=self.__class__,
                         method=self.start_test.__name__,

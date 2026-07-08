@@ -369,17 +369,21 @@ async def _install_net_guard(ssh, host: str, gateway: str) -> None:
 
 
 async def _trigger_reboot(ssh, host: str) -> None:
-    """Запустить отложенный detached-ребут hub'а и вернуться сразу.
+    """Запланировать отложенный ребут hub'а через systemd и вернуться сразу.
 
-    `setsid ... &` отвязывает reboot от SSH-сессии и возвращает управление
-    немедленно (exit 0). Хост уходит в reboot через несколько секунд — уже после
-    того, как callback отправлен и таска завершилась. Обрыв SSH на самом
-    триггере (если сессия успела закрыться) не должен ронять таску: prepared уже
-    доложен, поэтому глушим SshError.
+    Ребут нужен, чтобы поднялся мост br0. Планируем его как транзиентный
+    systemd-таймер (`systemd-run --on-active`) — он полностью отвязан от
+    SSH-сессии и переживёт её закрытие. Прежний вариант `setsid ... &` не
+    работал: sshd бьёт SIGHUP по процессам канала при его закрытии, и фоновый
+    `sleep 5; reboot` умирал до срабатывания. Фолбэк `shutdown -r` — на хостах
+    без `systemd-run`. Небольшая задержка даёт таске завершиться и session
+    закрыться до ребута. Обрыв SSH на самом триггере таску не роняет: prepared
+    уже доложен, поэтому глушим SshError.
     """
     try:
         await ssh.run(
-            "setsid sh -c 'sleep 5; systemctl reboot' >/dev/null 2>&1 &",
+            "sh -c 'systemd-run --on-active=8 systemctl reboot "
+            "|| shutdown -r +1'",
             sudo=True,
         )
     except SshError:

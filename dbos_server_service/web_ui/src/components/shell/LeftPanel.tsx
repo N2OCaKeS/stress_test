@@ -181,12 +181,22 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
     navLinks.push(chip.to);
     for (const s of chip.subItems ?? []) navLinks.push(s.to);
   }
-  // Пункты с query-фильтром («Серверы»/«ВМ» на одном пути /server) подсвечиваем
-  // только при точном совпадении пути со строкой запроса — иначе оба подпункта
-  // и родитель горели бы одновременно на общем префиксе /server.
-  const current = location.pathname + location.search;
+  // Пункты с query-фильтром («Серверы»/«ВМ» на одном пути /server) подсвечиваем,
+  // когда все параметры ссылки присутствуют в текущем URL. Так «ВМ»
+  // (/server?only=vms) остаётся активным и при открытой карточке ВМ
+  // (/server?only=vms&vm=…), но не загорается на чужом only=servers.
   const matches = (to: string) => {
-    if (to.includes("?")) return current === to;
+    const qIdx = to.indexOf("?");
+    if (qIdx >= 0) {
+      const path = to.slice(0, qIdx);
+      if (location.pathname !== path) return false;
+      const want = new URLSearchParams(to.slice(qIdx + 1));
+      const have = new URLSearchParams(location.search);
+      for (const [k, v] of want) {
+        if (have.get(k) !== v) return false;
+      }
+      return true;
+    }
     return (
       location.pathname === to ||
       (to !== "/home" && location.pathname.startsWith(to + "/"))

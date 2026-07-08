@@ -9,7 +9,7 @@
  * `server_service`.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import {
   Search,
   Server as ServerIcon,
@@ -43,10 +43,15 @@ import {
 import { BulkPrepareModal } from "@/pages/server/_bulkPrepareModal";
 import { listDepartments } from "@/api/auth/departments";
 import { useDeptLabel } from "@/lib/labels";
-import { isPlatformWideAdmin, isServerZoneBlocked } from "@/lib/rbac";
+import {
+  canManageVms,
+  isPlatformWideAdmin,
+  isServerZoneBlocked,
+} from "@/lib/rbac";
 import type { Server, ServerCreateRequest } from "@/api/server/types";
 import type { Department } from "@/api/auth/types";
 import { ServerDetail } from "./ServerDetail";
+import { VmDetail } from "@/pages/vm/Vm";
 
 const FOCUS_REFETCH_THROTTLE_MS = 12_000;
 
@@ -60,6 +65,10 @@ export function Server() {
   const [params, setParams] = useSearchParams();
 
   const selectedId = params.get("id");
+  // Выбранная ВМ открывается прямо в этой странице (рабочая область справа),
+  // средняя панель остаётся списком ВМ. Не уходим на /vm — там хаб-центричная
+  // раскладка, которая подменяла бы список одним хабом.
+  const selectedVmId = params.get("vm");
   const action = params.get("action"); // "new" | "edit" | null
   // Фильтр состава списка из левой навигации: подпункт «Серверы» → only=servers,
   // «ВМ» → only=vms. Пустое значение (пункт «Серверы») — общий смешанный список.
@@ -107,7 +116,6 @@ export function Server() {
   // в server_service; backend в работе — в mock-режиме берём фикстуры, в live
   // тихо деградируем (keepPreviousDataOnError), если маршрут ещё не готов.
   const mock = useMockMode();
-  const navigate = useNavigate();
   const vmsQ = useQuery(
     () =>
       mock
@@ -158,6 +166,7 @@ export function Server() {
     persona.platform_role === "dep_admin" ||
     persona.service_roles.server === "admin" ||
     persona.service_roles.server === "operator";
+  const canManageVm = canManageVms(persona);
 
   const items = useMemo(() => listQ.data?.items ?? [], [listQ.data]);
   // `total` — серверная истина (до клиентского поиска): если она больше, чем
@@ -221,11 +230,29 @@ export function Server() {
       .map(([key, items]) => ({ key, items }));
   }, [filtered, group]);
 
+  const selectedVm = useMemo(
+    () => (selectedVmId ? vmItems.find((v) => v.id === selectedVmId) ?? null : null),
+    [vmItems, selectedVmId],
+  );
+
   function selectId(id: string | null) {
     const next = new URLSearchParams(params);
     if (id) next.set("id", id);
     else next.delete("id");
+    next.delete("vm");
     next.delete("action");
+    setParams(next, { replace: true });
+  }
+  function openVm(id: string) {
+    const next = new URLSearchParams(params);
+    next.set("vm", id);
+    next.delete("id");
+    next.delete("action");
+    setParams(next, { replace: true });
+  }
+  function closeVm() {
+    const next = new URLSearchParams(params);
+    next.delete("vm");
     setParams(next, { replace: true });
   }
   function toggleSelected(id: string) {
@@ -450,11 +477,8 @@ export function Server() {
             vms={filteredVms}
             open={vmGroupOpen}
             onToggle={() => setVmGroupOpen((v) => !v)}
-            onOpenVm={(vm) =>
-              navigate(
-                `/vm?hub=${encodeURIComponent(vm.hub_server_id)}&id=${encodeURIComponent(vm.id)}`,
-              )
-            }
+            selectedVmId={selectedVmId}
+            onOpenVm={(vm) => openVm(vm.id)}
           />
         )}
         {!listQ.loading && !listQ.error && (
@@ -506,6 +530,14 @@ export function Server() {
           fixedDeptId={persona.dept_id}
           onCancel={closeAction}
           onSubmit={handleCreate}
+        />
+      ) : selectedVm ? (
+        <VmDetail
+          vm={selectedVm}
+          mock={mock}
+          canManage={canManageVm}
+          onBack={closeVm}
+          onChanged={() => vmsQ.refetch()}
         />
       ) : selectedId ? (
         <WorkzoneWithActions
@@ -772,18 +804,21 @@ function ServerRow({
 
 /**
  * Сворачиваемая группа ВМ в общем списке серверов. Клик по строке уводит в
- * карточку ВМ (`/vm`), а не в ServerDetail: ВМ — отдельная сущность со своим
- * набором операций.
+ * карточку ВМ (VmDetail) в рабочей области этой же страницы, сохраняя список ВМ
+ * в средней панели: ВМ — отдельная сущность со своим набором операций, поэтому
+ * это не ServerDetail.
  */
 function VmGroup({
   vms,
   open,
   onToggle,
+  selectedVmId,
   onOpenVm,
 }: {
   vms: Vm[];
   open: boolean;
   onToggle: () => void;
+  selectedVmId: string | null;
   onOpenVm: (vm: Vm) => void;
 }) {
   return (
@@ -804,7 +839,12 @@ function VmGroup({
       {open && (
         <div className="px-2 flex flex-col gap-0.5 mt-1">
           {vms.map((v) => (
-            <VmRow key={v.id} vm={v} onOpen={() => onOpenVm(v)} />
+            <VmRow
+              key={v.id}
+              vm={v}
+              active={selectedVmId === v.id}
+              onOpen={() => onOpenVm(v)}
+            />
           ))}
         </div>
       )}
@@ -812,7 +852,15 @@ function VmGroup({
   );
 }
 
-function VmRow({ vm, onOpen }: { vm: Vm; onOpen: () => void }) {
+function VmRow({
+  vm,
+  active,
+  onOpen,
+}: {
+  vm: Vm;
+  active: boolean;
+  onOpen: () => void;
+}) {
   const deptLabel = useDeptLabel(vm.department_id);
   const powerKind =
     vm.power_state === "on" ? "ok" : vm.power_state === "off" ? "danger" : "";
@@ -820,9 +868,11 @@ function VmRow({ vm, onOpen }: { vm: Vm; onOpen: () => void }) {
     <button
       type="button"
       onClick={onOpen}
-      className="cred-row text-left flex items-center gap-2"
+      className={`cred-row text-left flex items-center gap-2 ${active ? "active" : ""}`}
     >
-      <MonitorPlay className="w-4 h-4 text-dim shrink-0" />
+      <MonitorPlay
+        className={`w-4 h-4 shrink-0 ${active ? "text-accent" : "text-dim"}`}
+      />
       <div className="flex-1 min-w-0">
         <div className="text-sm truncate">{vm.name}</div>
         <div className="text-[11px] text-dim flex items-center gap-1.5 min-w-0">

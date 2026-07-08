@@ -450,8 +450,8 @@ class TestVmCreateSingle:
         i_cp = next(i for i, c in enumerate(cmds) if "cp /vms/single-box.qcow2 /vms/single-1.qcow2" in c)
         i_customize = next(
             i for i, c in enumerate(cmds)
-            if "virt-customize -a /vms/single-1.qcow2 "
-            "--upload /tmp/dbos-if:/etc/network/interfaces" in c
+            if "virt-customize -a /vms/single-1.qcow2 " in c
+            and "--upload /tmp/dbos-if:/etc/network/interfaces" in c
         )
         i_install = next(i for i, c in enumerate(cmds) if "virt-install -n single-1" in c)
         assert i_cp < i_customize < i_install

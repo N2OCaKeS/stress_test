@@ -372,8 +372,7 @@ class TestVmSetNetworkBridgeFallback:
         # offline-заливка правильного qcow2 через virt-customize
         i_customize = _idx(
             cmds,
-            "virt-customize -a /vms/station-a.qcow2 "
-            "--upload /tmp/dbos-if:/etc/network/interfaces",
+            "virt-customize -a /vms/station-a.qcow2 ",
         )
         # порядок: destroy → virt-customize → start
         i_destroy = _idx(cmds, "virsh destroy station-a")

@@ -528,10 +528,30 @@ async def write_static_interfaces_offline(
             stderr=(err or "").strip(),
             message="не удалось записать статик-конфиг во временный файл",
         )
+    # ifupdown-конфиг привязан к имени NIC (`eth0`). На части боксов включён
+    # предсказуемый нейминг systemd (NIC зовётся `ens3`/`enp1s0`), и `eth0`-станза
+    # не применяется — гость встаёт без адреса. Форсим традиционный нейминг
+    # `net.ifnames=0` в grub, чтобы NIC был `eth0`. Скрипт грузим через `--run`.
+    grub_fix = (
+        "sed -i 's/net.ifnames=0//g; s/biosdevname=[01]//g' "
+        "/etc/default/grub 2>/dev/null || true\n"
+        "sed -i 's|GRUB_CMDLINE_LINUX=\"|GRUB_CMDLINE_LINUX=\""
+        "net.ifnames=0 biosdevname=0 |' /etc/default/grub 2>/dev/null || true\n"
+        "update-grub 2>/dev/null "
+        "|| grub-mkconfig -o /boot/grub/grub.cfg 2>/dev/null || true\n"
+    )
+    rc, gout, _err = await ssh.run("mktemp", sudo=True)
+    gtmp = (gout or "").strip()
+    if rc == 0 and gtmp:
+        await ssh.run(
+            f"tee {gtmp} > /dev/null", sudo=True, stdin_payload=grub_fix,
+        )
+    run_opt = f"--run {gtmp} " if gtmp else ""
     try:
         await run_hub_cmd(
             ssh,
-            f"virt-customize -a {safe_disk} --upload {tmp}:/etc/network/interfaces",
+            f"virt-customize -a {safe_disk} "
+            f"{run_opt}--upload {tmp}:/etc/network/interfaces",
             host, error_code,
             "virt-customize не смог записать статику в диск ВМ",
         )

@@ -96,11 +96,14 @@ describe("Vm zone (mock mode)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("открывает модалку создания ВМ и валидирует форму", async () => {
+  it("открывает батч-форму создания ВМ и валидирует блок", async () => {
     renderVm("/vm?hub=srv-07&action=new");
-    // Поле имени и кнопка сабмита.
-    const submit = await screen.findByRole("button", { name: /Создать ВМ/ });
-    // Пустое имя — кнопка disabled.
+    // Кнопка «Создать все» и «Добавить ВМ».
+    const submit = await screen.findByRole("button", { name: /Создать все/ });
+    expect(
+      screen.getByRole("button", { name: /Добавить ВМ/ }),
+    ).toBeInTheDocument();
+    // Пустое имя — сабмит disabled.
     expect(submit).toBeDisabled();
     fireEvent.change(screen.getByPlaceholderText("alse-1.8-rc"), {
       target: { value: "test-vm" },
@@ -161,6 +164,51 @@ describe("Vm zone (mock mode)", () => {
     expect(await screen.findByText("pre-regress")).toBeInTheDocument();
     // Системный `1.8.1.6_build` скрыт (is_system).
     expect(screen.queryByText("1.8.1.6_build")).not.toBeInTheDocument();
+  });
+
+  it("вкладка «Снимки» разложена на 2 группы, обе со скроллом", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Снимки");
+    expect(
+      await screen.findByRole("heading", { name: "Версии ОС (чистые)" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Пользовательские" }),
+    ).toBeInTheDocument();
+    // Чистый снимок версии ОС и пользовательский — в разных группах.
+    expect(await screen.findByText("1.8.1.6_орёл")).toBeInTheDocument();
+    expect(screen.getByText("pre-regress")).toBeInTheDocument();
+    // Оба списка — скроллируемые контейнеры.
+    const baselineScroll = screen.getByTestId("snap-scroll-baseline");
+    const userScroll = screen.getByTestId("snap-scroll-user");
+    expect(baselineScroll.className).toMatch(/overflow-y-auto/);
+    expect(userScroll.className).toMatch(/overflow-y-auto/);
+  });
+
+  it("поиск в группе версий ОС фильтрует снимки по имени", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Снимки");
+    expect(await screen.findByText("1.8.1.6_орёл")).toBeInTheDocument();
+    expect(screen.getByText("1.7.5.9_орёл")).toBeInTheDocument();
+    fireEvent.change(
+      screen.getByLabelText("Поиск снимков версий ОС"),
+      { target: { value: "1.7" } },
+    );
+    expect(screen.getByText("1.7.5.9_орёл")).toBeInTheDocument();
+    expect(screen.queryByText("1.8.1.6_орёл")).not.toBeInTheDocument();
+  });
+
+  it("поиск в пользовательской группе фильтрует снимки", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Снимки");
+    expect(await screen.findByText("pre-regress")).toBeInTheDocument();
+    expect(screen.getByText("hotfix-check")).toBeInTheDocument();
+    fireEvent.change(
+      screen.getByLabelText("Поиск пользовательских снимков"),
+      { target: { value: "hotfix" } },
+    );
+    expect(screen.getByText("hotfix-check")).toBeInTheDocument();
+    expect(screen.queryByText("pre-regress")).not.toBeInTheDocument();
   });
 
   it("открывает модалку создания снимка", async () => {

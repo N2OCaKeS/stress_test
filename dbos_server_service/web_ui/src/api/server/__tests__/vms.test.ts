@@ -13,6 +13,7 @@ import {
   astraUpdateVm,
   createDefaultVms,
   createVm,
+  createVmsBulk,
   createVmDisk,
   createVmIpPool,
   createVmPreset,
@@ -68,6 +69,36 @@ describe("vms api client", () => {
     const res = await createVm(body);
     expect(apiPost).toHaveBeenCalledWith("/server/v1/vms", body);
     expect(res).toEqual({ task_id: "task-1", status: "queued" });
+  });
+
+  it("createVmsBulk POST'ит /vms/bulk с items", async () => {
+    const items = [
+      {
+        hub_server_id: "srv-07",
+        name: "vm-a",
+        hostname: "host-a",
+        cpu: 2,
+        ram_mb: 4096,
+        disk_gb: 40,
+        box: "vm_station",
+        network_mode: "bridge" as const,
+        autostart: true,
+        cred_strategy: "per_snapshot" as const,
+        accounts: ["acc-1", "acc-2"],
+      },
+      {
+        hub_server_id: "srv-07",
+        name: "vm-b",
+        cpu: 4,
+        ram_mb: 8192,
+        disk_gb: 60,
+        box: "vm_station",
+        network_mode: "nat" as const,
+        accounts: [],
+      },
+    ];
+    await createVmsBulk({ items });
+    expect(apiPost).toHaveBeenCalledWith("/server/v1/vms/bulk", { items });
   });
 
   it("vmPower шлёт action в /vms/{id}/power", async () => {
@@ -150,7 +181,7 @@ describe("vms api client", () => {
     const body = {
       name: "pre-regress",
       description: "перед прогоном",
-      kind: "disk_only" as const,
+      snapshot_type: "disk_only" as const,
     };
     const res = await createVmSnapshot("vm-101", body);
     expect(apiPost).toHaveBeenCalledWith(

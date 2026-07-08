@@ -168,8 +168,17 @@ export interface VmHub {
 export interface VmCreateRequest {
   hub_server_id: string;
   name: string;
+  /**
+   * Hostname гостя (`hostnamectl set-hostname`). Пусто/`null` — берётся имя ВМ.
+   */
+  hostname?: string | null;
   cpu: number;
   ram_mb: number;
+  /**
+   * Размер системного диска. Worker переразмечает образ бокса через
+   * `virt-resize` (рост или сжатие). Меньше `VmImage.min_disk_gb` бокса
+   * backend отбивает.
+   */
   disk_gb: number;
   box: string;
   network_mode: VmNetworkMode;
@@ -180,6 +189,36 @@ export interface VmCreateRequest {
    */
   pool_id?: string | null;
   number?: number | null;
+  autostart?: boolean;
+  cred_strategy?: VmCredStrategy;
+  /**
+   * ID аккаунтов отдела (`server_account`), привязываемых к ВМ. Worker
+   * провижнит их OS-юзерами в госте. Пусто — без привязки.
+   */
+  accounts?: string[];
+}
+
+/** Тело POST /vms/bulk — батч-создание нескольких ВМ одним запросом. */
+export interface VmBulkCreateRequest {
+  items: VmCreateRequest[];
+}
+
+/**
+ * Результат по одной ВМ в ответе `POST /vms/bulk`. `status` — `queued`
+ * (задача создания поставлена) либо `failed` (заявка отбита валидацией/
+ * ёмкостью), причина в `error`.
+ */
+export interface VmBulkItemResult {
+  name: string;
+  status: "queued" | "failed" | (string & {});
+  task_id?: string | null;
+  vm_id?: string | null;
+  error?: string | null;
+}
+
+/** Ответ `POST /vms/bulk` — per-item результат в порядке items запроса. */
+export interface VmBulkCreateResponse {
+  results: VmBulkItemResult[];
 }
 
 /** Тело PATCH /vms/{id}/status — смена booking-статуса. */
@@ -268,6 +307,12 @@ export interface VmImage {
   description?: string | null;
   /** Для `universal` — версии ОС, запечённые снимками в образе. */
   os_versions?: string[];
+  /**
+   * Минимальный размер системного диска, ГБ — занятое место образа бокса.
+   * Меньше этого `virt-resize` физически не ужмёт: UI предупреждает в форме
+   * ДО отправки. null/отсутствует — минимум неизвестен, проверку не делаем.
+   */
+  min_disk_gb?: number | null;
   /** Размер артефакта в байтах (если известен). */
   size_bytes?: number | null;
   /** URL `.tar.gz` в каталоге (обычно не нужен UI). */
@@ -280,11 +325,23 @@ export interface VmImageListResponse {
 }
 
 /**
- * Тип снимка (`vm_snapshots.kind`):
+ * Способ снятия снимка (`vm_snapshots.snapshot_type`):
  *  - `disk_only` — только диск (`virsh snapshot-create-as --disk-only`);
  *  - `full` — диск + память/состояние домена.
  */
-export type VmSnapshotKind = "disk_only" | "full" | (string & {});
+export type VmSnapshotType = "disk_only" | "full" | (string & {});
+
+/**
+ * Категория снимка (`vm_snapshots.kind`) — источник группировки в UI (дизайн §6–7):
+ *  - `os_baseline` — чистые снимки версии ОС после сборки/astra-update
+ *    (`<ver>_<mode>`); их UI группирует по версии;
+ *  - `user` — созданные пользователем снимки.
+ * Отдельное поле от `snapshot_type` (способ libvirt disk_only/full).
+ */
+export type VmSnapshotCategory = "os_baseline" | "user" | (string & {});
+
+/** Режим Астры снимка (уровень безопасности): Орёл (0) или Смоленск (2). */
+export type VmSnapshotMode = "oryol" | "smolensk" | (string & {});
 
 /**
  * Состояние снимка (`vm_snapshots.state`). `ready` — готов; промежуточные —
@@ -310,7 +367,14 @@ export interface VmSnapshot {
   name: string;
   description: string | null;
   parent_snapshot_id: string | null;
-  kind: VmSnapshotKind;
+  /** Способ снятия (`disk_only`/`full`). */
+  snapshot_type: VmSnapshotType;
+  /** Категория снимка (`os_baseline`/`user`) — источник группировки. */
+  kind: VmSnapshotCategory;
+  /** Режим Астры (`oryol`/`smolensk`). null — не относится (пользовательский). */
+  mode?: VmSnapshotMode | null;
+  /** Версия ОС снимка (для группировки os_baseline). null — не задана. */
+  os_version?: string | null;
   is_system: boolean;
   state: VmSnapshotState;
   /** Размер снимка в байтах (если известен). */
@@ -329,7 +393,7 @@ export interface VmSnapshotListResponse {
 export interface VmSnapshotCreateRequest {
   name: string;
   description?: string | null;
-  kind: VmSnapshotKind;
+  snapshot_type: VmSnapshotType;
 }
 
 /**
@@ -576,6 +640,18 @@ export function createVm(body: VmCreateRequest): Promise<TaskDispatchResponse> {
   return apiPost<TaskDispatchResponse>("/server/v1/vms", body);
 }
 
+/**
+ * `POST /api/server/v1/vms/bulk` — батч-создание нескольких ВМ одним запросом.
+ * Диспатчит по задаче на каждую ВМ, «одна упала — остальные едут»: ответ несёт
+ * per-item статус (`queued`/`failed`). Одиночное создание — частный случай
+ * (один элемент).
+ */
+export function createVmsBulk(
+  body: VmBulkCreateRequest,
+): Promise<VmBulkCreateResponse> {
+  return apiPost<VmBulkCreateResponse>("/server/v1/vms/bulk", body);
+}
+
 /** `DELETE /api/server/v1/vms/{id}` — удаление ВМ (202, task_id). */
 export function deleteVm(
   id: string,
@@ -700,12 +776,29 @@ export function refreshVmImages(): Promise<VmImageListResponse> {
 
 // ── снимки ────────────────────────────────────────────────────────────────────
 
+/** Параметры GET /vms/{id}/snapshots — поиск по имени + пагинация. */
+export interface ListVmSnapshotsQuery {
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
 /**
  * `GET /api/server/v1/vms/{id}/snapshots` — снимки ВМ. Backend отдаёт и
- * системные `_build`, но UI их прячет (дизайн §6, NQ4).
+ * системные `_build`, но UI их прячет (дизайн §6, NQ4). Поддерживает поиск
+ * (`?q=`) и пагинацию; без параметров вызывается без query.
  */
-export function listVmSnapshots(vmId: string): Promise<VmSnapshotListResponse> {
-  return apiGet<VmSnapshotListResponse>(`/server/v1/vms/${vmId}/snapshots`);
+export function listVmSnapshots(
+  vmId: string,
+  query: ListVmSnapshotsQuery = {},
+): Promise<VmSnapshotListResponse> {
+  const hasQuery =
+    query.q != null || query.limit != null || query.offset != null;
+  const path = `/server/v1/vms/${vmId}/snapshots`;
+  if (!hasQuery) return apiGet<VmSnapshotListResponse>(path);
+  return apiGet<VmSnapshotListResponse>(path, {
+    query: { q: query.q, limit: query.limit, offset: query.offset },
+  });
 }
 
 /** `POST /api/server/v1/vms/{id}/snapshots` — создать снимок (202). */

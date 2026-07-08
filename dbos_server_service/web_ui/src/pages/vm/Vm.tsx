@@ -15,10 +15,14 @@ import { useSearchParams } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowLeft,
   ArrowUpCircle,
   Boxes,
   Camera,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Cpu,
   HardDrive,
   KeyRound,
@@ -38,6 +42,8 @@ import {
   Layers,
   TerminalSquare,
   Copy,
+  Users,
+  XCircle,
   Zap,
   Trash2,
   Undo2,
@@ -68,7 +74,7 @@ import {
   alltaUpdateVm,
   astraUpdateVm,
   createDefaultVms,
-  createVm,
+  createVmsBulk,
   createVmDisk,
   createVmIpPool,
   createVmPreset,
@@ -104,6 +110,8 @@ import {
   vmPasswd,
   vmPower,
   type Vm,
+  type VmBulkCreateResponse,
+  type VmBulkItemResult,
   type VmConsoleKind,
   type VmConsoleResponse,
   type VmCreateRequest,
@@ -122,13 +130,21 @@ import {
   type VmPresetCreateRequest,
   type VmPresetUpdateRequest,
   type VmSnapshot,
+  type VmSnapshotCategory,
   type VmSnapshotCreateRequest,
-  type VmSnapshotKind,
+  type VmSnapshotType,
+  type VmSnapshotMode,
   type VmUpdateRequest,
 } from "@/api/server/vms";
-import type { OsVersion, TaskDispatchResponse } from "@/api/server/types";
+import { listAccounts } from "@/api/server/accounts";
+import type {
+  OsVersion,
+  ServerAccount,
+  TaskDispatchResponse,
+} from "@/api/server/types";
 import {
   MOCK_AVAILABLE_IPS,
+  MOCK_VM_ACCOUNTS,
   MOCK_VM_DISKS,
   MOCK_VM_HUBS,
   MOCK_VM_IMAGES,
@@ -283,15 +299,19 @@ export function Vm() {
     setParams(next, { replace: true });
   }
 
-  async function handleCreate(body: VmCreateRequest) {
-    try {
-      const res = mock ? fakeDispatch() : await createVm(body);
-      toast.success(`Создание ВМ ${body.name} — задача поставлена (${res.task_id})`);
-      closeAction();
-      hubsAndVmsQ.refetch();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Создание ВМ не удалось"));
+  async function handleCreateBulk(
+    items: VmCreateRequest[],
+  ): Promise<VmBulkCreateResponse> {
+    if (mock) {
+      return {
+        results: items.map((it) => ({
+          name: it.name,
+          status: "queued" as const,
+          task_id: `task-mock-${Math.random().toString(36).slice(2, 8)}`,
+        })),
+      };
     }
+    return createVmsBulk({ items });
   }
 
   async function resolveByNumber(n: number) {
@@ -419,7 +439,8 @@ export function Vm() {
           mock={mock}
           onRefreshImages={handleRefreshImages}
           onCancel={closeAction}
-          onSubmit={handleCreate}
+          onSubmit={handleCreateBulk}
+          onChanged={() => hubsAndVmsQ.refetch()}
         />
       ) : selectedVm ? (
         <VmDetail
@@ -1199,55 +1220,86 @@ function PingBadge({ vm }: { vm: Vm }) {
   );
 }
 
-// ── create VM ───────────────────────────────────────────────────────────────
+// ── create VM (батч) ─────────────────────────────────────────────────────────
 
-function CreateVmPane({
-  hub,
-  images,
-  mock,
-  onRefreshImages,
-  onCancel,
-  onSubmit,
-}: {
-  hub: VmHub;
-  images: VmImage[];
-  mock: boolean;
-  onRefreshImages: () => void | Promise<void>;
-  onCancel: () => void;
-  onSubmit: (body: VmCreateRequest) => void | Promise<void>;
-}) {
-  const [name, setName] = useState("");
-  const [cpu, setCpu] = useState("2");
-  const [ramMb, setRamMb] = useState("4096");
-  const [diskGb, setDiskGb] = useState("40");
-  const [box, setBox] = useState(images[0]?.name ?? "vm_station");
-  const selectedImage = images.find((im) => im.name === box) ?? null;
-  const [networkMode, setNetworkMode] = useState<VmNetworkMode>("bridge");
-  const [poolId, setPoolId] = useState("");
-  const [ipMode, setIpMode] = useState<"auto" | "pool" | "manual">("auto");
-  const [ip, setIp] = useState("");
-  const [number, setNumber] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+/** Состояние одного блока прогрессивной формы создания ВМ. */
+interface VmBlockData {
+  key: string;
+  name: string;
+  hostname: string;
+  cpu: string;
+  ramMb: string;
+  diskGb: string;
+  box: string;
+  networkMode: VmNetworkMode;
+  poolId: string;
+  ipMode: "auto" | "pool" | "manual";
+  ip: string;
+  autostart: boolean;
+  credStrategy: VmCredStrategy;
+  accountIds: string[];
+  collapsed: boolean;
+}
 
-  const cpuN = Number.parseInt(cpu, 10);
-  const ramN = Number.parseInt(ramMb, 10);
-  const diskN = Number.parseInt(diskGb, 10);
-  const numberN = number.trim() ? Number.parseInt(number.trim(), 10) : null;
+let vmBlockSeq = 0;
+function newVmBlock(box: string): VmBlockData {
+  vmBlockSeq += 1;
+  return {
+    key: `vmblk-${vmBlockSeq}`,
+    name: "",
+    hostname: "",
+    cpu: "2",
+    ramMb: "4096",
+    diskGb: "40",
+    box,
+    networkMode: "bridge",
+    poolId: "",
+    ipMode: "auto",
+    ip: "",
+    autostart: false,
+    credStrategy: "per_snapshot",
+    accountIds: [],
+    collapsed: false,
+  };
+}
 
+interface VmBlockValidation {
+  cpuN: number;
+  ramN: number;
+  diskN: number;
+  minDisk: number | null;
+  nameError: string | null;
+  diskWarning: string | null;
+  ipValid: boolean;
+  valid: boolean;
+}
+
+function validateVmBlock(
+  b: VmBlockData,
+  images: VmImage[],
+): VmBlockValidation {
+  const cpuN = Number.parseInt(b.cpu, 10);
+  const ramN = Number.parseInt(b.ramMb, 10);
+  const diskN = Number.parseInt(b.diskGb, 10);
   const nameError =
-    name.trim() && !/^[a-zA-Z0-9._-]+$/.test(name.trim())
+    b.name.trim() && !/^[a-zA-Z0-9._-]+$/.test(b.name.trim())
       ? "Имя: латиница, цифры, точка, дефис, подчёркивание"
       : null;
-  // Сеть валидна: NAT — всегда; bridge — авто, либо выбранный из пула, либо
-  // корректный ручной IPv4.
+  const img = images.find((im) => im.name === b.box) ?? null;
+  const minDisk = img?.min_disk_gb ?? null;
+  // Меньше минимума бокса — образ физически не поместится (virt-resize упадёт):
+  // предупреждаем в форме до отправки и блокируем сабмит этого блока.
+  const diskWarning =
+    minDisk != null && Number.isFinite(diskN) && diskN < minDisk
+      ? `Меньше минимума бокса (${minDisk} ГБ) — образ не поместится`
+      : null;
   const ipValid =
-    networkMode === "nat" ||
-    ipMode === "auto" ||
-    (ipMode === "pool" && !!ip) ||
-    (ipMode === "manual" && isLikelyIpv4(ip.trim()));
+    b.networkMode === "nat" ||
+    b.ipMode === "auto" ||
+    (b.ipMode === "pool" && !!b.ip) ||
+    (b.ipMode === "manual" && isLikelyIpv4(b.ip.trim()));
   const valid =
-    !!name.trim() &&
+    !!b.name.trim() &&
     !nameError &&
     Number.isFinite(cpuN) &&
     cpuN > 0 &&
@@ -1255,191 +1307,574 @@ function CreateVmPane({
     ramN > 0 &&
     Number.isFinite(diskN) &&
     diskN > 0 &&
+    !diskWarning &&
     ipValid;
+  return { cpuN, ramN, diskN, minDisk, nameError, diskWarning, ipValid, valid };
+}
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (submitting || !valid) return;
-    const bridge = networkMode === "bridge";
-    const body: VmCreateRequest = {
-      hub_server_id: hub.id,
-      name: name.trim(),
-      cpu: cpuN,
-      ram_mb: ramN,
-      disk_gb: diskN,
-      box,
-      network_mode: networkMode,
-      ip_address: !bridge
-        ? null
-        : ipMode === "manual"
-          ? ip.trim()
-          : ipMode === "pool"
-            ? ip
-            : null,
-      pool_id: bridge && poolId ? poolId : null,
-      number: numberN,
-    };
+function vmBlockToItem(
+  b: VmBlockData,
+  hubId: string,
+  v: VmBlockValidation,
+): VmCreateRequest {
+  const bridge = b.networkMode === "bridge";
+  return {
+    hub_server_id: hubId,
+    name: b.name.trim(),
+    hostname: b.hostname.trim() ? b.hostname.trim() : null,
+    cpu: v.cpuN,
+    ram_mb: v.ramN,
+    disk_gb: v.diskN,
+    box: b.box,
+    network_mode: b.networkMode,
+    ip_address: !bridge
+      ? null
+      : b.ipMode === "manual"
+        ? b.ip.trim()
+        : b.ipMode === "pool"
+          ? b.ip
+          : null,
+    pool_id: bridge && b.poolId ? b.poolId : null,
+    autostart: b.autostart,
+    cred_strategy: b.credStrategy,
+    accounts: b.accountIds,
+  };
+}
+
+export function CreateVmPane({
+  hub,
+  images,
+  mock,
+  onRefreshImages,
+  onCancel,
+  onSubmit,
+  onChanged,
+}: {
+  hub: VmHub;
+  images: VmImage[];
+  mock: boolean;
+  onRefreshImages: () => void | Promise<void>;
+  onCancel: () => void;
+  onSubmit: (items: VmCreateRequest[]) => Promise<VmBulkCreateResponse>;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const defaultBox = images[0]?.name ?? "vm_station";
+  const [blocks, setBlocks] = useState<VmBlockData[]>(() => [
+    newVmBlock(defaultBox),
+  ]);
+  const [submitting, setSubmitting] = useState(false);
+  const [results, setResults] = useState<VmBulkItemResult[] | null>(null);
+
+  const validations = blocks.map((b) => validateVmBlock(b, images));
+  const allValid = validations.every((v) => v.valid);
+
+  function patchBlock(key: string, patch: Partial<VmBlockData>) {
+    setBlocks((prev) =>
+      prev.map((b) => (b.key === key ? { ...b, ...patch } : b)),
+    );
+  }
+  function toggleCollapse(key: string) {
+    setBlocks((prev) =>
+      prev.map((b) => (b.key === key ? { ...b, collapsed: !b.collapsed } : b)),
+    );
+  }
+  function removeBlock(key: string) {
+    setBlocks((prev) =>
+      prev.length > 1 ? prev.filter((b) => b.key !== key) : prev,
+    );
+  }
+  function addBlock() {
+    // Сворачиваем всё заполненное и открываем свежий блок.
+    setBlocks((prev) => [
+      ...prev.map((b) => ({ ...b, collapsed: true })),
+      newVmBlock(defaultBox),
+    ]);
+  }
+
+  async function submitAll() {
+    if (!allValid || submitting) return;
+    const items = blocks.map((b, i) => vmBlockToItem(b, hub.id, validations[i]));
     setSubmitting(true);
     try {
-      await Promise.resolve(onSubmit(body));
+      const res = await onSubmit(items);
+      setResults(res.results);
+      const failed = res.results.filter((r) => r.status === "failed").length;
+      if (failed === 0) {
+        toast.success(
+          `Создание ${res.results.length} ВМ — задачи поставлены`,
+        );
+      } else {
+        toast.warn(
+          `Часть ВМ не создана: ${failed} из ${res.results.length}`,
+        );
+      }
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Батч-создание ВМ не удалось"));
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (results) {
+    return (
+      <section className="flex-1 min-w-0 overflow-y-auto">
+        <div className="p-5 w-full max-w-2xl">
+          <div className="flex items-center gap-2 mb-4">
+            <button
+              className="btn btn-ghost flex items-center gap-1"
+              onClick={onCancel}
+              type="button"
+            >
+              <ArrowLeft className="w-4 h-4" /> К хабу
+            </button>
+            <div className="text-sm text-dim">
+              Результат создания {results.length} ВМ
+            </div>
+          </div>
+          <div className="surface-2 border border-token rounded">
+            {results.map((r) => {
+              const failed = r.status === "failed";
+              return (
+                <div
+                  key={r.name}
+                  className="px-3 py-2 flex items-center gap-2 border-b border-token last:border-b-0"
+                >
+                  {failed ? (
+                    <XCircle className="w-4 h-4 text-danger shrink-0" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 text-ok shrink-0" />
+                  )}
+                  <span className="text-sm font-medium">{r.name}</span>
+                  <span
+                    className={`text-xs flex-1 truncate ${failed ? "text-danger" : "text-dim"}`}
+                  >
+                    {failed
+                      ? (r.error ?? "не удалось")
+                      : `задача ${r.task_id ?? "поставлена"}`}
+                  </span>
+                  <span className={`badge ${failed ? "badge-danger" : "badge-ok"}`}>
+                    {failed ? "ошибка" : "создана"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-2 mt-4">
+            <button className="btn btn-primary" onClick={onCancel}>
+              Готово
+            </button>
+            <button
+              className="btn"
+              onClick={() => {
+                setResults(null);
+                setBlocks([newVmBlock(defaultBox)]);
+              }}
+            >
+              Создать ещё
+            </button>
+          </div>
+        </div>
+      </section>
+    );
   }
 
   return (
     <section className="flex-1 min-w-0 overflow-y-auto">
       <div className="p-5 w-full max-w-2xl">
         <div className="flex items-center gap-2 mb-4">
-          <button className="btn btn-ghost flex items-center gap-1" onClick={onCancel} type="button">
+          <button
+            className="btn btn-ghost flex items-center gap-1"
+            onClick={onCancel}
+            type="button"
+          >
             <ArrowLeft className="w-4 h-4" /> Назад
           </button>
           <div className="text-sm text-dim">
-            Создание ВМ на хабе <b>{hub.display_name ?? hub.hostname}</b>
+            Создание ВМ на хабе <b>{hub.display_name ?? hub.hostname}</b> ·
+            блоков: {blocks.length}
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
+          {blocks.map((b, i) => (
+            <VmBlockForm
+              key={b.key}
+              index={i}
+              block={b}
+              validation={validations[i]}
+              images={images}
+              mock={mock}
+              hub={hub}
+              canRemove={blocks.length > 1}
+              onPatch={(patch) => patchBlock(b.key, patch)}
+              onToggle={() => toggleCollapse(b.key)}
+              onRemove={() => removeBlock(b.key)}
+              onRefreshImages={onRefreshImages}
+            />
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2 mt-4 flex-wrap">
+          <button
+            type="button"
+            className="btn flex items-center gap-1"
+            onClick={addBlock}
+          >
+            <Plus className="w-4 h-4" /> Добавить ВМ
+          </button>
+          <div className="flex-1" />
+          <button type="button" className="btn" onClick={onCancel}>
+            Отмена
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!allValid || submitting}
+            onClick={submitAll}
+          >
+            {submitting
+              ? "Создаём…"
+              : blocks.length > 1
+                ? `Создать все (${blocks.length})`
+                : "Создать все"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function VmBlockForm({
+  index,
+  block,
+  validation,
+  images,
+  mock,
+  hub,
+  canRemove,
+  onPatch,
+  onToggle,
+  onRemove,
+  onRefreshImages,
+}: {
+  index: number;
+  block: VmBlockData;
+  validation: VmBlockValidation;
+  images: VmImage[];
+  mock: boolean;
+  hub: VmHub;
+  canRemove: boolean;
+  onPatch: (patch: Partial<VmBlockData>) => void;
+  onToggle: () => void;
+  onRemove: () => void;
+  onRefreshImages: () => void | Promise<void>;
+}) {
+  const v = validation;
+  const selectedImage = images.find((im) => im.name === block.box) ?? null;
+  const ramGb = Math.round((Number.parseInt(block.ramMb, 10) || 0) / 1024);
+  const summary = `${block.box} · ${block.cpu} vCPU · ${ramGb} ГБ · ${block.diskGb} ГБ · ${block.networkMode}`;
+
+  if (block.collapsed) {
+    return (
+      <div className="surface-2 border border-token rounded">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="w-full text-left px-3 py-2 flex items-center gap-2 hover-bg"
+        >
+          <ChevronRight className="w-4 h-4 text-dim shrink-0" />
+          <span className="badge shrink-0">ВМ {index + 1}</span>
+          <span className="text-sm font-medium truncate">
+            {block.name.trim() || "(без имени)"}
+          </span>
+          <span className="text-[11px] text-dim truncate flex-1">{summary}</span>
+          {v.valid ? (
+            <CheckCircle2 className="w-4 h-4 text-ok shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-warn shrink-0" />
+          )}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="surface-2 border border-token rounded">
+      <div className="px-3 py-2 flex items-center gap-2 border-b border-token">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="btn btn-ghost btn-sm flex items-center"
+          title="Свернуть блок"
+        >
+          <ChevronDown className="w-4 h-4" />
+        </button>
+        <span className="badge shrink-0">ВМ {index + 1}</span>
+        <span className="text-sm font-medium truncate flex-1">
+          {block.name.trim() || "Новая ВМ"}
+        </span>
+        {v.valid ? (
+          <CheckCircle2 className="w-4 h-4 text-ok shrink-0" />
+        ) : (
+          <AlertTriangle className="w-4 h-4 text-warn shrink-0" />
+        )}
+        {canRemove && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm text-danger flex items-center"
+            onClick={onRemove}
+            title="Убрать блок"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      <div className="p-3 flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">Имя *</span>
             <input
               className="input"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
+              value={block.name}
+              onChange={(e) => onPatch({ name: e.target.value })}
               placeholder="alse-1.8-rc"
             />
-            {nameError && <span className="text-[11px] text-danger">{nameError}</span>}
-          </label>
-
-          <div className="grid grid-cols-3 gap-3">
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-dim text-xs">vCPU *</span>
-              <input
-                className="input"
-                type="number"
-                min={1}
-                value={cpu}
-                onChange={(e) => setCpu(e.target.value)}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-dim text-xs">RAM, МБ *</span>
-              <input
-                className="input"
-                type="number"
-                min={256}
-                step={256}
-                value={ramMb}
-                onChange={(e) => setRamMb(e.target.value)}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-dim text-xs">Диск, ГБ *</span>
-              <input
-                className="input"
-                type="number"
-                min={1}
-                value={diskGb}
-                onChange={(e) => setDiskGb(e.target.value)}
-              />
-            </label>
-          </div>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs flex items-center justify-between">
-              <span>Образ (каталог) *</span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm flex items-center gap-1"
-                onClick={() => onRefreshImages()}
-                title="Перечитать каталог образов с FTP"
-              >
-                <RefreshCw className="w-3 h-3" /> Обновить каталог
-              </button>
-            </span>
-            <select className="input" value={box} onChange={(e) => setBox(e.target.value)}>
-              {images.map((im) => (
-                <option key={im.name} value={im.name}>
-                  {im.name}
-                  {im.kind === "universal" ? " · universal" : ""}
-                </option>
-              ))}
-            </select>
-            {selectedImage && (
-              <span className="text-[11px] text-dim">
-                {selectedImage.description ?? selectedImage.name}
-                {selectedImage.os_versions && selectedImage.os_versions.length > 0
-                  ? ` · ОС: ${selectedImage.os_versions.join(", ")}`
-                  : ""}
-              </span>
+            {v.nameError && (
+              <span className="text-[11px] text-danger">{v.nameError}</span>
             )}
           </label>
-
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Сеть *</span>
+            <span className="text-dim text-xs">Hostname</span>
+            <input
+              className="input"
+              value={block.hostname}
+              onChange={(e) => onPatch({ hostname: e.target.value })}
+              placeholder="= имя ВМ если пусто"
+            />
+          </label>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">vCPU *</span>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              value={block.cpu}
+              onChange={(e) => onPatch({ cpu: e.target.value })}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">RAM, МБ *</span>
+            <input
+              className="input"
+              type="number"
+              min={256}
+              step={256}
+              value={block.ramMb}
+              onChange={(e) => onPatch({ ramMb: e.target.value })}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">
+              Диск, ГБ *
+              {v.minDisk != null ? ` (мин. ${v.minDisk})` : ""}
+            </span>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              value={block.diskGb}
+              onChange={(e) => onPatch({ diskGb: e.target.value })}
+            />
+          </label>
+        </div>
+        {v.diskWarning && (
+          <div className="alert alert-warn flex items-center gap-2 text-xs">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{v.diskWarning}</span>
+          </div>
+        )}
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs flex items-center justify-between">
+            <span>Образ (каталог) *</span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm flex items-center gap-1"
+              onClick={() => onRefreshImages()}
+              title="Перечитать каталог образов с FTP"
+            >
+              <RefreshCw className="w-3 h-3" /> Обновить каталог
+            </button>
+          </span>
+          <select
+            className="input"
+            value={block.box}
+            onChange={(e) => onPatch({ box: e.target.value })}
+          >
+            {images.map((im) => (
+              <option key={im.name} value={im.name}>
+                {im.name}
+                {im.kind === "universal" ? " · universal" : ""}
+              </option>
+            ))}
+          </select>
+          {selectedImage && (
+            <span className="text-[11px] text-dim">
+              {selectedImage.description ?? selectedImage.name}
+              {selectedImage.os_versions && selectedImage.os_versions.length > 0
+                ? ` · ОС: ${selectedImage.os_versions.join(", ")}`
+                : ""}
+              {selectedImage.min_disk_gb != null
+                ? ` · мин. диск ${selectedImage.min_disk_gb} ГБ`
+                : ""}
+            </span>
+          )}
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">Сеть *</span>
+          <select
+            className="input"
+            value={block.networkMode}
+            onChange={(e) =>
+              onPatch({ networkMode: e.target.value as VmNetworkMode })
+            }
+          >
+            <option value="bridge">bridge (static IP из пула)</option>
+            <option value="nat">nat (libvirt)</option>
+          </select>
+        </label>
+
+        {block.networkMode === "bridge" ? (
+          <PoolIpPicker
+            mock={mock}
+            departmentId={hub.department_id}
+            serverId={hub.id}
+            poolId={block.poolId}
+            onPoolChange={(poolId) => onPatch({ poolId })}
+            ipMode={block.ipMode}
+            onIpModeChange={(ipMode) => onPatch({ ipMode })}
+            ip={block.ip}
+            onIpChange={(ip) => onPatch({ ip })}
+          />
+        ) : (
+          <div className="text-xs text-dim">
+            NAT: адрес назначит libvirt (DHCP), пул не используется.
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={block.autostart}
+              onChange={(e) => onPatch({ autostart: e.target.checked })}
+            />
+            <span>Автозапуск при старте хаба</span>
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Режим управляющих кред</span>
             <select
               className="input"
-              value={networkMode}
-              onChange={(e) => setNetworkMode(e.target.value as VmNetworkMode)}
+              value={block.credStrategy}
+              onChange={(e) =>
+                onPatch({ credStrategy: e.target.value as VmCredStrategy })
+              }
             >
-              <option value="bridge">bridge (static IP из пула)</option>
-              <option value="nat">nat (libvirt)</option>
+              <option value="per_snapshot">per_snapshot (креды на снимок)</option>
+              <option value="reroll">reroll (единый пароль)</option>
             </select>
           </label>
+        </div>
 
-          {networkMode === "bridge" ? (
-            <PoolIpPicker
-              mock={mock}
-              departmentId={hub.department_id}
-              serverId={hub.id}
-              poolId={poolId}
-              onPoolChange={setPoolId}
-              ipMode={ipMode}
-              onIpModeChange={setIpMode}
-              ip={ip}
-              onIpChange={setIp}
-            />
-          ) : (
-            <div className="text-xs text-dim">
-              NAT: адрес назначит libvirt (DHCP), пул не используется.
-            </div>
-          )}
+        <AccountMultiSelect
+          mock={mock}
+          departmentId={hub.department_id}
+          selected={block.accountIds}
+          onChange={(accountIds) => onPatch({ accountIds })}
+        />
+      </div>
+    </div>
+  );
+}
 
-          <button
-            type="button"
-            className="btn btn-ghost self-start flex items-center gap-1 text-xs"
-            onClick={() => setShowAdvanced((v) => !v)}
-          >
-            {showAdvanced ? "Скрыть доп. параметры" : "Доп. параметры"}
-          </button>
-          {showAdvanced && (
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-dim text-xs">Номер (глобально уникальный)</span>
+function AccountMultiSelect({
+  mock,
+  departmentId,
+  selected,
+  onChange,
+}: {
+  mock: boolean;
+  departmentId: string;
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const accountsQ = useQuery<ServerAccount[]>(
+    async () => {
+      if (mock) {
+        return MOCK_VM_ACCOUNTS.filter((a) => a.department_id === departmentId);
+      }
+      const res = await listAccounts({});
+      const items = "items" in res ? res.items : [];
+      return items.filter(
+        (a) => a.is_active && a.department_id === departmentId,
+      );
+    },
+    [mock, departmentId],
+    { keepPreviousDataOnError: true },
+  );
+  const accounts = accountsQ.data ?? [];
+
+  function toggle(id: string) {
+    onChange(
+      selected.includes(id)
+        ? selected.filter((x) => x !== id)
+        : [...selected, id],
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1 text-sm">
+      <span className="text-dim text-xs flex items-center gap-1">
+        <Users className="w-3.5 h-3.5" /> Учётки отдела (OS-юзеры в госте)
+      </span>
+      {accountsQ.loading ? (
+        <div className="text-xs text-dim">Загрузка учёток…</div>
+      ) : accounts.length === 0 ? (
+        <div className="text-xs text-dim">Нет доступных учёток отдела.</div>
+      ) : (
+        <div className="surface border border-token rounded max-h-40 overflow-y-auto flex flex-col">
+          {accounts.map((a) => (
+            <label
+              key={a.id}
+              className="flex items-center gap-2 px-2 py-1 text-sm hover-bg cursor-pointer"
+            >
               <input
-                className="input"
-                type="number"
-                value={number}
-                onChange={(e) => setNumber(e.target.value)}
-                placeholder="опционально"
+                type="checkbox"
+                checked={selected.includes(a.id)}
+                onChange={() => toggle(a.id)}
               />
-              <span className="text-[11px] text-dim">
-                Прочие параметры (снимки, диски, autostart) — в отдельных разделах.
+              <span className="font-medium">{a.login}</span>
+              {a.has_sudo && (
+                <span className="badge text-[11px]">sudo</span>
+              )}
+              <span className="text-[11px] text-dim truncate">
+                {a.unix_groups.join(", ")}
               </span>
             </label>
-          )}
-
-          <div className="flex items-center gap-2 mt-2">
-            <button type="submit" className="btn btn-primary" disabled={submitting || !valid}>
-              {submitting ? "Создаём…" : "Создать ВМ"}
-            </button>
-            <button type="button" className="btn" onClick={onCancel}>
-              Отмена
-            </button>
-          </div>
-        </form>
-      </div>
-    </section>
+          ))}
+        </div>
+      )}
+      {selected.length > 0 && (
+        <span className="text-[11px] text-dim">Выбрано: {selected.length}</span>
+      )}
+    </div>
   );
 }
 
@@ -1724,7 +2159,10 @@ function SnapshotsSection({
           name: body.name,
           description: body.description ?? null,
           parent_snapshot_id: null,
-          kind: body.kind,
+          snapshot_type: body.snapshot_type,
+          kind: "user",
+          mode: null,
+          os_version: null,
           is_system: false,
           state: "creating",
           size_bytes: null,
@@ -1791,6 +2229,11 @@ function SnapshotsSection({
     }
   }
 
+  // Две группы: чистые снимки версий ОС (сгруппированы по версии) и
+  // пользовательские. Системные `_build` уже отфильтрованы выше.
+  const baseline = snapshots.filter((s) => snapCategory(s) === "os_baseline");
+  const userSnaps = snapshots.filter((s) => snapCategory(s) !== "os_baseline");
+
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-3">
@@ -1822,70 +2265,19 @@ function SnapshotsSection({
       ) : snapshots.length === 0 ? (
         <div className="text-xs text-dim">Снимков нет.</div>
       ) : (
-        <div className="surface-2 border border-token rounded overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[11px] uppercase text-dim border-b border-token">
-                <th className="text-left px-3 py-2 font-medium">Имя</th>
-                <th className="text-left px-3 py-2 font-medium">Описание</th>
-                <th className="text-left px-3 py-2 font-medium">Тип</th>
-                <th className="text-left px-3 py-2 font-medium">Создан</th>
-                <th className="text-left px-3 py-2 font-medium">Текущий</th>
-                {canManage && <th className="px-3 py-2" />}
-              </tr>
-            </thead>
-            <tbody>
-              {snapshots.map((s) => (
-                <tr key={s.id} className="border-b border-token last:border-b-0">
-                  <td className="px-3 py-1.5">
-                    {s.name}
-                    {s.state !== "ready" && (
-                      <span className="badge ml-2 text-[11px]">{s.state}</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-1.5 text-xs text-dim">
-                    {s.description ?? "—"}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <span className="badge">
-                      {s.kind === "full" ? "full" : "disk-only"}
-                    </span>
-                  </td>
-                  <td className="px-3 py-1.5 text-xs mono text-dim">
-                    {formatSnapDate(s.created_at)}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    {s.is_current ? (
-                      <span className="badge badge-ok">текущий</span>
-                    ) : (
-                      <span className="text-dim text-xs">—</span>
-                    )}
-                  </td>
-                  {canManage && (
-                    <td className="px-3 py-1.5">
-                      <div className="flex items-center gap-1 justify-end">
-                        <button
-                          className="btn btn-sm flex items-center gap-1"
-                          title="Откатить ВМ на этот снимок"
-                          disabled={s.is_current}
-                          onClick={() => handleRevert(s)}
-                        >
-                          <Undo2 className="w-3.5 h-3.5" /> Откат
-                        </button>
-                        <button
-                          className="btn btn-sm btn-danger flex items-center gap-1"
-                          title="Удалить снимок"
-                          onClick={() => handleDelete(s)}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex flex-col gap-4">
+          <SnapshotBaselineGroup
+            snapshots={baseline}
+            canManage={canManage}
+            onRevert={handleRevert}
+            onDelete={handleDelete}
+          />
+          <SnapshotUserGroup
+            snapshots={userSnaps}
+            canManage={canManage}
+            onRevert={handleRevert}
+            onDelete={handleDelete}
+          />
         </div>
       )}
 
@@ -1903,6 +2295,193 @@ function SnapshotsSection({
           onClose={() => setCreateOpen(false)}
           onSubmit={handleCreate}
         />
+      )}
+    </div>
+  );
+}
+
+/** Классификация снимка для группировки (см. `VmSnapshotCategory`). */
+function snapCategory(s: VmSnapshot): VmSnapshotCategory {
+  if (s.kind === "os_baseline" || s.kind === "user") return s.kind;
+  return "user";
+}
+
+function snapModeLabel(mode?: VmSnapshotMode | null): string | null {
+  if (mode === "oryol") return "Орёл";
+  if (mode === "smolensk") return "Смоленск";
+  return mode ? String(mode) : null;
+}
+
+function SnapshotRow({
+  snap,
+  canManage,
+  onRevert,
+  onDelete,
+}: {
+  snap: VmSnapshot;
+  canManage: boolean;
+  onRevert: (s: VmSnapshot) => void;
+  onDelete: (s: VmSnapshot) => void;
+}) {
+  const mode = snapModeLabel(snap.mode);
+  return (
+    <div className="px-3 py-1.5 flex items-center gap-2 border-b border-token last:border-b-0">
+      <div className="flex-1 min-w-0">
+        <div className="text-sm flex items-center gap-2 flex-wrap">
+          <span className="truncate">{snap.name}</span>
+          {mode && <span className="badge text-[11px]">{mode}</span>}
+          {snap.is_current && (
+            <span className="badge badge-ok text-[11px]">текущий</span>
+          )}
+          {snap.state !== "ready" && (
+            <span className="badge text-[11px]">{snap.state}</span>
+          )}
+        </div>
+        <div className="text-[11px] text-dim truncate">
+          {snap.description ?? "—"} · {formatSnapDate(snap.created_at)}
+        </div>
+      </div>
+      {canManage && (
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            className="btn btn-sm flex items-center gap-1"
+            title="Откатить ВМ на этот снимок"
+            disabled={snap.is_current}
+            onClick={() => onRevert(snap)}
+          >
+            <Undo2 className="w-3.5 h-3.5" /> Откат
+          </button>
+          <button
+            className="btn btn-sm btn-danger flex items-center gap-1"
+            title="Удалить снимок"
+            onClick={() => onDelete(snap)}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SnapshotBaselineGroup({
+  snapshots,
+  canManage,
+  onRevert,
+  onDelete,
+}: {
+  snapshots: VmSnapshot[];
+  canManage: boolean;
+  onRevert: (s: VmSnapshot) => void;
+  onDelete: (s: VmSnapshot) => void;
+}) {
+  const [q, setQ] = useState("");
+  const filtered = snapshots.filter((s) =>
+    s.name.toLowerCase().includes(q.trim().toLowerCase()),
+  );
+  // Группируем по версии ОС, внутри — режимы.
+  const versions = Array.from(
+    new Set(filtered.map((s) => s.os_version ?? "—")),
+  ).sort();
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h4 className="text-sm font-semibold">Версии ОС (чистые)</h4>
+        <div className="flex items-center gap-1 surface border border-token rounded px-2 py-1">
+          <Search className="w-3.5 h-3.5 text-dim" />
+          <input
+            className="bg-transparent outline-none text-xs w-36"
+            placeholder="Поиск по имени…"
+            aria-label="Поиск снимков версий ОС"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
+      </div>
+      {snapshots.length === 0 ? (
+        <div className="text-xs text-dim">Чистых снимков версий ОС нет.</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-xs text-dim">Ничего не найдено.</div>
+      ) : (
+        <div
+          data-testid="snap-scroll-baseline"
+          className="surface-2 border border-token rounded max-h-64 overflow-y-auto"
+        >
+          {versions.map((ver) => (
+            <div key={ver}>
+              <div className="px-3 py-1 text-[11px] uppercase text-dim surface sticky top-0">
+                ОС {ver}
+              </div>
+              {filtered
+                .filter((s) => (s.os_version ?? "—") === ver)
+                .map((s) => (
+                  <SnapshotRow
+                    key={s.id}
+                    snap={s}
+                    canManage={canManage}
+                    onRevert={onRevert}
+                    onDelete={onDelete}
+                  />
+                ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SnapshotUserGroup({
+  snapshots,
+  canManage,
+  onRevert,
+  onDelete,
+}: {
+  snapshots: VmSnapshot[];
+  canManage: boolean;
+  onRevert: (s: VmSnapshot) => void;
+  onDelete: (s: VmSnapshot) => void;
+}) {
+  const [q, setQ] = useState("");
+  const filtered = snapshots.filter((s) =>
+    s.name.toLowerCase().includes(q.trim().toLowerCase()),
+  );
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h4 className="text-sm font-semibold">Пользовательские</h4>
+        <div className="flex items-center gap-1 surface border border-token rounded px-2 py-1">
+          <Search className="w-3.5 h-3.5 text-dim" />
+          <input
+            className="bg-transparent outline-none text-xs w-36"
+            placeholder="Поиск по имени…"
+            aria-label="Поиск пользовательских снимков"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
+      </div>
+      {snapshots.length === 0 ? (
+        <div className="text-xs text-dim">Пользовательских снимков нет.</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-xs text-dim">Ничего не найдено.</div>
+      ) : (
+        <div
+          data-testid="snap-scroll-user"
+          className="surface-2 border border-token rounded max-h-64 overflow-y-auto"
+        >
+          {filtered.map((s) => (
+            <SnapshotRow
+              key={s.id}
+              snap={s}
+              canManage={canManage}
+              onRevert={onRevert}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
       )}
     </div>
   );
@@ -3836,7 +4415,7 @@ function SnapshotCreateModal({
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [kind, setKind] = useState<VmSnapshotKind>("disk_only");
+  const [snapshotType, setSnapshotType] = useState<VmSnapshotType>("disk_only");
   const [submitting, setSubmitting] = useState(false);
 
   const nameError =
@@ -3855,7 +4434,7 @@ function SnapshotCreateModal({
     const body: VmSnapshotCreateRequest = {
       name: name.trim(),
       description: description.trim() ? description.trim() : null,
-      kind,
+      snapshot_type: snapshotType,
     };
     setSubmitting(true);
     try {
@@ -3897,8 +4476,8 @@ function SnapshotCreateModal({
             <span className="text-dim text-xs">Тип</span>
             <select
               className="input"
-              value={kind}
-              onChange={(e) => setKind(e.target.value as VmSnapshotKind)}
+              value={snapshotType}
+              onChange={(e) => setSnapshotType(e.target.value as VmSnapshotType)}
             >
               <option value="disk_only">disk-only (только диск)</option>
               <option value="full">full (диск + память/состояние)</option>

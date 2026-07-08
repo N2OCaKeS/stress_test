@@ -177,20 +177,28 @@ _BRIDGE_NF_FIX = (
 )
 
 
-async def _setup_bridge(ssh, host: str, phy_if: str, os_family: str) -> None:
+async def _default_gateway(ssh) -> str:
+    """Достать адрес шлюза по умолчанию (`ip route show default`). Пусто если нет."""
+    _rc, route_out, _ = await ssh.run("ip route show default", sudo=True)
+    gw_m = re.search(r"default\s+via\s+(\d{1,3}(?:\.\d{1,3}){3})", route_out or "")
+    return gw_m.group(1) if gw_m else ""
+
+
+async def _setup_bridge(ssh, host: str, phy_if: str, os_family: str) -> bool:
     """Настроить мост `br0` над физическим NIC (static, по факту сети хоста).
 
-    Идемпотентно: если `br0` уже есть — выходим. Иначе снимаем текущую адресацию
-    `phy_if` (адрес/шлюз/DNS) и переносим её на мост. Для apt-семейства пишем
-    drop-in ifupdown (`/etc/network/interfaces.d`), для dnf — конфиг через
-    NetworkManager (`nmcli`). Активацию делаем best-effort (`ifup`/`nmcli up`):
-    полный переезд адреса с живого NIC на мост без разрыва текущей SSH-сессии не
-    гарантируется — на части стендов он вступит в силу после reboot.
+    Идемпотентно: если `br0` уже есть — выходим (`False`, ребут не нужен). Иначе
+    снимаем текущую адресацию `phy_if` (адрес/шлюз/DNS) и переносим её на мост.
+    Для apt-семейства пишем drop-in ifupdown (`/etc/network/interfaces.d`), для
+    dnf — конфиг через NetworkManager (`nmcli`). Живьём мост НЕ поднимаем: перенос
+    адреса с управляющего NIC рвёт текущую SSH-сессию. Конфиг вступит в силу на
+    следующей загрузке, поэтому при записи нового моста возвращаем `True` —
+    caller ставит guard и перезагружает хост сам.
     """
     rc, _out, _err = await ssh.run("ip link show br0", sudo=True)
     if rc == 0:
         logger.info("vms_hub.prepare: bridge br0 already present on %s", host)
-        return
+        return False
 
     _rc, addr_out, _ = await ssh.run(f"ip -o -4 addr show dev {phy_if}", sudo=True)
     m = re.search(r"inet\s+(\d{1,3}(?:\.\d{1,3}){3}/\d{1,2})", addr_out or "")
@@ -204,9 +212,7 @@ async def _setup_bridge(ssh, host: str, phy_if: str, os_family: str) -> None:
             ),
         )
     addr_cidr = m.group(1)
-    _rc, route_out, _ = await ssh.run("ip route show default", sudo=True)
-    gw_m = re.search(r"default\s+via\s+(\d{1,3}(?:\.\d{1,3}){3})", route_out or "")
-    gateway = gw_m.group(1) if gw_m else ""
+    gateway = await _default_gateway(ssh)
     _rc, dns_out, _ = await ssh.run(
         "grep -E '^nameserver' /etc/resolv.conf", sudo=True,
     )
@@ -263,6 +269,7 @@ async def _setup_bridge(ssh, host: str, phy_if: str, os_family: str) -> None:
         # тот же NIC сбрасывает адрес и рвёт текущую SSH-сессию. Мост поднимется
         # штатно при следующем reboot хоста — тогда drop-in отработает без
         # конфликта с живым eno6.
+        return True
     else:
         addr_only = addr_cidr
         await ssh.run("nmcli con add type bridge ifname br0 con-name br0", sudo=True)
@@ -282,6 +289,103 @@ async def _setup_bridge(ssh, host: str, phy_if: str, os_family: str) -> None:
         # Живую активацию (`nmcli con up br0`) НЕ делаем — перенос адреса на мост
         # через тот же NIC рвёт SSH-сессию. Соединение определено и поднимется на
         # следующем reboot хоста.
+        return True
+
+
+# Guard активации моста. Пишется на hub при первичной настройке br0 и снимается
+# сам собой на следующей загрузке, если сеть поднялась. Скрипт живёт как
+# systemd-oneshot (`multi-user.target`), поэтому переживает reboot: prepare сам
+# перезагружает хост, а если мост над управляющим NIC не встал — guard
+# откатывает адресацию из бэкапа и при необходимости ребутит ещё раз, чтобы
+# сервер не остался без сети.
+_NET_GUARD_SCRIPT_PATH = "/usr/local/sbin/dbos-net-guard.sh"
+_NET_GUARD_UNIT_PATH = "/etc/systemd/system/dbos-net-guard.service"
+_NET_GUARD_UNIT = (
+    "[Unit]\n"
+    "Description=DBOS vms-hub bridge activation guard\n"
+    "After=network.target networking.service\n"
+    "\n"
+    "[Service]\n"
+    "Type=oneshot\n"
+    f"ExecStart={_NET_GUARD_SCRIPT_PATH}\n"
+    "\n"
+    "[Install]\n"
+    "WantedBy=multi-user.target\n"
+)
+
+
+def _net_guard_script(gateway: str) -> str:
+    """Тело guard-скрипта: ждём загрузку сети, пингуем шлюз, откат при провале."""
+    return (
+        "#!/bin/bash\n"
+        "sleep 90\n"
+        f"if ping -c3 -W3 {gateway} >/dev/null 2>&1; then "
+        "systemctl disable dbos-net-guard.service; exit 0; fi\n"
+        "[ -f /etc/network/interfaces.dbos-bak ] && "
+        "cp /etc/network/interfaces.dbos-bak /etc/network/interfaces\n"
+        "rm -f /etc/network/interfaces.d/dbos-br0.cfg\n"
+        "systemctl restart networking 2>/dev/null\n"
+        "sleep 8\n"
+        f"ping -c3 -W3 {gateway} >/dev/null 2>&1 || /sbin/reboot\n"
+    )
+
+
+async def _install_net_guard(ssh, host: str, gateway: str) -> None:
+    """Поставить reboot-переживающий guard активации моста.
+
+    Кладёт скрипт `/usr/local/sbin/dbos-net-guard.sh` и systemd-unit, делает
+    daemon-reload и включает сервис. Содержимое подаём на stdin (`tee`), чтобы
+    multiline не расклеивал shell-строку. Guard запустится на следующей загрузке
+    (после `_trigger_reboot`) и сам решит судьбу моста по пингу шлюза.
+    """
+    rc, _out, stderr = await ssh.run(
+        f"tee {_NET_GUARD_SCRIPT_PATH} > /dev/null",
+        sudo=True, stdin_payload=_net_guard_script(gateway),
+    )
+    if rc != 0:
+        raise SshError(
+            error_code="VMS_HUB_GUARD_FAILED", host=host,
+            returncode=rc, stderr=(stderr or "").strip(),
+            message="не удалось записать net-guard скрипт",
+        )
+    await _run(ssh, f"chmod +x {_NET_GUARD_SCRIPT_PATH}", host,
+               "VMS_HUB_GUARD_FAILED", "не удалось сделать net-guard исполняемым")
+    rc, _out, stderr = await ssh.run(
+        f"tee {_NET_GUARD_UNIT_PATH} > /dev/null",
+        sudo=True, stdin_payload=_NET_GUARD_UNIT,
+    )
+    if rc != 0:
+        raise SshError(
+            error_code="VMS_HUB_GUARD_FAILED", host=host,
+            returncode=rc, stderr=(stderr or "").strip(),
+            message="не удалось записать net-guard unit",
+        )
+    await _run(
+        ssh,
+        "sh -c 'systemctl daemon-reload && "
+        "systemctl enable dbos-net-guard.service'",
+        host, "VMS_HUB_GUARD_FAILED", "не удалось включить net-guard",
+    )
+
+
+async def _trigger_reboot(ssh, host: str) -> None:
+    """Запустить отложенный detached-ребут hub'а и вернуться сразу.
+
+    `setsid ... &` отвязывает reboot от SSH-сессии и возвращает управление
+    немедленно (exit 0). Хост уходит в reboot через несколько секунд — уже после
+    того, как callback отправлен и таска завершилась. Обрыв SSH на самом
+    триггере (если сессия успела закрыться) не должен ронять таску: prepared уже
+    доложен, поэтому глушим SshError.
+    """
+    try:
+        await ssh.run(
+            "setsid sh -c 'sleep 5; systemctl reboot' >/dev/null 2>&1 &",
+            sudo=True,
+        )
+    except SshError:
+        logger.info(
+            "vms_hub.prepare: reboot-триггер оборвал SSH (ожидаемо) host=%s", host,
+        )
 
 
 def _image_url(ref: str) -> tuple[str, str]:
@@ -368,6 +472,12 @@ async def vms_hub_prepare(task_id: str) -> None:
     storage-pool `vms` и тянет образы каталога с FTP. Исход докладывает
     server_service (`vms-hub-state`).
 
+    Если мост `br0` создаётся впервые (живьём поднять его над управляющим NIC
+    нельзя — рвётся SSH), таска автономна: ставит reboot-переживающий guard,
+    докладывает успех и уходит в отложенный самоперезагруз. Мост встаёт на
+    следующей загрузке; не поднялась сеть — guard откатывает адресацию из
+    бэкапа. Если `br0` уже был — обычный callback без перезагрузки.
+
     Параметры: `task_id`. Payload — `server_id`, `host`/`hub_host` (str ip),
     `phy_if`, `os_family` (`apt`|`dnf`), `storage_pool_path` (опц., деф.
     `/vms`), `image_refs` (список имён/URL боксов), management-хинты.
@@ -428,11 +538,29 @@ async def vms_hub_prepare(task_id: str) -> None:
                     host,
                     "VMS_HUB_LIBVIRTD_FAILED", "не удалось поднять libvirtd",
                 )
-                await _setup_bridge(ssh, host, phy_if, os_family)
+                needs_reboot = await _setup_bridge(ssh, host, phy_if, os_family)
                 await ssh.run(_FIREWALL_FIX, sudo=True)
                 await ssh.run(_BRIDGE_NF_FIX, sudo=True)
                 await _ensure_pool(ssh, host, pool_path)
                 images = await _download_images(ssh, host, pool_path, image_refs)
+                if needs_reboot:
+                    # br0 записан, но живьём не поднят: ставим guard, докладываем
+                    # успех и уходим в отложенный reboot — мост встанет на
+                    # следующей загрузке. Callback обязан уйти ДО reboot-триггера.
+                    gateway = await _default_gateway(ssh)
+                    await _install_net_guard(ssh, host, gateway)
+                    await server_service_client.submit_vms_hub_state(
+                        server_id, prepared=True,
+                        target_department_id=target_dept, phy_if=phy_if,
+                    )
+                    await _trigger_reboot(ssh, host)
+                    return {
+                        "server_id": server_id,
+                        "prepared": True,
+                        "phy_if": phy_if,
+                        "os_family": os_family,
+                        "images": images,
+                    }
         except Exception as exc:
             # Best-effort доложить провал, чтобы server_service снял «в
             # процессе» и показал причину; ошибку callback'а глушим.

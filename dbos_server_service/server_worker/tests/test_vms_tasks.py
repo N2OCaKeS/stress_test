@@ -163,6 +163,31 @@ def _prepare_fake():
     return fake
 
 
+def _prepare_fake_bridge_present():
+    """Как `_prepare_fake`, но br0 уже есть — ребут и guard не нужны."""
+    fake = _FakeSshClient()
+    fake.set_response("test -e /dev/kvm", 0)
+    fake.set_response("ip link show br0", 0)  # мост уже поднят
+    fake.set_response("virsh pool-info", 1)
+    fake.set_response("test -f", 1)
+    return fake
+
+
+class _RebootDropSsh(_FakeSshClient):
+    """Мок, который на reboot-триггере рвёт SSH (SshError) — как настоящий хост,
+    успевший уйти в перезагрузку до закрытия сессии."""
+
+    async def run(self, command, *, sudo=False, stdin_payload=None):  # noqa: ARG002
+        self.commands.append(command)
+        self.stdins.append(stdin_payload)
+        if "systemctl reboot" in command:
+            raise SshError(error_code="SSH_RUN_FAILED", host=self.host, message="dropped")
+        for pat, resp in self._responses:
+            if pat in command:
+                return resp
+        return (0, "", "")
+
+
 class TestVmsHubPrepare:
     async def test_apt_family_full_flow(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _prepare_fake()
@@ -205,6 +230,101 @@ class TestVmsHubPrepare:
         assert not any("apt-get install" in c for c in fake.commands)
         # dnf-мост через nmcli
         assert any("nmcli con add type bridge ifname br0" in c for c in fake.commands)
+
+    async def test_setup_bridge_returns_true_for_new_bridge(self):
+        fake = _FakeSshClient()
+        fake.set_response("ip link show br0", 1)  # моста нет
+        fake.set_response("ip -o -4 addr show dev ens192", 0, "inet 10.177.103.207/24")
+        fake.set_response("ip route show default", 0, "default via 10.177.103.254 dev ens192")
+        fake.set_response("^nameserver", 0, "nameserver 10.177.180.246")
+        result = await vms._setup_bridge(fake, "10.0.0.7", "ens192", "apt")
+        assert result is True
+
+    async def test_setup_bridge_returns_false_when_present(self):
+        fake = _FakeSshClient()
+        fake.set_response("ip link show br0", 0)  # мост уже есть
+        result = await vms._setup_bridge(fake, "10.0.0.7", "ens192", "apt")
+        assert result is False
+        # адресацию не трогали
+        assert not any("dbos-br0.cfg" in c for c in fake.commands)
+
+    async def test_needs_reboot_installs_guard_then_reboots(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch,
+    ):
+        fake = _prepare_fake()  # br0 отсутствует → needs_reboot
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        # Переопределяем hub-callback, чтобы зафиксировать момент отправки
+        # относительно уже выполненных SSH-команд.
+        order: list[int] = []
+
+        async def _hub_state(server_id, prepared, target_department_id=None, **kw):  # noqa: ARG001
+            order.append(len(fake.commands))
+            return {"ok": True}
+
+        monkeypatch.setattr(vms.server_service_client, "submit_vms_hub_state", _hub_state)
+
+        tid = await make_task(task_kind="vms_hub.prepare", target_server_id="hub1", payload=_prepare_payload("apt"))
+        await vms.vms_hub_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        # guard: скрипт + unit + enable
+        guard_idx = next(i for i, c in enumerate(cmds) if "dbos-net-guard.sh" in c and "tee" in c)
+        assert any("dbos-net-guard.service" in c and "tee" in c for c in cmds)
+        assert any("systemctl enable dbos-net-guard.service" in c for c in cmds)
+        # тело скрипта несёт шлюз, откат из бэкапа и финальный reboot
+        script = fake.stdins[guard_idx] or ""
+        assert "ping -c3 -W3 10.177.103.254" in script
+        assert "interfaces.dbos-bak" in script
+        assert "/sbin/reboot" in script
+        # reboot-триггер — последняя команда таски
+        reboot_idx = next(i for i, c in enumerate(cmds) if "systemctl reboot" in c)
+        assert reboot_idx == len(cmds) - 1
+        # callback ушёл ДО reboot-триггера
+        assert order and order[0] <= reboot_idx
+
+    async def test_reboot_trigger_drop_does_not_fail_task(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
+    ):
+        fake = _RebootDropSsh()
+        fake.set_response("test -e /dev/kvm", 0)
+        fake.set_response("ip link show br0", 1)
+        fake.set_response(
+            "ip -o -4 addr show dev ens192", 0, "inet 10.177.103.207/24",
+        )
+        fake.set_response("ip route show default", 0, "default via 10.177.103.254 dev ens192")
+        fake.set_response("^nameserver", 0, "nameserver 10.177.180.246")
+        fake.set_response("virsh pool-info", 1)
+        fake.set_response("test -f", 1)
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        tid = await make_task(task_kind="vms_hub.prepare", target_server_id="hub1", payload=_prepare_payload("apt"))
+        await vms.vms_hub_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        # обрыв SSH на reboot-триггере не роняет таску
+        assert t.status == TaskStatus.SUCCEEDED
+        assert stub_session_and_callbacks["calls"]["hub_state"] == [
+            {"server_id": "hub1", "prepared": True, "target_department_id": "dep1", "phy_if": "ens192"},
+        ]
+
+    async def test_no_reboot_when_bridge_already_present(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
+    ):
+        fake = _prepare_fake_bridge_present()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        tid = await make_task(task_kind="vms_hub.prepare", target_server_id="hub1", payload=_prepare_payload("apt"))
+        await vms.vms_hub_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        assert not any("dbos-net-guard" in c for c in cmds)
+        assert not any("systemctl reboot" in c for c in cmds)
+        # обычный callback prepared=True
+        assert stub_session_and_callbacks["calls"]["hub_state"] == [
+            {"server_id": "hub1", "prepared": True, "target_department_id": "dep1", "phy_if": "ens192"},
+        ]
 
     async def test_no_kvm_fails_before_packages(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _FakeSshClient()

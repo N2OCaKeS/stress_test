@@ -469,7 +469,9 @@ async def ensure_virt_customize(
     Обычно ставится в `vms_hub.prepare`. Если бинаря нет — best-effort
     доустановка (apt|dnf); всё равно нет → внятная ошибка с переданным кодом.
     """
-    rc, _out, _err = await ssh.run("command -v virt-customize", sudo=True)
+    rc, _out, _err = await ssh.run(
+        "sh -c 'command -v virt-customize'", sudo=True,
+    )
     if rc == 0:
         return
     await ssh.run(
@@ -479,7 +481,9 @@ async def ensure_virt_customize(
         "dnf install -y libguestfs-tools || dnf install -y libguestfs-tools-c; fi'",
         sudo=True,
     )
-    rc, _out, _err = await ssh.run("command -v virt-customize", sudo=True)
+    rc, _out, _err = await ssh.run(
+        "sh -c 'command -v virt-customize'", sudo=True,
+    )
     if rc != 0:
         raise SshError(
             error_code=error_code, host=host,

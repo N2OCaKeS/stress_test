@@ -366,11 +366,15 @@ def _create_fake():
 class TestVmCreateUniversal:
     async def test_universal_builds_golden_orel_smolensk(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _create_fake()
+        fake.set_response("command -v virt-customize", 0)  # libguestfs стоит
+        fake.set_response("mktemp", 0, "/tmp/dbos-if")
         stub_session_and_callbacks["holder"]["ssh"] = fake
         payload = {
             "vm_id": "vm1", "hub_host": "10.0.0.7", "name": "station-a",
             "cpu": 16, "ram_mb": 131072, "disk_gb": 0, "box": "vm_station",
             "network_mode": "bridge", "ip_address": "10.177.103.101",
+            "gateway": "10.177.103.254", "netmask": "255.255.255.0",
+            "dns": ["10.177.180.246"],
             "os_versions": ["1.7.5.9"], "storage_pool_path": "/vms",
             "is_managed": True, "target_department_id": "dep1",
         }
@@ -380,16 +384,35 @@ class TestVmCreateUniversal:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         cmds = fake.commands
-        # disk_gb=0 → обычный cp (без virt-resize)
+        # universal всегда cp (virt-resize снёс бы внутренние qemu-снимки версий)
         assert any("cp /vms/vm_station.qcow2 /vms/station-a.qcow2" in c for c in cmds)
         assert not any("virt-resize" in c for c in cmds)
-        assert any("virt-install -n station-a" in c and "--cpu host-model" in c for c in cmds)
+        # домен собирается на br0 (не на NAT test)
+        assert any("virt-install -n station-a" in c and "bridge=br0" in c for c in cmds)
+        assert not any("virt-install -n station-a" in c and "network=test" in c for c in cmds)
         assert any("qemu-img snapshot -a 1.7.5.9 /vms/station-a.qcow2" in c for c in cmds)
+        # порядок: переключили версию → залили статику offline → подняли ВМ
+        i_disk = next(i for i, c in enumerate(cmds) if "qemu-img snapshot -a 1.7.5.9" in c)
+        i_customize = next(
+            i for i, c in enumerate(cmds)
+            if "virt-customize -a /vms/station-a.qcow2 " in c
+            and "--upload /tmp/dbos-if:/etc/network/interfaces" in c
+        )
+        i_start = next(i for i, c in enumerate(cmds) if "virsh start station-a" in c)
+        assert i_disk < i_customize < i_start
+        # NIC уже на мосту — отдельного virt-xml-переключения нет
+        assert not any("virt-xml station-a --edit --network" in c for c in cmds)
+        # провижн идёт по боевой статике, а не по domifaddr NAT-lease
+        assert not any("domifaddr station-a" in c for c in cmds)
+        # статик-конфиг несёт боевой адрес из пула
+        tee_idx = next(i for i, c in enumerate(cmds) if "tee /tmp/dbos-if" in c)
+        body = fake.stdins[tee_idx] or ""
+        assert "address 10.177.103.101" in body
+        assert "gateway 10.177.103.254" in body
         # golden (скрытый) + Орёл + Смоленск
         assert any("snapshot-create-as station-a --name 1.7.5.9_orel_build" in c for c in cmds)
         assert any("snapshot-create-as station-a --name 1.7.5.9_oryol" in c for c in cmds)
         assert any("snapshot-create-as station-a --name 1.7.5.9_smolensk" in c for c in cmds)
-        assert any("virt-xml station-a --edit --network bridge=br0" in c for c in cmds)
         # смена режима на Смоленск: modeswitch + МРД + МКЦ (и порядок до снимка)
         assert any("astra-modeswitch set 2" in c for c in cmds)
         assert any("astra-mac-control enable" in c for c in cmds)
@@ -412,6 +435,59 @@ class TestVmCreateUniversal:
         assert state["power_state"] == "on"
         assert state["status"] == "free"
         assert state["ip_address"] == "10.177.103.101"
+
+    async def test_universal_two_versions_inject_static_each(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _create_fake()
+        fake.set_response("command -v virt-customize", 0)
+        fake.set_response("mktemp", 0, "/tmp/dbos-if")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm1", "hub_host": "10.0.0.7", "name": "station-a",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "vm_station",
+            "network_mode": "bridge", "ip_address": "10.177.103.110",
+            "os_versions": ["1.7.5.9", "1.8.1.6"], "storage_pool_path": "/vms",
+            "is_managed": True, "target_department_id": "dep1",
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        # каждая версия: свой qemu-snapshot -a + своя offline-инъекция статики
+        assert any("qemu-img snapshot -a 1.7.5.9 /vms/station-a.qcow2" in c for c in cmds)
+        assert any("qemu-img snapshot -a 1.8.1.6 /vms/station-a.qcow2" in c for c in cmds)
+        n_customize = sum(
+            1 for c in cmds
+            if "virt-customize -a /vms/station-a.qcow2 " in c
+            and "--upload /tmp/dbos-if:/etc/network/interfaces" in c
+        )
+        assert n_customize == 2
+        # обе версии дают golden + oryol + smolensk
+        for ver in ("1.7.5.9", "1.8.1.6"):
+            for suf in ("_orel_build", "_oryol", "_smolensk"):
+                assert any(f"snapshot-create-as station-a --name {ver}{suf}" in c for c in cmds)
+        state = stub_session_and_callbacks["calls"]["vm_state"][0]
+        assert state["snapshots"] == [
+            "1.7.5.9_oryol", "1.7.5.9_smolensk",
+            "1.8.1.6_oryol", "1.8.1.6_smolensk",
+        ]
+
+    async def test_universal_requires_ip_address(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm1", "hub_host": "10.0.0.7", "name": "station-a",
+            "cpu": 4, "ram_mb": 4096, "box": "vm_station",
+            "network_mode": "bridge", "ip_address": None,
+            "os_versions": ["1.7.5.9"], "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await _set_single_attempt(tid)
+        await vms.vm_create.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert t.last_error and "VM_INVALID_ARG" in t.last_error
 
     async def test_universal_requires_versions(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _create_fake()

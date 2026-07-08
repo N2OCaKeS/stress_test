@@ -663,9 +663,10 @@ def _virt_install_cmd(
 ) -> str:
     """Собрать `virt-install --import` под ВМ.
 
-    universal собирается на NAT-сети `test` (транзит для провижна статики), затем
-    NIC переводится на bridge. single с `network_mode=bridge` сразу на `br0`,
-    `nat` — на сети `test`. `--cpu host-model` пробрасывает фичи хоста как есть,
+    universal всегда собирается на мосту `br0` (статику каждой версии льём в диск
+    offline, гость поднимается с боевым адресом сразу). single с
+    `network_mode=bridge` — на `br0`, `nat` — на сети `test`. `--cpu host-model`
+    пробрасывает фичи хоста как есть,
     включая vmx/svm для nested там, где хост их отдаёт; форсить `+vmx` нельзя —
     на хостах без vmx (AMD, не-nested) virt-install падает целиком.
     """
@@ -980,28 +981,6 @@ async def _clone_disk_resized(
     )
 
 
-async def _apply_static_ip(ssh, host: str, guest_ip: str, ip_address: str) -> None:
-    """Прописать статический IP гостю (rewrite /etc/network/interfaces).
-
-    Заходим по текущему (NAT) адресу и переписываем сетевой конфиг гостя на
-    `ip_address` из пула; NIC гостя после перевода домена на `br0` окажется в
-    боевом LAN. gw/dns — дефолты стенда (как в референсном `provision.sh`).
-    """
-    addr = ip_address.split("/")[0]
-    cfg = (
-        "auto eth0\\niface eth0 inet static\\n"
-        f"    address {addr}\\n    netmask 255.255.255.0\\n"
-        "    gateway 10.177.103.254\\n    dns-nameservers 10.177.180.246\\n"
-    )
-    cmd = guest_ssh(
-        guest_ip,
-        f"bash -c 'printf \"{cfg}\" > /etc/network/interfaces'",
-        sudo=True,
-    )
-    await _run(ssh, cmd, host, "VM_PROVISION_FAILED",
-               "не удалось прописать статический IP гостю")
-
-
 async def _snapshot(ssh, host: str, name: str, snap: str) -> None:
     await _run(
         ssh, f"virsh snapshot-create-as {name} --name {snap} --atomic", host,
@@ -1032,32 +1011,48 @@ def _os_baseline_entry(
 
 async def _build_universal(
     ssh, host: str, name: str, hostname: str, pool_path: str, ip_address: str,
+    netmask: str, gateway: str, dns: list[str],
     os_versions: list[str], password: str | None, accounts,
     host_label: str, target_dept: str | None,
 ) -> list[dict]:
     """Построить universal-ВМ: на каждую версию — golden + Орёл + Смоленск.
 
-    Для каждой версии: переключаем внутренний qemu-img снимок ОС, поднимаем ВМ
-    на NAT, провижним (hostname/ntp/deps + привязанные учётки), снимаем скрытый
-    golden `<ver>_orel_build`, прописываем статику + переводим NIC на `br0`,
-    опционально меняем пароль `u`, снимаем deliverable Орла `<ver>_oryol`,
-    переводим гостя в Смоленск (astra-modeswitch + МРД/МКЦ + reboot) и снимаем
-    deliverable Смоленска `<ver>_smolensk`. Возвращаем rich-снимки (с golden).
+    Домен уже определён на мосту `br0` (LAN без DHCP). Для каждой версии:
+    гасим ВМ, переключаем внутренний qemu-снимок ОС (`qemu-img snapshot -a`),
+    заливаем статику версии в диск offline (`virt-customize` — на br0 без DHCP
+    гость иначе не получит адрес и будет недостижим; каждая версия несёт свой
+    rootfs, поэтому инъекция идёт на каждую заново), поднимаем ВМ и заходим по
+    боевому адресу. Провижним (hostname/ntp/deps + привязанные учётки), снимаем
+    скрытый golden `<ver>_orel_build`, опционально меняем пароль `u`, снимаем
+    deliverable Орла `<ver>_oryol`, переводим гостя в Смоленск (astra-modeswitch
+    + МРД/МКЦ + reboot) и снимаем deliverable Смоленска `<ver>_smolensk`.
+    Возвращаем rich-снимки (с golden).
+
+    Клон бокса под universal идёт plain `cp` (сохраняет внутренние qemu-снимки
+    версий), а `disk_gb` для него игнорируется — версии зашиты в бокс
+    фиксированного размера.
     """
+    disk_path = f"{pool_path}/{name}.qcow2"
+    static_ip = ip_address.split("/")[0]
     snapshots: list[dict] = []
     for raw_ver in os_versions:
         ver = validate_name(str(raw_ver), host_label, "os_version")
         await ssh.run(f"virsh destroy {name}", sudo=True)  # stop (может быть off)
         await _run(
-            ssh, f"qemu-img snapshot -a {ver} {pool_path}/{name}.qcow2", host,
+            ssh, f"qemu-img snapshot -a {ver} {disk_path}", host,
             "VM_CREATE_FAILED", f"не удалось переключить ОС на {ver}",
+        )
+        # статику версии заливаем в диск offline (домен выключен) — гость
+        # поднимется на br0 сразу с боевым адресом и будет доступен по SSH.
+        await write_static_interfaces_offline(
+            ssh, host, disk_path, static_ip, netmask, gateway, dns,
+            error_code="VM_CREATE_FAILED",
         )
         await _run(ssh, f"virsh start {name}", host,
                    "VM_CREATE_FAILED", f"не удалось запустить ВМ на версии {ver}")
-        guest_ip = await _guest_ip(ssh, host, name)
-        await _provision_guest_base(ssh, host, hostname, guest_ip)
+        await _provision_guest_base(ssh, host, hostname, static_ip)
         await _provision_guest_accounts(
-            ssh, host, guest_ip, accounts, host_label, target_dept,
+            ssh, host, static_ip, accounts, host_label, target_dept,
         )
         # скрытый golden текущей версии (сырой бокс-стейт, креды u:1)
         await _snapshot(ssh, host, name, f"{ver}{_GOLDEN_SUFFIX}")
@@ -1066,21 +1061,10 @@ async def _build_universal(
                 f"{ver}{_GOLDEN_SUFFIX}", ver, MODE_OREL, is_system=True,
             ),
         )
-        # статика + перевод NIC на bridge br0
-        await _apply_static_ip(ssh, host, guest_ip, ip_address)
-        await _run(
-            ssh,
-            f"virt-xml {name} --edit --network bridge={bridge_label()},model=virtio",
-            host, "VM_CREATE_FAILED", "не удалось перевести NIC ВМ на br0",
-        )
-        await ssh.run(f"virsh destroy {name}", sudo=True)
-        await _run(ssh, f"virsh start {name}", host,
-                   "VM_CREATE_FAILED", "ВМ не поднялась на bridge")
-        bridged_ip = ip_address.split("/")[0]
         if password:
             await ssh.run(
                 guest_ssh(
-                    bridged_ip,
+                    static_ip,
                     f"bash -c 'echo {VMS_GUEST_LOGIN}:{password} | chpasswd'",
                     sudo=True,
                 ),
@@ -1091,7 +1075,7 @@ async def _build_universal(
         snapshots.append(_os_baseline_entry(f"{ver}_{MODE_OREL}", ver, MODE_OREL))
         # перевод гостя в Смоленск (уровень 2 + МРД/МКЦ + reboot) → deliverable
         await switch_guest_to_smolensk(
-            ssh, host, bridged_ip, error_code="VM_CREATE_FAILED",
+            ssh, host, static_ip, error_code="VM_CREATE_FAILED",
         )
         await _snapshot(ssh, host, name, f"{ver}_{MODE_SMOLENSK}")
         snapshots.append(
@@ -1255,9 +1239,14 @@ async def vm_create(task_id: str) -> None:
                         ip_address, netmask, gateway, dns,
                         error_code="VM_CREATE_FAILED",
                     )
+                # universal всегда на br0 (провижн версий идёт по боевому статик-
+                # адресу); network_mode из payload его не переопределяет.
+                install_network_mode = "bridge" if is_universal else network_mode
                 await _run(
                     ssh,
-                    _virt_install_cmd(name, cpu, ram_mb, pool_path, network_mode),
+                    _virt_install_cmd(
+                        name, cpu, ram_mb, pool_path, install_network_mode,
+                    ),
                     host, "VM_CREATE_FAILED", "virt-install упал",
                 )
                 if is_universal:
@@ -1266,9 +1255,25 @@ async def vm_create(task_id: str) -> None:
                             error_code="VM_INVALID_ARG", host=host,
                             message="universal-ВМ требует непустой os_versions",
                         )
+                    if not ip_address:
+                        raise SshError(
+                            error_code="VM_INVALID_ARG", host=host,
+                            message=(
+                                "universal-ВМ требует ip_address — гость "
+                                "провижнится по статике на br0 (DHCP на LAN нет)"
+                            ),
+                        )
+                    netmask = validate_ip(
+                        str(payload.get("netmask") or VMS_DEFAULT_NETMASK), host,
+                    )
+                    gateway = validate_ip(
+                        str(payload.get("gateway") or VMS_DEFAULT_GATEWAY), host,
+                    )
+                    dns = normalize_dns(payload, host)
                     snapshots = await _build_universal(
-                        ssh, host, name, hostname, pool_path, ip_address or "",
-                        os_versions, password, accounts, host_label, target_dept,
+                        ssh, host, name, hostname, pool_path, ip_address,
+                        netmask, gateway, dns, os_versions, password, accounts,
+                        host_label, target_dept,
                     )
                 else:
                     snapshots = await _build_single(

@@ -18,6 +18,9 @@ class IdentityContext(BaseModel):
         default=None,
         description="Человеческий заголовок профиля. None — не задан (показывать username).",
     )
+    last_name: str | None = Field(default=None, description="Фамилия. None — не задана.")
+    first_name: str | None = Field(default=None, description="Имя. None — не задано.")
+    middle_name: str | None = Field(default=None, description="Отчество. None — не задано.")
     email: str | None = Field(default=None, description="Email юзера. None для ботов/m2m.")
     department_id: str | None = Field(default=None, description="ID отдела. None у account_admin.")
     department_name: str | None = Field(default=None, description="Человеческое название отдела (== `Department.name`).")

@@ -196,11 +196,11 @@ Errors: `USER_NOT_FOUND` (404) — нет такого username в видимо�
 
 ### `GET /users/labels?ids=<csv>`
 
-Auth: любой залогиненный юзер (user-context; m2m отбивается `USER_CONTEXT_REQUIRED` 403). Батч-резолв `user_id` → `username` для подстановки имён в UI (например в карточке шаринга personal-секрета). Username — не чувствительные данные, поэтому ручка доступна не только админам.
+Auth: любой залогиненный юзер (user-context; m2m отбивается `USER_CONTEXT_REQUIRED` 403). Батч-резолв `user_id` → имена юзера (username, display_name, ФИО) для подстановки в UI (например в карточке шаринга personal-секрета). Это не чувствительные данные, поэтому ручка доступна не только админам.
 
 Query: `ids` — CSV из `user_id` (например `usr_a,usr_b`), 1..8192 символов; на сервере режется до 200 id за запрос. Несуществующие id молча пропускаются.
 
-Response (`UserLabelsResponse`): `{ "labels": { "usr_a": "ivanov", "usr_b": "petrov" } }` — только для найденных.
+Response (`UserLabelsResponse`): `{ "labels": { "usr_a": { "user_id": "usr_a", "username": "ivanov", "display_name": "Ваня", "last_name": "Иванов", "first_name": "Иван", "middle_name": "Иванович" } } }` — только для найденных. Поля `display_name`/`last_name`/`first_name`/`middle_name` = `null`, если у юзера не заполнены (фронт фолбэкается на `username`).
 
 ### `GET /users/locked`
 

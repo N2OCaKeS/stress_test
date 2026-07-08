@@ -261,7 +261,8 @@ async def raw_client(db):
 
 # ── Вспомогательные функции для создания тестовых данных ─────────────────────
 
-async def _make_user(db, username, password, department_id=None, platform_role=None, status="active"):
+async def _make_user(db, username, password, department_id=None, platform_role=None, status="active",
+                     display_name=None, last_name=None, first_name=None, middle_name=None):
     user = User(
         id=_new_id("usr_"),
         username=username,
@@ -270,6 +271,10 @@ async def _make_user(db, username, password, department_id=None, platform_role=N
         platform_role=platform_role,
         status=status,
         is_active=True,
+        display_name=display_name,
+        last_name=last_name,
+        first_name=first_name,
+        middle_name=middle_name,
     )
     db.add(user)
     await db.flush()

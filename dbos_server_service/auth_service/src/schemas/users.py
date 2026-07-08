@@ -31,6 +31,9 @@ class UserCreate(BaseModel):
     )
     password: str = Field(min_length=12, description="Пароль в plaintext. Минимум 12 символов, буквы + цифры. Хэшируется Argon2id перед записью.")
     email: EmailStr | None = Field(default=None, description="Email (опционально).")
+    last_name: str | None = Field(default=None, max_length=128, description="Фамилия (опционально).")
+    first_name: str | None = Field(default=None, max_length=128, description="Имя (опционально).")
+    middle_name: str | None = Field(default=None, max_length=128, description="Отчество (опционально).")
     # У account_admin юзеров нет отдела; для всех остальных ролей department_id обязателен
     department_id: str | None = Field(
         default=None,
@@ -107,6 +110,9 @@ class MeUpdateRequest(BaseModel):
 class UserUpdate(BaseModel):
     """Тело `PATCH /users/{user_id}` — частичный апдейт."""
     email: EmailStr | None = Field(default=None)
+    last_name: str | None = Field(default=None, max_length=128, description="Фамилия. Явный null очищает поле.")
+    first_name: str | None = Field(default=None, max_length=128, description="Имя. Явный null очищает поле.")
+    middle_name: str | None = Field(default=None, max_length=128, description="Отчество. Явный null очищает поле.")
     department_id: str | None = Field(default=None, description="Перевести юзера в другой отдел.")
     # `status` ограничен enum'ом — иначе admin прописал бы `"garbage"`, и
     # `authorization_service.introspect` сравнивал бы это с `UserStatus.ACTIVE`
@@ -125,6 +131,9 @@ class UserResponse(BaseModel):
     user_id: str
     username: str
     email: str | None
+    last_name: str | None = None
+    first_name: str | None = None
+    middle_name: str | None = None
     department_id: str | None
     department_name: str | None
     status: str
@@ -165,16 +174,34 @@ class UserResolveResponse(BaseModel):
     department_id: str | None = None
 
 
-class UserLabelsResponse(BaseModel):
-    """Ответ `GET /users/labels` — батч-резолв user_id → username.
+class UserLabel(BaseModel):
+    """Один элемент батч-резолва — человекочитаемые имена юзера по id.
 
-    `labels` — словарь {user_id: username} только для найденных id; запрошенные,
-    но несуществующие id в ответе отсутствуют. Username не чувствительные данные,
-    поэтому endpoint доступен любому залогиненному юзеру — UI подставляет имя
-    вместо id (например в карточке шаринга personal-секрета).
+    Помимо username отдаём display_name и ФИО (`last_name`/`first_name`/
+    `middle_name`), чтобы UI мог собрать полное имя с фолбэком на username там,
+    где ФИО не заполнено. Всё это не чувствительные данные — доступны любому
+    залогиненному юзеру. Ничего про статус, роли, email тут нет.
     """
 
-    labels: dict[str, str]
+    user_id: str
+    username: str
+    display_name: str | None = None
+    last_name: str | None = None
+    first_name: str | None = None
+    middle_name: str | None = None
+
+
+class UserLabelsResponse(BaseModel):
+    """Ответ `GET /users/labels` — батч-резолв user_id → имена юзера.
+
+    `labels` — словарь {user_id: UserLabel} только для найденных id; запрошенные,
+    но несуществующие id в ответе отсутствуют. Значение несёт username,
+    display_name и ФИО — не чувствительные данные, поэтому endpoint доступен
+    любому залогиненному юзеру. UI подставляет имя вместо id (например в карточке
+    шаринга personal-секрета) и может показать ФИО с фолбэком на username.
+    """
+
+    labels: dict[str, UserLabel]
 
 
 class AssignRolesRequest(BaseModel):

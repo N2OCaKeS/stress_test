@@ -169,6 +169,9 @@ class UserRepository:
         platform_role: str | None = None,
         created_by: str | None = None,
         must_change_password: bool = False,
+        last_name: str | None = None,
+        first_name: str | None = None,
+        middle_name: str | None = None,
     ) -> User:
         user = User(
             id=user_id(),
@@ -179,6 +182,9 @@ class UserRepository:
             platform_role=platform_role,
             created_by=created_by,
             must_change_password=must_change_password,
+            last_name=last_name,
+            first_name=first_name,
+            middle_name=middle_name,
         )
         self._db.add(user)
         await self._db.flush()

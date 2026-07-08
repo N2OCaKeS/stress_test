@@ -19,6 +19,12 @@ class User(Base):
     # пользователь сам предпочтёт). В отличие от `username` не уникален и не
     # участвует в логине. Меняется через PATCH /me.
     display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # ФИО пользователя — три отдельных поля. Заполняются опционально; у
+    # существующих учёток остаются пустыми (nullable). В логине не участвуют,
+    # уникальность не требуется — только для отображения в UI.
+    last_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    first_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    middle_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(1024), nullable=False)
     department_id: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("departments.id", ondelete="RESTRICT"), nullable=True, index=True

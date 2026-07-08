@@ -24,6 +24,7 @@ from src.schemas.users import (
     SessionEntry,
     SessionsListResponse,
     UserGroupWithRolesEntry,
+    UserLabel,
     UserLabelsResponse,
     UserPermissionsResponse,
     UserResponse,
@@ -43,6 +44,9 @@ def _to_response(user, dept_name: str | None) -> UserResponse:
         user_id=user.id,
         username=user.username,
         email=user.email,
+        last_name=user.last_name,
+        first_name=user.first_name,
+        middle_name=user.middle_name,
         department_id=user.department_id,
         department_name=dept_name,
         status=user.status,
@@ -336,8 +340,10 @@ async def resolve_labels(
         id→username, не возвращаем.
 
     Возвращает:
-        `UserLabelsResponse` с `labels = {user_id: username}` только для
-        найденных id. Несуществующие id молча пропускаются (UI покажет «—»).
+        `UserLabelsResponse` с `labels = {user_id: UserLabel}` только для
+        найденных id. Значение несёт username, display_name и ФИО (для тех, у
+        кого оно заполнено; иначе поля ФИО = null). Несуществующие id молча
+        пропускаются (UI покажет «—»).
     """
     # Дедуп — повторные id в query не должны раздувать IN-список.
     unique_ids = list(dict.fromkeys(user_ids))
@@ -346,7 +352,19 @@ async def resolve_labels(
 
     user_repo = UserRepository(db)
     found = await user_repo.list_by_ids(unique_ids)
-    return UserLabelsResponse(labels={u.id: u.username for u in found})
+    return UserLabelsResponse(
+        labels={
+            u.id: UserLabel(
+                user_id=u.id,
+                username=u.username,
+                display_name=u.display_name,
+                last_name=u.last_name,
+                first_name=u.first_name,
+                middle_name=u.middle_name,
+            )
+            for u in found
+        }
+    )
 
 
 async def create_user(
@@ -360,6 +378,9 @@ async def create_user(
     platform_role: str | None = None,
     initial_roles: list | None = None,
     must_change_password: bool | None = None,
+    last_name: str | None = None,
+    first_name: str | None = None,
+    middle_name: str | None = None,
     request_id: str | None = None,
 ) -> UserResponse:
     """Создать юзера + опционально выдать initial_roles в одной транзакции."""
@@ -427,6 +448,9 @@ async def create_user(
         platform_role=platform_role,
         created_by=actor_id,
         must_change_password=effective_must_change,
+        last_name=last_name,
+        first_name=first_name,
+        middle_name=middle_name,
     )
 
     if initial_roles:
@@ -560,12 +584,18 @@ async def update_user(
             message="Cannot update user outside your department",
         )
 
-    allowed_fields = {"email", "department_id", "status", "platform_role"}
+    allowed_fields = {
+        "email", "department_id", "status", "platform_role",
+        "last_name", "first_name", "middle_name",
+    }
     # status — не nullable в БД; для остальных явный null = «очистить поле»
     # (например, снять platform_role у юзера или перевести в платформенные
     # без отдела). exclude_unset на endpoint'е оставляет именно те ключи,
     # которые пришли в JSON, включая null.
-    nullable_fields = {"email", "department_id", "platform_role"}
+    nullable_fields = {
+        "email", "department_id", "platform_role",
+        "last_name", "first_name", "middle_name",
+    }
     filtered = {
         k: v
         for k, v in updates.items()

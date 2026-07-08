@@ -1,22 +1,42 @@
-"""`GET /users/labels?ids=usr_a,usr_b` — батч-резолв user_id → username.
+"""`GET /users/labels?ids=usr_a,usr_b` — батч-резолв user_id → имена юзера.
 
 Обратное направление к `/users/resolve`: UI получает набор user_id (например
 владельцев/получателей grant'ов personal-секрета) и подставляет человекочитаемые
-имена. Username — не чувствительные данные, поэтому доступ — любой user-context.
+имена. Username, display_name и ФИО — не чувствительные данные, поэтому доступ —
+любой user-context.
 
 Что проверяем:
 * обычный юзер резолвит имя по id (в т.ч. чужого отдела — scope не режется);
 * несколько id за раз → словарь;
+* значение несёт username + display_name + ФИО; у юзера без ФИО поля = null;
 * несуществующий id молча пропускается;
-* ответ содержит только labels {id: username}, без статусов/ролей/email;
+* ответ содержит только labels, без статусов/ролей/email;
 * m2m (client_credentials) → 403 USER_CONTEXT_REQUIRED;
 * без токена → 401;
 * пустой/отсутствующий `ids` → 422.
 """
 
+import pytest_asyncio
+
+from tests.conftest import _make_user
+
 LABELS_URL = "/api/auth/v1/users/labels"
 CLIENTS_URL = "/api/auth/v1/oauth2/clients"
 TOKEN_URL = "/api/auth/v1/oauth2/token"
+
+
+@pytest_asyncio.fixture()
+async def user_with_fio(db, dept_a):
+    """Юзер с заполненными display_name и ФИО — для проверки, что labels отдаёт
+    все имена, а не только username."""
+    return await _make_user(
+        db, "t_user_fio", "User12345678!",
+        department_id=dept_a.id,
+        display_name="Ксюша",
+        last_name="Иванова",
+        first_name="Ксения",
+        middle_name="Петровна",
+    )
 
 
 async def _labels(client, token, ids):
@@ -30,30 +50,78 @@ async def _labels(client, token, ids):
 async def test_regular_user_resolves_single_label(client, user_a_token, user_a):
     resp = await _labels(client, user_a_token, user_a.id)
     assert resp.status_code == 200, resp.text
-    assert resp.json()["labels"] == {user_a.id: "t_user_a"}
+    assert resp.json()["labels"] == {
+        user_a.id: {
+            "user_id": user_a.id,
+            "username": "t_user_a",
+            "display_name": None,
+            "last_name": None,
+            "first_name": None,
+            "middle_name": None,
+        }
+    }
 
 
 async def test_resolves_batch(client, user_a_token, user_a, dept_admin_a):
     resp = await _labels(client, user_a_token, f"{user_a.id},{dept_admin_a.id}")
     assert resp.status_code == 200
     labels = resp.json()["labels"]
-    assert labels[user_a.id] == "t_user_a"
-    assert labels[dept_admin_a.id] == "t_dept_admin_a"
+    assert labels[user_a.id]["username"] == "t_user_a"
+    assert labels[dept_admin_a.id]["username"] == "t_dept_admin_a"
+
+
+async def test_label_carries_fio(client, user_a_token, user_with_fio):
+    """У юзера с заполненным ФИО labels отдаёт last/first/middle_name и
+    display_name — фронт может собрать полное имя."""
+    resp = await _labels(client, user_a_token, user_with_fio.id)
+    assert resp.status_code == 200
+    entry = resp.json()["labels"][user_with_fio.id]
+    assert entry == {
+        "user_id": user_with_fio.id,
+        "username": "t_user_fio",
+        "display_name": "Ксюша",
+        "last_name": "Иванова",
+        "first_name": "Ксения",
+        "middle_name": "Петровна",
+    }
+
+
+async def test_label_fio_null_when_absent(client, user_a_token, user_a):
+    """У юзера без ФИО поля ФИО и display_name = null (фронт фолбэкнется на
+    username)."""
+    resp = await _labels(client, user_a_token, user_a.id)
+    assert resp.status_code == 200
+    entry = resp.json()["labels"][user_a.id]
+    assert entry["last_name"] is None
+    assert entry["first_name"] is None
+    assert entry["middle_name"] is None
+    assert entry["display_name"] is None
+    assert entry["username"] == "t_user_a"
+
+
+async def test_batch_mixes_fio_and_plain(client, user_a_token, user_a, user_with_fio):
+    """Батч с юзером с ФИО и юзером без — каждый отдаётся со своими полями."""
+    resp = await _labels(client, user_a_token, f"{user_a.id},{user_with_fio.id}")
+    assert resp.status_code == 200
+    labels = resp.json()["labels"]
+    assert labels[user_a.id]["last_name"] is None
+    assert labels[user_with_fio.id]["last_name"] == "Иванова"
+    assert labels[user_with_fio.id]["first_name"] == "Ксения"
 
 
 async def test_cross_dept_label_still_resolved(client, user_a_token, user_b):
-    """Username не чувствителен — резолв не режется по отделу (в отличие от
+    """Имена не чувствительны — резолв не режется по отделу (в отличие от
     /resolve, который скрывает существование чужого username)."""
     resp = await _labels(client, user_a_token, user_b.id)
     assert resp.status_code == 200
-    assert resp.json()["labels"] == {user_b.id: "t_user_b"}
+    assert resp.json()["labels"][user_b.id]["username"] == "t_user_b"
 
 
 async def test_nonexistent_id_skipped(client, user_a_token, user_a):
     resp = await _labels(client, user_a_token, f"{user_a.id},usr_does_not_exist")
     assert resp.status_code == 200
     labels = resp.json()["labels"]
-    assert labels == {user_a.id: "t_user_a"}
+    assert set(labels.keys()) == {user_a.id}
     assert "usr_does_not_exist" not in labels
 
 
@@ -68,8 +136,13 @@ async def test_response_has_no_sensitive_fields(client, user_a_token, user_a):
     assert resp.status_code == 200
     body = resp.json()
     assert set(body.keys()) == {"labels"}
-    # Значения — только строки-username, не вложенные объекты со статусами/ролями.
-    assert all(isinstance(v, str) for v in body["labels"].values())
+    # Значение — только имена: id, username, display_name, ФИО. Никаких
+    # статусов/ролей/email/department.
+    entry = body["labels"][user_a.id]
+    assert set(entry.keys()) == {
+        "user_id", "username", "display_name",
+        "last_name", "first_name", "middle_name",
+    }
 
 
 async def test_missing_ids_param_rejected(client, user_a_token):

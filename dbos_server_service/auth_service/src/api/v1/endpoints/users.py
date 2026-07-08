@@ -529,13 +529,15 @@ async def resolve_user(
 @router.get(
     "/labels",
     response_model=UserLabelsResponse,
-    summary="Батч-резолв user_id → username (любой залогиненный юзер)",
+    summary="Батч-резолв user_id → имена юзера (любой залогиненный юзер)",
     description=(
-        "Принимает `ids` (CSV из user_id) и возвращает `{user_id: username}` "
-        "только для найденных. Username — не чувствительные данные, поэтому "
-        "доступен любому user-context (не только админам): UI подставляет имя "
-        "вместо id, например в карточке шаринга personal-секрета. "
-        "Несуществующие id молча пропускаются. Лимит — 200 id за запрос."
+        "Принимает `ids` (CSV из user_id) и возвращает `{user_id: {username, "
+        "display_name, last_name, first_name, middle_name}}` только для "
+        "найденных. Всё это не чувствительные данные, поэтому доступно любому "
+        "user-context (не только админам): UI подставляет имя вместо id "
+        "(с фолбэком ФИО → username), например в карточке шаринга "
+        "personal-секрета. Несуществующие id молча пропускаются. "
+        "Лимит — 200 id за запрос."
     ),
 )
 async def resolve_user_labels(
@@ -547,12 +549,12 @@ async def resolve_user_labels(
     ),
     db: AsyncSession = Depends(get_db),
 ) -> UserLabelsResponse:
-    """Батч user_id → username.
+    """Батч user_id → имена юзера (username, display_name, ФИО).
 
     Доступ:
         Любой залогиненный юзер (user-context). m2m отбивается
         `require_user_context` (403 USER_CONTEXT_REQUIRED). Чувствительные поля
-        не отдаются — только id→username.
+        (статус, роли, email) не отдаются — только имена для подстановки в UI.
     """
     user_ids = [i.strip() for i in ids.split(",") if i.strip()]
     # Защита от слишком большого батча — режем до разумного потолка.
@@ -661,6 +663,9 @@ async def create_user(
         platform_role=body.platform_role,
         initial_roles=body.initial_roles,
         must_change_password=body.must_change_password,
+        last_name=body.last_name,
+        first_name=body.first_name,
+        middle_name=body.middle_name,
         request_id=getattr(request.state, "request_id", None),
     )
 

@@ -127,6 +127,18 @@ _QEMU_CONF_FIX = (
     ">> /etc/libvirt/qemu.conf'"
 )
 
+# Astra SE держит libvirt под parsec: access-driver и security-driver. В режиме
+# Смоленск parsec-ACL запрещает операции libvirt («доступ запрещён QEMU»), в Орле
+# hub поднимается и без правки. Снимаем parsec-ACL и per-VM labeling, чтобы hub
+# работал в обоих режимах. Идемпотентно: строку удаляем и дописываем заново.
+_PARSEC_FIX = (
+    "sh -c '"
+    "sed -i \"/^access_drivers/d\" /etc/libvirt/libvirtd.conf; "
+    "echo \"access_drivers = [ ]\" >> /etc/libvirt/libvirtd.conf; "
+    "sed -i \"/^security_driver/d\" /etc/libvirt/qemu.conf; "
+    "echo \"security_driver = \\\"none\\\"\" >> /etc/libvirt/qemu.conf'"
+)
+
 # Firewall: iptables→nft, FORWARD br0 ACCEPT (+ RELATED,ESTABLISHED обратно),
 # DOCKER-USER ACCEPT br0 (если docker установлен — иначе цепочки нет). Все
 # правила идемпотентны через `-C ... || -I ...`.
@@ -384,8 +396,12 @@ async def vms_hub_prepare(task_id: str) -> None:
                 mgmt_user = payload.get("management_user")
                 await ssh.run(_usermod_cmd(mgmt_user), sudo=True)
                 await ssh.run(_QEMU_CONF_FIX, sudo=True)
+                await ssh.run(_PARSEC_FIX, sudo=True)
                 await _run(
-                    ssh, "systemctl enable --now libvirtd", host,
+                    ssh,
+                    "sh -c 'systemctl enable --now libvirtd && "
+                    "systemctl restart libvirtd'",
+                    host,
                     "VMS_HUB_LIBVIRTD_FAILED", "не удалось поднять libvirtd",
                 )
                 await _setup_bridge(ssh, host, phy_if, os_family)

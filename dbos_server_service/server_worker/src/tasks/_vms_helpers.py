@@ -425,6 +425,116 @@ async def resolve_guest_ip(ssh, host: str, name: str, payload: dict) -> str:
     return parsed
 
 
+# ── Статика гостя (offline-инъекция в диск) ──────────────────────────────────
+
+
+# Дефолты сети стенда, если payload не задал их явно (порт `provision.sh`:
+# gw .254, /24, dns .246).
+VMS_DEFAULT_NETMASK = "255.255.255.0"
+VMS_DEFAULT_GATEWAY = "10.177.103.254"
+VMS_DEFAULT_DNS = ("10.177.180.246",)
+
+
+def static_interfaces_lines(
+    addr: str, netmask: str, gateway: str, dns: list[str],
+) -> list[str]:
+    """Строки `/etc/network/interfaces` со статикой — порт `provision.sh`."""
+    return [
+        "auto eth0",
+        "iface eth0 inet static",
+        f"    address {addr}",
+        f"    netmask {netmask}",
+        f"    gateway {gateway}",
+        f"    dns-nameservers {' '.join(dns)}",
+    ]
+
+
+def normalize_dns(payload: dict, host: str) -> list[str]:
+    """Список DNS-серверов из payload (str|list) → валидированные адреса."""
+    raw = payload.get("dns")
+    if raw is None:
+        return [str(d) for d in VMS_DEFAULT_DNS]
+    items = raw if isinstance(raw, (list, tuple)) else [raw]
+    out: list[str] = []
+    for item in items:
+        out.append(validate_ip(str(item), host).split("/")[0])
+    return out or [str(d) for d in VMS_DEFAULT_DNS]
+
+
+async def ensure_virt_customize(
+    ssh, host: str, *, error_code: str = "VM_NET_APPLY_FAILED",
+) -> None:
+    """Убедиться, что на hub'е есть virt-customize (libguestfs-tools).
+
+    Обычно ставится в `vms_hub.prepare`. Если бинаря нет — best-effort
+    доустановка (apt|dnf); всё равно нет → внятная ошибка с переданным кодом.
+    """
+    rc, _out, _err = await ssh.run("command -v virt-customize", sudo=True)
+    if rc == 0:
+        return
+    await ssh.run(
+        "sh -c 'if command -v apt-get >/dev/null 2>&1; then "
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y libguestfs-tools; "
+        "elif command -v dnf >/dev/null 2>&1; then "
+        "dnf install -y libguestfs-tools || dnf install -y libguestfs-tools-c; fi'",
+        sudo=True,
+    )
+    rc, _out, _err = await ssh.run("command -v virt-customize", sudo=True)
+    if rc != 0:
+        raise SshError(
+            error_code=error_code, host=host,
+            message=(
+                "на hub'е нет virt-customize (libguestfs-tools) для offline-правки "
+                "статики — доустановите пакет или повторите prepare сервера"
+            ),
+        )
+
+
+async def write_static_interfaces_offline(
+    ssh, host: str, disk_path: str, ip: str, netmask: str,
+    gateway: str, dns: list[str], *, error_code: str = "VM_NET_APPLY_FAILED",
+) -> None:
+    """Залить статику в qcow2-диск ВМ offline (`virt-customize`), не заходя в гостя.
+
+    Генерит `/etc/network/interfaces` (address/netmask/gateway/dns) во временный
+    файл на hub'е и заливает его прямо в образ — гость поднимается сразу с боевым
+    адресом. Домен на момент вызова должен быть выключен: `vm.create` зовёт до
+    `virt-install`, фолбэк `vm.set_network` — после `virsh destroy`. Требует
+    libguestfs-tools на hub'е (ставится в `vms_hub.prepare`). Содержимое подаём
+    на stdin (`tee`), а не в shell-строку — не расклеивает команду.
+    """
+    addr = str(ip).split("/")[0]
+    safe_disk = validate_path(str(disk_path), host)
+    await ensure_virt_customize(ssh, host, error_code=error_code)
+    content = "\n".join(static_interfaces_lines(addr, netmask, gateway, dns)) + "\n"
+    rc, out, err = await ssh.run("mktemp", sudo=True)
+    if rc != 0 or not (out or "").strip():
+        raise SshError(
+            error_code=error_code, host=host, returncode=rc,
+            stderr=(err or "").strip(),
+            message="не удалось создать временный файл для статик-конфига",
+        )
+    tmp = out.strip()
+    rc, _out, err = await ssh.run(
+        f"tee {tmp} > /dev/null", sudo=True, stdin_payload=content,
+    )
+    if rc != 0:
+        raise SshError(
+            error_code=error_code, host=host, returncode=rc,
+            stderr=(err or "").strip(),
+            message="не удалось записать статик-конфиг во временный файл",
+        )
+    try:
+        await run_hub_cmd(
+            ssh,
+            f"virt-customize -a {safe_disk} --upload {tmp}:/etc/network/interfaces",
+            host, error_code,
+            "virt-customize не смог записать статику в диск ВМ",
+        )
+    finally:
+        await ssh.run(f"rm -f {tmp}", sudo=True)
+
+
 # ── Каталог образов (страховка box_url) ──────────────────────────────────────
 
 
@@ -485,6 +595,13 @@ __all__ = [
     "additional_pool_path",
     "ensure_additional_pool",
     "resolve_guest_ip",
+    "static_interfaces_lines",
+    "normalize_dns",
+    "ensure_virt_customize",
+    "write_static_interfaces_offline",
+    "VMS_DEFAULT_NETMASK",
+    "VMS_DEFAULT_GATEWAY",
+    "VMS_DEFAULT_DNS",
     "box_url_from_catalog",
     "resolve_box_url",
     "guest_ssh",

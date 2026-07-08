@@ -42,17 +42,22 @@ from src.services.redis_stash_crypto import (
 )
 from src.tasks._runner import run_task
 from src.tasks._vms_helpers import (
+    VMS_DEFAULT_GATEWAY,
+    VMS_DEFAULT_NETMASK,
     bridge_label,
     guest_ssh,
     guest_ssh_key,
     map_domstate,
+    normalize_dns,
     open_hub_session,
     parse_domifaddr,
     resolve_guest_ip,
     run_hub_cmd,
+    static_interfaces_lines,
     validate_ip,
     validate_name,
     validate_path,
+    write_static_interfaces_offline,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,12 +69,6 @@ AUDIT_SAFE_FIELDS_PREPARE: set[str] = {
 AUDIT_SAFE_FIELDS_NETWORK: set[str] = {
     "vm_id", "vm_name", "network_mode", "ip_address", "power_state",
 }
-
-# Дефолты сети стенда — если payload не задал шлюз/маску/DNS явно. Совпадают с
-# референсным `provision.sh` (gw .254, /24, dns .246).
-_DEFAULT_NETMASK = "255.255.255.0"
-_DEFAULT_GATEWAY = "10.177.103.254"
-_DEFAULT_DNS = ("10.177.180.246",)
 
 # Тайминги ожидания гостя/адреса после рестарта домена. Вынесены в модульные
 # константы, чтобы тесты обнуляли задержки (реальный ребут гостя — минуты).
@@ -553,30 +552,8 @@ async def vm_prepare(task_id: str) -> None:
 # ── vm.set_network ───────────────────────────────────────────────────────────
 
 
-def _normalize_dns(payload: dict, host: str) -> list[str]:
-    """Список DNS-серверов из payload (str|list) → валидированные адреса."""
-    raw = payload.get("dns")
-    if raw is None:
-        return [str(d) for d in _DEFAULT_DNS]
-    items = raw if isinstance(raw, (list, tuple)) else [raw]
-    out: list[str] = []
-    for item in items:
-        out.append(validate_ip(str(item), host).split("/")[0])
-    return out or [str(d) for d in _DEFAULT_DNS]
-
-
-def _static_interfaces_lines(
-    addr: str, netmask: str, gateway: str, dns: list[str],
-) -> list[str]:
-    """Строки `/etc/network/interfaces` со статикой — порт `provision.sh`."""
-    return [
-        "auto eth0",
-        "iface eth0 inet static",
-        f"    address {addr}",
-        f"    netmask {netmask}",
-        f"    gateway {gateway}",
-        f"    dns-nameservers {' '.join(dns)}",
-    ]
+# DNS-нормализатор общий с `vm.create` — живёт в `_vms_helpers`.
+_normalize_dns = normalize_dns
 
 
 async def _write_static_interfaces(
@@ -589,7 +566,7 @@ async def _write_static_interfaces(
     `addr`/`netmask` с `gateway`/`dns`. После перевода NIC домена на `br0` гость
     окажется в боевом LAN с этим адресом.
     """
-    cfg = "\\n".join(_static_interfaces_lines(addr, netmask, gateway, dns)) + "\\n"
+    cfg = "\\n".join(static_interfaces_lines(addr, netmask, gateway, dns)) + "\\n"
     cmd = f"bash -c 'printf \"{cfg}\" > /etc/network/interfaces'"
     await run_hub_cmd(
         ssh, guest_ssh(guest_ip, cmd, sudo=True), host,
@@ -632,62 +609,6 @@ async def _resolve_vm_disk(ssh, host: str, vm_name: str) -> str:
     return validate_path(disk, host)
 
 
-async def _ensure_virt_customize(ssh, host: str) -> None:
-    """Убедиться, что на hub'е есть virt-customize (libguestfs-tools).
-
-    Обычно ставится в `vms_hub.prepare`. Если бинаря нет — best-effort
-    доустановка (apt|dnf); всё равно нет → внятная ошибка.
-    """
-    rc, _out, _err = await ssh.run("command -v virt-customize", sudo=True)
-    if rc == 0:
-        return
-    await ssh.run(
-        "sh -c 'if command -v apt-get >/dev/null 2>&1; then "
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y libguestfs-tools; "
-        "elif command -v dnf >/dev/null 2>&1; then "
-        "dnf install -y libguestfs-tools || dnf install -y libguestfs-tools-c; fi'",
-        sudo=True,
-    )
-    rc, _out, _err = await ssh.run("command -v virt-customize", sudo=True)
-    if rc != 0:
-        raise SshError(
-            error_code="VM_NET_APPLY_FAILED", host=host,
-            message=(
-                "на hub'е нет virt-customize (libguestfs-tools) для offline-правки "
-                "статики — доустановите пакет или повторите prepare сервера"
-            ),
-        )
-
-
-async def _write_interfaces_tmp(
-    ssh, host: str, addr: str, netmask: str, gateway: str, dns: list[str],
-) -> str:
-    """Сгенерить статик-конфиг во временный файл на hub'е; вернуть путь.
-
-    Содержимое подаём на stdin (`tee`), а не в shell-строку — не расклеивает
-    команду. Caller обязан подчистить файл.
-    """
-    content = "\n".join(_static_interfaces_lines(addr, netmask, gateway, dns)) + "\n"
-    rc, out, err = await ssh.run("mktemp", sudo=True)
-    if rc != 0 or not (out or "").strip():
-        raise SshError(
-            error_code="VM_NET_APPLY_FAILED", host=host, returncode=rc,
-            stderr=(err or "").strip(),
-            message="не удалось создать временный файл для статик-конфига",
-        )
-    path = out.strip()
-    rc, _out, err = await ssh.run(
-        f"tee {path} > /dev/null", sudo=True, stdin_payload=content,
-    )
-    if rc != 0:
-        raise SshError(
-            error_code="VM_NET_APPLY_FAILED", host=host, returncode=rc,
-            stderr=(err or "").strip(),
-            message="не удалось записать статик-конфиг во временный файл",
-        )
-    return path
-
-
 async def _apply_static_offline(
     ssh, host: str, vm_name: str, addr: str, netmask: str,
     gateway: str, dns: list[str],
@@ -700,17 +621,9 @@ async def _apply_static_offline(
     """
     await ssh.run(f"virsh destroy {vm_name}", sudo=True)  # offline-правка требует off
     disk = await _resolve_vm_disk(ssh, host, vm_name)
-    await _ensure_virt_customize(ssh, host)
-    tmp = await _write_interfaces_tmp(ssh, host, addr, netmask, gateway, dns)
-    try:
-        await run_hub_cmd(
-            ssh,
-            f"virt-customize -a {disk} --upload {tmp}:/etc/network/interfaces",
-            host, "VM_NET_APPLY_FAILED",
-            "virt-customize не смог записать статику в диск ВМ",
-        )
-    finally:
-        await ssh.run(f"rm -f {tmp}", sudo=True)
+    await write_static_interfaces_offline(
+        ssh, host, disk, addr, netmask, gateway, dns,
+    )
 
 
 async def _switch_domain_network(
@@ -818,10 +731,10 @@ async def vm_set_network(task_id: str) -> None:
                         )
                     addr = validate_ip(str(raw_ip), host).split("/")[0]
                     netmask = validate_ip(
-                        str(payload.get("netmask") or _DEFAULT_NETMASK), host,
+                        str(payload.get("netmask") or VMS_DEFAULT_NETMASK), host,
                     )
                     gateway = validate_ip(
-                        str(payload.get("gateway") or _DEFAULT_GATEWAY), host,
+                        str(payload.get("gateway") or VMS_DEFAULT_GATEWAY), host,
                     )
                     dns = _normalize_dns(payload, host)
                     # Текущий адрес гостя для входа (NAT/DHCP), пока он ещё на

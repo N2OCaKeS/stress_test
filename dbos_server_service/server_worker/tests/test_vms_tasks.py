@@ -422,7 +422,48 @@ class TestVmCreateSingle:
         assert any("qemu-img resize /vms/xfs-1.qcow2 15G" in c for c in cmds)
         assert any("network=test" in c for c in cmds)  # nat
         assert any("snapshot-create-as xfs-1 --name build" in c for c in cmds)
+        # nat-режим статику в диск не льёт
+        assert not any("virt-customize" in c for c in cmds)
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
+        assert state["snapshots"] == ["build"]
+
+    async def test_single_bridge_injects_static_before_install(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _create_fake()
+        fake.set_response("command -v virt-customize", 0)  # libguestfs уже стоит
+        fake.set_response("mktemp", 0, "/tmp/dbos-if")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm3", "hub_host": "10.0.0.7", "name": "single-1",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "single-box",
+            "network_mode": "bridge", "ip_address": "10.177.103.108",
+            "gateway": "10.177.103.254", "netmask": "255.255.255.0",
+            "dns": ["10.177.180.246", "10.177.180.247"],
+            "storage_pool_path": "/vms", "os_versions": [], "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        # порядок: клон диска → offline-инъекция статики → virt-install
+        i_cp = next(i for i, c in enumerate(cmds) if "cp /vms/single-box.qcow2 /vms/single-1.qcow2" in c)
+        i_customize = next(
+            i for i, c in enumerate(cmds)
+            if "virt-customize -a /vms/single-1.qcow2 "
+            "--upload /tmp/dbos-if:/etc/network/interfaces" in c
+        )
+        i_install = next(i for i, c in enumerate(cmds) if "virt-install -n single-1" in c)
+        assert i_cp < i_customize < i_install
+        # конфиг ушёл на stdin mktemp-файла со статикой из пула
+        tee_idx = next(i for i, c in enumerate(cmds) if "tee /tmp/dbos-if" in c)
+        body = fake.stdins[tee_idx] or ""
+        assert "address 10.177.103.108" in body
+        assert "gateway 10.177.103.254" in body
+        assert "netmask 255.255.255.0" in body
+        assert "dns-nameservers 10.177.180.246 10.177.180.247" in body
+        state = stub_session_and_callbacks["calls"]["vm_state"][0]
+        assert state["ip_address"] == "10.177.103.108"
         assert state["snapshots"] == ["build"]
 
 

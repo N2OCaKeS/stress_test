@@ -43,9 +43,12 @@ from src.services import server_service_client
 from src.tasks._runner import run_task
 from src.tasks._vms_helpers import (
     POWER_VERBS,
+    VMS_DEFAULT_GATEWAY,
+    VMS_DEFAULT_NETMASK,
     bridge_label,
     guest_ssh,
     map_domstate,
+    normalize_dns,
     open_hub_session,
     parse_domifaddr,
     positive_int,
@@ -55,6 +58,7 @@ from src.tasks._vms_helpers import (
     validate_iface,
     validate_name,
     validate_path,
+    write_static_interfaces_offline,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,7 +67,8 @@ logger = logging.getLogger(__name__)
 # Пакеты hub'а по семейству ОС. apt-набор — из референса
 # (`Libvirt.prepare`): astra-kvm тянет qemu/libvirt зависимостями. dnf-аналог —
 # ручной список для RHEL/RedOS. libguestfs-tools нужен для virt-customize —
-# offline-правки диска ВМ (фолбэк статики в `vm.set_network`).
+# offline-инъекции статики в диск ВМ (single-bridge в `vm.create` и фолбэк в
+# `vm.set_network`).
 _APT_PACKAGES = (
     "astra-kvm virtinst qemu-utils wget tar sshpass bridge-utils libguestfs-tools"
 )
@@ -765,10 +770,8 @@ async def _build_single(
             "VM_CREATE_FAILED", "не удалось увеличить диск ВМ",
         )
     if network_mode == "bridge" and ip_address:
-        # bridge: NIC уже на br0 (virt-install), но гость поднялся без адреса —
-        # временно смотрим по NAT нельзя, поэтому статику прописываем по факту
-        # старта. Здесь ограничиваемся снимком build; детальная статика single
-        # bridge-боксов — как в universal-ветке (provision.sh).
+        # bridge: статику залили в диск offline (virt-customize до virt-install),
+        # гость уже поднялся на br0 с этим адресом — заходим по нему напрямую.
         guest_ip = ip_address.split("/")[0]
     else:
         guest_ip = await _guest_ip(ssh, host, name)
@@ -871,6 +874,23 @@ async def vm_create(task_id: str) -> None:
                     ssh, f"cp {pool_path}/{box}.qcow2 {pool_path}/{name}.qcow2", host,
                     "VM_CREATE_FAILED", "не удалось клонировать диск бокса",
                 )
+                if network_mode == "bridge" and ip_address and not is_universal:
+                    # single-bridge: LAN статический, DHCP-сервера нет — на br0
+                    # гость не получит адрес и будет недостижим по SSH. Заливаем
+                    # статику в клон offline (virt-customize до virt-install),
+                    # чтобы гость поднялся сразу на боевом ip_address.
+                    netmask = validate_ip(
+                        str(payload.get("netmask") or VMS_DEFAULT_NETMASK), host,
+                    )
+                    gateway = validate_ip(
+                        str(payload.get("gateway") or VMS_DEFAULT_GATEWAY), host,
+                    )
+                    dns = normalize_dns(payload, host)
+                    await write_static_interfaces_offline(
+                        ssh, host, f"{pool_path}/{name}.qcow2",
+                        ip_address, netmask, gateway, dns,
+                        error_code="VM_CREATE_FAILED",
+                    )
                 await _run(
                     ssh,
                     _virt_install_cmd(name, cpu, ram_mb, pool_path, network_mode),

@@ -861,6 +861,11 @@ async def vm_create(task_id: str) -> None:
                         "VM_CREATE_FAILED", "не удалось распаковать бокс",
                     )
                     await ssh.run(f"rm -f {pool_path}/{box}.tar.gz", sudo=True)
+                # Идемпотентность ретраёв: если от прошлой попытки остался домен
+                # того же имени, virt-install падает «диск занят». Снимаем его
+                # (best-effort, диск перезальём клоном ниже).
+                await ssh.run(f"virsh destroy {name}", sudo=True)
+                await ssh.run(f"virsh undefine {name} --snapshots-metadata", sudo=True)
                 # клон диска бокса под ВМ (COW-исходник — готовый qcow2 бокса).
                 await _run(
                     ssh, f"cp {pool_path}/{box}.qcow2 {pool_path}/{name}.qcow2", host,

@@ -782,15 +782,14 @@ async def _build_universal(
 
 
 async def _build_single(
-    ssh, host: str, name: str, box: str, pool_path: str, disk_gb: int,
+    ssh, host: str, name: str, box: str, pool_path: str,
     network_mode: str, ip_address: str | None,
 ) -> list[str]:
-    """Построить single-ВМ из конкретного бокса: провижн + снимок `build`."""
-    if disk_gb:
-        await _run(
-            ssh, f"qemu-img resize {pool_path}/{name}.qcow2 {disk_gb}G", host,
-            "VM_CREATE_FAILED", "не удалось увеличить диск ВМ",
-        )
+    """Построить single-ВМ из конкретного бокса: провижн + снимок `build`.
+
+    Диск уже увеличен до virt-install (offline) в `vm.create` — тут только
+    провижн гостя и снимок.
+    """
     if network_mode == "bridge" and ip_address:
         # bridge: статику залили в диск offline (virt-customize до virt-install),
         # гость уже поднялся на br0 с этим адресом — заходим по нему напрямую.
@@ -896,6 +895,14 @@ async def vm_create(task_id: str) -> None:
                     ssh, f"cp {pool_path}/{box}.qcow2 {pool_path}/{name}.qcow2", host,
                     "VM_CREATE_FAILED", "не удалось клонировать диск бокса",
                 )
+                # Диск растим ПОКА ОН OFFLINE (до virt-install): у запущенного
+                # домена qcow2 залочен, и qemu-img resize падает «image in use».
+                if disk_gb and not is_universal:
+                    await _run(
+                        ssh,
+                        f"qemu-img resize {pool_path}/{name}.qcow2 {disk_gb}G",
+                        host, "VM_CREATE_FAILED", "не удалось увеличить диск ВМ",
+                    )
                 if network_mode == "bridge" and ip_address and not is_universal:
                     # single-bridge: LAN статический, DHCP-сервера нет — на br0
                     # гость не получит адрес и будет недостижим по SSH. Заливаем
@@ -930,7 +937,7 @@ async def vm_create(task_id: str) -> None:
                     )
                 else:
                     snapshots = await _build_single(
-                        ssh, host, name, box, pool_path, disk_gb,
+                        ssh, host, name, box, pool_path,
                         network_mode, ip_address,
                     )
                 _rc, dom_out, _err = await ssh.run(

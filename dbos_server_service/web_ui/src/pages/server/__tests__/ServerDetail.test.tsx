@@ -154,4 +154,16 @@ describe("ServerDetail smoke", () => {
     expect(screen.getByText("12.3 мс")).toBeInTheDocument();
     expect(screen.getByText("41 мс")).toBeInTheDocument();
   });
+
+  it("шапка карточки показывает 4 сигнала: ping / ssh / power / busy", async () => {
+    renderDetail();
+    await screen.findAllByText(/Smoke Box/);
+    // ping и ssh — независимые индикаторы доступности в шапке (по title).
+    expect(screen.getByTitle("доступность по ping")).toBeInTheDocument();
+    expect(screen.getByTitle("доступность по ssh")).toBeInTheDocument();
+    // power_state = on → «питание: вкл».
+    expect(screen.getByText("питание: вкл")).toBeInTheDocument();
+    // busy_state = free → чип «Свободен».
+    expect(screen.getByText("Свободен")).toBeInTheDocument();
+  });
 });

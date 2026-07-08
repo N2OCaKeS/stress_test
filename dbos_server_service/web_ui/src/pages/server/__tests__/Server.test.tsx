@@ -139,4 +139,28 @@ describe("Server (list page) smoke", () => {
       screen.getByTitle("ping: не проверялось"),
     ).toBeInTheDocument();
   });
+
+  it("строка списка: ровно ping + busy, без status-бейджа", async () => {
+    vi.mocked(listServers).mockResolvedValueOnce({
+      items: [
+        mkServer({
+          id: "srv_row",
+          status: "maintenance",
+          busy_state: "free",
+          ping_reachable: true,
+          ping_latency_ms: 7,
+        }),
+      ],
+      total: 1,
+      limit: 200,
+      offset: 0,
+    });
+    renderServer();
+    // ping-бейдж (latency) и busy-чип (free) присутствуют.
+    expect(await screen.findByText("7 мс")).toBeInTheDocument();
+    expect(screen.getByText("free")).toBeInTheDocument();
+    // Средний status-бейдж убран: его метка «maint» больше не рендерится
+    // (значение статуса «maintenance» осталось только в option фильтра).
+    expect(screen.queryByText("maint")).not.toBeInTheDocument();
+  });
 });

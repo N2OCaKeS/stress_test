@@ -44,31 +44,11 @@ import { BulkPrepareModal } from "@/pages/server/_bulkPrepareModal";
 import { listDepartments } from "@/api/auth/departments";
 import { useDeptLabel } from "@/lib/labels";
 import { isPlatformWideAdmin, isServerZoneBlocked } from "@/lib/rbac";
-import type {
-  Server,
-  ServerCreateRequest,
-  ServerStatus,
-} from "@/api/server/types";
+import type { Server, ServerCreateRequest } from "@/api/server/types";
 import type { Department } from "@/api/auth/types";
 import { ServerDetail } from "./ServerDetail";
 
 const FOCUS_REFETCH_THROTTLE_MS = 12_000;
-
-const STATUS_LABEL: Record<ServerStatus, string> = {
-  unknown: "unknown",
-  online: "online",
-  offline: "offline",
-  maintenance: "maint",
-  decommissioned: "decom",
-};
-
-const STATUS_KIND: Record<ServerStatus, "ok" | "warn" | "danger" | ""> = {
-  unknown: "",
-  online: "ok",
-  offline: "danger",
-  maintenance: "warn",
-  decommissioned: "",
-};
 
 type SortMode = "name" | "dept" | "status";
 type GroupMode = "none" | "department";
@@ -659,7 +639,6 @@ function ServerRow({
   onToggleChecked: () => void;
 }) {
   const deptLabel = useDeptLabel(server.department_id);
-  const statusKind = STATUS_KIND[server.status];
   const busyChipKind: "ok" | "warn" = server.busy_state === "free" ? "ok" : "warn";
   const busyChipLabel =
     server.busy_state === "free"
@@ -700,9 +679,6 @@ function ServerRow({
           </div>
         </div>
           <PingBadge server={server} />
-          <span className={`badge${statusKind ? ` badge-${statusKind}` : ""}`}>
-            {STATUS_LABEL[server.status] ?? server.status}
-          </span>
           <span className={`badge badge-${busyChipKind}`}>{busyChipLabel}</span>
         </div>
       </button>

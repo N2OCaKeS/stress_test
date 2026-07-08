@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validat
 
 from src.core.b64 import decode_b64 as _decode_b64
 from src.core.constants import ManagementMode
-from src.core.password_policy import validate_strong_password
 from src.schemas.disk import DiskResponse, DiskSpec
 from src.schemas.ipmi_controller import IpmiControllerCreate
 from src.utils.url_security import validate_safe_hostname
@@ -550,15 +549,12 @@ class ServerPrepareRequest(BaseModel):
     ними по SSH, заводит управляющего пользователя DBOS и кладёт ему
     публичный ключ, после чего исходные креды больше не нужны.
 
-    Ручной bootstrap-пароль валидируется по усиленной политике
-    `core.password_policy.validate_strong_password` — минимум 16 символов,
-    буква, цифра и хотя бы один не-алфанумерический символ. Это входная
-    точка управления свежим боксом: даже одноразовый кред должен быть
-    устойчив к перебору, пока он лежит в Redis под TTL и едет к worker'у
-    по internal-каналу. Пароль выбранного `server_account` под усиленную
-    политику не гоняется — он уже прошёл политику при создании/ротации
-    учётки. Управляемые DBOS-аккаунты после онбординга идут под отдельной
-    политикой (`ServerAccountCreate.password_b64`, `PasswordRotateRequest`,
+    Ручной bootstrap-пароль под усиленную политику НЕ гоняется — это
+    существующий пароль хоста (на дефолт-образах бывает и `u`/`1`), а не
+    новый пароль, который мы задаём. Требовать его надёжным неверно: тогда
+    нельзя подготовить сервер со слабым текущим паролем. Надёжность —
+    только у генерируемых при prepare управляющих кред и у управляемых
+    DBOS-аккаунтов (`ServerAccountCreate.password_b64`, `PasswordRotateRequest`,
     `IpmiCredentialsRotatedRequest.new_password`).
     """
 
@@ -598,8 +594,11 @@ class ServerPrepareRequest(BaseModel):
     def _check_password_b64(cls, value: str | None) -> str | None:
         if value is None:
             return value
-        plaintext = _decode_b64(value, "password_b64")
-        validate_strong_password(plaintext)
+        # Это существующий пароль хоста для первичного захода (bootstrap), а не
+        # новый пароль, который мы задаём. Политику надёжности к нему не
+        # применяем — иначе нельзя подготовить сервер, чей текущий пароль слабее
+        # политики. Валидируем только декодируемость base64.
+        _decode_b64(value, "password_b64")
         return value
 
     @field_validator("ssh_private_key_b64")
@@ -700,8 +699,9 @@ class ServerPrepareBulkItem(BaseModel):
     @field_validator("password_b64")
     @classmethod
     def _check_password_b64(cls, value: str) -> str:
-        plaintext = _decode_b64(value, "password_b64")
-        validate_strong_password(plaintext)
+        # Существующий пароль хоста для bootstrap, не новый — надёжность не
+        # проверяем (см. ServerPrepareRequest.password_b64).
+        _decode_b64(value, "password_b64")
         return value
 
     @field_validator("ssh_private_key_b64")

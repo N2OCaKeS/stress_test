@@ -295,19 +295,19 @@ class TestBulkPrepare:
         )
         assert_error(resp, 422, "VALIDATION_ERROR")
 
-    async def test_weak_password_item_422(
+    async def test_weak_bootstrap_password_item_accepted(
         self, client, operator_token_a, make_server, captured_dispatch,
     ):
+        # Слабый bootstrap-пароль — это существующий пароль хоста, не новый:
+        # надёжность не проверяется, элемент батча принимается и диспатчится.
         srv = await make_server(department_id="dep_a")
         resp = await client.post(
             f"{BASE}/prepare/bulk",
             headers=_hdr(operator_token_a),
-            json={"items": [_item(srv.id, pwd="short")]},
+            json={"items": [_item(srv.id, pwd="1")]},
         )
-        body = assert_error(resp, 422, "VALIDATION_ERROR")
-        types = [e["type"] for e in body["details"]["errors"]]
-        assert "WEAK_PASSWORD" in types
-        assert captured_dispatch.stored_creds_calls == []
+        assert resp.status_code == 202, resp.text
+        assert len(captured_dispatch.stored_creds_calls) == 1
 
     async def test_worker_unreachable_aborts_with_503(
         self, client, operator_token_a, make_server, captured_dispatch,

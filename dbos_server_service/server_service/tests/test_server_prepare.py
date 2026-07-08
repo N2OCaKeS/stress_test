@@ -213,123 +213,26 @@ class TestPrepareDispatch:
         assert_error(resp, 422, "VALIDATION_ERROR")
         assert captured_dispatch == []
 
-    # ── Усиленная парольная политика для bootstrap-пароля ──────────────────
+    # ── Bootstrap-пароль без усиленной парольной политики ─────────────────
 
-    async def test_weak_password_short_422(
+    async def test_weak_bootstrap_password_accepted(
         self, client, operator_token_a, make_server, captured_dispatch,
     ):
-        # Короткий пароль с буквой/цифрой/символом — отказ только по длине.
+        # Ручной bootstrap-пароль — это существующий пароль хоста, а не новая
+        # креда. На дефолт-образах он бывает `u`/`1`, поэтому усиленная
+        # политика к нему не применяется: короткий/слабый пароль принимается
+        # и prepare нормально диспатчится.
         srv = await make_server(department_id="dep_a")
-        pwd = "Boot1234!Short"  # 14
-        assert len(pwd) < 16
         resp = await client.post(
             f"{BASE}/{srv.id}/prepare",
             headers=_hdr(operator_token_a),
-            json={
-                "username_b64": _b64("bootadmin"),
-                "password_b64": _b64(pwd),
-            },
-        )
-        body = assert_error(resp, 422, "VALIDATION_ERROR")
-        types = [e["type"] for e in body["details"]["errors"]]
-        assert "WEAK_PASSWORD" in types
-        assert captured_dispatch.stored_creds_calls == []
-
-    async def test_weak_password_exactly_15_422(
-        self, client, operator_token_a, make_server, captured_dispatch,
-    ):
-        # Ровно 15 символов с буквой/цифрой/символом — всё равно отказ.
-        srv = await make_server(department_id="dep_a")
-        pwd = "Aa1!Aa1!Aa1!Aa1"  # 15
-        assert len(pwd) == 15
-        resp = await client.post(
-            f"{BASE}/{srv.id}/prepare",
-            headers=_hdr(operator_token_a),
-            json={
-                "username_b64": _b64("bootadmin"),
-                "password_b64": _b64(pwd),
-            },
-        )
-        body = assert_error(resp, 422, "VALIDATION_ERROR")
-        types = [e["type"] for e in body["details"]["errors"]]
-        assert "WEAK_PASSWORD" in types
-        assert captured_dispatch == []
-
-    async def test_weak_password_no_letter_422(
-        self, client, operator_token_a, make_server, captured_dispatch,
-    ):
-        # 16+ цифр и символов, но ни одной буквы.
-        srv = await make_server(department_id="dep_a")
-        pwd = "1234567890!@#$%^"  # 16
-        assert len(pwd) == 16
-        resp = await client.post(
-            f"{BASE}/{srv.id}/prepare",
-            headers=_hdr(operator_token_a),
-            json={
-                "username_b64": _b64("bootadmin"),
-                "password_b64": _b64(pwd),
-            },
-        )
-        body = assert_error(resp, 422, "VALIDATION_ERROR")
-        types = [e["type"] for e in body["details"]["errors"]]
-        assert "WEAK_PASSWORD" in types
-        assert captured_dispatch == []
-
-    async def test_weak_password_no_digit_422(
-        self, client, operator_token_a, make_server, captured_dispatch,
-    ):
-        srv = await make_server(department_id="dep_a")
-        pwd = "AbcdEfghIjkl!@#$"  # 16, no digit
-        assert len(pwd) == 16
-        resp = await client.post(
-            f"{BASE}/{srv.id}/prepare",
-            headers=_hdr(operator_token_a),
-            json={
-                "username_b64": _b64("bootadmin"),
-                "password_b64": _b64(pwd),
-            },
-        )
-        body = assert_error(resp, 422, "VALIDATION_ERROR")
-        types = [e["type"] for e in body["details"]["errors"]]
-        assert "WEAK_PASSWORD" in types
-        assert captured_dispatch == []
-
-    async def test_weak_password_no_symbol_422(
-        self, client, operator_token_a, make_server, captured_dispatch,
-    ):
-        srv = await make_server(department_id="dep_a")
-        pwd = "Abcd1234Efgh5678"  # 16, only alnum
-        assert len(pwd) == 16
-        resp = await client.post(
-            f"{BASE}/{srv.id}/prepare",
-            headers=_hdr(operator_token_a),
-            json={
-                "username_b64": _b64("bootadmin"),
-                "password_b64": _b64(pwd),
-            },
-        )
-        body = assert_error(resp, 422, "VALIDATION_ERROR")
-        types = [e["type"] for e in body["details"]["errors"]]
-        assert "WEAK_PASSWORD" in types
-        assert captured_dispatch == []
-
-    async def test_strong_password_exactly_16_ok(
-        self, client, operator_token_a, make_server, captured_dispatch,
-    ):
-        # Граница длины: ровно 16, буква+цифра+символ — пропускаем.
-        srv = await make_server(department_id="dep_a")
-        pwd = "Aa1!Aa1!Aa1!Aa1!"  # 16
-        assert len(pwd) == 16
-        resp = await client.post(
-            f"{BASE}/{srv.id}/prepare",
-            headers=_hdr(operator_token_a),
-            json={
-                "username_b64": _b64("bootadmin"),
-                "password_b64": _b64(pwd),
-            },
+            json={"username_b64": _b64("u"), "password_b64": _b64("1")},
         )
         assert resp.status_code == 202, resp.text
         assert len(captured_dispatch) == 1
+        stored = captured_dispatch[0]["stored_creds"]
+        assert stored["bootstrap_login"] == "u"
+        assert stored["bootstrap_password"] == "1"
 
     async def test_cross_dept_server_404(
         self, client, operator_token_b, make_server, captured_dispatch,

@@ -25,7 +25,7 @@ cp -r "$tmp/novnc/core" "$DEST/novnc/core"
 cp -r "$tmp/novnc/vendor" "$DEST/novnc/vendor"
 
 echo ">> spice-html5 ${SPICE_VERSION}"
-curl -fsSL "https://gitlab.freedesktop.org/spice/spice-html5/-/archive/${SPICE_VERSION}/spice-html5-${SPICE_VERSION}.tar.gz" \
+curl -fsSL "https://gitlab.freedesktop.org/spice/spice-html5/-/archive/spice-html5-${SPICE_VERSION}/spice-html5-spice-html5-${SPICE_VERSION}.tar.gz" \
   -o "$tmp/spice.tgz"
 mkdir -p "$tmp/spice"
 tar -xzf "$tmp/spice.tgz" -C "$tmp/spice" --strip-components=1

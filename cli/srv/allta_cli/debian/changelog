@@ -1,3 +1,9 @@
+allta (1.0.9) stable; urgency=medium
+
+  * Исправлена ошибка в команде allta jira testcase
+
+ -- Filippenko Maksim <mfilippenko@astralinux.ru>  Wed, 08 Jul 2026 10:45:20 +0300
+
 allta (1.0.8) stable; urgency=medium
 
   * Добавлены команды для загрузки пакетов в devpi

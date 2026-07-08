@@ -23,6 +23,14 @@ function renderVm(initialEntry: string) {
   );
 }
 
+/**
+ * Карточка ВМ разложена по вкладкам (как у сервера): дождаться таб-бар и
+ * переключиться на нужную вкладку по её подписи.
+ */
+async function openVmTab(label: string) {
+  fireEvent.click(await screen.findByRole("button", { name: label }));
+}
+
 describe("Vm zone (mock mode)", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -52,12 +60,40 @@ describe("Vm zone (mock mode)", () => {
     expect(screen.getByRole("button", { name: /Создать ВМ/ })).toBeInTheDocument();
   });
 
-  it("карточка ВМ несёт кнопки питания и бронь", async () => {
+  it("вкладка «Питание» несёт кнопки питания и бронь", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Питание");
     expect(await screen.findByRole("button", { name: /Start/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Shutdown/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reboot/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Забронировать/ })).toBeInTheDocument();
+  });
+
+  it("карточка ВМ рендерит таб-бар со всеми вкладками", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    for (const label of [
+      "Обзор",
+      "Питание",
+      "Снимки",
+      "Диски",
+      "Сеть",
+      "Обслуживание",
+    ]) {
+      expect(
+        await screen.findByRole("button", { name: label }),
+      ).toBeInTheDocument();
+    }
+    // По умолчанию активна вкладка «Обзор» — виден блок «Параметры».
+    expect(
+      await screen.findByRole("heading", { name: /Параметры/ }),
+    ).toBeInTheDocument();
+    // Секции других вкладок пока не смонтированы.
+    expect(
+      screen.queryByRole("heading", { name: /^Снимки$/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /^Диски$/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("открывает модалку создания ВМ и валидирует форму", async () => {
@@ -72,8 +108,9 @@ describe("Vm zone (mock mode)", () => {
     expect(submit).not.toBeDisabled();
   });
 
-  it("карточка ВМ рендерит раздел «Диски» со списком дисков", async () => {
+  it("вкладка «Диски» рендерит список дисков", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Диски");
     expect(await screen.findByRole("heading", { name: /Диски/ })).toBeInTheDocument();
     // Системный и доп. диск из фикстур.
     expect(await screen.findByText("system")).toBeInTheDocument();
@@ -84,6 +121,7 @@ describe("Vm zone (mock mode)", () => {
 
   it("открывает модалку создания диска", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Диски");
     fireEvent.click(await screen.findByRole("button", { name: /Создать диск/ }));
     expect(await screen.findByText("Новый диск")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("data")).toBeInTheDocument();
@@ -91,12 +129,13 @@ describe("Vm zone (mock mode)", () => {
 
   it("открывает модалку resize диска", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Диски");
     const resizeBtns = await screen.findAllByRole("button", { name: /Resize/ });
     fireEvent.click(resizeBtns[0]);
     expect(await screen.findByText(/Resize диска/)).toBeInTheDocument();
   });
 
-  it("открывает модалку изменения CPU/RAM", async () => {
+  it("вкладка «Обзор» открывает модалку изменения CPU/RAM", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
     fireEvent.click(await screen.findByRole("button", { name: /Изменить CPU\/RAM/ }));
     expect(await screen.findByText(/Ресурсы ВМ/)).toBeInTheDocument();
@@ -114,8 +153,9 @@ describe("Vm zone (mock mode)", () => {
     ).toBeInTheDocument();
   });
 
-  it("карточка ВМ рендерит раздел «Снимки» и прячет системные _build", async () => {
+  it("вкладка «Снимки» рендерит снимки и прячет системные _build", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Снимки");
     expect(await screen.findByRole("heading", { name: /Снимки/ })).toBeInTheDocument();
     // Пользовательский снимок виден.
     expect(await screen.findByText("pre-regress")).toBeInTheDocument();
@@ -125,6 +165,7 @@ describe("Vm zone (mock mode)", () => {
 
   it("открывает модалку создания снимка", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Снимки");
     fireEvent.click(await screen.findByRole("button", { name: /Создать снимок/ }));
     expect(await screen.findByText("Новый снимок")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("pre-regress")).toBeInTheDocument();
@@ -132,6 +173,7 @@ describe("Vm zone (mock mode)", () => {
 
   it("текущий снимок не даёт откатить (кнопка disabled)", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Снимки");
     // У vm-101 текущий снимок — 1.8.1.6; у него кнопка «Откат» disabled.
     const revertBtns = await screen.findAllByRole("button", { name: /Откат/ });
     // Хотя бы одна активна (pre-regress) и хотя бы одна disabled (текущий).
@@ -139,8 +181,9 @@ describe("Vm zone (mock mode)", () => {
     expect(revertBtns.some((b) => !(b as HTMLButtonElement).disabled)).toBe(true);
   });
 
-  it("рендерит операции ОС/кред и открывает модалки astra-update и passwd", async () => {
+  it("вкладка «Обслуживание» рендерит операции ОС/кред и открывает astra-update", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Обслуживание");
     // Кнопки операций.
     expect(
       await screen.findByRole("button", { name: /Обновить ОС \(astra-update\)/ }),
@@ -156,12 +199,14 @@ describe("Vm zone (mock mode)", () => {
 
   it("открывает модалку смены пароля", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Обслуживание");
     fireEvent.click(await screen.findByRole("button", { name: /Обновить пароль/ }));
     expect(await screen.findByText(/Смена пароля ·/)).toBeInTheDocument();
   });
 
-  it("рендерит селектор режима управляющих кред", async () => {
+  it("вкладка «Снимки» несёт селектор режима управляющих кред", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Снимки");
     expect(
       await screen.findByRole("heading", { name: /Режим управляющих кред/ }),
     ).toBeInTheDocument();
@@ -172,6 +217,7 @@ describe("Vm zone (mock mode)", () => {
 
   it("подготовленная ВМ показывает mgmt-учётку и кнопку ротации кред", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Обслуживание");
     expect(
       await screen.findByRole("heading", {
         name: /Подготовка и управляющие креды/,
@@ -187,13 +233,15 @@ describe("Vm zone (mock mode)", () => {
   it("неподготовленная ВМ показывает кнопку «Подготовить»", async () => {
     // vm-103 в фикстуре is_managed=false.
     renderVm("/vm?hub=srv-07&id=vm-103");
+    await openVmTab("Обслуживание");
     expect(
       await screen.findByRole("button", { name: /Подготовить/ }),
     ).toBeInTheDocument();
   });
 
-  it("карточка ВМ несёт раздел «Сеть» и открывает модалку смены сети", async () => {
+  it("вкладка «Сеть» показывает раздел и открывает модалку смены сети", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Сеть");
     expect(await screen.findByRole("heading", { name: /^Сеть$/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Изменить сеть/ }));
     expect(await screen.findByText(/Сеть ВМ/)).toBeInTheDocument();
@@ -276,8 +324,9 @@ describe("Vm zone (mock mode)", () => {
     ).toBeInTheDocument();
   });
 
-  it("карточка ВМ несёт тумблер автозапуска и переключает его", async () => {
+  it("вкладка «Питание» несёт тумблер автозапуска и переключает его", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Питание");
     // vm-101 в фикстуре autostart=true.
     const toggle = await screen.findByRole("switch", { name: /Автозапуск/ });
     expect(toggle).toHaveAttribute("aria-checked", "true");
@@ -288,8 +337,9 @@ describe("Vm zone (mock mode)", () => {
     ).toHaveAttribute("aria-checked", "false");
   });
 
-  it("карточка ВМ несёт панель консоли с выбором SSH/VNC/serial", async () => {
+  it("вкладка «Обслуживание» несёт панель консоли с выбором SSH/VNC/serial", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Обслуживание");
     expect(await screen.findByRole("heading", { name: /Консоль/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^SSH$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^VNC$/ })).toBeInTheDocument();
@@ -298,6 +348,7 @@ describe("Vm zone (mock mode)", () => {
 
   it("консоль SSH показывает команду подключения", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Обслуживание");
     await screen.findByRole("heading", { name: /Консоль/ });
     fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
     // SSH по умолчанию — видна команда ssh.
@@ -306,6 +357,7 @@ describe("Vm zone (mock mode)", () => {
 
   it("консоль VNC показывает ws-эндпоинт прокси (без внешнего вьювера)", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Обслуживание");
     await screen.findByRole("heading", { name: /Консоль/ });
     fireEvent.click(screen.getByRole("button", { name: /^VNC$/ }));
     fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));

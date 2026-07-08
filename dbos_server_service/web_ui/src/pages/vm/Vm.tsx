@@ -46,6 +46,7 @@ import {
   Unlock,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { Tabs } from "@/components/ui/Tabs";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -421,7 +422,7 @@ export function Vm() {
           onSubmit={handleCreate}
         />
       ) : selectedVm ? (
-        <VmCard
+        <VmDetail
           vm={selectedVm}
           mock={mock}
           canManage={canManage}
@@ -694,9 +695,24 @@ function PowerBadge({ state }: { state: Vm["power_state"] }) {
   return <span className="badge">unknown</span>;
 }
 
-// ── VM card ─────────────────────────────────────────────────────────────────
+// ── VM detail (вкладки) ──────────────────────────────────────────────────────
 
-function VmCard({
+type VmTabId =
+  | "overview"
+  | "power"
+  | "snapshots"
+  | "disks"
+  | "network"
+  | "maintenance";
+
+/**
+ * Карточка конкретной ВМ — раскладка вкладками по образцу карточки сервера
+ * (`ServerDetail`). Общая шапка с именем/номером/питанием, ниже — таб-бар и
+ * содержимое активной вкладки. Управляющие вкладки (питание, сеть,
+ * обслуживание) видны только при праве на управление; обзор, снимки и диски
+ * доступны и на чтение.
+ */
+export function VmDetail({
   vm,
   mock,
   canManage,
@@ -709,6 +725,7 @@ function VmCard({
   onBack: () => void;
   onChanged: () => void;
 }) {
+  const [tab, setTab] = useState<VmTabId>("overview");
   const toast = useToast();
   const { confirm, prompt } = useConfirm();
   const deptLabel = useDeptLabel(vm.department_id);
@@ -858,8 +875,41 @@ function VmCard({
     }
   }
 
+  // Вкладки: обзор/снимки/диски доступны на чтение; питание, сеть и
+  // обслуживание — только при праве на управление.
+  const tabs: { id: VmTabId; label: string; icon: React.ReactNode }[] = [
+    { id: "overview", label: "Обзор", icon: <MonitorPlay className="w-4 h-4" /> },
+    ...(canManage
+      ? [
+          {
+            id: "power" as const,
+            label: "Питание",
+            icon: <Power className="w-4 h-4" />,
+          },
+        ]
+      : []),
+    { id: "snapshots", label: "Снимки", icon: <Camera className="w-4 h-4" /> },
+    { id: "disks", label: "Диски", icon: <HardDrive className="w-4 h-4" /> },
+    ...(canManage
+      ? [
+          {
+            id: "network" as const,
+            label: "Сеть",
+            icon: <Network className="w-4 h-4" />,
+          },
+          {
+            id: "maintenance" as const,
+            label: "Обслуживание",
+            icon: <ShieldCheck className="w-4 h-4" />,
+          },
+        ]
+      : []),
+  ];
+  // Если активная вкладка выпала из набора (сменилась роль/ВМ) — вернуться на обзор.
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : "overview";
+
   return (
-    <section className="flex-1 min-w-0 overflow-y-auto">
+    <section className="flex-1 min-w-0 overflow-hidden flex flex-col">
       <div className="border-b border-token p-5 flex items-start gap-4 shrink-0">
         <button className="btn btn-ghost flex items-center gap-1" onClick={onBack}>
           <ArrowLeft className="w-4 h-4" /> К хабу
@@ -886,210 +936,226 @@ function VmCard({
         </div>
       </div>
 
-      <div className="p-5 flex flex-col gap-4">
-        {canManage && (
-          <div className="card">
-            <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-              <Power className="w-4 h-4 text-accent" /> Питание
-            </h3>
-            <div className="flex gap-2 flex-wrap">
-              <button
-                className="btn btn-primary flex items-center gap-1"
-                onClick={() => power("start")}
-                disabled={view.power_state === "on"}
-              >
-                <Play className="w-4 h-4" /> Start
-              </button>
-              <button
-                className="btn flex items-center gap-1"
-                onClick={() => power("shutdown")}
-                disabled={view.power_state === "off"}
-              >
-                <Square className="w-4 h-4" /> Shutdown
-              </button>
-              <button
-                className="btn flex items-center gap-1"
-                onClick={() => power("reboot")}
-                disabled={view.power_state === "off"}
-              >
-                <RotateCcw className="w-4 h-4" /> Reboot
-              </button>
-              <button
-                className="btn flex items-center gap-1"
-                onClick={() => power("reset", true)}
-                disabled={view.power_state === "off"}
-                title="Hard reset (power-cycle)"
-              >
-                <RotateCcw className="w-4 h-4" /> Reset
-              </button>
-              <button
-                className="btn btn-danger flex items-center gap-1"
-                onClick={() => power("destroy", true)}
-                disabled={view.power_state === "off"}
-                title="Hard power-off"
-              >
-                <Power className="w-4 h-4" /> Destroy
-              </button>
-            </div>
-            <div className="flex items-center gap-3 mt-3 pt-3 border-t border-token flex-wrap">
-              <Zap
-                className={`w-4 h-4 ${view.autostart ? "text-accent" : "text-dim"}`}
-              />
-              <div className="flex-1 text-xs text-dim">
-                Автозапуск при старте хаба (<span className="mono">virsh autostart</span>):{" "}
-                <b>{view.autostart ? "включён" : "выключен"}</b>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={view.autostart}
-                aria-label="Автозапуск"
-                onClick={handleToggleAutostart}
-                disabled={pending}
-                className={`btn btn-sm ${view.autostart ? "btn-primary" : ""}`}
-                title="Включить/выключить автозапуск ВМ"
-              >
-                {view.autostart ? "Автозапуск: вкл" : "Автозапуск: выкл"}
-              </button>
-            </div>
-            {powerOutcome.tracked && (
-              <TaskOutcomeBanner
-                outcome={powerOutcome.tracked}
-                className="mt-3"
-                successText="Питание применено."
-                onCancelled={powerOutcome.reset}
-              />
-            )}
-          </div>
-        )}
+      <Tabs
+        active={activeTab}
+        onChange={(id) => setTab(id as VmTabId)}
+        wrap
+        tabs={tabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon }))}
+      />
 
-        {canManage && (
-          <div className="card">
-            <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-              <Lock className="w-4 h-4 text-accent" /> Бронь
-            </h3>
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex-1 text-xs text-dim">
-                Booking-статус: <span className="mono">{view.status}</span>
-                {view.busy_note && <> · {view.busy_note}</>}
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto">
+        <div className="p-5 flex flex-col gap-4">
+          {activeTab === "overview" && (
+            <div className="card">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-base">Параметры</h3>
+                {canManage && (
+                  <button
+                    className="btn btn-sm flex items-center gap-1"
+                    onClick={() => setResourceModal(true)}
+                    title="Изменить vCPU и RAM"
+                  >
+                    <Cpu className="w-3.5 h-3.5" /> Изменить CPU/RAM
+                  </button>
+                )}
               </div>
-              {reserved ? (
-                <button
-                  className="btn btn-sm flex items-center gap-1"
-                  onClick={handleRelease}
-                  disabled={pending}
-                >
-                  <Unlock className="w-3.5 h-3.5" /> Снять бронь
-                </button>
-              ) : (
-                <button
-                  className="btn btn-sm btn-primary flex items-center gap-1"
-                  onClick={handleReserve}
-                  disabled={pending}
-                >
-                  <Lock className="w-3.5 h-3.5" /> Забронировать
-                </button>
+              <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm">
+                <Field k="Хаб" v={view.hub_server_id} mono />
+                <Field k="ОС" v={view.os_version ?? "—"} />
+                <Field k="box" v={view.box} />
+                <Field k="Сеть" v={view.network_mode} />
+                <Field k="IP-адрес" v={view.ip_address ?? "— (авто)"} mono />
+                <Field k="vCPU" v={String(view.cpu)} />
+                <Field k="RAM" v={`${view.ram_mb} МБ`} />
+                <Field k="Диск" v={`${view.disk_gb} ГБ`} />
+                <Field k="autostart" v={view.autostart ? "да" : "нет"} />
+                <Field k="Стратегия кред" v={view.cred_strategy} />
+                <Field k="Питание" v={view.power_state} />
+                <Field k="Занятость" v={view.busy_state} />
+              </dl>
+              {resourceOutcome.tracked && (
+                <TaskOutcomeBanner
+                  outcome={resourceOutcome.tracked}
+                  className="mt-3"
+                  successText="Ресурсы применены."
+                  onCancelled={resourceOutcome.reset}
+                />
               )}
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="card">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-base">Параметры</h3>
-            {canManage && (
-              <button
-                className="btn btn-sm flex items-center gap-1"
-                onClick={() => setResourceModal(true)}
-                title="Изменить vCPU и RAM"
-              >
-                <Cpu className="w-3.5 h-3.5" /> Изменить CPU/RAM
-              </button>
-            )}
-          </div>
-          <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm">
-            <Field k="ОС" v={view.os_version ?? "—"} />
-            <Field k="box" v={view.box} />
-            <Field k="Сеть" v={view.network_mode} />
-            <Field k="IP-адрес" v={view.ip_address ?? "— (авто)"} mono />
-            <Field k="vCPU" v={String(view.cpu)} />
-            <Field k="RAM" v={`${view.ram_mb} МБ`} />
-            <Field k="Диск" v={`${view.disk_gb} ГБ`} />
-            <Field k="autostart" v={view.autostart ? "да" : "нет"} />
-            <Field k="Стратегия кред" v={view.cred_strategy} />
-            <Field k="Питание" v={view.power_state} />
-            <Field k="Занятость" v={view.busy_state} />
-          </dl>
-          {resourceOutcome.tracked && (
-            <TaskOutcomeBanner
-              outcome={resourceOutcome.tracked}
-              className="mt-3"
-              successText="Ресурсы применены."
-              onCancelled={resourceOutcome.reset}
+          {activeTab === "power" && canManage && (
+            <>
+              <div className="card">
+                <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+                  <Power className="w-4 h-4 text-accent" /> Питание
+                </h3>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    className="btn btn-primary flex items-center gap-1"
+                    onClick={() => power("start")}
+                    disabled={view.power_state === "on"}
+                  >
+                    <Play className="w-4 h-4" /> Start
+                  </button>
+                  <button
+                    className="btn flex items-center gap-1"
+                    onClick={() => power("shutdown")}
+                    disabled={view.power_state === "off"}
+                  >
+                    <Square className="w-4 h-4" /> Shutdown
+                  </button>
+                  <button
+                    className="btn flex items-center gap-1"
+                    onClick={() => power("reboot")}
+                    disabled={view.power_state === "off"}
+                  >
+                    <RotateCcw className="w-4 h-4" /> Reboot
+                  </button>
+                  <button
+                    className="btn flex items-center gap-1"
+                    onClick={() => power("reset", true)}
+                    disabled={view.power_state === "off"}
+                    title="Hard reset (power-cycle)"
+                  >
+                    <RotateCcw className="w-4 h-4" /> Reset
+                  </button>
+                  <button
+                    className="btn btn-danger flex items-center gap-1"
+                    onClick={() => power("destroy", true)}
+                    disabled={view.power_state === "off"}
+                    title="Hard power-off"
+                  >
+                    <Power className="w-4 h-4" /> Destroy
+                  </button>
+                </div>
+                <div className="flex items-center gap-3 mt-3 pt-3 border-t border-token flex-wrap">
+                  <Zap
+                    className={`w-4 h-4 ${view.autostart ? "text-accent" : "text-dim"}`}
+                  />
+                  <div className="flex-1 text-xs text-dim">
+                    Автозапуск при старте хаба (<span className="mono">virsh autostart</span>):{" "}
+                    <b>{view.autostart ? "включён" : "выключен"}</b>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={view.autostart}
+                    aria-label="Автозапуск"
+                    onClick={handleToggleAutostart}
+                    disabled={pending}
+                    className={`btn btn-sm ${view.autostart ? "btn-primary" : ""}`}
+                    title="Включить/выключить автозапуск ВМ"
+                  >
+                    {view.autostart ? "Автозапуск: вкл" : "Автозапуск: выкл"}
+                  </button>
+                </div>
+                {powerOutcome.tracked && (
+                  <TaskOutcomeBanner
+                    outcome={powerOutcome.tracked}
+                    className="mt-3"
+                    successText="Питание применено."
+                    onCancelled={powerOutcome.reset}
+                  />
+                )}
+              </div>
+
+              <div className="card">
+                <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-accent" /> Бронь
+                </h3>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex-1 text-xs text-dim">
+                    Booking-статус: <span className="mono">{view.status}</span>
+                    {view.busy_note && <> · {view.busy_note}</>}
+                  </div>
+                  {reserved ? (
+                    <button
+                      className="btn btn-sm flex items-center gap-1"
+                      onClick={handleRelease}
+                      disabled={pending}
+                    >
+                      <Unlock className="w-3.5 h-3.5" /> Снять бронь
+                    </button>
+                  ) : (
+                    <button
+                      className="btn btn-sm btn-primary flex items-center gap-1"
+                      onClick={handleReserve}
+                      disabled={pending}
+                    >
+                      <Lock className="w-3.5 h-3.5" /> Забронировать
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {activeTab === "snapshots" && (
+            <>
+              <SnapshotsSection
+                vm={view}
+                mock={mock}
+                canManage={canManage}
+                onChanged={onChanged}
+              />
+              {canManage && (
+                <CredStrategyCard
+                  vm={view}
+                  mock={mock}
+                  onApplied={(next) => setLocal(next)}
+                  onChanged={onChanged}
+                />
+              )}
+            </>
+          )}
+
+          {activeTab === "disks" && (
+            <DisksSection
+              vm={view}
+              mock={mock}
+              canManage={canManage}
+              onChanged={onChanged}
             />
           )}
-        </div>
 
-        {canManage && (
-          <PrepareMgmtCard
-            vm={view}
-            mock={mock}
-            onApplied={(next) => setLocal(next)}
-            onChanged={onChanged}
-          />
-        )}
+          {activeTab === "network" && canManage && (
+            <NetworkCard vm={view} mock={mock} onChanged={onChanged} />
+          )}
 
-        {canManage && (
-          <NetworkCard vm={view} mock={mock} onChanged={onChanged} />
-        )}
-
-        {canManage && <ConsoleCard vm={view} mock={mock} />}
-
-        <DisksSection
-          vm={view}
-          mock={mock}
-          canManage={canManage}
-          onChanged={onChanged}
-        />
-
-        <SnapshotsSection
-          vm={view}
-          mock={mock}
-          canManage={canManage}
-          onChanged={onChanged}
-        />
-
-        {canManage && (
-          <OsOpsSection vm={view} mock={mock} onChanged={onChanged} />
-        )}
-
-        {canManage && (
-          <CredStrategyCard
-            vm={view}
-            mock={mock}
-            onApplied={(next) => setLocal(next)}
-            onChanged={onChanged}
-          />
-        )}
-
-        {canManage && (
-          <div className="card" style={{ border: "1px solid var(--danger, #b91c1c)" }}>
-            <div className="text-sm font-semibold flex items-center gap-2 text-danger mb-2">
-              Опасная зона
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex-1 text-xs text-dim">
-                Удаление ВМ сносит домен libvirt и все её диски. Действие необратимо.
-              </div>
-              <button
-                className="btn btn-danger flex items-center gap-1"
-                onClick={handleDelete}
+          {activeTab === "maintenance" && canManage && (
+            <>
+              <PrepareMgmtCard
+                vm={view}
+                mock={mock}
+                onApplied={(next) => setLocal(next)}
+                onChanged={onChanged}
+              />
+              <OsOpsSection vm={view} mock={mock} onChanged={onChanged} />
+              <ConsoleCard vm={view} mock={mock} />
+              <div
+                className="card"
+                style={{ border: "1px solid var(--danger, #b91c1c)" }}
               >
-                Удалить ВМ
-              </button>
-            </div>
-          </div>
-        )}
+                <div className="text-sm font-semibold flex items-center gap-2 text-danger mb-2">
+                  Опасная зона
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex-1 text-xs text-dim">
+                    Удаление ВМ сносит домен libvirt и все её диски. Действие
+                    необратимо.
+                  </div>
+                  <button
+                    className="btn btn-danger flex items-center gap-1"
+                    onClick={handleDelete}
+                  >
+                    Удалить ВМ
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {resourceModal && (

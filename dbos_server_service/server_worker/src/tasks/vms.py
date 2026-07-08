@@ -258,7 +258,11 @@ async def _setup_bridge(ssh, host: str, phy_if: str, os_family: str) -> None:
                 returncode=rc, stderr=(stderr or "").strip(),
                 message="не удалось записать конфиг моста",
             )
-        await ssh.run("ifup br0", sudo=True)
+        # Живой `ifup br0` НЕ делаем: основной interfaces уже свёрнут (адрес
+        # eno6 больше не закреплён в конфиге), поэтому live-подъём моста через
+        # тот же NIC сбрасывает адрес и рвёт текущую SSH-сессию. Мост поднимется
+        # штатно при следующем reboot хоста — тогда drop-in отработает без
+        # конфликта с живым eno6.
     else:
         addr_only = addr_cidr
         await ssh.run("nmcli con add type bridge ifname br0 con-name br0", sudo=True)
@@ -275,7 +279,9 @@ async def _setup_bridge(ssh, host: str, phy_if: str, os_family: str) -> None:
             "con-name dbos-br0-slave",
             sudo=True,
         )
-        await ssh.run("nmcli con up br0", sudo=True)
+        # Живую активацию (`nmcli con up br0`) НЕ делаем — перенос адреса на мост
+        # через тот же NIC рвёт SSH-сессию. Соединение определено и поднимется на
+        # следующем reboot хоста.
 
 
 def _image_url(ref: str) -> tuple[str, str]:

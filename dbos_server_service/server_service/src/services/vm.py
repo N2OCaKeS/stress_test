@@ -474,7 +474,16 @@ async def create_vm(
         "disk_gb": vm.disk_gb,
         "autostart": vm.autostart,
         "cred_strategy": vm.cred_strategy,
-        "accounts": [{"account_id": a.id, "login": a.login} for a in accounts],
+        "accounts": [
+            {
+                "account_id": a.id,
+                "login": a.login,
+                "has_sudo": a.has_sudo,
+                "unix_groups": list(a.unix_groups or []),
+                "ssh_public_key": a.ssh_public_key,
+            }
+            for a in accounts
+        ],
     }
     task_id = await _dispatch_vm_task(
         db=db, identity=identity, request=request,

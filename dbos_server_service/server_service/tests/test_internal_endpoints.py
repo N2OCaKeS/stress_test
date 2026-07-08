@@ -166,6 +166,128 @@ class TestAccountPassword:
         assert_error(resp, 403, "PERMISSION_DENIED")
 
 
+# ── Account password by id (без server_id) ───────────────────────────────────
+
+@pytest.mark.usefixtures("soft_dept_mode")
+class TestAccountPasswordById:
+    """`GET /internal/accounts/{id}/password` — резолв по одному account_id для
+    провижна привязанных к ВМ учёток (исходный сервер воркеру неизвестен)."""
+
+    async def test_worker_fetches_plaintext(
+        self, client, worker_pat_token, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password="by-id-secret")
+        resp = await client.get(
+            f"{BASE_INT}/accounts/{acc.id}/password",
+            headers=_hdr(worker_pat_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["login"] == "ops"
+        assert body["password"] == "by-id-secret"
+
+    async def test_unknown_account_returns_404(self, client, worker_pat_token):
+        resp = await client.get(
+            f"{BASE_INT}/accounts/acc_ghost/password",
+            headers=_hdr(worker_pat_token),
+        )
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
+
+    async def test_managed_without_password_returns_404(
+        self, client, worker_pat_token, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password=None)
+        resp = await client.get(
+            f"{BASE_INT}/accounts/{acc.id}/password",
+            headers=_hdr(worker_pat_token),
+        )
+        assert_error(resp, 404, "ACCOUNT_HAS_NO_PASSWORD")
+
+    async def test_discovered_without_password_returns_empty(
+        self, client, worker_pat_token, make_server, make_account, db,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password=None)
+        acc.source = "discovered"
+        await db.flush()
+        resp = await client.get(
+            f"{BASE_INT}/accounts/{acc.id}/password",
+            headers=_hdr(worker_pat_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["password"] == ""
+
+    async def test_reader_forbidden(self, client, reader_token_a, make_server, make_account):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="nope")
+        resp = await client.get(
+            f"{BASE_INT}/accounts/{acc.id}/password",
+            headers=_hdr(reader_token_a),
+        )
+        assert_error(resp, 403, "PERMISSION_DENIED")
+
+    async def test_no_token_returns_401(self, client, make_server, make_account):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="nope")
+        resp = await client.get(f"{BASE_INT}/accounts/{acc.id}/password")
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
+
+
+class TestAccountPasswordByIdDeptScoping:
+    """Cross-dept гард для by-id варианта: отдел берётся из карточки аккаунта,
+    заголовок обязан совпасть, иначе 403 (нет) / 404 (mismatch, маска)."""
+
+    async def test_missing_header_returns_403(
+        self, client, worker_pat_token, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="acc-should-not-leak")
+        resp = await client.get(
+            f"{BASE_INT}/accounts/{acc.id}/password",
+            headers=_hdr(worker_pat_token),
+        )
+        assert_error(resp, 403, "TARGET_DEPARTMENT_HEADER_REQUIRED")
+        assert "acc-should-not-leak" not in resp.text
+
+    async def test_mismatched_header_returns_404(
+        self, client, worker_pat_token, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="acc-mismatch")
+        resp = await client.get(
+            f"{BASE_INT}/accounts/{acc.id}/password",
+            headers=_hdr(worker_pat_token, dept="dep_b"),
+        )
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
+        assert "acc-mismatch" not in resp.text
+
+    async def test_matched_header_returns_200(
+        self, client, worker_pat_token, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ok", password="acc-ok-pwd")
+        resp = await client.get(
+            f"{BASE_INT}/accounts/{acc.id}/password",
+            headers=_hdr(worker_pat_token, dept="dep_a"),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["password"] == "acc-ok-pwd"
+
+    async def test_worker_from_other_dept_matching_header_succeeds(
+        self, client, worker_pat_token, make_server, make_account, dept_b,
+    ):
+        srv = await make_server(department_id="dep_b")
+        acc = await make_account(server_id=srv.id, password="cross-dept-by-id")
+        resp = await client.get(
+            f"{BASE_INT}/accounts/{acc.id}/password",
+            headers=_hdr(worker_pat_token, dept="dep_b"),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["password"] == "cross-dept-by-id"
+
+
 # ── Rotate password ──────────────────────────────────────────────────────────
 
 @pytest.mark.usefixtures("soft_dept_mode")

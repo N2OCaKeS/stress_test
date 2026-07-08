@@ -178,6 +178,38 @@ async def get_account_password(
     return AccountPasswordResponse(**data)
 
 
+@router.get(
+    "/accounts/{account_id}/password",
+    response_model=AccountPasswordResponse,
+    responses={**_INTERNAL_RESPONSES_BASE,
+               404: {"description": "ACCOUNT_NOT_FOUND (нет такой учётки или чужой отдел) / ACCOUNT_HAS_NO_PASSWORD (managed без сохранённого пароля)."},
+               422: {"description": "DECRYPT_FAILED — сломанный/неаутентичный ciphertext."},
+               500: {"description": "ENCRYPTION_KEY_MISSING."}},
+)
+async def get_account_password_by_id(
+    account_id: str,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> AccountPasswordResponse:
+    """Отдать пароль server_account по одному `account_id` (без server_id).
+
+    Что делает: провижн привязанных к ВМ учёток — dispatch `vm.create` несёт
+    только `account_id`/`login`, исходный сервер аккаунта воркеру неизвестен.
+    Резолвит аккаунт по глобально-уникальному id, отдел берёт из карточки,
+    расшифровывает и возвращает `{login, password}`.
+
+    Доступ: `(server_account, *, view_password)`. Worker_bot роль.
+
+    Аудит: `server_account.view_password` (WARNING на success).
+    """
+    data = await internal_service.fetch_account_password_by_id(
+        db, identity, account_id,
+        target_department_id=x_target_department_id,
+    )
+    return AccountPasswordResponse(**data)
+
+
 @router.post(
     "/servers/{server_id}/accounts/{account_id}/password/rotate",
     response_model=PasswordRotateResponse,

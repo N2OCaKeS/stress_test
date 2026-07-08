@@ -497,6 +497,127 @@ async def fetch_account_password(
     return {"login": account.login, "password": plain}
 
 
+async def fetch_account_password_by_id(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+    target_department_id: str | None = None,
+) -> dict:
+    """Расшифровать пароль аккаунта по одному `account_id`, без server_id.
+
+    Нужно провижну привязанных к ВМ учёток: dispatch `vm.create` знает только
+    `account_id`/`login`, исходный сервер аккаунта воркеру не передаётся. Аккаунт
+    резолвится по глобально-уникальному id, отдел берём из самой карточки, а не
+    из сервера. Заголовок `X-Target-Department-Id` cross-check'ится против
+    `account.department_id`.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW_PASSWORD
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server_account.view_password",
+            target_id=account_id, target_type="server_account",
+            status="denied", allowed=False,
+            details={
+                "reason": "permission_denied",
+                "caller_type": identity.subject_type,
+                "by_account_id": True,
+            },
+        )
+        raise
+    # Здесь аккаунт — самостоятельная сущность (server_id нет), поэтому грузим
+    # его до dept-check'а: отдел берётся из карточки. Несуществующий account и
+    # чужой отдел отдают один и тот же 404 ACCOUNT_NOT_FOUND — по коду ответа
+    # нельзя перечислить чужие учётки.
+    account = await account_repo.get_by_id(db, account_id)
+    if account is None:
+        audit_service.emit(
+            "server_account.view_password",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "account_not_found", "by_account_id": True},
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_FOUND",
+            message="Server account not found",
+        )
+    _check_target_department_for_account(
+        audit_action="server_account.view_password",
+        target_id=account_id,
+        server_department_id=account.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        extra_details={"by_account_id": True},
+    )
+    if account.password_encrypted is None:
+        # Discovered-аккаунт без пароля — отдаём пустую строку (useradd без
+        # chpasswd), managed без пароля — 404, симметрично `fetch_account_password`.
+        if account.source == AccountSource.DISCOVERED.value:
+            audit_service.emit(
+                "server_account.view_password",
+                target_id=account_id, target_type="server_account",
+                status="success", allowed=True,
+                details={
+                    "login": account.login,
+                    "discovered_no_password": True,
+                    "caller_type": identity.subject_type,
+                    "by_account_id": True,
+                },
+            )
+            return {"login": account.login, "password": ""}
+        audit_service.emit(
+            "server_account.view_password",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "no_password_stored", "by_account_id": True},
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_HAS_NO_PASSWORD",
+            message="Account has no stored password",
+        )
+    aad = secrets_service.aad_for_server_account_password(account.id)
+    old_blob = account.password_encrypted
+    try:
+        result = secrets_service.decrypt_with_meta(old_blob, aad=aad)
+    except AppException:
+        metrics.increment_secrets_decrypt_failures()
+        audit_service.emit(
+            "server_account.view_password",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "decrypt_failed",
+                "caller_type": identity.subject_type,
+                "by_account_id": True,
+            },
+        )
+        raise
+    plain = result.plaintext
+    if result.needs_reencrypt:
+        await secrets_service.lazy_reencrypt_owner_column(
+            db,
+            table="server_accounts",
+            column="password_encrypted",
+            row_id=account.id,
+            old_blob=old_blob,
+            plaintext=plain,
+            aad=aad,
+        )
+    audit_service.emit(
+        "server_account.view_password",
+        target_id=account_id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "login": account.login,
+            "caller_type": identity.subject_type,
+            "by_account_id": True,
+        },
+    )
+    return {"login": account.login, "password": plain}
+
+
 async def rotate_account_password(
     db: AsyncSession,
     identity: IdentityContext,

@@ -157,6 +157,39 @@ async def test_create_dispatches_vm_create(client, admin_role_token_a, make_hub,
 
 
 @pytest.mark.asyncio
+async def test_create_payload_carries_account_attributes(
+    client, admin_role_token_a, make_hub, make_server, make_account, db, monkeypatch,
+):
+    """Payload `vm.create` несёт несекретные атрибуты привязанных учёток —
+    воркер заводит юзера с sudo/группами/ключом, а не голым useradd."""
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    srv = await make_server(department_id="dep_a")
+    acc = await make_account(
+        server_id=srv.id, login="deploy",
+        has_sudo=True, unix_groups=["docker", "adm"],
+    )
+    acc.ssh_public_key = "ssh-ed25519 AAAAC3Nz deploy@host"
+    await db.flush()
+
+    resp = await client.post(
+        f"{BASE}/vms", json=_create_body(hub, accounts=[acc.id]),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    accounts = calls[0]["payload"]["accounts"]
+    assert len(accounts) == 1
+    entry = accounts[0]
+    assert entry["account_id"] == acc.id
+    assert entry["login"] == "deploy"
+    assert entry["has_sudo"] is True
+    assert entry["unix_groups"] == ["docker", "adm"]
+    assert entry["ssh_public_key"] == "ssh-ed25519 AAAAC3Nz deploy@host"
+    # Секрет в payload не уезжает — пароль воркер тянет отдельным internal-вызовом.
+    assert "password" not in entry
+
+
+@pytest.mark.asyncio
 async def test_create_capacity_exceeded(client, admin_role_token_a, make_hub, monkeypatch):
     make_dispatch_capture(monkeypatch)
     hub = await make_hub(cpu_threads=16)

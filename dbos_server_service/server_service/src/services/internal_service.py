@@ -2481,7 +2481,10 @@ async def record_vm_snapshots(
                 "id": vm_snapshot_id(),
                 "vm_id": vm.id,
                 "name": item.name,
-                "kind": item.kind or "disk_only",
+                "snapshot_type": item.snapshot_type or "disk_only",
+                "kind": item.kind or "user",
+                "os_version": item.os_version,
+                "mode": item.mode,
                 "is_system": bool(item.is_system) if item.is_system is not None else item.name.endswith("_build"),
                 "state": item.state or "ready",
                 "is_current": False,
@@ -2489,8 +2492,14 @@ async def record_vm_snapshots(
             existing[item.name] = snap
             created += 1
         else:
+            if item.snapshot_type is not None:
+                snap.snapshot_type = item.snapshot_type
             if item.kind is not None:
                 snap.kind = item.kind
+            if item.os_version is not None:
+                snap.os_version = item.os_version
+            if item.mode is not None:
+                snap.mode = item.mode
             if item.is_system is not None:
                 snap.is_system = item.is_system
             if item.state is not None:

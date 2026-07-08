@@ -451,8 +451,8 @@ class VmImageKind(StrEnum):
     SINGLE = "single"
 
 
-class VmSnapshotKind(StrEnum):
-    """Тип снимка ВМ.
+class VmSnapshotType(StrEnum):
+    """Способ снятия снимка ВМ (virsh-механика).
 
     `disk_only` — только диск (`virsh snapshot-create-as --disk-only`);
     `full` — диск + состояние RAM/устройств.
@@ -460,6 +460,29 @@ class VmSnapshotKind(StrEnum):
 
     DISK_ONLY = "disk_only"
     FULL = "full"
+
+
+class VmSnapshotKind(StrEnum):
+    """Смысловая группа снимка ВМ (для выдачи двумя списками в UI).
+
+    `os_baseline` — чистый снимок версии ОС после сборки/astra-update
+    (`<ver>_орёл` / `<ver>_смоленск`); заводится сборочным флоу, не руками.
+    `user` — снимок, снятый пользователем.
+    """
+
+    OS_BASELINE = "os_baseline"
+    USER = "user"
+
+
+class VmSnapshotMode(StrEnum):
+    """Режим (уровень безопасности) Astra, зафиксированный в снимке.
+
+    `oryol` — Орёл (уровень 0), `smolensk` — Смоленск (уровень 2). `None`
+    у пользовательских снимков и до фиксации режима.
+    """
+
+    ORYOL = "oryol"
+    SMOLENSK = "smolensk"
 
 
 class VmSnapshotState(StrEnum):

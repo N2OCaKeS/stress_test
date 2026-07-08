@@ -10,7 +10,11 @@ from src.models.resource_role_permission import ResourceRolePermission
 from src.models.server import Server
 from src.models.secrets_migration_state import SecretsMigrationState
 from src.models.secrets_outbox import ReencryptOutboxEntry
-from src.models.server_account import ServerAccount, ServerAccountServer
+from src.models.server_account import (
+    ServerAccount,
+    ServerAccountServer,
+    ServerAccountVm,
+)
 from src.models.server_account_ignored_login import ServerAccountIgnoredLogin
 from src.models.server_disk import ServerDisk
 from src.models.vm import Vm
@@ -34,6 +38,7 @@ __all__ = [
     "ServerAccount",
     "ServerAccountIgnoredLogin",
     "ServerAccountServer",
+    "ServerAccountVm",
     "ServerDisk",
     "Vm",
     "VmDisk",

@@ -77,7 +77,7 @@ def _parse_entry(name: str, value) -> dict | None:
         url = value.strip()
         if not url:
             return None
-        return {"url": url, "kind": _infer_kind(name), "os_versions": []}
+        return {"url": url, "kind": _infer_kind(name), "os_versions": [], "min_disk_gb": None}
     if isinstance(value, dict):
         url = str(value.get("url") or "").strip()
         if not url:
@@ -88,8 +88,27 @@ def _parse_entry(name: str, value) -> dict | None:
         os_versions = value.get("os_versions") or []
         if not isinstance(os_versions, list):
             os_versions = []
-        return {"url": url, "kind": str(kind), "os_versions": [str(v) for v in os_versions]}
+        return {
+            "url": url,
+            "kind": str(kind),
+            "os_versions": [str(v) for v in os_versions],
+            "min_disk_gb": _parse_min_disk_gb(value.get("min_disk_gb")),
+        }
     return None
+
+
+def _parse_min_disk_gb(raw) -> int | None:
+    """Минимальный размер системного диска (ГБ) из записи каталога.
+
+    Принимаем целое/строку-число; мусор и не-положительные → None (данных нет).
+    """
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
 
 
 async def refresh_catalog(

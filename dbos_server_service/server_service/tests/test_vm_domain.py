@@ -785,7 +785,8 @@ async def make_snapshot(db):
 
     async def _factory(
         *, vm, name: str, is_system: bool = False, is_current: bool = False,
-        password: str | None = None, kind: str = "disk_only", state: str = "ready",
+        password: str | None = None, snapshot_type: str = "disk_only",
+        state: str = "ready",
     ) -> VmSnapshot:
         sid = new_id()
         pwd_enc = None
@@ -795,7 +796,7 @@ async def make_snapshot(db):
             )
         snap = VmSnapshot(
             id=sid, vm_id=vm.id, name=name, is_system=is_system,
-            is_current=is_current, kind=kind, state=state,
+            is_current=is_current, snapshot_type=snapshot_type, state=state,
             mgmt_user="u" if password else None, mgmt_password_encrypted=pwd_enc,
         )
         db.add(snap)
@@ -817,7 +818,7 @@ async def test_snapshot_create_list_hides_build(
     await make_snapshot(vm=vm, name="1.8.1.6_build", is_system=True, is_current=True)
 
     resp = await client.post(
-        f"{BASE}/vms/{vm.id}/snapshots", json={"name": "before-test", "kind": "full"},
+        f"{BASE}/vms/{vm.id}/snapshots", json={"name": "before-test", "snapshot_type": "full"},
         headers=_hdr(admin_role_token_a),
     )
     assert resp.status_code == 202, resp.text
@@ -826,7 +827,7 @@ async def test_snapshot_create_list_hides_build(
     assert calls[-1]["task_kind"] == "vm.snapshot_create"
     assert calls[-1]["target_server_id"] == hub.id
     assert calls[-1]["payload"]["snapshot_name"] == "before-test"
-    assert calls[-1]["payload"]["kind"] == "full"
+    assert calls[-1]["payload"]["snapshot_type"] == "full"
 
     resp = await client.get(f"{BASE}/vms/{vm.id}/snapshots", headers=_hdr(admin_role_token_a))
     assert resp.status_code == 200

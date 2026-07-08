@@ -12,7 +12,7 @@ from src.core.constants import (
     VmCredStrategy,
     VmNetworkMode,
     VmPowerState,
-    VmSnapshotKind,
+    VmSnapshotType,
 )
 
 
@@ -21,6 +21,8 @@ class VmCreate(BaseModel):
 
     hub_server_id: str = Field(description="Сервер-hub, на котором создаётся ВМ (prefix srv_). Обязан быть подготовлен как VMS-hub.")
     name: str = Field(..., min_length=1, max_length=255, description="Голое имя ВМ (без префикса stand<N>_). Уникально в пределах hub'а.")
+    hostname: str | None = Field(default=None, max_length=255, description="Hostname гостя. Опционален: пусто → имя ВМ (name).")
+    accounts: list[str] = Field(default_factory=list, description="ID существующих server_account отдела для провижна в госте (привязка к ВМ). Аккаунты должны быть того же отдела и доступны caller'у.")
     number: int | None = Field(default=None, ge=0, description="Опциональный номер стенда. Глобально уникален в паре servers+vm.")
     department_id: str = Field(description="Department-владелец ВМ. Должен совпадать с department'ом caller'а, иначе 403 DEPARTMENT_ISOLATION.")
     os_version: str | None = Field(default=None, max_length=64, description="Версия ОС ВМ (свободная строка, напр. 1.8.1.6). У universal-бокса опускается.")
@@ -146,6 +148,7 @@ class VmResponse(BaseModel):
 
     id: str = Field(description="VM ID (prefix vm_).")
     name: str = Field(description="Голое имя ВМ.")
+    hostname: str | None = Field(default=None, description="Hostname гостя (или None → имя ВМ).")
     number: int | None = Field(default=None, description="Номер стенда (или None).")
     hub_server_id: str = Field(description="Сервер-hub ВМ.")
     department_id: str = Field(description="Department-владелец.")
@@ -181,6 +184,45 @@ class VmTaskDispatchResponse(BaseModel):
     vm_id: str = Field(description="ID ВМ (prefix vm_).")
     task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
     status: str = Field(description="Статус: queued.")
+
+
+class VmBulkCreateRequest(BaseModel):
+    """Тело POST /vms/bulk — создать несколько разных ВМ за один запрос.
+
+    Каждый элемент — самостоятельный `VmCreate` (свой hub/имя/ресурсы/сеть/
+    учётки). Диспатчим по задаче `vm.create` на элемент; одна упавшая не валит
+    остальные (per-item результат). Ёмкость hub'а копится по мере создания.
+    """
+
+    items: list[VmCreate] = Field(
+        ..., min_length=1,
+        description="ВМ для создания, по одному элементу на ВМ.",
+    )
+
+
+class VmBulkCreateResult(BaseModel):
+    """Per-item исход массового создания ВМ.
+
+    `status=created` — ВМ заведена, `vm_id`/`task_id` заполнены. `status=error`
+    — элемент упал, `error_code`/`message` несут причину (дубль имени, чужой
+    отдел, ёмкость hub'а, битый бокс и т.д.); остальные элементы продолжают.
+    """
+
+    index: int = Field(description="Позиция элемента в исходном списке items.")
+    name: str = Field(description="Имя ВМ из запроса.")
+    status: str = Field(description="created | error.")
+    vm_id: str | None = Field(default=None, description="ID созданной ВМ (prefix vm_), если created.")
+    task_id: str | None = Field(default=None, description="ID задачи vm.create (prefix tsk_), если created.")
+    error_code: str | None = Field(default=None, description="Стабильный error_code (для status=error).")
+    message: str | None = Field(default=None, description="Человекочитаемое описание ошибки (для status=error).")
+
+
+class VmBulkCreateResponse(BaseModel):
+    """Ответ POST /vms/bulk — per-item результаты + сводные счётчики."""
+
+    results: list[VmBulkCreateResult] = Field(description="Исход по каждому элементу (в порядке items).")
+    created_count: int = Field(description="Сколько ВМ создано.")
+    error_count: int = Field(description="Сколько элементов упало.")
 
 
 class VmDiskResponse(BaseModel):
@@ -222,6 +264,7 @@ class VmImageResponse(BaseModel):
     kind: str = Field(description="universal / single.")
     hub_server_id: str | None = Field(default=None, description="Привязка к hub'у (None — глобальный образ).")
     os_versions: list[str] = Field(default_factory=list, description="ОС внутри universal-бокса (для single — пусто).")
+    min_disk_gb: int | None = Field(default=None, description="Минимальный размер системного диска (ГБ); None — данных нет. UI предупреждает, если запрошенный диск меньше.")
     created_at: datetime = Field(description="Когда запись добавлена.")
     updated_at: datetime = Field(description="Когда запись изменена.")
 
@@ -252,7 +295,7 @@ class VmSnapshotCreate(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=255, description="Имя снимка (уникально в пределах ВМ). Суффикс _build зарезервирован под системные снимки.")
     description: str | None = Field(default=None, max_length=1024, description="Описание снимка (опционально).")
-    kind: VmSnapshotKind = Field(default=VmSnapshotKind.DISK_ONLY, description="disk_only (только диск) или full (диск + RAM/устройства).")
+    snapshot_type: VmSnapshotType = Field(default=VmSnapshotType.DISK_ONLY, description="disk_only (только диск) или full (диск + RAM/устройства).")
 
 
 class VmSnapshotResponse(BaseModel):
@@ -265,7 +308,10 @@ class VmSnapshotResponse(BaseModel):
     name: str = Field(description="Имя снимка.")
     description: str | None = Field(default=None, description="Описание снимка.")
     parent_snapshot_id: str | None = Field(default=None, description="Родительский снимок в цепочке (или None).")
-    kind: str = Field(description="disk_only / full.")
+    snapshot_type: str = Field(description="Способ снятия: disk_only / full.")
+    kind: str = Field(description="Смысловая группа: os_baseline / user.")
+    os_version: str | None = Field(default=None, description="Версия ОС снимка (или None).")
+    mode: str | None = Field(default=None, description="Режим Astra снимка: oryol / smolensk / None.")
     is_system: bool = Field(default=False, description="Системный golden-снимок (`<ver>_build`). В штатной выдаче не появляется.")
     state: str = Field(description="creating / ready / error.")
     size_bytes: int | None = Field(default=None, description="Размер снимка в байтах (None до синка с hub'а).")
@@ -513,7 +559,10 @@ class VmSnapshotSyncItem(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=255, description="Имя снимка (ключ матчинга в пределах ВМ).")
     parent: str | None = Field(default=None, max_length=255, description="Имя родительского снимка в цепочке (резолвится в parent_snapshot_id).")
-    kind: str | None = Field(default=None, max_length=16, description="disk_only / full.")
+    snapshot_type: str | None = Field(default=None, max_length=16, description="Способ снятия: disk_only / full.")
+    kind: str | None = Field(default=None, max_length=16, description="Смысловая группа: os_baseline / user.")
+    os_version: str | None = Field(default=None, max_length=64, description="Версия ОС снимка (`<ver>`).")
+    mode: str | None = Field(default=None, max_length=16, description="Режим Astra снимка: oryol / smolensk.")
     is_system: bool | None = Field(default=None, description="Системный `<ver>_build` (скрыт, защищён от ручного delete/revert).")
     state: str | None = Field(default=None, max_length=16, description="creating / ready / error.")
     size_bytes: int | None = Field(default=None, ge=0, description="Размер снимка в байтах.")

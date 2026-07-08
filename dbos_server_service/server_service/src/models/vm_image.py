@@ -16,6 +16,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     UniqueConstraint,
     func,
@@ -49,6 +50,10 @@ class VmImage(Base):
     os_versions: Mapped[list[str]] = mapped_column(
         ARRAY(String), nullable=False, default=list, server_default="{}"
     )
+    # Минимальный размер системного диска (ГБ) для этого бокса — занятое место
+    # разметки образа. UI предупреждает заранее, если запрошенный диск меньше.
+    # NULL — данных о минимуме нет (каталог не несёт эту метрику).
+    min_disk_gb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

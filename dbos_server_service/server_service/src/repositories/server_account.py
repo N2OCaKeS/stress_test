@@ -6,8 +6,8 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models import ServerAccount, ServerAccountServer
-from src.utils.ids import server_account_server_id
+from src.models import ServerAccount, ServerAccountServer, ServerAccountVm
+from src.utils.ids import server_account_server_id, server_account_vm_id
 
 
 async def get_by_id(db: AsyncSession, account_id: str) -> ServerAccount | None:
@@ -317,6 +317,43 @@ async def create(db: AsyncSession, data: dict, server_ids: list[str]) -> ServerA
         )
     await db.flush()
     return obj
+
+
+async def add_vm_links(
+    db: AsyncSession, vm_id: str, accounts: list[ServerAccount]
+) -> list[ServerAccountVm]:
+    """Привязать аккаунты к ВМ (зеркало серверной M2M). commit — на caller'е.
+
+    Дубль по (account_id, vm_id) отсеиваем на стороне Python; занятый логин на
+    ВМ поднимет IntegrityError на uq_vm_login. Возвращает созданные связки.
+    """
+    links: list[ServerAccountVm] = []
+    seen: set[str] = set()
+    for acc in accounts:
+        if acc.id in seen:
+            continue
+        seen.add(acc.id)
+        link = ServerAccountVm(
+            id=server_account_vm_id(),
+            account_id=acc.id,
+            vm_id=vm_id,
+            login=acc.login,
+        )
+        db.add(link)
+        links.append(link)
+    await db.flush()
+    return links
+
+
+async def list_for_vm(db: AsyncSession, vm_id: str) -> list[ServerAccount]:
+    """Аккаунты, привязанные к ВМ (created_at DESC)."""
+    stmt = (
+        select(ServerAccount)
+        .join(ServerAccountVm, ServerAccountVm.account_id == ServerAccount.id)
+        .where(ServerAccountVm.vm_id == vm_id)
+        .order_by(ServerAccount.created_at.desc())
+    )
+    return list((await db.execute(stmt)).scalars())
 
 
 async def update(db: AsyncSession, obj: ServerAccount, changes: dict) -> ServerAccount:

@@ -28,6 +28,11 @@ def server_account_server_id() -> str:
     return _new_id("acs_")
 
 
+def server_account_vm_id() -> str:
+    """`acv_<uuid>` — для строк связки server_account_vms."""
+    return _new_id("acv_")
+
+
 def ipmi_controller_id() -> str:
     """`ipm_<uuid>` — для ipmi_controllers."""
     return _new_id("ipm_")

@@ -26,6 +26,7 @@ from src.core.constants import (
     VmBusyState,
     VmNetworkMode,
     VmPowerState,
+    VmSnapshotKind,
     VmSnapshotState,
     VmTaskKind,
 )
@@ -41,6 +42,7 @@ from src.core.exceptions import (
 from src.dependencies.idempotency import read_idempotency_key
 from src.models import Vm, VmDisk, VmSnapshot
 from src.repositories import os_version as os_version_repo
+from src.repositories import server_account as account_repo
 from src.repositories import server as server_repo
 from src.repositories import server_disk as disk_repo
 from src.repositories import vm as repo
@@ -52,6 +54,7 @@ from src.schemas.identity import IdentityContext
 from src.schemas.vm import (
     VmAlltaUpdateRequest,
     VmAstraUpdateRequest,
+    VmBulkCreateResult,
     VmCreate,
     VmDiskCreate,
     VmNetworkRequest,
@@ -78,6 +81,11 @@ logger = logging.getLogger(__name__)
 # воркер подставляет сам, но кладём явно, чтобы контракт задачи был полным.
 VMS_HUB_OS_FAMILY = "apt"
 VMS_HUB_POOL_PATH = "/vms"
+
+# Sentinel: «взять Idempotency-Key из заголовка запроса». Отличает «ключ не
+# передан явно» (single-dispatch — читаем header) от «явно без ключа» (bulk —
+# каждый элемент диспатчится независимо, общий header-ключ дал бы дедуп).
+_IDEMPOTENCY_FROM_REQUEST = object()
 
 
 # ── visibility / booking helpers ─────────────────────────────────────────────
@@ -267,17 +275,61 @@ def _capacity_check(hub, existing: dict[str, int], payload: VmCreate) -> None:
             )
 
 
+async def _resolve_vm_accounts(
+    db: AsyncSession,
+    identity: IdentityContext,
+    department_id: str,
+    account_ids: list[str],
+) -> list:
+    """Валидировать и подгрузить server_account'ы для привязки к ВМ.
+
+    Каждый аккаунт обязан существовать (иначе 404 ACCOUNT_NOT_FOUND) и жить в
+    том же отделе, что и ВМ (иначе 403 VM_ACCOUNT_FORBIDDEN — dept-isolation
+    учёток). Порядок исходного списка сохраняется, дубли схлопываются.
+    """
+    accounts = []
+    seen: set[str] = set()
+    for aid in account_ids:
+        if aid in seen:
+            continue
+        seen.add(aid)
+        account = await account_repo.get_by_id(db, aid)
+        if account is None:
+            audit_service.emit(
+                "vm.create", target_type="vm", status="failure", allowed=True,
+                details={"reason": "account_not_found", "account_id": aid},
+            )
+            raise NotFoundError(
+                error_code="ACCOUNT_NOT_FOUND",
+                message="Server account not found",
+            )
+        if account.department_id != department_id:
+            audit_service.emit(
+                "vm.create", target_type="vm", status="failure", allowed=True,
+                details={"reason": "account_cross_dept", "account_id": aid},
+            )
+            raise AuthorizationError(
+                error_code="VM_ACCOUNT_FORBIDDEN",
+                message="Account belongs to a different department and cannot be attached to this VM",
+            )
+        accounts.append(account)
+    return accounts
+
+
 async def create_vm(
     db: AsyncSession,
     identity: IdentityContext,
     request: Request,
     payload: VmCreate,
+    *,
+    idempotency_key=_IDEMPOTENCY_FROM_REQUEST,
 ) -> tuple[Vm, str]:
     """INSERT ВМ (busy_state=creating) + dispatch VM_CREATE. Возвращает (vm, task_id).
 
     Права: `(vm, create)` (тип-wide, dept-scope). Ёмкость hub'а проверяется до
     dispatch'а (409 VM_CAPACITY_EXCEEDED). Hub обязан быть подготовлен как
-    VMS-hub (`is_vms_hub`), иначе 409 HUB_NOT_PREPARED.
+    VMS-hub (`is_vms_hub`), иначе 409 HUB_NOT_PREPARED. `accounts` — существующие
+    учётки отдела: привязываются к ВМ и уезжают в payload воркера для провижна.
     """
     with emit_denied_on_authz_error(
         "vm.create", target_type="vm",
@@ -316,6 +368,11 @@ async def create_vm(
     existing = await repo.sum_resources_for_hub(db, hub.id)
     _capacity_check(hub, existing, payload)
 
+    # Учётки для провижна в госте: существующие аккаунты того же отдела.
+    accounts = await _resolve_vm_accounts(
+        db, identity, payload.department_id, payload.accounts
+    )
+
     # Резолв box→box_url из каталога образов ДО INSERT'а: воркеру нужен URL,
     # откуда скачивать образ. Нет записи в каталоге → 400 (карточку не заводим).
     box_url = await _resolve_box_url(db, payload.box, hub.id)
@@ -349,6 +406,7 @@ async def create_vm(
     data = {
         "id": new_vm_id(),
         "name": payload.name,
+        "hostname": payload.hostname,
         "number": payload.number,
         "hub_server_id": hub.id,
         "department_id": payload.department_id,
@@ -381,10 +439,28 @@ async def create_vm(
             message="VM with this name (on the hub) or number already exists",
         ) from exc
 
+    # Привязка учёток к ВМ (зеркало серверной M2M). Занятый логин на ВМ →
+    # IntegrityError на uq_vm_login → 409.
+    try:
+        if accounts:
+            await account_repo.add_vm_links(db, vm.id, accounts)
+    except IntegrityError as exc:
+        await db.rollback()
+        audit_service.emit(
+            "vm.create", target_id=data["id"], target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "account_link_conflict", "department_id": payload.department_id},
+        )
+        raise ConflictError(
+            error_code="VM_ACCOUNT_DUPLICATE",
+            message="Two attached accounts share a login, or a login is already bound to this VM",
+        ) from exc
+
     payload_task = {
         **_hub_payload(hub),
         "vm_id": vm.id,
         "name": vm.name,
+        "hostname": vm.hostname or vm.name,
         "box": vm.box,
         "box_url": box_url,
         "os_version": vm.os_version,
@@ -398,11 +474,13 @@ async def create_vm(
         "disk_gb": vm.disk_gb,
         "autostart": vm.autostart,
         "cred_strategy": vm.cred_strategy,
+        "accounts": [{"account_id": a.id, "login": a.login} for a in accounts],
     }
     task_id = await _dispatch_vm_task(
         db=db, identity=identity, request=request,
         task_kind=VmTaskKind.VM_CREATE, hub=hub, vm=vm,
         payload=payload_task, audit_action="vm.create",
+        idempotency_key=idempotency_key,
     )
     await db.commit()
     await db.refresh(vm)
@@ -412,6 +490,76 @@ async def create_vm(
         details={"task_id": task_id, "hub_server_id": hub.id, "name": vm.name, "department_id": vm.department_id},
     )
     return vm, task_id
+
+
+async def bulk_create_vms(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    items: list[VmCreate],
+) -> list[VmBulkCreateResult]:
+    """Создать несколько ВМ за один запрос — по задаче `vm.create` на элемент.
+
+    Право `(vm, create)` проверяется один раз на весь батч (не зависит от
+    конкретной ВМ) — нет права → 403 на весь запрос. Дальше каждый элемент
+    создаётся независимо через `create_vm`: упавший уходит в результат с
+    error_code/message, остальные продолжают. Ёмкость hub'а копится по мере
+    коммита каждой созданной ВМ. Глобальная недоступность воркера (redis down)
+    на любом элементе отбивает весь запрос 503.
+    """
+    from src.core.exceptions import AppException, ServiceUnavailableError
+
+    with emit_denied_on_authz_error(
+        "vm.create", target_type="vm",
+        extra_details={"operation": "bulk_create", "count": len(items)},
+        identity=identity,
+    ):
+        await permissions.require_action(db, identity, EntityType.VM, Action.CREATE)
+
+    results: list[VmBulkCreateResult] = []
+    for index, item in enumerate(items):
+        try:
+            # Bulk: без общего header-ключа — каждый элемент диспатчится
+            # самостоятельно (общий Idempotency-Key дал бы дедуп на второй ВМ).
+            vm, task_id = await create_vm(
+                db, identity, request, item, idempotency_key=None,
+            )
+        except ServiceUnavailableError:
+            # Воркер недоступен глобально — продолжать бессмысленно, каждый
+            # следующий элемент упал бы идентично. Уже созданные закоммичены.
+            audit_service.emit(
+                "vm.create", target_type="vm", status="failure", allowed=True,
+                details={
+                    "reason": "worker_unreachable_bulk_abort",
+                    "operation": "bulk_create",
+                    "created_count": sum(1 for r in results if r.status == "created"),
+                },
+            )
+            raise
+        except AppException as exc:
+            # Частичная мутация упавшего элемента (если была) — откатываем, чтобы
+            # не тащить «грязную» транзакцию в следующий элемент.
+            await db.rollback()
+            results.append(VmBulkCreateResult(
+                index=index, name=item.name, status="error",
+                error_code=exc.error_code, message=exc.message,
+            ))
+            continue
+        results.append(VmBulkCreateResult(
+            index=index, name=item.name, status="created",
+            vm_id=vm.id, task_id=task_id,
+        ))
+
+    created = sum(1 for r in results if r.status == "created")
+    audit_service.emit(
+        "vm.create", target_type="vm", status="success", allowed=True,
+        details={
+            "operation": "bulk_create",
+            "created_count": created,
+            "error_count": len(results) - created,
+        },
+    )
+    return results
 
 
 async def _dispatch_vm_task(
@@ -424,15 +572,24 @@ async def _dispatch_vm_task(
     vm: Vm | None,
     payload: dict,
     audit_action: str,
+    idempotency_key=_IDEMPOTENCY_FROM_REQUEST,
 ) -> str:
     """Тонкая обёртка над worker_client.dispatch_task с failure-аудитом.
 
     target_server_id — всегда hub (SSH-таргет), target_resource_id — id ВМ
     (когда она есть). commit делает caller (create) или сама операция (power/
     delete), чтобы outbox-row лёг в одну транзакцию с доменной мутацией.
+
+    `idempotency_key` по умолчанию читается из заголовка запроса; bulk передаёт
+    None явно, чтобы каждый элемент диспатчился без общего header-ключа.
     """
     from src.core.exceptions import ServiceUnavailableError
 
+    key = (
+        read_idempotency_key(request)
+        if idempotency_key is _IDEMPOTENCY_FROM_REQUEST
+        else idempotency_key
+    )
     try:
         return await worker_client.dispatch_task(
             db=db,
@@ -442,7 +599,7 @@ async def _dispatch_vm_task(
             payload=payload,
             created_by=identity.user_id,
             request_id=getattr(request.state, "request_id", None),
-            idempotency_key=read_idempotency_key(request),
+            idempotency_key=key,
         )
     except (ConflictError, ServiceUnavailableError) as exc:
         reason = (
@@ -919,9 +1076,20 @@ def _copy_snapshot_creds(
 
 
 async def list_snapshots(
-    db: AsyncSession, identity: IdentityContext, vm_id: str,
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    *,
+    q: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[VmSnapshot]:
-    """Список снимков ВМ (системные `<ver>_build` скрыты). Право `(vm, view)`."""
+    """Список снимков ВМ. Право `(vm, view)`.
+
+    Показываются обе группы (`os_baseline` и `user`); скрыты только системные
+    golden-снимки `<ver>_build` (`is_system`). `q` — substr-поиск по имени,
+    `limit`/`offset` — постраничная выдача для скролла.
+    """
     await permissions.require_resource_action(
         db, identity, EntityType.VM, vm_id, Action.VIEW
     )
@@ -929,7 +1097,9 @@ async def list_snapshots(
     if vm is None:
         raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
     await _ensure_visible(db, identity, vm)
-    return await vm_snapshot_repo.list_for_vm(db, vm_id, include_system=False)
+    return await vm_snapshot_repo.list_for_vm(
+        db, vm_id, include_system=False, q=q, limit=limit, offset=offset,
+    )
 
 
 async def create_snapshot(
@@ -973,7 +1143,12 @@ async def create_snapshot(
         "name": payload.name,
         "description": payload.description,
         "parent_snapshot_id": parent.id if parent is not None else None,
-        "kind": payload.kind.value,
+        "snapshot_type": payload.snapshot_type.value,
+        # Снимки, снятые пользователем, — всегда группа `user`. Чистые
+        # os_baseline заводит сборочный флоу (sync-callback воркера).
+        "kind": VmSnapshotKind.USER.value,
+        "os_version": vm.os_version,
+        "mode": None,
         "is_system": False,
         "state": VmSnapshotState.CREATING.value,
         "is_current": False,
@@ -999,7 +1174,7 @@ async def create_snapshot(
         "vm_name": vm.name,
         "snapshot_id": snapshot.id,
         "snapshot_name": snapshot.name,
-        "kind": snapshot.kind,
+        "snapshot_type": snapshot.snapshot_type,
         "description": snapshot.description,
         "parent_snapshot_name": parent.name if parent is not None else None,
     }

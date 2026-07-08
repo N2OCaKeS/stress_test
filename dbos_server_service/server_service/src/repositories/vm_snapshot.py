@@ -24,13 +24,29 @@ async def get_by_name(
 
 
 async def list_for_vm(
-    db: AsyncSession, vm_id: str, *, include_system: bool = False
+    db: AsyncSession,
+    vm_id: str,
+    *,
+    include_system: bool = False,
+    q: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[VmSnapshot]:
-    """Снимки ВМ (created_at ASC). `include_system=False` прячет `<ver>_build`."""
+    """Снимки ВМ (created_at ASC). `include_system=False` прячет `<ver>_build`.
+
+    `q` — регистронезависимый substr-поиск по имени (для UI-скролла с поиском).
+    `limit`/`offset` — постраничная выдача; `limit=None` — без ограничения.
+    """
     stmt = select(VmSnapshot).where(VmSnapshot.vm_id == vm_id)
     if not include_system:
         stmt = stmt.where(VmSnapshot.is_system.is_(False))
+    if q:
+        stmt = stmt.where(VmSnapshot.name.ilike(f"%{q}%"))
     stmt = stmt.order_by(VmSnapshot.created_at, VmSnapshot.id)
+    if offset:
+        stmt = stmt.offset(offset)
+    if limit is not None:
+        stmt = stmt.limit(limit)
     return list((await db.execute(stmt)).scalars())
 
 

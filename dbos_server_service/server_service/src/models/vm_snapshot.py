@@ -34,7 +34,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.core.constants import VmSnapshotKind, VmSnapshotState
+from src.core.constants import VmSnapshotKind, VmSnapshotState, VmSnapshotType
 from src.db.base import Base
 
 
@@ -59,9 +59,18 @@ class VmSnapshot(Base):
         ForeignKey("vm_snapshots.id", ondelete="SET NULL"),
         nullable=True,
     )
-    kind: Mapped[str] = mapped_column(
-        String(16), default=VmSnapshotKind.DISK_ONLY, nullable=False
+    # Способ снятия (virsh-механика): disk_only / full.
+    snapshot_type: Mapped[str] = mapped_column(
+        String(16), default=VmSnapshotType.DISK_ONLY, nullable=False
     )
+    # Смысловая группа для UI: os_baseline (чистый снимок версии ОС) / user.
+    kind: Mapped[str] = mapped_column(
+        String(16), default=VmSnapshotKind.USER, nullable=False
+    )
+    # Версия ОС, зафиксированная снимком (напр. `1.8.1.6`); NULL, если неизвестна.
+    os_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Режим Astra на момент снимка: oryol / smolensk / NULL.
+    mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Системный golden-снимок (`<ver>_build`): скрыт из выдачи, защищён от
     # ручного delete/revert.
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

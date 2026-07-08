@@ -83,6 +83,52 @@ class ServerAccountServer(Base):
     )
 
 
+class ServerAccountVm(Base):
+    """Связка аккаунт ↔ ВМ (зеркало `ServerAccountServer`).
+
+    Тот же `server_account` можно привязать и к серверам, и к ВМ — отдельной
+    сущности под учётки ВМ не заводим. Логин уникален в пределах ВМ
+    (`uq_vm_login`); одна привязка на пару (account, vm) — `uq_account_vm`.
+    """
+
+    __tablename__ = "server_account_vms"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("server_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    vm_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("vms.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Денормализованная копия login'а аккаунта — держит constraint «один логин
+    # на ВМ». В sync с ServerAccount.login (логин неизменяем после создания).
+    login: Mapped[str] = mapped_column(String(128), nullable=False)
+    # True, пока пользователь реально заведён в госте. Провижн ставит True,
+    # будущая инвентаризация ВМ сбрасывает в False при дрейфе (запись не сносим).
+    present_on_vm: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "vm_id", name="uq_account_vm"),
+        UniqueConstraint("vm_id", "login", name="uq_vm_login"),
+    )
+
+    account: Mapped["ServerAccount"] = relationship(
+        "ServerAccount", back_populates="vm_links"
+    )
+    vm: Mapped["Vm"] = relationship("Vm")  # noqa: F821
+
+
 class ServerAccount(Base):
     """OS-аккаунт. Пароль хранится в формате secrets_service token и общий
     на все привязанные серверы."""
@@ -169,6 +215,12 @@ class ServerAccount(Base):
 
     server_links: Mapped[list["ServerAccountServer"]] = relationship(
         "ServerAccountServer",
+        back_populates="account",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    vm_links: Mapped[list["ServerAccountVm"]] = relationship(
+        "ServerAccountVm",
         back_populates="account",
         cascade="all, delete-orphan",
         lazy="selectin",

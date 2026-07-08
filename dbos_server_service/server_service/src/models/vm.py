@@ -47,6 +47,10 @@ class Vm(Base):
     # Голое имя ВМ (без префикса stand<N>_). Уникальность имени — в пределах
     # hub'а; на БД держим partial-unique (hub_server_id, name).
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Hostname гостя (`hostnamectl set-hostname`). Опционален: пусто → берётся
+    # имя ВМ (`name`). Отдельно от `name`, т.к. имя ВМ уникально в пределах
+    # hub'а, а hostname внутри гостя может отличаться/повторяться.
+    hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Опциональный номер стенда — глобально уникален в паре servers+vm.
     number: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True)
     hub_server_id: Mapped[str] = mapped_column(

@@ -20,6 +20,8 @@ from src.schemas.vm import (
     VmAstraUpdateRequest,
     VmAutostartRequest,
     VmAvailableIpsResponse,
+    VmBulkCreateRequest,
+    VmBulkCreateResponse,
     VmConsoleRequest,
     VmConsoleResponse,
     VmCreate,
@@ -98,6 +100,40 @@ async def create_vm(
     """POST /vms — создать ВМ + dispatch VM_CREATE. Аудит: vm.created."""
     vm, task_id = await svc.create_vm(db, identity, request, body)
     return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
+
+
+@router.post(
+    "/bulk",
+    response_model=VmBulkCreateResponse,
+    status_code=202,
+    summary="Массовое создание ВМ (202, серия dispatch VM_CREATE)",
+    description=(
+        "Создаёт несколько разных ВМ за один запрос: по задаче `vm.create` на "
+        "элемент. Право `(vm, create)` проверяется один раз на весь батч (нет "
+        "права → 403). Per-item результат: `{index, name, status, vm_id?, "
+        "task_id?, error_code?, message?}`; упавший элемент (дубль имени, чужой "
+        "отдел, ёмкость hub'а, битый бокс, чужая учётка) уходит в результат с "
+        "ошибкой и НЕ валит остальной батч. Ёмкость hub'а копится по мере "
+        "создания. Глобальная недоступность воркера отбивает весь запрос 503."
+    ),
+    responses={
+        202: {"description": "Батч принят; per-item results в теле ответа."},
+        403: {"description": "Нет `create` — весь батч отбит."},
+        503: {"description": "Worker недоступен (redis down / не сконфигурён)."},
+    },
+)
+async def create_vms_bulk(
+    body: VmBulkCreateRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmBulkCreateResponse:
+    """POST /vms/bulk — создать несколько ВМ; per-item статусы."""
+    results = await svc.bulk_create_vms(db, identity, request, body.items)
+    created = sum(1 for r in results if r.status == "created")
+    return VmBulkCreateResponse(
+        results=results, created_count=created, error_count=len(results) - created,
+    )
 
 
 @router.patch(
@@ -629,17 +665,27 @@ async def resize_vm_disk(
 @router.get(
     "/{vm_id}/snapshots",
     response_model=list[VmSnapshotResponse],
-    summary="Список снимков ВМ (системные _build скрыты)",
-    description="Гейтит право `(vm, view)`. Системные golden-снимки (`<ver>_build`) в выдаче не показываются. Cross-dept / нет ВМ → 404.",
+    summary="Список снимков ВМ (os_baseline + user; системные _build скрыты)",
+    description=(
+        "Гейтит право `(vm, view)`. Возвращает обе группы (`os_baseline` и "
+        "`user`) с полями `snapshot_type`/`kind`/`mode`/`os_version`. Системные "
+        "golden-снимки `<ver>_build` (`is_system`) скрыты. `q` — substr-поиск по "
+        "имени; `limit`/`offset` — постранично для скролла. Cross-dept / нет ВМ → 404."
+    ),
     responses={403: {"description": "Нет `view`."}, 404: {"description": "VM_NOT_FOUND."}},
 )
 async def list_vm_snapshots(
     vm_id: str,
     identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
+    q: str | None = Query(default=None, max_length=255, description="Substr-поиск по имени снимка."),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ) -> list[VmSnapshotResponse]:
     """GET /vms/{id}/snapshots."""
-    snapshots = await svc.list_snapshots(db, identity, vm_id)
+    snapshots = await svc.list_snapshots(
+        db, identity, vm_id, q=q, limit=limit, offset=offset,
+    )
     return [VmSnapshotResponse.model_validate(s) for s in snapshots]
 
 

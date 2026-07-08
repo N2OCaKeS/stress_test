@@ -47,6 +47,7 @@ from src.api.v1.endpoints.vms import (
     router as vms_router,
     router_images as vms_images_router,
     router_ip_pools as vms_ip_pools_router,
+    router_presets as vms_presets_router,
     router_servers as vms_servers_router,
 )
 from src.api.v1.endpoints.worker_dispatch import (
@@ -69,6 +70,8 @@ router.include_router(vms_servers_router, tags=["vms"])
 router.include_router(vms_images_router, tags=["vms"])
 # Пулы IP-адресов ВМ (IPAM): CRUD под правом vm.net_manage.
 router.include_router(vms_ip_pools_router, tags=["vms"])
+# Пресеты стандартных ВМ: CRUD под правом vm.preset_manage.
+router.include_router(vms_presets_router, tags=["vms"])
 router.include_router(ipmi_router, tags=["ipmi"])
 router.include_router(ipmi_list_router, tags=["ipmi"])
 # Legacy snake_case `/ipmi_controllers` — алиас на тот же handler, скрыт из

@@ -70,6 +70,41 @@ class VmPowerRequest(BaseModel):
     )
 
 
+class VmAutostartRequest(BaseModel):
+    """Тело POST /vms/{id}/autostart — включить/выключить автозапуск (202 → VM_SET_AUTOSTART)."""
+
+    enabled: bool = Field(..., description="True — ВМ стартует при старте hub'а (`virsh autostart`); False — выключить.")
+
+
+class VmConsoleRequest(BaseModel):
+    """Тело POST /vms/{id}/console — запросить доступ к консоли ВМ."""
+
+    kind: Literal["ssh", "vnc", "serial"] = Field(
+        default="vnc",
+        description="Тип консоли: ssh (интерактивный shell), vnc (websockify+noVNC), serial (`virsh console`).",
+    )
+
+
+class VmConsoleResponse(BaseModel):
+    """Ответ на POST /vms/{id}/console — контракт подключения UI к консоли ВМ.
+
+    Реальный проброс держит отдельный websockify/PTY-прокси (ставится позже):
+    UI подключается к нему по `host`+`ws_path`, предъявляя `token` (живёт
+    `expires_in` секунд). Прокси валидирует токен и резолвит фактический
+    VNC-дисплей/serial-устройство ВМ на hub'е. server_service токен не хранит.
+    """
+
+    vm_id: str = Field(description="ID ВМ (prefix vm_).")
+    kind: str = Field(description="ssh / vnc / serial.")
+    token: str = Field(description="Короткоживущий токен доступа (prefix vmc_); предъявляется прокси.")
+    expires_in: int = Field(description="Сколько секунд токен действителен.")
+    host: str | None = Field(default=None, description="Хост, к которому подключается UI: для vnc/serial — IP hub'а (там живёт прокси), для ssh — IP гостя (None, если гость ещё без IP).")
+    ws_path: str = Field(description="Путь websocket-эндпоинта прокси для этой ВМ и типа консоли.")
+    port: int | None = Field(default=None, description="VNC-порт (для kind=vnc, если известен) либо SSH-порт (для kind=ssh). Для serial — None.")
+    serial_path: str | None = Field(default=None, description="Устройство serial-консоли в госте (для kind=serial), иначе None.")
+    username: str | None = Field(default=None, description="Управляющий пользователь для kind=ssh (mgmt_user или дефолт-учётка образа). Пароль/ключ прокси тянет через internal mgmt-credentials — plaintext в ответе не отдаётся.")
+
+
 class VmReserveRequest(BaseModel):
     """Тело POST /vms/{id}/reserve — бронь ВМ под тест.
 
@@ -506,3 +541,90 @@ class VmSnapshotsCallbackResponse(BaseModel):
     synced: int = Field(description="Сколько снимков обработано (created + updated).")
     created: int = Field(description="Сколько снимков заведено.")
     updated: int = Field(description="Сколько снимков обновлено.")
+
+
+# ── пресеты стандартных ВМ (vm_preset) + create-default-vms ─────────────────
+
+
+class VmPresetCreate(BaseModel):
+    """Тело POST /vm-presets — создать шаблон стандартной ВМ отдела."""
+
+    name: str = Field(..., min_length=1, max_length=255, description="Имя пресета (уникально в пределах отдела). Становится именем развёрнутой ВМ.")
+    department_id: str = Field(..., description="Department-владелец пресета. Должен совпадать с department'ом caller'а.")
+    box: str | None = Field(default=None, max_length=128, description="Имя бокса-образа из FTP-каталога (vm_station / single-бокс).")
+    os_version: str | None = Field(default=None, max_length=64, description="Версия ОС ВМ (свободная строка). У universal-бокса опускается.")
+    cpu: int = Field(..., ge=1, description="vCPU ВМ.")
+    ram_mb: int = Field(..., ge=1, description="RAM ВМ в МБ.")
+    disk_gb: int = Field(..., ge=1, description="Диск ВМ в ГБ.")
+    network_mode: VmNetworkMode = Field(default=VmNetworkMode.BRIDGE, description="bridge (разворачивается 1 раз глобально) или nat (1 раз на hub-сервер).")
+    fixed_ip: IPv4Address | IPv6Address | None = Field(default=None, description="Желаемый статический IP bridge-станции (переносится в карточку ВМ).")
+    number: int | None = Field(default=None, ge=0, description="Желаемый номер стенда (глобально уникален в паре servers+vm).")
+
+
+class VmPresetUpdate(BaseModel):
+    """Тело PATCH /vm-presets/{id} — частичное изменение пресета (только присланные поля)."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    box: str | None = Field(default=None, max_length=128)
+    os_version: str | None = Field(default=None, max_length=64)
+    cpu: int | None = Field(default=None, ge=1)
+    ram_mb: int | None = Field(default=None, ge=1)
+    disk_gb: int | None = Field(default=None, ge=1)
+    network_mode: VmNetworkMode | None = Field(default=None)
+    fixed_ip: IPv4Address | IPv6Address | None = Field(default=None)
+    number: int | None = Field(default=None, ge=0)
+
+
+class VmPresetResponse(BaseModel):
+    """Карточка пресета стандартной ВМ."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(description="Preset ID (prefix vps_).")
+    name: str = Field(description="Имя пресета.")
+    department_id: str = Field(description="Department-владелец.")
+    box: str | None = Field(default=None, description="Имя бокса-образа.")
+    os_version: str | None = Field(default=None, description="Версия ОС ВМ.")
+    cpu: int = Field(description="vCPU ВМ.")
+    ram_mb: int = Field(description="RAM ВМ в МБ.")
+    disk_gb: int = Field(description="Диск ВМ в ГБ.")
+    network_mode: str = Field(description="bridge / nat.")
+    fixed_ip: IPv4Address | IPv6Address | None = Field(default=None, description="Желаемый статический IP.")
+    number: int | None = Field(default=None, description="Желаемый номер стенда.")
+    created_at: datetime = Field(description="Когда пресет создан.")
+    updated_at: datetime = Field(description="Когда пресет изменён в последний раз.")
+
+
+class CreateDefaultVmItem(BaseModel):
+    """Одна развёрнутая ВМ в ответе create-default-vms."""
+
+    preset_id: str = Field(description="ID пресета, из которого развёрнута ВМ.")
+    vm_id: str = Field(description="ID созданной ВМ (prefix vm_).")
+    name: str = Field(description="Имя ВМ (= имя пресета).")
+    task_id: str = Field(description="ID задачи vm.create воркера.")
+
+
+class CreateDefaultVmSkipped(BaseModel):
+    """Пропущенный пресет (уже развёрнут по правилу deploy-once)."""
+
+    preset_id: str = Field(description="ID пропущенного пресета.")
+    name: str = Field(description="Имя пресета.")
+    reason: str = Field(description="Причина пропуска: already_deployed_global (bridge) / already_deployed_on_hub (nat).")
+
+
+class CreateDefaultVmsResponse(BaseModel):
+    """Ответ POST /servers/{id}/create-default-vms — что развёрнуто и что пропущено."""
+
+    server_id: str = Field(description="Hub-сервер, на который разворачивали пресеты.")
+    created: list[CreateDefaultVmItem] = Field(default_factory=list, description="Развёрнутые ВМ (по одной на пресет).")
+    skipped: list[CreateDefaultVmSkipped] = Field(default_factory=list, description="Пресеты, пропущенные по deploy-once.")
+    status: str = Field(default="queued", description="Статус: queued (задачи vm.create поставлены).")
+
+
+class VmsHubTeardownResponse(BaseModel):
+    """Ответ DELETE /servers/{id}/vms-hub — итог сноса VMS-hub'а (202 → VMS_HUB_TEARDOWN)."""
+
+    server_id: str = Field(description="Сервер, снятый с роли VMS-hub.")
+    task_id: str = Field(description="ID задачи vms_hub.teardown воркера (очистка хоста).")
+    vms_removed: int = Field(description="Сколько карточек ВМ отдела снесено из БД (диски/снимки — каскадом).")
+    status: str = Field(default="queued", description="Статус: queued.")

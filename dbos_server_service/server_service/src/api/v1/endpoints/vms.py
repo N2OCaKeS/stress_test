@@ -13,9 +13,15 @@ from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import PaginatedResponse
 from src.schemas.vm import (
+    CreateDefaultVmItem,
+    CreateDefaultVmSkipped,
+    CreateDefaultVmsResponse,
     VmAlltaUpdateRequest,
     VmAstraUpdateRequest,
+    VmAutostartRequest,
     VmAvailableIpsResponse,
+    VmConsoleRequest,
+    VmConsoleResponse,
     VmCreate,
     VmDiskCreate,
     VmDiskDispatchResponse,
@@ -29,10 +35,14 @@ from src.schemas.vm import (
     VmNetworkRequest,
     VmPasswdRequest,
     VmPowerRequest,
+    VmPresetCreate,
+    VmPresetResponse,
+    VmPresetUpdate,
     VmReserveRequest,
     VmCredStrategyRequest,
     VmResponse,
     VmsHubPrepareResponse,
+    VmsHubTeardownResponse,
     VmSnapshotCreate,
     VmSnapshotDispatchResponse,
     VmSnapshotResponse,
@@ -43,15 +53,18 @@ from src.schemas.vm import (
 from src.services import vm as svc
 from src.services import vm_image_service as image_svc
 from src.services import vm_ip_pool as ip_pool_svc
+from src.services import vm_preset as preset_svc
 
 router = APIRouter(prefix="/vms")
-# prepare-vms-hub живёт под /servers/{id}; отдельный роутер, чтобы не тащить
-# в servers.py VM-зависимости.
+# prepare-vms-hub / create-default-vms / teardown живут под /servers/{id};
+# отдельный роутер, чтобы не тащить в servers.py VM-зависимости.
 router_servers = APIRouter(prefix="/servers/{server_id}")
 # Каталог боксов-образов ВМ (глобальный, зеркало FTP-конфига).
 router_images = APIRouter(prefix="/vm-images")
 # Пулы IP-адресов ВМ (IPAM, глобальный CRUD под правом vm.net_manage).
 router_ip_pools = APIRouter(prefix="/vm-ip-pools")
+# Пресеты стандартных ВМ (CRUD под правом vm.preset_manage).
+router_presets = APIRouter(prefix="/vm-presets")
 
 
 @router.post(
@@ -275,6 +288,66 @@ async def power_vm(
 
 
 @router.post(
+    "/{vm_id}/autostart",
+    response_model=VmTaskDispatchResponse,
+    status_code=202,
+    summary="Автозапуск ВМ при старте hub'а (202, dispatch VM_SET_AUTOSTART)",
+    description=(
+        "Включает/выключает автозапуск ВМ (`virsh autostart [--disable]`). "
+        "Гейтит право `(vm, vm_power)`, бронь и lifecycle-lock. Флаг autostart "
+        "выставляется оптимистично, воркер применяет его в libvirt."
+    ),
+    responses={
+        202: {"description": "Задача поставлена."},
+        403: {"description": "Нет `vm_power`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def set_vm_autostart(
+    vm_id: str,
+    body: VmAutostartRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmTaskDispatchResponse:
+    """POST /vms/{id}/autostart."""
+    vm, task_id = await svc.set_autostart(db, identity, request, vm_id, body.enabled)
+    return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
+
+
+@router.post(
+    "/{vm_id}/console",
+    response_model=VmConsoleResponse,
+    summary="Доступ к консоли ВМ (ssh / vnc / serial)",
+    description=(
+        "Выдаёт контракт подключения к консоли ВМ: короткоживущий токен + "
+        "hub-хост + порт/serial-путь/пользователь по типу консоли. Гейтит право "
+        "`(vm, view)` и бронь. Реальный проброс держит отдельный websockify/PTY-"
+        "прокси; server_service токен не хранит и plaintext-креды не отдаёт."
+    ),
+    responses={
+        200: {"description": "Контракт подключения к консоли."},
+        403: {"description": "Нет `view`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_RESERVED / HUB_UNAVAILABLE."},
+        422: {"description": "INVALID_VM_CONSOLE_KIND."},
+    },
+)
+async def vm_console(
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    body: VmConsoleRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> VmConsoleResponse:
+    """POST /vms/{id}/console."""
+    payload = body if body is not None else VmConsoleRequest()
+    data = await svc.console_access(db, identity, vm_id, payload.kind)
+    return VmConsoleResponse(**data)
+
+
+@router.post(
     "/{vm_id}/reserve",
     response_model=VmResponse,
     summary="Забронировать ВМ под тест",
@@ -365,6 +438,74 @@ async def prepare_vms_hub(
     """POST /servers/{id}/prepare-vms-hub."""
     sid, task_id = await svc.prepare_vms_hub(db, identity, request, server_id)
     return VmsHubPrepareResponse(server_id=sid, task_id=task_id, status="queued")
+
+
+@router_servers.post(
+    "/create-default-vms",
+    response_model=CreateDefaultVmsResponse,
+    status_code=202,
+    summary="Развернуть пресеты отдела на hub (202, серия dispatch VM_CREATE)",
+    description=(
+        "Разворачивает все пресеты отдела на hub'е (по одной ВМ на пресет). "
+        "Deploy-once: bridge-пресет — 1 раз глобально, nat-пресет — 1 раз на "
+        "hub-сервер; уже развёрнутые пропускаются (skipped). Полный повтор → "
+        "409 VM_PRESETS_ALREADY_DEPLOYED. Ёмкость hub'а проверяется по сумме "
+        "разворачиваемых пресетов. Гейтит право `(vm, create)`."
+    ),
+    responses={
+        202: {"description": "Пресеты развёрнуты (задачи vm.create поставлены)."},
+        403: {"description": "Нет `create`."},
+        404: {"description": "HUB_NOT_FOUND / VM_NO_PRESETS."},
+        409: {"description": "HUB_NOT_PREPARED / VM_CAPACITY_EXCEEDED / VM_PRESETS_ALREADY_DEPLOYED / VM_DUPLICATE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def create_default_vms(
+    server_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> CreateDefaultVmsResponse:
+    """POST /servers/{id}/create-default-vms."""
+    sid, created, skipped = await svc.create_default_vms(db, identity, request, server_id)
+    return CreateDefaultVmsResponse(
+        server_id=sid,
+        created=[CreateDefaultVmItem(**c) for c in created],
+        skipped=[CreateDefaultVmSkipped(**s) for s in skipped],
+        status="queued",
+    )
+
+
+@router_servers.delete(
+    "/vms-hub",
+    response_model=VmsHubTeardownResponse,
+    status_code=202,
+    summary="Снять сервер с роли VMS-hub (202, dispatch VMS_HUB_TEARDOWN)",
+    description=(
+        "Симметрия старому rm-vms-hub: карточки ВМ отдела на hub'е сносятся из "
+        "БД сразу (диски/снимки — каскадом), hub → free (`is_vms_hub=False`), "
+        "воркеру диспатчится `vms_hub.teardown` для очистки хоста. Право "
+        "`(vm, vms_hub_prepare)` (привилегированное)."
+    ),
+    responses={
+        202: {"description": "Hub снят с роли, задача очистки поставлена."},
+        403: {"description": "Нет `vms_hub_prepare`."},
+        404: {"description": "SERVER_NOT_FOUND / чужой отдел."},
+        409: {"description": "NOT_A_VMS_HUB — сервер не является VMS-hub'ом."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def teardown_vms_hub(
+    server_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmsHubTeardownResponse:
+    """DELETE /servers/{id}/vms-hub."""
+    sid, task_id, removed = await svc.teardown_vms_hub(db, identity, request, server_id)
+    return VmsHubTeardownResponse(
+        server_id=sid, task_id=task_id, vms_removed=removed, status="queued",
+    )
 
 
 # ── диски ВМ ─────────────────────────────────────────────────────────────────
@@ -930,3 +1071,109 @@ async def delete_ip_pool(
 ) -> None:
     """DELETE /vm-ip-pools/{id}."""
     await ip_pool_svc.delete_pool(db, identity, pool_id)
+
+
+# ── пресеты стандартных ВМ (vm_preset) ───────────────────────────────────────
+
+
+@router_presets.get(
+    "",
+    response_model=PaginatedResponse[VmPresetResponse],
+    summary="Список пресетов стандартных ВМ своего отдела",
+    description="Гейтит право `(vm, vm_preset_manage)`.",
+    responses={403: {"description": "Нет `vm_preset_manage`."}},
+)
+async def list_presets(
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> PaginatedResponse[VmPresetResponse]:
+    """GET /vm-presets."""
+    items, total = await preset_svc.list_presets(db, identity, limit=limit, offset=offset)
+    return PaginatedResponse[VmPresetResponse](
+        items=[VmPresetResponse.model_validate(p) for p in items],
+        total=total, limit=limit, offset=offset,
+    )
+
+
+@router_presets.post(
+    "",
+    response_model=VmPresetResponse,
+    status_code=201,
+    summary="Создать пресет стандартной ВМ",
+    description="Гейтит право `(vm, vm_preset_manage)`, изоляцию отдела.",
+    responses={
+        403: {"description": "Нет `vm_preset_manage`."},
+        409: {"description": "DEPARTMENT_ISOLATION / VM_PRESET_DUPLICATE."},
+    },
+)
+async def create_preset(
+    body: VmPresetCreate,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmPresetResponse:
+    """POST /vm-presets."""
+    preset = await preset_svc.create_preset(db, identity, request, body)
+    return VmPresetResponse.model_validate(preset)
+
+
+@router_presets.get(
+    "/{preset_id}",
+    response_model=VmPresetResponse,
+    summary="Получить пресет стандартной ВМ",
+    responses={
+        403: {"description": "Нет `vm_preset_manage`."},
+        404: {"description": "VM_PRESET_NOT_FOUND / чужой отдел."},
+    },
+)
+async def get_preset(
+    preset_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> VmPresetResponse:
+    """GET /vm-presets/{id}."""
+    preset = await preset_svc.get_preset(db, identity, preset_id)
+    return VmPresetResponse.model_validate(preset)
+
+
+@router_presets.patch(
+    "/{preset_id}",
+    response_model=VmPresetResponse,
+    summary="Изменить пресет стандартной ВМ (частично)",
+    responses={
+        403: {"description": "Нет `vm_preset_manage`."},
+        404: {"description": "VM_PRESET_NOT_FOUND / чужой отдел."},
+        409: {"description": "VM_PRESET_DUPLICATE."},
+        422: {"description": "VM_PRESET_UPDATE_EMPTY."},
+    },
+)
+async def update_preset(
+    preset_id: str,
+    body: VmPresetUpdate,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmPresetResponse:
+    """PATCH /vm-presets/{id}."""
+    preset = await preset_svc.update_preset(db, identity, request, preset_id, body)
+    return VmPresetResponse.model_validate(preset)
+
+
+@router_presets.delete(
+    "/{preset_id}",
+    status_code=204,
+    summary="Удалить пресет стандартной ВМ",
+    responses={
+        403: {"description": "Нет `vm_preset_manage`."},
+        404: {"description": "VM_PRESET_NOT_FOUND / чужой отдел."},
+    },
+)
+async def delete_preset(
+    preset_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """DELETE /vm-presets/{id}."""
+    await preset_svc.delete_preset(db, identity, preset_id)

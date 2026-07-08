@@ -344,6 +344,16 @@ class Settings(BaseSettings):
             "образа не нужен — значение фиксировано в сборке боксов."
         ),
     )
+    vm_console_token_ttl_seconds: int = Field(
+        default=120,
+        gt=0,
+        alias="VM_CONSOLE_TOKEN_TTL_SECONDS",
+        description=(
+            "Время жизни токена доступа к консоли ВМ (`POST /vms/{id}/console`). "
+            "UI получает токен + hub-хост + VNC-порт/serial-путь и подключается "
+            "через websockify/PTY-прокси, который валидирует токен в этом окне."
+        ),
+    )
     logging_service_url: str = Field(
         default="",
         description=(

@@ -240,6 +240,16 @@ SERVICE_EVENTS = [
     {"action": "vm_ip_pool.created", "description": "VM IP pool created (IPAM, POST /vm-ip-pools). failure reasons: department_isolation / duplicate / invalid_range", "default_severity": "INFO"},
     {"action": "vm_ip_pool.updated", "description": "VM IP pool updated (PATCH /vm-ip-pools/{id})", "default_severity": "INFO"},
     {"action": "vm_ip_pool.deleted", "description": "VM IP pool deleted (DELETE /vm-ip-pools/{id})", "default_severity": "INFO"},
+    # Автозапуск ВМ + консоль.
+    {"action": "vm.autostart_set", "description": "VM autostart toggled (dispatch vm.set_autostart: virsh autostart [--disable]). Gated by vm_power. failure reasons: not_found_or_cross_dept / worker_unreachable", "default_severity": "WARNING"},
+    {"action": "vm.console_accessed", "description": "VM console access granted (POST /vms/{id}/console): short-lived token + hub host + port/serial-path/user by kind (ssh/vnc/serial). Gated by (vm, view) + booking. No plaintext creds returned — proxy fetches them via internal mgmt-credentials", "default_severity": "WARNING"},
+    # Пресеты стандартных ВМ (vm_preset) + create-default-vms.
+    {"action": "vm_preset.created", "description": "VM preset created (POST /vm-presets). failure reasons: department_isolation / duplicate", "default_severity": "INFO"},
+    {"action": "vm_preset.updated", "description": "VM preset updated (PATCH /vm-presets/{id})", "default_severity": "INFO"},
+    {"action": "vm_preset.deleted", "description": "VM preset deleted (DELETE /vm-presets/{id})", "default_severity": "INFO"},
+    {"action": "vm_preset.deployed", "description": "Department presets deployed to a hub (POST /servers/{id}/create-default-vms: series of vm.create). deploy-once: bridge once globally / nat once per hub; already-deployed skipped. failure reasons: hub_not_found_or_cross_dept / hub_not_prepared / all_deployed / duplicate. per-VM vm.created also emitted", "default_severity": "CRITICAL"},
+    # Снос VMS-hub'а (rm-vms-hub).
+    {"action": "vms_hub.torn_down", "description": "Server torn down from the VMS-hub role (DELETE /servers/{id}/vms-hub): department VM cards removed from the DB (disks/snapshots cascade), is_vms_hub=False, and vms_hub.teardown dispatched to clean the host. failure reasons: not_found_or_cross_dept / not_a_vms_hub / worker_unreachable", "default_severity": "CRITICAL"},
 ]
 
 

@@ -99,6 +99,38 @@ async def list_for_hub(db: AsyncSession, hub_server_id: str) -> list[Vm]:
     return list((await db.execute(stmt)).scalars())
 
 
+async def list_for_hub_department(
+    db: AsyncSession, hub_server_id: str, department_id: str,
+) -> list[Vm]:
+    """ВМ отдела на конкретном hub'е — для teardown'а hub'а (снос ВМ отдела)."""
+    stmt = (
+        select(Vm)
+        .where(Vm.hub_server_id == hub_server_id, Vm.department_id == department_id)
+        .order_by(Vm.created_at)
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def exists_in_department_by_name(
+    db: AsyncSession, department_id: str, name: str,
+) -> bool:
+    """Есть ли ВМ отдела с таким именем (любой hub) — deploy-once bridge-пресета."""
+    stmt = select(Vm.id).where(
+        Vm.department_id == department_id, Vm.name == name
+    ).limit(1)
+    return (await db.execute(stmt)).first() is not None
+
+
+async def exists_on_hub_by_name(
+    db: AsyncSession, hub_server_id: str, name: str,
+) -> bool:
+    """Есть ли ВМ с таким именем на hub'е — deploy-once nat-пресета (на сервер)."""
+    stmt = select(Vm.id).where(
+        Vm.hub_server_id == hub_server_id, Vm.name == name
+    ).limit(1)
+    return (await db.execute(stmt)).first() is not None
+
+
 async def sum_resources_for_hub(db: AsyncSession, hub_server_id: str) -> dict[str, int]:
     """Σ(cpu / ram_mb / disk_gb) уже созданных ВМ на hub'е (NULL → 0)."""
     stmt = select(

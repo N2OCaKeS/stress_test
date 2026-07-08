@@ -83,6 +83,22 @@ def vm_ip_pool_id() -> str:
     return _new_id("pool_")
 
 
+def vm_preset_id() -> str:
+    """`vps_<uuid>` — для таблицы vm_preset (шаблоны стандартных ВМ отдела)."""
+    return _new_id("vps_")
+
+
+def vm_console_token() -> str:
+    """`vmc_<uuid>` — короткоживущий токен доступа к консоли ВМ (vnc/serial/ssh).
+
+    Отдаётся UI в ответе `POST /vms/{id}/console`; websockify/PTY-прокси (ставится
+    отдельной волной) валидирует его перед проксированием к VNC/serial/SSH ВМ.
+    Токен не персистится server_service'ом — контракт на его проверку держит
+    прокси (короткий TTL, одноразовость — на его стороне).
+    """
+    return _new_id("vmc_")
+
+
 def task_id() -> str:
     """`tsk_<uuid>` — для строк worker-БД `dev_server_worker.tasks`.
 

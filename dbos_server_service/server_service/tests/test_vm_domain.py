@@ -618,6 +618,21 @@ async def test_disks_cascade_on_vm_delete(
     assert remaining == []
 
 
+@pytest.mark.asyncio
+async def test_delete_dispatches_vm_delete_with_name(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, name="station-x")
+    resp = await client.delete(f"{BASE}/vms/{vm.id}", headers=_hdr(admin_role_token_a))
+    assert resp.status_code == 202, resp.text
+    assert calls[-1]["task_kind"] == "vm.delete"
+    assert calls[-1]["target_server_id"] == hub.id
+    assert calls[-1]["payload"]["vm_id"] == vm.id
+    assert calls[-1]["payload"]["vm_name"] == "station-x"
+
+
 # ── волна 2: каталог образов + box→box_url резолв ─────────────────────────────
 
 

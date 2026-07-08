@@ -17,6 +17,7 @@ from src.models.vm import Vm
 from src.models.vm_disk import VmDisk
 from src.models.vm_image import VmImage
 from src.models.vm_ip_pool import VmIpPool
+from src.models.vm_preset import VmPreset
 from src.models.vm_snapshot import VmSnapshot
 
 __all__ = [
@@ -38,5 +39,6 @@ __all__ = [
     "VmDisk",
     "VmImage",
     "VmIpPool",
+    "VmPreset",
     "VmSnapshot",
 ]

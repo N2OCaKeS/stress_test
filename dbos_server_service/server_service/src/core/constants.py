@@ -545,6 +545,12 @@ class VmTaskKind(StrEnum):
     # Смена сетевого режима ВМ: NAT (libvirt, IP через domifaddr) ↔ bridge
     # (br0, статический IP из пула — провижн статики в госте + правка XML).
     VM_SET_NETWORK = "vm.set_network"
+    # Автозапуск ВМ при старте hub'а: `virsh autostart [--disable] <vm>`.
+    VM_SET_AUTOSTART = "vm.set_autostart"
+    # Снос VMS-hub'а: остановить/удалить домены отдела, снять пул/образы,
+    # `apt purge` пакетов виртуализации. БД чистит server_service сразу (симметрия
+    # старому rm-vms-hub), воркер добивает состояние на хосте.
+    VMS_HUB_TEARDOWN = "vms_hub.teardown"
 
 
 # Действия питания ВМ, принимаемые `POST /vms/{id}/power`. Едут в payload
@@ -552,3 +558,7 @@ class VmTaskKind(StrEnum):
 VM_POWER_ACTIONS: frozenset[str] = frozenset({
     "start", "shutdown", "reboot", "reset", "destroy",
 })
+
+# Типы консольного доступа к ВМ (`POST /vms/{id}/console`): интерактивный SSH,
+# VNC (websockify+noVNC) и последовательная консоль (`virsh console`).
+VM_CONSOLE_KINDS: frozenset[str] = frozenset({"ssh", "vnc", "serial"})

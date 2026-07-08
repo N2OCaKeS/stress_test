@@ -19,6 +19,7 @@ from src.core.constants import (
     SERVICE_NAME,
     ServerStatus,
     ServiceRole,
+    VM_CONSOLE_KINDS,
     VM_POWER_ACTIONS,
     VM_STATUS_FREE,
     VM_SYSTEM_SNAPSHOT_SUFFIX,
@@ -45,6 +46,7 @@ from src.repositories import server_disk as disk_repo
 from src.repositories import vm as repo
 from src.repositories import vm_disk as vm_disk_repo
 from src.repositories import vm_image as vm_image_repo
+from src.repositories import vm_preset as vm_preset_repo
 from src.repositories import vm_snapshot as vm_snapshot_repo
 from src.schemas.identity import IdentityContext
 from src.schemas.vm import (
@@ -64,11 +66,18 @@ from src.services import vm_ip_pool as ip_pool_svc
 from src.services.management_creds import generate_management_material
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.utils.ids import dispatch_creds_id
+from src.utils.ids import vm_console_token as new_console_token
 from src.utils.ids import vm_disk_id as new_vm_disk_id
 from src.utils.ids import vm_id as new_vm_id
 from src.utils.ids import vm_snapshot_id as new_vm_snapshot_id
 
 logger = logging.getLogger(__name__)
+
+# Дефолты для teardown'а VMS-hub'а, которые forward'им воркеру: семейство
+# пакетов (Astra — apt) и путь storage-pool'а с образами. Совпадают с тем, что
+# воркер подставляет сам, но кладём явно, чтобы контракт задачи был полным.
+VMS_HUB_OS_FAMILY = "apt"
+VMS_HUB_POOL_PATH = "/vms"
 
 
 # ── visibility / booking helpers ─────────────────────────────────────────────
@@ -1362,7 +1371,7 @@ async def delete_vm(
     hub = await server_repo.get_by_id(db, vm.hub_server_id)
     if hub is None:
         raise ConflictError(error_code="HUB_UNAVAILABLE", message="Hub server is unavailable")
-    payload = {**_hub_payload(hub), "vm_id": vm.id, "name": vm.name}
+    payload = {**_hub_payload(hub), "vm_id": vm.id, "vm_name": vm.name}
     dept = vm.department_id
     name = vm.name
     task_id = await _dispatch_vm_task(
@@ -1904,3 +1913,397 @@ async def set_network(
         details={"task_id": task_id, "network_mode": mode, "ip_address": resolved_ip, "department_id": vm.department_id},
     )
     return vm, task_id
+
+
+# ── autostart ────────────────────────────────────────────────────────────────
+
+
+async def set_autostart(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    enabled: bool,
+) -> tuple[Vm, str]:
+    """Dispatch VM_SET_AUTOSTART (`virsh autostart [--disable]`). Право `(vm, vm_power)`.
+
+    Автозапуск — свойство из семейства питания (§7 дизайна), поэтому гейтится
+    тем же правом `vm_power`, что и старт/стоп. Флаг `autostart` выставляется
+    оптимистично; воркер применяет его в libvirt.
+    """
+    with emit_denied_on_authz_error(
+        "vm.autostart_set", target_id=vm_id, target_type="vm",
+        extra_details={"vm_id": vm_id, "enabled": enabled}, identity=identity,
+    ):
+        await permissions.require_resource_action(
+            db, identity, EntityType.VM, vm_id, Action.VM_POWER
+        )
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            "vm.autostart_set", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "not_found_or_cross_dept"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+    _ensure_not_busy(vm, action="vm.set_autostart")
+    _ensure_bookable(identity, vm, action="vm.set_autostart")
+    hub = await server_repo.get_by_id(db, vm.hub_server_id)
+    if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+        raise ConflictError(
+            error_code="HUB_UNAVAILABLE",
+            message="Hub server is unavailable (missing or decommissioned)",
+        )
+    payload = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "name": vm.name,
+        "autostart": enabled,
+    }
+    vm.autostart = enabled
+    task_id = await _dispatch_vm_task(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_SET_AUTOSTART, hub=hub, vm=vm,
+        payload=payload, audit_action="vm.autostart_set",
+    )
+    await db.commit()
+    await db.refresh(vm)
+    audit_service.emit(
+        "vm.autostart_set", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "enabled": enabled, "department_id": vm.department_id},
+    )
+    return vm, task_id
+
+
+# ── create-default-vms (развернуть пресеты отдела на hub) ─────────────────────
+
+
+def _preset_deploy_conflict_reason(preset) -> str:
+    """reason-строка пропуска пресета в аудите (для UI/SIEM)."""
+    return (
+        "already_deployed_on_hub"
+        if preset.network_mode == VmNetworkMode.NAT
+        else "already_deployed_global"
+    )
+
+
+async def _preset_already_deployed(db: AsyncSession, preset, hub) -> bool:
+    """Проверка deploy-once: bridge — 1 раз глобально (по имени в отделе),
+    nat — 1 раз на hub-сервер (по имени на hub'е)."""
+    if preset.network_mode == VmNetworkMode.NAT:
+        return await repo.exists_on_hub_by_name(db, hub.id, preset.name)
+    return await repo.exists_in_department_by_name(db, preset.department_id, preset.name)
+
+
+def _capacity_check_total(hub, existing: dict[str, int], planned: dict[str, int]) -> None:
+    """Ёмкость для батча пресетов: Σ(уже созданных) + Σ(планируемых) ≤ hub."""
+    hub_cpu = hub.cpu_threads or hub.cpu_cores
+    hub_ram = hub.ram_total_mb
+    hub_disk_gb = sum(d.size_gb or 0 for d in getattr(hub, "_hub_disks", []))
+    checks = [
+        ("cpu", hub_cpu, existing["cpu"] + planned["cpu"]),
+        ("ram_mb", hub_ram, existing["ram_mb"] + planned["ram_mb"]),
+        ("disk_gb", hub_disk_gb, existing["disk_gb"] + planned["disk_gb"]),
+    ]
+    for dim, capacity, requested in checks:
+        if capacity and requested > capacity:
+            raise ConflictError(
+                error_code="VM_CAPACITY_EXCEEDED",
+                message=(
+                    f"Hub {dim} capacity exceeded deploying presets: requested "
+                    f"total {requested} > hub {capacity}"
+                ),
+                details={"dimension": dim, "hub_capacity": capacity, "requested_total": requested},
+            )
+
+
+async def create_default_vms(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    server_id: str,
+) -> tuple[str, list[dict], list[dict]]:
+    """Развернуть пресеты отдела на hub'е (dispatch серии VM_CREATE).
+
+    Право `(vm, create)`. Deploy-once: bridge-пресет — 1 раз глобально,
+    nat-пресет — 1 раз на hub-сервер; уже развёрнутые пропускаются. Полный
+    повтор (разворачивать нечего) → 409 VM_PRESETS_ALREADY_DEPLOYED. Ёмкость
+    hub'а проверяется по сумме разворачиваемых пресетов. Возвращает
+    (server_id, created[], skipped[]).
+    """
+    with emit_denied_on_authz_error(
+        "vm_preset.deployed", target_id=server_id, target_type="server",
+        extra_details={"server_id": server_id}, identity=identity,
+    ):
+        await permissions.require_action(db, identity, EntityType.VM, Action.CREATE)
+    hub = await server_repo.get_by_id(db, server_id)
+    if hub is None or hub.department_id != identity.department_id:
+        audit_service.emit(
+            "vm_preset.deployed", target_id=server_id, target_type="server",
+            status="failure", allowed=True, details={"reason": "hub_not_found_or_cross_dept"},
+        )
+        raise NotFoundError(error_code="HUB_NOT_FOUND", message="Hub server not found")
+    if not hub.is_vms_hub:
+        audit_service.emit(
+            "vm_preset.deployed", target_id=server_id, target_type="server",
+            status="failure", allowed=True, details={"reason": "hub_not_prepared"},
+        )
+        raise ConflictError(
+            error_code="HUB_NOT_PREPARED",
+            message="Server is not prepared as a VMS-hub; run prepare-vms-hub first",
+        )
+    presets = await vm_preset_repo.list_all_in_department(db, identity.department_id)
+    if not presets:
+        raise NotFoundError(
+            error_code="VM_NO_PRESETS",
+            message="No VM presets defined for the department; create presets first",
+        )
+
+    # Отфильтровать уже развёрнутые (deploy-once), сумму — на ёмкость.
+    deployable = []
+    skipped: list[dict] = []
+    for preset in presets:
+        if await _preset_already_deployed(db, preset, hub):
+            skipped.append({
+                "preset_id": preset.id, "name": preset.name,
+                "reason": _preset_deploy_conflict_reason(preset),
+            })
+            continue
+        deployable.append(preset)
+
+    if not deployable:
+        audit_service.emit(
+            "vm_preset.deployed", target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "all_deployed", "skipped": len(skipped), "department_id": hub.department_id},
+        )
+        raise ConflictError(
+            error_code="VM_PRESETS_ALREADY_DEPLOYED",
+            message="All department presets are already deployed (bridge globally / nat on this hub)",
+            details={"skipped": len(skipped)},
+        )
+
+    hub._hub_disks = await disk_repo.list_all_for_server(db, hub.id)
+    existing = await repo.sum_resources_for_hub(db, hub.id)
+    planned = {
+        "cpu": sum(p.cpu for p in deployable),
+        "ram_mb": sum(p.ram_mb for p in deployable),
+        "disk_gb": sum(p.disk_gb for p in deployable),
+    }
+    _capacity_check_total(hub, existing, planned)
+
+    created: list[dict] = []
+    for preset in deployable:
+        box_url = await _resolve_box_url(db, preset.box, hub.id)
+        vm_data = {
+            "id": new_vm_id(),
+            "name": preset.name,
+            "number": preset.number,
+            "hub_server_id": hub.id,
+            "department_id": preset.department_id,
+            "os_version": preset.os_version,
+            "box": preset.box,
+            "network_mode": preset.network_mode,
+            "ip_address": str(preset.fixed_ip) if preset.fixed_ip is not None else None,
+            "status": VM_STATUS_FREE,
+            "power_state": VmPowerState.UNKNOWN.value,
+            "cpu": preset.cpu,
+            "ram_mb": preset.ram_mb,
+            "disk_gb": preset.disk_gb,
+            "autostart": False,
+            "cred_strategy": "per_snapshot",
+            "busy_state": VmBusyState.CREATING.value,
+            "busy_since": datetime.now(timezone.utc),
+            "created_by": identity.user_id,
+        }
+        try:
+            vm = await repo.create(db, vm_data)
+        except IntegrityError as exc:
+            await db.rollback()
+            audit_service.emit(
+                "vm_preset.deployed", target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "duplicate", "preset": preset.name, "department_id": hub.department_id},
+            )
+            raise ConflictError(
+                error_code="VM_DUPLICATE",
+                message=(
+                    f"Preset '{preset.name}' collides with an existing VM name or "
+                    "number on the hub"
+                ),
+                details={"preset": preset.name},
+            ) from exc
+        payload_task = {
+            **_hub_payload(hub),
+            "vm_id": vm.id,
+            "name": vm.name,
+            "box": vm.box,
+            "box_url": box_url,
+            "os_version": vm.os_version,
+            "network_mode": vm.network_mode,
+            "ip_address": vm_data["ip_address"],
+            "cpu": vm.cpu,
+            "ram_mb": vm.ram_mb,
+            "disk_gb": vm.disk_gb,
+            "autostart": vm.autostart,
+            "cred_strategy": vm.cred_strategy,
+            "from_preset_id": preset.id,
+        }
+        task_id = await _dispatch_vm_task(
+            db=db, identity=identity, request=request,
+            task_kind=VmTaskKind.VM_CREATE, hub=hub, vm=vm,
+            payload=payload_task, audit_action="vm_preset.deployed",
+        )
+        created.append({
+            "preset_id": preset.id, "vm_id": vm.id, "name": vm.name, "task_id": task_id,
+        })
+        audit_service.emit(
+            "vm.created", target_id=vm.id, target_type="vm",
+            status="success", allowed=True,
+            details={"task_id": task_id, "hub_server_id": hub.id, "name": vm.name,
+                     "from_preset_id": preset.id, "department_id": vm.department_id},
+        )
+
+    await db.commit()
+    audit_service.emit(
+        "vm_preset.deployed", target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={"created": len(created), "skipped": len(skipped), "department_id": hub.department_id},
+    )
+    return server_id, created, skipped
+
+
+# ── консоль (ssh / vnc / serial) ─────────────────────────────────────────────
+
+
+async def console_access(
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    kind: str,
+) -> dict:
+    """Выдать доступ к консоли ВМ. Право `(vm, view)` + бронь (§Консоль дизайна).
+
+    Возвращает контракт подключения UI к websockify/PTY-прокси: короткоживущий
+    токен + hub-хост + порт/serial-путь/пользователь по типу консоли. Реальный
+    проброс держит прокси (ставится отдельной волной), server_service токен не
+    хранит и plaintext-креды в ответ не кладёт — их прокси тянет через internal
+    mgmt-credentials.
+    """
+    if kind not in VM_CONSOLE_KINDS:
+        raise DomainValidationError(
+            error_code="INVALID_VM_CONSOLE_KIND",
+            message=f"kind must be one of {sorted(VM_CONSOLE_KINDS)}",
+        )
+    await permissions.require_resource_action(
+        db, identity, EntityType.VM, vm_id, Action.VIEW
+    )
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+    _ensure_bookable(identity, vm, action="vm.console")
+    hub = await server_repo.get_by_id(db, vm.hub_server_id)
+    if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+        raise ConflictError(
+            error_code="HUB_UNAVAILABLE",
+            message="Hub server is unavailable (missing or decommissioned)",
+        )
+    settings = get_settings()
+    token = new_console_token()
+    guest_ip = str(vm.ip_address) if vm.ip_address is not None else None
+    hub_ip = str(hub.ip_address)
+    result: dict = {
+        "vm_id": vm.id,
+        "kind": kind,
+        "token": token,
+        "expires_in": settings.vm_console_token_ttl_seconds,
+        "ws_path": f"/vm-console/{kind}/{vm.id}",
+        "port": None,
+        "serial_path": None,
+        "username": None,
+    }
+    if kind == "ssh":
+        # SSH идёт к гостю; пароль/ключ прокси берёт по internal mgmt-credentials.
+        result["host"] = guest_ip
+        result["port"] = 22
+        result["username"] = vm.mgmt_user or settings.vm_image_default_user
+    elif kind == "vnc":
+        # VNC/serial проксируются на hub'е; фактический дисплей/порт резолвит
+        # прокси через virsh (server_service его не хранит).
+        result["host"] = hub_ip
+    else:  # serial
+        result["host"] = hub_ip
+    audit_service.emit(
+        "vm.console_accessed", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"kind": kind, "department_id": vm.department_id},
+    )
+    return result
+
+
+# ── teardown VMS-hub (rm-vms-hub) ────────────────────────────────────────────
+
+
+async def teardown_vms_hub(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    server_id: str,
+) -> tuple[str, str, int]:
+    """Снять сервер с роли VMS-hub. Право `(vm, vms_hub_prepare)` (привилегированное).
+
+    Симметрия старому rm-vms-hub: карточки ВМ отдела на hub'е сносятся из БД
+    сразу (диски/снимки — каскадом), hub → free (`is_vms_hub=False`), и воркеру
+    диспатчится `vms_hub.teardown` для очистки хоста (домены/пул/пакеты).
+    Возвращает (server_id, task_id, снесённых ВМ).
+    """
+    with emit_denied_on_authz_error(
+        "vms_hub.torn_down", target_id=server_id, target_type="server",
+        extra_details={"server_id": server_id}, identity=identity,
+    ):
+        await permissions.require_action(db, identity, EntityType.VM, Action.VMS_HUB_PREPARE)
+    hub = await server_repo.get_by_id(db, server_id)
+    if hub is None or hub.department_id != identity.department_id:
+        audit_service.emit(
+            "vms_hub.torn_down", target_id=server_id, target_type="server",
+            status="failure", allowed=True, details={"reason": "not_found_or_cross_dept"},
+        )
+        raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
+    if not hub.is_vms_hub:
+        audit_service.emit(
+            "vms_hub.torn_down", target_id=server_id, target_type="server",
+            status="failure", allowed=True, details={"reason": "not_a_vms_hub"},
+        )
+        raise ConflictError(
+            error_code="NOT_A_VMS_HUB",
+            message="Server is not a VMS-hub; nothing to tear down",
+        )
+    vms = await repo.list_for_hub_department(db, hub.id, identity.department_id)
+    # Имена доменов собираем ДО удаления карточек — воркеру нужен список ВМ,
+    # которые он снесёт на хосте (destroy/undefine). os_family и пул совпадают
+    # с дефолтами hub-подготовки (Astra → apt, пул образов `/vms`).
+    payload = {
+        **_hub_payload(hub),
+        "phy_if": hub.network_interface_name,
+        "os_family": VMS_HUB_OS_FAMILY,
+        "storage_pool_path": VMS_HUB_POOL_PATH,
+        "vms": [vm.name for vm in vms],
+    }
+    task_id = await _dispatch_vm_task(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VMS_HUB_TEARDOWN, hub=hub, vm=None,
+        payload=payload, audit_action="vms_hub.torn_down",
+    )
+    for vm in vms:
+        await repo.delete(db, vm)
+    hub.is_vms_hub = False
+    hub.vms_hub_prepared_at = None
+    await db.commit()
+    audit_service.emit(
+        "vms_hub.torn_down", target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={"task_id": task_id, "vms_removed": len(vms), "department_id": hub.department_id},
+    )
+    return server_id, task_id, len(vms)

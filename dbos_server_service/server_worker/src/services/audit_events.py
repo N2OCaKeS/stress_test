@@ -76,7 +76,8 @@ SERVICE_EVENTS = [
     {"action": "vm.prepare", "description": "Подготовка ВМ по SSH: заведение управляющей учётки (ключ+sudo), hardening sshd, удаление базовой учётки", "default_severity": "CRITICAL"},
     {"action": "vm.set_network", "description": "Смена сети ВМ по SSH: статика в госте + перевод домена на bridge br0 либо NAT", "default_severity": "WARNING"},
     {"action": "vm.set_autostart", "description": "Смена флага автозапуска ВМ по SSH: virsh autostart / autostart --disable", "default_severity": "WARNING"},
-    {"action": "vm.console_prep", "description": "Подготовка консоли ВМ по SSH: VNC-graphics (+ serial) + чтение VNC-порта (virsh vncdisplay)", "default_severity": "INFO"},
+    {"action": "vm.console_prep", "description": "Подготовка консоли ВМ по SSH: vnc/spice-graphics (+ serial) + чтение порта (virsh vncdisplay/domdisplay)", "default_severity": "INFO"},
+    {"action": "vm.list_packages", "description": "Список установленных пакетов гостя ВМ снят по SSH (dpkg-query/rpm в госте)", "default_severity": "INFO"},
     {"action": "vms_hub.teardown", "description": "Разбор VMS-hub по SSH: destroy/undefine ВМ отдела + снос storage-pool/образов + опц. purge пакетов и br0", "default_severity": "CRITICAL"},
     # Управляющая учётка — tasks/management_user.py, tasks/management_creds.py
     {"action": "management_user.sync", "description": "Недеструктивный re-bootstrap управляющей учётки на хосте", "default_severity": "INFO"},

@@ -61,7 +61,7 @@ def stub_session_and_callbacks(monkeypatch):
     списками вызовов callback'ов.
     """
     holder: dict = {"ssh": None}
-    calls: dict = {"vm_state": [], "console": [], "torn_down": []}
+    calls: dict = {"vm_state": [], "torn_down": []}
 
     async def _open(payload):  # noqa: ARG001
         fake = holder["ssh"]
@@ -73,16 +73,11 @@ def stub_session_and_callbacks(monkeypatch):
         calls["vm_state"].append({"vm_id": vm_id, "target_department_id": target_department_id, **kw})
         return {"ok": True}
 
-    async def _console(vm_id, target_department_id=None, **kw):
-        calls["console"].append({"vm_id": vm_id, "target_department_id": target_department_id, **kw})
-        return {"ok": True}
-
     async def _torn_down(server_id, torn_down, target_department_id=None, **kw):
         calls["torn_down"].append({"server_id": server_id, "torn_down": torn_down, "target_department_id": target_department_id, **kw})
         return {"ok": True}
 
     monkeypatch.setattr(vms_lifecycle.server_service_client, "submit_vm_state", _vm_state)
-    monkeypatch.setattr(vms_lifecycle.server_service_client, "submit_vm_console", _console)
     monkeypatch.setattr(vms_lifecycle.server_service_client, "submit_vms_hub_torn_down", _torn_down)
     return {"holder": holder, "calls": calls}
 
@@ -103,6 +98,16 @@ class TestParseVncdisplay:
         assert _vms_helpers.parse_vncdisplay("0.0.0.0:12\n") == 5912
         assert _vms_helpers.parse_vncdisplay("") is None
         assert _vms_helpers.parse_vncdisplay("no display") is None
+
+
+class TestParseDisplayUri:
+    def test_parse(self):
+        # domdisplay отдаёт реальный порт в URI (не смещение 5900)
+        assert _vms_helpers.parse_display_uri("spice://0.0.0.0:5900") == 5900
+        assert _vms_helpers.parse_display_uri("spice://127.0.0.1:5901\n") == 5901
+        assert _vms_helpers.parse_display_uri("vnc://0.0.0.0:5905") == 5905
+        assert _vms_helpers.parse_display_uri("") is None
+        assert _vms_helpers.parse_display_uri("no uri") is None
 
 
 # ── vm.set_autostart ─────────────────────────────────────────────────────────
@@ -320,11 +325,12 @@ class TestVmConsolePrep:
         # serial уже есть → не добавляем
         assert not any("--serial" in c for c in fake.commands)
         assert any("virsh vncdisplay station-a" in c for c in fake.commands)
-        console = stub_session_and_callbacks["calls"]["console"][0]
-        assert console["vnc_port"] == 5900
-        assert console["vnc_listen"] == "0.0.0.0"
-        assert console["serial_ready"] is True
+        # Порт дисплея уезжает graphics_port'ом в state-callback.
+        state = stub_session_and_callbacks["calls"]["vm_state"][0]
+        assert state["graphics_port"] == 5900
         assert t.result["vnc_port"] == 5900
+        assert t.result["graphics_type"] == "vnc"
+        assert t.result["serial_ready"] is True
 
     async def test_adds_vnc_and_serial_when_absent(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _FakeSshClient()
@@ -343,9 +349,9 @@ class TestVmConsolePrep:
         cmds = fake.commands
         assert any("virt-xml station-a --add-device --graphics type=vnc,listen=10.177.103.207,port=-1" in c for c in cmds)
         assert any("virt-xml station-a --add-device --serial pty" in c for c in cmds)
-        console = stub_session_and_callbacks["calls"]["console"][0]
-        assert console["vnc_port"] == 5902
-        assert console["vnc_listen"] == "10.177.103.207"
+        state = stub_session_and_callbacks["calls"]["vm_state"][0]
+        assert state["graphics_port"] == 5902
+        assert t.result["vnc_listen"] == "10.177.103.207"
 
     async def test_serial_disabled(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _FakeSshClient()
@@ -361,7 +367,7 @@ class TestVmConsolePrep:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         assert not any("--serial" in c for c in fake.commands)
-        assert stub_session_and_callbacks["calls"]["console"][0]["serial_ready"] is False
+        assert t.result["serial_ready"] is False
 
     async def test_graphics_add_failure_reports_error(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _FakeSshClient()
@@ -375,4 +381,68 @@ class TestVmConsolePrep:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.FAILED
         assert t.last_error and "VM_CONSOLE_PREP_FAILED" in t.last_error
-        assert stub_session_and_callbacks["calls"]["console"][0]["error"] == "VM_CONSOLE_PREP_FAILED"
+        assert stub_session_and_callbacks["calls"]["vm_state"][0]["error"] == "VM_CONSOLE_PREP_FAILED"
+
+    async def test_spice_adds_device_and_reads_domdisplay_port(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _FakeSshClient()
+        # у домена только vnc → для spice надо добавить устройство
+        fake.set_response(
+            "virsh dumpxml", 0,
+            "<domain><devices><graphics type='vnc'/></devices></domain>",
+        )
+        fake.set_response("virsh domdisplay --type spice", 0, "spice://0.0.0.0:5905")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm1", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "graphics": "spice", "serial": False, "is_managed": True,
+            "target_department_id": "dep1",
+        }
+        tid = await make_task(task_kind="vm.console_prep", target_server_id="hub1", payload=payload)
+        await vms_lifecycle.vm_console_prep.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        assert any("virt-xml station-a --add-device --graphics type=spice,listen=0.0.0.0,port=-1" in c for c in cmds)
+        # vncdisplay для spice-пути не читаем
+        assert not any("virsh vncdisplay" in c for c in cmds)
+        assert any("virsh domdisplay --type spice station-a" in c for c in cmds)
+        state = stub_session_and_callbacks["calls"]["vm_state"][0]
+        assert state["graphics_port"] == 5905
+        assert t.result["spice_port"] == 5905
+        assert t.result["graphics_type"] == "spice"
+
+    async def test_spice_already_present_not_readded(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _FakeSshClient()
+        fake.set_response(
+            "virsh dumpxml", 0,
+            "<domain><devices><graphics type='spice' port='5900'/>"
+            "<serial type='pty'/></devices></domain>",
+        )
+        fake.set_response("virsh domdisplay --type spice", 0, "spice://0.0.0.0:5900")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm1", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "graphics": "spice", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.console_prep", target_server_id="hub1", payload=payload)
+        await vms_lifecycle.vm_console_prep.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # spice уже есть и serial уже есть → ничего не добавляем
+        assert not any("--add-device" in c for c in fake.commands)
+        assert stub_session_and_callbacks["calls"]["vm_state"][0]["graphics_port"] == 5900
+
+    async def test_invalid_graphics_rejected(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _FakeSshClient()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm1", "hub_host": "10.0.0.7", "vm_name": "s",
+            "graphics": "webrtc", "is_managed": True, "target_department_id": "dep1",
+        }
+        tid = await make_task(task_kind="vm.console_prep", target_server_id="hub1", payload=payload)
+        await _set_single_attempt(tid)
+        await vms_lifecycle.vm_console_prep.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert t.last_error and "VM_INVALID_ARG" in t.last_error

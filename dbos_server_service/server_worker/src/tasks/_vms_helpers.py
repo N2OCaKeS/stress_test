@@ -279,6 +279,20 @@ def parse_vncdisplay(stdout: str) -> int | None:
     return 5900 + int(m.group(1))
 
 
+def parse_display_uri(stdout: str) -> int | None:
+    """Достать TCP-порт из вывода `virsh domdisplay` (spice/vnc URI).
+
+    `virsh domdisplay --type spice` отдаёт готовый URI вида
+    `spice://0.0.0.0:5900` — порт там уже реальный (в отличие от
+    `vncdisplay`, где `:N` надо сложить с 5900). Берём число после
+    последнего `:`. None — если URI пуст или порта в нём нет.
+    """
+    m = re.search(r":(\d+)\s*$", (stdout or "").strip())
+    if m is None:
+        return None
+    return int(m.group(1))
+
+
 def guest_ssh(ip: str, remote_cmd: str, *, sudo: bool = False) -> str:
     """Собрать команду входа на гостя по `sshpass` из hub-сессии.
 
@@ -677,6 +691,7 @@ __all__ = [
     "map_domstate",
     "parse_domifaddr",
     "parse_vncdisplay",
+    "parse_display_uri",
     "next_target_dev",
     "additional_pool_path",
     "ensure_additional_pool",

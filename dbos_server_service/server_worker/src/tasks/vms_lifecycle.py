@@ -35,6 +35,7 @@ from src.services import server_service_client
 from src.tasks._runner import run_task
 from src.tasks._vms_helpers import (
     open_hub_session,
+    parse_display_uri,
     parse_vncdisplay,
     run_hub_cmd,
     validate_iface,
@@ -51,7 +52,8 @@ AUDIT_SAFE_FIELDS_TEARDOWN: set[str] = {
     "server_id", "torn_down", "removed_vms", "purged", "bridge_removed",
 }
 AUDIT_SAFE_FIELDS_CONSOLE: set[str] = {
-    "vm_id", "vm_name", "vnc_port", "vnc_listen", "serial_ready",
+    "vm_id", "vm_name", "graphics_type", "vnc_port", "spice_port",
+    "vnc_listen", "serial_ready",
 }
 
 
@@ -312,10 +314,10 @@ async def vms_hub_teardown(task_id: str) -> None:
 # ── vm.console_prep ──────────────────────────────────────────────────────────
 
 
-def _has_vnc_graphics(xml: str) -> bool:
-    """Есть ли у домена VNC-graphics (по dumpxml)."""
+def _has_graphics_type(xml: str, gfx_type: str) -> bool:
+    """Есть ли у домена graphics нужного типа (`vnc`|`spice`) по dumpxml."""
     lowered = (xml or "").lower()
-    return "graphics" in lowered and "vnc" in lowered
+    return "graphics" in lowered and gfx_type in lowered
 
 
 def _has_serial(xml: str) -> bool:
@@ -326,20 +328,24 @@ def _has_serial(xml: str) -> bool:
 
 @broker.task("vm.console_prep")
 async def vm_console_prep(task_id: str) -> None:
-    """Подготовить консоль ВМ: VNC-graphics (+ serial) и вернуть VNC-порт.
+    """Подготовить консоль ВМ: vnc/spice-graphics (+ serial) и вернуть порт.
 
     Что делает: заходит на hub по SSH, читает `virsh dumpxml <vm>`; если у
-    домена нет VNC-graphics — добавляет его (`virt-xml --add-device --graphics
-    type=vnc,listen=<listen>,port=-1`, autoport); если запрошена serial-консоль
-    и её нет — добавляет `--serial pty`. Затем читает TCP-порт дисплея
-    (`virsh vncdisplay <vm>` → `5900 + display`). Исход докладывает
-    server_service (`vms/{id}/console`) для websockify/noVNC-прокси.
+    домена нет graphics запрошенного типа — добавляет его (`virt-xml
+    --add-device --graphics type=<vnc|spice>,listen=<listen>,port=-1`, autoport);
+    если запрошена serial-консоль и её нет — добавляет `--serial pty`. Затем
+    читает TCP-порт дисплея: для vnc — `virsh vncdisplay <vm>` (`5900 + display`),
+    для spice — `virsh domdisplay --type spice <vm>` (реальный порт из URI).
+    Порт дисплея докладывает server_service полем `graphics_port` в
+    `vms/{id}/state`; server_service кладёт его в `vms.graphics_port` и в
+    консольный токен, по которому прокси проксирует vnc/spice.
 
-    Параметры: `task_id`. Payload — `vm_id`, `vm_name`/`name`, опц.
-    `vnc_listen` (адрес прослушивания, деф. `0.0.0.0`), `serial` (bool, деф.
-    True), hub-блок, `target_department_id`.
+    Параметры: `task_id`. Payload — `vm_id`, `vm_name`/`name`, опц. `graphics`
+    (`vnc`|`spice`, деф. vnc), `vnc_listen` (адрес прослушивания, деф. `0.0.0.0`),
+    `serial` (bool, деф. True), hub-блок, `target_department_id`.
 
-    Возвращает: `{vm_id, vm_name, vnc_port, vnc_listen, serial_ready}`.
+    Возвращает: `{vm_id, vm_name, graphics_type, vnc_port, spice_port,
+    vnc_listen, serial_ready}` (порт неиспользуемого типа — `None`).
 
     Возможные ошибки: `VM_INVALID_ARG`, `VM_CONSOLE_PREP_FAILED`. На любой
     ошибке — best-effort `vms/{id}/state{error}`.
@@ -354,22 +360,29 @@ async def vm_console_prep(task_id: str) -> None:
         listen = validate_ip(
             str(payload.get("vnc_listen") or VMS_VNC_DEFAULT_LISTEN), host_label,
         )
+        graphics = payload.get("graphics", "vnc")
+        if graphics not in ("vnc", "spice"):
+            raise SshError(
+                error_code="VM_INVALID_ARG", host=host_label,
+                message=f"graphics {graphics!r} должен быть vnc или spice",
+            )
         want_serial = payload.get("serial", True) is not False
 
         vnc_port: int | None = None
+        spice_port: int | None = None
         try:
             session, host = await open_hub_session(payload)
             async with session as ssh:
                 _rc, xml, _err = await ssh.run(
                     f"virsh dumpxml {vm_name}", sudo=True,
                 )
-                if not _has_vnc_graphics(xml):
+                if not _has_graphics_type(xml, graphics):
                     await run_hub_cmd(
                         ssh,
                         f"virt-xml {vm_name} --add-device "
-                        f"--graphics type=vnc,listen={listen},port=-1",
+                        f"--graphics type={graphics},listen={listen},port=-1",
                         host, "VM_CONSOLE_PREP_FAILED",
-                        "не удалось добавить VNC-graphics домену",
+                        f"не удалось добавить {graphics}-graphics домену",
                     )
                 if want_serial and not _has_serial(xml):
                     await run_hub_cmd(
@@ -378,14 +391,20 @@ async def vm_console_prep(task_id: str) -> None:
                         host, "VM_CONSOLE_PREP_FAILED",
                         "не удалось добавить serial-консоль домену",
                     )
-                _rc, vnc_out, _err = await ssh.run(
-                    f"virsh vncdisplay {vm_name}", sudo=True,
-                )
-                vnc_port = parse_vncdisplay(vnc_out)
+                if graphics == "spice":
+                    _rc, disp_out, _err = await ssh.run(
+                        f"virsh domdisplay --type spice {vm_name}", sudo=True,
+                    )
+                    spice_port = parse_display_uri(disp_out)
+                else:
+                    _rc, vnc_out, _err = await ssh.run(
+                        f"virsh vncdisplay {vm_name}", sudo=True,
+                    )
+                    vnc_port = parse_vncdisplay(vnc_out)
         except Exception as exc:
             error_text = getattr(exc, "error_code", type(exc).__name__)
             try:
-                await server_service_client.submit_vm_console(
+                await server_service_client.submit_vm_state(
                     vm_id, target_department_id=target_dept,
                     error=str(error_text),
                 )
@@ -396,14 +415,17 @@ async def vm_console_prep(task_id: str) -> None:
                 )
             raise
 
-        await server_service_client.submit_vm_console(
+        graphics_port = spice_port if graphics == "spice" else vnc_port
+        await server_service_client.submit_vm_state(
             vm_id, target_department_id=target_dept,
-            vnc_port=vnc_port, vnc_listen=listen, serial_ready=want_serial,
+            graphics_port=graphics_port,
         )
         return {
             "vm_id": vm_id,
             "vm_name": vm_name,
+            "graphics_type": graphics,
             "vnc_port": vnc_port,
+            "spice_port": spice_port,
             "vnc_listen": listen,
             "serial_ready": want_serial,
         }

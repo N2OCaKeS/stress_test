@@ -139,6 +139,28 @@ class TestHelpers:
         )
 
 
+class TestVirtInstallGraphics:
+    def test_default_is_vnc(self):
+        cmd = vms._virt_install_cmd("v1", 2, 2048, "/vms", "bridge")
+        assert "--graphics vnc,listen=0.0.0.0" in cmd
+        assert "spice" not in cmd
+
+    def test_explicit_vnc(self):
+        cmd = vms._virt_install_cmd("v1", 2, 2048, "/vms", "nat", "vnc")
+        assert "--graphics vnc,listen=0.0.0.0" in cmd
+
+    def test_spice(self):
+        cmd = vms._virt_install_cmd("v1", 2, 2048, "/vms", "bridge", "spice")
+        assert "--graphics spice,listen=0.0.0.0" in cmd
+        assert "graphics vnc" not in cmd
+
+    def test_unknown_falls_back_to_vnc(self):
+        # Неизвестный тип не должен пролезть в команду сырым (валидацию делает
+        # handler, но билдер сам подстраховывается на vnc).
+        cmd = vms._virt_install_cmd("v1", 2, 2048, "/vms", "bridge", "garbage")
+        assert "--graphics vnc,listen=0.0.0.0" in cmd
+
+
 # ── vms_hub.prepare ──────────────────────────────────────────────────────────
 
 
@@ -917,3 +939,188 @@ class TestVmDelete:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.FAILED
         assert t.last_error and "VM_DELETE_FAILED" in t.last_error
+
+
+class TestVmCreateGraphics:
+    async def test_create_default_graphics_vnc(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vmg1", "hub_host": "10.0.0.7", "name": "gfx-1",
+            "cpu": 2, "ram_mb": 2048, "disk_gb": 0, "box": "single-box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "storage_pool_path": "/vms", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        install = next(c for c in fake.commands if "virt-install -n gfx-1" in c)
+        assert "--graphics vnc,listen=0.0.0.0" in install
+        assert "spice" not in install
+
+    async def test_create_graphics_spice(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vmg2", "hub_host": "10.0.0.7", "name": "gfx-2",
+            "cpu": 2, "ram_mb": 2048, "disk_gb": 0, "box": "single-box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "storage_pool_path": "/vms", "is_managed": True, "graphics": "spice",
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        install = next(c for c in fake.commands if "virt-install -n gfx-2" in c)
+        assert "--graphics spice,listen=0.0.0.0" in install
+
+    async def test_create_invalid_graphics_rejected(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vmg3", "hub_host": "10.0.0.7", "name": "gfx-3",
+            "cpu": 2, "ram_mb": 2048, "disk_gb": 0, "box": "single-box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "storage_pool_path": "/vms", "is_managed": True, "graphics": "webrtc",
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await _set_single_attempt(tid)
+        await vms.vm_create.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert t.last_error and "VM_INVALID_ARG" in t.last_error
+
+
+class TestVmListPackages:
+    def _stub_packages(self, monkeypatch):
+        calls: list = []
+
+        async def _record(vm_id, packages, target_department_id=None, **kw):
+            calls.append({"vm_id": vm_id, "packages": packages, "target_department_id": target_department_id, **kw})
+            return {"ok": True}
+
+        monkeypatch.setattr(vms.server_service_client, "record_vm_packages", _record)
+        return calls
+
+    async def test_dpkg_via_os_family_hint(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch):
+        calls = self._stub_packages(monkeypatch)
+        fake = _FakeSshClient()
+        fake.set_response("dpkg-query -W", 0, "htop 3.0.5-7\nvim 9.0\n")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vmp1", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "guest_ip": "192.168.100.24", "os_family": "apt", "pattern": "*",
+            "is_managed": True, "target_department_id": "dep1",
+        }
+        tid = await make_task(task_kind="vm.list_packages", target_server_id="hub1", payload=payload)
+        await vms.vm_list_packages.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # os_family=apt → детект не гоняется
+        assert not any("command -v dpkg-query" in c for c in fake.commands)
+        assert any("dpkg-query -W" in c for c in fake.commands)
+        assert t.result["package_manager"] == "dpkg"
+        assert t.result["count"] == 2
+        assert t.result["packages"] == [
+            {"name": "htop", "version": "3.0.5-7"},
+            {"name": "vim", "version": "9.0"},
+        ]
+        assert calls[0]["packages"] == t.result["packages"]
+        assert calls[0]["source"] == "dpkg"
+        assert calls[0]["task_id"] == tid
+        assert calls[0]["target_department_id"] == "dep1"
+        # packages не утекают в audit-details
+        details = captured_audit[0]["details"].get("result", {})
+        assert "packages" not in details
+        assert details.get("count") == 2
+
+    async def test_detect_rpm_when_no_os_family(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch):
+        self._stub_packages(monkeypatch)
+        fake = _FakeSshClient()
+        fake.set_response("command -v dpkg-query", 1)  # нет dpkg в госте
+        fake.set_response("command -v rpm", 0)
+        fake.set_response("rpm -qa", 0, "bash 5.2.15\n")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vmp2", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "guest_ip": "192.168.100.24", "pattern": "*", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.list_packages", target_server_id="hub1", payload=payload)
+        await vms.vm_list_packages.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["package_manager"] == "rpm"
+        assert t.result["packages"] == [{"name": "bash", "version": "5.2.15"}]
+
+    async def test_guest_ip_from_domifaddr_when_absent(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch):
+        self._stub_packages(monkeypatch)
+        fake = _FakeSshClient()
+        fake.set_response("virsh domifaddr", 0, " vnet0 52:54:00:aa:bb:cc ipv4 192.168.100.55/24")
+        fake.set_response("dpkg-query -W", 0, "htop 3.0.5-7\n")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vmp3", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "os_family": "dpkg", "pattern": "htop", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.list_packages", target_server_id="hub1", payload=payload)
+        await vms.vm_list_packages.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert any("virsh domifaddr station-a" in c for c in fake.commands)
+        # guest_ssh к вычисленному адресу
+        assert any("192.168.100.55" in c for c in fake.commands)
+        assert t.result["count"] == 1
+
+    async def test_no_package_manager_fails(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch):
+        self._stub_packages(monkeypatch)
+        fake = _FakeSshClient()
+        # все probe'ы command -v возвращают дефолт (0,"","") — надо явно завалить
+        for probe in ("dpkg-query", "rpm", "apk", "pacman", "qlist", "xbps-query"):
+            fake.set_response(f"command -v {probe}", 1)
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vmp4", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "guest_ip": "192.168.100.24", "pattern": "*", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.list_packages", target_server_id="hub1", payload=payload)
+        await _set_single_attempt(tid)
+        await vms.vm_list_packages.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert t.last_error and "NO_PACKAGE_MANAGER" in t.last_error
+
+    async def test_invalid_pattern_rejected_before_session(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch):
+        calls = self._stub_packages(monkeypatch)
+        fake = _FakeSshClient()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vmp5", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "guest_ip": "192.168.100.24", "pattern": "htop; rm -rf /", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.list_packages", target_server_id="hub1", payload=payload)
+        await _set_single_attempt(tid)
+        await vms.vm_list_packages.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert t.last_error and "INVALID_PATTERN" in t.last_error
+        assert calls == []
+
+    async def test_empty_result_when_query_nonzero_no_stderr(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch):
+        self._stub_packages(monkeypatch)
+        fake = _FakeSshClient()
+        # dpkg-query отдаёт rc=1 без stderr, когда ничего не подошло под pattern
+        fake.set_response("dpkg-query -W", 1, "")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vmp6", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "guest_ip": "192.168.100.24", "os_family": "apt", "pattern": "nope*",
+            "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.list_packages", target_server_id="hub1", payload=payload)
+        await vms.vm_list_packages.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["count"] == 0
+        assert t.result["packages"] == []

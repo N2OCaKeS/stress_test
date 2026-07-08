@@ -46,6 +46,7 @@ from src.core.constants import (
 )
 from src.main import broker
 from src.services import server_service_client
+from src.tasks import installed_packages as ip_helpers
 from src.tasks._runner import run_task
 from src.tasks._vms_helpers import (
     MODE_OREL,
@@ -62,6 +63,7 @@ from src.tasks._vms_helpers import (
     parse_domifaddr,
     positive_int,
     resolve_box_url,
+    resolve_guest_ip,
     run_hub_cmd,
     switch_guest_to_smolensk,
     validate_ip,
@@ -103,6 +105,11 @@ AUDIT_SAFE_FIELDS_CREATE: set[str] = {
 }
 AUDIT_SAFE_FIELDS_POWER: set[str] = {"vm_id", "vm_name", "action", "power_state"}
 AUDIT_SAFE_FIELDS_DELETE: set[str] = {"vm_id", "vm_name", "destroyed", "undefined"}
+# Список пакетов гостя наружу в loging не уходит (как в installed_packages.list) —
+# только операционные счётчики. Сам `packages` лежит в task.result.
+AUDIT_SAFE_FIELDS_LIST_PACKAGES: set[str] = {
+    "vm_id", "vm_name", "package_manager", "count",
+}
 
 
 # hub-команда под sudo с проверкой кода возврата — общий раннер VM-тасок.
@@ -660,6 +667,7 @@ async def vms_hub_prepare(task_id: str) -> None:
 
 def _virt_install_cmd(
     name: str, cpu: int, ram_mb: int, pool_path: str, network_mode: str,
+    graphics: str = "vnc",
 ) -> str:
     """Собрать `virt-install --import` под ВМ.
 
@@ -669,16 +677,22 @@ def _virt_install_cmd(
     пробрасывает фичи хоста как есть,
     включая vmx/svm для nested там, где хост их отдаёт; форсить `+vmx` нельзя —
     на хостах без vmx (AMD, не-nested) virt-install падает целиком.
+
+    `graphics` — тип графической консоли (`vnc`|`spice`, деф. vnc). Слушаем на
+    `0.0.0.0`, чтобы websockify/spice-прокси с хаба мог дотянуться до порта
+    дисплея; `console_prep` потом читает конкретный порт.
     """
     if network_mode == "bridge":
         net = f"bridge={bridge_label()},model=virtio"
     else:
         net = f"network={VMS_NAT_NETWORK},model=virtio"
+    gfx = "spice" if graphics == "spice" else "vnc"
     return (
         f"virt-install -n {name} --memory {ram_mb} --vcpus {cpu} --import "
         f"--disk {pool_path}/{name}.qcow2,format=qcow2,bus=virtio "
         f"--os-variant {VMS_OS_VARIANT} --network {net} "
-        "--cpu host-model --autostart --graphics vnc --noautoconsole"
+        f"--cpu host-model --autostart --graphics {gfx},listen=0.0.0.0 "
+        "--noautoconsole"
     )
 
 
@@ -1129,7 +1143,8 @@ async def vm_create(task_id: str) -> None:
     `hostname` (опц.), `cpu`, `ram_mb`, `disk_gb`, `box`, `network_mode`
     (`bridge`|`nat`), `ip_address`, `box_url` (для скачивания single-бокса),
     `os_versions` (для universal), `os_version` (single), `accounts` (список
-    привязанных учёток), опц. `password`, management-хинты.
+    привязанных учёток), опц. `password`, `graphics` (`vnc`|`spice`, деф. vnc),
+    management-хинты.
 
     Возвращает: `{vm_id, name, box, network_mode, power_state, status,
     ip_address, snapshots}` — snapshots только plain (без скрытого golden).
@@ -1161,6 +1176,12 @@ async def vm_create(task_id: str) -> None:
             raise SshError(
                 error_code="VM_INVALID_ARG", host=host_label,
                 message=f"network_mode {network_mode!r} должен быть bridge или nat",
+            )
+        graphics = payload.get("graphics", "vnc")
+        if graphics not in ("vnc", "spice"):
+            raise SshError(
+                error_code="VM_INVALID_ARG", host=host_label,
+                message=f"graphics {graphics!r} должен быть vnc или spice",
             )
         ip_address = payload.get("ip_address")
         if ip_address:
@@ -1246,6 +1267,7 @@ async def vm_create(task_id: str) -> None:
                     ssh,
                     _virt_install_cmd(
                         name, cpu, ram_mb, pool_path, install_network_mode,
+                        graphics,
                     ),
                     host, "VM_CREATE_FAILED", "virt-install упал",
                 )
@@ -1464,4 +1486,152 @@ async def vm_delete(task_id: str) -> None:
         audit_target_type="vm",
         impl=_impl,
         audit_safe_fields=AUDIT_SAFE_FIELDS_DELETE,
+    )
+
+
+# ── vm.list_packages ─────────────────────────────────────────────────────────
+
+
+# Явный хинт os_family из payload → package manager, чтобы не гонять 6 проб по
+# SSH, когда семейство ОС гостя уже известно server_service'у. Всё, что не
+# распознали, уходит в живой детект внутри гостя.
+_OS_FAMILY_TO_PM: dict[str, str] = {
+    "apt": "dpkg", "dpkg": "dpkg", "debian": "dpkg", "astra": "dpkg",
+    "dnf": "rpm", "rpm": "rpm", "yum": "rpm", "rhel": "rpm", "redos": "rpm",
+}
+
+# Порядок живого детекта пакетного менеджера в госте (тот же приоритет, что в
+# `installed_packages._detect_package_manager`, но команды идут вложенным
+# guest_ssh, а не напрямую по hub-сессии).
+_GUEST_PM_PROBE: tuple[tuple[str, str], ...] = (
+    ("dpkg", "command -v dpkg-query"),
+    ("rpm", "command -v rpm"),
+    ("apk", "command -v apk"),
+    ("pacman", "command -v pacman"),
+    ("portage", "command -v qlist"),
+    ("xbps", "command -v xbps-query"),
+)
+
+
+async def _detect_guest_package_manager(ssh, host: str, guest_ip: str) -> str:
+    """Определить package manager внутри гостя ВМ (через вложенный guest_ssh).
+
+    Зеркало `installed_packages._detect_package_manager`, но команды `command -v`
+    идут в гостя по sshpass, а не на hub напрямую. Возвращает первый найденный
+    менеджер по приоритету; ни одного — `SshError(NO_PACKAGE_MANAGER)`.
+    """
+    for pm, probe in _GUEST_PM_PROBE:
+        rc, _out, _err = await ssh.run(guest_ssh(guest_ip, probe), sudo=True)
+        if rc == 0:
+            return pm
+    raise SshError(
+        error_code="NO_PACKAGE_MANAGER",
+        host=host,
+        message=(
+            "в госте ВМ нет поддерживаемого package manager'а "
+            "(dpkg-query/rpm/apk/pacman/qlist/xbps-query)"
+        ),
+    )
+
+
+@broker.task("vm.list_packages")
+async def vm_list_packages(task_id: str) -> None:
+    """Снять список установленных пакетов гостя ВМ по SSH.
+
+    Что делает: заходит на hub по управляющей SSH-сессии, определяет IP гостя
+    (`guest_ip`/`ip_address` из payload либо `virsh domifaddr`), заходит в гостя
+    по `sshpass` (`u`/`1`), определяет package manager (по `os_family` из payload
+    либо живым `command -v` в госте), листит пакеты по glob-паттернам
+    (`dpkg-query -W` / `rpm -qa` / apk/pacman/portage/xbps) и возвращает плоский
+    список `{name, version}`. Дубли по имени схлопываются, итог режется по
+    `max_rows`. Результат докладывает server_service (`vms/{id}/packages`).
+
+    Зеркало серверного `installed_packages.list`, но цель — гость ВМ, а не сам
+    сервер; парсеры/фильтры/валидатор glob'а переиспользуются из того модуля.
+
+    Параметры: `task_id`. Payload — `vm_id` (обязательно), `vm_name`/`name`,
+    `guest_ip`/`ip_address` (адрес гостя, если не по `domifaddr`), опц.
+    `os_family`, `patterns` (список glob'ов) либо `pattern` (back-compat, деф.
+    `*`), `max_rows`, hub-блок, `target_department_id`.
+
+    Возвращает: `{vm_id, vm_name, package_manager, count, packages: [...]}`.
+    Список пакетов в audit не утекает (whitelist `AUDIT_SAFE_FIELDS_LIST_PACKAGES`).
+
+    Возможные ошибки: `VM_INVALID_ARG`, `VM_GUEST_NO_IP`,
+    `NO_PACKAGE_MANAGER`, `PACKAGE_QUERY_FAILED`, `INVALID_PATTERN`.
+    """
+    async def _impl(payload: dict) -> dict:
+        vm_id = payload["vm_id"]
+        target_dept = payload.get("target_department_id")
+        host_label = str(
+            payload.get("host") or payload.get("hub_host")
+            or payload.get("hub_server_id") or "hub",
+        )
+        vm_name = validate_name(
+            payload.get("vm_name") or payload["name"], host_label, "vm_name",
+        )
+        patterns = ip_helpers._resolve_patterns(payload)
+        max_rows = payload.get("max_rows")
+        os_family = str(payload.get("os_family") or "").strip().lower()
+
+        # Паттерны уходят в shell-команду гостя — валидируем каждый локально
+        # (defence-in-depth, тот же allow-list, что в installed_packages.list).
+        for pattern in patterns:
+            if not isinstance(pattern, str) or not ip_helpers._PATTERN_RE.match(
+                pattern,
+            ):
+                raise SshError(
+                    error_code="INVALID_PATTERN", host=host_label,
+                    message=(
+                        f"pattern {pattern!r} содержит символы, недопустимые "
+                        "для glob'а пакета"
+                    ),
+                )
+
+        session, host = await open_hub_session(payload)
+        async with session as ssh:
+            guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
+            package_manager = _OS_FAMILY_TO_PM.get(os_family) or (
+                await _detect_guest_package_manager(ssh, host, guest_ip)
+            )
+            cmd = ip_helpers._build_command(package_manager, patterns)
+            rc, stdout, stderr = await ssh.run(guest_ssh(guest_ip, cmd), sudo=True)
+            if rc != 0:
+                # dpkg-query/rpm отдают non-zero, если ничего не подошло под
+                # pattern (stderr пуст) — это валидный пустой результат; rc!=0
+                # со stderr — реальная поломка (битая БД пакетов).
+                if stderr.strip():
+                    raise SshError(
+                        error_code="PACKAGE_QUERY_FAILED", host=host,
+                        cmd_sanitized=cmd, returncode=rc,
+                        stderr=stderr.strip(),
+                        message=f"{package_manager} query в госте упал",
+                    )
+                stdout = ""
+
+        packages = ip_helpers._parse_packages(stdout, package_manager)
+        if package_manager in ("apk", "pacman", "portage", "xbps"):
+            packages = ip_helpers._filter_by_patterns(packages, patterns)
+        packages = ip_helpers._dedup_by_name(packages)
+        if isinstance(max_rows, int) and max_rows >= 0:
+            packages = packages[:max_rows]
+
+        await server_service_client.record_vm_packages(
+            vm_id, packages, target_department_id=target_dept,
+            source=package_manager, task_id=task_id,
+        )
+        return {
+            "vm_id": vm_id,
+            "vm_name": vm_name,
+            "package_manager": package_manager,
+            "count": len(packages),
+            "packages": packages,
+        }
+
+    await run_task(
+        task_id,
+        audit_action="vm.list_packages",
+        audit_target_type="vm",
+        impl=_impl,
+        audit_safe_fields=AUDIT_SAFE_FIELDS_LIST_PACKAGES,
     )

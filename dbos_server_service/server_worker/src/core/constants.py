@@ -135,6 +135,7 @@ class TaskKind(StrEnum):
     VM_ASTRA_UPDATE = "vm.astra_update"
     VM_ALLTA_UPDATE = "vm.allta_update"
     VM_PASSWD = "vm.passwd"
+    VM_LIST_PACKAGES = "vm.list_packages"
 
 
 class TaskStatus(StrEnum):

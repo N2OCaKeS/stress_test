@@ -563,6 +563,7 @@ async def submit_vm_state(
     clear_busy_state: bool = False,
     snapshots: list[str] | None = None,
     autostart: bool | None = None,
+    graphics_port: int | None = None,
     error: str | None = None,
 ) -> dict:
     """Отдать server_service свежее состояние ВМ (финал `vm.create` / `vm.power`).
@@ -570,8 +571,10 @@ async def submit_vm_state(
     По этому callback'у server_service обновляет строку `vm`: `power_state`
     (из `virsh domstate`), выданный `ip_address`, `status`/`busy_state`
     (booking/lock), зеркалит список снимков (`snapshots` — только plain-имена,
-    без системных `_build`) и `autostart` (флаг автозапуска ВМ при старте hub'а,
-    финал `vm.set_autostart`). `error` заполняется только при частичном/неудачном
+    без системных `_build`), `autostart` (флаг автозапуска ВМ при старте hub'а,
+    финал `vm.set_autostart`) и `graphics_port` (TCP-порт дисплея vnc/spice на
+    хабе, финал `vm.console_prep` — server_service кладёт его в `vms.graphics_port`
+    и в консольный токен). `error` заполняется только при частичном/неудачном
     исходе, чтобы оператор увидел причину в карточке ВМ.
 
     Все поля опциональны: `vm.power` шлёт лишь `power_state`, `vm.create` —
@@ -601,6 +604,8 @@ async def submit_vm_state(
         body["snapshots"] = snapshots
     if autostart is not None:
         body["autostart"] = autostart
+    if graphics_port is not None:
+        body["graphics_port"] = graphics_port
     if error is not None:
         body["error"] = error
     return await _request(
@@ -736,42 +741,42 @@ async def submit_vm_snapshots(
     )
 
 
-async def submit_vm_console(
+async def record_vm_packages(
     vm_id: str,
+    packages: list,
     target_department_id: str | None = None,
     *,
-    vnc_port: int | None = None,
-    vnc_listen: str | None = None,
-    serial_ready: bool | None = None,
-    error: str | None = None,
+    source: str | None = None,
+    task_id: str | None = None,
 ) -> dict:
-    """Отдать server_service параметры доступа к консоли ВМ (финал `vm.console_prep`).
+    """Отдать server_service список установленных пакетов гостя ВМ (финал `vm.list_packages`).
 
-    По этому callback'у server_service сохраняет на строке `vm` данные для
-    websockify/noVNC-прокси: `vnc_port` (TCP-порт дисплея, `5900 + display` из
-    `virsh vncdisplay`), `vnc_listen` (адрес прослушивания graphics) и
-    `serial_ready` (готова ли serial-консоль домена). `error` заполняется на
-    неудачном исходе. `None`-поля трактуются как «не менять».
+    По этому callback'у server_service полностью перезаписывает инвентарь
+    пакетов ВМ (строка `vm_package_inventory`) — как серверный
+    `installed_packages.list`, но для гостя ВМ. `packages` — список
+    `{name, version}` (`version` может быть `None`). `source` — какой менеджер
+    снял срез (`dpkg`/`rpm`), для UI-подсказки. `task_id` — id задачи
+    `vm.list_packages` для трассировки.
 
-    Возвращает: тело `POST /api/server/v1/internal/vms/{vm_id}/console`.
+    Тело: `{packages: [{name, version}], source, task_id}` под
+    `VmPackagesCallbackRequest` server_service'а.
+
+    Возвращает: `{ok, vm_id, package_count}` от
+    `POST /api/server/v1/internal/vms/{vm_id}/packages`.
 
     Возможные ошибки: `CredentialFetchError` с `error_code`:
       * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
-      * `VM_CONSOLE_REJECTED` — server_service вернул не 2xx.
+      * `VM_PACKAGES_REJECTED` — server_service вернул не 2xx.
     """
-    body: dict = {}
-    if vnc_port is not None:
-        body["vnc_port"] = vnc_port
-    if vnc_listen is not None:
-        body["vnc_listen"] = vnc_listen
-    if serial_ready is not None:
-        body["serial_ready"] = serial_ready
-    if error is not None:
-        body["error"] = error
+    body: dict = {"packages": packages}
+    if source is not None:
+        body["source"] = source
+    if task_id is not None:
+        body["task_id"] = task_id
     return await _request(
         "post",
-        f"/api/server/v1/internal/vms/{vm_id}/console",
-        reject_code="VM_CONSOLE_REJECTED",
+        f"/api/server/v1/internal/vms/{vm_id}/packages",
+        reject_code="VM_PACKAGES_REJECTED",
         target_department_id=target_department_id,
         json=body,
         details={"vm_id": vm_id},

@@ -28,6 +28,7 @@ class TestTaskKind:
             "vm.update", "vm.disk_attach", "vm.disk_delete", "vm.disk_resize",
             "vm.snapshot_create", "vm.snapshot_delete", "vm.snapshot_revert",
             "vm.astra_update", "vm.allta_update", "vm.passwd",
+            "vm.list_packages",
         }
 
     def test_dot_namespaced(self):

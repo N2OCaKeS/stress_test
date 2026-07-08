@@ -45,7 +45,6 @@ import {
   TerminalSquare,
   Copy,
   Users,
-  Wrench,
   XCircle,
   Zap,
   Trash2,
@@ -69,6 +68,7 @@ import {
   hasVmZoneAccess,
 } from "@/lib/rbac";
 import { formatLatencyMs } from "@/pages/server/_serverShared";
+import { StatRow } from "@/pages/admin/services/_inline";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import { listServers } from "@/api/server/servers";
@@ -108,12 +108,10 @@ import {
   rotateVmMgmtCreds,
   setVmAutostart,
   setVmCredStrategy,
-  setVmNetwork,
   updateVm,
   updateVmIpPool,
   updateVmPreset,
   vmConsoleViewerUrl,
-  vmPasswd,
   vmPower,
   type Vm,
   type VmAccount,
@@ -131,7 +129,6 @@ import {
   type VmIpPoolCreateRequest,
   type VmIpPoolUpdateRequest,
   type VmNetworkMode,
-  type VmNetworkRequest,
   type VmPackagesResponse,
   type VmPowerAction,
   type VmPreset,
@@ -732,13 +729,11 @@ type VmTabId =
   | "overview"
   | "hardware"
   | "power"
-  | "network"
   | "disks"
   | "snapshots"
   | "accounts"
   | "packages"
   | "console"
-  | "maintenance"
   | "manage";
 
 /**
@@ -746,10 +741,11 @@ type VmTabId =
  * (`ServerDetail`). Общая шапка с именем/номером/питанием, ниже — таб-бар и
  * содержимое активной вкладки. Набор повторяет применимые вкладки сервера
  * (железо, аккаунты, пакеты, консоль, управление) плюс VM-специфичные (питание,
- * сеть, диски, снимки, обслуживание). IPMI у ВМ нет (нет BMC), вкладку не
- * показываем. Управляющие вкладки (питание, сеть, обслуживание, управление)
- * видны только при праве на управление; обзор, железо, диски, снимки, аккаунты,
- * пакеты и консоль доступны и на чтение.
+ * диски, снимки). IPMI у ВМ нет (нет BMC), вкладку не показываем. Обновление ОС
+ * и allta живут во вкладке «Снимки», бронь — во вкладке «Управление».
+ * Управляющие вкладки (питание, управление) видны только при праве на
+ * управление; обзор, железо, диски, снимки, аккаунты, пакеты и консоль доступны
+ * и на чтение.
  */
 export function VmDetail({
   vm,
@@ -915,8 +911,7 @@ export function VmDetail({
   }
 
   // Вкладки: обзор/железо/диски/снимки/аккаунты/пакеты/консоль доступны на
-  // чтение; питание, сеть, обслуживание и управление — только при праве на
-  // управление.
+  // чтение; питание и управление — только при праве на управление.
   const tabs: { id: VmTabId; label: string; icon: React.ReactNode }[] = [
     { id: "overview", label: "Обзор", icon: <MonitorPlay className="w-4 h-4" /> },
     { id: "hardware", label: "Железо", icon: <Cpu className="w-4 h-4" /> },
@@ -926,11 +921,6 @@ export function VmDetail({
             id: "power" as const,
             label: "Питание",
             icon: <Power className="w-4 h-4" />,
-          },
-          {
-            id: "network" as const,
-            label: "Сеть",
-            icon: <Network className="w-4 h-4" />,
           },
         ]
       : []),
@@ -945,11 +935,6 @@ export function VmDetail({
     },
     ...(canManage
       ? [
-          {
-            id: "maintenance" as const,
-            label: "Обслуживание",
-            icon: <Wrench className="w-4 h-4" />,
-          },
           {
             id: "manage" as const,
             label: "Управление",
@@ -1040,11 +1025,10 @@ export function VmDetail({
           {activeTab === "hardware" && <VmHardwareCard vm={view} />}
 
           {activeTab === "power" && canManage && (
-            <>
-              <div className="card">
-                <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-                  <Power className="w-4 h-4 text-accent" /> Питание
-                </h3>
+            <div className="card">
+              <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+                <Power className="w-4 h-4 text-accent" /> Питание
+              </h3>
                 <div className="flex gap-2 flex-wrap">
                   <button
                     className="btn btn-primary flex items-center gap-1"
@@ -1105,15 +1089,73 @@ export function VmDetail({
                     {view.autostart ? "Автозапуск: вкл" : "Автозапуск: выкл"}
                   </button>
                 </div>
-                {powerOutcome.tracked && (
-                  <TaskOutcomeBanner
-                    outcome={powerOutcome.tracked}
-                    className="mt-3"
-                    successText="Питание применено."
-                    onCancelled={powerOutcome.reset}
-                  />
-                )}
-              </div>
+              {powerOutcome.tracked && (
+                <TaskOutcomeBanner
+                  outcome={powerOutcome.tracked}
+                  className="mt-3"
+                  successText="Питание применено."
+                  onCancelled={powerOutcome.reset}
+                />
+              )}
+            </div>
+          )}
+
+          {activeTab === "snapshots" && (
+            <>
+              <SnapshotsSection
+                vm={view}
+                mock={mock}
+                canManage={canManage}
+                onChanged={onChanged}
+              />
+              {canManage && (
+                <VmOsUpdateCard vm={view} mock={mock} onChanged={onChanged} />
+              )}
+              {canManage && (
+                <CredStrategyCard
+                  vm={view}
+                  mock={mock}
+                  onApplied={(next) => setLocal(next)}
+                  onChanged={onChanged}
+                />
+              )}
+            </>
+          )}
+
+          {activeTab === "disks" && (
+            <DisksSection
+              vm={view}
+              mock={mock}
+              canManage={canManage}
+              onChanged={onChanged}
+            />
+          )}
+
+          {activeTab === "accounts" && (
+            <VmAccountsSection vm={view} mock={mock} />
+          )}
+
+          {activeTab === "packages" && (
+            <VmPackagesSection vm={view} mock={mock} />
+          )}
+
+          {activeTab === "console" && (
+            <ConsoleCard
+              vm={view}
+              mock={mock}
+              canManage={canManage}
+              onChanged={onChanged}
+            />
+          )}
+
+          {activeTab === "manage" && canManage && (
+            <>
+              <PrepareMgmtCard
+                vm={view}
+                mock={mock}
+                onApplied={(next) => setLocal(next)}
+                onChanged={onChanged}
+              />
 
               <div className="card">
                 <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
@@ -1143,63 +1185,7 @@ export function VmDetail({
                   )}
                 </div>
               </div>
-            </>
-          )}
 
-          {activeTab === "snapshots" && (
-            <>
-              <SnapshotsSection
-                vm={view}
-                mock={mock}
-                canManage={canManage}
-                onChanged={onChanged}
-              />
-              {canManage && (
-                <CredStrategyCard
-                  vm={view}
-                  mock={mock}
-                  onApplied={(next) => setLocal(next)}
-                  onChanged={onChanged}
-                />
-              )}
-            </>
-          )}
-
-          {activeTab === "disks" && (
-            <DisksSection
-              vm={view}
-              mock={mock}
-              canManage={canManage}
-              onChanged={onChanged}
-            />
-          )}
-
-          {activeTab === "network" && canManage && (
-            <NetworkCard vm={view} mock={mock} onChanged={onChanged} />
-          )}
-
-          {activeTab === "accounts" && (
-            <VmAccountsSection vm={view} mock={mock} />
-          )}
-
-          {activeTab === "packages" && (
-            <VmPackagesSection vm={view} mock={mock} />
-          )}
-
-          {activeTab === "console" && <ConsoleCard vm={view} mock={mock} />}
-
-          {activeTab === "maintenance" && canManage && (
-            <OsOpsSection vm={view} mock={mock} onChanged={onChanged} />
-          )}
-
-          {activeTab === "manage" && canManage && (
-            <>
-              <PrepareMgmtCard
-                vm={view}
-                mock={mock}
-                onApplied={(next) => setLocal(next)}
-                onChanged={onChanged}
-              />
               <div
                 className="card"
                 style={{ border: "1px solid var(--danger, #b91c1c)" }}
@@ -2543,9 +2529,15 @@ function formatSnapDate(iso: string): string {
   });
 }
 
-// ── OS / креды операции (astra-update / allta-update / passwd) ──────────────────
+// ── обновление ОС и allta (astra-update / allta-update) ─────────────────────────
 
-function OsOpsSection({
+/**
+ * Карточка обновления ОС и allta — живёт во вкладке «Снимки», рядом с
+ * версионными снимками. astra-update откатывается на нужный `_build`-снимок и
+ * пересобирает его под выбранную версию; allta-update прогоняет переустановку
+ * guest-allta по всем не-«_build» снимкам.
+ */
+function VmOsUpdateCard({
   vm,
   mock,
   onChanged,
@@ -2558,7 +2550,6 @@ function OsOpsSection({
   const { confirm } = useConfirm();
   const opsOutcome = useTaskOutcome();
   const [astraOpen, setAstraOpen] = useState(false);
-  const [passwdOpen, setPasswdOpen] = useState(false);
 
   async function handleAstra(_osVersionId: string, label: string) {
     opsOutcome.reset();
@@ -2593,27 +2584,14 @@ function OsOpsSection({
     }
   }
 
-  async function handlePasswd(password: string) {
-    opsOutcome.reset();
-    try {
-      const res = mock ? fakeDispatch() : await vmPasswd(vm.id, { password });
-      opsOutcome.track(`passwd · ${vm.name}`, res.task_id, res.status);
-      toast.success(`Смена пароля на ${vm.name} — задача поставлена`);
-      setPasswdOpen(false);
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Смена пароля не удалась"));
-    }
-  }
-
   return (
     <div className="card">
       <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-        <ArrowUpCircle className="w-4 h-4 text-accent" /> ОС и учётные данные
+        <ArrowUpCircle className="w-4 h-4 text-accent" /> Обновление ОС и allta
       </h3>
       <div className="text-xs text-dim mb-3">
         Обновление версии ОС переснимает снимок под выбранную версию; обновление
-        allta и смена пароля идут по не-«_build» снимкам согласно режиму кред ВМ.
+        allta идёт по всем не-«_build» снимкам согласно режиму кред ВМ.
       </div>
       <div className="flex gap-2 flex-wrap">
         <button
@@ -2622,17 +2600,8 @@ function OsOpsSection({
         >
           <ArrowUpCircle className="w-4 h-4" /> Обновить ОС (astra-update)
         </button>
-        <button
-          className="btn flex items-center gap-1"
-          onClick={handleAllta}
-        >
+        <button className="btn flex items-center gap-1" onClick={handleAllta}>
           <Boxes className="w-4 h-4" /> Обновить allta
-        </button>
-        <button
-          className="btn flex items-center gap-1"
-          onClick={() => setPasswdOpen(true)}
-        >
-          <KeyRound className="w-4 h-4" /> Обновить пароль
         </button>
       </div>
 
@@ -2651,13 +2620,6 @@ function OsOpsSection({
           mock={mock}
           onClose={() => setAstraOpen(false)}
           onSubmit={handleAstra}
-        />
-      )}
-      {passwdOpen && (
-        <PasswdModal
-          vm={vm}
-          onClose={() => setPasswdOpen(false)}
-          onSubmit={handlePasswd}
         />
       )}
     </div>
@@ -2898,77 +2860,6 @@ function PrepareMgmtCard({
   );
 }
 
-// ── сеть ВМ ─────────────────────────────────────────────────────────────────────
-
-function NetworkCard({
-  vm,
-  mock,
-  onChanged,
-}: {
-  vm: Vm;
-  mock: boolean;
-  onChanged: () => void;
-}) {
-  const toast = useToast();
-  const outcome = useTaskOutcome();
-  const [open, setOpen] = useState(false);
-
-  async function handleApply(body: VmNetworkRequest) {
-    outcome.reset();
-    try {
-      const res = mock ? fakeDispatch() : await setVmNetwork(vm.id, body);
-      outcome.track(`network · ${vm.name}`, res.task_id, res.status);
-      toast.success(`Смена сети ВМ ${vm.name} — задача поставлена`);
-      setOpen(false);
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Смена сети не удалась"));
-    }
-  }
-
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-base flex items-center gap-2">
-          <Network className="w-4 h-4 text-accent" /> Сеть
-        </h3>
-        <button
-          className="btn btn-sm flex items-center gap-1"
-          onClick={() => setOpen(true)}
-        >
-          <Pencil className="w-3.5 h-3.5" /> Изменить сеть
-        </button>
-      </div>
-      <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm">
-        <Field k="Режим" v={vm.network_mode} />
-        <Field k="IP-адрес" v={vm.ip_address ?? "— (авто / NAT)"} mono />
-      </dl>
-      <div className="text-xs text-dim mt-2">
-        Смена режима перекладывает домен на bridge/NAT; для статики адрес
-        прописывается в госте с последующим reboot.
-      </div>
-
-      {outcome.tracked && (
-        <TaskOutcomeBanner
-          outcome={outcome.tracked}
-          className="mt-3"
-          successText="Сеть применена."
-          onCancelled={outcome.reset}
-        />
-      )}
-
-      {open && (
-        <NetworkModal
-          vm={vm}
-          mock={mock}
-          onClose={() => setOpen(false)}
-          onSubmit={handleApply}
-        />
-      )}
-    </div>
-  );
-}
-
 // ── консоль ВМ ──────────────────────────────────────────────────────────────────
 
 /**
@@ -2978,11 +2869,23 @@ function NetworkCard({
  * (пакета нет в бандле, внешние CDN запрещены CSP) — показываем адрес/порт
  * прокси с пометкой.
  */
-export function ConsoleCard({ vm, mock }: { vm: Vm; mock: boolean }) {
+export function ConsoleCard({
+  vm,
+  mock,
+  canManage = false,
+  onChanged,
+}: {
+  vm: Vm;
+  mock: boolean;
+  canManage?: boolean;
+  onChanged?: () => void;
+}) {
   const toast = useToast();
+  const { confirm } = useConfirm();
   const [kind, setKind] = useState<VmConsoleKind>("ssh");
   const [session, setSession] = useState<VmConsoleResponse | null>(null);
   const [pending, setPending] = useState(false);
+  const [alltaPending, setAlltaPending] = useState(false);
 
   function pick(next: VmConsoleKind) {
     setKind(next);
@@ -3003,6 +2906,27 @@ export function ConsoleCard({ vm, mock }: { vm: Vm; mock: boolean }) {
     }
   }
 
+  async function handleAllta() {
+    const ok = await confirm({
+      title: "Обновить allta",
+      message: `Обновить guest-allta на ВМ ${vm.name}? Пройдёт по всем не-«_build» снимкам, переустановит .deb и переснимет их.`,
+      confirmLabel: "Обновить",
+    });
+    if (!ok) return;
+    setAlltaPending(true);
+    try {
+      const res = mock ? fakeDispatch() : await alltaUpdateVm(vm.id);
+      toast.success(
+        `Обновление allta ${vm.name} — задача поставлена (${res.task_id})`,
+      );
+      onChanged?.();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Обновление allta не удалось"));
+    } finally {
+      setAlltaPending(false);
+    }
+  }
+
   const kinds: { value: VmConsoleKind; label: string }[] = [
     { value: "ssh", label: "SSH" },
     { value: "vnc", label: "VNC" },
@@ -3012,9 +2936,23 @@ export function ConsoleCard({ vm, mock }: { vm: Vm; mock: boolean }) {
 
   return (
     <div className="card">
-      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-        <TerminalSquare className="w-4 h-4 text-accent" /> Консоль
-      </h3>
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <h3 className="font-semibold text-base flex items-center gap-2">
+          <TerminalSquare className="w-4 h-4 text-accent" /> Консоль
+        </h3>
+        {canManage && (
+          <button
+            type="button"
+            className="btn btn-sm flex items-center gap-1"
+            onClick={handleAllta}
+            disabled={alltaPending}
+            title="Переустановить guest-allta по не-«_build» снимкам"
+          >
+            <Boxes className="w-3.5 h-3.5" />
+            {alltaPending ? "Ставим задачу…" : "Обновить allta"}
+          </button>
+        )}
+      </div>
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <div className="flex items-center gap-1">
           {kinds.map((k) => (
@@ -3175,47 +3113,59 @@ function CopyableCommand({ text }: { text: string }) {
 function VmHardwareCard({ vm }: { vm: Vm }) {
   const ramGb = (vm.ram_mb / 1024).toFixed(vm.ram_mb % 1024 === 0 ? 0 : 1);
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div className="card">
-        <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-          <Cpu className="w-4 h-4 text-accent" /> CPU
-        </h3>
-        <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-sm">
-          <Field k="vCPU" v={String(vm.cpu)} mono />
-        </dl>
-      </div>
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="card">
+          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-accent" /> CPU
+          </h3>
+          <StatRow k="vCPU" v={<span className="mono">{vm.cpu}</span>} />
+        </div>
 
-      <div className="card">
-        <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-          <MemoryStick className="w-4 h-4 text-accent" /> RAM
-        </h3>
-        <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-sm">
-          <Field k="RAM, МБ" v={String(vm.ram_mb)} mono />
-          <Field k="RAM, ГБ" v={`${ramGb} ГБ`} mono />
-        </dl>
-      </div>
+        <div className="card">
+          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+            <MemoryStick className="w-4 h-4 text-accent" /> RAM
+          </h3>
+          <StatRow k="total_mb" v={<span className="mono">{vm.ram_mb}</span>} />
+          <StatRow k="total_gb" v={<span className="mono">{ramGb} GB</span>} />
+        </div>
 
-      <div className="card">
-        <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-          <HardDrive className="w-4 h-4 text-accent" /> Диск
-        </h3>
-        <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-sm">
-          <Field k="Системный, ГБ" v={`${vm.disk_gb} ГБ`} mono />
-          <Field k="box" v={vm.box} />
-        </dl>
-        <div className="mt-2 text-[11px] text-dim">
-          Дополнительные диски — во вкладке «Диски».
+        <div className="card">
+          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+            <Network className="w-4 h-4 text-accent" /> Сеть
+          </h3>
+          <StatRow k="mode" v={<span className="mono">{vm.network_mode}</span>} />
+          <StatRow
+            k="ip_address"
+            v={<span className="mono">{vm.ip_address ?? "— (авто / NAT)"}</span>}
+          />
+        </div>
+
+        <div className="card">
+          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+            <HardDrive className="w-4 h-4 text-accent" /> Диск
+          </h3>
+          <StatRow
+            k="system_gb"
+            v={<span className="mono">{vm.disk_gb} GB</span>}
+          />
+          <StatRow k="box" v={<span className="mono">{vm.box}</span>} />
+          <StatRow
+            k="os_version"
+            v={
+              vm.os_version ? (
+                <span className="mono">{vm.os_version}</span>
+              ) : (
+                <span className="text-dim">—</span>
+              )
+            }
+          />
         </div>
       </div>
 
-      <div className="card">
-        <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-          <Network className="w-4 h-4 text-accent" /> Сеть
-        </h3>
-        <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-sm">
-          <Field k="Режим" v={vm.network_mode} />
-          <Field k="IP-адрес" v={vm.ip_address ?? "— (авто / NAT)"} mono />
-        </dl>
+      <div className="text-[11px] text-dim">
+        Дополнительные диски — во вкладке «Диски». Ресурсы (vCPU/RAM) правятся во
+        вкладке «Обзор».
       </div>
     </div>
   );
@@ -3339,6 +3289,24 @@ function VmAccountsSection({ vm, mock }: { vm: Vm; mock: boolean }) {
  * probe (`?refresh=true` → `vm.list_packages`) и перезапрашивает сохранённый
  * список. В mock-режиме данные из `@/mocks/vm`.
  */
+/**
+ * Клиентский фильтр пакета по имени: подстрока по умолчанию, `*` — маска
+ * (glob), матч по всей строке. Регистронезависимо.
+ */
+function pkgNameMatches(name: string, filter: string): boolean {
+  const f = filter.trim().toLowerCase();
+  if (!f) return true;
+  const n = name.toLowerCase();
+  if (f.includes("*")) {
+    const escaped = f
+      .split("*")
+      .map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+      .join(".*");
+    return new RegExp(`^${escaped}$`).test(n);
+  }
+  return n.includes(f);
+}
+
 function pkgRefreshErrorMsg(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.errorCode === "VM_PREPARE_REQUIRED")
@@ -3362,8 +3330,13 @@ function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
     [vm.id, mock],
     { keepPreviousDataOnError: true },
   );
-  const packages = pkgsQ.data?.packages ?? [];
+  const packages = useMemo(() => pkgsQ.data?.packages ?? [], [pkgsQ.data]);
   const syncedAt = pkgsQ.data?.synced_at ?? null;
+  const [filter, setFilter] = useState("");
+  const filtered = useMemo(
+    () => packages.filter((p) => pkgNameMatches(p.name, filter)),
+    [packages, filter],
+  );
 
   async function refresh() {
     if (mock) {
@@ -3413,6 +3386,23 @@ function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
         {syncedAt ? ` (синк ${formatSnapDate(syncedAt)})` : ""}.
       </div>
 
+      {packages.length > 0 && (
+        <div className="mb-3 flex items-center gap-2 flex-wrap">
+          <input
+            className="input mono text-xs"
+            style={{ minWidth: 220 }}
+            placeholder="фильтр по имени (* — маска)"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+          {filter.trim() && (
+            <span className="text-[11px] text-dim">
+              показано {filtered.length} из {packages.length}
+            </span>
+          )}
+        </div>
+      )}
+
       {pkgsQ.loading ? (
         <div className="text-xs text-dim">Загрузка…</div>
       ) : pkgsQ.error && packages.length === 0 ? (
@@ -3430,6 +3420,10 @@ function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
         </div>
       ) : packages.length === 0 ? (
         <div className="text-xs text-dim">Данных о пакетах пока нет.</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-xs text-dim">
+          Ничего не найдено по фильтру «{filter.trim()}».
+        </div>
       ) : (
         <div className="surface-2 border border-token rounded overflow-x-auto">
           <table className="w-full text-sm">
@@ -3440,7 +3434,7 @@ function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
               </tr>
             </thead>
             <tbody>
-              {packages.map((p) => (
+              {filtered.map((p) => (
                 <tr
                   key={`${p.name}-${p.version ?? ""}`}
                   className="border-b border-token last:border-b-0"
@@ -3604,106 +3598,6 @@ function PoolIpPicker({
         )}
       </fieldset>
     </div>
-  );
-}
-
-function NetworkModal({
-  vm,
-  mock,
-  onClose,
-  onSubmit,
-}: {
-  vm: Vm;
-  mock: boolean;
-  onClose: () => void;
-  onSubmit: (body: VmNetworkRequest) => void | Promise<void>;
-}) {
-  const [mode, setMode] = useState<VmNetworkMode>(vm.network_mode);
-  const [poolId, setPoolId] = useState("");
-  const [ipMode, setIpMode] = useState<"auto" | "pool" | "manual">("auto");
-  const [ip, setIp] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const ipValid =
-    mode === "nat" ||
-    ipMode === "auto" ||
-    (ipMode === "pool" && !!ip) ||
-    (ipMode === "manual" && isLikelyIpv4(ip.trim()));
-  const valid = ipValid && !submitting;
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!valid) return;
-    const body: VmNetworkRequest =
-      mode === "nat"
-        ? { network_mode: "nat", ip_address: null, pool_id: null }
-        : {
-            network_mode: "bridge",
-            ip_address:
-              ipMode === "manual"
-                ? ip.trim()
-                : ipMode === "pool"
-                  ? ip
-                  : null,
-            pool_id: poolId || null,
-          };
-    setSubmitting(true);
-    try {
-      await Promise.resolve(onSubmit(body));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Modal title={`Сеть ВМ ${vm.name}`} onClose={onClose}>
-      <form onSubmit={submit}>
-        <div className="modal-body flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Режим *</span>
-            <select
-              className="input"
-              value={mode}
-              onChange={(e) => setMode(e.target.value as VmNetworkMode)}
-            >
-              <option value="bridge">bridge (static IP из пула)</option>
-              <option value="nat">nat (libvirt)</option>
-            </select>
-          </label>
-          {mode === "bridge" && (
-            <PoolIpPicker
-              mock={mock}
-              departmentId={vm.department_id}
-              serverId={vm.hub_server_id}
-              poolId={poolId}
-              onPoolChange={setPoolId}
-              ipMode={ipMode}
-              onIpModeChange={setIpMode}
-              ip={ip}
-              onIpChange={setIp}
-            />
-          )}
-          {mode === "nat" && (
-            <div className="text-xs text-dim">
-              Адрес назначит libvirt (DHCP), IP читается через{" "}
-              <span className="mono">domifaddr</span>.
-            </div>
-          )}
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
-            Отмена
-          </button>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={!valid}
-          >
-            {submitting ? "Применяем…" : "Применить сеть"}
-          </button>
-        </div>
-      </form>
-    </Modal>
   );
 }
 
@@ -4947,86 +4841,6 @@ function AstraUpdateModal({
             disabled={!valid || submitting}
           >
             {submitting ? "Запускаем…" : "Обновить ОС"}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function PasswdModal({
-  vm,
-  onClose,
-  onSubmit,
-}: {
-  vm: Vm;
-  onClose: () => void;
-  onSubmit: (password: string) => void | Promise<void>;
-}) {
-  const [password, setPassword] = useState("");
-  const [confirmPw, setConfirmPw] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const tooShort = password.length > 0 && password.length < 8;
-  const mismatch = confirmPw.length > 0 && confirmPw !== password;
-  const valid = password.length >= 8 && confirmPw === password;
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!valid || submitting) return;
-    setSubmitting(true);
-    try {
-      await Promise.resolve(onSubmit(password));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Modal title={`Смена пароля · ${vm.name}`} onClose={onClose}>
-      <form onSubmit={submit}>
-        <div className="modal-body flex flex-col gap-3">
-          <div className="text-xs text-dim">
-            Новый пароль учётки <span className="mono">u</span>. По режиму{" "}
-            <b>{vm.cred_strategy}</b> worker либо сохранит его в снимковых кредах,
-            либо перекатает по всем не-«_build» снимкам.
-          </div>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Новый пароль *</span>
-            <input
-              className="input"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoFocus
-            />
-            {tooShort && (
-              <span className="text-[11px] text-danger">Минимум 8 символов</span>
-            )}
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Повтор пароля *</span>
-            <input
-              className="input"
-              type="password"
-              value={confirmPw}
-              onChange={(e) => setConfirmPw(e.target.value)}
-            />
-            {mismatch && (
-              <span className="text-[11px] text-danger">Пароли не совпадают</span>
-            )}
-          </label>
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
-            Отмена
-          </button>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={!valid || submitting}
-          >
-            {submitting ? "Применяем…" : "Сменить пароль"}
           </button>
         </div>
       </form>

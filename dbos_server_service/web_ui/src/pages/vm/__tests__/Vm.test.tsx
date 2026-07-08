@@ -60,29 +60,29 @@ describe("Vm zone (mock mode)", () => {
     expect(screen.getByRole("button", { name: /Создать ВМ/ })).toBeInTheDocument();
   });
 
-  it("вкладка «Питание» несёт кнопки питания и бронь", async () => {
+  it("вкладка «Питание» несёт кнопки питания; бронь переехала в «Управление»", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
     await openVmTab("Питание");
     expect(await screen.findByRole("button", { name: /Start/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Shutdown/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reboot/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Забронировать/ })).toBeInTheDocument();
+    // Бронь больше не в «Питании».
+    expect(
+      screen.queryByRole("button", { name: /Забронировать/ }),
+    ).not.toBeInTheDocument();
   });
 
-  it("карточка ВМ рендерит таб-бар со всеми вкладками", async () => {
+  it("карточка ВМ рендерит таб-бар без вкладок «Сеть»/«Обслуживание»", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
-    for (const label of [
-      "Обзор",
-      "Питание",
-      "Снимки",
-      "Диски",
-      "Сеть",
-      "Обслуживание",
-    ]) {
+    for (const label of ["Обзор", "Питание", "Снимки", "Диски"]) {
       expect(
         await screen.findByRole("button", { name: label }),
       ).toBeInTheDocument();
     }
+    expect(screen.queryByRole("button", { name: "Сеть" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Обслуживание" }),
+    ).not.toBeInTheDocument();
     // По умолчанию активна вкладка «Обзор» — виден блок «Параметры».
     expect(
       await screen.findByRole("heading", { name: /Параметры/ }),
@@ -229,27 +229,24 @@ describe("Vm zone (mock mode)", () => {
     expect(revertBtns.some((b) => !(b as HTMLButtonElement).disabled)).toBe(true);
   });
 
-  it("вкладка «Обслуживание» рендерит операции ОС/кред и открывает astra-update", async () => {
+  it("вкладка «Снимки» несёт обновление ОС/allta и открывает astra-update", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
-    await openVmTab("Обслуживание");
-    // Кнопки операций.
+    await openVmTab("Снимки");
+    // Кнопки операций в карточке обновления ОС и allta.
     expect(
       await screen.findByRole("button", { name: /Обновить ОС \(astra-update\)/ }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Обновить allta/ })).toBeInTheDocument();
+    // Смена пароля выпилена.
+    expect(
+      screen.queryByRole("button", { name: /Обновить пароль/ }),
+    ).not.toBeInTheDocument();
     // astra-update модалка с выбором версии.
     fireEvent.click(screen.getByRole("button", { name: /Обновить ОС \(astra-update\)/ }));
     expect(await screen.findByText(/Обновление ОС ·/)).toBeInTheDocument();
     expect(
       await screen.findByRole("option", { name: "1.8.1.6" }),
     ).toBeInTheDocument();
-  });
-
-  it("открывает модалку смены пароля", async () => {
-    renderVm("/vm?hub=srv-07&id=vm-101");
-    await openVmTab("Обслуживание");
-    fireEvent.click(await screen.findByRole("button", { name: /Обновить пароль/ }));
-    expect(await screen.findByText(/Смена пароля ·/)).toBeInTheDocument();
   });
 
   it("вкладка «Снимки» несёт селектор режима управляющих кред", async () => {
@@ -285,16 +282,6 @@ describe("Vm zone (mock mode)", () => {
     expect(
       await screen.findByRole("button", { name: /Подготовить/ }),
     ).toBeInTheDocument();
-  });
-
-  it("вкладка «Сеть» показывает раздел и открывает модалку смены сети", async () => {
-    renderVm("/vm?hub=srv-07&id=vm-101");
-    await openVmTab("Сеть");
-    expect(await screen.findByRole("heading", { name: /^Сеть$/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Изменить сеть/ }));
-    expect(await screen.findByText(/Сеть ВМ/)).toBeInTheDocument();
-    // bridge по умолчанию — виден селектор пула IPAM.
-    expect(screen.getByText(/Пул IPAM/)).toBeInTheDocument();
   });
 
   it("открывает раздел IP-пулов и рендерит список из фикстур", async () => {

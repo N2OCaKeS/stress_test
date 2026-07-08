@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ToastProvider } from "@/contexts/ToastContext";
+import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import type { Vm as VmType } from "@/api/server/vms";
 import { ConsoleCard } from "@/pages/vm/Vm";
 
@@ -37,7 +38,9 @@ function renderConsole() {
   return render(
     <ThemeProvider>
       <ToastProvider>
-        <ConsoleCard vm={MOCK_VM} mock />
+        <ConfirmProvider>
+          <ConsoleCard vm={MOCK_VM} mock />
+        </ConfirmProvider>
       </ToastProvider>
     </ThemeProvider>,
   );

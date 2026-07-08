@@ -113,32 +113,31 @@ describe("VmDetail (tabbed, live mode)", () => {
 
   it("рендерит таб-бар со всеми вкладками для управляющей роли", async () => {
     renderDetail(true);
-    for (const label of [
-      "Обзор",
-      "Питание",
-      "Снимки",
-      "Диски",
-      "Сеть",
-      "Обслуживание",
-    ]) {
+    for (const label of ["Обзор", "Питание", "Снимки", "Диски"]) {
       expect(
         await screen.findByRole("button", { name: label }),
       ).toBeInTheDocument();
     }
+    // Вкладки «Сеть» и «Обслуживание» убраны.
+    expect(screen.queryByRole("button", { name: "Сеть" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Обслуживание" }),
+    ).not.toBeInTheDocument();
     // Активна «Обзор» — виден блок «Параметры».
     expect(
       screen.getByRole("heading", { name: /Параметры/ }),
     ).toBeInTheDocument();
   });
 
-  it("для роли без управления прячет вкладки питание/сеть/обслуживание", async () => {
+  it("для роли без управления прячет вкладку питание; сети/обслуживания нет ни у кого", async () => {
     renderDetail(false);
     // Доступны на чтение.
     expect(await screen.findByRole("button", { name: "Обзор" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Снимки" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Диски" })).toBeInTheDocument();
-    // Управляющих вкладок нет.
+    // Управляющей вкладки питания нет.
     expect(screen.queryByRole("button", { name: "Питание" })).not.toBeInTheDocument();
+    // Удалённых вкладок нет.
     expect(screen.queryByRole("button", { name: "Сеть" })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Обслуживание" }),
@@ -177,12 +176,30 @@ describe("VmDetail (tabbed, live mode)", () => {
     );
   });
 
-  it("вкладка «Сеть» показывает секцию сети", async () => {
+  it("вкладка «Снимки» несёт обновление ОС (astra) и allta, без смены пароля", async () => {
     renderDetail(true);
-    await openTab("Сеть");
+    await openTab("Снимки");
     expect(
-      await screen.findByRole("heading", { name: /^Сеть$/ }),
+      await screen.findByRole("button", { name: /Обновить ОС \(astra-update\)/ }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Обновить allta/ }),
+    ).toBeInTheDocument();
+    // Смена пароля выпилена — кнопки нет.
+    expect(
+      screen.queryByRole("button", { name: /Обновить пароль/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("вкладка «Консоль» несёт действие «Обновить allta»", async () => {
+    renderDetail(true);
+    await openTab("Консоль");
+    expect(
+      await screen.findByRole("button", { name: /Обновить allta/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Обновить пароль/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("рендерит новые серверные вкладки (Железо/Аккаунты/Пакеты/Консоль/Управление)", async () => {
@@ -231,13 +248,40 @@ describe("VmDetail (tabbed, live mode)", () => {
     );
   });
 
-  it("вкладка «Управление» показывает опасную зону удаления", async () => {
+  it("вкладка «Управление» несёт аналоги серверных блоков: подготовка/креды/бронь/удаление", async () => {
     renderDetail(true);
     await openTab("Управление");
-    expect(await screen.findByText(/Опасная зона/)).toBeInTheDocument();
+    // Подготовка + управляющие креды (Lifecycle + ManagementCreds аналог).
+    expect(
+      await screen.findByRole("heading", {
+        name: /Подготовка и управляющие креды/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Ротировать креды/ }),
+    ).toBeInTheDocument();
+    // Бронь (BusyCard аналог) переехала сюда из «Питания».
+    expect(
+      screen.getByRole("heading", { name: /^Бронь$/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Забронировать/ }),
+    ).toBeInTheDocument();
+    // Опасная зона (DangerCard аналог) — последней.
+    expect(screen.getByText(/Опасная зона/)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Удалить ВМ/ }),
     ).toBeInTheDocument();
+  });
+
+  it("вкладка «Питание» больше не содержит блок брони", async () => {
+    renderDetail(true);
+    await openTab("Питание");
+    expect(await screen.findByRole("button", { name: /Start/ })).toBeInTheDocument();
+    // Бронь ушла в «Управление».
+    expect(
+      screen.queryByRole("heading", { name: /^Бронь$/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("для роли без управления прячет вкладку «Управление», оставляет читаемые", async () => {

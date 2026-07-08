@@ -429,6 +429,10 @@ test-worker: ## Тесты server_worker в Docker
 test-secret: ## Тесты secret_service в Docker
 	$(SECRET) run --rm test-runner pytest tests/ -v --tb=short
 
+test-console: ## Тесты console_proxy (VNC/SPICE-прокси) в одноразовом python-контейнере
+	docker run --rm -v "$(CURDIR)/console_proxy:/app" -w /app python:3.12-slim bash -lc \
+		"pip install -q poetry==2.3.4 && poetry install --only main,dev --no-root && PYTHONPATH=. poetry run pytest -q"
+
 test-integration: ## Полный E2E-стек (4 сервиса + openssh-server + worker) и pytest tests/integration/
 	$(E2E) up -d --wait test-postgres test-redis ssh-target logging-service auth-service server-service
 	$(E2E) up --abort-on-container-exit --exit-code-from init-ssh-keys init-ssh-keys

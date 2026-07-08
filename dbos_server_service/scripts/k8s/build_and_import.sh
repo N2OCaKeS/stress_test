@@ -15,6 +15,7 @@ declare -A SERVICES=(
     [server-service]="server_service"
     [server-worker]="server_worker"
     [secret-service]="secret_service"
+    [console-proxy]="console_proxy"
 )
 
 TMP=$(mktemp -d)
@@ -58,7 +59,7 @@ sudo "$K3S_BIN" ctr images import "$TMP/web-ui.tar"
 
 echo ""
 echo "✓ Образы готовы и доступны k3s:"
-sudo "$K3S_BIN" ctr images list | grep -E "dbos/(auth|logging|server|secret)-(service|worker)|dbos/web-ui" || true
+sudo "$K3S_BIN" ctr images list | grep -E "dbos/(auth|logging|server|secret)-(service|worker)|dbos/(web-ui|console-proxy)" || true
 
 echo ""
 echo "  Чтобы развернуть/обновить: scripts/k8s/deploy.sh"

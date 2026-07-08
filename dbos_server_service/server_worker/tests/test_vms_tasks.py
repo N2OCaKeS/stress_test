@@ -373,7 +373,7 @@ class TestVmCreateUniversal:
         assert t.status == TaskStatus.SUCCEEDED
         cmds = fake.commands
         assert any("cp /vms/vm_station.qcow2 /vms/station-a.qcow2" in c for c in cmds)
-        assert any("virt-install -n station-a" in c and "host-model,+vmx" in c for c in cmds)
+        assert any("virt-install -n station-a" in c and "--cpu host-model" in c for c in cmds)
         assert any("qemu-img snapshot -a 1.7.5.9 /vms/station-a.qcow2" in c for c in cmds)
         assert any("snapshot-create-as station-a --name 1.7.5.9_build" in c for c in cmds)
         assert any("snapshot-create-as station-a --name 1.7.5.9 " in c for c in cmds)

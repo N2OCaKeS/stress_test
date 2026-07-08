@@ -612,7 +612,9 @@ def _virt_install_cmd(
 
     universal собирается на NAT-сети `test` (транзит для провижна статики), затем
     NIC переводится на bridge. single с `network_mode=bridge` сразу на `br0`,
-    `nat` — на сети `test`. `--cpu host-model,+vmx` — проброс nested-виртуализации.
+    `nat` — на сети `test`. `--cpu host-model` пробрасывает фичи хоста как есть,
+    включая vmx/svm для nested там, где хост их отдаёт; форсить `+vmx` нельзя —
+    на хостах без vmx (AMD, не-nested) virt-install падает целиком.
     """
     if network_mode == "bridge":
         net = f"bridge={bridge_label()},model=virtio"
@@ -622,7 +624,7 @@ def _virt_install_cmd(
         f"virt-install -n {name} --memory {ram_mb} --vcpus {cpu} --import "
         f"--disk {pool_path}/{name}.qcow2,format=qcow2,bus=virtio "
         f"--os-variant {VMS_OS_VARIANT} --network {net} "
-        "--cpu host-model,+vmx --autostart --graphics vnc --noautoconsole"
+        "--cpu host-model --autostart --graphics vnc --noautoconsole"
     )
 
 

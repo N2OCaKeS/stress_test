@@ -35,6 +35,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
+import { formatFio } from "@/lib/fio";
 import { PASSWORD_POLICY_MESSAGE } from "@/lib/passwordPolicy";
 import { formatMskShort, mskDateOffset } from "@/lib/datetime";
 import type {
@@ -74,8 +75,11 @@ export function MyAccount() {
         <div className="px-8 pt-6 pb-2 w-full flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="text-2xl font-bold mb-1">
-              {user?.username ?? "— (не авторизован)"}
+              {user ? formatFio(user) : "— (не авторизован)"}
             </div>
+            {user && formatFio(user) !== (user.username ?? "") && (
+              <div className="text-dim text-xs mono mb-1">{user.username}</div>
+            )}
             <div className="text-dim text-sm">
               {user?.platform_role ?? "user"} ·{" "}
               <HeaderDeptLabel
@@ -216,7 +220,7 @@ function ProfileCard({
       </div>
       <div className="text-xs text-dim mb-4">
         display_name и email можно отредактировать самостоятельно.
-        Department, platform_role и username меняет администратор.
+        ФИО, department, platform_role и username меняет администратор.
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
@@ -252,6 +256,7 @@ function ProfileCard({
       </div>
 
       <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+        <StatRow k="ФИО" v={<span>{formatFio(user, { empty: "— не задано" })}</span>} />
         <StatRow k="username" v={<span className="mono">{user?.username ?? "—"}</span>} />
         <StatRow k="display_name" v={<span>{user?.display_name ?? "—"}</span>} />
         <StatRow k="user_id" v={<span className="mono">{user?.user_id ?? "—"}</span>} />

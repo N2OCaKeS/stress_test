@@ -27,7 +27,8 @@ import {
 import { listDepartments } from "@/api/auth/departments";
 import { listGroups } from "@/api/auth/groups";
 import { listServices } from "@/api/auth/services";
-import { getUserLabels } from "@/api/auth/users";
+import { getUserLabels, type UserLabel } from "@/api/auth/users";
+import { formatFio } from "@/lib/fio";
 import { listServers } from "@/api/server/servers";
 import { getAccount } from "@/api/server/accounts";
 import { getCredential } from "@/api/secret/credentials";
@@ -313,12 +314,18 @@ export function useServerMap() {
  */
 type IdResolver = (id: string) => Promise<string>;
 
+/** Отображаемое имя из карточки лейбла: ФИО → display_name → username. */
+function userLabelName(l: UserLabel): string {
+  return formatFio(l, { fallback: (l.display_name ?? "").trim() || l.username });
+}
+
 // Через батч-endpoint `/users/labels`: он доступен любому user-JWT, тогда как
 // `GET /users/{id}` гейтится админскими правами и отдаёт 403 обычному юзеру.
 // Берём один id, фоллбэк на сам id, если имя не нашлось.
 const resolveUserName: IdResolver = async (id) => {
   const labels = await getUserLabels([id]);
-  return labels[id] || id;
+  const l = labels[id];
+  return l ? userLabelName(l) : id;
 };
 
 const resolveAccountName: IdResolver = async (id) => {
@@ -382,8 +389,8 @@ function useLazyLabel(
 }
 
 /**
- * `usr_*` → username. Фоллбэк на id, пока грузится / если пользователь удалён
- * или недоступен (403). `null`/пусто → "—".
+ * `usr_*` → отображаемое имя (ФИО, иначе username). Фоллбэк на id, пока
+ * грузится / если пользователь удалён или недоступен (403). `null`/пусто → "—".
  */
 export function useUserLabel(userId: string | null | undefined): string {
   return useLazyLabel(USER_DOMAIN, userId);
@@ -417,7 +424,8 @@ export function useUserLabels(
     getUserLabels(missing)
       .then((labels) => {
         for (const id of missing) {
-          USER_DOMAIN.cache.set(id, labels[id] || id);
+          const l = labels[id];
+          USER_DOMAIN.cache.set(id, l ? userLabelName(l) : id);
         }
       })
       .catch(() => {

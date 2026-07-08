@@ -38,6 +38,7 @@ import {
   personaById,
 } from "@/mocks/personas";
 import { USE_MOCK_AUTH, useAuthOptional } from "@/contexts/AuthContext";
+import { fullFio } from "@/lib/fio";
 import type { IdentityContext } from "@/api/auth/types";
 
 const STORAGE_KEY = "dbos-persona";
@@ -233,12 +234,17 @@ function identityToPersona(me: IdentityContext): Persona {
     platformRole === "logging_admin" ||
     Object.values(serviceRoles).some((r) => r === "admin");
 
+  // Инициалы предпочтительно из ФИО (Фамилия+Имя), иначе из username.
+  const fio = fullFio(me);
   return {
     id: (me.user_id ?? username) as PersonaId,
     username,
     email: me.email ?? `${username}@dbos.local`,
-    initials: initialsOf(username),
+    initials: initialsOf(fio || username),
     display_name: username,
+    last_name: me.last_name ?? null,
+    first_name: me.first_name ?? null,
+    middle_name: me.middle_name ?? null,
     dept_id: (me.department_id ?? null) as Persona["dept_id"],
     platform_role: platformRole,
     service_roles: serviceRoles,

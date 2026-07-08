@@ -26,12 +26,15 @@ import {
   getAvailableIps,
   getVmByNumber,
   getServerByNumber,
+  listVmAccounts,
   listVmDisks,
   listVmImages,
   listVmIpPools,
+  listVmPackages,
   listVmPresets,
   listVmSnapshots,
   openVmConsole,
+  vmConsoleViewerUrl,
   prepareVm,
   prepareVmsHub,
   refreshVmImages,
@@ -350,6 +353,40 @@ describe("vms api client", () => {
     expect(apiPost).toHaveBeenCalledWith("/server/v1/vms/vm-101/console", {
       kind: "vnc",
     });
+  });
+
+  it("listVmAccounts GET'ит голый массив учёток ВМ", async () => {
+    await listVmAccounts("vm-101");
+    expect(apiGet).toHaveBeenCalledWith("/server/v1/vms/vm-101/accounts");
+  });
+
+  it("listVmPackages без refresh GET'ит без query", async () => {
+    await listVmPackages("vm-101");
+    expect(apiGet).toHaveBeenCalledWith("/server/v1/vms/vm-101/packages");
+  });
+
+  it("listVmPackages с refresh шлёт ?refresh=true", async () => {
+    await listVmPackages("vm-101", { refresh: true });
+    expect(apiGet).toHaveBeenCalledWith("/server/v1/vms/vm-101/packages", {
+      query: { refresh: true },
+    });
+  });
+
+  it("vmConsoleViewerUrl переводит ws(s) в http(s) и добавляет token", () => {
+    expect(
+      vmConsoleViewerUrl({
+        ws_url: "wss://hub.local/vm-console/vnc/vm-101",
+        token: "sig abc",
+      }),
+    ).toBe("https://hub.local/vm-console/vnc/vm-101?token=sig%20abc");
+    expect(
+      vmConsoleViewerUrl({
+        ws_url: "ws://hub.local/vm-console/spice/vm-9?x=1",
+        token: "t2",
+      }),
+    ).toBe("http://hub.local/vm-console/spice/vm-9?x=1&token=t2");
+    // Без ws_url (ssh/serial) — null.
+    expect(vmConsoleViewerUrl({ ws_url: null, token: "t" })).toBeNull();
   });
 
   it("createVm с bridge несёт pool_id и ip_address", async () => {

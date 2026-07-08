@@ -60,7 +60,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery, useMockMode } from "@/api/auth/useQuery";
-import { apiErrMsg } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
 import { useDeptLabel } from "@/lib/labels";
 import {
   canManageVmNet,
@@ -112,9 +112,11 @@ import {
   updateVm,
   updateVmIpPool,
   updateVmPreset,
+  vmConsoleViewerUrl,
   vmPasswd,
   vmPower,
   type Vm,
+  type VmAccount,
   type VmBulkCreateResponse,
   type VmBulkItemResult,
   type VmConsoleKind,
@@ -130,7 +132,7 @@ import {
   type VmIpPoolUpdateRequest,
   type VmNetworkMode,
   type VmNetworkRequest,
-  type VmPackage,
+  type VmPackagesResponse,
   type VmPowerAction,
   type VmPreset,
   type VmPresetCreateRequest,
@@ -156,12 +158,12 @@ import {
   MOCK_VM_IMAGES,
   MOCK_VM_IP_POOLS,
   MOCK_VM_OS_VERSIONS,
-  MOCK_VM_PACKAGES,
   MOCK_VM_PRESETS,
   MOCK_VM_SNAPSHOTS,
   MOCK_VMS,
   mockVmAccounts,
   mockVmConsole,
+  mockVmPackages,
 } from "@/mocks/vm";
 
 // ── data helpers (mock ↔ live) ──────────────────────────────────────────────
@@ -3049,21 +3051,22 @@ export function ConsoleCard({ vm, mock }: { vm: Vm; mock: boolean }) {
 
 function ConsoleSession({ session }: { session: VmConsoleResponse }) {
   if (session.kind === "ssh") {
+    const command = `ssh ${session.username ?? "u"}@${session.host ?? ""}`;
     return (
       <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
         <div className="text-xs text-dim">
           Доступ по SSH под учёткой <span className="mono">{session.username}</span>.
         </div>
-        <CopyableCommand text={session.command} />
+        <CopyableCommand text={command} />
         <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
-          <Field k="host" v={`${session.host}:${session.port}`} mono />
-          <Field k="Логин" v={session.username} mono />
-          {session.password ? (
-            <Field k="Пароль" v={session.password} mono />
-          ) : (
-            <Field k="Пароль" v="— (по ключу)" />
-          )}
+          <Field k="host" v={`${session.host ?? "—"}:${session.port ?? 22}`} mono />
+          <Field k="Логин" v={session.username ?? "—"} mono />
+          <Field k="Токен" v={session.token} mono />
         </dl>
+        <div className="text-[11px] text-dim">
+          Токен действует {session.expires_in} с. Пароль/ключ учётки прокси
+          подставляет сам — в ответе он не отдаётся.
+        </div>
       </div>
     );
   }
@@ -3072,61 +3075,60 @@ function ConsoleSession({ session }: { session: VmConsoleResponse }) {
     return (
       <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
         <div className="text-xs text-dim">
-          Последовательная консоль (serial) через прокси.
+          Последовательная консоль (serial) через прокси на хабе.
         </div>
-        <div className="border border-dashed border-token rounded p-4 text-center bg-black/5 dark:bg-white/5">
-          <TerminalSquare className="w-8 h-8 mx-auto text-dim mb-2" />
-          {session.proxy_ready && session.ws_url ? (
-            <>
-              <div className="text-xs">
-                Прокси поднят. Подключайтесь websocket-клиентом к эндпоинту:
-              </div>
-              <div className="mono text-xs break-all mt-1">{session.ws_url}</div>
-            </>
-          ) : (
-            <div className="text-xs text-warn">
-              Прокси-эндпоинт разворачивается инфраструктурно. Встроенный вьювер
-              появится после его поднятия.
-            </div>
+        <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
+          <Field k="host (hub)" v={session.host ?? "—"} mono />
+          {session.serial_path && (
+            <Field k="Устройство" v={session.serial_path} mono />
           )}
-        </div>
-        {session.ws_url && (
-          <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
-            <Field k="ws-прокси" v={session.ws_url} mono />
-          </dl>
-        )}
-        <div className="text-xs text-dim">Локальный доступ на хабе:</div>
-        <CopyableCommand text={session.command} />
+          <Field k="ws-путь" v={session.ws_path} mono />
+          <Field k="Токен" v={session.token} mono />
+        </dl>
       </div>
     );
   }
 
-  // vnc | spice — графическая консоль через websockify/прокси.
+  // vnc | spice — графическая консоль через self-hosted прокси.
   const proto = session.kind === "vnc" ? "VNC" : "SPICE";
+  const viewerUrl = vmConsoleViewerUrl(session);
   return (
     <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
       <div className="text-xs text-dim">
-        Графическая консоль ({proto}) через websockify-прокси.
+        Графическая консоль ({proto}) через self-hosted прокси (noVNC/spice-html5).
       </div>
       <div className="border border-dashed border-token rounded p-4 text-center bg-black/5 dark:bg-white/5">
         <TerminalSquare className="w-8 h-8 mx-auto text-dim mb-2" />
-        {session.proxy_ready && session.ws_url ? (
+        {viewerUrl ? (
           <>
-            <div className="text-xs">
-              Прокси поднят. Подключайтесь {proto}/websocket-клиентом к эндпоинту:
+            <div className="text-xs mb-2">
+              Прокси откроет вьювер в новой вкладке; токен предъявляется в query.
             </div>
-            <div className="mono text-xs break-all mt-1">{session.ws_url}</div>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm inline-flex items-center gap-1"
+              onClick={() =>
+                window.open(viewerUrl, "_blank", "noopener,noreferrer")
+              }
+            >
+              <TerminalSquare className="w-3.5 h-3.5" /> Открыть консоль {proto}
+            </button>
           </>
         ) : (
           <div className="text-xs text-warn">
-            Прокси-эндпоинт разворачивается инфраструктурно. Встроенный вьювер
+            Прокси-эндпоинт разворачивается инфраструктурно. Кнопка открытия
             появится после его поднятия.
           </div>
         )}
       </div>
       <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
-        <Field k="host" v={`${session.host}:${session.port}`} mono />
+        <Field
+          k="host (hub)"
+          v={`${session.host ?? "—"}${session.port ? `:${session.port}` : ""}`}
+          mono
+        />
         {session.ws_url && <Field k="ws-прокси" v={session.ws_url} mono />}
+        <Field k="Токен" v={session.token} mono />
         {session.password && (
           <Field k={`Пароль ${proto}`} v={session.password} mono />
         )}
@@ -3222,18 +3224,17 @@ function VmHardwareCard({ vm }: { vm: Vm }) {
 // ── учётки ВМ ─────────────────────────────────────────────────────────────────
 
 /**
- * Read-only список учёток (`server_account`), привязанных к ВМ. По образцу
- * серверной вкладки «Аккаунты», но упрощённый: привязка учёток к ВМ идёт при
- * создании ВМ (мультиселект в форме create), поэтому здесь — только просмотр.
- * Backend домена `vm` ещё не отдаёт `/vms/{id}/accounts`, в mock-режиме данные
- * из `@/mocks/vm`.
+ * Read-only список учёток, привязанных к ВМ (`GET /vms/{id}/accounts`). По
+ * образцу серверной вкладки «Аккаунты», но упрощённый: привязка учёток к ВМ
+ * идёт при создании ВМ (мультиселект в форме create), поэтому здесь — только
+ * просмотр. `present_on_vm` показывает дрейф (привязка есть, а в госте учётки
+ * нет). В mock-режиме данные из `@/mocks/vm`.
  */
 function VmAccountsSection({ vm, mock }: { vm: Vm; mock: boolean }) {
-  const accountsQ = useQuery<ServerAccount[]>(
+  const accountsQ = useQuery<VmAccount[]>(
     async () => {
       if (mock) return mockVmAccounts(vm);
-      const res = await listVmAccounts(vm.id);
-      return res.items;
+      return await listVmAccounts(vm.id);
     },
     [vm.id, mock],
     { keepPreviousDataOnError: true },
@@ -3288,13 +3289,16 @@ function VmAccountsSection({ vm, mock }: { vm: Vm; mock: boolean }) {
                 <th className="text-left px-3 py-2 font-medium">Логин</th>
                 <th className="text-left px-3 py-2 font-medium">sudo</th>
                 <th className="text-left px-3 py-2 font-medium">Группы</th>
-                <th className="text-left px-3 py-2 font-medium">Источник</th>
-                <th className="text-left px-3 py-2 font-medium">Статус</th>
+                <th className="text-left px-3 py-2 font-medium">SSH-ключ</th>
+                <th className="text-left px-3 py-2 font-medium">В госте</th>
               </tr>
             </thead>
             <tbody>
               {accounts.map((a) => (
-                <tr key={a.id} className="border-b border-token last:border-b-0">
+                <tr
+                  key={a.account_id}
+                  className="border-b border-token last:border-b-0"
+                >
                   <td className="px-3 py-1.5 mono">{a.login}</td>
                   <td className="px-3 py-1.5">
                     {a.has_sudo ? (
@@ -3306,12 +3310,14 @@ function VmAccountsSection({ vm, mock }: { vm: Vm; mock: boolean }) {
                   <td className="px-3 py-1.5 text-xs text-dim">
                     {a.unix_groups.join(", ") || "—"}
                   </td>
-                  <td className="px-3 py-1.5 text-xs">{a.source}</td>
+                  <td className="px-3 py-1.5 text-xs text-dim">
+                    {a.ssh_public_key ? "есть" : "—"}
+                  </td>
                   <td className="px-3 py-1.5">
-                    {a.is_active ? (
-                      <span className="badge badge-ok text-[11px]">активна</span>
+                    {a.present_on_vm ? (
+                      <span className="badge badge-ok text-[11px]">заведена</span>
                     ) : (
-                      <span className="badge text-[11px]">неактивна</span>
+                      <span className="badge badge-warn text-[11px]">дрейф</span>
                     )}
                   </td>
                 </tr>
@@ -3328,21 +3334,59 @@ function VmAccountsSection({ vm, mock }: { vm: Vm; mock: boolean }) {
 
 /**
  * Read-only список установленных в госте пакетов ВМ. По образцу серверной
- * вкладки «Пакеты», но без live-SSH-probe: показываем последний срез из
- * `/vms/{id}/packages`. Backend домена `vm` его ещё не отдаёт — в mock-режиме
- * данные из `@/mocks/vm`.
+ * вкладки «Пакеты», но без live-SSH-probe в самом GET: показываем последний
+ * снятый воркером срез из `/vms/{id}/packages`. Кнопка «Обновить» ставит свежий
+ * probe (`?refresh=true` → `vm.list_packages`) и перезапрашивает сохранённый
+ * список. В mock-режиме данные из `@/mocks/vm`.
  */
+function pkgRefreshErrorMsg(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.errorCode === "VM_PREPARE_REQUIRED")
+      return "ВМ не подготовлена (prepare) — свежий сбор пакетов недоступен.";
+    if (e.errorCode === "VM_GUEST_IP_UNKNOWN")
+      return "У ВМ нет известного IP гостя — свежий сбор пакетов недоступен.";
+    if (e.errorCode === "HUB_UNAVAILABLE")
+      return "Hub недоступен — свежий сбор пакетов недоступен.";
+  }
+  return apiErrMsg(e, "Не удалось запустить сбор пакетов");
+}
+
 function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
-  const pkgsQ = useQuery<VmPackage[]>(
+  const toast = useToast();
+  const [refreshing, setRefreshing] = useState(false);
+  const pkgsQ = useQuery<VmPackagesResponse>(
     async () => {
-      if (mock) return MOCK_VM_PACKAGES[vm.id] ?? [];
-      const res = await listVmPackages(vm.id);
-      return res.items;
+      if (mock) return mockVmPackages(vm);
+      return await listVmPackages(vm.id);
     },
     [vm.id, mock],
     { keepPreviousDataOnError: true },
   );
-  const packages = pkgsQ.data ?? [];
+  const packages = pkgsQ.data?.packages ?? [];
+  const syncedAt = pkgsQ.data?.synced_at ?? null;
+
+  async function refresh() {
+    if (mock) {
+      pkgsQ.refetch();
+      return;
+    }
+    setRefreshing(true);
+    try {
+      const res = await listVmPackages(vm.id, { refresh: true });
+      if (res.dispatched) {
+        toast.info(
+          "Запущен свежий сбор пакетов — список обновится через несколько секунд.",
+        );
+      }
+      pkgsQ.refetch();
+    } catch (e) {
+      toast.error(pkgRefreshErrorMsg(e));
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  const busy = pkgsQ.loading || refreshing;
 
   return (
     <div className="card">
@@ -3355,18 +3399,18 @@ function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
         </h3>
         <button
           className="btn btn-sm flex items-center gap-1"
-          onClick={() => pkgsQ.refetch()}
-          disabled={pkgsQ.loading}
-          title="Обновить список пакетов"
+          onClick={refresh}
+          disabled={busy}
+          title="Поставить свежий probe и обновить список"
         >
-          <RefreshCw
-            className={`w-3.5 h-3.5 ${pkgsQ.loading ? "animate-spin" : ""}`}
-          />
+          <RefreshCw className={`w-3.5 h-3.5 ${busy ? "animate-spin" : ""}`} />
           Обновить
         </button>
       </div>
       <div className="text-xs text-dim mb-3">
-        Установленные в госте пакеты (`dpkg-query` / `rpm -qa`), последний срез.
+        Установленные в госте пакеты (`dpkg -l` / `rpm -qa`), последний снятый
+        воркером срез
+        {syncedAt ? ` (синк ${formatSnapDate(syncedAt)})` : ""}.
       </div>
 
       {pkgsQ.loading ? (
@@ -3393,19 +3437,17 @@ function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
               <tr className="text-[11px] uppercase text-dim border-b border-token">
                 <th className="text-left px-3 py-2 font-medium">Название</th>
                 <th className="text-left px-3 py-2 font-medium">Версия</th>
-                <th className="text-left px-3 py-2 font-medium">Архитектура</th>
               </tr>
             </thead>
             <tbody>
               {packages.map((p) => (
                 <tr
-                  key={`${p.name}-${p.version}-${p.arch ?? ""}`}
+                  key={`${p.name}-${p.version ?? ""}`}
                   className="border-b border-token last:border-b-0"
                 >
                   <td className="px-3 py-1.5 mono text-xs">{p.name}</td>
-                  <td className="px-3 py-1.5 mono text-xs">{p.version}</td>
-                  <td className="px-3 py-1.5 mono text-xs text-dim">
-                    {p.arch ?? "—"}
+                  <td className="px-3 py-1.5 mono text-xs">
+                    {p.version ?? "—"}
                   </td>
                 </tr>
               ))}

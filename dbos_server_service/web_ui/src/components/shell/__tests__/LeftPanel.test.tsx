@@ -131,6 +131,34 @@ describe("LeftPanel — server-подменю", () => {
   });
 });
 
+describe("LeftPanel — имя текущего пользователя", () => {
+  it("показывает ФИО, когда оно есть", async () => {
+    renderPanel(
+      makePersona({
+        username: "ivanov",
+        last_name: "Иванов",
+        first_name: "Иван",
+        accessible_services: ["server"] as ServiceName[],
+        service_roles: { server: "reader" },
+      }),
+    );
+    await screen.findByText("ОС");
+    expect(screen.getByText("Иванов Иван")).toBeInTheDocument();
+  });
+
+  it("падает на username, когда ФИО нет", async () => {
+    renderPanel(
+      makePersona({
+        username: "ivanov",
+        accessible_services: ["server"] as ServiceName[],
+        service_roles: { server: "reader" },
+      }),
+    );
+    await screen.findByText("ОС");
+    expect(screen.getByText("ivanov")).toBeInTheDocument();
+  });
+});
+
 describe("LeftPanel — аудит-чип", () => {
   it("dep_admin без logging в accessible_services видит «Журнал аудита»", () => {
     renderPanel(

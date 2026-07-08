@@ -44,6 +44,7 @@ import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { listDepartments } from "@/api/auth/departments";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { useDeptLabel, useUserLabel, useLabelsInvalidate } from "@/lib/labels";
+import { formatFio } from "@/lib/fio";
 import { formatMskDate, formatMskShort } from "@/lib/datetime";
 import { apiErrMsg } from "@/api/client";
 import { useToast } from "@/contexts/ToastContext";
@@ -74,6 +75,8 @@ type RowKind = "ok" | "warn" | "danger";
 
 interface UserRow {
   name: string;
+  /** login/username — для перехода в карточку, поиска и подписи под ФИО. */
+  login?: string;
   role?: { label: string; kind?: "warn" | "accent" | "plain" };
   dept: string;
   lastSeen: string;
@@ -167,7 +170,8 @@ const GROUPS_MOCK: UserGroup[] = [
 function apiToRow(u: ApiUser): UserRow {
   const statusKind: RowKind = userStatusBadgeKind(u.status);
   return {
-    name: u.username,
+    name: formatFio(u),
+    login: u.username,
     role: u.platform_role
       ? {
           label: u.platform_role,
@@ -245,6 +249,9 @@ export function UsersAccountAdmin() {
       return {
         id: m.id,
         username: m.username,
+        last_name: null as string | null,
+        first_name: null as string | null,
+        middle_name: null as string | null,
         email: m.email ?? `${m.username}@dbos.local`,
         platform_role: (m.platform_role ?? null) as PlatformRole,
         dept_id: m.dept_id,
@@ -262,6 +269,9 @@ export function UsersAccountAdmin() {
     return {
       id: u.id,
       username: u.username,
+      last_name: u.last_name,
+      first_name: u.first_name,
+      middle_name: u.middle_name,
       email: u.email ?? "",
       platform_role: u.platform_role,
       dept_id: u.department_id,
@@ -342,7 +352,7 @@ export function UsersAccountAdmin() {
     }));
   }, [mockMode, apiDeptsQ.data]);
 
-  const tgtLabel = targetUser ? targetUser.username : "пользователь";
+  const tgtLabel = targetUser ? formatFio(targetUser) : "пользователь";
 
   async function handleResetPassword() {
     if (!targetUser) return;
@@ -515,13 +525,14 @@ export function UsersAccountAdmin() {
                 {g.rows.map((row) => {
                   // В live-режиме apiUsersQ уже знает реальные id; в mock-моде
                   // фолбэк на статический USERS для перехода в карточку.
+                  const rowKey = row.login ?? row.name;
                   const apiUser = !mockMode
                     ? (apiUsersQ.data?.items ?? []).find(
-                        (u) => u.username === row.name,
+                        (u) => u.username === rowKey,
                       )
                     : null;
                   const mockUser = mockMode
-                    ? USERS.find((u) => u.username === row.name)
+                    ? USERS.find((u) => u.username === rowKey)
                     : null;
                   const real = apiUser ?? mockUser;
                   const linkTo = real ? `/users/${real.id}` : `/users/${row.name}`;
@@ -553,6 +564,12 @@ export function UsersAccountAdmin() {
                             )}
                           </div>
                           <div className="text-[11px] text-dim flex items-center gap-2">
+                            {row.login && row.login !== row.name && (
+                              <>
+                                <span className="mono">{row.login}</span>
+                                <span>·</span>
+                              </>
+                            )}
                             <span>{row.dept}</span>
                             <span>·</span>
                             <span>{row.lastSeen}</span>
@@ -717,7 +734,7 @@ export function UsersAccountAdmin() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-semibold truncate">
-                {targetUser?.username ?? "—"}
+                {targetUser ? formatFio(targetUser) : "—"}
               </h1>
               {targetUser && (
                 <span className={`badge badge-${userStatusBadgeKind(targetUser.status)}`}>
@@ -729,6 +746,12 @@ export function UsersAccountAdmin() {
               )}
             </div>
             <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
+              {targetUser && (
+                <>
+                  <span className="mono">{targetUser.username}</span>
+                  <span>·</span>
+                </>
+              )}
               <span className="flex items-center gap-1">
                 <Mail className="w-3 h-3" />{" "}
                 {targetUser?.email || "—"}
@@ -820,6 +843,7 @@ export function UsersAccountAdmin() {
               {targetUser ? (
                 <div className="grid grid-cols-2 gap-x-6 text-sm">
                   <div>
+                    <StatRow k="ФИО" v={<span>{formatFio(targetUser, { empty: "— не задано" })}</span>} />
                     <StatRow k="username" v={<span className="mono">{targetUser.username}</span>} />
                     <StatRow k="email" v={<span className="mono">{targetUser.email || "—"}</span>} />
                     <StatRow k="ID" v={<span className="mono">{targetUser.id}</span>} />
@@ -1180,6 +1204,9 @@ export function UsersAccountAdmin() {
               username: targetUser.username,
               platform_role: targetUser.platform_role,
               dept_id: targetUser.dept_id,
+              last_name: targetUser.last_name,
+              first_name: targetUser.first_name,
+              middle_name: targetUser.middle_name,
             }}
             depts={deptsLite}
             mockMode={mockMode}

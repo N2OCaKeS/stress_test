@@ -81,6 +81,11 @@ export interface IdentityContext {
   user_id?: string | null;
   username?: string | null;
   display_name?: string | null;
+  // ФИО: любое поле может быть null. UI собирает из них отображаемое имя
+  // (см. `@/lib/fio`), фолбэк — username.
+  last_name?: string | null;
+  first_name?: string | null;
+  middle_name?: string | null;
   email?: string | null;
   department_id?: string | null;
   department_name?: string | null;
@@ -148,6 +153,11 @@ export type MeResponse = IdentityContext;
 export interface User {
   id: string;
   username: string;
+  // ФИО пользователя. Любое поле может быть null; UI показывает собранное
+  // «Фамилия Имя Отчество» (см. `@/lib/fio`), с фолбэком на username.
+  last_name: string | null;
+  first_name: string | null;
+  middle_name: string | null;
   email: string | null;
   department_id: string | null;
   department_name?: string | null;
@@ -163,6 +173,9 @@ export interface User {
 export interface UserCreateRequest {
   username: string;
   password: string;
+  last_name?: string | null;
+  first_name?: string | null;
+  middle_name?: string | null;
   email?: string;
   department_id?: string | null;
   platform_role?: PlatformRole;
@@ -177,6 +190,9 @@ export interface UserCreateRequest {
 }
 
 export interface UserPatchRequest {
+  last_name?: string | null;
+  first_name?: string | null;
+  middle_name?: string | null;
   email?: string;
   department_id?: string | null;
   status?: UserStatus;

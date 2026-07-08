@@ -9,6 +9,7 @@
 
 import type {
   Vm,
+  VmAccount,
   VmConsoleKind,
   VmConsoleResponse,
   VmDisk,
@@ -16,6 +17,7 @@ import type {
   VmImage,
   VmIpPool,
   VmPackage,
+  VmPackagesResponse,
   VmPreset,
   VmSnapshot,
 } from "@/api/server/vms";
@@ -654,79 +656,86 @@ export const MOCK_VM_PRESETS: VmPreset[] = [
 ];
 
 /**
- * Данные консоли ВМ для mock-режима (`POST /vms/{id}/console`). VNC отдаёт
- * поднятый прокси (для демонстрации панели-вьювера), SPICE — тоже поднятый
- * прокси (другой протокол/порт), serial — ещё не поднятый (пометка про
- * инфраструктурное развёртывание).
+ * Данные консоли ВМ для mock-режима (`POST /vms/{id}/console`). vnc/spice
+ * отдают поднятый прокси (`ws_url` + токен, для демонстрации кнопки открытия
+ * вьювера), ssh — данные подключения, serial — host hub'а и путь устройства.
  */
 export function mockVmConsole(vm: Vm, kind: VmConsoleKind): VmConsoleResponse {
-  const host = vm.ip_address ?? "10.177.103.51";
-  const user = vm.mgmt_user ?? "u";
+  const guest = vm.ip_address ?? "10.177.103.51";
+  const hub = "10.177.103.207";
+  const wsPath = `/vm-console/${kind}/${vm.id}`;
+  const base = {
+    vm_id: vm.id,
+    kind,
+    token: `mock-${kind}-token-9f3a`,
+    expires_in: 300,
+    ws_path: wsPath,
+  };
   if (kind === "ssh") {
-    return {
-      kind: "ssh",
-      host,
-      port: 22,
-      username: user,
-      password: null,
-      command: `ssh ${user}@${host}`,
-    };
+    return { ...base, host: guest, port: 22, username: vm.mgmt_user ?? "u" };
   }
-  if (kind === "vnc") {
-    return {
-      kind: "vnc",
-      ws_url: `wss://vms-console.local/vms/${vm.id}/vnc`,
-      host,
-      port: 5901,
-      password: "mock-otp-9f3a",
-      proxy_ready: true,
-    };
+  if (kind === "serial") {
+    return { ...base, host: hub, serial_path: "/dev/pts/3" };
   }
-  if (kind === "spice") {
-    return {
-      kind: "spice",
-      ws_url: `wss://vms-console.local/vms/${vm.id}/spice`,
-      host,
-      port: 5900,
-      password: "mock-spice-7c1b",
-      proxy_ready: true,
-    };
-  }
+  // vnc | spice — графическая консоль через прокси.
   return {
-    kind: "serial",
-    ws_url: null,
-    command: `virsh console ${vm.name}`,
-    proxy_ready: false,
+    ...base,
+    host: hub,
+    port: kind === "vnc" ? 5901 : 5900,
+    ws_url: `wss://vms-console.local${wsPath}`,
   };
 }
 
 /**
  * Учётки, привязанные к ВМ (`GET /vms/{id}/accounts`) — mock-фолбэк вкладки
- * «Аккаунты» карточки ВМ. Берём учётки отдела ВМ (в проде это те, что worker
- * провижнит OS-юзерами в госте).
+ * «Аккаунты» карточки ВМ. Берём учётки отдела ВМ и приводим к форме
+ * `VmAccount` (в проде это те, что worker провижнит OS-юзерами в госте).
  */
-export function mockVmAccounts(vm: Vm): ServerAccount[] {
-  return MOCK_VM_ACCOUNTS.filter((a) => a.department_id === vm.department_id);
+export function mockVmAccounts(vm: Vm): VmAccount[] {
+  return MOCK_VM_ACCOUNTS.filter((a) => a.department_id === vm.department_id).map(
+    (a): VmAccount => ({
+      account_id: a.id,
+      login: a.login,
+      has_sudo: a.has_sudo,
+      unix_groups: a.unix_groups,
+      ssh_public_key: null,
+      present_on_vm: a.is_active,
+    }),
+  );
 }
 
 /**
  * Пакеты гостя ВМ (`GET /vms/{id}/packages`), keyed по `vm.id` — mock-фолбэк
  * вкладки «Пакеты» карточки ВМ.
  */
-export const MOCK_VM_PACKAGES: Record<string, VmPackage[]> = {
+const MOCK_VM_PACKAGE_LISTS: Record<string, VmPackage[]> = {
   "vm-101": [
-    { name: "astra-version", version: "1.8.1.6", arch: "all" },
-    { name: "linux-image-6.1.0", version: "6.1.90-1", arch: "amd64" },
-    { name: "openssh-server", version: "1:9.2p1-2", arch: "amd64" },
-    { name: "allta-agent", version: "2.4.1", arch: "amd64" },
+    { name: "astra-version", version: "1.8.1.6" },
+    { name: "linux-image-6.1.0", version: "6.1.90-1" },
+    { name: "openssh-server", version: "1:9.2p1-2" },
+    { name: "allta-agent", version: "2.4.1" },
   ],
   "vm-102": [
-    { name: "astra-version", version: "1.7.5.9", arch: "all" },
-    { name: "linux-image-5.15.0", version: "5.15.120-1", arch: "amd64" },
-    { name: "openssh-server", version: "1:8.4p1-5", arch: "amd64" },
+    { name: "astra-version", version: "1.7.5.9" },
+    { name: "linux-image-5.15.0", version: "5.15.120-1" },
+    { name: "openssh-server", version: "1:8.4p1-5" },
   ],
   "vm-201": [
-    { name: "astra-version", version: "1.8.1.6", arch: "all" },
-    { name: "xfsprogs", version: "6.1.0-1", arch: "amd64" },
+    { name: "astra-version", version: "1.8.1.6" },
+    { name: "xfsprogs", version: "6.1.0-1" },
   ],
 };
+
+/** Ответ `GET /vms/{id}/packages` для mock-режима вкладки «Пакеты». */
+export function mockVmPackages(vm: Vm): VmPackagesResponse {
+  const packages = MOCK_VM_PACKAGE_LISTS[vm.id] ?? [];
+  return {
+    vm_id: vm.id,
+    packages,
+    package_count: packages.length,
+    source: "dpkg",
+    synced_at: NOW,
+    dispatched: false,
+    task_id: null,
+  };
+}

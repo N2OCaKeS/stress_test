@@ -18,6 +18,7 @@ import {
 import { usePersona } from "@/contexts/PersonaContext";
 import { ThemeSwitcher } from "@/components/shell/ThemeSwitcher";
 import { useDeptLabel } from "@/lib/labels";
+import { formatFio } from "@/lib/fio";
 import type { Persona } from "@/types/persona";
 
 const SERVICE_CHIPS: Record<
@@ -51,6 +52,8 @@ function PersonaTile({
     : null;
   const serviceRoleEntries = Object.entries(persona.service_roles);
   const deptLabel = useDeptLabel(persona.dept_id);
+  const displayName = formatFio(persona);
+  const hasRealFio = displayName !== persona.username;
 
   return (
     <button
@@ -61,7 +64,10 @@ function PersonaTile({
       <div className="flex items-start gap-4">
         <div className="persona-avatar">{persona.initials}</div>
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-lg">{persona.username}</div>
+          <div className="font-semibold text-lg">{displayName}</div>
+          {hasRealFio && (
+            <div className="text-xs text-dim mono">{persona.username}</div>
+          )}
           <div className="text-xs text-dim mono">{persona.email}</div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {persona.platform_role && RoleIcon && (

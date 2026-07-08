@@ -68,7 +68,6 @@ import type {
   OffsetPaginatedResponse,
   ReasonBody,
   Server,
-  ServerAccount,
   TaskDispatchResponse,
 } from "@/api/server/types";
 
@@ -574,64 +573,52 @@ export interface VmConsoleRequest {
   kind: VmConsoleKind;
 }
 
-/** SSH-доступ: готовая команда и параметры подключения. */
-export interface VmConsoleSshResponse {
-  kind: "ssh";
-  host: string;
-  port: number;
-  username: string;
-  /** Пароль учётки; null — доступ по ключу. */
+/**
+ * Ответ POST /vms/{id}/console — контракт подключения UI к консоли ВМ.
+ *
+ * Реальный проброс держит отдельный websockify/PTY-прокси: UI подключается к
+ * нему по `ws_url` (для vnc/spice), предъявляя `token` (живёт `expires_in`
+ * секунд). Для ssh/serial графического прокси нет — отдаются данные подключения
+ * (host/port/username для ssh, host/serial_path для serial). server_service
+ * токен не хранит: прокси валидирует его по общему секрету.
+ */
+export interface VmConsoleResponse {
+  vm_id: string;
+  kind: VmConsoleKind;
+  /** Токен доступа: ssh/serial — короткоживущий `vmc_`; vnc/spice — HMAC-подпись для прокси. */
+  token: string;
+  /** Сколько секунд токен действителен. */
+  expires_in: number;
+  /** ssh — IP гостя; vnc/spice/serial — IP hub'а (там прокси). null — неизвестен. */
+  host?: string | null;
+  /** Путь websocket-эндпоинта прокси для этой ВМ и вида консоли. */
+  ws_path: string;
+  /** Полный ws(s)-URL прокси (vnc/spice). null для ssh/serial. */
+  ws_url?: string | null;
+  /** Порт дисплея на hub'е (vnc/spice) либо SSH-порт (ssh). null для serial. */
+  port?: number | null;
+  /** Устройство serial-консоли в госте (serial), иначе null. */
+  serial_path?: string | null;
+  /** Управляющий пользователь для ssh. Пароль/ключ прокси тянет отдельно. */
+  username?: string | null;
+  /** Пароль графической консоли (vnc/spice), если ВМ его требует. Обычно null. */
   password?: string | null;
-  /** Готовая строка подключения (`ssh user@host`). */
-  command: string;
 }
 
 /**
- * VNC-консоль: ws(s)-эндпоинт прокси (websockify) для noVNC-вьювера. Если
- * прокси ещё не поднят инфраструктурно — `proxy_ready=false`, UI показывает
- * заглушку с адресом/портом.
+ * Прямая http(s)-ссылка на self-hosted вьювер прокси (noVNC/spice-html5) с
+ * предъявлением токена в query. Прокси по этому пути на GET отдаёт HTML-вьювер,
+ * на WS — сам поток. `ws://`→`http://`, `wss://`→`https://`. null, если у
+ * ответа нет `ws_url` (ssh/serial или прокси ещё не развёрнут).
  */
-export interface VmConsoleVncResponse {
-  kind: "vnc";
-  /** ws(s)-URL прокси. null — прокси не развёрнут. */
-  ws_url: string | null;
-  host: string;
-  port: number;
-  /** Одноразовый пароль VNC (если задан). */
-  password?: string | null;
-  proxy_ready: boolean;
+export function vmConsoleViewerUrl(
+  session: Pick<VmConsoleResponse, "ws_url" | "token">,
+): string | null {
+  if (!session.ws_url) return null;
+  const httpUrl = session.ws_url.replace(/^ws(s?):\/\//, "http$1://");
+  const sep = httpUrl.includes("?") ? "&" : "?";
+  return `${httpUrl}${sep}token=${encodeURIComponent(session.token)}`;
 }
-
-/** Serial-консоль: ws(s)-эндпоинт прокси и локальная команда `virsh console`. */
-export interface VmConsoleSerialResponse {
-  kind: "serial";
-  ws_url: string | null;
-  command: string;
-  proxy_ready: boolean;
-}
-
-/**
- * SPICE-консоль: ws(s)-эндпоинт прокси для SPICE-вьювера (аналог VNC, но по
- * протоколу SPICE). Домен ВМ должен быть создан с `graphics=spice`. Если прокси
- * ещё не поднят — `proxy_ready=false`, UI показывает адрес/порт с пометкой.
- */
-export interface VmConsoleSpiceResponse {
-  kind: "spice";
-  /** ws(s)-URL прокси. null — прокси не развёрнут. */
-  ws_url: string | null;
-  host: string;
-  port: number;
-  /** Одноразовый пароль SPICE (если задан). */
-  password?: string | null;
-  proxy_ready: boolean;
-}
-
-/** Ответ POST /vms/{id}/console (дискриминатор — `kind`). */
-export type VmConsoleResponse =
-  | VmConsoleSshResponse
-  | VmConsoleVncResponse
-  | VmConsoleSerialResponse
-  | VmConsoleSpiceResponse;
 
 // ── client ──────────────────────────────────────────────────────────────────
 
@@ -1064,8 +1051,8 @@ export function teardownVmsHub(
 
 /**
  * `POST /api/server/v1/vms/{id}/console` — получить данные для подключения к
- * консоли ВМ выбранного вида (ssh/vnc/serial). Для VNC/serial бэк возвращает
- * ws(s)-эндпоинт прокси (websockify); для SSH — команду и параметры.
+ * консоли ВМ выбранного вида (ssh/vnc/serial/spice). Для vnc/spice бэк
+ * возвращает ws(s)-URL прокси и токен; для ssh/serial — параметры подключения.
  */
 export function openVmConsole(
   vmId: string,
@@ -1076,40 +1063,69 @@ export function openVmConsole(
 
 // ── учётки ВМ ─────────────────────────────────────────────────────────────────
 
-/** Envelope GET /vms/{id}/accounts. */
-export interface VmAccountListResponse {
-  items: ServerAccount[];
+/**
+ * Учётка, привязанная к ВМ (`GET /vms/{id}/accounts`). Подмножество
+ * `server_account` без секретов; `present_on_vm` показывает дрейф (привязка
+ * есть, а в госте учётки нет).
+ */
+export interface VmAccount {
+  account_id: string;
+  login: string;
+  has_sudo: boolean;
+  unix_groups: string[];
+  /** Публичный SSH-ключ учётки (открытый). null, если не задан. */
+  ssh_public_key?: string | null;
+  /** Реально ли учётка заведена в госте (false — дрейф). */
+  present_on_vm: boolean;
 }
 
 /**
- * `GET /api/server/v1/vms/{id}/accounts` — учётки (`server_account`),
- * привязанные к ВМ (worker провижнит их OS-юзерами в госте). Форма учётки — та
- * же `ServerAccount`, что и у сервера. Контракт согласован, но backend домена
- * `vm` его ещё не отдаёт — в mock-режиме страница берёт данные из `@/mocks/vm`.
+ * `GET /api/server/v1/vms/{id}/accounts` — учётки, привязанные к ВМ (worker
+ * провижнит их OS-юзерами в госте). Backend отдаёт голый массив без envelope.
  */
-export function listVmAccounts(vmId: string): Promise<VmAccountListResponse> {
-  return apiGet<VmAccountListResponse>(`/server/v1/vms/${vmId}/accounts`);
+export function listVmAccounts(vmId: string): Promise<VmAccount[]> {
+  return apiGet<VmAccount[]>(`/server/v1/vms/${vmId}/accounts`);
 }
 
 // ── пакеты гостя ВМ ──────────────────────────────────────────────────────────
 
-/** Установленный пакет в госте ВМ (`dpkg-query` / `rpm -qa`). */
+/** Установленный пакет в госте ВМ (`dpkg -l` / `rpm -qa`). */
 export interface VmPackage {
   name: string;
-  version: string;
-  arch?: string | null;
+  version: string | null;
 }
 
-/** Envelope GET /vms/{id}/packages. */
-export interface VmPackageListResponse {
-  items: VmPackage[];
+/**
+ * Ответ `GET /vms/{id}/packages` — сохранённый инвентарь + флаг диспатча.
+ * По умолчанию отдаёт последний снятый воркером срез; при `?refresh=true`
+ * дополнительно диспатчит свежий probe (`dispatched=true`, `task_id`), а
+ * `packages`/`synced_at` пока несут прежний список — он обновится по callback'у.
+ */
+export interface VmPackagesResponse {
+  vm_id: string;
+  packages: VmPackage[];
+  package_count: number;
+  /** Откуда снят список (`dpkg`/`rpm`) или null. */
+  source?: string | null;
+  /** Когда список последний раз синкнут воркером (UTC ISO). null — probe не было. */
+  synced_at?: string | null;
+  /** Был ли по этому запросу поставлен свежий probe `vm.list_packages`. */
+  dispatched: boolean;
+  /** ID задачи `vm.list_packages`, если `dispatched=true`. */
+  task_id?: string | null;
 }
 
 /**
  * `GET /api/server/v1/vms/{id}/packages` — установленные в госте пакеты
- * (последний снятый срез). Контракт согласован, но backend домена `vm` его ещё
- * не отдаёт — в mock-режиме данные берутся из `@/mocks/vm`.
+ * (последний снятый срез). `refresh=true` дополнительно ставит свежий probe
+ * `vm.list_packages`: ВМ обязана быть prepared, иметь IP гостя и живой hub,
+ * иначе 409 (VM_PREPARE_REQUIRED / VM_GUEST_IP_UNKNOWN / HUB_UNAVAILABLE).
  */
-export function listVmPackages(vmId: string): Promise<VmPackageListResponse> {
-  return apiGet<VmPackageListResponse>(`/server/v1/vms/${vmId}/packages`);
+export function listVmPackages(
+  vmId: string,
+  opts: { refresh?: boolean } = {},
+): Promise<VmPackagesResponse> {
+  const path = `/server/v1/vms/${vmId}/packages`;
+  if (!opts.refresh) return apiGet<VmPackagesResponse>(path);
+  return apiGet<VmPackagesResponse>(path, { query: { refresh: true } });
 }

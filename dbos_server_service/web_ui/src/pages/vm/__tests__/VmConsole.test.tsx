@@ -60,14 +60,16 @@ describe("ConsoleCard (VM console selector)", () => {
     );
   });
 
-  it("по умолчанию открывает SSH-данные подключения", () => {
+  it("по умолчанию открывает SSH-данные подключения (команда + токен)", () => {
     renderConsole();
     fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
-    // SSH-команда с mgmt-логином.
+    // SSH-команда с mgmt-логином и токен доступа.
     expect(screen.getByText(/ssh dbosmgr@10\.10\.0\.9/)).toBeInTheDocument();
+    expect(screen.getByText("Токен")).toBeInTheDocument();
   });
 
-  it("переключение на VNC меняет данные подключения на ws-прокси", () => {
+  it("VNC даёт кнопку открытия прокси-URL с token в query", () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     renderConsole();
     fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
     expect(screen.getByText(/ssh dbosmgr@/)).toBeInTheDocument();
@@ -76,22 +78,36 @@ describe("ConsoleCard (VM console selector)", () => {
     fireEvent.click(screen.getByRole("button", { name: "VNC" }));
     fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
     expect(screen.getByText(/Графическая консоль \(VNC\)/)).toBeInTheDocument();
-    expect(screen.getByText("Пароль VNC")).toBeInTheDocument();
     // SSH-команды на экране больше нет.
     expect(screen.queryByText(/ssh dbosmgr@/)).not.toBeInTheDocument();
+
+    // Кнопка «Открыть консоль VNC» ведёт на http(s)-форму прокси с token.
+    fireEvent.click(screen.getByRole("button", { name: /Открыть консоль VNC/ }));
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const url = openSpy.mock.calls[0][0] as string;
+    expect(url).toContain("/vm-console/vnc/vm-console");
+    expect(url).toMatch(/^https:\/\//);
+    expect(url).toContain("token=mock-vnc-token-9f3a");
+    openSpy.mockRestore();
   });
 
-  it("SPICE показывает графический прокси-эндпоинт", () => {
+  it("SPICE показывает графический прокси и кнопку открытия", () => {
     renderConsole();
     fireEvent.click(screen.getByRole("button", { name: "SPICE" }));
     fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
     expect(screen.getByText(/Графическая консоль \(SPICE\)/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Открыть консоль SPICE/ }),
+    ).toBeInTheDocument();
   });
 
-  it("Serial показывает локальную команду virsh console", () => {
+  it("Serial показывает данные serial-консоли (host hub + токен)", () => {
     renderConsole();
     fireEvent.click(screen.getByRole("button", { name: "Serial" }));
     fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
-    expect(screen.getByText(/virsh console console-vm/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Последовательная консоль \(serial\)/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("host (hub)")).toBeInTheDocument();
   });
 });

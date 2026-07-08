@@ -1,14 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import type { UserLabel } from "@/api/auth/users";
 
 // USE_MOCK_AUTH читается на этапе импорта модулей; для реального резолва имени
 // гасим мок-режим и подменяем батч-endpoint лейблов перед динамическим
 // импортом. Каждый кейс — свежий модульный реестр (resetModules).
-const getUserLabelsMock = vi.fn(async (_ids: string[]) => ({}) as Record<string, string>);
+const getUserLabelsMock = vi.fn(
+  async (_ids: string[]) => ({}) as Record<string, UserLabel>,
+);
 
 vi.mock("@/api/auth/users", () => ({
   getUserLabels: (ids: string[]) => getUserLabelsMock(ids),
 }));
+
+// `/users/labels` теперь отдаёт карточку с ФИО/display_name/username вместо
+// голого username — UI собирает отображаемое имя через formatFio.
+function mkLabel(overrides: Partial<UserLabel> & { username: string }): UserLabel {
+  return {
+    user_id: `usr_${overrides.username}`,
+    display_name: null,
+    last_name: null,
+    first_name: null,
+    middle_name: null,
+    ...overrides,
+  };
+}
 
 describe("useUserLabel через /users/labels", () => {
   beforeEach(() => {
@@ -22,8 +38,10 @@ describe("useUserLabel через /users/labels", () => {
     vi.restoreAllMocks();
   });
 
-  it("резолвит username батч-endpoint'ом и показывает имя", async () => {
-    getUserLabelsMock.mockResolvedValue({ usr_a: "alice" });
+  it("резолвит ФИО батч-endpoint'ом и показывает его вместо username", async () => {
+    getUserLabelsMock.mockResolvedValue({
+      usr_a: mkLabel({ username: "alice", last_name: "Иванова", first_name: "Алиса" }),
+    });
     const { useUserLabel } = await import("@/lib/labels");
 
     function Probe() {
@@ -31,8 +49,28 @@ describe("useUserLabel через /users/labels", () => {
     }
     render(<Probe />);
 
-    await waitFor(() => expect(screen.getByText("alice")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("Иванова Алиса")).toBeInTheDocument(),
+    );
     expect(getUserLabelsMock).toHaveBeenCalledWith(["usr_a"]);
+    // username не показывается, когда есть ФИО.
+    expect(screen.queryByText("alice")).not.toBeInTheDocument();
+  });
+
+  it("без ФИО падает на display_name, затем на username", async () => {
+    getUserLabelsMock.mockResolvedValue({
+      usr_dn: mkLabel({ username: "carol", display_name: "Кэрол Д." }),
+    });
+    const { useUserLabel } = await import("@/lib/labels");
+
+    function Probe() {
+      return <span>{useUserLabel("usr_dn")}</span>;
+    }
+    render(<Probe />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Кэрол Д.")).toBeInTheDocument(),
+    );
   });
 
   it("фоллбэк на id, если имя не нашлось", async () => {
@@ -49,9 +87,13 @@ describe("useUserLabel через /users/labels", () => {
     );
   });
 
-  it("баннер занятости показывает имя держателя брони, а не id", async () => {
+  it("баннер занятости показывает ФИО держателя брони, а не id", async () => {
     getUserLabelsMock.mockResolvedValue({
-      usr_0f8e73b1: "ivan.petrov",
+      usr_0f8e73b1: mkLabel({
+        username: "ivan.petrov",
+        last_name: "Петров",
+        first_name: "Иван",
+      }),
     });
     const { useUserLabel } = await import("@/lib/labels");
 
@@ -68,7 +110,7 @@ describe("useUserLabel через /users/labels", () => {
     render(<BusyBanner id="usr_0f8e73b1" />);
 
     await waitFor(() =>
-      expect(screen.getByText("ivan.petrov")).toBeInTheDocument(),
+      expect(screen.getByText("Петров Иван")).toBeInTheDocument(),
     );
     expect(screen.queryByText("usr_0f8e73b1")).not.toBeInTheDocument();
   });
@@ -86,8 +128,11 @@ describe("useUserLabels (батч)", () => {
     vi.restoreAllMocks();
   });
 
-  it("резолвит набор id одним запросом и отдаёт имена", async () => {
-    getUserLabelsMock.mockResolvedValue({ usr_x: "alice", usr_y: "bob" });
+  it("резолвит набор id одним запросом и отдаёт ФИО", async () => {
+    getUserLabelsMock.mockResolvedValue({
+      usr_x: mkLabel({ username: "alice", last_name: "Иванова", first_name: "Алиса" }),
+      usr_y: mkLabel({ username: "bob", last_name: "Петров", first_name: "Борис" }),
+    });
     const { useUserLabels } = await import("@/lib/labels");
 
     function List() {
@@ -102,8 +147,10 @@ describe("useUserLabels (батч)", () => {
     }
     render(<List />);
 
-    await waitFor(() => expect(screen.getByText("alice")).toBeInTheDocument());
-    expect(screen.getByText("bob")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText("Иванова Алиса")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Петров Борис")).toBeInTheDocument();
     expect(screen.getByText("—")).toBeInTheDocument();
 
     // Один сетевой вызов на всю выборку; null/пустые в запрос не уходят.
@@ -112,7 +159,9 @@ describe("useUserLabels (батч)", () => {
   });
 
   it("фоллбэк на id для непришедших имён", async () => {
-    getUserLabelsMock.mockResolvedValue({ usr_known: "carol" });
+    getUserLabelsMock.mockResolvedValue({
+      usr_known: mkLabel({ username: "carol", last_name: "Сидорова" }),
+    });
     const { useUserLabels } = await import("@/lib/labels");
 
     function List() {
@@ -126,7 +175,9 @@ describe("useUserLabels (батч)", () => {
     }
     render(<List />);
 
-    await waitFor(() => expect(screen.getByText("carol")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("Сидорова")).toBeInTheDocument(),
+    );
     expect(screen.getByText("usr_gone")).toBeInTheDocument();
   });
 });

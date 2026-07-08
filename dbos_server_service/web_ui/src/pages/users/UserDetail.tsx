@@ -67,6 +67,7 @@ import { listServiceRoles } from "@/api/auth/service_roles";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { useDeptLabel, useLabelMaps, useServiceLabel } from "@/lib/labels";
+import { formatFio } from "@/lib/fio";
 import { formatMsk, formatMskDate, formatMskShort } from "@/lib/datetime";
 import type {
   Group as ApiGroup,
@@ -151,6 +152,9 @@ export function UserDetail() {
       return {
         id: u.id,
         username: u.username,
+        last_name: u.last_name,
+        first_name: u.first_name,
+        middle_name: u.middle_name,
         email: u.email ?? "",
         dept_id: u.department_id,
         platform_role: u.platform_role ?? null,
@@ -285,7 +289,7 @@ export function UserDetail() {
     : null;
   const assignments = mockMode ? USER_ASSIGNMENTS[user.id] : undefined;
   const groups = mockMode
-    ? ((user.groups ?? assignments?.groups ?? []).map((gid) =>
+    ? (((user as { groups?: string[] }).groups ?? assignments?.groups ?? []).map((gid) =>
         GROUPS.find((g) => g.id === gid),
       ).filter(Boolean) as typeof GROUPS)
     : [];
@@ -316,7 +320,7 @@ export function UserDetail() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-semibold truncate">{user.username}</h1>
+              <h1 className="text-xl font-semibold truncate">{formatFio(user)}</h1>
               <span className={`badge badge-${userStatusBadgeKind(user.status)}`}>
                 {user.status}
               </span>
@@ -325,6 +329,8 @@ export function UserDetail() {
               )}
             </div>
             <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
+              <span className="mono">{user.username}</span>
+              <span>·</span>
               <span className="flex items-center gap-1">
                 <Mail className="w-3 h-3" /> {user.email}
               </span>
@@ -480,6 +486,7 @@ export function UserDetail() {
           <Section icon={<UserIcon className="w-4 h-4" />} title="Идентификация" className="col-span-2">
             <div className="grid grid-cols-2 gap-x-6 text-sm">
               <div>
+                <StatRow k="ФИО" v={<span>{formatFio(user, { empty: "— не задано" })}</span>} />
                 <StatRow k="login" v={<span className="mono">{user.username}</span>} />
                 <StatRow k="email" v={<span className="mono">{user.email}</span>} />
                 <StatRow k="ID" v={<span className="mono">{user.id}</span>} />

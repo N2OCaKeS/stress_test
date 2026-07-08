@@ -26,15 +26,33 @@ describe("getUserLabels", () => {
 
   it("шлёт ids как csv-query и возвращает только labels", async () => {
     const seen: string[] = [];
+    const labels = {
+      usr_a: {
+        user_id: "usr_a",
+        username: "alice",
+        display_name: null,
+        last_name: "Иванова",
+        first_name: "Алиса",
+        middle_name: null,
+      },
+      usr_b: {
+        user_id: "usr_b",
+        username: "bob",
+        display_name: "Боб",
+        last_name: null,
+        first_name: null,
+        middle_name: null,
+      },
+    };
     const fetchMock = vi.fn(async (url: string) => {
       seen.push(url);
-      return jsonResponse(200, { labels: { usr_a: "alice", usr_b: "bob" } });
+      return jsonResponse(200, { labels });
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const res = await getUserLabels(["usr_a", "usr_b"]);
 
-    expect(res).toEqual({ usr_a: "alice", usr_b: "bob" });
+    expect(res).toEqual(labels);
     expect(seen).toHaveLength(1);
     expect(seen[0]).toContain("/auth/v1/users/labels");
     // csv-кодирование запятой не должно ломать резолв

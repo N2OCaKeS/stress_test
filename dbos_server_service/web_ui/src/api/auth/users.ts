@@ -187,16 +187,32 @@ export async function getUser(userId: string): Promise<User> {
 }
 
 /**
- * Батч-резолв `usr_*` → username для любого аутентифицированного юзера (не
- * только админов): в отличие от `getUser`/`/users/{id}`, этот endpoint не
- * гейтится правами. Возвращаются только найденные id; отсутствующие молча
- * пропускаются. Лимит — 200 id за запрос. Пустой список не дёргает сеть.
+ * Человекочитаемая карточка пользователя из батч-эндпоинта `/users/labels`:
+ * username плюс поля ФИО и `display_name` (каждое — null, если не задано).
+ * Отображаемое имя UI собирает через `formatFio` (ФИО → display_name →
+ * username).
+ */
+export interface UserLabel {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+  last_name: string | null;
+  first_name: string | null;
+  middle_name: string | null;
+}
+
+/**
+ * Батч-резолв `usr_*` → карточка имени (ФИО/username) для любого
+ * аутентифицированного юзера (не только админов): в отличие от
+ * `getUser`/`/users/{id}`, этот endpoint не гейтится правами. Возвращаются
+ * только найденные id; отсутствующие молча пропускаются. Лимит — 200 id за
+ * запрос. Пустой список не дёргает сеть.
  */
 export async function getUserLabels(
   ids: string[],
-): Promise<Record<string, string>> {
+): Promise<Record<string, UserLabel>> {
   if (ids.length === 0) return {};
-  const res = await apiGet<{ labels: Record<string, string> }>(
+  const res = await apiGet<{ labels: Record<string, UserLabel> }>(
     "/auth/v1/users/labels",
     { query: { ids: ids.join(",") } },
   );

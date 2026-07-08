@@ -34,6 +34,7 @@ import {
 } from "@/lib/rbac";
 import type { ServiceName } from "@/types/persona";
 import { useDeptLabelOpt } from "@/lib/labels";
+import { formatFio } from "@/lib/fio";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { AdminOnlyPanel } from "./AdminOnlyPanel";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
@@ -217,6 +218,10 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
 
   const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
 
+  // Показываем ФИО, если оно есть; login остаётся в подписи-tooltip.
+  const displayName = formatFio(persona);
+  const hasRealFio = displayName !== persona.username;
+
   return (
     <aside
       className="flex flex-col h-full overflow-hidden shrink-0 border-r border-token surface"
@@ -324,7 +329,13 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
         <div className="p-2 border-t border-token flex flex-col gap-2">
           <Link
             to="/me"
-            title={collapsed ? `${persona.username} — личный кабинет` : "Личный кабинет"}
+            title={
+              collapsed
+                ? `${displayName} (${persona.username}) — личный кабинет`
+                : hasRealFio
+                  ? persona.username
+                  : "Личный кабинет"
+            }
             className={`surface-2 border border-token rounded px-2 py-1.5 flex items-center gap-2 text-sm hover-bg transition-colors ${
               isActive("/me") ? "active" : ""
             } ${collapsed ? "justify-center" : ""}`}
@@ -335,7 +346,7 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
             {!collapsed && (
               <>
                 <div className="min-w-0 flex-1">
-                  <div className="leading-tight truncate">{persona.username}</div>
+                  <div className="leading-tight truncate">{displayName}</div>
                   <div className="text-[10px] text-dim leading-tight truncate" title={roleLine}>
                     {roleLine}
                   </div>

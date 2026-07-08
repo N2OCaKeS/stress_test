@@ -92,6 +92,9 @@ export function CreateUserForm({
   onCancel: () => void;
 }) {
   const [username, setUsername] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [middleName, setMiddleName] = useState("");
   const [password, setPassword] = useState(() => generateInitialPassword());
   const [email, setEmail] = useState("");
   const [dept, setDept] = useState("");
@@ -161,6 +164,9 @@ export function CreateUserForm({
       await createUser({
         username,
         password,
+        last_name: lastName.trim() || null,
+        first_name: firstName.trim() || null,
+        middle_name: middleName.trim() || null,
         email: email || undefined,
         department_id: dept || null,
         platform_role: (platformRole || null) as PlatformRole,
@@ -189,6 +195,33 @@ export function CreateUserForm({
             <div className="text-[11px] text-danger mt-1">{usernameError}</div>
           )}
         </div>
+      </Field>
+      <Field label="Фамилия">
+        <input
+          className="input w-full"
+          value={lastName}
+          onChange={(e) => setLastName(e.target.value)}
+          maxLength={128}
+          placeholder="Иванов"
+        />
+      </Field>
+      <Field label="Имя">
+        <input
+          className="input w-full"
+          value={firstName}
+          onChange={(e) => setFirstName(e.target.value)}
+          maxLength={128}
+          placeholder="Иван"
+        />
+      </Field>
+      <Field label="Отчество">
+        <input
+          className="input w-full"
+          value={middleName}
+          onChange={(e) => setMiddleName(e.target.value)}
+          maxLength={128}
+          placeholder="Иванович"
+        />
       </Field>
       <Field label={`начальный пароль (сгенерирован) · ${PASSWORD_POLICY_MESSAGE}`}>
         <div className="flex gap-2 items-center">
@@ -316,7 +349,15 @@ export function EditRolesForm({
   onSuccess,
   onCancel,
 }: {
-  user: { id: string; username: string; platform_role: PlatformRole; dept_id: string | null };
+  user: {
+    id: string;
+    username: string;
+    platform_role: PlatformRole;
+    dept_id: string | null;
+    last_name?: string | null;
+    first_name?: string | null;
+    middle_name?: string | null;
+  };
   depts: DeptLite[];
   mockMode: boolean;
   onSuccess: () => void;
@@ -324,6 +365,9 @@ export function EditRolesForm({
 }) {
   const [platformRole, setPlatformRole] = useState<string>(user.platform_role ?? "");
   const [dept, setDept] = useState<string>(user.dept_id ?? "");
+  const [lastName, setLastName] = useState<string>(user.last_name ?? "");
+  const [firstName, setFirstName] = useState<string>(user.first_name ?? "");
+  const [middleName, setMiddleName] = useState<string>(user.middle_name ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -338,11 +382,21 @@ export function EditRolesForm({
       const body: {
         platform_role?: PlatformRole;
         department_id?: string | null;
+        last_name?: string | null;
+        first_name?: string | null;
+        middle_name?: string | null;
       } = {};
       const nextRole = (platformRole || null) as PlatformRole;
       if (nextRole !== (user.platform_role ?? null)) body.platform_role = nextRole;
       const nextDept = dept || null;
       if (nextDept !== (user.dept_id ?? null)) body.department_id = nextDept;
+      // ФИО: пустое поле шлём как null (явная очистка), непустое — trim.
+      const nextLast = lastName.trim() || null;
+      if (nextLast !== (user.last_name ?? null)) body.last_name = nextLast;
+      const nextFirst = firstName.trim() || null;
+      if (nextFirst !== (user.first_name ?? null)) body.first_name = nextFirst;
+      const nextMiddle = middleName.trim() || null;
+      if (nextMiddle !== (user.middle_name ?? null)) body.middle_name = nextMiddle;
       if (Object.keys(body).length > 0) {
         await updateUser(user.id, body);
       }
@@ -360,6 +414,33 @@ export function EditRolesForm({
         <UserCog className="w-3 h-3" /> {user.username}
         <span className="mono">{user.id}</span>
       </div>
+      <Field label="Фамилия">
+        <input
+          className="input"
+          value={lastName}
+          onChange={(e) => setLastName(e.target.value)}
+          maxLength={128}
+          placeholder="Иванов"
+        />
+      </Field>
+      <Field label="Имя">
+        <input
+          className="input"
+          value={firstName}
+          onChange={(e) => setFirstName(e.target.value)}
+          maxLength={128}
+          placeholder="Иван"
+        />
+      </Field>
+      <Field label="Отчество">
+        <input
+          className="input"
+          value={middleName}
+          onChange={(e) => setMiddleName(e.target.value)}
+          maxLength={128}
+          placeholder="Иванович"
+        />
+      </Field>
       <Field label="platform_role">
         <select
           className="input"

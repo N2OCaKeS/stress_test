@@ -27,8 +27,15 @@ vi.mock("@/api/server/vms", async (importOriginal) => {
     vmPower: vi.fn(() => Promise.resolve({ task_id: "t1", status: "queued" })),
     listVmDisks: vi.fn(() => Promise.resolve({ items: [] })),
     listVmSnapshots: vi.fn(() => Promise.resolve({ items: [] })),
-    listVmAccounts: vi.fn(() => Promise.resolve({ items: [] })),
-    listVmPackages: vi.fn(() => Promise.resolve({ items: [] })),
+    listVmAccounts: vi.fn(() => Promise.resolve([])),
+    listVmPackages: vi.fn(() =>
+      Promise.resolve({
+        vm_id: "vm-x1",
+        packages: [],
+        package_count: 0,
+        dispatched: false,
+      }),
+    ),
   };
 });
 

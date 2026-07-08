@@ -42,6 +42,11 @@ export interface Persona {
   email: string;
   initials: string;
   display_name: string;
+  /** ФИО текущего пользователя (из identity). Любое поле может быть пустым —
+   *  UI собирает отображаемое имя через `@/lib/fio` с фолбэком на username. */
+  last_name?: string | null;
+  first_name?: string | null;
+  middle_name?: string | null;
   /** Synthetic dept id; null = platform-wide (no dept scope). */
   dept_id: DeptId | null;
   platform_role: PlatformRole;

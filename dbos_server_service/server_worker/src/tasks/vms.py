@@ -234,6 +234,18 @@ async def _setup_bridge(ssh, host: str, phy_if: str, os_family: str) -> None:
             "",
         ]
         content = "\n".join(lines)
+        # Основной /etc/network/interfaces обычно держит `iface <phy_if> inet
+        # static` с адресом — она конфликтует с br0 (bridge_ports забирает тот же
+        # NIC) и мост не встаёт после reboot. Сворачиваем основной файл до
+        # `source .d/* + lo` (с бэкапом рядом, идемпотентно), чтобы адресацию нёс
+        # только drop-in моста.
+        await ssh.run(
+            "sh -c 'test -f /etc/network/interfaces.dbos-bak || "
+            "cp /etc/network/interfaces /etc/network/interfaces.dbos-bak; "
+            "printf \"source /etc/network/interfaces.d/*\\n"
+            "auto lo\\niface lo inet loopback\\n\" > /etc/network/interfaces'",
+            sudo=True,
+        )
         # Конфиг подаём на stdin (`tee`) — так multiline-содержимое не уходит в
         # shell-строку и не может её расклеить.
         rc, _out, stderr = await ssh.run(

@@ -35,6 +35,14 @@ class JiraError(RuntimeError):
     pass
 
 
+def _format_story_points(value: float | int) -> str:
+    """Оценка для estimation-эндпоинта. Jira с русской локалью ждёт запятую как
+    разделитель дробной части, иначе '0.5' отбивается как неверный номер."""
+    if float(value).is_integer():
+        return str(int(value))
+    return str(value).replace(".", ",")
+
+
 @dataclass(frozen=True)
 class JiraTaskSpec:
     summary: str
@@ -116,7 +124,7 @@ class JiraClient:
             self._request(
                 "PUT",
                 f"/rest/agile/1.0/issue/{issue_key}/estimation?boardId={self.board_id}",
-                json={"value": str(story_points)},
+                json={"value": _format_story_points(story_points)},
             )
         else:
             self._request("PUT", f"/rest/api/2/issue/{issue_key}", json={"fields": {JIRA_STORY_POINTS_FIELD: story_points}})
@@ -174,7 +182,9 @@ def testcase_cmd(
     dry_run: bool = False,
 ) -> int:
     epic_key = _normalize_epic_key(epic or click.prompt("Код эпика, можно только цифры после DEVQA-", type=str))
-    task_name = (name or click.prompt("Название задачи", type=str)).strip()
+    task_name = _normalize_task_name(
+        name or click.prompt("Название задачи (префикс «НТ. » и точка в конце добавятся сами)", type=str)
+    )
     if not task_name:
         ui.err("Название задачи не должно быть пустым.")
         return 1
@@ -319,6 +329,7 @@ def build_testcase_tasks(
     default_assignee: str | None = None,
 ) -> list[JiraTaskSpec]:
     all_summaries: list[tuple[str, float | int | None]] = [
+        (f"НТ. {task_name}. Проработка архитектуры.", 3),
         (f"НТ. {task_name}. Подготовка окружения.", None),
         (f"НТ. {task_name}. Нагрузочный скрипт.", None),
         (f"НТ. {task_name}. Обработка результатов.", None),
@@ -472,6 +483,19 @@ def _credential_from_allta_token(token_key: str) -> str:
         return get_token_credential(token_key)["token"]
     except (ConfigApiError, NotAuthenticatedError, TokenExpiredError, AuthError) as e:
         raise JiraError(f"Не удалось получить Jira credential '{token_key}': {e}") from e
+
+
+def _normalize_task_name(value: str) -> str:
+    """Ядро названия без префикса «НТ. » и хвостовой точки — их навешивают шаблоны
+    задач. Если пользователь уже написал «НТ. Название.», снимаем обёртку, чтобы
+    она не задвоилась; «Название» отдаём как есть."""
+    text = value.strip()
+    lowered = text.lower()
+    if lowered.startswith("нт."):
+        text = text[3:].strip()
+    elif lowered.startswith("нт "):
+        text = text[3:].strip()
+    return text.rstrip(".").strip()
 
 
 def _normalize_epic_key(value: str) -> str:

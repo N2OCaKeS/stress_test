@@ -16,7 +16,8 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { getServer, setBusy, clearBusy } from "@/api/server/servers";
 import { useDeptLabel, useUserLabel } from "@/lib/labels";
 import { isDepAdmin } from "@/lib/rbac";
-import { formatLatencyMs } from "@/pages/server/_serverShared";
+import { EntityHeader } from "@/components/entity/EntityHeader";
+import { ReachSignal, PowerStateBadge } from "@/components/entity/signals";
 import { ApiError, apiErrMsg } from "@/api/client";
 import type { Server, ServerStatus, BusyState } from "@/api/server/types";
 import { OverviewTab } from "./tabs/overview";
@@ -193,26 +194,33 @@ function ServerHeader({
   const busyKind = BUSY_KIND[server.busy_state];
   const name = server.display_name ?? server.hostname;
   return (
-    <div className="border-b border-token p-5 flex items-start gap-4 shrink-0">
-      <div className="w-12 h-12 rounded bg-accent flex items-center justify-center">
-        <ServerIcon className="w-7 h-7" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-xl font-semibold truncate">{name}</h1>
-          <span
-            className={`badge${statusKind ? ` badge-${statusKind}` : ""}`}
-          >
+    <EntityHeader
+      icon={<ServerIcon className="w-7 h-7" />}
+      name={name}
+      badges={
+        <>
+          <span className={`badge${statusKind ? ` badge-${statusKind}` : ""}`}>
             {STATUS_LABEL[server.status] ?? server.status}
           </span>
           <span className={`badge${busyKind ? ` badge-${busyKind}` : ""}`}>
             {BUSY_LABEL[server.busy_state] ?? server.busy_state}
           </span>
-          <HeaderPing server={server} />
-          <HeaderSsh server={server} />
-          <HeaderPower server={server} />
-        </div>
-        <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
+          <ReachSignal
+            label="ping"
+            reachable={server.ping_reachable}
+            latencyMs={server.ping_latency_ms}
+          />
+          <ReachSignal
+            label="ssh"
+            reachable={server.ssh_reachable}
+            latencyMs={server.ssh_latency_ms}
+          />
+          {/* Сигнал питания снимается по IPMI/BMC. */}
+          <PowerStateBadge state={server.power_state} />
+        </>
+      }
+      meta={
+        <>
           <span className="mono">{server.id}</span>
           <span>·</span>
           <span>
@@ -226,96 +234,15 @@ function ServerHeader({
           <span>
             dept: <b>{deptLabel}</b>
           </span>
-        </div>
-        <ReserveControl
-          server={server}
-          onServerUpdated={onServerUpdated}
-          onBusyChanged={onBusyChanged}
-        />
-      </div>
-    </div>
-  );
-}
-
-/**
- * Индикатор доступности сервера по ping в шапке карточки: доступен (+latency) /
- * недоступен / проба не снималась. Рядом идут ssh и питание — три независимых
- * сигнала, подробности с временем последней пробы во вкладке «Обзор».
- */
-function HeaderPing({ server }: { server: Server }) {
-  return (
-    <ReachSignal
-      label="ping"
-      reachable={server.ping_reachable}
-      latencyMs={server.ping_latency_ms}
-    />
-  );
-}
-
-/** Индикатор доступности по TCP SSH-порту в шапке — как ping, но по ssh. */
-function HeaderSsh({ server }: { server: Server }) {
-  return (
-    <ReachSignal
-      label="ssh"
-      reachable={server.ssh_reachable}
-      latencyMs={server.ssh_latency_ms}
-    />
-  );
-}
-
-/**
- * Общий рендер сигнала доступности (ping/ssh): «доступен» + latency либо
- * «недоступен»; `null` — проба не снималась, показываем нейтральный прочерк.
- */
-function ReachSignal({
-  label,
-  reachable,
-  latencyMs,
-}: {
-  label: string;
-  reachable?: boolean | null;
-  latencyMs?: number | null;
-}) {
-  if (reachable == null) {
-    return (
-      <span className="text-xs text-dim" title={`${label}: не проверялось`}>
-        {label}: —
-      </span>
-    );
-  }
-  const lat = formatLatencyMs(latencyMs);
-  return (
-    <span
-      className={`text-xs ${reachable ? "text-ok" : "text-danger"}`}
-      title={`доступность по ${label}`}
+        </>
+      }
     >
-      {label}: <b>{reachable ? "доступен" : "недоступен"}</b>
-      {reachable && lat ? ` · ${lat}` : ""}
-    </span>
-  );
-}
-
-/** Состояние питания сервера (power_state): включён / выключен / неизвестно. */
-function HeaderPower({ server }: { server: Server }) {
-  const kind: "ok" | "danger" | "" =
-    server.power_state === "on"
-      ? "ok"
-      : server.power_state === "off"
-        ? "danger"
-        : "";
-  const label =
-    server.power_state === "on"
-      ? "питание: вкл"
-      : server.power_state === "off"
-        ? "питание: выкл"
-        : "питание: —";
-  return (
-    <span
-      className={`badge${kind ? ` badge-${kind}` : ""}`}
-      title="состояние питания"
-    >
-      {label}
-    </span>
+      <ReserveControl
+        server={server}
+        onServerUpdated={onServerUpdated}
+        onBusyChanged={onBusyChanged}
+      />
+    </EntityHeader>
   );
 }
 

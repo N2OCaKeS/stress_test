@@ -51,7 +51,6 @@ import {
   Undo2,
   Waypoints,
   Lock,
-  Unlock,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { Tabs } from "@/components/ui/Tabs";
@@ -67,7 +66,11 @@ import {
   canManageVms,
   hasVmZoneAccess,
 } from "@/lib/rbac";
-import { formatLatencyMs } from "@/pages/server/_serverShared";
+import { EntityHeader } from "@/components/entity/EntityHeader";
+import { ReachSignal, PowerStateBadge } from "@/components/entity/signals";
+import { PackagesTable } from "@/components/entity/PackagesTable";
+import { BookingCard } from "@/components/entity/manage/BookingCard";
+import { DangerZoneCard } from "@/components/entity/manage/DangerZoneCard";
 import { StatRow } from "@/pages/admin/services/_inline";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
@@ -840,17 +843,8 @@ export function VmDetail({
     }
   }
 
-  async function handleReserve() {
+  async function handleReserve(reason: string) {
     if (pending) return;
-    const { ok, reason } = await prompt({
-      title: "Забронировать ВМ",
-      message: `Забронировать ${view.name}? Бронь блокирует операции других пользователей.`,
-      reason: true,
-      reasonLabel: "Примечание",
-      reasonRequired: true,
-      confirmLabel: "Забронировать",
-    });
-    if (!ok) return;
     setPending(true);
     try {
       const next = mock
@@ -948,31 +942,42 @@ export function VmDetail({
 
   return (
     <section className="flex-1 min-w-0 overflow-hidden flex flex-col">
-      <div className="border-b border-token p-5 flex items-start gap-4 shrink-0">
-        <button className="btn btn-ghost flex items-center gap-1" onClick={onBack}>
-          <ArrowLeft className="w-4 h-4" /> К хабу
-        </button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-xl font-semibold truncate">{view.name}</h1>
+      <EntityHeader
+        icon={<MonitorPlay className="w-7 h-7" />}
+        onBack={onBack}
+        backLabel="К хабу"
+        name={view.name}
+        badges={
+          <>
             <span className="badge">ВМ</span>
-            <PowerBadge state={view.power_state} />
             {reserved && (
               <span className="badge badge-warn flex items-center gap-1">
                 <Lock className="w-3.5 h-3.5" /> {view.status}
               </span>
             )}
-            <PingBadge vm={view} />
-          </div>
-          <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
+            <ReachSignal
+              label="ping"
+              reachable={view.ping_reachable}
+              latencyMs={view.ping_latency_ms}
+            />
+            {/* Состояние питания домена снимается из virsh. */}
+            <PowerStateBadge state={view.power_state} />
+          </>
+        }
+        meta={
+          <>
             <span className="mono">{view.id}</span>
             <span>·</span>
-            <span>№ <b className="mono">{view.number ?? "—"}</b></span>
+            <span>
+              № <b className="mono">{view.number ?? "—"}</b>
+            </span>
             <span>·</span>
-            <span>dept: <b>{deptLabel}</b></span>
-          </div>
-        </div>
-      </div>
+            <span>
+              dept: <b>{deptLabel}</b>
+            </span>
+          </>
+        }
+      />
 
       <Tabs
         active={activeTab}
@@ -1157,55 +1162,23 @@ export function VmDetail({
                 onChanged={onChanged}
               />
 
-              <div className="card">
-                <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-accent" /> Бронь
-                </h3>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <div className="flex-1 text-xs text-dim">
-                    Booking-статус: <span className="mono">{view.status}</span>
-                    {view.busy_note && <> · {view.busy_note}</>}
-                  </div>
-                  {reserved ? (
-                    <button
-                      className="btn btn-sm flex items-center gap-1"
-                      onClick={handleRelease}
-                      disabled={pending}
-                    >
-                      <Unlock className="w-3.5 h-3.5" /> Снять бронь
-                    </button>
-                  ) : (
-                    <button
-                      className="btn btn-sm btn-primary flex items-center gap-1"
-                      onClick={handleReserve}
-                      disabled={pending}
-                    >
-                      <Lock className="w-3.5 h-3.5" /> Забронировать
-                    </button>
-                  )}
-                </div>
-              </div>
+              <BookingCard
+                entityWord="ВМ"
+                reserved={reserved}
+                stateLabel={view.busy_state}
+                note={view.busy_note}
+                canManage={canManage}
+                busy={pending}
+                onReserve={handleReserve}
+                onRelease={handleRelease}
+              />
 
-              <div
-                className="card"
-                style={{ border: "1px solid var(--danger, #b91c1c)" }}
-              >
-                <div className="text-sm font-semibold flex items-center gap-2 text-danger mb-2">
-                  Опасная зона
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <div className="flex-1 text-xs text-dim">
-                    Удаление ВМ сносит домен libvirt и все её диски. Действие
-                    необратимо.
-                  </div>
-                  <button
-                    className="btn btn-danger flex items-center gap-1"
-                    onClick={handleDelete}
-                  >
-                    Удалить ВМ
-                  </button>
-                </div>
-              </div>
+              <DangerZoneCard
+                buttonLabel="Удалить ВМ"
+                busy={pending}
+                onDelete={handleDelete}
+                description="Удаление ВМ сносит домен libvirt и все её диски. Действие необратимо."
+              />
             </>
           )}
         </div>
@@ -1228,27 +1201,6 @@ function Field({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
       <dt className="text-dim text-xs">{k}</dt>
       <dd className={mono ? "mono" : undefined}>{v}</dd>
     </>
-  );
-}
-
-function PingBadge({ vm }: { vm: Vm }) {
-  const reachable = vm.ping_reachable;
-  if (reachable == null) {
-    return (
-      <span className="text-xs text-dim" title="ping: не проверялось">
-        ping: —
-      </span>
-    );
-  }
-  const lat = formatLatencyMs(vm.ping_latency_ms);
-  return (
-    <span
-      className={`text-xs ${reachable ? "text-ok" : "text-danger"}`}
-      title="доступность по ping"
-    >
-      ping: <b>{reachable ? "доступен" : "недоступен"}</b>
-      {reachable && lat ? ` · ${lat}` : ""}
-    </span>
   );
 }
 
@@ -3289,24 +3241,6 @@ function VmAccountsSection({ vm, mock }: { vm: Vm; mock: boolean }) {
  * probe (`?refresh=true` → `vm.list_packages`) и перезапрашивает сохранённый
  * список. В mock-режиме данные из `@/mocks/vm`.
  */
-/**
- * Клиентский фильтр пакета по имени: подстрока по умолчанию, `*` — маска
- * (glob), матч по всей строке. Регистронезависимо.
- */
-function pkgNameMatches(name: string, filter: string): boolean {
-  const f = filter.trim().toLowerCase();
-  if (!f) return true;
-  const n = name.toLowerCase();
-  if (f.includes("*")) {
-    const escaped = f
-      .split("*")
-      .map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-      .join(".*");
-    return new RegExp(`^${escaped}$`).test(n);
-  }
-  return n.includes(f);
-}
-
 function pkgRefreshErrorMsg(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.errorCode === "VM_PREPARE_REQUIRED")
@@ -3333,10 +3267,6 @@ function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
   const packages = useMemo(() => pkgsQ.data?.packages ?? [], [pkgsQ.data]);
   const syncedAt = pkgsQ.data?.synced_at ?? null;
   const [filter, setFilter] = useState("");
-  const filtered = useMemo(
-    () => packages.filter((p) => pkgNameMatches(p.name, filter)),
-    [packages, filter],
-  );
 
   async function refresh() {
     if (mock) {
@@ -3386,69 +3316,14 @@ function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
         {syncedAt ? ` (синк ${formatSnapDate(syncedAt)})` : ""}.
       </div>
 
-      {packages.length > 0 && (
-        <div className="mb-3 flex items-center gap-2 flex-wrap">
-          <input
-            className="input mono text-xs"
-            style={{ minWidth: 220 }}
-            placeholder="фильтр по имени (* — маска)"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-          {filter.trim() && (
-            <span className="text-[11px] text-dim">
-              показано {filtered.length} из {packages.length}
-            </span>
-          )}
-        </div>
-      )}
-
-      {pkgsQ.loading ? (
-        <div className="text-xs text-dim">Загрузка…</div>
-      ) : pkgsQ.error && packages.length === 0 ? (
-        <div className="alert alert-danger flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 mt-0.5" />
-          <div className="flex-1 text-xs">
-            <div>{apiErrMsg(pkgsQ.error, "Список пакетов не загрузился")}</div>
-            <button
-              className="btn btn-ghost mt-2"
-              onClick={() => pkgsQ.refetch()}
-            >
-              Повторить
-            </button>
-          </div>
-        </div>
-      ) : packages.length === 0 ? (
-        <div className="text-xs text-dim">Данных о пакетах пока нет.</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-xs text-dim">
-          Ничего не найдено по фильтру «{filter.trim()}».
-        </div>
-      ) : (
-        <div className="surface-2 border border-token rounded overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[11px] uppercase text-dim border-b border-token">
-                <th className="text-left px-3 py-2 font-medium">Название</th>
-                <th className="text-left px-3 py-2 font-medium">Версия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((p) => (
-                <tr
-                  key={`${p.name}-${p.version ?? ""}`}
-                  className="border-b border-token last:border-b-0"
-                >
-                  <td className="px-3 py-1.5 mono text-xs">{p.name}</td>
-                  <td className="px-3 py-1.5 mono text-xs">
-                    {p.version ?? "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <PackagesTable
+        items={packages}
+        filter={filter}
+        onFilter={setFilter}
+        loading={pkgsQ.loading}
+        error={pkgsQ.error}
+        onRetry={() => pkgsQ.refetch()}
+      />
     </div>
   );
 }

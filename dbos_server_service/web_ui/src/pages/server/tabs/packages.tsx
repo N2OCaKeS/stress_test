@@ -52,6 +52,7 @@ import type {
   TaskRead,
 } from "@/api/server/types";
 import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
+import { PackagesTable } from "@/components/entity/PackagesTable";
 
 const HISTORY_PAGE_SIZE = 20;
 
@@ -133,6 +134,7 @@ export function PackagesTab({ serverId, server, onServerUpdated }: Props) {
   const [lastStatus, setLastStatus] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [packages, setPackages] = useState<PackageRow[]>([]);
+  const [filter, setFilter] = useState("");
   const [polling, setPolling] = useState(false);
   // Probe на prepared-сервере упал с auth-ошибкой → возможно протух пароль
   // управляющего пользователя. Предлагаем повторно прогнать prepare.
@@ -483,43 +485,12 @@ export function PackagesTab({ serverId, server, onServerUpdated }: Props) {
         </div>
       )}
 
-      <div className="surface-2 border border-token rounded overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-[11px] uppercase text-dim border-b border-token">
-              <th className="text-left px-3 py-2 font-medium">Название</th>
-              <th className="text-left px-3 py-2 font-medium">Версия</th>
-              <th className="text-left px-3 py-2 font-medium">Архитектура</th>
-            </tr>
-          </thead>
-          <tbody>
-            {packages.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={3}
-                  className="px-3 py-4 text-xs text-dim text-center"
-                >
-                  Список пуст. Нажми «Получить пакеты» и подожди, пока worker
-                  закроет задачу.
-                </td>
-              </tr>
-            ) : (
-              packages.map((p) => (
-                <tr
-                  key={`${p.name}-${p.version}-${p.arch ?? ""}`}
-                  className="border-b border-token last:border-b-0"
-                >
-                  <td className="px-3 py-1.5 mono text-xs">{p.name}</td>
-                  <td className="px-3 py-1.5 mono text-xs">{p.version}</td>
-                  <td className="px-3 py-1.5 mono text-xs text-dim">
-                    {p.arch ?? "—"}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <PackagesTable
+        items={packages}
+        filter={filter}
+        onFilter={setFilter}
+        emptyText="Список пуст. Нажми «Получить пакеты» и подожди, пока worker закроет задачу."
+      />
 
       <PackageHistorySection serverId={serverId} />
     </div>

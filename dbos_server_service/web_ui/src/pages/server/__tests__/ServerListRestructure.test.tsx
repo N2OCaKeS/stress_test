@@ -122,6 +122,17 @@ describe("Server list — состав по фильтру only", () => {
     expect(screen.queryByText("alse-1.8-rc")).not.toBeInTheDocument();
   });
 
+  it("заголовки групп серверов несут иконку (консистентно с группой ВМ)", async () => {
+    renderServer("/server");
+    const serverHeader = await screen.findByText(/Серверы · 2/);
+    const vmHeader = await screen.findByText(/Виртуальные машины/);
+    // У обоих заголовков есть svg-иконка в кнопке-тумблере.
+    expect(
+      serverHeader.closest("button")!.querySelector("svg"),
+    ).not.toBeNull();
+    expect(vmHeader.closest("button")!.querySelector("svg")).not.toBeNull();
+  });
+
   it("строка сервера: IP и бейджи не наезжают (shrink-0 на блоке бейджей)", async () => {
     renderServer("/server?only=servers");
     const ip = (await screen.findAllByText("10.10.20.11"))[0];

@@ -19,11 +19,8 @@ import { Link } from "react-router-dom";
 import {
   Play,
   RefreshCw,
-  Pause,
-  PlayCircle,
   Trash2,
   Settings,
-  AlertTriangle,
   ChevronDown,
   ChevronRight,
   Plus,
@@ -76,6 +73,8 @@ import {
   filterAccessibleAccounts,
   reservedErrorMessage,
 } from "@/pages/server/_serverShared";
+import { BookingCard } from "@/components/entity/manage/BookingCard";
+import { DangerZoneCard } from "@/components/entity/manage/DangerZoneCard";
 import { BootstrapCredsModal } from "./_bootstrapCredsModal";
 import { CleanModal } from "./_cleanModal";
 import type {
@@ -140,6 +139,7 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
     setCurrent(server);
   }, [server]);
   const view = current ?? server;
+  const reserverLabel = useUserLabel(view?.busy_user_id);
 
   // Любая lifecycle/busy-мутация возвращает обновлённый Server: правим
   // локальную копию и поднимаем наверх, чтобы header ServerDetail и соседние
@@ -410,21 +410,28 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
         }}
       />
 
-      <BusyCard
-        server={view}
-        allowed={allowBasic}
-        busyLabel={busy}
-        foreignReservation={
-          !!view?.busy_user_id && view.busy_user_id !== persona.id
+      <BookingCard
+        entityWord="сервер"
+        reserved={!!view && (view.busy_state !== "free" || !!view.busy_note)}
+        stateLabel={view?.busy_state ?? "—"}
+        note={view?.busy_note}
+        reserverLabel={
+          view?.busy_user_id ? (
+            <span title={view.busy_user_id}>юзер {reserverLabel}</span>
+          ) : undefined
         }
-        onSetBusy={async (reason) => {
+        since={view?.busy_since ? formatMskShort(view.busy_since) : undefined}
+        canManage={allowBasic}
+        foreign={!!view?.busy_user_id && view.busy_user_id !== persona.id}
+        busy={busy !== null}
+        onReserve={async (reason) => {
           if (!view) return;
           const next = await run("busy_set", () =>
             setBusy(view.id, { reason }),
           );
           if (next) applyServer(next);
         }}
-        onClearBusy={async () => {
+        onRelease={async () => {
           if (!view) return;
           const foreign =
             !!view.busy_user_id && view.busy_user_id !== persona.id;
@@ -466,12 +473,23 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
         />
       )}
 
-      {view && (
-        <DangerCard
-          server={view}
-          allowed={allowDelete}
-          busyLabel={busy}
-          onDelete={async (reason) => {
+      {view && allowDelete && (
+        <DangerZoneCard
+          buttonLabel={busy === "delete_server" ? "Удаляем…" : "Удалить сервер"}
+          busy={busy !== null}
+          description="Hard-delete сервера каскадом удаляет IPMI-контроллер, диски, привязки к аккаунтам и историю задач. Действие необратимо."
+          onDelete={async () => {
+            const { ok, reason } = await prompt({
+              title: "Удалить сервер",
+              message: `Удалить сервер ${view.hostname} полностью? Действие необратимо.`,
+              reason: true,
+              reasonLabel: "Причина удаления",
+              reasonPlaceholder: "decommission / wrong-record / …",
+              reasonRequired: true,
+              confirmLabel: "Удалить",
+              danger: true,
+            });
+            if (!ok) return;
             await run("delete_server", async () => {
               await deleteServer(view.id, { reason });
               onDeleted?.();
@@ -1086,145 +1104,6 @@ function AstraUpdateCard({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Busy toggle
-// ─────────────────────────────────────────────────────────────────────────────
-
-function BusyCard({
-  server,
-  allowed,
-  busyLabel,
-  foreignReservation = false,
-  onSetBusy,
-  onClearBusy,
-}: {
-  server: Server | undefined;
-  allowed: boolean;
-  busyLabel: string | null;
-  /** Бронь держит другой пользователь — освобождение будет принудительным. */
-  foreignReservation?: boolean;
-  onSetBusy: (reason: string) => Promise<void>;
-  onClearBusy: () => Promise<void>;
-}) {
-  const [showForm, setShowForm] = useState(false);
-  const [reason, setReason] = useState("");
-  const reserverLabel = useUserLabel(server?.busy_user_id);
-  if (!server) {
-    return (
-      <div className="card text-sm text-dim">Busy: нет данных по серверу.</div>
-    );
-  }
-
-  const isBusy = server.busy_state !== "free" || !!server.busy_note;
-  const disabled = !allowed || busyLabel !== null;
-
-  return (
-    <div className="card">
-      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-        <Pause className="w-4 h-4 text-accent" /> Бронь
-      </h3>
-      {isBusy ? (
-        <div className="alert flex items-start gap-2">
-          <Pause className="w-4 h-4 mt-0.5 text-warn" />
-          <div className="flex-1 text-xs">
-            <div>
-              Сервер занят:{" "}
-              <span className="mono">{server.busy_state}</span>
-              {server.busy_user_id && (
-                <>
-                  {" · "}юзер{" "}
-                  <span title={server.busy_user_id}>{reserverLabel}</span>
-                </>
-              )}
-            </div>
-            {server.busy_note && (
-              <div className="text-dim mt-1">
-                Причина: <span className="mono">{server.busy_note}</span>
-              </div>
-            )}
-            {server.busy_since && (
-              <div className="text-dim text-[11px] mt-1">
-                с <span className="mono">{formatMskShort(server.busy_since)}</span>
-              </div>
-            )}
-          </div>
-          {allowed && (
-            <button
-              className="btn flex items-center gap-1"
-              disabled={disabled}
-              onClick={onClearBusy}
-              title={
-                foreignReservation
-                  ? "Снять чужую бронь принудительно"
-                  : "Освободить сервер"
-              }
-            >
-              <PlayCircle className="w-4 h-4" />
-              {foreignReservation ? "Освободить принудительно" : "Clear busy"}
-            </button>
-          )}
-        </div>
-      ) : showForm ? (
-        <div className="flex flex-col gap-2">
-          <FormRow label="reason / purpose">
-            <input
-              className="input"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="например, ручной debug-цикл"
-            />
-          </FormRow>
-          <div className="flex gap-2 justify-end">
-            <button
-              className="btn"
-              onClick={() => {
-                setShowForm(false);
-                setReason("");
-              }}
-              disabled={busyLabel !== null}
-            >
-              Отмена
-            </button>
-            <button
-              className="btn btn-primary"
-              disabled={disabled || !reason.trim()}
-              onClick={async () => {
-                await onSetBusy(reason.trim());
-                setShowForm(false);
-                setReason("");
-              }}
-            >
-              Mark busy
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="text-xs text-dim flex-1">
-            Сервер свободен. Захват блокирует параллельные тесты до тех пор,
-            пока ты или другой админ не снимешь lease.
-          </div>
-          {allowed && (
-            <button
-              className="btn btn-primary flex items-center gap-1"
-              disabled={disabled}
-              onClick={() => setShowForm(true)}
-            >
-              <Pause className="w-4 h-4" />
-              Mark busy
-            </button>
-          )}
-        </div>
-      )}
-      {!allowed && (
-        <div className="text-[11px] text-dim italic mt-3">
-          Нет прав на busy-операции.
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Администрирование — OS Versions catalog (account_admin)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1561,59 +1440,4 @@ function CleanCard({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Danger zone
-// ─────────────────────────────────────────────────────────────────────────────
-
-function DangerCard({
-  server,
-  allowed,
-  busyLabel,
-  onDelete,
-}: {
-  server: Server;
-  allowed: boolean;
-  busyLabel: string | null;
-  onDelete: (reason: string) => Promise<void>;
-}) {
-  const { prompt } = useConfirm();
-  if (!allowed) return null;
-  return (
-    <div
-      className="card"
-      style={{ border: "1px solid var(--danger, #b91c1c)" }}
-    >
-      <div className="text-sm font-semibold flex items-center gap-2 text-danger mb-2">
-        <AlertTriangle className="w-4 h-4" /> Опасная зона
-      </div>
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex-1 text-xs text-dim">
-          Hard-delete сервера каскадом удаляет IPMI-контроллер, диски, привязки
-          к аккаунтам и историю задач. Действие необратимо.
-        </div>
-        <button
-          className="btn btn-danger flex items-center gap-1"
-          disabled={busyLabel !== null}
-          onClick={async () => {
-            const { ok, reason } = await prompt({
-              title: "Удалить сервер",
-              message: `Удалить сервер ${server.hostname} полностью? Действие необратимо.`,
-              reason: true,
-              reasonLabel: "Причина удаления",
-              reasonPlaceholder: "decommission / wrong-record / …",
-              reasonRequired: true,
-              confirmLabel: "Удалить",
-              danger: true,
-            });
-            if (!ok) return;
-            await onDelete(reason);
-          }}
-        >
-          <Trash2 className="w-4 h-4" />
-          {busyLabel === "delete_server" ? "Удаляем…" : "Delete server"}
-        </button>
-      </div>
-    </div>
-  );
-}
 

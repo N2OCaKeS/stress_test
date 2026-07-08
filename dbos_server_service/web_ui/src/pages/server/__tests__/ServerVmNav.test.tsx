@@ -50,12 +50,13 @@ function renderServer(entry = "/server?only=vms") {
   );
 }
 
-// Строка ВМ в среднем списке — это button.cred-row; карточка ВМ справа рисует
-// то же имя в <h1>. Достаём именно строку списка.
+// Строка ВМ в среднем списке — общий EntityRow (div.cred-row с кнопкой внутри),
+// такой же, как у сервера; карточка ВМ справа рисует то же имя в <h1>. Достаём
+// именно кликабельную кнопку строки списка.
 function vmListRow(name: string): HTMLElement {
   const hit = screen
     .getAllByText(name)
-    .map((el) => el.closest("button.cred-row"))
+    .map((el) => el.closest(".cred-row")?.querySelector("button") ?? null)
     .find((btn): btn is HTMLButtonElement => btn !== null);
   if (!hit) throw new Error(`Строка ВМ «${name}» в списке не найдена`);
   return hit;
@@ -101,8 +102,10 @@ describe("Server list → открытие ВМ сохраняет средни�
     fireEvent.click(vmListRow("alse-1.8-rc"));
     await screen.findByRole("heading", { name: /Параметры/ });
 
-    // Активная строка получает класс active.
-    expect(vmListRow("alse-1.8-rc").className).toContain("active");
+    // Активная строка получает класс active (на обёртке .cred-row).
+    expect(
+      vmListRow("alse-1.8-rc").closest(".cred-row")!.className,
+    ).toContain("active");
 
     // URL сохранил only=vms и добавил vm=<id>, не ушёл на /vm.
     const loc = screen.getByTestId("loc").textContent ?? "";

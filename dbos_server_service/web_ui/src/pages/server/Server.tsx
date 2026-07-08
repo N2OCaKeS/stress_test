@@ -40,10 +40,9 @@ import {
   deleteServer,
   listServers,
 } from "@/api/server/servers";
-import {
-  formatLatencyMs,
-  reservedErrorMessage,
-} from "@/pages/server/_serverShared";
+import { reservedErrorMessage } from "@/pages/server/_serverShared";
+import { EntityRow } from "@/components/entity/EntityRow";
+import { ReachRowBadge, PowerStateBadge } from "@/components/entity/signals";
 import { BulkPrepareModal } from "@/pages/server/_bulkPrepareModal";
 import { listDepartments } from "@/api/auth/departments";
 import { useDeptLabel } from "@/lib/labels";
@@ -658,8 +657,11 @@ function ServerGroup({
   return (
     <div>
       {showHeader && (
-        <div className="group-header px-3 mt-2 text-[11px] uppercase text-dim">
-          {deptLabel} · {items.length}
+        <div className="group-header px-3 mt-2 text-[11px] uppercase text-dim flex items-center gap-1">
+          <ServerIcon className="w-3.5 h-3.5 shrink-0" />
+          <span>
+            {deptLabel} · {items.length}
+          </span>
         </div>
       )}
       <div className="px-2 flex flex-col gap-0.5">
@@ -790,47 +792,33 @@ function ServerRow({
   // VMS-hub — не обычный сервер, а несущий ВМ узел: помечаем и подписью.
   const kindLabel = server.is_vms_hub ? "VMS-hub" : "сервер";
   return (
-    <div className={`cred-row text-left flex items-center gap-2 ${active ? "active" : ""}`}>
-      {selectable && (
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={onToggleChecked}
-          onClick={(e) => e.stopPropagation()}
-          className="shrink-0"
-          title="Выбрать для массовой операции"
-        />
-      )}
-      <button
-        type="button"
-        onClick={onSelect}
-        className="flex-1 min-w-0 text-left"
-      >
-        <div className="flex items-center gap-2">
+    <EntityRow
+      active={active}
+      onSelect={onSelect}
+      selectable={selectable}
+      checked={checked}
+      onToggleChecked={onToggleChecked}
+      title={name}
+      kindLabel={kindLabel}
+      deptLabel={deptLabel}
+      subtitle={server.ip_address}
+      icon={
         <RowIcon
           data-testid="server-row-icon"
           aria-label={iconTitle}
           className={`w-4 h-4 shrink-0 ${active ? "text-accent" : serverIconTint(server)}`}
         />
-        <div className="flex-1 min-w-0">
-          <div className="text-sm truncate">{name}</div>
-          <div className="text-[11px] text-dim flex items-center gap-1.5 min-w-0">
-            <span className="uppercase tracking-wide text-[10px] shrink-0">
-              {kindLabel}
-            </span>
-            <span className="shrink-0">·</span>
-            <span className="truncate">{deptLabel}</span>
-            <span className="shrink-0">·</span>
-            <span className="mono truncate">{server.ip_address}</span>
-          </div>
-        </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <PingBadge server={server} />
-            <span className={`badge badge-${busyChipKind}`}>{busyChipLabel}</span>
-          </div>
-        </div>
-      </button>
-    </div>
+      }
+      badges={
+        <>
+          <ReachRowBadge
+            reachable={server.ping_reachable}
+            latencyMs={server.ping_latency_ms}
+          />
+          <span className={`badge badge-${busyChipKind}`}>{busyChipLabel}</span>
+        </>
+      }
+    />
   );
 }
 
@@ -894,63 +882,21 @@ function VmRow({
   onOpen: () => void;
 }) {
   const deptLabel = useDeptLabel(vm.department_id);
-  const powerKind =
-    vm.power_state === "on" ? "ok" : vm.power_state === "off" ? "danger" : "";
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={`cred-row text-left flex items-center gap-2 ${active ? "active" : ""}`}
-    >
-      <MonitorPlay
-        className={`w-4 h-4 shrink-0 ${active ? "text-accent" : "text-dim"}`}
-      />
-      <div className="flex-1 min-w-0">
-        <div className="text-sm truncate">{vm.name}</div>
-        <div className="text-[11px] text-dim flex items-center gap-1.5 min-w-0">
-          <span className="uppercase tracking-wide text-[10px] shrink-0">ВМ</span>
-          <span className="shrink-0">·</span>
-          <span className="truncate">{deptLabel}</span>
-          <span className="shrink-0">·</span>
-          <span className="mono truncate">{vm.ip_address ?? "—"}</span>
-        </div>
-      </div>
-      <span
-        className={`badge shrink-0${powerKind ? ` badge-${powerKind}` : ""}`}
-      >
-        {vm.power_state}
-      </span>
-    </button>
-  );
-}
-
-/**
- * Индикатор доступности сервера по ping в строке списка. Три состояния:
- * доступен (зелёный, latency где есть), недоступен (красный), проба не
- * снималась (нейтральный «—»). ssh/ipmi в списке не показываем — только в
- * деталях; здесь важен один сигнал «жив ли бокс».
- */
-function PingBadge({ server }: { server: Server }) {
-  const reachable = server.ping_reachable;
-  if (reachable == null) {
-    return (
-      <span className="badge" title="ping: не проверялось">
-        —
-      </span>
-    );
-  }
-  if (reachable) {
-    const lat = formatLatencyMs(server.ping_latency_ms);
-    return (
-      <span className="badge badge-ok" title="ping: доступен">
-        {lat ?? "доступен"}
-      </span>
-    );
-  }
-  return (
-    <span className="badge badge-danger" title="ping: недоступен">
-      недоступен
-    </span>
+    <EntityRow
+      active={active}
+      onSelect={onOpen}
+      title={vm.name}
+      kindLabel="ВМ"
+      deptLabel={deptLabel}
+      subtitle={vm.ip_address ?? "—"}
+      icon={
+        <MonitorPlay
+          className={`w-4 h-4 shrink-0 ${active ? "text-accent" : "text-dim"}`}
+        />
+      }
+      badges={<PowerStateBadge state={vm.power_state} />}
+    />
   );
 }
 

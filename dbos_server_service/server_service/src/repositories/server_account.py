@@ -356,6 +356,25 @@ async def list_for_vm(db: AsyncSession, vm_id: str) -> list[ServerAccount]:
     return list((await db.execute(stmt)).scalars())
 
 
+async def list_vm_links(
+    db: AsyncSession, vm_id: str
+) -> list[tuple[ServerAccountVm, ServerAccount]]:
+    """Связки учётка↔ВМ вместе с аккаунтом (created_at DESC).
+
+    Возвращает пары (link, account): `present_on_vm` живёт на связке, а
+    login/sudo/группы/ssh-ключ — на аккаунте. Нужна для листинга привязанных
+    учёток ВМ с флагом присутствия в госте.
+    """
+    stmt = (
+        select(ServerAccountVm, ServerAccount)
+        .join(ServerAccount, ServerAccountVm.account_id == ServerAccount.id)
+        .where(ServerAccountVm.vm_id == vm_id)
+        .order_by(ServerAccount.created_at.desc())
+    )
+    rows = (await db.execute(stmt)).all()
+    return [(link, account) for link, account in rows]
+
+
 async def update(db: AsyncSession, obj: ServerAccount, changes: dict) -> ServerAccount:
     """In-place setattr + flush. commit — на caller'е."""
     for key, value in changes.items():

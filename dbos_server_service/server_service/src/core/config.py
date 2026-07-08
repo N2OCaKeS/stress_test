@@ -354,6 +354,25 @@ class Settings(BaseSettings):
             "через websockify/PTY-прокси, который валидирует токен в этом окне."
         ),
     )
+    vm_console_token_secret: str = Field(
+        default="dev-vm-console-token-secret",
+        alias="VM_CONSOLE_TOKEN_SECRET",
+        description=(
+            "Общий секрет для подписи токенов графической консоли ВМ (vnc/spice). "
+            "server_service подписывает токен HMAC-SHA256, console-прокси проверяет "
+            "им подпись и срок — round-trip в server_service не нужен. В проде "
+            "обязателен свой секрет; дефолт — только для dev/тестов."
+        ),
+    )
+    vm_console_proxy_ws_base: str = Field(
+        default="wss://vm-console-proxy",
+        alias="VM_CONSOLE_PROXY_WS_BASE",
+        description=(
+            "Базовый ws(s)-адрес console-прокси для графических консолей ВМ. "
+            "ws_url в ответе `POST /vms/{id}/console` = <base> + ws_path; UI "
+            "открывает его, предъявляя подписанный токен."
+        ),
+    )
     logging_service_url: str = Field(
         default="",
         description=(

@@ -74,6 +74,8 @@ from src.schemas.vm import (
     VmDisksCallbackRequest,
     VmDisksCallbackResponse,
     VmMgmtCredentialsResponse,
+    VmPackagesCallbackRequest,
+    VmPackagesCallbackResponse,
     VmPreparedCallbackRequest,
     VmPreparedCallbackResponse,
     VmsHubStateCallbackRequest,
@@ -645,6 +647,34 @@ async def record_vm_snapshots(
         target_department_id=x_target_department_id,
     )
     return VmSnapshotsCallbackResponse(**data)
+
+
+@router.post(
+    "/vms/{vm_id}/packages",
+    response_model=VmPackagesCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def record_vm_packages(
+    vm_id: str,
+    body: VmPackagesCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> VmPackagesCallbackResponse:
+    """Worker пишет список установленных пакетов гостя ВМ (vm.list_packages).
+
+    Полная перезапись инвентаря (одна строка на ВМ). `GET /vms/{id}/packages`
+    затем отдаёт этот список.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `vm.packages_synced` (INFO).
+    """
+    data = await internal_service.record_vm_packages(
+        db, identity, vm_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return VmPackagesCallbackResponse(**data)
 
 
 @router.get(

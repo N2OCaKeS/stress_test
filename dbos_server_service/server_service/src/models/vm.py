@@ -30,6 +30,7 @@ from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.constants import (
+    VM_GRAPHICS_DEFAULT,
     VmCredStrategy,
     VmNetworkMode,
     VmPowerState,
@@ -86,6 +87,14 @@ class Vm(Base):
     ram_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     disk_gb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     autostart: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Тип графической консоли ВМ (vnc/spice) — выбирается при создании и уезжает
+    # воркеру (`--graphics`). Дефолт vnc. graphics_port — фактический порт дисплея
+    # на hub'е, который воркер сообщает в state-callback'е (NULL до первой пробы;
+    # прокси иначе резолвит его через virsh).
+    graphics: Mapped[str] = mapped_column(
+        String(8), default=VM_GRAPHICS_DEFAULT, nullable=False
+    )
+    graphics_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cred_strategy: Mapped[str] = mapped_column(
         String(16), default=VmCredStrategy.PER_SNAPSHOT, nullable=False
     )

@@ -16,6 +16,7 @@ from src.schemas.vm import (
     CreateDefaultVmItem,
     CreateDefaultVmSkipped,
     CreateDefaultVmsResponse,
+    VmAccountResponse,
     VmAlltaUpdateRequest,
     VmAstraUpdateRequest,
     VmAutostartRequest,
@@ -35,6 +36,7 @@ from src.schemas.vm import (
     VmIpPoolResponse,
     VmIpPoolUpdate,
     VmNetworkRequest,
+    VmPackagesResponse,
     VmPasswdRequest,
     VmPowerRequest,
     VmPresetCreate,
@@ -384,6 +386,61 @@ async def vm_console(
     payload = body if body is not None else VmConsoleRequest()
     data = await svc.console_access(db, identity, vm_id, payload.kind)
     return VmConsoleResponse(**data)
+
+
+@router.get(
+    "/{vm_id}/accounts",
+    response_model=list[VmAccountResponse],
+    summary="Учётки, привязанные к ВМ",
+    description=(
+        "Возвращает OS-учётки, привязанные к ВМ (join `server_account_vms`), с "
+        "флагом `present_on_vm` (дрейф — привязка есть, в госте нет). Гейтит право "
+        "`(vm, view)`. Секретов не отдаёт (пароль/приватный ключ не читаются). "
+        "Cross-dept / нет ВМ → 404."
+    ),
+    responses={403: {"description": "Нет `view`."}, 404: {"description": "VM_NOT_FOUND."}},
+)
+async def list_vm_accounts(
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> list[VmAccountResponse]:
+    """GET /vms/{id}/accounts."""
+    accounts = await svc.list_vm_accounts(db, identity, vm_id)
+    return [VmAccountResponse(**a) for a in accounts]
+
+
+@router.get(
+    "/{vm_id}/packages",
+    response_model=VmPackagesResponse,
+    summary="Установленные пакеты гостя ВМ (сохранённый инвентарь / свежий probe)",
+    description=(
+        "По умолчанию отдаёт последний известный список пакетов гостя (что записал "
+        "воркер callback'ом `record_vm_packages`). `?refresh=true` дополнительно "
+        "диспатчит свежий probe `vm.list_packages` (worker по SSH через hub снимает "
+        "`dpkg -l`/`rpm -qa` в госте): в ответе `dispatched=true` и `task_id`, а "
+        "`packages` пока несёт прежний снимок — он обновится, когда придёт callback. "
+        "Для refresh ВМ обязана быть prepared (`is_managed`), иметь IP гостя и живой "
+        "hub. Гейтит право `(vm, view)`. Cross-dept / нет ВМ → 404."
+    ),
+    responses={
+        200: {"description": "Инвентарь пакетов (сохранённый и/или свежий probe поставлен)."},
+        403: {"description": "Нет `view`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_PREPARE_REQUIRED / VM_GUEST_IP_UNKNOWN / HUB_UNAVAILABLE (для refresh)."},
+        503: {"description": "Worker недоступен (для refresh)."},
+    },
+)
+async def list_vm_packages(
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    refresh: bool = Query(default=False, description="true — поставить свежий probe vm.list_packages в дополнение к сохранённому списку."),
+    db: AsyncSession = Depends(get_db),
+) -> VmPackagesResponse:
+    """GET /vms/{id}/packages."""
+    data = await svc.list_packages(db, identity, request, vm_id, refresh=refresh)
+    return VmPackagesResponse(**data)
 
 
 @router.post(

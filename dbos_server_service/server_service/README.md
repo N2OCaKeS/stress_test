@@ -334,6 +334,8 @@ Worker-task'и, зарегистрированные в брокере, с кл�
 | `INTERNAL_REQUIRE_DEPT_HEADER` | default `True`; soft mode (`False`) — только для dev/test |
 | `APP_ENV` | `local` / `dev` / `test` / `staging` / `production` (влияет на https-guard'ы, обязательность ключей, swagger) |
 | `TRUSTED_PROXY_IPS` | CIDR allow-list для XFF; default `[]` (никому не доверять). Comma-separated или JSON-list |
+| `VM_CONSOLE_TOKEN_SECRET` | секрет подписи токенов графической консоли ВМ (vnc/spice); console-прокси проверяет им подпись и срок. В проде обязателен свой; default — dev-only |
+| `VM_CONSOLE_PROXY_WS_BASE` | базовый ws(s)-адрес console-прокси; `ws_url` = base + ws_path; default `wss://vm-console-proxy` |
 
 ## Тестирование
 

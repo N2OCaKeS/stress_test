@@ -51,6 +51,7 @@ from src.repositories import server_account_ignored_login as ignored_login_repo
 from src.repositories import server_disk as disk_repo
 from src.repositories import vm as vm_repo
 from src.repositories import vm_disk as vm_disk_repo
+from src.repositories import vm_package_inventory as vm_package_repo
 from src.repositories import vm_snapshot as vm_snapshot_repo
 from src.schemas.identity import IdentityContext
 from src.schemas.internal import (
@@ -66,6 +67,7 @@ from src.schemas.server import (
 )
 from src.schemas.vm import (
     VmDisksCallbackRequest,
+    VmPackagesCallbackRequest,
     VmPreparedCallbackRequest,
     VmsHubStateCallbackRequest,
     VmSnapshotsCallbackRequest,
@@ -2398,6 +2400,8 @@ async def record_vm_state(
     if payload.ssh_reachable is not None:
         vm.ssh_reachable = payload.ssh_reachable
         vm.ssh_checked_at = checked_at
+    if payload.graphics_port is not None:
+        vm.graphics_port = payload.graphics_port
     if payload.error is not None:
         vm.last_error = payload.error
     await db.commit()
@@ -2546,6 +2550,69 @@ async def record_vm_disks_state(
         details={"synced": synced, "department_id": vm.department_id},
     )
     return {"ok": True, "vm_id": vm.id, "synced": synced}
+
+
+async def record_vm_packages(
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    payload: VmPackagesCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Callback воркера: список установленных пакетов гостя ВМ (vm.list_packages).
+
+    Полная перезапись инвентаря (одна строка на ВМ). server_service нормализует
+    имя/версию и сохраняет; `GET /vms/{id}/packages` отдаёт последний известный
+    список.
+
+    Доступ: `(server, *, prepare_callback)`. Аудит: `vm.packages_synced` (INFO).
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "vm.packages_synced", target_id=vm_id, target_type="vm",
+            status="denied", allowed=False, details={"reason": "permission_denied"},
+        )
+        raise
+    vm = await vm_repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            "vm.packages_synced", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "vm_not_found"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    _check_target_department(
+        audit_action="vm.packages_synced",
+        target_id=vm_id, target_type="vm",
+        server_department_id=vm.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        not_found_error_code="VM_NOT_FOUND",
+        not_found_message="VM not found",
+    )
+    packages = [
+        {"name": item.name, "version": item.version} for item in payload.packages
+    ]
+    inventory = await vm_package_repo.upsert(
+        db, vm.id,
+        packages=packages,
+        source=payload.source,
+        task_id=payload.task_id,
+    )
+    await db.commit()
+    audit_service.emit(
+        "vm.packages_synced", target_id=vm_id, target_type="vm",
+        status="success", allowed=True,
+        details={
+            "package_count": inventory.package_count,
+            "source": payload.source,
+            "department_id": vm.department_id,
+        },
+    )
+    return {"ok": True, "vm_id": vm.id, "package_count": inventory.package_count}
 
 
 async def record_vm_snapshots(

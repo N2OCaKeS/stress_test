@@ -20,6 +20,7 @@ from src.core.constants import (
     ServerStatus,
     ServiceRole,
     VM_CONSOLE_KINDS,
+    VM_GRAPHICS_CONSOLE_KINDS,
     VM_POWER_ACTIONS,
     VM_STATUS_FREE,
     VM_SYSTEM_SNAPSHOT_SUFFIX,
@@ -48,6 +49,7 @@ from src.repositories import server_disk as disk_repo
 from src.repositories import vm as repo
 from src.repositories import vm_disk as vm_disk_repo
 from src.repositories import vm_image as vm_image_repo
+from src.repositories import vm_package_inventory as vm_package_repo
 from src.repositories import vm_preset as vm_preset_repo
 from src.repositories import vm_snapshot as vm_snapshot_repo
 from src.schemas.identity import IdentityContext
@@ -63,7 +65,7 @@ from src.schemas.vm import (
     VmCredStrategyRequest,
     VmUpdateRequest,
 )
-from src.services import audit_service, permissions, secrets_service, worker_client
+from src.services import audit_service, console_token, permissions, secrets_service, worker_client
 from src.services import management_user_config
 from src.services import vm_ip_pool as ip_pool_svc
 from src.services.management_creds import generate_management_material
@@ -420,6 +422,7 @@ async def create_vm(
         "ram_mb": payload.ram_mb,
         "disk_gb": payload.disk_gb,
         "autostart": payload.autostart,
+        "graphics": payload.graphics,
         "cred_strategy": payload.cred_strategy.value,
         "busy_state": VmBusyState.CREATING.value,
         "busy_since": datetime.now(timezone.utc),
@@ -474,6 +477,7 @@ async def create_vm(
         "ram_mb": vm.ram_mb,
         "disk_gb": vm.disk_gb,
         "autostart": vm.autostart,
+        "graphics": vm.graphics,
         "cred_strategy": vm.cred_strategy,
         "accounts": [
             {
@@ -2417,28 +2421,46 @@ async def console_access(
             message="Hub server is unavailable (missing or decommissioned)",
         )
     settings = get_settings()
-    token = new_console_token()
     guest_ip = str(vm.ip_address) if vm.ip_address is not None else None
     hub_ip = str(hub.ip_address)
+    ttl = settings.vm_console_token_ttl_seconds
+    ws_path = f"/vm-console/{kind}/{vm.id}"
     result: dict = {
         "vm_id": vm.id,
         "kind": kind,
-        "token": token,
-        "expires_in": settings.vm_console_token_ttl_seconds,
-        "ws_path": f"/vm-console/{kind}/{vm.id}",
+        "token": new_console_token(),
+        "expires_in": ttl,
+        "ws_path": ws_path,
+        "ws_url": None,
         "port": None,
         "serial_path": None,
         "username": None,
+        "password": None,
     }
     if kind == "ssh":
         # SSH идёт к гостю; пароль/ключ прокси берёт по internal mgmt-credentials.
         result["host"] = guest_ip
         result["port"] = 22
         result["username"] = vm.mgmt_user or settings.vm_image_default_user
-    elif kind == "vnc":
-        # VNC/serial проксируются на hub'е; фактический дисплей/порт резолвит
-        # прокси через virsh (server_service его не хранит).
+    elif kind in VM_GRAPHICS_CONSOLE_KINDS:
+        # vnc/spice: графика через websockify-прокси на hub'е. Токен подписан —
+        # прокси проверяет его по общему секрету, round-trip в server_service не
+        # нужен. Порт дисплея, если воркер его сообщил (graphics_port), кладём в
+        # токен; иначе прокси резолвит через virsh.
         result["host"] = hub_ip
+        result["port"] = vm.graphics_port
+        result["ws_url"] = f"{settings.vm_console_proxy_ws_base}{ws_path}"
+        result["token"] = console_token.issue(
+            secret=settings.vm_console_token_secret,
+            vm_id=vm.id,
+            kind=kind,
+            hub_ip=hub_ip,
+            hub_server_id=vm.hub_server_id,
+            ssh_port=hub.ssh_port,
+            port=vm.graphics_port,
+            domain=vm.name,
+            ttl_seconds=ttl,
+        )
     else:  # serial
         result["host"] = hub_ip
     audit_service.emit(
@@ -2446,6 +2468,114 @@ async def console_access(
         status="success", allowed=True,
         details={"kind": kind, "department_id": vm.department_id},
     )
+    return result
+
+
+# ── учётки / пакеты ВМ ───────────────────────────────────────────────────────
+
+
+async def list_vm_accounts(
+    db: AsyncSession, identity: IdentityContext, vm_id: str,
+) -> list[dict]:
+    """Учётки, привязанные к ВМ. Право `(vm, view)` + видимость (cross-dept → 404).
+
+    Возвращает атрибуты учётки + `present_on_vm` (дрейф — привязка есть, в госте
+    нет). Секретов не отдаёт (пароль/приватный ключ не читаются).
+    """
+    await permissions.require_resource_action(
+        db, identity, EntityType.VM, vm_id, Action.VIEW
+    )
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+    links = await account_repo.list_vm_links(db, vm_id)
+    return [
+        {
+            "account_id": account.id,
+            "login": account.login,
+            "has_sudo": account.has_sudo,
+            "unix_groups": list(account.unix_groups or []),
+            "ssh_public_key": account.ssh_public_key,
+            "present_on_vm": link.present_on_vm,
+        }
+        for link, account in links
+    ]
+
+
+async def list_packages(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    *,
+    refresh: bool,
+) -> dict:
+    """Инвентарь пакетов гостя ВМ. Право `(vm, view)` + видимость (cross-dept → 404).
+
+    По умолчанию отдаёт сохранённый список (что записал воркер callback'ом
+    `record_vm_packages`). `refresh=True` дополнительно диспатчит свежий probe
+    `vm.list_packages` — ВМ обязана быть prepared (`is_managed`), иметь IP гостя
+    и живой hub; результат придёт callback'ом. Read-only, брони не требует.
+    """
+    await permissions.require_resource_action(
+        db, identity, EntityType.VM, vm_id, Action.VIEW
+    )
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+
+    inventory = await vm_package_repo.get_for_vm(db, vm_id)
+    result: dict = {
+        "vm_id": vm.id,
+        "packages": list(inventory.packages) if inventory is not None else [],
+        "package_count": inventory.package_count if inventory is not None else 0,
+        "source": inventory.source if inventory is not None else None,
+        "synced_at": inventory.synced_at if inventory is not None else None,
+        "dispatched": False,
+        "task_id": None,
+    }
+    if not refresh:
+        return result
+
+    # Свежий probe: гость опрашивается по SSH через hub под управляющими кредами,
+    # поэтому ВМ обязана быть prepared и иметь IP.
+    if not vm.is_managed:
+        raise ConflictError(
+            error_code="VM_PREPARE_REQUIRED",
+            message="VM is not prepared; run prepare before probing guest packages",
+        )
+    if vm.ip_address is None:
+        raise ConflictError(
+            error_code="VM_GUEST_IP_UNKNOWN",
+            message="VM guest IP is unknown; cannot reach the guest to list packages",
+        )
+    hub = await server_repo.get_by_id(db, vm.hub_server_id)
+    if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+        raise ConflictError(
+            error_code="HUB_UNAVAILABLE",
+            message="Hub server is unavailable (missing or decommissioned)",
+        )
+    payload = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "guest_ip": str(vm.ip_address),
+    }
+    task_id = await _dispatch_vm_task(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_LIST_PACKAGES, hub=hub, vm=vm,
+        payload=payload, audit_action="vm.packages_listed",
+    )
+    await db.commit()
+    audit_service.emit(
+        "vm.packages_listed", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "department_id": vm.department_id},
+    )
+    result["dispatched"] = True
+    result["task_id"] = task_id
     return result
 
 

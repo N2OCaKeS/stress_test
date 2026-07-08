@@ -243,7 +243,9 @@ SERVICE_EVENTS = [
     {"action": "vm_ip_pool.deleted", "description": "VM IP pool deleted (DELETE /vm-ip-pools/{id})", "default_severity": "INFO"},
     # Автозапуск ВМ + консоль.
     {"action": "vm.autostart_set", "description": "VM autostart toggled (dispatch vm.set_autostart: virsh autostart [--disable]). Gated by vm_power. failure reasons: not_found_or_cross_dept / worker_unreachable", "default_severity": "WARNING"},
-    {"action": "vm.console_accessed", "description": "VM console access granted (POST /vms/{id}/console): short-lived token + hub host + port/serial-path/user by kind (ssh/vnc/serial). Gated by (vm, view) + booking. No plaintext creds returned — proxy fetches them via internal mgmt-credentials", "default_severity": "WARNING"},
+    {"action": "vm.console_accessed", "description": "VM console access granted (POST /vms/{id}/console): token + hub host + port/serial-path/user by kind (ssh/vnc/serial/spice). vnc/spice get a signed token + ws_url to the console proxy. Gated by (vm, view) + booking. No plaintext creds returned — proxy fetches them via internal mgmt-credentials", "default_severity": "WARNING"},
+    {"action": "vm.packages_listed", "description": "VM guest package probe dispatched (GET /vms/{id}/packages?refresh=true → vm.list_packages): worker lists dpkg/rpm over SSH via the hub. Gated by (vm, view); requires prepared VM + guest IP + live hub. failure reasons: prepare_required / guest_ip_unknown / hub_unavailable / worker_unreachable", "default_severity": "INFO"},
+    {"action": "vm.packages_synced", "description": "Worker wrote VM guest package inventory back (POST /internal/vms/{id}/packages): full overwrite of the stored package list. Access: (server, *, prepare_callback)", "default_severity": "INFO"},
     # Пресеты стандартных ВМ (vm_preset) + create-default-vms.
     {"action": "vm_preset.created", "description": "VM preset created (POST /vm-presets). failure reasons: department_isolation / duplicate", "default_severity": "INFO"},
     {"action": "vm_preset.updated", "description": "VM preset updated (PATCH /vm-presets/{id})", "default_severity": "INFO"},

@@ -565,6 +565,9 @@ class VmTaskKind(StrEnum):
     # установка per-VM управляющей SSH-пары + пароля, удаление базовой учётки.
     # Тот же kind обслуживает и ротацию mgmt-кред (payload несёт `operation`).
     VM_PREPARE = "vm.prepare"
+    # Live-инвентарь пакетов гостя: worker заходит на гостя по SSH через hub,
+    # снимает dpkg/rpm-список и отдаёт его callback'ом record_vm_packages.
+    VM_LIST_PACKAGES = "vm.list_packages"
     # Смена сетевого режима ВМ: NAT (libvirt, IP через domifaddr) ↔ bridge
     # (br0, статический IP из пула — провижн статики в госте + правка XML).
     VM_SET_NETWORK = "vm.set_network"
@@ -583,5 +586,15 @@ VM_POWER_ACTIONS: frozenset[str] = frozenset({
 })
 
 # Типы консольного доступа к ВМ (`POST /vms/{id}/console`): интерактивный SSH,
-# VNC (websockify+noVNC) и последовательная консоль (`virsh console`).
-VM_CONSOLE_KINDS: frozenset[str] = frozenset({"ssh", "vnc", "serial"})
+# VNC/SPICE (графическая консоль через websockify-прокси) и последовательная
+# консоль (`virsh console`).
+VM_CONSOLE_KINDS: frozenset[str] = frozenset({"ssh", "vnc", "serial", "spice"})
+
+# Графические консоли ВМ, идущие через токен-прокси (websockify): и vnc, и spice
+# отдают UI ws_url + подписанный токен. ssh/serial проксируются иначе.
+VM_GRAPHICS_CONSOLE_KINDS: frozenset[str] = frozenset({"vnc", "spice"})
+
+# Тип графики ВМ, выбираемый при создании (`VmCreate.graphics`) и уезжающий
+# воркеру (`--graphics`). Дефолт — vnc.
+VM_GRAPHICS_KINDS: frozenset[str] = frozenset({"vnc", "spice"})
+VM_GRAPHICS_DEFAULT = "vnc"

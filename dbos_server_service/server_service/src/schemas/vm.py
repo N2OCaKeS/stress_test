@@ -34,6 +34,7 @@ class VmCreate(BaseModel):
     ram_mb: int = Field(..., ge=1, description="RAM ВМ в МБ. Учитывается в проверке ёмкости hub'а.")
     disk_gb: int = Field(..., ge=1, description="Диск ВМ в ГБ. Учитывается в проверке ёмкости hub'а.")
     autostart: bool = Field(default=False, description="Автозапуск ВМ при старте hub'а.")
+    graphics: Literal["vnc", "spice"] = Field(default="vnc", description="Тип графической консоли ВМ (vnc/spice). Уезжает воркеру как --graphics; для spice-консоли ВМ должна быть создана с graphics=spice.")
     cred_strategy: VmCredStrategy = Field(default=VmCredStrategy.PER_SNAPSHOT, description="Связь mgmt-кред со снимками: per_snapshot (дефолт) или reroll.")
 
 
@@ -82,9 +83,9 @@ class VmAutostartRequest(BaseModel):
 class VmConsoleRequest(BaseModel):
     """Тело POST /vms/{id}/console — запросить доступ к консоли ВМ."""
 
-    kind: Literal["ssh", "vnc", "serial"] = Field(
+    kind: Literal["ssh", "vnc", "serial", "spice"] = Field(
         default="vnc",
-        description="Тип консоли: ssh (интерактивный shell), vnc (websockify+noVNC), serial (`virsh console`).",
+        description="Тип консоли: ssh (интерактивный shell), vnc/spice (графика через websockify-прокси), serial (`virsh console`).",
     )
 
 
@@ -98,14 +99,53 @@ class VmConsoleResponse(BaseModel):
     """
 
     vm_id: str = Field(description="ID ВМ (prefix vm_).")
-    kind: str = Field(description="ssh / vnc / serial.")
-    token: str = Field(description="Короткоживущий токен доступа (prefix vmc_); предъявляется прокси.")
+    kind: str = Field(description="ssh / vnc / serial / spice.")
+    token: str = Field(description="Токен доступа: для ssh/serial — короткоживущий `vmc_`; для vnc/spice — подписанный (HMAC) токен, который прокси проверяет по общему секрету.")
     expires_in: int = Field(description="Сколько секунд токен действителен.")
-    host: str | None = Field(default=None, description="Хост, к которому подключается UI: для vnc/serial — IP hub'а (там живёт прокси), для ssh — IP гостя (None, если гость ещё без IP).")
+    host: str | None = Field(default=None, description="Хост, к которому подключается UI: для vnc/spice/serial — IP hub'а (там живёт прокси), для ssh — IP гостя (None, если гость ещё без IP).")
     ws_path: str = Field(description="Путь websocket-эндпоинта прокси для этой ВМ и типа консоли.")
-    port: int | None = Field(default=None, description="VNC-порт (для kind=vnc, если известен) либо SSH-порт (для kind=ssh). Для serial — None.")
+    ws_url: str | None = Field(default=None, description="Полный ws(s)-URL console-прокси (для vnc/spice): base + ws_path. UI открывает его, предъявляя token. Для ssh/serial — None.")
+    port: int | None = Field(default=None, description="Порт дисплея на hub'е (vnc/spice, если известен из state-callback'а) либо SSH-порт (kind=ssh). Для serial — None.")
     serial_path: str | None = Field(default=None, description="Устройство serial-консоли в госте (для kind=serial), иначе None.")
     username: str | None = Field(default=None, description="Управляющий пользователь для kind=ssh (mgmt_user или дефолт-учётка образа). Пароль/ключ прокси тянет через internal mgmt-credentials — plaintext в ответе не отдаётся.")
+    password: str | None = Field(default=None, description="Пароль графической консоли (vnc/spice), если ВМ его требует. Обычно None — консоль защищена токеном прокси, не паролем дисплея.")
+
+
+class VmAccountResponse(BaseModel):
+    """Одна учётка, привязанная к ВМ (GET /vms/{id}/accounts). Без секретов."""
+
+    account_id: str = Field(description="ID учётки (prefix acc_).")
+    login: str = Field(description="OS-логин учётки в госте.")
+    has_sudo: bool = Field(description="Есть ли sudo у учётки.")
+    unix_groups: list[str] = Field(default_factory=list, description="Доп. unix-группы учётки.")
+    ssh_public_key: str | None = Field(default=None, description="Публичный SSH-ключ учётки (открытый — не секрет). None, если не задан.")
+    present_on_vm: bool = Field(description="Реально ли учётка заведена в госте (False — дрейф: привязка есть, в госте нет).")
+
+
+class VmPackageItem(BaseModel):
+    """Один установленный пакет гостя ВМ."""
+
+    name: str = Field(description="Имя пакета.")
+    version: str | None = Field(default=None, description="Версия пакета (или None).")
+
+
+class VmPackagesResponse(BaseModel):
+    """Ответ GET /vms/{id}/packages — сохранённый инвентарь + флаг диспатча.
+
+    По умолчанию отдаёт последний известный список (что записал воркер
+    callback'ом). `?refresh=true` дополнительно диспатчит свежий probe
+    `vm.list_packages` — в этом случае `dispatched=true` и `task_id` заполнен, а
+    `packages`/`synced_at` пока несут прежний (возможно, устаревший) снимок,
+    который обновится, когда придёт callback.
+    """
+
+    vm_id: str = Field(description="ID ВМ (prefix vm_).")
+    packages: list[VmPackageItem] = Field(default_factory=list, description="Установленные пакеты (последний известный список).")
+    package_count: int = Field(default=0, description="Число пакетов в списке.")
+    source: str | None = Field(default=None, description="Откуда снят список (dpkg/rpm) или None.")
+    synced_at: datetime | None = Field(default=None, description="Когда список последний раз синкнут воркером (UTC). None — probe ещё не было.")
+    dispatched: bool = Field(default=False, description="Был ли по этому запросу поставлен свежий probe vm.list_packages.")
+    task_id: str | None = Field(default=None, description="ID задачи vm.list_packages, если dispatched=true.")
 
 
 class VmReserveRequest(BaseModel):
@@ -163,6 +203,7 @@ class VmResponse(BaseModel):
     ram_mb: int | None = Field(default=None, description="RAM ВМ в МБ.")
     disk_gb: int | None = Field(default=None, description="Диск ВМ в ГБ.")
     autostart: bool = Field(default=False, description="Автозапуск при старте hub'а.")
+    graphics: str = Field(default="vnc", description="Тип графической консоли ВМ: vnc / spice.")
     cred_strategy: str = Field(description="per_snapshot / reroll.")
     busy_state: str | None = Field(default=None, description="Lifecycle-lock (creating/deleting/updating/powering) или None.")
     busy_since: datetime | None = Field(default=None, description="Когда поставлен lifecycle-lock.")
@@ -483,6 +524,7 @@ class VmStateCallbackRequest(BaseModel):
     clear_busy_state: bool = Field(default=False, description="Явно снять lifecycle-lock (busy_state → NULL). Нужен, т.к. null в busy_state неотличим от «не прислано».")
     ping_reachable: bool | None = Field(default=None, description="Результат ping-пробы гостя.")
     ssh_reachable: bool | None = Field(default=None, description="Результат SSH-пробы гостя.")
+    graphics_port: int | None = Field(default=None, ge=1, le=65535, description="Порт графического дисплея ВМ (vnc/spice) на hub'е — воркер сообщает его при console-prep. Пишется в vms.graphics_port, попадает в токен консоли.")
     error: str | None = Field(default=None, max_length=1024, description="Текст ошибки последней операции (в last_error).")
 
 
@@ -522,6 +564,27 @@ class VmDisksCallbackResponse(BaseModel):
     ok: bool = True
     vm_id: str = Field(description="ID ВМ.")
     synced: int = Field(description="Сколько дисков фактически обновлено.")
+
+
+class VmPackagesCallbackRequest(BaseModel):
+    """Тело POST /internal/vms/{id}/packages — воркер пишет пакеты гостя ВМ.
+
+    Полная перезапись инвентаря: воркер снял `dpkg -l`/`rpm -qa` в госте и шлёт
+    весь список. server_service сохраняет его строкой на ВМ (перезаписывает
+    прежний). `source` — dpkg/rpm (для UI-подсказки).
+    """
+
+    packages: list[VmPackageItem] = Field(default_factory=list, description="Полный список установленных пакетов гостя.")
+    source: str | None = Field(default=None, max_length=16, description="Менеджер пакетов, которым снят список: dpkg / rpm.")
+    task_id: str | None = Field(default=None, max_length=64, description="ID задачи vm.list_packages, чей результат прислан (для трассировки).")
+
+
+class VmPackagesCallbackResponse(BaseModel):
+    """Подтверждение записи packages-callback'а ВМ."""
+
+    ok: bool = True
+    vm_id: str = Field(description="ID ВМ.")
+    package_count: int = Field(description="Сколько пакетов сохранено.")
 
 
 class VmsHubStateCallbackRequest(BaseModel):

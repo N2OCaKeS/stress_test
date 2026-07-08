@@ -1316,6 +1316,47 @@ async def auto_inventory_sweep() -> None:
     )
 
 
+@broker.task(
+    "power.sweep",
+    # Частый прогон живой пробы питания (default каждые 5 минут). Регистрируем
+    # cron только когда включён и scheduler, и сам power-sweep — иначе task
+    # висит на broker'е без расписания (для ручного kiq / testkit'а).
+    schedule=(
+        [{"cron": _settings.power_sweep_cron}]
+        if _settings.scheduler_enabled and _settings.power_sweep_enabled
+        else []
+    ),
+)
+async def power_sweep() -> None:
+    """Частый прогон живой пробы питания по всем серверам (ping/ssh/ipmi).
+
+    Воркер даёт только расписание: дёргает server_service internal-эндпоинт
+    `/servers/power-sweep`, а тот сам берёт список всех не-списанных серверов и
+    ставит `power.status` на каждый (без inventory.sync, без фильтра is_managed).
+    Так доступность и питание держатся актуальными для каждого сервера, включая
+    неподготовленные и те, у кого нет IPMI.
+
+    Ошибки логируются с redact'ом и НЕ пробрасываются — один пропущенный tick
+    не должен валить scheduler-loop (симметрично housekeeping-cron'ам).
+    """
+    from src.services import server_service_client
+    from src.utils.redaction import redact_error_message
+
+    try:
+        summary = await server_service_client.trigger_power_sweep()
+    except Exception as exc:  # noqa: BLE001 — periodic не должен крэшить scheduler
+        redacted = redact_error_message(f"{type(exc).__name__}: {exc}")
+        logger.warning("power.sweep failed: %s", redacted)
+        return
+    logger.info(
+        "power.sweep: total=%s processed=%s dispatched=%s truncated=%s",
+        summary.get("total_servers"),
+        summary.get("processed"),
+        summary.get("dispatched_tasks"),
+        summary.get("truncated"),
+    )
+
+
 @broker.task("dispatch_outbox.poll")
 async def dispatch_outbox_poll_task() -> None:
     """Operator-ручка / ad-hoc kick'нуть один проход publisher'а.

@@ -415,7 +415,11 @@ async def _probe_ipmi_power_state(server_id: str, target_dept: str | None) -> st
     except CredentialFetchError as exc:
         if exc.error_code == "SERVER_SERVICE_UNREACHABLE":
             raise
-        logger.info(
+        # У сервера просто нет IPMI-контроллера/кред — штатная ситуация для
+        # массы боксов, и периодический sweep дёргает эту ветку по каждому из
+        # них. Пишем DEBUG, а не INFO: в логах не должно быть шума на каждом
+        # тике. ipmi_power_state=unknown — валидный сигнал.
+        logger.debug(
             "power.status: IPMI credentials unavailable (%s), ipmi_power_state=unknown",
             exc.error_code,
         )

@@ -25,6 +25,7 @@ durable-retry на уровне `_runner`. Guest доступен по `sshpass`
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
@@ -654,8 +655,29 @@ async def _guest_ip(ssh, host: str, name: str) -> str:
     return ip
 
 
+async def _wait_guest_ssh(
+    ssh, host: str, guest_ip: str, *, attempts: int = 30, delay: float = 6.0,
+) -> None:
+    """Дождаться, пока гость примет SSH.
+
+    Гость только что стартовал из virt-install — sshd поднимается не мгновенно.
+    Провижн (bridge берёт IP напрямую, без ожидания dhcp-lease) без этой паузы
+    бьёт по гостю раньше времени и падает. Пробуем `true` по SSH до успеха.
+    """
+    for _ in range(attempts):
+        rc, _out, _err = await ssh.run(guest_ssh(guest_ip, "true"), sudo=True)
+        if rc == 0:
+            return
+        await asyncio.sleep(delay)
+    raise SshError(
+        error_code="VM_PROVISION_FAILED", host=host,
+        message=f"гость {guest_ip} не принял SSH за отведённое время",
+    )
+
+
 async def _provision_guest_base(ssh, host: str, name: str, guest_ip: str) -> None:
     """Базовый провижн гостя: hostname, ntp, установка зависимостей."""
+    await _wait_guest_ssh(ssh, host, guest_ip)
     await _run(
         ssh, guest_ssh(guest_ip, f"hostnamectl set-hostname {name}", sudo=True),
         host, "VM_PROVISION_FAILED", "не удалось задать hostname гостю",

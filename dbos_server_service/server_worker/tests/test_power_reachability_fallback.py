@@ -416,12 +416,15 @@ class TestProbeReachabilityUnit:
 class _FakeProc:
     """Заглушка subprocess-процесса ping для юнит-тестов latency."""
 
-    def __init__(self, returncode: int, stdout: bytes) -> None:
+    def __init__(
+        self, returncode: int, stdout: bytes, stderr: bytes = b"",
+    ) -> None:
         self.returncode = returncode
         self._stdout = stdout
+        self._stderr = stderr
 
     async def communicate(self):
-        return self._stdout, b""
+        return self._stdout, self._stderr
 
     async def wait(self):
         return self.returncode
@@ -451,9 +454,12 @@ class TestReachabilityLatencyUnit:
         monkeypatch.setattr(
             _reachability.asyncio, "create_subprocess_exec", fake_exec,
         )
-        reachable, latency = await _reachability._ping_probe("10.0.0.1", 2.0)
+        reachable, latency, icmp_available = await _reachability._ping_probe(
+            "10.0.0.1", 2.0,
+        )
         assert reachable is True
         assert latency == 2.50
+        assert icmp_available is True
 
     async def test_ping_probe_wallclock_fallback_when_no_time(self, monkeypatch):
         async def fake_exec(*args, **kwargs):
@@ -462,20 +468,53 @@ class TestReachabilityLatencyUnit:
         monkeypatch.setattr(
             _reachability.asyncio, "create_subprocess_exec", fake_exec,
         )
-        reachable, latency = await _reachability._ping_probe("10.0.0.1", 2.0)
+        reachable, latency, icmp_available = await _reachability._ping_probe(
+            "10.0.0.1", 2.0,
+        )
         assert reachable is True
         # RTT в выводе нет → latency берётся wall-clock'ом, но всё равно число.
         assert isinstance(latency, float)
         assert latency >= 0.0
+        assert icmp_available is True
 
     async def test_ping_probe_unreachable(self, monkeypatch):
+        # rc==1: пакет ушёл, ответа нет — ICMP как метод рабочий, хост молчит.
         async def fake_exec(*args, **kwargs):
             return _FakeProc(1, b"")
 
         monkeypatch.setattr(
             _reachability.asyncio, "create_subprocess_exec", fake_exec,
         )
-        assert await _reachability._ping_probe("10.0.0.1", 2.0) == (False, None)
+        assert await _reachability._ping_probe("10.0.0.1", 2.0) == (
+            False, None, True,
+        )
+
+    async def test_ping_probe_icmp_unavailable_socket_error(self, monkeypatch):
+        # rc==2 + «Operation not permitted» — ICMP в среде запрещён, а не хост
+        # недоступен. icmp_available=False → caller деградирует на TCP.
+        async def fake_exec(*args, **kwargs):
+            return _FakeProc(
+                2, b"", b"ping: socket: Operation not permitted\n",
+            )
+
+        monkeypatch.setattr(
+            _reachability.asyncio, "create_subprocess_exec", fake_exec,
+        )
+        assert await _reachability._ping_probe("10.0.0.1", 2.0) == (
+            False, None, False,
+        )
+
+    async def test_ping_probe_icmp_unavailable_no_binary(self, monkeypatch):
+        # Бинаря ping нет — тоже «ICMP недоступен», не «хост недоступен».
+        async def fake_exec(*args, **kwargs):
+            raise FileNotFoundError("ping")
+
+        monkeypatch.setattr(
+            _reachability.asyncio, "create_subprocess_exec", fake_exec,
+        )
+        assert await _reachability._ping_probe("10.0.0.1", 2.0) == (
+            False, None, False,
+        )
 
     async def test_tcp_probe_measures_latency_on_real_listener(self):
         import asyncio
@@ -504,7 +543,7 @@ class TestReachabilityLatencyUnit:
 
         async def fake_ping(host, timeout):
             calls["ping"] += 1
-            return True, 1.11
+            return True, 1.11, True
 
         async def fake_tcp(host, port, timeout):
             calls["tcp"] += 1
@@ -525,6 +564,44 @@ class TestReachabilityLatencyUnit:
             "ssh_reachable": True,
             "ssh_latency_ms": 2.22,
         }
+
+    async def test_ping_degrades_to_tcp_when_icmp_unavailable(self, monkeypatch):
+        # ICMP в среде запрещён (icmp_available=False), но SSH-порт открыт —
+        # ping не должен показывать ложный «недоступен», берёт TCP-результат.
+        async def fake_ping(host, timeout):
+            return False, None, False
+
+        async def fake_tcp(host, port, timeout):
+            return True, 3.33
+
+        monkeypatch.setattr(_reachability, "_ping_probe", fake_ping)
+        monkeypatch.setattr(_reachability, "_tcp_probe", fake_tcp)
+
+        signals = await _reachability.probe_reachability_signals("10.0.0.1")
+        assert signals == {
+            "ping_reachable": True,
+            "ping_latency_ms": 3.33,
+            "ssh_reachable": True,
+            "ssh_latency_ms": 3.33,
+        }
+
+    async def test_ping_stays_false_when_icmp_unavailable_and_tcp_closed(
+        self, monkeypatch,
+    ):
+        # ICMP запрещён и SSH-порт закрыт — деградация даёт честный «недоступен»,
+        # а не ложный «доступен».
+        async def fake_ping(host, timeout):
+            return False, None, False
+
+        async def fake_tcp(host, port, timeout):
+            return False, None
+
+        monkeypatch.setattr(_reachability, "_ping_probe", fake_ping)
+        monkeypatch.setattr(_reachability, "_tcp_probe", fake_tcp)
+
+        signals = await _reachability.probe_reachability_signals("10.0.0.1")
+        assert signals["ping_reachable"] is False
+        assert signals["ssh_reachable"] is False
 
     async def test_probe_reachability_signals_empty_host(self):
         assert await _reachability.probe_reachability_signals("  ") == {

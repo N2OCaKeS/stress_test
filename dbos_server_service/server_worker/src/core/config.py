@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 # Ночной низкий traffic, со сдвигом от housekeeping-cleanup'ов (00:00-00:30 UTC).
 _AUTO_INVENTORY_CRON_DEFAULT = "0 1 * * *"
 
+# Дефолт cron'а частого power-sweep'а: каждые 5 минут. Проба ping/ssh/ipmi
+# read-only и лёгкая, но держит доступность и питание всех серверов актуальными
+# (иначе значения «протухают» между суточными inventory-прогонами).
+_POWER_SWEEP_CRON_DEFAULT = "*/5 * * * *"
+
 
 # Матчит DSN `redis://[user]:<password>@host:port/db`. Без password
 # (`redis://redis:6379/0`) и без user:pass-сегмента вообще — не матчит.
@@ -373,6 +378,28 @@ class Settings(BaseSettings):
         description=(
             "Cron for the periodic auto-inventory/power sweep (UTC, taskiq). "
             "Default `0 1 * * *` = 04:00 MSK, once a day."
+        ),
+    )
+
+    # ── Частый power-sweep (ping/ssh/ipmi по всем серверам) ──────────────
+    # Периодик `power.sweep` по частому cron'у дёргает server_service
+    # internal-эндпоинт /servers/power-sweep — тот ставит ТОЛЬКО power.status на
+    # ВСЕ не-списанные серверы (без inventory.sync, без фильтра is_managed).
+    # Держит доступность (ping/ssh) и питание (ipmi) актуальными для каждого
+    # сервера. Регистрируется при `scheduler_enabled AND power_sweep_enabled`.
+    power_sweep_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enable the frequent power/reachability sweep task (`power.sweep`) "
+            "that probes ping/ssh/ipmi for every server. Requires "
+            "SCHEDULER_ENABLED as well."
+        ),
+    )
+    power_sweep_cron: str = Field(
+        default=_POWER_SWEEP_CRON_DEFAULT,
+        description=(
+            "Cron for the frequent power/reachability sweep (UTC, taskiq). "
+            "Default `*/5 * * * *` = every 5 minutes."
         ),
     )
 
@@ -988,6 +1015,32 @@ class Settings(BaseSettings):
             self.auto_inventory_cron = _AUTO_INVENTORY_CRON_DEFAULT
         else:
             self.auto_inventory_cron = expr
+        return self
+
+    @model_validator(mode="after")
+    def _fallback_invalid_power_sweep_cron(self) -> "Settings":
+        """Кривой `POWER_SWEEP_CRON` заменяем дефолтом, а не роняем scheduler.
+
+        Та же защита, что и у `_fallback_invalid_auto_inventory_cron`: строка,
+        которую pycron не парсит, останавливает весь scheduler-loop, поэтому на
+        parse-ошибке откатываемся на дефолт с WARNING'ом.
+        """
+        expr = (self.power_sweep_cron or "").strip()
+        try:
+            import pycron
+
+            pycron.is_now(expr, datetime.now(timezone.utc))
+        except Exception as exc:  # noqa: BLE001 — любую parse-ошибку трактуем как битый cron
+            logger.warning(
+                "POWER_SWEEP_CRON=%r is not a valid cron expression (%s); "
+                "falling back to default %r",
+                self.power_sweep_cron,
+                type(exc).__name__,
+                _POWER_SWEEP_CRON_DEFAULT,
+            )
+            self.power_sweep_cron = _POWER_SWEEP_CRON_DEFAULT
+        else:
+            self.power_sweep_cron = expr
         return self
 
 

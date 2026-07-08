@@ -370,6 +370,29 @@ async def trigger_auto_inventory_sweep() -> dict:
     )
 
 
+async def trigger_power_sweep() -> dict:
+    """Запустить частый power-sweep на стороне server_service.
+
+    Периодик `power.sweep` (worker-scheduler) даёт лишь расписание; сам фан-аут
+    (список ВСЕХ активных серверов + dispatch `power.status` на каждый) делает
+    server_service. В отличие от auto-inventory-sweep — только проба ping/ssh/ipmi,
+    без inventory.sync и без фильтра is_managed. Прогон платформенный, поэтому
+    `X-Target-Department-Id` не шлём.
+
+    Возвращает: `{ok, total_servers, processed, dispatched_tasks, truncated}` от
+    `POST /api/server/v1/internal/servers/power-sweep`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `POWER_SWEEP_REJECTED` — server_service вернул не 2xx.
+    """
+    return await _request(
+        "post",
+        "/api/server/v1/internal/servers/power-sweep",
+        reject_code="POWER_SWEEP_REJECTED",
+    )
+
+
 async def fetch_management_credentials(
     server_id: str,
     target_department_id: str | None = None,

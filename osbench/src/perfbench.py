@@ -51,7 +51,7 @@ class PerfBench(Test):
         result, code = system.leave_command(cmd, returncode=True, console=False)
         return result, code
 
-    @status_check  
+    #@status_check  
     def start_test(self):
         """
         Запуск всех тестов perf bench с разными уровнями concurrency
@@ -118,7 +118,7 @@ class PerfBench(Test):
             self.test_success = False
             return True, False
 
-    @status_check
+    #@status_check
     def get_results(self):
         """
         Получить результаты и сохранить в JSON с группировкой по concurrency

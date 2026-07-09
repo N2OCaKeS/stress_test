@@ -159,7 +159,7 @@ class FSMark(Test, FsMarkParser):
         FsMarkParser.__init__(self, self._report_filename)
 
 
-    @status_check  
+    #@status_check  
     def start_test(self):
 
         log.info("Запуск fs_mark")
@@ -182,7 +182,7 @@ class FSMark(Test, FsMarkParser):
             
             return False
         
-        log.warning("⚠️ ВНИМАНИЕ! В процессе тестирования данные на диске могут быть уничтожены!")
+        log.warning(f"⚠️ ВНИМАНИЕ! В процессе тестирования данные на диске '{self.dd}' могут быть уничтожены!")
         storage_name = self.dd
         if storage_name not in system.command(f"lsblk | grep {storage_name}"):
             storage_name = system.command("lsblk | awk 'NR==2' | awk '{print $1;}'")
@@ -240,6 +240,8 @@ class FSMark(Test, FsMarkParser):
                 message=f"Files: {count}, Size: {self.f_size}KB"
             )
 
+        system.leave_command(f"umount {STORAGE_MOUNT_DIR}", console=False)
+
         log.debug(f"Codes status: {status}")
 
         if all(code for code in status):
@@ -254,7 +256,7 @@ class FSMark(Test, FsMarkParser):
             return True, False
 
 
-    @status_check
+    #@status_check
     def get_results(self):
         """
         Получить результаты и сохранить в JSON

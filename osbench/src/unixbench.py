@@ -225,7 +225,7 @@ class UnixBench(Test, UnixBenchParser):
         return self._report_filename
 
 
-    @status_check  
+    #@status_check  
     def start_test(self):
 
         log.info("Запуск UnixBench")

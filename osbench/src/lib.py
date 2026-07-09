@@ -96,11 +96,12 @@ class system:
             
 
     @staticmethod
-    def leave_command(command: str, returncode=None, console=True) -> Tuple[str, bool]:
+    def leave_command(command: str, returncode=None, console=True, debug=False) -> Tuple[str, bool]:
         """
         Построчный вывод в терминал/лог
         """
-        log.info(f"Выполняется команда: {command}")
+        if debug:
+            log.info(f"Выполняется команда: {command}")
 
         output_lines = []
         error_lines = []
@@ -110,8 +111,8 @@ class system:
         
         if not console:
             log.set_console(False)
-
-            keepalive_active = True
+            log.info(f"Выполняется команда: {command}")
+            keepalive_active = False #True
 
             def keepalive():
                 spinner = ['◐', '◓', '◑', '◒']
@@ -157,7 +158,8 @@ class system:
             log.set_console(True)
 
         if process.returncode == 0:
-            log.info(f"Команда '{command}' завершена с кодом: {process.returncode}\n")
+            if debug:
+                log.info(f"Команда '{command}' завершена с кодом: {process.returncode}\n")
         else: log.error(f"Команда '{command}' завершена с кодом: {process.returncode}\n")
 
         output = '\n'.join(output_lines)
@@ -294,4 +296,145 @@ class Writer:
             f.write("\n")
 
 
-
+class ProgressBar:
+    """
+    Прогресс-бар с отображением процентов и времени
+    """
+    
+    # Веса этапов
+    STAGE_WEIGHTS = {
+        'unixbench': 61,      
+        'fs_mark': 8,         
+        'lmbench': 28,        
+        'perf': 2,            
+        'aggregation': 0.5,   
+        'index': 0.5          
+    }
+    
+    # Очередность этапов
+    STAGE_ORDER = ['unixbench', 'fs_mark', 'lmbench', 'perf', 'aggregation', 'index']
+    
+    # Названия этапов для отображения
+    STAGE_NAMES = {
+        'unixbench': 'Ядро/системные вызовы',
+        'fs_mark': 'Файловая система',
+        'lmbench': 'Задержки',
+        'perf': 'Синхронизация/события',
+        'aggregation': 'Агрегация результатов',
+        'index': 'Расчёт индекса'
+    }
+    
+    def __init__(self):
+        self.current_stage_index = 0
+        self.stage_progress = 0  # 0-100 внутри текущего этапа
+        self.start_time = datetime.now()
+        self.running = True
+        self.completed = False
+        self.total_weight = sum(self.STAGE_WEIGHTS.values())
+        self.lock = threading.Lock()
+        self.thread = threading.Thread(target=self._update, daemon=True)
+        self.last_percent = 0
+        
+    def start(self):
+        """Запускает поток обновления прогресс-бара"""
+        self.thread.start()
+        
+    def stop(self):
+        """Останавливает поток и завершает прогресс-бар"""
+        self.completed = True
+        self.running = False
+        if self.thread.is_alive():
+            self.thread.join(timeout=0.5)
+        self._display(completed=True)
+        
+    def advance_stage(self):
+        """Переход к следующему этапу"""
+        self.stage_progress = 100
+        self.current_stage_index += 1
+        
+    def update_progress(self, progress_percent):
+        """Обновление прогресса внутри текущего этапа (0-100)"""
+        self.stage_progress = min(100, progress_percent)
+        
+    def get_current_stage_name(self):
+        """Получить название текущего этапа"""
+        if self.current_stage_index < len(self.STAGE_ORDER):
+            stage = self.STAGE_ORDER[self.current_stage_index]
+            return self.STAGE_NAMES.get(stage, stage)
+        return "Завершение"
+        
+    def get_current_weight(self):
+        """Получить вес текущего этапа"""
+        if self.current_stage_index < len(self.STAGE_ORDER):
+            stage = self.STAGE_ORDER[self.current_stage_index]
+            return self.STAGE_WEIGHTS.get(stage, 0)
+        return 0
+        
+    def get_overall_progress(self):
+        """Расчёт общего прогресса"""
+        overall = 0
+        for i, stage in enumerate(self.STAGE_ORDER):
+            weight = self.STAGE_WEIGHTS.get(stage, 0)
+            if i < self.current_stage_index:
+                overall += weight
+            elif i == self.current_stage_index:
+                overall += weight * (self.stage_progress / 100)
+        return min(99, overall)  # Не доходим до 100% до завершения
+        
+    def _update(self):
+        """Фоновый поток обновления прогресс-бара"""
+        while self.running:
+            with self.lock:
+                self._display()
+            time.sleep(0.5)
+            
+    def _display(self, completed=False):
+        """Отображает прогресс-бар"""
+        # Вычисляем процент
+        if completed:
+            percent = 100
+        else:
+            percent = self.get_overall_progress()
+        
+        # Время выполнения
+        elapsed = datetime.now() - self.start_time
+        total_seconds = int(elapsed.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        
+        # Прогноз времени (ETA) на основе прогресса
+        if percent > 0 and not completed:
+            estimated_total = (total_seconds / percent) * 100
+            remaining = estimated_total - total_seconds
+            rem_hours = int(remaining // 3600)
+            rem_minutes = int((remaining % 3600) // 60)
+            rem_seconds = int(remaining % 60)
+            eta_str = f"{rem_hours:02d}:{rem_minutes:02d}:{rem_seconds:02d}"
+        else:
+            eta_str = "00:00:00"
+        
+        # Создаём прогресс-бар
+        bar_length = 40
+        filled = int(bar_length * percent / 100)
+        bar = '█' * filled + '░' * (bar_length - filled)
+        
+        # Статус и описание
+        if completed:
+            status = "ЗАВЕРШЕНО"
+        elif percent >= 99:
+            status = "ФИНИШИРУЕМ"
+        else:
+            status = "ВЫПОЛНЕНИЕ"
+        
+        # Название этапа
+        stage_name = self.get_current_stage_name()
+        
+        # Выводим
+        sys.stdout.write(f'\r{status} | {bar} | {percent:>5.1f}% | {stage_name:<35} | {time_str} | ETA: {eta_str}')
+        sys.stdout.flush()
+        
+        if completed:
+            sys.stdout.write('\n')
+            sys.stdout.flush()

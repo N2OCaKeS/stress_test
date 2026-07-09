@@ -59,15 +59,15 @@ class LMBench(Test):
         return result, code
 
 
-    @status_check  
+    #@status_check  
     def start_test(self):
 
         log.info("Запуск LMbench")
-        log.warning("=" * 60)
-        log.warning("⚠️ ПРИМЕЧАНИЕ:")
-        log.warning("LMbench выводит результаты тестов в stderr")
-        log.warning("Это НЕ ошибки, а нормальное поведение бенчмарка")
-        log.warning("=" * 60)
+        log.debug("=" * 60)
+        log.debug("⚠️ ПРИМЕЧАНИЕ:")
+        log.debug("LMbench выводит результаты тестов в stderr")
+        log.debug("Это НЕ ошибки, а нормальное поведение бенчмарка")
+        log.debug("=" * 60)
         status_code_dict = {}
         iterations = ITERATIONS_COUNT
         
@@ -142,7 +142,7 @@ class LMBench(Test):
             return True, False
 
         
-    @status_check
+    #@status_check
     def get_results(self):
         """
         Получить результаты и сохранить в JSON с группировкой по итерациям

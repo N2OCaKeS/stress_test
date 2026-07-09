@@ -4,7 +4,7 @@ SSH мокается `_FakeSshClient` (дефолт rc=0, точечные от�
 команды) — как в `test_vms_tasks`. Проверяем: prepare ставит mgmt-учётку +
 ключ + sudo, проверяет вход по ключу ДО деструктива, хардит sshd и удаляет
 базовую учётку `u` (безопасный порядок); set_network пишет статику и переводит
-NIC на bridge (или читает NAT-адрес через domifaddr); internal-callback'и.
+NIC на нужный мост (`br0` для LAN, `natbr0` для NAT); internal-callback'и.
 """
 
 from __future__ import annotations
@@ -428,15 +428,65 @@ class TestVmSetNetworkBridgeFallback:
 
 
 class TestVmSetNetworkNat:
-    async def test_nat_reads_domifaddr(
+    # Детерминированный статик-адрес NAT-гостя `xfs-1` в подсети natbr0.
+    _NAT_ADDR = "192.168.100.73"
+
+    async def test_nat_static_and_natbr0_switch(
         self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
     ):
         fake = _FakeSshClient()
         fake.set_response("virsh domstate", 0, "running")
-        fake.set_response(
-            "virsh domifaddr", 0,
-            " vnet0 52:54:00:aa:bb:cc ipv4 192.168.100.30/24",
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm2", "hub_host": "10.0.0.7", "vm_name": "xfs-1",
+            "network_mode": "nat", "guest_ip": "10.177.103.150",
+            "target_department_id": "dep1",
+        }
+        tid = await make_task(task_kind="vm.set_network", target_server_id="hub1", payload=payload)
+        await vms_network.vm_set_network.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        # host-only мост natbr0 гарантирован на хабе перед переводом NIC
+        assert any("dbos-vms-nat.sh" in c for c in cmds)
+        # статика: детерминированный адрес подсети natbr0, шлюз/DNS 192.168.100.1
+        i_static = _idx(cmds, "/etc/network/interfaces")
+        assert f"address {self._NAT_ADDR}" in cmds[i_static]
+        assert "netmask 255.255.255.0" in cmds[i_static]
+        assert "gateway 192.168.100.1" in cmds[i_static]
+        assert "dns-nameservers 192.168.100.1" in cmds[i_static]
+        # NIC переведён на реальный мост natbr0 (не SLIRP user-networking)
+        i_switch = _idx(cmds, "virt-xml xfs-1 --edit --network bridge=natbr0,model=virtio")
+        assert i_static < i_switch
+        assert not any("user,model=virtio" in c for c in cmds)
+        assert any("virsh start xfs-1" in c for c in cmds)
+        # NIC-свитч и рестарт домена — в session без sudo
+        _assert_session_no_sudo(
+            fake.calls, "virt-xml xfs-1 --edit --network bridge=natbr0",
         )
+        _assert_session_no_sudo(fake.calls, "virsh start xfs-1")
+        # applied_ip детерминирован и известен сразу (гость достижим с хаба)
+        state = stub_session_and_callbacks["calls"]["vm_state"][0]
+        assert state["ip_address"] == self._NAT_ADDR
+        assert state["power_state"] == "on"
+
+    async def test_nat_offline_fallback_when_guest_unreachable(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
+    ):
+        # Текущего адреса гостя нет (domifaddr пуст, guest_ip не задан) →
+        # статику заливаем offline в диск, но applied_ip всё равно
+        # детерминирован (адрес natbr0 известен заранее).
+        fake = _FakeSshClient()
+        fake.set_response("virsh domstate", 0, "running")
+        fake.set_response(
+            "virsh domblklist", 0,
+            " Target   Source\n"
+            "---------------------------------\n"
+            " vda      /vms/xfs-1.qcow2\n",
+        )
+        fake.set_response("command -v virt-customize", 0)
+        fake.set_response("mktemp", 0, "/tmp/dbos-if")
         stub_session_and_callbacks["holder"]["ssh"] = fake
         payload = {
             "vm_id": "vm2", "hub_host": "10.0.0.7", "vm_name": "xfs-1",
@@ -448,35 +498,21 @@ class TestVmSetNetworkNat:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         cmds = fake.commands
-        # SLIRP user-networking вместо управляемой сети `test`
-        assert any("virt-xml xfs-1 --edit --network user,model=virtio" in c for c in cmds)
-        assert not any("network=test" in c for c in cmds)
-        assert not any("/etc/network/interfaces" in c for c in cmds)
-        # NIC-свитч и чтение адреса — в session без sudo
-        _assert_session_no_sudo(fake.calls, "virt-xml xfs-1 --edit --network user")
-        _assert_session_no_sudo(fake.calls, "virsh domifaddr xfs-1 --source agent")
+        # статику в госта по SSH не писали — только offline в диск
+        assert not any(
+            "printf" in c and "/etc/network/interfaces" in c for c in cmds
+        )
+        i_customize = _idx(cmds, "virt-customize -a /vms/xfs-1.qcow2 ")
+        i_destroy = _idx(cmds, "virsh destroy xfs-1")
+        i_start = _idx(cmds, "virsh start xfs-1")
+        assert i_destroy < i_customize < i_start
+        # NIC всё равно переведён на natbr0
+        assert any(
+            "virt-xml xfs-1 --edit --network bridge=natbr0,model=virtio" in c
+            for c in cmds
+        )
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
-        assert state["ip_address"] == "192.168.100.30"
-
-    async def test_nat_without_ip_is_not_error(
-        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
-    ):
-        # SLIRP не отдаёт lease и агент молчит — адреса нет, но это штатно:
-        # таска успешна, ip_address=None (не VM_GUEST_NO_IP).
-        fake = _FakeSshClient()
-        fake.set_response("virsh domstate", 0, "running")
-        stub_session_and_callbacks["holder"]["ssh"] = fake
-        payload = {
-            "vm_id": "vm2", "hub_host": "10.0.0.7", "vm_name": "xfs-1",
-            "network_mode": "nat", "target_department_id": "dep1",
-        }
-        tid = await make_task(task_kind="vm.set_network", target_server_id="hub1", payload=payload)
-        await vms_network.vm_set_network.original_func(tid)
-
-        t = await fetch_task(tid)
-        assert t.status == TaskStatus.SUCCEEDED
-        state = stub_session_and_callbacks["calls"]["vm_state"][0]
-        assert state["ip_address"] is None
+        assert state["ip_address"] == self._NAT_ADDR
         assert state["power_state"] == "on"
 
     async def test_invalid_mode_rejected(

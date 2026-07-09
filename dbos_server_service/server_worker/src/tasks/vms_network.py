@@ -10,15 +10,16 @@ libvirt/kvm без пароля), гость — по `sshpass` (`u`/`1`), по�
   ставим пароль, даём sudo NOPASSWD, хардим sshd, проверяем вход по ключу и
   только после подтверждения удаляем базовую учётку `u`. Порядок безопасный —
   доступ не теряем до успешной проверки нового входа.
-* `vm.set_network` — перевод ВМ на статику в LAN (bridge `br0`) или на NAT-сеть
-  libvirt. bridge: основной путь — в живом госте по SSH переписываем
-  `/etc/network/interfaces` (address/netmask/gateway/dns из payload — порт
-  `provision.sh`/`static_ip.sh`); если гость по SSH недостижим — фолбэк через
-  `virt-customize` (offline-правка qcow2-диска: `virsh destroy` → заливка
-  interfaces в образ → старт). Дальше переводим NIC домена на `br0` (`virt-xml`)
-  и рестартуем. NAT: переводим NIC на user-сеть SLIRP (`--network user`),
-  рестартуем и читаем адрес гостя через `domifaddr --source agent` (для SLIRP
-  libvirt lease не ведёт, адрес может не доехать — это не ошибка).
+* `vm.set_network` — перевод ВМ на статику в боевом LAN (bridge `br0`) или в
+  приватную NAT-подсеть хаба (host-only мост `natbr0`, `192.168.100.0/24`). Оба
+  режима работают одинаково: пишем статику гостю (в живом госте по SSH
+  переписываем `/etc/network/interfaces` — порт `provision.sh`/`static_ip.sh`;
+  если гость по SSH недостижим — фолбэк через `virt-customize`, offline-правка
+  qcow2-диска), переводим NIC домена на нужный мост (`virt-xml`) и рестартуем.
+  Отличие NAT — детерминированный статик-адрес подсети natbr0 (`_nat_static_ip`,
+  шлюз/DNS `192.168.100.1`); мост natbr0 на хабе гарантируется `_setup_nat_bridge`
+  перед переводом. NAT-гость сидит на реальном мосту и достижим с хаба джампом
+  (в отличие от старого SLIRP), поэтому `applied_ip` известен сразу.
 
 Длинные операции идут как `astra_update`: без per-команда timeout'а,
 durable-retry на уровне `_runner`. Исход докладывается server_service через
@@ -33,7 +34,11 @@ import logging
 import re
 
 from src.clients.ssh import SshError
-from src.core.constants import VMS_GUEST_LOGIN
+from src.core.constants import (
+    VMS_GUEST_LOGIN,
+    VMS_NAT_BRIDGE,
+    VMS_NAT_HOST_IP,
+)
 from src.main import broker
 from src.services import redis_pool, server_service_client
 from src.services.redis_stash_crypto import (
@@ -52,7 +57,6 @@ from src.tasks._vms_helpers import (
     map_domstate,
     normalize_dns,
     open_hub_session,
-    parse_domifaddr,
     resolve_guest_ip,
     run_hub_cmd,
     static_interfaces_lines,
@@ -61,6 +65,7 @@ from src.tasks._vms_helpers import (
     validate_path,
     write_static_interfaces_offline,
 )
+from src.tasks.vms import _nat_static_ip, _setup_nat_bridge
 
 logger = logging.getLogger(__name__)
 
@@ -665,49 +670,59 @@ async def _wait_guest_ssh(ssh, host: str, guest_ip: str) -> None:
     )
 
 
-async def _wait_domifaddr(ssh, host: str, vm_name: str) -> str | None:
-    """Дождаться NAT-адреса гостя (`virsh domifaddr`); None — если не доехал.
+async def _apply_static_and_switch(
+    ssh, host: str, vm_name: str, payload: dict, net_arg: str,
+    addr: str, netmask: str, gateway: str, dns: list[str],
+) -> None:
+    """Залить статику гостю и перевести NIC домена на заданный мост.
 
-    В `qemu:///session` NAT — это user-сеть SLIRP: libvirt DHCP-lease'ов не
-    ведёт, адрес (обычно `10.0.2.15`) виден только через гостевой агент
-    (`--source agent`). Поэтому первично спрашиваем agent, lease пробуем как
-    запасной путь (bridged NAT с внешним DHCP). Адреса нет за окно опроса —
-    возвращаем None: для SLIRP это штатно (агент мог не встать), а не ошибка.
+    Единый путь для bridge (`br0`) и NAT (`natbr0`): статику пишем по текущему
+    адресу гостя (пока он ещё на старой сети) — в живом госте по SSH, а если он
+    недостижим, offline-правкой диска (`virt-customize`, домен на этот момент
+    гасится). Затем NIC переводится на `net_arg` (`virt-xml`), домен рестартится
+    и ждём гостя по новому статик-адресу `addr`.
     """
-    await asyncio.sleep(_GUEST_REBOOT_SETTLE_S)
-    for _ in range(_GUEST_REBOOT_MAX_POLLS):
-        _rc, out, _err = await ssh.run(
-            f"{LIBVIRT_SESSION_ENV} virsh domifaddr {vm_name} --source agent",
+    # Текущий адрес гостя для входа (bridge-DHCP/NAT), пока он на старой сети;
+    # нет адреса — сразу offline-фолбэк (по SSH зайти всё равно некуда).
+    try:
+        guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
+    except SshError as exc:
+        if exc.error_code != "VM_GUEST_NO_IP":
+            raise
+        guest_ip = None
+    reachable = bool(guest_ip) and await _guest_ssh_reachable(ssh, guest_ip)
+    if reachable:
+        await _write_static_interfaces(
+            ssh, host, guest_ip, addr, netmask, gateway, dns,
         )
-        ip = parse_domifaddr(out)
-        if ip is None:
-            _rc, out2, _err2 = await ssh.run(
-                f"{LIBVIRT_SESSION_ENV} virsh domifaddr {vm_name} --source lease",
-            )
-            ip = parse_domifaddr(out2)
-        if ip is not None:
-            return ip
-        await asyncio.sleep(_GUEST_REBOOT_POLL_DELAY_S)
-    return None
+    else:
+        await _apply_static_offline(
+            ssh, host, vm_name, addr, netmask, gateway, dns,
+        )
+    await _switch_domain_network(ssh, host, vm_name, net_arg)
+    await _restart_domain(ssh, host, vm_name)
+    await _wait_guest_ssh(ssh, host, addr)
 
 
 @broker.task("vm.set_network")
 async def vm_set_network(task_id: str) -> None:
-    """Перевести ВМ на статику в LAN (bridge `br0`) или на NAT-сеть libvirt.
+    """Перевести ВМ на статику в LAN (bridge `br0`) или в NAT-подсеть (`natbr0`).
 
-    Что делает: заходит на hub по SSH. Для `bridge` — переписывает статику в
-    госте (`/etc/network/interfaces`: address/netmask/gateway/dns из payload,
-    порт `provision.sh`/`static_ip.sh`); если гость по SSH недостижим — фолбэк
-    через `virt-customize` (offline-заливка interfaces в qcow2-диск). Затем
-    переводит NIC домена на `br0` (`virt-xml`) и рестартует домен, гость
-    поднимается с боевым адресом. Для `nat` — переводит NIC на user-сеть SLIRP
-    (`--network user`), рестартует и читает адрес гостя через `domifaddr
-    --source agent` (адрес может не доехать — для SLIRP это штатно). Исход
-    докладывает server_service (`vms/{id}/state` с `ip_address`/`power_state`).
+    Что делает: заходит на hub по SSH. Оба режима переписывают статику в госте
+    (`/etc/network/interfaces`: address/netmask/gateway/dns, порт
+    `provision.sh`/`static_ip.sh`); если гость по SSH недостижим — фолбэк через
+    `virt-customize` (offline-заливка interfaces в qcow2-диск). Затем переводят
+    NIC домена на нужный мост (`virt-xml`) и рестартуют домен. Для `bridge` адрес
+    берётся из payload (`ip_address`), гость встаёт в боевом LAN. Для `nat`
+    сначала гарантируется host-only мост `natbr0` (`_setup_nat_bridge`), адрес —
+    детерминированный `_nat_static_ip` в подсети `192.168.100.0/24` (шлюз/DNS
+    `192.168.100.1`); гость сидит на реальном мосту и достижим с хаба джампом.
+    Исход докладывает server_service (`vms/{id}/state` с
+    `ip_address`/`power_state`).
 
     Параметры: `task_id`. Payload — `vm_id`, `vm_name`/`name`, `network_mode`
-    (`bridge`|`nat`); для `bridge` — `ip_address`, опц. `netmask`/`gateway`/`dns`
-    и `guest_ip` (текущий адрес гостя для входа); hub-блок,
+    (`bridge`|`nat`); для `bridge` — `ip_address`, опц. `netmask`/`gateway`/`dns`;
+    опц. `guest_ip` (текущий адрес гостя для входа до перевода NIC); hub-блок,
     `target_department_id`.
 
     Возвращает: `{vm_id, vm_name, network_mode, ip_address, power_state}`.
@@ -748,46 +763,27 @@ async def vm_set_network(task_id: str) -> None:
                         str(payload.get("gateway") or VMS_DEFAULT_GATEWAY), host,
                     )
                     dns = _normalize_dns(payload, host)
-                    # Текущий адрес гостя для входа (NAT/DHCP), пока он ещё на
-                    # старой сети; статику пишем по нему до перевода NIC. Нет
-                    # адреса — сразу в offline-фолбэк (по SSH зайти всё равно
-                    # некуда).
-                    try:
-                        guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
-                    except SshError as exc:
-                        if exc.error_code != "VM_GUEST_NO_IP":
-                            raise
-                        guest_ip = None
-                    reachable = bool(guest_ip) and await _guest_ssh_reachable(
-                        ssh, guest_ip,
-                    )
-                    if reachable:
-                        # Основной путь: статику пишем в живом госте по SSH.
-                        await _write_static_interfaces(
-                            ssh, host, guest_ip, addr, netmask, gateway, dns,
-                        )
-                    else:
-                        # Гость по SSH не поднялся — offline-правка диска.
-                        await _apply_static_offline(
-                            ssh, host, vm_name, addr, netmask, gateway, dns,
-                        )
-                    await _switch_domain_network(
-                        ssh, host, vm_name,
+                    await _apply_static_and_switch(
+                        ssh, host, vm_name, payload,
                         f"bridge={bridge_label()},model=virtio",
+                        addr, netmask, gateway, dns,
                     )
-                    await _restart_domain(ssh, host, vm_name)
-                    await _wait_guest_ssh(ssh, host, addr)
                     applied_ip = addr
                 else:
-                    # В session нет управляемой libvirt-сети — NAT даём через
-                    # user-networking (SLIRP): `--network user`. Адрес гостя
-                    # виден только гостевому агенту и может не доехать — это
-                    # для SLIRP штатно, ip_address тогда остаётся None.
-                    await _switch_domain_network(
-                        ssh, host, vm_name, "user,model=virtio",
+                    # NAT: гость на реальном мосту natbr0 со статикой (как в
+                    # vm.create) — детерминированный адрес подсети natbr0, шлюз/DNS
+                    # 192.168.100.1, наружу через MASQUERADE. Мост host-only, живой
+                    # подъём не рвёт SSH. Гость достижим с хаба джампом, поэтому
+                    # applied_ip известен сразу (в отличие от старого SLIRP).
+                    await _setup_nat_bridge(ssh, host)
+                    addr = _nat_static_ip(vm_name)
+                    await _apply_static_and_switch(
+                        ssh, host, vm_name, payload,
+                        f"bridge={VMS_NAT_BRIDGE},model=virtio",
+                        addr, VMS_DEFAULT_NETMASK, VMS_NAT_HOST_IP,
+                        [VMS_NAT_HOST_IP],
                     )
-                    await _restart_domain(ssh, host, vm_name)
-                    applied_ip = await _wait_domifaddr(ssh, host, vm_name)
+                    applied_ip = addr
                 _rc, dom_out, _err = await ssh.run(
                     f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
                 )

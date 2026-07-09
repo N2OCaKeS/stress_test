@@ -375,10 +375,25 @@ EOF"""
                     'signal set': 'protopack schema',
                     'signal get': ['protopack db created']
                 },
-                'protopack import data': {
-                    'command': f'sudo wget -P /tmp ftp://10.177.103.10/postgresql/build_* && for FILE in build_info build_packages_new build_sourses; do if [ -f "/tmp/$FILE" ]; then sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/$FILE"; fi; done',
-                    'signal set': 'protopack imported',
+                'download protopack data': {
+                    'command': 'sudo wget -P /tmp ftp://10.177.103.10/postgresql/build_*',
+                    'signal set': 'protopack data downloaded',
                     'signal get': ['protopack schema']
+                },
+                'import build_info': {
+                    'command': f'if [ -f /tmp/build_info ]; then sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/build_info"; else echo "build_info not found, skip"; fi',
+                    'signal set': 'protopack build_info imported',
+                    'signal get': ['protopack data downloaded']
+                },
+                'import build_packages_new': {
+                    'command': f'if [ -f /tmp/build_packages_new ]; then sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/build_packages_new"; else echo "build_packages_new not found, skip"; fi',
+                    'signal set': 'protopack build_packages imported',
+                    'signal get': ['protopack build_info imported']
+                },
+                'import build_sourses': {
+                    'command': f'if [ -f /tmp/build_sourses ]; then sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/build_sourses"; else echo "build_sourses not found, skip"; fi',
+                    'signal set': 'protopack imported',
+                    'signal get': ['protopack build_packages imported']
                 },
             },
         }

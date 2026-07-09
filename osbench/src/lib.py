@@ -4,7 +4,9 @@ import signal
 import sys
 import platform
 import psutil
+import threading
 
+from time import sleep, time
 from pathlib import Path
 from abc import ABC, abstractmethod
 from typing import Union, Tuple
@@ -109,6 +111,31 @@ class system:
         if not console:
             log.set_console(False)
 
+            keepalive_active = True
+
+            def keepalive():
+                spinner = ['◐', '◓', '◑', '◒']
+                idx = 0
+                start = time.time()
+                total_hours = 0
+                total_minutes = 0
+                total_seconds = 0
+                while keepalive_active and process.poll() is None:
+                    sleep(1)
+                    if keepalive_active:
+                        elapsed = int(time.time() - start)
+                        total_hours = elapsed // 3600
+                        total_minutes = (elapsed % 3600) // 60
+                        total_seconds = elapsed % 60
+                        sys.stdout.write(f'\r{spinner[idx]}  {total_hours:02d}:{total_minutes:02d}:{total_seconds:02d}')
+                        sys.stdout.flush()
+                        idx = (idx + 1) % len(spinner)
+                sys.stdout.write(f'\r✅ Выполнено за {total_hours:02d}:{total_minutes:02d}:{total_seconds:02d} \n')
+                sys.stdout.flush()
+
+            keepalive_thread = threading.Thread(target=keepalive, daemon=True)
+            keepalive_thread.start()
+
         for line in process.stdout:
             log.info(line.rstrip('\n'))  
             output_lines.append(line.rstrip('\n'))
@@ -125,7 +152,10 @@ class system:
             raise
         
         if not console:
+            keepalive_active = False
+            keepalive_thread.join(timeout=1)
             log.set_console(True)
+
         if process.returncode == 0:
             log.info(f"Команда '{command}' завершена с кодом: {process.returncode}\n")
         else: log.error(f"Команда '{command}' завершена с кодом: {process.returncode}\n")

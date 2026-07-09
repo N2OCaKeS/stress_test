@@ -3,9 +3,9 @@
 Нужен только в ssh-режиме: VNC/SPICE-сокет qemu по умолчанию слушает на
 127.0.0.1 хаба, снаружи его не видно. Чтобы пробросить порт, прокси открывает
 SSH-туннель на хаб под управляющей учёткой сервера — эти креды server_service
-отдаёт по internal-эндпоинту (тот же worker_bot-грант `view_management_credentials`,
-что использует server_worker). Ключ доступа прокси кладётся в inbound
-SERVICE_API_KEYS-map server_service отдельной записью `console_proxy`.
+отдаёт по internal-эндпоинту. Эндпоинт требует Bearer-идентичность с грантом
+`view_management_credentials` (как у server_worker), поэтому прокси предъявляет
+bot-токен в `Authorization: Bearer` плюс `X-Service-Identity` для трассировки.
 """
 
 from __future__ import annotations
@@ -46,8 +46,8 @@ class InternalClient:
         """GET /internal/servers/{id}/management/credentials."""
         url = f"{self._base_url}/api/server/v1/internal/servers/{server_id}/management/credentials"
         headers = {
-            "X-Service-Name": self._api_key_name,
-            "X-API-Key": self._api_key,
+            "Authorization": f"Bearer {self._api_key}",
+            "X-Service-Identity": self._api_key_name,
         }
         if target_department_id:
             headers["X-Target-Department-Id"] = target_department_id

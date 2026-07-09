@@ -85,13 +85,13 @@ spec:
                 secretKeyRef:
                   name: dbos-secrets
                   key: VM_CONSOLE_TOKEN_SECRET
-            # Ключ для inbound SERVICE_API_KEYS-map server_service (запись
-            # console_proxy) — им прокси тянет mgmt-креды хаба в ssh-режиме.
+            # Bot-токен с грантом view_management_credentials — им прокси
+            # тянет mgmt-креды хаба в ssh-режиме (Bearer, как server_worker).
             - name: SERVER_SERVICE_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: dbos-secrets
-                  key: CONSOLE_PROXY_SERVER_API_KEY
+                  key: WORKER_BOT_TOKEN
           startupProbe:
             httpGet:
               path: /readyz

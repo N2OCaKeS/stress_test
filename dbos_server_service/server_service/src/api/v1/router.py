@@ -43,6 +43,10 @@ from src.api.v1.endpoints.resource_permissions import (
 from src.api.v1.endpoints.secrets_migration import router as secrets_migration_router
 from src.api.v1.endpoints.server_accounts import router as server_accounts_router
 from src.api.v1.endpoints.servers import router as servers_router
+from src.api.v1.endpoints.system_settings import (
+    internal_router as system_settings_internal_router,
+    router as system_settings_router,
+)
 from src.api.v1.endpoints.tasks import router as tasks_router
 from src.api.v1.endpoints.vms import (
     router as vms_router,
@@ -126,3 +130,8 @@ router.include_router(admin_encryption_router)
 # Конфиг управляющей учётки — платформенный singleton под account_admin.
 # Сервисная настройка уровня платформы, тоже исключение из business-блока.
 router.include_router(management_user_config_router)
+# Настройки проб статуса (частота ping/ssh/ipmi-опроса) — платформенный
+# singleton под account_admin. Тоже сервисная настройка, исключение из
+# business-блока. Плюс internal-read для воркера (скрыт из OpenAPI).
+router.include_router(system_settings_router)
+router.include_router(system_settings_internal_router)

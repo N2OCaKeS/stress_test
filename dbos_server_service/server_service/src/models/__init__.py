@@ -6,6 +6,7 @@ from src.models.entity_permission import EntityPermission
 from src.models.ipmi_controller import IpmiController
 from src.models.management_user_config import ManagementUserConfig
 from src.models.os_version import OsVersion
+from src.models.probe_settings import ProbeSettings
 from src.models.resource_role_permission import ResourceRolePermission
 from src.models.server import Server
 from src.models.secrets_migration_state import SecretsMigrationState
@@ -32,6 +33,7 @@ __all__ = [
     "IpmiController",
     "ManagementUserConfig",
     "OsVersion",
+    "ProbeSettings",
     "ReencryptOutboxEntry",
     "ResourceRolePermission",
     "SecretsMigrationState",

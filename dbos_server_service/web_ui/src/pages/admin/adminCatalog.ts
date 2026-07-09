@@ -10,6 +10,7 @@ import {
   ExternalLink,
   EyeOff,
   FileText,
+  Gauge,
   HardDrive,
   KeyRound,
   Layers,
@@ -42,6 +43,7 @@ import { ServicesServerPermissions } from "./services/ServicesServerPermissions"
 import { ServicesOsVersions } from "./services/ServicesOsVersions";
 import { ServicesIgnoredLogins } from "./services/ServicesIgnoredLogins";
 import { ServicesManagementUser } from "./services/ServicesManagementUser";
+import { ServicesProbeSettings } from "./services/ServicesProbeSettings";
 import { ServicesNavLink } from "./services/ServicesNavLink";
 import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
 import { ServicesSecretPermissions } from "./services/ServicesSecretPermissions";
@@ -272,6 +274,18 @@ const STATIC_ITEMS: AdminItem[] = [
     content: ServicesManagementUser,
     // Конфиг управляющей учётки гейтится account_admin; смена login запускает
     // cutover на всех подготовленных серверах. Остальным backend ответит 403.
+    visibleFor: (p) => isAccountAdmin(p),
+  },
+  {
+    id: "services.server.probe_settings",
+    label: "Проверки статуса",
+    hint: "частота проб доступности и питания",
+    icon: Gauge,
+    block: "services",
+    group: "server",
+    content: ServicesProbeSettings,
+    // Настройки проб — платформенный singleton под account_admin; воркер читает
+    // их через internal-эндпоинт. Остальным backend ответит 403.
     visibleFor: (p) => isAccountAdmin(p),
   },
 

@@ -160,6 +160,15 @@ _ADMIN_ENCRYPTION_PREFIX = "/api/server/v1/admin/encryption"
 # на endpoint-уровне; guard лишь не отбивает запрос. Префикс точный.
 _MANAGEMENT_USER_CONFIG_PREFIX = "/api/server/v1/management-user-config"
 
+# Настройки проб статуса (частота ping/ssh/ipmi-опроса) — платформенный
+# singleton под `account_admin`, как и конфиг управляющей учётки. Сервисная
+# настройка уровня платформы, а не бизнес-данные отдела, поэтому исключение из
+# business-блока. Позитивная проверка роли — в `require_account_admin` на
+# endpoint-уровне; guard лишь не отбивает запрос. Префикс точный. Internal-read
+# воркера живёт под `/internal/settings/*` и сюда по префиксу не попадает — его
+# каллер (worker_bot) не платформенная роль, guard его и так пропускает.
+_SETTINGS_PREFIX = "/api/server/v1/settings"
+
 # Каталог OS-версий — глобальный справочник (имена версий, репозитории), а не
 # бизнес-данные отдела. Чтение каталога публичное (см. endpoints/os_versions.py),
 # поэтому платформенным ролям его тоже не за что отбивать. Исключение строго для
@@ -229,6 +238,16 @@ def _is_management_user_config_path(path: str) -> bool:
     )
 
 
+def _is_settings_path(path: str) -> bool:
+    """True для платформенных настроек проб статуса (`/settings*`).
+
+    Сервисная настройка под `account_admin` — исключение из business-data-блока.
+    Точная проверка роли — в `require_account_admin`; middleware путь просто не
+    блокирует. Матч по префиксу + границе сегмента.
+    """
+    return path == _SETTINGS_PREFIX or path.startswith(_SETTINGS_PREFIX + "/")
+
+
 def _is_public_path(path: str) -> bool:
     """True для путей, которые middleware пропускает без проверки токена.
 
@@ -248,6 +267,7 @@ def _is_public_path(path: str) -> bool:
         or path.startswith(_DOCS_PREFIXES)
         or _is_admin_encryption_path(path)
         or _is_management_user_config_path(path)
+        or _is_settings_path(path)
     )
 
 

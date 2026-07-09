@@ -171,10 +171,16 @@ class TestVirtInstallGraphics:
 
 
 class TestVirtInstallNetwork:
-    def test_bridge_uses_br0(self):
+    def test_bridge_uses_helper_on_machine_pc(self):
+        # session-libvirt на Astra не поднимает bridge-tap сам (parsec убивает
+        # демон) — tap создаёт qemu через setuid qemu-bridge-helper на машине pc.
         cmd = vms._virt_install_cmd("v1", 2, 2048, "/vms", "bridge")
-        assert "--network bridge=br0,model=virtio" in cmd
-        assert "user" not in cmd.split("--network", 1)[1].split()[0]
+        assert "--machine pc" in cmd
+        assert "--network none" in cmd
+        assert "-netdev bridge,id=hn0,br=br0" in cmd
+        assert "qemu-bridge-helper" in cmd
+        assert "virtio-net-pci" in cmd
+        assert "addr=0x10" in cmd
 
     def test_nat_uses_slirp_user(self):
         # В qemu:///session системной сети `test` нет — NAT идёт через SLIRP.
@@ -448,7 +454,7 @@ class TestVmCreateUniversal:
         assert any("cp /vms/vm_station.qcow2 /vms/station-a.qcow2" in c for c in cmds)
         assert not any("virt-resize" in c for c in cmds)
         # домен собирается на br0 (не на NAT test)
-        assert any("virt-install -n station-a" in c and "bridge=br0" in c for c in cmds)
+        assert any("virt-install -n station-a" in c and "br=br0" in c for c in cmds)
         assert not any("virt-install -n station-a" in c and "network=test" in c for c in cmds)
         # весь VM/диск-флоу идёт в qemu:///session без sudo
         assert fake.sudo_for("virt-install -n station-a") is False

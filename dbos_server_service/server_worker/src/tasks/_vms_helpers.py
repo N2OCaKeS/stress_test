@@ -41,10 +41,14 @@ logger = logging.getLogger(__name__)
 
 # libvirt-команды ВМ идут в user-сессии управляющей учётки (qemu:///session),
 # без sudo: домены, пулы и qcow2 принадлежат учётке. Префикс в env, чтобы
-# virsh/virt-install/virt-xml без явного --connect били в session; qemu-img и
-# virt-customize env игнорируют. Инфра-шаги prepare (пакеты, мост, firewall,
-# chown, bridge-helper) остаются под sudo — вызываются с sudo=True.
-LIBVIRT_SESSION_ENV = "LIBVIRT_DEFAULT_URI=qemu:///session"
+# virsh/virt-install/virt-xml без явного --connect били в session; qemu-img
+# env игнорирует. `LIBGUESTFS_BACKEND=direct` — libguestfs-тулам (virt-resize/
+# virt-customize/guestfish) под non-root: они не поднимут appliance через
+# системный libvirt, direct-режим запускает qemu напрямую. Инфра-шаги prepare
+# (пакеты, мост, firewall, chown, bridge-helper) остаются под sudo (sudo=True).
+LIBVIRT_SESSION_ENV = (
+    "LIBVIRT_DEFAULT_URI=qemu:///session LIBGUESTFS_BACKEND=direct"
+)
 
 
 async def run_hub_cmd(
@@ -641,11 +645,11 @@ async def write_static_interfaces_offline(
         )
     run_opt = f"--run {gtmp} " if gtmp else ""
     try:
-        # LIBGUESTFS_BACKEND=direct — libguestfs под non-root не поднимает
-        # appliance через libvirt; direct-режим запускает qemu напрямую.
+        # virt-customize идёт через run_hub_cmd → env несёт LIBGUESTFS_BACKEND=
+        # direct (libguestfs под non-root не поднимает appliance через libvirt).
         await run_hub_cmd(
             ssh,
-            f"LIBGUESTFS_BACKEND=direct virt-customize -a {safe_disk} "
+            f"virt-customize -a {safe_disk} "
             f"{run_opt}--upload {tmp}:/etc/network/interfaces",
             host, error_code,
             "virt-customize не смог записать статику в диск ВМ",

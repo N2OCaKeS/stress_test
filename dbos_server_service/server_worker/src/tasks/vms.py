@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import math
@@ -590,6 +591,11 @@ async def _setup_session_storage(
         "не удалось отдать каталог хранилища управляющей учётке",
         sudo=True,
     )
+    # libguestfs (virt-resize/virt-customize/guestfish) под non-root строит
+    # appliance через supermin, а тот копирует ядро из /boot/vmlinuz-*. Astra
+    # ставит часть ядер mode 600 (root-only), и supermin берёт новейшее — под
+    # управляющей учёткой `cp` падает Permission denied. Делаем ядра читаемыми.
+    await ssh.run("sh -c 'chmod 0644 /boot/vmlinuz-* 2>/dev/null || true'", sudo=True)
 
 
 async def _setup_user_libvirtd(
@@ -618,6 +624,12 @@ async def _setup_user_libvirtd(
         "grep -q security_driver ~/.config/libvirt/qemu.conf 2>/dev/null "
         "|| echo \"security_driver = \\\"none\\\"\" "
         ">> ~/.config/libvirt/qemu.conf'",
+    )
+    # seccomp_sandbox=0: песочница qemu (no_new_privs) иначе запрещает fork
+    # setuid `qemu-bridge-helper` — без этого session bridge-tap не поднять.
+    await ssh.run(
+        "sh -c 'grep -q seccomp_sandbox ~/.config/libvirt/qemu.conf 2>/dev/null "
+        "|| echo \"seccomp_sandbox = 0\" >> ~/.config/libvirt/qemu.conf'",
     )
 
 
@@ -791,18 +803,42 @@ def _virt_install_cmd(
     `0.0.0.0`, чтобы websockify/spice-прокси с хаба мог дотянуться до порта
     дисплея; `console_prep` потом читает конкретный порт.
     """
-    if network_mode == "bridge":
-        net = f"bridge={bridge_label()},model=virtio"
-    else:
-        net = "user,model=virtio"
     gfx = "spice" if graphics == "spice" else "vnc"
-    return (
+    base = (
         f"virt-install -n {name} --memory {ram_mb} --vcpus {cpu} --import "
         f"--disk {pool_path}/{name}.qcow2,format=qcow2,bus=virtio "
-        f"--os-variant {VMS_OS_VARIANT} --network {net} "
-        f"--cpu host-model --autostart --graphics {gfx},listen=0.0.0.0 "
-        "--noautoconsole"
+        f"--os-variant {VMS_OS_VARIANT} --cpu host-model --autostart "
+        f"--graphics {gfx},listen=0.0.0.0 --noautoconsole"
     )
+    if network_mode != "bridge":
+        # NAT: пользовательская сеть SLIRP (системной `test` в session нет).
+        return f"{base} --network user,model=virtio"
+    # bridge на Astra в session нельзя отдать libvirt-демону: он поднимает tap
+    # напрямую, и parsec убивает демон («Permission denied»). Отдаём tap qemu
+    # через setuid `qemu-bridge-helper` (машина `pc`/i440fx — на q35 pcie-root-
+    # port конфликтует со слотом ручного NIC; фиксируем свободный slot 0x10).
+    # `seccomp_sandbox=0` (в user qemu.conf, ставит prepare) разрешает qemu
+    # fork setuid-хелпера. MAC детерминирован от имени — стабилен на ретраях.
+    # Путь хелпера резолвим инлайном `$(...)`, чтобы virt-install оставался
+    # первой командой и получил session-env, который префиксит `run_hub_cmd`.
+    helper = f"$(ls {' '.join(_BRIDGE_HELPER_PATHS)} 2>/dev/null | head -1)"
+    qcl = (
+        f"-netdev bridge,id=hn0,br={bridge_label()},helper={helper} "
+        f"-device virtio-net-pci,netdev=hn0,mac={_derive_mac(name)},addr=0x10"
+    )
+    return (
+        f'{base} --machine pc --network none --qemu-commandline="{qcl}"'
+    )
+
+
+def _derive_mac(name: str) -> str:
+    """Детерминированный MAC ВМ из имени (`52:54:00:xx:xx:xx`, KVM-префикс).
+
+    Стабилен между ретраями `vm.create`, чтобы пересборка домена не плодила
+    новый адрес. Для bridge NIC задаётся вручную в qemu-commandline.
+    """
+    digest = hashlib.sha256(name.encode()).hexdigest()
+    return "52:54:00:" + ":".join(digest[i : i + 2] for i in (0, 2, 4))
 
 
 async def _guest_ip(ssh, host: str, name: str) -> str:

@@ -1019,11 +1019,13 @@ function validateVmBlock(
 function vmBlockToItem(
   b: VmBlockData,
   hubId: string,
+  departmentId: string,
   v: VmBlockValidation,
 ): VmCreateRequest {
   const bridge = b.networkMode === "bridge";
   return {
     hub_server_id: hubId,
+    department_id: departmentId,
     name: b.name.trim(),
     hostname: b.hostname.trim() ? b.hostname.trim() : null,
     cpu: v.cpuN,
@@ -1098,7 +1100,9 @@ export function CreateVmPane({
 
   async function submitAll() {
     if (!allValid || submitting) return;
-    const items = blocks.map((b, i) => vmBlockToItem(b, hub.id, validations[i]));
+    const items = blocks.map((b, i) =>
+      vmBlockToItem(b, hub.id, hub.department_id, validations[i]),
+    );
     setSubmitting(true);
     try {
       const res = await onSubmit(items);

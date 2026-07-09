@@ -222,6 +222,8 @@ export function serversToVmHubs(servers: Server[], vms: Vm[]): VmHub[] {
 /** Тело POST /vms. `ip_address: null` = взять свободный из пула автоматически. */
 export interface VmCreateRequest {
   hub_server_id: string;
+  /** Отдел-владелец ВМ. Обязателен бэком (VmCreate) — берём из отдела хаба. */
+  department_id: string;
   name: string;
   /**
    * Hostname гостя (`hostnamectl set-hostname`). Пусто/`null` — берётся имя ВМ.

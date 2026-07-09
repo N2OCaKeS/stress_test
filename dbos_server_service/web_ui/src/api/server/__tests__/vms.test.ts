@@ -60,6 +60,7 @@ describe("vms api client", () => {
   it("createVm POST'ит /server/v1/vms с телом", async () => {
     const body = {
       hub_server_id: "srv-07",
+      department_id: "dep-x",
       name: "alse-1.8",
       cpu: 4,
       ram_mb: 8192,
@@ -78,6 +79,7 @@ describe("vms api client", () => {
     const items = [
       {
         hub_server_id: "srv-07",
+        department_id: "dep-x",
         name: "vm-a",
         hostname: "host-a",
         cpu: 2,
@@ -91,6 +93,7 @@ describe("vms api client", () => {
       },
       {
         hub_server_id: "srv-07",
+        department_id: "dep-x",
         name: "vm-b",
         cpu: 4,
         ram_mb: 8192,
@@ -401,6 +404,7 @@ describe("vms api client", () => {
   it("createVm с bridge несёт pool_id и ip_address", async () => {
     const body = {
       hub_server_id: "srv-07",
+      department_id: "dep-x",
       name: "alse",
       cpu: 2,
       ram_mb: 4096,

@@ -2109,6 +2109,44 @@ async def run_vm_status_sweep(
     return {"ok": True, **summary}
 
 
+async def list_probe_targets(
+    db: AsyncSession,
+    identity: IdentityContext,
+) -> dict:
+    """Отдать плоский список целей пробинга воркер-loop'ам (серверы + ВМ).
+
+    Замена частым sweep'ам `power.sweep`/`vms.status_sweep`: те диспатчили
+    `power.status`/`vm.status` на каждую цель и плодили task-row'ы. Теперь воркер
+    держит фоновые probe-циклы и просто тянет отсюда, кого пробить, — серверы
+    (ping/ssh + ipmi по `server_id`) и ВМ (domstate + ping/ssh гостя через hub).
+    Сам фан-аут (enumerate + cap) остаётся на server_service, воркер не дублирует
+    его БД.
+
+    Право: `(server, *, prepare_callback)` — тот же глобальный callback-грант
+    worker_bot'а, что у sweep-эндпоинтов и `/internal/settings/probes`. Прогон
+    платформенный, поэтому `X-Target-Department-Id` здесь не требуется.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server.probe_targets_listed", target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+    servers, servers_truncated = await auto_inventory.enumerate_server_probe_targets(db)
+    vms, vms_truncated = await vm_svc.enumerate_vm_probe_targets(db)
+    return {
+        "servers": servers,
+        "vms": vms,
+        "servers_truncated": servers_truncated,
+        "vms_truncated": vms_truncated,
+    }
+
+
 async def run_vm_create_reconcile(
     db: AsyncSession,
     identity: IdentityContext,

@@ -70,6 +70,39 @@ def _auto_payload(server) -> dict:
     }
 
 
+def build_server_probe_target(server) -> dict:
+    """Плоская цель серверной пробы для воркер-loop'ов (reachability + power).
+
+    Тот же набор ключей адресации, что `_auto_payload` кладёт в task-payload,
+    но без диспатча задачи: воркер тянет список таких целей и снимает ping/ssh
+    (`host`/`ssh_port`) и ipmi (по `server_id`, `department_id` → заголовок) сам.
+    В `host` — IP, не hostname (под воркера не резолвит короткие имена).
+    """
+    return {
+        "server_id": server.id,
+        "department_id": server.department_id,
+        "host": str(server.ip_address),
+        "ssh_port": server.ssh_port,
+        "is_managed": server.is_managed,
+        "management_user": server.management_user,
+    }
+
+
+async def enumerate_server_probe_targets(db: AsyncSession) -> tuple[list[dict], bool]:
+    """Перечислить серверные цели пробинга (все не-списанные), capped.
+
+    Возвращает `(targets, truncated)`: список плоских целей и флаг, был ли
+    отрезан хвост по `auto_inventory_fanout_max`. Отрезанные подхватятся
+    следующим циклом воркера — как и в старом sweep'е cap работает throttle'ом.
+    Диспатча задач тут нет: воркер снимает сигналы сам из фонового loop'а.
+    """
+    cap = get_settings().auto_inventory_fanout_max
+    servers = await server_repo.list_all_active(db, limit=cap)
+    total = await server_repo.count_all_active(db)
+    truncated = total > cap
+    return [build_server_probe_target(s) for s in servers], truncated
+
+
 async def _dispatch_one(
     db: AsyncSession,
     *,

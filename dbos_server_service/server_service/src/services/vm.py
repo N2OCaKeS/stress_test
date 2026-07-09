@@ -1767,6 +1767,53 @@ async def fanout_vm_status_sweep(
     }
 
 
+def build_vm_probe_target(vm: Vm, hub) -> dict:
+    """Плоская цель статус-пробы ВМ для воркер-loop'а (domstate + ping/ssh гостя).
+
+    Несёт адресацию hub'а (проба идёт через управляющую SSH-сессию к нему) плюс
+    имя домена, сетевой режим и, если известен, LAN-адрес гостя. Зеркалит поля,
+    которые `_dispatch_vm_status` кладёт в task-payload, но без диспатча задачи.
+    """
+    return {
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "department_id": vm.department_id,
+        "network_mode": vm.network_mode,
+        "guest_ip": str(vm.ip_address) if vm.ip_address is not None else None,
+        "hub_server_id": hub.id,
+        "hub_host": str(hub.ip_address),
+        "hub_ssh_port": hub.ssh_port,
+        "hub_is_managed": hub.is_managed,
+        "hub_management_user": hub.management_user,
+    }
+
+
+async def enumerate_vm_probe_targets(db: AsyncSession) -> tuple[list[dict], bool]:
+    """Перечислить ВМ-цели пробинга (все активные), capped.
+
+    Возвращает `(targets, truncated)`. ВМ, чей hub отсутствует или списан,
+    пропускаем (проба к ним не адресуема). Hub'ы кэшируем в пределах прогона,
+    чтобы не перезапрашивать один и тот же сервер под каждой его ВМ. Диспатча
+    задач нет: воркер снимает сигналы сам из фонового loop'а.
+    """
+    cap = get_settings().auto_inventory_fanout_max
+    vms = await repo.list_all_active(db, limit=cap)
+    total = await repo.count_all_active(db)
+    truncated = total > cap
+
+    targets: list[dict] = []
+    hub_cache: dict[str, object] = {}
+    for vm in vms:
+        hub = hub_cache.get(vm.hub_server_id, _HUB_UNCACHED)
+        if hub is _HUB_UNCACHED:
+            hub = await server_repo.get_by_id(db, vm.hub_server_id)
+            hub_cache[vm.hub_server_id] = hub
+        if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+            continue
+        targets.append(build_vm_probe_target(vm, hub))
+    return targets, truncated
+
+
 # ── reconcile упавших vm.create ──────────────────────────────────────────────
 
 # Значение worker'ского `TaskStatus.FAILED` в строке `tasks.status`. Только

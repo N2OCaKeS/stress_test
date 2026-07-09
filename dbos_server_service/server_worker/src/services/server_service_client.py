@@ -374,6 +374,53 @@ async def submit_power_state(
     )
 
 
+async def get_probe_settings() -> dict:
+    """Прочитать текущие настройки проб статуса (частота + вкл/выкл).
+
+    Источник интервалов и enabled-флагов для фоновых probe-циклов воркера
+    (`services/probe_loop.py`). Читается свежим каждый цикл — правки из UI
+    (`PUT /settings/probes`) применяются без рестарта воркера. Прогон
+    платформенный, `X-Target-Department-Id` не шлём.
+
+    Возвращает: `{reachability_probe_interval_seconds, power_probe_interval_seconds,
+    reachability_probe_enabled, power_probe_enabled}` от
+    `GET /api/server/v1/internal/settings/probes`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `PROBE_SETTINGS_REJECTED` — server_service вернул не 2xx.
+    """
+    return await _request(
+        "get",
+        "/api/server/v1/internal/settings/probes",
+        reject_code="PROBE_SETTINGS_REJECTED",
+    )
+
+
+async def get_probe_targets() -> dict:
+    """Прочитать список целей пробинга (серверы + ВМ) для probe-циклов.
+
+    Замена частым sweep'ам: вместо диспатча `power.status`/`vm.status` на каждую
+    цель server_service просто перечисляет их, а воркер снимает сигналы сам из
+    фонового loop'а. Прогон платформенный, `X-Target-Department-Id` не шлём.
+
+    Возвращает: `{servers: [...], vms: [...], servers_truncated, vms_truncated}`
+    от `GET /api/server/v1/internal/probe-targets`. Поля серверной цели:
+    `server_id, department_id, host, ssh_port, is_managed, management_user`;
+    ВМ-цели: `vm_id, vm_name, department_id, network_mode, guest_ip,
+    hub_server_id, hub_host, hub_ssh_port, hub_is_managed, hub_management_user`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `PROBE_TARGETS_REJECTED` — server_service вернул не 2xx.
+    """
+    return await _request(
+        "get",
+        "/api/server/v1/internal/probe-targets",
+        reject_code="PROBE_TARGETS_REJECTED",
+    )
+
+
 async def trigger_auto_inventory_sweep() -> dict:
     """Запустить плановый авто-inventory прогон на стороне server_service.
 

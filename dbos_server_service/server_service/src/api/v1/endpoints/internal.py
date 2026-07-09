@@ -66,6 +66,7 @@ from src.schemas.internal import (
     VmCreateReconcileResponse,
     VmStatusSweepResponse,
 )
+from src.schemas.probe_targets import ProbeTargetsResponse
 from src.schemas.server import (
     ServerAstraUpdateCallbackRequest,
     ServerAstraUpdateCallbackResponse,
@@ -496,6 +497,31 @@ async def vm_status_sweep(
     """
     data = await internal_service.run_vm_status_sweep(db, identity)
     return VmStatusSweepResponse(**data)
+
+
+@router.get(
+    "/probe-targets",
+    response_model=ProbeTargetsResponse,
+    responses={403: _INTERNAL_RESPONSES_BASE[403]},
+)
+async def list_probe_targets(
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> ProbeTargetsResponse:
+    """Отдать список целей пробинга воркер-loop'ам (серверы + ВМ).
+
+    Замена частым sweep'ам `power.sweep`/`vms.status_sweep`: вместо диспатча
+    `power.status`/`vm.status` на каждую цель (task-row на каждую) server_service
+    просто перечисляет цели, а воркер снимает сигналы сам из фоновых probe-циклов
+    (reachability = ping+ssh, power = ipmi/domstate). Прогон платформенный,
+    `X-Target-Department-Id` не требуется.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `server.probe_targets_listed` (только denied — при отказе гранта).
+    """
+    data = await internal_service.list_probe_targets(db, identity)
+    return ProbeTargetsResponse(**data)
 
 
 @router.post(

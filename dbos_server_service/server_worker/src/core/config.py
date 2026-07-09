@@ -398,11 +398,13 @@ class Settings(BaseSettings):
     # Держит доступность (ping/ssh) и питание (ipmi) актуальными для каждого
     # сервера. Регистрируется при `scheduler_enabled AND power_sweep_enabled`.
     power_sweep_enabled: bool = Field(
-        default=True,
+        default=False,
         description=(
             "Enable the frequent power/reachability sweep task (`power.sweep`) "
-            "that probes ping/ssh/ipmi for every server. Requires "
-            "SCHEDULER_ENABLED as well."
+            "that dispatches power.status for every server. Superseded by the "
+            "in-worker probe loops (services/probe_loop.py, PROBE_LOOP_*) — off "
+            "by default so it no longer spams task rows. The task stays "
+            "registered for manual kiq. Requires SCHEDULER_ENABLED to schedule."
         ),
     )
     power_sweep_cron: str = Field(
@@ -419,11 +421,13 @@ class Settings(BaseSettings):
     # активные ВМ (питание domstate + ping/ssh гостя). Зеркало power-sweep'а
     # серверов. Регистрируется при `scheduler_enabled AND vm_status_sweep_enabled`.
     vm_status_sweep_enabled: bool = Field(
-        default=True,
+        default=False,
         description=(
             "Enable the frequent VM status sweep task (`vms.status_sweep`) that "
-            "probes domstate/ping/ssh for every VM. Requires SCHEDULER_ENABLED "
-            "as well."
+            "dispatches vm.status for every VM. Superseded by the in-worker probe "
+            "loops (services/probe_loop.py, PROBE_LOOP_*) — off by default so it "
+            "no longer spams task rows. The task stays registered for manual kiq. "
+            "Requires SCHEDULER_ENABLED to schedule."
         ),
     )
     vm_status_cron: str = Field(
@@ -589,6 +593,22 @@ class Settings(BaseSettings):
         description=(
             "Default SSH port probed by the power.status reachability fallback "
             "when the dispatch payload carries no explicit ssh_port."
+        ),
+    )
+
+    # ── Фоновые probe-циклы воркера (reachability + power) ────────────────
+    # Заменяют частые sweep'ы power.sweep/vms.status_sweep: воркер держит два
+    # фоновых asyncio-loop'а (services/probe_loop.py), тянет цели через
+    # /internal/probe-targets и снимает ping/ssh/ipmi/domstate сам, не плодя
+    # task-row'ы. Параллелизм внутри одного тика ограничен ВЫДЕЛЕННЫМ семафором
+    # (не taskiq handler-слотами), чтобы шторм целей не забивал event-loop.
+    probe_loop_concurrency: int = Field(
+        default=8, ge=1, le=256,
+        description=(
+            "Max concurrent probes within one reachability/power loop tick "
+            "(dedicated asyncio.Semaphore, independent of the taskiq handler "
+            "pool). Intervals and on/off come from /internal/settings/probes, "
+            "re-read fresh each cycle."
         ),
     )
 

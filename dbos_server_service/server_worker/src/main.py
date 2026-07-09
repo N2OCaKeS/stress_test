@@ -345,6 +345,64 @@ async def _stop_heartbeat_loop(state: TaskiqState) -> None:
     logger.info("heartbeat loop stopped on worker shutdown")
 
 
+_REACHABILITY_LOOP_TASK_KEY = "reachability_probe_loop_task"
+_POWER_LOOP_TASK_KEY = "power_probe_loop_task"
+
+
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def _start_probe_loops(state: TaskiqState) -> None:
+    """Поднять фоновые probe-циклы (reachability + power).
+
+    Заменяют частые sweep'ы `power.sweep`/`vms.status_sweep`: вместо диспатча
+    `power.status`/`vm.status` на каждую цель (task-row на каждую) воркер держит
+    два asyncio-loop'а, тянет цели через `/internal/probe-targets` и снимает
+    ping/ssh/ipmi/domstate своим семафором. Интервалы/вкл-выкл читаются свежими
+    из `/internal/settings/probes` каждый цикл. Loop'ы никогда не падают.
+    """
+    from src.services import probe_loop
+
+    reach = asyncio.create_task(
+        probe_loop.run_reachability_loop(), name="reachability_probe_loop",
+    )
+    reach.add_done_callback(_on_publisher_exit)
+    state[_REACHABILITY_LOOP_TASK_KEY] = reach
+
+    power = asyncio.create_task(
+        probe_loop.run_power_loop(), name="power_probe_loop",
+    )
+    power.add_done_callback(_on_publisher_exit)
+    state[_POWER_LOOP_TASK_KEY] = power
+    logger.info("reachability + power probe loops scheduled on worker startup")
+
+
+@broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
+async def _stop_probe_loops(state: TaskiqState) -> None:
+    """Остановить probe-циклы при shutdown'е воркера."""
+    for key, label in (
+        (_REACHABILITY_LOOP_TASK_KEY, "reachability probe loop"),
+        (_POWER_LOOP_TASK_KEY, "power probe loop"),
+    ):
+        task: asyncio.Task | None = state.get(key)
+        if task is None:
+            continue
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:  # noqa: BLE001 — shutdown-хук не должен падать
+            logger.warning(
+                "%s raised on shutdown: %s",
+                label, redact_error_message(f"{type(exc).__name__}: {exc}"),
+            )
+        finally:
+            try:
+                del state[key]
+            except KeyError:
+                pass
+    logger.info("probe loops stopped on worker shutdown")
+
+
 _CONSOLE_LISTENER_TASK_KEY = "console_control_listener_task"
 
 

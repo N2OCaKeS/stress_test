@@ -1358,6 +1358,47 @@ async def power_sweep() -> None:
 
 
 @broker.task(
+    "vms.status_sweep",
+    # Частый статус-прогон ВМ (default каждые 5 минут). Регистрируем cron только
+    # когда включён и scheduler, и сам vm-status-sweep — иначе task висит на
+    # broker'е без расписания (для ручного kiq / testkit'а).
+    schedule=(
+        [{"cron": _settings.vm_status_cron}]
+        if _settings.scheduler_enabled and _settings.vm_status_sweep_enabled
+        else []
+    ),
+)
+async def vms_status_sweep() -> None:
+    """Частый прогон статус-пробы по всем ВМ (domstate/ping/ssh гостя).
+
+    Зеркало `power.sweep`, но по ВМ: воркер даёт только расписание — дёргает
+    server_service internal-эндпоинт `/vms/status-sweep`, а тот берёт список всех
+    активных ВМ и ставит `vm.status` на каждую (питание domstate + ping/ssh
+    гостя). Так питание и доступность гостей держатся актуальными между
+    lifecycle-операциями.
+
+    Ошибки логируются с redact'ом и НЕ пробрасываются — один пропущенный tick
+    не должен валить scheduler-loop (симметрично power-sweep'у).
+    """
+    from src.services import server_service_client
+    from src.utils.redaction import redact_error_message
+
+    try:
+        summary = await server_service_client.trigger_vm_status_sweep()
+    except Exception as exc:  # noqa: BLE001 — periodic не должен крэшить scheduler
+        redacted = redact_error_message(f"{type(exc).__name__}: {exc}")
+        logger.warning("vms.status_sweep failed: %s", redacted)
+        return
+    logger.info(
+        "vms.status_sweep: total=%s processed=%s dispatched=%s truncated=%s",
+        summary.get("total_vms"),
+        summary.get("processed"),
+        summary.get("dispatched_tasks"),
+        summary.get("truncated"),
+    )
+
+
+@broker.task(
     "vms.reconcile_failed_creates",
     # Периодический reconcile упавших vm.create (default каждые 3 минуты).
     # Регистрируем cron только когда включён и scheduler, и сам reconcile —

@@ -23,7 +23,7 @@ class TestTaskKind:
             "installed_packages.remove", "installed_packages.update",
             "management_user_sync",
             "vms_hub.prepare", "vms_hub.teardown", "vm.create", "vm.power",
-            "vm.delete", "vm.set_autostart", "vm.console_prep",
+            "vm.status", "vm.delete", "vm.set_autostart", "vm.console_prep",
             "vm.prepare", "vm.set_network",
             "vm.update", "vm.disk_attach", "vm.disk_delete", "vm.disk_resize",
             "vm.snapshot_create", "vm.snapshot_delete", "vm.snapshot_revert",
@@ -66,6 +66,7 @@ _NON_DISPATCH_BROKER_TASKS = frozenset({
     "tasks.recover_scheduled_retries",
     "tasks.sweep_orphaned",
     "vms.reconcile_failed_creates",
+    "vms.status_sweep",
     "worker.cleanup_stale_heartbeats",
     "worker.heartbeat",
 })

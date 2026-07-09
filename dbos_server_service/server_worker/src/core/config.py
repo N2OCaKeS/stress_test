@@ -20,6 +20,11 @@ _AUTO_INVENTORY_CRON_DEFAULT = "0 1 * * *"
 # (иначе значения «протухают» между суточными inventory-прогонами).
 _POWER_SWEEP_CRON_DEFAULT = "*/5 * * * *"
 
+# Дефолт cron'а частого статус-sweep'а ВМ: каждые 5 минут, как у серверного
+# power-sweep'а. Проба domstate/ping/ssh read-only и лёгкая, держит питание и
+# доступность гостей актуальными между lifecycle-операциями.
+_VM_STATUS_CRON_DEFAULT = "*/5 * * * *"
+
 # Дефолт cron'а reconcile'а упавших vm.create: каждые 3 минуты. Прогон дешёвый
 # (SELECT ВМ в busy_state=creating + статус их задач), но удаляет ВМ, чью
 # create-задачу воркер терминально завалил — реагировать хочется быстро.
@@ -404,6 +409,27 @@ class Settings(BaseSettings):
         default=_POWER_SWEEP_CRON_DEFAULT,
         description=(
             "Cron for the frequent power/reachability sweep (UTC, taskiq). "
+            "Default `*/5 * * * *` = every 5 minutes."
+        ),
+    )
+
+    # ── Частый статус-sweep ВМ (domstate/ping/ssh по всем ВМ) ────────────
+    # Периодик `vms.status_sweep` по частому cron'у дёргает server_service
+    # internal-эндпоинт /vms/status-sweep — тот ставит `vm.status` на ВСЕ
+    # активные ВМ (питание domstate + ping/ssh гостя). Зеркало power-sweep'а
+    # серверов. Регистрируется при `scheduler_enabled AND vm_status_sweep_enabled`.
+    vm_status_sweep_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enable the frequent VM status sweep task (`vms.status_sweep`) that "
+            "probes domstate/ping/ssh for every VM. Requires SCHEDULER_ENABLED "
+            "as well."
+        ),
+    )
+    vm_status_cron: str = Field(
+        default=_VM_STATUS_CRON_DEFAULT,
+        description=(
+            "Cron for the frequent VM status sweep (UTC, taskiq). "
             "Default `*/5 * * * *` = every 5 minutes."
         ),
     )
@@ -1066,6 +1092,32 @@ class Settings(BaseSettings):
             self.power_sweep_cron = _POWER_SWEEP_CRON_DEFAULT
         else:
             self.power_sweep_cron = expr
+        return self
+
+    @model_validator(mode="after")
+    def _fallback_invalid_vm_status_cron(self) -> "Settings":
+        """Кривой `VM_STATUS_CRON` заменяем дефолтом, а не роняем scheduler.
+
+        Та же защита, что и у соседних cron-валидаторов: невалидную строку
+        pycron выбрасывает исключением в scheduler-loop, останавливая ВСЕ
+        периодики — поэтому на parse-ошибке откатываемся на дефолт с WARNING'ом.
+        """
+        expr = (self.vm_status_cron or "").strip()
+        try:
+            import pycron
+
+            pycron.is_now(expr, datetime.now(timezone.utc))
+        except Exception as exc:  # noqa: BLE001 — любую parse-ошибку трактуем как битый cron
+            logger.warning(
+                "VM_STATUS_CRON=%r is not a valid cron expression (%s); "
+                "falling back to default %r",
+                self.vm_status_cron,
+                type(exc).__name__,
+                _VM_STATUS_CRON_DEFAULT,
+            )
+            self.vm_status_cron = _VM_STATUS_CRON_DEFAULT
+        else:
+            self.vm_status_cron = expr
         return self
 
     @model_validator(mode="after")

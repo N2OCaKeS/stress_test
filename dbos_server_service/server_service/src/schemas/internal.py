@@ -561,6 +561,16 @@ class PowerSweepResponse(BaseModel):
     truncated: int = Field(description="Сколько серверов отрезано cap'ом AUTO_INVENTORY_FANOUT_MAX.")
 
 
+class VmStatusSweepResponse(BaseModel):
+    """Сводка частого статус-прогона ВМ (POST /internal/vms/status-sweep)."""
+
+    ok: bool = True
+    total_vms: int = Field(description="Всего активных ВМ платформы.")
+    processed: int = Field(description="ВМ, по которым прошёл фан-аут (после cap'а, с живым hub'ом).")
+    dispatched_tasks: int = Field(description="Сколько vm.status-задач реально поставлено.")
+    truncated: int = Field(description="Сколько ВМ отрезано cap'ом AUTO_INVENTORY_FANOUT_MAX.")
+
+
 class VmCreateReconcileResponse(BaseModel):
     """Сводка reconcile'а упавших vm.create (POST /internal/vms/reconcile-failed-creates)."""
 

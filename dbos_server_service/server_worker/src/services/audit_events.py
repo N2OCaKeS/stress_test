@@ -62,6 +62,7 @@ SERVICE_EVENTS = [
     {"action": "vms_hub.prepare", "description": "Подготовка сервера как VMS-hub по SSH: libvirt + мост br0 + storage-pool + образы", "default_severity": "CRITICAL"},
     {"action": "vm.create", "description": "Создание ВМ на hub'е по SSH: клон диска + virt-install + провижн + снимки", "default_severity": "CRITICAL"},
     {"action": "vm.power", "description": "Управление питанием ВМ на hub'е по SSH (virsh start/shutdown/reboot/reset/destroy)", "default_severity": "WARNING"},
+    {"action": "vm.status", "description": "Живая проба статуса ВМ на hub'е: virsh domstate + ping/ssh гостя (read-only)", "default_severity": "INFO"},
     {"action": "vm.delete", "description": "Удаление ВМ на hub'е по SSH: virsh destroy + virsh undefine --remove-all-storage --snapshots-metadata", "default_severity": "CRITICAL"},
     {"action": "vm.update", "description": "Изменение cpu/ram ВМ по SSH: dumpxml + правка vcpu/memory + virsh define", "default_severity": "WARNING"},
     {"action": "vm.disk_attach", "description": "Подключение диска к ВМ по SSH: qemu-img create + virsh attach-disk (опц. mkfs+fstab в госте)", "default_severity": "WARNING"},

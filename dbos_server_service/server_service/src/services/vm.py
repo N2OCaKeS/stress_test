@@ -1609,6 +1609,164 @@ async def delete_vm(
     return vm, task_id
 
 
+# ── статус-sweep ВМ (domstate/ping/ssh) ──────────────────────────────────────
+
+# Источник частого статус-прогона ВМ — идёт в `details.source` audit-события,
+# чтобы SIEM отличал sweep от ручного дисптача.
+SOURCE_VM_STATUS_SWEEP = "auto_vm_status_sweep"
+
+# Sentinel для кэша hub'ов внутри одного прогона (None — валидный «hub не найден»).
+_HUB_UNCACHED = object()
+
+
+async def _dispatch_vm_status(
+    db: AsyncSession,
+    *,
+    vm: Vm,
+    hub,
+    actor_id: str | None,
+    request_id: str | None,
+) -> str | None:
+    """Best-effort поставить `vm.status` для одной ВМ. Вернуть task_id либо None.
+
+    Зеркало серверного `probe_server_power`/`_dispatch_one`: ConflictError
+    (idempotent-replay) и ServiceUnavailableError (воркер/redis недоступны)
+    уводятся в failure-audit и возвращают None, а не пробрасываются — один
+    провал не должен валить остальные ВМ sweep'а. Payload несёт адресацию hub'а
+    + имя ВМ и, если известен, LAN-адрес гостя (`guest_ip`) для ping/ssh.
+    """
+    payload = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "name": vm.name,
+    }
+    if vm.ip_address is not None:
+        payload["guest_ip"] = str(vm.ip_address)
+    try:
+        task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+            db=db,
+            task_kind=VmTaskKind.VM_STATUS,
+            target_server_id=hub.id,
+            target_resource_id=vm.id,
+            payload=payload,
+            created_by=actor_id,
+            request_id=request_id,
+            idempotency_key=None,
+        )
+        await db.commit()
+    except (ConflictError, ServiceUnavailableError) as exc:
+        await db.rollback()
+        reason = (
+            "idempotent_conflict"
+            if isinstance(exc, ConflictError)
+            else "worker_unreachable"
+        )
+        audit_service.emit(
+            "vm.status", target_id=vm.id, target_type="vm",
+            status="failure", allowed=True,
+            details={
+                "reason": reason,
+                "task_kind": VmTaskKind.VM_STATUS.value,
+                "source": SOURCE_VM_STATUS_SWEEP,
+                "hub_server_id": hub.id,
+                "department_id": vm.department_id,
+            },
+        )
+        return None
+    except Exception:  # noqa: BLE001 — статус-sweep не должен падать
+        await db.rollback()
+        logger.warning(
+            "vm status-sweep dispatch failed vm_id=%s", vm.id, exc_info=True,
+        )
+        audit_service.emit(
+            "vm.status", target_id=vm.id, target_type="vm",
+            status="failure", allowed=True,
+            details={
+                "reason": "dispatch_error",
+                "task_kind": VmTaskKind.VM_STATUS.value,
+                "source": SOURCE_VM_STATUS_SWEEP,
+                "hub_server_id": hub.id,
+                "department_id": vm.department_id,
+            },
+        )
+        return None
+    audit_service.emit(
+        "vm.status", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={
+            "task_id": task_id,
+            "task_kind": VmTaskKind.VM_STATUS.value,
+            "source": SOURCE_VM_STATUS_SWEEP,
+            "hub_server_id": hub.id,
+            "department_id": vm.department_id,
+            "idempotent_hit": idempotent_hit,
+        },
+    )
+    return task_id
+
+
+async def fanout_vm_status_sweep(
+    db: AsyncSession,
+    *,
+    actor_id: str | None = None,
+    request_id: str | None = None,
+) -> dict:
+    """Частый прогон статус-пробы (`vm.status`) по ВСЕМ активным ВМ.
+
+    Зеркало серверного `fanout_power_sweep`: населённость — все ВМ платформы
+    (`repo.list_all_active`), а ставится только `vm.status` — питание домена
+    (domstate) + ping/ssh гостя. Так питание и доступность гостей держатся
+    актуальными между lifecycle-операциями. ВМ, чей hub отсутствует или списан,
+    пропускаем (worker-операции туда не адресуемы).
+
+    Cap `auto_inventory_fanout_max` — тот же throttle против шторма задач; при
+    превышении режем хвост и эмитим `vm_status_sweep.truncated`. Hub'ы кэшируем
+    в пределах прогона, чтобы не перезапрашивать один и тот же сервер под каждой
+    его ВМ. Возвращает `{total_vms, processed, dispatched_tasks, truncated}`.
+    """
+    cap = get_settings().auto_inventory_fanout_max
+    vms = await repo.list_all_active(db, limit=cap)
+    total_vms = await repo.count_all_active(db)
+    truncated = max(0, total_vms - cap)
+    if truncated:
+        audit_service.emit(
+            "vm_status_sweep.truncated",
+            target_id=None, target_type="vm",
+            status="warning", allowed=True,
+            details={
+                "total_vms": total_vms,
+                "cap": cap,
+                "truncated_count": truncated,
+            },
+        )
+
+    processed = 0
+    dispatched_tasks = 0
+    hub_cache: dict[str, object] = {}
+    for vm in vms:
+        hub = hub_cache.get(vm.hub_server_id, _HUB_UNCACHED)
+        if hub is _HUB_UNCACHED:
+            hub = await server_repo.get_by_id(db, vm.hub_server_id)
+            hub_cache[vm.hub_server_id] = hub
+        if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+            continue
+        task_id = await _dispatch_vm_status(
+            db, vm=vm, hub=hub,
+            actor_id=actor_id, request_id=request_id,
+        )
+        processed += 1
+        if task_id is not None:
+            dispatched_tasks += 1
+
+    return {
+        "total_vms": total_vms,
+        "processed": processed,
+        "dispatched_tasks": dispatched_tasks,
+        "truncated": truncated,
+    }
+
+
 # ── reconcile упавших vm.create ──────────────────────────────────────────────
 
 # Значение worker'ского `TaskStatus.FAILED` в строке `tasks.status`. Только

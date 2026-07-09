@@ -419,6 +419,29 @@ async def trigger_power_sweep() -> dict:
     )
 
 
+async def trigger_vm_status_sweep() -> dict:
+    """Запустить частый статус-sweep ВМ на стороне server_service.
+
+    Зеркало `trigger_power_sweep`, но по ВМ: периодик `vms.status_sweep`
+    (worker-scheduler) даёт лишь расписание, а фан-аут (список всех активных ВМ
+    + dispatch `vm.status` на каждую) делает server_service. Каждая `vm.status`
+    снимает три сигнала гостя (питание domstate + ping + ssh). Прогон
+    платформенный, поэтому `X-Target-Department-Id` не шлём.
+
+    Возвращает: `{ok, total_vms, processed, dispatched_tasks, truncated}` от
+    `POST /api/server/v1/internal/vms/status-sweep`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `VM_STATUS_SWEEP_REJECTED` — server_service вернул не 2xx.
+    """
+    return await _request(
+        "post",
+        "/api/server/v1/internal/vms/status-sweep",
+        reject_code="VM_STATUS_SWEEP_REJECTED",
+    )
+
+
 async def trigger_vm_create_reconcile() -> dict:
     """Запустить reconcile упавших vm.create на стороне server_service.
 
@@ -587,6 +610,8 @@ async def submit_vm_state(
     snapshots: list[str] | None = None,
     autostart: bool | None = None,
     graphics_port: int | None = None,
+    ping_reachable: bool | None = None,
+    ssh_reachable: bool | None = None,
     error: str | None = None,
 ) -> dict:
     """Отдать server_service свежее состояние ВМ (финал `vm.create` / `vm.power`).
@@ -629,6 +654,10 @@ async def submit_vm_state(
         body["autostart"] = autostart
     if graphics_port is not None:
         body["graphics_port"] = graphics_port
+    if ping_reachable is not None:
+        body["ping_reachable"] = ping_reachable
+    if ssh_reachable is not None:
+        body["ssh_reachable"] = ssh_reachable
     if error is not None:
         body["error"] = error
     return await _request(

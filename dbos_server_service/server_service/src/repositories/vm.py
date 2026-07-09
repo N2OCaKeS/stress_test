@@ -40,6 +40,27 @@ async def list_by_busy_state(db: AsyncSession, busy_state: str) -> list[Vm]:
     )
 
 
+async def list_all_active(db: AsyncSession, limit: int) -> list[Vm]:
+    """SELECT все ВМ платформы (capped) — для статус-sweep'а.
+
+    Зеркало серверного `list_all_active`: у ВМ нет «списанного» статуса, поэтому
+    активны все строки таблицы. Порядок по `created_at` (стабильный) с cap'ом
+    против шторма задач на крупной платформе; отрезанный хвост выровняется
+    следующим прогоном.
+    """
+    stmt = (
+        select(Vm)
+        .order_by(Vm.created_at.desc(), Vm.id.desc())
+        .limit(limit)
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def count_all_active(db: AsyncSession) -> int:
+    """COUNT всех ВМ платформы — для total в статус-sweep'е (детект truncation)."""
+    return int((await db.execute(select(func.count(Vm.id)))).scalar_one())
+
+
 async def list_in_departments(
     db: AsyncSession,
     department_ids: list[str] | None,

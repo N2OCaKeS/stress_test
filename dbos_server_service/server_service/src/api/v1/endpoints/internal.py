@@ -64,6 +64,7 @@ from src.schemas.internal import (
     UsersInventoryCallbackRequest,
     UsersInventoryCallbackResponse,
     VmCreateReconcileResponse,
+    VmStatusSweepResponse,
 )
 from src.schemas.server import (
     ServerAstraUpdateCallbackRequest,
@@ -469,6 +470,32 @@ async def power_sweep(
     """
     data = await internal_service.run_power_sweep(db, identity)
     return PowerSweepResponse(**data)
+
+
+@router.post(
+    "/vms/status-sweep",
+    response_model=VmStatusSweepResponse,
+    responses={403: _INTERNAL_RESPONSES_BASE[403]},
+)
+async def vm_status_sweep(
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> VmStatusSweepResponse:
+    """Частый прогон статус-пробы по всем ВМ: только vm.status.
+
+    Триггерится worker-scheduler'ом (`vms.status_sweep`) по частому cron'у.
+    Зеркало серверного power-sweep'а: воркер даёт лишь расписание, а фан-аут
+    (список всех активных ВМ + dispatch `vm.status` на каждую) идёт здесь.
+    `vm.status` снимает три сигнала гостя (питание domstate + ping + ssh). Прогон
+    платформенный, `X-Target-Department-Id` не требуется.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: per-VM `vm.status` (source=auto_vm_status_sweep); превышение cap'а —
+    `vm_status_sweep.truncated`.
+    """
+    data = await internal_service.run_vm_status_sweep(db, identity)
+    return VmStatusSweepResponse(**data)
 
 
 @router.post(

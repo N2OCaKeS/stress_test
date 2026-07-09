@@ -543,6 +543,8 @@ class VmTaskKind(StrEnum):
     VMS_HUB_PREPARE = "vms_hub.prepare"
     VM_CREATE = "vm.create"
     VM_POWER = "vm.power"
+    # Живая проба статуса ВМ: virsh domstate + ping/ssh гостя (read-only sweep).
+    VM_STATUS = "vm.status"
     VM_DELETE = "vm.delete"
     # Изменение ресурсов ВМ (cpu/ram): stop → правка XML → start.
     VM_UPDATE = "vm.update"

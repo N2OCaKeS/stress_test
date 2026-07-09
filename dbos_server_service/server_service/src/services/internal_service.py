@@ -2076,6 +2076,39 @@ async def run_power_sweep(
     return {"ok": True, **summary}
 
 
+async def run_vm_status_sweep(
+    db: AsyncSession,
+    identity: IdentityContext,
+) -> dict:
+    """Частый прогон статус-пробы по всем ВМ (callback воркера).
+
+    Зеркало `run_power_sweep`, но по ВМ: воркер-scheduler (`vms.status_sweep`)
+    даёт лишь расписание, а фан-аут (список всех активных ВМ + dispatch
+    `vm.status` на каждую) идёт здесь. `vm.status` снимает три сигнала гостя:
+    питание домена (domstate) + ping + ssh. Так питание и доступность держатся
+    актуальными между lifecycle-операциями.
+
+    Право: `(server, *, prepare_callback)` — тот же callback-грант worker_bot'а,
+    что у power-sweep'а; прогон платформенный, поэтому X-Target-Department-Id
+    здесь не требуется.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "vm.status", target_type="vm",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "source": "auto_vm_status_sweep"},
+        )
+        raise
+    summary = await vm_svc.fanout_vm_status_sweep(
+        db, actor_id=identity.user_id,
+    )
+    return {"ok": True, **summary}
+
+
 async def run_vm_create_reconcile(
     db: AsyncSession,
     identity: IdentityContext,

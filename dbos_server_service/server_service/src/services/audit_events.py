@@ -97,6 +97,7 @@ SERVICE_EVENTS = [
     {"action": "management_user_sync_fanout.truncated", "description": "Фан-аут management_user_sync превысил MANAGEMENT_USER_SYNC_FANOUT_MAX — хвост подготовленных серверов вырезан, выровняется на следующем PUT/prepare", "default_severity": "WARNING"},
     {"action": "auto_inventory_sweep.truncated", "description": "Плановый авто-inventory прогон превысил AUTO_INVENTORY_FANOUT_MAX — хвост подготовленных серверов вырезан, выровняется на следующем прогоне", "default_severity": "WARNING"},
     {"action": "power_sweep.truncated", "description": "Частый power-sweep превысил AUTO_INVENTORY_FANOUT_MAX — хвост серверов вырезан, выровняется на следующем прогоне", "default_severity": "WARNING"},
+    {"action": "vm_status_sweep.truncated", "description": "Частый статус-sweep ВМ превысил AUTO_INVENTORY_FANOUT_MAX — хвост ВМ вырезан, выровняется на следующем прогоне", "default_severity": "WARNING"},
     # Server accounts — CRUD (user-facing)
     {"action": "server_account.create", "description": "Server account created", "default_severity": "CRITICAL"},
     {"action": "server_account.view", "description": "Server account viewed", "default_severity": "INFO"},
@@ -219,6 +220,7 @@ SERVICE_EVENTS = [
     {"action": "vm.deleted", "description": "VM deleted: record removed and vm.delete dispatched to worker to clean up the hypervisor domain", "default_severity": "CRITICAL"},
     {"action": "vm.create_failed", "description": "VM auto-removed by the reconciler because its vm.create task terminally failed (worker status=failed): best-effort undefine on the hub + cascade row delete. actor = the VM's original creator (created_by); details carry create_task_id / cleanup_task_id / last_error. Emitted per VM by the periodic vms.reconcile_failed_creates sweep", "default_severity": "WARNING"},
     {"action": "vm.powered", "description": "VM power action dispatched to worker (vm.power: start/shutdown/reboot/reset/destroy)", "default_severity": "WARNING"},
+    {"action": "vm.status", "description": "VM status live-probe dispatched (vm.status): virsh domstate + guest ping/ssh over the hub. Emitted per VM by the periodic vms.status_sweep (source=auto_vm_status_sweep). failure reasons: idempotent_conflict / worker_unreachable / dispatch_error", "default_severity": "INFO"},
     {"action": "vm.reserved", "description": "VM reserved (status set to run test / debug test / <login>) for a test/lease", "default_severity": "WARNING"},
     {"action": "vm.released", "description": "VM released (status back to free)", "default_severity": "WARNING"},
     {"action": "vm.status_updated", "description": "VM booking status set directly (PATCH /vms/{id}/status)", "default_severity": "WARNING"},

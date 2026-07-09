@@ -120,6 +120,7 @@ class TaskKind(StrEnum):
     VMS_HUB_TEARDOWN = "vms_hub.teardown"
     VM_CREATE = "vm.create"
     VM_POWER = "vm.power"
+    VM_STATUS = "vm.status"
     VM_DELETE = "vm.delete"
     VM_SET_AUTOSTART = "vm.set_autostart"
     VM_CONSOLE_PREP = "vm.console_prep"

@@ -6,9 +6,12 @@ Write-операции, которые дёргают воркера (create/pow
 status) — синхронный booking по полю `status`.
 """
 
-from fastapi import APIRouter, Depends, Query, Request
+import re
+
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.exceptions import DomainValidationError
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import PaginatedResponse
@@ -36,6 +39,7 @@ from src.schemas.vm import (
     VmIpPoolResponse,
     VmIpPoolUpdate,
     VmNetworkRequest,
+    VmPackageHistoryEntry,
     VmPackagesResponse,
     VmPasswdRequest,
     VmPowerRequest,
@@ -60,6 +64,12 @@ from src.services import vm_ip_pool as ip_pool_svc
 from src.services import vm_preset as preset_svc
 
 router = APIRouter(prefix="/vms")
+
+# Shell-glob для probe пакетов гостя — тот же allow-list, что в серверном
+# `installed_packages` (буквы/цифры/`._-+` + glob-метасимволы `*?[]`). Никаких
+# пробелов внутри одной маски, `;`, `$`, кавычек — defence-in-depth против
+# shell-injection в dpkg/rpm-команду воркера.
+_VM_PACKAGE_PATTERN_RE = re.compile(r"^[A-Za-z0-9._\-+*?\[\]]+$")
 # prepare-vms-hub / create-default-vms / teardown живут под /servers/{id};
 # отдельный роутер, чтобы не тащить в servers.py VM-зависимости.
 router_servers = APIRouter(prefix="/servers/{server_id}")
@@ -420,11 +430,14 @@ async def list_vm_accounts(
         "диспатчит свежий probe `vm.list_packages` (worker по SSH через hub снимает "
         "`dpkg -l`/`rpm -qa` в госте): в ответе `dispatched=true` и `task_id`, а "
         "`packages` пока несёт прежний снимок — он обновится, когда придёт callback. "
+        "`&pattern=<glob>` (shell glob, деф. `*`) сужает probe — несколько масок "
+        "через пробел (`bash* ssh*`), worker матчит ПО ЛЮБОЙ (OR). "
         "Для refresh ВМ обязана быть prepared (`is_managed`), иметь IP гостя и живой "
         "hub. Гейтит право `(vm, view)`. Cross-dept / нет ВМ → 404."
     ),
     responses={
         200: {"description": "Инвентарь пакетов (сохранённый и/или свежий probe поставлен)."},
+        422: {"description": "INVALID_PATTERN (при refresh)."},
         403: {"description": "Нет `view`."},
         404: {"description": "VM_NOT_FOUND."},
         409: {"description": "VM_PREPARE_REQUIRED / VM_GUEST_IP_UNKNOWN / HUB_UNAVAILABLE (для refresh)."},
@@ -436,11 +449,74 @@ async def list_vm_packages(
     identity: CurrentUserIdentity,
     request: Request,
     refresh: bool = Query(default=False, description="true — поставить свежий probe vm.list_packages в дополнение к сохранённому списку."),
+    pattern: str = Query(
+        default="*",
+        min_length=1,
+        max_length=128,
+        description=(
+            "Shell-glob паттерн(ы) для refresh-probe. Несколько масок — через "
+            "пробел (`bash* ssh*`): worker матчит ПО ЛЮБОЙ (OR). Деф. `*` — все пакеты."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> VmPackagesResponse:
     """GET /vms/{id}/packages."""
-    data = await svc.list_packages(db, identity, request, vm_id, refresh=refresh)
+    # Pattern-валидация только когда probe реально ставится — при чистом чтении
+    # сохранённого списка маска игнорируется. Зеркало серверного
+    # `installed_packages.list`: маски разделяются whitespace'ом, каждую
+    # проверяем отдельно, дальше уходит список `patterns`.
+    patterns: list[str] | None = None
+    if refresh:
+        patterns = pattern.split()
+        if not patterns or not all(_VM_PACKAGE_PATTERN_RE.match(p) for p in patterns):
+            raise DomainValidationError(
+                error_code="INVALID_PATTERN",
+                message="pattern must match [A-Za-z0-9._\\-+*?\\[\\]]+",
+            )
+    data = await svc.list_packages(
+        db, identity, request, vm_id, refresh=refresh, patterns=patterns,
+    )
     return VmPackagesResponse(**data)
+
+
+@router.get(
+    "/{vm_id}/packages/history",
+    response_model=list[VmPackageHistoryEntry],
+    summary="История прошлых probe-запросов пакетов по ВМ",
+    description=(
+        "Возвращает прошлые `vm.list_packages`-задачи этой ВМ (каждый "
+        "`GET /vms/{id}/packages?refresh=true` оставляет такую) — чтобы оператор "
+        "видел уже полученные результаты, не гоняя probe заново. Зеркало серверного "
+        "`GET /servers/{id}/packages/history`: источник — `dev_server_worker.tasks` "
+        "(`target_resource_id=ВМ`, `task_kind=vm.list_packages`), запрошенный "
+        "`pattern` тащится из payload'а, найденные `packages` — из `task.result`. "
+        "Сортировка `enqueued_at DESC`, пагинация `limit` (1..100, деф. 20) + "
+        "`offset`; общее число — в `X-Total-Count`.\n\n"
+        "Доступ — `(vm, view)` + видимость (cross-dept → 404), как у самого запроса "
+        "пакетов: любой, кто видит ВМ, видит всю историю probe'ов по ней. "
+        "Незавершённые (`queued`/`running`) попадают с пустым `packages`. Глубина "
+        "истории ограничена retention'ом worker'а (`tasks.cleanup_completed_old`)."
+    ),
+    responses={
+        200: {"description": "Страница истории; `X-Total-Count` в заголовке."},
+        403: {"description": "Нет `view`."},
+        404: {"description": "VM_NOT_FOUND."},
+    },
+)
+async def list_vm_packages_history(
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    response: Response,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=100_000),
+    db: AsyncSession = Depends(get_db),
+) -> list[VmPackageHistoryEntry]:
+    """GET /vms/{id}/packages/history."""
+    resolved_vm_id, total, items = await svc.list_package_history(
+        db, identity, vm_id, limit=limit, offset=offset,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return [VmPackageHistoryEntry(**item.model_dump()) for item in items]
 
 
 @router.post(

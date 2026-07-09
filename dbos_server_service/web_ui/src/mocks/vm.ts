@@ -21,7 +21,8 @@ import type {
   VmPreset,
   VmSnapshot,
 } from "@/api/server/vms";
-import type { ServerAccount } from "@/api/server/types";
+import type { PackageHistoryEntry, ServerAccount } from "@/api/server/types";
+import type { PaginatedList } from "@/api/auth/users";
 
 /**
  * Кандидаты в VMS-hub — серверы, ещё НЕ подготовленные под виртуализацию.
@@ -815,4 +816,47 @@ export function mockVmPackages(vm: Vm): VmPackagesResponse {
     dispatched: false,
     task_id: null,
   };
+}
+
+/**
+ * История сборов пакетов гостя ВМ (`GET /vms/{id}/packages/history`) для
+ * mock-режима: пара прошлых запросов с уже готовым результатом из последнего
+ * снятого среза, чтобы раздел «История запросов» был не пустым.
+ */
+export function mockVmPackageHistory(
+  vm: Vm,
+  query: { limit: number; offset: number },
+): PaginatedList<PackageHistoryEntry> {
+  const packages = MOCK_VM_PACKAGE_LISTS[vm.id] ?? [];
+  const all: PackageHistoryEntry[] = [
+    {
+      task_id: `tsk-vmpkg-${vm.id}-2`,
+      status: "succeeded",
+      pattern: "*",
+      patterns: null,
+      requested_by: "usr_demo",
+      requested_at: NOW,
+      finished_at: NOW,
+      package_count: packages.length,
+      packages: packages.map((p) => ({ name: p.name, version: p.version ?? "" })),
+      last_error: null,
+    },
+    {
+      task_id: `tsk-vmpkg-${vm.id}-1`,
+      status: "succeeded",
+      pattern: "linux-image*",
+      patterns: null,
+      requested_by: "usr_demo",
+      requested_at: NOW,
+      finished_at: NOW,
+      package_count: packages.filter((p) => p.name.startsWith("linux-image"))
+        .length,
+      packages: packages
+        .filter((p) => p.name.startsWith("linux-image"))
+        .map((p) => ({ name: p.name, version: p.version ?? "" })),
+      last_error: null,
+    },
+  ];
+  const items = all.slice(query.offset, query.offset + query.limit);
+  return { items, total: all.length, totalKnown: true };
 }

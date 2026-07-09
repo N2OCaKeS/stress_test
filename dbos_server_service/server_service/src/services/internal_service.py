@@ -81,6 +81,7 @@ from src.services import (
     secrets_service,
 )
 from src.services import server as server_svc
+from src.services import vm as vm_svc
 from src.utils.ids import os_version_id, server_disk_id, vm_snapshot_id
 
 logger = logging.getLogger(__name__)
@@ -2073,6 +2074,37 @@ async def run_power_sweep(
         db, actor_id=identity.user_id,
     )
     return {"ok": True, **summary}
+
+
+async def run_vm_create_reconcile(
+    db: AsyncSession,
+    identity: IdentityContext,
+) -> dict:
+    """Прогон reconcile'а упавших `vm.create` (callback воркера).
+
+    Триггерится периодиком `vms.reconcile_failed_creates` (worker-scheduler):
+    воркер даёт только расписание, а логику (ВМ в `busy_state='creating'` +
+    статус их `vm.create`-задач + удаление провалившихся) выполняет
+    server_service. Прогон платформенный, `X-Target-Department-Id` не требуется.
+
+    Право: `(server, *, prepare_callback)` — тот же callback-грант worker_bot'а,
+    что у sweep'ов. Удаление ВМ идёт под actor'ом = исходным создателем ВМ
+    (см. `vm.reconcile_failed_vm_creates`), а не под воркер-ботом.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "vm.create_failed", target_type="vm",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "source": "vm_create_reconcile"},
+        )
+        raise
+    return await vm_svc.reconcile_failed_vm_creates(
+        db, actor_id=identity.user_id,
+    )
 
 
 async def record_ipmi_credentials_rotated(

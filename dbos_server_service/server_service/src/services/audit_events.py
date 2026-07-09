@@ -217,6 +217,7 @@ SERVICE_EVENTS = [
     {"action": "vm.created", "description": "VM record created and vm.create dispatched to worker (busy_state=creating)", "default_severity": "CRITICAL"},
     {"action": "vm.view", "description": "VM card viewed (emitted on denied/not-found)", "default_severity": "INFO"},
     {"action": "vm.deleted", "description": "VM deleted: record removed and vm.delete dispatched to worker to clean up the hypervisor domain", "default_severity": "CRITICAL"},
+    {"action": "vm.create_failed", "description": "VM auto-removed by the reconciler because its vm.create task terminally failed (worker status=failed): best-effort undefine on the hub + cascade row delete. actor = the VM's original creator (created_by); details carry create_task_id / cleanup_task_id / last_error. Emitted per VM by the periodic vms.reconcile_failed_creates sweep", "default_severity": "WARNING"},
     {"action": "vm.powered", "description": "VM power action dispatched to worker (vm.power: start/shutdown/reboot/reset/destroy)", "default_severity": "WARNING"},
     {"action": "vm.reserved", "description": "VM reserved (status set to run test / debug test / <login>) for a test/lease", "default_severity": "WARNING"},
     {"action": "vm.released", "description": "VM released (status back to free)", "default_severity": "WARNING"},
@@ -251,6 +252,7 @@ SERVICE_EVENTS = [
     {"action": "vm.console_accessed", "description": "VM console access granted (POST /vms/{id}/console): token + hub host + port/serial-path/user by kind (ssh/vnc/serial/spice). vnc/spice get a signed token + ws_url to the console proxy. Gated by (vm, view) + booking. No plaintext creds returned — proxy fetches them via internal mgmt-credentials", "default_severity": "WARNING"},
     {"action": "vm.packages_listed", "description": "VM guest package probe dispatched (GET /vms/{id}/packages?refresh=true → vm.list_packages): worker lists dpkg/rpm over SSH via the hub. Gated by (vm, view); requires prepared VM + guest IP + live hub. failure reasons: prepare_required / guest_ip_unknown / hub_unavailable / worker_unreachable", "default_severity": "INFO"},
     {"action": "vm.packages_synced", "description": "Worker wrote VM guest package inventory back (POST /internal/vms/{id}/packages): full overwrite of the stored package list. Access: (server, *, prepare_callback)", "default_severity": "INFO"},
+    {"action": "vm.packages_history", "description": "VM package probe request history read (GET /vms/{id}/packages/history); emitted on denied / not-found", "default_severity": "INFO"},
     # Пресеты стандартных ВМ (vm_preset) + create-default-vms.
     {"action": "vm_preset.created", "description": "VM preset created (POST /vm-presets). failure reasons: department_isolation / duplicate", "default_severity": "INFO"},
     {"action": "vm_preset.updated", "description": "VM preset updated (PATCH /vm-presets/{id})", "default_severity": "INFO"},

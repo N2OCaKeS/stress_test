@@ -372,19 +372,28 @@ describe("vms api client", () => {
     });
   });
 
-  it("vmConsoleViewerUrl переводит ws(s) в http(s) и добавляет token", () => {
+  it("listVmPackages с pattern пробрасывает glob в query", async () => {
+    await listVmPackages("vm-101", { refresh: true, pattern: "linux-image*" });
+    expect(apiGet).toHaveBeenCalledWith("/server/v1/vms/vm-101/packages", {
+      query: { refresh: true, pattern: "linux-image*" },
+    });
+  });
+
+  it("vmConsoleViewerUrl берёт path+query от текущего origin, host из ws_url игнорит", () => {
+    const origin = window.location.origin;
+    // Абсолютный host из ws_url (может не резолвиться при заходе по IP) отброшен.
     expect(
       vmConsoleViewerUrl({
-        ws_url: "wss://hub.local/vm-console/vnc/vm-101",
+        ws_url: "wss://emm.devos.astralinux.ru/vm-console/vnc/vm-101",
         token: "sig abc",
       }),
-    ).toBe("https://hub.local/vm-console/vnc/vm-101?token=sig%20abc");
+    ).toBe(`${origin}/vm-console/vnc/vm-101?token=sig%20abc`);
     expect(
       vmConsoleViewerUrl({
         ws_url: "ws://hub.local/vm-console/spice/vm-9?x=1",
         token: "t2",
       }),
-    ).toBe("http://hub.local/vm-console/spice/vm-9?x=1&token=t2");
+    ).toBe(`${origin}/vm-console/spice/vm-9?x=1&token=t2`);
     // Без ws_url (ssh/serial) — null.
     expect(vmConsoleViewerUrl({ ws_url: null, token: "t" })).toBeNull();
   });

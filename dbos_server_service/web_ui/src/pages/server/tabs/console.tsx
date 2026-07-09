@@ -754,9 +754,11 @@ function VmConsoleTab({
 }
 
 /**
- * Графическая консоль ВМ (vnc/spice) через self-hosted прокси. Вьювер не
- * встраиваем (пакета нет в бандле, внешние CDN запрещены CSP) — по кнопке
- * открываем адрес прокси в новой вкладке, токен предъявляется в query.
+ * Графическая консоль ВМ (vnc/spice) через self-hosted прокси. Вьювер (noVNC/
+ * spice-html5) прокси отдаёт по GET и шлёт `frame-ancestors 'self'`, поэтому
+ * встраиваем его same-origin iframe'ом прямо в рабочую область: по «Подключиться»
+ * получаем сессию у бэка и рендерим вьювер инлайн. Адрес строим от текущего
+ * origin (см. `vmConsoleViewerUrl`), а не от зашитого в ответе хоста.
  */
 function VmGraphicalConsole({
   vm,
@@ -776,7 +778,7 @@ function VmGraphicalConsole({
     setSession(null);
   }, [kind]);
 
-  async function open() {
+  async function connect() {
     setPending(true);
     try {
       const res = mock
@@ -797,17 +799,22 @@ function VmGraphicalConsole({
     <div className="flex flex-col gap-3">
       <button
         type="button"
-        className="btn btn-sm flex items-center gap-1 self-start"
-        onClick={open}
+        className="btn btn-primary btn-sm flex items-center gap-1 self-start"
+        onClick={connect}
         disabled={pending}
       >
         <TerminalSquare className="w-3.5 h-3.5" />
-        {pending ? "Готовим…" : "Открыть консоль"}
+        {pending
+          ? "Подключаемся…"
+          : session
+            ? `Переподключить ${proto}`
+            : `Подключиться (${proto})`}
       </button>
 
       {!session && (
         <div className="text-xs text-dim">
-          Нажмите «Открыть консоль», чтобы получить адрес графического прокси.
+          Нажмите «Подключиться», чтобы запустить графическую консоль {proto}{" "}
+          прямо в рабочей области.
         </div>
       )}
 
@@ -817,32 +824,22 @@ function VmGraphicalConsole({
             Графическая консоль ({proto}) через self-hosted прокси
             (noVNC/spice-html5).
           </div>
-          <div className="border border-dashed border-token rounded p-4 text-center bg-black/5 dark:bg-white/5">
-            <TerminalSquare className="w-8 h-8 mx-auto text-dim mb-2" />
-            {viewerUrl ? (
-              <>
-                <div className="text-xs mb-2">
-                  Прокси откроет вьювер в новой вкладке; токен предъявляется в
-                  query.
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm inline-flex items-center gap-1"
-                  onClick={() =>
-                    window.open(viewerUrl, "_blank", "noopener,noreferrer")
-                  }
-                >
-                  <TerminalSquare className="w-3.5 h-3.5" /> Открыть консоль{" "}
-                  {proto}
-                </button>
-              </>
-            ) : (
+          {viewerUrl ? (
+            <iframe
+              src={viewerUrl}
+              title={`Консоль ${proto} ВМ ${vm.name}`}
+              className="w-full border border-token rounded bg-black"
+              style={{ minHeight: 480 }}
+            />
+          ) : (
+            <div className="border border-dashed border-token rounded p-4 text-center bg-black/5 dark:bg-white/5">
+              <TerminalSquare className="w-8 h-8 mx-auto text-dim mb-2" />
               <div className="text-xs text-warn">
-                Прокси-эндпоинт разворачивается инфраструктурно. Кнопка открытия
-                появится после его поднятия.
+                Прокси-эндпоинт разворачивается инфраструктурно. Консоль появится
+                после его поднятия.
               </div>
-            )}
-          </div>
+            </div>
+          )}
           <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
             <Field
               k="host (hub)"

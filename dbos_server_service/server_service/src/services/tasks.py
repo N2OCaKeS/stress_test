@@ -292,6 +292,25 @@ async def list_server_package_history(
     return [_to_package_history_entry(r) for r in rows], total
 
 
+async def list_vm_package_history(
+    vm_id: str,
+    *,
+    limit: int,
+    offset: int,
+) -> tuple[list[PackageHistoryEntry], int]:
+    """История `vm.list_packages`-запросов ВМ (DESC по времени).
+
+    Зеркало `list_server_package_history`: та же форма записи и тот же
+    конвертер `_to_package_history_entry`, только источник — задачи ВМ
+    (`target_resource_id=vm.id`, kind `vm.list_packages`). Permission
+    `(vm, view)` + видимость решает endpoint — сюда ВМ приходит проверенной.
+    """
+    rows, total = await worker_client.list_vm_package_history(
+        vm_id=vm_id, limit=limit, offset=offset,
+    )
+    return [_to_package_history_entry(r) for r in rows], total
+
+
 async def get_task(
     db,
     identity: IdentityContext,

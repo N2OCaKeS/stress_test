@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from taskiq_redis import ListQueueBroker
 
 from src.core.config import get_settings
+from src.core.constants import VmTaskKind
 from src.core.exceptions import ConflictError, ServiceUnavailableError
 from src.repositories import dispatch_outbox as dispatch_outbox_repo
 from src.services import audit_service, metrics
@@ -750,6 +751,95 @@ async def list_package_history(
             }
             for r in rows
         ], total
+
+
+async def list_vm_package_history(
+    *,
+    vm_id: str,
+    limit: int,
+    offset: int,
+) -> tuple[list[dict], int]:
+    """Страница прошлых `vm.list_packages`-задач одной ВМ.
+
+    Зеркало `list_package_history`, но ключ — `target_resource_id` (id ВМ), а
+    не `target_server_id`: задачи ВМ едут с `target_server_id=hub` и
+    `target_resource_id=vm.id`. Kind жёстко `vm.list_packages`, чей payload —
+    только `{patterns, pattern, guest_ip, ...}`, без ссылок на креды.
+    Сортировка `enqueued_at DESC`, `total` — COUNT под тем же фильтром.
+    """
+    params = {"vid": vm_id, "kind": VmTaskKind.VM_LIST_PACKAGES.value}
+    where_sql = "WHERE task_kind = :kind AND target_resource_id = :vid"
+    session_factory = _engine_factory()
+    async with session_factory() as session:
+        total = int(
+            (
+                await session.execute(
+                    text(f"SELECT COUNT(*) FROM tasks {where_sql}"), params,
+                )
+            ).scalar_one()
+        )
+        if total == 0:
+            return [], total
+        rows = (
+            await session.execute(
+                text(
+                    f"SELECT {_PACKAGE_HISTORY_COLUMNS} FROM tasks {where_sql} "
+                    "ORDER BY enqueued_at DESC, id DESC LIMIT :limit OFFSET :offset"
+                ),
+                {**params, "limit": limit, "offset": offset},
+            )
+        ).all()
+        return [
+            {
+                "id": r[0],
+                "status": r[1],
+                "payload": r[2],
+                "result": r[3],
+                "enqueued_at": r[4],
+                "completed_at": r[5],
+                "created_by": r[6],
+                "last_error": r[7],
+            }
+            for r in rows
+        ], total
+
+
+async def get_latest_task_status(
+    *,
+    target_resource_id: str,
+    task_kind: str,
+) -> dict | None:
+    """Статус последней (по времени постановки) задачи kind по ресурсу.
+
+    Читает `dev_server_worker.tasks` cross-DB и возвращает самую свежую строку
+    с заданными `task_kind` и `target_resource_id` (для ВМ — id ВМ). Нужен
+    reconcile'у упавших `vm.create`: он берёт только `status`, чтобы отличить
+    терминально-провальную задачу (`failed`) от ещё живой (`queued`/`running`).
+
+    Возвращает `{"task_id", "status", "last_error", "completed_at"}` либо
+    None, если ни одной такой задачи нет.
+    """
+    params = {"rid": target_resource_id, "kind": task_kind}
+    session_factory = _engine_factory()
+    async with session_factory() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT id, status, last_error, completed_at FROM tasks "
+                    "WHERE task_kind = :kind AND target_resource_id = :rid "
+                    "ORDER BY enqueued_at DESC, id DESC LIMIT 1"
+                ),
+                params,
+            )
+        ).first()
+    if row is None:
+        return None
+    return {
+        "task_id": row[0],
+        "status": row[1],
+        "last_error": row[2],
+        "completed_at": row[3],
+    }
 
 
 async def cancel_task(

@@ -148,6 +148,30 @@ class VmPackagesResponse(BaseModel):
     task_id: str | None = Field(default=None, description="ID задачи vm.list_packages, если dispatched=true.")
 
 
+class VmPackageHistoryEntry(BaseModel):
+    """Один прошлый probe-запрос пакетов ВМ (история без повторного теста).
+
+    Зеркало серверного `PackageHistoryEntry`: источник — row из
+    `dev_server_worker.tasks` с `task_kind=vm.list_packages` и
+    `target_resource_id=ВМ`. `pattern`/`patterns` берутся из task-payload'а,
+    `packages`/`package_count` — из `task.result`. Незавершённый запрос
+    (`queued`/`running`) отдаётся с пустыми `packages`/`package_count`.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    task_id: str = Field(description="task_id запроса (PK в dev_server_worker.tasks).")
+    status: str = Field(description="queued / running / succeeded / failed / cancelled.")
+    pattern: str | None = Field(default=None, description="Запрошенный glob-паттерн (raw). None у row без одиночного pattern.")
+    patterns: list[str] | None = Field(default=None, description="Список glob-паттернов (OR-матч). None если в payload их не было.")
+    requested_by: str | None = Field(default=None, description="user_id инициатора (task.created_by). None у dispatch'ей без актора.")
+    requested_at: datetime = Field(description="Момент постановки запроса (enqueued_at).")
+    finished_at: datetime | None = Field(default=None, description="Момент завершения (completed_at). None пока запрос не терминальный.")
+    package_count: int | None = Field(default=None, description="Сколько пакетов нашёл worker (len result.packages). None если результата ещё нет.")
+    packages: list[dict] | None = Field(default=None, description="Найденные пакеты `{name, version}` из task.result. None пока запрос не завершён.")
+    last_error: str | None = Field(default=None, description="Текст ошибки для failed-запросов.")
+
+
 class VmReserveRequest(BaseModel):
     """Тело POST /vms/{id}/reserve — бронь ВМ под тест.
 

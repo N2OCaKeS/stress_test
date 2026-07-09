@@ -65,6 +65,7 @@ _NON_DISPATCH_BROKER_TASKS = frozenset({
     "tasks.cleanup_completed_old",
     "tasks.recover_scheduled_retries",
     "tasks.sweep_orphaned",
+    "vms.reconcile_failed_creates",
     "worker.cleanup_stale_heartbeats",
     "worker.heartbeat",
 })

@@ -246,18 +246,27 @@ describe("Паритет вкладок ВМ с серверными (live-ре�
     expect(await screen.findByText("vda")).toBeInTheDocument();
   });
 
-  it("Управление ВМ несёт astra-update, смену сети и mgmt-креды", async () => {
+  it("Управление ВМ несёт серверный набор карточек + VM-специфичные", async () => {
     renderTab(<ManageTab serverId="" entity={vmEntity()} />);
+    // Серверный набор: Жизненный цикл, Управляющие креды, Бронь, Опасная зона.
+    for (const name of [
+      /Жизненный цикл/,
+      /^Управляющие креды$/,
+      /^Бронь$/,
+    ]) {
+      expect(
+        await screen.findByRole("heading", { name }),
+      ).toBeInTheDocument();
+    }
+    expect(screen.getByText(/Опасная зона/)).toBeInTheDocument();
+    // VM-специфичные дополнительные карточки.
     expect(
-      await screen.findByRole("heading", { name: /Обновление ОС Astra/ }),
+      screen.getByRole("heading", { name: /Обновление ОС Astra/ }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: /Смена сети/ }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: /Подготовка и управляющие креды/ }),
-    ).toBeInTheDocument();
-    // mgmt-креды показывают учётку.
+    // Жизненный цикл показывает mgmt-учётку.
     expect(screen.getByText("dbosmgr")).toBeInTheDocument();
 
     // astra-update: выбрать версию → «Обновить ОС».

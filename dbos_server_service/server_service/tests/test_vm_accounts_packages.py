@@ -310,6 +310,269 @@ async def test_packages_callback_requires_dept_header(
     assert_error(resp, 403, "TARGET_DEPARTMENT_HEADER_REQUIRED")
 
 
+# ── packages: pattern-passthrough при refresh ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_packages_refresh_pattern_passthrough(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, is_managed=True, ip_address="10.40.0.81")
+    resp = await client.get(
+        f"{BASE}/vms/{vm.id}/packages?refresh=true&pattern=bash*%20ssh*",
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    assert len(calls) == 1
+    # Две маски через пробел → список patterns (worker OR-матчит), pattern —
+    # первая маска (back-compat, как в серверном installed_packages.list).
+    assert calls[0]["payload"]["patterns"] == ["bash*", "ssh*"]
+    assert calls[0]["payload"]["pattern"] == "bash*"
+
+
+@pytest.mark.asyncio
+async def test_packages_refresh_default_pattern_star(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, is_managed=True, ip_address="10.40.0.82")
+    resp = await client.get(
+        f"{BASE}/vms/{vm.id}/packages?refresh=true", headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    assert calls[0]["payload"]["patterns"] == ["*"]
+
+
+@pytest.mark.asyncio
+async def test_packages_refresh_invalid_pattern_400(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, is_managed=True, ip_address="10.40.0.83")
+    resp = await client.get(
+        f"{BASE}/vms/{vm.id}/packages?refresh=true&pattern=bad!name",
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 422, "INVALID_PATTERN")
+
+
+# ── packages: история probe-запросов ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_packages_history(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    from datetime import datetime, timezone
+
+    import src.services.worker_client as wc_mod
+
+    rows = [
+        {
+            "id": "tsk_h1", "status": "succeeded",
+            "payload": {"patterns": ["bash*"], "pattern": "bash*"},
+            "result": {"packages": [{"name": "bash", "version": "5"}]},
+            "enqueued_at": datetime(2026, 7, 1, tzinfo=timezone.utc),
+            "completed_at": datetime(2026, 7, 1, 0, 1, tzinfo=timezone.utc),
+            "created_by": "usr_a", "last_error": None,
+        },
+    ]
+
+    async def fake_hist(*, vm_id, limit, offset):
+        return rows, 1
+
+    monkeypatch.setattr(wc_mod, "list_vm_package_history", fake_hist)
+
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.get(
+        f"{BASE}/vms/{vm.id}/packages/history", headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["X-Total-Count"] == "1"
+    body = resp.json()
+    assert len(body) == 1
+    entry = body[0]
+    assert entry["task_id"] == "tsk_h1"
+    assert entry["status"] == "succeeded"
+    assert entry["pattern"] == "bash*"
+    assert entry["patterns"] == ["bash*"]
+    assert entry["package_count"] == 1
+    assert entry["requested_by"] == "usr_a"
+
+
+@pytest.mark.asyncio
+async def test_packages_history_cross_dept_404(
+    client, admin_role_token_a, make_hub, make_vm,
+):
+    hub = await make_hub(department_id="dep_b")
+    vm = await make_vm(hub=hub, department_id="dep_b")
+    resp = await client.get(
+        f"{BASE}/vms/{vm.id}/packages/history", headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 404, "VM_NOT_FOUND")
+
+
+@pytest.mark.asyncio
+async def test_packages_history_denied_without_view(
+    client, make_token, make_hub, make_vm,
+):
+    no_role = make_token(department_id="dep_a", service_roles={}, username="nobody")
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    resp = await client.get(
+        f"{BASE}/vms/{vm.id}/packages/history", headers=_hdr(no_role),
+    )
+    assert resp.status_code == 403, resp.text
+
+
+# ── reconcile упавших vm.create ──────────────────────────────────────────────
+
+BASE_INT = "/api/server/v1/internal"
+
+
+async def _make_creating_vm(db, hub, make_vm, *, ip: str, creator: str = "usr_creator"):
+    from datetime import datetime, timezone
+
+    vm = await make_vm(hub=hub, is_managed=True, ip_address=ip)
+    vm.busy_state = "creating"
+    vm.busy_since = datetime.now(timezone.utc)
+    vm.created_by = creator
+    await db.flush()
+    return vm
+
+
+def _patch_create_status(monkeypatch, status: str | None):
+    import src.services.worker_client as wc_mod
+
+    async def fake_status(*, target_resource_id, task_kind):
+        if status is None:
+            return None
+        return {
+            "task_id": "tsk_create",
+            "status": status,
+            "last_error": "libvirt define failed" if status == "failed" else None,
+            "completed_at": None,
+        }
+
+    monkeypatch.setattr(wc_mod, "get_latest_task_status", fake_status)
+
+
+@pytest.mark.asyncio
+async def test_reconcile_deletes_failed_create(
+    client, worker_bot_token_a, make_hub, make_vm, db, monkeypatch,
+):
+    from tests._helpers import make_emit_capture
+    from src.repositories import vm as vm_repo
+
+    calls = make_dispatch_capture(monkeypatch)
+    emits = make_emit_capture(monkeypatch)
+    _patch_create_status(monkeypatch, "failed")
+
+    hub = await make_hub()
+    vm = await _make_creating_vm(db, hub, make_vm, ip="10.40.9.1")
+    vm_id = vm.id
+
+    resp = await client.post(
+        f"{BASE_INT}/vms/reconcile-failed-creates",
+        headers=_hdr(worker_bot_token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["checked"] == 1
+    assert body["deleted"] == 1
+
+    # ВМ удалена из БД.
+    assert await vm_repo.get_by_id(db, vm_id) is None
+    # best-effort cleanup vm.delete задиспатчена на хаб.
+    assert any(c["task_kind"] == "vm.delete" for c in calls)
+    # Аудит vm.create_failed с actor'ом = исходным создателем.
+    failed = [e for e in emits if e["action"] == "vm.create_failed"]
+    assert failed, "vm.create_failed not emitted"
+    assert failed[0]["actor_id"] == "usr_creator"
+    assert failed[0]["target_id"] == vm_id
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_running_create(
+    client, worker_bot_token_a, make_hub, make_vm, db, monkeypatch,
+):
+    from src.repositories import vm as vm_repo
+
+    make_dispatch_capture(monkeypatch)
+    _patch_create_status(monkeypatch, "running")
+
+    hub = await make_hub()
+    vm = await _make_creating_vm(db, hub, make_vm, ip="10.40.9.2")
+    vm_id = vm.id
+
+    resp = await client.post(
+        f"{BASE_INT}/vms/reconcile-failed-creates",
+        headers=_hdr(worker_bot_token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["checked"] == 1
+    assert body["deleted"] == 0
+    assert body["skipped"] == 1
+    # ВМ не тронута.
+    assert await vm_repo.get_by_id(db, vm_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_when_no_task(
+    client, worker_bot_token_a, make_hub, make_vm, db, monkeypatch,
+):
+    from src.repositories import vm as vm_repo
+
+    make_dispatch_capture(monkeypatch)
+    _patch_create_status(monkeypatch, None)
+
+    hub = await make_hub()
+    vm = await _make_creating_vm(db, hub, make_vm, ip="10.40.9.3")
+    vm_id = vm.id
+
+    resp = await client.post(
+        f"{BASE_INT}/vms/reconcile-failed-creates",
+        headers=_hdr(worker_bot_token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["deleted"] == 0
+    assert await vm_repo.get_by_id(db, vm_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_idempotent(
+    client, worker_bot_token_a, make_hub, make_vm, db, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    _patch_create_status(monkeypatch, "failed")
+
+    hub = await make_hub()
+    await _make_creating_vm(db, hub, make_vm, ip="10.40.9.4")
+
+    first = await client.post(
+        f"{BASE_INT}/vms/reconcile-failed-creates",
+        headers=_hdr(worker_bot_token_a),
+    )
+    assert first.status_code == 200, first.text
+    assert first.json()["deleted"] == 1
+
+    # Повторный тик: creating-ВМ больше нет → нечего проверять/удалять.
+    second = await client.post(
+        f"{BASE_INT}/vms/reconcile-failed-creates",
+        headers=_hdr(worker_bot_token_a),
+    )
+    assert second.status_code == 200, second.text
+    body = second.json()
+    assert body["checked"] == 0
+    assert body["deleted"] == 0
+
+
 # ── графическая консоль: spice + serial ──────────────────────────────────────
 
 

@@ -120,37 +120,41 @@ describe("Консоль ВМ — селектор вида + переиспол
     ).toBeInTheDocument();
   });
 
-  it("VNC даёт графический прокси и кнопку открытия URL с token", async () => {
+  it("VNC встраивает вьювер iframe'ом с URL текущего origin, без window.open", async () => {
     const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
-    renderConsole();
+    const { container } = renderConsole();
     fireEvent.click(screen.getByRole("button", { name: "VNC" }));
     fireEvent.click(
-      await screen.findByRole("button", { name: /Открыть консоль/ }),
+      await screen.findByRole("button", { name: /Подключиться \(VNC\)/ }),
     );
     expect(
       await screen.findByText(/Графическая консоль \(VNC\)/),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Открыть консоль VNC/ }));
-    expect(openSpy).toHaveBeenCalledTimes(1);
-    const url = openSpy.mock.calls[0][0] as string;
-    expect(url).toContain("/vm-console/vnc/vm-console");
-    expect(url).toMatch(/^https:\/\//);
-    expect(url).toContain("token=mock-vnc-token-9f3a");
+    // Вьювер встроен в рабочую область iframe'ом, а не открыт новым окном.
+    const iframe = container.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    const src = iframe!.getAttribute("src") ?? "";
+    // Origin — текущий (не зашитый emm.devos из ws_url), путь и токен на месте.
+    expect(src.startsWith(window.location.origin)).toBe(true);
+    expect(src).not.toContain("vms-console.local");
+    expect(src).toContain("/vm-console/vnc/vm-console");
+    expect(src).toContain("token=mock-vnc-token-9f3a");
+    expect(openSpy).not.toHaveBeenCalled();
     openSpy.mockRestore();
   });
 
-  it("SPICE показывает графический прокси и кнопку открытия", async () => {
-    renderConsole();
+  it("SPICE встраивает вьювер iframe'ом в рабочую область", async () => {
+    const { container } = renderConsole();
     fireEvent.click(screen.getByRole("button", { name: "SPICE" }));
     fireEvent.click(
-      await screen.findByRole("button", { name: /Открыть консоль/ }),
+      await screen.findByRole("button", { name: /Подключиться \(SPICE\)/ }),
     );
     expect(
       await screen.findByText(/Графическая консоль \(SPICE\)/),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /Открыть консоль SPICE/ }),
-    ).toBeInTheDocument();
+    const iframe = container.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    expect(iframe!.getAttribute("src")).toContain("/vm-console/spice/vm-console");
   });
 });

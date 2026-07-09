@@ -63,9 +63,11 @@
  */
 
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
+import { listWithTotal, type PaginatedList } from "@/api/auth/users";
 import type {
   Iso8601,
   OffsetPaginatedResponse,
+  PackageHistoryEntry,
   ReasonBody,
   Server,
   TaskDispatchResponse,
@@ -637,18 +639,32 @@ export interface VmConsoleResponse {
 }
 
 /**
- * Прямая http(s)-ссылка на self-hosted вьювер прокси (noVNC/spice-html5) с
+ * http(s)-ссылка на self-hosted вьювер прокси (noVNC/spice-html5) с
  * предъявлением токена в query. Прокси по этому пути на GET отдаёт HTML-вьювер,
- * на WS — сам поток. `ws://`→`http://`, `wss://`→`https://`. null, если у
- * ответа нет `ws_url` (ssh/serial или прокси ещё не развёрнут).
+ * на WS — сам поток; вьювер встраивается в рабочую область через same-origin
+ * iframe.
+ *
+ * Хост из `ws_url` (backend зашивает туда абсолютный `VM_CONSOLE_PROXY_WS_BASE`,
+ * например `wss://emm.devos…`) намеренно отбрасываем: пользователь может зайти
+ * по IP, где этот DNS не резолвится. Берём только path+query и клеим к текущему
+ * origin — как это делают консольные WS-хелперы. null, если у ответа нет
+ * `ws_url` (ssh/serial или прокси ещё не развёрнут).
  */
 export function vmConsoleViewerUrl(
   session: Pick<VmConsoleResponse, "ws_url" | "token">,
 ): string | null {
   if (!session.ws_url) return null;
-  const httpUrl = session.ws_url.replace(/^ws(s?):\/\//, "http$1://");
-  const sep = httpUrl.includes("?") ? "&" : "?";
-  return `${httpUrl}${sep}token=${encodeURIComponent(session.token)}`;
+  let pathAndQuery: string;
+  try {
+    const u = new URL(session.ws_url);
+    pathAndQuery = `${u.pathname}${u.search}`;
+  } catch {
+    // ws_url без схемы/хоста — уже относительный, срезаем возможный ws(s)://host.
+    pathAndQuery = session.ws_url.replace(/^ws(s?):\/\/[^/]*/i, "");
+  }
+  const base = pathAndQuery.startsWith("/") ? pathAndQuery : `/${pathAndQuery}`;
+  const sep = base.includes("?") ? "&" : "?";
+  return `${window.location.origin}${base}${sep}token=${encodeURIComponent(session.token)}`;
 }
 
 // ── client ──────────────────────────────────────────────────────────────────
@@ -1151,12 +1167,40 @@ export interface VmPackagesResponse {
  * (последний снятый срез). `refresh=true` дополнительно ставит свежий probe
  * `vm.list_packages`: ВМ обязана быть prepared, иметь IP гостя и живой hub,
  * иначе 409 (VM_PREPARE_REQUIRED / VM_GUEST_IP_UNKNOWN / HUB_UNAVAILABLE).
+ * `pattern` — shell glob фильтра (`linux-image*`, `*-dev`); пусто → `*`.
  */
 export function listVmPackages(
   vmId: string,
-  opts: { refresh?: boolean } = {},
+  opts: { refresh?: boolean; pattern?: string } = {},
 ): Promise<VmPackagesResponse> {
   const path = `/server/v1/vms/${vmId}/packages`;
-  if (!opts.refresh) return apiGet<VmPackagesResponse>(path);
-  return apiGet<VmPackagesResponse>(path, { query: { refresh: true } });
+  const query: Record<string, string | boolean | undefined> = {};
+  if (opts.refresh) query.refresh = true;
+  if (opts.pattern) query.pattern = opts.pattern;
+  if (Object.keys(query).length === 0) return apiGet<VmPackagesResponse>(path);
+  return apiGet<VmPackagesResponse>(path, { query });
+}
+
+/** Параметры пагинации истории запросов пакетов ВМ. */
+export interface VmPackageHistoryQuery {
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * `GET /api/server/v1/vms/{id}/packages/history` — страница прошлых сборов
+ * пакетов гостя ВМ (DESC по времени). Форма записи совпадает с серверной
+ * (`PackageHistoryEntry`): запрошенный паттерн + найденные пакеты прямо из
+ * `task.result`, без повторного probe. Backend отдаёт голый массив +
+ * `X-Total-Count`; протаскиваем оба через `listWithTotal` для «N из M».
+ */
+export function getVmPackageHistory(
+  vmId: string,
+  query: VmPackageHistoryQuery = {},
+): Promise<PaginatedList<PackageHistoryEntry>> {
+  const { limit = 20, offset = 0 } = query;
+  return listWithTotal<PackageHistoryEntry>(
+    `/server/v1/vms/${vmId}/packages/history`,
+    { limit, offset },
+  );
 }

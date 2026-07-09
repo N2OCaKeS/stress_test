@@ -63,6 +63,7 @@ from src.schemas.internal import (
     ProvisionStatusResponse,
     UsersInventoryCallbackRequest,
     UsersInventoryCallbackResponse,
+    VmCreateReconcileResponse,
 )
 from src.schemas.server import (
     ServerAstraUpdateCallbackRequest,
@@ -468,6 +469,31 @@ async def power_sweep(
     """
     data = await internal_service.run_power_sweep(db, identity)
     return PowerSweepResponse(**data)
+
+
+@router.post(
+    "/vms/reconcile-failed-creates",
+    response_model=VmCreateReconcileResponse,
+    responses={403: _INTERNAL_RESPONSES_BASE[403]},
+)
+async def reconcile_failed_vm_creates(
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> VmCreateReconcileResponse:
+    """Reconcile упавших vm.create: удалить ВМ с терминально-провальной задачей.
+
+    Триггерится worker-scheduler'ом (`vms.reconcile_failed_creates`) по cron'у.
+    Воркер даёт только расписание; логику (ВМ в busy_state=creating, чью
+    vm.create-задачу воркер завершил ошибкой → best-effort undefine + каскадное
+    удаление строк + уведомление создателя) выполняет server_service. Прогон
+    платформенный, `X-Target-Department-Id` не требуется.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: per-VM `vm.create_failed` (WARNING, actor = создатель ВМ).
+    """
+    data = await internal_service.run_vm_create_reconcile(db, identity)
+    return VmCreateReconcileResponse(**data)
 
 
 @router.post(

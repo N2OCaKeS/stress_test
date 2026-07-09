@@ -290,14 +290,15 @@ describe("Vm zone (mock mode)", () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
     await openVmTab("Управление");
     expect(
-      await screen.findByRole("heading", {
-        name: /Подготовка и управляющие креды/,
-      }),
+      await screen.findByRole("heading", { name: /Жизненный цикл/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /^Управляющие креды$/ }),
     ).toBeInTheDocument();
     // mgmt-учётка из фикстуры и кнопка ротации.
     expect(await screen.findByText("dbosmgr")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Ротировать креды/ }),
+      screen.getByRole("button", { name: /Ротировать управляющие креды/ }),
     ).toBeInTheDocument();
   });
 
@@ -306,7 +307,7 @@ describe("Vm zone (mock mode)", () => {
     renderVm("/vm?hub=srv-07&id=vm-103");
     await openVmTab("Управление");
     expect(
-      await screen.findByRole("button", { name: /Подготовить/ }),
+      await screen.findByRole("button", { name: /Prepare/ }),
     ).toBeInTheDocument();
   });
 
@@ -420,14 +421,29 @@ describe("Vm zone (mock mode)", () => {
     ).toBeInTheDocument();
   });
 
-  it("консоль VNC показывает ws-эндпоинт прокси (без внешнего вьювера)", async () => {
+  it("консоль VNC встраивает вьювер и показывает ws-эндпоинт прокси", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
     await openVmTab("Консоль");
     fireEvent.click(await screen.findByRole("button", { name: /^VNC$/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Подключиться \(VNC\)/ }),
+    );
     expect(
       (await screen.findAllByText(/wss:\/\/vms-console\.local/)).length,
     ).toBeGreaterThan(0);
+  });
+
+  it("пакеты ВМ: pattern-input и секция истории (как у сервера)", async () => {
+    renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Пакеты");
+    // Панель пакетов ВМ несёт тот же pattern-input, что и серверная.
+    expect(
+      await screen.findByPlaceholderText(/linux-image/),
+    ).toBeInTheDocument();
+    // И секцию «История запросов» из общего под-компонента.
+    expect(screen.getByText("История запросов")).toBeInTheDocument();
+    // В mock-истории есть прошлый запрос с паттерном linux-image*.
+    expect(await screen.findByText("linux-image*")).toBeInTheDocument();
   });
 
   it("открывает раздел «Пресеты ВМ» и рендерит список из фикстур", async () => {

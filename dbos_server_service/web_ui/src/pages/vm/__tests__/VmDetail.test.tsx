@@ -236,27 +236,28 @@ describe("VmDetail (диспетчер общих вкладок, live-режи�
     );
   });
 
-  it("вкладка «Управление»: подготовка/креды и удаление, без брони", async () => {
+  it("вкладка «Управление»: серверный набор карточек + удаление", async () => {
     renderDetail(true);
     await openTab("Управление");
-    // Подготовка + управляющие креды (аналог серверного ManagementCreds).
+    // Жизненный цикл + Управляющие креды (аналог серверных карточек).
     expect(
-      await screen.findByRole("heading", {
-        name: /Подготовка и управляющие креды/,
-      }),
+      await screen.findByRole("heading", { name: /Жизненный цикл/ }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Ротировать креды/ }),
+      screen.getByRole("heading", { name: /^Управляющие креды$/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Ротировать управляющие креды/ }),
+    ).toBeInTheDocument();
+    // Бронь теперь живёт и в «Управление» (как у сервера).
+    expect(
+      screen.getByRole("heading", { name: /^Бронь$/ }),
     ).toBeInTheDocument();
     // Опасная зона (аналог серверного Danger) — с удалением ВМ.
     expect(screen.getByText(/Опасная зона/)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Удалить ВМ/ }),
     ).toBeInTheDocument();
-    // Бронь во «Управление» не живёт — она в шапке карточки (как у сервера).
-    expect(
-      screen.queryByRole("heading", { name: /^Бронь$/ }),
-    ).not.toBeInTheDocument();
   });
 
   it("бронь вынесена в шапку карточки (как ReserveControl у сервера)", async () => {

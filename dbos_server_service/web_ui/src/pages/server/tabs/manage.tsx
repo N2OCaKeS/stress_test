@@ -14,7 +14,14 @@
  * gate'ятся через `@/lib/rbac` хелперы. Backend перепроверит права —
  * client-side фильтр прячет только лишнее.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Link } from "react-router-dom";
 import {
   Play,
@@ -35,7 +42,6 @@ import {
   X,
   ArrowUpCircle,
   MonitorPlay,
-  ShieldCheck,
   Network,
 } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
@@ -64,6 +70,8 @@ import {
   listVmIpPools,
   prepareVm,
   prepareVmsHub,
+  releaseVm,
+  reserveVm,
   rotateVmMgmtCreds,
   setVmNetwork,
   teardownVmsHub,
@@ -424,10 +432,15 @@ function ServerManageTab({ server, onServerUpdated, onDeleted }: Props) {
       />
 
       <ManagementCredsCard
-        server={view}
+        prepared={!!view && view.is_managed}
+        pubKey={view?.mgmt_ssh_public_key ?? null}
+        rotatedAt={view?.mgmt_creds_rotated_at}
+        pendingApply={!!view?.mgmt_creds_pending_apply}
         allowed={allowBasic}
         locked={updating}
-        busyLabel={busy}
+        busy={busy !== null}
+        rotateBusy={busy === "mgmt_rotate"}
+        notPreparedHint="Управляющая пара появляется после prepare — на неподготовленном сервере ротировать нечего."
         outcome={rotateOutcome.tracked}
         onCancelled={rotateOutcome.reset}
         onRotate={async () => {
@@ -908,34 +921,52 @@ function VmsHubCard({
 // Управляющие креды (per-server, фича #3)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Карточка «Управляющие креды» — общая для сервера и ВМ. Показывает fingerprint
+ * управляющего ключа и время последней ротации, даёт кнопку ротации. Данные
+ * приходят готовыми пропсами, чтобы обе сущности делили одну вёрстку.
+ */
 function ManagementCredsCard({
-  server,
+  prepared,
+  pubKey,
+  rotatedAt,
+  pendingApply = false,
   allowed,
   locked = false,
-  busyLabel,
+  busy,
+  rotateBusy = false,
   outcome,
   onCancelled,
   onRotate,
+  notPreparedHint,
+  noPermissionHint,
 }: {
-  server: Server | undefined;
+  /** Сущность подготовлена (есть управляющая пара). */
+  prepared: boolean;
+  /** Публичный SSH-ключ управляющей учётки (для fingerprint). null — нет. */
+  pubKey: string | null;
+  /** Момент последней ротации (ISO). null/undefined — не ротировались. */
+  rotatedAt?: string | null;
+  /** Backend ещё применяет свежую ротацию. */
+  pendingApply?: boolean;
   allowed: boolean;
-  /** Сервер под системной блокировкой обновления ОС — ротация недоступна. */
+  /** Сущность под системной блокировкой обновления ОС — ротация недоступна. */
   locked?: boolean;
-  busyLabel: string | null;
+  /** Любая операция в процессе — блокируем кнопку. */
+  busy: boolean;
+  /** Именно ротация только что задиспатчена — подпись «Запускаем…». */
+  rotateBusy?: boolean;
   outcome: TrackedTask | null;
   onCancelled: () => void;
   onRotate: () => Promise<void>;
+  notPreparedHint?: ReactNode;
+  noPermissionHint?: ReactNode;
 }) {
-  const prepared = !!server && server.is_managed;
-  // pending — либо backend ещё применяет ротацию (`mgmt_creds_pending_apply`),
-  // либо мы поллим только что задиспатченную задачу.
-  const pending =
-    !!server?.mgmt_creds_pending_apply || (outcome?.polling ?? false);
-  const disabled =
-    !allowed || locked || busyLabel !== null || !prepared || pending || !server;
+  // pending — либо backend ещё применяет ротацию, либо мы поллим задачу.
+  const pending = pendingApply || (outcome?.polling ?? false);
+  const disabled = !allowed || locked || busy || !prepared || pending;
 
   const [fingerprint, setFingerprint] = useState<string | null>(null);
-  const pubKey = server?.mgmt_ssh_public_key ?? null;
   useEffect(() => {
     let alive = true;
     sshKeyFingerprint(pubKey).then((fp) => {
@@ -959,26 +990,20 @@ function ManagementCredsCard({
 
       {!prepared ? (
         <div className="text-[11px] text-dim italic">
-          Управляющая пара появляется после prepare — на неподготовленном сервере
-          ротировать нечего.
+          {notPreparedHint ??
+            "Управляющая пара появляется после prepare — на неподготовленном ресурсе ротировать нечего."}
         </div>
       ) : (
         <>
           <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-xs mb-3">
             <dt className="text-dim">fingerprint</dt>
             <dd className="mono break-all">
-              {fingerprint ? (
-                fingerprint
-              ) : (
-                <span className="text-dim" title="server_service ещё не отдаёт mgmt_ssh_public_key в карточке сервера">
-                  —
-                </span>
-              )}
+              {fingerprint ? fingerprint : <span className="text-dim">—</span>}
             </dd>
             <dt className="text-dim">rotated_at</dt>
             <dd className="mono">
-              {server?.mgmt_creds_rotated_at ? (
-                formatMskShort(server.mgmt_creds_rotated_at)
+              {rotatedAt ? (
+                formatMskShort(rotatedAt)
               ) : (
                 <span className="text-dim">—</span>
               )}
@@ -987,24 +1012,20 @@ function ManagementCredsCard({
 
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex-1 text-xs text-dim">
-              Генерирует новую управляющую SSH-пару и пароль, применяет их на
-              сервере через worker и отзывает старый материал.
+              Генерирует новую управляющую SSH-пару и пароль, применяет их через
+              worker и отзывает старый материал.
             </div>
             {allowed && (
               <button
                 className="btn btn-danger flex items-center gap-1"
                 disabled={disabled}
                 onClick={onRotate}
-                title={
-                  prepared
-                    ? "Ротировать управляющую пару и пароль"
-                    : "Сначала prepare"
-                }
+                title="Ротировать управляющую пару и пароль"
               >
                 <KeyRound className="w-4 h-4" />
                 {pending
                   ? "Ротация идёт…"
-                  : busyLabel === "mgmt_rotate"
+                  : rotateBusy
                     ? "Запускаем…"
                     : "Ротировать управляющие креды"}
               </button>
@@ -1015,8 +1036,8 @@ function ManagementCredsCard({
 
       {!allowed && (
         <div className="text-[11px] text-dim italic mt-3">
-          Нет прав на ротацию управляющих кред (нужна роль server.operator+ или
-          dep_admin своего департамента).
+          {noPermissionHint ??
+            "Нет прав на ротацию управляющих кред (нужна роль server.operator+ или dep_admin своего департамента)."}
         </div>
       )}
 
@@ -1503,9 +1524,10 @@ function Field({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
 }
 
 /**
- * Manage-вкладка для ВМ. Бронь (reserve/release) сюда не входит — она живёт в
- * шапке карточки ВМ; здесь только подготовка/ротация управляющих кред и
- * удаление домена.
+ * Manage-вкладка для ВМ. Набор карточек зеркалит серверный: Жизненный цикл
+ * (подготовка), Обновление ОС, Управляющие креды (общая с сервером карточка),
+ * Смена сети, Бронь (общая карточка), Опасная зона. VM-специфичные (Astra-update
+ * и Смена сети) идут дополнительными к общему набору.
  */
 function VmManageView({
   vm,
@@ -1522,9 +1544,13 @@ function VmManageView({
   onEntityUpdated?: (next: Server | Vm) => void;
   onDeleted?: () => void;
 }) {
+  const { persona } = usePersona();
   const toast = useToast();
-  const { prompt } = useConfirm();
+  const { confirm, prompt } = useConfirm();
   const [busy, setBusy] = useState(false);
+  // Ротация управляющих кред: свой трекер исхода под общей ManagementCredsCard.
+  const rotateOutcome = useTaskOutcome();
+  const reserverLabel = useUserLabel(vm.busy_user_id);
 
   if (!canManage) {
     return (
@@ -1534,6 +1560,68 @@ function VmManageView({
         </div>
       </div>
     );
+  }
+
+  async function handleRotate() {
+    const ok = await confirm({
+      title: "Ротировать управляющие креды",
+      message: `Сгенерировать новые управляющие креды ВМ ${vm.name} и применить их через worker? Старый материал будет отозван.`,
+      confirmLabel: "Ротировать",
+      danger: true,
+    });
+    if (!ok) return;
+    rotateOutcome.reset();
+    setBusy(true);
+    try {
+      const res = mock ? fakeDispatch() : await rotateVmMgmtCreds(vm.id);
+      rotateOutcome.track(`mgmt rotate · ${vm.name}`, res.task_id, res.status);
+      toast.success(`Ротация кред ВМ ${vm.name} — задача поставлена`);
+      if (mock) {
+        onEntityUpdated?.({ ...vm, mgmt_creds_pending_apply: true });
+      }
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Ротация кред не удалась"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleReserve(reason: string) {
+    setBusy(true);
+    try {
+      const next = mock
+        ? { ...vm, busy_state: "busy", busy_note: reason, status: reason }
+        : await reserveVm(vm.id, { reason });
+      onEntityUpdated?.(next as Vm);
+      onChanged();
+      toast.success(`ВМ ${vm.name} забронирована`);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось забронировать"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRelease() {
+    const isForeign = !!vm.busy_user_id && vm.busy_user_id !== persona.id;
+    const message = isForeign
+      ? "ВМ забронирована другим пользователем. Снять бронь принудительно? После освобождения её сможет занять любой."
+      : `Снять бронь с ВМ ${vm.name}?`;
+    if (!(await confirm({ message }))) return;
+    setBusy(true);
+    try {
+      const next = mock
+        ? { ...vm, busy_state: "free", busy_note: null, status: "free" }
+        : await releaseVm(vm.id);
+      onEntityUpdated?.(next as Vm);
+      onChanged();
+      toast.success(`Бронь с ВМ ${vm.name} снята`);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось снять бронь"));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleDelete() {
@@ -1564,9 +1652,12 @@ function VmManageView({
     }
   }
 
+  const reserved = vm.busy_state !== "free" || !!vm.busy_note;
+  const foreign = !!vm.busy_user_id && vm.busy_user_id !== persona.id;
+
   return (
     <div className="p-5 flex flex-col gap-4">
-      <PrepareMgmtCard
+      <VmLifecycleCard
         vm={vm}
         mock={mock}
         onApplied={(next) => onEntityUpdated?.(next)}
@@ -1575,7 +1666,40 @@ function VmManageView({
 
       <AstraUpdateVmCard vm={vm} mock={mock} onChanged={onChanged} />
 
+      <ManagementCredsCard
+        prepared={vm.is_managed === true}
+        pubKey={vm.mgmt_ssh_public_key ?? null}
+        rotatedAt={vm.mgmt_creds_rotated_at}
+        pendingApply={vm.mgmt_creds_pending_apply === true}
+        allowed={canManage}
+        busy={busy}
+        rotateBusy={busy}
+        notPreparedHint="Управляющая пара появляется после подготовки ВМ — на неподготовленной ротировать нечего."
+        noPermissionHint="Нет прав на ротацию управляющих кред этой ВМ."
+        outcome={rotateOutcome.tracked}
+        onCancelled={rotateOutcome.reset}
+        onRotate={handleRotate}
+      />
+
       <VmNetworkCard vm={vm} mock={mock} onChanged={onChanged} />
+
+      <BookingCard
+        entityWord="ВМ"
+        reserved={reserved}
+        stateLabel={vm.busy_state ?? "—"}
+        note={vm.busy_note}
+        reserverLabel={
+          vm.busy_user_id ? (
+            <span title={vm.busy_user_id}>юзер {reserverLabel}</span>
+          ) : undefined
+        }
+        since={vm.busy_since ? formatMskShort(vm.busy_since) : undefined}
+        canManage={canManage}
+        foreign={foreign}
+        busy={busy}
+        onReserve={handleReserve}
+        onRelease={handleRelease}
+      />
 
       <DangerZoneCard
         buttonLabel={busy ? "Удаляем…" : "Удалить ВМ"}
@@ -1926,7 +2050,13 @@ function VmNetworkCard({
   );
 }
 
-function PrepareMgmtCard({
+/**
+ * Жизненный цикл ВМ — аналог серверной `LifecycleCard`. У ВМ из lifecycle-набора
+ * применима только подготовка (`vm.prepare`): инвентаризация/OS-sync идут через
+ * снимки и astra-update, поэтому здесь одна кнопка Prepare. Управляющие креды
+ * (fingerprint + ротация) вынесены в общую `ManagementCredsCard`.
+ */
+function VmLifecycleCard({
   vm,
   mock,
   onApplied,
@@ -1941,23 +2071,8 @@ function PrepareMgmtCard({
   const { confirm } = useConfirm();
   const outcome = useTaskOutcome();
   const [pending, setPending] = useState(false);
-  const [fingerprint, setFingerprint] = useState<string | null>(null);
 
   const managed = vm.is_managed === true;
-  // pending — либо backend ещё применяет ротацию, либо мы поллим задачу.
-  const applying =
-    vm.mgmt_creds_pending_apply === true || (outcome.tracked?.polling ?? false);
-
-  const pubKey = vm.mgmt_ssh_public_key ?? null;
-  useEffect(() => {
-    let alive = true;
-    sshKeyFingerprint(pubKey).then((fp) => {
-      if (alive) setFingerprint(fp);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [pubKey]);
 
   async function handlePrepare() {
     const ok = await confirm({
@@ -1989,44 +2104,35 @@ function PrepareMgmtCard({
     }
   }
 
-  async function handleRotate() {
-    const ok = await confirm({
-      title: "Ротировать управляющие креды",
-      message: `Сгенерировать новые управляющие креды ВМ ${vm.name} и применить их через worker? Старый материал будет отозван.`,
-      confirmLabel: "Ротировать",
-      danger: true,
-    });
-    if (!ok) return;
-    outcome.reset();
-    setPending(true);
-    try {
-      const res = mock ? fakeDispatch() : await rotateVmMgmtCreds(vm.id);
-      outcome.track(`mgmt rotate · ${vm.name}`, res.task_id, res.status);
-      toast.success(`Ротация кред ВМ ${vm.name} — задача поставлена`);
-      if (mock) {
-        onApplied({ ...vm, mgmt_creds_pending_apply: true });
-      }
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Ротация кред не удалась"));
-    } finally {
-      setPending(false);
-    }
-  }
-
   return (
     <div className="card">
       <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-        <ShieldCheck className="w-4 h-4 text-accent" /> Подготовка и управляющие
-        креды
-        {applying && (
-          <span className="badge badge-warn text-[11px]">
-            ротация применяется…
-          </span>
-        )}
+        <Settings className="w-4 h-4 text-accent" /> Жизненный цикл
       </h3>
 
-      {!managed ? (
+      {managed ? (
+        <>
+          <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm mb-3">
+            <Field k="Состояние" v="подготовлена" />
+            <Field k="mgmt-учётка" v={vm.mgmt_user ?? "—"} mono />
+          </dl>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex-1 text-xs text-dim">
+              ВМ подготовлена: заведены per-VM управляющие креды, базовый доступ
+              снят. Повторная подготовка перезапустит bootstrap-цикл.
+            </div>
+            <button
+              className="btn flex items-center gap-1"
+              onClick={handlePrepare}
+              disabled={pending}
+              title="Повторно подготовить ВМ"
+            >
+              <Play className="w-4 h-4" />
+              {pending ? "Ставим задачу…" : "Prepare"}
+            </button>
+          </div>
+        </>
+      ) : (
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex-1 text-xs text-dim">
             ВМ ещё не подготовлена: базовая учётка <span className="mono">u:1</span>{" "}
@@ -2038,42 +2144,10 @@ function PrepareMgmtCard({
             onClick={handlePrepare}
             disabled={pending}
           >
-            <ShieldCheck className="w-4 h-4" />
-            {pending ? "Ставим задачу…" : "Подготовить"}
+            <Play className="w-4 h-4" />
+            {pending ? "Ставим задачу…" : "Prepare"}
           </button>
         </div>
-      ) : (
-        <>
-          <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm mb-3">
-            <Field k="Состояние" v="подготовлена" />
-            <Field k="mgmt-учётка" v={vm.mgmt_user ?? "—"} mono />
-            <Field k="fingerprint" v={fingerprint ?? "—"} mono />
-            <Field
-              k="Креды ротированы"
-              v={
-                vm.mgmt_creds_rotated_at
-                  ? formatMskShort(vm.mgmt_creds_rotated_at)
-                  : "—"
-              }
-              mono
-            />
-          </dl>
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex-1 text-xs text-dim">
-              Ротация генерирует новую управляющую пару/пароль ВМ и применяет их
-              через worker.
-            </div>
-            <button
-              className="btn btn-danger flex items-center gap-1"
-              onClick={handleRotate}
-              disabled={pending || applying}
-              title="Ротировать управляющие креды ВМ"
-            >
-              <KeyRound className="w-4 h-4" />
-              {applying ? "Ротация идёт…" : "Ротировать креды"}
-            </button>
-          </div>
-        </>
       )}
 
       {outcome.tracked && (

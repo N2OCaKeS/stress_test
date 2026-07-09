@@ -53,9 +53,10 @@ import type {
 } from "@/api/server/types";
 import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
 import { PackagesTable, type PackageItem } from "@/components/entity/PackagesTable";
-import { listVmPackages } from "@/api/server/vms";
+import { listVmPackages, getVmPackageHistory } from "@/api/server/vms";
 import type { Vm, VmPackagesResponse } from "@/api/server/vms";
-import { mockVmPackages } from "@/mocks/vm";
+import { mockVmPackages, mockVmPackageHistory } from "@/mocks/vm";
+import type { PaginatedList } from "@/api/auth/users";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import type { EntityRef } from "./_entity";
@@ -608,7 +609,14 @@ function ServerPackagesTab({ serverId, server, onServerUpdated }: Props) {
         emptyText:
           "Список пуст. Нажми «Получить пакеты» и подожди, пока worker закроет задачу.",
       }}
-      footer={<PackageHistorySection serverId={serverId} />}
+      footer={
+        <PackageHistorySection
+          depKey={serverId}
+          fetchPage={(q) => getPackageHistory(serverId, q)}
+          hint="Прошлые probe'ы пакетов этого сервера — результат можно посмотреть, не запуская SSH-пробу заново. Глубина ограничена retention'ом worker'а."
+          emptyText="Запросов пакетов по этому серверу ещё не было."
+        />
+      }
     />
   );
 }
@@ -643,23 +651,38 @@ function historyPatternLabel(entry: PackageHistoryEntry): string {
 }
 
 /**
- * Раздел «История запросов пакетов»: список прошлых live-probe'ов по серверу
- * (DESC по времени), без повторного SSH. Клик по строке разворачивает её
- * результат (`packages`) из уже сохранённой задачи. Незавершённые
- * (`queued`/`running`) показываются с пометкой и без списка пакетов.
- * Пагинация — по `X-Total-Count` через `getPackageHistory`.
+ * Раздел «История запросов пакетов»: список прошлых probe'ов сущности
+ * (сервер / гость ВМ) DESC по времени, без повторного SSH. Клик по строке
+ * разворачивает её результат (`packages`) из уже сохранённой задачи.
+ * Незавершённые (`queued`/`running`) показываются с пометкой и без списка.
+ * Источник страницы приходит снаружи (`fetchPage`) — так вкладка сервера и ВМ
+ * делят одну вёрстку, различаясь только эндпоинтом и текстами.
  */
-function PackageHistorySection({ serverId }: { serverId: string }) {
+function PackageHistorySection({
+  depKey,
+  fetchPage,
+  hint,
+  emptyText,
+}: {
+  /** Ключ пересборки запроса (id сервера/ВМ) — идёт в deps useQuery. */
+  depKey: string;
+  fetchPage: (q: {
+    limit: number;
+    offset: number;
+  }) => Promise<PaginatedList<PackageHistoryEntry>>;
+  hint: ReactNode;
+  emptyText: ReactNode;
+}) {
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const historyQ = useQuery(
     () =>
-      getPackageHistory(serverId, {
+      fetchPage({
         limit: HISTORY_PAGE_SIZE,
         offset: page * HISTORY_PAGE_SIZE,
       }),
-    [serverId, page],
+    [depKey, page],
     { keepPreviousDataOnError: true },
   );
 
@@ -697,10 +720,7 @@ function PackageHistorySection({ serverId }: { serverId: string }) {
           Обновить
         </button>
       </div>
-      <div className="text-xs text-dim mb-3">
-        Прошлые probe'ы пакетов этого сервера — результат можно посмотреть, не
-        запуская SSH-пробу заново. Глубина ограничена retention'ом worker'а.
-      </div>
+      <div className="text-xs text-dim mb-3">{hint}</div>
 
       {historyQ.error && (
         <div className="alert alert-danger flex items-start gap-2 mb-3">
@@ -720,9 +740,7 @@ function PackageHistorySection({ serverId }: { serverId: string }) {
       {historyQ.loading && items.length === 0 ? (
         <div className="text-xs text-dim py-4 text-center">Загрузка…</div>
       ) : items.length === 0 ? (
-        <div className="text-xs text-dim py-4 text-center">
-          Запросов пакетов по этому серверу ещё не было.
-        </div>
+        <div className="text-xs text-dim py-4 text-center">{emptyText}</div>
       ) : (
         <div className="flex flex-col gap-1">
           {items.map((entry) => (
@@ -879,6 +897,7 @@ function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
   const outcome = useTaskOutcome();
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState("");
+  const [pattern, setPattern] = useState("");
 
   const pkgsQ = useQuery<VmPackagesResponse>(
     async () => {
@@ -909,7 +928,10 @@ function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
     setRefreshing(true);
     outcome.reset();
     try {
-      const res = await listVmPackages(vm.id, { refresh: true });
+      const res = await listVmPackages(vm.id, {
+        refresh: true,
+        pattern: pattern.trim() || undefined,
+      });
       if (res.dispatched && res.task_id) {
         outcome.track("Сбор пакетов гостя", res.task_id, "queued");
         toast.info(
@@ -948,6 +970,22 @@ function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
         disabled: busy,
         title: "Поставить свежий probe и обновить список",
       }}
+      controls={
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
+          <label className="text-xs text-dim">pattern (shell glob)</label>
+          <input
+            className="input mono text-xs"
+            style={{ minWidth: 220 }}
+            placeholder="* / linux-image* / *-dev"
+            value={pattern}
+            onChange={(e) => setPattern(e.target.value)}
+            disabled={busy}
+          />
+          <span className="text-[11px] text-dim">
+            пусто → `*` (все пакеты)
+          </span>
+        </div>
+      }
       banners={
         outcome.tracked && (
           <TaskOutcomeBanner
@@ -965,6 +1003,18 @@ function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
         error: pkgsQ.error,
         onRetry: () => pkgsQ.refetch(),
       }}
+      footer={
+        <PackageHistorySection
+          depKey={vm.id}
+          fetchPage={(q) =>
+            mock
+              ? Promise.resolve(mockVmPackageHistory(vm, q))
+              : getVmPackageHistory(vm.id, q)
+          }
+          hint="Прошлые сборы пакетов гостя этой ВМ — результат можно посмотреть, не запуская probe заново. Глубина ограничена retention'ом worker'а."
+          emptyText="Запросов пакетов по этой ВМ ещё не было."
+        />
+      }
     />
   );
 }

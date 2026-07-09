@@ -1357,6 +1357,47 @@ async def power_sweep() -> None:
     )
 
 
+@broker.task(
+    "vms.reconcile_failed_creates",
+    # Периодический reconcile упавших vm.create (default каждые 3 минуты).
+    # Регистрируем cron только когда включён и scheduler, и сам reconcile —
+    # иначе task висит на broker'е без расписания (для ручного kiq / testkit'а).
+    schedule=(
+        [{"cron": _settings.vm_create_reconcile_cron}]
+        if _settings.scheduler_enabled and _settings.vm_create_reconcile_enabled
+        else []
+    ),
+)
+async def vms_reconcile_failed_creates() -> None:
+    """Удалить ВМ, чья vm.create-задача терминально провалилась (+ уведомить).
+
+    Воркер даёт только расписание: дёргает server_service internal-эндпоинт
+    `/vms/reconcile-failed-creates`, а тот сам берёт ВМ в busy_state=creating,
+    сверяет статус их vm.create-задач и удаляет только те, чья задача в
+    статусе `failed` (best-effort undefine на хабе + каскадное удаление строк +
+    аудит `vm.create_failed` от имени создателя). Так воркер не дублирует БД
+    server_service и не принимает разрушительных решений сам.
+
+    Ошибки логируются с redact'ом и НЕ пробрасываются — один пропущенный tick
+    не должен валить scheduler-loop (симметрично sweep'ам).
+    """
+    from src.services import server_service_client
+    from src.utils.redaction import redact_error_message
+
+    try:
+        summary = await server_service_client.trigger_vm_create_reconcile()
+    except Exception as exc:  # noqa: BLE001 — periodic не должен крэшить scheduler
+        redacted = redact_error_message(f"{type(exc).__name__}: {exc}")
+        logger.warning("vms.reconcile_failed_creates failed: %s", redacted)
+        return
+    logger.info(
+        "vms.reconcile_failed_creates: checked=%s deleted=%s skipped=%s",
+        summary.get("checked"),
+        summary.get("deleted"),
+        summary.get("skipped"),
+    )
+
+
 @broker.task("dispatch_outbox.poll")
 async def dispatch_outbox_poll_task() -> None:
     """Operator-ручка / ad-hoc kick'нуть один проход publisher'а.

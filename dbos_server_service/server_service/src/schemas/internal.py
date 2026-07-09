@@ -561,6 +561,15 @@ class PowerSweepResponse(BaseModel):
     truncated: int = Field(description="Сколько серверов отрезано cap'ом AUTO_INVENTORY_FANOUT_MAX.")
 
 
+class VmCreateReconcileResponse(BaseModel):
+    """Сводка reconcile'а упавших vm.create (POST /internal/vms/reconcile-failed-creates)."""
+
+    ok: bool = True
+    checked: int = Field(description="ВМ в busy_state=creating, проверенных в этом прогоне.")
+    deleted: int = Field(description="ВМ, удалённых из-за терминально-провальной vm.create-задачи.")
+    skipped: int = Field(description="ВМ, не тронутых (задача ещё жива / успешна / отсутствует / ошибка обработки).")
+
+
 # ── IPMI credentials_rotated callback ───────────────────────────────────────
 
 class IpmiCredentialsRotatedRequest(BaseModel):

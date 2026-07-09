@@ -20,6 +20,26 @@ async def get_by_number(db: AsyncSession, number: int) -> Vm | None:
     ).scalar_one_or_none()
 
 
+async def list_by_busy_state(db: AsyncSession, busy_state: str) -> list[Vm]:
+    """SELECT все ВМ в заданном lifecycle-состоянии (busy_state).
+
+    Reconcile упавших create'ов берёт `busy_state='creating'`: ВМ, чью
+    `vm.create`-задачу воркер уже завершил ошибкой, но callback не снял
+    lock (worker упал / задача застряла в failed без state-callback'а).
+    Порядок по `busy_since` (старые сверху) — чтобы reconcile сначала
+    разгребал самые залежавшиеся.
+    """
+    return list(
+        (
+            await db.execute(
+                select(Vm)
+                .where(Vm.busy_state == busy_state)
+                .order_by(Vm.busy_since.asc().nulls_last())
+            )
+        ).scalars()
+    )
+
+
 async def list_in_departments(
     db: AsyncSession,
     department_ids: list[str] | None,

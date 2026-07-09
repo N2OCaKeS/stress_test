@@ -343,6 +343,20 @@ manage_packages)`, по дефолту admin/operator.
 
 ---
 
+## VM lifecycle (частично; полный VM-каталог здесь ещё не задокументирован)
+
+Ниже — только события, добавленные под reconcile упавших create'ов и историю
+package-probe'ов ВМ. Остальные `vm.*` действия каталогизированы в
+`src/services/audit_events.py` (`SERVICE_EVENTS`), но в этот файл пока не
+перенесены — известное расхождение.
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `vm.create_failed` | WARNING | периодик `vms.reconcile_failed_creates` нашёл ВМ в `busy_state=creating`, чья `vm.create`-задача в worker-БД в статусе `failed`; ВМ удалена (best-effort undefine на хабе + каскадное удаление строк). Actor = исходный создатель ВМ (`created_by`), не worker_bot | `vm` | `reason=create_task_failed`, `name`, `department_id`, `create_task_id`, `cleanup_task_id`, `last_error`. denied (permission): `reason=permission_denied`, `source=vm_create_reconcile` |
+| `vm.packages_history` | INFO | GET `/vms/{id}/packages/history` — чтение истории прошлых probe-запросов пакетов ВМ. Эмитится только на denied (нет `(vm, view)`) / not-found (cross-dept); success не аудитим | `vm` | denied: `reason=permission_denied`; not-found: `reason=not_found_or_cross_dept` |
+
+---
+
 ## Worker task lifecycle (cancel)
 
 Единственная server_service-ручка управления task-row'ой — `POST /api/server/v1/tasks/{id}/cancel`. Row физически живёт в `dev_server_worker.tasks`; server_service ходит туда cross-DB через `worker_client`. Cancel применяется немедленно: queued → cancelled, running → worker завершает текущий stage и видит `status=cancelled` при попытке terminal `mark_succeeded/failed` (CAS отбрасывает финализацию). Force-kill процесса нет.

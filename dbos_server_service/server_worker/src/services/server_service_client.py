@@ -419,6 +419,29 @@ async def trigger_power_sweep() -> dict:
     )
 
 
+async def trigger_vm_create_reconcile() -> dict:
+    """Запустить reconcile упавших vm.create на стороне server_service.
+
+    Периодик `vms.reconcile_failed_creates` (worker-scheduler) даёт лишь
+    расписание; логику (ВМ в busy_state=creating, чью vm.create-задачу воркер
+    завершил ошибкой → best-effort undefine + каскадное удаление + уведомление
+    создателя) выполняет server_service. Прогон платформенный, поэтому
+    `X-Target-Department-Id` не шлём.
+
+    Возвращает: `{ok, checked, deleted, skipped}` от
+    `POST /api/server/v1/internal/vms/reconcile-failed-creates`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `VM_CREATE_RECONCILE_REJECTED` — server_service вернул не 2xx.
+    """
+    return await _request(
+        "post",
+        "/api/server/v1/internal/vms/reconcile-failed-creates",
+        reject_code="VM_CREATE_RECONCILE_REJECTED",
+    )
+
+
 async def fetch_management_credentials(
     server_id: str,
     target_department_id: str | None = None,

@@ -39,6 +39,7 @@ from src.core.exceptions import (
     ConflictError,
     DomainValidationError,
     NotFoundError,
+    ServiceUnavailableError,
 )
 from src.dependencies.idempotency import read_idempotency_key
 from src.models import Vm, VmDisk, VmSnapshot
@@ -1608,6 +1609,129 @@ async def delete_vm(
     return vm, task_id
 
 
+# ── reconcile упавших vm.create ──────────────────────────────────────────────
+
+# Значение worker'ского `TaskStatus.FAILED` в строке `tasks.status`. Только
+# на нём reconcile удаляет ВМ — `queued`/`running`/отсутствие задачи считаются
+# «ещё в полёте / неоднозначно» и ВМ не трогаются (удаление разрушительно).
+_TASK_STATUS_FAILED = "failed"
+
+
+async def _dispatch_vm_delete_cleanup(
+    db: AsyncSession,
+    *,
+    hub,
+    vm: Vm,
+    actor_id: str | None,
+    request_id: str | None,
+) -> str | None:
+    """Best-effort dispatch `vm.delete` для очистки домена на хабе (reconcile).
+
+    В отличие от пользовательского `delete_vm`, тут нет request'а и
+    idempotency-header'а — задача ставится системно (`created_by=actor_id`
+    воркер-бота). Провал dispatch'а (worker недоступен / idempotent-конфликт)
+    не должен мешать удалению строк ВМ, поэтому возвращаем None, а не бросаем.
+    """
+    payload = {**_hub_payload(hub), "vm_id": vm.id, "vm_name": vm.name}
+    try:
+        return await worker_client.dispatch_task(
+            db=db,
+            task_kind=VmTaskKind.VM_DELETE,
+            target_server_id=hub.id,
+            target_resource_id=vm.id,
+            payload=payload,
+            created_by=actor_id,
+            request_id=request_id,
+            idempotency_key=None,
+        )
+    except (ConflictError, ServiceUnavailableError):
+        return None
+
+
+async def reconcile_failed_vm_creates(
+    db: AsyncSession,
+    *,
+    actor_id: str | None,
+    request_id: str | None = None,
+) -> dict:
+    """Найти ВМ с провалившимся `vm.create` и удалить их (+ уведомить создателя).
+
+    Периодический прогон (worker-scheduler → internal-эндпоинт). Для каждой ВМ
+    в `busy_state='creating'` смотрим статус её самой свежей `vm.create`-задачи
+    в worker-БД. Удаляем ВМ ТОЛЬКО если задача в терминально-провальном статусе
+    (`failed`): `queued`/`running`/`succeeded`/отсутствие задачи не трогаем —
+    удаление разрушительно, при любой неоднозначности пропускаем.
+
+    Удаление: best-effort `vm.delete` на хаб (undefine домена, если хаб жив) +
+    каскадное удаление строк ВМ (`repo.delete` → FK ON DELETE CASCADE для
+    `vm_disks` / `vm_snapshots` / `vm_package_inventory` / `server_account_vms`).
+    На каждую удалённую ВМ эмитим `vm.create_failed` (WARNING) с actor'ом =
+    исходным создателем (`created_by`) и причиной из `task.last_error`.
+
+    Идемпотентно: повторный тик по уже удалённой ВМ её не видит (строки нет);
+    ВМ без failed-задачи остаются нетронутыми. Ошибка на одной ВМ не мешает
+    остальным (per-VM try/except).
+
+    Возвращает `{ok, checked, deleted, skipped}`.
+    """
+    creating = await repo.list_by_busy_state(db, VmBusyState.CREATING.value)
+    checked = len(creating)
+    deleted = 0
+    skipped = 0
+    for vm in creating:
+        try:
+            latest = await worker_client.get_latest_task_status(
+                target_resource_id=vm.id,
+                task_kind=VmTaskKind.VM_CREATE.value,
+            )
+            if latest is None or latest.get("status") != _TASK_STATUS_FAILED:
+                # Задачи нет либо она ещё жива / успешна — не трогаем.
+                skipped += 1
+                continue
+
+            create_task_id = latest.get("task_id")
+            failure_reason = latest.get("last_error")
+            created_by = vm.created_by
+            name = vm.name
+            dept = vm.department_id
+
+            hub = await server_repo.get_by_id(db, vm.hub_server_id)
+            cleanup_task_id: str | None = None
+            if hub is not None and hub.status != ServerStatus.DECOMMISSIONED:
+                cleanup_task_id = await _dispatch_vm_delete_cleanup(
+                    db, hub=hub, vm=vm,
+                    actor_id=actor_id, request_id=request_id,
+                )
+
+            await repo.delete(db, vm)
+            await db.commit()
+
+            audit_service.emit(
+                "vm.create_failed",
+                actor_id=created_by,
+                actor_type="user",
+                target_id=vm.id, target_type="vm",
+                status="failure", allowed=True,
+                department_id=dept,
+                details={
+                    "reason": "create_task_failed",
+                    "name": name,
+                    "department_id": dept,
+                    "create_task_id": create_task_id,
+                    "cleanup_task_id": cleanup_task_id,
+                    "last_error": failure_reason,
+                },
+            )
+            deleted += 1
+        except Exception:  # noqa: BLE001 — одна ВМ не должна ронять весь прогон
+            await db.rollback()
+            logger.exception(
+                "vm create-reconcile failed for vm_id=%s", vm.id,
+            )
+            skipped += 1
+    return {"ok": True, "checked": checked, "deleted": deleted, "skipped": skipped}
+
+
 # ── booking (reserve / release / status) ─────────────────────────────────────
 
 
@@ -2613,6 +2737,7 @@ async def list_packages(
     vm_id: str,
     *,
     refresh: bool,
+    patterns: list[str] | None = None,
 ) -> dict:
     """Инвентарь пакетов гостя ВМ. Право `(vm, view)` + видимость (cross-dept → 404).
 
@@ -2620,6 +2745,10 @@ async def list_packages(
     `record_vm_packages`). `refresh=True` дополнительно диспатчит свежий probe
     `vm.list_packages` — ВМ обязана быть prepared (`is_managed`), иметь IP гостя
     и живой hub; результат придёт callback'ом. Read-only, брони не требует.
+
+    `patterns` (shell glob) сужают probe — воркер OR-матчит по списку масок,
+    зеркало серверного `installed_packages.list`. None → `["*"]` (все пакеты).
+    Валидацию масок делает endpoint.
     """
     await permissions.require_resource_action(
         db, identity, EntityType.VM, vm_id, Action.VIEW
@@ -2660,11 +2789,17 @@ async def list_packages(
             error_code="HUB_UNAVAILABLE",
             message="Hub server is unavailable (missing or decommissioned)",
         )
+    effective_patterns = patterns if patterns else ["*"]
     payload = {
         **_hub_payload(hub),
         "vm_id": vm.id,
         "vm_name": vm.name,
         "guest_ip": str(vm.ip_address),
+        # `patterns` — список масок (worker OR-матчит), `pattern` дублируем
+        # (raw, первая маска) для back-compat и success-audit'а, как в
+        # серверном installed_packages.list.
+        "patterns": effective_patterns,
+        "pattern": effective_patterns[0],
     }
     task_id = await _dispatch_vm_task(
         db=db, identity=identity, request=request,
@@ -2675,11 +2810,57 @@ async def list_packages(
     audit_service.emit(
         "vm.packages_listed", target_id=vm.id, target_type="vm",
         status="success", allowed=True,
-        details={"task_id": task_id, "department_id": vm.department_id},
+        details={
+            "task_id": task_id,
+            "department_id": vm.department_id,
+            "patterns": effective_patterns,
+        },
     )
     result["dispatched"] = True
     result["task_id"] = task_id
     return result
+
+
+async def list_package_history(
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    *,
+    limit: int,
+    offset: int,
+):
+    """История probe-запросов пакетов ВМ (DESC по времени). Право `(vm, view)`.
+
+    Зеркало серверного `list_packages_history`: permission `(vm, view)` +
+    видимость (cross-dept → 404) решаются здесь, дальше read идёт через
+    `tasks_svc.list_vm_package_history` (cross-DB к dev_server_worker.tasks).
+    Read-only, prepare/decommissioned-гейтов нет. Возвращает
+    `(vm_id, total, items)`.
+    """
+    from src.services import tasks as tasks_svc
+
+    audit_action = "vm.packages_history"
+    with emit_denied_on_authz_error(
+        audit_action, target_id=vm_id, target_type="vm",
+        extra_details={"vm_id": vm_id}, identity=identity,
+    ):
+        await permissions.require_resource_action(
+            db, identity, EntityType.VM, vm_id, Action.VIEW
+        )
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            audit_action, target_id=vm_id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "not_found_or_cross_dept"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+
+    items, total = await tasks_svc.list_vm_package_history(
+        vm.id, limit=limit, offset=offset,
+    )
+    return vm.id, total, items
 
 
 # ── teardown VMS-hub (rm-vms-hub) ────────────────────────────────────────────

@@ -103,12 +103,29 @@ export type VmCredStrategy = "per_snapshot" | "reroll";
 export type VmBusyState = "free" | "busy" | "testing" | (string & {});
 
 /**
+ * Сетевой интерфейс ВМ (`VmResponse.nics[]`). Зеркало серверного списка
+ * интерфейсов: устройство, режим подключения и адрес. ВМ создаётся с одним
+ * гостевым NIC (`eth0`, virtio). `mac` libvirt генерит сам — обычно null;
+ * `bridge` заполнен только для bridge-режима (мост хаба `br0`).
+ */
+export interface VmNic {
+  name: string;
+  model: string;
+  network_mode: string;
+  bridge?: string | null;
+  mac?: string | null;
+  ip_address?: string | null;
+}
+
+/**
  * Карточка ВМ (ответ GET/POST /vms). `status` — booking-статус
  * (`free` / `run test` / `debug test` / `<login>`), отдельный от питания.
  */
 export interface Vm {
   id: string;
   name: string;
+  /** Hostname гостя (`hostnamectl`). null — берётся имя ВМ. */
+  hostname?: string | null;
   /** Глобально уникальный номер (в паре servers+vm). null — не задан. */
   number: number | null;
   hub_server_id: string;
@@ -132,6 +149,14 @@ export interface Vm {
   /** Доступность по ICMP-ping с последней пробы. null — пробы не было. */
   ping_reachable?: boolean | null;
   ping_latency_ms?: number | null;
+  /** Когда последний раз пробовали ping гостя. null — пробы не было. */
+  ping_checked_at?: Iso8601 | null;
+  /** Доступность SSH гостя с последней пробы. null — пробы не было. */
+  ssh_reachable?: boolean | null;
+  /** Когда последний раз пробовали SSH гостя. null — пробы не было. */
+  ssh_checked_at?: Iso8601 | null;
+  /** Последняя ошибка воркера по ВМ. null — ошибок не было. */
+  last_error?: string | null;
   /**
    * Подготовлена ли ВМ (`vm.prepare` пройден): базовая учётка `u:1` снята,
    * заведены per-VM управляющие креды. До prepare mgmt-кред нет.
@@ -139,10 +164,16 @@ export interface Vm {
   is_managed?: boolean;
   /** Логин управляющей учётки ВМ (появляется после prepare). null — нет. */
   mgmt_user?: string | null;
+  /** Публичный SSH-ключ управляющей учётки ВМ. Приватный не отдаётся. null — нет. */
+  mgmt_ssh_public_key?: string | null;
   /** Момент последней ротации управляющих кред. null — не ротировались. */
   mgmt_creds_rotated_at?: Iso8601 | null;
   /** true, пока worker применяет свежую ротацию управляющих кред. */
   mgmt_creds_pending_apply?: boolean;
+  /** Гостевые сетевые интерфейсы ВМ (симметрия со списком у сервера). */
+  network_interfaces?: string[];
+  /** Детализация NIC: устройство, режим, мост, IP. */
+  nics?: VmNic[];
   created_at: Iso8601;
   updated_at: Iso8601;
   created_by?: string | null;

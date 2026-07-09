@@ -36,6 +36,7 @@ import {
   ArrowUpCircle,
   MonitorPlay,
   ShieldCheck,
+  Network,
 } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
@@ -57,12 +58,18 @@ import {
 } from "@/api/server/servers";
 import { usersInventory } from "@/api/server/misc";
 import {
+  astraUpdateVm,
   deleteVm,
+  getAvailableIps,
+  listVmIpPools,
   prepareVm,
   prepareVmsHub,
   rotateVmMgmtCreds,
+  setVmNetwork,
   teardownVmsHub,
   type Vm,
+  type VmIpPool,
+  type VmNetworkMode,
 } from "@/api/server/vms";
 import { useTaskOutcome, type TrackedTask } from "@/api/server/useTaskOutcome";
 import { listAccounts } from "@/api/server/accounts";
@@ -73,6 +80,11 @@ import {
   osSync,
   updateOsVersion,
 } from "@/api/server/osVersions";
+import {
+  MOCK_AVAILABLE_IPS,
+  MOCK_VM_IP_POOLS,
+  MOCK_VM_OS_VERSIONS,
+} from "@/mocks/vm";
 import { FormRow } from "@/pages/admin/services/_inline";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -1561,12 +1573,355 @@ function VmManageView({
         onChanged={onChanged}
       />
 
+      <AstraUpdateVmCard vm={vm} mock={mock} onChanged={onChanged} />
+
+      <VmNetworkCard vm={vm} mock={mock} onChanged={onChanged} />
+
       <DangerZoneCard
         buttonLabel={busy ? "Удаляем…" : "Удалить ВМ"}
         busy={busy}
         onDelete={handleDelete}
         description="Удаление ВМ сносит домен libvirt и все её диски. Действие необратимо."
       />
+    </div>
+  );
+}
+
+/**
+ * Обновление ОС ВМ (astra-update) — аналог серверной `AstraUpdateCard`. Дропдаун
+ * версий из каталога; целевая версия уходит как `rc`. Worker перезапишет
+ * репозитории, прогонит `astra-update` и переснимет снимок под новую версию.
+ * Доступно только для подготовленной ВМ (`is_managed`).
+ */
+function AstraUpdateVmCard({
+  vm,
+  mock,
+  onChanged,
+}: {
+  vm: Vm;
+  mock: boolean;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const outcome = useTaskOutcome();
+  const [pending, setPending] = useState(false);
+  const [selected, setSelected] = useState("");
+
+  const managed = vm.is_managed === true;
+  const q = useQuery<{ id: string; name: string }[]>(
+    async () => {
+      if (mock) return MOCK_VM_OS_VERSIONS;
+      const res = await listOsVersions({ limit: 200 });
+      return res.items.map((v: OsVersion) => ({ id: v.id, name: v.name }));
+    },
+    [mock],
+    { keepPreviousDataOnError: true },
+  );
+  const versions = q.data ?? [];
+  const disabled = !managed || pending;
+
+  async function handleUpdate() {
+    const label = versions.find((v) => v.id === selected)?.name ?? selected;
+    if (!label) return;
+    const ok = await confirm({
+      title: "Обновить ОС ВМ",
+      message: `Обновить ОС ВМ ${vm.name} до ${label}? Репозитории будут перезаписаны, пойдёт astra-update, снимок переснимется под новую версию.`,
+      confirmLabel: "Обновить",
+      danger: true,
+    });
+    if (!ok) return;
+    outcome.reset();
+    setPending(true);
+    try {
+      const res = mock ? fakeDispatch() : await astraUpdateVm(vm.id, { rc: label });
+      outcome.track(`astra-update · ${label}`, res.task_id, res.status);
+      toast.success(`Обновление ОС ВМ ${vm.name} — задача поставлена`);
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Обновление ОС не удалось"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <ArrowUpCircle className="w-4 h-4 text-accent" /> Обновление ОС Astra
+      </h3>
+      {!managed ? (
+        <div className="text-[11px] text-dim italic">
+          Обновление идёт по управляющему ключу — сначала подготовьте ВМ.
+        </div>
+      ) : (
+        <>
+          <div className="text-xs text-dim mb-3">
+            Обновляет ВМ до выбранной версии ОС из каталога: worker откатится на
+            нужный <span className="mono">_build</span>-снимок, перезапишет
+            репозитории, выполнит{" "}
+            <span className="mono">astra-update</span> и переснимет снимок.
+          </div>
+          <div className="flex items-end gap-2 flex-wrap">
+            <label className="flex flex-col gap-1 text-sm flex-1 min-w-[200px]">
+              <span className="text-dim text-xs">Целевая версия ОС</span>
+              {q.loading ? (
+                <div className="text-xs text-dim">Загрузка каталога…</div>
+              ) : (
+                <select
+                  className="input"
+                  value={selected}
+                  onChange={(e) => setSelected(e.target.value)}
+                  disabled={disabled}
+                >
+                  <option value="">— выберите версию —</option>
+                  {versions.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+            <button
+              className="btn btn-danger flex items-center gap-1"
+              disabled={disabled || !selected}
+              onClick={handleUpdate}
+            >
+              <ArrowUpCircle className="w-4 h-4" />
+              {pending ? "Запускаем…" : "Обновить ОС"}
+            </button>
+          </div>
+        </>
+      )}
+      {outcome.tracked && (
+        <TaskOutcomeBanner
+          outcome={outcome.tracked}
+          className="mt-3"
+          successText="Обновление ОС применено."
+          onCancelled={outcome.reset}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Смена сети ВМ (`POST /vms/{id}/network`). Переключает домен bridge ↔ NAT;
+ * для bridge даёт выбрать пул IPAM и адрес (свободный автоматически либо
+ * вручную). Backend правит XML, для статики прописывает адрес в госте и
+ * ребутит — поэтому 202-задача.
+ */
+function VmNetworkCard({
+  vm,
+  mock,
+  onChanged,
+}: {
+  vm: Vm;
+  mock: boolean;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const outcome = useTaskOutcome();
+  const [pending, setPending] = useState(false);
+  const [mode, setMode] = useState<VmNetworkMode>(vm.network_mode);
+  const [poolId, setPoolId] = useState("");
+  const [ipMode, setIpMode] = useState<"auto" | "pool" | "manual">("auto");
+  const [ip, setIp] = useState("");
+
+  const poolsQ = useQuery<VmIpPool[]>(
+    async () => {
+      if (mock) return MOCK_VM_IP_POOLS;
+      const res = await listVmIpPools({ department_id: vm.department_id });
+      return res.items;
+    },
+    [mock, vm.department_id],
+    { enabled: mode === "bridge", keepPreviousDataOnError: true },
+  );
+  const pools = (poolsQ.data ?? []).filter(
+    (p) => !p.server_id || p.server_id === vm.hub_server_id,
+  );
+
+  const ipsQ = useQuery<string[]>(
+    async () => {
+      if (!poolId) return [];
+      if (mock) return MOCK_AVAILABLE_IPS[poolId] ?? [];
+      const res = await getAvailableIps(poolId);
+      return res.ips;
+    },
+    [mock, poolId],
+    { enabled: !!poolId && ipMode === "pool", keepPreviousDataOnError: true },
+  );
+  const availableIps = ipsQ.data ?? [];
+
+  async function handleApply() {
+    const ipAddress = mode === "bridge" && ipMode !== "auto" ? ip.trim() || null : null;
+    const pool = mode === "bridge" ? poolId || null : null;
+    const ok = await confirm({
+      title: "Сменить сеть ВМ",
+      message: `Переложить сеть ВМ ${vm.name} на «${mode}»? Домен будет перенастроен; для статики адрес пропишется в госте с ребутом.`,
+      confirmLabel: "Сменить",
+      danger: true,
+    });
+    if (!ok) return;
+    outcome.reset();
+    setPending(true);
+    try {
+      const res = mock
+        ? fakeDispatch()
+        : await setVmNetwork(vm.id, {
+            network_mode: mode,
+            ip_address: ipAddress,
+            pool_id: pool,
+          });
+      outcome.track(`network · ${vm.name}`, res.task_id, res.status);
+      toast.success(`Смена сети ВМ ${vm.name} — задача поставлена`);
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Смена сети не удалась"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  const changed =
+    mode !== vm.network_mode ||
+    (mode === "bridge" && (poolId !== "" || (ipMode !== "auto" && ip.trim() !== "")));
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <Network className="w-4 h-4 text-accent" /> Смена сети
+      </h3>
+      <div className="text-xs text-dim mb-3">
+        Текущий режим: <span className="mono">{vm.network_mode}</span>
+        {vm.ip_address ? (
+          <>
+            {" · "}
+            <span className="mono">{vm.ip_address}</span>
+          </>
+        ) : null}
+        . Bridge вешает ВМ на мост хаба со статикой из пула; NAT — на libvirt-сеть.
+      </div>
+      <div className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">Сетевой режим</span>
+          <select
+            className="input"
+            value={mode}
+            onChange={(e) => setMode(e.target.value as VmNetworkMode)}
+            disabled={pending}
+          >
+            <option value="bridge">bridge (мост, статика)</option>
+            <option value="nat">nat (libvirt NAT)</option>
+          </select>
+        </label>
+
+        {mode === "bridge" && (
+          <>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">Пул IPAM</span>
+              <select
+                className="input"
+                value={poolId}
+                onChange={(e) => {
+                  setPoolId(e.target.value);
+                  setIp("");
+                }}
+                disabled={pending}
+              >
+                <option value="">— авто-выбор пула —</option>
+                {pools.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} · {p.cidr}
+                    {p.server_id ? " · хаб-override" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <fieldset className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">IP-адрес</span>
+              <div className="flex items-center gap-3 flex-wrap">
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    type="radio"
+                    checked={ipMode === "auto"}
+                    onChange={() => setIpMode("auto")}
+                  />
+                  свободный автоматически
+                </label>
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    type="radio"
+                    checked={ipMode === "pool"}
+                    onChange={() => setIpMode("pool")}
+                    disabled={!poolId}
+                  />
+                  выбрать из пула
+                </label>
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    type="radio"
+                    checked={ipMode === "manual"}
+                    onChange={() => setIpMode("manual")}
+                  />
+                  вручную
+                </label>
+              </div>
+              {ipMode === "pool" &&
+                (ipsQ.loading ? (
+                  <div className="text-xs text-dim mt-1">Загрузка свободных IP…</div>
+                ) : availableIps.length === 0 ? (
+                  <div className="text-xs text-warn mt-1">
+                    В пуле нет свободных адресов.
+                  </div>
+                ) : (
+                  <select
+                    className="input mt-1"
+                    value={ip}
+                    onChange={(e) => setIp(e.target.value)}
+                  >
+                    <option value="">— выберите адрес —</option>
+                    {availableIps.map((a) => (
+                      <option key={a} value={a}>
+                        {a}
+                      </option>
+                    ))}
+                  </select>
+                ))}
+              {ipMode === "manual" && (
+                <input
+                  className="input mt-1"
+                  value={ip}
+                  onChange={(e) => setIp(e.target.value)}
+                  placeholder="10.177.103.51"
+                />
+              )}
+            </fieldset>
+          </>
+        )}
+
+        <div className="flex justify-end">
+          <button
+            className="btn btn-primary flex items-center gap-1"
+            disabled={pending || !changed}
+            onClick={handleApply}
+          >
+            <Network className="w-4 h-4" />
+            {pending ? "Запускаем…" : "Сменить сеть"}
+          </button>
+        </div>
+      </div>
+      {outcome.tracked && (
+        <TaskOutcomeBanner
+          outcome={outcome.tracked}
+          className="mt-3"
+          successText="Сеть переключена."
+          onCancelled={outcome.reset}
+        />
+      )}
     </div>
   );
 }
@@ -1586,11 +1941,23 @@ function PrepareMgmtCard({
   const { confirm } = useConfirm();
   const outcome = useTaskOutcome();
   const [pending, setPending] = useState(false);
+  const [fingerprint, setFingerprint] = useState<string | null>(null);
 
   const managed = vm.is_managed === true;
   // pending — либо backend ещё применяет ротацию, либо мы поллим задачу.
   const applying =
     vm.mgmt_creds_pending_apply === true || (outcome.tracked?.polling ?? false);
+
+  const pubKey = vm.mgmt_ssh_public_key ?? null;
+  useEffect(() => {
+    let alive = true;
+    sshKeyFingerprint(pubKey).then((fp) => {
+      if (alive) setFingerprint(fp);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [pubKey]);
 
   async function handlePrepare() {
     const ok = await confirm({
@@ -1680,6 +2047,7 @@ function PrepareMgmtCard({
           <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm mb-3">
             <Field k="Состояние" v="подготовлена" />
             <Field k="mgmt-учётка" v={vm.mgmt_user ?? "—"} mono />
+            <Field k="fingerprint" v={fingerprint ?? "—"} mono />
             <Field
               k="Креды ротированы"
               v={

@@ -138,9 +138,13 @@ describe("VmDetail (диспетчер общих вкладок, live-режи�
         screen.queryByRole("button", { name: gone }),
       ).not.toBeInTheDocument();
     }
-    // Активна «Обзор» — виден блок «Параметры».
+    // Активна «Обзор» — видны те же 4 секции, что у сервера (первая —
+    // «Идентификация»).
     expect(
-      screen.getByRole("heading", { name: /Параметры/ }),
+      screen.getByRole("heading", { name: /Идентификация/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /^Состояние$/ }),
     ).toBeInTheDocument();
   });
 
@@ -213,12 +217,11 @@ describe("VmDetail (диспетчер общих вкладок, live-режи�
     expect(screen.getByRole("heading", { name: /RAM/ })).toBeInTheDocument();
   });
 
-  it("вкладка «Аккаунты» монтирует секцию и грузит учётки", async () => {
+  it("вкладка «Аккаунты» монтирует master-detail и грузит учётки", async () => {
     renderDetail(true);
     await openTab("Аккаунты");
-    expect(
-      await screen.findByRole("heading", { name: /Учётки/ }),
-    ).toBeInTheDocument();
+    // Master-detail: слева список с заголовком «Учётки · N», справа пустой стейт.
+    expect(await screen.findByText(/Учётки ·/)).toBeInTheDocument();
     await waitFor(() => expect(listVmAccounts).toHaveBeenCalledWith(MOCK_VM.id));
   });
 

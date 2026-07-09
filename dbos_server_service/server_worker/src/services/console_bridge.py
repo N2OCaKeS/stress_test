@@ -47,6 +47,7 @@ import base64
 import json
 import logging
 import re
+import shlex
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -145,6 +146,13 @@ async def _release_session(session_id: str) -> None:
 # provision-stash в tasks/users.py).
 _CONSOLE_CREDS_KEY_RE = re.compile(r"^dbos:console_creds:[A-Za-z0-9_\-]{1,128}$")
 
+# VM-консоль подставляет домен/логин/IP гостя в shell-команду hub'а (вложенный
+# ssh / virsh console). Прогоняем их через defence-in-depth валидаторы до
+# подстановки — так же, как VM-tasks гейтят аргументы virsh/virt-install.
+_VM_DOMAIN_RE = re.compile(r"^[A-Za-z0-9._-]{1,255}$")
+_GUEST_IP_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+_LOGIN_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
 
 def _validate_session_id(session_id: str) -> bool:
     """session_id должен быть безопасным для Redis-ключа/канала.
@@ -203,6 +211,7 @@ async def _emit_command_audit(
     department_id: str | None,
     actor_id: str | None,
     exit_status: int | None,
+    vm_id: str | None = None,
 ) -> None:
     """Записать `ssh_console.command` в audit-outbox (at-least-once).
 
@@ -223,6 +232,8 @@ async def _emit_command_audit(
     }
     if server_id is not None:
         details["server_id"] = server_id
+    if vm_id is not None:
+        details["vm_id"] = vm_id
     if exit_status is not None:
         details["exit_status"] = exit_status
     payload: dict = {
@@ -230,9 +241,11 @@ async def _emit_command_audit(
         "status": status,
         "allowed": True,
         "actor_type": "user" if actor_id else "service",
-        "target_type": "server",
+        "target_type": "vm" if vm_id is not None else "server",
     }
-    if server_id is not None:
+    if vm_id is not None:
+        payload["target_id"] = vm_id
+    elif server_id is not None:
         payload["target_id"] = server_id
     if actor_id is not None:
         payload["actor_id"] = actor_id
@@ -268,6 +281,16 @@ class _ConsoleSession:
     idle_timeout: float = 900.0
     max_lifetime: float = 3600.0
     max_command_length: int = 8192
+    # VM-таргет: консоль идёт не напрямую к боксу, а через hub в гостя.
+    # `is_vm` включает ветку `_open_vm_process`; `console_kind` — ssh|serial;
+    # `vm_id`/`vm_domain`/`guest_ip` адресуют гостя, `hub_msg` (сырой start)
+    # — параметры для `open_hub_session`.
+    is_vm: bool = False
+    console_kind: str = "ssh"
+    vm_id: str | None = None
+    vm_domain: str | None = None
+    guest_ip: str | None = None
+    hub_msg: dict = field(default_factory=dict)
 
     _ssh: SshClient | None = field(default=None, init=False)
     _process: object | None = field(default=None, init=False)
@@ -286,21 +309,10 @@ class _ConsoleSession:
         self._last_input_at = time.monotonic()
         reason = "error"
         try:
-            await self._resolve_creds()
-            # Управляемый бокс после prepare держит `PasswordAuthentication no` —
-            # вход возможен только по ключу аккаунта. Когда server_service положил
-            # в stash приватный ключ, коннектимся по нему; пароль остаётся
-            # запасным каналом для неуправляемых серверов с парольным входом.
-            client_keys = self._load_client_keys()
-            self._ssh = SshClient(
-                host=self.host,
-                username=self.login,
-                password=self.password or None,
-                port=self.port,
-                client_keys=client_keys,
-            )
-            await self._ssh.connect()
-            self._process = await self._ssh.open_pty()
+            if self.is_vm:
+                self._process = await self._open_vm_process()
+            else:
+                self._process = await self._open_server_process()
             await self._publish_ctl({"event": "ready"})
             reason = await self._pump()
         except SshError as exc:
@@ -324,6 +336,94 @@ class _ConsoleSession:
         finally:
             await self._teardown(reason)
         return reason
+
+    async def _open_server_process(self):
+        """Серверная консоль: прямой SSH к боксу под аккаунтом + login-shell."""
+        await self._resolve_creds()
+        # Управляемый бокс после prepare держит `PasswordAuthentication no` —
+        # вход возможен только по ключу аккаунта. Когда server_service положил
+        # в stash приватный ключ, коннектимся по нему; пароль остаётся
+        # запасным каналом для неуправляемых серверов с парольным входом.
+        client_keys = self._load_client_keys()
+        self._ssh = SshClient(
+            host=self.host,
+            username=self.login,
+            password=self.password or None,
+            port=self.port,
+            client_keys=client_keys,
+        )
+        await self._ssh.connect()
+        return await self._ssh.open_pty()
+
+    async def _open_vm_process(self):
+        """Консоль ВМ: SSH к hub'у под управляющей учёткой, оттуда PTY в гостя.
+
+        `ssh` — вложенный `sshpass ... ssh` в гостя под выбранным аккаунтом
+        (пароль из stash, key-based на управляемом госте выключен). `serial` —
+        `virsh console` домена на самом hub'е. Команда исполняется exec-ом с
+        allocated pty, поэтому её текст (в т.ч. `SSHPASS=`) в терминал клиента
+        не эхоится. `open_hub_session`/`_guest_ip` переиспользуются из VM-tasks,
+        чтобы цепочка hub→гость была ровно та же, что у остальных VM-операций.
+        """
+        # Ленивый импорт: `tasks.vms` тянет broker, а console_bridge грузится
+        # из WORKER_STARTUP — на import-time это был бы цикл.
+        from src.tasks._vms_helpers import open_hub_session
+        from src.tasks.vms import _guest_ip
+
+        session, host = await open_hub_session(self.hub_msg)
+        self._ssh = session
+        self.host = str(host)
+        if self.console_kind == "serial":
+            command = self._serial_command()
+        else:
+            await self._resolve_creds()
+            guest_ip = self.guest_ip or await _guest_ip(
+                self._ssh, self.host, self._require_vm_domain(),
+            )
+            command = self._guest_ssh_command(guest_ip)
+        return await self._ssh.open_pty(command=command)
+
+    def _require_vm_domain(self) -> str:
+        domain = self.vm_domain or ""
+        if not _VM_DOMAIN_RE.fullmatch(domain):
+            raise SshError(
+                error_code="VM_CONSOLE_INVALID_TARGET",
+                host=self.host,
+                message="vm domain name is missing or unsafe for console",
+            )
+        return domain
+
+    def _guest_ssh_command(self, guest_ip: str) -> str:
+        """Вложенный вход в гостя под аккаунтом по паролю (`sshpass`, force-PTY).
+
+        Пароль подаётся через переменную окружения `SSHPASS`, а не аргументом
+        `-p`, чтобы не оседать в списке процессов. `-tt` форсит выделение PTY на
+        госте (иначе интерактивный shell не поднимется). Гость только что мог
+        быть пересобран — host-key не проверяем.
+        """
+        if not _GUEST_IP_RE.fullmatch(str(guest_ip)):
+            raise SshError(
+                error_code="VM_CONSOLE_INVALID_TARGET",
+                host=self.host,
+                message=f"guest ip {guest_ip!r} is not a valid address",
+            )
+        if not self.login or not _LOGIN_RE.fullmatch(self.login):
+            raise SshError(
+                error_code="VM_CONSOLE_INVALID_TARGET",
+                host=self.host,
+                message="account login is missing or unsafe for console",
+            )
+        env = f"SSHPASS={shlex.quote(self.password or '')}"
+        return (
+            f"{env} sshpass -e ssh -tt "
+            "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+            f"-o ConnectTimeout=15 {self.login}@{guest_ip}"
+        )
+
+    def _serial_command(self) -> str:
+        """`virsh console` домена на hub'е под sudo (NOPASSWD управляющей учётки)."""
+        domain = self._require_vm_domain()
+        return f"sudo virsh console --force {domain}"
 
     async def _resolve_creds(self) -> None:
         """Прочитать креды аккаунта из Redis-stash и сразу удалить ключ.
@@ -473,6 +573,7 @@ class _ConsoleSession:
                 department_id=self.department_id,
                 actor_id=self.actor_id,
                 exit_status=None,
+                vm_id=self.vm_id,
             ),
             name=f"console-audit-{self.session_id}",
         )
@@ -576,6 +677,8 @@ def _build_session_from_start(session_id: str, msg: dict) -> _ConsoleSession:
     уже внутри `run()` (см. `_resolve_creds`) — здесь только валидируем ссылку.
     """
     settings = get_settings()
+    if msg.get("target_type") == "vm":
+        return _build_vm_session_from_start(session_id, msg, settings)
     creds_stash_key = msg.get("creds_stash_key")
     if not creds_stash_key:
         raise SshError(
@@ -593,6 +696,50 @@ def _build_session_from_start(session_id: str, msg: dict) -> _ConsoleSession:
         server_id=msg.get("server_id"),
         department_id=msg.get("target_department_id") or msg.get("department_id"),
         actor_id=msg.get("actor_id"),
+        idle_timeout=settings.console_idle_timeout_seconds,
+        max_lifetime=settings.console_max_session_seconds,
+        max_command_length=settings.console_max_command_length,
+    )
+
+
+def _build_vm_session_from_start(session_id: str, msg: dict, settings) -> _ConsoleSession:
+    """Собрать VM-сессию: адресация hub'а + гость, ssh под аккаунтом / serial.
+
+    `ssh` требует `creds_stash_key` (креды аккаунта для входа в гостя), `serial`
+    — нет (`virsh console` идёт под управляющей учёткой hub'а, аккаунт не нужен).
+    Хост в сессии — адрес hub'а (SSH-таргет), а не гостя; сам `msg` уезжает в
+    `hub_msg`, чтобы `open_hub_session` собрал управляющую сессию к hub'у.
+    """
+    console_kind = msg.get("console_kind") or "ssh"
+    if console_kind not in ("ssh", "serial"):
+        raise SshError(
+            error_code="VM_CONSOLE_INVALID_KIND",
+            host=str(msg.get("host") or ""),
+            message=f"console_kind {console_kind!r} must be ssh or serial",
+        )
+    creds_stash_key = msg.get("creds_stash_key")
+    if console_kind == "ssh" and not creds_stash_key:
+        raise SshError(
+            error_code="CONSOLE_CREDS_KEY_MISSING",
+            host=str(msg.get("host") or ""),
+            message="vm ssh console start message has no creds_stash_key",
+        )
+    return _ConsoleSession(
+        session_id=session_id,
+        host=str(msg.get("host") or msg.get("hub_server_id") or ""),
+        port=int(msg.get("ssh_port") or 22),
+        login="",
+        password="",
+        creds_stash_key=str(creds_stash_key) if creds_stash_key else None,
+        server_id=None,
+        department_id=msg.get("target_department_id") or msg.get("department_id"),
+        actor_id=msg.get("actor_id"),
+        is_vm=True,
+        console_kind=console_kind,
+        vm_id=msg.get("vm_id"),
+        vm_domain=msg.get("vm_domain"),
+        guest_ip=msg.get("guest_ip") or None,
+        hub_msg=msg,
         idle_timeout=settings.console_idle_timeout_seconds,
         max_lifetime=settings.console_max_session_seconds,
         max_command_length=settings.console_max_command_length,

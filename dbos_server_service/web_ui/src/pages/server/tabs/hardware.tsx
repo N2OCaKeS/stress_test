@@ -11,19 +11,23 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import {
+  AlertCircle,
   Cpu,
   HardDrive,
   MemoryStick,
   Network,
   Pencil,
+  RefreshCw,
   type LucideIcon,
 } from "lucide-react";
 import type { DiskResponse, Server, ServerUpdateRequest } from "@/api/server/types";
-import type { Vm } from "@/api/server/vms";
+import { listVmDisks, type Vm, type VmDisk, type VmNic } from "@/api/server/vms";
 import { updateServer } from "@/api/server/servers";
+import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { usePersona } from "@/contexts/PersonaContext";
 import { isDepAdmin } from "@/lib/rbac";
+import { MOCK_VM_DISKS } from "@/mocks/vm";
 import { FormRow, StatRow } from "@/pages/admin/services/_inline";
 import type { EntityRef } from "./_entity";
 
@@ -49,23 +53,65 @@ interface HwDiskTable {
   footnote: ReactNode;
 }
 
+/** Детализация NIC ВМ во всю ширину — зеркало серверной таблицы интерфейсов. */
+interface HwNicTable {
+  nics: VmNic[];
+}
+
+/** Таблица дисков ВМ (read-only) — `GET /vms/{id}/disks`; управление на «Дисках». */
+interface HwVmDiskTable {
+  disks: VmDisk[];
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}
+
 /** Нормализованная модель «Железа», одинаковая для сервера и ВМ. */
 interface HardwareModel {
   /** Кнопка правки сверху; у read-only сущностей (ВМ) — undefined. */
   edit?: { canEdit: boolean; onEdit: () => void };
   cards: HwCard[];
   diskTable?: HwDiskTable;
+  nicTable?: HwNicTable;
+  vmDiskTable?: HwVmDiskTable;
   footer?: ReactNode;
 }
 
 export function HardwareTab(props: Props) {
   // Карточка ВМ рендерится тем же файлом: у ВМ железо read-only, правка
   // ресурсов живёт во вкладке «Обзор», поэтому серверный edit-поток не нужен.
-  // Диспетчер без хуков — модель ВМ собирается чистой функцией.
   if (props.entity?.kind === "vm") {
-    return <HardwareView model={vmModel(props.entity.vm)} />;
+    return <VmHardwareTab vm={props.entity.vm} mock={props.entity.mock} />;
   }
   return <ServerHardwareTab {...props} />;
+}
+
+/**
+ * Hardware-вкладка ВМ: те же карточки-сводки, что у сервера, плюс детализация
+ * NIC из `vm.nics` и read-only таблица дисков (`GET /vms/{id}/disks`).
+ * Управление дисками остаётся на вкладке «Диски», здесь только просмотр.
+ */
+function VmHardwareTab({ vm, mock }: { vm: Vm; mock: boolean }) {
+  const disksQ = useQuery<VmDisk[]>(
+    async () => {
+      if (mock) return MOCK_VM_DISKS[vm.id] ?? [];
+      const res = await listVmDisks(vm.id);
+      return res.items;
+    },
+    [vm.id, mock],
+    { keepPreviousDataOnError: true },
+  );
+
+  return (
+    <HardwareView
+      model={vmModel(vm, {
+        disks: disksQ.data ?? [],
+        loading: disksQ.loading,
+        error: disksQ.error ? apiErrMsg(disksQ.error, "Диски не загрузились") : null,
+        onRetry: () => disksQ.refetch(),
+      })}
+    />
+  );
 }
 
 function ServerHardwareTab({ server, onServerUpdated }: Props) {
@@ -189,12 +235,14 @@ function serverModel(
 
 /**
  * Собирает модель «Железа» из VM-объекта — виртуальные ресурсы домена
- * (vCPU / RAM / сеть / системный диск). Правка ресурсов (vCPU/RAM) — во вкладке
- * «Обзор», дополнительные диски — во вкладке «Диски», поэтому здесь ни edit, ни
- * таблицы физдисков нет: те же карточки, read-only.
+ * (vCPU / RAM / сеть / системный диск), детализацию NIC (`vm.nics`) и read-only
+ * таблицу дисков ВМ. Правка ресурсов (vCPU/RAM) — во вкладке «Обзор», управление
+ * дисками — во вкладке «Диски», поэтому здесь ни edit, ни серверного disk-CRUD
+ * нет: те же карточки/таблицы, read-only.
  */
-function vmModel(vm: Vm): HardwareModel {
+function vmModel(vm: Vm, vmDisks: HwVmDiskTable): HardwareModel {
   const ramGb = (vm.ram_mb / 1024).toFixed(vm.ram_mb % 1024 === 0 ? 0 : 1);
+  const nics = vm.nics ?? [];
   return {
     cards: [
       {
@@ -216,6 +264,21 @@ function vmModel(vm: Vm): HardwareModel {
         rows: [
           { k: "mode", v: mono(vm.network_mode) },
           { k: "ip_address", v: mono(vm.ip_address ?? "— (авто / NAT)") },
+          {
+            k: "interfaces",
+            v:
+              vm.network_interfaces && vm.network_interfaces.length > 0 ? (
+                <span className="flex flex-wrap gap-1">
+                  {vm.network_interfaces.map((iface) => (
+                    <span key={iface} className="badge mono">
+                      {iface}
+                    </span>
+                  ))}
+                </span>
+              ) : (
+                dim
+              ),
+          },
         ],
       },
       {
@@ -228,10 +291,12 @@ function vmModel(vm: Vm): HardwareModel {
         ],
       },
     ],
+    nicTable: { nics },
+    vmDiskTable: vmDisks,
     footer: (
       <>
-        Дополнительные диски — во вкладке «Диски». Ресурсы (vCPU/RAM) правятся во
-        вкладке «Обзор».
+        Дополнительные диски создаются во вкладке «Диски». Ресурсы (vCPU/RAM)
+        правятся во вкладке «Обзор».
       </>
     ),
   };
@@ -274,9 +339,138 @@ function HardwareView({ model }: { model: HardwareModel }) {
         })}
       </div>
 
+      {model.nicTable && <NicTableCard table={model.nicTable} />}
+
       {model.diskTable && <DiskTableCard table={model.diskTable} />}
 
+      {model.vmDiskTable && <VmDiskTableCard table={model.vmDiskTable} />}
+
       {model.footer && <div className="text-[11px] text-dim">{model.footer}</div>}
+    </div>
+  );
+}
+
+/** Детализация NIC ВМ — зеркало серверной таблицы интерфейсов, read-only. */
+function NicTableCard({ table }: { table: HwNicTable }) {
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <Network className="w-4 h-4 text-accent" /> Сетевые интерфейсы
+        <span className="text-xs text-dim font-normal">({table.nics.length})</span>
+      </h3>
+      {table.nics.length === 0 ? (
+        <div className="text-sm text-dim">Интерфейсов нет.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-dim text-xs border-b border-token">
+                <th className="text-left py-2 pr-3">Устройство</th>
+                <th className="text-left py-2 pr-3">Модель</th>
+                <th className="text-left py-2 pr-3">Режим</th>
+                <th className="text-left py-2 pr-3">Мост</th>
+                <th className="text-left py-2 pr-3">MAC</th>
+                <th className="text-left py-2 pr-3">IP</th>
+              </tr>
+            </thead>
+            <tbody>
+              {table.nics.map((n) => (
+                <tr
+                  key={n.name}
+                  className="border-b border-dashed border-token last:border-b-0"
+                >
+                  <td className="py-1.5 pr-3 mono">{n.name}</td>
+                  <td className="py-1.5 pr-3 mono">{n.model}</td>
+                  <td className="py-1.5 pr-3 mono">{n.network_mode}</td>
+                  <td className="py-1.5 pr-3 mono">
+                    {n.bridge ?? <span className="text-dim">—</span>}
+                  </td>
+                  <td className="py-1.5 pr-3 mono">
+                    {n.mac ?? <span className="text-dim">—</span>}
+                  </td>
+                  <td className="py-1.5 pr-3 mono">
+                    {n.ip_address ?? <span className="text-dim">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Read-only таблица дисков ВМ (`GET /vms/{id}/disks`), стиль серверной storage. */
+function VmDiskTableCard({ table }: { table: HwVmDiskTable }) {
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <HardDrive className="w-4 h-4 text-accent" /> Диски
+        <span className="text-xs text-dim font-normal">({table.disks.length})</span>
+      </h3>
+      {table.loading && table.disks.length === 0 ? (
+        <div className="text-sm text-dim">Загрузка…</div>
+      ) : table.error && table.disks.length === 0 ? (
+        <div className="alert alert-danger flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 mt-0.5" />
+          <div className="flex-1 text-xs">
+            <div>{table.error}</div>
+            <button className="btn btn-ghost mt-2 flex items-center gap-1" onClick={table.onRetry}>
+              <RefreshCw className="w-3.5 h-3.5" /> Повторить
+            </button>
+          </div>
+        </div>
+      ) : table.disks.length === 0 ? (
+        <div className="text-sm text-dim">Дисков нет.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-dim text-xs border-b border-token">
+                <th className="text-left py-2 pr-3">Имя</th>
+                <th className="text-left py-2 pr-3">Размер, ГБ</th>
+                <th className="text-left py-2 pr-3">Устройство</th>
+                <th className="text-left py-2 pr-3">ФС</th>
+                <th className="text-left py-2 pr-3">Монтирование</th>
+                <th className="text-left py-2 pr-3">Состояние</th>
+                <th className="text-left py-2 pr-3">Тип</th>
+              </tr>
+            </thead>
+            <tbody>
+              {table.disks.map((d) => (
+                <tr
+                  key={d.id}
+                  className="border-b border-dashed border-token last:border-b-0"
+                >
+                  <td className="py-1.5 pr-3 mono">{d.name}</td>
+                  <td className="py-1.5 pr-3 mono">{d.size_gb}</td>
+                  <td className="py-1.5 pr-3 mono">
+                    {d.target_dev ?? <span className="text-dim">—</span>}
+                  </td>
+                  <td className="py-1.5 pr-3 mono">
+                    {d.fs ?? <span className="text-dim">—</span>}
+                  </td>
+                  <td className="py-1.5 pr-3 mono">
+                    {d.mount ?? <span className="text-dim">—</span>}
+                  </td>
+                  <td className="py-1.5 pr-3 mono">{d.state}</td>
+                  <td className="py-1.5 pr-3">
+                    {d.is_system ? (
+                      <span className="badge badge-ok">system</span>
+                    ) : (
+                      <span className="text-dim">data</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="mt-3 text-[11px] text-dim">
+        Read-only срез. Создание/увеличение/удаление дисков — во вкладке «Диски».
+      </div>
     </div>
   );
 }

@@ -34,15 +34,15 @@ export function consoleWsUrl(serverId: string, accountId: string): string {
 /**
  * Абсолютный ws(s)-URL консоли для ВМ — тот же приём, что и `consoleWsUrl` для
  * сервера, только путь ведёт в `/vms/{id}/console/ws`. `accountId` уходит в
- * query `account_id`: бэк открывает ssh-сессию в гость под этой учёткой.
- *
- * Важно: на сегодня в server_service этого WS-маршрута ещё нет (есть только
- * `POST /vms/{id}/console`, отдающий данные подключения). Пока маршрут не
- * добавлен, соединение будет сразу закрываться — причина разбирается тем же
- * `describeConsoleClose`.
+ * query `account_id`: бэк открывает сессию в гость под этой учёткой. `kind`
+ * выбирает транспорт: `ssh` (PTY в гость) или `serial` (`virsh console`).
  */
-export function vmConsoleWsUrl(vmId: string, accountId: string): string {
-  const path = `${API_BASE_URL}/server/v1/vms/${vmId}/console/ws?account_id=${encodeURIComponent(accountId)}`;
+export function vmConsoleWsUrl(
+  vmId: string,
+  accountId: string,
+  kind: "ssh" | "serial" = "ssh",
+): string {
+  const path = `${API_BASE_URL}/server/v1/vms/${vmId}/console/ws?account_id=${encodeURIComponent(accountId)}&kind=${kind}`;
   if (/^https?:\/\//i.test(API_BASE_URL)) {
     return path.replace(/^http/i, "ws");
   }

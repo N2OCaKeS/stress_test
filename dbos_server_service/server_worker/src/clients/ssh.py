@@ -507,6 +507,7 @@ class SshClient:
     async def open_pty(
         self, *, term_type: str = "xterm-256color",
         term_size: tuple[int, int] = (80, 24),
+        command: str | None = None,
     ):
         """Открыть интерактивную PTY-сессию поверх текущего соединения.
 
@@ -516,6 +517,13 @@ class SshClient:
         `process.stdout`. Сессия должна быть закрыта `process.close()` +
         `process.wait_closed()` (или через `aclose`), иначе SSH-канал
         останется открытым.
+
+        `command=None` поднимает login-shell (invoke_shell — серверная консоль
+        под аккаунтом). С `command` PTY выполняет именно эту команду через
+        exec-запрос: текст команды НЕ попадает в терминал (клиент его не видит,
+        в отличие от набора в интерактивном shell'е), поэтому здесь безопасно
+        передавать вложенный `sshpass ... ssh` для консоли ВМ или
+        `virsh console` для serial'а.
 
         `term_type`/`term_size` дают удалённому shell'у разумный TERM,
         чтобы интерактивные программы (`top`, `vi`) рендерились корректно.
@@ -529,6 +537,7 @@ class SshClient:
             )
         try:
             return await self._conn.create_process(
+                *( (command,) if command is not None else () ),
                 term_type=term_type,
                 term_size=term_size,
                 encoding=None,  # bytes in/out — мост не интерпретирует кодировку

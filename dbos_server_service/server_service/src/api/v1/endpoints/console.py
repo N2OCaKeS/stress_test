@@ -59,11 +59,17 @@ from src.dependencies import auth as auth_deps
 from src.services import audit_service, permissions, worker_client
 from src.services import server as server_svc
 from src.services import server_account as account_svc
+from src.services import vm as vm_svc
 from src.utils.ids import console_creds_id, console_session_id
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/servers/{server_id}")
+vm_router = APIRouter(prefix="/vms/{vm_id}")
+
+# Виды консоли ВМ, которые обслуживает этот WS-мост (PTY-терминал). vnc/spice —
+# графический прокси (`POST /vms/{id}/console`), сюда не приходят.
+_VM_TERMINAL_KINDS = frozenset({"ssh", "serial"})
 
 # WebSocket close-коды. 4400/4401/4403/4404/4409 — application-specific
 # (диапазон 4000-4999 свободен по RFC 6455), мапятся на привычные HTTP-семантики.
@@ -327,15 +333,194 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
         )
 
 
+@vm_router.websocket("/console/ws")
+async def vm_console_ws(websocket: WebSocket, vm_id: str) -> None:
+    """Интерактивная консоль ВМ под выбранным аккаунтом. Зеркало серверной.
+
+    `WS /api/server/v1/vms/{id}/console/ws?account_id=<acc>&kind=ssh|serial`.
+    Транспорт, аутентификация, close-коды и аудит — те же, что у
+    `server_console_ws`, только цель — ВМ: `kind=ssh` открывает PTY в гостя
+    через hub под учёткой (password-auth), `kind=serial` — `virsh console`
+    домена на hub'е. Доступ — ролевой `console`/`view_password` на учётке;
+    учётка привязана к ВМ (`server_account_vms`) и видима. Prepare не требуется.
+
+    Связано: `server_worker/src/services/console_bridge.py` (hub→гость PTY).
+    """
+    token = _ws_bearer(websocket)
+    if token is None:
+        await websocket.close(code=_WS_CLOSE_UNAUTHENTICATED, reason="ACCESS_TOKEN_MISSING")
+        return
+
+    account_id = websocket.query_params.get("account_id")
+    if not account_id:
+        await websocket.close(code=_WS_CLOSE_BAD_REQUEST, reason="ACCOUNT_ID_REQUIRED")
+        return
+
+    kind = websocket.query_params.get("kind") or "ssh"
+    if kind not in _VM_TERMINAL_KINDS:
+        await websocket.close(code=_WS_CLOSE_BAD_REQUEST, reason="INVALID_CONSOLE_KIND")
+        return
+
+    try:
+        identity = await _authenticate(token)
+        async with AsyncSessionLocal() as db:
+            vm, hub, creds = await vm_svc.resolve_vm_console_credentials(
+                db, identity, vm_id, account_id,
+            )
+    except AuthenticationError as exc:
+        await websocket.close(code=_WS_CLOSE_UNAUTHENTICATED, reason=exc.error_code)
+        return
+    except AuthorizationError as exc:
+        audit_service.emit(
+            "ssh_console.session_open", target_id=vm_id, target_type="vm",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "account_id": account_id, "kind": kind},
+        )
+        await websocket.close(code=_WS_CLOSE_FORBIDDEN, reason=exc.error_code)
+        return
+    except NotFoundError as exc:
+        audit_service.emit(
+            "ssh_console.session_open", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "not_found_or_cross_dept", "account_id": account_id, "kind": kind},
+        )
+        await websocket.close(code=_WS_CLOSE_NOT_FOUND, reason=exc.error_code)
+        return
+    except ConflictError as exc:
+        # ВМ занята другим (VM_RESERVED), hub недоступен или у учётки нет пароля.
+        audit_service.emit(
+            "ssh_console.session_open", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": exc.error_code, "account_id": account_id, "kind": kind},
+        )
+        await websocket.close(code=_WS_CLOSE_CONFLICT, reason=exc.error_code)
+        return
+    except AppException as exc:
+        await websocket.close(code=_WS_CLOSE_UNAVAILABLE, reason=exc.error_code)
+        return
+
+    # Креды учётки в Redis-stash (в pub/sub едет только ссылка). Serial-консоль
+    # аккаунт не использует, но стэшим одинаково — учётка выбрана в обоих видах.
+    session_id = console_session_id()
+    stash_key = worker_client.console_creds_key(console_creds_id())
+    try:
+        await worker_client.store_console_creds(
+            stash_key,
+            {
+                "login": creds["login"],
+                "password": creds["password"],
+                "ssh_private_key": creds.get("ssh_private_key"),
+            },
+        )
+    except AppException as exc:
+        await websocket.close(code=_WS_CLOSE_UNAVAILABLE, reason=exc.error_code)
+        return
+
+    offered = websocket.scope.get("subprotocols", [])
+    await websocket.accept(
+        subprotocol="console.v1" if "console.v1" in offered else None,
+    )
+    audit_service.emit(
+        "ssh_console.session_open", target_id=vm_id, target_type="vm",
+        status="success", allowed=True,
+        details={
+            "session_id": session_id,
+            "department_id": vm.department_id,
+            "account_id": account_id,
+            "login": creds["login"],
+            "kind": kind,
+        },
+    )
+
+    # start-сообщение: адресация hub'а (worker сам тянет его mgmt-ключ через
+    # internal) + гость (домен/IP) + ссылка на креды учётки.
+    start_message = {
+        "action": "start",
+        "target_type": "vm",
+        "console_kind": kind,
+        "vm_id": vm.id,
+        "vm_domain": vm.name,
+        "guest_ip": str(vm.ip_address) if vm.ip_address is not None else None,
+        "creds_stash_key": stash_key,
+        "account_id": account_id,
+        "target_department_id": vm.department_id,
+        "actor_id": identity.user_id,
+        # hub-адресация для open_hub_session (SSH всегда по IP hub'а).
+        "hub_server_id": hub.id,
+        "server_id": hub.id,
+        "host": str(hub.ip_address),
+        "ssh_port": hub.ssh_port,
+        "is_managed": hub.is_managed,
+        "management_user": hub.management_user,
+    }
+
+    reason = "client_disconnect"
+    try:
+        reason = await _bridge_core(websocket, session_id, start_message)
+    except WebSocketDisconnect:
+        reason = "client_disconnect"
+    except Exception:  # noqa: BLE001
+        logger.warning("vm console ws bridge error for session %s", session_id, exc_info=True)
+        reason = "bridge_error"
+    finally:
+        try:
+            await worker_client.publish_console_control(session_id, {"action": "stop"})
+        except Exception:  # noqa: BLE001
+            logger.debug("vm console: stop publish failed", exc_info=True)
+        try:
+            await worker_client.delete_console_creds(stash_key)
+        except Exception:  # noqa: BLE001
+            logger.debug("vm console: creds stash cleanup failed", exc_info=True)
+        if websocket.application_state != WebSocketState.DISCONNECTED:
+            try:
+                await websocket.close(code=_WS_CLOSE_NORMAL)
+            except Exception:  # noqa: BLE001
+                pass
+        audit_service.emit(
+            "ssh_console.session_close", target_id=vm.id, target_type="vm",
+            status="success", allowed=True,
+            details={
+                "session_id": session_id,
+                "reason": reason,
+                "department_id": vm.department_id,
+                "account_id": account_id,
+                "login": creds["login"],
+                "kind": kind,
+            },
+        )
+
+
 async def _bridge(
     websocket: WebSocket, identity, server, session_id: str,
     creds_stash_key: str, account_id: str,
+) -> str:
+    """Серверная консоль: собрать start-сообщение и уйти в общий мост."""
+    # Старт PTY на worker'е. host (IP, не hostname — короткие имена не
+    # резолвятся из пода) / port server_service знает из server-row; логин/пароль
+    # аккаунта лежат в Redis-stash, в start едет только ссылка `creds_stash_key`
+    # — worker коннектится под аккаунтом по password-auth.
+    start_message = {
+        "action": "start",
+        "server_id": server.id,
+        "host": str(server.ip_address),
+        "ssh_port": server.ssh_port,
+        "creds_stash_key": creds_stash_key,
+        "account_id": account_id,
+        "target_department_id": server.department_id,
+        "actor_id": identity.user_id,
+    }
+    return await _bridge_core(websocket, session_id, start_message)
+
+
+async def _bridge_core(
+    websocket: WebSocket, session_id: str, start_message: dict,
 ) -> str:
     """Запустить PTY у worker'а и мостить WS ↔ Redis. Возвращает reason закрытия.
 
     Шаги: publish `start` → ждать `ready` на control-канале (с таймаутом) →
     параллельные помпы client→in и out→client + слежение за `closed`/`error`
-    в control-канале.
+    в control-канале. Транспорт одинаков для серверной и VM-консоли —
+    различается только содержимое `start_message` (worker разбирает его сам).
     """
     client = worker_client.get_worker_redis()
     own_client = client is not worker_client._creds_redis_client
@@ -346,20 +531,7 @@ async def _bridge(
     pubsub = client.pubsub()
     await pubsub.subscribe(ctl_ch, out_ch)
     try:
-        # Старт PTY на worker'е. host (IP, не hostname — короткие имена не
-        # резолвятся из пода) / port server_service знает из server-row;
-        # логин/пароль аккаунта лежат в Redis-stash, в start едет только ссылка
-        # `creds_stash_key` — worker коннектится под аккаунтом по password-auth.
-        await client.publish(ctl_ch, json.dumps({
-            "action": "start",
-            "server_id": server.id,
-            "host": str(server.ip_address),
-            "ssh_port": server.ssh_port,
-            "creds_stash_key": creds_stash_key,
-            "account_id": account_id,
-            "target_department_id": server.department_id,
-            "actor_id": identity.user_id,
-        }))
+        await client.publish(ctl_ch, json.dumps(start_message))
 
         ready, err = await _await_ready(pubsub, ctl_ch, out_ch)
         if not ready:

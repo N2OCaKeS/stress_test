@@ -2471,6 +2471,109 @@ async def console_access(
     return result
 
 
+async def resolve_vm_console_credentials(
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    account_id: str,
+) -> tuple[Vm, object, dict[str, str | None]]:
+    """Загрузить ВМ+hub и расшифровать креды учётки для интерактивной консоли ВМ.
+
+    Зеркало серверного `server_account.resolve_console_credentials`, но привязка
+    идёт к ВМ (`server_account_vms`), а не к серверу. Проверки по порядку:
+
+    * видимость ВМ (свой отдел / инстанс-грант, иначе 404 VM_NOT_FOUND);
+    * бронь (`_ensure_bookable` → 409 VM_RESERVED, если ВМ занята другим);
+    * доступность hub'а (missing/decommissioned → 409 HUB_UNAVAILABLE);
+    * видимость учётки (dept-isolation / грант, иначе 404 ACCOUNT_NOT_FOUND);
+    * привязка учётки к этой ВМ (иначе 404 ACCOUNT_NOT_LINKED);
+    * ролевой `console`/`view_password` на учётке (иначе 403 PERMISSION_DENIED) —
+      у ВМ нет собственного `(vm, console)`-гранта, гейт целиком на учётке;
+    * наличие сохранённого пароля (иначе 409 ACCOUNT_HAS_NO_PASSWORD) — вход в
+      гостя идёт по паролю учётки.
+
+    Возвращает `(vm, hub, {"login","password","ssh_private_key"})`; сами
+    значения кладёт в Redis-stash вызывающий WS-endpoint, в start-сообщение
+    воркеру едет только ссылка.
+    """
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+    _ensure_bookable(identity, vm, action="vm.console")
+    hub = await server_repo.get_by_id(db, vm.hub_server_id)
+    if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+        raise ConflictError(
+            error_code="HUB_UNAVAILABLE",
+            message="Hub server is unavailable (missing or decommissioned)",
+        )
+
+    account = await account_repo.get_by_id(db, account_id)
+    if account is None:
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_FOUND", message="Server account not found",
+        )
+    # Видимость учётки: свой отдел ЛИБО инстанс-грант на неё (тот же 404, что и
+    # для несуществующей — не палим enumeration'ом факт чужой учётки).
+    if identity.department_id != account.department_id and not await permissions.has_resource_grant(
+        db, identity, EntityType.SERVER_ACCOUNT, account.id,
+    ):
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_FOUND", message="Server account not found",
+        )
+    if not await account_repo.is_vm_linked(db, account.id, vm.id):
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_LINKED",
+            message="Server account is not linked to this VM",
+        )
+    allowed = await permissions.has_account_action(
+        db, identity, account, Action.CONSOLE,
+    ) or await permissions.has_account_action(
+        db, identity, account, Action.VIEW_PASSWORD,
+    )
+    if not allowed:
+        raise AuthorizationError(
+            error_code="PERMISSION_DENIED",
+            message="No console access to this server account",
+            details={"entity_type": "server_account", "action": "console"},
+        )
+    if account.password_encrypted is None:
+        raise ConflictError(
+            error_code="ACCOUNT_HAS_NO_PASSWORD",
+            message=(
+                "Selected account has no stored password; rotate it first or "
+                "attach one before opening the VM console"
+            ),
+        )
+    password = secrets_service.decrypt(
+        account.password_encrypted,
+        aad=secrets_service.aad_for_server_account_password(account.id),
+    )
+    ssh_private_key: str | None = None
+    if account.ssh_private_key_encrypted is not None:
+        ssh_private_key = secrets_service.decrypt(
+            account.ssh_private_key_encrypted,
+            aad=secrets_service.aad_for_server_account_ssh_key(account.id),
+        )
+    audit_service.emit(
+        "server_account.bootstrap_resolved",
+        target_id=account.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "login": account.login,
+            "vm_id": vm.id,
+            "department_id": account.department_id,
+            "has_ssh_private_key": ssh_private_key is not None,
+            "via": "vm_console",
+        },
+    )
+    return vm, hub, {
+        "login": account.login,
+        "password": password,
+        "ssh_private_key": ssh_private_key,
+    }
+
+
 # ── учётки / пакеты ВМ ───────────────────────────────────────────────────────
 
 

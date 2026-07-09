@@ -89,7 +89,7 @@ type ConnState = "idle" | "connecting" | "open" | "closed";
  */
 type ConsoleTarget =
   | { kind: "server"; serverId: string }
-  | { kind: "vm"; vmId: string };
+  | { kind: "vm"; vmId: string; consoleKind?: "ssh" | "serial" };
 
 /**
  * Минимум, который picker'у и терминалу нужен от учётки. Серверный
@@ -408,7 +408,7 @@ function ConsoleSession({
     const url =
       target.kind === "server"
         ? consoleWsUrl(target.serverId, account.id)
-        : vmConsoleWsUrl(target.vmId, account.id);
+        : vmConsoleWsUrl(target.vmId, account.id, target.consoleKind ?? "ssh");
 
     let ws: WebSocket;
     try {
@@ -732,7 +732,11 @@ function VmConsoleTab({
 
       {isTerminal ? (
         <AccountConsolePanel
-          target={target}
+          target={
+            target.kind === "vm"
+              ? { ...target, consoleKind: kind === "serial" ? "serial" : "ssh" }
+              : target
+          }
           accounts={accounts}
           loading={accountsQ.loading}
           error={accountsQ.error}

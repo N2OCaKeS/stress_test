@@ -15,7 +15,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertCircle,
   AlertTriangle,
   Copy,
   Edit3,
@@ -30,7 +29,6 @@ import {
   Trash2,
   Unlink,
   User,
-  Users,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -46,7 +44,7 @@ import type {
   ServerAccountUpdateRequest,
 } from "@/api/server/types";
 import { listVmAccounts, type Vm, type VmAccount } from "@/api/server/vms";
-import { mockVmAccounts } from "@/mocks/vm";
+import { mockVmAccounts, MOCK_VM_ACCOUNTS } from "@/mocks/vm";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { RotateDispatchResult } from "@/pages/server/_rotateResult";
@@ -134,7 +132,14 @@ function provisionBadge(
 
 export function AccountsTab({ serverId, server, entity }: Props) {
   if (entity?.kind === "vm") {
-    return <VmAccountsList vm={entity.vm} mock={entity.mock} />;
+    return (
+      <VmAccountsTab
+        vm={entity.vm}
+        mock={entity.mock}
+        canManage={entity.canManage}
+        onChanged={entity.onChanged}
+      />
+    );
   }
   return <ServerAccountsTab serverId={serverId} server={server} />;
 }
@@ -316,33 +321,59 @@ function ServerAccountsTab({ serverId, server }: Props) {
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
- * Read-only список учёток, привязанных к ВМ (`GET /vms/{id}/accounts`). У ВМ
- * привязка задаётся при создании (мультиселект в форме create), поэтому CRUD
- * здесь нет — только просмотр. `present_on_vm` показывает дрейф: привязка есть,
- * а в госте учётки нет. Строки рисует общий `AccountRow` — та же презентация,
- * что и на серверном пути, только модель приходит из `vmRowModel`. В
- * mock-режиме данные из `@/mocks/vm`.
+ * Вкладка «Аккаунты» карточки ВМ — master-detail по образцу серверной.
+ *
+ * Слева — список учёток, привязанных к ВМ (`GET /vms/{id}/accounts`, общий пул
+ * `server_account`), плюс кнопка «Привязать существующую». Справа — детали
+ * выбранной учётки с действиями над госте ВМ: provision / update_on_host /
+ * deprovision, ротация пароля, раскрытие пароля (те же под-компоненты, что на
+ * серверном пути) и отвязка. `present_on_vm` показывает дрейф. В mock-режиме
+ * данные из `@/mocks/vm`, мутации не уходят на backend.
  */
-function VmAccountsList({ vm, mock }: { vm: Vm; mock: boolean }) {
+function VmAccountsTab({
+  vm,
+  mock,
+  canManage,
+  onChanged,
+}: {
+  vm: Vm;
+  mock: boolean;
+  canManage: boolean;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [linking, setLinking] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+
   const accountsQ = useQuery<VmAccount[]>(
     async () => {
       if (mock) return mockVmAccounts(vm);
       return await listVmAccounts(vm.id);
     },
-    [vm.id, mock],
+    [vm.id, mock, refreshTick],
     { keepPreviousDataOnError: true },
   );
   const accounts = accountsQ.data ?? [];
+  const selected = selectedId
+    ? accounts.find((a) => a.account_id === selectedId) ?? null
+    : null;
+
+  const refresh = useCallback(() => {
+    setRefreshTick((t) => t + 1);
+    onChanged();
+  }, [onChanged]);
 
   return (
-    <div className="flex-1 min-w-0 overflow-y-auto p-5">
-      <div className="card">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-base flex items-center gap-2">
-            <Users className="w-4 h-4 text-accent" /> Учётки
-          </h3>
+    <div className="flex-1 min-w-0 flex overflow-hidden">
+      {/* ─── Список учёток ─────────────────────────────────────────── */}
+      <section className="w-[340px] shrink-0 border-r border-token surface flex flex-col min-h-0">
+        <div className="border-b border-token px-3 py-2 shrink-0 flex items-center justify-between">
+          <div className="text-xs uppercase text-dim">
+            Учётки · {accounts.length}
+          </div>
           <button
-            className="btn btn-sm flex items-center gap-1"
+            className="btn btn-ghost btn-sm flex items-center gap-1"
             onClick={() => accountsQ.refetch()}
             disabled={accountsQ.loading}
             title="Обновить список учёток"
@@ -350,42 +381,491 @@ function VmAccountsList({ vm, mock }: { vm: Vm; mock: boolean }) {
             <RefreshCw
               className={`w-3.5 h-3.5 ${accountsQ.loading ? "animate-spin" : ""}`}
             />
-            Обновить
           </button>
         </div>
-        <div className="text-xs text-dim mb-3">
-          Учётки отдела, провижнящиеся OS-юзерами в госте ВМ. Привязка задаётся
-          при создании ВМ.
-        </div>
 
-        {accountsQ.loading ? (
-          <div className="text-xs text-dim">Загрузка…</div>
-        ) : accountsQ.error && accounts.length === 0 ? (
-          <div className="alert alert-danger flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 mt-0.5" />
-            <div className="flex-1 text-xs">
-              <div>
-                {apiErrMsg(accountsQ.error, "Список учёток не загрузился")}
-              </div>
+        <div className="flex-1 overflow-y-auto py-2 px-2 flex flex-col gap-0.5">
+          {accountsQ.error && accounts.length === 0 && (
+            <div className="alert-danger m-2 text-xs">
+              {apiErrMsg(accountsQ.error, "Список не загрузился")}
               <button
-                className="btn btn-ghost mt-2"
+                className="btn btn-sm ml-2"
                 onClick={() => accountsQ.refetch()}
               >
                 Повторить
               </button>
             </div>
-          </div>
-        ) : accounts.length === 0 ? (
-          <div className="text-xs text-dim">
-            К ВМ не привязано ни одной учётки.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-0.5">
-            {accounts.map((a) => (
-              <AccountRow key={a.account_id} model={vmRowModel(a)} />
-            ))}
+          )}
+          {!accountsQ.loading && !accountsQ.error && accounts.length === 0 && (
+            <div className="px-3 py-6 text-xs text-dim text-center">
+              К ВМ не привязано ни одной учётки.
+            </div>
+          )}
+          {accounts.map((a) => (
+            <AccountRow
+              key={a.account_id}
+              model={vmRowModel(a)}
+              active={selectedId === a.account_id}
+              onSelect={() => setSelectedId(a.account_id)}
+            />
+          ))}
+        </div>
+
+        {canManage && (
+          <div className="border-t border-token p-3 shrink-0">
+            <button
+              className="btn w-full flex items-center justify-center gap-2"
+              onClick={() => setLinking(true)}
+            >
+              <Link2 className="w-4 h-4" /> Привязать существующую
+            </button>
           </div>
         )}
+      </section>
+
+      {/* ─── Side-panel ────────────────────────────────────────────── */}
+      <section className="flex-1 min-w-0 overflow-y-auto p-5">
+        {selected ? (
+          <VmAccountDetail
+            key={selected.account_id}
+            vmAccount={selected}
+            vm={vm}
+            mock={mock}
+            canManage={canManage}
+            onChanged={refresh}
+            onClosed={() => setSelectedId(null)}
+          />
+        ) : (
+          <div className="empty-card max-w-md mx-auto text-center mt-10">
+            <User className="w-10 h-10 mx-auto text-dim mb-3" />
+            <div className="text-sm text-dim">
+              Учётки отдела, провижнящиеся OS-юзерами в госте ВМ. Выберите учётку
+              слева, чтобы посмотреть детали и действия.
+            </div>
+          </div>
+        )}
+      </section>
+
+      {linking && (
+        <VmLinkAccountModal
+          vm={vm}
+          mock={mock}
+          linkedIds={accounts.map((a) => a.account_id)}
+          onClose={() => setLinking(false)}
+          onLinked={(login) => {
+            setLinking(false);
+            toast.success(`Учётка ${login} привязана к ВМ`);
+            refresh();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Детали учётки, привязанной к ВМ. Метаданные берём из `VmAccount`; полную
+ * карточку `ServerAccount` подтягиваем отдельно (`getAccount`) ради раскрытия
+ * пароля общим `PasswordRevealCard`. Действия провижна/ротации/отвязки бьют в
+ * VM-эндпоинты общего пула. В mock-режиме карточку строим из `MOCK_VM_ACCOUNTS`,
+ * мутации имитируем.
+ */
+function VmAccountDetail({
+  vmAccount,
+  vm,
+  mock,
+  canManage,
+  onChanged,
+  onClosed,
+}: {
+  vmAccount: VmAccount;
+  vm: Vm;
+  mock: boolean;
+  canManage: boolean;
+  onChanged: () => void;
+  onClosed: () => void;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const [pending, setPending] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Полная карточка аккаунта нужна только для reveal-пароля; в mock берём из
+  // фикстур, иначе тянем `getAccount`.
+  const fullQ = useQuery<ServerAccount | null>(
+    async () => {
+      if (mock) {
+        return MOCK_VM_ACCOUNTS.find((a) => a.id === vmAccount.account_id) ?? null;
+      }
+      return await accountsApi.getAccount(vmAccount.account_id);
+    },
+    [vmAccount.account_id, mock],
+    { keepPreviousDataOnError: true },
+  );
+
+  const run = useCallback(
+    async (fn: () => Promise<unknown>, ok: string) => {
+      setErr(null);
+      setPending(true);
+      try {
+        if (mock) {
+          toast.success(`${ok} (mock)`);
+        } else {
+          await fn();
+          toast.success(ok);
+        }
+        onChanged();
+      } catch (e) {
+        const msg = apiErrMsg(e);
+        setErr(msg);
+        toast.error(msg);
+      } finally {
+        setPending(false);
+      }
+    },
+    [mock, onChanged, toast],
+  );
+
+  const groups = vmAccount.unix_groups;
+
+  return (
+    <div className="flex flex-col gap-4 w-full">
+      {/* ── Header / профиль ── */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h3 className="font-semibold flex items-center gap-2 mono">
+            <User className="w-4 h-4 text-accent" /> {vmAccount.login}
+            {vmAccount.has_sudo && <span className="badge badge-warn">sudo</span>}
+            {vmAccount.present_on_vm ? (
+              <span className="badge badge-ok">заведена</span>
+            ) : (
+              <span className="badge badge-warn">дрейф</span>
+            )}
+          </h3>
+          <button className="btn" onClick={onClosed} type="button" title="Закрыть">
+            ×
+          </button>
+        </div>
+
+        {err && <div className="alert-danger mb-2 text-sm">{err}</div>}
+
+        <div className="text-xs uppercase text-dim mb-2">Профиль</div>
+        <StatRow k="account_id" v={<span className="mono">{vmAccount.account_id}</span>} />
+        <StatRow k="login" v={<span className="mono">{vmAccount.login}</span>} />
+        <StatRow k="has_sudo" v={vmAccount.has_sudo ? "yes" : "no"} />
+        <StatRow
+          k="unix_groups"
+          v={
+            groups.length === 0 ? (
+              <span className="text-dim italic">—</span>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {groups.map((g) => (
+                  <span key={g} className="badge mono">
+                    {g}
+                  </span>
+                ))}
+              </div>
+            )
+          }
+        />
+        <StatRow
+          k="ssh_public_key"
+          v={
+            vmAccount.ssh_public_key ? (
+              <span className="mono break-all text-xs">{vmAccount.ssh_public_key}</span>
+            ) : (
+              <span className="text-dim italic">—</span>
+            )
+          }
+        />
+        <StatRow
+          k="present_on_vm"
+          v={
+            vmAccount.present_on_vm ? (
+              <span className="text-ok">заведена в госте</span>
+            ) : (
+              <span className="text-warn">привязана, но в госте нет (дрейф)</span>
+            )
+          }
+        />
+      </div>
+
+      {/* ── Пароль (общий reveal-компонент) ── */}
+      {fullQ.data ? (
+        <PasswordRevealCard account={fullQ.data} canReveal={canManage} />
+      ) : (
+        <div className="card text-xs text-dim">
+          {fullQ.loading
+            ? "Загрузка карточки учётки…"
+            : "Карточка учётки недоступна — раскрытие пароля невозможно."}
+        </div>
+      )}
+
+      {/* ── Provision в госте ВМ ── */}
+      <div className="card">
+        <div className="text-xs uppercase text-dim mb-2 flex items-center gap-2">
+          <Power className="w-3 h-3" /> Provision в госте ВМ
+        </div>
+        <div className="text-xs text-dim mb-3">
+          Запускает worker-таск (`useradd` / `usermod` / `userdel`) в госте этой
+          ВМ. Полная отвязка — через кнопку ниже.
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="btn flex items-center gap-1"
+            disabled={pending || !canManage}
+            title={canManage ? "useradd в госте" : "Нет прав"}
+            onClick={() =>
+              run(
+                () => accountsApi.provisionAccountOnVm(vmAccount.account_id, vm.id),
+                "Provision-task поставлен в очередь",
+              )
+            }
+          >
+            <Power className="w-4 h-4" /> Provision
+          </button>
+          <button
+            className="btn flex items-center gap-1"
+            disabled={pending || !canManage}
+            title={canManage ? "usermod синхронизирует атрибуты" : "Нет прав"}
+            onClick={() =>
+              run(
+                () => accountsApi.updateAccountOnVm(vmAccount.account_id, vm.id),
+                "Update-on-host-task поставлен в очередь",
+              )
+            }
+          >
+            <RotateCw className="w-4 h-4" /> Update on host
+          </button>
+          <button
+            className="btn btn-danger flex items-center gap-1"
+            disabled={pending || !canManage}
+            title={canManage ? "userdel в госте — снимет и привязку" : "Нет прав"}
+            onClick={async () => {
+              if (
+                !(await confirm({
+                  message: `Удалить OS-пользователя ${vmAccount.login} из гостя ВМ? Связка учётка ↔ ВМ тоже снимется.`,
+                  confirmLabel: "Deprovision",
+                  danger: true,
+                }))
+              )
+                return;
+              run(async () => {
+                await accountsApi.deprovisionAccountOnVm(
+                  vmAccount.account_id,
+                  vm.id,
+                );
+                onClosed();
+              }, "Deprovision-task поставлен в очередь");
+            }}
+          >
+            <Trash2 className="w-4 h-4" /> Deprovision
+          </button>
+        </div>
+      </div>
+
+      {/* ── Rotate password ── */}
+      <div className="card">
+        <div className="text-xs uppercase text-dim mb-2 flex items-center gap-2">
+          <KeyRound className="w-3 h-3" /> Ротация пароля
+        </div>
+        <div className="text-xs text-dim mb-3">
+          Генерирует новый пароль учётки в БД (общий пул). Plaintext клиенту не
+          возвращается; раскатка в гости — через Update on host / Provision.
+        </div>
+        <button
+          className="btn flex items-center gap-1"
+          disabled={pending || !canManage}
+          title={canManage ? "Только БД" : "Нет прав"}
+          onClick={() =>
+            run(
+              () => accountsApi.rotateAccountUserInitiated(vmAccount.account_id),
+              "Пароль ротирован в БД",
+            )
+          }
+        >
+          <KeyRound className="w-4 h-4" /> Rotate (sync, БД)
+        </button>
+      </div>
+
+      {/* ── Danger zone: отвязка ── */}
+      <div className="card" style={{ borderColor: "rgba(244,135,113,0.3)" }}>
+        <div className="text-xs uppercase text-danger mb-2 flex items-center gap-2">
+          <AlertTriangle className="w-3 h-3" /> Опасная зона
+        </div>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-sm flex-1 min-w-[200px]">
+            <div className="font-medium">Отвязать от ВМ</div>
+            <div className="text-xs text-dim">
+              Снимает связку учётка ↔ ВМ и удаляет OS-юзера из гостя (userdel),
+              если он там стоял. Карточка учётки остаётся в БД.
+            </div>
+          </div>
+          <button
+            className="btn btn-danger flex items-center gap-1"
+            disabled={pending || !canManage}
+            title={canManage ? undefined : "Нет прав"}
+            onClick={async () => {
+              if (
+                !(await confirm({
+                  message: `Отвязать учётку ${vmAccount.login} от этой ВМ?`,
+                  confirmLabel: "Отвязать",
+                  danger: true,
+                }))
+              )
+                return;
+              run(async () => {
+                await accountsApi.unbindAccountVm(vmAccount.account_id, vm.id, {
+                  deprovision: true,
+                });
+                onClosed();
+              }, "Учётка отвязана от ВМ");
+            }}
+          >
+            <Unlink className="w-4 h-4" /> Unbind
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Модалка «Привязать существующую учётку к этой ВМ». Учётки — общий пул:
+ * показываем dept-аккаунты (`listAccounts` без server_id), исключая уже
+ * привязанные к ВМ. Привязка — `POST /server-accounts/{id}/vms` с опциональным
+ * provision (useradd в госте). В mock-режиме источник — `MOCK_VM_ACCOUNTS`.
+ */
+function VmLinkAccountModal({
+  vm,
+  mock,
+  linkedIds,
+  onClose,
+  onLinked,
+}: {
+  vm: Vm;
+  mock: boolean;
+  linkedIds: string[];
+  onClose: () => void;
+  onLinked: (login: string) => void;
+}) {
+  const [provision, setProvision] = useState(true);
+  const [pending, setPending] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const accountsQ = useQuery<ServerAccount[]>(
+    async () => {
+      if (mock) {
+        return MOCK_VM_ACCOUNTS.filter((a) => a.department_id === vm.department_id);
+      }
+      const res = await accountsApi.listAccounts({ limit: 200 });
+      return "items" in res ? res.items : [];
+    },
+    [mock, vm.department_id],
+  );
+  const linked = new Set(linkedIds);
+  const candidates = (accountsQ.data ?? []).filter((a) => !linked.has(a.id));
+
+  async function bind(account: ServerAccount) {
+    if (pending) return;
+    setErr(null);
+    setPending(true);
+    try {
+      if (!mock) {
+        await accountsApi.bindAccountVms(
+          account.id,
+          { vm_ids: [vm.id] },
+          { provision },
+        );
+      }
+      onLinked(account.login);
+    } catch (e) {
+      setErr(apiErrMsg(e, "Не удалось привязать учётку"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={() => !pending && onClose()}>
+      <div
+        className="modal-content"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header flex items-center gap-2">
+          <Link2 className="w-5 h-5 text-accent" />
+          <div className="text-base font-semibold">
+            Привязать учётку к ВМ
+          </div>
+        </div>
+        <div className="modal-body">
+          <div className="text-sm text-dim mb-3">
+            Учётка отдела будет привязана к{" "}
+            <span className="mono">{vm.name}</span>.
+          </div>
+
+          {err && <div className="alert-danger mb-3 text-sm">{err}</div>}
+
+          <label className="inline-flex items-center gap-2 text-sm mb-3">
+            <input
+              type="checkbox"
+              checked={provision}
+              onChange={(e) => setProvision(e.target.checked)}
+            />
+            <span>сразу завести в госте (provision / useradd)</span>
+          </label>
+
+          {accountsQ.loading && (
+            <div className="text-xs text-dim py-2">Загрузка учёток…</div>
+          )}
+          {accountsQ.error && (
+            <div className="alert-danger text-xs">
+              {apiErrMsg(accountsQ.error, "Учётки не загрузились")}
+              <button
+                className="btn btn-sm ml-2"
+                onClick={() => accountsQ.refetch()}
+              >
+                Повторить
+              </button>
+            </div>
+          )}
+          {!accountsQ.loading && !accountsQ.error && candidates.length === 0 && (
+            <div className="text-xs text-dim py-2">
+              Нет учёток отдела, которые ещё не привязаны к этой ВМ.
+            </div>
+          )}
+          {candidates.length > 0 && (
+            <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto mt-1">
+              {candidates.map((a) => (
+                <div key={a.id} className="cred-row flex items-center gap-2">
+                  <User className="w-4 h-4 text-dim shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm truncate mono">{a.login}</div>
+                    <div className="text-[11px] text-dim truncate">
+                      {a.source}
+                      {a.has_sudo ? " · sudo" : ""}
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-sm btn-primary flex items-center gap-1 shrink-0"
+                    disabled={pending}
+                    onClick={() => bind(a)}
+                  >
+                    <Link2 className="w-3.5 h-3.5" /> Привязать
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose} disabled={pending}>
+            Закрыть
+          </button>
+        </div>
       </div>
     </div>
   );

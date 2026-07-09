@@ -109,9 +109,9 @@ describe("Vm zone (mock mode)", () => {
     expect(
       screen.queryByRole("button", { name: "Обслуживание" }),
     ).not.toBeInTheDocument();
-    // По умолчанию активна вкладка «Обзор» — виден блок «Параметры».
+    // По умолчанию активна вкладка «Обзор» — видна секция «Идентификация».
     expect(
-      await screen.findByRole("heading", { name: /Параметры/ }),
+      await screen.findByRole("heading", { name: /Идентификация/ }),
     ).toBeInTheDocument();
     // Секции других вкладок пока не смонтированы.
     expect(

@@ -75,13 +75,13 @@ describe("Server list → открытие ВМ сохраняет средни�
     expect(await screen.findByText("alse-1.8-rc")).toBeInTheDocument();
     expect(screen.queryByText(/Серверы · /)).not.toBeInTheDocument();
     // До выбора справа — пустой стейт, карточки ВМ ещё нет.
-    expect(screen.queryByRole("heading", { name: /Параметры/ })).toBeNull();
+    expect(screen.queryByRole("heading", { name: /Идентификация/ })).toBeNull();
 
     fireEvent.click(vmListRow("alse-1.8-rc"));
 
-    // Справа появилась карточка ВМ (VmDetail): шапка «К хабу» + блок «Параметры».
+    // Справа появилась карточка ВМ (VmDetail): шапка «К хабу» + блок «Идентификация».
     expect(
-      await screen.findByRole("heading", { name: /Параметры/ }),
+      await screen.findByRole("heading", { name: /Идентификация/ }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /К хабу/ })).toBeInTheDocument();
 
@@ -100,7 +100,7 @@ describe("Server list → открытие ВМ сохраняет средни�
     await screen.findByText("alse-1.8-rc");
 
     fireEvent.click(vmListRow("alse-1.8-rc"));
-    await screen.findByRole("heading", { name: /Параметры/ });
+    await screen.findByRole("heading", { name: /Идентификация/ });
 
     // Активная строка получает класс active (на обёртке .cred-row).
     expect(
@@ -123,7 +123,7 @@ describe("Server list → открытие ВМ сохраняет средни�
     fireEvent.click(back);
 
     // Карточка ушла, средний список ВМ остался, фильтр не потерян.
-    expect(screen.queryByRole("heading", { name: /Параметры/ })).toBeNull();
+    expect(screen.queryByRole("heading", { name: /Идентификация/ })).toBeNull();
     expect(screen.getByText(/Виртуальные машины ·/)).toBeInTheDocument();
     const loc = screen.getByTestId("loc").textContent ?? "";
     expect(loc).toContain("only=vms");

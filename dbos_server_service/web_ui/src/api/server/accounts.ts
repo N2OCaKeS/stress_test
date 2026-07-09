@@ -425,6 +425,109 @@ export function unbindAccountServer(
 }
 
 // ---------------------------------------------------------------------------
+// VM linking (общий пул: тот же server_account привязывается и к ВМ)
+// ---------------------------------------------------------------------------
+
+/** Ответ привязки/отвязки учётки к ВМ — актуальный набор привязанных ВМ. */
+export interface ServerAccountVmsResponse {
+  account_id: string;
+  login: string;
+  vm_ids: string[];
+}
+
+/**
+ * Привязать учётку к ВМ общего пула.
+ *
+ * Идемпотентно: уже привязанные `vm_ids` игнорируются. Все ВМ обязаны быть в
+ * отделе аккаунта (cross-dept → 404). `provision=true` дополнительно ставит
+ * `vm.account_provision` (useradd в госте) на каждую ВМ — best-effort.
+ */
+export function bindAccountVms(
+  accountId: string,
+  body: { vm_ids: string[] },
+  options: { provision?: boolean } = {},
+): Promise<ServerAccountVmsResponse> {
+  return apiPost<ServerAccountVmsResponse>(
+    `${BASE}/server-accounts/${accountId}/vms`,
+    body,
+    { query: { provision: options.provision } },
+  );
+}
+
+/**
+ * Отвязать учётку от одной ВМ.
+ *
+ * Снимает связку немедленно. `deprovision=true` дополнительно ставит
+ * `vm.account_deprovision` (userdel в госте), если учётка там реально стояла
+ * (`present_on_vm`) — best-effort; недоступность hub/worker отвязку не откатывает.
+ */
+export function unbindAccountVm(
+  accountId: string,
+  vmId: string,
+  options: { deprovision?: boolean } = {},
+): Promise<ServerAccountVmsResponse> {
+  return apiDelete<ServerAccountVmsResponse>(
+    `${BASE}/server-accounts/${accountId}/vms/${vmId}`,
+    undefined,
+    { query: { deprovision: options.deprovision } },
+  );
+}
+
+/**
+ * Ответ worker-dispatch provision/update/deprovision учётки в госте ВМ.
+ * Зеркало `AccountProvisionDispatchResponse`, но цель — гость ВМ (`vm_id`).
+ */
+export interface AccountVmProvisionDispatchResponse {
+  operation: "provision" | "update" | "deprovision" | string;
+  vm_id: string;
+  task_id: string;
+  status: string;
+}
+
+/**
+ * Завести учётку в госте ВМ через worker (`useradd`). ВМ обязана быть
+ * привязана к учётке. Гейтится `(server_account, *, provision)`.
+ */
+export function provisionAccountOnVm(
+  accountId: string,
+  vmId: string,
+): Promise<AccountVmProvisionDispatchResponse> {
+  return apiPost<AccountVmProvisionDispatchResponse>(
+    `${BASE}/server-accounts/${accountId}/vms/${vmId}/provision`,
+  );
+}
+
+/**
+ * Синхронизировать атрибуты учётки в госте ВМ (`usermod` — sudo/группы). Пароль
+ * не меняется. ВМ обязана быть привязана. Гейтится `(server_account, *, update)`.
+ */
+export function updateAccountOnVm(
+  accountId: string,
+  vmId: string,
+): Promise<AccountVmProvisionDispatchResponse> {
+  return apiPost<AccountVmProvisionDispatchResponse>(
+    `${BASE}/server-accounts/${accountId}/vms/${vmId}/update_on_host`,
+  );
+}
+
+/**
+ * Удалить учётку из гостя ВМ через worker (`userdel`). Снос сразу снимает и
+ * связку учётка ↔ ВМ (deprovision — полная отвязка). `remove_home=true`
+ * пропихивает `userdel --remove`. Гейтится `(server_account, *, deprovision)`.
+ */
+export function deprovisionAccountOnVm(
+  accountId: string,
+  vmId: string,
+  options: { remove_home?: boolean } = {},
+): Promise<AccountVmProvisionDispatchResponse> {
+  return apiPost<AccountVmProvisionDispatchResponse>(
+    `${BASE}/server-accounts/${accountId}/vms/${vmId}/deprovision`,
+    undefined,
+    { query: { remove_home: options.remove_home } },
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Ревизия атрибутов: применить найденное на боксе значение в БД
 // ---------------------------------------------------------------------------
 

@@ -589,11 +589,13 @@ function fakeDispatch(): TaskDispatchResponse {
 }
 
 /**
- * Overview-вкладка карточки ВМ. Строит модель «Параметры» из `Vm` и рендерит
- * общий `ParamCard` — тот же, что и серверная ветка. Кнопка «Изменить CPU/RAM»
- * в шапке карточки открывает `ResourcesModal` (202-задача `PATCH /vms/{id}`),
- * исход показываем баннером под строками. В mock-режиме cpu/ram применяем
- * локально и поднимаем свежую копию наверх.
+ * Overview-вкладка карточки ВМ. Строит те же четыре секции-сводки, что и
+ * серверная ветка (`Идентификация` / `Состояние` / `Сеть и OS` / `Метки
+ * времени`), и рендерит общий `ParamCard`. Поля, которых у ВМ нет, рисуем «—»
+ * — секции не выкидываем ради визуального паритета с сервером. Кнопка «Изменить
+ * CPU/RAM» живёт в шапке `Идентификации` и открывает `ResourcesModal`
+ * (202-задача `PATCH /vms/{id}`); исход показываем баннером под строками. В
+ * mock-режиме cpu/ram применяем локально и поднимаем свежую копию наверх.
  */
 function VmOverview({
   entity,
@@ -610,6 +612,11 @@ function VmOverview({
 
   // vm prop меняется при refetch — подхватываем свежую копию.
   const view = local.id === vm.id ? local : vm;
+
+  const deptLabel = useDeptLabel(view.department_id);
+  const createdByLabel = useUserLabel(view.created_by ?? null);
+  const busyUserLabel = useUserLabel(view.busy_user_id ?? null);
+  const dash = <span className="text-dim">—</span>;
 
   async function handleUpdateResources(body: VmUpdateRequest) {
     resourceOutcome.reset();
@@ -637,19 +644,116 @@ function VmOverview({
     }
   }
 
-  const rows: ParamRow[] = [
-    { label: "Хаб", value: view.hub_server_id, mono: true },
-    { label: "ОС", value: view.os_version ?? "—" },
-    { label: "box", value: view.box },
-    { label: "Сеть", value: view.network_mode },
-    { label: "IP-адрес", value: view.ip_address ?? "— (авто)", mono: true },
-    { label: "vCPU", value: String(view.cpu) },
-    { label: "RAM", value: `${view.ram_mb} МБ` },
-    { label: "Диск", value: `${view.disk_gb} ГБ` },
-    { label: "autostart", value: view.autostart ? "да" : "нет" },
-    { label: "Стратегия кред", value: view.cred_strategy },
-    { label: "Питание", value: view.power_state },
-    { label: "Занятость", value: view.busy_state },
+  const identity: ParamRow[] = [
+    { label: "display_name", value: <span className="mono">{view.name}</span> },
+    {
+      label: "hostname",
+      value: view.hostname ? <span className="mono">{view.hostname}</span> : dash,
+    },
+    { label: "id", value: <span className="mono">{view.id}</span> },
+    { label: "department", value: deptLabel },
+    { label: "number", value: view.number != null ? String(view.number) : dash },
+  ];
+
+  const state: ParamRow[] = [
+    { label: "status", value: view.status },
+    { label: "power_state", value: view.power_state },
+    {
+      label: "ping",
+      value: (
+        <ReachValue
+          reachable={view.ping_reachable}
+          latencyMs={view.ping_latency_ms}
+          checkedAt={view.ping_checked_at}
+        />
+      ),
+    },
+    {
+      label: "ssh",
+      value: (
+        <ReachValue reachable={view.ssh_reachable} checkedAt={view.ssh_checked_at} />
+      ),
+    },
+    { label: "last_error", value: view.last_error ? view.last_error : dash },
+    { label: "is_managed", value: view.is_managed ? "да" : "нет" },
+    {
+      label: "mgmt_user",
+      value: view.mgmt_user ? <span className="mono">{view.mgmt_user}</span> : dash,
+    },
+    { label: "busy_state", value: view.busy_state },
+    {
+      label: "busy_user_id",
+      value: view.busy_user_id ? (
+        <span title={view.busy_user_id}>{busyUserLabel}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "busy_since",
+      value: view.busy_since ? (
+        <span className="mono">{formatMsk(view.busy_since)}</span>
+      ) : (
+        dash
+      ),
+    },
+    { label: "busy_note", value: view.busy_note ? view.busy_note : dash },
+  ];
+
+  const network: ParamRow[] = [
+    {
+      label: "ip_address",
+      value: view.ip_address ? (
+        <span className="mono">{view.ip_address}</span>
+      ) : (
+        <span className="text-dim">— (авто)</span>
+      ),
+    },
+    { label: "network_mode", value: <span className="mono">{view.network_mode}</span> },
+    {
+      label: "os_version",
+      value: view.os_version ? (
+        <span className="mono">{view.os_version}</span>
+      ) : (
+        <span className="text-dim">не задана</span>
+      ),
+    },
+    { label: "box", value: <span className="mono">{view.box}</span> },
+    {
+      label: "nics",
+      value:
+        view.nics && view.nics.length > 0 ? (
+          <span className="flex flex-wrap gap-1">
+            {view.nics.map((nic) => (
+              <span key={nic.name} className="badge mono">
+                {nic.name}/{nic.model}
+                {nic.bridge ? `@${nic.bridge}` : ""}
+              </span>
+            ))}
+          </span>
+        ) : (
+          dash
+        ),
+    },
+  ];
+
+  const timestamps: ParamRow[] = [
+    {
+      label: "created_at",
+      value: <span className="mono">{formatMsk(view.created_at)}</span>,
+    },
+    {
+      label: "updated_at",
+      value: <span className="mono">{formatMsk(view.updated_at)}</span>,
+    },
+    {
+      label: "created_by",
+      value: view.created_by ? (
+        <span title={view.created_by}>{createdByLabel}</span>
+      ) : (
+        dash
+      ),
+    },
   ];
 
   const resourceAction = canManage ? (
@@ -664,7 +768,12 @@ function VmOverview({
 
   return (
     <div className="p-5 flex flex-col gap-4">
-      <ParamCard title="Параметры" action={resourceAction} rows={rows}>
+      <ParamCard
+        title="Идентификация"
+        subtitle="Базовые поля карточки ВМ. Ресурсы (vCPU/RAM) — во вкладке «Железо»."
+        action={resourceAction}
+        rows={identity}
+      >
         {resourceOutcome.tracked && (
           <TaskOutcomeBanner
             outcome={resourceOutcome.tracked}
@@ -674,6 +783,9 @@ function VmOverview({
           />
         )}
       </ParamCard>
+      <ParamCard title="Состояние" rows={state} />
+      <ParamCard title="Сеть и OS" rows={network} />
+      <ParamCard title="Метки времени" rows={timestamps} />
 
       {resourceModal && (
         <ResourcesModal

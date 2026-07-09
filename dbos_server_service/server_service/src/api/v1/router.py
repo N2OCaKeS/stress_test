@@ -18,6 +18,7 @@ from fastapi import APIRouter
 
 from src.api.v1.endpoints.admin_encryption import router as admin_encryption_router
 from src.api.v1.endpoints.console import router as console_router
+from src.api.v1.endpoints.console import vm_router as vm_console_router
 from src.api.v1.endpoints.console_macros import router as console_macros_router
 from src.api.v1.endpoints.health import router as health_router
 from src.api.v1.endpoints.ipmi import list_router as ipmi_list_router
@@ -108,6 +109,9 @@ router.include_router(worker_dispatch_ipmi_router, tags=["ipmi-controllers"])
 # Интерактивная SSH-консоль (WebSocket-мост к worker'у через Redis pub/sub).
 # WS /servers/{id}/console/ws — RBAC (server, console) + prepared-gate.
 router.include_router(console_router, tags=["console"])
+# Интерактивная консоль ВМ (тот же Redis-мост). WS /vms/{id}/console/ws —
+# ssh/serial-терминал через hub в гостя под учёткой.
+router.include_router(vm_console_router, tags=["console"])
 # Макросы консоли — справочник сохранённых команд (личные + системные в отделе).
 router.include_router(console_macros_router, tags=["console-macros"])
 # Internal — без tags, include_in_schema=False (скрыт из публичного OpenAPI).

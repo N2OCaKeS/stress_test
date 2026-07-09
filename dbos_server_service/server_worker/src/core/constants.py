@@ -136,6 +136,11 @@ class TaskKind(StrEnum):
     VM_ALLTA_UPDATE = "vm.allta_update"
     VM_PASSWD = "vm.passwd"
     VM_LIST_PACKAGES = "vm.list_packages"
+    # Учётки общего пула (server_account) в гостях ВМ — те же операции, что и на
+    # серверах, только цель гость ВМ (useradd/usermod/userdel через hub).
+    VM_ACCOUNT_PROVISION = "vm.account_provision"
+    VM_ACCOUNT_UPDATE_ON_HOST = "vm.account_update_on_host"
+    VM_ACCOUNT_DEPROVISION = "vm.account_deprovision"
 
 
 class TaskStatus(StrEnum):

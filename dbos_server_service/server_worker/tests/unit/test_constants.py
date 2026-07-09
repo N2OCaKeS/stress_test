@@ -29,6 +29,8 @@ class TestTaskKind:
             "vm.snapshot_create", "vm.snapshot_delete", "vm.snapshot_revert",
             "vm.astra_update", "vm.allta_update", "vm.passwd",
             "vm.list_packages",
+            "vm.account_provision", "vm.account_update_on_host",
+            "vm.account_deprovision",
         }
 
     def test_dot_namespaced(self):

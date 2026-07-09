@@ -86,6 +86,7 @@ from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import os_version as os_version_repo
 from src.repositories import server as server_repo
 from src.repositories import server_account as account_repo
+from src.repositories import vm as vm_repo
 from src.schemas.server import (
     ServerAstraUpdateRequest,
     ServerBatchDispatched,
@@ -110,6 +111,7 @@ from src.schemas.server_account import (
     AccountRotateDispatchResponse,
     AccountRotateSkipped,
     AccountRotateTask,
+    AccountVmProvisionDispatchResponse,
 )
 from src.services import (
     audit_service,
@@ -1207,6 +1209,358 @@ async def recreate_login_orchestrate(
         "provision": provision,
         "skipped": skipped,
     }
+
+
+# ── account ↔ ВМ: provision / update / deprovision в госте ──────────────────
+#
+# Тот же общий пул учёток (`server_account`), что и у серверов, только цель —
+# гость ВМ. Worker заходит на hub-сервер ВМ под управляющей учёткой, оттуда по
+# `sshpass` в гостя и делает useradd/usermod/userdel. Пароль воркер тянет сам
+# через internal (`fetch_account_password_by_id`) — в payload только публичные
+# атрибуты. RBAC — те же действия матрицы server_account (provision/update/
+# deprovision), что и у серверного пути.
+
+
+def _build_vm_account_task_payload(
+    *,
+    hub,
+    vm,
+    account,
+    include_attrs: bool,
+    remove_home: bool | None = None,
+) -> dict:
+    """Payload для account-task'ов в гостя ВМ (provision / update / deprovision).
+
+    Ключи адресации — hub'а (SSH-таргет всегда IP hub'а, не hostname), плюс
+    `vm_id`/`vm_name`/`guest_ip` для входа в гостя и identity учётки. Секрет
+    (пароль) в payload не кладём — воркер резолвит его через internal по
+    `account_id`; `ssh_public_key` не секрет и едет как есть.
+    """
+    payload: dict = {
+        # target_server_id dispatch'а — hub; в payload дублируем ключи адресации,
+        # которые читает `open_hub_session` воркера.
+        "server_id": hub.id,
+        "hub_server_id": hub.id,
+        "target_department_id": vm.department_id,
+        "host": str(hub.ip_address),
+        "ssh_port": hub.ssh_port,
+        "is_managed": hub.is_managed,
+        "management_user": hub.management_user,
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "guest_ip": str(vm.ip_address) if vm.ip_address is not None else None,
+        "login": account.login,
+        "account_id": account.id,
+    }
+    if include_attrs:
+        payload["has_sudo"] = account.has_sudo
+        payload["unix_groups"] = list(account.unix_groups)
+        payload["ssh_public_key"] = account.ssh_public_key
+    if remove_home is not None:
+        payload["remove_home"] = remove_home
+    return payload
+
+
+async def _resolve_account_and_vm(
+    *,
+    db: AsyncSession,
+    identity,
+    account_id: str,
+    vm_id: str,
+    action: str,
+    audit_action: str,
+    operation: str,
+    acl_action: str | None = None,
+):
+    """Permission + visibility + привязка для пары account+ВМ. Возвращает (account, vm, hub).
+
+    Зеркало `_resolve_account_and_server`: авторизация аддитивная (роль ИЛИ
+    per-account грант на `acl_action`). ВМ обязана быть в отделе аккаунта и
+    привязана к нему (иначе 404). Hub ВМ обязан существовать и не быть списанным
+    (иначе 409 HUB_UNAVAILABLE). На любом провале — failure-audit.
+    """
+    acl_action = acl_action or action
+    has_role = await permissions.has_action(
+        db, identity, EntityType.SERVER_ACCOUNT, action,
+    )
+    account = await account_repo.get_by_id(db, account_id)
+    visible = account is not None and account.department_id == identity.department_id
+
+    if has_role:
+        if not visible:
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept", "operation": operation},
+            )
+            raise NotFoundError(
+                error_code="ACCOUNT_NOT_FOUND", message="Server account not found",
+            )
+    else:
+        if not (
+            visible
+            and await permissions.has_account_action(db, identity, account, acl_action)
+        ):
+            details = {
+                "vm_id": vm_id,
+                "operation": operation,
+                "reason": "permission_denied",
+            }
+            if getattr(identity, "subject_type", None) is not None:
+                details["subject_type"] = identity.subject_type
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="denied", allowed=False, details=details,
+            )
+            raise AuthorizationError(
+                error_code="PERMISSION_DENIED",
+                message=f"No access to action '{acl_action}' on this server account",
+                details={"entity_type": "server_account", "action": acl_action},
+            )
+
+    vm = await vm_repo.get_by_id(db, vm_id)
+    # ВМ чужого отдела / несуществующая / не привязанная к учётке — единый 404,
+    # как «нет учётки на этой ВМ» (не раскрываем чужую ВМ).
+    if (
+        vm is None
+        or vm.department_id != account.department_id
+        or not await account_repo.is_vm_linked(db, account_id, vm_id)
+    ):
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "vm_not_linked", "vm_id": vm_id, "operation": operation},
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_FOUND",
+            message="Server account not found on this VM",
+        )
+
+    hub = await server_repo.get_by_id(db, vm.hub_server_id)
+    if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "hub_unavailable", "vm_id": vm_id, "operation": operation},
+        )
+        raise ConflictError(
+            error_code="HUB_UNAVAILABLE",
+            message="Hub server is unavailable (missing or decommissioned)",
+        )
+    return account, vm, hub
+
+
+async def _dispatch_vm_account_task(
+    *,
+    db: AsyncSession,
+    identity,
+    request: Request,
+    account,
+    vm,
+    hub,
+    task_kind: str,
+    audit_action: str,
+    operation: str,
+    include_attrs: bool,
+    remove_home: bool | None = None,
+) -> dict:
+    """Поставить одну account-task'у в гостя ВМ. target_server_id — hub, resource — учётка."""
+    payload = _build_vm_account_task_payload(
+        hub=hub, vm=vm, account=account,
+        include_attrs=include_attrs, remove_home=remove_home,
+    )
+    idempotency_key = read_idempotency_key(request)
+    vm_id_v = vm.id
+    vm_dept_v = vm.department_id
+    account_login_v = account.login
+    try:
+        task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+            db=db,
+            task_kind=task_kind,
+            target_server_id=hub.id,
+            target_resource_id=account.id,
+            payload=payload,
+            created_by=identity.user_id,
+            request_id=getattr(request.state, "request_id", None),
+            idempotency_key=idempotency_key,
+        )
+        await db.commit()
+    except ConflictError:
+        audit_service.emit(
+            audit_action, target_id=account.id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "idempotent_conflict", "task_kind": task_kind,
+                "vm_id": vm_id_v, "operation": operation, "department_id": vm_dept_v,
+            },
+        )
+        raise
+    except ServiceUnavailableError:
+        audit_service.emit(
+            audit_action, target_id=account.id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "worker_unreachable", "task_kind": task_kind,
+                "vm_id": vm_id_v, "operation": operation, "department_id": vm_dept_v,
+            },
+        )
+        raise
+    audit_service.emit(
+        audit_action, target_id=account.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "task_id": task_id, "task_kind": task_kind, "vm_id": vm_id_v,
+            "operation": operation, "login": account_login_v,
+            "department_id": vm_dept_v, "idempotent_hit": idempotent_hit,
+        },
+    )
+    return {"operation": operation, "vm_id": vm_id_v, "task_id": task_id, "status": "queued"}
+
+
+async def fanout_vm_provision(
+    *,
+    db: AsyncSession,
+    identity,
+    request: Request,
+    account,
+    vm_ids: list[str],
+) -> tuple[list[dict], list[dict]]:
+    """Best-effort `vm.account_provision` на набор ВМ (после attach с provision).
+
+    Каждую ВМ резолвим через `_resolve_account_and_vm` (permission/привязка/hub);
+    недоступный hub / worker / cross-dept ВМ уходят в `skipped`, не валят
+    остальные. Возвращает `(tasks, skipped)` формы `{vm_id, task_id}` /
+    `{vm_id, reason}`.
+    """
+    tasks: list[dict] = []
+    skipped: list[dict] = []
+    for vid in vm_ids:
+        try:
+            account_obj, vm, hub = await _resolve_account_and_vm(
+                db=db, identity=identity, account_id=account.id, vm_id=vid,
+                action=Action.PROVISION, acl_action=Action.PROVISION,
+                audit_action="server_account.vm_provision", operation="provision",
+            )
+            result = await _dispatch_vm_account_task(
+                db=db, identity=identity, request=request,
+                account=account_obj, vm=vm, hub=hub,
+                task_kind="vm.account_provision",
+                audit_action="server_account.vm_provision",
+                operation="provision", include_attrs=True,
+            )
+        except ConflictError as exc:
+            reason = "hub_unavailable" if exc.error_code == "HUB_UNAVAILABLE" else "idempotent_conflict"
+            skipped.append({"vm_id": vid, "reason": reason})
+            continue
+        except ServiceUnavailableError:
+            skipped.append({"vm_id": vid, "reason": "worker_unreachable"})
+            continue
+        except (NotFoundError, AuthorizationError):
+            skipped.append({"vm_id": vid, "reason": "not_found_or_cross_dept"})
+            continue
+        tasks.append({"vm_id": result["vm_id"], "task_id": result["task_id"]})
+    return tasks, skipped
+
+
+async def fanout_vm_deprovision(
+    *,
+    db: AsyncSession,
+    identity,
+    request: Request,
+    account,
+    login: str,
+    vm_ids: list[str],
+) -> None:
+    """Best-effort `vm.account_deprovision` после отвязки от ВМ (userdel в госте).
+
+    Связки в БД уже сняты, поэтому payload собираем из ВМ+hub напрямую (не из
+    M2M-линка). Недоступность hub/worker не откатывает отвязку — фиксируем
+    audit-warning'ом. Зеркало `_dispatch_deprovision_after_unlink` серверного пути.
+    """
+    audit_action = "server_account.vm_deprovision"
+    request_id = getattr(request.state, "request_id", None)
+    for vid in vm_ids:
+        vm = await vm_repo.get_by_id(db, vid)
+        if vm is None or vm.department_id != account.department_id:
+            continue
+        hub = await server_repo.get_by_id(db, vm.hub_server_id)
+        if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+            audit_service.emit(
+                audit_action, target_id=account.id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": "hub_unavailable", "vm_id": vid,
+                    "source": "unlink_fanout", "department_id": vm.department_id,
+                },
+            )
+            continue
+        payload = {
+            "server_id": hub.id,
+            "hub_server_id": hub.id,
+            "target_department_id": vm.department_id,
+            "host": str(hub.ip_address),
+            "ssh_port": hub.ssh_port,
+            "is_managed": hub.is_managed,
+            "management_user": hub.management_user,
+            "vm_id": vm.id,
+            "vm_name": vm.name,
+            "guest_ip": str(vm.ip_address) if vm.ip_address is not None else None,
+            "login": login,
+            "account_id": account.id,
+            "remove_home": False,
+        }
+        try:
+            task_id, _ = await worker_client.dispatch_task_with_hit(
+                db=db, task_kind="vm.account_deprovision",
+                target_server_id=hub.id, target_resource_id=account.id,
+                payload=payload, created_by=identity.user_id, request_id=request_id,
+            )
+            await db.commit()
+        except (ConflictError, ServiceUnavailableError) as exc:
+            await db.rollback()
+            reason = (
+                "idempotent_conflict" if isinstance(exc, ConflictError)
+                else "worker_unreachable"
+            )
+            audit_service.emit(
+                audit_action, target_id=account.id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": reason, "vm_id": vid,
+                    "source": "unlink_fanout", "department_id": vm.department_id,
+                },
+            )
+            continue
+        audit_service.emit(
+            audit_action, target_id=account.id, target_type="server_account",
+            status="success", allowed=True,
+            details={
+                "task_id": task_id, "vm_id": vid, "source": "unlink_fanout",
+                "login": login, "department_id": vm.department_id,
+            },
+        )
+
+
+async def fanout_vm_reprovision(
+    *,
+    db: AsyncSession,
+    identity,
+    request: Request,
+    account,
+) -> tuple[list[dict], list[dict]]:
+    """Best-effort re-provision учётки в гостях всех привязанных ВМ (после rotate).
+
+    Ротация меняет общий пароль в БД; чтобы он доехал до гостей ВМ, на каждую
+    привязанную ВМ ставим `vm.account_provision` (useradd идемпотентен, пароль
+    воркер fetch'ит из БД и делает chpasswd). Best-effort — недоступность
+    hub/worker на одной ВМ не валит остальные. Возвращает `(tasks, skipped)`.
+    """
+    vm_ids = account_repo.linked_vm_ids(account)
+    if not vm_ids:
+        return [], []
+    return await fanout_vm_provision(
+        db=db, identity=identity, request=request, account=account, vm_ids=vm_ids,
+    )
 
 
 # ── /servers/{id}/power/status — live BMC-probe через worker ────────────────
@@ -3430,6 +3784,160 @@ async def account_deprovision_dispatch(
         await db.delete(link)
         await db.commit()
     return AccountProvisionDispatchResponse(**result)
+
+
+# ── /server-accounts/{id}/vms/{vm_id}/provision|update_on_host|deprovision ──
+
+
+@router_accounts.post(
+    "/vms/{vm_id}/provision",
+    response_model=AccountVmProvisionDispatchResponse,
+    status_code=202,
+    summary="Завести учётку в госте ВМ через worker (useradd)",
+    description=(
+        "Публикует задачу `vm.account_provision`. Worker заходит на hub-сервер "
+        "ВМ под управляющей учёткой, оттуда в гостя и выполняет `useradd` (+ "
+        "chpasswd общим паролем учётки, + authorized_keys публичным ключом, + "
+        "группы/sudo). Учётка — общий пул: тот же `server_account`, что и на "
+        "серверах. ВМ обязана быть привязана к учётке (`POST /server-accounts/"
+        "{id}/vms`). Триггер гейтится `(server_account, *, provision)`."
+    ),
+    responses={
+        202: {"description": "Задача принята, возвращается task_id."},
+        403: {"description": "Нет роли/гранта с `provision` либо чужой department."},
+        404: {"description": "Учётка/ВМ не найдена, чужой dept, либо ВМ не привязана."},
+        409: {"description": "HUB_UNAVAILABLE / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def account_vm_provision_dispatch(
+    account_id: str,
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AccountVmProvisionDispatchResponse:
+    """Ставит `vm.account_provision` (useradd в госте) в очередь worker'а.
+
+    Доступ: `(server_account, *, provision)`. Связано:
+    `server_worker/src/tasks/vms_accounts.py::vm_account_provision`.
+    """
+    account, vm, hub = await _resolve_account_and_vm(
+        db=db, identity=identity, account_id=account_id, vm_id=vm_id,
+        action=Action.PROVISION, acl_action=Action.PROVISION,
+        audit_action="server_account.vm_provision", operation="provision",
+    )
+    result = await _dispatch_vm_account_task(
+        db=db, identity=identity, request=request,
+        account=account, vm=vm, hub=hub,
+        task_kind="vm.account_provision",
+        audit_action="server_account.vm_provision",
+        operation="provision", include_attrs=True,
+    )
+    return AccountVmProvisionDispatchResponse(**result)
+
+
+@router_accounts.post(
+    "/vms/{vm_id}/update_on_host",
+    response_model=AccountVmProvisionDispatchResponse,
+    status_code=202,
+    summary="Синхронизировать атрибуты учётки в госте ВМ (usermod)",
+    description=(
+        "Публикует задачу `vm.account_update_on_host`. Worker в госте ВМ "
+        "выполняет `usermod` — синхронизирует sudo/группы аккаунта. Пароль этой "
+        "операцией не меняется. ВМ обязана быть привязана. Триггер гейтится "
+        "`(server_account, *, update)`."
+    ),
+    responses={
+        202: {"description": "Задача принята, возвращается task_id."},
+        403: {"description": "Нет роли с `update` либо чужой department."},
+        404: {"description": "Учётка/ВМ не найдена, чужой dept, либо ВМ не привязана."},
+        409: {"description": "HUB_UNAVAILABLE / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def account_vm_update_on_host_dispatch(
+    account_id: str,
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AccountVmProvisionDispatchResponse:
+    """Ставит `vm.account_update_on_host` (usermod в госте) в очередь worker'а.
+
+    Доступ: `(server_account, *, update)`. Связано:
+    `server_worker/src/tasks/vms_accounts.py::vm_account_update_on_host`.
+    """
+    account, vm, hub = await _resolve_account_and_vm(
+        db=db, identity=identity, account_id=account_id, vm_id=vm_id,
+        action=Action.UPDATE, acl_action=Action.UPDATE,
+        audit_action="server_account.vm_update_on_host", operation="update",
+    )
+    result = await _dispatch_vm_account_task(
+        db=db, identity=identity, request=request,
+        account=account, vm=vm, hub=hub,
+        task_kind="vm.account_update_on_host",
+        audit_action="server_account.vm_update_on_host",
+        operation="update", include_attrs=True,
+    )
+    return AccountVmProvisionDispatchResponse(**result)
+
+
+@router_accounts.post(
+    "/vms/{vm_id}/deprovision",
+    response_model=AccountVmProvisionDispatchResponse,
+    status_code=202,
+    summary="Удалить учётку из гостя ВМ через worker (userdel)",
+    description=(
+        "Публикует задачу `vm.account_deprovision`. Worker в госте ВМ выполняет "
+        "`userdel` (опционально `--remove` для home). ВМ обязана быть привязана. "
+        "Связку учётка ↔ ВМ снимаем сразу после постановки задачи — deprovision "
+        "и есть полная отвязка от ВМ. Триггер гейтится `(server_account, *, "
+        "deprovision)`."
+    ),
+    responses={
+        202: {"description": "Задача принята, возвращается task_id."},
+        403: {"description": "Нет роли/гранта с `deprovision` либо чужой department."},
+        404: {"description": "Учётка/ВМ не найдена, чужой dept, либо ВМ не привязана."},
+        409: {"description": "HUB_UNAVAILABLE / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def account_vm_deprovision_dispatch(
+    account_id: str,
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    remove_home: bool = Query(
+        default=False,
+        description="Удалять ли home-директорию в госте (`userdel --remove`).",
+    ),
+) -> AccountVmProvisionDispatchResponse:
+    """Ставит `vm.account_deprovision` (userdel в госте) в очередь worker'а.
+
+    Доступ: `(server_account, *, deprovision)`. Связано:
+    `server_worker/src/tasks/vms_accounts.py::vm_account_deprovision`.
+    """
+    account, vm, hub = await _resolve_account_and_vm(
+        db=db, identity=identity, account_id=account_id, vm_id=vm_id,
+        action=Action.DEPROVISION, acl_action=Action.DEPROVISION,
+        audit_action="server_account.vm_deprovision", operation="deprovision",
+    )
+    result = await _dispatch_vm_account_task(
+        db=db, identity=identity, request=request,
+        account=account, vm=vm, hub=hub,
+        task_kind="vm.account_deprovision",
+        audit_action="server_account.vm_deprovision",
+        operation="deprovision", include_attrs=False, remove_home=remove_home,
+    )
+    # Снос учётки поставлен — сразу снимаем связку учётка ↔ ВМ в БД (симметрия
+    # с серверным deprovision: он и есть полная отвязка от ВМ).
+    link = await account_repo.get_vm_link(db, account_id, vm_id)
+    if link is not None:
+        await db.delete(link)
+        await db.commit()
+    return AccountVmProvisionDispatchResponse(**result)
 
 
 # ── /ipmi-controllers/{id}/rotate ───────────────────────────────────────────

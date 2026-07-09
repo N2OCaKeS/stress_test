@@ -4,7 +4,7 @@ from datetime import datetime
 from ipaddress import IPv4Address, IPv6Address
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from src.core.constants import (
     VM_STATUS_FREE,
@@ -181,8 +181,39 @@ class VmStatusUpdate(BaseModel):
     status: str = Field(..., min_length=1, max_length=64, description="Новый booking-статус ВМ.")
 
 
+# Как собран гостевой NIC ВМ (virt-install `--network ...,model=virtio`): модель
+# всегда virtio, гостевой интерфейс фиксируется как eth0 (воркер пинит
+# `net.ifnames=0` в grub), bridge-режим вешается на мост хаба `br0`. Значения
+# зеркалят server_worker (VMS_BRIDGE) — держим локально, т.к. у server_service
+# своей константы моста нет.
+_VM_NIC_MODEL = "virtio"
+_VM_GUEST_NIC = "eth0"
+_VM_HUB_BRIDGE = "br0"
+
+
+class VmNic(BaseModel):
+    """Сетевой интерфейс ВМ — что за устройство и куда подключено.
+
+    ВМ создаётся с одним гостевым NIC. `mac` не отслеживается (генерит libvirt) —
+    отдаётся None, UI рисует «—». bridge заполнен только для bridge-режима.
+    """
+
+    name: str = Field(description="Имя гостевого интерфейса (eth0).")
+    model: str = Field(description="Модель устройства NIC (virtio).")
+    network_mode: str = Field(description="bridge / nat.")
+    bridge: str | None = Field(default=None, description="Мост хаба для bridge-режима (br0); None для nat.")
+    mac: str | None = Field(default=None, description="MAC гостевого NIC. None — не отслеживается.")
+    ip_address: IPv4Address | IPv6Address | None = Field(default=None, description="IP интерфейса (static/NAT), None до назначения.")
+
+
 class VmResponse(BaseModel):
-    """Карточка ВМ в ответе GET/POST/list /vms."""
+    """Карточка ВМ в ответе GET/POST/list /vms.
+
+    Форма зеркалит `ServerResponse` — та же UI-страница рисует и сервер, и ВМ.
+    Поля, которых у ВМ физически нет (serial железа, asset_tag, ipmi, BMC-power),
+    не заводим; отсутствующие у ВМ по модели booking-поля (busy_user_id/busy_note
+    — бронь ВМ идёт через `status`) тоже опущены.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -208,11 +239,48 @@ class VmResponse(BaseModel):
     busy_state: str | None = Field(default=None, description="Lifecycle-lock (creating/deleting/updating/powering) или None.")
     busy_since: datetime | None = Field(default=None, description="Когда поставлен lifecycle-lock.")
     ping_reachable: bool | None = Field(default=None, description="Отвечает ли гость на ping (None — пробы не было).")
+    ping_checked_at: datetime | None = Field(default=None, description="Когда последний раз пробовали ping гостя (UTC; None — пробы не было).")
     ssh_reachable: bool | None = Field(default=None, description="Доступен ли SSH гостя (None — пробы не было).")
+    ssh_checked_at: datetime | None = Field(default=None, description="Когда последний раз пробовали SSH гостя (UTC; None — пробы не было).")
     last_error: str | None = Field(default=None, description="Последняя ошибка воркера по ВМ (или None).")
+    # ── управляемость (зеркало серверных mgmt-полей) ──────────────────────────
+    is_managed: bool = Field(default=False, description="Прошла ли ВМ бутстрап управления (vm.prepare): заведены per-VM управляющие креды.")
+    mgmt_user: str | None = Field(default=None, description="Имя управляющего пользователя ВМ (после prepare). None — ВМ ещё не подготовлена.")
+    mgmt_ssh_public_key: str | None = Field(default=None, description="Публичный SSH-ключ управляющей учётки ВМ. Приватный ключ и пароль не отдаются.")
+    mgmt_creds_rotated_at: datetime | None = Field(default=None, description="Когда управляющие креды ВМ последний раз ротированы.")
+    mgmt_creds_pending_apply: bool = Field(default=False, description="Идёт применение свежей управляющей пары в госте (ротация ещё не подтверждена).")
     created_at: datetime = Field(description="Когда карточка создана.")
     updated_at: datetime = Field(description="Когда карточка изменена в последний раз.")
     created_by: str | None = Field(default=None, description="user_id, создавший ВМ.")
+
+    @computed_field
+    @property
+    def network_interfaces(self) -> list[str]:
+        """Гостевые сетевые интерфейсы ВМ — для симметрии со списком у сервера.
+
+        ВМ строится с одним NIC, гостевое имя фиксировано (`net.ifnames=0` → eth0).
+        """
+        return [_VM_GUEST_NIC]
+
+    @computed_field
+    @property
+    def nics(self) -> list[VmNic]:
+        """Детализация NIC ВМ: модель устройства, режим, мост, IP.
+
+        Один гостевой интерфейс virtio. Для bridge-режима подключён к мосту хаба
+        (`br0`), для nat — к libvirt-сети (bridge=None). MAC не отслеживается.
+        """
+        is_bridge = self.network_mode == VmNetworkMode.BRIDGE.value
+        return [
+            VmNic(
+                name=_VM_GUEST_NIC,
+                model=_VM_NIC_MODEL,
+                network_mode=self.network_mode,
+                bridge=_VM_HUB_BRIDGE if is_bridge else None,
+                mac=None,
+                ip_address=self.ip_address,
+            )
+        ]
 
     @classmethod
     def from_vm(cls, vm) -> "VmResponse":

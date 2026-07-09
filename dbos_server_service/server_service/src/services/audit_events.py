@@ -165,6 +165,11 @@ SERVICE_EVENTS = [
     {"action": "server_account.update_on_host", "description": "OS-user attribute sync (usermod) dispatched to worker", "default_severity": "INFO"},
     {"action": "fanout_update_on_host.truncated", "description": "PATCH-fanout превысил FANOUT_UPDATE_ON_HOST_MAX — хвост серверов вырезан, выровняется на следующем sweep'е", "default_severity": "WARNING"},
     {"action": "server_account.deprovision", "description": "OS-user deprovision (userdel) dispatched to worker", "default_severity": "WARNING"},
+    {"action": "server_account.link_vms", "description": "Server account (shared pool) linked to VMs (server_account_vms)", "default_severity": "INFO"},
+    {"action": "server_account.unlink_vms", "description": "Server account (shared pool) unlinked from VMs", "default_severity": "INFO"},
+    {"action": "server_account.vm_provision", "description": "OS-user provision (useradd) in a VM guest dispatched to worker", "default_severity": "WARNING"},
+    {"action": "server_account.vm_update_on_host", "description": "OS-user attribute sync (usermod) in a VM guest dispatched to worker", "default_severity": "INFO"},
+    {"action": "server_account.vm_deprovision", "description": "OS-user deprovision (userdel) in a VM guest dispatched to worker", "default_severity": "WARNING"},
     {"action": "ipmi_controller.rotate_dispatch", "description": "IPMI controller password rotation dispatched to worker (currently safety-guarded: worker fails fast until storage round-trip exists)", "default_severity": "CRITICAL"},
     # Busy-lease, OS-sync — пользовательский CRUD над servers.busy_state / os_version_id
     {"action": "server.acquire", "description": "Server acquired (busy_state set to busy) for a test/lease", "default_severity": "INFO"},

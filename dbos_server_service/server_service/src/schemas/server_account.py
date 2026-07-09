@@ -349,6 +349,57 @@ class ServerAccountServersUpdate(BaseModel):
         return out
 
 
+class ServerAccountVmsUpdate(BaseModel):
+    """Тело POST /server-accounts/{id}/vms — привязка учётки к ВМ.
+
+    Учётки — общий пул: тот же `server_account` привязывается и к серверам, и к
+    ВМ. Привязываемые ВМ обязаны быть в том же department'е, что и аккаунт.
+    Отвязка ВМ идёт по одиночному пути `DELETE /server-accounts/{id}/vms/{vm_id}`.
+    """
+
+    vm_ids: list[str] = Field(
+        ...,
+        min_length=1,
+        description="ВМ для привязки к учётке (≥1); все в отделе аккаунта.",
+    )
+
+    @field_validator("vm_ids")
+    @classmethod
+    def _dedupe_vm_ids(cls, value: list[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for vid in value:
+            if vid not in seen:
+                seen.add(vid)
+                out.append(vid)
+        return out
+
+
+class ServerAccountVmsResponse(BaseModel):
+    """Ответ привязки/отвязки учётки к ВМ — текущий набор привязанных ВМ."""
+
+    account_id: str = Field(description="ID учётки (prefix acc_).")
+    login: str = Field(description="OS-логин учётки.")
+    vm_ids: list[str] = Field(
+        default_factory=list,
+        description="Актуальный список ВМ, к которым привязана учётка.",
+    )
+
+
+class AccountVmProvisionDispatchResponse(BaseModel):
+    """Ответ worker-dispatch provision/update/deprovision учётки в госте ВМ.
+
+    Зеркало `AccountProvisionDispatchResponse`, но цель — гость ВМ, а не сервер:
+    `vm_id` вместо `server_id`. `operation` — `provision` (useradd в госте),
+    `update` (usermod групп/sudo) или `deprovision` (userdel в госте).
+    """
+
+    operation: str = Field(description="provision | update | deprovision.")
+    vm_id: str = Field(description="ВМ, в госте которой применяется операция.")
+    task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
+    status: str = Field(default="queued", description="Статус постановки в очередь.")
+
+
 class ServerAccountRecreateLoginRequest(BaseModel):
     """Тело POST /server-accounts/{id}/recreate_login.
 

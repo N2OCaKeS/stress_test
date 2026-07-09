@@ -78,6 +78,9 @@ SERVICE_EVENTS = [
     {"action": "vm.set_autostart", "description": "Смена флага автозапуска ВМ по SSH: virsh autostart / autostart --disable", "default_severity": "WARNING"},
     {"action": "vm.console_prep", "description": "Подготовка консоли ВМ по SSH: vnc/spice-graphics (+ serial) + чтение порта (virsh vncdisplay/domdisplay)", "default_severity": "INFO"},
     {"action": "vm.list_packages", "description": "Список установленных пакетов гостя ВМ снят по SSH (dpkg-query/rpm в госте)", "default_severity": "INFO"},
+    {"action": "vm.account_provision", "description": "Учётка общего пула заведена в госте ВМ по SSH через hub (useradd + пароль/ключ/группы)", "default_severity": "WARNING"},
+    {"action": "vm.account_update_on_host", "description": "Группы/sudo учётки синхронизированы в госте ВМ по SSH через hub (usermod)", "default_severity": "INFO"},
+    {"action": "vm.account_deprovision", "description": "Учётка удалена из гостя ВМ по SSH через hub (userdel)", "default_severity": "WARNING"},
     {"action": "vms_hub.teardown", "description": "Разбор VMS-hub по SSH: destroy/undefine ВМ отдела + снос storage-pool/образов + опц. purge пакетов и br0", "default_severity": "CRITICAL"},
     # Управляющая учётка — tasks/management_user.py, tasks/management_creds.py
     {"action": "management_user.sync", "description": "Недеструктивный re-bootstrap управляющей учётки на хосте", "default_severity": "INFO"},

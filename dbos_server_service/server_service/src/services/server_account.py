@@ -45,6 +45,7 @@ from src.models import Server, ServerAccount, ServerAccountIgnoredLogin
 from src.repositories import resource_role_permission as resource_perm_repo
 from src.repositories import server_account as repo
 from src.repositories import server_account_ignored_login as ignored_login_repo
+from src.repositories import vm as vm_repo
 from src.schemas.identity import IdentityContext
 from src.schemas.server_account import (
     IgnoredLoginCreate,
@@ -53,6 +54,7 @@ from src.schemas.server_account import (
     ServerAccountImportRequest,
     ServerAccountServersUpdate,
     ServerAccountUpdate,
+    ServerAccountVmsUpdate,
 )
 from src.services import (
     audit_context,
@@ -1799,6 +1801,175 @@ async def unlink_servers(
             db, identity, account_id, login, sorted(present_targets), request_id,
         )
     return obj
+
+
+async def _resolve_same_dept_vms(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account: ServerAccount,
+    vm_ids: list[str],
+    audit_action: str,
+) -> list:
+    """Подгрузить ВМ из списка с изоляцией по отделу аккаунта.
+
+    Учётки — общий пул в рамках отдела; привязать к ВМ можно только ВМ того же
+    отдела, что и аккаунт. Любая ВМ чужого/несуществующего отдела → 404
+    VM_NOT_FOUND (скрываем факт существования, как `_resolve_same_dept_servers`).
+    """
+    vms = []
+    for vid in vm_ids:
+        vm = await vm_repo.get_by_id(db, vid)
+        if vm is None or vm.department_id != account.department_id:
+            audit_service.emit(
+                audit_action,
+                target_id=account.id, target_type="server_account",
+                status="failure", allowed=True,
+                details={"reason": "vm_not_found_or_cross_dept", "vm_id": vid},
+            )
+            raise NotFoundError(
+                error_code="VM_NOT_FOUND", message="VM not found",
+            )
+        vms.append(vm)
+    return vms
+
+
+async def link_vms(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+    payload: ServerAccountVmsUpdate,
+) -> ServerAccount:
+    """Привязать учётку к ВМ (общий пул). Зеркало `link_servers`.
+
+    Гейтится `update`. Все ВМ обязаны быть в отделе аккаунта (cross-dept → 404).
+    Уже привязанные ВМ игнорируются (идемпотентно). Если login занят на одной из
+    ВМ другой учёткой (uq_vm_login) — 409 ACCOUNT_DUPLICATE.
+    """
+    with emit_denied_on_authz_error(
+        "server_account.link_vms",
+        target_id=account_id,
+        target_type="server_account",
+        identity=identity,
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.UPDATE
+        )
+    try:
+        obj = await _load_account_visible_for_update(db, identity, account_id)
+    except NotFoundError:
+        audit_service.emit(
+            "server_account.link_vms",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "not_found_or_cross_dept"},
+        )
+        raise
+
+    await _resolve_same_dept_vms(
+        db, identity, obj, payload.vm_ids, "server_account.link_vms"
+    )
+
+    try:
+        await repo.add_vms(db, obj, payload.vm_ids)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        logger.warning("IntegrityError на привязке учётки к ВМ %s: %s", account_id, type(exc.orig).__name__)
+        audit_service.emit(
+            "server_account.link_vms",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "duplicate", "vm_ids": payload.vm_ids},
+        )
+        raise ConflictError(
+            error_code="ACCOUNT_DUPLICATE",
+            message="Account login already exists on one of the target VMs",
+        ) from exc
+    await db.refresh(obj)
+    audit_service.emit(
+        "server_account.link_vms",
+        target_id=obj.id, target_type="server_account",
+        status="success", allowed=True,
+        details={"vm_ids": payload.vm_ids, "department_id": obj.department_id},
+    )
+    return obj
+
+
+async def unlink_vms(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+    payload: ServerAccountVmsUpdate,
+) -> tuple[ServerAccount, list[str], str]:
+    """Отвязать учётку от ВМ (общий пул). Зеркало `unlink_servers`.
+
+    Гейтится `update`. Снимает связку учётка ↔ ВМ немедленно. Возвращает
+    `(account, present_vm_ids, login)` — `present_vm_ids` это ВМ, где учётка
+    реально стояла в госте (`present_on_vm`); вызывающий endpoint по ним
+    best-effort ставит `vm.account_deprovision` (userdel в госте), если оператор
+    попросил deprovision.
+    """
+    with emit_denied_on_authz_error(
+        "server_account.unlink_vms",
+        target_id=account_id,
+        target_type="server_account",
+        identity=identity,
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.UPDATE
+        )
+    try:
+        obj = await _load_account_visible_for_update(db, identity, account_id)
+    except NotFoundError:
+        audit_service.emit(
+            "server_account.unlink_vms",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "not_found_or_cross_dept"},
+        )
+        raise
+
+    live_links = await repo.lock_vm_links_for_account(db, account_id)
+    current = {link.vm_id for link in live_links}
+    unknown = [vid for vid in payload.vm_ids if vid not in current]
+    if unknown:
+        audit_service.emit(
+            "server_account.unlink_vms",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "vm_not_linked",
+                "vm_ids": payload.vm_ids,
+                "unknown_vm_ids": unknown,
+            },
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_VM_LINK_NOT_FOUND",
+            message="Account is not linked to one or more of the requested VMs",
+            details={"unknown_vm_ids": unknown},
+        )
+    present_targets = {
+        link.vm_id
+        for link in live_links
+        if link.vm_id in set(payload.vm_ids) and link.present_on_vm
+    }
+
+    await db.refresh(obj, attribute_names=["vm_links"])
+    login = obj.login
+    removed = await repo.remove_vms(db, obj, payload.vm_ids)
+    await db.commit()
+    await db.refresh(obj)
+    audit_service.emit(
+        "server_account.unlink_vms",
+        target_id=obj.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "vm_ids": payload.vm_ids,
+            "removed": removed,
+            "department_id": obj.department_id,
+        },
+    )
+    return obj, sorted(present_targets), login
 
 
 async def unbind_all_accounts_from_server(

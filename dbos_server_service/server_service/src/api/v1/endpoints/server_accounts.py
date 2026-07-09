@@ -17,6 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.v1.endpoints.worker_dispatch import (
     fanout_apply_credentials,
     fanout_update_on_host,
+    fanout_vm_deprovision,
+    fanout_vm_provision,
+    fanout_vm_reprovision,
     recreate_login_orchestrate,
 )
 from src.core.config import get_settings
@@ -46,6 +49,8 @@ from src.schemas.server_account import (
     ServerAccountSshKeyRequest,
     ServerAccountSshPrivateKeyResponse,
     ServerAccountUpdate,
+    ServerAccountVmsResponse,
+    ServerAccountVmsUpdate,
 )
 from src.services import server_account as svc
 
@@ -504,6 +509,89 @@ async def unlink_servers(
     return _to_response(obj)
 
 
+@router.post(
+    "/{account_id}/vms",
+    response_model=ServerAccountVmsResponse,
+    summary="Привязать учётку к ВМ (общий пул) + опционально provision в госте",
+    description=(
+        "Добавляет связки учётка ↔ ВМ (`server_account_vms`). Учётки — общий "
+        "пул: тот же `server_account`, что и на серверах, привязывается и к ВМ. "
+        "Все ВМ обязаны быть в отделе аккаунта (cross-dept → 404). Уже "
+        "привязанные ВМ игнорируются (идемпотентно). `provision=true` (query) "
+        "дополнительно ставит `vm.account_provision` (useradd в госте) на "
+        "каждую ВМ — best-effort. Гейтится `(server_account, *, update)`."
+    ),
+    responses={
+        403: {"description": "Нет `update`."},
+        404: {"description": "Учётка или одна из ВМ не найдена / чужой dept."},
+        409: {"description": "Login занят на одной из ВМ (uq_vm_login)."},
+    },
+)
+async def link_vms(
+    account_id: str,
+    body: ServerAccountVmsUpdate,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    provision: bool = Query(
+        default=False,
+        description="true — поставить vm.account_provision (useradd) на привязанные ВМ.",
+    ),
+) -> ServerAccountVmsResponse:
+    """Привязка ВМ. Доступ: `(server_account, *, update)`."""
+    obj = await svc.link_vms(db, identity, account_id, body)
+    if provision:
+        await fanout_vm_provision(
+            db=db, identity=identity, request=request, account=obj,
+            vm_ids=body.vm_ids,
+        )
+    return ServerAccountVmsResponse(
+        account_id=obj.id, login=obj.login,
+        vm_ids=account_repo.linked_vm_ids(obj),
+    )
+
+
+@router.delete(
+    "/{account_id}/vms/{vm_id}",
+    response_model=ServerAccountVmsResponse,
+    summary="Отвязать учётку от ВМ (общий пул) + опционально deprovision в госте",
+    description=(
+        "Снимает связку учётка ↔ ВМ немедленно. `deprovision=true` (query) "
+        "дополнительно ставит `vm.account_deprovision` (userdel в госте), если "
+        "учётка там реально стояла (`present_on_vm`) — best-effort, недоступность "
+        "hub/worker не откатывает отвязку. Гейтится `(server_account, *, update)`."
+    ),
+    responses={
+        403: {"description": "Нет `update`."},
+        404: {"description": "Учётка не найдена / чужой dept, либо ВМ не привязана."},
+    },
+)
+async def unlink_vm(
+    account_id: str,
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    deprovision: bool = Query(
+        default=False,
+        description="true — поставить vm.account_deprovision (userdel) в госте отвязанной ВМ.",
+    ),
+) -> ServerAccountVmsResponse:
+    """Отвязка ВМ. Доступ: `(server_account, *, update)`."""
+    obj, present, login = await svc.unlink_vms(
+        db, identity, account_id, ServerAccountVmsUpdate(vm_ids=[vm_id]),
+    )
+    if deprovision and vm_id in present:
+        await fanout_vm_deprovision(
+            db=db, identity=identity, request=request, account=obj,
+            login=login, vm_ids=[vm_id],
+        )
+    return ServerAccountVmsResponse(
+        account_id=obj.id, login=obj.login,
+        vm_ids=account_repo.linked_vm_ids(obj),
+    )
+
+
 @router.delete(
     "/{account_id}",
     response_model=OkResponse,
@@ -573,6 +661,14 @@ async def rotate_password(
         db=db, identity=identity, request=request, account=obj,
         action=Action.ROTATE_PASSWORD, apply_password=True,
     )
+    # Общий пул: тот же пароль применяем и в гостях привязанных ВМ. Re-provision
+    # (useradd идемпотентен + chpasswd новым паролем) best-effort — недоступность
+    # hub/worker на ВМ не валит ответ ротации. Серверный путь выше не задет.
+    fresh = await account_repo.get_by_id(db, account_id_v)
+    if fresh is not None and account_repo.linked_vm_ids(fresh):
+        await fanout_vm_reprovision(
+            db=db, identity=identity, request=request, account=fresh,
+        )
     return ServerAccountRotateResponse(
         id=account_id_v,
         login=login_v,

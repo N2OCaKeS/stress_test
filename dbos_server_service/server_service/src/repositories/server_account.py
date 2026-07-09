@@ -375,6 +375,97 @@ async def list_vm_links(
     return [(link, account) for link, account in rows]
 
 
+def linked_vm_ids(account: ServerAccount) -> list[str]:
+    """Список vm_id из связок аккаунта, упорядоченный по (created_at, vm_id).
+
+    Зеркало `linked_server_ids`, но по общему пулу учёток в сторону ВМ. Tiebreaker
+    по vm_id — при bulk INSERT created_at совпадает, иначе порядок не воспроизводим.
+    """
+    return [
+        link.vm_id
+        for link in sorted(
+            account.vm_links, key=lambda link: (link.created_at, link.vm_id)
+        )
+    ]
+
+
+async def add_vms(
+    db: AsyncSession, account: ServerAccount, vm_ids: list[str]
+) -> None:
+    """Привязать аккаунт к новым ВМ. Уже привязанные — пропускаем.
+
+    Зеркало `add_servers`: дубль по (account_id, vm_id) отсеивается на стороне
+    Python, занятый логин на ВМ поднимет IntegrityError на uq_vm_login. commit —
+    на caller'е.
+    """
+    existing = {link.vm_id for link in account.vm_links}
+    for vid in vm_ids:
+        if vid in existing:
+            continue
+        db.add(
+            ServerAccountVm(
+                id=server_account_vm_id(),
+                account_id=account.id,
+                vm_id=vid,
+                login=account.login,
+            )
+        )
+    await db.flush()
+    await db.refresh(account)
+
+
+async def remove_vms(
+    db: AsyncSession, account: ServerAccount, vm_ids: list[str]
+) -> int:
+    """Отвязать аккаунт от ВМ. Возвращает число снятых связок (зеркало `remove_servers`)."""
+    targets = set(vm_ids)
+    removed = 0
+    for link in list(account.vm_links):
+        if link.vm_id in targets:
+            await db.delete(link)
+            removed += 1
+    await db.flush()
+    await db.refresh(account)
+    return removed
+
+
+async def is_vm_linked(db: AsyncSession, account_id: str, vm_id: str) -> bool:
+    """Привязан ли аккаунт к конкретной ВМ."""
+    stmt = select(ServerAccountVm.id).where(
+        ServerAccountVm.account_id == account_id,
+        ServerAccountVm.vm_id == vm_id,
+    )
+    return (await db.execute(stmt)).first() is not None
+
+
+async def get_vm_link(
+    db: AsyncSession, account_id: str, vm_id: str
+) -> ServerAccountVm | None:
+    """Связка аккаунта с ВМ (или None)."""
+    stmt = select(ServerAccountVm).where(
+        ServerAccountVm.account_id == account_id,
+        ServerAccountVm.vm_id == vm_id,
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def lock_vm_links_for_account(
+    db: AsyncSession, account_id: str
+) -> list[ServerAccountVm]:
+    """SELECT всех VM-связок аккаунта с FOR UPDATE.
+
+    Зеркало `lock_links_for_account`: берётся в `unlink_vms` перед чтением
+    `present_on_vm` и `remove_vms`, чтобы сериализовать с параллельными правками
+    этих же связок. Возвращает свежий live-snapshot из БД.
+    """
+    stmt = (
+        select(ServerAccountVm)
+        .where(ServerAccountVm.account_id == account_id)
+        .with_for_update(of=ServerAccountVm)
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
 async def update(db: AsyncSession, obj: ServerAccount, changes: dict) -> ServerAccount:
     """In-place setattr + flush. commit — на caller'е."""
     for key, value in changes.items():

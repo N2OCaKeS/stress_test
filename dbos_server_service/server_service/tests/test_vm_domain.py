@@ -264,6 +264,50 @@ async def test_get_cross_dept_hidden(client, admin_role_token_a, make_hub, make_
     assert_error(resp, 404, "VM_NOT_FOUND")
 
 
+@pytest.mark.asyncio
+async def test_vm_response_parity_fields(client, admin_role_token_a, make_hub, make_vm):
+    """VmResponse несёт серверную форму: mgmt-поля, метки доступности и NIC."""
+    hub = await make_hub()
+    vm = await make_vm(
+        hub=hub, is_managed=True, mgmt_user="dbosmgr",
+        ip_address="10.20.30.40", network_mode="bridge",
+    )
+    resp = await client.get(f"{BASE}/vms/{vm.id}", headers=_hdr(admin_role_token_a))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # управляемость — те же ключи, что читает UI на серверной странице.
+    assert body["is_managed"] is True
+    assert body["mgmt_user"] == "dbosmgr"
+    assert body["mgmt_creds_pending_apply"] is False
+    assert "mgmt_creds_rotated_at" in body
+    assert "mgmt_ssh_public_key" in body
+    # доступность гостя — метки времени как у сервера.
+    assert "ping_checked_at" in body
+    assert "ssh_checked_at" in body
+    # NIC-детализация: один гостевой virtio-интерфейс на мосту хаба.
+    assert body["network_interfaces"] == ["eth0"]
+    assert len(body["nics"]) == 1
+    nic = body["nics"][0]
+    assert nic["name"] == "eth0"
+    assert nic["model"] == "virtio"
+    assert nic["network_mode"] == "bridge"
+    assert nic["bridge"] == "br0"
+    assert nic["mac"] is None
+    assert nic["ip_address"] == "10.20.30.40"
+
+
+@pytest.mark.asyncio
+async def test_vm_response_nat_nic_has_no_bridge(client, admin_role_token_a, make_hub, make_vm):
+    """У nat-ВМ NIC не привязан к мосту хаба (bridge=None)."""
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, network_mode="nat")
+    resp = await client.get(f"{BASE}/vms/{vm.id}", headers=_hdr(admin_role_token_a))
+    assert resp.status_code == 200, resp.text
+    nic = resp.json()["nics"][0]
+    assert nic["network_mode"] == "nat"
+    assert nic["bridge"] is None
+
+
 # ── power ────────────────────────────────────────────────────────────────────
 
 
@@ -1189,7 +1233,10 @@ async def test_prepare_dispatches_vm_prepare(
     assert creds["password"]
 
     resp = await client.get(f"{BASE}/vms/{vm.id}", headers=_hdr(admin_role_token_a))
-    assert resp.json()["busy_state"] == "preparing"
+    body = resp.json()
+    assert body["busy_state"] == "preparing"
+    # prepare выставляет флаг «идёт применение управляющей пары» — он виден в карточке.
+    assert body["mgmt_creds_pending_apply"] is True
 
 
 @pytest.mark.asyncio

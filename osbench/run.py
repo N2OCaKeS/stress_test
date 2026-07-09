@@ -41,9 +41,9 @@ if args.COLORS:
 
 if args.PREP:
     log.info("Настройка окружения\n")
-    system.leave_command(f'sudo bash scripts/prepare.sh', returncode=True, console=False)
+    system.leave_command(f'sudo bash scripts/prepare.sh', returncode=True, console=False, debug=True)
     log.info("Настройка бенчмарков\n")
-    system.leave_command(f'sudo bash scripts/install_bench.sh', returncode=True, console=False)
+    system.leave_command(f'sudo bash scripts/install_bench.sh', returncode=True, console=False, debug=True)
 elif args.RUN:
     log.info(f"\n{OSBENCH_LOGO}\n")
     subprocess.run(f'sudo {VENV_PATH} src/osbench.py', shell=True)

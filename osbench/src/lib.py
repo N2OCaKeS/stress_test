@@ -112,30 +112,32 @@ class system:
         if not console:
             log.set_console(False)
             log.info(f"Выполняется команда: {command}")
-            keepalive_active = False #True
+            keepalive_active = False
+            if debug:
+                keepalive_active = True
+             
+                def keepalive():
+                    spinner = ['◐', '◓', '◑', '◒']
+                    idx = 0
+                    start = time()
+                    total_hours = 0
+                    total_minutes = 0
+                    total_seconds = 0
+                    while keepalive_active and process.poll() is None:
+                        sleep(1)
+                        if keepalive_active:
+                            elapsed = int(time() - start)
+                            total_hours = elapsed // 3600
+                            total_minutes = (elapsed % 3600) // 60
+                            total_seconds = elapsed % 60
+                            sys.stdout.write(f'\r{spinner[idx]}  {total_hours:02d}:{total_minutes:02d}:{total_seconds:02d}')
+                            sys.stdout.flush()
+                            idx = (idx + 1) % len(spinner)
+                    sys.stdout.write(f'\rВыполнено за {total_hours:02d}:{total_minutes:02d}:{total_seconds:02d} \n')
+                    sys.stdout.flush()
 
-            def keepalive():
-                spinner = ['◐', '◓', '◑', '◒']
-                idx = 0
-                start = time()
-                total_hours = 0
-                total_minutes = 0
-                total_seconds = 0
-                while keepalive_active and process.poll() is None:
-                    sleep(1)
-                    if keepalive_active:
-                        elapsed = int(time() - start)
-                        total_hours = elapsed // 3600
-                        total_minutes = (elapsed % 3600) // 60
-                        total_seconds = elapsed % 60
-                        sys.stdout.write(f'\r{spinner[idx]}  {total_hours:02d}:{total_minutes:02d}:{total_seconds:02d}')
-                        sys.stdout.flush()
-                        idx = (idx + 1) % len(spinner)
-                sys.stdout.write(f'\rВыполнено за {total_hours:02d}:{total_minutes:02d}:{total_seconds:02d} \n')
-                sys.stdout.flush()
-
-            keepalive_thread = threading.Thread(target=keepalive, daemon=True)
-            keepalive_thread.start()
+                keepalive_thread = threading.Thread(target=keepalive, daemon=True)
+                keepalive_thread.start()
 
         for line in process.stdout:
             log.info(line.rstrip('\n'))  
@@ -153,8 +155,9 @@ class system:
             raise
         
         if not console:
-            keepalive_active = False
-            keepalive_thread.join(timeout=1)
+            if debug:
+                keepalive_active = False
+                keepalive_thread.join(timeout=1)
             log.set_console(True)
 
         if process.returncode == 0:
@@ -386,7 +389,7 @@ class ProgressBar:
         while self.running:
             with self.lock:
                 self._display()
-            time.sleep(0.5)
+            sleep(0.5)
             
     def _display(self, completed=False):
         """Отображает прогресс-бар"""

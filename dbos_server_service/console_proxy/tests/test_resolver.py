@@ -20,6 +20,7 @@ def _claims(**over) -> ConsoleClaims:
         kind="vnc",
         hub_ip="127.0.0.1",
         hub_server_id="srv_1",
+        department_id="dep_1",
         domain=None,
         port=5901,
         display=None,

@@ -112,7 +112,9 @@ class SshTunnelResolver:
             raise ResolveError(
                 "NO_HUB_SERVER", "hub_server_id is required for ssh mode"
             )
-        return await self._internal.fetch_hub_credentials(claims.hub_server_id)
+        return await self._internal.fetch_hub_credentials(
+            claims.hub_server_id, target_department_id=claims.department_id
+        )
 
     async def open(self, claims: ConsoleClaims) -> Target:
         creds = await self._creds(claims)
@@ -166,24 +168,34 @@ class SshTunnelResolver:
                 "cannot resolve display without domain name or explicit port",
             )
         domain = claims.domain
-        # domdisplay отдаёт полный URL со схемой и портом для vnc и spice.
-        result = await conn.run(f"virsh domdisplay {_sh_quote(domain)}", check=False)
-        out = (result.stdout or "").strip()
-        m = _DOMDISPLAY_RE.search(out)
-        if m:
-            return int(m.group(1))
-        # Фолбэк для vnc: vncdisplay отдаёт `:N` → порт 5900+N.
         if claims.kind == "vnc":
-            result = await conn.run(
-                f"virsh vncdisplay {_sh_quote(domain)}", check=False
-            )
-            m = _VNCDISPLAY_RE.search((result.stdout or "").strip())
+            # vncdisplay отдаёт `:N` (номер дисплея) → TCP 5900+N. Надёжнее
+            # domdisplay, который для vnc возвращает номер дисплея, а не порт.
+            out = await self._virsh(conn, f"vncdisplay {_sh_quote(domain)}")
+            m = _VNCDISPLAY_RE.search(out)
             if m:
                 return 5900 + int(m.group(1))
+        else:
+            # spice: domdisplay отдаёт spice://host:PORT (реальный TCP-порт).
+            out = await self._virsh(conn, f"domdisplay {_sh_quote(domain)}")
+            m = _DOMDISPLAY_RE.search(out)
+            if m:
+                return int(m.group(1))
         raise ResolveError(
             "DISPLAY_NOT_FOUND",
             f"virsh did not report a {claims.kind} display for {domain}",
         )
+
+    async def _virsh(self, conn, args: str) -> str:
+        """virsh с fallback: сначала user (qemu:///session, без sudo), затем
+        sudo (qemu:///system). ВМ в пользовательском libvirt резолвятся без
+        привилегий; ВМ в системном — через sudo (NOPASSWD с prepare)."""
+        result = await conn.run(f"virsh {args}", check=False)
+        out = (result.stdout or "").strip()
+        if result.exit_status == 0 and out:
+            return out
+        result = await conn.run(f"sudo virsh {args}", check=False)
+        return (result.stdout or "").strip()
 
 
 def _port_from_claims(claims: ConsoleClaims) -> int | None:

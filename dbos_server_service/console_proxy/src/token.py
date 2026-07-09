@@ -49,6 +49,7 @@ class ConsoleClaims:
     kind: str
     hub_ip: str
     hub_server_id: str | None
+    department_id: str | None
     domain: str | None
     port: int | None
     display: int | None
@@ -158,6 +159,7 @@ def verify(
         kind=kind,
         hub_ip=hub_ip,
         hub_server_id=claims.get("hub_server_id"),
+        department_id=claims.get("department_id"),
         domain=claims.get("domain"),
         port=port,
         display=display,

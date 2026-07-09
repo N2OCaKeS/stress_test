@@ -2580,6 +2580,7 @@ async def console_access(
             kind=kind,
             hub_ip=hub_ip,
             hub_server_id=vm.hub_server_id,
+            department_id=vm.department_id,
             ssh_port=hub.ssh_port,
             port=vm.graphics_port,
             domain=vm.name,

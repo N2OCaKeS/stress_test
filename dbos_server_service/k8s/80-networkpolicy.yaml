@@ -120,6 +120,10 @@ spec:
         - podSelector:
             matchLabels:
               app: server-worker
+        # console-proxy тянет mgmt-креды хаба через internal-эндпоинт (ssh-режим).
+        - podSelector:
+            matchLabels:
+              app: console-proxy
       ports:
         - protocol: TCP
           port: 8002
@@ -977,6 +981,10 @@ spec:
         - protocol: TCP
           port: 8002
     # Хабы: SSH-туннель (произвольный SSH-порт) и/или прямой VNC/SPICE-порт.
-    - to: []
+    # ipBlock 0.0.0.0/0 (не `to: []` — kube-router не трактует пустой список как
+    # «все адреса»). Operator сузит CIDR'ом стендов, когда он зафиксируется.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
       ports:
         - protocol: TCP

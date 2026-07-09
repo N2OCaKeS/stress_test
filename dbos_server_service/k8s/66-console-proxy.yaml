@@ -79,6 +79,10 @@ spec:
             - configMapRef:
                 name: console-proxy-config
           env:
+            # runAsUser 1000 без записи в /etc/passwd — asyncssh зовёт
+            # getpass.getuser(); без USER падает «Unknown local username».
+            - name: USER
+              value: console-proxy
             # Общий с server_service HMAC-секрет подписи консольного JWT.
             - name: VM_CONSOLE_TOKEN_SECRET
               valueFrom:
@@ -119,6 +123,15 @@ spec:
           resources:
             requests: { cpu: "20m", memory: "64Mi" }
             limits:   { cpu: "500m", memory: "256Mi" }
+          # asyncssh (ssh-режим) пишет во временный каталог; rootfs read-only,
+          # поэтому монтируем writable emptyDir на /tmp.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
 
 ---
 apiVersion: v1

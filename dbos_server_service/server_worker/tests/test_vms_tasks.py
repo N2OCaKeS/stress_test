@@ -29,6 +29,7 @@ class _FakeSshClient:
         self._responses: list[tuple[str, tuple[int, str, str]]] = []
         self.commands: list[str] = []
         self.stdins: list[str | None] = []
+        self.sudos: list[bool] = []
 
     def set_response(self, pat: str, rc: int, stdout: str = "", stderr: str = ""):
         self._responses.append((pat, (rc, stdout, stderr)))
@@ -45,13 +46,21 @@ class _FakeSshClient:
     async def __aexit__(self, *a):
         return None
 
-    async def run(self, command, *, sudo=False, stdin_payload=None):  # noqa: ARG002
+    async def run(self, command, *, sudo=False, stdin_payload=None):
         self.commands.append(command)
         self.stdins.append(stdin_payload)
+        self.sudos.append(sudo)
         for pat, resp in self._responses:
             if pat in command:
                 return resp
         return (0, "", "")
+
+    def sudo_for(self, pat: str) -> bool:
+        """Флаг sudo первой команды, содержащей подстроку `pat`."""
+        for cmd, sudo in zip(self.commands, self.sudos):
+            if pat in cmd:
+                return sudo
+        raise AssertionError(f"нет команды с подстрокой {pat!r}")
 
 
 @pytest.fixture(autouse=True)
@@ -161,6 +170,19 @@ class TestVirtInstallGraphics:
         assert "--graphics vnc,listen=0.0.0.0" in cmd
 
 
+class TestVirtInstallNetwork:
+    def test_bridge_uses_br0(self):
+        cmd = vms._virt_install_cmd("v1", 2, 2048, "/vms", "bridge")
+        assert "--network bridge=br0,model=virtio" in cmd
+        assert "user" not in cmd.split("--network", 1)[1].split()[0]
+
+    def test_nat_uses_slirp_user(self):
+        # В qemu:///session системной сети `test` нет — NAT идёт через SLIRP.
+        cmd = vms._virt_install_cmd("v1", 2, 2048, "/vms", "nat")
+        assert "--network user,model=virtio" in cmd
+        assert "network=test" not in cmd
+
+
 # ── vms_hub.prepare ──────────────────────────────────────────────────────────
 
 
@@ -207,9 +229,10 @@ class _RebootDropSsh(_FakeSshClient):
     """Мок, который на reboot-триггере рвёт SSH (SshError) — как настоящий хост,
     успевший уйти в перезагрузку до закрытия сессии."""
 
-    async def run(self, command, *, sudo=False, stdin_payload=None):  # noqa: ARG002
+    async def run(self, command, *, sudo=False, stdin_payload=None):
         self.commands.append(command)
         self.stdins.append(stdin_payload)
+        self.sudos.append(sudo)
         if "systemctl reboot" in command:
             raise SshError(error_code="SSH_RUN_FAILED", host=self.host, message="dropped")
         for pat, resp in self._responses:
@@ -242,6 +265,21 @@ class TestVmsHubPrepare:
         assert any("bridge-nf-call-iptables=0" in c for c in cmds)
         assert any("pool-define-as vms dir --target /vms" in c for c in cmds)
         assert any("wget" in c and "vm_station.tar.gz" in c for c in cmds)
+        # новые session-инфра шаги: qemu-bridge-helper + allow br0,
+        # chown хранилища на управляющую учётку, linger + user-libvirtd
+        assert any("qemu-bridge-helper" in c for c in cmds)
+        assert any("allow br0" in c and "bridge.conf" in c for c in cmds)
+        assert any("chown -R dbos /vms" in c for c in cmds)
+        assert any("enable-linger dbos" in c for c in cmds)
+        assert any("virtqemud.socket" in c for c in cmds)
+        # разделение: системные шаги под sudo, libvirt-пул — session без sudo
+        assert fake.sudo_for("apt-get install -y astra-kvm") is True
+        assert fake.sudo_for("chown -R dbos /vms") is True
+        assert fake.sudo_for("qemu-bridge-helper") is True
+        assert fake.sudo_for("pool-define-as vms dir") is False
+        assert vms.LIBVIRT_SESSION_ENV in next(
+            c for c in cmds if "pool-define-as vms dir" in c
+        )
         # callback prepared=True + phy_if
         assert stub_session_and_callbacks["calls"]["hub_state"] == [
             {"server_id": "hub1", "prepared": True, "target_department_id": "dep1", "phy_if": "ens192"},
@@ -412,6 +450,13 @@ class TestVmCreateUniversal:
         # домен собирается на br0 (не на NAT test)
         assert any("virt-install -n station-a" in c and "bridge=br0" in c for c in cmds)
         assert not any("virt-install -n station-a" in c and "network=test" in c for c in cmds)
+        # весь VM/диск-флоу идёт в qemu:///session без sudo
+        assert fake.sudo_for("virt-install -n station-a") is False
+        assert fake.sudo_for("cp /vms/vm_station.qcow2") is False
+        assert fake.sudo_for("qemu-img snapshot -a 1.7.5.9") is False
+        assert vms.LIBVIRT_SESSION_ENV in next(
+            c for c in cmds if "virt-install -n station-a" in c
+        )
         assert any("qemu-img snapshot -a 1.7.5.9 /vms/station-a.qcow2" in c for c in cmds)
         # порядок: переключили версию → залили статику offline → подняли ВМ
         i_disk = next(i for i, c in enumerate(cmds) if "qemu-img snapshot -a 1.7.5.9" in c)
@@ -554,7 +599,13 @@ class TestVmCreateSingle:
         assert not any("qemu-img resize" in c for c in cmds)
         # growpart-костыль убран
         assert not any("growpart" in c for c in cmds)
-        assert any("network=test" in c for c in cmds)  # nat
+        assert any("--network user" in c for c in cmds)  # nat → SLIRP
+        assert not any("network=test" in c for c in cmds)
+        # virt-install идёт в session без sudo (env-префикс = маркер session)
+        assert vms.LIBVIRT_SESSION_ENV in next(
+            c for c in cmds if "virt-install -n xfs-1" in c
+        )
+        assert fake.sudo_for("virt-install -n xfs-1") is False
         assert any("snapshot-create-as xfs-1 --name build" in c for c in cmds)
         # nat-режим статику в диск не льёт
         assert not any("virt-customize" in c for c in cmds)

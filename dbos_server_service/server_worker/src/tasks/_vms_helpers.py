@@ -39,18 +39,27 @@ from src.tasks._account_helpers import resolve_ssh_creds
 logger = logging.getLogger(__name__)
 
 
+# libvirt-команды ВМ идут в user-сессии управляющей учётки (qemu:///session),
+# без sudo: домены, пулы и qcow2 принадлежат учётке. Префикс в env, чтобы
+# virsh/virt-install/virt-xml без явного --connect били в session; qemu-img и
+# virt-customize env игнорируют. Инфра-шаги prepare (пакеты, мост, firewall,
+# chown, bridge-helper) остаются под sudo — вызываются с sudo=True.
+LIBVIRT_SESSION_ENV = "LIBVIRT_DEFAULT_URI=qemu:///session"
+
+
 async def run_hub_cmd(
     ssh, cmd: str, host: str, error_code: str, message: str,
-    *, ok: tuple[int, ...] = (0,),
+    *, ok: tuple[int, ...] = (0,), sudo: bool = False,
 ) -> tuple[int, str, str]:
-    """Выполнить команду на hub'е под sudo; поднять SshError на неожиданный код.
+    """Выполнить команду на hub'е; поднять SshError на неожиданный код.
 
-    Все hub-команды идут под sudo (NOPASSWD управляющей учётки): virsh работает
-    с `qemu:///system`, файловые операции в пуле — с правами root. `ok` — набор
-    допустимых кодов (например `virsh destroy` на уже выключенной ВМ отдаёт
-    non-zero, но это не ошибка).
+    По умолчанию — под управляющей учёткой в `qemu:///session` (libvirt/VM-опера-
+    ции, файлы в user-owned пуле). `sudo=True` — для системных инфра-шагов prepare
+    (пакеты, мост, firewall, sysctl, chown). `ok` — набор допустимых кодов
+    (например `virsh destroy` на уже выключенной ВМ отдаёт non-zero, но это ок).
     """
-    rc, stdout, stderr = await ssh.run(cmd, sudo=True)
+    full = cmd if sudo else f"{LIBVIRT_SESSION_ENV} {cmd}"
+    rc, stdout, stderr = await ssh.run(full, sudo=sudo)
     if rc not in ok:
         raise SshError(
             error_code=error_code,
@@ -451,8 +460,11 @@ async def ensure_additional_pool(ssh, host: str, pool_path: str) -> str:
     определён — только refresh (подхватить внешне созданные qcow2).
     """
     target = additional_pool_path(pool_path)
+    # Пул `additional` — в session-libvirt управляющей учётки (каталог под
+    # user-owned /vms), симметрично `_ensure_pool`. Без sudo: домены и пулы ВМ
+    # живут в qemu:///session.
     rc, _out, _err = await ssh.run(
-        f"virsh pool-info {VMS_ADDITIONAL_POOL_NAME}", sudo=True,
+        f"{LIBVIRT_SESSION_ENV} virsh pool-info {VMS_ADDITIONAL_POOL_NAME}",
     )
     if rc != 0:
         await run_hub_cmd(ssh, f"mkdir -p {target}", host,
@@ -462,11 +474,11 @@ async def ensure_additional_pool(ssh, host: str, pool_path: str) -> str:
             f"virsh pool-define-as {VMS_ADDITIONAL_POOL_NAME} dir --target {target}",
             host, "VM_DISK_POOL_FAILED", "virsh pool-define-as additional упал",
         )
-        await ssh.run(f"virsh pool-build {VMS_ADDITIONAL_POOL_NAME}", sudo=True)
+        await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-build {VMS_ADDITIONAL_POOL_NAME}")
         await run_hub_cmd(ssh, f"virsh pool-start {VMS_ADDITIONAL_POOL_NAME}", host,
                           "VM_DISK_POOL_FAILED", "virsh pool-start additional упал")
-        await ssh.run(f"virsh pool-autostart {VMS_ADDITIONAL_POOL_NAME}", sudo=True)
-    await ssh.run(f"virsh pool-refresh {VMS_ADDITIONAL_POOL_NAME}", sudo=True)
+        await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-autostart {VMS_ADDITIONAL_POOL_NAME}")
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-refresh {VMS_ADDITIONAL_POOL_NAME}")
     return target
 
 
@@ -483,13 +495,15 @@ async def resolve_guest_ip(ssh, host: str, name: str, payload: dict) -> str:
     ip = payload.get("guest_ip") or payload.get("ip_address")
     if ip:
         return validate_ip(str(ip), host).split("/")[0]
+    # domifaddr — в session-libvirt (домен там); без sudo. Для SLIRP-NAT
+    # lease пуст, адрес приходит только через qemu-guest-agent.
     _rc, out, _err = await ssh.run(
-        f"virsh domifaddr {name} --source lease", sudo=True,
+        f"{LIBVIRT_SESSION_ENV} virsh domifaddr {name} --source lease",
     )
     parsed = parse_domifaddr(out)
     if parsed is None:
         _rc, out2, _err2 = await ssh.run(
-            f"virsh domifaddr {name} --source agent", sudo=True,
+            f"{LIBVIRT_SESSION_ENV} virsh domifaddr {name} --source agent",
         )
         parsed = parse_domifaddr(out2)
     if parsed is None:
@@ -587,7 +601,10 @@ async def write_static_interfaces_offline(
     safe_disk = validate_path(str(disk_path), host)
     await ensure_virt_customize(ssh, host, error_code=error_code)
     content = "\n".join(static_interfaces_lines(addr, netmask, gateway, dns)) + "\n"
-    rc, out, err = await ssh.run("mktemp", sudo=True)
+    # tmp-файлы создаём под управляющей учёткой (без sudo): virt-customize идёт
+    # в session под тем же user'ом и должен их прочитать; root-owned tmp он не
+    # откроет.
+    rc, out, err = await ssh.run("mktemp")
     if rc != 0 or not (out or "").strip():
         raise SshError(
             error_code=error_code, host=host, returncode=rc,
@@ -596,7 +613,7 @@ async def write_static_interfaces_offline(
         )
     tmp = out.strip()
     rc, _out, err = await ssh.run(
-        f"tee {tmp} > /dev/null", sudo=True, stdin_payload=content,
+        f"tee {tmp} > /dev/null", stdin_payload=content,
     )
     if rc != 0:
         raise SshError(
@@ -616,23 +633,25 @@ async def write_static_interfaces_offline(
         "update-grub 2>/dev/null "
         "|| grub-mkconfig -o /boot/grub/grub.cfg 2>/dev/null || true\n"
     )
-    rc, gout, _err = await ssh.run("mktemp", sudo=True)
+    rc, gout, _err = await ssh.run("mktemp")
     gtmp = (gout or "").strip()
     if rc == 0 and gtmp:
         await ssh.run(
-            f"tee {gtmp} > /dev/null", sudo=True, stdin_payload=grub_fix,
+            f"tee {gtmp} > /dev/null", stdin_payload=grub_fix,
         )
     run_opt = f"--run {gtmp} " if gtmp else ""
     try:
+        # LIBGUESTFS_BACKEND=direct — libguestfs под non-root не поднимает
+        # appliance через libvirt; direct-режим запускает qemu напрямую.
         await run_hub_cmd(
             ssh,
-            f"virt-customize -a {safe_disk} "
+            f"LIBGUESTFS_BACKEND=direct virt-customize -a {safe_disk} "
             f"{run_opt}--upload {tmp}:/etc/network/interfaces",
             host, error_code,
             "virt-customize не смог записать статику в диск ВМ",
         )
     finally:
-        await ssh.run(f"rm -f {tmp}", sudo=True)
+        await ssh.run(f"rm -f {tmp} {gtmp}".rstrip())
 
 
 # ── Каталог образов (страховка box_url) ──────────────────────────────────────

@@ -29,6 +29,7 @@ class _FakeSshClient:
         self.host = host
         self._responses: list[tuple[str, tuple[int, str, str]]] = []
         self.commands: list[str] = []
+        self.calls: list[tuple[str, bool]] = []
 
     def set_response(self, pat: str, rc: int, stdout: str = "", stderr: str = ""):
         self._responses.append((pat, (rc, stdout, stderr)))
@@ -47,10 +48,20 @@ class _FakeSshClient:
 
     async def run(self, command, *, sudo=False, stdin_payload=None):  # noqa: ARG002
         self.commands.append(command)
+        self.calls.append((command, sudo))
         for pat, resp in self._responses:
             if pat in command:
                 return resp
         return (0, "", "")
+
+
+def _assert_session_no_sudo(calls: list[tuple[str, bool]], needle: str) -> None:
+    """Команда с подстрокой `needle` идёт в qemu:///session и без sudo."""
+    matched = [(cmd, sudo) for cmd, sudo in calls if needle in cmd]
+    assert matched, f"команда {needle!r} не найдена"
+    for cmd, sudo in matched:
+        assert "LIBVIRT_DEFAULT_URI=qemu:///session" in cmd, cmd
+        assert sudo is False, cmd
 
 
 @pytest.fixture(autouse=True)
@@ -215,6 +226,14 @@ class TestVmsHubTeardown:
         assert any("apt-get purge -y astra-kvm" in c for c in cmds)
         assert any("interfaces.d/dbos-br0.cfg" in c for c in cmds)
         assert any("ip link delete br0" in c for c in cmds)
+        # libvirt-операции (destroy/undefine/pool) — session без sudo
+        _assert_session_no_sudo(fake.calls, "virsh destroy station-a")
+        _assert_session_no_sudo(fake.calls, "virsh undefine station-a --remove-all-storage")
+        _assert_session_no_sudo(fake.calls, "virsh pool-destroy vms")
+        _assert_session_no_sudo(fake.calls, "virsh pool-undefine additional")
+        # системные шаги хоста остаются под sudo
+        assert any(sudo and "apt-get purge -y astra-kvm" in cmd for cmd, sudo in fake.calls)
+        assert any(sudo and "rm -rf /vms" in cmd for cmd, sudo in fake.calls)
         # callback torn_down=True + список снятых ВМ
         assert stub_session_and_callbacks["calls"]["torn_down"] == [
             {"server_id": "hub1", "torn_down": True, "target_department_id": "dep1",
@@ -325,6 +344,9 @@ class TestVmConsolePrep:
         # serial уже есть → не добавляем
         assert not any("--serial" in c for c in fake.commands)
         assert any("virsh vncdisplay station-a" in c for c in fake.commands)
+        # dumpxml/vncdisplay — session без sudo
+        _assert_session_no_sudo(fake.calls, "virsh dumpxml station-a")
+        _assert_session_no_sudo(fake.calls, "virsh vncdisplay station-a")
         # Порт дисплея уезжает graphics_port'ом в state-callback.
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state["graphics_port"] == 5900
@@ -349,6 +371,9 @@ class TestVmConsolePrep:
         cmds = fake.commands
         assert any("virt-xml station-a --add-device --graphics type=vnc,listen=10.177.103.207,port=-1" in c for c in cmds)
         assert any("virt-xml station-a --add-device --serial pty" in c for c in cmds)
+        # virt-xml добавление graphics/serial — session без sudo
+        _assert_session_no_sudo(fake.calls, "virt-xml station-a --add-device --graphics type=vnc")
+        _assert_session_no_sudo(fake.calls, "virt-xml station-a --add-device --serial pty")
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state["graphics_port"] == 5902
         assert t.result["vnc_listen"] == "10.177.103.207"

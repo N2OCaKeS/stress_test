@@ -34,6 +34,7 @@ from src.main import broker
 from src.services import server_service_client
 from src.tasks._runner import run_task
 from src.tasks._vms_helpers import (
+    LIBVIRT_SESSION_ENV,
     open_hub_session,
     parse_display_uri,
     parse_vncdisplay,
@@ -163,10 +164,11 @@ async def _teardown_pool(ssh, name: str) -> None:
 
     Оба идут без проверки кода возврата — пул может быть уже неактивен или
     отсутствовать (повторный teardown), это не ошибка. Файлы образов сносит
-    отдельный `rm -rf` пути пула в вызывающем коде.
+    отдельный `rm -rf` пути пула в вызывающем коде. Пулы user-owned — session
+    без sudo.
     """
-    await ssh.run(f"virsh pool-destroy {name}", sudo=True)
-    await ssh.run(f"virsh pool-undefine {name}", sudo=True)
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-destroy {name}")
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-undefine {name}")
 
 
 async def _remove_bridge(ssh, os_family: str) -> None:
@@ -244,7 +246,7 @@ async def vms_hub_teardown(task_id: str) -> None:
                 for name in vm_names:
                     # destroy может отдать non-zero на уже выключенном домене —
                     # это не ошибка, глушим.
-                    await ssh.run(f"virsh destroy {name}", sudo=True)
+                    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {name}")
                     await run_hub_cmd(
                         ssh,
                         f"virsh undefine {name} --remove-all-storage "
@@ -259,10 +261,13 @@ async def vms_hub_teardown(task_id: str) -> None:
                 await _teardown_pool(ssh, VMS_POOL_NAME)
                 await ssh.run(f"rm -rf {pool_path}", sudo=True)
                 if purge:
+                    # Выпиливание пакетов виртуализации — системный шаг хоста,
+                    # идёт под sudo (не VM-операция в session).
                     await run_hub_cmd(
                         ssh, _purge_packages_cmd(os_family), host,
                         "VMS_HUB_TEARDOWN_FAILED",
                         "выпиливание пакетов виртуализации упало",
+                        sudo=True,
                     )
                 if remove_bridge:
                     await _remove_bridge(ssh, os_family)
@@ -374,7 +379,7 @@ async def vm_console_prep(task_id: str) -> None:
             session, host = await open_hub_session(payload)
             async with session as ssh:
                 _rc, xml, _err = await ssh.run(
-                    f"virsh dumpxml {vm_name}", sudo=True,
+                    f"{LIBVIRT_SESSION_ENV} virsh dumpxml {vm_name}",
                 )
                 if not _has_graphics_type(xml, graphics):
                     await run_hub_cmd(
@@ -393,12 +398,12 @@ async def vm_console_prep(task_id: str) -> None:
                     )
                 if graphics == "spice":
                     _rc, disp_out, _err = await ssh.run(
-                        f"virsh domdisplay --type spice {vm_name}", sudo=True,
+                        f"{LIBVIRT_SESSION_ENV} virsh domdisplay --type spice {vm_name}",
                     )
                     spice_port = parse_display_uri(disp_out)
                 else:
                     _rc, vnc_out, _err = await ssh.run(
-                        f"virsh vncdisplay {vm_name}", sudo=True,
+                        f"{LIBVIRT_SESSION_ENV} virsh vncdisplay {vm_name}",
                     )
                     vnc_port = parse_vncdisplay(vnc_out)
         except Exception as exc:

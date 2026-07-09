@@ -31,6 +31,7 @@ class _FakeSshClient:
         self._responses: list[tuple[str, tuple[int, str, str]]] = []
         self.commands: list[str] = []
         self.stdins: list[str | None] = []
+        self.calls: list[tuple[str, bool]] = []
 
     def set_response(self, pat: str, rc: int, stdout: str = "", stderr: str = ""):
         self._responses.append((pat, (rc, stdout, stderr)))
@@ -47,13 +48,23 @@ class _FakeSshClient:
     async def __aexit__(self, *a):
         return None
 
-    async def run(self, command, *, sudo=False, stdin_payload=None):  # noqa: ARG002
+    async def run(self, command, *, sudo=False, stdin_payload=None):
         self.commands.append(command)
         self.stdins.append(stdin_payload)
+        self.calls.append((command, sudo))
         for pat, resp in self._responses:
             if pat in command:
                 return resp
         return (0, "", "")
+
+
+def _assert_session_no_sudo(calls: list[tuple[str, bool]], needle: str) -> None:
+    """Команда с подстрокой `needle` идёт в qemu:///session и без sudo."""
+    matched = [(cmd, sudo) for cmd, sudo in calls if needle in cmd]
+    assert matched, f"команда {needle!r} не найдена"
+    for cmd, sudo in matched:
+        assert "LIBVIRT_DEFAULT_URI=qemu:///session" in cmd, cmd
+        assert sudo is False, cmd
 
 
 _MGMT = {
@@ -314,6 +325,12 @@ class TestVmSetNetworkBridge:
         i_bridge = _idx(cmds, "virt-xml station-a --edit --network bridge=br0")
         assert i_static < i_bridge
         assert any("virsh start station-a" in c for c in cmds)
+        # bridge остаётся bridge=br0; NIC-свитч и рестарт домена — в session без sudo
+        _assert_session_no_sudo(
+            fake.calls, "virt-xml station-a --edit --network bridge=br0",
+        )
+        _assert_session_no_sudo(fake.calls, "virsh start station-a")
+        _assert_session_no_sudo(fake.calls, "virsh destroy station-a")
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state["ip_address"] == "10.177.103.101"
         assert state["power_state"] == "on"
@@ -431,10 +448,36 @@ class TestVmSetNetworkNat:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         cmds = fake.commands
-        assert any("virt-xml xfs-1 --edit --network network=test" in c for c in cmds)
+        # SLIRP user-networking вместо управляемой сети `test`
+        assert any("virt-xml xfs-1 --edit --network user,model=virtio" in c for c in cmds)
+        assert not any("network=test" in c for c in cmds)
         assert not any("/etc/network/interfaces" in c for c in cmds)
+        # NIC-свитч и чтение адреса — в session без sudo
+        _assert_session_no_sudo(fake.calls, "virt-xml xfs-1 --edit --network user")
+        _assert_session_no_sudo(fake.calls, "virsh domifaddr xfs-1 --source agent")
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state["ip_address"] == "192.168.100.30"
+
+    async def test_nat_without_ip_is_not_error(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
+    ):
+        # SLIRP не отдаёт lease и агент молчит — адреса нет, но это штатно:
+        # таска успешна, ip_address=None (не VM_GUEST_NO_IP).
+        fake = _FakeSshClient()
+        fake.set_response("virsh domstate", 0, "running")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm2", "hub_host": "10.0.0.7", "vm_name": "xfs-1",
+            "network_mode": "nat", "target_department_id": "dep1",
+        }
+        tid = await make_task(task_kind="vm.set_network", target_server_id="hub1", payload=payload)
+        await vms_network.vm_set_network.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        state = stub_session_and_callbacks["calls"]["vm_state"][0]
+        assert state["ip_address"] is None
+        assert state["power_state"] == "on"
 
     async def test_invalid_mode_rejected(
         self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,

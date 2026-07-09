@@ -16,8 +16,9 @@ libvirt/kvm без пароля), гость — по `sshpass` (`u`/`1`), по�
   `provision.sh`/`static_ip.sh`); если гость по SSH недостижим — фолбэк через
   `virt-customize` (offline-правка qcow2-диска: `virsh destroy` → заливка
   interfaces в образ → старт). Дальше переводим NIC домена на `br0` (`virt-xml`)
-  и рестартуем. NAT: переводим NIC на сеть `test`, рестартуем и читаем выданный
-  адрес через `domifaddr`.
+  и рестартуем. NAT: переводим NIC на user-сеть SLIRP (`--network user`),
+  рестартуем и читаем адрес гостя через `domifaddr --source agent` (для SLIRP
+  libvirt lease не ведёт, адрес может не доехать — это не ошибка).
 
 Длинные операции идут как `astra_update`: без per-команда timeout'а,
 durable-retry на уровне `_runner`. Исход докладывается server_service через
@@ -32,7 +33,7 @@ import logging
 import re
 
 from src.clients.ssh import SshError
-from src.core.constants import VMS_GUEST_LOGIN, VMS_NAT_NETWORK
+from src.core.constants import VMS_GUEST_LOGIN
 from src.main import broker
 from src.services import redis_pool, server_service_client
 from src.services.redis_stash_crypto import (
@@ -42,6 +43,7 @@ from src.services.redis_stash_crypto import (
 )
 from src.tasks._runner import run_task
 from src.tasks._vms_helpers import (
+    LIBVIRT_SESSION_ENV,
     VMS_DEFAULT_GATEWAY,
     VMS_DEFAULT_NETMASK,
     bridge_label,
@@ -599,7 +601,9 @@ def _first_qcow2_path(domblklist_out: str) -> str | None:
 
 async def _resolve_vm_disk(ssh, host: str, vm_name: str) -> str:
     """Путь qcow2-диска домена (`virsh domblklist`) для offline-правки."""
-    _rc, out, _err = await ssh.run(f"virsh domblklist {vm_name}", sudo=True)
+    _rc, out, _err = await ssh.run(
+        f"{LIBVIRT_SESSION_ENV} virsh domblklist {vm_name}",
+    )
     disk = _first_qcow2_path(out)
     if disk is None:
         raise SshError(
@@ -619,7 +623,8 @@ async def _apply_static_offline(
     готовый `/etc/network/interfaces` прямо в образ (libguestfs), не заходя в
     гостя. Домен остаётся выключенным — caller переводит NIC и стартует.
     """
-    await ssh.run(f"virsh destroy {vm_name}", sudo=True)  # offline-правка требует off
+    # offline-правка требует выключенного домена
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {vm_name}")
     disk = await _resolve_vm_disk(ssh, host, vm_name)
     await write_static_interfaces_offline(
         ssh, host, disk, addr, netmask, gateway, dns,
@@ -638,7 +643,8 @@ async def _switch_domain_network(
 
 async def _restart_domain(ssh, host: str, vm_name: str) -> None:
     """Рестартнуть домен (`virsh destroy` → `virsh start`) для применения сети."""
-    await ssh.run(f"virsh destroy {vm_name}", sudo=True)  # может быть уже off
+    # может быть уже выключен — non-zero глушим
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {vm_name}")
     await run_hub_cmd(
         ssh, f"virsh start {vm_name}", host,
         "VM_NET_APPLY_FAILED", "ВМ не поднялась после смены сети",
@@ -659,26 +665,30 @@ async def _wait_guest_ssh(ssh, host: str, guest_ip: str) -> None:
     )
 
 
-async def _wait_domifaddr(ssh, host: str, vm_name: str) -> str:
-    """Дождаться NAT-lease и вернуть выданный адрес (`virsh domifaddr`)."""
+async def _wait_domifaddr(ssh, host: str, vm_name: str) -> str | None:
+    """Дождаться NAT-адреса гостя (`virsh domifaddr`); None — если не доехал.
+
+    В `qemu:///session` NAT — это user-сеть SLIRP: libvirt DHCP-lease'ов не
+    ведёт, адрес (обычно `10.0.2.15`) виден только через гостевой агент
+    (`--source agent`). Поэтому первично спрашиваем agent, lease пробуем как
+    запасной путь (bridged NAT с внешним DHCP). Адреса нет за окно опроса —
+    возвращаем None: для SLIRP это штатно (агент мог не встать), а не ошибка.
+    """
     await asyncio.sleep(_GUEST_REBOOT_SETTLE_S)
     for _ in range(_GUEST_REBOOT_MAX_POLLS):
         _rc, out, _err = await ssh.run(
-            f"virsh domifaddr {vm_name} --source lease", sudo=True,
+            f"{LIBVIRT_SESSION_ENV} virsh domifaddr {vm_name} --source agent",
         )
         ip = parse_domifaddr(out)
         if ip is None:
             _rc, out2, _err2 = await ssh.run(
-                f"virsh domifaddr {vm_name} --source agent", sudo=True,
+                f"{LIBVIRT_SESSION_ENV} virsh domifaddr {vm_name} --source lease",
             )
             ip = parse_domifaddr(out2)
         if ip is not None:
             return ip
         await asyncio.sleep(_GUEST_REBOOT_POLL_DELAY_S)
-    raise SshError(
-        error_code="VM_GUEST_NO_IP", host=host,
-        message=f"ВМ {vm_name} не получила NAT-адрес после смены сети",
-    )
+    return None
 
 
 @broker.task("vm.set_network")
@@ -690,9 +700,10 @@ async def vm_set_network(task_id: str) -> None:
     порт `provision.sh`/`static_ip.sh`); если гость по SSH недостижим — фолбэк
     через `virt-customize` (offline-заливка interfaces в qcow2-диск). Затем
     переводит NIC домена на `br0` (`virt-xml`) и рестартует домен, гость
-    поднимается с боевым адресом. Для `nat` — переводит NIC на сеть `test`,
-    рестартует и читает выданный адрес через `domifaddr`. Исход докладывает
-    server_service (`vms/{id}/state` с `ip_address`/`power_state`).
+    поднимается с боевым адресом. Для `nat` — переводит NIC на user-сеть SLIRP
+    (`--network user`), рестартует и читает адрес гостя через `domifaddr
+    --source agent` (адрес может не доехать — для SLIRP это штатно). Исход
+    докладывает server_service (`vms/{id}/state` с `ip_address`/`power_state`).
 
     Параметры: `task_id`. Payload — `vm_id`, `vm_name`/`name`, `network_mode`
     (`bridge`|`nat`); для `bridge` — `ip_address`, опц. `netmask`/`gateway`/`dns`
@@ -768,14 +779,17 @@ async def vm_set_network(task_id: str) -> None:
                     await _wait_guest_ssh(ssh, host, addr)
                     applied_ip = addr
                 else:
+                    # В session нет управляемой libvirt-сети — NAT даём через
+                    # user-networking (SLIRP): `--network user`. Адрес гостя
+                    # виден только гостевому агенту и может не доехать — это
+                    # для SLIRP штатно, ip_address тогда остаётся None.
                     await _switch_domain_network(
-                        ssh, host, vm_name,
-                        f"network={VMS_NAT_NETWORK},model=virtio",
+                        ssh, host, vm_name, "user,model=virtio",
                     )
                     await _restart_domain(ssh, host, vm_name)
                     applied_ip = await _wait_domifaddr(ssh, host, vm_name)
                 _rc, dom_out, _err = await ssh.run(
-                    f"virsh domstate {vm_name}", sudo=True,
+                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
                 )
                 power_state = map_domstate(dom_out)
         except Exception as exc:

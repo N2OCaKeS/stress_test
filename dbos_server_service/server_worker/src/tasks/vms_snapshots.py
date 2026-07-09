@@ -31,6 +31,7 @@ from src.main import broker
 from src.services import server_service_client
 from src.tasks._runner import run_task
 from src.tasks._vms_helpers import (
+    LIBVIRT_SESSION_ENV,
     MODE_OREL,
     MODE_SMOLENSK,
     SNAPSHOT_KIND_OS_BASELINE,
@@ -337,7 +338,7 @@ async def vm_snapshot_revert(task_id: str) -> None:
                     host, "VM_SNAPSHOT_FAILED", f"не удалось откатить на снимок {snap}",
                 )
                 _rc, dom_out, _err = await ssh.run(
-                    f"virsh domstate {vm_name}", sudo=True,
+                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
                 )
                 power_state = map_domstate(dom_out)
         except Exception as exc:
@@ -499,7 +500,7 @@ async def vm_astra_update(task_id: str) -> None:
                     f"не удалось откатить на {base_snapshot}",
                 )
                 # старт на случай, если снимок снят с выключенной ВМ
-                await ssh.run(f"virsh start {vm_name}", sudo=True)
+                await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {vm_name}")
                 guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
                 # 2. репозитории целевой версии + astra-update
                 await _write_guest_sources(ssh, host, guest_ip, sources_content)
@@ -535,7 +536,7 @@ async def vm_astra_update(task_id: str) -> None:
                     f"не удалось снять снимок {smolensk_snap}",
                 )
                 _rc, dom_out, _err = await ssh.run(
-                    f"virsh domstate {vm_name}", sudo=True,
+                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
                 )
                 power_state = map_domstate(dom_out)
         except Exception as exc:
@@ -652,7 +653,7 @@ async def _reroll_impl(payload: dict, *, require_password: bool) -> dict:
                     host, "VM_SNAPSHOT_FAILED",
                     f"не удалось откатить на снимок {snap}",
                 )
-                await ssh.run(f"virsh start {vm_name}", sudo=True)
+                await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {vm_name}")
                 guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
                 # обновить guest-allta CLI из свежего .deb на FTP
                 await run_hub_cmd(

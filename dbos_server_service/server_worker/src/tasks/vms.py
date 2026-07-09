@@ -1,7 +1,12 @@
 """Задачи VM-менеджера — исполнение по SSH на hub-сервере.
 
-Три базовых handler'а, все под управляющей учёткой hub'а (ключевая сессия,
-sudo NOPASSWD — libvirt/kvm без пароля):
+Управляющая учётка hub'а заходит по ключу. libvirt/qemu крутятся в её
+пользовательской сессии (`qemu:///session`, без sudo): домены, пулы и qcow2
+принадлежат учётке. Системная настройка хоста в `vms_hub.prepare` (пакеты,
+мост br0, firewall, chown хранилища, qemu-bridge-helper, user-libvirtd) идёт
+под sudo NOPASSWD. Разделение жёсткое: VM/диски = session, инфра = sudo.
+
+Три базовых handler'а:
 
 * `vms_hub.prepare` — подготовить сервер как VMS-hub: precheck `/dev/kvm`,
   пакеты по семейству ОС, членство в libvirt-группах, cgroup-фикс qemu.conf,
@@ -39,7 +44,6 @@ from src.core.constants import (
     VMS_DEFAULT_POOL_PATH,
     VMS_FTP_BOXES_URL,
     VMS_GUEST_LOGIN,
-    VMS_NAT_NETWORK,
     VMS_OS_VARIANT,
     VMS_POOL_NAME,
     VMS_UNIVERSAL_BOX,
@@ -49,6 +53,7 @@ from src.services import server_service_client
 from src.tasks import installed_packages as ip_helpers
 from src.tasks._runner import run_task
 from src.tasks._vms_helpers import (
+    LIBVIRT_SESSION_ENV,
     MODE_OREL,
     MODE_SMOLENSK,
     POWER_VERBS,
@@ -409,7 +414,8 @@ async def _install_net_guard(ssh, host: str, gateway: str) -> None:
             message="не удалось записать net-guard скрипт",
         )
     await _run(ssh, f"chmod +x {_NET_GUARD_SCRIPT_PATH}", host,
-               "VMS_HUB_GUARD_FAILED", "не удалось сделать net-guard исполняемым")
+               "VMS_HUB_GUARD_FAILED", "не удалось сделать net-guard исполняемым",
+               sudo=True)
     rc, _out, stderr = await ssh.run(
         f"tee {_NET_GUARD_UNIT_PATH} > /dev/null",
         sudo=True, stdin_payload=_NET_GUARD_UNIT,
@@ -425,6 +431,7 @@ async def _install_net_guard(ssh, host: str, gateway: str) -> None:
         "sh -c 'systemctl daemon-reload && "
         "systemctl enable dbos-net-guard.service'",
         host, "VMS_HUB_GUARD_FAILED", "не удалось включить net-guard",
+        sudo=True,
     )
 
 
@@ -474,8 +481,15 @@ def _image_url(ref: str) -> tuple[str, str]:
 
 
 async def _ensure_pool(ssh, host: str, pool_path: str) -> None:
-    """Идемпотентно поднять dir storage-pool `vms` на `pool_path`."""
-    rc, _out, _err = await ssh.run(f"virsh pool-info {VMS_POOL_NAME}", sudo=True)
+    """Идемпотентно поднять dir storage-pool `vms` на `pool_path` в session.
+
+    Пул определяется в `qemu:///session` управляющей учётки — каталог к этому
+    моменту уже создан и отдан ей (`_setup_session_storage` в prepare), поэтому
+    ни define/build/start, ни последующие qemu-img не требуют sudo.
+    """
+    rc, _out, _err = await ssh.run(
+        f"{LIBVIRT_SESSION_ENV} virsh pool-info {VMS_POOL_NAME}",
+    )
     if rc == 0:
         return
     await _run(ssh, f"mkdir -p {pool_path}", host,
@@ -485,10 +499,10 @@ async def _ensure_pool(ssh, host: str, pool_path: str) -> None:
         f"virsh pool-define-as {VMS_POOL_NAME} dir --target {pool_path}",
         host, "VMS_HUB_POOL_FAILED", "virsh pool-define-as упал",
     )
-    await ssh.run(f"virsh pool-build {VMS_POOL_NAME}", sudo=True)
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-build {VMS_POOL_NAME}")
     await _run(ssh, f"virsh pool-start {VMS_POOL_NAME}", host,
                "VMS_HUB_POOL_FAILED", "virsh pool-start упал")
-    await ssh.run(f"virsh pool-autostart {VMS_POOL_NAME}", sudo=True)
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-autostart {VMS_POOL_NAME}")
 
 
 async def _download_images(
@@ -506,7 +520,7 @@ async def _download_images(
         url, base = _image_url(ref.strip())
         validate_name(base, host, "image_ref")
         qcow = f"{pool_path}/{base}.qcow2"
-        rc, _out, _err = await ssh.run(f"test -f {qcow}", sudo=True)
+        rc, _out, _err = await ssh.run(f"test -f {qcow}")
         if rc == 0:
             downloaded.append(base)
             continue
@@ -519,9 +533,92 @@ async def _download_images(
             ssh, f"tar xzf {tarball} -C {pool_path}", host,
             "VMS_HUB_IMAGE_UNPACK_FAILED", f"не удалось распаковать образ {base}",
         )
-        await ssh.run(f"rm -f {tarball}", sudo=True)
+        await ssh.run(f"rm -f {tarball}")
         downloaded.append(base)
     return downloaded
+
+
+# Пути setuid-хелпера моста по семействам: apt кладёт его в /usr/lib/qemu,
+# dnf — в /usr/libexec. Без бита setuid и без `allow br0` в bridge.conf
+# session-virt-install с `--network bridge=br0` не может подключить tap.
+_BRIDGE_HELPER_PATHS = (
+    "/usr/lib/qemu/qemu-bridge-helper",
+    "/usr/libexec/qemu-bridge-helper",
+)
+
+
+async def _setup_bridge_helper(ssh, host: str) -> None:
+    """Разрешить session-qemu подключать ВМ к мосту `br0` через qemu-bridge-helper.
+
+    В `qemu:///session` tap для `--network bridge=br0` создаёт setuid-root
+    хелпер `qemu-bridge-helper`, и только если мост в его allow-list. Ставим бит
+    setuid на найденный бинарь и дописываем `allow <bridge>` в
+    `/etc/qemu/bridge.conf` (создаём каталог/файл, если нет). Идемпотентно.
+    """
+    helpers = " ".join(_BRIDGE_HELPER_PATHS)
+    allow_line = f"allow {bridge_label()}"
+    await _run(
+        ssh,
+        "sh -c 'for h in " + helpers + "; do "
+        '[ -e "$h" ] && chmod u+s "$h"; done; '
+        "mkdir -p /etc/qemu; "
+        f'grep -qxF "{allow_line}" /etc/qemu/bridge.conf 2>/dev/null '
+        f'|| echo "{allow_line}" >> /etc/qemu/bridge.conf\'',
+        host, "VMS_HUB_BRIDGE_HELPER_FAILED",
+        "не удалось настроить qemu-bridge-helper для моста",
+        sudo=True,
+    )
+
+
+async def _setup_session_storage(
+    ssh, host: str, pool_path: str, mgmt_user: str | None,
+) -> None:
+    """Отдать каталог хранилища управляющей учётке (`chown`), чтобы session-qemu
+    и qemu-img писали в него без sudo.
+
+    `mkdir -p <pool>` под sudo (каталог мог не существовать), затем
+    `chown -R <mgmt_user> <pool>`. Управляющий пользователь — из creds/payload;
+    если не задан, под sudo это `$SUDO_USER` (учётка, под которой открыта
+    session). Дополнительный пул дисков (`<pool>/additional_disk`) создаётся
+    лениво уже в session и наследует владельца.
+    """
+    user = mgmt_user if mgmt_user else "${SUDO_USER:-root}"
+    await _run(
+        ssh,
+        f"sh -c 'mkdir -p {pool_path} && chown -R {user} {pool_path}'",
+        host, "VMS_HUB_STORAGE_CHOWN_FAILED",
+        "не удалось отдать каталог хранилища управляющей учётке",
+        sudo=True,
+    )
+
+
+async def _setup_user_libvirtd(
+    ssh, host: str, mgmt_user: str | None,
+) -> None:
+    """Поднять пользовательский libvirt-демон управляющей учётки под session.
+
+    Включаем linger (сервисы учётки живут без её логин-сессии — по SSH
+    user-systemd иначе может не подняться), затем сокет-активацию
+    `virtqemud`/`libvirtd` в user-режиме. На хостах без user-systemd команды
+    молча проходят (`|| true`) — session-демон стартует по сокету при первом
+    обращении virsh. Дополнительно, если Astra-parsec режет session-qemu,
+    дублируем `security_driver=none` в пользовательском `~/.config/libvirt/
+    qemu.conf` (системный правит `_PARSEC_FIX`).
+    """
+    user = mgmt_user if mgmt_user else "${SUDO_USER:-root}"
+    await ssh.run(f"loginctl enable-linger {user}", sudo=True)
+    # --user и ~ резолвятся под самой управляющей учёткой, поэтому без sudo.
+    await ssh.run(
+        "sh -c 'systemctl --user enable --now "
+        "virtqemud.socket virtqemud-ro.socket "
+        "libvirtd.socket 2>/dev/null || true'",
+    )
+    await ssh.run(
+        "sh -c 'mkdir -p ~/.config/libvirt && "
+        "grep -q security_driver ~/.config/libvirt/qemu.conf 2>/dev/null "
+        "|| echo \"security_driver = \\\"none\\\"\" "
+        ">> ~/.config/libvirt/qemu.conf'",
+    )
 
 
 @broker.task("vms_hub.prepare")
@@ -590,6 +687,7 @@ async def vms_hub_prepare(task_id: str) -> None:
                 await _run(
                     ssh, _install_packages_cmd(os_family), host,
                     "VMS_HUB_PACKAGES_FAILED", "установка пакетов hub'а упала",
+                    sudo=True,
                 )
                 mgmt_user = payload.get("management_user")
                 await ssh.run(_usermod_cmd(mgmt_user), sudo=True)
@@ -601,10 +699,16 @@ async def vms_hub_prepare(task_id: str) -> None:
                     "systemctl restart libvirtd'",
                     host,
                     "VMS_HUB_LIBVIRTD_FAILED", "не удалось поднять libvirtd",
+                    sudo=True,
                 )
                 needs_reboot = await _setup_bridge(ssh, host, phy_if, os_family)
                 await ssh.run(_FIREWALL_FIX, sudo=True)
                 await ssh.run(_BRIDGE_NF_FIX, sudo=True)
+                # Инфра под session: setuid-хелпер моста + allow br0, хранилище
+                # во владение управляющей учётки, пользовательский libvirt-демон.
+                await _setup_bridge_helper(ssh, host)
+                await _setup_session_storage(ssh, host, pool_path, mgmt_user)
+                await _setup_user_libvirtd(ssh, host, mgmt_user)
                 await _ensure_pool(ssh, host, pool_path)
                 images = await _download_images(ssh, host, pool_path, image_refs)
                 if needs_reboot:
@@ -669,14 +773,19 @@ def _virt_install_cmd(
     name: str, cpu: int, ram_mb: int, pool_path: str, network_mode: str,
     graphics: str = "vnc",
 ) -> str:
-    """Собрать `virt-install --import` под ВМ.
+    """Собрать `virt-install --import` под ВМ (в `qemu:///session`).
 
     universal всегда собирается на мосту `br0` (статику каждой версии льём в диск
     offline, гость поднимается с боевым адресом сразу). single с
-    `network_mode=bridge` — на `br0`, `nat` — на сети `test`. `--cpu host-model`
-    пробрасывает фичи хоста как есть,
-    включая vmx/svm для nested там, где хост их отдаёт; форсить `+vmx` нельзя —
-    на хостах без vmx (AMD, не-nested) virt-install падает целиком.
+    `network_mode=bridge` — на `br0` (через qemu-bridge-helper), `nat` — на
+    пользовательской сети SLIRP (`--network user`): системной сети `test` в
+    session нет. SLIRP-гость изолирован (адрес 10.0.2.x, наружу через NAT
+    хоста, из LAN недоступен), а его IP читается только qemu-guest-agent'ом
+    (`domifaddr --source agent`) — lease-таблицы у SLIRP нет.
+
+    `--cpu host-model` пробрасывает фичи хоста как есть, включая vmx/svm для
+    nested там, где хост их отдаёт; форсить `+vmx` нельзя — на хостах без vmx
+    (AMD, не-nested) virt-install падает целиком.
 
     `graphics` — тип графической консоли (`vnc`|`spice`, деф. vnc). Слушаем на
     `0.0.0.0`, чтобы websockify/spice-прокси с хаба мог дотянуться до порта
@@ -685,7 +794,7 @@ def _virt_install_cmd(
     if network_mode == "bridge":
         net = f"bridge={bridge_label()},model=virtio"
     else:
-        net = f"network={VMS_NAT_NETWORK},model=virtio"
+        net = "user,model=virtio"
     gfx = "spice" if graphics == "spice" else "vnc"
     return (
         f"virt-install -n {name} --memory {ram_mb} --vcpus {cpu} --import "
@@ -697,15 +806,20 @@ def _virt_install_cmd(
 
 
 async def _guest_ip(ssh, host: str, name: str) -> str:
-    """Получить IP гостя через `virsh domifaddr` (NAT lease). Raise если нет."""
+    """Получить IP гостя через `virsh domifaddr` (session). Raise если нет.
+
+    Пробуем lease-таблицу, затем qemu-guest-agent. У SLIRP-сети (`--network
+    user`) lease нет вовсе — адрес отдаёт только agent-источник.
+    """
     _rc, out, _err = await ssh.run(
-        f"virsh domifaddr {name} --source lease", sudo=True,
+        f"{LIBVIRT_SESSION_ENV} virsh domifaddr {name} --source lease",
     )
     ip = parse_domifaddr(out)
     if ip is None:
-        # fallback на agent-источник (qemu-guest-agent установлен в провижне)
+        # fallback на agent-источник (qemu-guest-agent установлен в провижне);
+        # для SLIRP это единственный рабочий путь.
         _rc, out2, _err2 = await ssh.run(
-            f"virsh domifaddr {name} --source agent", sudo=True,
+            f"{LIBVIRT_SESSION_ENV} virsh domifaddr {name} --source agent",
         )
         ip = parse_domifaddr(out2)
     if ip is None:
@@ -727,7 +841,7 @@ async def _wait_guest_ssh(
     бьёт по гостю раньше времени и падает. Пробуем `true` по SSH до успеха.
     """
     for _ in range(attempts):
-        rc, _out, _err = await ssh.run(guest_ssh(guest_ip, "true"), sudo=True)
+        rc, _out, _err = await ssh.run(guest_ssh(guest_ip, "true"))
         if rc == 0:
             return
         await asyncio.sleep(delay)
@@ -760,7 +874,7 @@ async def _provision_guest_base(
         host, "VM_PROVISION_FAILED", "не удалось прописать hostname в /etc/hosts",
     )
     await ssh.run(
-        guest_ssh(guest_ip, "timedatectl set-ntp true", sudo=True), sudo=True,
+        guest_ssh(guest_ip, "timedatectl set-ntp true", sudo=True),
     )
     await _run(
         ssh,
@@ -888,7 +1002,7 @@ async def _provision_guest_accounts(
 async def _box_virtual_gb(ssh, host: str, box_path: str) -> int | None:
     """Виртуальный размер диска бокса в ГБ (`qemu-img info`). None — не распарсили."""
     _rc, out, _err = await ssh.run(
-        f"qemu-img info --output=json {box_path}", sudo=True,
+        f"{LIBVIRT_SESSION_ENV} qemu-img info --output=json {box_path}",
     )
     try:
         data = json.loads(out or "")
@@ -906,9 +1020,8 @@ async def _fs_minimum_bytes(ssh, host: str, box_path: str) -> int | None:
     write-overlay для e2fsck). None — не распарсили (нет числа в выводе).
     """
     _rc, out, _err = await ssh.run(
-        f"guestfish --ro -a {box_path} run : e2fsck-f {_ROOT_PARTITION} : "
-        f"vfs-minimum-size {_ROOT_PARTITION}",
-        sudo=True,
+        f"{LIBVIRT_SESSION_ENV} guestfish --ro -a {box_path} run : "
+        f"e2fsck-f {_ROOT_PARTITION} : vfs-minimum-size {_ROOT_PARTITION}",
     )
     nums = re.findall(r"\d+", out or "")
     if not nums:
@@ -943,7 +1056,7 @@ async def _clone_disk_shrink(
         )
 
     work = f"{target_path}{_SHRINK_WORK_SUFFIX}"
-    await ssh.run(f"rm -f {work}", sudo=True)
+    await ssh.run(f"rm -f {work}")
     await _run(
         ssh, f"qemu-img create -f qcow2 -b {box_path} -F qcow2 {work}", host,
         "VM_CREATE_FAILED", "не удалось создать overlay бокса для сжатия диска",
@@ -966,7 +1079,7 @@ async def _clone_disk_shrink(
             host, "VM_CREATE_FAILED", "virt-resize не смог сжать диск ВМ",
         )
     finally:
-        await ssh.run(f"rm -f {work}", sudo=True)
+        await ssh.run(f"rm -f {work}")
 
 
 async def _clone_disk_resized(
@@ -1051,7 +1164,8 @@ async def _build_universal(
     snapshots: list[dict] = []
     for raw_ver in os_versions:
         ver = validate_name(str(raw_ver), host_label, "os_version")
-        await ssh.run(f"virsh destroy {name}", sudo=True)  # stop (может быть off)
+        # stop (может быть уже off) в session
+        await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {name}")
         await _run(
             ssh, f"qemu-img snapshot -a {ver} {disk_path}", host,
             "VM_CREATE_FAILED", f"не удалось переключить ОС на {ver}",
@@ -1082,7 +1196,6 @@ async def _build_universal(
                     f"bash -c 'echo {VMS_GUEST_LOGIN}:{password} | chpasswd'",
                     sudo=True,
                 ),
-                sudo=True,
             )
         # deliverable Орла
         await _snapshot(ssh, host, name, f"{ver}_{MODE_OREL}")
@@ -1199,7 +1312,7 @@ async def vm_create(task_id: str) -> None:
             async with session as ssh:
                 # single-бокс может ещё не лежать в пуле — тянем по box_url.
                 rc, _out, _err = await ssh.run(
-                    f"test -f {pool_path}/{box}.qcow2", sudo=True,
+                    f"test -f {pool_path}/{box}.qcow2",
                 )
                 if rc != 0:
                     # server_service обычно шлёт box_url; если нет — тянем
@@ -1220,12 +1333,15 @@ async def vm_create(task_id: str) -> None:
                         ssh, f"tar xzf {pool_path}/{box}.tar.gz -C {pool_path}", host,
                         "VM_CREATE_FAILED", "не удалось распаковать бокс",
                     )
-                    await ssh.run(f"rm -f {pool_path}/{box}.tar.gz", sudo=True)
+                    await ssh.run(f"rm -f {pool_path}/{box}.tar.gz")
                 # Идемпотентность ретраёв: если от прошлой попытки остался домен
                 # того же имени, virt-install падает «диск занят». Снимаем его
                 # (best-effort, диск перезальём клоном ниже).
-                await ssh.run(f"virsh destroy {name}", sudo=True)
-                await ssh.run(f"virsh undefine {name} --snapshots-metadata", sudo=True)
+                await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {name}")
+                await ssh.run(
+                    f"{LIBVIRT_SESSION_ENV} virsh undefine {name} "
+                    "--snapshots-metadata",
+                )
                 box_path = f"{pool_path}/{box}.qcow2"
                 target_path = f"{pool_path}/{name}.qcow2"
                 # Клон диска под ВМ идёт ПОКА ОН OFFLINE (до virt-install): у
@@ -1304,7 +1420,7 @@ async def vm_create(task_id: str) -> None:
                         host_label, target_dept,
                     )
                 _rc, dom_out, _err = await ssh.run(
-                    f"virsh domstate {name}", sudo=True,
+                    f"{LIBVIRT_SESSION_ENV} virsh domstate {name}",
                 )
                 power_state = map_domstate(dom_out)
         except Exception as exc:
@@ -1406,7 +1522,7 @@ async def vm_power(task_id: str) -> None:
                 "VM_POWER_FAILED", f"virsh {verb} упал", ok=ok,
             )
             _rc, dom_out, _err = await ssh.run(
-                f"virsh domstate {vm_name}", sudo=True,
+                f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
             )
             power_state = map_domstate(dom_out)
 
@@ -1464,7 +1580,7 @@ async def vm_delete(task_id: str) -> None:
         session, host = await open_hub_session(payload)
         async with session as ssh:
             # destroy на уже выключенном домене отдаёт non-zero — это не ошибка.
-            await ssh.run(f"virsh destroy {vm_name}", sudo=True)
+            await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {vm_name}")
             await _run(
                 ssh,
                 f"virsh undefine {vm_name} --remove-all-storage "
@@ -1521,7 +1637,7 @@ async def _detect_guest_package_manager(ssh, host: str, guest_ip: str) -> str:
     менеджер по приоритету; ни одного — `SshError(NO_PACKAGE_MANAGER)`.
     """
     for pm, probe in _GUEST_PM_PROBE:
-        rc, _out, _err = await ssh.run(guest_ssh(guest_ip, probe), sudo=True)
+        rc, _out, _err = await ssh.run(guest_ssh(guest_ip, probe))
         if rc == 0:
             return pm
     raise SshError(
@@ -1595,7 +1711,7 @@ async def vm_list_packages(task_id: str) -> None:
                 await _detect_guest_package_manager(ssh, host, guest_ip)
             )
             cmd = ip_helpers._build_command(package_manager, patterns)
-            rc, stdout, stderr = await ssh.run(guest_ssh(guest_ip, cmd), sudo=True)
+            rc, stdout, stderr = await ssh.run(guest_ssh(guest_ip, cmd))
             if rc != 0:
                 # dpkg-query/rpm отдают non-zero, если ничего не подошло под
                 # pattern (stderr пуст) — это валидный пустой результат; rc!=0

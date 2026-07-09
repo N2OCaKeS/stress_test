@@ -751,6 +751,7 @@ function VmLinkAccountModal({
   onLinked: (login: string) => void;
 }) {
   const [provision, setProvision] = useState(true);
+  const [query, setQuery] = useState("");
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -765,7 +766,12 @@ function VmLinkAccountModal({
     [mock, vm.department_id],
   );
   const linked = new Set(linkedIds);
-  const candidates = (accountsQ.data ?? []).filter((a) => !linked.has(a.id));
+  const candidates = (accountsQ.data ?? [])
+    .filter((a) => !linked.has(a.id))
+    .filter((a) => {
+      const q = query.trim().toLowerCase();
+      return !q || a.login.toLowerCase().includes(q);
+    });
 
   async function bind(account: ServerAccount) {
     if (pending) return;
@@ -818,6 +824,14 @@ function VmLinkAccountModal({
             <span>сразу завести в госте (provision / useradd)</span>
           </label>
 
+          <input
+            className="field-input mono mb-1"
+            placeholder="фильтр по логину"
+            value={query}
+            disabled={pending}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+
           {accountsQ.loading && (
             <div className="text-xs text-dim py-2">Загрузка учёток…</div>
           )}
@@ -834,7 +848,9 @@ function VmLinkAccountModal({
           )}
           {!accountsQ.loading && !accountsQ.error && candidates.length === 0 && (
             <div className="text-xs text-dim py-2">
-              Нет учёток отдела, которые ещё не привязаны к этой ВМ.
+              {query.trim()
+                ? "Нет учёток по фильтру."
+                : "Нет учёток отдела, которые ещё не привязаны к этой ВМ."}
             </div>
           )}
           {candidates.length > 0 && (

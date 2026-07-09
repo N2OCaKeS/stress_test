@@ -397,6 +397,9 @@ class TestCreateBoxUrlFallback:
         )
         fake.set_response("virsh domifaddr", 0, " vnet0 52:54:00:aa:bb:cc ipv4 192.168.100.24/24")
         fake.set_response("virsh domstate", 0, "running")
+        # nat-статику льём в диск offline — мокаем virt-customize и mktemp
+        fake.set_response("command -v virt-customize", 0)
+        fake.set_response("mktemp", 0, "/tmp/dbos-if")
         stub_vms["holder"]["ssh"] = fake
         payload = {
             "vm_id": "vm5", "hub_host": "10.0.0.7", "name": "xfs-1",

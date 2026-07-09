@@ -1047,31 +1047,16 @@ def _parse_nat_lease_ip(text: str) -> str | None:
     return None
 
 
-async def _nat_guest_ip(ssh, host: str, name: str) -> str:
-    """Резолв IP NAT-гостя по MAC из lease-файла dnsmasq на natbr0.
+def _nat_static_ip(name: str) -> str:
+    """Детерминированный статический адрес NAT-гостя в подсети natbr0.
 
-    У NAT-NIC (через qemu-commandline) нет записи в libvirt, поэтому `domifaddr`
-    его не видит — адрес читаем из lease-таблицы выделенного dnsmasq. MAC
-    детерминирован (`_derive_mac`), grep по нему на хабе. DHCP берёт несколько
-    секунд после старта домена — ретраим с паузой.
+    NAT-гость сидит на статике (как bridge), а не на DHCP: на боксе включены и
+    NetworkManager, и ifupdown, из-за чего dhclient на eth0 не поднимается
+    надёжно, а ifupdown-статика работает. Октет — из хэша имени (10..249,
+    стабилен между ретраями), `.1` (шлюз natbr0) исключён.
     """
-    mac = _derive_mac(name)
-    for _ in range(_NAT_LEASE_ATTEMPTS):
-        _rc, out, _err = await ssh.run(
-            f"grep -i {mac} {VMS_NAT_LEASE_FILE}", sudo=True,
-        )
-        ip = _parse_nat_lease_ip(out)
-        if ip:
-            return ip
-        await asyncio.sleep(_NAT_LEASE_DELAY_S)
-    raise SshError(
-        error_code="VM_GUEST_NO_IP",
-        host=host,
-        message=(
-            f"ВМ {name} не получила DHCP-адрес на natbr0 "
-            "(нет lease по MAC гостя)"
-        ),
-    )
+    octet = int(hashlib.sha256(name.encode()).hexdigest()[:6], 16) % 240 + 10
+    return f"192.168.100.{octet}"
 
 
 async def _wait_guest_ssh(
@@ -1119,15 +1104,23 @@ async def _provision_guest_base(
     await ssh.run(
         guest_ssh(guest_ip, "timedatectl set-ntp true", sudo=True),
     )
-    await _run(
-        ssh,
+    # deps — convenience-тулзы (rsync/gcc/qemu-guest-agent), не критичны для
+    # работы/управления ВМ. Ставим best-effort: у NAT-гостя apt-репо может быть
+    # недостижимо через MASQUERADE, а валить весь create из-за опциональных
+    # пакетов нельзя. bridge (LAN) их получит штатно.
+    rc, _out, err = await ssh.run(
         guest_ssh(
             guest_ip,
             f"DEBIAN_FRONTEND=noninteractive apt-get install -y {_GUEST_DEPS}",
             sudo=True,
         ),
-        host, "VM_PROVISION_FAILED", "не удалось поставить зависимости в гостя",
     )
+    if rc != 0:
+        logger.warning(
+            "vm.create: не поставились guest-deps в %s (apt rc=%s) — "
+            "ВМ создана без опциональных пакетов: %s",
+            guest_ip, rc, (err or "").strip()[:200],
+        )
 
 
 # Публичный SSH-ключ аккаунта: base64/PEM-безопасный набор для отбоя shell-мета
@@ -1617,6 +1610,17 @@ async def vm_create(task_id: str) -> None:
                         ip_address, netmask, gateway, dns,
                         error_code="VM_CREATE_FAILED",
                     )
+                elif network_mode == "nat" and not is_universal:
+                    # NAT: статика в подсети natbr0 (шлюз/DNS 192.168.100.1,
+                    # интернет через MASQUERADE). DHCP не используем — на боксе
+                    # NM+ifupdown конфликтуют и dhclient на eth0 не поднимается;
+                    # статику ifupdown применяет надёжно (как у bridge).
+                    await write_static_interfaces_offline(
+                        ssh, host, f"{pool_path}/{name}.qcow2",
+                        _nat_static_ip(name), "255.255.255.0",
+                        VMS_NAT_HOST_IP, [VMS_NAT_HOST_IP],
+                        error_code="VM_CREATE_FAILED",
+                    )
                 # universal всегда на br0 (провижн версий идёт по боевому статик-
                 # адресу); network_mode из payload его не переопределяет.
                 install_network_mode = "bridge" if is_universal else network_mode
@@ -1660,8 +1664,9 @@ async def vm_create(task_id: str) -> None:
                         # virt-install), гость уже на br0 с этим адресом.
                         guest_ip = ip_address.split("/")[0]
                     elif network_mode == "nat":
-                        # nat: адрес выдал dnsmasq natbr0 — читаем lease по MAC.
-                        guest_ip = await _nat_guest_ip(ssh, host, name)
+                        # nat: статика в подсети natbr0 (залита offline выше),
+                        # детерминирована от имени — гость на этом адресе.
+                        guest_ip = _nat_static_ip(name)
                         nat_ip = guest_ip
                     else:
                         guest_ip = await _guest_ip(ssh, host, name)
@@ -1669,6 +1674,10 @@ async def vm_create(task_id: str) -> None:
                         ssh, host, name, hostname, guest_ip, os_version,
                         accounts, host_label, target_dept,
                     )
+                    # снимок build (внутренний, с памятью) оставляет домен
+                    # выключенным — поднимаем, чтобы отдать рабочую ВМ. Уже
+                    # запущенный virsh start отдаст non-zero, это ок.
+                    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {name}")
                 _rc, dom_out, _err = await ssh.run(
                     f"{LIBVIRT_SESSION_ENV} virsh domstate {name}",
                 )
@@ -1679,6 +1688,7 @@ async def vm_create(task_id: str) -> None:
                 await server_service_client.submit_vm_state(
                     vm_id, target_department_id=target_dept,
                     status="error", error=str(error_text),
+                    clear_busy_state=True,
                 )
             except Exception:  # noqa: BLE001
                 logger.warning(
@@ -1701,7 +1711,7 @@ async def vm_create(task_id: str) -> None:
         await server_service_client.submit_vm_state(
             vm_id, target_department_id=target_dept,
             power_state=power_state, ip_address=report_ip, status="free",
-            snapshots=plain,
+            snapshots=plain, clear_busy_state=True,
         )
         return {
             "vm_id": vm_id,

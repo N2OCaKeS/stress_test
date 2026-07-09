@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 # системный libvirt, direct-режим запускает qemu напрямую. Инфра-шаги prepare
 # (пакеты, мост, firewall, chown, bridge-helper) остаются под sudo (sudo=True).
 LIBVIRT_SESSION_ENV = (
-    "LIBVIRT_DEFAULT_URI=qemu:///session LIBGUESTFS_BACKEND=direct"
+    "LC_ALL=C LIBVIRT_DEFAULT_URI=qemu:///session LIBGUESTFS_BACKEND=direct"
 )
 
 
@@ -597,14 +597,21 @@ async def write_static_interfaces_offline(
     Генерит `/etc/network/interfaces` (address/netmask/gateway/dns) во временный
     файл на hub'е и заливает его прямо в образ — гость поднимается сразу с боевым
     адресом. Домен на момент вызова должен быть выключен: `vm.create` зовёт до
-    `virt-install`, фолбэк `vm.set_network` — после `virsh destroy`. Требует
-    libguestfs-tools на hub'е (ставится в `vms_hub.prepare`). Содержимое подаём
-    на stdin (`tee`), а не в shell-строку — не расклеивает команду.
+    `virt-install`, фолбэк `vm.set_network` — после `virsh destroy`.
     """
-    addr = str(ip).split("/")[0]
+    content = "\n".join(
+        static_interfaces_lines(str(ip).split("/")[0], netmask, gateway, dns)
+    ) + "\n"
+    await _write_interfaces_offline(ssh, host, disk_path, content, error_code)
+
+
+async def _write_interfaces_offline(
+    ssh, host: str, disk_path: str, content: str, error_code: str,
+) -> None:
+    """Залить готовый `/etc/network/interfaces` + форс net.ifnames=0 в диск
+    offline (`virt-customize`). Содержимое подаём на stdin (`tee`)."""
     safe_disk = validate_path(str(disk_path), host)
     await ensure_virt_customize(ssh, host, error_code=error_code)
-    content = "\n".join(static_interfaces_lines(addr, netmask, gateway, dns)) + "\n"
     # tmp-файлы создаём под управляющей учёткой (без sudo): virt-customize идёт
     # в session под тем же user'ом и должен их прочитать; root-owned tmp он не
     # откроет.

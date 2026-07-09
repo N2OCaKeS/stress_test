@@ -156,18 +156,17 @@ class TestHelpers:
         assert vms._parse_nat_lease_ip("garbage line here") is None
         assert vms._parse_nat_lease_ip("") is None
 
-    async def test_nat_guest_ip_reads_lease_by_mac(self):
-        fake = _FakeSshClient()
-        mac = vms._derive_mac("box-a")
-        fake.set_response(
-            "dnsmasq.natbr0.leases", 0,
-            f"1700000000 {mac} 192.168.100.77 box-a *",
-        )
-        ip = await vms._nat_guest_ip(fake, "10.0.0.7", "box-a")
-        assert ip == "192.168.100.77"
-        # grep идёт по детерминированному MAC гостя, под sudo
-        assert any(f"grep -i {mac}" in c for c in fake.commands)
-        assert fake.sudo_for("dnsmasq.natbr0.leases") is True
+    def test_nat_static_ip_deterministic(self):
+        # один и тот же адрес для одного имени, в диапазоне natbr0
+        ip = vms._nat_static_ip("box-a")
+        assert ip == vms._nat_static_ip("box-a")
+        assert ip.startswith("192.168.100.")
+        octet = int(ip.rsplit(".", 1)[1])
+        assert 10 <= octet <= 249
+        # разные имена — разные адреса (в подавляющем большинстве)
+        assert vms._nat_static_ip("box-a") != vms._nat_static_ip("box-zzz")
+        # никогда не совпадает с адресом самого моста
+        assert ip != "192.168.100.1"
 
 
 class TestVirtInstallGraphics:
@@ -493,12 +492,10 @@ class TestVmsHubPrepare:
 def _create_fake():
     fake = _FakeSshClient()
     fake.set_response("test -f", 0)  # бокс в пуле
-    # NAT: адрес гостя читается из lease natbr0 (grep <mac> <leasefile> на хабе).
-    # Мок отдаёт готовую строку lease независимо от MAC — grep фильтрует на хабе.
-    fake.set_response(
-        "dnsmasq.natbr0.leases", 0,
-        "1700000000 52:54:00:aa:bb:cc 192.168.100.50 guest *",
-    )
+    # статику (bridge и nat) льём в диск offline через virt-customize — мокаем
+    # наличие тула и mktemp под временный /etc/network/interfaces.
+    fake.set_response("command -v virt-customize", 0)
+    fake.set_response("mktemp", 0, "/tmp/dbos-if")
     fake.set_response("virsh domstate", 0, "running")
     return fake
 
@@ -682,10 +679,14 @@ class TestVmCreateSingle:
         assert any("br=natbr0" in c for c in cmds)  # nat → host-only natbr0
         assert not any("--network user" in c for c in cmds)
         assert not any("network=test" in c for c in cmds)
-        # адрес гостя резолвится из lease natbr0 по MAC (grep на хабе)
+        # nat-гость на детерминированной статике в подсети natbr0 — lease
+        # больше не читаем (grep leasefile отсутствует)
+        assert not any("dnsmasq.natbr0.leases" in c for c in cmds)
+        nat_ip = vms._nat_static_ip("xfs-1")
+        # статику NAT льём в диск offline через virt-customize (как bridge)
         assert any(
-            f"grep -i {vms._derive_mac('xfs-1')} " in c
-            and "dnsmasq.natbr0.leases" in c
+            "virt-customize -a /vms/xfs-1.qcow2 " in c
+            and "--upload /tmp/dbos-if:/etc/network/interfaces" in c
             for c in cmds
         )
         # virt-install идёт в session без sudo (env-префикс = маркер session)
@@ -694,12 +695,10 @@ class TestVmCreateSingle:
         )
         assert fake.sudo_for("virt-install -n xfs-1") is False
         assert any("snapshot-create-as xfs-1 --name build" in c for c in cmds)
-        # nat-режим статику в диск не льёт
-        assert not any("virt-customize" in c for c in cmds)
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state["snapshots"] == ["build"]
-        # NAT-адрес из lease докладывается в state
-        assert state["ip_address"] == "192.168.100.50"
+        # NAT-адрес (детерминированная статика) докладывается в state
+        assert state["ip_address"] == nat_ip
         snaps = stub_session_and_callbacks["calls"]["snapshots"][0]["snapshots"]
         assert snaps[0]["name"] == "build"
         assert snaps[0]["os_version"] == "1.8.1.6"
@@ -1264,3 +1263,4 @@ class TestVmListPackages:
         assert t.status == TaskStatus.SUCCEEDED
         assert t.result["count"] == 0
         assert t.result["packages"] == []
+

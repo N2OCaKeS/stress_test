@@ -26,14 +26,25 @@ visibility-обвязка поверх этих read'ов:
 по `target_server_id` (один батч-SELECT, без N+1).
 """
 
-from src.core.constants import Action, EntityType, PlatformRole, ServiceRole
+import logging
+
+from src.core.constants import (
+    Action,
+    EntityType,
+    PlatformRole,
+    ServiceRole,
+    VmBusyState,
+)
 from src.core.exceptions import NotFoundError
 from src.repositories import server as server_repo
 from src.repositories import server_account as account_repo
+from src.repositories import vm as vm_repo
 from src.schemas.identity import IdentityContext
 from src.schemas.server import PackageHistoryEntry
 from src.schemas.task import TaskRead
 from src.services import permissions, worker_client
+
+logger = logging.getLogger(__name__)
 
 # Усечение JSONB-`result` в листинге: полную «полезную нагрузку» (например,
 # список пакетов в `installed_packages.list`) в карточку строки таблицы не
@@ -365,3 +376,35 @@ async def get_task(
     return _to_task_read(
         row, dept_by_server, hostname_by_server, login_by_account, summarize=False,
     )
+
+
+async def cleanup_cancelled_vm_create(db, *, vm_id: str | None) -> bool:
+    """Снять placeholder-строку ВМ после отмены ещё не стартовавшего vm.create.
+
+    Задача `vm.create` создаёт строку ВМ в `busy_state='creating'` до диспатча.
+    Пока задача в `queued`, воркер её не запускал — на гипервизоре домена нет,
+    строка ВМ остаётся чистым placeholder'ом. Отмена такого create'а до старта
+    = удаление строки (не сброс busy): на хаб `vm.delete` не шлём, там нечего
+    убирать.
+
+    Best-effort и идемпотентно: `vm_id` пустой или строки уже нет (гонка с
+    reconcile / повторный cancel) → возвращаем False, наружу не бросаем. Удаляем
+    только если ВМ действительно в `creating` — иначе оставляем как есть, чтобы
+    не снести ВМ, которую кто-то успел увести в другое состояние. Возвращает
+    True, если строка удалена.
+    """
+    if vm_id is None:
+        return False
+    try:
+        vm = await vm_repo.get_by_id(db, vm_id)
+        if vm is None or vm.busy_state != VmBusyState.CREATING.value:
+            return False
+        await vm_repo.delete(db, vm)
+        await db.commit()
+        return True
+    except Exception:  # noqa: BLE001
+        await db.rollback()
+        logger.warning(
+            "cancelled vm.create cleanup failed for vm_id=%s", vm_id,
+        )
+        return False

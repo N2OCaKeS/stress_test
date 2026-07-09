@@ -292,6 +292,122 @@ class TestTaskCancelNotFound:
         assert "cross_dept" in ev[0]["details"]["reason"]
 
 
+class TestTaskCancelVmCreateCleanup:
+    """Отмена queued vm.create снимает осиротевшую placeholder-строку ВМ.
+
+    Реальный VM-row кладём в БД (через `db`), fetch/cancel мочим — проверяем,
+    что endpoint удаляет строку ВМ только на `queued` vm.create и не трогает
+    её на `running` или на не-vm.create.
+    """
+
+    async def _make_creating_vm(self, db, make_server):
+        from src.models import Vm
+        from src.utils.ids import vm_id as new_id
+
+        hub = await make_server(department_id="dep_a")
+        vm = Vm(
+            id=new_id(),
+            name="vm-orphan",
+            hub_server_id=hub.id,
+            department_id="dep_a",
+            status="free",
+            cpu=4, ram_mb=8192, disk_gb=100,
+            busy_state="creating",
+            network_mode="nat",
+        )
+        db.add(vm)
+        await db.flush()
+        return hub, vm
+
+    async def test_queued_vm_create_deletes_vm_row(
+        self, client, admin_role_token_a, make_server, fake_worker, captured_audit, db,
+    ):
+        from src.repositories import vm as vm_repo
+
+        hub, vm = await self._make_creating_vm(db, make_server)
+        fake_worker["tasks"]["tsk_vmc"] = {
+            "status": "queued",
+            "target_server_id": hub.id,
+            "task_kind": "vm.create",
+            "target_resource_id": vm.id,
+        }
+        resp = await client.post(
+            f"{BASE}/tasks/tsk_vmc/cancel",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 200, resp.text
+        # placeholder-строка ВМ снята
+        assert await vm_repo.get_by_id(db, vm.id) is None
+        ev = _events(captured_audit, "task.cancelled")
+        assert len(ev) == 1
+        assert ev[0]["status"] == "success"
+        assert ev[0]["details"]["vm_cleaned_up"] is True
+
+    async def test_running_vm_create_keeps_vm_row(
+        self, client, admin_role_token_a, make_server, fake_worker, captured_audit, db,
+    ):
+        from src.repositories import vm as vm_repo
+
+        hub, vm = await self._make_creating_vm(db, make_server)
+        fake_worker["tasks"]["tsk_vmr"] = {
+            "status": "running",
+            "target_server_id": hub.id,
+            "task_kind": "vm.create",
+            "target_resource_id": vm.id,
+        }
+        resp = await client.post(
+            f"{BASE}/tasks/tsk_vmr/cancel",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 200, resp.text
+        # частично собранная ВМ не трогается
+        assert await vm_repo.get_by_id(db, vm.id) is not None
+        ev = _events(captured_audit, "task.cancelled")
+        assert "vm_cleaned_up" not in ev[0]["details"]
+
+    async def test_queued_non_vm_create_keeps_vm_row(
+        self, client, admin_role_token_a, make_server, fake_worker, captured_audit, db,
+    ):
+        from src.repositories import vm as vm_repo
+
+        hub, vm = await self._make_creating_vm(db, make_server)
+        # Задача не vm.create, target_resource_id указывает на строку ВМ —
+        # cleanup всё равно не должен её тронуть.
+        fake_worker["tasks"]["tsk_other"] = {
+            "status": "queued",
+            "target_server_id": hub.id,
+            "task_kind": "vm.power",
+            "target_resource_id": vm.id,
+        }
+        resp = await client.post(
+            f"{BASE}/tasks/tsk_other/cancel",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 200, resp.text
+        assert await vm_repo.get_by_id(db, vm.id) is not None
+        ev = _events(captured_audit, "task.cancelled")
+        assert "vm_cleaned_up" not in ev[0]["details"]
+
+    async def test_queued_vm_create_missing_vm_is_idempotent(
+        self, client, admin_role_token_a, make_server, fake_worker, captured_audit,
+    ):
+        srv = await make_server(department_id="dep_a")
+        # ВМ-строки нет (уже удалена reconcile'ом) — cleanup не падает.
+        fake_worker["tasks"]["tsk_vmgone"] = {
+            "status": "queued",
+            "target_server_id": srv.id,
+            "task_kind": "vm.create",
+            "target_resource_id": "vm_does_not_exist",
+        }
+        resp = await client.post(
+            f"{BASE}/tasks/tsk_vmgone/cancel",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 200, resp.text
+        ev = _events(captured_audit, "task.cancelled")
+        assert ev[0]["details"]["vm_cleaned_up"] is False
+
+
 class TestTaskCancelValidation:
     """Pydantic-валидация тела."""
 

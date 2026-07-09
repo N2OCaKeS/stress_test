@@ -30,8 +30,12 @@
   mark_succeeded/failed (CAS отбрасывает финализацию, финальный статус
   остаётся cancelled). Re-kick подавляется CAS'ом на mark_running в
   `_runner`. Force-kill процесса нет.
+* vm.create cleanup: отмена `queued` (ещё не стартовавшего) `vm.create`
+  снимает placeholder-строку ВМ (`target_resource_id`) — задача хаб не
+  трогала, домена там нет. `running`-cancel строку ВМ не трогает (частично
+  собранная ВМ — отдельная тема). details.vm_cleaned_up фиксирует исход.
 * audit: `task.cancelled` (WARNING по дефолту) с details.task_kind /
-  target_server_id / previous_status.
+  target_server_id / previous_status (+ vm_cleaned_up для queued vm.create).
 """
 
 import logging
@@ -40,7 +44,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Body, Depends, Path, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import Action, EntityType, PlatformRole
+from src.core.constants import Action, EntityType, PlatformRole, VmTaskKind
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
@@ -245,6 +249,7 @@ async def cancel_task_endpoint(
 
     target_server_id = meta.get("target_server_id")
     task_kind = meta.get("task_kind")
+    target_resource_id = meta.get("target_resource_id")
 
     # 3. Системные task'и (kind ∈ _SYSTEM_TASK_KINDS — scheduler-registered
     #    autostart-задачи: heartbeat/sweep/recover/cleanup/reencrypt, см.
@@ -350,17 +355,29 @@ async def cancel_task_endpoint(
             details={"previous_status": previous_status},
         )
 
+    # Отмена ещё не стартовавшего (`queued`) `vm.create` оставляла бы строку ВМ
+    # осиротевшей в `busy_state=creating` навсегда. Задача воркером не
+    # запускалась — на хабе ничего нет, строка ВМ — placeholder, поэтому просто
+    # снимаем её (best-effort; см. `cleanup_cancelled_vm_create`). Running-cancel
+    # тут сознательно не трогаем: там ВМ может быть частично собрана на хабе.
+    details: dict = {
+        "task_id": task_id,
+        "previous_status": previous_status,
+        "task_kind": task_kind,
+        "target_server_id": target_server_id,
+        "cancel_reason": reason,
+    }
+    if previous_status == "queued" and task_kind == VmTaskKind.VM_CREATE.value:
+        vm_cleaned_up = await tasks_svc.cleanup_cancelled_vm_create(
+            db, vm_id=target_resource_id,
+        )
+        details["vm_cleaned_up"] = vm_cleaned_up
+
     cancelled_at = datetime.now(timezone.utc)
     audit_service.emit(
         audit_action, target_id=task_id, target_type="task",
         status="success", allowed=True,
-        details={
-            "task_id": task_id,
-            "previous_status": previous_status,
-            "task_kind": task_kind,
-            "target_server_id": target_server_id,
-            "cancel_reason": reason,
-        },
+        details=details,
     )
     return TaskCancelResponse(
         task_id=task_id,

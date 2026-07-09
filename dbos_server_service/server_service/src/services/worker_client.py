@@ -521,19 +521,22 @@ _CANCELLABLE_STATUSES: frozenset[str] = frozenset({"queued", "running"})
 async def _fetch_task_status_and_meta(task_id_value: str) -> dict | None:
     """Подгрузить статус и метаданные target'а task'и из dev_server_worker.tasks.
 
-    Возвращает dict со status / target_server_id / task_kind / created_by либо
-    None, если row не существует. `created_by` нужен cancel-эндпоинту для
-    отличения системных task'ов (heartbeat/sweep/cleanup_completed — created_by
-    IS NULL, target_server_id IS NULL) от пользовательских: системные требуют
-    отдельной гарды по платформенной роли.
+    Возвращает dict со status / target_server_id / task_kind / created_by /
+    target_resource_id либо None, если row не существует. `created_by` нужен
+    cancel-эндпоинту для отличения системных task'ов (heartbeat/sweep/
+    cleanup_completed — created_by IS NULL, target_server_id IS NULL) от
+    пользовательских: системные требуют отдельной гарды по платформенной роли.
+    `target_resource_id` — id доменного ресурса задачи (для `vm.create` это
+    id ВМ): cancel'у он нужен, чтобы снять placeholder-строку ВМ при отмене
+    ещё не стартовавшего create'а.
     """
     session_factory = _engine_factory()
     async with session_factory() as session:
         row = (
             await session.execute(
                 text(
-                    "SELECT status, target_server_id, task_kind, created_by "
-                    "FROM tasks WHERE id = :id"
+                    "SELECT status, target_server_id, task_kind, created_by, "
+                    "target_resource_id FROM tasks WHERE id = :id"
                 ),
                 {"id": task_id_value},
             )
@@ -545,6 +548,7 @@ async def _fetch_task_status_and_meta(task_id_value: str) -> dict | None:
             "target_server_id": row[1],
             "task_kind": row[2],
             "created_by": row[3],
+            "target_resource_id": row[4],
         }
 
 

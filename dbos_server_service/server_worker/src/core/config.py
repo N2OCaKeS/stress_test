@@ -485,13 +485,13 @@ class Settings(BaseSettings):
             "Default lowered from 1800s to 180s for faster pod-loss recovery."
         ),
     )
-    # Сколько секунд heartbeat'а отсутствие worker_id считается «упал».
-    # Должно быть заметно больше heartbeat-интервала (60s) — иначе
-    # transient GC pause / DB hiccup сделает живой worker «мёртвым».
-    # Дефолт 60s — было 300s; вместе с orphan_threshold=180s даёт
-    # ~3-минутное recovery window (60s heartbeat-stale + ~2× sweep tick).
+    # Сколько секунд отсутствия heartbeat'а worker_id считается «упал».
+    # Per-worker heartbeat теперь фоновый loop (services/heartbeat_loop.py),
+    # бьётся каждые ~stale/3 независимо от handler-слотов, поэтому насыщенный
+    # воркер под нагрузкой не протухает. Порог 120s даёт запас (loop ~40s → 2
+    # пропущенных тика переживаются) и recovery реально мёртвого пода ~2 мин.
     worker_heartbeat_stale_seconds: float = Field(
-        default=60.0,
+        default=120.0,
         alias="SWEEP_HEARTBEAT_TIMEOUT_SECONDS",
         description=(
             "After this many seconds since last_heartbeat_at, a worker_id "

@@ -299,6 +299,52 @@ async def _stop_dispatch_outbox_publisher(state: TaskiqState) -> None:
     logger.info("dispatch_outbox publisher loop stopped on worker shutdown")
 
 
+_HEARTBEAT_LOOP_TASK_KEY = "heartbeat_loop_task"
+
+
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def _start_heartbeat_loop(state: TaskiqState) -> None:
+    """Поднять per-worker фоновый heartbeat-loop.
+
+    Пишет `worker_heartbeats.last_heartbeat_at` независимо от handler-слотов —
+    насыщенный воркер (все слоты заняты длинными create'ами) всё равно бьётся,
+    и sweep не метит его задачи `worker_orphaned`. Заменяет broker-задачу
+    `worker.heartbeat`, которая под нагрузкой не получала слот.
+    """
+    from src.services import heartbeat_loop
+
+    task = asyncio.create_task(
+        heartbeat_loop.run_heartbeat_loop(), name="heartbeat_loop",
+    )
+    task.add_done_callback(_on_publisher_exit)
+    state[_HEARTBEAT_LOOP_TASK_KEY] = task
+    logger.info("heartbeat loop scheduled on worker startup")
+
+
+@broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
+async def _stop_heartbeat_loop(state: TaskiqState) -> None:
+    """Остановить heartbeat-loop при shutdown'е воркера."""
+    task: asyncio.Task | None = state.get(_HEARTBEAT_LOOP_TASK_KEY)
+    if task is None:
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception as exc:  # noqa: BLE001 — shutdown-хук не должен падать
+        logger.warning(
+            "heartbeat loop raised on shutdown: %s",
+            redact_error_message(f"{type(exc).__name__}: {exc}"),
+        )
+    finally:
+        try:
+            del state[_HEARTBEAT_LOOP_TASK_KEY]
+        except KeyError:
+            pass
+    logger.info("heartbeat loop stopped on worker shutdown")
+
+
 _CONSOLE_LISTENER_TASK_KEY = "console_control_listener_task"
 
 

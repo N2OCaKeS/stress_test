@@ -97,6 +97,8 @@ def stub_session_and_callbacks(monkeypatch):
     # Смена режима гостя ребутит его — реальное ожидание минуты, в тестах 0.
     monkeypatch.setattr(_vms_helpers, "GUEST_MODE_REBOOT_SETTLE_S", 0)
     monkeypatch.setattr(_vms_helpers, "GUEST_MODE_REBOOT_POLL_DELAY_S", 0)
+    # Ожидание DHCP-lease natbr0 — в тестах 0 (иначе ретраи по 4с).
+    monkeypatch.setattr(vms, "_NAT_LEASE_DELAY_S", 0)
     return {"holder": holder, "calls": calls}
 
 
@@ -147,6 +149,26 @@ class TestHelpers:
             "ftp://x/boxes/foo.tar.gz", "foo",
         )
 
+    def test_parse_nat_lease_ip(self):
+        line = "1700000000 52:54:00:62:ce:ef 192.168.100.42 xfs-1 01:52:54:00:62:ce:ef"
+        assert vms._parse_nat_lease_ip(line) == "192.168.100.42"
+        # третье поле не IPv4 / пустой вывод → None
+        assert vms._parse_nat_lease_ip("garbage line here") is None
+        assert vms._parse_nat_lease_ip("") is None
+
+    async def test_nat_guest_ip_reads_lease_by_mac(self):
+        fake = _FakeSshClient()
+        mac = vms._derive_mac("box-a")
+        fake.set_response(
+            "dnsmasq.natbr0.leases", 0,
+            f"1700000000 {mac} 192.168.100.77 box-a *",
+        )
+        ip = await vms._nat_guest_ip(fake, "10.0.0.7", "box-a")
+        assert ip == "192.168.100.77"
+        # grep идёт по детерминированному MAC гостя, под sudo
+        assert any(f"grep -i {mac}" in c for c in fake.commands)
+        assert fake.sudo_for("dnsmasq.natbr0.leases") is True
+
 
 class TestVirtInstallGraphics:
     def test_default_is_vnc(self):
@@ -182,10 +204,18 @@ class TestVirtInstallNetwork:
         assert "virtio-net-pci" in cmd
         assert "addr=0x10" in cmd
 
-    def test_nat_uses_slirp_user(self):
-        # В qemu:///session системной сети `test` нет — NAT идёт через SLIRP.
+    def test_nat_uses_natbr0(self):
+        # NAT-гость сидит на host-only мосту natbr0 (dnsmasq + MASQUERADE) и цепляет
+        # NIC тем же qemu-bridge-helper'ом, что и bridge — отличается только мост.
         cmd = vms._virt_install_cmd("v1", 2, 2048, "/vms", "nat")
-        assert "--network user,model=virtio" in cmd
+        assert "--machine pc" in cmd
+        assert "--network none" in cmd
+        assert "-netdev bridge,id=hn0,br=natbr0" in cmd
+        assert "qemu-bridge-helper" in cmd
+        assert "virtio-net-pci" in cmd
+        assert "addr=0x10" in cmd
+        # старый SLIRP-путь ушёл
+        assert "--network user" not in cmd
         assert "network=test" not in cmd
 
 
@@ -290,6 +320,45 @@ class TestVmsHubPrepare:
         assert stub_session_and_callbacks["calls"]["hub_state"] == [
             {"server_id": "hub1", "prepared": True, "target_department_id": "dep1", "phy_if": "ens192"},
         ]
+
+    async def test_nat_bridge_setup_no_reboot(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        # br0 уже есть → в тесте нет reboot/guard, а natbr0 всё равно ставится.
+        fake = _prepare_fake_bridge_present()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        tid = await make_task(task_kind="vms_hub.prepare", target_server_id="hub1", payload=_prepare_payload("apt"))
+        await vms.vms_hub_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        # dnsmasq ставится пакетом хаба
+        assert any("apt-get install -y" in c and "dnsmasq" in c for c in cmds)
+        # oneshot-скрипт natbr0: мост + MASQUERADE в теле, unit + enable
+        nat_idx = next(i for i, c in enumerate(cmds) if "dbos-vms-nat.sh" in c and "tee" in c)
+        script = fake.stdins[nat_idx] or ""
+        assert "ip link add natbr0 type bridge" in script
+        assert "192.168.100.1/24" in script
+        assert "-s 192.168.100.0/24 ! -o natbr0 -j MASQUERADE" in script
+        assert "net.ipv4.ip_forward=1" in script
+        assert any("dbos-vms-nat.service" in c and "tee" in c for c in cmds)
+        assert any("systemctl enable dbos-vms-nat.service" in c for c in cmds)
+        # скрипт исполняется на живую (host-only, без reboot)
+        assert any(c.strip() == "/usr/local/sbin/dbos-vms-nat.sh" for c in cmds)
+        # dnsmasq на natbr0: конфиг в dnsmasq.d + enable/restart сервиса
+        dm_idx = next(i for i, c in enumerate(cmds) if "dbos-natbr0.conf" in c and "tee" in c)
+        dm_conf = fake.stdins[dm_idx] or ""
+        assert "interface=natbr0" in dm_conf
+        assert "bind-interfaces" in dm_conf
+        assert "dhcp-range=192.168.100.10,192.168.100.250,12h" in dm_conf
+        assert "dhcp-leasefile=/var/lib/misc/dnsmasq.natbr0.leases" in dm_conf
+        assert any("systemctl enable --now dnsmasq" in c for c in cmds)
+        # allow natbr0 для qemu-bridge-helper
+        assert any("allow natbr0" in c and "bridge.conf" in c for c in cmds)
+        # natbr0-инфра идёт под sudo
+        assert fake.sudo_for("dbos-vms-nat.sh") is True
+        assert fake.sudo_for("dbos-natbr0.conf") is True
+        # мост host-only → никакого reboot/guard из-за natbr0
+        assert not any("systemctl reboot" in c for c in cmds)
 
     async def test_dnf_family_packages(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _prepare_fake()
@@ -424,7 +493,12 @@ class TestVmsHubPrepare:
 def _create_fake():
     fake = _FakeSshClient()
     fake.set_response("test -f", 0)  # бокс в пуле
-    fake.set_response("virsh domifaddr", 0, " vnet0 52:54:00:aa:bb:cc ipv4 192.168.100.24/24")
+    # NAT: адрес гостя читается из lease natbr0 (grep <mac> <leasefile> на хабе).
+    # Мок отдаёт готовую строку lease независимо от MAC — grep фильтрует на хабе.
+    fake.set_response(
+        "dnsmasq.natbr0.leases", 0,
+        "1700000000 52:54:00:aa:bb:cc 192.168.100.50 guest *",
+    )
     fake.set_response("virsh domstate", 0, "running")
     return fake
 
@@ -605,8 +679,15 @@ class TestVmCreateSingle:
         assert not any("qemu-img resize" in c for c in cmds)
         # growpart-костыль убран
         assert not any("growpart" in c for c in cmds)
-        assert any("--network user" in c for c in cmds)  # nat → SLIRP
+        assert any("br=natbr0" in c for c in cmds)  # nat → host-only natbr0
+        assert not any("--network user" in c for c in cmds)
         assert not any("network=test" in c for c in cmds)
+        # адрес гостя резолвится из lease natbr0 по MAC (grep на хабе)
+        assert any(
+            f"grep -i {vms._derive_mac('xfs-1')} " in c
+            and "dnsmasq.natbr0.leases" in c
+            for c in cmds
+        )
         # virt-install идёт в session без sudo (env-префикс = маркер session)
         assert vms.LIBVIRT_SESSION_ENV in next(
             c for c in cmds if "virt-install -n xfs-1" in c
@@ -617,6 +698,8 @@ class TestVmCreateSingle:
         assert not any("virt-customize" in c for c in cmds)
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state["snapshots"] == ["build"]
+        # NAT-адрес из lease докладывается в state
+        assert state["ip_address"] == "192.168.100.50"
         snaps = stub_session_and_callbacks["calls"]["snapshots"][0]["snapshots"]
         assert snaps[0]["name"] == "build"
         assert snaps[0]["os_version"] == "1.8.1.6"

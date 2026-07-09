@@ -95,8 +95,9 @@ class TestSweepTunables:
         )
         assert s.worker_orphan_threshold_seconds == 180.0
 
-    def test_heartbeat_stale_default_is_60(self, monkeypatch):
-        """Дефолт уменьшён 300→60s — пропущенный heartbeat-tick = inactive."""
+    def test_heartbeat_stale_default_is_120(self, monkeypatch):
+        """Дефолт 120s: per-worker heartbeat теперь фоновый loop (бьётся ~40s,
+        независимо от handler-слотов), порог с запасом на 2 пропущенных тика."""
         for env in (
             "SWEEP_HEARTBEAT_TIMEOUT_SECONDS",
             "WORKER_HEARTBEAT_STALE_SECONDS",
@@ -109,7 +110,7 @@ class TestSweepTunables:
             logging_service_url="http://l",
             worker_bot_token="t",
         )
-        assert s.worker_heartbeat_stale_seconds == 60.0
+        assert s.worker_heartbeat_stale_seconds == 120.0
 
     def test_orphan_threshold_env_alias(self, monkeypatch):
         monkeypatch.setenv("SWEEP_ORPHAN_THRESHOLD_SECONDS", "600")

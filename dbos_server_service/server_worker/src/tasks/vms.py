@@ -45,6 +45,13 @@ from src.core.constants import (
     VMS_DEFAULT_POOL_PATH,
     VMS_FTP_BOXES_URL,
     VMS_GUEST_LOGIN,
+    VMS_NAT_BRIDGE,
+    VMS_NAT_DHCP_END,
+    VMS_NAT_DHCP_START,
+    VMS_NAT_HOST_CIDR,
+    VMS_NAT_HOST_IP,
+    VMS_NAT_LEASE_FILE,
+    VMS_NAT_SUBNET_CIDR,
     VMS_OS_VARIANT,
     VMS_POOL_NAME,
     VMS_UNIVERSAL_BOX,
@@ -88,11 +95,12 @@ logger = logging.getLogger(__name__)
 # offline-инъекции статики в диск ВМ (single-bridge в `vm.create` и фолбэк в
 # `vm.set_network`).
 _APT_PACKAGES = (
-    "astra-kvm virtinst qemu-utils wget tar sshpass bridge-utils libguestfs-tools"
+    "astra-kvm virtinst qemu-utils wget tar sshpass bridge-utils "
+    "libguestfs-tools dnsmasq"
 )
 _DNF_PACKAGES = (
     "qemu-kvm libvirt virt-install qemu-img wget tar sshpass bridge-utils "
-    "libguestfs-tools"
+    "libguestfs-tools dnsmasq"
 )
 
 # Группы libvirt/kvm, в которые доклеиваем управляющего пользователя hub'а.
@@ -571,6 +579,154 @@ async def _setup_bridge_helper(ssh, host: str) -> None:
     )
 
 
+# ── NAT-мост natbr0 (host-only, dnsmasq + MASQUERADE) ────────────────────────
+#
+# В отличие от br0 (несёт физический NIC, требует reboot) natbr0 host-only:
+# ставим и поднимаем на живую, SSH-сессия не рвётся. Мост + ip_forward + правила
+# iptables кладём в oneshot-скрипт: он идемпотентен, исполняется сразу при
+# prepare и переигрывается на каждой загрузке (systemd-unit WantedBy multi-user),
+# так что MASQUERADE и адрес natbr0 переживают reboot без iptables-persistent.
+_NAT_SETUP_SCRIPT_PATH = "/usr/local/sbin/dbos-vms-nat.sh"
+_NAT_SETUP_UNIT_PATH = "/etc/systemd/system/dbos-vms-nat.service"
+_NAT_DNSMASQ_CONF_PATH = "/etc/dnsmasq.d/dbos-natbr0.conf"
+
+_NAT_SETUP_UNIT = (
+    "[Unit]\n"
+    "Description=DBOS vms-hub NAT bridge (natbr0 + MASQUERADE)\n"
+    "After=network.target networking.service\n"
+    "\n"
+    "[Service]\n"
+    "Type=oneshot\n"
+    "RemainAfterExit=yes\n"
+    f"ExecStart={_NAT_SETUP_SCRIPT_PATH}\n"
+    "\n"
+    "[Install]\n"
+    "WantedBy=multi-user.target\n"
+)
+
+
+def _nat_setup_script() -> str:
+    """Тело idempotent-скрипта natbr0: мост + адрес + ip_forward + MASQUERADE.
+
+    Мост host-only (без bridge_ports), поэтому подъём не трогает адресацию
+    физического NIC и не рвёт SSH. iptables — через iptables-nft, каждое правило
+    под `-C ... || -I ...`, так что повторный прогон ничего не дублирует.
+    """
+    br = VMS_NAT_BRIDGE
+    subnet = VMS_NAT_SUBNET_CIDR
+    return (
+        "#!/bin/bash\n"
+        f"ip link show {br} >/dev/null 2>&1 || ip link add {br} type bridge\n"
+        f"ip addr show dev {br} | grep -q '{VMS_NAT_HOST_IP}/' "
+        f"|| ip addr add {VMS_NAT_HOST_CIDR} dev {br}\n"
+        f"ip link set {br} up\n"
+        "sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true\n"
+        f"iptables -t nat -C POSTROUTING -s {subnet} ! -o {br} -j MASQUERADE "
+        f"2>/dev/null || iptables -t nat -I POSTROUTING 1 -s {subnet} ! -o {br} "
+        "-j MASQUERADE\n"
+        f"iptables -C FORWARD -i {br} -j ACCEPT 2>/dev/null "
+        f"|| iptables -I FORWARD 1 -i {br} -j ACCEPT\n"
+        f"iptables -C FORWARD -o {br} -m conntrack --ctstate RELATED,ESTABLISHED "
+        f"-j ACCEPT 2>/dev/null || iptables -I FORWARD 2 -o {br} -m conntrack "
+        "--ctstate RELATED,ESTABLISHED -j ACCEPT\n"
+        "if iptables -L DOCKER-USER -n >/dev/null 2>&1; then "
+        f"iptables -C DOCKER-USER -i {br} -j ACCEPT 2>/dev/null "
+        f"|| iptables -I DOCKER-USER 1 -i {br} -j ACCEPT; "
+        f"iptables -C DOCKER-USER -o {br} -j ACCEPT 2>/dev/null "
+        f"|| iptables -I DOCKER-USER 1 -o {br} -j ACCEPT; fi\n"
+    )
+
+
+def _nat_dnsmasq_conf() -> str:
+    """Конфиг выделенного dnsmasq-инстанса на natbr0.
+
+    `bind-interfaces` + `interface=natbr0` держат dnsmasq только на мосту, чтобы
+    он не спорил с системным резолвером на других интерфейсах. Свой lease-файл —
+    по нему воркер резолвит адрес гостя по MAC. Шлюз и DNS для гостя — сам хаб
+    (`192.168.100.1`): dnsmasq проксирует DNS в апстримы хоста.
+    """
+    return (
+        "# dbos-vms-hub NAT DHCP on natbr0\n"
+        f"interface={VMS_NAT_BRIDGE}\n"
+        "bind-interfaces\n"
+        "except-interface=lo\n"
+        f"dhcp-range={VMS_NAT_DHCP_START},{VMS_NAT_DHCP_END},12h\n"
+        f"dhcp-leasefile={VMS_NAT_LEASE_FILE}\n"
+        f"dhcp-option=3,{VMS_NAT_HOST_IP}\n"
+        f"dhcp-option=6,{VMS_NAT_HOST_IP}\n"
+    )
+
+
+async def _setup_nat_bridge(ssh, host: str) -> None:
+    """Поднять host-only NAT-мост natbr0 с dnsmasq и MASQUERADE (без reboot).
+
+    Идемпотентно: скрипт/unit/конфиг переписываются, живой подъём и iptables — под
+    `-C || -I`. Последовательность: (1) кладём oneshot-скрипт+unit и включаем его,
+    (2) исполняем скрипт сейчас (мост host-only — SSH не рвётся, reboot не нужен),
+    (3) поднимаем выделенный dnsmasq на natbr0, (4) разрешаем natbr0 в
+    `qemu-bridge-helper` (`allow natbr0`), чтобы session-qemu цеплял tap к мосту.
+    """
+    rc, _out, stderr = await ssh.run(
+        f"tee {_NAT_SETUP_SCRIPT_PATH} > /dev/null",
+        sudo=True, stdin_payload=_nat_setup_script(),
+    )
+    if rc != 0:
+        raise SshError(
+            error_code="VMS_HUB_NAT_FAILED", host=host,
+            returncode=rc, stderr=(stderr or "").strip(),
+            message="не удалось записать скрипт настройки natbr0",
+        )
+    await _run(ssh, f"chmod +x {_NAT_SETUP_SCRIPT_PATH}", host,
+               "VMS_HUB_NAT_FAILED", "не удалось сделать natbr0-скрипт исполняемым",
+               sudo=True)
+    rc, _out, stderr = await ssh.run(
+        f"tee {_NAT_SETUP_UNIT_PATH} > /dev/null",
+        sudo=True, stdin_payload=_NAT_SETUP_UNIT,
+    )
+    if rc != 0:
+        raise SshError(
+            error_code="VMS_HUB_NAT_FAILED", host=host,
+            returncode=rc, stderr=(stderr or "").strip(),
+            message="не удалось записать natbr0 unit",
+        )
+    await _run(
+        ssh,
+        "sh -c 'systemctl daemon-reload && "
+        "systemctl enable dbos-vms-nat.service'",
+        host, "VMS_HUB_NAT_FAILED", "не удалось включить natbr0-unit",
+        sudo=True,
+    )
+    # Живой подъём сейчас: host-only мост не рвёт управляющую SSH-сессию.
+    await _run(ssh, _NAT_SETUP_SCRIPT_PATH, host,
+               "VMS_HUB_NAT_FAILED", "не удалось поднять natbr0", sudo=True)
+    rc, _out, stderr = await ssh.run(
+        f"tee {_NAT_DNSMASQ_CONF_PATH} > /dev/null",
+        sudo=True, stdin_payload=_nat_dnsmasq_conf(),
+    )
+    if rc != 0:
+        raise SshError(
+            error_code="VMS_HUB_NAT_FAILED", host=host,
+            returncode=rc, stderr=(stderr or "").strip(),
+            message="не удалось записать конфиг dnsmasq для natbr0",
+        )
+    await _run(
+        ssh,
+        "sh -c 'systemctl enable --now dnsmasq && systemctl restart dnsmasq'",
+        host, "VMS_HUB_NAT_FAILED", "не удалось поднять dnsmasq на natbr0",
+        sudo=True,
+    )
+    allow_line = f"allow {VMS_NAT_BRIDGE}"
+    await _run(
+        ssh,
+        "sh -c 'mkdir -p /etc/qemu; "
+        f'grep -qxF "{allow_line}" /etc/qemu/bridge.conf 2>/dev/null '
+        f'|| echo "{allow_line}" >> /etc/qemu/bridge.conf\'',
+        host, "VMS_HUB_NAT_FAILED",
+        "не удалось разрешить natbr0 в qemu-bridge-helper",
+        sudo=True,
+    )
+
+
 async def _setup_session_storage(
     ssh, host: str, pool_path: str, mgmt_user: str | None,
 ) -> None:
@@ -716,9 +872,11 @@ async def vms_hub_prepare(task_id: str) -> None:
                 needs_reboot = await _setup_bridge(ssh, host, phy_if, os_family)
                 await ssh.run(_FIREWALL_FIX, sudo=True)
                 await ssh.run(_BRIDGE_NF_FIX, sudo=True)
-                # Инфра под session: setuid-хелпер моста + allow br0, хранилище
-                # во владение управляющей учётки, пользовательский libvirt-демон.
+                # Инфра под session: setuid-хелпер моста + allow br0, host-only
+                # NAT-мост natbr0 (dnsmasq + MASQUERADE), хранилище во владение
+                # управляющей учётки, пользовательский libvirt-демон.
                 await _setup_bridge_helper(ssh, host)
+                await _setup_nat_bridge(ssh, host)
                 await _setup_session_storage(ssh, host, pool_path, mgmt_user)
                 await _setup_user_libvirtd(ssh, host, mgmt_user)
                 await _ensure_pool(ssh, host, pool_path)
@@ -789,11 +947,13 @@ def _virt_install_cmd(
 
     universal всегда собирается на мосту `br0` (статику каждой версии льём в диск
     offline, гость поднимается с боевым адресом сразу). single с
-    `network_mode=bridge` — на `br0` (через qemu-bridge-helper), `nat` — на
-    пользовательской сети SLIRP (`--network user`): системной сети `test` в
-    session нет. SLIRP-гость изолирован (адрес 10.0.2.x, наружу через NAT
-    хоста, из LAN недоступен), а его IP читается только qemu-guest-agent'ом
-    (`domifaddr --source agent`) — lease-таблицы у SLIRP нет.
+    `network_mode=bridge` идёт на `br0` (боевой LAN, статик-адрес), `nat` — на
+    host-only мосту `natbr0`: приватная подсеть `192.168.100.0/24`, адрес выдаёт
+    выделенный dnsmasq хаба, наружу — через MASQUERADE. Оба режима цепляют NIC
+    одинаково — через setuid `qemu-bridge-helper` (session-libvirt на Astra tap
+    сам не поднимает, parsec убивает демон); отличается только имя моста. NAT-
+    гость, в отличие от старого SLIRP, виден с хаба (адрес на natbr0), поэтому
+    провижн/консоль ходят к нему джампом с хаба.
 
     `--cpu host-model` пробрасывает фичи хоста как есть, включая vmx/svm для
     nested там, где хост их отдаёт; форсить `+vmx` нельзя — на хостах без vmx
@@ -810,20 +970,19 @@ def _virt_install_cmd(
         f"--os-variant {VMS_OS_VARIANT} --cpu host-model --autostart "
         f"--graphics {gfx},listen=0.0.0.0 --noautoconsole"
     )
-    if network_mode != "bridge":
-        # NAT: пользовательская сеть SLIRP (системной `test` в session нет).
-        return f"{base} --network user,model=virtio"
-    # bridge на Astra в session нельзя отдать libvirt-демону: он поднимает tap
-    # напрямую, и parsec убивает демон («Permission denied»). Отдаём tap qemu
-    # через setuid `qemu-bridge-helper` (машина `pc`/i440fx — на q35 pcie-root-
-    # port конфликтует со слотом ручного NIC; фиксируем свободный slot 0x10).
-    # `seccomp_sandbox=0` (в user qemu.conf, ставит prepare) разрешает qemu
-    # fork setuid-хелпера. MAC детерминирован от имени — стабилен на ретраях.
-    # Путь хелпера резолвим инлайном `$(...)`, чтобы virt-install оставался
-    # первой командой и получил session-env, который префиксит `run_hub_cmd`.
+    # bridge/nat отличаются только мостом. Оба на Astra в session нельзя отдать
+    # libvirt-демону (он поднимает tap напрямую, parsec убивает демон
+    # «Permission denied») — отдаём tap qemu через setuid `qemu-bridge-helper`
+    # (машина `pc`/i440fx: на q35 pcie-root-port конфликтует со слотом ручного
+    # NIC; фиксируем свободный slot 0x10). `seccomp_sandbox=0` (в user qemu.conf,
+    # ставит prepare) разрешает qemu fork setuid-хелпера. MAC детерминирован от
+    # имени — стабилен на ретраях, по нему же читаем DHCP-lease natbr0. Путь
+    # хелпера резолвим инлайном `$(...)`, чтобы virt-install оставался первой
+    # командой и получил session-env, который префиксит `run_hub_cmd`.
+    br = bridge_label() if network_mode == "bridge" else VMS_NAT_BRIDGE
     helper = f"$(ls {' '.join(_BRIDGE_HELPER_PATHS)} 2>/dev/null | head -1)"
     qcl = (
-        f"-netdev bridge,id=hn0,br={bridge_label()},helper={helper} "
+        f"-netdev bridge,id=hn0,br={br},helper={helper} "
         f"-device virtio-net-pci,netdev=hn0,mac={_derive_mac(name)},addr=0x10"
     )
     return (
@@ -865,6 +1024,54 @@ async def _guest_ip(ssh, host: str, name: str) -> str:
             message=f"ВМ {name} не получила IP (нет lease/agent-адреса)",
         )
     return ip
+
+
+# Ожидание DHCP-lease гостя на natbr0. dnsmasq выдаёт адрес за секунды после
+# старта NIC; поллим lease-файл, пока по MAC гостя не появится строка.
+_NAT_LEASE_ATTEMPTS = 30
+_NAT_LEASE_DELAY_S = 4.0
+
+_NAT_LEASE_IP_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+
+
+def _parse_nat_lease_ip(text: str) -> str | None:
+    """IP из строки dnsmasq-lease (`<expiry> <mac> <ip> <host> <clientid>`).
+
+    На вход подаётся уже отфильтрованный по MAC вывод (`grep <mac> <leasefile>`
+    на хабе), поэтому берём первую строку с валидным IPv4 в третьем поле.
+    """
+    for raw in (text or "").splitlines():
+        parts = raw.split()
+        if len(parts) >= 3 and _NAT_LEASE_IP_RE.match(parts[2]):
+            return parts[2]
+    return None
+
+
+async def _nat_guest_ip(ssh, host: str, name: str) -> str:
+    """Резолв IP NAT-гостя по MAC из lease-файла dnsmasq на natbr0.
+
+    У NAT-NIC (через qemu-commandline) нет записи в libvirt, поэтому `domifaddr`
+    его не видит — адрес читаем из lease-таблицы выделенного dnsmasq. MAC
+    детерминирован (`_derive_mac`), grep по нему на хабе. DHCP берёт несколько
+    секунд после старта домена — ретраим с паузой.
+    """
+    mac = _derive_mac(name)
+    for _ in range(_NAT_LEASE_ATTEMPTS):
+        _rc, out, _err = await ssh.run(
+            f"grep -i {mac} {VMS_NAT_LEASE_FILE}", sudo=True,
+        )
+        ip = _parse_nat_lease_ip(out)
+        if ip:
+            return ip
+        await asyncio.sleep(_NAT_LEASE_DELAY_S)
+    raise SshError(
+        error_code="VM_GUEST_NO_IP",
+        host=host,
+        message=(
+            f"ВМ {name} не получила DHCP-адрес на natbr0 "
+            "(нет lease по MAC гостя)"
+        ),
+    )
 
 
 async def _wait_guest_ssh(
@@ -1248,21 +1455,16 @@ async def _build_universal(
 
 
 async def _build_single(
-    ssh, host: str, name: str, hostname: str, box: str, pool_path: str,
-    network_mode: str, ip_address: str | None, os_version: str | None,
-    accounts, host_label: str, target_dept: str | None,
+    ssh, host: str, name: str, hostname: str, guest_ip: str,
+    os_version: str | None, accounts, host_label: str,
+    target_dept: str | None,
 ) -> list[dict]:
     """Построить single-ВМ из конкретного бокса: провижн + снимок `build`.
 
     Диск уже приведён к нужному размеру до virt-install (offline, virt-resize) в
-    `vm.create` — тут только провижн гостя (hostname/ntp/deps + учётки) и снимок.
+    `vm.create`, адрес гостя резолвит caller (bridge — статик из пула, nat —
+    lease natbr0) — тут только провижн гостя (hostname/ntp/deps + учётки) и снимок.
     """
-    if network_mode == "bridge" and ip_address:
-        # bridge: статику залили в диск offline (virt-customize до virt-install),
-        # гость уже поднялся на br0 с этим адресом — заходим по нему напрямую.
-        guest_ip = ip_address.split("/")[0]
-    else:
-        guest_ip = await _guest_ip(ssh, host, name)
     await _provision_guest_base(ssh, host, hostname, guest_ip)
     await _provision_guest_accounts(
         ssh, host, guest_ip, accounts, host_label, target_dept,
@@ -1342,6 +1544,9 @@ async def vm_create(task_id: str) -> None:
         os_versions = payload.get("os_versions") or []
         password = payload.get("password")
         is_universal = box == VMS_UNIVERSAL_BOX
+        # Для NAT адрес гостя заранее неизвестен — резолвим по lease natbr0 и
+        # докладываем его в state (bridge/universal несут статик из payload).
+        nat_ip: str | None = None
 
         try:
             session, host = await open_hub_session(payload)
@@ -1450,10 +1655,19 @@ async def vm_create(task_id: str) -> None:
                         host_label, target_dept,
                     )
                 else:
+                    if network_mode == "bridge" and ip_address:
+                        # bridge: статику залили в диск offline (virt-customize до
+                        # virt-install), гость уже на br0 с этим адресом.
+                        guest_ip = ip_address.split("/")[0]
+                    elif network_mode == "nat":
+                        # nat: адрес выдал dnsmasq natbr0 — читаем lease по MAC.
+                        guest_ip = await _nat_guest_ip(ssh, host, name)
+                        nat_ip = guest_ip
+                    else:
+                        guest_ip = await _guest_ip(ssh, host, name)
                     snapshots = await _build_single(
-                        ssh, host, name, hostname, box, pool_path,
-                        network_mode, ip_address, os_version, accounts,
-                        host_label, target_dept,
+                        ssh, host, name, hostname, guest_ip, os_version,
+                        accounts, host_label, target_dept,
                     )
                 _rc, dom_out, _err = await ssh.run(
                     f"{LIBVIRT_SESSION_ENV} virsh domstate {name}",
@@ -1478,12 +1692,15 @@ async def vm_create(task_id: str) -> None:
         # (раньше снимки слались в state и молча терялись — базовый снимок не был
         # виден в UI). Plain-имена (без скрытого golden) — в state и в result.
         plain = [s["name"] for s in snapshots if not s.get("is_system")]
+        # NAT-адрес известен только после старта (lease natbr0); bridge/universal
+        # несут статик из payload.
+        report_ip = nat_ip or ip_address
         await server_service_client.submit_vm_snapshots(
             vm_id, snapshots, target_department_id=target_dept,
         )
         await server_service_client.submit_vm_state(
             vm_id, target_department_id=target_dept,
-            power_state=power_state, ip_address=ip_address, status="free",
+            power_state=power_state, ip_address=report_ip, status="free",
             snapshots=plain,
         )
         return {
@@ -1493,7 +1710,7 @@ async def vm_create(task_id: str) -> None:
             "network_mode": network_mode,
             "power_state": power_state,
             "status": "free",
-            "ip_address": ip_address,
+            "ip_address": report_ip,
             "snapshots": plain,
         }
 

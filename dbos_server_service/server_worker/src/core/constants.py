@@ -44,10 +44,23 @@ VMS_UNIVERSAL_BOX = "vm_station"
 # отдельного профиля для новых сборок в libosinfo пока нет).
 VMS_OS_VARIANT = "alse17"
 
-# NAT-сеть libvirt для транзита при сборке (провижн статики до перевода на
-# bridge) и `br0` — мост над физическим NIC для боевого доступа в LAN.
-VMS_NAT_NETWORK = "test"
+# `br0` — мост над физическим NIC для боевого доступа в LAN (статик-адрес ВМ).
 VMS_BRIDGE = "br0"
+
+# `natbr0` — host-only NAT-мост: ВМ сидит в приватной подсети, адрес выдаёт
+# выделенный dnsmasq, выход в LAN через MASQUERADE. В отличие от br0 моста
+# натовский гость виден с самого хаба (адрес 192.168.100.x на natbr0), поэтому
+# провижн/консоль ходят джампом worker→хаб→ВМ. Мост не несёт физического NIC —
+# ставится и поднимается на живую, без reboot хаба.
+VMS_NAT_BRIDGE = "natbr0"
+VMS_NAT_SUBNET_CIDR = "192.168.100.0/24"
+VMS_NAT_HOST_IP = "192.168.100.1"
+VMS_NAT_HOST_CIDR = "192.168.100.1/24"
+VMS_NAT_DHCP_START = "192.168.100.10"
+VMS_NAT_DHCP_END = "192.168.100.250"
+# Отдельный lease-файл dnsmasq на natbr0 (не системный по умолчанию): по нему
+# резолвим IP гостя по его MAC после старта домена.
+VMS_NAT_LEASE_FILE = "/var/lib/misc/dnsmasq.natbr0.leases"
 
 # Storage-pool по умолчанию (dir-pool в `/vms`), если payload не задал иной путь.
 VMS_DEFAULT_POOL_PATH = "/vms"

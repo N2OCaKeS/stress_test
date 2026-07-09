@@ -20,7 +20,7 @@
  * дополнительно требует `view_password`; если его нет — приходит 403, которую
  * показываем человекочитаемо.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Package,
   RefreshCw,
@@ -52,10 +52,12 @@ import type {
   TaskRead,
 } from "@/api/server/types";
 import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
-import { PackagesTable } from "@/components/entity/PackagesTable";
+import { PackagesTable, type PackageItem } from "@/components/entity/PackagesTable";
 import { listVmPackages } from "@/api/server/vms";
 import type { Vm, VmPackagesResponse } from "@/api/server/vms";
 import { mockVmPackages } from "@/mocks/vm";
+import { useTaskOutcome } from "@/api/server/useTaskOutcome";
+import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import type { EntityRef } from "./_entity";
 
 const HISTORY_PAGE_SIZE = 20;
@@ -131,7 +133,7 @@ function looksLikeAuthFailure(lastError: string | null | undefined): boolean {
 
 export function PackagesTab({ entity, serverId, server, onServerUpdated }: Props) {
   if (entity?.kind === "vm") {
-    return <VmPackagesView vm={entity.vm} mock={entity.mock} />;
+    return <VmPackagesSection vm={entity.vm} mock={entity.mock} />;
   }
   return (
     <ServerPackagesTab
@@ -139,6 +141,106 @@ export function PackagesTab({ entity, serverId, server, onServerUpdated }: Props
       server={server}
       onServerUpdated={onServerUpdated}
     />
+  );
+}
+
+/** Кнопка «Обновить/Запросить» в шапке панели пакетов. */
+interface PackagesPanelAction {
+  label: string;
+  onClick: () => void;
+  busy?: boolean;
+  disabled?: boolean;
+  /** Скрыть кнопку целиком (нет прав). */
+  hidden?: boolean;
+  /** Акцентная кнопка (`btn-primary`) вместо нейтральной. */
+  primary?: boolean;
+  title?: string;
+}
+
+/**
+ * Общая презентационная панель пакетов для сервера и ВМ: карточка с шапкой
+ * (иконка + заголовок + счётчик + кнопка запроса), описанием и опциональными
+ * слотами под доп. контролы/баннеры, плюс таблица `PackagesTable` со всеми её
+ * состояниями. Данные и колбэк запроса приходят снаружи — сервер кормит
+ * live-probe, ВМ отдаёт сохранённый срез гостя.
+ */
+function PackagesPanel({
+  title,
+  count,
+  description,
+  action,
+  controls,
+  note,
+  banners,
+  table,
+  footer,
+}: {
+  title: string;
+  count?: number;
+  description?: ReactNode;
+  action?: PackagesPanelAction;
+  controls?: ReactNode;
+  note?: ReactNode;
+  banners?: ReactNode;
+  table: {
+    items: PackageItem[];
+    filter: string;
+    onFilter: (v: string) => void;
+    loading?: boolean;
+    error?: unknown;
+    onRetry?: () => void;
+    emptyText?: string;
+  };
+  footer?: ReactNode;
+}) {
+  return (
+    <div className="p-5 flex flex-col gap-4">
+      <div className="card">
+        <div className="flex items-start gap-3 flex-wrap">
+          <div className="flex-1 min-w-[260px]">
+            <h3 className="text-sm font-medium mb-1 flex items-center gap-2">
+              <Package className="w-4 h-4 text-accent" />
+              {title}
+              {count != null && (
+                <span className="text-xs text-dim font-normal">({count})</span>
+              )}
+            </h3>
+            {description && (
+              <div className="text-xs text-dim">{description}</div>
+            )}
+          </div>
+          {action && !action.hidden && (
+            <button
+              className={`btn ${action.primary ? "btn-primary " : ""}flex items-center gap-2`}
+              onClick={action.onClick}
+              disabled={action.disabled}
+              title={action.title}
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${action.busy ? "animate-spin" : ""}`}
+              />
+              {action.label}
+            </button>
+          )}
+        </div>
+        {controls}
+        {note}
+      </div>
+
+      {banners}
+
+      <PackagesTable
+        items={table.items}
+        filter={table.filter}
+        onFilter={table.onFilter}
+        loading={table.loading}
+        error={table.error}
+        onRetry={table.onRetry}
+        emptyText={table.emptyText}
+      />
+
+      {footer}
+    </div>
   );
 }
 
@@ -390,34 +492,26 @@ function ServerPackagesTab({ serverId, server, onServerUpdated }: Props) {
   }, [phase]);
 
   return (
-    <div className="p-5 flex flex-col gap-4">
-      <div className="card">
-        <div className="flex items-start gap-3 flex-wrap">
-          <div className="flex-1 min-w-[260px]">
-            <div className="text-sm font-medium mb-1 flex items-center gap-2">
-              <Package className="w-4 h-4 text-accent" />
-              Установленные пакеты
-            </div>
-            <div className="text-xs text-dim">
-              Live SSH-probe через worker: `dpkg-query` / `rpm -qa` по
-              shell-glob'у. Если сервер ещё не подготовлен, prepare запустится
-              автоматически под sudo-аккаунтом сервера. Сама проба обычно идёт{" "}
-              <b>десятки секунд</b> — список появится после закрытия задачи.
-            </div>
-          </div>
-          {allowed && (
-            <button
-              className="btn btn-primary flex items-center gap-2"
-              onClick={() => handleProbe(false)}
-              disabled={busy || !view}
-              title="Получить список установленных пакетов"
-            >
-              <RefreshCw className={`w-4 h-4 ${busy ? "animate-spin" : ""}`} />
-              {buttonLabel}
-            </button>
-          )}
-        </div>
-
+    <PackagesPanel
+      title="Установленные пакеты"
+      description={
+        <>
+          Live SSH-probe через worker: `dpkg-query` / `rpm -qa` по shell-glob'у.
+          Если сервер ещё не подготовлен, prepare запустится автоматически под
+          sudo-аккаунтом сервера. Сама проба обычно идёт <b>десятки секунд</b> —
+          список появится после закрытия задачи.
+        </>
+      }
+      action={{
+        label: buttonLabel,
+        onClick: () => handleProbe(false),
+        busy,
+        disabled: busy || !view,
+        hidden: !allowed,
+        primary: true,
+        title: "Получить список установленных пакетов",
+      }}
+      controls={
         <div className="mt-3 flex items-center gap-2 flex-wrap">
           <label className="text-xs text-dim">pattern (shell glob)</label>
           <input
@@ -432,86 +526,90 @@ function ServerPackagesTab({ serverId, server, onServerUpdated }: Props) {
             пусто → `*` (все пакеты)
           </span>
         </div>
-
-        {!allowed && (
+      }
+      note={
+        !allowed ? (
           <div className="mt-3 text-[11px] text-dim italic">
             Нет прав на запуск probe (нужна роль server.operator+ или
             dep_admin своего департамента).
           </div>
-        )}
-      </div>
-
-      {progress && (
-        <div className="surface-2 border border-token rounded p-3 text-xs flex items-center gap-2">
-          <RefreshCw className="w-4 h-4 animate-spin text-accent" />
-          <span>{progress}</span>
-        </div>
-      )}
-
-      {err && (
-        <div className="alert alert-danger flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 mt-0.5" />
-          <div className="flex-1 text-xs">
-            <div>{err}</div>
-            {offerReprepare && allowed && (
-              <button
-                className="btn btn-ghost mt-2 flex items-center gap-1 text-xs"
-                onClick={() => handleProbe(true)}
-                disabled={busy}
-                title="Повторно подготовить сервер и получить пакеты"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Повторить prepare и пакеты
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {lastTaskId && (
-        <div className="surface-2 border border-token rounded p-3 text-xs flex flex-col gap-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            Последний probe:{" "}
-            <span className="mono">{lastTaskId}</span>
-            {lastStatus && (
-              <>
-                {" · "}статус{" "}
-                <span
-                  className={`badge ${
-                    lastStatus === "succeeded"
-                      ? "badge-ok"
-                      : lastStatus === "failed"
-                        ? "badge-danger"
-                        : "badge-warn"
-                  }`}
-                >
-                  {lastStatus}
-                </span>
-              </>
-            )}
-            {polling && (
-              <span className="flex items-center gap-1 text-dim">
-                <RefreshCw className="w-3 h-3 animate-spin" /> ждём worker…
-              </span>
-            )}
-          </div>
-          {!polling && lastStatus === "succeeded" && (
-            <div className="text-dim">
-              Найдено пакетов: <b>{packages.length}</b> (из{" "}
-              <span className="mono">task.result</span>).
+        ) : null
+      }
+      banners={
+        <>
+          {progress && (
+            <div className="surface-2 border border-token rounded p-3 text-xs flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-accent" />
+              <span>{progress}</span>
             </div>
           )}
-        </div>
-      )}
 
-      <PackagesTable
-        items={packages}
-        filter={filter}
-        onFilter={setFilter}
-        emptyText="Список пуст. Нажми «Получить пакеты» и подожди, пока worker закроет задачу."
-      />
+          {err && (
+            <div className="alert alert-danger flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 mt-0.5" />
+              <div className="flex-1 text-xs">
+                <div>{err}</div>
+                {offerReprepare && allowed && (
+                  <button
+                    className="btn btn-ghost mt-2 flex items-center gap-1 text-xs"
+                    onClick={() => handleProbe(true)}
+                    disabled={busy}
+                    title="Повторно подготовить сервер и получить пакеты"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Повторить prepare и
+                    пакеты
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
-      <PackageHistorySection serverId={serverId} />
-    </div>
+          {lastTaskId && (
+            <div className="surface-2 border border-token rounded p-3 text-xs flex flex-col gap-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                Последний probe:{" "}
+                <span className="mono">{lastTaskId}</span>
+                {lastStatus && (
+                  <>
+                    {" · "}статус{" "}
+                    <span
+                      className={`badge ${
+                        lastStatus === "succeeded"
+                          ? "badge-ok"
+                          : lastStatus === "failed"
+                            ? "badge-danger"
+                            : "badge-warn"
+                      }`}
+                    >
+                      {lastStatus}
+                    </span>
+                  </>
+                )}
+                {polling && (
+                  <span className="flex items-center gap-1 text-dim">
+                    <RefreshCw className="w-3 h-3 animate-spin" /> ждём worker…
+                  </span>
+                )}
+              </div>
+              {!polling && lastStatus === "succeeded" && (
+                <div className="text-dim">
+                  Найдено пакетов: <b>{packages.length}</b> (из{" "}
+                  <span className="mono">task.result</span>).
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      }
+      table={{
+        items: packages,
+        filter,
+        onFilter: setFilter,
+        emptyText:
+          "Список пуст. Нажми «Получить пакеты» и подожди, пока worker закроет задачу.",
+      }}
+      footer={<PackageHistorySection serverId={serverId} />}
+    />
   );
 }
 
@@ -772,12 +870,16 @@ function HistoryRow({
  * Read-only список установленных в госте пакетов ВМ. По образцу серверной
  * вкладки, но без live-SSH-probe в самом GET: показываем последний снятый
  * воркером срез из `/vms/{id}/packages`. Кнопка «Обновить» ставит свежий probe
- * (`?refresh=true` → `vm.list_packages`) и перезапрашивает сохранённый список.
+ * (`?refresh=true` → задача `vm.list_packages`), поллит её исход через
+ * `useTaskOutcome` и по успешному закрытию подтягивает обновлённый срез.
  * В mock-режиме данные из `@/mocks/vm`.
  */
-function VmPackagesView({ vm, mock }: { vm: Vm; mock: boolean }) {
+function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
   const toast = useToast();
+  const outcome = useTaskOutcome();
   const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState("");
+
   const pkgsQ = useQuery<VmPackagesResponse>(
     async () => {
       if (mock) return mockVmPackages(vm);
@@ -788,7 +890,16 @@ function VmPackagesView({ vm, mock }: { vm: Vm; mock: boolean }) {
   );
   const packages = useMemo(() => pkgsQ.data?.packages ?? [], [pkgsQ.data]);
   const syncedAt = pkgsQ.data?.synced_at ?? null;
-  const [filter, setFilter] = useState("");
+
+  // Свежий probe пакетов закрылся успехом — воркер уже записал новый срез,
+  // перечитываем сохранённый список, чтобы таблица показала актуальное.
+  const trackedStatus = outcome.tracked?.status;
+  const trackedPolling = outcome.tracked?.polling ?? false;
+  useEffect(() => {
+    if (trackedStatus === "succeeded" && !trackedPolling) {
+      pkgsQ.refetch();
+    }
+  }, [trackedStatus, trackedPolling, pkgsQ.refetch]);
 
   async function refresh() {
     if (mock) {
@@ -796,14 +907,19 @@ function VmPackagesView({ vm, mock }: { vm: Vm; mock: boolean }) {
       return;
     }
     setRefreshing(true);
+    outcome.reset();
     try {
       const res = await listVmPackages(vm.id, { refresh: true });
-      if (res.dispatched) {
+      if (res.dispatched && res.task_id) {
+        outcome.track("Сбор пакетов гостя", res.task_id, "queued");
         toast.info(
-          "Запущен свежий сбор пакетов — список обновится через несколько секунд.",
+          "Запущен свежий сбор пакетов — список обновится после закрытия задачи.",
         );
+      } else {
+        // Бэкенд не задиспатчил новый probe — просто перечитаем сохранённый срез.
+        pkgsQ.refetch();
+        toast.info("Обновляю сохранённый список пакетов.");
       }
-      pkgsQ.refetch();
     } catch (e) {
       toast.error(pkgRefreshErrorMsg(e));
     } finally {
@@ -811,44 +927,45 @@ function VmPackagesView({ vm, mock }: { vm: Vm; mock: boolean }) {
     }
   }
 
-  const busy = pkgsQ.loading || refreshing;
+  const busy = pkgsQ.loading || refreshing || trackedPolling;
 
   return (
-    <div className="p-5">
-      <div className="card">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-base flex items-center gap-2">
-            <Package className="w-4 h-4 text-accent" /> Пакеты
-            <span className="text-xs text-dim font-normal">
-              ({packages.length})
-            </span>
-          </h3>
-          <button
-            className="btn btn-sm flex items-center gap-1"
-            onClick={refresh}
-            disabled={busy}
-            title="Поставить свежий probe и обновить список"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${busy ? "animate-spin" : ""}`} />
-            Обновить
-          </button>
-        </div>
-        <div className="text-xs text-dim mb-3">
+    <PackagesPanel
+      title="Пакеты"
+      count={packages.length}
+      description={
+        <>
           Установленные в госте пакеты (`dpkg -l` / `rpm -qa`), последний снятый
           воркером срез
-          {syncedAt ? ` (синк ${formatSnapDate(syncedAt)})` : ""}.
-        </div>
-
-        <PackagesTable
-          items={packages}
-          filter={filter}
-          onFilter={setFilter}
-          loading={pkgsQ.loading}
-          error={pkgsQ.error}
-          onRetry={() => pkgsQ.refetch()}
-        />
-      </div>
-    </div>
+          {syncedAt ? ` (синк ${formatSnapDate(syncedAt)})` : ""}. Кнопка
+          «Обновить» ставит свежий сбор через worker.
+        </>
+      }
+      action={{
+        label: "Обновить",
+        onClick: refresh,
+        busy,
+        disabled: busy,
+        title: "Поставить свежий probe и обновить список",
+      }}
+      banners={
+        outcome.tracked && (
+          <TaskOutcomeBanner
+            outcome={outcome.tracked}
+            label="Сбор пакетов гостя"
+            successText="Свежий список пакетов снят — таблица обновлена."
+          />
+        )
+      }
+      table={{
+        items: packages,
+        filter,
+        onFilter: setFilter,
+        loading: pkgsQ.loading,
+        error: pkgsQ.error,
+        onRetry: () => pkgsQ.refetch(),
+      }}
+    />
   );
 }
 

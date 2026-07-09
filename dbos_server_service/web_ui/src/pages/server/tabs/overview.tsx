@@ -1,18 +1,24 @@
 /**
  * Overview-вкладка карточки сервера и ВМ.
  *
- * По умолчанию (без `entity` или `entity.kind === "server"`) — read-only сводка
- * по `Server`: имя, департамент, статус/busy/power, сеть, OS-версия, ключевые
- * timestamps. Под edit-кнопкой — inline-форма с PATCH `/servers/{id}`
- * (display_name, description-эквивалент location, IP, ssh_port, os_version_id)
- * для account_admin'а и dep_admin'а своего dept'а. Источник данных — prop
- * `server: Server`; после PATCH поднимаем свежий объект через
- * `onServerUpdated(next)`, чтобы header и соседние вкладки обновились без
- * перезагрузки.
+ * Обе ветки строят нормализованную view-model (набор карточек-сводок со
+ * строками поле→значение) и рендерят один и тот же презентационный
+ * под-компонент `ParamCard`. Отличается только источник данных и поля/действия,
+ * у которых нет серверного аналога.
  *
- * При `entity.kind === "vm"` рендерится карточка «Параметры» ВМ с правкой
- * cpu/ram (`VmOverviewView`): право управления и mock-режим приходят из
- * `entity`, свежую копию ВМ поднимаем наверх через `onEntityUpdated`.
+ * Серверная ветка (`entity` нет или `entity.kind === "server"`) — read-only
+ * сводка по `Server`: идентификация, состояние/busy/power, сеть, OS-версия,
+ * timestamps. Под edit-кнопкой — inline-форма с PATCH `/servers/{id}`
+ * (display_name, location, IP, ssh_port, os_version_id) для account_admin'а и
+ * dep_admin'а своего dept'а. Источник данных — prop `server: Server`; после
+ * PATCH поднимаем свежий объект через `onServerUpdated(next)`, чтобы header и
+ * соседние вкладки обновились без перезагрузки.
+ *
+ * VM-ветка (`entity.kind === "vm"`) строит модель из `Vm` (Хаб/ОС/box/сеть/IP/
+ * ресурсы/питание/занятость) и рендерит тот же `ParamCard`. Действие «Изменить
+ * CPU/RAM» живёт кнопкой в шапке карточки и открывает `ResourcesModal` (202-
+ * задача `PATCH /vms/{id}`). Право управления и mock-режим приходят из `entity`,
+ * свежую копию ВМ поднимаем наверх через `onEntityUpdated`.
  */
 import { useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
@@ -55,19 +61,88 @@ interface Props {
   onEntityUpdated?: (next: Server | Vm) => void;
 }
 
+/**
+ * Диспетчер без собственных хуков: выбирает ветку по типу сущности и делегирует
+ * её ServerOverview / VmOverview. Обе кормят один презентационный `ParamCard`.
+ * Хуки живут внутри веток, поэтому ветвление не нарушает rules-of-hooks.
+ */
 export function OverviewTab({
   server,
   onServerUpdated,
   entity,
   onEntityUpdated,
 }: Props) {
-  const [editing, setEditing] = useState(false);
-  const view = server;
-  const { persona } = usePersona();
-
   if (entity?.kind === "vm") {
-    return <VmOverviewView entity={entity} onEntityUpdated={onEntityUpdated} />;
+    return <VmOverview entity={entity} onEntityUpdated={onEntityUpdated} />;
   }
+  return <ServerOverview server={server} onServerUpdated={onServerUpdated} />;
+}
+
+// ── Общий презентационный под-компонент ─────────────────────────────────────
+
+/** Строка сводки: подпись слева, значение справа. `mono` — моноширинное значение. */
+interface ParamRow {
+  label: string;
+  value: ReactNode;
+  mono?: boolean;
+}
+
+/**
+ * Карточка-сводка: заголовок (с опциональным подзаголовком и кнопкой-действием
+ * справа) и набор строк поле→значение. Ничего не знает про сервер или ВМ — обе
+ * ветки кормят её готовой view-model. Доп. контент под строками (баннер задачи
+ * и т.п.) идёт через children.
+ */
+function ParamCard({
+  title,
+  subtitle,
+  action,
+  rows,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+  rows: ParamRow[];
+  children?: ReactNode;
+}) {
+  return (
+    <div className="card">
+      {subtitle || action ? (
+        <div className="flex items-start gap-3 mb-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-base">{title}</h3>
+            {subtitle && <div className="text-xs text-dim">{subtitle}</div>}
+          </div>
+          {action}
+        </div>
+      ) : (
+        <h3 className="font-semibold text-base mb-3">{title}</h3>
+      )}
+      {rows.map((r) => (
+        <StatRow
+          key={r.label}
+          k={r.label}
+          v={r.mono ? <span className="mono">{r.value}</span> : r.value}
+        />
+      ))}
+      {children}
+    </div>
+  );
+}
+
+// ── Серверная ветка ─────────────────────────────────────────────────────────
+
+function ServerOverview({
+  server,
+  onServerUpdated,
+}: {
+  server?: Server;
+  onServerUpdated?: (next: Server) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const { persona } = usePersona();
+  const view = server;
 
   if (!view) {
     return <div className="p-5 text-sm text-dim">Нет данных по серверу.</div>;
@@ -95,7 +170,7 @@ export function OverviewTab({
   }
 
   return (
-    <OverviewView
+    <ServerOverviewView
       server={view}
       canEdit={canEdit}
       onEdit={() => setEditing(true)}
@@ -103,7 +178,7 @@ export function OverviewTab({
   );
 }
 
-function OverviewView({
+function ServerOverviewView({
   server,
   canEdit,
   onEdit,
@@ -116,211 +191,174 @@ function OverviewView({
   const createdByLabel = useUserLabel(server.created_by);
   const busyUserLabel = useUserLabel(server.busy_user_id);
   const name = server.display_name ?? server.hostname;
+  const dash = <span className="text-dim">—</span>;
+
+  const identity: ParamRow[] = [
+    { label: "display_name", value: <span className="mono">{name}</span> },
+    { label: "hostname", value: <span className="mono">{server.hostname}</span> },
+    { label: "id", value: <span className="mono">{server.id}</span> },
+    { label: "department", value: deptLabel },
+    { label: "serial_number", value: server.serial_number ?? dash },
+    { label: "asset_tag", value: server.asset_tag ?? dash },
+    { label: "location", value: server.location ?? dash },
+  ];
+
+  const state: ParamRow[] = [
+    { label: "status", value: server.status },
+    {
+      label: "ping",
+      value: (
+        <ReachValue
+          reachable={server.ping_reachable}
+          latencyMs={server.ping_latency_ms}
+          checkedAt={server.ping_checked_at}
+        />
+      ),
+    },
+    {
+      label: "ssh",
+      value: (
+        <ReachValue
+          reachable={server.ssh_reachable}
+          latencyMs={server.ssh_latency_ms}
+          checkedAt={server.ssh_checked_at}
+        />
+      ),
+    },
+    {
+      label: "ipmi",
+      value: (
+        <IpmiPowerValue
+          state={server.ipmi_power_state}
+          checkedAt={server.ipmi_checked_at}
+        />
+      ),
+    },
+    { label: "power_state", value: server.power_state },
+    { label: "busy_state", value: server.busy_state },
+    {
+      label: "busy_user_id",
+      value: server.busy_user_id ? (
+        <span title={server.busy_user_id}>{busyUserLabel}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "busy_since",
+      value: server.busy_since ? (
+        <span className="mono">{formatMsk(server.busy_since)}</span>
+      ) : (
+        dash
+      ),
+    },
+    { label: "busy_note", value: server.busy_note ?? dash },
+    { label: "is_managed", value: server.is_managed ? "да" : "нет" },
+    {
+      label: "management_user",
+      value: server.management_user ? (
+        <span className="mono">{server.management_user}</span>
+      ) : (
+        dash
+      ),
+    },
+  ];
+
+  const network: ParamRow[] = [
+    { label: "ip_address", value: <span className="mono">{server.ip_address}</span> },
+    {
+      label: "mgmt_ip_address",
+      value: server.mgmt_ip_address ? (
+        <span className="mono">{server.mgmt_ip_address}</span>
+      ) : (
+        dash
+      ),
+    },
+    { label: "ssh_port", value: <span className="mono">{server.ssh_port}</span> },
+    {
+      label: "network_interface_name",
+      value: server.network_interface_name ? (
+        <span className="mono">{server.network_interface_name}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "os_version",
+      value: server.os_version_id ? (
+        <OsVersionName
+          osVersionId={server.os_version_id}
+          securityMode={server.os_security_mode}
+        />
+      ) : (
+        <span className="text-dim">не задана</span>
+      ),
+    },
+    {
+      label: "os_last_synced_at",
+      value: server.os_last_synced_at ? (
+        <span className="mono">{formatMsk(server.os_last_synced_at)}</span>
+      ) : (
+        dash
+      ),
+    },
+  ];
+
+  const timestamps: ParamRow[] = [
+    {
+      label: "created_at",
+      value: <span className="mono">{formatMsk(server.created_at)}</span>,
+    },
+    {
+      label: "updated_at",
+      value: <span className="mono">{formatMsk(server.updated_at)}</span>,
+    },
+    {
+      label: "prepared_at",
+      value: server.prepared_at ? (
+        <span className="mono">{formatMsk(server.prepared_at)}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "decommissioned_at",
+      value: server.decommissioned_at ? (
+        <span className="mono">{formatMsk(server.decommissioned_at)}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "created_by",
+      value: server.created_by ? (
+        <span title={server.created_by}>{createdByLabel}</span>
+      ) : (
+        dash
+      ),
+    },
+  ];
+
+  const editAction = canEdit ? (
+    <button
+      className="btn btn-ghost flex items-center gap-1"
+      onClick={onEdit}
+    >
+      <Pencil className="w-4 h-4" /> Изменить
+    </button>
+  ) : undefined;
 
   return (
     <div className="p-5 flex flex-col gap-4">
-      <div className="card">
-        <div className="flex items-start gap-3 mb-3">
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-base">Идентификация</h3>
-            <div className="text-xs text-dim">
-              Базовые поля карточки сервера.
-            </div>
-          </div>
-          {canEdit && (
-            <button
-              className="btn btn-ghost flex items-center gap-1"
-              onClick={onEdit}
-            >
-              <Pencil className="w-4 h-4" /> Изменить
-            </button>
-          )}
-        </div>
-        <StatRow k="display_name" v={<span className="mono">{name}</span>} />
-        <StatRow k="hostname" v={<span className="mono">{server.hostname}</span>} />
-        <StatRow k="id" v={<span className="mono">{server.id}</span>} />
-        <StatRow k="department" v={deptLabel} />
-        <StatRow
-          k="serial_number"
-          v={server.serial_number ?? <span className="text-dim">—</span>}
-        />
-        <StatRow
-          k="asset_tag"
-          v={server.asset_tag ?? <span className="text-dim">—</span>}
-        />
-        <StatRow
-          k="location"
-          v={server.location ?? <span className="text-dim">—</span>}
-        />
-      </div>
-
-      <div className="card">
-        <h3 className="font-semibold text-base mb-3">Состояние</h3>
-        <StatRow k="status" v={server.status} />
-        <StatRow
-          k="ping"
-          v={
-            <ReachValue
-              reachable={server.ping_reachable}
-              latencyMs={server.ping_latency_ms}
-              checkedAt={server.ping_checked_at}
-            />
-          }
-        />
-        <StatRow
-          k="ssh"
-          v={
-            <ReachValue
-              reachable={server.ssh_reachable}
-              latencyMs={server.ssh_latency_ms}
-              checkedAt={server.ssh_checked_at}
-            />
-          }
-        />
-        <StatRow
-          k="ipmi"
-          v={
-            <IpmiPowerValue
-              state={server.ipmi_power_state}
-              checkedAt={server.ipmi_checked_at}
-            />
-          }
-        />
-        <StatRow k="power_state" v={server.power_state} />
-        <StatRow k="busy_state" v={server.busy_state} />
-        <StatRow
-          k="busy_user_id"
-          v={
-            server.busy_user_id ? (
-              <span title={server.busy_user_id}>{busyUserLabel}</span>
-            ) : (
-              <span className="text-dim">—</span>
-            )
-          }
-        />
-        <StatRow
-          k="busy_since"
-          v={
-            server.busy_since ? (
-              <span className="mono">{formatMsk(server.busy_since)}</span>
-            ) : (
-              <span className="text-dim">—</span>
-            )
-          }
-        />
-        <StatRow
-          k="busy_note"
-          v={server.busy_note ?? <span className="text-dim">—</span>}
-        />
-        <StatRow
-          k="is_managed"
-          v={server.is_managed ? "да" : "нет"}
-        />
-        <StatRow
-          k="management_user"
-          v={
-            server.management_user ? (
-              <span className="mono">{server.management_user}</span>
-            ) : (
-              <span className="text-dim">—</span>
-            )
-          }
-        />
-      </div>
-
-      <div className="card">
-        <h3 className="font-semibold text-base mb-3">Сеть и OS</h3>
-        <StatRow
-          k="ip_address"
-          v={<span className="mono">{server.ip_address}</span>}
-        />
-        <StatRow
-          k="mgmt_ip_address"
-          v={
-            server.mgmt_ip_address ? (
-              <span className="mono">{server.mgmt_ip_address}</span>
-            ) : (
-              <span className="text-dim">—</span>
-            )
-          }
-        />
-        <StatRow k="ssh_port" v={<span className="mono">{server.ssh_port}</span>} />
-        <StatRow
-          k="network_interface_name"
-          v={
-            server.network_interface_name ? (
-              <span className="mono">{server.network_interface_name}</span>
-            ) : (
-              <span className="text-dim">—</span>
-            )
-          }
-        />
-        <StatRow
-          k="os_version"
-          v={
-            server.os_version_id ? (
-              <OsVersionName
-                osVersionId={server.os_version_id}
-                securityMode={server.os_security_mode}
-              />
-            ) : (
-              <span className="text-dim">не задана</span>
-            )
-          }
-        />
-        <StatRow
-          k="os_last_synced_at"
-          v={
-            server.os_last_synced_at ? (
-              <span className="mono">{formatMsk(server.os_last_synced_at)}</span>
-            ) : (
-              <span className="text-dim">—</span>
-            )
-          }
-        />
-      </div>
-
-      <div className="card">
-        <h3 className="font-semibold text-base mb-3">Метки времени</h3>
-        <StatRow
-          k="created_at"
-          v={<span className="mono">{formatMsk(server.created_at)}</span>}
-        />
-        <StatRow
-          k="updated_at"
-          v={<span className="mono">{formatMsk(server.updated_at)}</span>}
-        />
-        <StatRow
-          k="prepared_at"
-          v={
-            server.prepared_at ? (
-              <span className="mono">{formatMsk(server.prepared_at)}</span>
-            ) : (
-              <span className="text-dim">—</span>
-            )
-          }
-        />
-        <StatRow
-          k="decommissioned_at"
-          v={
-            server.decommissioned_at ? (
-              <span className="mono">{formatMsk(server.decommissioned_at)}</span>
-            ) : (
-              <span className="text-dim">—</span>
-            )
-          }
-        />
-        <StatRow
-          k="created_by"
-          v={
-            server.created_by ? (
-              <span title={server.created_by}>{createdByLabel}</span>
-            ) : (
-              <span className="text-dim">—</span>
-            )
-          }
-        />
-      </div>
+      <ParamCard
+        title="Идентификация"
+        subtitle="Базовые поля карточки сервера."
+        action={editAction}
+        rows={identity}
+      />
+      <ParamCard title="Состояние" rows={state} />
+      <ParamCard title="Сеть и OS" rows={network} />
+      <ParamCard title="Метки времени" rows={timestamps} />
     </div>
   );
 }
@@ -551,12 +589,13 @@ function fakeDispatch(): TaskDispatchResponse {
 }
 
 /**
- * Overview-вкладка карточки ВМ. Read-only карточка «Параметры» с ключевыми
- * полями домена и кнопкой «Изменить CPU/RAM» под правом управления. Правка
- * ресурсов — 202-задача (`PATCH /vms/{id}`), исход показываем баннером. В
- * mock-режиме cpu/ram применяем локально и поднимаем свежую копию наверх.
+ * Overview-вкладка карточки ВМ. Строит модель «Параметры» из `Vm` и рендерит
+ * общий `ParamCard` — тот же, что и серверная ветка. Кнопка «Изменить CPU/RAM»
+ * в шапке карточки открывает `ResourcesModal` (202-задача `PATCH /vms/{id}`),
+ * исход показываем баннером под строками. В mock-режиме cpu/ram применяем
+ * локально и поднимаем свежую копию наверх.
  */
-function VmOverviewView({
+function VmOverview({
   entity,
   onEntityUpdated,
 }: {
@@ -598,35 +637,34 @@ function VmOverviewView({
     }
   }
 
+  const rows: ParamRow[] = [
+    { label: "Хаб", value: view.hub_server_id, mono: true },
+    { label: "ОС", value: view.os_version ?? "—" },
+    { label: "box", value: view.box },
+    { label: "Сеть", value: view.network_mode },
+    { label: "IP-адрес", value: view.ip_address ?? "— (авто)", mono: true },
+    { label: "vCPU", value: String(view.cpu) },
+    { label: "RAM", value: `${view.ram_mb} МБ` },
+    { label: "Диск", value: `${view.disk_gb} ГБ` },
+    { label: "autostart", value: view.autostart ? "да" : "нет" },
+    { label: "Стратегия кред", value: view.cred_strategy },
+    { label: "Питание", value: view.power_state },
+    { label: "Занятость", value: view.busy_state },
+  ];
+
+  const resourceAction = canManage ? (
+    <button
+      className="btn btn-sm flex items-center gap-1"
+      onClick={() => setResourceModal(true)}
+      title="Изменить vCPU и RAM"
+    >
+      <Cpu className="w-3.5 h-3.5" /> Изменить CPU/RAM
+    </button>
+  ) : undefined;
+
   return (
     <div className="p-5 flex flex-col gap-4">
-      <div className="card">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-base">Параметры</h3>
-          {canManage && (
-            <button
-              className="btn btn-sm flex items-center gap-1"
-              onClick={() => setResourceModal(true)}
-              title="Изменить vCPU и RAM"
-            >
-              <Cpu className="w-3.5 h-3.5" /> Изменить CPU/RAM
-            </button>
-          )}
-        </div>
-        <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm">
-          <Field k="Хаб" v={view.hub_server_id} mono />
-          <Field k="ОС" v={view.os_version ?? "—"} />
-          <Field k="box" v={view.box} />
-          <Field k="Сеть" v={view.network_mode} />
-          <Field k="IP-адрес" v={view.ip_address ?? "— (авто)"} mono />
-          <Field k="vCPU" v={String(view.cpu)} />
-          <Field k="RAM" v={`${view.ram_mb} МБ`} />
-          <Field k="Диск" v={`${view.disk_gb} ГБ`} />
-          <Field k="autostart" v={view.autostart ? "да" : "нет"} />
-          <Field k="Стратегия кред" v={view.cred_strategy} />
-          <Field k="Питание" v={view.power_state} />
-          <Field k="Занятость" v={view.busy_state} />
-        </dl>
+      <ParamCard title="Параметры" action={resourceAction} rows={rows}>
         {resourceOutcome.tracked && (
           <TaskOutcomeBanner
             outcome={resourceOutcome.tracked}
@@ -635,7 +673,7 @@ function VmOverviewView({
             onCancelled={resourceOutcome.reset}
           />
         )}
-      </div>
+      </ParamCard>
 
       {resourceModal && (
         <ResourcesModal
@@ -645,15 +683,6 @@ function VmOverviewView({
         />
       )}
     </div>
-  );
-}
-
-function Field({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
-  return (
-    <>
-      <dt className="text-dim text-xs">{k}</dt>
-      <dd className={mono ? "mono" : undefined}>{v}</dd>
-    </>
   );
 }
 

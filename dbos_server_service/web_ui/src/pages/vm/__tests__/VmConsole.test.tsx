@@ -8,6 +8,31 @@ import type { Vm as VmType } from "@/api/server/vms";
 // `ConsoleTab` при `entity.kind === "vm"` уходит в VM-ветку с выбором вида.
 import { ConsoleTab } from "@/pages/server/tabs/console";
 
+// xterm тащит canvas/matchMedia — в jsdom подменяем терминал заглушкой, как в
+// серверном ConsoleTab.test. Нам важен account-picker и переключение видов.
+vi.mock("@xterm/xterm", () => {
+  class FakeTerminal {
+    open() {}
+    loadAddon() {}
+    clear() {}
+    write() {}
+    writeln() {}
+    focus() {}
+    dispose() {}
+    onData() {
+      return { dispose() {} };
+    }
+  }
+  return { Terminal: FakeTerminal };
+});
+vi.mock("@xterm/addon-fit", () => {
+  class FakeFitAddon {
+    fit() {}
+  }
+  return { FitAddon: FakeFitAddon };
+});
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+
 const MOCK_VM: VmType = {
   id: "vm-console",
   name: "console-vm",
@@ -56,7 +81,7 @@ function renderConsole() {
   );
 }
 
-describe("ConsoleCard (VM console selector)", () => {
+describe("Консоль ВМ — селектор вида + переиспользуемая серверная консоль", () => {
   beforeEach(() => {
     window.localStorage.clear();
   });
@@ -73,28 +98,39 @@ describe("ConsoleCard (VM console selector)", () => {
     );
   });
 
-  it("по умолчанию открывает SSH-данные подключения (команда + токен)", () => {
+  it("SSH-вид рендерит тот же account-picker + терминал, что у сервера", async () => {
     renderConsole();
-    fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
-    // SSH-команда с mgmt-логином и токен доступа.
-    expect(screen.getByText(/ssh dbosmgr@10\.10\.0\.9/)).toBeInTheDocument();
-    expect(screen.getByText("Токен")).toBeInTheDocument();
+    // Выбор учётки (общий с серверной консолью) и кнопка «Подключить» терминала.
+    expect(
+      await screen.findByRole("combobox", { name: /Аккаунт для подключения/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Подключить/ }),
+    ).toBeInTheDocument();
   });
 
-  it("VNC даёт кнопку открытия прокси-URL с token в query", () => {
+  it("Serial-вид — тоже account-picker + терминал (как ssh)", async () => {
+    renderConsole();
+    fireEvent.click(screen.getByRole("button", { name: "Serial" }));
+    expect(
+      await screen.findByRole("combobox", { name: /Аккаунт для подключения/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Подключить/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("VNC даёт графический прокси и кнопку открытия URL с token", async () => {
     const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     renderConsole();
-    fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
-    expect(screen.getByText(/ssh dbosmgr@/)).toBeInTheDocument();
-
-    // Смена вида сбрасывает сессию — открываем заново.
     fireEvent.click(screen.getByRole("button", { name: "VNC" }));
-    fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
-    expect(screen.getByText(/Графическая консоль \(VNC\)/)).toBeInTheDocument();
-    // SSH-команды на экране больше нет.
-    expect(screen.queryByText(/ssh dbosmgr@/)).not.toBeInTheDocument();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Открыть консоль/ }),
+    );
+    expect(
+      await screen.findByText(/Графическая консоль \(VNC\)/),
+    ).toBeInTheDocument();
 
-    // Кнопка «Открыть консоль VNC» ведёт на http(s)-форму прокси с token.
     fireEvent.click(screen.getByRole("button", { name: /Открыть консоль VNC/ }));
     expect(openSpy).toHaveBeenCalledTimes(1);
     const url = openSpy.mock.calls[0][0] as string;
@@ -104,23 +140,17 @@ describe("ConsoleCard (VM console selector)", () => {
     openSpy.mockRestore();
   });
 
-  it("SPICE показывает графический прокси и кнопку открытия", () => {
+  it("SPICE показывает графический прокси и кнопку открытия", async () => {
     renderConsole();
     fireEvent.click(screen.getByRole("button", { name: "SPICE" }));
-    fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
-    expect(screen.getByText(/Графическая консоль \(SPICE\)/)).toBeInTheDocument();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Открыть консоль/ }),
+    );
+    expect(
+      await screen.findByText(/Графическая консоль \(SPICE\)/),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Открыть консоль SPICE/ }),
     ).toBeInTheDocument();
-  });
-
-  it("Serial показывает данные serial-консоли (host hub + токен)", () => {
-    renderConsole();
-    fireEvent.click(screen.getByRole("button", { name: "Serial" }));
-    fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
-    expect(
-      screen.getByText(/Последовательная консоль \(serial\)/),
-    ).toBeInTheDocument();
-    expect(screen.getByText("host (hub)")).toBeInTheDocument();
   });
 });

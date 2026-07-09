@@ -9,8 +9,16 @@
  * вынесено в TODO бэка).
  */
 import { useState } from "react";
-import { Cpu, HardDrive, MemoryStick, Network, Pencil } from "lucide-react";
-import type { Server, ServerUpdateRequest } from "@/api/server/types";
+import type { ReactNode } from "react";
+import {
+  Cpu,
+  HardDrive,
+  MemoryStick,
+  Network,
+  Pencil,
+  type LucideIcon,
+} from "lucide-react";
+import type { DiskResponse, Server, ServerUpdateRequest } from "@/api/server/types";
 import type { Vm } from "@/api/server/vms";
 import { updateServer } from "@/api/server/servers";
 import { apiErrMsg } from "@/api/client";
@@ -28,12 +36,34 @@ interface Props {
   onServerUpdated?: (next: Server) => void;
 }
 
+/** Одна карточка-сводка (CPU / RAM / Сеть / Диск) в двухколоночной сетке. */
+interface HwCard {
+  icon: LucideIcon;
+  title: string;
+  rows: { k: string; v: ReactNode }[];
+}
+
+/** Таблица физических дисков во всю ширину — есть только у сервера. */
+interface HwDiskTable {
+  disks: DiskResponse[];
+  footnote: ReactNode;
+}
+
+/** Нормализованная модель «Железа», одинаковая для сервера и ВМ. */
+interface HardwareModel {
+  /** Кнопка правки сверху; у read-only сущностей (ВМ) — undefined. */
+  edit?: { canEdit: boolean; onEdit: () => void };
+  cards: HwCard[];
+  diskTable?: HwDiskTable;
+  footer?: ReactNode;
+}
+
 export function HardwareTab(props: Props) {
   // Карточка ВМ рендерится тем же файлом: у ВМ железо read-only, правка
   // ресурсов живёт во вкладке «Обзор», поэтому серверный edit-поток не нужен.
-  // Диспетчер без хуков — режим фиксируется на монтирование.
+  // Диспетчер без хуков — модель ВМ собирается чистой функцией.
   if (props.entity?.kind === "vm") {
-    return <VmHardwareView vm={props.entity.vm} />;
+    return <HardwareView model={vmModel(props.entity.vm)} />;
   }
   return <ServerHardwareTab {...props} />;
 }
@@ -70,134 +100,64 @@ function ServerHardwareTab({ server, onServerUpdated }: Props) {
 
   return (
     <HardwareView
-      server={view}
-      canEdit={canEdit}
-      onEdit={() => setEditing(true)}
+      model={serverModel(view, canEdit, () => setEditing(true))}
     />
   );
 }
 
-function HardwareView({
-  server,
-  canEdit,
-  onEdit,
-}: {
-  server: Server;
-  canEdit: boolean;
-  onEdit: () => void;
-}) {
+const dim = <span className="text-dim">—</span>;
+const mono = (v: ReactNode) => <span className="mono">{v}</span>;
+
+/** Собирает модель «Железа» из серверного объекта. */
+function serverModel(
+  server: Server,
+  canEdit: boolean,
+  onEdit: () => void,
+): HardwareModel {
   const ramGb =
     server.ram_total_mb != null
       ? (server.ram_total_mb / 1024).toFixed(server.ram_total_mb % 1024 === 0 ? 0 : 1)
       : null;
 
-  return (
-    <div className="p-5 flex flex-col gap-4">
-      <div className="flex justify-end">
-        {canEdit && (
-          <button
-            className="btn btn-ghost flex items-center gap-1"
-            onClick={onEdit}
-          >
-            <Pencil className="w-4 h-4" /> Изменить
-          </button>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="card">
-          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-accent" /> CPU
-          </h3>
-          <StatRow
-            k="brand"
-            v={server.cpu_brand ?? <span className="text-dim">—</span>}
-          />
-          <StatRow
-            k="model"
-            v={
-              server.cpu_model ? (
-                <span className="mono">{server.cpu_model}</span>
-              ) : (
-                <span className="text-dim">—</span>
-              )
-            }
-          />
-          <StatRow
-            k="cores"
-            v={
-              server.cpu_cores != null ? (
-                <span className="mono">{server.cpu_cores}</span>
-              ) : (
-                <span className="text-dim">—</span>
-              )
-            }
-          />
-          <StatRow
-            k="threads"
-            v={
-              server.cpu_threads != null ? (
-                <span className="mono">{server.cpu_threads}</span>
-              ) : (
-                <span className="text-dim">—</span>
-              )
-            }
-          />
-          <StatRow
-            k="frequency"
-            v={
-              server.cpu_frequency_ghz != null ? (
-                <span className="mono">{server.cpu_frequency_ghz} GHz</span>
-              ) : (
-                <span className="text-dim">—</span>
-              )
-            }
-          />
-        </div>
-
-        <div className="card">
-          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-            <MemoryStick className="w-4 h-4 text-accent" /> RAM
-          </h3>
-          <StatRow
-            k="total_mb"
-            v={
-              server.ram_total_mb != null ? (
-                <span className="mono">{server.ram_total_mb}</span>
-              ) : (
-                <span className="text-dim">—</span>
-              )
-            }
-          />
-          <StatRow
-            k="total_gb"
-            v={
-              ramGb != null ? (
-                <span className="mono">{ramGb} GB</span>
-              ) : (
-                <span className="text-dim">—</span>
-              )
-            }
-          />
-        </div>
-
-        <div className="card">
-          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-            <Network className="w-4 h-4 text-accent" /> Сеть
-          </h3>
-          <StatRow
-            k="interface_name"
-            v={
-              server.network_interface_name ? (
-                <span className="mono">{server.network_interface_name}</span>
-              ) : (
-                <span className="text-dim">—</span>
-              )
-            }
-          />
-          <StatRow
-            k="interfaces"
-            v={
+  return {
+    edit: { canEdit, onEdit },
+    cards: [
+      {
+        icon: Cpu,
+        title: "CPU",
+        rows: [
+          { k: "brand", v: server.cpu_brand ?? dim },
+          { k: "model", v: server.cpu_model ? mono(server.cpu_model) : dim },
+          { k: "cores", v: server.cpu_cores != null ? mono(server.cpu_cores) : dim },
+          { k: "threads", v: server.cpu_threads != null ? mono(server.cpu_threads) : dim },
+          {
+            k: "frequency",
+            v:
+              server.cpu_frequency_ghz != null
+                ? mono(`${server.cpu_frequency_ghz} GHz`)
+                : dim,
+          },
+        ],
+      },
+      {
+        icon: MemoryStick,
+        title: "RAM",
+        rows: [
+          { k: "total_mb", v: server.ram_total_mb != null ? mono(server.ram_total_mb) : dim },
+          { k: "total_gb", v: ramGb != null ? mono(`${ramGb} GB`) : dim },
+        ],
+      },
+      {
+        icon: Network,
+        title: "Сеть",
+        rows: [
+          {
+            k: "interface_name",
+            v: server.network_interface_name ? mono(server.network_interface_name) : dim,
+          },
+          {
+            k: "interfaces",
+            v:
               server.network_interfaces && server.network_interfaces.length > 0 ? (
                 <span className="flex flex-wrap gap-1">
                   {server.network_interfaces.map((iface) => (
@@ -207,87 +167,177 @@ function HardwareView({
                   ))}
                 </span>
               ) : (
-                <span className="text-dim">—</span>
-              )
-            }
-          />
-          <StatRow
-            k="ip_address"
-            v={<span className="mono">{server.ip_address}</span>}
-          />
-          <StatRow
-            k="mgmt_ip_address"
-            v={
-              server.mgmt_ip_address ? (
-                <span className="mono">{server.mgmt_ip_address}</span>
-              ) : (
-                <span className="text-dim">—</span>
-              )
-            }
-          />
-        </div>
-      </div>
-
-      <div className="card">
-        <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-          <HardDrive className="w-4 h-4 text-accent" /> Диски
-          <span className="text-xs text-dim font-normal">
-            ({server.storage.length})
-          </span>
-        </h3>
-        {server.storage.length === 0 ? (
-          <div className="text-sm text-dim">Дисков в инвентаре нет.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-dim text-xs border-b border-token">
-                  <th className="text-left py-2 pr-3">Слот</th>
-                  <th className="text-left py-2 pr-3">Размер, ГБ</th>
-                  <th className="text-left py-2 pr-3">Занято, ГБ</th>
-                  <th className="text-left py-2 pr-3">Занято, %</th>
-                  <th className="text-left py-2 pr-3">Модель</th>
-                  <th className="text-left py-2 pr-3">Тип</th>
-                  <th className="text-left py-2 pr-3">id</th>
-                </tr>
-              </thead>
-              <tbody>
-                {server.storage.map((d) => (
-                  <tr key={d.id} className="border-b border-dashed border-token last:border-b-0">
-                    <td className="py-1.5 pr-3 mono">{d.slot}</td>
-                    <td className="py-1.5 pr-3 mono">{d.size_gb}</td>
-                    <td className="py-1.5 pr-3 mono">
-                      {d.used_gb != null ? d.used_gb : <span className="text-dim">—</span>}
-                    </td>
-                    <td className="py-1.5 pr-3 mono">
-                      {d.used_percent != null ? (
-                        `${d.used_percent}%`
-                      ) : (
-                        <span className="text-dim">—</span>
-                      )}
-                    </td>
-                    <td className="py-1.5 pr-3">
-                      {d.model ?? <span className="text-dim">—</span>}
-                    </td>
-                    <td className="py-1.5 pr-3">
-                      {d.is_system ? (
-                        <span className="badge badge-ok">system</span>
-                      ) : (
-                        <span className="text-dim">data</span>
-                      )}
-                    </td>
-                    <td className="py-1.5 pr-3 mono text-dim">{d.id}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <div className="mt-3 text-[11px] text-dim">
+                dim
+              ),
+          },
+          { k: "ip_address", v: mono(server.ip_address) },
+          { k: "mgmt_ip_address", v: server.mgmt_ip_address ? mono(server.mgmt_ip_address) : dim },
+        ],
+      },
+    ],
+    diskTable: {
+      disks: server.storage,
+      footnote: (
+        <>
           Редактирование дисков идёт через инвентаризацию (`inventory_sync`) —
           вручную сюда писать не нужно.
+        </>
+      ),
+    },
+  };
+}
+
+/**
+ * Собирает модель «Железа» из VM-объекта — виртуальные ресурсы домена
+ * (vCPU / RAM / сеть / системный диск). Правка ресурсов (vCPU/RAM) — во вкладке
+ * «Обзор», дополнительные диски — во вкладке «Диски», поэтому здесь ни edit, ни
+ * таблицы физдисков нет: те же карточки, read-only.
+ */
+function vmModel(vm: Vm): HardwareModel {
+  const ramGb = (vm.ram_mb / 1024).toFixed(vm.ram_mb % 1024 === 0 ? 0 : 1);
+  return {
+    cards: [
+      {
+        icon: Cpu,
+        title: "CPU",
+        rows: [{ k: "vCPU", v: mono(vm.cpu) }],
+      },
+      {
+        icon: MemoryStick,
+        title: "RAM",
+        rows: [
+          { k: "total_mb", v: mono(vm.ram_mb) },
+          { k: "total_gb", v: mono(`${ramGb} GB`) },
+        ],
+      },
+      {
+        icon: Network,
+        title: "Сеть",
+        rows: [
+          { k: "mode", v: mono(vm.network_mode) },
+          { k: "ip_address", v: mono(vm.ip_address ?? "— (авто / NAT)") },
+        ],
+      },
+      {
+        icon: HardDrive,
+        title: "Диск",
+        rows: [
+          { k: "system_gb", v: mono(`${vm.disk_gb} GB`) },
+          { k: "box", v: mono(vm.box) },
+          { k: "os_version", v: vm.os_version ? mono(vm.os_version) : dim },
+        ],
+      },
+    ],
+    footer: (
+      <>
+        Дополнительные диски — во вкладке «Диски». Ресурсы (vCPU/RAM) правятся во
+        вкладке «Обзор».
+      </>
+    ),
+  };
+}
+
+/**
+ * Презентационная часть «Железа». Ничего не знает про сервер/ВМ — рисует
+ * нормализованную модель: карточки-сводки в сетке, опциональную таблицу
+ * физдисков и опциональную кнопку правки.
+ */
+function HardwareView({ model }: { model: HardwareModel }) {
+  return (
+    <div className="p-5 flex flex-col gap-4">
+      {model.edit && (
+        <div className="flex justify-end">
+          {model.edit.canEdit && (
+            <button
+              className="btn btn-ghost flex items-center gap-1"
+              onClick={model.edit.onEdit}
+            >
+              <Pencil className="w-4 h-4" /> Изменить
+            </button>
+          )}
         </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {model.cards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div key={card.title} className="card">
+              <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+                <Icon className="w-4 h-4 text-accent" /> {card.title}
+              </h3>
+              {card.rows.map((r) => (
+                <StatRow key={r.k} k={r.k} v={r.v} />
+              ))}
+            </div>
+          );
+        })}
       </div>
+
+      {model.diskTable && <DiskTableCard table={model.diskTable} />}
+
+      {model.footer && <div className="text-[11px] text-dim">{model.footer}</div>}
+    </div>
+  );
+}
+
+/** Таблица физдисков сервера — часть общей презентации, но ВМ её не передаёт. */
+function DiskTableCard({ table }: { table: HwDiskTable }) {
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <HardDrive className="w-4 h-4 text-accent" /> Диски
+        <span className="text-xs text-dim font-normal">({table.disks.length})</span>
+      </h3>
+      {table.disks.length === 0 ? (
+        <div className="text-sm text-dim">Дисков в инвентаре нет.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-dim text-xs border-b border-token">
+                <th className="text-left py-2 pr-3">Слот</th>
+                <th className="text-left py-2 pr-3">Размер, ГБ</th>
+                <th className="text-left py-2 pr-3">Занято, ГБ</th>
+                <th className="text-left py-2 pr-3">Занято, %</th>
+                <th className="text-left py-2 pr-3">Модель</th>
+                <th className="text-left py-2 pr-3">Тип</th>
+                <th className="text-left py-2 pr-3">id</th>
+              </tr>
+            </thead>
+            <tbody>
+              {table.disks.map((d) => (
+                <tr key={d.id} className="border-b border-dashed border-token last:border-b-0">
+                  <td className="py-1.5 pr-3 mono">{d.slot}</td>
+                  <td className="py-1.5 pr-3 mono">{d.size_gb}</td>
+                  <td className="py-1.5 pr-3 mono">
+                    {d.used_gb != null ? d.used_gb : <span className="text-dim">—</span>}
+                  </td>
+                  <td className="py-1.5 pr-3 mono">
+                    {d.used_percent != null ? (
+                      `${d.used_percent}%`
+                    ) : (
+                      <span className="text-dim">—</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3">
+                    {d.model ?? <span className="text-dim">—</span>}
+                  </td>
+                  <td className="py-1.5 pr-3">
+                    {d.is_system ? (
+                      <span className="badge badge-ok">system</span>
+                    ) : (
+                      <span className="text-dim">data</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3 mono text-dim">{d.id}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="mt-3 text-[11px] text-dim">{table.footnote}</div>
     </div>
   );
 }
@@ -469,73 +519,6 @@ function HardwareEditForm({
           Диски не редактируются вручную — backend заменяет весь массив
           целиком, реальное обновление идёт через inventory worker.
         </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Read-only сводка по «железу» ВМ — виртуальные ресурсы домена (vCPU / RAM /
- * системный диск / сеть). Тот же вид, что серверная вкладка «Железо», но данные
- * берутся прямо из VM-объекта. Правка ресурсов (vCPU/RAM) — во вкладке «Обзор»,
- * дополнительные диски — во вкладке «Диски».
- */
-function VmHardwareView({ vm }: { vm: Vm }) {
-  const ramGb = (vm.ram_mb / 1024).toFixed(vm.ram_mb % 1024 === 0 ? 0 : 1);
-  return (
-    <div className="p-5 flex flex-col gap-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="card">
-          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-accent" /> CPU
-          </h3>
-          <StatRow k="vCPU" v={<span className="mono">{vm.cpu}</span>} />
-        </div>
-
-        <div className="card">
-          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-            <MemoryStick className="w-4 h-4 text-accent" /> RAM
-          </h3>
-          <StatRow k="total_mb" v={<span className="mono">{vm.ram_mb}</span>} />
-          <StatRow k="total_gb" v={<span className="mono">{ramGb} GB</span>} />
-        </div>
-
-        <div className="card">
-          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-            <Network className="w-4 h-4 text-accent" /> Сеть
-          </h3>
-          <StatRow k="mode" v={<span className="mono">{vm.network_mode}</span>} />
-          <StatRow
-            k="ip_address"
-            v={<span className="mono">{vm.ip_address ?? "— (авто / NAT)"}</span>}
-          />
-        </div>
-
-        <div className="card">
-          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-            <HardDrive className="w-4 h-4 text-accent" /> Диск
-          </h3>
-          <StatRow
-            k="system_gb"
-            v={<span className="mono">{vm.disk_gb} GB</span>}
-          />
-          <StatRow k="box" v={<span className="mono">{vm.box}</span>} />
-          <StatRow
-            k="os_version"
-            v={
-              vm.os_version ? (
-                <span className="mono">{vm.os_version}</span>
-              ) : (
-                <span className="text-dim">—</span>
-              )
-            }
-          />
-        </div>
-      </div>
-
-      <div className="text-[11px] text-dim">
-        Дополнительные диски — во вкладке «Диски». Ресурсы (vCPU/RAM) правятся во
-        вкладке «Обзор».
       </div>
     </div>
   );

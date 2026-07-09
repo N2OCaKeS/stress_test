@@ -1490,16 +1490,6 @@ function Field({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   );
 }
 
-function formatSnapDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("ru-RU", {
-    timeZone: "Europe/Moscow",
-    dateStyle: "short",
-    timeStyle: "short",
-  });
-}
-
 /**
  * Manage-вкладка для ВМ. Бронь (reserve/release) сюда не входит — она живёт в
  * шапке карточки ВМ; здесь только подготовка/ротация управляющих кред и
@@ -1694,7 +1684,7 @@ function PrepareMgmtCard({
               k="Креды ротированы"
               v={
                 vm.mgmt_creds_rotated_at
-                  ? formatSnapDate(vm.mgmt_creds_rotated_at)
+                  ? formatMskShort(vm.mgmt_creds_rotated_at)
                   : "—"
               }
               mono

@@ -7,6 +7,31 @@ import { ToastProvider } from "@/contexts/ToastContext";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import { Vm } from "@/pages/vm/Vm";
 
+// Вкладка «Консоль» ВМ монтирует тот же xterm-терминал, что серверная консоль;
+// в jsdom подменяем его заглушкой (canvas/matchMedia недоступны).
+vi.mock("@xterm/xterm", () => {
+  class FakeTerminal {
+    open() {}
+    loadAddon() {}
+    clear() {}
+    write() {}
+    writeln() {}
+    focus() {}
+    dispose() {}
+    onData() {
+      return { dispose() {} };
+    }
+  }
+  return { Terminal: FakeTerminal };
+});
+vi.mock("@xterm/addon-fit", () => {
+  class FakeFitAddon {
+    fit() {}
+  }
+  return { FitAddon: FakeFitAddon };
+});
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+
 function renderVm(initialEntry: string) {
   return render(
     <ThemeProvider>
@@ -376,27 +401,29 @@ describe("Vm zone (mock mode)", () => {
   it("вкладка «Консоль» несёт панель консоли с выбором SSH/VNC/serial/SPICE", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
     await openVmTab("Консоль");
-    expect(await screen.findByRole("heading", { name: /Консоль/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^SSH$/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^SSH$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^VNC$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Serial$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^SPICE$/ })).toBeInTheDocument();
   });
 
-  it("консоль SSH показывает команду подключения", async () => {
+  it("консоль SSH = выбор учётки + терминал, как у серверной консоли", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
     await openVmTab("Консоль");
-    await screen.findByRole("heading", { name: /Консоль/ });
-    fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
-    // SSH по умолчанию — видна команда ssh.
-    expect(await screen.findByText(/ssh dbosmgr@/)).toBeInTheDocument();
+    // SSH по умолчанию: тот же account-picker + терминал (кнопка «Подключить»),
+    // что и у серверной консоли, а не отдельная data-вёрстка.
+    expect(
+      await screen.findByRole("combobox", { name: /Аккаунт для подключения/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Подключить/ }),
+    ).toBeInTheDocument();
   });
 
   it("консоль VNC показывает ws-эндпоинт прокси (без внешнего вьювера)", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
     await openVmTab("Консоль");
-    await screen.findByRole("heading", { name: /Консоль/ });
-    fireEvent.click(screen.getByRole("button", { name: /^VNC$/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^VNC$/ }));
     fireEvent.click(screen.getByRole("button", { name: /Открыть консоль/ }));
     expect(
       (await screen.findAllByText(/wss:\/\/vms-console\.local/)).length,

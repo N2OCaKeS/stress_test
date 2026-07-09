@@ -1,27 +1,35 @@
 /**
- * Console-вкладка карточки сервера — интерактивный терминал поверх xterm.js.
+ * Console-вкладка карточки сервера и ВМ — интерактивный терминал поверх
+ * xterm.js. Разметка одна и та же: сверху выбор сервисной учётки, ниже живой
+ * терминал. Карточка ВМ добавляет над этим блоком селектор вида консоли
+ * (ssh/serial → тот же терминал; vnc/spice → графический прокси).
  *
- * Соединение: WebSocket на
- * `/api/server/v1/servers/{id}/console/ws?account_id=<acc>`. Консоль
- * открывается под выбранной сервисной учёткой — её id уходит в query
- * `account_id`, а access-токен передаётся subprotocol'ом `bearer.<token>`
- * (см. `@/api/server/console`), потому что браузерный WS не шлёт заголовков.
- * После connect бэк сам поднимает PTY под этим аккаунтом; ввод терминала
- * уходит ws.send(text), вывод приходит binary-кадрами и пишется в xterm как
- * есть.
+ * Соединение: WebSocket на `/api/server/v1/servers/{id}/console/ws` (сервер)
+ * или `/api/server/v1/vms/{id}/console/ws` (ВМ), в обоих случаях с query
+ * `account_id=<acc>`. Консоль открывается под выбранной учёткой; access-токен
+ * уходит subprotocol'ом `bearer.<token>` (см. `@/api/server/console`), потому
+ * что браузерный WS не шлёт заголовков. После connect бэк поднимает PTY/ssh под
+ * этим аккаунтом; ввод терминала уходит ws.send(text), вывод приходит
+ * binary-кадрами и пишется в xterm как есть.
  *
- * Prepare для консоли не требуется — заходим напрямую под выбранным
- * аккаунтом. Обязателен лишь выбор учётки; причины отказа бэка маппятся на
- * понятный баннер по close-коду.
+ * Prepare для консоли не требуется — заходим напрямую под выбранным аккаунтом.
+ * Обязателен лишь выбор учётки; причины отказа бэка маппятся на понятный баннер
+ * по close-коду.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import {
   AlertCircle,
   Boxes,
-  Copy,
   KeyRound,
   Lock,
   Plug,
@@ -34,6 +42,7 @@ import {
   consoleWsProtocols,
   consoleWsUrl,
   describeConsoleClose,
+  vmConsoleWsUrl,
   type ConsoleCloseInfo,
 } from "@/api/server/console";
 import { useQuery } from "@/api/auth/useQuery";
@@ -46,12 +55,14 @@ import { ConsoleMacrosPanel } from "@/pages/server/tabs/ConsoleMacros";
 import { HeightResizeHandle } from "@/components/shell/ResizeHandle";
 import { usePanelHeight } from "@/components/shell/usePanelWidth";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { mockVmConsole } from "@/mocks/vm";
+import { mockVmAccounts, mockVmConsole } from "@/mocks/vm";
 import {
   alltaUpdateVm,
+  listVmAccounts,
   openVmConsole,
   vmConsoleViewerUrl,
   type Vm,
+  type VmAccount,
   type VmConsoleKind,
   type VmConsoleResponse,
 } from "@/api/server/vms";
@@ -72,6 +83,26 @@ interface Props {
 
 type ConnState = "idle" | "connecting" | "open" | "closed";
 
+/**
+ * Куда открывать консольный WS. И сервер, и ВМ переиспользуют один терминал —
+ * различается только маршрут, который выбирается по этому дескриптору.
+ */
+type ConsoleTarget =
+  | { kind: "server"; serverId: string }
+  | { kind: "vm"; vmId: string };
+
+/**
+ * Минимум, который picker'у и терминалу нужен от учётки. Серверный
+ * `ServerAccount` подходит как есть; учётка ВМ приводится к этой форме.
+ */
+interface ConsoleAccount {
+  id: string;
+  login: string;
+  has_sudo: boolean;
+  /** Только у серверных учёток — помечаем discovered в списке. */
+  source?: string;
+}
+
 // Ключ и границы для регулируемой высоты терминала. По умолчанию высота не
 // зафиксирована — терминал заполняет всё доступное место; после первого drag'а
 // в localStorage ложится явный оверрайд.
@@ -80,11 +111,11 @@ const CONSOLE_MIN_HEIGHT = 240;
 const CONSOLE_MAX_HEIGHT = 2000;
 
 export function ConsoleTab({ serverId = "", server, entity }: Props) {
-  // Карточка ВМ рендерит ту же вкладку, но у ВМ своя консоль с выбором вида
-  // (ssh по умолчанию). Диспетчер без хуков — режим фиксируется на монтирование.
+  // Карточка ВМ рендерит ту же вкладку, но с селектором вида консоли сверху.
+  // Диспетчер без хуков — ветка фиксируется на монтирование.
   if (entity?.kind === "vm")
     return (
-      <VmConsoleView
+      <VmConsoleTab
         vm={entity.vm}
         mock={entity.mock}
         canManage={entity.canManage}
@@ -114,10 +145,6 @@ function ServerConsoleTab({ serverId = "", server }: Props) {
     [accounts, persona],
   );
 
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
-  const selectedAccount =
-    accessible.find((a) => a.id === selectedAccountId) ?? null;
-
   // Грубый клиентский gate под право view_password — та же роль, что и для
   // reveal-пароля на вкладке аккаунтов (dep_admin / server admin / operator).
   // Финальное решение за backend'ом: без гранта `getAccount` вернёт
@@ -126,6 +153,11 @@ function ServerConsoleTab({ serverId = "", server }: Props) {
     persona.platform_role === "dep_admin" ||
     persona.service_roles.server === "admin" ||
     persona.service_roles.server === "operator";
+
+  const target = useMemo<ConsoleTarget>(
+    () => ({ kind: "server", serverId }),
+    [serverId],
+  );
 
   return (
     <div className="p-5 flex flex-col gap-4 w-full h-full min-h-0">
@@ -143,29 +175,15 @@ function ServerConsoleTab({ serverId = "", server }: Props) {
         </div>
       </div>
 
-      {accountsQ.loading && (
-        <div className="text-xs text-dim">Загружаем аккаунты…</div>
-      )}
-
-      {accountsQ.error && (
-        <div className="alert alert-danger flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 mt-0.5" />
-          <div className="flex-1 text-xs">
-            <div>{apiErrMsg(accountsQ.error, "Аккаунты не загрузились")}</div>
-            <button
-              className="btn btn-ghost mt-2"
-              onClick={() => accountsQ.refetch()}
-            >
-              Повторить
-            </button>
-          </div>
-        </div>
-      )}
-
-      {!accountsQ.loading && !accountsQ.error && accessible.length === 0 && (
-        <div className="alert flex items-start gap-2">
-          <Lock className="w-4 h-4 mt-0.5 text-dim" />
-          <div className="flex-1 text-xs text-dim">
+      <AccountConsolePanel
+        target={target}
+        accounts={accessible}
+        loading={accountsQ.loading}
+        error={accountsQ.error}
+        onRetry={accountsQ.refetch}
+        canReveal={canReveal}
+        emptyHint={
+          <>
             На этом сервере нет аккаунтов, к которым у вас есть доступ.
             {accounts.length > 0 && (
               <>
@@ -174,11 +192,62 @@ function ServerConsoleTab({ serverId = "", server }: Props) {
                 администратора сервиса или департамента.
               </>
             )}
+          </>
+        }
+      />
+    </div>
+  );
+}
+
+/**
+ * Общий блок «picker учётки + живой терминал». Кормится уже отфильтрованным
+ * списком доступных учёток; loading/error/пустой список рисуются здесь же.
+ */
+function AccountConsolePanel({
+  target,
+  accounts,
+  loading,
+  error,
+  onRetry,
+  canReveal,
+  emptyHint,
+}: {
+  target: ConsoleTarget;
+  accounts: ConsoleAccount[];
+  loading: boolean;
+  error: unknown;
+  onRetry: () => void;
+  canReveal: boolean;
+  emptyHint: ReactNode;
+}) {
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const selectedAccount =
+    accounts.find((a) => a.id === selectedAccountId) ?? null;
+
+  return (
+    <>
+      {loading && <div className="text-xs text-dim">Загружаем аккаунты…</div>}
+
+      {!!error && (
+        <div className="alert alert-danger flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 mt-0.5" />
+          <div className="flex-1 text-xs">
+            <div>{apiErrMsg(error, "Аккаунты не загрузились")}</div>
+            <button className="btn btn-ghost mt-2" onClick={onRetry}>
+              Повторить
+            </button>
           </div>
         </div>
       )}
 
-      {accessible.length > 0 && (
+      {!loading && !error && accounts.length === 0 && (
+        <div className="alert flex items-start gap-2">
+          <Lock className="w-4 h-4 mt-0.5 text-dim" />
+          <div className="flex-1 text-xs text-dim">{emptyHint}</div>
+        </div>
+      )}
+
+      {accounts.length > 0 && (
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">
             Аккаунт для подключения (обязательно)
@@ -189,7 +258,7 @@ function ServerConsoleTab({ serverId = "", server }: Props) {
             onChange={(e) => setSelectedAccountId(e.target.value)}
           >
             <option value="">— выберите учётку —</option>
-            {accessible.map((a) => (
+            {accounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.login}
                 {a.has_sudo ? " (sudo)" : ""}
@@ -204,14 +273,14 @@ function ServerConsoleTab({ serverId = "", server }: Props) {
         </label>
       )}
 
-      {accessible.length > 0 && (
+      {accounts.length > 0 && (
         <ConsoleSession
-          serverId={serverId}
+          target={target}
           account={selectedAccount}
           canReveal={canReveal}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -228,15 +297,16 @@ function StatusBadge({ state }: { state: ConnState }) {
 
 /**
  * Живой терминал. xterm монтируется один раз в контейнер; WebSocket
- * открывается по «Подключить» и dispose'ится по «Отключить» / unmount.
+ * открывается по «Подключить» и dispose'ится по «Отключить» / unmount. Маршрут
+ * WS выбирается по `target` (сервер или ВМ) — сама механика одна и та же.
  */
 function ConsoleSession({
-  serverId,
+  target,
   account,
   canReveal,
 }: {
-  serverId: string;
-  account: ServerAccount | null;
+  target: ConsoleTarget;
+  account: ConsoleAccount | null;
   canReveal: boolean;
 }) {
   const toast = useToast();
@@ -335,12 +405,14 @@ function ConsoleSession({
     term.clear();
     term.writeln("Подключение к консоли…");
 
+    const url =
+      target.kind === "server"
+        ? consoleWsUrl(target.serverId, account.id)
+        : vmConsoleWsUrl(target.vmId, account.id);
+
     let ws: WebSocket;
     try {
-      ws = new WebSocket(
-        consoleWsUrl(serverId, account.id),
-        consoleWsProtocols(),
-      );
+      ws = new WebSocket(url, consoleWsProtocols());
     } catch {
       setState("closed");
       setCloseInfo({
@@ -394,12 +466,13 @@ function ConsoleSession({
       // «connecting», если соединение упало до open.
       if (state === "connecting") setState("closed");
     };
-  }, [serverId, account, state]);
+  }, [target, account, state]);
 
   // Подставить пароль текущей учётки в терминал без перевода строки: при
   // запросе пароля (sudo и т.п.) пользователю остаётся нажать Enter. Пароль
   // достаём свежим запросом и держим в локальной переменной ровно на время
   // отправки — ни в state, ни в term.write (sudo не эхоит, не светим на экран).
+  // Только для серверных учёток: у ВМ reveal-эндпоинта нет, кнопка задизейблена.
   const injectPassword = useCallback(async () => {
     const ws = wsRef.current;
     if (!account || injecting) return;
@@ -544,13 +617,12 @@ function fakeDispatch(): TaskDispatchResponse {
 }
 
 /**
- * Панель консоли ВМ: выбор вида (SSH / VNC / serial / SPICE) и получение данных
- * подключения. Дефолт — SSH. Для SSH показываем готовую команду и креды; для
- * VNC/SPICE/serial — ws-эндпоинт прокси. Графический вьювер не встраиваем
- * (пакета нет в бандле, внешние CDN запрещены CSP) — показываем адрес/порт
- * прокси с пометкой.
+ * Консоль ВМ: сверху селектор вида (ssh по умолчанию / vnc / serial / spice).
+ * ssh и serial используют тот же account-picker + живой терминал, что и сервер;
+ * vnc/spice дают кнопку открытия графического прокси. Кнопка «Обновить allta»
+ * — управляющее действие, доступно носителю права управления.
  */
-function VmConsoleView({
+function VmConsoleTab({
   vm,
   mock,
   canManage = false,
@@ -564,28 +636,29 @@ function VmConsoleView({
   const toast = useToast();
   const { confirm } = useConfirm();
   const [kind, setKind] = useState<VmConsoleKind>("ssh");
-  const [session, setSession] = useState<VmConsoleResponse | null>(null);
-  const [pending, setPending] = useState(false);
   const [alltaPending, setAlltaPending] = useState(false);
 
-  function pick(next: VmConsoleKind) {
-    setKind(next);
-    setSession(null);
-  }
+  const accountsQ = useQuery<VmAccount[]>(
+    () => (mock ? Promise.resolve(mockVmAccounts(vm)) : listVmAccounts(vm.id)),
+    [vm.id, mock],
+  );
 
-  async function open() {
-    setPending(true);
-    try {
-      const res = mock
-        ? mockVmConsole(vm, kind)
-        : await openVmConsole(vm.id, kind);
-      setSession(res);
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось получить данные консоли"));
-    } finally {
-      setPending(false);
-    }
-  }
+  // Учётки ВМ приводим к общей форме picker'а. Персона-фильтра у ВМ нет —
+  // доступность режет backend при открытии сессии; reveal-пароля тоже нет.
+  const accounts = useMemo<ConsoleAccount[]>(
+    () =>
+      (accountsQ.data ?? []).map((a) => ({
+        id: a.account_id,
+        login: a.login,
+        has_sudo: a.has_sudo,
+      })),
+    [accountsQ.data],
+  );
+
+  const target = useMemo<ConsoleTarget>(
+    () => ({ kind: "vm", vmId: vm.id }),
+    [vm.id],
+  );
 
   async function handleAllta() {
     const ok = await confirm({
@@ -615,12 +688,21 @@ function VmConsoleView({
     { value: "spice", label: "SPICE" },
   ];
 
+  const isTerminal = kind === "ssh" || kind === "serial";
+
   return (
-    <div className="card">
-      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-        <h3 className="font-semibold text-base flex items-center gap-2">
-          <TerminalSquare className="w-4 h-4 text-accent" /> Консоль
-        </h3>
+    <div className="p-5 flex flex-col gap-4 w-full h-full min-h-0">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <div className="text-sm font-medium mb-1 flex items-center gap-2">
+            <TerminalSquare className="w-4 h-4 text-accent" />
+            Консоль
+          </div>
+          <div className="text-xs text-dim">
+            Подключение к ВМ{" "}
+            <span className="mono">{vm.name}</span> под выбранной учёткой.
+          </div>
+        </div>
         {canManage && (
           <button
             type="button"
@@ -634,151 +716,143 @@ function VmConsoleView({
           </button>
         )}
       </div>
-      <div className="flex items-center gap-2 flex-wrap mb-3">
-        <div className="flex items-center gap-1">
-          {kinds.map((k) => (
-            <button
-              key={k.value}
-              type="button"
-              className={`btn btn-sm ${kind === k.value ? "btn-primary" : ""}`}
-              onClick={() => pick(k.value)}
-            >
-              {k.label}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          className="btn btn-sm flex items-center gap-1"
-          onClick={open}
-          disabled={pending}
-        >
-          <TerminalSquare className="w-3.5 h-3.5" />
-          {pending ? "Готовим…" : "Открыть консоль"}
-        </button>
+
+      <div className="flex items-center gap-1 flex-wrap">
+        {kinds.map((k) => (
+          <button
+            key={k.value}
+            type="button"
+            className={`btn btn-sm ${kind === k.value ? "btn-primary" : ""}`}
+            onClick={() => setKind(k.value)}
+          >
+            {k.label}
+          </button>
+        ))}
       </div>
 
-      {session && <VmConsoleSession session={session} />}
-      {!session && (
-        <div className="text-xs text-dim">
-          Выберите вид консоли и нажмите «Открыть консоль».
-        </div>
+      {isTerminal ? (
+        <AccountConsolePanel
+          target={target}
+          accounts={accounts}
+          loading={accountsQ.loading}
+          error={accountsQ.error}
+          onRetry={accountsQ.refetch}
+          canReveal={false}
+          emptyHint={
+            <>К этой ВМ не привязано ни одной учётки для консольного входа.</>
+          }
+        />
+      ) : (
+        <VmGraphicalConsole vm={vm} kind={kind} mock={mock} />
       )}
     </div>
   );
 }
 
-function VmConsoleSession({ session }: { session: VmConsoleResponse }) {
-  if (session.kind === "ssh") {
-    const command = `ssh ${session.username ?? "u"}@${session.host ?? ""}`;
-    return (
-      <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
-        <div className="text-xs text-dim">
-          Доступ по SSH под учёткой <span className="mono">{session.username}</span>.
-        </div>
-        <CopyableCommand text={command} />
-        <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
-          <Field k="host" v={`${session.host ?? "—"}:${session.port ?? 22}`} mono />
-          <Field k="Логин" v={session.username ?? "—"} mono />
-          <Field k="Токен" v={session.token} mono />
-        </dl>
-        <div className="text-[11px] text-dim">
-          Токен действует {session.expires_in} с. Пароль/ключ учётки прокси
-          подставляет сам — в ответе он не отдаётся.
-        </div>
-      </div>
-    );
-  }
-
-  if (session.kind === "serial") {
-    return (
-      <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
-        <div className="text-xs text-dim">
-          Последовательная консоль (serial) через прокси на хабе.
-        </div>
-        <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
-          <Field k="host (hub)" v={session.host ?? "—"} mono />
-          {session.serial_path && (
-            <Field k="Устройство" v={session.serial_path} mono />
-          )}
-          <Field k="ws-путь" v={session.ws_path} mono />
-          <Field k="Токен" v={session.token} mono />
-        </dl>
-      </div>
-    );
-  }
-
-  // vnc | spice — графическая консоль через self-hosted прокси.
-  const proto = session.kind === "vnc" ? "VNC" : "SPICE";
-  const viewerUrl = vmConsoleViewerUrl(session);
-  return (
-    <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
-      <div className="text-xs text-dim">
-        Графическая консоль ({proto}) через self-hosted прокси (noVNC/spice-html5).
-      </div>
-      <div className="border border-dashed border-token rounded p-4 text-center bg-black/5 dark:bg-white/5">
-        <TerminalSquare className="w-8 h-8 mx-auto text-dim mb-2" />
-        {viewerUrl ? (
-          <>
-            <div className="text-xs mb-2">
-              Прокси откроет вьювер в новой вкладке; токен предъявляется в query.
-            </div>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm inline-flex items-center gap-1"
-              onClick={() =>
-                window.open(viewerUrl, "_blank", "noopener,noreferrer")
-              }
-            >
-              <TerminalSquare className="w-3.5 h-3.5" /> Открыть консоль {proto}
-            </button>
-          </>
-        ) : (
-          <div className="text-xs text-warn">
-            Прокси-эндпоинт разворачивается инфраструктурно. Кнопка открытия
-            появится после его поднятия.
-          </div>
-        )}
-      </div>
-      <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
-        <Field
-          k="host (hub)"
-          v={`${session.host ?? "—"}${session.port ? `:${session.port}` : ""}`}
-          mono
-        />
-        {session.ws_url && <Field k="ws-прокси" v={session.ws_url} mono />}
-        <Field k="Токен" v={session.token} mono />
-        {session.password && (
-          <Field k={`Пароль ${proto}`} v={session.password} mono />
-        )}
-      </dl>
-    </div>
-  );
-}
-
-function CopyableCommand({ text }: { text: string }) {
+/**
+ * Графическая консоль ВМ (vnc/spice) через self-hosted прокси. Вьювер не
+ * встраиваем (пакета нет в бандле, внешние CDN запрещены CSP) — по кнопке
+ * открываем адрес прокси в новой вкладке, токен предъявляется в query.
+ */
+function VmGraphicalConsole({
+  vm,
+  kind,
+  mock,
+}: {
+  vm: Vm;
+  kind: VmConsoleKind;
+  mock: boolean;
+}) {
   const toast = useToast();
-  async function copy() {
+  const [session, setSession] = useState<VmConsoleResponse | null>(null);
+  const [pending, setPending] = useState(false);
+
+  // Смена вида сбрасывает уже полученную сессию.
+  useEffect(() => {
+    setSession(null);
+  }, [kind]);
+
+  async function open() {
+    setPending(true);
     try {
-      await navigator.clipboard.writeText(text);
-      toast.info("Скопировано в буфер");
-    } catch {
-      toast.warn("Не удалось скопировать — выделите вручную");
+      const res = mock
+        ? mockVmConsole(vm, kind)
+        : await openVmConsole(vm.id, kind);
+      setSession(res);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось получить данные консоли"));
+    } finally {
+      setPending(false);
     }
   }
+
+  const proto = kind === "vnc" ? "VNC" : "SPICE";
+  const viewerUrl = session ? vmConsoleViewerUrl(session) : null;
+
   return (
-    <div className="flex items-center gap-2">
-      <code className="mono text-xs flex-1 break-all bg-black/5 dark:bg-white/5 rounded px-2 py-1">
-        {text}
-      </code>
+    <div className="flex flex-col gap-3">
       <button
         type="button"
-        className="btn btn-sm flex items-center gap-1"
-        onClick={copy}
-        title="Скопировать"
+        className="btn btn-sm flex items-center gap-1 self-start"
+        onClick={open}
+        disabled={pending}
       >
-        <Copy className="w-3.5 h-3.5" />
+        <TerminalSquare className="w-3.5 h-3.5" />
+        {pending ? "Готовим…" : "Открыть консоль"}
       </button>
+
+      {!session && (
+        <div className="text-xs text-dim">
+          Нажмите «Открыть консоль», чтобы получить адрес графического прокси.
+        </div>
+      )}
+
+      {session && (
+        <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
+          <div className="text-xs text-dim">
+            Графическая консоль ({proto}) через self-hosted прокси
+            (noVNC/spice-html5).
+          </div>
+          <div className="border border-dashed border-token rounded p-4 text-center bg-black/5 dark:bg-white/5">
+            <TerminalSquare className="w-8 h-8 mx-auto text-dim mb-2" />
+            {viewerUrl ? (
+              <>
+                <div className="text-xs mb-2">
+                  Прокси откроет вьювер в новой вкладке; токен предъявляется в
+                  query.
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm inline-flex items-center gap-1"
+                  onClick={() =>
+                    window.open(viewerUrl, "_blank", "noopener,noreferrer")
+                  }
+                >
+                  <TerminalSquare className="w-3.5 h-3.5" /> Открыть консоль{" "}
+                  {proto}
+                </button>
+              </>
+            ) : (
+              <div className="text-xs text-warn">
+                Прокси-эндпоинт разворачивается инфраструктурно. Кнопка открытия
+                появится после его поднятия.
+              </div>
+            )}
+          </div>
+          <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
+            <Field
+              k="host (hub)"
+              v={`${session.host ?? "—"}${session.port ? `:${session.port}` : ""}`}
+              mono
+            />
+            {session.ws_url && <Field k="ws-прокси" v={session.ws_url} mono />}
+            <Field k="Токен" v={session.token} mono />
+            {session.password && (
+              <Field k={`Пароль ${proto}`} v={session.password} mono />
+            )}
+          </dl>
+        </div>
+      )}
     </div>
   );
 }

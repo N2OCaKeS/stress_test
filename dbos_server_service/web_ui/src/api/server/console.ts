@@ -32,6 +32,26 @@ export function consoleWsUrl(serverId: string, accountId: string): string {
 }
 
 /**
+ * Абсолютный ws(s)-URL консоли для ВМ — тот же приём, что и `consoleWsUrl` для
+ * сервера, только путь ведёт в `/vms/{id}/console/ws`. `accountId` уходит в
+ * query `account_id`: бэк открывает ssh-сессию в гость под этой учёткой.
+ *
+ * Важно: на сегодня в server_service этого WS-маршрута ещё нет (есть только
+ * `POST /vms/{id}/console`, отдающий данные подключения). Пока маршрут не
+ * добавлен, соединение будет сразу закрываться — причина разбирается тем же
+ * `describeConsoleClose`.
+ */
+export function vmConsoleWsUrl(vmId: string, accountId: string): string {
+  const path = `${API_BASE_URL}/server/v1/vms/${vmId}/console/ws?account_id=${encodeURIComponent(accountId)}`;
+  if (/^https?:\/\//i.test(API_BASE_URL)) {
+    return path.replace(/^http/i, "ws");
+  }
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const base = path.startsWith("/") ? path : `/${path}`;
+  return `${proto}//${window.location.host}${base}`;
+}
+
+/**
  * Subprotocol'ы для открытия консольного WS: фиксированный `console.v1` как
  * маркер протокола плюс `bearer.<access>` с текущим токеном. Если токена в
  * памяти нет — отдаём только маркер, бэк закроет соединение кодом 4401.

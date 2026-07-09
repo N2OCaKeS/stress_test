@@ -134,7 +134,7 @@ function provisionBadge(
 
 export function AccountsTab({ serverId, server, entity }: Props) {
   if (entity?.kind === "vm") {
-    return <VmAccountsView vm={entity.vm} mock={entity.mock} />;
+    return <VmAccountsList vm={entity.vm} mock={entity.mock} />;
   }
   return <ServerAccountsTab serverId={serverId} server={server} />;
 }
@@ -228,8 +228,7 @@ function ServerAccountsTab({ serverId, server }: Props) {
           {items.map((a) => (
             <AccountRow
               key={a.id}
-              account={a}
-              serverId={serverId}
+              model={serverRowModel(a, serverId)}
               active={selectedId === a.id}
               onSelect={() => handleSelect(a.id)}
             />
@@ -320,9 +319,11 @@ function ServerAccountsTab({ serverId, server }: Props) {
  * Read-only список учёток, привязанных к ВМ (`GET /vms/{id}/accounts`). У ВМ
  * привязка задаётся при создании (мультиселект в форме create), поэтому CRUD
  * здесь нет — только просмотр. `present_on_vm` показывает дрейф: привязка есть,
- * а в госте учётки нет. В mock-режиме данные из `@/mocks/vm`.
+ * а в госте учётки нет. Строки рисует общий `AccountRow` — та же презентация,
+ * что и на серверном пути, только модель приходит из `vmRowModel`. В
+ * mock-режиме данные из `@/mocks/vm`.
  */
-function VmAccountsView({ vm, mock }: { vm: Vm; mock: boolean }) {
+function VmAccountsList({ vm, mock }: { vm: Vm; mock: boolean }) {
   const accountsQ = useQuery<VmAccount[]>(
     async () => {
       if (mock) return mockVmAccounts(vm);
@@ -379,50 +380,10 @@ function VmAccountsView({ vm, mock }: { vm: Vm; mock: boolean }) {
             К ВМ не привязано ни одной учётки.
           </div>
         ) : (
-          <div className="surface-2 border border-token rounded overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[11px] uppercase text-dim border-b border-token">
-                  <th className="text-left px-3 py-2 font-medium">Логин</th>
-                  <th className="text-left px-3 py-2 font-medium">sudo</th>
-                  <th className="text-left px-3 py-2 font-medium">Группы</th>
-                  <th className="text-left px-3 py-2 font-medium">SSH-ключ</th>
-                  <th className="text-left px-3 py-2 font-medium">В госте</th>
-                </tr>
-              </thead>
-              <tbody>
-                {accounts.map((a) => (
-                  <tr
-                    key={a.account_id}
-                    className="border-b border-token last:border-b-0"
-                  >
-                    <td className="px-3 py-1.5 mono">{a.login}</td>
-                    <td className="px-3 py-1.5">
-                      {a.has_sudo ? (
-                        <span className="badge badge-warn text-[11px]">sudo</span>
-                      ) : (
-                        <span className="text-dim">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-1.5 text-xs text-dim">
-                      {a.unix_groups.join(", ") || "—"}
-                    </td>
-                    <td className="px-3 py-1.5 text-xs text-dim">
-                      {a.ssh_public_key ? "есть" : "—"}
-                    </td>
-                    <td className="px-3 py-1.5">
-                      {a.present_on_vm ? (
-                        <span className="badge badge-ok text-[11px]">
-                          заведена
-                        </span>
-                      ) : (
-                        <span className="badge badge-warn text-[11px]">дрейф</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="flex flex-col gap-0.5">
+            {accounts.map((a) => (
+              <AccountRow key={a.account_id} model={vmRowModel(a)} />
+            ))}
           </div>
         )}
       </div>
@@ -431,45 +392,98 @@ function VmAccountsView({ vm, mock }: { vm: Vm; mock: boolean }) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Список — одна строка
+// Список — одна строка (общая для сервера и ВМ)
 // ───────────────────────────────────────────────────────────────────────────
 
+type AccountBadge = { label: string; kind: "ok" | "warn" | "danger" | "" };
+
+/**
+ * Нормализованная строка учётки. И сервер, и ВМ приводят свою модель
+ * (`ServerAccount` / `VmAccount`) к этому виду, чтобы список рисовал один и тот
+ * же ряд: логин, вспомогательная подпись под ним и набор бейджей справа.
+ */
+interface AccountRowModel {
+  /** Ключ строки и id для выбора: у сервера — `account.id`, у ВМ — `account_id`. */
+  id: string;
+  login: string;
+  subtitle?: string;
+  badges: AccountBadge[];
+}
+
+/** Серверная учётка → строка списка: scope + provision-бейдж, подпись rotated. */
+function serverRowModel(a: ServerAccount, serverId: string): AccountRowModel {
+  const scope = deriveScope(a);
+  const prov = provisionBadge(a, serverId);
+  return {
+    id: a.id,
+    login: a.login,
+    subtitle: `rotated: ${fmtTs(a.password_rotated_at)}`,
+    badges: [
+      { label: scope, kind: scopeBadgeKind(scope) },
+      { label: prov.label, kind: prov.kind },
+    ],
+  };
+}
+
+/** Учётка ВМ → строка списка: sudo + drift-бейдж, подпись с unix-группами. */
+function vmRowModel(a: VmAccount): AccountRowModel {
+  const groups = a.unix_groups.join(", ");
+  const badges: AccountBadge[] = [];
+  if (a.has_sudo) badges.push({ label: "sudo", kind: "warn" });
+  badges.push(
+    a.present_on_vm
+      ? { label: "заведена", kind: "ok" }
+      : { label: "дрейф", kind: "warn" },
+  );
+  return {
+    id: a.account_id,
+    login: a.login,
+    subtitle: groups ? `группы: ${groups}` : undefined,
+    badges,
+  };
+}
+
+/**
+ * Презентация одной строки списка учёток. Кликабельна только когда передан
+ * `onSelect` (серверный путь с side-panel); ВМ отдаёт read-only ряд без
+ * обработчика.
+ */
 function AccountRow({
-  account,
-  serverId,
+  model,
   active,
   onSelect,
 }: {
-  account: ServerAccount;
-  serverId: string;
-  active: boolean;
-  onSelect: () => void;
+  model: AccountRowModel;
+  active?: boolean;
+  onSelect?: () => void;
 }) {
-  const scope = deriveScope(account);
-  const prov = provisionBadge(account, serverId);
+  const body = (
+    <div className="flex items-center gap-2">
+      <User className={`w-4 h-4 ${active ? "text-accent" : "text-dim"}`} />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm truncate mono">{model.login}</div>
+        {model.subtitle && (
+          <div className="text-[11px] text-dim truncate">{model.subtitle}</div>
+        )}
+      </div>
+      {model.badges.map((b, i) => (
+        <span key={i} className={`badge${b.kind ? ` badge-${b.kind}` : ""}`}>
+          {b.label}
+        </span>
+      ))}
+    </div>
+  );
+
+  if (!onSelect) {
+    return <div className="cred-row">{body}</div>;
+  }
   return (
     <button
       type="button"
       onClick={onSelect}
       className={`cred-row text-left ${active ? "active" : ""}`}
     >
-      <div className="flex items-center gap-2">
-        <User
-          className={`w-4 h-4 ${active ? "text-accent" : "text-dim"}`}
-        />
-        <div className="flex-1 min-w-0">
-          <div className="text-sm truncate mono">{account.login}</div>
-          <div className="text-[11px] text-dim truncate">
-            rotated: {fmtTs(account.password_rotated_at)}
-          </div>
-        </div>
-        <span className={`badge${scopeBadgeKind(scope) ? ` badge-${scopeBadgeKind(scope)}` : ""}`}>
-          {scope}
-        </span>
-        <span className={`badge${prov.kind ? ` badge-${prov.kind}` : ""}`}>
-          {prov.label}
-        </span>
-      </div>
+      {body}
     </button>
   );
 }

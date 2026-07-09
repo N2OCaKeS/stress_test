@@ -137,6 +137,7 @@ export function ServerDetail({
       <Tabs
         active={tab}
         onChange={(id) => setTab(id as TabId)}
+        wrap
         tabs={TABS.map((t) => ({
           id: t.id,
           label: t.label,

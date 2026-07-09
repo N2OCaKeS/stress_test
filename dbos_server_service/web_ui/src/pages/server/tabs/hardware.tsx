@@ -220,6 +220,26 @@ function serverModel(
           { k: "mgmt_ip_address", v: server.mgmt_ip_address ? mono(server.mgmt_ip_address) : dim },
         ],
       },
+      {
+        icon: HardDrive,
+        title: "Диск",
+        rows: (() => {
+          const sys = server.storage.find((d) => d.is_system) ?? null;
+          return [
+            { k: "system_gb", v: sys ? mono(`${sys.size_gb} GB`) : dim },
+            {
+              k: "used",
+              v:
+                sys && sys.used_gb != null
+                  ? mono(
+                      `${sys.used_gb} GB${sys.used_percent != null ? ` (${sys.used_percent}%)` : ""}`,
+                    )
+                  : dim,
+            },
+            { k: "model", v: sys?.model ? mono(sys.model) : dim },
+          ];
+        })(),
+      },
     ],
     diskTable: {
       disks: server.storage,

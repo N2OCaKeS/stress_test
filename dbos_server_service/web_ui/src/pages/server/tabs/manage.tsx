@@ -35,6 +35,7 @@ import {
   X,
   ArrowUpCircle,
   MonitorPlay,
+  ShieldCheck,
 } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
@@ -55,7 +56,14 @@ import {
   setBusy,
 } from "@/api/server/servers";
 import { usersInventory } from "@/api/server/misc";
-import { prepareVmsHub, teardownVmsHub } from "@/api/server/vms";
+import {
+  deleteVm,
+  prepareVm,
+  prepareVmsHub,
+  rotateVmMgmtCreds,
+  teardownVmsHub,
+  type Vm,
+} from "@/api/server/vms";
 import { useTaskOutcome, type TrackedTask } from "@/api/server/useTaskOutcome";
 import { listAccounts } from "@/api/server/accounts";
 import {
@@ -83,13 +91,19 @@ import type {
   OsVersion,
   Server,
   ServerAccount,
+  TaskDispatchResponse,
 } from "@/api/server/types";
+import type { EntityRef } from "./_entity";
 
 interface Props {
   serverId: string;
   server?: Server;
   onServerUpdated?: (next: Server) => void;
   onDeleted?: () => void;
+  /** Ссылка на сущность: при `kind==="vm"` вкладка рендерит управление ВМ. */
+  entity?: EntityRef;
+  /** Локальное обновление карточки после мутации (общий контракт вкладок). */
+  onEntityUpdated?: (next: Server | Vm) => void;
 }
 
 function isDepAdminOfServer(
@@ -111,7 +125,26 @@ function canManageBasic(
   return false;
 }
 
-export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
+export function ManageTab(props: Props) {
+  const { entity, onDeleted, onEntityUpdated } = props;
+  // ВМ рендерит собственный набор карточек (mgmt-креды + удаление). Серверный
+  // путь — прежний. Диспетчер без хуков, чтобы порядок хуков не зависел от режима.
+  if (entity?.kind === "vm") {
+    return (
+      <VmManageView
+        vm={entity.vm}
+        mock={entity.mock}
+        canManage={entity.canManage}
+        onChanged={entity.onChanged}
+        onEntityUpdated={onEntityUpdated}
+        onDeleted={onDeleted}
+      />
+    );
+  }
+  return <ServerManageTab {...props} />;
+}
+
+function ServerManageTab({ server, onServerUpdated, onDeleted }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
   const { confirm, prompt } = useConfirm();
@@ -1435,6 +1468,263 @@ function CleanCard({
           Нет прав на очистку (нужна роль server.operator+ или dep_admin своего
           департамента).
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ВМ — управление (подготовка/mgmt-креды + удаление)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function fakeDispatch(): TaskDispatchResponse {
+  return { task_id: `task-mock-${Date.now()}`, status: "queued" };
+}
+
+function Field({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+  return (
+    <>
+      <dt className="text-dim text-xs">{k}</dt>
+      <dd className={mono ? "mono" : undefined}>{v}</dd>
+    </>
+  );
+}
+
+function formatSnapDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("ru-RU", {
+    timeZone: "Europe/Moscow",
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
+/**
+ * Manage-вкладка для ВМ. Бронь (reserve/release) сюда не входит — она живёт в
+ * шапке карточки ВМ; здесь только подготовка/ротация управляющих кред и
+ * удаление домена.
+ */
+function VmManageView({
+  vm,
+  mock,
+  canManage,
+  onChanged,
+  onEntityUpdated,
+  onDeleted,
+}: {
+  vm: Vm;
+  mock: boolean;
+  canManage: boolean;
+  onChanged: () => void;
+  onEntityUpdated?: (next: Server | Vm) => void;
+  onDeleted?: () => void;
+}) {
+  const toast = useToast();
+  const { prompt } = useConfirm();
+  const [busy, setBusy] = useState(false);
+
+  if (!canManage) {
+    return (
+      <div className="p-5">
+        <div className="text-[11px] text-dim italic">
+          Нет прав на управление этой ВМ.
+        </div>
+      </div>
+    );
+  }
+
+  async function handleDelete() {
+    const { ok, reason } = await prompt({
+      title: "Удалить ВМ",
+      message: `Удалить ВМ ${vm.name}? Домен и диски будут снесены. Действие необратимо.`,
+      reason: true,
+      reasonLabel: "Причина удаления",
+      reasonRequired: true,
+      confirmLabel: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const res = mock
+        ? fakeDispatch()
+        : await deleteVm(vm.id, { reason: reason.trim() });
+      toast.success(
+        `Удаление ВМ ${vm.name} — задача поставлена (${res.task_id})`,
+      );
+      onDeleted?.();
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Удаление не удалось"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="p-5 flex flex-col gap-4">
+      <PrepareMgmtCard
+        vm={vm}
+        mock={mock}
+        onApplied={(next) => onEntityUpdated?.(next)}
+        onChanged={onChanged}
+      />
+
+      <DangerZoneCard
+        buttonLabel={busy ? "Удаляем…" : "Удалить ВМ"}
+        busy={busy}
+        onDelete={handleDelete}
+        description="Удаление ВМ сносит домен libvirt и все её диски. Действие необратимо."
+      />
+    </div>
+  );
+}
+
+function PrepareMgmtCard({
+  vm,
+  mock,
+  onApplied,
+  onChanged,
+}: {
+  vm: Vm;
+  mock: boolean;
+  onApplied: (next: Vm) => void;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const outcome = useTaskOutcome();
+  const [pending, setPending] = useState(false);
+
+  const managed = vm.is_managed === true;
+  // pending — либо backend ещё применяет ротацию, либо мы поллим задачу.
+  const applying =
+    vm.mgmt_creds_pending_apply === true || (outcome.tracked?.polling ?? false);
+
+  async function handlePrepare() {
+    const ok = await confirm({
+      title: "Подготовить ВМ",
+      message: `Подготовить ВМ ${vm.name}? Worker зайдёт по базовой учётке u:1, выполнит bootstrap, снесёт базовую учётку и заведёт управляющие креды.`,
+      confirmLabel: "Подготовить",
+    });
+    if (!ok) return;
+    outcome.reset();
+    setPending(true);
+    try {
+      const res = mock ? fakeDispatch() : await prepareVm(vm.id);
+      outcome.track(`prepare · ${vm.name}`, res.task_id, res.status);
+      toast.success(`Подготовка ВМ ${vm.name} — задача поставлена`);
+      if (mock) {
+        onApplied({
+          ...vm,
+          is_managed: true,
+          mgmt_user: "dbosmgr",
+          mgmt_creds_rotated_at: new Date().toISOString(),
+          mgmt_creds_pending_apply: false,
+        });
+      }
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Подготовка ВМ не удалась"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleRotate() {
+    const ok = await confirm({
+      title: "Ротировать управляющие креды",
+      message: `Сгенерировать новые управляющие креды ВМ ${vm.name} и применить их через worker? Старый материал будет отозван.`,
+      confirmLabel: "Ротировать",
+      danger: true,
+    });
+    if (!ok) return;
+    outcome.reset();
+    setPending(true);
+    try {
+      const res = mock ? fakeDispatch() : await rotateVmMgmtCreds(vm.id);
+      outcome.track(`mgmt rotate · ${vm.name}`, res.task_id, res.status);
+      toast.success(`Ротация кред ВМ ${vm.name} — задача поставлена`);
+      if (mock) {
+        onApplied({ ...vm, mgmt_creds_pending_apply: true });
+      }
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Ротация кред не удалась"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+        <ShieldCheck className="w-4 h-4 text-accent" /> Подготовка и управляющие
+        креды
+        {applying && (
+          <span className="badge badge-warn text-[11px]">
+            ротация применяется…
+          </span>
+        )}
+      </h3>
+
+      {!managed ? (
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex-1 text-xs text-dim">
+            ВМ ещё не подготовлена: базовая учётка <span className="mono">u:1</span>{" "}
+            не снята, управляющих кред нет. Подготовка заведёт per-VM креды и
+            уберёт базовый доступ.
+          </div>
+          <button
+            className="btn btn-primary flex items-center gap-1"
+            onClick={handlePrepare}
+            disabled={pending}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            {pending ? "Ставим задачу…" : "Подготовить"}
+          </button>
+        </div>
+      ) : (
+        <>
+          <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm mb-3">
+            <Field k="Состояние" v="подготовлена" />
+            <Field k="mgmt-учётка" v={vm.mgmt_user ?? "—"} mono />
+            <Field
+              k="Креды ротированы"
+              v={
+                vm.mgmt_creds_rotated_at
+                  ? formatSnapDate(vm.mgmt_creds_rotated_at)
+                  : "—"
+              }
+              mono
+            />
+          </dl>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex-1 text-xs text-dim">
+              Ротация генерирует новую управляющую пару/пароль ВМ и применяет их
+              через worker.
+            </div>
+            <button
+              className="btn btn-danger flex items-center gap-1"
+              onClick={handleRotate}
+              disabled={pending || applying}
+              title="Ротировать управляющие креды ВМ"
+            >
+              <KeyRound className="w-4 h-4" />
+              {applying ? "Ротация идёт…" : "Ротировать креды"}
+            </button>
+          </div>
+        </>
+      )}
+
+      {outcome.tracked && (
+        <TaskOutcomeBanner
+          outcome={outcome.tracked}
+          className="mt-3"
+          successText="Операция применена."
+          onCancelled={outcome.reset}
+        />
       )}
     </div>
   );

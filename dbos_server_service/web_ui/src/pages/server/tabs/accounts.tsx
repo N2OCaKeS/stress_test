@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  AlertCircle,
   AlertTriangle,
   Copy,
   Edit3,
@@ -24,10 +25,12 @@ import {
   Link2,
   Plus,
   Power,
+  RefreshCw,
   RotateCw,
   Trash2,
   Unlink,
   User,
+  Users,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -42,6 +45,8 @@ import type {
   ServerAccount,
   ServerAccountUpdateRequest,
 } from "@/api/server/types";
+import { listVmAccounts, type Vm, type VmAccount } from "@/api/server/vms";
+import { mockVmAccounts } from "@/mocks/vm";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { RotateDispatchResult } from "@/pages/server/_rotateResult";
@@ -51,10 +56,17 @@ import {
   accountPasswordPolicyError,
 } from "@/pages/server/_serverShared";
 import { LinkAccountModal } from "./_linkAccountModal";
+import type { EntityRef } from "./_entity";
 
 interface Props {
   serverId: string;
   server?: Server;
+  /**
+   * Сущность вкладки. Для `kind:"vm"` рендерится read-only список учёток ВМ;
+   * без `entity` (или `kind:"server"`) работает прежний серверный путь по
+   * `serverId`/`server`.
+   */
+  entity?: EntityRef;
 }
 
 const fmtTs = formatMskShort;
@@ -120,7 +132,14 @@ function provisionBadge(
   return { label: "linked", kind: "ok" };
 }
 
-export function AccountsTab({ serverId, server }: Props) {
+export function AccountsTab({ serverId, server, entity }: Props) {
+  if (entity?.kind === "vm") {
+    return <VmAccountsView vm={entity.vm} mock={entity.mock} />;
+  }
+  return <ServerAccountsTab serverId={serverId} server={server} />;
+}
+
+function ServerAccountsTab({ serverId, server }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -289,6 +308,124 @@ export function AccountsTab({ serverId, server }: Props) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Учётки ВМ (read-only)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Read-only список учёток, привязанных к ВМ (`GET /vms/{id}/accounts`). У ВМ
+ * привязка задаётся при создании (мультиселект в форме create), поэтому CRUD
+ * здесь нет — только просмотр. `present_on_vm` показывает дрейф: привязка есть,
+ * а в госте учётки нет. В mock-режиме данные из `@/mocks/vm`.
+ */
+function VmAccountsView({ vm, mock }: { vm: Vm; mock: boolean }) {
+  const accountsQ = useQuery<VmAccount[]>(
+    async () => {
+      if (mock) return mockVmAccounts(vm);
+      return await listVmAccounts(vm.id);
+    },
+    [vm.id, mock],
+    { keepPreviousDataOnError: true },
+  );
+  const accounts = accountsQ.data ?? [];
+
+  return (
+    <div className="flex-1 min-w-0 overflow-y-auto p-5">
+      <div className="card">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-base flex items-center gap-2">
+            <Users className="w-4 h-4 text-accent" /> Учётки
+          </h3>
+          <button
+            className="btn btn-sm flex items-center gap-1"
+            onClick={() => accountsQ.refetch()}
+            disabled={accountsQ.loading}
+            title="Обновить список учёток"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${accountsQ.loading ? "animate-spin" : ""}`}
+            />
+            Обновить
+          </button>
+        </div>
+        <div className="text-xs text-dim mb-3">
+          Учётки отдела, провижнящиеся OS-юзерами в госте ВМ. Привязка задаётся
+          при создании ВМ.
+        </div>
+
+        {accountsQ.loading ? (
+          <div className="text-xs text-dim">Загрузка…</div>
+        ) : accountsQ.error && accounts.length === 0 ? (
+          <div className="alert alert-danger flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 mt-0.5" />
+            <div className="flex-1 text-xs">
+              <div>
+                {apiErrMsg(accountsQ.error, "Список учёток не загрузился")}
+              </div>
+              <button
+                className="btn btn-ghost mt-2"
+                onClick={() => accountsQ.refetch()}
+              >
+                Повторить
+              </button>
+            </div>
+          </div>
+        ) : accounts.length === 0 ? (
+          <div className="text-xs text-dim">
+            К ВМ не привязано ни одной учётки.
+          </div>
+        ) : (
+          <div className="surface-2 border border-token rounded overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] uppercase text-dim border-b border-token">
+                  <th className="text-left px-3 py-2 font-medium">Логин</th>
+                  <th className="text-left px-3 py-2 font-medium">sudo</th>
+                  <th className="text-left px-3 py-2 font-medium">Группы</th>
+                  <th className="text-left px-3 py-2 font-medium">SSH-ключ</th>
+                  <th className="text-left px-3 py-2 font-medium">В госте</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map((a) => (
+                  <tr
+                    key={a.account_id}
+                    className="border-b border-token last:border-b-0"
+                  >
+                    <td className="px-3 py-1.5 mono">{a.login}</td>
+                    <td className="px-3 py-1.5">
+                      {a.has_sudo ? (
+                        <span className="badge badge-warn text-[11px]">sudo</span>
+                      ) : (
+                        <span className="text-dim">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs text-dim">
+                      {a.unix_groups.join(", ") || "—"}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs text-dim">
+                      {a.ssh_public_key ? "есть" : "—"}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      {a.present_on_vm ? (
+                        <span className="badge badge-ok text-[11px]">
+                          заведена
+                        </span>
+                      ) : (
+                        <span className="badge badge-warn text-[11px]">дрейф</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

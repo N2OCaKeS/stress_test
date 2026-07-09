@@ -20,11 +20,14 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import {
   AlertCircle,
+  Boxes,
+  Copy,
   KeyRound,
   Lock,
   Plug,
   PlugZap,
   Terminal as TerminalIcon,
+  TerminalSquare,
 } from "lucide-react";
 import { getAccount, listAccounts } from "@/api/server/accounts";
 import {
@@ -42,16 +45,29 @@ import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
 import { ConsoleMacrosPanel } from "@/pages/server/tabs/ConsoleMacros";
 import { HeightResizeHandle } from "@/components/shell/ResizeHandle";
 import { usePanelHeight } from "@/components/shell/usePanelWidth";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { mockVmConsole } from "@/mocks/vm";
+import {
+  alltaUpdateVm,
+  openVmConsole,
+  vmConsoleViewerUrl,
+  type Vm,
+  type VmConsoleKind,
+  type VmConsoleResponse,
+} from "@/api/server/vms";
 import type {
   CursorPaginatedResponse,
   OffsetPaginatedResponse,
   Server,
   ServerAccount,
+  TaskDispatchResponse,
 } from "@/api/server/types";
+import type { EntityRef } from "./_entity";
 
 interface Props {
-  serverId: string;
+  serverId?: string;
   server?: Server;
+  entity?: EntityRef;
 }
 
 type ConnState = "idle" | "connecting" | "open" | "closed";
@@ -63,7 +79,22 @@ const CONSOLE_HEIGHT_KEY = "dbos-console-height";
 const CONSOLE_MIN_HEIGHT = 240;
 const CONSOLE_MAX_HEIGHT = 2000;
 
-export function ConsoleTab({ serverId, server }: Props) {
+export function ConsoleTab({ serverId = "", server, entity }: Props) {
+  // Карточка ВМ рендерит ту же вкладку, но у ВМ своя консоль с выбором вида
+  // (ssh по умолчанию). Диспетчер без хуков — режим фиксируется на монтирование.
+  if (entity?.kind === "vm")
+    return (
+      <VmConsoleView
+        vm={entity.vm}
+        mock={entity.mock}
+        canManage={entity.canManage}
+        onChanged={entity.onChanged}
+      />
+    );
+  return <ServerConsoleTab serverId={serverId} server={server} />;
+}
+
+function ServerConsoleTab({ serverId = "", server }: Props) {
   const { persona } = usePersona();
   const accountsQ = useQuery(
     () => listAccounts({ server_id: serverId, limit: 200 }),
@@ -503,5 +534,260 @@ function ConsoleSession({
         ariaLabel="Изменить высоту консоли (двойной клик — сброс)"
       />
     </div>
+  );
+}
+
+// ── консоль ВМ ──────────────────────────────────────────────────────────────
+
+function fakeDispatch(): TaskDispatchResponse {
+  return { task_id: `task-mock-${Date.now()}`, status: "queued" };
+}
+
+/**
+ * Панель консоли ВМ: выбор вида (SSH / VNC / serial / SPICE) и получение данных
+ * подключения. Дефолт — SSH. Для SSH показываем готовую команду и креды; для
+ * VNC/SPICE/serial — ws-эндпоинт прокси. Графический вьювер не встраиваем
+ * (пакета нет в бандле, внешние CDN запрещены CSP) — показываем адрес/порт
+ * прокси с пометкой.
+ */
+function VmConsoleView({
+  vm,
+  mock,
+  canManage = false,
+  onChanged,
+}: {
+  vm: Vm;
+  mock: boolean;
+  canManage?: boolean;
+  onChanged?: () => void;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const [kind, setKind] = useState<VmConsoleKind>("ssh");
+  const [session, setSession] = useState<VmConsoleResponse | null>(null);
+  const [pending, setPending] = useState(false);
+  const [alltaPending, setAlltaPending] = useState(false);
+
+  function pick(next: VmConsoleKind) {
+    setKind(next);
+    setSession(null);
+  }
+
+  async function open() {
+    setPending(true);
+    try {
+      const res = mock
+        ? mockVmConsole(vm, kind)
+        : await openVmConsole(vm.id, kind);
+      setSession(res);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось получить данные консоли"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleAllta() {
+    const ok = await confirm({
+      title: "Обновить allta",
+      message: `Обновить guest-allta на ВМ ${vm.name}? Пройдёт по всем не-«_build» снимкам, переустановит .deb и переснимет их.`,
+      confirmLabel: "Обновить",
+    });
+    if (!ok) return;
+    setAlltaPending(true);
+    try {
+      const res = mock ? fakeDispatch() : await alltaUpdateVm(vm.id);
+      toast.success(
+        `Обновление allta ${vm.name} — задача поставлена (${res.task_id})`,
+      );
+      onChanged?.();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Обновление allta не удалось"));
+    } finally {
+      setAlltaPending(false);
+    }
+  }
+
+  const kinds: { value: VmConsoleKind; label: string }[] = [
+    { value: "ssh", label: "SSH" },
+    { value: "vnc", label: "VNC" },
+    { value: "serial", label: "Serial" },
+    { value: "spice", label: "SPICE" },
+  ];
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <h3 className="font-semibold text-base flex items-center gap-2">
+          <TerminalSquare className="w-4 h-4 text-accent" /> Консоль
+        </h3>
+        {canManage && (
+          <button
+            type="button"
+            className="btn btn-sm flex items-center gap-1"
+            onClick={handleAllta}
+            disabled={alltaPending}
+            title="Переустановить guest-allta по не-«_build» снимкам"
+          >
+            <Boxes className="w-3.5 h-3.5" />
+            {alltaPending ? "Ставим задачу…" : "Обновить allta"}
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <div className="flex items-center gap-1">
+          {kinds.map((k) => (
+            <button
+              key={k.value}
+              type="button"
+              className={`btn btn-sm ${kind === k.value ? "btn-primary" : ""}`}
+              onClick={() => pick(k.value)}
+            >
+              {k.label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="btn btn-sm flex items-center gap-1"
+          onClick={open}
+          disabled={pending}
+        >
+          <TerminalSquare className="w-3.5 h-3.5" />
+          {pending ? "Готовим…" : "Открыть консоль"}
+        </button>
+      </div>
+
+      {session && <VmConsoleSession session={session} />}
+      {!session && (
+        <div className="text-xs text-dim">
+          Выберите вид консоли и нажмите «Открыть консоль».
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VmConsoleSession({ session }: { session: VmConsoleResponse }) {
+  if (session.kind === "ssh") {
+    const command = `ssh ${session.username ?? "u"}@${session.host ?? ""}`;
+    return (
+      <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
+        <div className="text-xs text-dim">
+          Доступ по SSH под учёткой <span className="mono">{session.username}</span>.
+        </div>
+        <CopyableCommand text={command} />
+        <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
+          <Field k="host" v={`${session.host ?? "—"}:${session.port ?? 22}`} mono />
+          <Field k="Логин" v={session.username ?? "—"} mono />
+          <Field k="Токен" v={session.token} mono />
+        </dl>
+        <div className="text-[11px] text-dim">
+          Токен действует {session.expires_in} с. Пароль/ключ учётки прокси
+          подставляет сам — в ответе он не отдаётся.
+        </div>
+      </div>
+    );
+  }
+
+  if (session.kind === "serial") {
+    return (
+      <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
+        <div className="text-xs text-dim">
+          Последовательная консоль (serial) через прокси на хабе.
+        </div>
+        <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
+          <Field k="host (hub)" v={session.host ?? "—"} mono />
+          {session.serial_path && (
+            <Field k="Устройство" v={session.serial_path} mono />
+          )}
+          <Field k="ws-путь" v={session.ws_path} mono />
+          <Field k="Токен" v={session.token} mono />
+        </dl>
+      </div>
+    );
+  }
+
+  // vnc | spice — графическая консоль через self-hosted прокси.
+  const proto = session.kind === "vnc" ? "VNC" : "SPICE";
+  const viewerUrl = vmConsoleViewerUrl(session);
+  return (
+    <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
+      <div className="text-xs text-dim">
+        Графическая консоль ({proto}) через self-hosted прокси (noVNC/spice-html5).
+      </div>
+      <div className="border border-dashed border-token rounded p-4 text-center bg-black/5 dark:bg-white/5">
+        <TerminalSquare className="w-8 h-8 mx-auto text-dim mb-2" />
+        {viewerUrl ? (
+          <>
+            <div className="text-xs mb-2">
+              Прокси откроет вьювер в новой вкладке; токен предъявляется в query.
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm inline-flex items-center gap-1"
+              onClick={() =>
+                window.open(viewerUrl, "_blank", "noopener,noreferrer")
+              }
+            >
+              <TerminalSquare className="w-3.5 h-3.5" /> Открыть консоль {proto}
+            </button>
+          </>
+        ) : (
+          <div className="text-xs text-warn">
+            Прокси-эндпоинт разворачивается инфраструктурно. Кнопка открытия
+            появится после его поднятия.
+          </div>
+        )}
+      </div>
+      <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
+        <Field
+          k="host (hub)"
+          v={`${session.host ?? "—"}${session.port ? `:${session.port}` : ""}`}
+          mono
+        />
+        {session.ws_url && <Field k="ws-прокси" v={session.ws_url} mono />}
+        <Field k="Токен" v={session.token} mono />
+        {session.password && (
+          <Field k={`Пароль ${proto}`} v={session.password} mono />
+        )}
+      </dl>
+    </div>
+  );
+}
+
+function CopyableCommand({ text }: { text: string }) {
+  const toast = useToast();
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.info("Скопировано в буфер");
+    } catch {
+      toast.warn("Не удалось скопировать — выделите вручную");
+    }
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <code className="mono text-xs flex-1 break-all bg-black/5 dark:bg-white/5 rounded px-2 py-1">
+        {text}
+      </code>
+      <button
+        type="button"
+        className="btn btn-sm flex items-center gap-1"
+        onClick={copy}
+        title="Скопировать"
+      >
+        <Copy className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function Field({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+  return (
+    <>
+      <dt className="text-dim text-xs">{k}</dt>
+      <dd className={mono ? "mono" : undefined}>{v}</dd>
+    </>
   );
 }

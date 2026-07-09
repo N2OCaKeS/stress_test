@@ -4,7 +4,9 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import type { Vm as VmType } from "@/api/server/vms";
-import { ConsoleCard } from "@/pages/vm/Vm";
+// Консоль ВМ рендерится тем же файлом-вкладкой, что и у сервера: общий
+// `ConsoleTab` при `entity.kind === "vm"` уходит в VM-ветку с выбором вида.
+import { ConsoleTab } from "@/pages/server/tabs/console";
 
 const MOCK_VM: VmType = {
   id: "vm-console",
@@ -39,7 +41,15 @@ function renderConsole() {
     <ThemeProvider>
       <ToastProvider>
         <ConfirmProvider>
-          <ConsoleCard vm={MOCK_VM} mock />
+          <ConsoleTab
+            entity={{
+              kind: "vm",
+              vm: MOCK_VM,
+              mock: true,
+              canManage: true,
+              onChanged: () => {},
+            }}
+          />
         </ConfirmProvider>
       </ToastProvider>
     </ThemeProvider>,

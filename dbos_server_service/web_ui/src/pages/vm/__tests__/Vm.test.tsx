@@ -60,16 +60,17 @@ describe("Vm zone (mock mode)", () => {
     expect(screen.getByRole("button", { name: /Создать ВМ/ })).toBeInTheDocument();
   });
 
-  it("вкладка «Питание» несёт кнопки питания; бронь переехала в «Управление»", async () => {
+  it("вкладка «Питание» несёт кнопки питания; бронь живёт в шапке карточки", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    // Бронь вынесена в шапку карточки (как ReserveControl у сервера) — кнопка
+    // видна независимо от активной вкладки.
+    expect(
+      await screen.findByRole("button", { name: /Забронировать/ }),
+    ).toBeInTheDocument();
     await openVmTab("Питание");
     expect(await screen.findByRole("button", { name: /Start/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Shutdown/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reboot/ })).toBeInTheDocument();
-    // Бронь больше не в «Питании».
-    expect(
-      screen.queryByRole("button", { name: /Забронировать/ }),
-    ).not.toBeInTheDocument();
   });
 
   it("карточка ВМ рендерит таб-бар без вкладок «Сеть»/«Обслуживание»", async () => {

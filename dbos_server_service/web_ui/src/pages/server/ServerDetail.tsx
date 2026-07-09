@@ -20,6 +20,7 @@ import { EntityHeader } from "@/components/entity/EntityHeader";
 import { ReachSignal, PowerStateBadge } from "@/components/entity/signals";
 import { ApiError, apiErrMsg } from "@/api/client";
 import type { Server, ServerStatus, BusyState } from "@/api/server/types";
+import { TAB_ICON } from "./tabs/_tabMeta";
 import { OverviewTab } from "./tabs/overview";
 import { HardwareTab } from "./tabs/hardware";
 import { IpmiTab } from "./tabs/ipmi";
@@ -136,7 +137,11 @@ export function ServerDetail({
       <Tabs
         active={tab}
         onChange={(id) => setTab(id as TabId)}
-        tabs={TABS.map((t) => ({ id: t.id, label: t.label }))}
+        tabs={TABS.map((t) => ({
+          id: t.id,
+          label: t.label,
+          icon: TAB_ICON[t.id],
+        }))}
       />
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto">
         {tab === "overview" && (

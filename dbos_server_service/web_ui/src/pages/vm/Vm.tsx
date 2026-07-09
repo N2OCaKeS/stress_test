@@ -10,47 +10,29 @@
  * `@/api/server/vms`. Тонкая матрица прав `vm.*` (дизайн §2) ещё не приходит в
  * persona — гейтим серверной ролью через `@/lib/rbac`.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   AlertCircle,
   AlertTriangle,
   ArrowLeft,
-  ArrowUpCircle,
-  Boxes,
-  Camera,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Cpu,
-  HardDrive,
-  KeyRound,
-  Maximize2,
-  MemoryStick,
   MonitorPlay,
-  Network,
-  Package,
   Pencil,
-  Play,
   Plus,
-  Power,
   RefreshCw,
-  RotateCcw,
   Rocket,
   Search,
-  ShieldCheck,
-  Square,
   Layers,
-  TerminalSquare,
-  Copy,
   Users,
   XCircle,
-  Zap,
   Trash2,
-  Undo2,
   Waypoints,
   Lock,
+  Unlock,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { Tabs } from "@/components/ui/Tabs";
@@ -58,7 +40,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery, useMockMode } from "@/api/auth/useQuery";
-import { ApiError, apiErrMsg } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import { useDeptLabel } from "@/lib/labels";
 import {
   canManageVmNet,
@@ -68,103 +50,65 @@ import {
 } from "@/lib/rbac";
 import { EntityHeader } from "@/components/entity/EntityHeader";
 import { ReachSignal, PowerStateBadge } from "@/components/entity/signals";
-import { PackagesTable } from "@/components/entity/PackagesTable";
-import { BookingCard } from "@/components/entity/manage/BookingCard";
-import { DangerZoneCard } from "@/components/entity/manage/DangerZoneCard";
-import { StatRow } from "@/pages/admin/services/_inline";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import { listServers } from "@/api/server/servers";
-import { listOsVersions } from "@/api/server/osVersions";
 import {
-  alltaUpdateVm,
-  astraUpdateVm,
   createDefaultVms,
   createVmsBulk,
-  createVmDisk,
   createVmIpPool,
   createVmPreset,
-  createVmSnapshot,
-  deleteVm,
-  deleteVmDisk,
   deleteVmIpPool,
   deleteVmPreset,
-  deleteVmSnapshot,
   getAvailableIps,
   getVmByNumber,
   getServerByNumber,
-  listVmDisks,
-  listVmAccounts,
   listVmImages,
   listVmIpPools,
-  listVmPackages,
   listVmPresets,
-  listVmSnapshots,
   listVms,
-  openVmConsole,
-  prepareVm,
   refreshVmImages,
   releaseVm,
   reserveVm,
-  resizeVmDisk,
-  revertVmSnapshot,
-  rotateVmMgmtCreds,
-  setVmAutostart,
-  setVmCredStrategy,
-  updateVm,
   updateVmIpPool,
   updateVmPreset,
-  vmConsoleViewerUrl,
-  vmPower,
   type Vm,
-  type VmAccount,
   type VmBulkCreateResponse,
   type VmBulkItemResult,
-  type VmConsoleKind,
-  type VmConsoleResponse,
   type VmCreateRequest,
   type VmCredStrategy,
-  type VmDisk,
-  type VmDiskCreateRequest,
   type VmHub,
   type VmImage,
   type VmIpPool,
   type VmIpPoolCreateRequest,
   type VmIpPoolUpdateRequest,
   type VmNetworkMode,
-  type VmPackagesResponse,
-  type VmPowerAction,
   type VmPreset,
   type VmPresetCreateRequest,
   type VmPresetUpdateRequest,
-  type VmSnapshot,
-  type VmSnapshotCategory,
-  type VmSnapshotCreateRequest,
-  type VmSnapshotType,
-  type VmSnapshotMode,
-  type VmUpdateRequest,
 } from "@/api/server/vms";
 import { listAccounts } from "@/api/server/accounts";
-import type {
-  OsVersion,
-  ServerAccount,
-  TaskDispatchResponse,
-} from "@/api/server/types";
+import type { ServerAccount, TaskDispatchResponse } from "@/api/server/types";
 import {
   MOCK_AVAILABLE_IPS,
   MOCK_VM_ACCOUNTS,
-  MOCK_VM_DISKS,
   MOCK_VM_HUBS,
   MOCK_VM_IMAGES,
   MOCK_VM_IP_POOLS,
-  MOCK_VM_OS_VERSIONS,
   MOCK_VM_PRESETS,
-  MOCK_VM_SNAPSHOTS,
   MOCK_VMS,
-  mockVmAccounts,
-  mockVmConsole,
-  mockVmPackages,
 } from "@/mocks/vm";
+import { TAB_ICON } from "@/pages/server/tabs/_tabMeta";
+import type { EntityRef } from "@/pages/server/tabs/_entity";
+import { OverviewTab } from "@/pages/server/tabs/overview";
+import { HardwareTab } from "@/pages/server/tabs/hardware";
+import { PowerTab } from "@/pages/server/tabs/power";
+import { AccountsTab } from "@/pages/server/tabs/accounts";
+import { ConsoleTab } from "@/pages/server/tabs/console";
+import { PackagesTab } from "@/pages/server/tabs/packages";
+import { ManageTab } from "@/pages/server/tabs/manage";
+import { DisksTab } from "@/pages/server/tabs/disks";
+import { SnapshotsTab } from "@/pages/server/tabs/snapshots";
 
 // ── data helpers (mock ↔ live) ──────────────────────────────────────────────
 
@@ -732,23 +676,32 @@ type VmTabId =
   | "overview"
   | "hardware"
   | "power"
-  | "disks"
-  | "snapshots"
   | "accounts"
-  | "packages"
   | "console"
-  | "manage";
+  | "packages"
+  | "manage"
+  | "disks"
+  | "snapshots";
+
+const VM_TABS: { id: VmTabId; label: string }[] = [
+  { id: "overview", label: "Обзор" },
+  { id: "hardware", label: "Железо" },
+  { id: "power", label: "Питание" },
+  { id: "accounts", label: "Аккаунты" },
+  { id: "console", label: "Консоль" },
+  { id: "packages", label: "Пакеты" },
+  { id: "manage", label: "Управление" },
+  { id: "disks", label: "Диски" },
+  { id: "snapshots", label: "Снимки" },
+];
 
 /**
- * Карточка конкретной ВМ — раскладка вкладками по образцу карточки сервера
- * (`ServerDetail`). Общая шапка с именем/номером/питанием, ниже — таб-бар и
- * содержимое активной вкладки. Набор повторяет применимые вкладки сервера
- * (железо, аккаунты, пакеты, консоль, управление) плюс VM-специфичные (питание,
- * диски, снимки). IPMI у ВМ нет (нет BMC), вкладку не показываем. Обновление ОС
- * и allta живут во вкладке «Снимки», бронь — во вкладке «Управление».
- * Управляющие вкладки (питание, управление) видны только при праве на
- * управление; обзор, железо, диски, снимки, аккаунты, пакеты и консоль доступны
- * и на чтение.
+ * Карточка ВМ — тонкий диспетчер вкладок по образцу `ServerDetail`. Рендерит те
+ * же файлы-компоненты вкладок, что и карточка сервера, передавая им сущность-ВМ
+ * через `EntityRef`. Своё здесь — только общая шапка (имя/питание/бронь) и
+ * локальная копия карточки, чтобы мутации во вкладках поднимались в header и в
+ * соседние вкладки без перезагрузки. Набор вкладок фиксирован; гейтинг по праву
+ * управления живёт внутри самих вкладок (power/manage), как у сервера.
  */
 export function VmDetail({
   vm,
@@ -764,181 +717,17 @@ export function VmDetail({
   onChanged: () => void;
 }) {
   const [tab, setTab] = useState<VmTabId>("overview");
-  const toast = useToast();
-  const { confirm, prompt } = useConfirm();
   const deptLabel = useDeptLabel(vm.department_id);
-  const powerOutcome = useTaskOutcome();
-  const resourceOutcome = useTaskOutcome();
+  // Свежая копия карточки: vm-проп меняется при refetch списка, локальные
+  // мутации во вкладках (PATCH, бронь) поднимаются сюда через setLocal.
   const [local, setLocal] = useState<Vm>(vm);
-  const [pending, setPending] = useState(false);
-  const [resourceModal, setResourceModal] = useState(false);
-
-  // vm prop меняется при refetch — подхватываем свежую копию.
   const view = local.id === vm.id ? local : vm;
-  const reserved = view.busy_state !== "free" || !!view.busy_note;
 
-  async function handleUpdateResources(body: VmUpdateRequest) {
-    resourceOutcome.reset();
-    try {
-      const res = mock ? fakeDispatch() : await updateVm(view.id, body);
-      resourceOutcome.track(
-        `update cpu/ram · ${view.name}`,
-        res.task_id,
-        res.status,
-      );
-      toast.success(`Изменение ресурсов ${view.name} — задача поставлена`);
-      setResourceModal(false);
-      if (mock) {
-        setLocal({
-          ...view,
-          cpu: body.cpu ?? view.cpu,
-          ram_mb: body.ram_mb ?? view.ram_mb,
-        });
-      }
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось изменить ресурсы"));
-    }
-  }
+  const entity: EntityRef = { kind: "vm", vm: view, mock, canManage, onChanged };
+  const onVmUpdated = (next: import("@/api/server/types").Server | Vm) =>
+    setLocal(next as Vm);
 
-  async function power(action: VmPowerAction, danger = false) {
-    const ok = await confirm({
-      title: `Питание: ${action}`,
-      message: `Выполнить «${action}» на ВМ ${view.name}?`,
-      confirmLabel: "Выполнить",
-      danger,
-    });
-    if (!ok) return;
-    powerOutcome.reset();
-    try {
-      const res = mock ? fakeDispatch() : await vmPower(view.id, action);
-      powerOutcome.track(`power ${action}`, res.task_id, res.status);
-      toast.success(`Питание «${action}» — задача поставлена`);
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Операция питания не удалась"));
-    }
-  }
-
-  async function handleToggleAutostart() {
-    if (pending) return;
-    const next = !view.autostart;
-    setPending(true);
-    powerOutcome.reset();
-    try {
-      const res = mock ? fakeDispatch() : await setVmAutostart(view.id, next);
-      powerOutcome.track(
-        `autostart ${next ? "on" : "off"} · ${view.name}`,
-        res.task_id,
-        res.status,
-      );
-      setLocal({ ...view, autostart: next });
-      toast.success(
-        `Автозапуск ВМ ${view.name} — ${next ? "включён" : "выключен"} (задача поставлена)`,
-      );
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось изменить автозапуск"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function handleReserve(reason: string) {
-    if (pending) return;
-    setPending(true);
-    try {
-      const next = mock
-        ? { ...view, busy_state: "busy", busy_note: reason.trim(), status: reason.trim() }
-        : await reserveVm(view.id, { reason: reason.trim() });
-      setLocal(next as Vm);
-      onChanged();
-      toast.success(`ВМ ${view.name} забронирована`);
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось забронировать"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function handleRelease() {
-    if (pending) return;
-    const ok = await confirm({
-      title: "Снять бронь",
-      message: `Снять бронь с ${view.name}?`,
-      confirmLabel: "Снять бронь",
-    });
-    if (!ok) return;
-    setPending(true);
-    try {
-      const next = mock
-        ? { ...view, busy_state: "free", busy_note: null, status: "free" }
-        : await releaseVm(view.id);
-      setLocal(next as Vm);
-      onChanged();
-      toast.success(`Бронь с ${view.name} снята`);
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось снять бронь"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function handleDelete() {
-    const { ok, reason } = await prompt({
-      title: "Удалить ВМ",
-      message: `Удалить ВМ ${view.name}? Домен и диски будут снесены. Действие необратимо.`,
-      reason: true,
-      reasonLabel: "Причина удаления",
-      reasonRequired: true,
-      confirmLabel: "Удалить",
-      danger: true,
-    });
-    if (!ok) return;
-    try {
-      const res = mock ? fakeDispatch() : await deleteVm(view.id, { reason: reason.trim() });
-      toast.success(`Удаление ВМ ${view.name} — задача поставлена (${res.task_id})`);
-      onBack();
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Удаление не удалось"));
-    }
-  }
-
-  // Вкладки: обзор/железо/диски/снимки/аккаунты/пакеты/консоль доступны на
-  // чтение; питание и управление — только при праве на управление.
-  const tabs: { id: VmTabId; label: string; icon: React.ReactNode }[] = [
-    { id: "overview", label: "Обзор", icon: <MonitorPlay className="w-4 h-4" /> },
-    { id: "hardware", label: "Железо", icon: <Cpu className="w-4 h-4" /> },
-    ...(canManage
-      ? [
-          {
-            id: "power" as const,
-            label: "Питание",
-            icon: <Power className="w-4 h-4" />,
-          },
-        ]
-      : []),
-    { id: "disks", label: "Диски", icon: <HardDrive className="w-4 h-4" /> },
-    { id: "snapshots", label: "Снимки", icon: <Camera className="w-4 h-4" /> },
-    { id: "accounts", label: "Аккаунты", icon: <Users className="w-4 h-4" /> },
-    { id: "packages", label: "Пакеты", icon: <Package className="w-4 h-4" /> },
-    {
-      id: "console",
-      label: "Консоль",
-      icon: <TerminalSquare className="w-4 h-4" />,
-    },
-    ...(canManage
-      ? [
-          {
-            id: "manage" as const,
-            label: "Управление",
-            icon: <ShieldCheck className="w-4 h-4" />,
-          },
-        ]
-      : []),
-  ];
-  // Если активная вкладка выпала из набора (сменилась роль/ВМ) — вернуться на обзор.
-  const activeTab = tabs.some((t) => t.id === tab) ? tab : "overview";
+  const activeTab = VM_TABS.some((t) => t.id === tab) ? tab : "overview";
 
   return (
     <section className="flex-1 min-w-0 overflow-hidden flex flex-col">
@@ -950,11 +739,6 @@ export function VmDetail({
         badges={
           <>
             <span className="badge">ВМ</span>
-            {reserved && (
-              <span className="badge badge-warn flex items-center gap-1">
-                <Lock className="w-3.5 h-3.5" /> {view.status}
-              </span>
-            )}
             <ReachSignal
               label="ping"
               reachable={view.ping_reachable}
@@ -977,230 +761,178 @@ export function VmDetail({
             </span>
           </>
         }
-      />
+      >
+        <VmReserveControl
+          vm={view}
+          mock={mock}
+          canManage={canManage}
+          onLocal={setLocal}
+          onChanged={onChanged}
+        />
+      </EntityHeader>
 
       <Tabs
         active={activeTab}
         onChange={(id) => setTab(id as VmTabId)}
         wrap
-        tabs={tabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon }))}
+        tabs={VM_TABS.map((t) => ({
+          id: t.id,
+          label: t.label,
+          icon: TAB_ICON[t.id],
+        }))}
       />
 
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto">
-        <div className="p-5 flex flex-col gap-4">
-          {activeTab === "overview" && (
-            <div className="card">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-base">Параметры</h3>
-                {canManage && (
-                  <button
-                    className="btn btn-sm flex items-center gap-1"
-                    onClick={() => setResourceModal(true)}
-                    title="Изменить vCPU и RAM"
-                  >
-                    <Cpu className="w-3.5 h-3.5" /> Изменить CPU/RAM
-                  </button>
-                )}
-              </div>
-              <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm">
-                <Field k="Хаб" v={view.hub_server_id} mono />
-                <Field k="ОС" v={view.os_version ?? "—"} />
-                <Field k="box" v={view.box} />
-                <Field k="Сеть" v={view.network_mode} />
-                <Field k="IP-адрес" v={view.ip_address ?? "— (авто)"} mono />
-                <Field k="vCPU" v={String(view.cpu)} />
-                <Field k="RAM" v={`${view.ram_mb} МБ`} />
-                <Field k="Диск" v={`${view.disk_gb} ГБ`} />
-                <Field k="autostart" v={view.autostart ? "да" : "нет"} />
-                <Field k="Стратегия кред" v={view.cred_strategy} />
-                <Field k="Питание" v={view.power_state} />
-                <Field k="Занятость" v={view.busy_state} />
-              </dl>
-              {resourceOutcome.tracked && (
-                <TaskOutcomeBanner
-                  outcome={resourceOutcome.tracked}
-                  className="mt-3"
-                  successText="Ресурсы применены."
-                  onCancelled={resourceOutcome.reset}
-                />
-              )}
-            </div>
-          )}
-
-          {activeTab === "hardware" && <VmHardwareCard vm={view} />}
-
-          {activeTab === "power" && canManage && (
-            <div className="card">
-              <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-                <Power className="w-4 h-4 text-accent" /> Питание
-              </h3>
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    className="btn btn-primary flex items-center gap-1"
-                    onClick={() => power("start")}
-                    disabled={view.power_state === "on"}
-                  >
-                    <Play className="w-4 h-4" /> Start
-                  </button>
-                  <button
-                    className="btn flex items-center gap-1"
-                    onClick={() => power("shutdown")}
-                    disabled={view.power_state === "off"}
-                  >
-                    <Square className="w-4 h-4" /> Shutdown
-                  </button>
-                  <button
-                    className="btn flex items-center gap-1"
-                    onClick={() => power("reboot")}
-                    disabled={view.power_state === "off"}
-                  >
-                    <RotateCcw className="w-4 h-4" /> Reboot
-                  </button>
-                  <button
-                    className="btn flex items-center gap-1"
-                    onClick={() => power("reset", true)}
-                    disabled={view.power_state === "off"}
-                    title="Hard reset (power-cycle)"
-                  >
-                    <RotateCcw className="w-4 h-4" /> Reset
-                  </button>
-                  <button
-                    className="btn btn-danger flex items-center gap-1"
-                    onClick={() => power("destroy", true)}
-                    disabled={view.power_state === "off"}
-                    title="Hard power-off"
-                  >
-                    <Power className="w-4 h-4" /> Destroy
-                  </button>
-                </div>
-                <div className="flex items-center gap-3 mt-3 pt-3 border-t border-token flex-wrap">
-                  <Zap
-                    className={`w-4 h-4 ${view.autostart ? "text-accent" : "text-dim"}`}
-                  />
-                  <div className="flex-1 text-xs text-dim">
-                    Автозапуск при старте хаба (<span className="mono">virsh autostart</span>):{" "}
-                    <b>{view.autostart ? "включён" : "выключен"}</b>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={view.autostart}
-                    aria-label="Автозапуск"
-                    onClick={handleToggleAutostart}
-                    disabled={pending}
-                    className={`btn btn-sm ${view.autostart ? "btn-primary" : ""}`}
-                    title="Включить/выключить автозапуск ВМ"
-                  >
-                    {view.autostart ? "Автозапуск: вкл" : "Автозапуск: выкл"}
-                  </button>
-                </div>
-              {powerOutcome.tracked && (
-                <TaskOutcomeBanner
-                  outcome={powerOutcome.tracked}
-                  className="mt-3"
-                  successText="Питание применено."
-                  onCancelled={powerOutcome.reset}
-                />
-              )}
-            </div>
-          )}
-
-          {activeTab === "snapshots" && (
-            <>
-              <SnapshotsSection
-                vm={view}
-                mock={mock}
-                canManage={canManage}
-                onChanged={onChanged}
-              />
-              {canManage && (
-                <VmOsUpdateCard vm={view} mock={mock} onChanged={onChanged} />
-              )}
-              {canManage && (
-                <CredStrategyCard
-                  vm={view}
-                  mock={mock}
-                  onApplied={(next) => setLocal(next)}
-                  onChanged={onChanged}
-                />
-              )}
-            </>
-          )}
-
-          {activeTab === "disks" && (
-            <DisksSection
-              vm={view}
-              mock={mock}
-              canManage={canManage}
-              onChanged={onChanged}
-            />
-          )}
-
-          {activeTab === "accounts" && (
-            <VmAccountsSection vm={view} mock={mock} />
-          )}
-
-          {activeTab === "packages" && (
-            <VmPackagesSection vm={view} mock={mock} />
-          )}
-
-          {activeTab === "console" && (
-            <ConsoleCard
-              vm={view}
-              mock={mock}
-              canManage={canManage}
-              onChanged={onChanged}
-            />
-          )}
-
-          {activeTab === "manage" && canManage && (
-            <>
-              <PrepareMgmtCard
-                vm={view}
-                mock={mock}
-                onApplied={(next) => setLocal(next)}
-                onChanged={onChanged}
-              />
-
-              <BookingCard
-                entityWord="ВМ"
-                reserved={reserved}
-                stateLabel={view.busy_state}
-                note={view.busy_note}
-                canManage={canManage}
-                busy={pending}
-                onReserve={handleReserve}
-                onRelease={handleRelease}
-              />
-
-              <DangerZoneCard
-                buttonLabel="Удалить ВМ"
-                busy={pending}
-                onDelete={handleDelete}
-                description="Удаление ВМ сносит домен libvirt и все её диски. Действие необратимо."
-              />
-            </>
-          )}
-        </div>
+        {activeTab === "overview" && (
+          <OverviewTab entity={entity} onEntityUpdated={onVmUpdated} />
+        )}
+        {activeTab === "hardware" && (
+          <HardwareTab serverId="" entity={entity} />
+        )}
+        {activeTab === "power" && (
+          <PowerTab entity={entity} onEntityUpdated={onVmUpdated} />
+        )}
+        {activeTab === "accounts" && (
+          <AccountsTab serverId="" entity={entity} />
+        )}
+        {activeTab === "console" && <ConsoleTab entity={entity} />}
+        {activeTab === "packages" && (
+          <PackagesTab serverId="" entity={entity} />
+        )}
+        {activeTab === "manage" && (
+          <ManageTab
+            serverId=""
+            entity={entity}
+            onEntityUpdated={onVmUpdated}
+            onDeleted={onBack}
+          />
+        )}
+        {activeTab === "disks" && <DisksTab entity={entity} />}
+        {activeTab === "snapshots" && (
+          <SnapshotsTab entity={entity} onEntityUpdated={onVmUpdated} />
+        )}
       </div>
-
-      {resourceModal && (
-        <ResourcesModal
-          vm={view}
-          onClose={() => setResourceModal(false)}
-          onSubmit={handleUpdateResources}
-        />
-      )}
     </section>
   );
 }
 
-function Field({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+/**
+ * Бронь ВМ в шапке карточки — индикатор «Забронировано» и кнопки
+ * «Забронировать»/«Снять бронь». Оптимистично правит локальную копию и дёргает
+ * `onChanged`, чтобы список хаба обновил индикатор. Право на бронь приходит
+ * сверху одним флагом: у ВМ нет per-операционной матрицы прав, как у сервера.
+ */
+function VmReserveControl({
+  vm,
+  mock,
+  canManage,
+  onLocal,
+  onChanged,
+}: {
+  vm: Vm;
+  mock: boolean;
+  canManage: boolean;
+  onLocal: (next: Vm) => void;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const { prompt, confirm } = useConfirm();
+  const [pending, setPending] = useState(false);
+  const reserved = vm.busy_state !== "free" || !!vm.busy_note;
+
+  async function handleReserve() {
+    if (pending || !canManage) return;
+    const { ok, reason } = await prompt({
+      title: "Забронировать ВМ",
+      message: `Забронировать ${vm.name}? Бронь блокирует деструктивные операции других пользователей до её снятия.`,
+      reason: true,
+      reasonLabel: "Примечание (зачем бронь)",
+      reasonPlaceholder: "например, ручной debug-цикл",
+      reasonRequired: true,
+      confirmLabel: "Забронировать",
+    });
+    if (!ok) return;
+    setPending(true);
+    try {
+      const next = mock
+        ? {
+            ...vm,
+            busy_state: "busy",
+            busy_note: reason.trim(),
+            status: reason.trim(),
+          }
+        : await reserveVm(vm.id, { reason: reason.trim() });
+      onLocal(next as Vm);
+      onChanged();
+      toast.success(`ВМ ${vm.name} забронирована`);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось забронировать"));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleRelease() {
+    if (pending || !canManage) return;
+    const ok = await confirm({
+      title: "Снять бронь",
+      message: `Снять бронь с ${vm.name}?`,
+      confirmLabel: "Снять бронь",
+    });
+    if (!ok) return;
+    setPending(true);
+    try {
+      const next = mock
+        ? { ...vm, busy_state: "free", busy_note: null, status: "free" }
+        : await releaseVm(vm.id);
+      onLocal(next as Vm);
+      onChanged();
+      toast.success(`Бронь с ${vm.name} снята`);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось снять бронь"));
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
-    <>
-      <dt className="text-dim text-xs">{k}</dt>
-      <dd className={mono ? "mono" : undefined}>{v}</dd>
-    </>
+    <div className="mt-3 flex items-center gap-3 flex-wrap">
+      {reserved ? (
+        <>
+          <span className="badge badge-warn flex items-center gap-1">
+            <Lock className="w-3.5 h-3.5" /> Забронировано
+          </span>
+          {vm.busy_note && (
+            <span className="text-xs text-dim truncate max-w-[320px]">
+              {vm.busy_note}
+            </span>
+          )}
+          {canManage && (
+            <button
+              type="button"
+              className="btn btn-sm flex items-center gap-1"
+              onClick={handleRelease}
+              disabled={pending}
+              title="Снять бронь"
+            >
+              <Unlock className="w-3.5 h-3.5" /> Снять бронь
+            </button>
+          )}
+        </>
+      ) : (
+        canManage && (
+          <button
+            type="button"
+            className="btn btn-sm btn-primary flex items-center gap-1"
+            onClick={handleReserve}
+            disabled={pending}
+            title="Забронировать ВМ"
+          >
+            <Lock className="w-3.5 h-3.5" /> Забронировать
+          </button>
+        )
+      )}
+    </div>
   );
 }
 
@@ -1862,1471 +1594,6 @@ function AccountMultiSelect({
   );
 }
 
-// ── disks ─────────────────────────────────────────────────────────────────────
-
-function DisksSection({
-  vm,
-  mock,
-  canManage,
-  onChanged,
-}: {
-  vm: Vm;
-  mock: boolean;
-  canManage: boolean;
-  onChanged: () => void;
-}) {
-  const toast = useToast();
-  const { confirm } = useConfirm();
-  const diskOutcome = useTaskOutcome();
-  const [createOpen, setCreateOpen] = useState(false);
-  const [resizeTarget, setResizeTarget] = useState<VmDisk | null>(null);
-
-  const disksQ = useQuery<VmDisk[]>(
-    async () => {
-      if (mock) return MOCK_VM_DISKS[vm.id] ?? [];
-      const res = await listVmDisks(vm.id);
-      return res.items;
-    },
-    [vm.id, mock],
-    { keepPreviousDataOnError: true },
-  );
-
-  // В mock-режиме операции не ходят на backend — держим локальную копию, чтобы
-  // список отражал создание/удаление/resize сразу.
-  const [mockDisks, setMockDisks] = useState<VmDisk[] | null>(null);
-  useEffect(() => {
-    setMockDisks(null);
-  }, [vm.id]);
-  const disks = mock ? (mockDisks ?? disksQ.data ?? []) : (disksQ.data ?? []);
-
-  async function handleCreate(body: VmDiskCreateRequest) {
-    diskOutcome.reset();
-    try {
-      const res = mock ? fakeDispatch() : await createVmDisk(vm.id, body);
-      diskOutcome.track(`disk create · ${body.name}`, res.task_id, res.status);
-      toast.success(`Создание диска ${body.name} — задача поставлена`);
-      setCreateOpen(false);
-      if (mock) {
-        const next: VmDisk = {
-          id: `disk-mock-${Date.now()}`,
-          vm_id: vm.id,
-          name: body.name,
-          size_gb: body.size_gb,
-          path: null,
-          target_dev: null,
-          serial: `${vm.id}_${body.name}`,
-          is_system: false,
-          fs: body.fs ?? null,
-          mount: body.mount ?? null,
-          state: "creating",
-        };
-        setMockDisks([...disks, next]);
-      } else {
-        disksQ.refetch();
-        onChanged();
-      }
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Создание диска не удалось"));
-    }
-  }
-
-  async function handleDelete(disk: VmDisk) {
-    const ok = await confirm({
-      title: "Удалить диск",
-      message: `Отвязать и удалить диск ${disk.name} (${disk.size_gb} ГБ)? Данные на нём будут потеряны.`,
-      confirmLabel: "Удалить",
-      danger: true,
-    });
-    if (!ok) return;
-    diskOutcome.reset();
-    try {
-      const res = mock
-        ? fakeDispatch()
-        : await deleteVmDisk(vm.id, disk.id, { reason: "ui" });
-      diskOutcome.track(`disk delete · ${disk.name}`, res.task_id, res.status);
-      toast.success(`Удаление диска ${disk.name} — задача поставлена`);
-      if (mock) setMockDisks(disks.filter((d) => d.id !== disk.id));
-      else {
-        disksQ.refetch();
-        onChanged();
-      }
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Удаление диска не удалось"));
-    }
-  }
-
-  async function handleResize(disk: VmDisk, sizeGb: number) {
-    diskOutcome.reset();
-    try {
-      const res = mock
-        ? fakeDispatch()
-        : await resizeVmDisk(vm.id, disk.id, { size_gb: sizeGb });
-      diskOutcome.track(`disk resize · ${disk.name}`, res.task_id, res.status);
-      toast.success(`Resize диска ${disk.name} → ${sizeGb} ГБ — задача поставлена`);
-      setResizeTarget(null);
-      if (mock)
-        setMockDisks(
-          disks.map((d) =>
-            d.id === disk.id ? { ...d, size_gb: sizeGb, state: "resizing" } : d,
-          ),
-        );
-      else {
-        disksQ.refetch();
-        onChanged();
-      }
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Resize диска не удался"));
-    }
-  }
-
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-base flex items-center gap-2">
-          <HardDrive className="w-4 h-4 text-accent" /> Диски
-        </h3>
-        {canManage && (
-          <button
-            className="btn btn-sm btn-primary flex items-center gap-1"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Plus className="w-3.5 h-3.5" /> Создать диск
-          </button>
-        )}
-      </div>
-
-      {disksQ.loading ? (
-        <div className="text-xs text-dim">Загрузка…</div>
-      ) : disksQ.error && disks.length === 0 ? (
-        <div className="alert alert-danger flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 mt-0.5" />
-          <div className="flex-1 text-xs">
-            <div>{apiErrMsg(disksQ.error, "Список дисков не загрузился")}</div>
-            <button className="btn btn-ghost mt-2" onClick={() => disksQ.refetch()}>
-              Повторить
-            </button>
-          </div>
-        </div>
-      ) : disks.length === 0 ? (
-        <div className="text-xs text-dim">Дисков нет.</div>
-      ) : (
-        <div className="surface-2 border border-token rounded overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[11px] uppercase text-dim border-b border-token">
-                <th className="text-left px-3 py-2 font-medium">Имя</th>
-                <th className="text-left px-3 py-2 font-medium">Размер</th>
-                <th className="text-left px-3 py-2 font-medium">target</th>
-                <th className="text-left px-3 py-2 font-medium">ФС / mount</th>
-                <th className="text-left px-3 py-2 font-medium">serial</th>
-                <th className="text-left px-3 py-2 font-medium">Тип</th>
-                {canManage && <th className="px-3 py-2" />}
-              </tr>
-            </thead>
-            <tbody>
-              {disks.map((d) => (
-                <tr key={d.id} className="border-b border-token last:border-b-0">
-                  <td className="px-3 py-1.5">{d.name}</td>
-                  <td className="px-3 py-1.5 mono">{d.size_gb} ГБ</td>
-                  <td className="px-3 py-1.5 mono text-dim">{d.target_dev ?? "—"}</td>
-                  <td className="px-3 py-1.5 text-xs">
-                    {d.fs ?? "—"}
-                    {d.mount ? ` · ${d.mount}` : ""}
-                  </td>
-                  <td className="px-3 py-1.5 mono text-dim text-xs">{d.serial ?? "—"}</td>
-                  <td className="px-3 py-1.5">
-                    {d.is_system ? (
-                      <span className="badge">системный</span>
-                    ) : (
-                      <span className="badge badge-ok">доп.</span>
-                    )}
-                  </td>
-                  {canManage && (
-                    <td className="px-3 py-1.5">
-                      <div className="flex items-center gap-1 justify-end">
-                        <button
-                          className="btn btn-sm flex items-center gap-1"
-                          title="Изменить размер (только рост)"
-                          onClick={() => setResizeTarget(d)}
-                        >
-                          <Maximize2 className="w-3.5 h-3.5" /> Resize
-                        </button>
-                        {!d.is_system && (
-                          <button
-                            className="btn btn-sm btn-danger flex items-center gap-1"
-                            title="Удалить диск"
-                            onClick={() => handleDelete(d)}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {diskOutcome.tracked && (
-        <TaskOutcomeBanner
-          outcome={diskOutcome.tracked}
-          className="mt-3"
-          successText="Операция с диском применена."
-          onCancelled={diskOutcome.reset}
-        />
-      )}
-
-      {createOpen && (
-        <DiskCreateModal onClose={() => setCreateOpen(false)} onSubmit={handleCreate} />
-      )}
-      {resizeTarget && (
-        <DiskResizeModal
-          disk={resizeTarget}
-          onClose={() => setResizeTarget(null)}
-          onSubmit={(size) => handleResize(resizeTarget, size)}
-        />
-      )}
-    </div>
-  );
-}
-
-// ── snapshots ─────────────────────────────────────────────────────────────────
-
-function SnapshotsSection({
-  vm,
-  mock,
-  canManage,
-  onChanged,
-}: {
-  vm: Vm;
-  mock: boolean;
-  canManage: boolean;
-  onChanged: () => void;
-}) {
-  const toast = useToast();
-  const { confirm } = useConfirm();
-  const snapOutcome = useTaskOutcome();
-  const [createOpen, setCreateOpen] = useState(false);
-
-  const snapsQ = useQuery<VmSnapshot[]>(
-    async () => {
-      if (mock) return MOCK_VM_SNAPSHOTS[vm.id] ?? [];
-      const res = await listVmSnapshots(vm.id);
-      return res.items;
-    },
-    [vm.id, mock],
-    { keepPreviousDataOnError: true },
-  );
-
-  const [mockSnaps, setMockSnaps] = useState<VmSnapshot[] | null>(null);
-  useEffect(() => {
-    setMockSnaps(null);
-  }, [vm.id]);
-  const raw = mock ? (mockSnaps ?? snapsQ.data ?? []) : (snapsQ.data ?? []);
-  // Системные `<ver>_build` в UI не показываем (дизайн §6, NQ4).
-  const snapshots = raw.filter((s) => !s.is_system);
-
-  async function handleCreate(body: VmSnapshotCreateRequest) {
-    snapOutcome.reset();
-    try {
-      const res = mock ? fakeDispatch() : await createVmSnapshot(vm.id, body);
-      snapOutcome.track(`snapshot create · ${body.name}`, res.task_id, res.status);
-      toast.success(`Создание снимка ${body.name} — задача поставлена`);
-      setCreateOpen(false);
-      if (mock) {
-        const next: VmSnapshot = {
-          id: `snap-mock-${Date.now()}`,
-          vm_id: vm.id,
-          name: body.name,
-          description: body.description ?? null,
-          parent_snapshot_id: null,
-          snapshot_type: body.snapshot_type,
-          kind: "user",
-          mode: null,
-          os_version: null,
-          is_system: false,
-          state: "creating",
-          size_bytes: null,
-          is_current: false,
-          created_at: new Date().toISOString(),
-          created_by: null,
-        };
-        setMockSnaps([...raw, next]);
-      } else {
-        snapsQ.refetch();
-        onChanged();
-      }
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Создание снимка не удалось"));
-    }
-  }
-
-  async function handleRevert(snap: VmSnapshot) {
-    const ok = await confirm({
-      title: "Откатить на снимок",
-      message: `Откатить ВМ ${vm.name} на снимок «${snap.name}»? Текущее состояние диска (и памяти для full) будет заменено на снимковое.`,
-      confirmLabel: "Откатить",
-      danger: true,
-    });
-    if (!ok) return;
-    snapOutcome.reset();
-    try {
-      const res = mock ? fakeDispatch() : await revertVmSnapshot(vm.id, snap.id);
-      snapOutcome.track(`snapshot revert · ${snap.name}`, res.task_id, res.status);
-      toast.success(`Откат на «${snap.name}» — задача поставлена`);
-      if (mock)
-        setMockSnaps(
-          raw.map((s) => ({ ...s, is_current: s.id === snap.id })),
-        );
-      else {
-        snapsQ.refetch();
-        onChanged();
-      }
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Откат на снимок не удался"));
-    }
-  }
-
-  async function handleDelete(snap: VmSnapshot) {
-    const ok = await confirm({
-      title: "Удалить снимок",
-      message: `Удалить снимок «${snap.name}»? Действие необратимо.`,
-      confirmLabel: "Удалить",
-      danger: true,
-    });
-    if (!ok) return;
-    snapOutcome.reset();
-    try {
-      const res = mock ? fakeDispatch() : await deleteVmSnapshot(vm.id, snap.id);
-      snapOutcome.track(`snapshot delete · ${snap.name}`, res.task_id, res.status);
-      toast.success(`Удаление снимка «${snap.name}» — задача поставлена`);
-      if (mock) setMockSnaps(raw.filter((s) => s.id !== snap.id));
-      else {
-        snapsQ.refetch();
-        onChanged();
-      }
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Удаление снимка не удалось"));
-    }
-  }
-
-  // Две группы: чистые снимки версий ОС (сгруппированы по версии) и
-  // пользовательские. Системные `_build` уже отфильтрованы выше.
-  const baseline = snapshots.filter((s) => snapCategory(s) === "os_baseline");
-  const userSnaps = snapshots.filter((s) => snapCategory(s) !== "os_baseline");
-
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-base flex items-center gap-2">
-          <Camera className="w-4 h-4 text-accent" /> Снимки
-        </h3>
-        {canManage && (
-          <button
-            className="btn btn-sm btn-primary flex items-center gap-1"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Plus className="w-3.5 h-3.5" /> Создать снимок
-          </button>
-        )}
-      </div>
-
-      {snapsQ.loading ? (
-        <div className="text-xs text-dim">Загрузка…</div>
-      ) : snapsQ.error && snapshots.length === 0 ? (
-        <div className="alert alert-danger flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 mt-0.5" />
-          <div className="flex-1 text-xs">
-            <div>{apiErrMsg(snapsQ.error, "Список снимков не загрузился")}</div>
-            <button className="btn btn-ghost mt-2" onClick={() => snapsQ.refetch()}>
-              Повторить
-            </button>
-          </div>
-        </div>
-      ) : snapshots.length === 0 ? (
-        <div className="text-xs text-dim">Снимков нет.</div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          <SnapshotBaselineGroup
-            snapshots={baseline}
-            canManage={canManage}
-            onRevert={handleRevert}
-            onDelete={handleDelete}
-          />
-          <SnapshotUserGroup
-            snapshots={userSnaps}
-            canManage={canManage}
-            onRevert={handleRevert}
-            onDelete={handleDelete}
-          />
-        </div>
-      )}
-
-      {snapOutcome.tracked && (
-        <TaskOutcomeBanner
-          outcome={snapOutcome.tracked}
-          className="mt-3"
-          successText="Операция со снимком применена."
-          onCancelled={snapOutcome.reset}
-        />
-      )}
-
-      {createOpen && (
-        <SnapshotCreateModal
-          onClose={() => setCreateOpen(false)}
-          onSubmit={handleCreate}
-        />
-      )}
-    </div>
-  );
-}
-
-/** Классификация снимка для группировки (см. `VmSnapshotCategory`). */
-function snapCategory(s: VmSnapshot): VmSnapshotCategory {
-  if (s.kind === "os_baseline" || s.kind === "user") return s.kind;
-  return "user";
-}
-
-function snapModeLabel(mode?: VmSnapshotMode | null): string | null {
-  if (mode === "oryol") return "Орёл";
-  if (mode === "smolensk") return "Смоленск";
-  return mode ? String(mode) : null;
-}
-
-function SnapshotRow({
-  snap,
-  canManage,
-  onRevert,
-  onDelete,
-}: {
-  snap: VmSnapshot;
-  canManage: boolean;
-  onRevert: (s: VmSnapshot) => void;
-  onDelete: (s: VmSnapshot) => void;
-}) {
-  const mode = snapModeLabel(snap.mode);
-  return (
-    <div className="px-3 py-1.5 flex items-center gap-2 border-b border-token last:border-b-0">
-      <div className="flex-1 min-w-0">
-        <div className="text-sm flex items-center gap-2 flex-wrap">
-          <span className="truncate">{snap.name}</span>
-          {mode && <span className="badge text-[11px]">{mode}</span>}
-          {snap.is_current && (
-            <span className="badge badge-ok text-[11px]">текущий</span>
-          )}
-          {snap.state !== "ready" && (
-            <span className="badge text-[11px]">{snap.state}</span>
-          )}
-        </div>
-        <div className="text-[11px] text-dim truncate">
-          {snap.description ?? "—"} · {formatSnapDate(snap.created_at)}
-        </div>
-      </div>
-      {canManage && (
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            className="btn btn-sm flex items-center gap-1"
-            title="Откатить ВМ на этот снимок"
-            disabled={snap.is_current}
-            onClick={() => onRevert(snap)}
-          >
-            <Undo2 className="w-3.5 h-3.5" /> Откат
-          </button>
-          <button
-            className="btn btn-sm btn-danger flex items-center gap-1"
-            title="Удалить снимок"
-            onClick={() => onDelete(snap)}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SnapshotBaselineGroup({
-  snapshots,
-  canManage,
-  onRevert,
-  onDelete,
-}: {
-  snapshots: VmSnapshot[];
-  canManage: boolean;
-  onRevert: (s: VmSnapshot) => void;
-  onDelete: (s: VmSnapshot) => void;
-}) {
-  const [q, setQ] = useState("");
-  const filtered = snapshots.filter((s) =>
-    s.name.toLowerCase().includes(q.trim().toLowerCase()),
-  );
-  // Группируем по версии ОС, внутри — режимы.
-  const versions = Array.from(
-    new Set(filtered.map((s) => s.os_version ?? "—")),
-  ).sort();
-
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <h4 className="text-sm font-semibold">Версии ОС (чистые)</h4>
-        <div className="flex items-center gap-1 surface border border-token rounded px-2 py-1">
-          <Search className="w-3.5 h-3.5 text-dim" />
-          <input
-            className="bg-transparent outline-none text-xs w-36"
-            placeholder="Поиск по имени…"
-            aria-label="Поиск снимков версий ОС"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
-      </div>
-      {snapshots.length === 0 ? (
-        <div className="text-xs text-dim">Чистых снимков версий ОС нет.</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-xs text-dim">Ничего не найдено.</div>
-      ) : (
-        <div
-          data-testid="snap-scroll-baseline"
-          className="surface-2 border border-token rounded max-h-64 overflow-y-auto"
-        >
-          {versions.map((ver) => (
-            <div key={ver}>
-              <div className="px-3 py-1 text-[11px] uppercase text-dim surface sticky top-0">
-                ОС {ver}
-              </div>
-              {filtered
-                .filter((s) => (s.os_version ?? "—") === ver)
-                .map((s) => (
-                  <SnapshotRow
-                    key={s.id}
-                    snap={s}
-                    canManage={canManage}
-                    onRevert={onRevert}
-                    onDelete={onDelete}
-                  />
-                ))}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SnapshotUserGroup({
-  snapshots,
-  canManage,
-  onRevert,
-  onDelete,
-}: {
-  snapshots: VmSnapshot[];
-  canManage: boolean;
-  onRevert: (s: VmSnapshot) => void;
-  onDelete: (s: VmSnapshot) => void;
-}) {
-  const [q, setQ] = useState("");
-  const filtered = snapshots.filter((s) =>
-    s.name.toLowerCase().includes(q.trim().toLowerCase()),
-  );
-
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <h4 className="text-sm font-semibold">Пользовательские</h4>
-        <div className="flex items-center gap-1 surface border border-token rounded px-2 py-1">
-          <Search className="w-3.5 h-3.5 text-dim" />
-          <input
-            className="bg-transparent outline-none text-xs w-36"
-            placeholder="Поиск по имени…"
-            aria-label="Поиск пользовательских снимков"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
-      </div>
-      {snapshots.length === 0 ? (
-        <div className="text-xs text-dim">Пользовательских снимков нет.</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-xs text-dim">Ничего не найдено.</div>
-      ) : (
-        <div
-          data-testid="snap-scroll-user"
-          className="surface-2 border border-token rounded max-h-64 overflow-y-auto"
-        >
-          {filtered.map((s) => (
-            <SnapshotRow
-              key={s.id}
-              snap={s}
-              canManage={canManage}
-              onRevert={onRevert}
-              onDelete={onDelete}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function formatSnapDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("ru-RU", {
-    timeZone: "Europe/Moscow",
-    dateStyle: "short",
-    timeStyle: "short",
-  });
-}
-
-// ── обновление ОС и allta (astra-update / allta-update) ─────────────────────────
-
-/**
- * Карточка обновления ОС и allta — живёт во вкладке «Снимки», рядом с
- * версионными снимками. astra-update откатывается на нужный `_build`-снимок и
- * пересобирает его под выбранную версию; allta-update прогоняет переустановку
- * guest-allta по всем не-«_build» снимкам.
- */
-function VmOsUpdateCard({
-  vm,
-  mock,
-  onChanged,
-}: {
-  vm: Vm;
-  mock: boolean;
-  onChanged: () => void;
-}) {
-  const toast = useToast();
-  const { confirm } = useConfirm();
-  const opsOutcome = useTaskOutcome();
-  const [astraOpen, setAstraOpen] = useState(false);
-
-  async function handleAstra(_osVersionId: string, label: string) {
-    opsOutcome.reset();
-    try {
-      const res = mock
-        ? fakeDispatch()
-        : await astraUpdateVm(vm.id, { rc: label });
-      opsOutcome.track(`astra-update · ${label}`, res.task_id, res.status);
-      toast.success(`Обновление ОС до ${label} — задача поставлена`);
-      setAstraOpen(false);
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Обновление ОС не удалось"));
-    }
-  }
-
-  async function handleAllta() {
-    const ok = await confirm({
-      title: "Обновить allta",
-      message: `Обновить guest-allta на ВМ ${vm.name}? Пройдёт по всем не-«_build» снимкам, переустановит .deb и переснимет их.`,
-      confirmLabel: "Обновить",
-    });
-    if (!ok) return;
-    opsOutcome.reset();
-    try {
-      const res = mock ? fakeDispatch() : await alltaUpdateVm(vm.id);
-      opsOutcome.track(`allta-update · ${vm.name}`, res.task_id, res.status);
-      toast.success(`Обновление allta ${vm.name} — задача поставлена`);
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Обновление allta не удалось"));
-    }
-  }
-
-  return (
-    <div className="card">
-      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-        <ArrowUpCircle className="w-4 h-4 text-accent" /> Обновление ОС и allta
-      </h3>
-      <div className="text-xs text-dim mb-3">
-        Обновление версии ОС переснимает снимок под выбранную версию; обновление
-        allta идёт по всем не-«_build» снимкам согласно режиму кред ВМ.
-      </div>
-      <div className="flex gap-2 flex-wrap">
-        <button
-          className="btn flex items-center gap-1"
-          onClick={() => setAstraOpen(true)}
-        >
-          <ArrowUpCircle className="w-4 h-4" /> Обновить ОС (astra-update)
-        </button>
-        <button className="btn flex items-center gap-1" onClick={handleAllta}>
-          <Boxes className="w-4 h-4" /> Обновить allta
-        </button>
-      </div>
-
-      {opsOutcome.tracked && (
-        <TaskOutcomeBanner
-          outcome={opsOutcome.tracked}
-          className="mt-3"
-          successText="Операция применена."
-          onCancelled={opsOutcome.reset}
-        />
-      )}
-
-      {astraOpen && (
-        <AstraUpdateModal
-          vm={vm}
-          mock={mock}
-          onClose={() => setAstraOpen(false)}
-          onSubmit={handleAstra}
-        />
-      )}
-    </div>
-  );
-}
-
-// ── режим кред ──────────────────────────────────────────────────────────────────
-
-function CredStrategyCard({
-  vm,
-  mock,
-  onApplied,
-  onChanged,
-}: {
-  vm: Vm;
-  mock: boolean;
-  onApplied: (next: Vm) => void;
-  onChanged: () => void;
-}) {
-  const toast = useToast();
-  const [strategy, setStrategy] = useState<VmCredStrategy>(vm.cred_strategy);
-  const [pending, setPending] = useState(false);
-  useEffect(() => {
-    setStrategy(vm.cred_strategy);
-  }, [vm.id, vm.cred_strategy]);
-
-  const changed = strategy !== vm.cred_strategy;
-
-  async function apply() {
-    if (!changed || pending) return;
-    setPending(true);
-    try {
-      const next = mock
-        ? { ...vm, cred_strategy: strategy }
-        : await setVmCredStrategy(vm.id, strategy);
-      onApplied(next as Vm);
-      onChanged();
-      toast.success(
-        `Режим кред ВМ ${vm.name} → ${credStrategyLabel(strategy)}`,
-      );
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось сменить режим кред"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <div className="card">
-      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-        <KeyRound className="w-4 h-4 text-accent" /> Режим управляющих кред
-      </h3>
-      <div className="text-xs text-dim mb-3">
-        Наследуется от отдела; здесь — override на конкретную ВМ.{" "}
-        <b>per_snapshot</b> — каждый снимок хранит свои креды (дёшево, дефолт);{" "}
-        <b>reroll</b> — единый пароль во всех снимках (перекатывает снимки при
-        смене).
-      </div>
-      <div className="flex items-end gap-2 flex-wrap">
-        <label className="flex flex-col gap-1 text-sm flex-1 min-w-[220px]">
-          <span className="text-dim text-xs">Режим</span>
-          <select
-            className="input"
-            value={strategy}
-            onChange={(e) => setStrategy(e.target.value as VmCredStrategy)}
-            disabled={pending}
-          >
-            <option value="per_snapshot">
-              per_snapshot — креды на снимок
-            </option>
-            <option value="reroll">reroll — единый пароль (паритет)</option>
-          </select>
-        </label>
-        <button
-          className="btn btn-primary"
-          onClick={apply}
-          disabled={!changed || pending}
-        >
-          {pending ? "Применяем…" : "Применить"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function credStrategyLabel(s: VmCredStrategy): string {
-  return s === "reroll" ? "reroll" : "per_snapshot";
-}
-
-// ── prepare / mgmt-креды ВМ ─────────────────────────────────────────────────────
-
-function PrepareMgmtCard({
-  vm,
-  mock,
-  onApplied,
-  onChanged,
-}: {
-  vm: Vm;
-  mock: boolean;
-  onApplied: (next: Vm) => void;
-  onChanged: () => void;
-}) {
-  const toast = useToast();
-  const { confirm } = useConfirm();
-  const outcome = useTaskOutcome();
-  const [pending, setPending] = useState(false);
-
-  const managed = vm.is_managed === true;
-  // pending — либо backend ещё применяет ротацию, либо мы поллим задачу.
-  const applying =
-    vm.mgmt_creds_pending_apply === true || (outcome.tracked?.polling ?? false);
-
-  async function handlePrepare() {
-    const ok = await confirm({
-      title: "Подготовить ВМ",
-      message: `Подготовить ВМ ${vm.name}? Worker зайдёт по базовой учётке u:1, выполнит bootstrap, снесёт базовую учётку и заведёт управляющие креды.`,
-      confirmLabel: "Подготовить",
-    });
-    if (!ok) return;
-    outcome.reset();
-    setPending(true);
-    try {
-      const res = mock ? fakeDispatch() : await prepareVm(vm.id);
-      outcome.track(`prepare · ${vm.name}`, res.task_id, res.status);
-      toast.success(`Подготовка ВМ ${vm.name} — задача поставлена`);
-      if (mock) {
-        onApplied({
-          ...vm,
-          is_managed: true,
-          mgmt_user: "dbosmgr",
-          mgmt_creds_rotated_at: new Date().toISOString(),
-          mgmt_creds_pending_apply: false,
-        });
-      }
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Подготовка ВМ не удалась"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function handleRotate() {
-    const ok = await confirm({
-      title: "Ротировать управляющие креды",
-      message: `Сгенерировать новые управляющие креды ВМ ${vm.name} и применить их через worker? Старый материал будет отозван.`,
-      confirmLabel: "Ротировать",
-      danger: true,
-    });
-    if (!ok) return;
-    outcome.reset();
-    setPending(true);
-    try {
-      const res = mock ? fakeDispatch() : await rotateVmMgmtCreds(vm.id);
-      outcome.track(`mgmt rotate · ${vm.name}`, res.task_id, res.status);
-      toast.success(`Ротация кред ВМ ${vm.name} — задача поставлена`);
-      if (mock) {
-        onApplied({ ...vm, mgmt_creds_pending_apply: true });
-      }
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Ротация кред не удалась"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <div className="card">
-      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-        <ShieldCheck className="w-4 h-4 text-accent" /> Подготовка и управляющие
-        креды
-        {applying && (
-          <span className="badge badge-warn text-[11px]">
-            ротация применяется…
-          </span>
-        )}
-      </h3>
-
-      {!managed ? (
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex-1 text-xs text-dim">
-            ВМ ещё не подготовлена: базовая учётка <span className="mono">u:1</span>{" "}
-            не снята, управляющих кред нет. Подготовка заведёт per-VM креды и
-            уберёт базовый доступ.
-          </div>
-          <button
-            className="btn btn-primary flex items-center gap-1"
-            onClick={handlePrepare}
-            disabled={pending}
-          >
-            <ShieldCheck className="w-4 h-4" />
-            {pending ? "Ставим задачу…" : "Подготовить"}
-          </button>
-        </div>
-      ) : (
-        <>
-          <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm mb-3">
-            <Field k="Состояние" v="подготовлена" />
-            <Field k="mgmt-учётка" v={vm.mgmt_user ?? "—"} mono />
-            <Field
-              k="Креды ротированы"
-              v={
-                vm.mgmt_creds_rotated_at
-                  ? formatSnapDate(vm.mgmt_creds_rotated_at)
-                  : "—"
-              }
-              mono
-            />
-          </dl>
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex-1 text-xs text-dim">
-              Ротация генерирует новую управляющую пару/пароль ВМ и применяет их
-              через worker.
-            </div>
-            <button
-              className="btn btn-danger flex items-center gap-1"
-              onClick={handleRotate}
-              disabled={pending || applying}
-              title="Ротировать управляющие креды ВМ"
-            >
-              <KeyRound className="w-4 h-4" />
-              {applying ? "Ротация идёт…" : "Ротировать креды"}
-            </button>
-          </div>
-        </>
-      )}
-
-      {outcome.tracked && (
-        <TaskOutcomeBanner
-          outcome={outcome.tracked}
-          className="mt-3"
-          successText="Операция применена."
-          onCancelled={outcome.reset}
-        />
-      )}
-    </div>
-  );
-}
-
-// ── консоль ВМ ──────────────────────────────────────────────────────────────────
-
-/**
- * Панель консоли ВМ: выбор вида (SSH / VNC / serial / SPICE) и получение данных
- * подключения. Дефолт — SSH. Для SSH показываем готовую команду и креды; для
- * VNC/SPICE/serial — ws-эндпоинт прокси. Графический вьювер не встраиваем
- * (пакета нет в бандле, внешние CDN запрещены CSP) — показываем адрес/порт
- * прокси с пометкой.
- */
-export function ConsoleCard({
-  vm,
-  mock,
-  canManage = false,
-  onChanged,
-}: {
-  vm: Vm;
-  mock: boolean;
-  canManage?: boolean;
-  onChanged?: () => void;
-}) {
-  const toast = useToast();
-  const { confirm } = useConfirm();
-  const [kind, setKind] = useState<VmConsoleKind>("ssh");
-  const [session, setSession] = useState<VmConsoleResponse | null>(null);
-  const [pending, setPending] = useState(false);
-  const [alltaPending, setAlltaPending] = useState(false);
-
-  function pick(next: VmConsoleKind) {
-    setKind(next);
-    setSession(null);
-  }
-
-  async function open() {
-    setPending(true);
-    try {
-      const res = mock
-        ? mockVmConsole(vm, kind)
-        : await openVmConsole(vm.id, kind);
-      setSession(res);
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось получить данные консоли"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function handleAllta() {
-    const ok = await confirm({
-      title: "Обновить allta",
-      message: `Обновить guest-allta на ВМ ${vm.name}? Пройдёт по всем не-«_build» снимкам, переустановит .deb и переснимет их.`,
-      confirmLabel: "Обновить",
-    });
-    if (!ok) return;
-    setAlltaPending(true);
-    try {
-      const res = mock ? fakeDispatch() : await alltaUpdateVm(vm.id);
-      toast.success(
-        `Обновление allta ${vm.name} — задача поставлена (${res.task_id})`,
-      );
-      onChanged?.();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Обновление allta не удалось"));
-    } finally {
-      setAlltaPending(false);
-    }
-  }
-
-  const kinds: { value: VmConsoleKind; label: string }[] = [
-    { value: "ssh", label: "SSH" },
-    { value: "vnc", label: "VNC" },
-    { value: "serial", label: "Serial" },
-    { value: "spice", label: "SPICE" },
-  ];
-
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-        <h3 className="font-semibold text-base flex items-center gap-2">
-          <TerminalSquare className="w-4 h-4 text-accent" /> Консоль
-        </h3>
-        {canManage && (
-          <button
-            type="button"
-            className="btn btn-sm flex items-center gap-1"
-            onClick={handleAllta}
-            disabled={alltaPending}
-            title="Переустановить guest-allta по не-«_build» снимкам"
-          >
-            <Boxes className="w-3.5 h-3.5" />
-            {alltaPending ? "Ставим задачу…" : "Обновить allta"}
-          </button>
-        )}
-      </div>
-      <div className="flex items-center gap-2 flex-wrap mb-3">
-        <div className="flex items-center gap-1">
-          {kinds.map((k) => (
-            <button
-              key={k.value}
-              type="button"
-              className={`btn btn-sm ${kind === k.value ? "btn-primary" : ""}`}
-              onClick={() => pick(k.value)}
-            >
-              {k.label}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          className="btn btn-sm flex items-center gap-1"
-          onClick={open}
-          disabled={pending}
-        >
-          <TerminalSquare className="w-3.5 h-3.5" />
-          {pending ? "Готовим…" : "Открыть консоль"}
-        </button>
-      </div>
-
-      {session && <ConsoleSession session={session} />}
-      {!session && (
-        <div className="text-xs text-dim">
-          Выберите вид консоли и нажмите «Открыть консоль».
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ConsoleSession({ session }: { session: VmConsoleResponse }) {
-  if (session.kind === "ssh") {
-    const command = `ssh ${session.username ?? "u"}@${session.host ?? ""}`;
-    return (
-      <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
-        <div className="text-xs text-dim">
-          Доступ по SSH под учёткой <span className="mono">{session.username}</span>.
-        </div>
-        <CopyableCommand text={command} />
-        <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
-          <Field k="host" v={`${session.host ?? "—"}:${session.port ?? 22}`} mono />
-          <Field k="Логин" v={session.username ?? "—"} mono />
-          <Field k="Токен" v={session.token} mono />
-        </dl>
-        <div className="text-[11px] text-dim">
-          Токен действует {session.expires_in} с. Пароль/ключ учётки прокси
-          подставляет сам — в ответе он не отдаётся.
-        </div>
-      </div>
-    );
-  }
-
-  if (session.kind === "serial") {
-    return (
-      <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
-        <div className="text-xs text-dim">
-          Последовательная консоль (serial) через прокси на хабе.
-        </div>
-        <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
-          <Field k="host (hub)" v={session.host ?? "—"} mono />
-          {session.serial_path && (
-            <Field k="Устройство" v={session.serial_path} mono />
-          )}
-          <Field k="ws-путь" v={session.ws_path} mono />
-          <Field k="Токен" v={session.token} mono />
-        </dl>
-      </div>
-    );
-  }
-
-  // vnc | spice — графическая консоль через self-hosted прокси.
-  const proto = session.kind === "vnc" ? "VNC" : "SPICE";
-  const viewerUrl = vmConsoleViewerUrl(session);
-  return (
-    <div className="surface-2 border border-token rounded p-3 flex flex-col gap-2">
-      <div className="text-xs text-dim">
-        Графическая консоль ({proto}) через self-hosted прокси (noVNC/spice-html5).
-      </div>
-      <div className="border border-dashed border-token rounded p-4 text-center bg-black/5 dark:bg-white/5">
-        <TerminalSquare className="w-8 h-8 mx-auto text-dim mb-2" />
-        {viewerUrl ? (
-          <>
-            <div className="text-xs mb-2">
-              Прокси откроет вьювер в новой вкладке; токен предъявляется в query.
-            </div>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm inline-flex items-center gap-1"
-              onClick={() =>
-                window.open(viewerUrl, "_blank", "noopener,noreferrer")
-              }
-            >
-              <TerminalSquare className="w-3.5 h-3.5" /> Открыть консоль {proto}
-            </button>
-          </>
-        ) : (
-          <div className="text-xs text-warn">
-            Прокси-эндпоинт разворачивается инфраструктурно. Кнопка открытия
-            появится после его поднятия.
-          </div>
-        )}
-      </div>
-      <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
-        <Field
-          k="host (hub)"
-          v={`${session.host ?? "—"}${session.port ? `:${session.port}` : ""}`}
-          mono
-        />
-        {session.ws_url && <Field k="ws-прокси" v={session.ws_url} mono />}
-        <Field k="Токен" v={session.token} mono />
-        {session.password && (
-          <Field k={`Пароль ${proto}`} v={session.password} mono />
-        )}
-      </dl>
-    </div>
-  );
-}
-
-function CopyableCommand({ text }: { text: string }) {
-  const toast = useToast();
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.info("Скопировано в буфер");
-    } catch {
-      toast.warn("Не удалось скопировать — выделите вручную");
-    }
-  }
-  return (
-    <div className="flex items-center gap-2">
-      <code className="mono text-xs flex-1 break-all bg-black/5 dark:bg-white/5 rounded px-2 py-1">
-        {text}
-      </code>
-      <button
-        type="button"
-        className="btn btn-sm flex items-center gap-1"
-        onClick={copy}
-        title="Скопировать"
-      >
-        <Copy className="w-3.5 h-3.5" />
-      </button>
-    </div>
-  );
-}
-
-// ── железо ВМ ─────────────────────────────────────────────────────────────────
-
-/**
- * Read-only сводка по «железу» ВМ — виртуальные ресурсы домена (vCPU / RAM /
- * системный диск / сеть). По образцу серверной вкладки «Железо», но данные
- * берутся прямо из VM-объекта; правка ресурсов — во вкладке «Обзор»
- * (кнопка «Изменить CPU/RAM»), доп. диски — во вкладке «Диски».
- */
-function VmHardwareCard({ vm }: { vm: Vm }) {
-  const ramGb = (vm.ram_mb / 1024).toFixed(vm.ram_mb % 1024 === 0 ? 0 : 1);
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="card">
-          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-accent" /> CPU
-          </h3>
-          <StatRow k="vCPU" v={<span className="mono">{vm.cpu}</span>} />
-        </div>
-
-        <div className="card">
-          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-            <MemoryStick className="w-4 h-4 text-accent" /> RAM
-          </h3>
-          <StatRow k="total_mb" v={<span className="mono">{vm.ram_mb}</span>} />
-          <StatRow k="total_gb" v={<span className="mono">{ramGb} GB</span>} />
-        </div>
-
-        <div className="card">
-          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-            <Network className="w-4 h-4 text-accent" /> Сеть
-          </h3>
-          <StatRow k="mode" v={<span className="mono">{vm.network_mode}</span>} />
-          <StatRow
-            k="ip_address"
-            v={<span className="mono">{vm.ip_address ?? "— (авто / NAT)"}</span>}
-          />
-        </div>
-
-        <div className="card">
-          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-            <HardDrive className="w-4 h-4 text-accent" /> Диск
-          </h3>
-          <StatRow
-            k="system_gb"
-            v={<span className="mono">{vm.disk_gb} GB</span>}
-          />
-          <StatRow k="box" v={<span className="mono">{vm.box}</span>} />
-          <StatRow
-            k="os_version"
-            v={
-              vm.os_version ? (
-                <span className="mono">{vm.os_version}</span>
-              ) : (
-                <span className="text-dim">—</span>
-              )
-            }
-          />
-        </div>
-      </div>
-
-      <div className="text-[11px] text-dim">
-        Дополнительные диски — во вкладке «Диски». Ресурсы (vCPU/RAM) правятся во
-        вкладке «Обзор».
-      </div>
-    </div>
-  );
-}
-
-// ── учётки ВМ ─────────────────────────────────────────────────────────────────
-
-/**
- * Read-only список учёток, привязанных к ВМ (`GET /vms/{id}/accounts`). По
- * образцу серверной вкладки «Аккаунты», но упрощённый: привязка учёток к ВМ
- * идёт при создании ВМ (мультиселект в форме create), поэтому здесь — только
- * просмотр. `present_on_vm` показывает дрейф (привязка есть, а в госте учётки
- * нет). В mock-режиме данные из `@/mocks/vm`.
- */
-function VmAccountsSection({ vm, mock }: { vm: Vm; mock: boolean }) {
-  const accountsQ = useQuery<VmAccount[]>(
-    async () => {
-      if (mock) return mockVmAccounts(vm);
-      return await listVmAccounts(vm.id);
-    },
-    [vm.id, mock],
-    { keepPreviousDataOnError: true },
-  );
-  const accounts = accountsQ.data ?? [];
-
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-base flex items-center gap-2">
-          <Users className="w-4 h-4 text-accent" /> Учётки
-        </h3>
-        <button
-          className="btn btn-sm flex items-center gap-1"
-          onClick={() => accountsQ.refetch()}
-          disabled={accountsQ.loading}
-          title="Обновить список учёток"
-        >
-          <RefreshCw
-            className={`w-3.5 h-3.5 ${accountsQ.loading ? "animate-spin" : ""}`}
-          />
-          Обновить
-        </button>
-      </div>
-      <div className="text-xs text-dim mb-3">
-        Учётки отдела, провижнящиеся OS-юзерами в госте ВМ. Привязка задаётся при
-        создании ВМ.
-      </div>
-
-      {accountsQ.loading ? (
-        <div className="text-xs text-dim">Загрузка…</div>
-      ) : accountsQ.error && accounts.length === 0 ? (
-        <div className="alert alert-danger flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 mt-0.5" />
-          <div className="flex-1 text-xs">
-            <div>{apiErrMsg(accountsQ.error, "Список учёток не загрузился")}</div>
-            <button
-              className="btn btn-ghost mt-2"
-              onClick={() => accountsQ.refetch()}
-            >
-              Повторить
-            </button>
-          </div>
-        </div>
-      ) : accounts.length === 0 ? (
-        <div className="text-xs text-dim">К ВМ не привязано ни одной учётки.</div>
-      ) : (
-        <div className="surface-2 border border-token rounded overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[11px] uppercase text-dim border-b border-token">
-                <th className="text-left px-3 py-2 font-medium">Логин</th>
-                <th className="text-left px-3 py-2 font-medium">sudo</th>
-                <th className="text-left px-3 py-2 font-medium">Группы</th>
-                <th className="text-left px-3 py-2 font-medium">SSH-ключ</th>
-                <th className="text-left px-3 py-2 font-medium">В госте</th>
-              </tr>
-            </thead>
-            <tbody>
-              {accounts.map((a) => (
-                <tr
-                  key={a.account_id}
-                  className="border-b border-token last:border-b-0"
-                >
-                  <td className="px-3 py-1.5 mono">{a.login}</td>
-                  <td className="px-3 py-1.5">
-                    {a.has_sudo ? (
-                      <span className="badge badge-warn text-[11px]">sudo</span>
-                    ) : (
-                      <span className="text-dim">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-1.5 text-xs text-dim">
-                    {a.unix_groups.join(", ") || "—"}
-                  </td>
-                  <td className="px-3 py-1.5 text-xs text-dim">
-                    {a.ssh_public_key ? "есть" : "—"}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    {a.present_on_vm ? (
-                      <span className="badge badge-ok text-[11px]">заведена</span>
-                    ) : (
-                      <span className="badge badge-warn text-[11px]">дрейф</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── пакеты гостя ВМ ──────────────────────────────────────────────────────────
-
-/**
- * Read-only список установленных в госте пакетов ВМ. По образцу серверной
- * вкладки «Пакеты», но без live-SSH-probe в самом GET: показываем последний
- * снятый воркером срез из `/vms/{id}/packages`. Кнопка «Обновить» ставит свежий
- * probe (`?refresh=true` → `vm.list_packages`) и перезапрашивает сохранённый
- * список. В mock-режиме данные из `@/mocks/vm`.
- */
-function pkgRefreshErrorMsg(e: unknown): string {
-  if (e instanceof ApiError) {
-    if (e.errorCode === "VM_PREPARE_REQUIRED")
-      return "ВМ не подготовлена (prepare) — свежий сбор пакетов недоступен.";
-    if (e.errorCode === "VM_GUEST_IP_UNKNOWN")
-      return "У ВМ нет известного IP гостя — свежий сбор пакетов недоступен.";
-    if (e.errorCode === "HUB_UNAVAILABLE")
-      return "Hub недоступен — свежий сбор пакетов недоступен.";
-  }
-  return apiErrMsg(e, "Не удалось запустить сбор пакетов");
-}
-
-function VmPackagesSection({ vm, mock }: { vm: Vm; mock: boolean }) {
-  const toast = useToast();
-  const [refreshing, setRefreshing] = useState(false);
-  const pkgsQ = useQuery<VmPackagesResponse>(
-    async () => {
-      if (mock) return mockVmPackages(vm);
-      return await listVmPackages(vm.id);
-    },
-    [vm.id, mock],
-    { keepPreviousDataOnError: true },
-  );
-  const packages = useMemo(() => pkgsQ.data?.packages ?? [], [pkgsQ.data]);
-  const syncedAt = pkgsQ.data?.synced_at ?? null;
-  const [filter, setFilter] = useState("");
-
-  async function refresh() {
-    if (mock) {
-      pkgsQ.refetch();
-      return;
-    }
-    setRefreshing(true);
-    try {
-      const res = await listVmPackages(vm.id, { refresh: true });
-      if (res.dispatched) {
-        toast.info(
-          "Запущен свежий сбор пакетов — список обновится через несколько секунд.",
-        );
-      }
-      pkgsQ.refetch();
-    } catch (e) {
-      toast.error(pkgRefreshErrorMsg(e));
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  const busy = pkgsQ.loading || refreshing;
-
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-base flex items-center gap-2">
-          <Package className="w-4 h-4 text-accent" /> Пакеты
-          <span className="text-xs text-dim font-normal">
-            ({packages.length})
-          </span>
-        </h3>
-        <button
-          className="btn btn-sm flex items-center gap-1"
-          onClick={refresh}
-          disabled={busy}
-          title="Поставить свежий probe и обновить список"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${busy ? "animate-spin" : ""}`} />
-          Обновить
-        </button>
-      </div>
-      <div className="text-xs text-dim mb-3">
-        Установленные в госте пакеты (`dpkg -l` / `rpm -qa`), последний снятый
-        воркером срез
-        {syncedAt ? ` (синк ${formatSnapDate(syncedAt)})` : ""}.
-      </div>
-
-      <PackagesTable
-        items={packages}
-        filter={filter}
-        onFilter={setFilter}
-        loading={pkgsQ.loading}
-        error={pkgsQ.error}
-        onRetry={() => pkgsQ.refetch()}
-      />
-    </div>
-  );
-}
 
 /**
  * Селектор пула + свободного IP для bridge. Полностью управляемый: пулы и
@@ -4294,434 +2561,6 @@ function Modal({
   );
 }
 
-function ResourcesModal({
-  vm,
-  onClose,
-  onSubmit,
-}: {
-  vm: Vm;
-  onClose: () => void;
-  onSubmit: (body: VmUpdateRequest) => void | Promise<void>;
-}) {
-  const [cpu, setCpu] = useState(String(vm.cpu));
-  const [ramMb, setRamMb] = useState(String(vm.ram_mb));
-  const [submitting, setSubmitting] = useState(false);
-
-  const cpuN = Number.parseInt(cpu, 10);
-  const ramN = Number.parseInt(ramMb, 10);
-  const valid =
-    Number.isFinite(cpuN) && cpuN > 0 && Number.isFinite(ramN) && ramN >= 256;
-  const changed = cpuN !== vm.cpu || ramN !== vm.ram_mb;
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!valid || !changed || submitting) return;
-    const body: VmUpdateRequest = {};
-    if (cpuN !== vm.cpu) body.cpu = cpuN;
-    if (ramN !== vm.ram_mb) body.ram_mb = ramN;
-    setSubmitting(true);
-    try {
-      await Promise.resolve(onSubmit(body));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Modal title={`Ресурсы ВМ ${vm.name}`} onClose={onClose}>
-      <form onSubmit={submit}>
-        <div className="modal-body flex flex-col gap-3">
-          <div className="text-xs text-dim">
-            Изменение остановит ВМ, применит новые значения и запустит её заново.
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-dim text-xs">vCPU *</span>
-              <input
-                className="input"
-                type="number"
-                min={1}
-                value={cpu}
-                onChange={(e) => setCpu(e.target.value)}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-dim text-xs">RAM, МБ *</span>
-              <input
-                className="input"
-                type="number"
-                min={256}
-                step={256}
-                value={ramMb}
-                onChange={(e) => setRamMb(e.target.value)}
-              />
-            </label>
-          </div>
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
-            Отмена
-          </button>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={!valid || !changed || submitting}
-          >
-            {submitting ? "Применяем…" : "Применить"}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function DiskCreateModal({
-  onClose,
-  onSubmit,
-}: {
-  onClose: () => void;
-  onSubmit: (body: VmDiskCreateRequest) => void | Promise<void>;
-}) {
-  const [name, setName] = useState("");
-  const [sizeGb, setSizeGb] = useState("20");
-  const [fs, setFs] = useState("ext4");
-  const [mount, setMount] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const sizeN = Number.parseInt(sizeGb, 10);
-  const nameError =
-    name.trim() && !/^[a-zA-Z0-9._-]+$/.test(name.trim())
-      ? "Имя: латиница, цифры, точка, дефис, подчёркивание"
-      : null;
-  const valid = !!name.trim() && !nameError && Number.isFinite(sizeN) && sizeN > 0;
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!valid || submitting) return;
-    const body: VmDiskCreateRequest = {
-      name: name.trim(),
-      size_gb: sizeN,
-      fs: fs === "none" ? null : fs,
-      mount: mount.trim() ? mount.trim() : null,
-    };
-    setSubmitting(true);
-    try {
-      await Promise.resolve(onSubmit(body));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Modal title="Новый диск" onClose={onClose}>
-      <form onSubmit={submit}>
-        <div className="modal-body flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Имя *</span>
-            <input
-              className="input"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="data"
-              autoFocus
-            />
-            {nameError && <span className="text-[11px] text-danger">{nameError}</span>}
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Размер, ГБ *</span>
-            <input
-              className="input"
-              type="number"
-              min={1}
-              value={sizeGb}
-              onChange={(e) => setSizeGb(e.target.value)}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Файловая система</span>
-            <select className="input" value={fs} onChange={(e) => setFs(e.target.value)}>
-              <option value="ext4">ext4</option>
-              <option value="xfs">xfs</option>
-              <option value="btrfs">btrfs</option>
-              <option value="none">не форматировать</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Точка монтирования</span>
-            <input
-              className="input"
-              value={mount}
-              onChange={(e) => setMount(e.target.value)}
-              placeholder="/data (опционально)"
-            />
-          </label>
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
-            Отмена
-          </button>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={!valid || submitting}
-          >
-            {submitting ? "Создаём…" : "Создать диск"}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function DiskResizeModal({
-  disk,
-  onClose,
-  onSubmit,
-}: {
-  disk: VmDisk;
-  onClose: () => void;
-  onSubmit: (sizeGb: number) => void | Promise<void>;
-}) {
-  const [sizeGb, setSizeGb] = useState(String(disk.size_gb));
-  const [submitting, setSubmitting] = useState(false);
-
-  const sizeN = Number.parseInt(sizeGb, 10);
-  const valid = Number.isFinite(sizeN) && sizeN > disk.size_gb;
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!valid || submitting) return;
-    setSubmitting(true);
-    try {
-      await Promise.resolve(onSubmit(sizeN));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Modal title={`Resize диска ${disk.name}`} onClose={onClose}>
-      <form onSubmit={submit}>
-        <div className="modal-body flex flex-col gap-3">
-          <div className="text-xs text-dim">
-            Текущий размер: <b className="mono">{disk.size_gb} ГБ</b>. Диск можно
-            только увеличить (`qemu-img resize` + growpart/resize2fs в госте).
-          </div>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Новый размер, ГБ *</span>
-            <input
-              className="input"
-              type="number"
-              min={disk.size_gb + 1}
-              value={sizeGb}
-              onChange={(e) => setSizeGb(e.target.value)}
-              autoFocus
-            />
-            {!valid && sizeGb.trim() !== "" && (
-              <span className="text-[11px] text-danger">
-                Должно быть больше {disk.size_gb} ГБ
-              </span>
-            )}
-          </label>
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
-            Отмена
-          </button>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={!valid || submitting}
-          >
-            {submitting ? "Применяем…" : "Увеличить"}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function SnapshotCreateModal({
-  onClose,
-  onSubmit,
-}: {
-  onClose: () => void;
-  onSubmit: (body: VmSnapshotCreateRequest) => void | Promise<void>;
-}) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [snapshotType, setSnapshotType] = useState<VmSnapshotType>("disk_only");
-  const [submitting, setSubmitting] = useState(false);
-
-  const nameError =
-    name.trim() && !/^[a-zA-Z0-9._-]+$/.test(name.trim())
-      ? "Имя: латиница, цифры, точка, дефис, подчёркивание"
-      : null;
-  // `_build`-суффикс зарезервирован под системные снимки — не даём его занять.
-  const reservedError = /_build$/.test(name.trim())
-    ? "Суффикс _build зарезервирован под системные снимки"
-    : null;
-  const valid = !!name.trim() && !nameError && !reservedError;
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!valid || submitting) return;
-    const body: VmSnapshotCreateRequest = {
-      name: name.trim(),
-      description: description.trim() ? description.trim() : null,
-      snapshot_type: snapshotType,
-    };
-    setSubmitting(true);
-    try {
-      await Promise.resolve(onSubmit(body));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Modal title="Новый снимок" onClose={onClose}>
-      <form onSubmit={submit}>
-        <div className="modal-body flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Имя *</span>
-            <input
-              className="input"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="pre-regress"
-              autoFocus
-            />
-            {(nameError || reservedError) && (
-              <span className="text-[11px] text-danger">
-                {nameError ?? reservedError}
-              </span>
-            )}
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Описание</span>
-            <input
-              className="input"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="опционально"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Тип</span>
-            <select
-              className="input"
-              value={snapshotType}
-              onChange={(e) => setSnapshotType(e.target.value as VmSnapshotType)}
-            >
-              <option value="disk_only">disk-only (только диск)</option>
-              <option value="full">full (диск + память/состояние)</option>
-            </select>
-          </label>
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
-            Отмена
-          </button>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={!valid || submitting}
-          >
-            {submitting ? "Создаём…" : "Создать снимок"}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function AstraUpdateModal({
-  vm,
-  mock,
-  onClose,
-  onSubmit,
-}: {
-  vm: Vm;
-  mock: boolean;
-  onClose: () => void;
-  onSubmit: (osVersionId: string, label: string) => void | Promise<void>;
-}) {
-  const versionsQ = useQuery<{ id: string; name: string }[]>(
-    async () => {
-      if (mock) return MOCK_VM_OS_VERSIONS;
-      const res = await listOsVersions({ limit: 200 });
-      return res.items.map((v: OsVersion) => ({ id: v.id, name: v.name }));
-    },
-    [mock],
-    { keepPreviousDataOnError: true },
-  );
-  const versions = versionsQ.data ?? [];
-  const [selected, setSelected] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const selectedLabel = versions.find((v) => v.id === selected)?.name ?? selected;
-  const valid = !!selected;
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!valid || submitting) return;
-    setSubmitting(true);
-    try {
-      await Promise.resolve(onSubmit(selected, selectedLabel));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Modal title={`Обновление ОС · ${vm.name}`} onClose={onClose}>
-      <form onSubmit={submit}>
-        <div className="modal-body flex flex-col gap-3">
-          <div className="text-xs text-dim">
-            Выберите целевую версию ОС (RC). Worker откатится на нужный{" "}
-            <span className="mono">_build</span>-снимок, перезапишет sources.list
-            репозиториями версии, выполнит{" "}
-            <span className="mono">astra-update -A -T -r</span> и переснимет
-            снимок под новую версию.
-          </div>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Версия ОС *</span>
-            {versionsQ.loading ? (
-              <div className="text-xs text-dim">Загрузка каталога…</div>
-            ) : (
-              <select
-                className="input"
-                value={selected}
-                onChange={(e) => setSelected(e.target.value)}
-                autoFocus
-              >
-                <option value="">— выберите версию —</option>
-                {versions.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </label>
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
-            Отмена
-          </button>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={!valid || submitting}
-          >
-            {submitting ? "Запускаем…" : "Обновить ОС"}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
 
 function isLikelyIpv4(value: string): boolean {
   return /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/.test(value);

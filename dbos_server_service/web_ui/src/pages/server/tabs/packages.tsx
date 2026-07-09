@@ -53,6 +53,10 @@ import type {
 } from "@/api/server/types";
 import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
 import { PackagesTable } from "@/components/entity/PackagesTable";
+import { listVmPackages } from "@/api/server/vms";
+import type { Vm, VmPackagesResponse } from "@/api/server/vms";
+import { mockVmPackages } from "@/mocks/vm";
+import type { EntityRef } from "./_entity";
 
 const HISTORY_PAGE_SIZE = 20;
 
@@ -82,6 +86,7 @@ function extractPackages(result: TaskRead["result"]): PackageRow[] {
 }
 
 interface Props {
+  entity?: EntityRef;
   serverId: string;
   server?: Server;
   onServerUpdated?: (next: Server) => void;
@@ -124,7 +129,20 @@ function looksLikeAuthFailure(lastError: string | null | undefined): boolean {
   );
 }
 
-export function PackagesTab({ serverId, server, onServerUpdated }: Props) {
+export function PackagesTab({ entity, serverId, server, onServerUpdated }: Props) {
+  if (entity?.kind === "vm") {
+    return <VmPackagesView vm={entity.vm} mock={entity.mock} />;
+  }
+  return (
+    <ServerPackagesTab
+      serverId={serverId}
+      server={server}
+      onServerUpdated={onServerUpdated}
+    />
+  );
+}
+
+function ServerPackagesTab({ serverId, server, onServerUpdated }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
   const [pattern, setPattern] = useState("");
@@ -744,4 +762,116 @@ function HistoryRow({
       )}
     </div>
   );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Пакеты гостя ВМ
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Read-only список установленных в госте пакетов ВМ. По образцу серверной
+ * вкладки, но без live-SSH-probe в самом GET: показываем последний снятый
+ * воркером срез из `/vms/{id}/packages`. Кнопка «Обновить» ставит свежий probe
+ * (`?refresh=true` → `vm.list_packages`) и перезапрашивает сохранённый список.
+ * В mock-режиме данные из `@/mocks/vm`.
+ */
+function VmPackagesView({ vm, mock }: { vm: Vm; mock: boolean }) {
+  const toast = useToast();
+  const [refreshing, setRefreshing] = useState(false);
+  const pkgsQ = useQuery<VmPackagesResponse>(
+    async () => {
+      if (mock) return mockVmPackages(vm);
+      return await listVmPackages(vm.id);
+    },
+    [vm.id, mock],
+    { keepPreviousDataOnError: true },
+  );
+  const packages = useMemo(() => pkgsQ.data?.packages ?? [], [pkgsQ.data]);
+  const syncedAt = pkgsQ.data?.synced_at ?? null;
+  const [filter, setFilter] = useState("");
+
+  async function refresh() {
+    if (mock) {
+      pkgsQ.refetch();
+      return;
+    }
+    setRefreshing(true);
+    try {
+      const res = await listVmPackages(vm.id, { refresh: true });
+      if (res.dispatched) {
+        toast.info(
+          "Запущен свежий сбор пакетов — список обновится через несколько секунд.",
+        );
+      }
+      pkgsQ.refetch();
+    } catch (e) {
+      toast.error(pkgRefreshErrorMsg(e));
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  const busy = pkgsQ.loading || refreshing;
+
+  return (
+    <div className="p-5">
+      <div className="card">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-base flex items-center gap-2">
+            <Package className="w-4 h-4 text-accent" /> Пакеты
+            <span className="text-xs text-dim font-normal">
+              ({packages.length})
+            </span>
+          </h3>
+          <button
+            className="btn btn-sm flex items-center gap-1"
+            onClick={refresh}
+            disabled={busy}
+            title="Поставить свежий probe и обновить список"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${busy ? "animate-spin" : ""}`} />
+            Обновить
+          </button>
+        </div>
+        <div className="text-xs text-dim mb-3">
+          Установленные в госте пакеты (`dpkg -l` / `rpm -qa`), последний снятый
+          воркером срез
+          {syncedAt ? ` (синк ${formatSnapDate(syncedAt)})` : ""}.
+        </div>
+
+        <PackagesTable
+          items={packages}
+          filter={filter}
+          onFilter={setFilter}
+          loading={pkgsQ.loading}
+          error={pkgsQ.error}
+          onRetry={() => pkgsQ.refetch()}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Разбор 409-ошибок свежего probe пакетов ВМ в человекочитаемый текст. */
+function pkgRefreshErrorMsg(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.errorCode === "VM_PREPARE_REQUIRED")
+      return "ВМ не подготовлена (prepare) — свежий сбор пакетов недоступен.";
+    if (e.errorCode === "VM_GUEST_IP_UNKNOWN")
+      return "У ВМ нет известного IP гостя — свежий сбор пакетов недоступен.";
+    if (e.errorCode === "HUB_UNAVAILABLE")
+      return "Hub недоступен — свежий сбор пакетов недоступен.";
+  }
+  return apiErrMsg(e, "Не удалось запустить сбор пакетов");
+}
+
+/** Дата последнего синка пакетов ВМ в MSK, короткий формат. */
+function formatSnapDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("ru-RU", {
+    timeZone: "Europe/Moscow",
+    dateStyle: "short",
+    timeStyle: "short",
+  });
 }

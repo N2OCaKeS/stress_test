@@ -11,13 +11,16 @@
 import { useState } from "react";
 import { Cpu, HardDrive, MemoryStick, Network, Pencil } from "lucide-react";
 import type { Server, ServerUpdateRequest } from "@/api/server/types";
+import type { Vm } from "@/api/server/vms";
 import { updateServer } from "@/api/server/servers";
 import { apiErrMsg } from "@/api/client";
 import { usePersona } from "@/contexts/PersonaContext";
 import { isDepAdmin } from "@/lib/rbac";
 import { FormRow, StatRow } from "@/pages/admin/services/_inline";
+import type { EntityRef } from "./_entity";
 
 interface Props {
+  entity?: EntityRef;
   serverId: string;
   server?: Server;
   /** Поднимает свежий объект в ServerDetail, чтобы header и соседние
@@ -25,8 +28,19 @@ interface Props {
   onServerUpdated?: (next: Server) => void;
 }
 
-export function HardwareTab({ server, onServerUpdated }: Props) {
+export function HardwareTab(props: Props) {
+  // Карточка ВМ рендерится тем же файлом: у ВМ железо read-only, правка
+  // ресурсов живёт во вкладке «Обзор», поэтому серверный edit-поток не нужен.
+  // Диспетчер без хуков — режим фиксируется на монтирование.
+  if (props.entity?.kind === "vm") {
+    return <VmHardwareView vm={props.entity.vm} />;
+  }
+  return <ServerHardwareTab {...props} />;
+}
+
+function ServerHardwareTab({ server, onServerUpdated }: Props) {
   const [editing, setEditing] = useState(false);
+
   const view = server;
   const { persona } = usePersona();
 
@@ -455,6 +469,73 @@ function HardwareEditForm({
           Диски не редактируются вручную — backend заменяет весь массив
           целиком, реальное обновление идёт через inventory worker.
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Read-only сводка по «железу» ВМ — виртуальные ресурсы домена (vCPU / RAM /
+ * системный диск / сеть). Тот же вид, что серверная вкладка «Железо», но данные
+ * берутся прямо из VM-объекта. Правка ресурсов (vCPU/RAM) — во вкладке «Обзор»,
+ * дополнительные диски — во вкладке «Диски».
+ */
+function VmHardwareView({ vm }: { vm: Vm }) {
+  const ramGb = (vm.ram_mb / 1024).toFixed(vm.ram_mb % 1024 === 0 ? 0 : 1);
+  return (
+    <div className="p-5 flex flex-col gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="card">
+          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-accent" /> CPU
+          </h3>
+          <StatRow k="vCPU" v={<span className="mono">{vm.cpu}</span>} />
+        </div>
+
+        <div className="card">
+          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+            <MemoryStick className="w-4 h-4 text-accent" /> RAM
+          </h3>
+          <StatRow k="total_mb" v={<span className="mono">{vm.ram_mb}</span>} />
+          <StatRow k="total_gb" v={<span className="mono">{ramGb} GB</span>} />
+        </div>
+
+        <div className="card">
+          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+            <Network className="w-4 h-4 text-accent" /> Сеть
+          </h3>
+          <StatRow k="mode" v={<span className="mono">{vm.network_mode}</span>} />
+          <StatRow
+            k="ip_address"
+            v={<span className="mono">{vm.ip_address ?? "— (авто / NAT)"}</span>}
+          />
+        </div>
+
+        <div className="card">
+          <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
+            <HardDrive className="w-4 h-4 text-accent" /> Диск
+          </h3>
+          <StatRow
+            k="system_gb"
+            v={<span className="mono">{vm.disk_gb} GB</span>}
+          />
+          <StatRow k="box" v={<span className="mono">{vm.box}</span>} />
+          <StatRow
+            k="os_version"
+            v={
+              vm.os_version ? (
+                <span className="mono">{vm.os_version}</span>
+              ) : (
+                <span className="text-dim">—</span>
+              )
+            }
+          />
+        </div>
+      </div>
+
+      <div className="text-[11px] text-dim">
+        Дополнительные диски — во вкладке «Диски». Ресурсы (vCPU/RAM) правятся во
+        вкладке «Обзор».
       </div>
     </div>
   );

@@ -70,6 +70,7 @@ import {
   refreshVmImages,
   releaseVm,
   reserveVm,
+  serversToVmHubs,
   updateVmIpPool,
   updateVmPreset,
   type Vm,
@@ -146,20 +147,7 @@ export function Vm() {
         listServers({ limit: 200 }),
         listVms({ limit: 500 }),
       ]);
-      const counts = new Map<string, number>();
-      for (const v of vmsPage.items) {
-        counts.set(v.hub_server_id, (counts.get(v.hub_server_id) ?? 0) + 1);
-      }
-      const hubs: VmHub[] = srv.items
-        .filter((s) => (s as { is_vms_hub?: boolean }).is_vms_hub === true)
-        .map((s) => ({
-          id: s.id,
-          hostname: s.hostname,
-          display_name: s.display_name,
-          ip_address: s.ip_address,
-          department_id: s.department_id,
-          vm_count: counts.get(s.id) ?? 0,
-        }));
+      const hubs = serversToVmHubs(srv.items, vmsPage.items);
       return { hubs, vms: vmsPage.items };
     },
     [mock],

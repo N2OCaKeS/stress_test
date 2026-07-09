@@ -197,6 +197,28 @@ export interface VmHub {
   vm_count: number;
 }
 
+/**
+ * Деривация списка VMS-hub из серверов: оставляем подготовленные хабы
+ * (`is_vms_hub`) и считаем на каждом число ВМ из переданного списка. Общая для
+ * страниц /vm и /servers, чтобы маппинг сервер→хаб не расходился между ними.
+ */
+export function serversToVmHubs(servers: Server[], vms: Vm[]): VmHub[] {
+  const counts = new Map<string, number>();
+  for (const v of vms) {
+    counts.set(v.hub_server_id, (counts.get(v.hub_server_id) ?? 0) + 1);
+  }
+  return servers
+    .filter((s) => s.is_vms_hub === true)
+    .map((s) => ({
+      id: s.id,
+      hostname: s.hostname,
+      display_name: s.display_name,
+      ip_address: s.ip_address,
+      department_id: s.department_id,
+      vm_count: counts.get(s.id) ?? 0,
+    }));
+}
+
 /** Тело POST /vms. `ip_address: null` = взять свободный из пула автоматически. */
 export interface VmCreateRequest {
   hub_server_id: string;

@@ -33,8 +33,18 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery, useMockMode } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
-import { listVms, type Vm } from "@/api/server/vms";
-import { MOCK_VMS } from "@/mocks/vm";
+import {
+  createVmsBulk,
+  listVmImages,
+  listVms,
+  refreshVmImages,
+  serversToVmHubs,
+  type Vm,
+  type VmBulkCreateResponse,
+  type VmCreateRequest,
+  type VmImage,
+} from "@/api/server/vms";
+import { MOCK_VMS, MOCK_VM_IMAGES } from "@/mocks/vm";
 import {
   createServer,
   deleteServer,
@@ -54,7 +64,7 @@ import {
 import type { Server, ServerCreateRequest } from "@/api/server/types";
 import type { Department } from "@/api/auth/types";
 import { ServerDetail } from "./ServerDetail";
-import { VmDetail } from "@/pages/vm/Vm";
+import { VmDetail, CreateVmPane } from "@/pages/vm/Vm";
 
 const FOCUS_REFETCH_THROTTLE_MS = 12_000;
 
@@ -527,12 +537,20 @@ export function Server() {
   return (
     <Shell breadcrumb="server_service / servers" middle={aside}>
       {action === "new" && canManage ? (
-        <CreatePane
+        <CreateWorkzone
           depts={depsQ.data ?? []}
           isAccountAdmin={isAccountAdmin}
           fixedDeptId={persona.dept_id}
           onCancel={closeAction}
-          onSubmit={handleCreate}
+          onSubmitServer={handleCreate}
+          canManageVm={canManageVm}
+          servers={items}
+          vms={vmsQ.data?.items ?? []}
+          mock={mock}
+          onVmChanged={() => {
+            listQ.refetch();
+            vmsQ.refetch();
+          }}
         />
       ) : selectedVm ? (
         <VmDetail
@@ -997,6 +1015,230 @@ function isLikelyIpAddress(value: string): boolean {
   if (ipv4.test(v)) return true;
   // IPv6: hex-группы и `::`-сжатие; достаточно для отсечения непохожего ввода.
   return v.includes(":") && /^[0-9a-fA-F:]+$/.test(v) && v.length >= 2;
+}
+
+/**
+ * Обёртка create-флоу: переключатель «Сервер / ВМ» сверху и соответствующая
+ * форма под ним. Серверная ветка — прежняя `CreatePane` без изменений; ВМ —
+ * переиспользуемая `CreateVmPane` из /vm с локальным выбором хаба. Ветка ВМ
+ * доступна только при праве управлять ВМ (`canManageVm`); иначе сегмент «ВМ»
+ * заблокирован с подсказкой.
+ */
+function CreateWorkzone({
+  depts,
+  isAccountAdmin,
+  fixedDeptId,
+  onCancel,
+  onSubmitServer,
+  canManageVm,
+  servers,
+  vms,
+  mock,
+  onVmChanged,
+}: {
+  depts: Department[];
+  isAccountAdmin: boolean;
+  fixedDeptId: string | null;
+  onCancel: () => void;
+  onSubmitServer: (body: ServerCreateRequest) => void | Promise<void>;
+  canManageVm: boolean;
+  servers: Server[];
+  vms: Vm[];
+  mock: boolean;
+  onVmChanged: () => void;
+}) {
+  const [kind, setKind] = useState<"server" | "vm">("server");
+
+  return (
+    <section className="flex-1 min-w-0 overflow-hidden flex flex-col">
+      <div className="border-b border-token px-5 py-3 shrink-0 flex items-center gap-3 flex-wrap">
+        <div className="inline-flex rounded border border-token overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setKind("server")}
+            aria-pressed={kind === "server"}
+            className={`px-3 py-1.5 text-sm flex items-center gap-1.5 ${
+              kind === "server" ? "btn-primary" : "hover-bg text-dim"
+            }`}
+          >
+            <ServerIcon className="w-4 h-4" /> Сервер
+          </button>
+          <button
+            type="button"
+            onClick={() => canManageVm && setKind("vm")}
+            disabled={!canManageVm}
+            aria-pressed={kind === "vm"}
+            title={canManageVm ? undefined : "Недостаточно прав для создания ВМ"}
+            className={`px-3 py-1.5 text-sm flex items-center gap-1.5 border-l border-token ${
+              kind === "vm" ? "btn-primary" : "hover-bg text-dim"
+            } ${canManageVm ? "" : "opacity-50 cursor-not-allowed"}`}
+          >
+            <MonitorPlay className="w-4 h-4" /> ВМ
+          </button>
+        </div>
+        {!canManageVm && (
+          <span className="text-xs text-dim">
+            Создание ВМ требует роли server.admin/operator или dep_admin.
+          </span>
+        )}
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {kind === "server" ? (
+          <CreatePane
+            depts={depts}
+            isAccountAdmin={isAccountAdmin}
+            fixedDeptId={fixedDeptId}
+            onCancel={onCancel}
+            onSubmit={onSubmitServer}
+          />
+        ) : (
+          <VmCreateFlow
+            servers={servers}
+            vms={vms}
+            deptId={fixedDeptId}
+            mock={mock}
+            onCancel={onCancel}
+            onChanged={onVmChanged}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * ВМ-ветка create-флоу: собирает хабы из серверов (`is_vms_hub`, свой отдел),
+ * тянет каталог образов и рендерит переиспользуемую `CreateVmPane`. При одном
+ * хабе он выбран сразу; при нескольких — выпадающий селектор; если хабов нет —
+ * подсказка подготовить сервер как VMS-hub.
+ */
+function VmCreateFlow({
+  servers,
+  vms,
+  deptId,
+  mock,
+  onCancel,
+  onChanged,
+}: {
+  servers: Server[];
+  vms: Vm[];
+  deptId: string | null;
+  mock: boolean;
+  onCancel: () => void;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const hubs = useMemo(() => {
+    const all = serversToVmHubs(servers, vms);
+    return deptId ? all.filter((h) => h.department_id === deptId) : all;
+  }, [servers, vms, deptId]);
+  const [hubId, setHubId] = useState<string>("");
+  const selectedHub =
+    hubs.find((h) => h.id === hubId) ?? (hubs.length > 0 ? hubs[0] : null);
+
+  const imagesQ = useQuery<VmImage[]>(
+    async () => {
+      if (mock) return MOCK_VM_IMAGES;
+      const res = await listVmImages();
+      return res.items;
+    },
+    [mock],
+    { keepPreviousDataOnError: true },
+  );
+  const images = useMemo(
+    () =>
+      imagesQ.data && imagesQ.data.length > 0 ? imagesQ.data : MOCK_VM_IMAGES,
+    [imagesQ.data],
+  );
+
+  async function handleRefreshImages() {
+    if (mock) {
+      imagesQ.refetch();
+      toast.info("Каталог образов (mock) обновлён");
+      return;
+    }
+    try {
+      await refreshVmImages();
+      imagesQ.refetch();
+      toast.success("Каталог образов обновлён");
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось обновить каталог образов"));
+    }
+  }
+
+  async function handleCreateBulk(
+    items: VmCreateRequest[],
+  ): Promise<VmBulkCreateResponse> {
+    if (mock) {
+      return {
+        results: items.map((it) => ({
+          name: it.name,
+          status: "queued" as const,
+          task_id: `task-mock-${Math.random().toString(36).slice(2, 8)}`,
+        })),
+      };
+    }
+    return createVmsBulk({ items });
+  }
+
+  if (hubs.length === 0) {
+    return (
+      <section className="flex-1 min-w-0 overflow-y-auto">
+        <div className="p-5 w-full max-w-2xl">
+          <div className="empty-card text-center">
+            <MonitorPlay className="w-10 h-10 mx-auto text-dim mb-3" />
+            <div className="text-sm font-medium mb-2">
+              Нет подготовленных VMS-hub
+            </div>
+            <div className="text-xs text-dim mb-4">
+              Чтобы создавать ВМ, подготовьте сервер как VMS-hub — в карточке
+              сервера, вкладка «Управление».
+            </div>
+            <button type="button" className="btn" onClick={onCancel}>
+              Назад
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <div className="flex flex-col min-h-0">
+      {hubs.length > 1 && (
+        <div className="px-5 pt-4 w-full max-w-2xl">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">VMS-hub *</span>
+            <select
+              className="surface-2 border border-token rounded px-2 py-1"
+              value={selectedHub?.id ?? ""}
+              onChange={(e) => setHubId(e.target.value)}
+            >
+              {hubs.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.display_name ?? h.hostname} · {h.ip_address} · {h.vm_count}{" "}
+                  ВМ
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+      {selectedHub && (
+        <CreateVmPane
+          key={selectedHub.id}
+          hub={selectedHub}
+          images={images}
+          mock={mock}
+          onRefreshImages={handleRefreshImages}
+          onCancel={onCancel}
+          onSubmit={handleCreateBulk}
+          onChanged={onChanged}
+        />
+      )}
+    </div>
+  );
 }
 
 function CreatePane({

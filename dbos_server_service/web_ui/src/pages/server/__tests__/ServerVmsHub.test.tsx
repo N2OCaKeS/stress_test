@@ -181,13 +181,43 @@ describe("ServerDetail — VMS-hub", () => {
     );
   });
 
-  it("на обычном сервере (без virtualization) карточки VMS-hub нет", async () => {
+  it("managed-сервер с virtualization=null — кнопка видна, но заблокирована (идёт проверка)", async () => {
     h.server = baseServer({ virtualization: null, is_vms_hub: false });
     renderDetail();
     await openManageTab();
-    expect(
-      screen.queryByRole("button", { name: /Подготовить как VMS-hub/ }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("VMS-hub")).not.toBeInTheDocument();
+    const btn = await screen.findByRole("button", {
+      name: /Подготовить как VMS-hub/,
+    });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute("title", "Идёт проверка виртуализации…");
+  });
+
+  it("managed-сервер без KVM (virtualization=false) — кнопка заблокирована", async () => {
+    h.server = baseServer({ virtualization: false, is_vms_hub: false });
+    renderDetail();
+    await openManageTab();
+    const btn = await screen.findByRole("button", {
+      name: /Подготовить как VMS-hub/,
+    });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute(
+      "title",
+      "Нет аппаратной виртуализации (KVM) — сервер нельзя сделать VMS-hub",
+    );
+  });
+
+  it("не подготовленный сервер — кнопка заблокирована (нужен prepare)", async () => {
+    h.server = baseServer({
+      is_managed: false,
+      virtualization: null,
+      is_vms_hub: false,
+    });
+    renderDetail();
+    await openManageTab();
+    const btn = await screen.findByRole("button", {
+      name: /Подготовить как VMS-hub/,
+    });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute("title", "Сначала нужен prepare сервера");
   });
 });

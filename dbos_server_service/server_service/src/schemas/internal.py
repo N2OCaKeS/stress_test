@@ -147,6 +147,16 @@ class InventoryCallbackRequest(BaseModel):
             "воркер поле не шлёт (back-compat)."
         ),
     )
+    virtualization: bool | None = Field(
+        default=None,
+        description=(
+            "Аппаратная виртуализация (KVM): True — есть /dev/kvm либо флаг "
+            "vmx/svm в /proc/cpuinfo, False — нет. Пишется в "
+            "servers.virtualization как авторитетный факт детекта (гейт кнопки "
+            "«Подготовить как VMS-hub»). None — старый воркер поле не шлёт "
+            "(back-compat), тогда значение сервера не трогается."
+        ),
+    )
     network_interfaces: list[str] = Field(
         default_factory=list,
         max_length=64,

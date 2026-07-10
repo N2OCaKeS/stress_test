@@ -1108,6 +1108,21 @@ def _extract_memory_mb(meminfo_block: Any) -> int | None:
     return None
 
 
+def _extract_virtualization(facts: dict) -> bool | None:
+    """Флаг аппаратной виртуализации (KVM) из inventory-пробы.
+
+    Воркер кладёт в `facts["virtualization"]` результат `test -e /dev/kvm ||
+    grep vmx/svm /proc/cpuinfo` строкой `1`/`0`: `1` — KVM есть, `0` — нет.
+    Пустой/отсутствующий блок (проба не отработала) → None — способность
+    неизвестна, существующее значение сервера трогать нельзя.
+    """
+    text = _capture_stdout(facts.get("virtualization"))
+    if not text:
+        return None
+    token = text.splitlines()[0].strip()
+    return token != "0"
+
+
 def _extract_network_interfaces(net_block: Any) -> list[str]:
     """Имена активных сетевых интерфейсов из `ip -o link show` (без lo).
 
@@ -1282,8 +1297,8 @@ def inventory_facts_to_payload(facts: dict) -> dict:
     JSON и parsed os-release, плюс `astra_build`/`astra_license`/`apt_sources`).
     server_service ждёт flat-schema: `hostname`, `kernel`, `cpu_brand`,
     `cpu_model`, `cpu_cores`, `cpu_threads`, `cpu_frequency_ghz`, `os_version`,
-    `os_security_mode?`, `ram_total_mb?`, `network_interfaces: [...]`,
-    `disks: [...]`, `lspci?`, `repositories: [...]`.
+    `os_security_mode?`, `ram_total_mb?`, `virtualization?`,
+    `network_interfaces: [...]`, `disks: [...]`, `lspci?`, `repositories: [...]`.
 
     Для Astra Linux `os_version` — версия сборки (`1.7.5`) из
     `/etc/astra/build_version`, а режим защищённости уходит отдельным полем
@@ -1316,6 +1331,7 @@ def inventory_facts_to_payload(facts: dict) -> dict:
         ),
         "os_security_mode": _extract_os_security_mode(facts.get("astra_license")),
         "ram_total_mb": _extract_memory_mb(facts.get("meminfo")),
+        "virtualization": _extract_virtualization(facts),
         "network_interfaces": _extract_network_interfaces(facts.get("net_interfaces")),
         "disks": _extract_disks(facts.get("disks", {}), facts.get("df")),
         "lspci": _extract_lspci(facts.get("pci", {})),

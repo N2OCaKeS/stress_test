@@ -19,6 +19,7 @@ from src.services.ssh_client import (
     _extract_memory_mb,
     _extract_network_interfaces,
     _extract_repositories,
+    _extract_virtualization,
     _normalize_cpu_vendor,
     _parse_size_to_gb,
     inventory_facts_to_payload,
@@ -374,6 +375,32 @@ class TestExtractNetworkInterfaces:
         )}
         payload = inventory_facts_to_payload(facts)
         assert payload["network_interfaces"] == ["eno1"]
+
+
+# ── Аппаратная виртуализация (KVM) ──────────────────────────────────────────
+
+
+class TestExtractVirtualization:
+    def test_kvm_present(self):
+        assert _extract_virtualization({"virtualization": {"stdout": "1\n"}}) is True
+
+    def test_kvm_absent(self):
+        assert _extract_virtualization({"virtualization": {"stdout": "0\n"}}) is False
+
+    def test_missing_block_returns_none(self):
+        assert _extract_virtualization({}) is None
+        assert _extract_virtualization(
+            {"virtualization": {"error": "no shell", "returncode": 1}}
+        ) is None
+
+    def test_payload_includes_virtualization(self):
+        facts = dict(_FULL_FACTS)
+        facts["virtualization"] = {"stdout": "1\n"}
+        assert inventory_facts_to_payload(facts)["virtualization"] is True
+
+    def test_payload_virtualization_none_when_absent(self):
+        # _FULL_FACTS без ключа virtualization — старый воркер / проба не дошла.
+        assert inventory_facts_to_payload(_FULL_FACTS)["virtualization"] is None
 
 
 # ── Диски: системный + занятость ────────────────────────────────────────────

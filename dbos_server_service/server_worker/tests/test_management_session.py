@@ -615,6 +615,7 @@ def _inventory_conn():
             "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536\n"
             "2: ens192: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500\n"
         ),
+        _run_result("1\n"),
         _run_result('NAME="Astra Linux"\nVERSION_ID="1.7"\n'),
         _run_result('00:00.0 "Host bridge" "Intel"\n'),
         _run_result("1.7.5\n"),

@@ -1249,6 +1249,13 @@ async def receive_inventory(
     if payload.os_security_mode is not None:
         server_update["os_security_mode"] = payload.os_security_mode
 
+    # Аппаратная виртуализация (KVM) — булев факт детекта с бокса. Здесь
+    # inventory авторитетен (не warn-on-drift): непустое значение пишем как
+    # есть, оно гейтит подготовку VMS-hub. None (старый воркер без поля)
+    # существующее не затирает.
+    if payload.virtualization is not None:
+        server_update["virtualization"] = payload.virtualization
+
     # Сетевые интерфейсы — box-authoritative факт (как os_version_id): непустой
     # список с бокса перезаписывает хранимый, пустой/отсутствующий (старый
     # воркер) существующее не трогает. Основной интерфейс

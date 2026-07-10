@@ -591,6 +591,7 @@ class TestSshClientGetInventory:
             _run_result(_DF),
             _run_result(_MEMINFO),
             _run_result(_IP_LINK),
+            _run_result("1\n"),  # virtualization-проба (KVM есть)
             _run_result(_OS_RELEASE),
             _run_result(_LSPCI),
             _run_result(_ASTRA_BUILD),
@@ -609,6 +610,7 @@ class TestSshClientGetInventory:
         assert facts["os"]["NAME"] == "Astra Linux SE"
         assert facts["os"]["VERSION_ID"] == "1.7"
         assert any("Host bridge" in line for line in facts["pci"]["devices"])
+        assert facts["virtualization"]["stdout"] == "1"
 
     async def test_partial_failure_lscpu_returns_error_block(self, monkeypatch):
         # Все ОК кроме lscpu (rc=127, command not found).
@@ -620,6 +622,7 @@ class TestSshClientGetInventory:
             _run_result(_DF),
             _run_result(_MEMINFO),
             _run_result(_IP_LINK),
+            _run_result("1\n"),  # virtualization-проба (KVM есть)
             _run_result(_OS_RELEASE),
             _run_result(_LSPCI),
             _run_result(_ASTRA_BUILD),
@@ -646,6 +649,7 @@ class TestSshClientGetInventory:
             _run_result(_DF),
             _run_result(_MEMINFO),
             _run_result(_IP_LINK),
+            _run_result("1\n"),  # virtualization-проба (KVM есть)
             _run_result(_OS_RELEASE),
             _run_result(_LSPCI),
             _run_result(_ASTRA_BUILD),
@@ -671,6 +675,7 @@ class TestSshClientGetInventory:
             _run_result(_DF),
             _run_result(_MEMINFO),
             _run_result(_IP_LINK),
+            _run_result("1\n"),  # virtualization-проба (KVM есть)
             _run_result(_OS_RELEASE),
             _run_result(_LSPCI),
             _run_result(_ASTRA_BUILD),

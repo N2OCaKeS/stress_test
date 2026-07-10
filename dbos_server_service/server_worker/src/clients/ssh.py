@@ -1635,6 +1635,8 @@ class SshClient:
           смонтированных ФС (байты), для used/used_percent по каждому диску;
         * `cat /proc/meminfo` — объём ОЗУ (строка MemTotal);
         * `ip -o link show` — сетевые интерфейсы (имена активных, без lo);
+        * проба виртуализации — `/dev/kvm` либо флаг `vmx`/`svm` в
+          `/proc/cpuinfo` (возвращает `1`/`0`);
         * `cat /etc/os-release` — KEY=VALUE с дистрибутивом;
         * `lspci -mm` — PCI-устройства (одной строкой `class "vendor"
           "device" ...`);
@@ -1643,7 +1645,8 @@ class SshClient:
         * `cat /etc/apt/sources.list` (+ `sources.list.d/*.list`) — репозитории.
 
         Возврат — dict с ключами `hostname`, `kernel`, `cpu`, `disks`,
-        `os`, `pci`, `astra_build`, `astra_license`, `apt_sources`. Каждый
+        `os`, `pci`, `virtualization`, `astra_build`, `astra_license`,
+        `apt_sources`. Каждый
         блок может содержать `error` с описанием, если команда вернула
         non-zero — частичный inventory лучше, чем полный фейл одной команды.
         Astra-блоки на не-Астре ожидаемо приходят с `error` (файлов нет).
@@ -1673,6 +1676,15 @@ class SshClient:
         facts["meminfo"] = await self._capture_text("cat /proc/meminfo")
         # Сетевые интерфейсы: активные имена без loopback.
         facts["net_interfaces"] = await self._capture_text("ip -o link show")
+
+        # Аппаратная виртуализация: сервер тянет KVM, если есть /dev/kvm либо в
+        # /proc/cpuinfo присутствует флаг vmx (Intel VT-x) или svm (AMD-V).
+        # Отдаём ровно "1"/"0" — маппер превратит в bool. Это гейт для кнопки
+        # «Подготовить как VMS-hub».
+        facts["virtualization"] = await self._capture_text(
+            "if [ -e /dev/kvm ] || grep -qE '(vmx|svm)' /proc/cpuinfo; "
+            "then echo 1; else echo 0; fi"
+        )
 
         # 4. /etc/os-release — KEY=VALUE (часть в кавычках).
         # `_capture_text` всегда возвращает dict (см. сигнатуру), `isinstance`

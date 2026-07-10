@@ -1187,17 +1187,24 @@ function VmsHubCard({
   onPrepare: () => Promise<void>;
   onTeardown: () => Promise<void>;
 }) {
-  // Карточка нужна на managed-сервере (кандидат в hub) либо на уже готовом hub'е.
-  // Прячем, только если сервер не подготовлен для управления, либо прошлый
-  // prepare уже установил отсутствие KVM (`virtualization === false`).
-  if (
-    !server ||
-    server.virtualization === false ||
-    (!server.is_managed && !server.is_vms_hub)
-  )
-    return null;
+  // Карточка видна всегда, пока есть объект сервера. Готовность к подготовке
+  // hub'а зависит от prepare сервера и детекта виртуализации — по ним считаем
+  // причину блокировки кнопки (null = кнопка активна).
+  if (!server) return null;
   const isHub = !!server.is_vms_hub;
   const disabled = !allowed || locked || busyLabel !== null;
+
+  const virt = server.virtualization;
+  let prepareBlockReason: string | null = null;
+  if (!server.is_managed) {
+    prepareBlockReason = "Сначала нужен prepare сервера";
+  } else if (virt === false) {
+    prepareBlockReason =
+      "Нет аппаратной виртуализации (KVM) — сервер нельзя сделать VMS-hub";
+  } else if (virt == null) {
+    prepareBlockReason = "Идёт проверка виртуализации…";
+  }
+  const prepareDisabled = disabled || prepareBlockReason !== null;
 
   return (
     <div className="card">
@@ -1237,16 +1244,15 @@ function VmsHubCard({
       ) : (
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex-1 text-xs text-dim">
-            Сервер поддерживает виртуализацию (KVM). Подготовка развернёт
-            libvirt/kvm, мост br0 и storage-pool и скачает образы каталога —
-            после этого на нём можно создавать ВМ.
+            {prepareBlockReason ??
+              "Сервер поддерживает виртуализацию (KVM). Подготовка развернёт libvirt/kvm, мост br0 и storage-pool и скачает образы каталога — после этого на нём можно создавать ВМ."}
           </div>
           {allowed && (
             <button
               className="btn btn-primary flex items-center gap-1"
-              disabled={disabled}
+              disabled={prepareDisabled}
               onClick={onPrepare}
-              title="Подготовить сервер как VMS-hub"
+              title={prepareBlockReason ?? "Подготовить сервер как VMS-hub"}
             >
               <MonitorPlay className="w-4 h-4" />
               {busyLabel === "prepare_vms_hub"

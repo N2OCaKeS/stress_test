@@ -440,6 +440,66 @@ class TestInventoryCallback:
         )).scalar_one()
         assert srv_row2.os_security_mode == "Voronezh"
 
+    async def test_inventory_virtualization_persist_and_backcompat(
+        self, client, admin_role_token_a, make_server, db, dept_a,
+    ):
+        """Флаг KVM пишется авторитетно из callback'а; повторный inventory без
+        поля (старый воркер) сохранённое значение не затирает."""
+        srv = await make_server(department_id=dept_a)
+        base = {
+            "hostname": "kvm-box",
+            "kernel": "5.15.0",
+            "cpu_brand": "Intel",
+            "cpu_model": "Xeon",
+            "cpu_cores": 8,
+            "os_version": "1.8.1.6",
+            "disks": [],
+        }
+        r1 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a),
+            json={**base, "virtualization": True},
+        )
+        assert r1.status_code == 200, r1.text
+        await db.commit()
+        srv_row = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert srv_row.virtualization is True
+
+        # Read-схема отдаёт флаг — UI гейтит по нему кнопку VMS-hub.
+        read = await client.get(
+            f"/api/server/v1/servers/{srv.id}",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert read.status_code == 200, read.text
+        assert read.json()["virtualization"] is True
+
+        # Старый воркер: поля virtualization нет — существующее значение живёт.
+        r2 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a), json=base,
+        )
+        assert r2.status_code == 200, r2.text
+        await db.commit()
+        srv_row2 = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert srv_row2.virtualization is True
+
+        # Явный False перетирает True — детект авторитетен (не warn-on-drift).
+        r3 = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(admin_role_token_a),
+            json={**base, "virtualization": False},
+        )
+        assert r3.status_code == 200, r3.text
+        await db.commit()
+        srv_row3 = (await db.execute(
+            select(Server).where(Server.id == srv.id)
+        )).scalar_one()
+        assert srv_row3.virtualization is False
+
     async def test_inventory_network_memory_disk_usage_persist_and_read(
         self, client, admin_role_token_a, make_server, db, dept_a,
     ):

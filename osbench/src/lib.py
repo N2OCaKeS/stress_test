@@ -327,7 +327,7 @@ class ProgressBar:
     def __init__(self):
         self.current_stage_index = 0
         self.stage_start_time = datetime.now()
-        self.estimated_stage_duration = 300  # начальная оценка 5 минут
+        self.estimated_stage_duration = 9000  # начальная оценка 2,5 часа
         self.actual_times = {} 
         self.start_time = datetime.now()
         self.running = True
@@ -336,6 +336,7 @@ class ProgressBar:
         self.lock = threading.Lock()
         self.thread = threading.Thread(target=self._update, daemon=True)
         self.last_percent = 0
+        self.stage_progress = 0
         
     def start(self):
         """Запускает поток обновления прогресс-бара"""
@@ -350,35 +351,23 @@ class ProgressBar:
         self._display(completed=True)
         
     def advance_stage(self):
-        """Переход к следующему этапу с сохранением времени"""
-        # Сохраняем время выполнения завершённого этапа
+        """Переход к следующему этапу"""
+        # Сохраняем реальное время этапа
         if self.current_stage_index < len(self.STAGE_ORDER):
             stage_name = self.STAGE_ORDER[self.current_stage_index]
             elapsed = (datetime.now() - self.stage_start_time).total_seconds()
             self.actual_times[stage_name] = elapsed
+            # Уточняем общую оценку
+            if elapsed > 0:
+                weight = self.STAGE_WEIGHTS.get(stage_name, 0)
+                if weight > 0:
+                    estimated_total = (elapsed / (weight / 100))
+                    if estimated_total > self.estimated_stage_duration:
+                        self.estimated_stage_duration = estimated_total
         
         self.current_stage_index += 1
         self.stage_start_time = datetime.now()
-        
-        # Оцениваем длительность следующего этапа
-        if self.current_stage_index < len(self.STAGE_ORDER):
-            stage = self.STAGE_ORDER[self.current_stage_index]
-            if stage in self.actual_times:
-                # Если уже есть данные по этому этапу, используем их
-                self.estimated_stage_duration = self.actual_times[stage]
-            else:
-                # Иначе оцениваем по весу и общему времени
-                total_elapsed = (datetime.now() - self.start_time).total_seconds()
-                overall = self.get_overall_progress()
-                if overall > 0:
-                    total_estimated = (total_elapsed / overall) * 100
-                    weight = self.STAGE_WEIGHTS.get(stage, 0)
-                    if weight > 0:
-                        self.estimated_stage_duration = max(30, total_estimated * (weight / 100))
-                    else:
-                        self.estimated_stage_duration = 300
-                else:
-                    self.estimated_stage_duration = 300
+        self.stage_progress = 0
         
     def get_current_stage_name(self):
         """Получить название текущего этапа"""
@@ -395,19 +384,21 @@ class ProgressBar:
         return 0
         
     def get_stage_progress(self):
-        """Плавный расчёт прогресса внутри текущего этапа на основе времени"""
+        """Плавный расчёт прогресса"""
         if self.current_stage_index >= len(self.STAGE_ORDER):
             return 100
             
         elapsed = (datetime.now() - self.stage_start_time).total_seconds()
+        weight = self.get_current_weight()
         
-        if self.estimated_stage_duration > 0:
-            # Прогресс внутри этапа пропорционален времени
-            progress = (elapsed / self.estimated_stage_duration) * 100
-            # Ограничиваем 95% (оставляем запас)
-            return min(95, progress)
-        else:
-            return 0
+        if weight > 0:
+            # Ожидаемая длительность этапа
+            stage_duration = self.estimated_stage_duration * (weight / 100)
+            # Прогресс внутри этапа (линейный)
+            if stage_duration > 0:
+                progress = (elapsed / stage_duration) * 100
+                return min(99, progress)
+        return self.stage_progress
             
     def get_overall_progress(self):
         """Расчёт общего прогресса с плавным заполнением"""

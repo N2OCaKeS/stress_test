@@ -41,7 +41,6 @@ shell вообще не уходит — фильтрация чисто Python-
 
 from __future__ import annotations
 
-import fnmatch
 import logging
 import re
 
@@ -49,10 +48,23 @@ from src.clients.ssh import SshClient, SshError
 from src.core.config import get_settings
 from src.main import broker
 from src.services import ssh_client
+from src.tasks import _packages_common as pkg
 from src.tasks._account_helpers import resolve_ssh_creds
 from src.tasks._runner import run_task
+from src.tasks._target_runner import DirectRunner
 
 logger = logging.getLogger(__name__)
+
+# Общая логика листинга пакетов (детект/сборка/парсинг/фильтр) вынесена в
+# `_packages_common` — она одна на сервер и на гостя ВМ. Здесь держим алиасы под
+# историческими именами: на них ссылаются тесты и `vms.list_packages` (через
+# импорт этого модуля).
+_PATTERN_RE = pkg.PATTERN_RE
+_resolve_patterns = pkg.resolve_patterns
+_build_command = pkg.build_command
+_parse_packages = pkg.parse_packages
+_filter_by_patterns = pkg.filter_by_patterns
+_dedup_by_name = pkg.dedup_by_name
 
 # server_id/count/package_manager — операционные счётчики без секретов и без
 # намёка на интент оператора. `patterns` живут в отдельном whitelist'е и
@@ -85,38 +97,6 @@ def _audit_safe_fields() -> set[str]:
 # Backward-compat alias для тестов / внешних читателей, ожидавших
 # module-level set. Содержит дефолтный (masked) набор полей.
 AUDIT_SAFE_FIELDS: set[str] = set(_BASE_AUDIT_SAFE_FIELDS)
-
-# Локальный allow-list символов для glob-pattern перед подстановкой в
-# shell-команду. Принимаем только то, что нужно dpkg-query/rpm glob'у:
-# буквы, цифры, точка, подчёркивание, дефис, плюс и сами glob-метасимволы
-# `* ? [ ]`. Кавычка `'`, `$`, `;`, `\`, backtick, пробелы, перевод строки
-# не проходят — это закрывает break-out из одиночных кавычек и shell-
-# инъекцию. defence-in-depth: не полагаемся на валидацию server_service.
-# Тот же класс символов заявлен в docstring модуля и в server_service.
-_PATTERN_RE = re.compile(r"^[A-Za-z0-9._\-+*?\[\]]+$")
-
-
-def _resolve_patterns(payload: dict) -> list[str]:
-    """Свести payload к списку glob-паттернов с дедупом и сохранением порядка.
-
-    Приоритет: `patterns` (список) → одиночный `pattern` (back-compat) →
-    `["*"]` (дефолт). Не-list `patterns` или не-str `pattern` подменяются
-    дефолтом — валидацию каждого элемента делает caller через `_PATTERN_RE`.
-    """
-    raw = payload.get("patterns")
-    if isinstance(raw, list) and raw:
-        source = raw
-    else:
-        pattern = payload.get("pattern", "*")
-        source = [pattern] if pattern is not None else ["*"]
-    seen: set = set()
-    out: list[str] = []
-    for p in source:
-        if p not in seen:
-            seen.add(p)
-            out.append(p)
-    return out
-
 
 # Allow-list имён пакетов для мутаций (install/remove/upgrade). В отличие от
 # glob-pattern'а здесь НЕ допускаем `* ? [ ]` — устанавливать/сносить пакеты
@@ -166,242 +146,14 @@ def _remap_managed_connect_error(exc: SshError) -> SshError:
     )
 
 
-def _build_command(package_manager: str, patterns: list[str]) -> str:
-    """Собрать shell-команду под выбранный package manager.
-
-    Каждый pattern оборачивается в одинарные кавычки. Перед подстановкой
-    они обязаны пройти `_PATTERN_RE` (caller валидирует) — внутри не может
-    быть `'`/`$`/`;` и прочих метасимволов, поэтому break-out из кавычек
-    невозможен.
-
-    Для dpkg/rpm несколько паттернов передаются позиционными аргументами —
-    инструмент сам делает OR-матч (любой пакет, подошедший под хотя бы один
-    glob). apk/pacman/portage/xbps не глоббят на стороне инструмента — листят
-    всё, OR-фильтр по паттернам делается в Python (`_filter_by_patterns`).
-    """
-    if package_manager == "dpkg":
-        joined = " ".join("'" + p + "'" for p in patterns)
-        return (
-            "dpkg-query -W -f='${Package} ${Version}\\n' "
-            + joined
-            + " 2>/dev/null"
-        )
-    if package_manager == "rpm":
-        joined = " ".join("'" + p + "'" for p in patterns)
-        return (
-            "rpm -qa --queryformat '%{NAME} %{VERSION}\\n' "
-            + joined
-            + " 2>/dev/null"
-        )
-    if package_manager == "apk":
-        # apk не глоббит pattern на стороне инструмента — листим всё, а
-        # фильтрацию по pattern делаем уже в Python (`_filter_by_pattern`).
-        # Поэтому pattern в shell не подставляем.
-        return "apk info -v 2>/dev/null"
-    if package_manager == "pacman":
-        # pacman -Q выдаёт `name version` по строке, как dpkg, и сам не
-        # глоббит — листим всё, фильтр по pattern в Python.
-        return "pacman -Q 2>/dev/null"
-    if package_manager == "portage":
-        # qlist -Iv (portage-utils) — строки `category/name-version`.
-        # Фильтр по pattern в Python.
-        return "qlist -Iv 2>/dev/null"
-    if package_manager == "xbps":
-        # xbps-query -l — строки `ii name-version_rev  description`.
-        # Фильтр по pattern в Python.
-        return "xbps-query -l 2>/dev/null"
-    raise SshError(
-        error_code="NO_PACKAGE_MANAGER",
-        host="",
-        message=f"unsupported package manager: {package_manager}",
-    )
-
-
-def _parse_packages(
-    stdout: str, package_manager: str = "dpkg"
-) -> list[dict[str, str]]:
-    """Разобрать вывод package manager'а в список `[{name, version}, ...]`.
-
-    Для dpkg-query / rpm -qa / pacman формат строки — `<name> <version>`
-    (две колонки, разделитель пробел). Для apk (`apk info -v`) формат
-    другой — одна слитная строка `<name>-<version>-r<rel>`, разбирается
-    отдельно (`_parse_apk_line`). portage (`qlist -Iv`) и xbps
-    (`xbps-query -l`) тоже со своими парсерами.
-
-    Один пакет может встретиться несколько раз (например, разные версии
-    `linux-image-*`) — отдаём как есть, без дедупликации: server_service /
-    UI решает, как показывать (свернуть в array или поднять conflict).
-
-    Пустая строка / нераспознанная строка — пропускаем (защита от мусора).
-    """
-    packages: list[dict[str, str]] = []
-    for line in stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if package_manager == "apk":
-            packages.append(_parse_apk_line(line))
-            continue
-        if package_manager == "portage":
-            packages.append(_parse_portage_line(line))
-            continue
-        if package_manager == "xbps":
-            parsed = _parse_xbps_line(line)
-            if parsed is not None:
-                packages.append(parsed)
-            continue
-        # `split(None, 1)` — разделяем по первому пробелу/табу, остальное
-        # остаётся в version. dpkg-query format формально с одним пробелом,
-        # но defensive split на whitespace надёжнее.
-        parts = line.split(None, 1)
-        if len(parts) != 2:
-            continue
-        name, version = parts
-        packages.append({"name": name, "version": version})
-    return packages
-
-
-def _parse_apk_line(line: str) -> dict[str, str]:
-    """Разобрать одну строку `apk info -v` в `{name, version}`.
-
-    Формат — `<name>-<version>-r<rel>`, где имя пакета само может содержать
-    дефисы (`py3-pip-23.1-r0`). Версия всегда занимает два последних
-    дефис-сегмента (`<version>-r<rel>`), поэтому режем справа на 3 части:
-    `py3-pip-23.1-r0` → `["py3-pip", "23.1", "r0"]` → name=`py3-pip`,
-    version=`23.1-r0`. Если revision-сегмента нет (нестандартная строка),
-    fallback: режем справа один раз; если и это не делится — вся строка
-    уходит в name с пустой version.
-    """
-    parts = line.rsplit("-", 2)
-    if len(parts) == 3:
-        name, ver, rel = parts
-        return {"name": name, "version": f"{ver}-{rel}"}
-    parts = line.rsplit("-", 1)
-    if len(parts) == 2:
-        return {"name": parts[0], "version": parts[1]}
-    return {"name": line, "version": ""}
-
-
-# Версия в portage-атоме начинается с цифры сразу после дефиса. Имя берём
-# non-greedy, чтобы дефисы внутри имени (`libfoo-bar`) не съелись в версию.
-_PORTAGE_RE = re.compile(r"^(.*?)-(\d.*)$")
-
-
-def _parse_portage_line(line: str) -> dict[str, str]:
-    """Разобрать одну строку `qlist -Iv` в `{name, version}`.
-
-    Формат — `<category>/<name>-<version>`, напр. `app-shells/bash-5.2_p15`
-    или `dev-python/pip-23.1-r1`. Категорию отбрасываем (basename после
-    последнего `/`), затем делим имя и версию по первому дефису, за которым
-    идёт цифра: `bash-5.2_p15` → name=`bash`, version=`5.2_p15`;
-    `pip-23.1-r1` → name=`pip`, version=`23.1-r1`; `libfoo-bar-1.2` →
-    name=`libfoo-bar`, version=`1.2`. Если версии нет — вся строка в name.
-    """
-    basename = line.rsplit("/", 1)[-1]
-    m = _PORTAGE_RE.match(basename)
-    if m:
-        return {"name": m.group(1), "version": m.group(2)}
-    return {"name": basename, "version": ""}
-
-
-def _parse_xbps_line(line: str) -> dict[str, str] | None:
-    """Разобрать одну строку `xbps-query -l` в `{name, version}`.
-
-    Формат — `ii <name>-<version>_<rev>   <description>`: первый токен —
-    состояние (`ii`), второй — `name-version_rev`, дальше описание. Берём
-    токен с индексом 1 и режем по последнему дефису: `bash-5.2.015_1` →
-    name=`bash`, version=`5.2.015_1`; `python3-pip-23.1_1` →
-    name=`python3-pip`, version=`23.1_1`. Строки с менее чем двумя
-    токенами пропускаем (возвращаем `None`).
-    """
-    tokens = line.split()
-    if len(tokens) < 2:
-        return None
-    name, _, version = tokens[1].rpartition("-")
-    if not name:
-        return {"name": tokens[1], "version": ""}
-    return {"name": name, "version": version}
-
-
-def _filter_by_patterns(
-    packages: list[dict[str, str]], patterns: list[str]
-) -> list[dict[str, str]]:
-    """Отфильтровать пакеты по набору glob-паттернов (OR-матч) на стороне Python.
-
-    Нужно для apk/pacman/portage/xbps, которые сами не глоббят — листят все
-    пакеты, фильтруем здесь. Пакет проходит, если его имя матчит ХОТЯ БЫ один
-    паттерн. Пустой список или наличие `*`/пустого паттерна — без фильтра
-    (вернуть всё). Сравнение через `fnmatch.fnmatchcase` — case-sensitive и не
-    зависит от ОС воркера, в отличие от `fnmatch.fnmatch`. Это согласуется с
-    tool-side глоббингом dpkg-query/rpm, который тоже регистрозависим.
-    """
-    if not patterns or any(not p or p == "*" for p in patterns):
-        return packages
-    return [
-        p for p in packages
-        if any(fnmatch.fnmatchcase(p["name"], pat) for pat in patterns)
-    ]
-
-
-def _dedup_by_name(
-    packages: list[dict[str, str]]
-) -> list[dict[str, str]]:
-    """Схлопнуть пакеты-дубли по имени, сохраняя порядок первого вхождения.
-
-    При нескольких паттернах пакет может подойти под не один glob (например
-    `ssh*` и `*server*` оба матчат `openssh-server`) — на стороне dpkg/rpm это
-    дало бы две одинаковые строки. Дедуп по `name` оставляет первую запись;
-    мульти-версионные пакеты (`linux-image-*`) различаются именем и не
-    схлопываются.
-    """
-    seen: set[str] = set()
-    out: list[dict[str, str]] = []
-    for p in packages:
-        if p["name"] not in seen:
-            seen.add(p["name"])
-            out.append(p)
-    return out
-
-
 async def _detect_package_manager(ssh: SshClient) -> str:
-    """Определить package manager на удалённом хосте.
+    """Определить package manager на прямом сервере (обёртка над общим детектом).
 
-    `command -v` возвращает rc=0 и путь если бинарь есть в PATH, rc!=0
-    если нет. Используем именно `command -v`, а не `which`: POSIX-стандарт,
-    есть и в Debian, и в RHEL, и в Alpine без отдельной установки.
-
-    Порядок проверки: dpkg → rpm → apk → pacman → portage → xbps. Если
-    есть несколько (теоретически возможно на гибридных хостах с alien) —
-    берём первый по приоритету; dpkg первый для Astra Linux target'а.
-    portage детектим по `qlist` (portage-utils — стандарт для скриптинга
-    на Gentoo); если qlist нет, portage не выбираем, даже если есть emerge.
+    Оставлена как тонкий адаптер: мутации (install/remove/update) детектят
+    менеджер на управляющей SSH-сессии напрямую. Гоняет общий
+    `_packages_common.detect_package_manager` через `DirectRunner`.
     """
-    rc, _, _ = await ssh.run("command -v dpkg-query")
-    if rc == 0:
-        return "dpkg"
-    rc, _, _ = await ssh.run("command -v rpm")
-    if rc == 0:
-        return "rpm"
-    rc, _, _ = await ssh.run("command -v apk")
-    if rc == 0:
-        return "apk"
-    rc, _, _ = await ssh.run("command -v pacman")
-    if rc == 0:
-        return "pacman"
-    rc, _, _ = await ssh.run("command -v qlist")
-    if rc == 0:
-        return "portage"
-    rc, _, _ = await ssh.run("command -v xbps-query")
-    if rc == 0:
-        return "xbps"
-    raise SshError(
-        error_code="NO_PACKAGE_MANAGER",
-        host=ssh.host,
-        message=(
-            "no supported package manager "
-            "(dpkg-query/rpm/apk/pacman/qlist/xbps-query) on remote host"
-        ),
-    )
+    return await pkg.detect_package_manager(DirectRunner(ssh))
 
 
 @broker.task("installed_packages.list")
@@ -498,40 +250,12 @@ async def installed_packages_list(task_id: str) -> None:
                 raise _remap_managed_connect_error(exc) from exc
             await session.close()
             raise
+        # Цель — прямой сервер: общий листинг гоняет команды по этой же
+        # управляющей сессии (детект, dpkg-query/rpm/..., парсинг, дедуп, cap).
         async with session as ssh:
-            package_manager = await _detect_package_manager(ssh)
-            cmd = _build_command(package_manager, patterns)
-            rc, stdout, stderr = await ssh.run(cmd)
-            if rc != 0:
-                # dpkg-query возвращает rc=1 если ничего не нашлось —
-                # это валидный «empty result», stderr пустой. rc!=0 со
-                # stderr — реальная ошибка (broken DB, нет binary'я).
-                if stderr.strip():
-                    raise SshError(
-                        error_code="PACKAGE_QUERY_FAILED",
-                        host=host,
-                        cmd_sanitized=cmd,
-                        returncode=rc,
-                        stderr=stderr.strip(),
-                        message=f"{package_manager} query failed",
-                    )
-                # rc!=0 без stderr — трактуем как «ничего не подошло».
-                stdout = ""
-
-        packages = _parse_packages(stdout, package_manager)
-        # apk/pacman/portage/xbps листят все пакеты — OR-фильтр по паттернам
-        # делаем здесь. Для dpkg/rpm паттерны уже отработали на стороне
-        # инструмента (несколько позиционных glob'ов), повторно не фильтруем.
-        if package_manager in ("apk", "pacman", "portage", "xbps"):
-            packages = _filter_by_patterns(packages, patterns)
-        # Один пакет может подойти под несколько паттернов (dpkg/rpm выдадут
-        # дубль-строку) — схлопываем по имени.
-        packages = _dedup_by_name(packages)
-        # Жёсткий cap на число строк — при широких glob'ах (`*`, несколько
-        # паттернов) union может распухнуть. server_service кладёт лимит в
-        # payload (`max_rows`); режем итог после дедупа.
-        if isinstance(max_rows, int) and max_rows >= 0:
-            packages = packages[:max_rows]
+            package_manager, packages = await pkg.collect_packages(
+                DirectRunner(ssh), patterns, max_rows=max_rows,
+            )
         return {
             "server_id": server_id,
             "patterns": patterns,

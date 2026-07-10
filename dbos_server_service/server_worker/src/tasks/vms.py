@@ -59,8 +59,9 @@ from src.core.constants import (
 )
 from src.main import broker
 from src.services import server_service_client
-from src.tasks import installed_packages as ip_helpers
+from src.tasks import _packages_common as pkg
 from src.tasks._runner import run_task
+from src.tasks._target_runner import GuestHopRunner
 from src.tasks._vm_prepare_helpers import (
     _delete_stash,
     _shred_temp_key,
@@ -2062,54 +2063,6 @@ async def vm_delete(task_id: str) -> None:
 # ── vm.list_packages ─────────────────────────────────────────────────────────
 
 
-# Явный хинт os_family из payload → package manager, чтобы не гонять 6 проб по
-# SSH, когда семейство ОС гостя уже известно server_service'у. Всё, что не
-# распознали, уходит в живой детект внутри гостя.
-_OS_FAMILY_TO_PM: dict[str, str] = {
-    "apt": "dpkg", "dpkg": "dpkg", "debian": "dpkg", "astra": "dpkg",
-    "dnf": "rpm", "rpm": "rpm", "yum": "rpm", "rhel": "rpm", "redos": "rpm",
-}
-
-# Порядок живого детекта пакетного менеджера в госте (тот же приоритет, что в
-# `installed_packages._detect_package_manager`, но команды идут вложенным
-# guest_ssh, а не напрямую по hub-сессии).
-_GUEST_PM_PROBE: tuple[tuple[str, str], ...] = (
-    ("dpkg", "command -v dpkg-query"),
-    ("rpm", "command -v rpm"),
-    ("apk", "command -v apk"),
-    ("pacman", "command -v pacman"),
-    ("portage", "command -v qlist"),
-    ("xbps", "command -v xbps-query"),
-)
-
-
-async def _detect_guest_package_manager(
-    ssh, host: str, guest_ip: str, *, connect=None,
-) -> str:
-    """Определить package manager внутри гостя ВМ (через вложенный коннектор).
-
-    Зеркало `installed_packages._detect_package_manager`, но команды `command -v`
-    идут в гостя вложенной сессией, а не на hub напрямую. `connect` — коннектор
-    входа на гостя (по управляющему ключу на managed-ВМ, иначе по базовой учётке).
-    Возвращает первый найденный менеджер по приоритету; ни одного —
-    `SshError(NO_PACKAGE_MANAGER)`.
-    """
-    if connect is None:
-        connect = guest_connector(guest_ip)
-    for pm, probe in _GUEST_PM_PROBE:
-        rc, _out, _err = await ssh.run(connect(probe))
-        if rc == 0:
-            return pm
-    raise SshError(
-        error_code="NO_PACKAGE_MANAGER",
-        host=host,
-        message=(
-            "в госте ВМ нет поддерживаемого package manager'а "
-            "(dpkg-query/rpm/apk/pacman/qlist/xbps-query)"
-        ),
-    )
-
-
 @broker.task("vm.list_packages")
 async def vm_list_packages(task_id: str) -> None:
     """Снять список установленных пакетов гостя ВМ по SSH.
@@ -2123,8 +2076,9 @@ async def vm_list_packages(task_id: str) -> None:
     список `{name, version}`. Дубли по имени схлопываются, итог режется по
     `max_rows`. Результат докладывает server_service (`vms/{id}/packages`).
 
-    Зеркало серверного `installed_packages.list`, но цель — гость ВМ, а не сам
-    сервер; парсеры/фильтры/валидатор glob'а переиспользуются из того модуля.
+    Зеркало серверного `installed_packages.list`: детект/сборка/парсинг/фильтр
+    — общий код `_packages_common`, отличается только транспорт (гость ВМ через
+    hop-раннер вместо прямой сессии).
 
     Параметры: `task_id`. Payload — `vm_id` (обязательно), `vm_name`/`name`,
     `guest_ip`/`ip_address` (адрес гостя, если не по `domifaddr`), опц.
@@ -2147,16 +2101,14 @@ async def vm_list_packages(task_id: str) -> None:
         vm_name = validate_name(
             payload.get("vm_name") or payload["name"], host_label, "vm_name",
         )
-        patterns = ip_helpers._resolve_patterns(payload)
+        patterns = pkg.resolve_patterns(payload)
         max_rows = payload.get("max_rows")
         os_family = str(payload.get("os_family") or "").strip().lower()
 
         # Паттерны уходят в shell-команду гостя — валидируем каждый локально
         # (defence-in-depth, тот же allow-list, что в installed_packages.list).
         for pattern in patterns:
-            if not isinstance(pattern, str) or not ip_helpers._PATTERN_RE.match(
-                pattern,
-            ):
+            if not isinstance(pattern, str) or not pkg.PATTERN_RE.match(pattern):
                 raise SshError(
                     error_code="INVALID_PATTERN", host=host_label,
                     message=(
@@ -2173,36 +2125,16 @@ async def vm_list_packages(task_id: str) -> None:
             # фолбэк на базовую учётку `u`/`1`. Ключ шредим в finally.
             mgmt_user, key_path = await load_guest_key(ssh, host, payload)
             connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
+            # Цель — гость ВМ: тот же общий листинг, что и на сервере, но команды
+            # едут вложенным ssh из hub-сессии (hop-раннер).
+            runner = GuestHopRunner(ssh, connect, host=host)
             try:
-                package_manager = _OS_FAMILY_TO_PM.get(os_family) or (
-                    await _detect_guest_package_manager(
-                        ssh, host, guest_ip, connect=connect,
-                    )
+                package_manager, packages = await pkg.collect_packages(
+                    runner, patterns, os_family=os_family, max_rows=max_rows,
                 )
-                cmd = ip_helpers._build_command(package_manager, patterns)
-                rc, stdout, stderr = await ssh.run(connect(cmd))
-                if rc != 0:
-                    # dpkg-query/rpm отдают non-zero, если ничего не подошло под
-                    # pattern (stderr пуст) — это валидный пустой результат; rc!=0
-                    # со stderr — реальная поломка (битая БД пакетов).
-                    if stderr.strip():
-                        raise SshError(
-                            error_code="PACKAGE_QUERY_FAILED", host=host,
-                            cmd_sanitized=cmd, returncode=rc,
-                            stderr=stderr.strip(),
-                            message=f"{package_manager} query в госте упал",
-                        )
-                    stdout = ""
             finally:
                 if key_path:
                     await _shred_temp_key(ssh, key_path)
-
-        packages = ip_helpers._parse_packages(stdout, package_manager)
-        if package_manager in ("apk", "pacman", "portage", "xbps"):
-            packages = ip_helpers._filter_by_patterns(packages, patterns)
-        packages = ip_helpers._dedup_by_name(packages)
-        if isinstance(max_rows, int) and max_rows >= 0:
-            packages = packages[:max_rows]
 
         await server_service_client.record_vm_packages(
             vm_id, packages, target_department_id=target_dept,

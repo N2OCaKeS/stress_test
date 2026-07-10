@@ -31,11 +31,8 @@ import {
   XCircle,
   Trash2,
   Waypoints,
-  Lock,
-  Unlock,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
-import { Tabs } from "@/components/ui/Tabs";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -48,8 +45,7 @@ import {
   canManageVms,
   hasVmZoneAccess,
 } from "@/lib/rbac";
-import { EntityHeader } from "@/components/entity/EntityHeader";
-import { ReachSignal, PowerStateBadge } from "@/components/entity/signals";
+import { EntityDetail } from "@/components/entity/EntityDetail";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import { listServers } from "@/api/server/servers";
@@ -68,8 +64,6 @@ import {
   listVmPresets,
   listVms,
   refreshVmImages,
-  releaseVm,
-  reserveVm,
   serversToVmHubs,
   updateVmIpPool,
   updateVmPreset,
@@ -100,17 +94,7 @@ import {
   MOCK_VM_PRESETS,
   MOCK_VMS,
 } from "@/mocks/vm";
-import { TAB_ICON } from "@/pages/server/tabs/_tabMeta";
 import type { EntityRef } from "@/pages/server/tabs/_entity";
-import { OverviewTab } from "@/pages/server/tabs/overview";
-import { HardwareTab } from "@/pages/server/tabs/hardware";
-import { PowerTab } from "@/pages/server/tabs/power";
-import { AccountsTab } from "@/pages/server/tabs/accounts";
-import { ConsoleTab } from "@/pages/server/tabs/console";
-import { PackagesTab } from "@/pages/server/tabs/packages";
-import { ManageTab } from "@/pages/server/tabs/manage";
-import { DisksTab } from "@/pages/server/tabs/disks";
-import { SnapshotsTab } from "@/pages/server/tabs/snapshots";
 
 // ── data helpers (mock ↔ live) ──────────────────────────────────────────────
 
@@ -663,36 +647,12 @@ function PowerBadge({ state }: { state: Vm["power_state"] }) {
 
 // ── VM detail (вкладки) ──────────────────────────────────────────────────────
 
-type VmTabId =
-  | "overview"
-  | "hardware"
-  | "power"
-  | "accounts"
-  | "console"
-  | "packages"
-  | "manage"
-  | "disks"
-  | "snapshots";
-
-const VM_TABS: { id: VmTabId; label: string }[] = [
-  { id: "overview", label: "Обзор" },
-  { id: "hardware", label: "Железо" },
-  { id: "power", label: "Питание" },
-  { id: "accounts", label: "Аккаунты" },
-  { id: "console", label: "Консоль" },
-  { id: "packages", label: "Пакеты" },
-  { id: "manage", label: "Управление" },
-  { id: "disks", label: "Диски" },
-  { id: "snapshots", label: "Снимки" },
-];
-
 /**
- * Карточка ВМ — тонкий диспетчер вкладок по образцу `ServerDetail`. Рендерит те
- * же файлы-компоненты вкладок, что и карточка сервера, передавая им сущность-ВМ
- * через `EntityRef`. Своё здесь — только общая шапка (имя/питание/бронь) и
- * локальная копия карточки, чтобы мутации во вкладках поднимались в header и в
- * соседние вкладки без перезагрузки. Набор вкладок фиксирован; гейтинг по праву
- * управления живёт внутри самих вкладок (power/manage), как у сервера.
+ * Карточка ВМ — тонкая обёртка над общей рабочей зоной `EntityDetail`. Здесь
+ * только локальная копия карточки: vm-проп меняется при refetch списка, мутации
+ * во вкладках и бронь поднимаются сюда через `onLocalUpdate`, чтобы шапка и
+ * соседние вкладки обновились без перезагрузки. Набор вкладок, шапка, бронь и
+ * рендер вкладок живут в `EntityDetail` — общие с картой сервера.
  */
 export function VmDetail({
   vm,
@@ -707,230 +667,18 @@ export function VmDetail({
   onBack: () => void;
   onChanged: () => void;
 }) {
-  const [tab, setTab] = useState<VmTabId>("overview");
-  const deptLabel = useDeptLabel(vm.department_id);
-  // Свежая копия карточки: vm-проп меняется при refetch списка, локальные
-  // мутации во вкладках (PATCH, бронь) поднимаются сюда через setLocal.
   const [local, setLocal] = useState<Vm>(vm);
   const view = local.id === vm.id ? local : vm;
-
   const entity: EntityRef = { kind: "vm", vm: view, mock, canManage, onChanged };
-  const onVmUpdated = (next: import("@/api/server/types").Server | Vm) =>
-    setLocal(next as Vm);
-
-  const activeTab = VM_TABS.some((t) => t.id === tab) ? tab : "overview";
 
   return (
-    <section className="flex-1 min-w-0 overflow-hidden flex flex-col">
-      <EntityHeader
-        icon={<MonitorPlay className="w-7 h-7" />}
-        onBack={onBack}
-        backLabel="К хабу"
-        name={view.name}
-        badges={
-          <>
-            <span className="badge">ВМ</span>
-            <ReachSignal
-              label="ping"
-              reachable={view.ping_reachable}
-              latencyMs={view.ping_latency_ms}
-            />
-            {/* Состояние питания домена снимается из virsh. */}
-            <PowerStateBadge state={view.power_state} />
-          </>
-        }
-        meta={
-          <>
-            <span className="mono">{view.id}</span>
-            <span>·</span>
-            <span>
-              № <b className="mono">{view.number ?? "—"}</b>
-            </span>
-            <span>·</span>
-            <span>
-              dept: <b>{deptLabel}</b>
-            </span>
-          </>
-        }
-      >
-        <VmReserveControl
-          vm={view}
-          mock={mock}
-          canManage={canManage}
-          onLocal={setLocal}
-          onChanged={onChanged}
-        />
-      </EntityHeader>
-
-      <Tabs
-        active={activeTab}
-        onChange={(id) => setTab(id as VmTabId)}
-        wrap
-        tabs={VM_TABS.map((t) => ({
-          id: t.id,
-          label: t.label,
-          icon: TAB_ICON[t.id],
-        }))}
-      />
-
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto">
-        {activeTab === "overview" && (
-          <OverviewTab entity={entity} onEntityUpdated={onVmUpdated} />
-        )}
-        {activeTab === "hardware" && (
-          <HardwareTab serverId="" entity={entity} />
-        )}
-        {activeTab === "power" && (
-          <PowerTab entity={entity} onEntityUpdated={onVmUpdated} />
-        )}
-        {activeTab === "accounts" && (
-          <AccountsTab serverId="" entity={entity} />
-        )}
-        {activeTab === "console" && <ConsoleTab entity={entity} />}
-        {activeTab === "packages" && (
-          <PackagesTab serverId="" entity={entity} />
-        )}
-        {activeTab === "manage" && (
-          <ManageTab
-            serverId=""
-            entity={entity}
-            onEntityUpdated={onVmUpdated}
-            onDeleted={onBack}
-          />
-        )}
-        {activeTab === "disks" && <DisksTab entity={entity} />}
-        {activeTab === "snapshots" && (
-          <SnapshotsTab entity={entity} onEntityUpdated={onVmUpdated} />
-        )}
-      </div>
-    </section>
-  );
-}
-
-/**
- * Бронь ВМ в шапке карточки — индикатор «Забронировано» и кнопки
- * «Забронировать»/«Снять бронь». Оптимистично правит локальную копию и дёргает
- * `onChanged`, чтобы список хаба обновил индикатор. Право на бронь приходит
- * сверху одним флагом: у ВМ нет per-операционной матрицы прав, как у сервера.
- */
-function VmReserveControl({
-  vm,
-  mock,
-  canManage,
-  onLocal,
-  onChanged,
-}: {
-  vm: Vm;
-  mock: boolean;
-  canManage: boolean;
-  onLocal: (next: Vm) => void;
-  onChanged: () => void;
-}) {
-  const toast = useToast();
-  const { prompt, confirm } = useConfirm();
-  const [pending, setPending] = useState(false);
-  // Индикатор идущей операции (создание/удаление/…): пока busy_state непустой,
-  // ВМ занята lifecycle-локом. Бронь под тест — отдельно, через `status`.
-  const busyLabel = vmBusyLabel(vm.busy_state);
-  const reserved = vm.status !== "free" && vm.status !== "error";
-
-  async function handleReserve() {
-    if (pending || !canManage) return;
-    const { ok, reason } = await prompt({
-      title: "Забронировать ВМ",
-      message: `Забронировать ${vm.name}? Бронь блокирует деструктивные операции других пользователей до её снятия.`,
-      reason: true,
-      reasonLabel: "Примечание (зачем бронь)",
-      reasonPlaceholder: "например, ручной debug-цикл",
-      reasonRequired: true,
-      confirmLabel: "Забронировать",
-    });
-    if (!ok) return;
-    setPending(true);
-    try {
-      const next = mock
-        ? {
-            ...vm,
-            busy_state: null,
-            busy_note: reason.trim(),
-            status: reason.trim(),
-          }
-        : await reserveVm(vm.id, { reason: reason.trim() });
-      onLocal(next as Vm);
-      onChanged();
-      toast.success(`ВМ ${vm.name} забронирована`);
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось забронировать"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function handleRelease() {
-    if (pending || !canManage) return;
-    const ok = await confirm({
-      title: "Снять бронь",
-      message: `Снять бронь с ${vm.name}?`,
-      confirmLabel: "Снять бронь",
-    });
-    if (!ok) return;
-    setPending(true);
-    try {
-      const next = mock
-        ? { ...vm, busy_state: null, busy_note: null, status: "free" }
-        : await releaseVm(vm.id);
-      onLocal(next as Vm);
-      onChanged();
-      toast.success(`Бронь с ${vm.name} снята`);
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось снять бронь"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <div className="mt-3 flex items-center gap-3 flex-wrap">
-      {busyLabel ? (
-        <span className="badge badge-warn flex items-center gap-1">
-          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> {busyLabel}…
-        </span>
-      ) : reserved ? (
-        <>
-          <span className="badge badge-warn flex items-center gap-1">
-            <Lock className="w-3.5 h-3.5" /> Забронировано
-          </span>
-          {vm.busy_note && (
-            <span className="text-xs text-dim truncate max-w-[320px]">
-              {vm.busy_note}
-            </span>
-          )}
-          {canManage && (
-            <button
-              type="button"
-              className="btn btn-sm flex items-center gap-1"
-              onClick={handleRelease}
-              disabled={pending}
-              title="Снять бронь"
-            >
-              <Unlock className="w-3.5 h-3.5" /> Снять бронь
-            </button>
-          )}
-        </>
-      ) : (
-        canManage && (
-          <button
-            type="button"
-            className="btn btn-sm btn-primary flex items-center gap-1"
-            onClick={handleReserve}
-            disabled={pending}
-            title="Забронировать ВМ"
-          >
-            <Lock className="w-3.5 h-3.5" /> Забронировать
-          </button>
-        )
-      )}
-    </div>
+    <EntityDetail
+      entity={entity}
+      onLocalUpdate={(next) => setLocal(next as Vm)}
+      onBack={onBack}
+      backLabel="К хабу"
+      onDeleted={onBack}
+    />
   );
 }
 

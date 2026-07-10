@@ -819,7 +819,7 @@ async def submit_vm_snapshots(
 
     Каждый элемент — dict с обязательным `name` и опциональными `snapshot_id`,
     `state`, `snapshot_type` (способ снятия disk_only/full), `kind` (категория
-    os_baseline/user), `mode` (oryol/smolensk), `os_version`, `is_system`,
+    os_baseline/user), `mode` (orel/smolensk), `os_version`, `is_system`,
     `is_current`, `error`. `None`-поля не кладём.
 
     Возвращает: тело

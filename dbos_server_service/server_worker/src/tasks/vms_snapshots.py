@@ -474,7 +474,7 @@ async def vm_astra_update(task_id: str) -> None:
     целевой версии, гонит `astra-update -A -T -r`, перезагружает гостя и ждёт
     его, меняет пароль `u` на новый, снимает deliverable Орла `<rc>`, переводит
     гостя в Смоленск (astra-modeswitch + МРД/МКЦ + reboot) и снимает `<rc>_smolensk`.
-    Оба снимка (mode oryol/smolensk) докладывает `vms/{id}/snapshots`, состояние
+    Оба снимка (mode orel/smolensk) докладывает `vms/{id}/snapshots`, состояние
     — `vms/{id}/state` power/ip.
 
     Параметры: `task_id`. Payload — `vm_id`, `vm_name`/`name`, `rc`,

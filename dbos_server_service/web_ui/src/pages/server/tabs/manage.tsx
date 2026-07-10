@@ -1,5 +1,5 @@
 /**
- * Manage-вкладка карточки сервера.
+ * Manage-вкладка карточки сервера и ВМ — единый компонент.
  *
  * Большой админский блок, разбитый на карточки:
  *  - Lifecycle: Prepare / Inventory sync / OS sync / Users inventory.
@@ -15,6 +15,7 @@
  * client-side фильтр прячет только лишнее.
  */
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -43,6 +44,7 @@ import {
   ArrowUpCircle,
   MonitorPlay,
   Network,
+  type LucideIcon,
 } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
@@ -145,58 +147,48 @@ function canManageBasic(
   return false;
 }
 
-export function ManageTab(props: Props) {
-  const { entity, onDeleted, onEntityUpdated } = props;
-  // ВМ рендерит собственный набор карточек (mgmt-креды + удаление). Серверный
-  // путь — прежний. Диспетчер без хуков, чтобы порядок хуков не зависел от режима.
-  if (entity?.kind === "vm") {
-    return (
-      <VmManageView
-        vm={entity.vm}
-        mock={entity.mock}
-        canManage={entity.canManage}
-        onChanged={entity.onChanged}
-        onEntityUpdated={onEntityUpdated}
-        onDeleted={onDeleted}
-      />
-    );
-  }
-  return <ServerManageTab {...props} />;
+/** Опция каталога версий ОС для карточки обновления Astra. */
+interface AstraVersionOption {
+  id: string;
+  name: string;
+  /** Доп. пометка после имени (например, «(нет репозиториев)»). */
+  hint?: string;
 }
 
-function ServerManageTab({ server, onServerUpdated, onDeleted }: Props) {
+export function ManageTab(props: Props) {
+  const { entity, onServerUpdated, onDeleted, onEntityUpdated } = props;
+  const vmEntity = entity?.kind === "vm" ? entity : null;
+  const isVm = !!vmEntity;
+  const vm = vmEntity?.vm;
+
   const { persona } = usePersona();
   const toast = useToast();
   const { confirm, prompt } = useConfirm();
   const [busy, setBusyLocal] = useState<string | null>(null);
-  // Поллинг исхода lifecycle-задач (prepare / inventory / users-inventory):
-  // worker может закрыть их FAILED (битые bootstrap-креды, недоступный BMC),
-  // и причину надо показать прямо здесь, не гоня юзера в /worker.
-  const taskOutcome = useTaskOutcome();
-  // Отдельный трекер для ротации управляющих кред: у неё свой баннер в
-  // mgmt-карточке, чтобы не пересекаться с lifecycle-исходом.
-  const rotateOutcome = useTaskOutcome();
-  const rotateHandledRef = useRef<string | null>(null);
-  // Обновление ОС Astra: свой трекер, чтобы по succeeded перечитать карточку
-  // (backend снял updating-блокировку, сменил версию и запустил inventory).
-  const astraOutcome = useTaskOutcome();
-  const astraHandledRef = useRef<string | null>(null);
-  // Подготовка/разбор VMS-hub: свой трекер, по succeeded перечитываем карточку
-  // (backend флипает is_vms_hub на callback после завершения задачи).
-  const vmsHubOutcome = useTaskOutcome();
-  const vmsHubHandledRef = useRef<string | null>(null);
-  const [current, setCurrent] = useState<Server | undefined>(server);
-  // Когда родитель прислал свежий объект (мутация в соседней вкладке) —
-  // подхватываем его, чтобы не залипнуть на устаревшей локальной копии.
-  useEffect(() => {
-    setCurrent(server);
-  }, [server]);
-  const view = current ?? server;
-  const reserverLabel = useUserLabel(view?.busy_user_id);
 
-  // Любая lifecycle/busy-мутация возвращает обновлённый Server: правим
-  // локальную копию и поднимаем наверх, чтобы header ServerDetail и соседние
-  // вкладки увидели новый busy/status без перезагрузки.
+  // Трекеры исхода задач под свои карточки: lifecycle (server prepare/inventory/
+  // users либо vm.prepare), ротация кред, обновление ОС, подготовка VMS-hub.
+  const taskOutcome = useTaskOutcome();
+  const rotateOutcome = useTaskOutcome();
+  const astraOutcome = useTaskOutcome();
+  const vmsHubOutcome = useTaskOutcome();
+  const rotateHandledRef = useRef<string | null>(null);
+  const astraHandledRef = useRef<string | null>(null);
+  const vmsHubHandledRef = useRef<string | null>(null);
+
+  // Серверная ветка держит локальную копию Server: lifecycle/busy-мутации
+  // возвращают свежий объект — правим копию и поднимаем наверх, чтобы header и
+  // соседние вкладки увидели новый busy/status без перезагрузки.
+  const [current, setCurrent] = useState<Server | undefined>(props.server);
+  useEffect(() => {
+    setCurrent(props.server);
+  }, [props.server]);
+  const serverView = current ?? props.server;
+
+  const reserverLabel = useUserLabel(
+    isVm ? vm?.busy_user_id ?? null : serverView?.busy_user_id ?? null,
+  );
+
   const applyServer = useCallback(
     (next: Server) => {
       setCurrent(next);
@@ -205,71 +197,60 @@ function ServerManageTab({ server, onServerUpdated, onDeleted }: Props) {
     [onServerUpdated],
   );
 
-  // Когда worker подтвердил ротацию (задача succeeded) — перечитываем карточку,
-  // чтобы подхватить новый fingerprint/rotated_at и снять pending. Ref гасит
-  // повторные refetch'и: applyServer меняет `view`, иначе эффект зациклится.
+  // refetch карточки по succeeded — только для сервера: у ВМ обновление идёт
+  // через onChanged (родитель перечитывает список). Ref гасит повторный refetch.
   useEffect(() => {
+    if (isVm) return;
     const t = rotateOutcome.tracked;
     if (!t || t.polling || t.status !== "succeeded") return;
     if (rotateHandledRef.current === t.taskId) return;
     rotateHandledRef.current = t.taskId;
-    if (view) {
-      getServer(view.id)
-        .then((next) => applyServer(next))
-        .catch(() => {});
-    }
-  }, [rotateOutcome.tracked, view, applyServer]);
+    if (serverView) getServer(serverView.id).then(applyServer).catch(() => {});
+  }, [isVm, rotateOutcome.tracked, serverView, applyServer]);
 
-  // Обновление ОС завершилось — перечитываем карточку: сервер уже свободен
-  // (updating снят), версия и факты обновлены. Ref гасит повторный refetch.
   useEffect(() => {
+    if (isVm) return;
     const t = astraOutcome.tracked;
     if (!t || t.polling || t.status !== "succeeded") return;
     if (astraHandledRef.current === t.taskId) return;
     astraHandledRef.current = t.taskId;
-    if (view) {
-      getServer(view.id)
-        .then((next) => applyServer(next))
-        .catch(() => {});
-    }
-  }, [astraOutcome.tracked, view, applyServer]);
+    if (serverView) getServer(serverView.id).then(applyServer).catch(() => {});
+  }, [isVm, astraOutcome.tracked, serverView, applyServer]);
 
-  // Подготовка VMS-hub завершилась — перечитываем карточку, чтобы подхватить
-  // is_vms_hub/vms_hub_prepared_at. Ref гасит повторный refetch.
   useEffect(() => {
+    if (isVm) return;
     const t = vmsHubOutcome.tracked;
     if (!t || t.polling || t.status !== "succeeded") return;
     if (vmsHubHandledRef.current === t.taskId) return;
     vmsHubHandledRef.current = t.taskId;
-    if (view) {
-      getServer(view.id)
-        .then((next) => applyServer(next))
-        .catch(() => {});
-    }
-  }, [vmsHubOutcome.tracked, view, applyServer]);
+    if (serverView) getServer(serverView.id).then(applyServer).catch(() => {});
+  }, [isVm, vmsHubOutcome.tracked, serverView, applyServer]);
 
-  const allowBasic = canManageBasic(persona, view);
-  const allowVmsHub = canPrepareVmsHub(persona);
-  // Пока идёт обновление ОС — сервер под системной блокировкой: все
-  // управляющие операции backend отобьёт 409 SERVER_UPDATING. Гейтим кнопки
-  // на клиенте, чтобы не слать заведомо отбиваемые запросы.
-  const updating = view?.busy_state === "updating";
-  // os_version CRUD и server:delete — только admin-плоскость (dep_admin своего
-  // dept либо server.admin). operator их не получает по дефолтной матрице.
-  const allowOsCatalog =
-    isDepAdminOfServer(persona, view) ||
-    persona.service_roles.server === "admin";
-  const allowDelete =
-    isDepAdminOfServer(persona, view) ||
-    persona.service_roles.server === "admin";
+  // Каталог версий ОС для карточки обновления — общий для сервера и ВМ. В
+  // mock-режиме ВМ берём фикстуру, иначе — реальный каталог os_versions.
+  const versionsQ = useQuery<AstraVersionOption[]>(
+    async () => {
+      if (vmEntity?.mock) {
+        return MOCK_VM_OS_VERSIONS.map((v) => ({ id: v.id, name: v.name }));
+      }
+      const res = await listOsVersions({ limit: 200 });
+      return res.items.map((v) => ({
+        id: v.id,
+        name: v.name,
+        hint: v.repositories.length === 0 ? " (нет репозиториев)" : "",
+      }));
+    },
+    [vmEntity?.mock],
+    { keepPreviousDataOnError: true },
+  );
+  const versions = useMemo(() => versionsQ.data ?? [], [versionsQ.data]);
 
   // Аккаунты сервера — нужны inventory/users SSH-задачам на неуправляемом
-  // сервере: worker заходит под self-сессией по паролю аккаунта. Управляемый
-  // сервер ходит по ключу — picker тогда не обязателен (backend сам None'ит).
+  // сервере. Для ВМ не тянем (у ВМ свой пул на вкладке «Аккаунты»).
   const accountsQ = useQuery(
-    () => listAccounts({ server_id: view!.id, limit: 200 }),
-    [view?.id],
-    { enabled: !!view },
+    () => listAccounts({ server_id: serverView!.id, limit: 200 }),
+    [serverView?.id],
+    { enabled: !isVm && !!serverView },
   );
   const accounts = useMemo<ServerAccount[]>(() => {
     const data = accountsQ.data as
@@ -282,8 +263,7 @@ function ServerManageTab({ server, onServerUpdated, onDeleted }: Props) {
     () => filterAccessibleAccounts(accounts, persona),
     [accounts, persona],
   );
-  // prepare собирает bootstrap-креды через модалку (выбор аккаунта или ручной
-  // ввод с masked-полем пароля), а не через window.prompt.
+
   const [credsModalOpen, setCredsModalOpen] = useState(false);
   const [osSyncOpen, setOsSyncOpen] = useState(false);
   const [cleanOpen, setCleanOpen] = useState(false);
@@ -305,47 +285,392 @@ function ServerManageTab({ server, onServerUpdated, onDeleted }: Props) {
     }
   }
 
+  // ── Ветка ВМ ──────────────────────────────────────────────────────────────
+  if (vmEntity && vm) {
+    const { mock, canManage, onChanged } = vmEntity;
+    if (!canManage) {
+      return (
+        <div className="p-5">
+          <div className="text-[11px] text-dim italic">
+            Нет прав на управление этой ВМ.
+          </div>
+        </div>
+      );
+    }
+
+    const managed = vm.is_managed === true;
+    const reserved = vm.busy_state !== "free" || !!vm.busy_note;
+    const foreign = !!vm.busy_user_id && vm.busy_user_id !== persona.id;
+
+    const handleVmPrepare = async () => {
+      if (
+        !(await confirm({
+          title: "Подготовить ВМ",
+          message: `Подготовить ВМ ${vm.name}? Worker зайдёт по базовой учётке u:1, выполнит bootstrap, снесёт базовую учётку и заведёт управляющие креды.`,
+          confirmLabel: "Подготовить",
+        }))
+      )
+        return;
+      taskOutcome.reset();
+      setBusyLocal("prepare");
+      try {
+        const res = mock ? fakeDispatch() : await prepareVm(vm.id);
+        taskOutcome.track(`prepare · ${vm.name}`, res.task_id, res.status);
+        toast.success(`Подготовка ВМ ${vm.name} — задача поставлена`);
+        if (mock) {
+          onEntityUpdated?.({
+            ...vm,
+            is_managed: true,
+            mgmt_user: "dbosmgr",
+            mgmt_creds_rotated_at: new Date().toISOString(),
+            mgmt_creds_pending_apply: false,
+          });
+        }
+        onChanged();
+      } catch (e) {
+        toast.error(apiErrMsg(e, "Подготовка ВМ не удалась"));
+      } finally {
+        setBusyLocal(null);
+      }
+    };
+
+    const handleVmAstra = async (osVersionId: string) => {
+      const label =
+        versions.find((v) => v.id === osVersionId)?.name ?? osVersionId;
+      if (!label) return;
+      if (
+        !(await confirm({
+          title: "Обновить ОС ВМ",
+          message: `Обновить ОС ВМ ${vm.name} до ${label}? Репозитории будут перезаписаны, пойдёт astra-update, снимок переснимется под новую версию.`,
+          confirmLabel: "Обновить",
+          danger: true,
+        }))
+      )
+        return;
+      astraOutcome.reset();
+      setBusyLocal("astra_update");
+      try {
+        const res = mock
+          ? fakeDispatch()
+          : await astraUpdateVm(vm.id, { rc: label });
+        astraOutcome.track(`astra-update · ${label}`, res.task_id, res.status);
+        toast.success(`Обновление ОС ВМ ${vm.name} — задача поставлена`);
+        onChanged();
+      } catch (e) {
+        toast.error(apiErrMsg(e, "Обновление ОС не удалось"));
+      } finally {
+        setBusyLocal(null);
+      }
+    };
+
+    const handleVmRotate = async () => {
+      if (
+        !(await confirm({
+          title: "Ротировать управляющие креды",
+          message: `Сгенерировать новые управляющие креды ВМ ${vm.name} и применить их через worker? Старый материал будет отозван.`,
+          confirmLabel: "Ротировать",
+          danger: true,
+        }))
+      )
+        return;
+      rotateOutcome.reset();
+      setBusyLocal("mgmt_rotate");
+      try {
+        const res = mock ? fakeDispatch() : await rotateVmMgmtCreds(vm.id);
+        rotateOutcome.track(`mgmt rotate · ${vm.name}`, res.task_id, res.status);
+        toast.success(`Ротация кред ВМ ${vm.name} — задача поставлена`);
+        if (mock) onEntityUpdated?.({ ...vm, mgmt_creds_pending_apply: true });
+        onChanged();
+      } catch (e) {
+        toast.error(apiErrMsg(e, "Ротация кред не удалась"));
+      } finally {
+        setBusyLocal(null);
+      }
+    };
+
+    const handleVmReserve = async (reason: string) => {
+      setBusyLocal("busy_set");
+      try {
+        const next = mock
+          ? ({
+              ...vm,
+              busy_state: "busy",
+              busy_note: reason,
+              status: reason,
+            } as Vm)
+          : await reserveVm(vm.id, { reason });
+        onEntityUpdated?.(next);
+        onChanged();
+        toast.success(`ВМ ${vm.name} забронирована`);
+      } catch (e) {
+        toast.error(apiErrMsg(e, "Не удалось забронировать"));
+      } finally {
+        setBusyLocal(null);
+      }
+    };
+
+    const handleVmRelease = async () => {
+      const message = foreign
+        ? "ВМ забронирована другим пользователем. Снять бронь принудительно? После освобождения её сможет занять любой."
+        : `Снять бронь с ВМ ${vm.name}?`;
+      if (!(await confirm({ message }))) return;
+      setBusyLocal("busy_clear");
+      try {
+        const next = mock
+          ? ({
+              ...vm,
+              busy_state: "free",
+              busy_note: null,
+              status: "free",
+            } as Vm)
+          : await releaseVm(vm.id);
+        onEntityUpdated?.(next);
+        onChanged();
+        toast.success(`Бронь с ВМ ${vm.name} снята`);
+      } catch (e) {
+        toast.error(apiErrMsg(e, "Не удалось снять бронь"));
+      } finally {
+        setBusyLocal(null);
+      }
+    };
+
+    const handleVmDelete = async () => {
+      const { ok, reason } = await prompt({
+        title: "Удалить ВМ",
+        message: `Удалить ВМ ${vm.name}? Домен и диски будут снесены. Действие необратимо.`,
+        reason: true,
+        reasonLabel: "Причина удаления",
+        reasonRequired: true,
+        confirmLabel: "Удалить",
+        danger: true,
+      });
+      if (!ok) return;
+      setBusyLocal("delete");
+      try {
+        const res = mock
+          ? fakeDispatch()
+          : await deleteVm(vm.id, { reason: reason.trim() });
+        toast.success(
+          `Удаление ВМ ${vm.name} — задача поставлена (${res.task_id})`,
+        );
+        onDeleted?.();
+        onChanged();
+      } catch (e) {
+        toast.error(apiErrMsg(e, "Удаление не удалось"));
+      } finally {
+        setBusyLocal(null);
+      }
+    };
+
+    return (
+      <div className="p-5 flex flex-col gap-4">
+        <LifecycleCard
+          ready
+          prepared={managed}
+          allowed={canManage}
+          busyLabel={busy}
+          infoRows={
+            managed
+              ? [
+                  { k: "Состояние", v: "подготовлена" },
+                  { k: "mgmt-учётка", v: vm.mgmt_user ?? "—", mono: true },
+                ]
+              : undefined
+          }
+          description={
+            managed ? (
+              "ВМ подготовлена: заведены per-VM управляющие креды, базовый доступ снят. Повторная подготовка перезапустит bootstrap-цикл."
+            ) : (
+              <>
+                ВМ ещё не подготовлена: базовая учётка{" "}
+                <span className="mono">u:1</span> не снята, управляющих кред нет.
+                Подготовка заведёт per-VM креды и уберёт базовый доступ.
+              </>
+            )
+          }
+          actions={[
+            {
+              key: "prepare",
+              label: "Prepare",
+              runningLabel: "Ставим задачу…",
+              Icon: Play,
+              primary: !managed,
+              onClick: handleVmPrepare,
+              title: managed ? "Повторно подготовить ВМ" : undefined,
+            },
+          ]}
+          outcome={taskOutcome.tracked}
+          onCancelled={taskOutcome.reset}
+          successText="Операция применена."
+        />
+
+        <AstraUpdateCard
+          prepared={managed}
+          allowed={canManage}
+          busy={busy !== null}
+          submitting={busy === "astra_update"}
+          versions={versions}
+          versionsLoading={versionsQ.loading}
+          description={
+            <>
+              Обновляет ВМ до выбранной версии ОС из каталога: worker откатится
+              на нужный <span className="mono">_build</span>-снимок, перезапишет
+              репозитории, выполнит <span className="mono">astra-update</span> и
+              переснимет снимок.
+            </>
+          }
+          notPreparedHint="Обновление идёт по управляющему ключу — сначала подготовьте ВМ."
+          onUpdate={handleVmAstra}
+          outcome={astraOutcome.tracked}
+          onCancelled={astraOutcome.reset}
+          successText="Обновление ОС применено."
+        />
+
+        <ManagementCredsCard
+          prepared={managed}
+          pubKey={vm.mgmt_ssh_public_key ?? null}
+          rotatedAt={vm.mgmt_creds_rotated_at}
+          pendingApply={vm.mgmt_creds_pending_apply === true}
+          allowed={canManage}
+          busy={busy !== null}
+          rotateBusy={busy === "mgmt_rotate"}
+          notPreparedHint="Управляющая пара появляется после подготовки ВМ — на неподготовленной ротировать нечего."
+          noPermissionHint="Нет прав на ротацию управляющих кред этой ВМ."
+          outcome={rotateOutcome.tracked}
+          onCancelled={rotateOutcome.reset}
+          onRotate={handleVmRotate}
+        />
+
+        <VmNetworkCard vm={vm} mock={mock} onChanged={onChanged} />
+
+        <BookingCard
+          entityWord="ВМ"
+          reserved={reserved}
+          stateLabel={vm.busy_state ?? "—"}
+          note={vm.busy_note}
+          reserverLabel={
+            vm.busy_user_id ? (
+              <span title={vm.busy_user_id}>юзер {reserverLabel}</span>
+            ) : undefined
+          }
+          since={vm.busy_since ? formatMskShort(vm.busy_since) : undefined}
+          canManage={canManage}
+          foreign={foreign}
+          busy={busy !== null}
+          onReserve={handleVmReserve}
+          onRelease={handleVmRelease}
+        />
+
+        <DangerZoneCard
+          buttonLabel={busy === "delete" ? "Удаляем…" : "Удалить ВМ"}
+          busy={busy !== null}
+          onDelete={handleVmDelete}
+          description="Удаление ВМ сносит домен libvirt и все её диски. Действие необратимо."
+        />
+      </div>
+    );
+  }
+
+  // ── Ветка сервера ───────────────────────────────────────────────────────
+  const view = serverView;
+  const allowBasic = canManageBasic(persona, view);
+  const allowVmsHub = canPrepareVmsHub(persona);
+  // Пока идёт обновление ОС — сервер под системной блокировкой: все управляющие
+  // операции backend отобьёт 409 SERVER_UPDATING. Гейтим кнопки на клиенте.
+  const updating = view?.busy_state === "updating";
+  const allowOsCatalog =
+    isDepAdminOfServer(persona, view) ||
+    persona.service_roles.server === "admin";
+  const allowDelete =
+    isDepAdminOfServer(persona, view) ||
+    persona.service_roles.server === "admin";
+  const prepared = !!view && view.is_managed;
+  const prepareHint = prepared
+    ? undefined
+    : "Сначала запустите prepare — инвентаризация ходит по управляющему ключу";
+
   return (
     <div className="p-5 flex flex-col gap-4">
       <LifecycleCard
-        server={view}
+        ready={!!view}
+        prepared={prepared}
         allowed={allowBasic}
         locked={updating}
         busyLabel={busy}
+        tasksLink={
+          view ? `/worker?server_id=${encodeURIComponent(view.id)}` : undefined
+        }
+        notPreparedHint="Сервер не подготовлен (нет management-пользователя). Инвентаризация станет доступна после успешного prepare."
+        noPermissionHint="Нет прав на lifecycle-операции (нужна роль server.operator+ или dep_admin своего департамента)."
+        actions={[
+          {
+            key: "prepare",
+            label: "Prepare",
+            runningLabel: "Запускаем…",
+            Icon: Play,
+            primary: true,
+            title: allowBasic
+              ? "Bootstrap management-цикла"
+              : "Нет прав на prepare",
+            onClick: async () => {
+              if (!view) return;
+              if (
+                !(await confirm({
+                  title: "Запустить prepare",
+                  message: `Запустить prepare для ${view.hostname}? Действие сбрасывает bootstrap-креды на сервере и инициирует management-цикл.`,
+                  confirmLabel: "Запустить",
+                }))
+              )
+                return;
+              setCredsModalOpen(true);
+            },
+          },
+          {
+            key: "inventory_sync",
+            label: "Inventory sync",
+            Icon: RefreshCw,
+            spin: true,
+            requiresPrepared: true,
+            title: prepareHint,
+            onClick: async () => {
+              if (!view) return;
+              taskOutcome.reset();
+              const res = await run("inventory_sync", () =>
+                inventorySync(view.id),
+              );
+              if (res)
+                taskOutcome.track("inventory_sync", res.task_id, res.status);
+            },
+          },
+          {
+            key: "os_sync",
+            label: "OS sync",
+            Icon: RefreshCw,
+            spin: true,
+            onClick: () => {
+              if (!view) return;
+              setOsSyncOpen(true);
+            },
+          },
+          {
+            key: "users_inventory",
+            label: "Users inventory",
+            Icon: UserCheck,
+            requiresPrepared: true,
+            title: prepareHint,
+            onClick: async () => {
+              if (!view) return;
+              taskOutcome.reset();
+              const res = await run("users_inventory", () =>
+                usersInventory(view.id),
+              );
+              if (res)
+                taskOutcome.track("users_inventory", res.task_id, res.status);
+            },
+          },
+        ]}
         outcome={taskOutcome.tracked}
         onCancelled={taskOutcome.reset}
-        onPrepare={async () => {
-          if (!view) return;
-          if (
-            !(await confirm({
-              title: "Запустить prepare",
-              message: `Запустить prepare для ${view.hostname}? Действие сбрасывает bootstrap-креды на сервере и инициирует management-цикл.`,
-              confirmLabel: "Запустить",
-            }))
-          )
-            return;
-          setCredsModalOpen(true);
-        }}
-        onInventory={async () => {
-          if (!view) return;
-          taskOutcome.reset();
-          const res = await run("inventory_sync", () =>
-            inventorySync(view.id),
-          );
-          if (res) taskOutcome.track("inventory_sync", res.task_id, res.status);
-        }}
-        onOsSync={() => {
-          if (!view) return;
-          setOsSyncOpen(true);
-        }}
-        onUsersInventory={async () => {
-          if (!view) return;
-          taskOutcome.reset();
-          const res = await run("users_inventory", () =>
-            usersInventory(view.id),
-          );
-          if (res) taskOutcome.track("users_inventory", res.task_id, res.status);
-        }}
       />
 
       <VmsHubCard
@@ -396,12 +721,23 @@ function ServerManageTab({ server, onServerUpdated, onDeleted }: Props) {
       />
 
       <AstraUpdateCard
-        server={view}
+        prepared={prepared}
         allowed={allowBasic}
         locked={updating}
-        busyLabel={busy}
-        outcome={astraOutcome.tracked}
-        onCancelled={astraOutcome.reset}
+        busy={busy !== null}
+        submitting={busy === "astra_update"}
+        versions={versions}
+        versionsLoading={versionsQ.loading}
+        description={
+          <>
+            Обновляет сервер до выбранной версии ОС из каталога: полностью
+            перезаписывает <span className="mono">/etc/apt/sources.list</span>{" "}
+            репозиториями версии и выполняет{" "}
+            <span className="mono">apt update &amp;&amp; astra-update</span>. На
+            время обновления любые операции с сервером блокируются.
+          </>
+        }
+        notPreparedHint="Обновление идёт по управляющему ключу — сначала выполните prepare."
         onUpdate={async (osVersionId) => {
           if (!view) return;
           if (
@@ -429,6 +765,8 @@ function ServerManageTab({ server, onServerUpdated, onDeleted }: Props) {
             });
           }
         }}
+        outcome={astraOutcome.tracked}
+        onCancelled={astraOutcome.reset}
       />
 
       <ManagementCredsCard
@@ -688,48 +1026,81 @@ function OsSyncModal({
 // Lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
 
+interface LifecycleAction {
+  /** Ключ операции; совпадает с меткой busy, пока идёт именно она. */
+  key: string;
+  label: string;
+  /** Подпись, пока идёт именно это действие (иначе — label). */
+  runningLabel?: string;
+  Icon: LucideIcon;
+  /** Крутить иконку, пока действие выполняется. */
+  spin?: boolean;
+  /** Акцентная кнопка (btn-primary). */
+  primary?: boolean;
+  /** Доступно только после подготовки (inventory-семейство у сервера). */
+  requiresPrepared?: boolean;
+  onClick: () => void | Promise<void>;
+  title?: string;
+}
+
+/** Строка сводки в шапке карточки (у ВМ — состояние + mgmt-учётка). */
+interface LifecycleInfoRow {
+  k: string;
+  v: ReactNode;
+  mono?: boolean;
+}
+
+/**
+ * Карточка «Жизненный цикл» — общая для сервера и ВМ. Заголовок, иконка и
+ * раскладка серверные; различия сущностей приходят пропсами: набор кнопок
+ * (`actions`), ссылка на задачи (`tasksLink`), сводка в шапке (`infoRows`) и
+ * поясняющий текст (`description`). Сервер отдаёт prepare/inventory/os-sync/
+ * users, у ВМ применима только подготовка.
+ */
 function LifecycleCard({
-  server,
+  ready,
+  prepared,
   allowed,
   locked = false,
   busyLabel,
+  actions,
+  infoRows,
+  description,
+  tasksLink,
+  notPreparedHint,
+  noPermissionHint,
   outcome,
   onCancelled,
-  onPrepare,
-  onInventory,
-  onOsSync,
-  onUsersInventory,
+  successText,
 }: {
-  server: Server | undefined;
+  /** Сущность загружена (для сервера — есть объект). */
+  ready: boolean;
+  /** Сущность подготовлена (is_managed). */
+  prepared: boolean;
   allowed: boolean;
-  /** Сервер под системной блокировкой обновления ОС — операции заблокированы. */
+  /** Под системной блокировкой обновления ОС — операции заблокированы. */
   locked?: boolean;
   busyLabel: string | null;
+  actions: LifecycleAction[];
+  infoRows?: LifecycleInfoRow[];
+  description?: ReactNode;
+  tasksLink?: string;
+  notPreparedHint?: ReactNode;
+  noPermissionHint?: ReactNode;
   outcome: TrackedTask | null;
   onCancelled: () => void;
-  onPrepare: () => void;
-  onInventory: () => Promise<void>;
-  onOsSync: () => void;
-  onUsersInventory: () => Promise<void>;
+  successText?: string;
 }) {
-  const disabled = !allowed || locked || busyLabel !== null || !server;
-  // Инвентаризация идёт по SSH под управляющим ключом — до prepare заходить
-  // нечем, backend вернёт 409 PREPARE_REQUIRED. Гейтим кнопки и подсказываем,
-  // что сначала надо prepare. OS sync — локальный UPDATE, prepare не требует.
-  const prepared = !!server && server.is_managed;
-  const inventoryDisabled = disabled || !prepared;
-  const prepareHint = prepared
-    ? undefined
-    : "Сначала запустите prepare — инвентаризация ходит по управляющему ключу";
+  const base = !allowed || locked || busyLabel !== null || !ready;
   return (
     <div className="card">
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <h3 className="font-semibold text-base flex items-center gap-2">
           <Settings className="w-4 h-4 text-accent" /> Жизненный цикл
         </h3>
-        {server && (
+        {tasksLink && (
           <Link
-            to={`/worker?server_id=${encodeURIComponent(server.id)}`}
+            to={tasksLink}
             className="btn btn-ghost flex items-center gap-1 text-xs"
             title="Открыть worker-задачи этого сервера"
           >
@@ -743,67 +1114,47 @@ function LifecycleCard({
           Идёт обновление ОС — операции с сервером заблокированы до завершения.
         </div>
       )}
-      {server && !prepared && (
-        <div className="text-[11px] text-dim italic mb-3">
-          Сервер не подготовлен (нет management-пользователя). Инвентаризация
-          станет доступна после успешного prepare.
-        </div>
+      {notPreparedHint && ready && !prepared && (
+        <div className="text-[11px] text-dim italic mb-3">{notPreparedHint}</div>
       )}
+      {infoRows && infoRows.length > 0 && (
+        <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm mb-3">
+          {infoRows.map((r) => (
+            <Fragment key={r.k}>
+              <dt className="text-dim text-xs">{r.k}</dt>
+              <dd className={r.mono ? "mono" : undefined}>{r.v}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
+      {description && <div className="text-xs text-dim mb-3">{description}</div>}
       <div className="flex gap-2 flex-wrap">
-        <button
-          className="btn btn-primary flex items-center gap-1"
-          disabled={disabled}
-          onClick={onPrepare}
-          title={
-            allowed
-              ? "Bootstrap management-цикла"
-              : "Нет прав на prepare"
-          }
-        >
-          <Play className="w-4 h-4" />
-          {busyLabel === "prepare" ? "Запускаем…" : "Prepare"}
-        </button>
-        <button
-          className="btn flex items-center gap-1"
-          disabled={inventoryDisabled}
-          onClick={onInventory}
-          title={prepareHint}
-        >
-          <RefreshCw
-            className={`w-4 h-4 ${busyLabel === "inventory_sync" ? "animate-spin" : ""}`}
-          />
-          Inventory sync
-        </button>
-        <button
-          className="btn flex items-center gap-1"
-          disabled={disabled}
-          onClick={onOsSync}
-        >
-          <RefreshCw
-            className={`w-4 h-4 ${busyLabel === "os_sync" ? "animate-spin" : ""}`}
-          />
-          OS sync
-        </button>
-        <button
-          className="btn flex items-center gap-1"
-          disabled={inventoryDisabled}
-          onClick={onUsersInventory}
-          title={prepareHint}
-        >
-          <UserCheck className="w-4 h-4" />
-          Users inventory
-        </button>
+        {actions.map((a) => {
+          const disabled = base || (!!a.requiresPrepared && !prepared);
+          return (
+            <button
+              key={a.key}
+              className={`btn ${a.primary ? "btn-primary " : ""}flex items-center gap-1`}
+              disabled={disabled}
+              onClick={a.onClick}
+              title={a.title}
+            >
+              <a.Icon
+                className={`w-4 h-4 ${a.spin && busyLabel === a.key ? "animate-spin" : ""}`}
+              />
+              {busyLabel === a.key ? a.runningLabel ?? a.label : a.label}
+            </button>
+          );
+        })}
       </div>
-      {!allowed && (
-        <div className="text-[11px] text-dim italic mt-3">
-          Нет прав на lifecycle-операции (нужна роль server.operator+ или
-          dep_admin своего департамента).
-        </div>
+      {noPermissionHint && !allowed && (
+        <div className="text-[11px] text-dim italic mt-3">{noPermissionHint}</div>
       )}
       {outcome && (
         <TaskOutcomeBanner
           outcome={outcome}
           className="mt-3"
+          successText={successText}
           onCancelled={onCancelled}
         />
       )}
@@ -1056,33 +1407,46 @@ function ManagementCredsCard({
 // Обновление ОС Astra (astra_update)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Карточка «Обновление ОС Astra» — общая для сервера и ВМ. Дропдаун версий
+ * каталога и кнопка запуска одинаковы; различаются источник версий и эндпоинт
+ * (server astra-update vs vm astra-update) — они приходят пропсами `versions`
+ * и `onUpdate`.
+ */
 function AstraUpdateCard({
-  server,
+  prepared,
   allowed,
   locked = false,
-  busyLabel,
+  busy,
+  submitting,
+  versions,
+  versionsLoading,
+  description,
+  notPreparedHint,
+  onUpdate,
   outcome,
   onCancelled,
-  onUpdate,
+  successText,
 }: {
-  server: Server | undefined;
+  prepared: boolean;
   allowed: boolean;
-  /** Сервер уже под updating-блокировкой — кнопка «идёт обновление». */
+  /** Сущность уже под updating-блокировкой — кнопка «идёт обновление». */
   locked?: boolean;
-  busyLabel: string | null;
+  /** Любая операция в процессе — блокируем контролы. */
+  busy: boolean;
+  /** Именно обновление ОС только что задиспатчено — подпись «Запускаем…». */
+  submitting: boolean;
+  versions: AstraVersionOption[];
+  versionsLoading: boolean;
+  description: ReactNode;
+  notPreparedHint: ReactNode;
+  onUpdate: (osVersionId: string) => void | Promise<void>;
   outcome: TrackedTask | null;
   onCancelled: () => void;
-  onUpdate: (osVersionId: string) => Promise<void>;
+  successText?: string;
 }) {
-  const prepared = !!server && server.is_managed;
-  const q = useQuery<OffsetPaginatedResponse<OsVersion>>(
-    () => listOsVersions({ limit: 200 }),
-    [],
-  );
-  const items = useMemo(() => q.data?.items ?? [], [q.data]);
   const [selected, setSelected] = useState("");
-  const disabled =
-    !allowed || locked || busyLabel !== null || !prepared || !server;
+  const disabled = !allowed || locked || busy || !prepared;
 
   return (
     <div className="card">
@@ -1094,22 +1458,14 @@ function AstraUpdateCard({
       </h3>
 
       {!prepared ? (
-        <div className="text-[11px] text-dim italic">
-          Обновление идёт по управляющему ключу — сначала выполните prepare.
-        </div>
+        <div className="text-[11px] text-dim italic">{notPreparedHint}</div>
       ) : (
         <>
-          <div className="text-xs text-dim mb-3">
-            Обновляет сервер до выбранной версии ОС из каталога: полностью
-            перезаписывает <span className="mono">/etc/apt/sources.list</span>{" "}
-            репозиториями версии и выполняет{" "}
-            <span className="mono">apt update &amp;&amp; astra-update</span>. На
-            время обновления любые операции с сервером блокируются.
-          </div>
+          <div className="text-xs text-dim mb-3">{description}</div>
           <div className="flex items-end gap-2 flex-wrap">
             <label className="flex flex-col gap-1 text-sm flex-1 min-w-[200px]">
               <span className="text-dim text-xs">Целевая версия ОС</span>
-              {q.loading ? (
+              {versionsLoading ? (
                 <div className="text-xs text-dim">Загрузка каталога…</div>
               ) : (
                 <select
@@ -1119,10 +1475,10 @@ function AstraUpdateCard({
                   disabled={disabled}
                 >
                   <option value="">— выберите версию —</option>
-                  {items.map((v) => (
+                  {versions.map((v) => (
                     <option key={v.id} value={v.id} title={v.id}>
                       {v.name}
-                      {v.repositories.length === 0 ? " (нет репозиториев)" : ""}
+                      {v.hint ?? ""}
                     </option>
                   ))}
                 </select>
@@ -1142,7 +1498,7 @@ function AstraUpdateCard({
                 <ArrowUpCircle className="w-4 h-4" />
                 {locked
                   ? "Обновление идёт…"
-                  : busyLabel === "astra_update"
+                  : submitting
                     ? "Запускаем…"
                     : "Обновить ОС"}
               </button>
@@ -1162,6 +1518,7 @@ function AstraUpdateCard({
         <TaskOutcomeBanner
           outcome={outcome}
           className="mt-3"
+          successText={successText}
           onCancelled={onCancelled}
         />
       )}
@@ -1507,327 +1864,11 @@ function CleanCard({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ВМ — управление (подготовка/mgmt-креды + удаление)
+// ВМ — mock-диспатч и смена сети (VM-специфичная карточка)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function fakeDispatch(): TaskDispatchResponse {
   return { task_id: `task-mock-${Date.now()}`, status: "queued" };
-}
-
-function Field({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
-  return (
-    <>
-      <dt className="text-dim text-xs">{k}</dt>
-      <dd className={mono ? "mono" : undefined}>{v}</dd>
-    </>
-  );
-}
-
-/**
- * Manage-вкладка для ВМ. Набор карточек зеркалит серверный: Жизненный цикл
- * (подготовка), Обновление ОС, Управляющие креды (общая с сервером карточка),
- * Смена сети, Бронь (общая карточка), Опасная зона. VM-специфичные (Astra-update
- * и Смена сети) идут дополнительными к общему набору.
- */
-function VmManageView({
-  vm,
-  mock,
-  canManage,
-  onChanged,
-  onEntityUpdated,
-  onDeleted,
-}: {
-  vm: Vm;
-  mock: boolean;
-  canManage: boolean;
-  onChanged: () => void;
-  onEntityUpdated?: (next: Server | Vm) => void;
-  onDeleted?: () => void;
-}) {
-  const { persona } = usePersona();
-  const toast = useToast();
-  const { confirm, prompt } = useConfirm();
-  const [busy, setBusy] = useState(false);
-  // Ротация управляющих кред: свой трекер исхода под общей ManagementCredsCard.
-  const rotateOutcome = useTaskOutcome();
-  const reserverLabel = useUserLabel(vm.busy_user_id);
-
-  if (!canManage) {
-    return (
-      <div className="p-5">
-        <div className="text-[11px] text-dim italic">
-          Нет прав на управление этой ВМ.
-        </div>
-      </div>
-    );
-  }
-
-  async function handleRotate() {
-    const ok = await confirm({
-      title: "Ротировать управляющие креды",
-      message: `Сгенерировать новые управляющие креды ВМ ${vm.name} и применить их через worker? Старый материал будет отозван.`,
-      confirmLabel: "Ротировать",
-      danger: true,
-    });
-    if (!ok) return;
-    rotateOutcome.reset();
-    setBusy(true);
-    try {
-      const res = mock ? fakeDispatch() : await rotateVmMgmtCreds(vm.id);
-      rotateOutcome.track(`mgmt rotate · ${vm.name}`, res.task_id, res.status);
-      toast.success(`Ротация кред ВМ ${vm.name} — задача поставлена`);
-      if (mock) {
-        onEntityUpdated?.({ ...vm, mgmt_creds_pending_apply: true });
-      }
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Ротация кред не удалась"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleReserve(reason: string) {
-    setBusy(true);
-    try {
-      const next = mock
-        ? { ...vm, busy_state: "busy", busy_note: reason, status: reason }
-        : await reserveVm(vm.id, { reason });
-      onEntityUpdated?.(next as Vm);
-      onChanged();
-      toast.success(`ВМ ${vm.name} забронирована`);
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось забронировать"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleRelease() {
-    const isForeign = !!vm.busy_user_id && vm.busy_user_id !== persona.id;
-    const message = isForeign
-      ? "ВМ забронирована другим пользователем. Снять бронь принудительно? После освобождения её сможет занять любой."
-      : `Снять бронь с ВМ ${vm.name}?`;
-    if (!(await confirm({ message }))) return;
-    setBusy(true);
-    try {
-      const next = mock
-        ? { ...vm, busy_state: "free", busy_note: null, status: "free" }
-        : await releaseVm(vm.id);
-      onEntityUpdated?.(next as Vm);
-      onChanged();
-      toast.success(`Бронь с ВМ ${vm.name} снята`);
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось снять бронь"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleDelete() {
-    const { ok, reason } = await prompt({
-      title: "Удалить ВМ",
-      message: `Удалить ВМ ${vm.name}? Домен и диски будут снесены. Действие необратимо.`,
-      reason: true,
-      reasonLabel: "Причина удаления",
-      reasonRequired: true,
-      confirmLabel: "Удалить",
-      danger: true,
-    });
-    if (!ok) return;
-    setBusy(true);
-    try {
-      const res = mock
-        ? fakeDispatch()
-        : await deleteVm(vm.id, { reason: reason.trim() });
-      toast.success(
-        `Удаление ВМ ${vm.name} — задача поставлена (${res.task_id})`,
-      );
-      onDeleted?.();
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Удаление не удалось"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const reserved = vm.busy_state !== "free" || !!vm.busy_note;
-  const foreign = !!vm.busy_user_id && vm.busy_user_id !== persona.id;
-
-  return (
-    <div className="p-5 flex flex-col gap-4">
-      <VmLifecycleCard
-        vm={vm}
-        mock={mock}
-        onApplied={(next) => onEntityUpdated?.(next)}
-        onChanged={onChanged}
-      />
-
-      <AstraUpdateVmCard vm={vm} mock={mock} onChanged={onChanged} />
-
-      <ManagementCredsCard
-        prepared={vm.is_managed === true}
-        pubKey={vm.mgmt_ssh_public_key ?? null}
-        rotatedAt={vm.mgmt_creds_rotated_at}
-        pendingApply={vm.mgmt_creds_pending_apply === true}
-        allowed={canManage}
-        busy={busy}
-        rotateBusy={busy}
-        notPreparedHint="Управляющая пара появляется после подготовки ВМ — на неподготовленной ротировать нечего."
-        noPermissionHint="Нет прав на ротацию управляющих кред этой ВМ."
-        outcome={rotateOutcome.tracked}
-        onCancelled={rotateOutcome.reset}
-        onRotate={handleRotate}
-      />
-
-      <VmNetworkCard vm={vm} mock={mock} onChanged={onChanged} />
-
-      <BookingCard
-        entityWord="ВМ"
-        reserved={reserved}
-        stateLabel={vm.busy_state ?? "—"}
-        note={vm.busy_note}
-        reserverLabel={
-          vm.busy_user_id ? (
-            <span title={vm.busy_user_id}>юзер {reserverLabel}</span>
-          ) : undefined
-        }
-        since={vm.busy_since ? formatMskShort(vm.busy_since) : undefined}
-        canManage={canManage}
-        foreign={foreign}
-        busy={busy}
-        onReserve={handleReserve}
-        onRelease={handleRelease}
-      />
-
-      <DangerZoneCard
-        buttonLabel={busy ? "Удаляем…" : "Удалить ВМ"}
-        busy={busy}
-        onDelete={handleDelete}
-        description="Удаление ВМ сносит домен libvirt и все её диски. Действие необратимо."
-      />
-    </div>
-  );
-}
-
-/**
- * Обновление ОС ВМ (astra-update) — аналог серверной `AstraUpdateCard`. Дропдаун
- * версий из каталога; целевая версия уходит как `rc`. Worker перезапишет
- * репозитории, прогонит `astra-update` и переснимет снимок под новую версию.
- * Доступно только для подготовленной ВМ (`is_managed`).
- */
-function AstraUpdateVmCard({
-  vm,
-  mock,
-  onChanged,
-}: {
-  vm: Vm;
-  mock: boolean;
-  onChanged: () => void;
-}) {
-  const toast = useToast();
-  const { confirm } = useConfirm();
-  const outcome = useTaskOutcome();
-  const [pending, setPending] = useState(false);
-  const [selected, setSelected] = useState("");
-
-  const managed = vm.is_managed === true;
-  const q = useQuery<{ id: string; name: string }[]>(
-    async () => {
-      if (mock) return MOCK_VM_OS_VERSIONS;
-      const res = await listOsVersions({ limit: 200 });
-      return res.items.map((v: OsVersion) => ({ id: v.id, name: v.name }));
-    },
-    [mock],
-    { keepPreviousDataOnError: true },
-  );
-  const versions = q.data ?? [];
-  const disabled = !managed || pending;
-
-  async function handleUpdate() {
-    const label = versions.find((v) => v.id === selected)?.name ?? selected;
-    if (!label) return;
-    const ok = await confirm({
-      title: "Обновить ОС ВМ",
-      message: `Обновить ОС ВМ ${vm.name} до ${label}? Репозитории будут перезаписаны, пойдёт astra-update, снимок переснимется под новую версию.`,
-      confirmLabel: "Обновить",
-      danger: true,
-    });
-    if (!ok) return;
-    outcome.reset();
-    setPending(true);
-    try {
-      const res = mock ? fakeDispatch() : await astraUpdateVm(vm.id, { rc: label });
-      outcome.track(`astra-update · ${label}`, res.task_id, res.status);
-      toast.success(`Обновление ОС ВМ ${vm.name} — задача поставлена`);
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Обновление ОС не удалось"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <div className="card">
-      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-        <ArrowUpCircle className="w-4 h-4 text-accent" /> Обновление ОС Astra
-      </h3>
-      {!managed ? (
-        <div className="text-[11px] text-dim italic">
-          Обновление идёт по управляющему ключу — сначала подготовьте ВМ.
-        </div>
-      ) : (
-        <>
-          <div className="text-xs text-dim mb-3">
-            Обновляет ВМ до выбранной версии ОС из каталога: worker откатится на
-            нужный <span className="mono">_build</span>-снимок, перезапишет
-            репозитории, выполнит{" "}
-            <span className="mono">astra-update</span> и переснимет снимок.
-          </div>
-          <div className="flex items-end gap-2 flex-wrap">
-            <label className="flex flex-col gap-1 text-sm flex-1 min-w-[200px]">
-              <span className="text-dim text-xs">Целевая версия ОС</span>
-              {q.loading ? (
-                <div className="text-xs text-dim">Загрузка каталога…</div>
-              ) : (
-                <select
-                  className="input"
-                  value={selected}
-                  onChange={(e) => setSelected(e.target.value)}
-                  disabled={disabled}
-                >
-                  <option value="">— выберите версию —</option>
-                  {versions.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </label>
-            <button
-              className="btn btn-danger flex items-center gap-1"
-              disabled={disabled || !selected}
-              onClick={handleUpdate}
-            >
-              <ArrowUpCircle className="w-4 h-4" />
-              {pending ? "Запускаем…" : "Обновить ОС"}
-            </button>
-          </div>
-        </>
-      )}
-      {outcome.tracked && (
-        <TaskOutcomeBanner
-          outcome={outcome.tracked}
-          className="mt-3"
-          successText="Обновление ОС применено."
-          onCancelled={outcome.reset}
-        />
-      )}
-    </div>
-  );
 }
 
 /**
@@ -2049,117 +2090,3 @@ function VmNetworkCard({
     </div>
   );
 }
-
-/**
- * Жизненный цикл ВМ — аналог серверной `LifecycleCard`. У ВМ из lifecycle-набора
- * применима только подготовка (`vm.prepare`): инвентаризация/OS-sync идут через
- * снимки и astra-update, поэтому здесь одна кнопка Prepare. Управляющие креды
- * (fingerprint + ротация) вынесены в общую `ManagementCredsCard`.
- */
-function VmLifecycleCard({
-  vm,
-  mock,
-  onApplied,
-  onChanged,
-}: {
-  vm: Vm;
-  mock: boolean;
-  onApplied: (next: Vm) => void;
-  onChanged: () => void;
-}) {
-  const toast = useToast();
-  const { confirm } = useConfirm();
-  const outcome = useTaskOutcome();
-  const [pending, setPending] = useState(false);
-
-  const managed = vm.is_managed === true;
-
-  async function handlePrepare() {
-    const ok = await confirm({
-      title: "Подготовить ВМ",
-      message: `Подготовить ВМ ${vm.name}? Worker зайдёт по базовой учётке u:1, выполнит bootstrap, снесёт базовую учётку и заведёт управляющие креды.`,
-      confirmLabel: "Подготовить",
-    });
-    if (!ok) return;
-    outcome.reset();
-    setPending(true);
-    try {
-      const res = mock ? fakeDispatch() : await prepareVm(vm.id);
-      outcome.track(`prepare · ${vm.name}`, res.task_id, res.status);
-      toast.success(`Подготовка ВМ ${vm.name} — задача поставлена`);
-      if (mock) {
-        onApplied({
-          ...vm,
-          is_managed: true,
-          mgmt_user: "dbosmgr",
-          mgmt_creds_rotated_at: new Date().toISOString(),
-          mgmt_creds_pending_apply: false,
-        });
-      }
-      onChanged();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Подготовка ВМ не удалась"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <div className="card">
-      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-        <Settings className="w-4 h-4 text-accent" /> Жизненный цикл
-      </h3>
-
-      {managed ? (
-        <>
-          <dl className="grid grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm mb-3">
-            <Field k="Состояние" v="подготовлена" />
-            <Field k="mgmt-учётка" v={vm.mgmt_user ?? "—"} mono />
-          </dl>
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex-1 text-xs text-dim">
-              ВМ подготовлена: заведены per-VM управляющие креды, базовый доступ
-              снят. Повторная подготовка перезапустит bootstrap-цикл.
-            </div>
-            <button
-              className="btn flex items-center gap-1"
-              onClick={handlePrepare}
-              disabled={pending}
-              title="Повторно подготовить ВМ"
-            >
-              <Play className="w-4 h-4" />
-              {pending ? "Ставим задачу…" : "Prepare"}
-            </button>
-          </div>
-        </>
-      ) : (
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex-1 text-xs text-dim">
-            ВМ ещё не подготовлена: базовая учётка <span className="mono">u:1</span>{" "}
-            не снята, управляющих кред нет. Подготовка заведёт per-VM креды и
-            уберёт базовый доступ.
-          </div>
-          <button
-            className="btn btn-primary flex items-center gap-1"
-            onClick={handlePrepare}
-            disabled={pending}
-          >
-            <Play className="w-4 h-4" />
-            {pending ? "Ставим задачу…" : "Prepare"}
-          </button>
-        </div>
-      )}
-
-      {outcome.tracked && (
-        <TaskOutcomeBanner
-          outcome={outcome.tracked}
-          className="mt-3"
-          successText="Операция применена."
-          onCancelled={outcome.reset}
-        />
-      )}
-    </div>
-  );
-}
-
-

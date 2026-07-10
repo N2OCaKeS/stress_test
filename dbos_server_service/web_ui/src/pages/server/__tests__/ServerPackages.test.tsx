@@ -121,6 +121,9 @@ vi.mock("@/api/server/vms", () => ({
       task_id: "vt1",
     }),
   ),
+  vmPackagesAction: vi.fn(() =>
+    Promise.resolve({ task_id: "vat1", status: "queued" }),
+  ),
 }));
 
 vi.mock("@/api/server/osVersions", () => ({
@@ -152,13 +155,14 @@ import {
   packagesBulkAction,
 } from "@/api/server/misc";
 import { listServers } from "@/api/server/servers";
-import { listVms, listVmPackages } from "@/api/server/vms";
+import { listVms, listVmPackages, vmPackagesAction } from "@/api/server/vms";
 
 const installedPackagesBulkMock = vi.mocked(installedPackagesBulk);
 const packagesBulkActionMock = vi.mocked(packagesBulkAction);
 const listServersMock = vi.mocked(listServers);
 const listVmsMock = vi.mocked(listVms);
 const listVmPackagesMock = vi.mocked(listVmPackages);
+const vmPackagesActionMock = vi.mocked(vmPackagesAction);
 
 function renderPage() {
   return render(
@@ -182,6 +186,7 @@ describe("ServerPackages", () => {
     listServersMock.mockClear();
     listVmsMock.mockClear();
     listVmPackagesMock.mockClear();
+    vmPackagesActionMock.mockClear();
   });
 
   it("показывает подсказку про мультипаттерн", async () => {
@@ -353,5 +358,46 @@ describe("ServerPackages", () => {
     });
     // Серверный bulk не дёргается, раз выбрана только ВМ.
     expect(installedPackagesBulkMock).not.toHaveBeenCalled();
+  });
+
+  it("action по ВМ шлёт vmPackagesAction, а не серверный bulk", async () => {
+    renderPage();
+    await screen.findByText("vm-one");
+    // Выбираем только ВМ (последний чекбокс).
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[checkboxes.length - 1]);
+    const pkgInput = screen.getByPlaceholderText("htop nginx git");
+    fireEvent.change(pkgInput, { target: { value: "htop" } });
+    fireEvent.click(screen.getByRole("button", { name: /Установить/ }));
+    await waitFor(() =>
+      expect(vmPackagesActionMock).toHaveBeenCalledTimes(1),
+    );
+    expect(vmPackagesActionMock.mock.calls[0][0]).toBe("vm_x");
+    expect(vmPackagesActionMock.mock.calls[0][1]).toEqual({
+      action: "install",
+      packages: ["htop"],
+    });
+    // Серверный bulk-action не дёргается — выбрана только ВМ.
+    expect(packagesBulkActionMock).not.toHaveBeenCalled();
+  });
+
+  it("action по серверу и ВМ вместе шлёт оба клиента", async () => {
+    renderPage();
+    await screen.findByText("vm-one");
+    const checkboxes = screen.getAllByRole("checkbox");
+    // Первый сервер + ВМ.
+    fireEvent.click(checkboxes[0]);
+    fireEvent.click(checkboxes[checkboxes.length - 1]);
+    const pkgInput = screen.getByPlaceholderText("htop nginx git");
+    fireEvent.change(pkgInput, { target: { value: "htop" } });
+    fireEvent.click(screen.getByRole("button", { name: /Установить/ }));
+    await waitFor(() =>
+      expect(vmPackagesActionMock).toHaveBeenCalledTimes(1),
+    );
+    expect(packagesBulkActionMock).toHaveBeenCalledTimes(1);
+    expect(
+      (packagesBulkActionMock.mock.calls[0][0] as { server_ids: string[] })
+        .server_ids,
+    ).toEqual(["srv_a"]);
   });
 });

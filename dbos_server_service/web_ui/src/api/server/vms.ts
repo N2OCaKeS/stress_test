@@ -68,6 +68,7 @@ import type {
   Iso8601,
   OffsetPaginatedResponse,
   PackageHistoryEntry,
+  PackagesBulkActionKind,
   ReasonBody,
   Server,
   TaskDispatchResponse,
@@ -1267,6 +1268,34 @@ export function listVmPackages(
   if (opts.pattern) query.pattern = opts.pattern;
   if (Object.keys(query).length === 0) return apiGet<VmPackagesResponse>(path);
   return apiGet<VmPackagesResponse>(path, { query });
+}
+
+/**
+ * Тело `POST /vms/{id}/packages/action` — установка/удаление/обновление пакетов
+ * в госте ВМ. `packages` обязателен для `install`/`remove`; для `update` пусто
+ * означает upgrade всех пакетов гостя. Набор действий тот же, что у серверного
+ * bulk-action.
+ */
+export interface VmPackagesActionRequest {
+  action: PackagesBulkActionKind;
+  packages?: string[];
+}
+
+/**
+ * `POST /api/server/v1/vms/{id}/packages/action` — поставить install/remove/
+ * update пакетов гостя ВМ через worker (202, task_id). ВМ обязана быть prepared,
+ * иметь IP гостя и живой hub, иначе backend отобьёт 409
+ * (VM_PREPARE_REQUIRED / VM_GUEST_IP_UNKNOWN / HUB_UNAVAILABLE). Итог задачи
+ * добирают поллингом `GET /tasks/{task_id}`.
+ */
+export function vmPackagesAction(
+  vmId: string,
+  body: VmPackagesActionRequest,
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(
+    `/server/v1/vms/${vmId}/packages/action`,
+    body,
+  );
 }
 
 /** Параметры пагинации истории запросов пакетов ВМ. */

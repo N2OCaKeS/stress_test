@@ -49,7 +49,7 @@ import {
   packagesBulkAction,
   getTask,
 } from "@/api/server/misc";
-import { listVms, listVmPackages } from "@/api/server/vms";
+import { listVms, listVmPackages, vmPackagesAction } from "@/api/server/vms";
 import { listOsVersions } from "@/api/server/osVersions";
 import { isDepAdmin, isServerZoneBlocked } from "@/lib/rbac";
 import { isTerminalTaskStatus } from "@/api/server/types";
@@ -179,13 +179,16 @@ function canManagePackages(
   return false;
 }
 
-/** Человеко-читаемые подписи статусов сервера в bulk-action ответе. */
+/** Человеко-читаемые подписи статусов сущности в bulk-action ответе. */
 const ACTION_STATUS_LABEL: Record<string, string> = {
   ok: "поставлено",
   prepare_required: "не подготовлен",
   reserved: "забронирован",
   decommissioned: "decommissioned",
   not_found: "не найден",
+  // Синтетический статус для ВМ, по которой backend отбил сам dispatch
+  // (права/prepare/hub) — деталь причины лежит в error.
+  error: "отклонено",
 };
 
 const ACTION_STATUS_KIND: Record<string, "ok" | "warn" | "danger" | ""> = {
@@ -194,6 +197,7 @@ const ACTION_STATUS_KIND: Record<string, "ok" | "warn" | "danger" | ""> = {
   reserved: "warn",
   decommissioned: "",
   not_found: "danger",
+  error: "danger",
 };
 
 const ACTION_LABEL: Record<PackagesBulkActionKind, string> = {
@@ -202,8 +206,9 @@ const ACTION_LABEL: Record<PackagesBulkActionKind, string> = {
   update: "Обновление",
 };
 
-/** Локальное состояние одного сервера в результате bulk-action (исход + поллинг). */
+/** Локальное состояние одной сущности (сервер/ВМ) в результате action (исход + поллинг). */
 interface ActionServerState {
+  kind: EntityKind;
   serverId: string;
   hostname: string;
   /** Человекочитаемое имя сервера (если задано) — показываем его как основное. */
@@ -348,14 +353,20 @@ export function ServerPackages() {
   );
   const totalCount = serverEntities.length + vmEntities.length;
 
-  // Кол-во выбранных ВМ — их путь action'ов пока не поддержан бэком, показываем
-  // предупреждение и режем список для панели действий.
+  // Разводим выбор на серверы и ВМ: панель действий шлёт их разными клиентами
+  // (серверный bulk vs per-VM action), но исходы сводит в одну таблицу.
   const selectedServerIds = useMemo(
     () =>
       [...selected].filter((id) => entityById.get(id)?.kind === "server"),
     [selected, entityById],
   );
-  const selectedVmCount = selected.size - selectedServerIds.length;
+  const selectedVmEntities = useMemo(
+    () =>
+      [...selected]
+        .map((id) => entityById.get(id))
+        .filter((e): e is PickEntity => e?.kind === "vm"),
+    [selected, entityById],
+  );
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -697,18 +708,11 @@ export function ServerPackages() {
         )}
 
         {canManage && (
-          <>
-            <PackageActionPanel
-              serverIds={selectedServerIds}
-              servers={servers}
-            />
-            {selectedVmCount > 0 && (
-              <div className="text-[11px] text-dim italic">
-                Действия install/remove/update для ВМ появятся позже — сейчас они
-                применяются только к выбранным серверам ({selectedServerIds.length}).
-              </div>
-            )}
-          </>
+          <PackageActionPanel
+            serverIds={selectedServerIds}
+            servers={servers}
+            vms={selectedVmEntities}
+          />
         )}
       </div>
     </aside>
@@ -775,18 +779,21 @@ function EntityPickRow({
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
- * Панель массовых действий над пакетами выбранных серверов. Видна только
+ * Панель массовых действий над пакетами выбранных серверов и ВМ. Видна только
  * носителю права `manage_packages`. Принимает список пакетов (через пробел),
  * кнопки Install / Remove / Update; Remove и Update идут с подтверждением
- * (деструктив). После dispatch'а показывает per-server исходы и поллит итог
- * каждой задачи до терминала.
+ * (деструктив). Серверы уходят одним bulk-вызовом, ВМ — по отдельному
+ * `vmPackagesAction` на каждую (bulk-эндпоинта для ВМ нет). Исходы обоих потоков
+ * сходятся в одну таблицу; итог каждой задачи поллится до терминала.
  */
 function PackageActionPanel({
   serverIds,
   servers,
+  vms,
 }: {
   serverIds: string[];
   servers: Server[];
+  vms: PickEntity[];
 }) {
   const toast = useToast();
   const { confirm } = useConfirm();
@@ -820,10 +827,12 @@ function PackageActionPanel({
     [],
   );
 
+  const targetCount = serverIds.length + vms.length;
+
   async function dispatch(action: PackagesBulkActionKind) {
     if (running) return;
-    if (serverIds.length === 0) {
-      setErr("Выберите хотя бы один сервер.");
+    if (targetCount === 0) {
+      setErr("Выберите хотя бы один сервер или ВМ.");
       return;
     }
     // install/remove требуют явного списка пакетов; update без списка =
@@ -840,8 +849,8 @@ function PackageActionPanel({
         title: action === "remove" ? "Удалить пакеты" : "Обновить пакеты",
         message:
           action === "remove"
-            ? `Удалить ${pkgText} на ${serverIds.length} серверах? Операция необратима.`
-            : `Обновить ${pkgText} на ${serverIds.length} серверах?`,
+            ? `Удалить ${pkgText} на ${targetCount} сущностях (серверы и ВМ)? Операция необратима.`
+            : `Обновить ${pkgText} на ${targetCount} сущностях (серверы и ВМ)?`,
         confirmLabel: action === "remove" ? "Удалить" : "Обновить",
         danger: action === "remove",
       });
@@ -853,26 +862,74 @@ function PackageActionPanel({
     setRunning(action);
     setActionLabel(ACTION_LABEL[action]);
     try {
-      const res = await packagesBulkAction({
-        server_ids: serverIds,
-        action,
-        ...(packages.length ? { packages } : {}),
-      });
+      // Серверы — один bulk-вызов; ВМ — по action на каждую (bulk для ВМ нет).
+      // Отбой прав/prepare по конкретной ВМ ловим локально, чтобы не ронять
+      // серверный поток и остальные ВМ.
+      const serverStatesP: Promise<ActionServerState[]> = serverIds.length
+        ? packagesBulkAction({
+            server_ids: serverIds,
+            action,
+            ...(packages.length ? { packages } : {}),
+          }).then((res) =>
+            res.results.map((r) => ({
+              kind: "server" as const,
+              serverId: r.server_id,
+              hostname: r.hostname ?? hostnameOf(r.server_id),
+              displayName:
+                servers.find((s) => s.id === r.server_id)?.display_name ?? null,
+              status: r.status,
+              taskId: r.task_id ?? null,
+              taskStatus: null,
+              polling: r.status === "ok" && !!r.task_id,
+              error: null,
+            })),
+          )
+        : Promise.resolve([]);
+
+      const vmStatesP: Promise<ActionServerState[]> = Promise.all(
+        vms.map(async (vm): Promise<ActionServerState> => {
+          const base = {
+            kind: "vm" as const,
+            serverId: vm.id,
+            hostname: vm.hostname,
+            displayName: vm.name,
+            taskStatus: null as string | null,
+          };
+          try {
+            const res = await vmPackagesAction(vm.id, {
+              action,
+              ...(packages.length ? { packages } : {}),
+            });
+            return {
+              ...base,
+              status: "ok",
+              taskId: res.task_id ?? null,
+              polling: !!res.task_id,
+              error: null,
+            };
+          } catch (e) {
+            return {
+              ...base,
+              status: "error",
+              taskId: null,
+              polling: false,
+              error: apiErrMsg(e, "ВМ отклонила действие с пакетами"),
+            };
+          }
+        }),
+      );
+
+      const [serverStates, vmStates] = await Promise.all([
+        serverStatesP,
+        vmStatesP,
+      ]);
       if (!aliveRef.current) return;
-      const init: ActionServerState[] = res.results.map((r) => ({
-        serverId: r.server_id,
-        hostname: r.hostname ?? hostnameOf(r.server_id),
-        displayName:
-          servers.find((s) => s.id === r.server_id)?.display_name ?? null,
-        status: r.status,
-        taskId: r.task_id ?? null,
-        taskStatus: null,
-        polling: r.status === "ok" && !!r.task_id,
-        error: null,
-      }));
-      setStates(init);
+      setStates([...serverStates, ...vmStates]);
+      const dispatched = [...serverStates, ...vmStates].filter(
+        (s) => s.status === "ok" && s.taskId,
+      ).length;
       toast.success(
-        `${ACTION_LABEL[action]}: задач поставлено ${res.dispatched} из ${res.requested}`,
+        `${ACTION_LABEL[action]}: задач поставлено ${dispatched} из ${targetCount}`,
       );
     } catch (e) {
       if (!aliveRef.current) return;
@@ -948,7 +1005,8 @@ function PackageActionPanel({
   return (
     <div className="mt-3 border-t border-token pt-3 flex flex-col gap-2">
       <div className="text-xs text-dim font-medium">
-        Действия с пакетами ({serverIds.length} серв.)
+        Действия с пакетами ({serverIds.length} серв.
+        {vms.length > 0 && ` + ${vms.length} ВМ`})
       </div>
       <label className="flex flex-col gap-1 text-xs text-dim">
         пакеты (через пробел)
@@ -969,7 +1027,7 @@ function PackageActionPanel({
           type="button"
           className="btn btn-sm flex items-center justify-center gap-1"
           onClick={() => dispatch("install")}
-          disabled={busy || serverIds.length === 0}
+          disabled={busy || targetCount === 0}
           title="Установить пакеты"
         >
           <Download className="w-3.5 h-3.5" /> Установить
@@ -978,7 +1036,7 @@ function PackageActionPanel({
           type="button"
           className="btn btn-sm btn-danger flex items-center justify-center gap-1"
           onClick={() => dispatch("remove")}
-          disabled={busy || serverIds.length === 0}
+          disabled={busy || targetCount === 0}
           title="Удалить пакеты"
         >
           <Trash2 className="w-3.5 h-3.5" /> Удалить
@@ -987,7 +1045,7 @@ function PackageActionPanel({
           type="button"
           className="btn btn-sm flex items-center justify-center gap-1"
           onClick={() => dispatch("update")}
-          disabled={busy || serverIds.length === 0}
+          disabled={busy || targetCount === 0}
           title="Обновить пакеты (пусто = upgrade всех)"
         >
           <ArrowUpCircle className="w-3.5 h-3.5" /> Обновить
@@ -1005,7 +1063,7 @@ function PackageActionPanel({
         <div className="flex flex-col gap-1">
           {actionLabel && (
             <div className="text-[11px] text-dim">
-              {actionLabel} — исходы по серверам:
+              {actionLabel} — исходы по серверам и ВМ:
             </div>
           )}
           <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto">
@@ -1025,10 +1083,13 @@ function ActionStatusRow({ state }: { state: ActionServerState }) {
   return (
     <div className="surface-2 border border-token rounded px-2 py-1 text-[11px] flex items-center gap-2">
       <span
-        className="truncate flex-1"
+        className="truncate flex-1 flex items-center gap-1"
         title={`${state.hostname} · ${state.serverId}`}
       >
-        {state.displayName ?? state.hostname}
+        {state.kind === "vm" && (
+          <span className="badge badge-accent text-[9px]">ВМ</span>
+        )}
+        <span className="truncate">{state.displayName ?? state.hostname}</span>
       </span>
       <span className={`badge${kind ? ` badge-${kind}` : ""}`}>
         {ACTION_STATUS_LABEL[state.status] ?? state.status}

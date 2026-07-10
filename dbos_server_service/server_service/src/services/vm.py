@@ -1620,6 +1620,8 @@ async def power_vm(
         "vm_id": vm.id,
         "name": vm.name,
         "action": action,
+        # worker поднимает natbr0 перед стартом NAT-ВМ — режим нужен ему в payload
+        "network_mode": vm.network_mode,
     }
     task_id = await _dispatch_vm_task(
         db=db, identity=identity, request=request,

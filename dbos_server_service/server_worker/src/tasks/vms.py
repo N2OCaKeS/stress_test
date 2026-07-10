@@ -1793,6 +1793,11 @@ async def vm_create(task_id: str) -> None:
                         # снимок build (внутренний, с памятью) оставляет домен
                         # выключенным — поднимаем, чтобы отдать рабочую ВМ. Уже
                         # запущенный virsh start отдаст non-zero, это ок.
+                        # NAT цепляет tap к natbr0 в момент старта — гарантируем
+                        # мост перед подъёмом (идемпотентно; не зависим от того,
+                        # что unit prepare пережил reboot хаба).
+                        if network_mode == "nat":
+                            await _setup_nat_bridge(ssh, host)
                         await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {name}")
                 finally:
                     if key_path is not None:
@@ -1902,9 +1907,16 @@ async def vm_power(task_id: str) -> None:
                     f"{sorted(POWER_VERBS)}"
                 ),
             )
+        network_mode = payload.get("network_mode")
 
         session, host = await open_hub_session(payload)
         async with session as ssh:
+            # NAT-ВМ цепляет NIC к natbr0 через qemu-bridge-helper в момент
+            # старта домена. Если мост не поднят (после reboot хаба) — tap не
+            # прицепится и гость останется без сети. Перед подъёмом домена
+            # гарантируем natbr0 (идемпотентно). bridge-ВМ на br0 не трогаем.
+            if network_mode == "nat" and action in ("start", "reboot", "reset"):
+                await _setup_nat_bridge(ssh, host)
             verb = POWER_VERBS[action]
             # start идемпотентен на запущенной ВМ (virsh отдаст non-zero
             # "already active") — допускаем; destroy на выключенной тоже.

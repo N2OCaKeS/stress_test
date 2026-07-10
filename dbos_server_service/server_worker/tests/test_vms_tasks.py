@@ -711,6 +711,43 @@ class TestVmCreateSingle:
         assert snaps[0]["name"] == "build"
         assert snaps[0]["os_version"] == "1.8.1.6"
 
+    async def test_single_nat_ensures_bridge_before_final_start(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        # NAT single: natbr0 гарантируется перед финальным подъёмом ВМ, чтобы
+        # tap прицепился к мосту (иначе гость без сети).
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm2", "hub_host": "10.0.0.7", "name": "xfs-1",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "xfs.box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "os_version": "1.8.1.6", "storage_pool_path": "/vms", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        i_setup = next(i for i, c in enumerate(cmds) if "dbos-vms-nat.sh" in c)
+        i_start = next(i for i, c in enumerate(cmds) if "virsh start xfs-1" in c)
+        assert i_setup < i_start
+
+    async def test_single_bridge_skips_bridge_setup(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        # bridge single на br0 — natbr0 не поднимаем.
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm2", "hub_host": "10.0.0.7", "name": "xfs-1",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "xfs.box",
+            "network_mode": "bridge", "ip_address": "10.177.103.50/24",
+            "os_versions": [], "os_version": "1.8.1.6",
+            "storage_pool_path": "/vms", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert not any("dbos-vms-nat.sh" in c for c in fake.commands)
+
     async def test_single_box_shrink_offline_fs_then_virt_resize(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _create_fake()
         # бокс 20G, запрошено 10G → сжатие. ФС ужимается заранее в overlay бокса.
@@ -1178,6 +1215,55 @@ class TestVmPower:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.FAILED
         assert t.last_error and "VM_INVALID_ARG" in t.last_error
+
+    @pytest.mark.parametrize("action", ["start", "reboot", "reset"])
+    async def test_nat_power_on_ensures_bridge(self, action, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        # NAT-ВМ: natbr0 поднимается до virsh перед стартом/ребутом/резетом.
+        fake = _FakeSshClient()
+        fake.set_response("virsh domstate", 0, "running")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm9", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "action": action, "network_mode": "nat", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.power", target_server_id="hub1", payload=payload)
+        await vms.vm_power.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        setup_i = next(i for i, c in enumerate(fake.commands) if "dbos-vms-nat.sh" in c)
+        power_i = next(i for i, c in enumerate(fake.commands) if f"virsh {action} station-a" in c)
+        assert setup_i < power_i
+
+    async def test_bridge_power_on_skips_bridge_setup(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        # bridge-ВМ на br0 — natbr0 не трогаем.
+        fake = _FakeSshClient()
+        fake.set_response("virsh domstate", 0, "running")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm9", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "action": "start", "network_mode": "bridge", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.power", target_server_id="hub1", payload=payload)
+        await vms.vm_power.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert not any("dbos-vms-nat.sh" in c for c in fake.commands)
+
+    @pytest.mark.parametrize("action", ["shutdown", "destroy"])
+    async def test_nat_power_off_skips_bridge_setup(self, action, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
+        # выключение NAT-ВМ мост не поднимает — незачем.
+        fake = _FakeSshClient()
+        fake.set_response("virsh domstate", 0, "shut off")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm9", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "action": action, "network_mode": "nat", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.power", target_server_id="hub1", payload=payload)
+        await vms.vm_power.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert not any("dbos-vms-nat.sh" in c for c in fake.commands)
 
 
 # ── vm.delete ────────────────────────────────────────────────────────────────

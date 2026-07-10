@@ -349,7 +349,7 @@ async def test_power_dispatches_vm_power(
 ):
     calls = make_dispatch_capture(monkeypatch)
     hub = await make_hub()
-    vm = await make_vm(hub=hub)
+    vm = await make_vm(hub=hub, network_mode="nat")
     resp = await client.post(
         f"{BASE}/vms/{vm.id}/power", json={"action": "reboot"},
         headers=_hdr(admin_role_token_a),
@@ -360,6 +360,8 @@ async def test_power_dispatches_vm_power(
     assert calls[0]["target_server_id"] == hub.id
     assert calls[0]["payload"]["action"] == "reboot"
     assert calls[0]["payload"]["vm_id"] == vm.id
+    # worker поднимает natbr0 перед стартом NAT-ВМ — режим едет в payload
+    assert calls[0]["payload"]["network_mode"] == "nat"
 
 
 @pytest.mark.asyncio

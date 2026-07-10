@@ -17,6 +17,7 @@ from src.tasks import (  # noqa: F401
     vms_inventory,
     vms_lifecycle,
     vms_network,
+    vms_packages,
     vms_snapshots,
     vms_status,
 )

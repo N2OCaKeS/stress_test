@@ -355,6 +355,9 @@ package-probe'ов ВМ. Остальные `vm.*` действия катало
 |---|---|---|---|---|
 | `vm.create_failed` | WARNING | периодик `vms.reconcile_failed_creates` нашёл ВМ в `busy_state=creating`, чья `vm.create`-задача в worker-БД в статусе `failed`; ВМ удалена (best-effort undefine на хабе + каскадное удаление строк). Actor = исходный создатель ВМ (`created_by`), не worker_bot | `vm` | `reason=create_task_failed`, `name`, `department_id`, `create_task_id`, `cleanup_task_id`, `last_error`. denied (permission): `reason=permission_denied`, `source=vm_create_reconcile` |
 | `vm.packages_history` | INFO | GET `/vms/{id}/packages/history` — чтение истории прошлых probe-запросов пакетов ВМ. Эмитится только на denied (нет `(vm, view)`) / not-found (cross-dept); success не аудитим | `vm` | denied: `reason=permission_denied`; not-found: `reason=not_found_or_cross_dept` |
+| `vm.packages_installed` | WARNING | dispatch (`POST /vms/{id}/packages/action` action=install) success / denied / failure + worker task SUCCEEDED/FAILED. Мутация софта гостя ВМ по SSH через hub под sudo | `vm` | `task_id`, `operation=install`, `package_count`, `department_id`, либо `reason`. Право `(vm, vm_astra_update)` |
+| `vm.packages_removed` | WARNING | dispatch (`POST /vms/{id}/packages/action` action=remove) success / denied / failure + worker task SUCCEEDED/FAILED | `vm` | `task_id`, `operation=remove`, `package_count`, `department_id`, либо `reason` |
+| `vm.packages_updated` | INFO | dispatch (`POST /vms/{id}/packages/action` action=update) success / denied / failure + worker task SUCCEEDED/FAILED (пусто = обновить всё) | `vm` | `task_id`, `operation=update`, `package_count`, `department_id`, либо `reason` |
 
 ---
 

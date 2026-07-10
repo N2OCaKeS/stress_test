@@ -7,8 +7,10 @@ status) — синхронный booking по полю `status`.
 """
 
 import re
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import DomainValidationError
@@ -70,6 +72,47 @@ router = APIRouter(prefix="/vms")
 # пробелов внутри одной маски, `;`, `$`, кавычек — defence-in-depth против
 # shell-injection в dpkg/rpm-команду воркера.
 _VM_PACKAGE_PATTERN_RE = re.compile(r"^[A-Za-z0-9._\-+*?\[\]]+$")
+# Allow-list имён пакетов для мутаций гостя ВМ. В отличие от glob-pattern'а
+# (`*?[]`) здесь НЕ допускаем маски — ставить/сносить по маске нельзя. Тот же
+# класс, что в серверных мутациях (`schemas/server._PKG_NAME_RE` и worker'е).
+_VM_PKG_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+\-]*$")
+
+
+class VmPackagesActionRequest(BaseModel):
+    """Тело POST /vms/{id}/packages/action — мутация пакетов гостя ВМ.
+
+    Зеркало серверного `BulkPackagesActionRequest`, но per-VM. `action` —
+    `install` / `remove` / `update`. Для install/remove `packages` обязателен и
+    непуст; для update опционален (пусто = обновить всё). Имена валидируются
+    строгим allow-list'ом `[A-Za-z0-9._+-]` (без glob).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["install", "remove", "update"] = Field(
+        ..., description="install / remove / update.",
+    )
+    packages: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Имена пакетов. Обязательны для install/remove; для update пусто = "
+            "обновить всё. Allow-list [A-Za-z0-9._+-], без glob."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_action_packages(self) -> "VmPackagesActionRequest":
+        if self.action in ("install", "remove") and not self.packages:
+            raise ValueError(
+                f"packages must be a non-empty list for action '{self.action}'"
+            )
+        bad = [p for p in self.packages if not _VM_PKG_NAME_RE.match(p)]
+        if bad:
+            raise ValueError(
+                f"invalid package name(s) {bad!r}; allowed [A-Za-z0-9._+-], "
+                "must start with an alphanumeric"
+            )
+        return self
 # prepare-vms-hub / create-default-vms / teardown живут под /servers/{id};
 # отдельный роутер, чтобы не тащить в servers.py VM-зависимости.
 router_servers = APIRouter(prefix="/servers/{server_id}")
@@ -517,6 +560,48 @@ async def list_vm_packages_history(
     )
     response.headers["X-Total-Count"] = str(total)
     return [VmPackageHistoryEntry(**item.model_dump()) for item in items]
+
+
+@router.post(
+    "/{vm_id}/packages/action",
+    response_model=VmTaskDispatchResponse,
+    status_code=202,
+    summary="Мутация пакетов гостя ВМ (install/remove/update, 202, dispatch vm.<action>_packages)",
+    description=(
+        "VM-аналог серверного `POST /servers/packages/bulk-action`, но per-VM. "
+        "Диспатчит `vm.{install|remove|update}_packages`: worker заходит в гостя "
+        "по SSH через hub под управляющим ключом (managed) либо базовой учёткой "
+        "образа (legacy) и с sudo выполняет `apt-get`/`dnf`/`apk`. `action` — "
+        "install / remove / update; `packages` обязателен для install/remove, для "
+        "update опционален (пусто = обновить всё). Имена валидируются строгим "
+        "allow-list'ом `[A-Za-z0-9._+-]` (без glob).\n\n"
+        "Право `(vm, vm_astra_update)` — деструктив над софтом гостя, крупноблочно "
+        "(то же право, что обновление ОС ВМ). Гейтит бронь и lifecycle-lock. "
+        "Модель async: dispatch ставит задачу, результат (exit-код, что применено) "
+        "UI добирает поллингом `GET /tasks/{task_id}` — тот же контракт, что у "
+        "серверной мутации."
+    ),
+    responses={
+        202: {"description": "Задача поставлена."},
+        403: {"description": "Нет `vm_astra_update`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_BUSY / VM_RESERVED / HUB_UNAVAILABLE."},
+        422: {"description": "Невалидное имя пакета / пустой packages для install/remove / неизвестный action."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def vm_packages_action(
+    vm_id: str,
+    body: VmPackagesActionRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmTaskDispatchResponse:
+    """POST /vms/{id}/packages/action — мутация пакетов гостя + dispatch vm.<action>_packages."""
+    vm, task_id = await svc.mutate_packages(
+        db, identity, request, vm_id, action=body.action, packages=body.packages,
+    )
+    return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
 
 
 @router.post(

@@ -173,6 +173,12 @@ class TaskKind(StrEnum):
     VM_ALLTA_UPDATE = "vm.allta_update"
     VM_PASSWD = "vm.passwd"
     VM_LIST_PACKAGES = "vm.list_packages"
+    # Мутации пакетов гостя ВМ — VM-аналоги installed_packages.{install,remove,
+    # update}, тем же общим кодом, но цель гость ВМ через hub (apt-get/dnf/apk
+    # под sudo).
+    VM_INSTALL_PACKAGES = "vm.install_packages"
+    VM_REMOVE_PACKAGES = "vm.remove_packages"
+    VM_UPDATE_PACKAGES = "vm.update_packages"
     # Инвентаризация гостя ВМ — VM-аналоги inventory.sync / users.inventory, тем
     # же общим кодом, но цель гость ВМ через hub (по управляющему ключу).
     VM_INVENTORY_SYNC = "vm.inventory_sync"

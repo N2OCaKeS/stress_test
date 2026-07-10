@@ -571,6 +571,12 @@ class VmTaskKind(StrEnum):
     # Live-инвентарь пакетов гостя: worker заходит на гостя по SSH через hub,
     # снимает dpkg/rpm-список и отдаёт его callback'ом record_vm_packages.
     VM_LIST_PACKAGES = "vm.list_packages"
+    # Мутации пакетов гостя (install/remove/update) — VM-аналоги серверных
+    # installed_packages.{install,remove,update}: worker заходит на гостя по SSH
+    # через hub под управляющим ключом и гонит apt-get/dnf/apk под sudo.
+    VM_INSTALL_PACKAGES = "vm.install_packages"
+    VM_REMOVE_PACKAGES = "vm.remove_packages"
+    VM_UPDATE_PACKAGES = "vm.update_packages"
     # Инвентаризация гостя ВМ — VM-аналоги inventory.sync / users.inventory: worker
     # снимает hardware-facts / OS-юзеров с гостя по SSH через hub (управляющий ключ)
     # и сдаёт callback'ом (inventory / users/inventory).

@@ -42,7 +42,6 @@ shell вообще не уходит — фильтрация чисто Python-
 from __future__ import annotations
 
 import logging
-import re
 
 from src.clients.ssh import SshClient, SshError
 from src.core.config import get_settings
@@ -98,19 +97,13 @@ def _audit_safe_fields() -> set[str]:
 # module-level set. Содержит дефолтный (masked) набор полей.
 AUDIT_SAFE_FIELDS: set[str] = set(_BASE_AUDIT_SAFE_FIELDS)
 
-# Allow-list имён пакетов для мутаций (install/remove/upgrade). В отличие от
-# glob-pattern'а здесь НЕ допускаем `* ? [ ]` — устанавливать/сносить пакеты
-# по маске опасно (один `*` снёс бы пол-системы) и сам apt/dpkg при install
-# трактует имя буквально. Разрешённый класс — `[A-Za-z0-9._+-]`: легальные
-# имена пакетов Debian/RPM (`linux-image-amd64`, `g++`, `lib32z1`,
-# `python3.11`). Метасимволы shell (`'`, `$`, `;`, пробел, backtick) тем
-# самым тоже отсечены — break-out из одиночных кавычек невозможен.
-_PKG_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+\-]*$")
-
-# Package manager'ы, для которых поддержана мутация. list работает на всех
-# шести бэкендах, но менять состав мы умеем только там, где знаем безопасный
-# не-интерактивный синтаксис: dpkg→apt-get, rpm→dnf/yum, apk→apk.
-_MUTABLE_PACKAGE_MANAGERS = frozenset({"dpkg", "rpm", "apk"})
+# Мутации (install/remove/update) сведены в общий `_packages_common` — код один
+# на сервер (DirectRunner) и на гостя ВМ (GuestHopRunner). Здесь держим алиасы
+# под историческими именами: на них ссылаются тесты.
+_PKG_NAME_RE = pkg.PKG_NAME_RE
+_MUTABLE_PACKAGE_MANAGERS = pkg.MUTABLE_PACKAGE_MANAGERS
+_validate_package_names = pkg.validate_package_names
+_build_mutation_command = pkg.build_mutation_command
 
 # Connect-time коды SshClient.connect(), означающие «до сервера дошли, но
 # управляющая SSH-сессия не поднялась»: auth не прошёл, коннект сорвался,
@@ -289,114 +282,15 @@ _MUTATION_AUDIT_SAFE_FIELDS: set[str] = {
 }
 
 
-def _validate_package_names(packages: list, host: str) -> list[str]:
-    """Проверить список имён пакетов по строгому allow-list'у.
-
-    Возвращает нормализованный список строк. Любой элемент не-str, пустой
-    либо с символом вне `_PKG_NAME_RE` валит таску `INVALID_PACKAGE_NAME` —
-    раньше, чем имя попадёт в shell-команду. Это defence-in-depth поверх
-    валидации server_service: на shell-уровень уходит только то, что прошло
-    обе проверки.
-    """
-    if not isinstance(packages, list) or not packages:
-        raise SshError(
-            error_code="INVALID_PACKAGE_NAME",
-            host=host,
-            message="packages must be a non-empty list of names",
-        )
-    out: list[str] = []
-    for name in packages:
-        if not isinstance(name, str) or not _PKG_NAME_RE.match(name):
-            raise SshError(
-                error_code="INVALID_PACKAGE_NAME",
-                host=host,
-                message=(
-                    f"package name {name!r} contains characters disallowed for "
-                    "a package name (only [A-Za-z0-9._+-], must start alnum)"
-                ),
-            )
-        out.append(name)
-    return out
-
-
-def _build_mutation_command(
-    package_manager: str, operation: str, packages: list[str]
-) -> str:
-    """Собрать не-интерактивную команду мутации под выбранный package manager.
-
-    `packages` обязаны пройти `_validate_package_names` — внутри только
-    `[A-Za-z0-9._+-]`, поэтому подстановка в shell без кавычек безопасна
-    (метасимволов нет). update без явного списка пакетов = обновить всё.
-
-    Команды с `&&` (apt-get/apk update перед install) оборачиваются в
-    `sh -c '...'`. SSH-слой исполняет шаг под sudo как `sudo -S -p '' <cmd>` —
-    без обёртки sudo накрыл бы только первый сегмент до `&&`, а второй
-    (install) пошёл бы без прав и упал на dpkg-lock. Внутри одинарных кавычек
-    `sh -c` безопасно, потому что имена пакетов прошли allow-list (нет `'`).
-
-    Поддержаны dpkg/rpm/apk; для остального — `SshError`
-    (`UNSUPPORTED_PACKAGE_MANAGER`). Все команды не задают вопросов
-    (`-y` / `--noninteractive`).
-    """
-    joined = " ".join(packages)
-    if package_manager == "dpkg":
-        # DEBIAN_FRONTEND=noninteractive глушит debconf-промпты (postinst).
-        env = "DEBIAN_FRONTEND=noninteractive"
-        if operation == "install":
-            return f"sh -c '{env} apt-get update && {env} apt-get install -y {joined}'"
-        if operation == "remove":
-            return f"{env} apt-get remove -y {joined}"
-        if operation == "update":
-            # Без списка пакетов — dist-safe upgrade всего; со списком —
-            # apt-get install переустанавливает именно их на свежие версии.
-            if packages:
-                return f"sh -c '{env} apt-get update && {env} apt-get install -y --only-upgrade {joined}'"
-            return f"sh -c '{env} apt-get update && {env} apt-get upgrade -y'"
-    elif package_manager == "rpm":
-        # dnf на современных RHEL/Fedora; на старых это symlink на yum, синтаксис
-        # совпадает. -y подавляет промпты.
-        if operation == "install":
-            return f"dnf install -y {joined}"
-        if operation == "remove":
-            return f"dnf remove -y {joined}"
-        if operation == "update":
-            if packages:
-                return f"dnf upgrade -y {joined}"
-            return "dnf upgrade -y"
-    elif package_manager == "apk":
-        if operation == "install":
-            return f"sh -c 'apk update && apk add {joined}'"
-        if operation == "remove":
-            return f"apk del {joined}"
-        if operation == "update":
-            if packages:
-                return f"sh -c 'apk update && apk add --upgrade {joined}'"
-            return "sh -c 'apk update && apk upgrade'"
-    else:
-        raise SshError(
-            error_code="UNSUPPORTED_PACKAGE_MANAGER",
-            host="",
-            message=(
-                f"package manager {package_manager!r} does not support "
-                "mutation (install/remove/update); only dpkg/rpm/apk"
-            ),
-        )
-    # operation вне install/remove/update — caller валидирует, но defensive.
-    raise SshError(
-        error_code="INVALID_OPERATION",
-        host="",
-        message=f"unsupported mutation operation: {operation}",
-    )
-
-
 async def _mutate_packages_impl(payload: dict, operation: str) -> dict:
     """Общая реализация install/remove/update под управляющей SSH-сессией.
 
     Заходит на сервер по ключу под управляющим пользователем (мутация —
-    всегда managed-путь, server_service гейтит prepare), определяет package
-    manager, валидирует имена пакетов и выполняет соответствующую команду
-    под sudo. Возвращает `{server_id, operation, package_manager, packages,
-    count, returncode}`.
+    всегда managed-путь, server_service гейтит prepare) и отдаёт саму мутацию
+    общему `_packages_common.mutate_packages` через `DirectRunner`: детект
+    менеджера, валидация имён, сборка команды и выполнение под sudo — один код на
+    сервер и на гостя ВМ. Возвращает `{server_id, operation, package_manager,
+    packages, count, returncode}`.
     """
     server_id = payload["server_id"]
     raw_packages = payload.get("packages", [])
@@ -417,17 +311,7 @@ async def _mutate_packages_impl(payload: dict, operation: str) -> dict:
     await ssh_client.attach_management_creds(creds, server_id)
     host = creds.get("host") or creds.get("ssh_host") or server_id
 
-    # update может идти без списка (обновить всё); install/remove обязаны
-    # иметь хотя бы один пакет. Валидируем имена до подстановки в shell.
-    packages: list[str]
-    if operation == "update" and not raw_packages:
-        packages = []
-    else:
-        packages = _validate_package_names(raw_packages, str(host))
-
-    logger.info(
-        "installed_packages.%s on %r packages=%s", operation, host, packages,
-    )
+    logger.info("installed_packages.%s on %r", operation, host)
     session = ssh_client.build_session(creds, server_id)
     try:
         await session.connect()
@@ -438,28 +322,9 @@ async def _mutate_packages_impl(payload: dict, operation: str) -> dict:
         await session.close()
         raise
     async with session as ssh:
-        package_manager = await _detect_package_manager(ssh)
-        if package_manager not in _MUTABLE_PACKAGE_MANAGERS:
-            raise SshError(
-                error_code="UNSUPPORTED_PACKAGE_MANAGER",
-                host=str(host),
-                message=(
-                    f"package manager {package_manager!r} on remote host does "
-                    "not support mutation (install/remove/update); supported: "
-                    "dpkg (apt-get) / rpm (dnf) / apk"
-                ),
-            )
-        cmd = _build_mutation_command(package_manager, operation, packages)
-        rc, stdout, stderr = await ssh.run(cmd, sudo=True)
-        if rc != 0:
-            raise SshError(
-                error_code="PACKAGE_MUTATION_FAILED",
-                host=str(host),
-                cmd_sanitized=cmd,
-                returncode=rc,
-                stderr=(stderr or stdout).strip(),
-                message=f"{package_manager} {operation} failed",
-            )
+        package_manager, packages, rc = await pkg.mutate_packages(
+            DirectRunner(ssh), operation, raw_packages,
+        )
     return {
         "server_id": server_id,
         "operation": operation,

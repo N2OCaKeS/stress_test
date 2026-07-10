@@ -3177,6 +3177,75 @@ async def list_packages(
     return result
 
 
+# task_kind на действие мутации пакетов гостя ВМ. Зеркало серверного
+# `_PACKAGES_ACTION_MAP`, но per-VM (не bulk): worker-таски `vm.<action>_packages`
+# и per-action audit-action (past-tense, как у остальных VM-операций).
+_VM_PACKAGES_ACTION_MAP: dict[str, tuple[str, str]] = {
+    "install": (VmTaskKind.VM_INSTALL_PACKAGES, "vm.packages_installed"),
+    "remove": (VmTaskKind.VM_REMOVE_PACKAGES, "vm.packages_removed"),
+    "update": (VmTaskKind.VM_UPDATE_PACKAGES, "vm.packages_updated"),
+}
+
+
+async def mutate_packages(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    *,
+    action: str,
+    packages: list[str],
+) -> tuple[Vm, str]:
+    """Диспатч мутации пакетов гостя ВМ (install/remove/update) по SSH через hub.
+
+    VM-аналог серверного `POST /servers/packages/bulk-action`, но per-VM.
+    Крупноблочное право `(vm, vm_astra_update)` — деструктив над софтом гостя,
+    той же силы, что обновление ОС; отдельного гранулярного права не заводим.
+    Гейтит бронь и lifecycle-lock (`_load_vm_for_managed_op`, как astra_update),
+    но своего lock'а не ставит — контракт как у серверной bulk-мутации
+    (dispatch-and-poll). Guest-часть на managed-ВМ идёт по управляющему ключу —
+    стэшим mgmt-материал (в payload едет только stash-ключ). Возвращает
+    (vm, task_id). Валидацию `action`/имён пакетов делает endpoint.
+    """
+    task_kind, audit_action = _VM_PACKAGES_ACTION_MAP[action]
+    vm, hub = await _load_vm_for_managed_op(
+        db, identity, vm_id,
+        action_perm=Action.VM_ASTRA_UPDATE,
+        audit_action=audit_action, op=f"packages_{action}",
+    )
+    payload = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "operation": action,
+        "packages": list(packages),
+    }
+    # IP гостя кладём хинтом, если известен (worker иначе резолвит через
+    # virsh domifaddr); os_version помогает воркеру не гонять лишний детект.
+    if vm.ip_address is not None:
+        payload["guest_ip"] = str(vm.ip_address)
+    stash_key = await stash_existing_vm_mgmt_creds(vm, audit_action)
+    if stash_key:
+        payload["creds_stash_key"] = stash_key
+    task_id = await _dispatch_guest_task_with_stash(
+        db=db, identity=identity, request=request,
+        task_kind=task_kind, hub=hub, vm=vm,
+        payload=payload, audit_action=audit_action, stash_key=stash_key,
+    )
+    await db.commit()
+    audit_service.emit(
+        audit_action, target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={
+            "task_id": task_id,
+            "operation": action,
+            "package_count": len(packages),
+            "department_id": vm.department_id,
+        },
+    )
+    return vm, task_id
+
+
 async def list_package_history(
     db: AsyncSession,
     identity: IdentityContext,

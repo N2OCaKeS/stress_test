@@ -309,7 +309,7 @@ def _first_qcow2_path(domblklist_out: str) -> str | None:
 async def _resolve_vm_disk(ssh, host: str, vm_name: str) -> str:
     """Путь qcow2-диска домена (`virsh domblklist`) для offline-правки."""
     _rc, out, _err = await ssh.run(
-        f"{LIBVIRT_SESSION_ENV} virsh domblklist {vm_name}",
+        f"{LIBVIRT_SESSION_ENV} virsh domblklist {vm_name}", sudo=True,
     )
     disk = _first_qcow2_path(out)
     if disk is None:
@@ -331,7 +331,7 @@ async def _apply_static_offline(
     гостя. Домен остаётся выключенным — caller переводит NIC и стартует.
     """
     # offline-правка требует выключенного домена
-    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {vm_name}")
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {vm_name}", sudo=True)
     disk = await _resolve_vm_disk(ssh, host, vm_name)
     await write_static_interfaces_offline(
         ssh, host, disk, addr, netmask, gateway, dns,
@@ -351,7 +351,7 @@ async def _switch_domain_network(
 async def _restart_domain(ssh, host: str, vm_name: str) -> None:
     """Рестартнуть домен (`virsh destroy` → `virsh start`) для применения сети."""
     # может быть уже выключен — non-zero глушим
-    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {vm_name}")
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {vm_name}", sudo=True)
     await run_hub_cmd(
         ssh, f"virsh start {vm_name}", host,
         "VM_NET_APPLY_FAILED", "ВМ не поднялась после смены сети",
@@ -487,7 +487,7 @@ async def vm_set_network(task_id: str) -> None:
                     )
                     applied_ip = addr
                 _rc, dom_out, _err = await ssh.run(
-                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
+                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}", sudo=True,
                 )
                 power_state = map_domstate(dom_out)
         except Exception as exc:

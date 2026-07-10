@@ -58,13 +58,13 @@ class _FakeSshClient:
         return (0, "", "")
 
 
-def _assert_session_no_sudo(calls: list[tuple[str, bool]], needle: str) -> None:
-    """Команда с подстрокой `needle` идёт в qemu:///session и без sudo."""
+def _assert_root_libvirt(calls: list[tuple[str, bool]], needle: str) -> None:
+    """Команда с подстрокой `needle` идёт в system-libvirt под root (sudo)."""
     matched = [(cmd, sudo) for cmd, sudo in calls if needle in cmd]
     assert matched, f"команда {needle!r} не найдена"
     for cmd, sudo in matched:
-        assert "LIBVIRT_DEFAULT_URI=qemu:///session" in cmd, cmd
-        assert sudo is False, cmd
+        assert "LC_ALL=C LIBGUESTFS_BACKEND=direct" in cmd, cmd
+        assert sudo is True, cmd
 
 
 _MGMT = {
@@ -325,12 +325,12 @@ class TestVmSetNetworkBridge:
         i_bridge = _idx(cmds, "virt-xml station-a --edit --network bridge=br0")
         assert i_static < i_bridge
         assert any("virsh start station-a" in c for c in cmds)
-        # bridge остаётся bridge=br0; NIC-свитч и рестарт домена — в session без sudo
-        _assert_session_no_sudo(
+        # bridge остаётся bridge=br0; NIC-свитч и рестарт домена — под root
+        _assert_root_libvirt(
             fake.calls, "virt-xml station-a --edit --network bridge=br0",
         )
-        _assert_session_no_sudo(fake.calls, "virsh start station-a")
-        _assert_session_no_sudo(fake.calls, "virsh destroy station-a")
+        _assert_root_libvirt(fake.calls, "virsh start station-a")
+        _assert_root_libvirt(fake.calls, "virsh destroy station-a")
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state["ip_address"] == "10.177.103.101"
         assert state["power_state"] == "on"
@@ -461,11 +461,11 @@ class TestVmSetNetworkNat:
         assert i_static < i_switch
         assert not any("user,model=virtio" in c for c in cmds)
         assert any("virsh start xfs-1" in c for c in cmds)
-        # NIC-свитч и рестарт домена — в session без sudo
-        _assert_session_no_sudo(
+        # NIC-свитч и рестарт домена — под root
+        _assert_root_libvirt(
             fake.calls, "virt-xml xfs-1 --edit --network bridge=natbr0",
         )
-        _assert_session_no_sudo(fake.calls, "virsh start xfs-1")
+        _assert_root_libvirt(fake.calls, "virsh start xfs-1")
         # applied_ip детерминирован и известен сразу (гость достижим с хаба)
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state["ip_address"] == self._NAT_ADDR

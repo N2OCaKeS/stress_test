@@ -1,16 +1,16 @@
 """Задачи VM-менеджера — исполнение по SSH на hub-сервере.
 
-Управляющая учётка hub'а заходит по ключу. libvirt/qemu крутятся в её
-пользовательской сессии (`qemu:///session`, без sudo): домены, пулы и qcow2
-принадлежат учётке. Системная настройка хоста в `vms_hub.prepare` (пакеты,
-мост br0, firewall, chown хранилища, qemu-bridge-helper, user-libvirtd) идёт
-под sudo NOPASSWD. Разделение жёсткое: VM/диски = session, инфра = sudo.
+Управляющая учётка hub'а заходит по ключу и всё гонит под `sudo` NOPASSWD.
+libvirt/qemu крутятся в системном демоне (`qemu:///system`, от root): домены,
+пулы и qcow2 принадлежат root. VM-команды (virsh/virt-install/libguestfs) несут
+env-префикс (`LC_ALL=C LIBGUESTFS_BACKEND=direct`), системная настройка хоста
+(пакеты, мост br0, firewall) — тот же root, без env-префикса.
 
 Три базовых handler'а:
 
 * `vms_hub.prepare` — подготовить сервер как VMS-hub: precheck `/dev/kvm`,
   пакеты по семейству ОС, членство в libvirt-группах, cgroup-фикс qemu.conf,
-  `libvirtd`, мост `br0` над физическим NIC, firewall (FORWARD/DOCKER-USER
+  system-`libvirtd`, мост `br0` над физическим NIC, firewall (FORWARD/DOCKER-USER
   ACCEPT br0 + `bridge-nf-call-iptables=0`), storage-pool и скачивание образов
   с FTP. Идемпотентна.
 * `vm.create` — создать ВМ: клон диска бокса (virt-resize при disk_gb) +
@@ -579,14 +579,14 @@ def _image_url(ref: str) -> tuple[str, str]:
 
 
 async def _ensure_pool(ssh, host: str, pool_path: str) -> None:
-    """Идемпотентно поднять dir storage-pool `vms` на `pool_path` в session.
+    """Идемпотентно поднять dir storage-pool `vms` на `pool_path` в системном libvirt.
 
-    Пул определяется в `qemu:///session` управляющей учётки — каталог к этому
-    моменту уже создан и отдан ей (`_setup_session_storage` в prepare), поэтому
-    ни define/build/start, ни последующие qemu-img не требуют sudo.
+    Пул определяется в `qemu:///system` под root — каталог к этому моменту уже
+    создан (`_setup_storage` в prepare). define/build/start и последующие qemu-img
+    идут под root (`sudo=True`), как и весь VM-флоу.
     """
     rc, _out, _err = await ssh.run(
-        f"{LIBVIRT_SESSION_ENV} virsh pool-info {VMS_POOL_NAME}",
+        f"{LIBVIRT_SESSION_ENV} virsh pool-info {VMS_POOL_NAME}", sudo=True,
     )
     if rc == 0:
         return
@@ -597,10 +597,12 @@ async def _ensure_pool(ssh, host: str, pool_path: str) -> None:
         f"virsh pool-define-as {VMS_POOL_NAME} dir --target {pool_path}",
         host, "VMS_HUB_POOL_FAILED", "virsh pool-define-as упал",
     )
-    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-build {VMS_POOL_NAME}")
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-build {VMS_POOL_NAME}", sudo=True)
     await _run(ssh, f"virsh pool-start {VMS_POOL_NAME}", host,
                "VMS_HUB_POOL_FAILED", "virsh pool-start упал")
-    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-autostart {VMS_POOL_NAME}")
+    await ssh.run(
+        f"{LIBVIRT_SESSION_ENV} virsh pool-autostart {VMS_POOL_NAME}", sudo=True,
+    )
 
 
 async def _download_images(
@@ -634,38 +636,6 @@ async def _download_images(
         await ssh.run(f"rm -f {tarball}")
         downloaded.append(base)
     return downloaded
-
-
-# Пути setuid-хелпера моста по семействам: apt кладёт его в /usr/lib/qemu,
-# dnf — в /usr/libexec. Без бита setuid и без `allow br0` в bridge.conf
-# session-virt-install с `--network bridge=br0` не может подключить tap.
-_BRIDGE_HELPER_PATHS = (
-    "/usr/lib/qemu/qemu-bridge-helper",
-    "/usr/libexec/qemu-bridge-helper",
-)
-
-
-async def _setup_bridge_helper(ssh, host: str) -> None:
-    """Разрешить session-qemu подключать ВМ к мосту `br0` через qemu-bridge-helper.
-
-    В `qemu:///session` tap для `--network bridge=br0` создаёт setuid-root
-    хелпер `qemu-bridge-helper`, и только если мост в его allow-list. Ставим бит
-    setuid на найденный бинарь и дописываем `allow <bridge>` в
-    `/etc/qemu/bridge.conf` (создаём каталог/файл, если нет). Идемпотентно.
-    """
-    helpers = " ".join(_BRIDGE_HELPER_PATHS)
-    allow_line = f"allow {bridge_label()}"
-    await _run(
-        ssh,
-        "sh -c 'for h in " + helpers + "; do "
-        '[ -e "$h" ] && chmod u+s "$h"; done; '
-        "mkdir -p /etc/qemu; "
-        f'grep -qxF "{allow_line}" /etc/qemu/bridge.conf 2>/dev/null '
-        f'|| echo "{allow_line}" >> /etc/qemu/bridge.conf\'',
-        host, "VMS_HUB_BRIDGE_HELPER_FAILED",
-        "не удалось настроить qemu-bridge-helper для моста",
-        sudo=True,
-    )
 
 
 # ── NAT-мост natbr0 (host-only, dnsmasq + MASQUERADE) ────────────────────────
@@ -752,8 +722,8 @@ async def _setup_nat_bridge(ssh, host: str) -> None:
     Идемпотентно: скрипт/unit/конфиг переписываются, живой подъём и iptables — под
     `-C || -I`. Последовательность: (1) кладём oneshot-скрипт+unit и включаем его,
     (2) исполняем скрипт сейчас (мост host-only — SSH не рвётся, reboot не нужен),
-    (3) поднимаем выделенный dnsmasq на natbr0, (4) разрешаем natbr0 в
-    `qemu-bridge-helper` (`allow natbr0`), чтобы session-qemu цеплял tap к мосту.
+    (3) поднимаем выделенный dnsmasq на natbr0. Системный libvirt под root цепляет
+    tap к natbr0 сам — qemu-bridge-helper/allow-list не нужны.
     """
     rc, _out, stderr = await ssh.run(
         f"tee {_NAT_SETUP_SCRIPT_PATH} > /dev/null",
@@ -804,77 +774,18 @@ async def _setup_nat_bridge(ssh, host: str) -> None:
         host, "VMS_HUB_NAT_FAILED", "не удалось поднять dnsmasq на natbr0",
         sudo=True,
     )
-    allow_line = f"allow {VMS_NAT_BRIDGE}"
-    await _run(
-        ssh,
-        "sh -c 'mkdir -p /etc/qemu; "
-        f'grep -qxF "{allow_line}" /etc/qemu/bridge.conf 2>/dev/null '
-        f'|| echo "{allow_line}" >> /etc/qemu/bridge.conf\'',
-        host, "VMS_HUB_NAT_FAILED",
-        "не удалось разрешить natbr0 в qemu-bridge-helper",
-        sudo=True,
-    )
 
 
-async def _setup_session_storage(
-    ssh, host: str, pool_path: str, mgmt_user: str | None,
-) -> None:
-    """Отдать каталог хранилища управляющей учётке (`chown`), чтобы session-qemu
-    и qemu-img писали в него без sudo.
+async def _setup_storage(ssh, host: str, pool_path: str) -> None:
+    """Обеспечить каталог хранилища под VM-диски (root-owned).
 
-    `mkdir -p <pool>` под sudo (каталог мог не существовать), затем
-    `chown -R <mgmt_user> <pool>`. Управляющий пользователь — из creds/payload;
-    если не задан, под sudo это `$SUDO_USER` (учётка, под которой открыта
-    session). Дополнительный пул дисков (`<pool>/additional_disk`) создаётся
-    лениво уже в session и наследует владельца.
+    Системный qemu бежит от root, поэтому chown в управляющую учётку не нужен —
+    достаточно, чтобы каталог существовал (`mkdir -p`, идемпотентно). qemu-img и
+    libguestfs-тулы пишут сюда под root.
     """
-    user = mgmt_user if mgmt_user else "${SUDO_USER:-root}"
     await _run(
-        ssh,
-        f"sh -c 'mkdir -p {pool_path} && chown -R {user} {pool_path}'",
-        host, "VMS_HUB_STORAGE_CHOWN_FAILED",
-        "не удалось отдать каталог хранилища управляющей учётке",
-        sudo=True,
-    )
-    # libguestfs (virt-resize/virt-customize/guestfish) под non-root строит
-    # appliance через supermin, а тот копирует ядро из /boot/vmlinuz-*. Astra
-    # ставит часть ядер mode 600 (root-only), и supermin берёт новейшее — под
-    # управляющей учёткой `cp` падает Permission denied. Делаем ядра читаемыми.
-    await ssh.run("sh -c 'chmod 0644 /boot/vmlinuz-* 2>/dev/null || true'", sudo=True)
-
-
-async def _setup_user_libvirtd(
-    ssh, host: str, mgmt_user: str | None,
-) -> None:
-    """Поднять пользовательский libvirt-демон управляющей учётки под session.
-
-    Включаем linger (сервисы учётки живут без её логин-сессии — по SSH
-    user-systemd иначе может не подняться), затем сокет-активацию
-    `virtqemud`/`libvirtd` в user-режиме. На хостах без user-systemd команды
-    молча проходят (`|| true`) — session-демон стартует по сокету при первом
-    обращении virsh. Дополнительно, если Astra-parsec режет session-qemu,
-    дублируем `security_driver=none` в пользовательском `~/.config/libvirt/
-    qemu.conf` (системный правит `_PARSEC_FIX`).
-    """
-    user = mgmt_user if mgmt_user else "${SUDO_USER:-root}"
-    await ssh.run(f"loginctl enable-linger {user}", sudo=True)
-    # --user и ~ резолвятся под самой управляющей учёткой, поэтому без sudo.
-    await ssh.run(
-        "sh -c 'systemctl --user enable --now "
-        "virtqemud.socket virtqemud-ro.socket "
-        "libvirtd.socket 2>/dev/null || true'",
-    )
-    await ssh.run(
-        "sh -c 'mkdir -p ~/.config/libvirt && "
-        "grep -q security_driver ~/.config/libvirt/qemu.conf 2>/dev/null "
-        "|| echo \"security_driver = \\\"none\\\"\" "
-        ">> ~/.config/libvirt/qemu.conf'",
-    )
-    # seccomp_sandbox=0: песочница qemu (no_new_privs) иначе запрещает fork
-    # setuid `qemu-bridge-helper` — без этого session bridge-tap не поднять.
-    await ssh.run(
-        "sh -c 'grep -q seccomp_sandbox ~/.config/libvirt/qemu.conf 2>/dev/null "
-        "|| echo \"seccomp_sandbox = 0\" >> ~/.config/libvirt/qemu.conf'",
+        ssh, f"mkdir -p {pool_path}", host, "VMS_HUB_STORAGE_FAILED",
+        "не удалось создать каталог хранилища", sudo=True,
     )
 
 
@@ -884,15 +795,16 @@ async def vms_hub_prepare(task_id: str) -> None:
 
     Что делает: заходит по SSH под управляющей учёткой hub'а, проверяет
     `/dev/kvm`, ставит пакеты по семейству ОС (`apt`/`dnf`), доклеивает
-    управляющего пользователя в libvirt/kvm-группы, чинит qemu.conf, поднимает
-    `libvirtd`, настраивает мост `br0` над физическим NIC, правит firewall
-    (FORWARD/DOCKER-USER ACCEPT br0 + `bridge-nf-call-iptables=0`), поднимает
+    управляющего пользователя в libvirt/kvm-группы, чинит qemu.conf (cgroup +
+    parsec `security_driver=none`), поднимает системный `libvirtd`, настраивает
+    мост `br0` над физическим NIC, правит firewall (FORWARD/DOCKER-USER ACCEPT
+    br0 + `bridge-nf-call-iptables=0`), поднимает host-only NAT-мост natbr0,
     storage-pool `vms` и тянет образы каталога с FTP. Исход докладывает
     server_service (`vms-hub-state`).
 
     Если мост `br0` создаётся впервые (живьём поднять его над управляющим NIC
-    нельзя — рвётся SSH) или сняли kiosk-режим (parsec-kiosk2 ломает session-ВМ),
-    хабу нужен reboot: для br0 ставим reboot-переживающий guard, перезагружаем
+    нельзя — рвётся SSH) или сняли kiosk-режим (parsec-kiosk2), хабу нужен
+    reboot: для br0 ставим reboot-переживающий guard, перезагружаем
     хаб и ждём его подъёма (`_wait_hub_back`), и только после этого докладываем
     успех. Мост встаёт на следующей загрузке; не поднялась сеть — guard
     откатывает адресацию из бэкапа; не поднялся хаб за окно —
@@ -967,13 +879,11 @@ async def vms_hub_prepare(task_id: str) -> None:
                 needs_reboot = await _setup_bridge(ssh, host, phy_if, os_family)
                 await ssh.run(_FIREWALL_FIX, sudo=True)
                 await ssh.run(_BRIDGE_NF_FIX, sudo=True)
-                # Инфра под session: setuid-хелпер моста + allow br0, host-only
-                # NAT-мост natbr0 (dnsmasq + MASQUERADE), хранилище во владение
-                # управляющей учётки, пользовательский libvirt-демон.
-                await _setup_bridge_helper(ssh, host)
+                # Инфра под root: host-only NAT-мост natbr0 (dnsmasq + MASQUERADE)
+                # и каталог хранилища. ВМ крутятся в системном libvirt от root,
+                # поэтому setuid-хелпер моста и пользовательский демон не нужны.
                 await _setup_nat_bridge(ssh, host)
-                await _setup_session_storage(ssh, host, pool_path, mgmt_user)
-                await _setup_user_libvirtd(ssh, host, mgmt_user)
+                await _setup_storage(ssh, host, pool_path)
                 await _ensure_pool(ssh, host, pool_path)
                 images = await _download_images(ssh, host, pool_path, image_refs)
                 # Ребут нужен, если впервые записан br0 (мост встаёт только на
@@ -1039,61 +949,37 @@ def _virt_install_cmd(
     name: str, cpu: int, ram_mb: int, pool_path: str, network_mode: str,
     graphics: str = "vnc",
 ) -> str:
-    """Собрать `virt-install --import` под ВМ (в `qemu:///session`).
+    """Собрать `virt-install --import` под ВМ (qemu:///system, root).
 
     universal всегда собирается на мосту `br0` (статику каждой версии льём в диск
     offline, гость поднимается с боевым адресом сразу). single с
     `network_mode=bridge` идёт на `br0` (боевой LAN, статик-адрес), `nat` — на
     host-only мосту `natbr0`: приватная подсеть `192.168.100.0/24`, адрес выдаёт
     выделенный dnsmasq хаба, наружу — через MASQUERADE. Оба режима цепляют NIC
-    одинаково — через setuid `qemu-bridge-helper` (session-libvirt на Astra tap
-    сам не поднимает, parsec убивает демон); отличается только имя моста. NAT-
-    гость, в отличие от старого SLIRP, виден с хаба (адрес на natbr0), поэтому
-    провижн/консоль ходят к нему джампом с хаба.
+    штатным `--network bridge=<мост>,model=virtio`: системный libvirt под root
+    сам поднимает tap на мосту, отдельный qemu-bridge-helper и qemu-commandline
+    не нужны. Отличается только имя моста. NAT-гость виден с хаба (адрес на
+    natbr0), поэтому провижн/консоль ходят к нему джампом с хаба.
 
     `--cpu host-model` пробрасывает фичи хоста как есть, включая vmx/svm для
     nested там, где хост их отдаёт; форсить `+vmx` нельзя — на хостах без vmx
-    (AMD, не-nested) virt-install падает целиком.
+    (AMD, не-nested) virt-install падает целиком. MAC libvirt генерит сам —
+    домену не нужен детерминированный адрес.
 
     `graphics` — тип графической консоли (`vnc`|`spice`, деф. vnc). Слушаем на
     `0.0.0.0`, чтобы websockify/spice-прокси с хаба мог дотянуться до порта
     дисплея; `console_prep` потом читает конкретный порт.
     """
     gfx = "spice" if graphics == "spice" else "vnc"
-    base = (
+    # bridge/nat отличаются только мостом.
+    br = bridge_label() if network_mode == "bridge" else VMS_NAT_BRIDGE
+    return (
         f"virt-install -n {name} --memory {ram_mb} --vcpus {cpu} --import "
         f"--disk {pool_path}/{name}.qcow2,format=qcow2,bus=virtio "
+        f"--network bridge={br},model=virtio "
         f"--os-variant {VMS_OS_VARIANT} --cpu host-model --autostart "
         f"--graphics {gfx},listen=0.0.0.0 --noautoconsole"
     )
-    # bridge/nat отличаются только мостом. Оба на Astra в session нельзя отдать
-    # libvirt-демону (он поднимает tap напрямую, parsec убивает демон
-    # «Permission denied») — отдаём tap qemu через setuid `qemu-bridge-helper`
-    # (машина `pc`/i440fx: на q35 pcie-root-port конфликтует со слотом ручного
-    # NIC; фиксируем свободный slot 0x10). `seccomp_sandbox=0` (в user qemu.conf,
-    # ставит prepare) разрешает qemu fork setuid-хелпера. MAC детерминирован от
-    # имени — стабилен на ретраях, по нему же читаем DHCP-lease natbr0. Путь
-    # хелпера резолвим инлайном `$(...)`, чтобы virt-install оставался первой
-    # командой и получил session-env, который префиксит `run_hub_cmd`.
-    br = bridge_label() if network_mode == "bridge" else VMS_NAT_BRIDGE
-    helper = f"$(ls {' '.join(_BRIDGE_HELPER_PATHS)} 2>/dev/null | head -1)"
-    qcl = (
-        f"-netdev bridge,id=hn0,br={br},helper={helper} "
-        f"-device virtio-net-pci,netdev=hn0,mac={_derive_mac(name)},addr=0x10"
-    )
-    return (
-        f'{base} --machine pc --network none --qemu-commandline="{qcl}"'
-    )
-
-
-def _derive_mac(name: str) -> str:
-    """Детерминированный MAC ВМ из имени (`52:54:00:xx:xx:xx`, KVM-префикс).
-
-    Стабилен между ретраями `vm.create`, чтобы пересборка домена не плодила
-    новый адрес. Для bridge NIC задаётся вручную в qemu-commandline.
-    """
-    digest = hashlib.sha256(name.encode()).hexdigest()
-    return "52:54:00:" + ":".join(digest[i : i + 2] for i in (0, 2, 4))
 
 
 async def _guest_ip(ssh, host: str, name: str) -> str:
@@ -1103,7 +989,7 @@ async def _guest_ip(ssh, host: str, name: str) -> str:
     user`) lease нет вовсе — адрес отдаёт только agent-источник.
     """
     _rc, out, _err = await ssh.run(
-        f"{LIBVIRT_SESSION_ENV} virsh domifaddr {name} --source lease",
+        f"{LIBVIRT_SESSION_ENV} virsh domifaddr {name} --source lease", sudo=True,
     )
     ip = parse_domifaddr(out)
     if ip is None:
@@ -1111,6 +997,7 @@ async def _guest_ip(ssh, host: str, name: str) -> str:
         # для SLIRP это единственный рабочий путь.
         _rc, out2, _err2 = await ssh.run(
             f"{LIBVIRT_SESSION_ENV} virsh domifaddr {name} --source agent",
+            sudo=True,
         )
         ip = parse_domifaddr(out2)
     if ip is None:
@@ -1340,7 +1227,7 @@ async def _provision_guest_accounts(
 async def _box_virtual_gb(ssh, host: str, box_path: str) -> int | None:
     """Виртуальный размер диска бокса в ГБ (`qemu-img info`). None — не распарсили."""
     _rc, out, _err = await ssh.run(
-        f"{LIBVIRT_SESSION_ENV} qemu-img info --output=json {box_path}",
+        f"{LIBVIRT_SESSION_ENV} qemu-img info --output=json {box_path}", sudo=True,
     )
     try:
         data = json.loads(out or "")
@@ -1360,6 +1247,7 @@ async def _fs_minimum_bytes(ssh, host: str, box_path: str) -> int | None:
     _rc, out, _err = await ssh.run(
         f"{LIBVIRT_SESSION_ENV} guestfish --ro -a {box_path} run : "
         f"e2fsck-f {_ROOT_PARTITION} : vfs-minimum-size {_ROOT_PARTITION}",
+        sudo=True,
     )
     nums = re.findall(r"\d+", out or "")
     if not nums:
@@ -1461,15 +1349,15 @@ async def _power_off_for_snapshot(ssh, name: str) -> None:
     (`virsh destroy`, non-zero на уже выключенном терпим). Снимок baseline
     снимаем на выключенной ВМ, чтобы он нёс чистое disk-состояние без памяти.
     """
-    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh shutdown {name}")
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh shutdown {name}", sudo=True)
     for _ in range(_SNAP_OFF_MAX_POLLS):
         _rc, out, _err = await ssh.run(
-            f"{LIBVIRT_SESSION_ENV} virsh domstate {name}",
+            f"{LIBVIRT_SESSION_ENV} virsh domstate {name}", sudo=True,
         )
         if map_domstate(out) == "off":
             return
         await asyncio.sleep(_SNAP_OFF_POLL_DELAY_S)
-    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {name}")
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {name}", sudo=True)
 
 
 def _os_baseline_entry(
@@ -1531,8 +1419,8 @@ async def _build_universal(
     snapshots: list[dict] = []
     for raw_ver in os_versions:
         ver = validate_name(str(raw_ver), host_label, "os_version")
-        # stop (может быть уже off) в session
-        await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {name}")
+        # stop (может быть уже off) под root
+        await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {name}", sudo=True)
         await _run(
             ssh, f"qemu-img snapshot -a {ver} {disk_path}", host,
             "VM_CREATE_FAILED", f"не удалось переключить ОС на {ver}",
@@ -1766,10 +1654,13 @@ async def vm_create(task_id: str) -> None:
                 # Идемпотентность ретраёв: если от прошлой попытки остался домен
                 # того же имени, virt-install падает «диск занят». Снимаем его
                 # (best-effort, диск перезальём клоном ниже).
-                await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {name}")
+                await ssh.run(
+                    f"{LIBVIRT_SESSION_ENV} virsh destroy {name}", sudo=True,
+                )
                 await ssh.run(
                     f"{LIBVIRT_SESSION_ENV} virsh undefine {name} "
                     "--snapshots-metadata",
+                    sudo=True,
                 )
                 box_path = f"{pool_path}/{box}.qcow2"
                 target_path = f"{pool_path}/{name}.qcow2"
@@ -1885,12 +1776,14 @@ async def vm_create(task_id: str) -> None:
                         # что unit prepare пережил reboot хаба).
                         if network_mode == "nat":
                             await _setup_nat_bridge(ssh, host)
-                        await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {name}")
+                        await ssh.run(
+                            f"{LIBVIRT_SESSION_ENV} virsh start {name}", sudo=True,
+                        )
                 finally:
                     if key_path is not None:
                         await _shred_temp_key(ssh, key_path)
                 _rc, dom_out, _err = await ssh.run(
-                    f"{LIBVIRT_SESSION_ENV} virsh domstate {name}",
+                    f"{LIBVIRT_SESSION_ENV} virsh domstate {name}", sudo=True,
                 )
                 power_state = map_domstate(dom_out)
         except Exception as exc:
@@ -2013,7 +1906,7 @@ async def vm_power(task_id: str) -> None:
                 "VM_POWER_FAILED", f"virsh {verb} упал", ok=ok,
             )
             _rc, dom_out, _err = await ssh.run(
-                f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
+                f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}", sudo=True,
             )
             power_state = map_domstate(dom_out)
 
@@ -2071,7 +1964,9 @@ async def vm_delete(task_id: str) -> None:
         session, host = await open_hub_session(payload)
         async with session as ssh:
             # destroy на уже выключенном домене отдаёт non-zero — это не ошибка.
-            await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {vm_name}")
+            await ssh.run(
+                f"{LIBVIRT_SESSION_ENV} virsh destroy {vm_name}", sudo=True,
+            )
             await _run(
                 ssh,
                 f"virsh undefine {vm_name} --remove-all-storage "

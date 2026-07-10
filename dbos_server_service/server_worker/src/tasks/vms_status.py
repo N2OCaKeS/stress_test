@@ -68,6 +68,7 @@ async def _guest_ip_best_effort(ssh, name: str, payload: dict) -> str | None:
         try:
             _rc, out, _err = await ssh.run(
                 f"{LIBVIRT_SESSION_ENV} virsh domifaddr {name} --source {source}",
+                sudo=True,
             )
         except Exception:  # noqa: BLE001
             continue
@@ -82,6 +83,7 @@ async def _probe_power(ssh, name: str) -> str:
     try:
         _rc, out, _err = await ssh.run(
             f"{LIBVIRT_SESSION_ENV} virsh domstate {name}",
+            sudo=True,
         )
     except Exception:  # noqa: BLE001 — read-only проба не должна падать
         return "unknown"

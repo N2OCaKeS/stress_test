@@ -68,13 +68,13 @@ class _FakeSshClient:
         return (0, "", "")
 
 
-def _assert_session_no_sudo(calls: list[tuple[str, bool]], needle: str) -> None:
-    """Команда с подстрокой `needle` идёт в qemu:///session и без sudo."""
+def _assert_root_libvirt(calls: list[tuple[str, bool]], needle: str) -> None:
+    """Команда с подстрокой `needle` идёт в system-libvirt под root (sudo)."""
     matched = [(cmd, sudo) for cmd, sudo in calls if needle in cmd]
     assert matched, f"команда {needle!r} не найдена"
     for cmd, sudo in matched:
-        assert "LIBVIRT_DEFAULT_URI=qemu:///session" in cmd, cmd
-        assert sudo is False, cmd
+        assert "LC_ALL=C LIBGUESTFS_BACKEND=direct" in cmd, cmd
+        assert sudo is True, cmd
 
 
 @pytest.fixture(autouse=True)
@@ -243,11 +243,11 @@ class TestSnapshotRevert:
             "snapshot-revert --domain station-a --snapshotname daily-1" in c
             for c in fake.commands
         )
-        # snapshot-revert и чтение domstate — в session без sudo
-        _assert_session_no_sudo(
+        # snapshot-revert и чтение domstate — под root
+        _assert_root_libvirt(
             fake.calls, "snapshot-revert --domain station-a --snapshotname daily-1",
         )
-        _assert_session_no_sudo(fake.calls, "virsh domstate station-a")
+        _assert_root_libvirt(fake.calls, "virsh domstate station-a")
         snap_cb = stub_session_and_callbacks["calls"]["snapshots"][0]
         assert snap_cb["snapshots"][0]["is_current"] is True
         state_cb = stub_session_and_callbacks["calls"]["vm_state"][0]

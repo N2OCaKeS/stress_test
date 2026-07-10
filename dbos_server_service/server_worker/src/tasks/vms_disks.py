@@ -148,6 +148,7 @@ async def vm_disk_attach(task_id: str) -> None:
                 )
                 _rc, blk_out, _err = await ssh.run(
                     f"{LIBVIRT_SESSION_ENV} virsh domblklist {vm_name} --details",
+                    sudo=True,
                 )
                 target_dev = next_target_dev(blk_out, host)
                 await run_hub_cmd(
@@ -247,8 +248,8 @@ async def vm_disk_delete(task_id: str) -> None:
                     ssh, f"virsh detach-disk {vm_name} {target_dev} --persistent",
                     host, "VM_DISK_DELETE_FAILED", "virsh detach-disk упал",
                 )
-                # qcow2 лежит в user-owned пуле управляющей учётки — sudo не нужен.
-                await ssh.run(f"rm -f {path}")
+                # qcow2 в root-owned пуле system-libvirt — сносим под sudo.
+                await ssh.run(f"rm -f {path}", sudo=True)
         except Exception as exc:
             await _report_disk_error(vm_id, disk_id, target_dept, "vm.disk_delete", exc)
             raise
@@ -309,7 +310,7 @@ async def vm_disk_resize(task_id: str) -> None:
             session, host = await open_hub_session(payload)
             async with session as ssh:
                 # stop: qemu-img resize отказывается работать с занятым образом.
-                await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {vm_name}")
+                await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {vm_name}", sudo=True)
                 await run_hub_cmd(
                     ssh, f"qemu-img resize {path} {size_gb}G", host,
                     "VM_DISK_RESIZE_FAILED", "qemu-img resize упал",
@@ -331,7 +332,7 @@ async def vm_disk_resize(task_id: str) -> None:
                     if key_path:
                         await _shred_temp_key(ssh, key_path)
                 _rc, dom_out, _err = await ssh.run(
-                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
+                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}", sudo=True,
                 )
                 power_state = map_domstate(dom_out)
         except Exception as exc:
@@ -406,10 +407,10 @@ async def vm_update(task_id: str) -> None:
             session, host = await open_hub_session(payload)
             async with session as ssh:
                 _rc, dom_out, _err = await ssh.run(
-                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
+                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}", sudo=True,
                 )
                 if map_domstate(dom_out) == "on":
-                    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {vm_name}")
+                    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {vm_name}", sudo=True)
                 xml_path = f"/tmp/{vm_name}.xml"
                 await run_hub_cmd(
                     ssh, f"sh -c 'virsh dumpxml {vm_name} > {xml_path}'", host,
@@ -446,7 +447,7 @@ async def vm_update(task_id: str) -> None:
                     "VM_UPDATE_FAILED", "ВМ не поднялась после update",
                 )
                 _rc, dom_out2, _err2 = await ssh.run(
-                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
+                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}", sudo=True,
                 )
                 power_state = map_domstate(dom_out2)
                 if power_state != "on":

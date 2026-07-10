@@ -421,14 +421,14 @@ class _ConsoleSession:
         )
 
     def _serial_command(self) -> str:
-        """`virsh console` домена на hub'е в user-сессии управляющей учётки.
+        """`virsh console` домена на hub'е под root (`qemu:///system`).
 
-        Домен принадлежит учётке (`qemu:///session`), поэтому без sudo — только
-        префикс `LIBVIRT_DEFAULT_URI=qemu:///session`, как у остальных
-        VM-операций. Домен уже прогнан через `_VM_DOMAIN_RE`.
+        Домены живут в system-libvirt, поэтому консоль идёт под `sudo` (NOPASSWD
+        на hub'е); под root virsh по умолчанию подключается к `qemu:///system`.
+        Домен уже прогнан через `_VM_DOMAIN_RE`.
         """
         domain = self._require_vm_domain()
-        return f"LIBVIRT_DEFAULT_URI=qemu:///session virsh console --force {domain}"
+        return f"sudo -n virsh console --force {domain}"
 
     async def _resolve_creds(self) -> None:
         """Прочитать креды аккаунта из Redis-stash и сразу удалить ключ.

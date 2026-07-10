@@ -195,7 +195,7 @@ def test_serial_command_uses_virsh_console():
         is_vm=True, console_kind="serial", vm_domain="vm-astra-01",
     )
     assert s._serial_command() == (
-        "LIBVIRT_DEFAULT_URI=qemu:///session virsh console --force vm-astra-01"
+        "sudo -n virsh console --force vm-astra-01"
     )
 
 
@@ -348,10 +348,10 @@ async def test_vm_serial_run_opens_virsh_console(monkeypatch):
     reason = await asyncio.wait_for(session.run(), timeout=5.0)
 
     assert hub_ssh.pty_command == (
-        "LIBVIRT_DEFAULT_URI=qemu:///session virsh console --force vm-astra-01"
+        "sudo -n virsh console --force vm-astra-01"
     )
-    # Serial-консоль без sudo — домен в user-сессии управляющей учётки.
-    assert "sudo" not in hub_ssh.pty_command
+    # Serial-консоль под sudo — домен в system-libvirt (root → qemu:///system).
+    assert "sudo" in hub_ssh.pty_command
     # Serial не читает креды аккаунта.
     assert read_called["n"] == 0
     assert reason == "idle_timeout"

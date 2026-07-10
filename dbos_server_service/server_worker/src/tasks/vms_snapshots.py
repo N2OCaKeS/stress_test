@@ -350,7 +350,7 @@ async def vm_snapshot_revert(task_id: str) -> None:
                     host, "VM_SNAPSHOT_FAILED", f"не удалось откатить на снимок {snap}",
                 )
                 _rc, dom_out, _err = await ssh.run(
-                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
+                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}", sudo=True,
                 )
                 power_state = map_domstate(dom_out)
         except Exception as exc:
@@ -523,7 +523,7 @@ async def vm_astra_update(task_id: str) -> None:
                     f"не удалось откатить на {base_snapshot}",
                 )
                 # старт на случай, если снимок снят с выключенной ВМ
-                await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {vm_name}")
+                await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {vm_name}", sudo=True)
                 guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
                 # managed-ВМ: guest-шаги идут по управляющему ключу (базовой
                 # учётки `u` нет); legacy-ВМ — по `u`/`1`.
@@ -571,7 +571,7 @@ async def vm_astra_update(task_id: str) -> None:
                     if key_path:
                         await _shred_temp_key(ssh, key_path)
                 _rc, dom_out, _err = await ssh.run(
-                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
+                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}", sudo=True,
                 )
                 power_state = map_domstate(dom_out)
         except Exception as exc:
@@ -693,7 +693,7 @@ async def _reroll_impl(payload: dict, *, require_password: bool) -> dict:
                         host, "VM_SNAPSHOT_FAILED",
                         f"не удалось откатить на снимок {snap}",
                     )
-                    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {vm_name}")
+                    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {vm_name}", sudo=True)
                     guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
                     connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
                     # обновить guest-allta CLI из свежего .deb на FTP

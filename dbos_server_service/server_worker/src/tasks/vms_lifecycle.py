@@ -164,11 +164,11 @@ async def _teardown_pool(ssh, name: str) -> None:
 
     Оба идут без проверки кода возврата — пул может быть уже неактивен или
     отсутствовать (повторный teardown), это не ошибка. Файлы образов сносит
-    отдельный `rm -rf` пути пула в вызывающем коде. Пулы user-owned — session
-    без sudo.
+    отдельный `rm -rf` пути пула в вызывающем коде. Пулы в system-libvirt —
+    под sudo.
     """
-    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-destroy {name}")
-    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-undefine {name}")
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-destroy {name}", sudo=True)
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-undefine {name}", sudo=True)
 
 
 async def _remove_bridge(ssh, os_family: str) -> None:
@@ -246,7 +246,7 @@ async def vms_hub_teardown(task_id: str) -> None:
                 for name in vm_names:
                     # destroy может отдать non-zero на уже выключенном домене —
                     # это не ошибка, глушим.
-                    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {name}")
+                    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {name}", sudo=True)
                     await run_hub_cmd(
                         ssh,
                         f"virsh undefine {name} --remove-all-storage "
@@ -379,7 +379,7 @@ async def vm_console_prep(task_id: str) -> None:
             session, host = await open_hub_session(payload)
             async with session as ssh:
                 _rc, xml, _err = await ssh.run(
-                    f"{LIBVIRT_SESSION_ENV} virsh dumpxml {vm_name}",
+                    f"{LIBVIRT_SESSION_ENV} virsh dumpxml {vm_name}", sudo=True,
                 )
                 if not _has_graphics_type(xml, graphics):
                     await run_hub_cmd(
@@ -399,11 +399,12 @@ async def vm_console_prep(task_id: str) -> None:
                 if graphics == "spice":
                     _rc, disp_out, _err = await ssh.run(
                         f"{LIBVIRT_SESSION_ENV} virsh domdisplay --type spice {vm_name}",
+                        sudo=True,
                     )
                     spice_port = parse_display_uri(disp_out)
                 else:
                     _rc, vnc_out, _err = await ssh.run(
-                        f"{LIBVIRT_SESSION_ENV} virsh vncdisplay {vm_name}",
+                        f"{LIBVIRT_SESSION_ENV} virsh vncdisplay {vm_name}", sudo=True,
                     )
                     vnc_port = parse_vncdisplay(vnc_out)
         except Exception as exc:

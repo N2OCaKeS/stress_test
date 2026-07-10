@@ -202,27 +202,25 @@ class TestVirtInstallGraphics:
 
 
 class TestVirtInstallNetwork:
-    def test_bridge_uses_helper_on_machine_pc(self):
-        # session-libvirt на Astra не поднимает bridge-tap сам (parsec убивает
-        # демон) — tap создаёт qemu через setuid qemu-bridge-helper на машине pc.
+    def test_bridge_uses_native_nic_on_br0(self):
+        # системный libvirt под root сам поднимает tap на мосту — штатный
+        # `--network bridge=br0,model=virtio`, без qemu-commandline/helper.
         cmd = vms._virt_install_cmd("v1", 2, 2048, "/vms", "bridge")
-        assert "--machine pc" in cmd
-        assert "--network none" in cmd
-        assert "-netdev bridge,id=hn0,br=br0" in cmd
-        assert "qemu-bridge-helper" in cmd
-        assert "virtio-net-pci" in cmd
-        assert "addr=0x10" in cmd
+        assert "--network bridge=br0,model=virtio" in cmd
+        assert "--qemu-commandline" not in cmd
+        assert "--network none" not in cmd
+        assert "qemu-bridge-helper" not in cmd
+        assert "--machine pc" not in cmd
+        assert "addr=0x10" not in cmd
 
     def test_nat_uses_natbr0(self):
-        # NAT-гость сидит на host-only мосту natbr0 (dnsmasq + MASQUERADE) и цепляет
-        # NIC тем же qemu-bridge-helper'ом, что и bridge — отличается только мост.
+        # NAT-гость сидит на host-only мосту natbr0 (dnsmasq + MASQUERADE), NIC
+        # цепляется тем же штатным `--network bridge` — отличается только мост.
         cmd = vms._virt_install_cmd("v1", 2, 2048, "/vms", "nat")
-        assert "--machine pc" in cmd
-        assert "--network none" in cmd
-        assert "-netdev bridge,id=hn0,br=natbr0" in cmd
-        assert "qemu-bridge-helper" in cmd
-        assert "virtio-net-pci" in cmd
-        assert "addr=0x10" in cmd
+        assert "--network bridge=natbr0,model=virtio" in cmd
+        assert "--qemu-commandline" not in cmd
+        assert "qemu-bridge-helper" not in cmd
+        assert "--machine pc" not in cmd
         # старый SLIRP-путь ушёл
         assert "--network user" not in cmd
         assert "network=test" not in cmd
@@ -319,18 +317,18 @@ class TestVmsHubPrepare:
         assert any("bridge-nf-call-iptables=0" in c for c in cmds)
         assert any("pool-define-as vms dir --target /vms" in c for c in cmds)
         assert any("wget" in c and "vm_station.tar.gz" in c for c in cmds)
-        # новые session-инфра шаги: qemu-bridge-helper + allow br0,
-        # chown хранилища на управляющую учётку, linger + user-libvirtd
-        assert any("qemu-bridge-helper" in c for c in cmds)
-        assert any("allow br0" in c and "bridge.conf" in c for c in cmds)
-        assert any("chown -R dbos /vms" in c for c in cmds)
-        assert any("enable-linger dbos" in c for c in cmds)
-        assert any("virtqemud.socket" in c for c in cmds)
-        # разделение: системные шаги под sudo, libvirt-пул — session без sudo
+        # системная инфра: каталог хранилища root-owned (mkdir без chown).
+        # session-костыли (qemu-bridge-helper/allow/linger/user-libvirtd) убраны.
+        assert any("mkdir -p /vms" in c for c in cmds)
+        assert not any("qemu-bridge-helper" in c for c in cmds)
+        assert not any("/etc/qemu" in c for c in cmds)
+        assert not any("chown -R" in c and "/vms" in c for c in cmds)
+        assert not any("enable-linger" in c for c in cmds)
+        assert not any("virtqemud.socket" in c for c in cmds)
+        # всё идёт под root (sudo=True); libvirt-команды несут env-префикс
         assert fake.sudo_for("apt-get install -y astra-kvm") is True
-        assert fake.sudo_for("chown -R dbos /vms") is True
-        assert fake.sudo_for("qemu-bridge-helper") is True
-        assert fake.sudo_for("pool-define-as vms dir") is False
+        assert fake.sudo_for("mkdir -p /vms") is True
+        assert fake.sudo_for("pool-define-as vms dir") is True
         assert vms.LIBVIRT_SESSION_ENV in next(
             c for c in cmds if "pool-define-as vms dir" in c
         )
@@ -370,8 +368,8 @@ class TestVmsHubPrepare:
         assert "dhcp-range=192.168.100.10,192.168.100.250,12h" in dm_conf
         assert "dhcp-leasefile=/var/lib/misc/dnsmasq.natbr0.leases" in dm_conf
         assert any("systemctl enable --now dnsmasq" in c for c in cmds)
-        # allow natbr0 для qemu-bridge-helper
-        assert any("allow natbr0" in c and "bridge.conf" in c for c in cmds)
+        # qemu-bridge-helper allow-list убран — системный libvirt цепляет tap сам
+        assert not any("/etc/qemu" in c for c in cmds)
         # natbr0-инфра идёт под sudo
         assert fake.sudo_for("dbos-vms-nat.sh") is True
         assert fake.sudo_for("dbos-natbr0.conf") is True
@@ -641,13 +639,13 @@ class TestVmCreateUniversal:
         # universal всегда cp (virt-resize снёс бы внутренние qemu-снимки версий)
         assert any("cp /vms/vm_station.qcow2 /vms/station-a.qcow2" in c for c in cmds)
         assert not any("virt-resize" in c for c in cmds)
-        # домен собирается на br0 (не на NAT test)
-        assert any("virt-install -n station-a" in c and "br=br0" in c for c in cmds)
-        assert not any("virt-install -n station-a" in c and "network=test" in c for c in cmds)
-        # весь VM/диск-флоу идёт в qemu:///session без sudo
-        assert fake.sudo_for("virt-install -n station-a") is False
-        assert fake.sudo_for("cp /vms/vm_station.qcow2") is False
-        assert fake.sudo_for("qemu-img snapshot -a 1.7.5.9") is False
+        # домен собирается на br0 штатным NIC (не на NAT natbr0)
+        assert any("virt-install -n station-a" in c and "--network bridge=br0,model=virtio" in c for c in cmds)
+        assert not any("virt-install -n station-a" in c and "natbr0" in c for c in cmds)
+        # весь VM/диск-флоу идёт под root (sudo=True), с env-префиксом
+        assert fake.sudo_for("virt-install -n station-a") is True
+        assert fake.sudo_for("cp /vms/vm_station.qcow2") is True
+        assert fake.sudo_for("qemu-img snapshot -a 1.7.5.9") is True
         assert vms.LIBVIRT_SESSION_ENV in next(
             c for c in cmds if "virt-install -n station-a" in c
         )
@@ -793,7 +791,7 @@ class TestVmCreateSingle:
         assert not any("qemu-img resize" in c for c in cmds)
         # growpart-костыль убран
         assert not any("growpart" in c for c in cmds)
-        assert any("br=natbr0" in c for c in cmds)  # nat → host-only natbr0
+        assert any("--network bridge=natbr0,model=virtio" in c for c in cmds)  # nat → host-only natbr0
         assert not any("--network user" in c for c in cmds)
         assert not any("network=test" in c for c in cmds)
         # nat-гость на детерминированной статике в подсети natbr0 — lease
@@ -806,11 +804,11 @@ class TestVmCreateSingle:
             and "--upload /tmp/dbos-if:/etc/network/interfaces" in c
             for c in cmds
         )
-        # virt-install идёт в session без sudo (env-префикс = маркер session)
+        # virt-install идёт под root (sudo=True) с env-префиксом
         assert vms.LIBVIRT_SESSION_ENV in next(
             c for c in cmds if "virt-install -n xfs-1" in c
         )
-        assert fake.sudo_for("virt-install -n xfs-1") is False
+        assert fake.sudo_for("virt-install -n xfs-1") is True
         assert any("snapshot-create-as xfs-1 --name build" in c for c in cmds)
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state["snapshots"] == ["build"]

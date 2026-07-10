@@ -1,8 +1,9 @@
 """Общие хелперы VM-менеджера: hub-сессия, валидаторы, сборка команд.
 
 Все операции VM-менеджера исполняются по SSH на hub-сервере под его
-управляющей учёткой (ключевая сессия, sudo NOPASSWD — libvirt/kvm без
-пароля). Здесь живёт:
+управляющей учёткой (ключевая сессия, sudo NOPASSWD). libvirt/kvm крутится
+в системном демоне (qemu:///system), поэтому virsh/virt-install/qemu-img и
+libguestfs-тулы идут под root через sudo. Здесь живёт:
 
 * `open_hub_session` — собрать и открыть SSH-сессию к hub'у (тот же паттерн
   выбора кред, что в `astra_update`/`installed_packages`: resolve → hints →
@@ -39,16 +40,15 @@ from src.tasks._account_helpers import resolve_ssh_creds
 logger = logging.getLogger(__name__)
 
 
-# libvirt-команды ВМ идут в user-сессии управляющей учётки (qemu:///session),
-# без sudo: домены, пулы и qcow2 принадлежат учётке. Префикс в env, чтобы
-# virsh/virt-install/virt-xml без явного --connect били в session; qemu-img
-# env игнорирует. `LIBGUESTFS_BACKEND=direct` — libguestfs-тулам (virt-resize/
-# virt-customize/guestfish) под non-root: они не поднимут appliance через
-# системный libvirt, direct-режим запускает qemu напрямую. Инфра-шаги prepare
-# (пакеты, мост, firewall, chown, bridge-helper) остаются под sudo (sudo=True).
-LIBVIRT_SESSION_ENV = (
-    "LC_ALL=C LIBVIRT_DEFAULT_URI=qemu:///session LIBGUESTFS_BACKEND=direct"
-)
+# libvirt-команды ВМ идут под root в системном демоне (qemu:///system): у root
+# дефолтный URI и так system, отдельный LIBVIRT_DEFAULT_URI не нужен. Префикс
+# `env` протаскивает переменные окружения сквозь sudo (`sudo -S ... env VAR=val
+# cmd`), иначе sudo срезал бы их по env_reset. `LC_ALL=C` фиксирует локаль под
+# парсинг вывода, `LIBGUESTFS_BACKEND=direct` — libguestfs-тулам (virt-resize/
+# virt-customize/guestfish), чтобы гнать qemu напрямую, а не через libvirtd.
+# Инфра-шаги prepare (пакеты, мост, firewall, chown, bridge-helper) тоже под
+# root, но без env-префикса (sudo=True).
+LIBVIRT_SESSION_ENV = "env LC_ALL=C LIBGUESTFS_BACKEND=direct"
 
 
 async def run_hub_cmd(
@@ -57,13 +57,16 @@ async def run_hub_cmd(
 ) -> tuple[int, str, str]:
     """Выполнить команду на hub'е; поднять SshError на неожиданный код.
 
-    По умолчанию — под управляющей учёткой в `qemu:///session` (libvirt/VM-опера-
-    ции, файлы в user-owned пуле). `sudo=True` — для системных инфра-шагов prepare
-    (пакеты, мост, firewall, sysctl, chown). `ok` — набор допустимых кодов
-    (например `virsh destroy` на уже выключенной ВМ отдаёт non-zero, но это ок).
+    Всё исполняется под root. `sudo=False` — libvirt/VM-операции: к команде
+    добавляется env-префикс (`env LC_ALL=C LIBGUESTFS_BACKEND=direct`), чтобы
+    переменные дошли до virsh/virt-install/libguestfs сквозь sudo, и команда
+    бьёт в `qemu:///system`. `sudo=True` — системные инфра-шаги prepare (пакеты,
+    мост, firewall, sysctl, chown): те же root-права, но без env-префикса. `ok`
+    — набор допустимых кодов (например `virsh destroy` на уже выключенной ВМ
+    отдаёт non-zero, но это ок).
     """
     full = cmd if sudo else f"{LIBVIRT_SESSION_ENV} {cmd}"
-    rc, stdout, stderr = await ssh.run(full, sudo=sudo)
+    rc, stdout, stderr = await ssh.run(full, sudo=True)
     if rc not in ok:
         raise SshError(
             error_code=error_code,
@@ -494,11 +497,12 @@ async def ensure_additional_pool(ssh, host: str, pool_path: str) -> str:
     определён — только refresh (подхватить внешне созданные qcow2).
     """
     target = additional_pool_path(pool_path)
-    # Пул `additional` — в session-libvirt управляющей учётки (каталог под
-    # user-owned /vms), симметрично `_ensure_pool`. Без sudo: домены и пулы ВМ
-    # живут в qemu:///session.
+    # Пул `additional` — в системном libvirt под root (каталог в /vms),
+    # симметрично `_ensure_pool`. Прямые ssh.run идут с sudo=True, как и команды
+    # через run_hub_cmd: домены и пулы ВМ живут в qemu:///system.
     rc, _out, _err = await ssh.run(
         f"{LIBVIRT_SESSION_ENV} virsh pool-info {VMS_ADDITIONAL_POOL_NAME}",
+        sudo=True,
     )
     if rc != 0:
         await run_hub_cmd(ssh, f"mkdir -p {target}", host,
@@ -508,11 +512,20 @@ async def ensure_additional_pool(ssh, host: str, pool_path: str) -> str:
             f"virsh pool-define-as {VMS_ADDITIONAL_POOL_NAME} dir --target {target}",
             host, "VM_DISK_POOL_FAILED", "virsh pool-define-as additional упал",
         )
-        await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-build {VMS_ADDITIONAL_POOL_NAME}")
+        await ssh.run(
+            f"{LIBVIRT_SESSION_ENV} virsh pool-build {VMS_ADDITIONAL_POOL_NAME}",
+            sudo=True,
+        )
         await run_hub_cmd(ssh, f"virsh pool-start {VMS_ADDITIONAL_POOL_NAME}", host,
                           "VM_DISK_POOL_FAILED", "virsh pool-start additional упал")
-        await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-autostart {VMS_ADDITIONAL_POOL_NAME}")
-    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh pool-refresh {VMS_ADDITIONAL_POOL_NAME}")
+        await ssh.run(
+            f"{LIBVIRT_SESSION_ENV} virsh pool-autostart {VMS_ADDITIONAL_POOL_NAME}",
+            sudo=True,
+        )
+    await ssh.run(
+        f"{LIBVIRT_SESSION_ENV} virsh pool-refresh {VMS_ADDITIONAL_POOL_NAME}",
+        sudo=True,
+    )
     return target
 
 
@@ -529,15 +542,17 @@ async def resolve_guest_ip(ssh, host: str, name: str, payload: dict) -> str:
     ip = payload.get("guest_ip") or payload.get("ip_address")
     if ip:
         return validate_ip(str(ip), host).split("/")[0]
-    # domifaddr — в session-libvirt (домен там); без sudo. Для SLIRP-NAT
+    # domifaddr — в системном libvirt под root (домен там). Для SLIRP-NAT
     # lease пуст, адрес приходит только через qemu-guest-agent.
     _rc, out, _err = await ssh.run(
         f"{LIBVIRT_SESSION_ENV} virsh domifaddr {name} --source lease",
+        sudo=True,
     )
     parsed = parse_domifaddr(out)
     if parsed is None:
         _rc, out2, _err2 = await ssh.run(
             f"{LIBVIRT_SESSION_ENV} virsh domifaddr {name} --source agent",
+            sudo=True,
         )
         parsed = parse_domifaddr(out2)
     if parsed is None:
@@ -643,8 +658,7 @@ async def _write_interfaces_offline(
     safe_disk = validate_path(str(disk_path), host)
     await ensure_virt_customize(ssh, host, error_code=error_code)
     # tmp-файлы создаём под управляющей учёткой (без sudo): virt-customize идёт
-    # в session под тем же user'ом и должен их прочитать; root-owned tmp он не
-    # откроет.
+    # под root и такие файлы читает без проблем.
     rc, out, err = await ssh.run("mktemp")
     if rc != 0 or not (out or "").strip():
         raise SshError(
@@ -682,8 +696,8 @@ async def _write_interfaces_offline(
         )
     run_opt = f"--run {gtmp} " if gtmp else ""
     try:
-        # virt-customize идёт через run_hub_cmd → env несёт LIBGUESTFS_BACKEND=
-        # direct (libguestfs под non-root не поднимает appliance через libvirt).
+        # virt-customize идёт через run_hub_cmd → под root и с env-префиксом,
+        # который несёт LIBGUESTFS_BACKEND=direct (qemu напрямую, минуя libvirtd).
         await run_hub_cmd(
             ssh,
             f"virt-customize -a {safe_disk} "

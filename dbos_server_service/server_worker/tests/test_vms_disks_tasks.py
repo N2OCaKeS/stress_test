@@ -78,13 +78,13 @@ class _FakeSshClient:
         return -1
 
 
-def _assert_session_no_sudo(calls: list[tuple[str, bool]], needle: str) -> None:
-    """Команда с подстрокой `needle` идёт в qemu:///session и без sudo."""
+def _assert_root_libvirt(calls: list[tuple[str, bool]], needle: str) -> None:
+    """Команда с подстрокой `needle` идёт в system-libvirt под root (sudo)."""
     matched = [(cmd, sudo) for cmd, sudo in calls if needle in cmd]
     assert matched, f"команда {needle!r} не найдена"
     for cmd, sudo in matched:
-        assert "LIBVIRT_DEFAULT_URI=qemu:///session" in cmd, cmd
-        assert sudo is False, cmd
+        assert "LC_ALL=C LIBGUESTFS_BACKEND=direct" in cmd, cmd
+        assert sudo is True, cmd
 
 
 async def _set_single_attempt(tid: str):
@@ -212,10 +212,10 @@ class TestDiskAttach:
         cmds = fake.commands
         assert any("pool-define-as additional dir --target /vms/additional_disk" in c for c in cmds)
         assert any("qemu-img create -f qcow2 /vms/additional_disk/station-a_data.qcow2 20G" in c for c in cmds)
-        # qemu-img/domblklist/attach-disk — user-owned диски, session без sudo
-        _assert_session_no_sudo(fake.calls, "qemu-img create -f qcow2 /vms/additional_disk/station-a_data.qcow2")
-        _assert_session_no_sudo(fake.calls, "virsh domblklist station-a --details")
-        _assert_session_no_sudo(fake.calls, "virsh attach-disk station-a")
+        # qemu-img/domblklist/attach-disk — system-libvirt, под root
+        _assert_root_libvirt(fake.calls, "qemu-img create -f qcow2 /vms/additional_disk/station-a_data.qcow2")
+        _assert_root_libvirt(fake.calls, "virsh domblklist station-a --details")
+        _assert_root_libvirt(fake.calls, "virsh attach-disk station-a")
         attach = next(c for c in cmds if "virsh attach-disk station-a" in c)
         assert "/vms/additional_disk/station-a_data.qcow2 vdb" in attach
         assert "--persistent --targetbus virtio --serial station-a_data --subdriver qcow2" in attach
@@ -326,9 +326,9 @@ class TestDiskDelete:
         cmds = fake.commands
         assert any("virsh detach-disk station-a vdb --persistent" in c for c in cmds)
         assert any("rm -f /vms/additional_disk/station-a_data.qcow2" in c for c in cmds)
-        # detach — session без sudo; rm qcow2 — user-owned, без sudo
-        _assert_session_no_sudo(fake.calls, "virsh detach-disk station-a vdb --persistent")
-        assert ("rm -f /vms/additional_disk/station-a_data.qcow2", False) in fake.calls
+        # detach — под root; rm qcow2 — root-owned пул, под sudo
+        _assert_root_libvirt(fake.calls, "virsh detach-disk station-a vdb --persistent")
+        assert ("rm -f /vms/additional_disk/station-a_data.qcow2", True) in fake.calls
         state = stub_disks["calls"]["disk_state"][0]
         assert state == {
             "vm_id": "vm1", "disk_id": "dsk1", "state": "deleted",
@@ -362,11 +362,11 @@ class TestDiskResize:
         i_grow = fake.idx("growpart /dev/vda 1")
         assert -1 < i_stop < i_resize < i_start < i_grow
         assert any("resize2fs /dev/vda1" in c for c in fake.commands)
-        # power/qemu-img операции ресайза — session без sudo
-        _assert_session_no_sudo(fake.calls, "virsh destroy station-a")
-        _assert_session_no_sudo(fake.calls, "qemu-img resize /vms/station-a.qcow2 40G")
-        _assert_session_no_sudo(fake.calls, "virsh start station-a")
-        _assert_session_no_sudo(fake.calls, "virsh domstate station-a")
+        # power/qemu-img операции ресайза — под root
+        _assert_root_libvirt(fake.calls, "virsh destroy station-a")
+        _assert_root_libvirt(fake.calls, "qemu-img resize /vms/station-a.qcow2 40G")
+        _assert_root_libvirt(fake.calls, "virsh start station-a")
+        _assert_root_libvirt(fake.calls, "virsh domstate station-a")
         state = stub_disks["calls"]["disk_state"][0]
         assert state["state"] == "ready" and state["size_gb"] == 40
 
@@ -428,10 +428,10 @@ class TestVmUpdate:
         assert any("<currentMemory>16777216</currentMemory>" in c for c in cmds)
         assert any("virsh define /tmp/station-a.xml" in c for c in cmds)
         assert any("virsh start station-a" in c for c in cmds)
-        # dumpxml→define→start и domstate — session без sudo (домен user-owned)
-        _assert_session_no_sudo(fake.calls, "virsh dumpxml station-a > /tmp/station-a.xml")
-        _assert_session_no_sudo(fake.calls, "virsh define /tmp/station-a.xml")
-        _assert_session_no_sudo(fake.calls, "virsh domstate station-a")
+        # dumpxml→define→start и domstate — под root (system-libvirt)
+        _assert_root_libvirt(fake.calls, "virsh dumpxml station-a > /tmp/station-a.xml")
+        _assert_root_libvirt(fake.calls, "virsh define /tmp/station-a.xml")
+        _assert_root_libvirt(fake.calls, "virsh domstate station-a")
         state = stub_disks["calls"]["vm_state"][0]
         assert state["power_state"] == "on"
         assert state["clear_busy_state"] is True

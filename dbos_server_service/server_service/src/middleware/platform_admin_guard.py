@@ -152,6 +152,13 @@ _DOCS_PREFIXES: tuple[str, ...] = ("/docs/", "/redoc/")
 # `/admin/encryption/...` пути роутятся только сюда.
 _ADMIN_ENCRYPTION_PREFIX = "/api/server/v1/admin/encryption"
 
+# Настраиваемая парольная политика — платформенный singleton под `account_admin`,
+# как и ротация ключей. Сервисная настройка уровня платформы, а не бизнес-данные
+# отдела, поэтому исключение из business-блока. Позитивная проверка роли — в
+# `require_account_admin` на endpoint-уровне; guard лишь не отбивает запрос.
+# Префикс точный.
+_ADMIN_PASSWORD_POLICY_PREFIX = "/api/server/v1/admin/password-policy"
+
 # Конфиг управляющей учётки — платформенный singleton, которым управляет
 # `account_admin` (имя управляющего пользователя + правила bootstrap'а по
 # режимам ОС). Это сервисная настройка уровня платформы, а не бизнес-данные
@@ -226,6 +233,18 @@ def _is_admin_encryption_path(path: str) -> bool:
     )
 
 
+def _is_admin_password_policy_path(path: str) -> bool:
+    """True для настраиваемой парольной политики (`/admin/password-policy`).
+
+    Платформенная сервисная настройка под `account_admin` — исключение из
+    business-data-блока. Точная проверка роли — в `require_account_admin`;
+    middleware путь просто не блокирует. Матч по префиксу + границе сегмента.
+    """
+    return path == _ADMIN_PASSWORD_POLICY_PREFIX or path.startswith(
+        _ADMIN_PASSWORD_POLICY_PREFIX + "/"
+    )
+
+
 def _is_management_user_config_path(path: str) -> bool:
     """True для конфига управляющей учётки (`/management-user-config`).
 
@@ -266,6 +285,7 @@ def _is_public_path(path: str) -> bool:
         or path in _DOCS_PATHS
         or path.startswith(_DOCS_PREFIXES)
         or _is_admin_encryption_path(path)
+        or _is_admin_password_policy_path(path)
         or _is_management_user_config_path(path)
         or _is_settings_path(path)
     )

@@ -17,6 +17,9 @@ User-facing endpoints, требующие user identity, защищены гар
 from fastapi import APIRouter
 
 from src.api.v1.endpoints.admin_encryption import router as admin_encryption_router
+from src.api.v1.endpoints.admin_password_policy import (
+    router as admin_password_policy_router,
+)
 from src.api.v1.endpoints.console import router as console_router
 from src.api.v1.endpoints.console import vm_router as vm_console_router
 from src.api.v1.endpoints.console_macros import router as console_macros_router
@@ -127,6 +130,10 @@ router.include_router(ops_router)
 # Admin-эндпоинты ротации ключей шифрования для account_admin. Инфраструктура,
 # не бизнес-данные — явное исключение из platform_admin_guard business-блока.
 router.include_router(admin_encryption_router)
+# Настраиваемая парольная политика server-аккаунтов — платформенный singleton
+# под account_admin. Сервисная настройка уровня платформы, тоже исключение из
+# business-блока.
+router.include_router(admin_password_policy_router)
 # Конфиг управляющей учётки — платформенный singleton под account_admin.
 # Сервисная настройка уровня платформы, тоже исключение из business-блока.
 router.include_router(management_user_config_router)

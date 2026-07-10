@@ -228,6 +228,12 @@ def create_application() -> FastAPI:
             worker_client._creds_redis_client = aioredis.from_url(
                 settings.server_worker_redis_url,
             )
+        # Загружаем настраиваемую парольную политику из БД в процессный кэш
+        # `core/password_policy`. Валидаторы паролей синхронные и читают кэш;
+        # без этого шага они работали бы на дефолтах до первого PUT. Если
+        # таблицы/строки ещё нет (свежая БД до миграции) — не падаем, оставляем
+        # дефолты кэша.
+        await _load_password_policy()
         # Регистрируем event-каталог в loging_service + эмитим `service.started`
         # СИНХРОННО на startup (await до yield). Это закрывает прежнюю
         # race-condition с `asyncio.ensure_future(asyncio.to_thread(...))` —
@@ -684,6 +690,27 @@ async def _drain_pending_audit_tasks() -> None:
         await asyncio.wait(pending, timeout=_AUDIT_DRAIN_TIMEOUT_SECONDS)
     except Exception as exc:  # noqa: BLE001 — best-effort на shutdown
         logger.warning("audit drain failed (%s: %s)", type(exc).__name__, exc)
+
+
+async def _load_password_policy() -> None:
+    """Прочитать singleton парольной политики из БД в процессный кэш.
+
+    Best-effort: на свежей БД до миграции таблицы ещё нет — ловим любую ошибку,
+    логгируем WARNING и едем на дефолтах кэша (историческое поведение). Открываем
+    отдельную короткую сессию, чтобы не завязываться на request-scoped `get_db`.
+    """
+    from src.db.session import AsyncSessionLocal
+    from src.services import password_policy_service
+
+    try:
+        async with AsyncSessionLocal() as session:
+            await password_policy_service.load_active_policy(session)
+    except Exception as exc:  # noqa: BLE001 — best-effort: не блокируем startup
+        logger.warning(
+            "password policy load skipped (%s: %s) — using default policy",
+            type(exc).__name__,
+            exc,
+        )
 
 
 async def _run_startup_audit_sequence() -> None:

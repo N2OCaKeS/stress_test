@@ -1187,8 +1187,15 @@ function VmsHubCard({
   onPrepare: () => Promise<void>;
   onTeardown: () => Promise<void>;
 }) {
-  // Карточка имеет смысл только когда сервер умеет виртуализацию или уже hub.
-  if (!server || (!server.virtualization && !server.is_vms_hub)) return null;
+  // Карточка нужна на managed-сервере (кандидат в hub) либо на уже готовом hub'е.
+  // Прячем, только если сервер не подготовлен для управления, либо прошлый
+  // prepare уже установил отсутствие KVM (`virtualization === false`).
+  if (
+    !server ||
+    server.virtualization === false ||
+    (!server.is_managed && !server.is_vms_hub)
+  )
+    return null;
   const isHub = !!server.is_vms_hub;
   const disabled = !allowed || locked || busyLabel !== null;
 

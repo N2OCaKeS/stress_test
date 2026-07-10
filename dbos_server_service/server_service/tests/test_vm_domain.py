@@ -448,6 +448,21 @@ async def test_prepare_hub_virtualization_gate(
 
 
 @pytest.mark.asyncio
+async def test_prepare_hub_virtualization_unknown_allowed(
+    client, admin_role_token_a, make_hub, monkeypatch,
+):
+    # virtualization=None (ещё не пробовали) — prepare проходит, /dev/kvm
+    # precheck делает worker. Блокирует только явный False.
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub(is_vms_hub=False, virtualization=None, is_managed=True)
+    resp = await client.post(
+        f"{BASE}/servers/{hub.id}/prepare-vms-hub", headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[0]["task_kind"] == "vms_hub.prepare"
+
+
+@pytest.mark.asyncio
 async def test_prepare_hub_requires_managed(
     client, admin_role_token_a, make_hub, monkeypatch,
 ):

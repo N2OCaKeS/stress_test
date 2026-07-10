@@ -2187,7 +2187,10 @@ async def prepare_vms_hub(
             error_code="PREPARE_REQUIRED",
             message="Server must be prepared for management before it can become a VMS-hub",
         )
-    if not hub.virtualization:
+    # virtualization=None — ещё не пробовали (флаг ставит только callback этого
+    # же prepare); реальный precheck /dev/kvm делает worker-задача (VMS_HUB_NO_KVM).
+    # Блокируем только явный False — прошлый prepare уже установил, что KVM нет.
+    if hub.virtualization is False:
         audit_service.emit(
             "vms_hub.prepared", target_id=server_id, target_type="server",
             status="failure", allowed=True, details={"reason": "virtualization_unsupported"},

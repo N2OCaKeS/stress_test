@@ -104,28 +104,28 @@ RESULT_PERF_BENCH_NAME = "perf_bench_results.json"
 # Index Criterions                                                              #
 #################################################################################
 KERNEL_CRITERIONS = {
-    # ========== СИСТЕМНЫЕ ВЫЗОВЫ (28%) ==========
+    # ========== СИСТЕМНЫЕ ВЫЗОВЫ (36%) ==========
     'syscall': {                              # базовые системные вызовы
-        'weight': 0.15, 
+        'weight': 0.20, 
         'negative': False,
         'bounds': (0.0, 7000000),
         'reference': 690000.0
         },              
     
     'lat_syscall null': {                     # нулевой syscall - чистая задержка
-        'weight': 0.06, 
+        'weight': 0.07, 
         'negative': True,
         'bounds': (0.0, 150),
         'reference': 0.300
         },     
     'lat_syscall read': {                     # чтение - частая операция
-        'weight': 0.05, 
+        'weight': 0.06, 
         'negative': True,
         'bounds': (0.0, 150),
         'reference': 0.420
         },     
     'lat_syscall write': {                    # запись - частая операция
-        'weight': 0.04, 
+        'weight': 0.05, 
         'negative': True,
         'bounds': (0.0, 150),
         'reference': 0.390
@@ -151,24 +151,24 @@ KERNEL_CRITERIONS = {
         'reference': 0.050
     },
     
-    # ========== СИНХРОНИЗАЦИЯ (19%) ==========           
+    # ========== СИНХРОНИЗАЦИЯ (11%) ==========           
     'futex hash': {                           # хэш-таблица с futex
         'weight': 0.08, 
         'negative': False,
         'bounds': (0.0, 40000000),
-        'reference': 1800000.0
+        'reference': 1840000.0
     },
     'futex wake': {                           # пробуждение futex
-        'weight': 0.07, 
+        'weight': 0.02, 
         'negative': True,
         'bounds': (0.0, 1500),
-        'reference': 65.0
+        'reference': 35.0
         },           
     'futex requeue': {                        # перемещение очереди futex
-        'weight': 0.04, 
+        'weight': 0.01, 
         'negative': True,
         'bounds': (0.0, 1500),
-        'reference': 70.0
+        'reference': 40.0
         },       
     
     # ========== СОБЫТИЯ (16%) ==========
@@ -176,13 +176,13 @@ KERNEL_CRITERIONS = {
         'weight': 0.09, 
         'negative': False,
         'bounds': (0.0, 5000000),
-        'reference': 70000.0
+        'reference': 65000.0
         },          
     'epoll ctl': {                            # управление epoll
         'weight': 0.07, 
         'negative': False,
         'bounds': (0.0, 10000000),
-        'reference': 375000.0
+        'reference': 350000.0
         },         
     
     # ========== СИГНАЛЫ (10%) ==========
@@ -201,9 +201,9 @@ KERNEL_CRITERIONS = {
 }
 
 PROCESSES_IPC_CRITERIONS = {
-    # ========== СОЗДАНИЕ ПРОЦЕССОВ (35%) ==========
+    # ========== СОЗДАНИЕ ПРОЦЕССОВ (41%) ==========
     'spawn': {                                # создание процессов
-        'weight': 0.12,
+        'weight': 0.15,
         'negative': False,
         'bounds': (0.0, 800000),
         'reference': 33000.0            
@@ -215,19 +215,19 @@ PROCESSES_IPC_CRITERIONS = {
         'reference': 15000.0              
     },
     'lat_proc fork': {                        # время fork
-        'weight': 0.09,
+        'weight': 0.11,
         'negative': True,
         'bounds': (0.0, 5000),
         'reference': 340.0                 
     },
     'lat_proc exec': {                        # время exec
-        'weight': 0.08,
+        'weight': 0.09,
         'negative': True,
         'bounds': (0.0, 5000),
         'reference': 340.0                 
     },
     
-    # ========== IPC МЕХАНИЗМЫ (65%) ==========
+    # ========== IPC МЕХАНИЗМЫ (59%) ==========
     'pipe': {                                 # пропускная способность pipe
         'weight': 0.16,
         'negative': False,
@@ -241,16 +241,16 @@ PROCESSES_IPC_CRITERIONS = {
         'reference': 650000.0              
     },
     'lat_pipe': {                             # задержка pipe
-        'weight': 0.11,
+        'weight': 0.05,
         'negative': True,
         'bounds': (0.0, 500),
-        'reference': 18.0                  
+        'reference': 15.0                  
     },
     'bw_pipe': {                              # пропускная способность pipe
         'weight': 0.18,
         'negative': False,
         'bounds': (0.0, 50000),
-        'reference': 2670.0                
+        'reference': 2500.0                
     },
 }
 
@@ -320,7 +320,7 @@ FILESYSTEM_CRITERIONS = {
         'weight': 0.08,
         'negative': True,
         'bounds': (0.0, 1500),
-        'reference': 10.0                
+        'reference': 7.0                
     },
     'fsync_avg': {                            # синхронизация файлов
         'weight': 0.06,
@@ -332,7 +332,7 @@ FILESYSTEM_CRITERIONS = {
         'weight': 0.05, 
         'negative': True, 
         'bounds': (0.0, 150),
-        'reference': 4.0
+        'reference': 2.0
     },
     'unlink_avg': {                           # удаление файлов
         'weight': 0.10,
@@ -348,7 +348,7 @@ SCRIPTS_CRITERIONS = {
         'weight': 0.50,
         'negative': False,
         'bounds': (0.0, 500000),
-        'reference': 40000.0               
+        'reference': 43000.0               
     },
     'shell8': {                               # восемь параллельных скриптов
         'weight': 0.50,

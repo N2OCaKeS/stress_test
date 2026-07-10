@@ -320,7 +320,7 @@ class ProgressBar:
         'unixbench': 'Тестируем ядро и системные вызовы',
         'fs_mark': 'Тестируем файловую систему',
         'lmbench': 'Тестируем задержки',
-        'perf': 'Тестируем синхронизация и события',
+        'perf': 'Тестируем синхронизацию и события',
         'aggregation': 'Агрегация результатов'
     }
     
@@ -374,7 +374,7 @@ class ProgressBar:
         if self.current_stage_index < len(self.STAGE_ORDER):
             stage = self.STAGE_ORDER[self.current_stage_index]
             return self.STAGE_NAMES.get(stage, stage)
-        return "Завершение"
+        return "Расчет индекса"
         
     def get_current_weight(self):
         """Получить вес текущего этапа"""
@@ -417,7 +417,7 @@ class ProgressBar:
         while self.running:
             with self.lock:
                 self._display()
-            sleep(0.5)
+            sleep(1)
             
     def _display(self, completed=False):
         """Отображает прогресс-бар"""

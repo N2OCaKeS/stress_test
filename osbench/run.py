@@ -45,6 +45,7 @@ if args.PREP:
     log.info("Настройка бенчмарков")
     system.leave_command(f'sudo bash scripts/install_bench.sh', returncode=True, console=False, debug=True)
 elif args.RUN:
+    log.info("Очистка предыдущих результатов")
     system.leave_command(f'sudo bash scripts/cleare.sh', returncode=True, console=False, debug=True)
     log.info(f"\n{OSBENCH_LOGO}\n")
     subprocess.run(f'sudo {VENV_PATH} src/osbench.py', shell=True)

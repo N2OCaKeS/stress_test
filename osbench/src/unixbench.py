@@ -65,11 +65,11 @@ class UnixBenchParser:
                 files_with_time.append((f, ctime))
             
             latest_file = max(files_with_time, key=lambda x: x[1])[0]
-            log.info(f"Найдено несколько файлов. Выбран последний: {latest_file}")
+            log.debug(f"Найдено несколько файлов. Выбран последний: {latest_file}")
             return latest_file
         
         result_file = result_files[0]
-        log.info(f"Найден файл с результатами: {result_file}")
+        log.debug(f"Найден файл с результатами: {result_file}")
         return result_file
 
     def parse(self):
@@ -122,7 +122,7 @@ class UnixBenchParser:
         parallel_copies = int(copies_match.group(1))
         copies_key = str(parallel_copies)  
         
-        log.info(f"Парсинг результатов для {parallel_copies} параллельных копий")
+        log.debug(f"Парсинг результатов для {parallel_copies} параллельных копий")
         
         # Парсим overall score
         score_match = re.search(REGEXP_OVERALL_SCORE, text)
@@ -248,7 +248,7 @@ class UnixBench(Test, UnixBenchParser):
         if code:
             log.debug(result)
             log.debug("UnixBench: - тестирование завершено успешно")
-            log.info(f"{Colors.GREEN}Все тесты успешно пройдены: {code}{Colors.RESET}")
+            log.debug(f"{Colors.GREEN}Все тесты успешно пройдены: {code}{Colors.RESET}")
             self.test_success = True
             return result, True
         else:

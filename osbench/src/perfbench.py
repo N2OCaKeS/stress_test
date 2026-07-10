@@ -108,7 +108,7 @@ class PerfBench(Test):
         
         if all(code for code in status_code_dict.values()):
             log.debug("Perf Bench: тестирование завершено успешно")
-            log.info(f"{Colors.GREEN}Все тесты успешно пройдены: {status_code_dict}{Colors.RESET}")
+            log.debug(f"{Colors.GREEN}Все тесты успешно пройдены: {status_code_dict}{Colors.RESET}")
             self.test_success = True
             return True, True
         else:

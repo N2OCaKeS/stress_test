@@ -182,7 +182,7 @@ class FSMark(Test, FsMarkParser):
             
             return False
         
-        log.warning(f"⚠️ ВНИМАНИЕ! В процессе тестирования данные на диске '{self.dd}' могут быть уничтожены!")
+        log.debug(f"⚠️ ВНИМАНИЕ! В процессе тестирования данные на диске '{self.dd}' могут быть уничтожены!")
         storage_name = self.dd
         if storage_name not in system.command(f"lsblk | grep {storage_name}"):
             storage_name = system.command("lsblk | awk 'NR==2' | awk '{print $1;}'")
@@ -246,7 +246,7 @@ class FSMark(Test, FsMarkParser):
 
         if all(code for code in status):
             log.debug("fs_mark: - тестирование завершено успешно")
-            log.info(f"{Colors.GREEN}Все тесты успешно пройдены: {status}{Colors.RESET}")
+            log.debug(f"{Colors.GREEN}Все тесты успешно пройдены: {status}{Colors.RESET}")
             self.test_success = True
             return True, True
         else:

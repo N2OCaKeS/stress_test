@@ -162,7 +162,7 @@ class FSMark(Test, FsMarkParser):
     #@status_check  
     def start_test(self):
 
-        log.info("Запуск fs_mark")
+        log.debug("Запуск fs_mark")
 
         """
         Создание тестовой директории

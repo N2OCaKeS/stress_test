@@ -56,7 +56,7 @@ class PerfBench(Test):
         """
         Запуск всех тестов perf bench с разными уровнями concurrency
         """
-        log.info("Запуск Perf Bench")
+        log.debug("Запуск Perf Bench")
         
         tests = [
             # ========== ПЛАНИРОВЩИК И IPC ==========

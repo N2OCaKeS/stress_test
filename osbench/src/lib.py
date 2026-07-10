@@ -301,35 +301,34 @@ class Writer:
 
 class ProgressBar:
     """
-    Прогресс-бар с отображением процентов и времени
+    Прогресс-бар на основе весов этапов
     """
-    
-    # Веса этапов
+    # Веса этапов (в процентах от общего времени)
     STAGE_WEIGHTS = {
-        'unixbench': 61,      
+        'unixbench': 61,     
         'fs_mark': 8,         
-        'lmbench': 28,        
+        'lmbench': 28,       
         'perf': 2,            
-        'aggregation': 0.5,   
-        'index': 0.5          
+        'aggregation': 1   
     }
     
     # Очередность этапов
-    STAGE_ORDER = ['unixbench', 'fs_mark', 'lmbench', 'perf', 'aggregation', 'index']
+    STAGE_ORDER = ['unixbench', 'fs_mark', 'lmbench', 'perf', 'aggregation']
     
-    # Названия этапов для отображения
+    # Названия этапов 
     STAGE_NAMES = {
-        'unixbench': 'Ядро/системные вызовы',
-        'fs_mark': 'Файловая система',
-        'lmbench': 'Задержки',
-        'perf': 'Синхронизация/события',
-        'aggregation': 'Агрегация результатов',
-        'index': 'Расчёт индекса'
+        'unixbench': 'Тестируем ядро и системные вызовы',
+        'fs_mark': 'Тестируем файловую систему',
+        'lmbench': 'Тестируем задержки',
+        'perf': 'Тестируем синхронизация и события',
+        'aggregation': 'Агрегация результатов'
     }
     
     def __init__(self):
         self.current_stage_index = 0
-        self.stage_progress = 0  # 0-100 внутри текущего этапа
+        self.stage_start_time = datetime.now()
+        self.estimated_stage_duration = 300  # начальная оценка 5 минут
+        self.actual_times = {} 
         self.start_time = datetime.now()
         self.running = True
         self.completed = False
@@ -351,13 +350,35 @@ class ProgressBar:
         self._display(completed=True)
         
     def advance_stage(self):
-        """Переход к следующему этапу"""
-        self.stage_progress = 100
-        self.current_stage_index += 1
+        """Переход к следующему этапу с сохранением времени"""
+        # Сохраняем время выполнения завершённого этапа
+        if self.current_stage_index < len(self.STAGE_ORDER):
+            stage_name = self.STAGE_ORDER[self.current_stage_index]
+            elapsed = (datetime.now() - self.stage_start_time).total_seconds()
+            self.actual_times[stage_name] = elapsed
         
-    def update_progress(self, progress_percent):
-        """Обновление прогресса внутри текущего этапа (0-100)"""
-        self.stage_progress = min(100, progress_percent)
+        self.current_stage_index += 1
+        self.stage_start_time = datetime.now()
+        
+        # Оцениваем длительность следующего этапа
+        if self.current_stage_index < len(self.STAGE_ORDER):
+            stage = self.STAGE_ORDER[self.current_stage_index]
+            if stage in self.actual_times:
+                # Если уже есть данные по этому этапу, используем их
+                self.estimated_stage_duration = self.actual_times[stage]
+            else:
+                # Иначе оцениваем по весу и общему времени
+                total_elapsed = (datetime.now() - self.start_time).total_seconds()
+                overall = self.get_overall_progress()
+                if overall > 0:
+                    total_estimated = (total_elapsed / overall) * 100
+                    weight = self.STAGE_WEIGHTS.get(stage, 0)
+                    if weight > 0:
+                        self.estimated_stage_duration = max(30, total_estimated * (weight / 100))
+                    else:
+                        self.estimated_stage_duration = 300
+                else:
+                    self.estimated_stage_duration = 300
         
     def get_current_stage_name(self):
         """Получить название текущего этапа"""
@@ -373,16 +394,32 @@ class ProgressBar:
             return self.STAGE_WEIGHTS.get(stage, 0)
         return 0
         
+    def get_stage_progress(self):
+        """Плавный расчёт прогресса внутри текущего этапа на основе времени"""
+        if self.current_stage_index >= len(self.STAGE_ORDER):
+            return 100
+            
+        elapsed = (datetime.now() - self.stage_start_time).total_seconds()
+        
+        if self.estimated_stage_duration > 0:
+            # Прогресс внутри этапа пропорционален времени
+            progress = (elapsed / self.estimated_stage_duration) * 100
+            # Ограничиваем 95% (оставляем запас)
+            return min(95, progress)
+        else:
+            return 0
+            
     def get_overall_progress(self):
-        """Расчёт общего прогресса"""
+        """Расчёт общего прогресса с плавным заполнением"""
         overall = 0
         for i, stage in enumerate(self.STAGE_ORDER):
             weight = self.STAGE_WEIGHTS.get(stage, 0)
             if i < self.current_stage_index:
                 overall += weight
             elif i == self.current_stage_index:
-                overall += weight * (self.stage_progress / 100)
-        return min(99, overall)  # Не доходим до 100% до завершения
+                stage_progress = self.get_stage_progress()
+                overall += weight * (stage_progress / 100)
+        return min(100, overall)
         
     def _update(self):
         """Фоновый поток обновления прогресс-бара"""
@@ -393,7 +430,6 @@ class ProgressBar:
             
     def _display(self, completed=False):
         """Отображает прогресс-бар"""
-        # Вычисляем процент
         if completed:
             percent = 100
         else:
@@ -407,23 +443,33 @@ class ProgressBar:
         seconds = total_seconds % 60
         time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         
-        # Прогноз времени (ETA) на основе прогресса
+        # Расчёт ETA на основе весов
+        eta_str = "00:00:00"
         if percent > 0 and not completed:
-            estimated_total = (total_seconds / percent) * 100
-            remaining = estimated_total - total_seconds
-            rem_hours = int(remaining // 3600)
-            rem_minutes = int((remaining % 3600) // 60)
-            rem_seconds = int(remaining % 60)
-            eta_str = f"{rem_hours:02d}:{rem_minutes:02d}:{rem_seconds:02d}"
-        else:
-            eta_str = "00:00:00"
+            done_weight = 0
+            for i in range(self.current_stage_index):
+                done_weight += self.STAGE_WEIGHTS.get(self.STAGE_ORDER[i], 0)
+            stage_progress = self.get_stage_progress()
+            done_weight += self.STAGE_WEIGHTS.get(self.STAGE_ORDER[self.current_stage_index], 0) * (stage_progress / 100)
+            
+            if done_weight > 0:
+                estimated_total = (total_seconds / done_weight) * 100
+                remaining_seconds = estimated_total - total_seconds
+                if remaining_seconds < 0:
+                    remaining_seconds = 0
+                elif remaining_seconds > 86400:
+                    remaining_seconds = 86400
+                rem_hours = int(remaining_seconds // 3600)
+                rem_minutes = int((remaining_seconds % 3600) // 60)
+                rem_seconds = int(remaining_seconds % 60)
+                eta_str = f"{rem_hours:02d}:{rem_minutes:02d}:{rem_seconds:02d}"
         
         # Создаём прогресс-бар
-        bar_length = 40
+        bar_length = 60
         filled = int(bar_length * percent / 100)
         bar = '█' * filled + '░' * (bar_length - filled)
         
-        # Статус и описание
+        # Статус
         if completed:
             status = "ЗАВЕРШЕНО"
         elif percent >= 99:

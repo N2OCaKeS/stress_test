@@ -62,7 +62,7 @@ class LMBench(Test):
     #@status_check  
     def start_test(self):
 
-        log.info("Запуск LMbench")
+        log.debug("Запуск LMbench")
         log.debug("=" * 60)
         log.debug("⚠️ ПРИМЕЧАНИЕ:")
         log.debug("LMbench выводит результаты тестов в stderr")

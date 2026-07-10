@@ -228,7 +228,7 @@ class UnixBench(Test, UnixBenchParser):
     #@status_check  
     def start_test(self):
 
-        log.info("Запуск UnixBench")
+        log.debug("Запуск UnixBench")
         ub_dir = f"{MAIN_DIR}/benchmarks/UnixBench/byte-unixbench/UnixBench/"
         run_cmd_args = ' '.join(f"-c {c}" for c in CONCURRENCY)
 

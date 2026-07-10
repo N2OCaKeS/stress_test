@@ -1631,6 +1631,10 @@ async def _build_single(
     (`apply_managed_baseline`); привязанные учётки заводим уже по управляющему
     ключу. Снимок `build` в этом случае — managed-baseline (dbos, без `u`).
     Без управляющего материала (legacy) — прежнее поведение по `u`/`1`.
+
+    Снимок `build` снимаем на ВЫКЛЮЧЕННОЙ ВМ (disk-only): внутренний снимок с
+    памятью на работающей NAT-ВМ рушит qemu через минуту. ВМ остаётся выключенной
+    — её поднимает финальный `virsh start` в `vm.create` (natbr0 там гарантирован).
     """
     await _provision_guest_base(ssh, host, hostname, guest_ip)
     if mgmt is not None:
@@ -1643,6 +1647,8 @@ async def _build_single(
         await _provision_guest_accounts(
             ssh, host, guest_ip, accounts, host_label, target_dept,
         )
+    # чистый baseline — на выключенной ВМ, без памяти
+    await _power_off_for_snapshot(ssh, name)
     await _snapshot(ssh, host, name, "build")
     entry: dict = {"name": "build", "state": "ready"}
     if os_version:
@@ -1871,9 +1877,9 @@ async def vm_create(task_id: str) -> None:
                             accounts, host_label, target_dept,
                             mgmt=mgmt, key_path=key_path,
                         )
-                        # снимок build (внутренний, с памятью) оставляет домен
-                        # выключенным — поднимаем, чтобы отдать рабочую ВМ. Уже
-                        # запущенный virsh start отдаст non-zero, это ок.
+                        # снимок build снят на выключенной ВМ (disk-only) —
+                        # поднимаем, чтобы отдать рабочую ВМ. Уже запущенный
+                        # virsh start отдаст non-zero, это ок.
                         # NAT цепляет tap к natbr0 в момент старта — гарантируем
                         # мост перед подъёмом (идемпотентно; не зависим от того,
                         # что unit prepare пережил reboot хаба).

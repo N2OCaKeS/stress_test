@@ -1074,6 +1074,11 @@ class TestVmCreateManaged:
         assert any("useradd -m -s /bin/bash dbos" in c for c in cmds)
         assert any("userdel -rf u" in c for c in cmds)
         assert any("snapshot-create-as single-1 --name build" in c for c in cmds)
+        # снимок build снят на ВЫКЛЮЧЕННОЙ ВМ: shutdown → snapshot → финальный start
+        i_shutdown = next(i for i, c in enumerate(cmds) if "virsh shutdown single-1" in c)
+        i_build = next(i for i, c in enumerate(cmds) if "snapshot-create-as single-1 --name build" in c)
+        i_start_after = next(i for i, c in enumerate(cmds) if i > i_build and "virsh start single-1" in c)
+        assert i_shutdown < i_build < i_start_after
         prepared = stub_session_and_callbacks["calls"]["prepared"]
         assert prepared and prepared[0]["management_user"] == "dbos"
 
@@ -1097,6 +1102,11 @@ class TestVmCreateManaged:
         cmds = fake.commands
         assert not any("userdel -rf u" in c for c in cmds)
         assert not any("useradd -m -s /bin/bash dbos" in c for c in cmds)
+        # снимок build и в legacy-пути снят на ВЫКЛЮЧЕННОЙ ВМ, старт — после
+        i_shutdown = next(i for i, c in enumerate(cmds) if "virsh shutdown single-2" in c)
+        i_build = next(i for i, c in enumerate(cmds) if "snapshot-create-as single-2 --name build" in c)
+        i_start_after = next(i for i, c in enumerate(cmds) if i > i_build and "virsh start single-2" in c)
+        assert i_shutdown < i_build < i_start_after
         # managed-callback не вызывается в legacy-пути
         assert stub_session_and_callbacks["calls"]["prepared"] == []
 

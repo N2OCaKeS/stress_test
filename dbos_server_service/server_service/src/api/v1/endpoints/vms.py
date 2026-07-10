@@ -860,8 +860,9 @@ async def create_vm_snapshot(
     summary="Откатить ВМ к снимку (202, dispatch VM_SNAPSHOT_REVERT)",
     description=(
         "Гейтит право `(vm, vm_snapshot_manage)`, бронь и lifecycle-lock. "
-        "Системные `<ver>_build` откатывать руками нельзя (403). В режиме "
-        "per_snapshot активные креды ВМ переключаются на снимковые."
+        "Системные `<ver>_build` откатывать руками нельзя (403); эталоны версии "
+        "ОС (`os_baseline`) откатывать можно. В режиме per_snapshot активные "
+        "креды ВМ переключаются на снимковые."
     ),
     responses={
         202: {"description": "Задача поставлена."},
@@ -890,12 +891,12 @@ async def revert_vm_snapshot(
     summary="Удалить снимок ВМ (202, dispatch VM_SNAPSHOT_DELETE)",
     description=(
         "Гейтит право `(vm, vm_snapshot_manage)`, бронь и lifecycle-lock. "
-        "Системные `<ver>_build` удалять руками нельзя (403). Диспатчит "
-        "`vm.snapshot_delete` и сносит строку снимка."
+        "Системные `<ver>_build` и эталоны версии ОС (`os_baseline`) удалять "
+        "руками нельзя (403). Диспатчит `vm.snapshot_delete` и сносит строку снимка."
     ),
     responses={
         202: {"description": "Задача поставлена, строка снимка удалена."},
-        403: {"description": "Нет `vm_snapshot_manage` / VM_SNAPSHOT_SYSTEM_PROTECTED."},
+        403: {"description": "Нет `vm_snapshot_manage` / VM_SNAPSHOT_SYSTEM_PROTECTED / VM_SNAPSHOT_BASELINE_PROTECTED."},
         404: {"description": "VM_NOT_FOUND / VM_SNAPSHOT_NOT_FOUND."},
         409: {"description": "VM_BUSY / VM_RESERVED / HUB_UNAVAILABLE."},
         503: {"description": "Worker недоступен."},

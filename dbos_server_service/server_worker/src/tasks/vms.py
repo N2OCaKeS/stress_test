@@ -16,8 +16,9 @@ env-префикс (`LC_ALL=C LIBGUESTFS_BACKEND=direct`), системная н
 * `vm.create` — создать ВМ: клон диска бокса (virt-resize при disk_gb) +
   `virt-install`, провижн гостя (hostname, привязанные учётки), снимки.
   Universal-бокс (`vm_station`) несёт несколько версий ОС на одном диске — для
-  каждой строим скрытый golden `<ver>_orel_build` + deliverable `<ver>_oryol`
-  (Орёл) и `<ver>_smolensk` (Смоленск); single-бокс — один снимок `build`.
+  каждой строим скрытый golden `<ver>_build` + deliverable `<ver>_orel`
+  (Орёл) и `<ver>_smolensk` (Смоленск); single-бокс с известной версией — тот
+  же набор, без версии — один снимок `build`.
 * `vm.power` — `virsh start|shutdown|reboot|reset|destroy` + чтение
   `domstate`.
 * `vm.delete` — снести домен ВМ: `virsh destroy` (глушим non-zero) +
@@ -65,6 +66,8 @@ from src.tasks._vm_prepare_helpers import (
     _shred_temp_key,
     _write_temp_key,
     apply_managed_baseline,
+    choose_guest_connector,
+    load_guest_key,
     load_mgmt_material,
 )
 from src.tasks._vms_helpers import (
@@ -152,9 +155,10 @@ _SHRINK_WORK_SUFFIX = ".shrink-src"
 # что этот зазор не теряется. 256 МиБ — с запасом.
 _SHRINK_FS_MARGIN_BYTES = 256 * 1024 * 1024
 
-# Суффикс скрытого golden-снимка версии (сырой бокс-стейт, служебный). Кончается
-# на `_build` — reroll/passwd его защищают (см. `vms_snapshots._BUILD_SUFFIX`).
-_GOLDEN_SUFFIX = "_orel_build"
+# Суффикс скрытого golden-снимка версии (чистый managed-baseline, служебный).
+# Кончается на `_build` — по нему server_service детектит скрытый снимок, а
+# reroll/passwd его защищают (см. `vms_snapshots._BUILD_SUFFIX`).
+_GOLDEN_SUFFIX = "_build"
 
 # Ожидание graceful-выключения гостя перед снимком чистого managed-baseline.
 # domstate поллим до `off`; не выключился штатно — глушим жёстко (`virsh destroy`).
@@ -1069,36 +1073,38 @@ async def _wait_guest_ssh(
 
 async def _provision_guest_base(
     ssh, host: str, hostname: str, guest_ip: str,
+    *, base_login: str | None = None, base_password: str | None = None,
 ) -> None:
-    """Базовый провижн гостя: hostname (+ /etc/hosts), ntp, зависимости."""
-    await _wait_guest_ssh(ssh, host, guest_ip)
+    """Базовый провижн гостя: hostname (+ /etc/hosts), ntp, зависимости.
+
+    Идёт на «сырой» бокс под его базовой учёткой (`base_login`/`base_password`;
+    без них — дефолт `u`/`1`).
+    """
+    conn = guest_connector(guest_ip, login=base_login, password=base_password)
+    await _wait_guest_ssh(ssh, host, guest_ip, connect=conn)
     await _run(
         ssh,
-        guest_ssh(guest_ip, f"hostnamectl set-hostname {hostname}", sudo=True),
+        conn(f"hostnamectl set-hostname {hostname}", sudo=True),
         host, "VM_PROVISION_FAILED", "не удалось задать hostname гостю",
     )
     # Без записи в /etc/hosts sudo ругается «unable to resolve host <hostname>»
     # и каждая привилегированная команда тянет за собой таймаут резолва.
     await _run(
         ssh,
-        guest_ssh(
-            guest_ip,
+        conn(
             f"bash -c 'grep -q \" {hostname}$\" /etc/hosts "
             f"|| echo \"127.0.1.1 {hostname}\" >> /etc/hosts'",
             sudo=True,
         ),
         host, "VM_PROVISION_FAILED", "не удалось прописать hostname в /etc/hosts",
     )
-    await ssh.run(
-        guest_ssh(guest_ip, "timedatectl set-ntp true", sudo=True),
-    )
+    await ssh.run(conn("timedatectl set-ntp true", sudo=True))
     # deps — convenience-тулзы (rsync/gcc/qemu-guest-agent), не критичны для
     # работы/управления ВМ. Ставим best-effort: у NAT-гостя apt-репо может быть
     # недостижимо через MASQUERADE, а валить весь create из-за опциональных
     # пакетов нельзя. bridge (LAN) их получит штатно.
     rc, _out, err = await ssh.run(
-        guest_ssh(
-            guest_ip,
+        conn(
             f"DEBIAN_FRONTEND=noninteractive apt-get install -y {_GUEST_DEPS}",
             sudo=True,
         ),
@@ -1365,7 +1371,7 @@ def _os_baseline_entry(
 ) -> dict:
     """Rich-элемент снимка версии ОС для callback'а `submit_vm_snapshots`.
 
-    Несёт `mode` (oryol/smolensk), `os_version` и `kind=os_baseline` — по этим
+    Несёт `mode` (orel/smolensk), `os_version` и `kind=os_baseline` — по этим
     полям server_service группирует «чистые» снимки версий (контракт снимков).
     golden помечаем `is_system` (скрыт, защищён от ручного delete/revert).
     """
@@ -1386,6 +1392,7 @@ async def _build_universal(
     netmask: str, gateway: str, dns: list[str],
     os_versions: list[str], password: str | None, accounts,
     host_label: str, target_dept: str | None, *, mgmt=None, key_path: str | None = None,
+    base_login: str | None = None, base_password: str | None = None,
 ) -> list[dict]:
     """Построить universal-ВМ: на каждую версию — golden + Орёл + Смоленск.
 
@@ -1399,10 +1406,10 @@ async def _build_universal(
     Если передан управляющий материал (`mgmt`/`key_path` — managed-сборка), для
     каждой версии заходим по `u`/`1`, ставим управляющего пользователя (ключ +
     пароль + sudo, qemu-guest-agent), проверяем вход по ключу, хардим sshd и
-    сносим базовую учётку `u` (`apply_managed_baseline`). Скрытый golden
-    `<ver>_orel_build` снимаем на ВЫКЛЮЧЕННОЙ ВМ — это чистый managed-baseline без
+    сносим базовую учётку (`apply_managed_baseline`). Скрытый golden
+    `<ver>_build` снимаем на ВЫКЛЮЧЕННОЙ ВМ — это чистый managed-baseline без
     привязанных пользователей. Затем поднимаем ВМ, добавляем привязанные учётки
-    уже по управляющему ключу, снимаем deliverable Орла `<ver>_oryol`, переводим
+    уже по управляющему ключу, снимаем deliverable Орла `<ver>_orel`, переводим
     гостя в Смоленск (по ключу) и снимаем `<ver>_smolensk`.
 
     Без управляющего материала (legacy-путь: `creds_stash_key` в payload нет)
@@ -1433,12 +1440,18 @@ async def _build_universal(
         )
         await _run(ssh, f"virsh start {name}", host,
                    "VM_CREATE_FAILED", f"не удалось запустить ВМ на версии {ver}")
-        await _provision_guest_base(ssh, host, hostname, static_ip)
+        await _provision_guest_base(
+            ssh, host, hostname, static_ip,
+            base_login=base_login, base_password=base_password,
+        )
 
         if managed:
-            # bootstrap управления по `u`/`1`: заводим dbos-юзера, проверяем вход
-            # по ключу, хардим sshd, сносим `u`. Дальше — только по ключу.
-            await apply_managed_baseline(ssh, host, static_ip, mgmt, key_path)
+            # bootstrap управления по базовой учётке: заводим dbos-юзера, проверяем
+            # вход по ключу, сносим базовую учётку. Дальше — только по ключу.
+            await apply_managed_baseline(
+                ssh, host, static_ip, mgmt, key_path,
+                base_login=base_login, base_password=base_password,
+            )
             guest_conn = guest_key_connector(
                 static_ip, mgmt["management_user"], key_path,
             )
@@ -1485,8 +1498,10 @@ async def _build_universal(
             await ssh.run(
                 guest_ssh(
                     static_ip,
-                    f"bash -c 'echo {VMS_GUEST_LOGIN}:{password} | chpasswd'",
+                    f"bash -c 'echo {base_login or VMS_GUEST_LOGIN}:{password} "
+                    "| chpasswd'",
                     sudo=True,
+                    login=base_login, password=base_password,
                 ),
             )
         # deliverable Орла
@@ -1507,41 +1522,85 @@ async def _build_single(
     ssh, host: str, name: str, hostname: str, guest_ip: str,
     os_version: str | None, accounts, host_label: str,
     target_dept: str | None, *, mgmt=None, key_path: str | None = None,
+    base_login: str | None = None, base_password: str | None = None,
 ) -> list[dict]:
-    """Построить single-ВМ из конкретного бокса: провижн + снимок `build`.
+    """Построить single-ВМ из конкретного бокса: golden + Орёл + Смоленск.
 
     Диск уже приведён к нужному размеру до virt-install (offline, virt-resize) в
     `vm.create`, адрес гостя резолвит caller (bridge — статик из пула, nat —
-    lease natbr0). Провижним гостя (hostname/ntp/deps) по `u`/`1`.
+    lease natbr0). Провижним гостя (hostname/ntp/deps) по базовой учётке.
 
     Если передан управляющий материал (`mgmt`/`key_path` — managed-сборка),
-    ставим управляющего пользователя и сносим базовую учётку `u`
+    ставим управляющего пользователя и сносим базовую учётку
     (`apply_managed_baseline`); привязанные учётки заводим уже по управляющему
-    ключу. Снимок `build` в этом случае — managed-baseline (dbos, без `u`).
-    Без управляющего материала (legacy) — прежнее поведение по `u`/`1`.
+    ключу. Без управляющего материала (legacy) — по базовой учётке бокса.
 
-    Снимок `build` снимаем на ВЫКЛЮЧЕННОЙ ВМ (disk-only): внутренний снимок с
-    памятью на работающей NAT-ВМ рушит qemu через минуту. ВМ остаётся выключенной
-    — её поднимает финальный `virsh start` в `vm.create` (natbr0 там гарантирован).
+    При известной `os_version` строим тот же набор снимков, что и universal для
+    одной версии: скрытый golden `<ver>_build` (чистый baseline, снят на
+    ВЫКЛЮЧЕННОЙ ВМ) + deliverable Орла `<ver>_orel` + `<ver>_smolensk` (после
+    перевода в Смоленск вживую — `astra-modeswitch` + МРД/МКЦ + reboot). У
+    single-бокса нет пред-запечённых qemu-снимков версий, поэтому режимы
+    переключаются на живой ВМ, без `qemu-img snapshot -a`. ВМ по итогу остаётся
+    поднятой; финальный `virsh start` в `vm.create` — no-op (natbr0 гарантирован).
+
+    Если `os_version` не задана — снимаем прежний одиночный `build` на
+    выключенной ВМ (без режимов) и логируем.
     """
-    await _provision_guest_base(ssh, host, hostname, guest_ip)
-    if mgmt is not None:
-        await apply_managed_baseline(ssh, host, guest_ip, mgmt, key_path)
-        conn = guest_key_connector(guest_ip, mgmt["management_user"], key_path)
-        await _provision_guest_accounts(
-            ssh, host, guest_ip, accounts, host_label, target_dept, connect=conn,
+    await _provision_guest_base(
+        ssh, host, hostname, guest_ip,
+        base_login=base_login, base_password=base_password,
+    )
+    managed = mgmt is not None
+    if managed:
+        await apply_managed_baseline(
+            ssh, host, guest_ip, mgmt, key_path,
+            base_login=base_login, base_password=base_password,
         )
+        guest_conn = guest_key_connector(guest_ip, mgmt["management_user"], key_path)
     else:
+        guest_conn = guest_connector(
+            guest_ip, login=base_login, password=base_password,
+        )
+
+    if not os_version:
+        # Версия неизвестна — старое одиночное поведение: один снимок build на
+        # выключенной ВМ (disk-only), без режимов.
         await _provision_guest_accounts(
             ssh, host, guest_ip, accounts, host_label, target_dept,
+            connect=guest_conn,
         )
-    # чистый baseline — на выключенной ВМ, без памяти
+        await _power_off_for_snapshot(ssh, name)
+        await _snapshot(ssh, host, name, "build")
+        logger.warning(
+            "vm.create single-бокс без os_version — снят одиночный build без "
+            "режимов name=%s", name,
+        )
+        return [{"name": "build", "state": "ready"}]
+
+    ver = validate_name(str(os_version), host_label, "os_version")
+    snapshots: list[dict] = []
+    # чистый baseline (без привязанных юзеров) — на выключенной ВМ, без памяти
     await _power_off_for_snapshot(ssh, name)
-    await _snapshot(ssh, host, name, "build")
-    entry: dict = {"name": "build", "state": "ready"}
-    if os_version:
-        entry["os_version"] = os_version
-    return [entry]
+    await _snapshot(ssh, host, name, f"{ver}{_GOLDEN_SUFFIX}")
+    snapshots.append(
+        _os_baseline_entry(f"{ver}{_GOLDEN_SUFFIX}", ver, MODE_OREL, is_system=True),
+    )
+    # поднимаем и добавляем привязанные учётки
+    await _run(ssh, f"virsh start {name}", host,
+               "VM_CREATE_FAILED", f"не удалось поднять ВМ версии {ver}")
+    await _wait_guest_ssh(ssh, host, guest_ip, connect=guest_conn)
+    await _provision_guest_accounts(
+        ssh, host, guest_ip, accounts, host_label, target_dept, connect=guest_conn,
+    )
+    await _snapshot(ssh, host, name, f"{ver}_{MODE_OREL}")
+    snapshots.append(_os_baseline_entry(f"{ver}_{MODE_OREL}", ver, MODE_OREL))
+    # перевод гостя в Смоленск (уровень 2 + МРД/МКЦ + reboot) → deliverable
+    await switch_guest_to_smolensk(
+        ssh, host, guest_ip, error_code="VM_CREATE_FAILED", connect=guest_conn,
+    )
+    await _snapshot(ssh, host, name, f"{ver}_{MODE_SMOLENSK}")
+    snapshots.append(_os_baseline_entry(f"{ver}_{MODE_SMOLENSK}", ver, MODE_SMOLENSK))
+    return snapshots
 
 
 @broker.task("vm.create")
@@ -1552,9 +1611,10 @@ async def vm_create(task_id: str) -> None:
     рост/сжатие; иначе cp), собирает домен `virt-install --import`, провижнит
     гостя по SSH (`u`/`1` + hostname из `hostname or name`, привязанные учётки) и
     снимает снимки. Universal-бокс (`vm_station`) несёт несколько версий ОС на
-    одном диске — для каждой строит скрытый golden `<ver>_orel_build` +
-    deliverable `<ver>_oryol` (Орёл) + `<ver>_smolensk` (Смоленск, после
-    astra-modeswitch + МРД/МКЦ + reboot); single-бокс — один снимок `build`.
+    одном диске — для каждой строит скрытый golden `<ver>_build` +
+    deliverable `<ver>_orel` (Орёл) + `<ver>_smolensk` (Смоленск, после
+    astra-modeswitch + МРД/МКЦ + reboot); single-бокс с известной версией — тот
+    же набор, без версии — один снимок `build`.
     Снимки докладывает `vms/{id}/snapshots` (с kind/mode/os_version), состояние —
     `vms/{id}/state`.
 
@@ -1623,6 +1683,10 @@ async def vm_create(task_id: str) -> None:
         stash_key = payload.get("creds_stash_key")
         mgmt = await load_mgmt_material(stash_key, host_label) if stash_key else None
         managed = mgmt is not None
+        # Базовая учётка «сырого» бокса: у каждого бокса своя (реестр наполняет
+        # payload). Без хинтов — дефолт `u`/`1`.
+        base_login = payload.get("base_user_login")
+        base_password = payload.get("base_user_password")
 
         try:
             session, host = await open_hub_session(payload)
@@ -1750,6 +1814,7 @@ async def vm_create(task_id: str) -> None:
                             ssh, host, name, hostname, pool_path, ip_address,
                             netmask, gateway, dns, os_versions, password, accounts,
                             host_label, target_dept, mgmt=mgmt, key_path=key_path,
+                            base_login=base_login, base_password=base_password,
                         )
                     else:
                         if network_mode == "bridge" and ip_address:
@@ -1763,19 +1828,22 @@ async def vm_create(task_id: str) -> None:
                             nat_ip = guest_ip
                         else:
                             guest_ip = await _guest_ip(ssh, host, name)
+                        # NAT цепляет tap к natbr0 в момент старта — гарантируем
+                        # мост до любого подъёма ВМ (внутренние старты снимков
+                        # режимов в _build_single + финальный serve). Идемпотентно;
+                        # не зависим от того, что unit prepare пережил reboot хаба.
+                        if network_mode == "nat":
+                            await _setup_nat_bridge(ssh, host)
                         snapshots = await _build_single(
                             ssh, host, name, hostname, guest_ip, os_version,
                             accounts, host_label, target_dept,
                             mgmt=mgmt, key_path=key_path,
+                            base_login=base_login, base_password=base_password,
                         )
-                        # снимок build снят на выключенной ВМ (disk-only) —
-                        # поднимаем, чтобы отдать рабочую ВМ. Уже запущенный
-                        # virsh start отдаст non-zero, это ок.
-                        # NAT цепляет tap к natbr0 в момент старта — гарантируем
-                        # мост перед подъёмом (идемпотентно; не зависим от того,
-                        # что unit prepare пережил reboot хаба).
-                        if network_mode == "nat":
-                            await _setup_nat_bridge(ssh, host)
+                        # golden снят на выключенной ВМ; при известной версии
+                        # _build_single оставляет ВМ поднятой (Орёл/Смоленск), при
+                        # неизвестной — выключенной. В обоих случаях доводим до
+                        # рабочего состояния (уже запущенный virsh start — no-op).
                         await ssh.run(
                             f"{LIBVIRT_SESSION_ENV} virsh start {name}", sudo=True,
                         )
@@ -2015,15 +2083,21 @@ _GUEST_PM_PROBE: tuple[tuple[str, str], ...] = (
 )
 
 
-async def _detect_guest_package_manager(ssh, host: str, guest_ip: str) -> str:
-    """Определить package manager внутри гостя ВМ (через вложенный guest_ssh).
+async def _detect_guest_package_manager(
+    ssh, host: str, guest_ip: str, *, connect=None,
+) -> str:
+    """Определить package manager внутри гостя ВМ (через вложенный коннектор).
 
     Зеркало `installed_packages._detect_package_manager`, но команды `command -v`
-    идут в гостя по sshpass, а не на hub напрямую. Возвращает первый найденный
-    менеджер по приоритету; ни одного — `SshError(NO_PACKAGE_MANAGER)`.
+    идут в гостя вложенной сессией, а не на hub напрямую. `connect` — коннектор
+    входа на гостя (по управляющему ключу на managed-ВМ, иначе по базовой учётке).
+    Возвращает первый найденный менеджер по приоритету; ни одного —
+    `SshError(NO_PACKAGE_MANAGER)`.
     """
+    if connect is None:
+        connect = guest_connector(guest_ip)
     for pm, probe in _GUEST_PM_PROBE:
-        rc, _out, _err = await ssh.run(guest_ssh(guest_ip, probe))
+        rc, _out, _err = await ssh.run(connect(probe))
         if rc == 0:
             return pm
     raise SshError(
@@ -2042,7 +2116,8 @@ async def vm_list_packages(task_id: str) -> None:
 
     Что делает: заходит на hub по управляющей SSH-сессии, определяет IP гостя
     (`guest_ip`/`ip_address` из payload либо `virsh domifaddr`), заходит в гостя
-    по `sshpass` (`u`/`1`), определяет package manager (по `os_family` из payload
+    по управляющему ключу (managed-ВМ) либо по базовой учётке `u`/`1` (legacy),
+    определяет package manager (по `os_family` из payload
     либо живым `command -v` в госте), листит пакеты по glob-паттернам
     (`dpkg-query -W` / `rpm -qa` / apk/pacman/portage/xbps) и возвращает плоский
     список `{name, version}`. Дубли по имени схлопываются, итог режется по
@@ -2093,23 +2168,34 @@ async def vm_list_packages(task_id: str) -> None:
         session, host = await open_hub_session(payload)
         async with session as ssh:
             guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
-            package_manager = _OS_FAMILY_TO_PM.get(os_family) or (
-                await _detect_guest_package_manager(ssh, host, guest_ip)
-            )
-            cmd = ip_helpers._build_command(package_manager, patterns)
-            rc, stdout, stderr = await ssh.run(guest_ssh(guest_ip, cmd))
-            if rc != 0:
-                # dpkg-query/rpm отдают non-zero, если ничего не подошло под
-                # pattern (stderr пуст) — это валидный пустой результат; rc!=0
-                # со stderr — реальная поломка (битая БД пакетов).
-                if stderr.strip():
-                    raise SshError(
-                        error_code="PACKAGE_QUERY_FAILED", host=host,
-                        cmd_sanitized=cmd, returncode=rc,
-                        stderr=stderr.strip(),
-                        message=f"{package_manager} query в госте упал",
+            # На managed-ВМ базовая учётка снесена — ходим в гостя по управляющему
+            # ключу (`load_guest_key`); legacy/unmanaged (ключа в payload нет) —
+            # фолбэк на базовую учётку `u`/`1`. Ключ шредим в finally.
+            mgmt_user, key_path = await load_guest_key(ssh, host, payload)
+            connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
+            try:
+                package_manager = _OS_FAMILY_TO_PM.get(os_family) or (
+                    await _detect_guest_package_manager(
+                        ssh, host, guest_ip, connect=connect,
                     )
-                stdout = ""
+                )
+                cmd = ip_helpers._build_command(package_manager, patterns)
+                rc, stdout, stderr = await ssh.run(connect(cmd))
+                if rc != 0:
+                    # dpkg-query/rpm отдают non-zero, если ничего не подошло под
+                    # pattern (stderr пуст) — это валидный пустой результат; rc!=0
+                    # со stderr — реальная поломка (битая БД пакетов).
+                    if stderr.strip():
+                        raise SshError(
+                            error_code="PACKAGE_QUERY_FAILED", host=host,
+                            cmd_sanitized=cmd, returncode=rc,
+                            stderr=stderr.strip(),
+                            message=f"{package_manager} query в госте упал",
+                        )
+                    stdout = ""
+            finally:
+                if key_path:
+                    await _shred_temp_key(ssh, key_path)
 
         packages = ip_helpers._parse_packages(stdout, package_manager)
         if package_manager in ("apk", "pacman", "portage", "xbps"):

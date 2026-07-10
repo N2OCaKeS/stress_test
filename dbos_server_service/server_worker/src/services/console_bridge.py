@@ -400,6 +400,12 @@ class _ConsoleSession:
         `-p`, чтобы не оседать в списке процессов. `-tt` форсит выделение PTY на
         госте (иначе интерактивный shell не поднимется). Гость только что мог
         быть пересобран — host-key не проверяем.
+
+        Аутентификация принудительно парольная: `PreferredAuthentications=password`
+        + `PubkeyAuthentication=no`. У пользователя dbos на хабе есть свои ключи,
+        и без этого ssh сперва перебирает их, упирается в `MaxAuthTries` и отдаёт
+        `Permission denied (publickey)`, не дойдя до пароля аккаунта.
+        `NumberOfPasswordPrompts=1` — один запрос пароля, без ретраев.
         """
         if not _GUEST_IP_RE.fullmatch(str(guest_ip)):
             raise SshError(
@@ -416,6 +422,8 @@ class _ConsoleSession:
         env = f"SSHPASS={shlex.quote(self.password or '')}"
         return (
             f"{env} sshpass -e ssh -tt "
+            "-o PreferredAuthentications=password -o PubkeyAuthentication=no "
+            "-o NumberOfPasswordPrompts=1 "
             "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
             f"-o ConnectTimeout=15 {self.login}@{guest_ip}"
         )

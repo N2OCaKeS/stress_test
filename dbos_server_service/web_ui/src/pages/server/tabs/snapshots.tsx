@@ -282,7 +282,8 @@ function snapCategory(s: VmSnapshot): VmSnapshotCategory {
 }
 
 function snapModeLabel(mode?: VmSnapshotMode | null): string | null {
-  if (mode === "oryol") return "Орёл";
+  // `orel` — текущее имя режима Орёл, `oryol` — прежнее (совместимость на чтение).
+  if (mode === "orel" || mode === "oryol") return "Орёл";
   if (mode === "smolensk") return "Смоленск";
   return mode ? String(mode) : null;
 }
@@ -290,11 +291,18 @@ function snapModeLabel(mode?: VmSnapshotMode | null): string | null {
 function SnapshotRow({
   snap,
   canManage,
+  allowDelete = true,
   onRevert,
   onDelete,
 }: {
   snap: VmSnapshot;
   canManage: boolean;
+  /**
+   * Разрешено ли изменять/удалять снимок. Для чистых эталонных снимков версий
+   * ОС (`os_baseline`) — false: их создаёт только сборка/astra-update, руками
+   * не трогаем. Откат при этом остаётся доступен.
+   */
+  allowDelete?: boolean;
   onRevert: (s: VmSnapshot) => void;
   onDelete: (s: VmSnapshot) => void;
 }) {
@@ -326,13 +334,15 @@ function SnapshotRow({
           >
             <Undo2 className="w-3.5 h-3.5" /> Откат
           </button>
-          <button
-            className="btn btn-sm btn-danger flex items-center gap-1"
-            title="Удалить снимок"
-            onClick={() => onDelete(snap)}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {allowDelete && (
+            <button
+              className="btn btn-sm btn-danger flex items-center gap-1"
+              title="Удалить снимок"
+              onClick={() => onDelete(snap)}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -395,6 +405,7 @@ function SnapshotBaselineGroup({
                     key={s.id}
                     snap={s}
                     canManage={canManage}
+                    allowDelete={false}
                     onRevert={onRevert}
                     onDelete={onDelete}
                   />

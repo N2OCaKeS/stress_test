@@ -912,7 +912,7 @@ async def make_snapshot(db):
     async def _factory(
         *, vm, name: str, is_system: bool = False, is_current: bool = False,
         password: str | None = None, snapshot_type: str = "disk_only",
-        state: str = "ready",
+        state: str = "ready", kind: str = "user",
     ) -> VmSnapshot:
         sid = new_id()
         pwd_enc = None
@@ -923,6 +923,7 @@ async def make_snapshot(db):
         snap = VmSnapshot(
             id=sid, vm_id=vm.id, name=name, is_system=is_system,
             is_current=is_current, snapshot_type=snapshot_type, state=state,
+            kind=kind,
             mgmt_user="u" if password else None, mgmt_password_encrypted=pwd_enc,
         )
         db.add(snap)
@@ -1034,6 +1035,42 @@ async def test_build_snapshot_delete_revert_forbidden(
         f"{BASE}/vms/{vm.id}/snapshots/{build.id}", headers=_hdr(admin_role_token_a),
     )
     assert_error(resp, 403, "VM_SNAPSHOT_SYSTEM_PROTECTED")
+
+
+@pytest.mark.asyncio
+async def test_baseline_snapshot_delete_forbidden(
+    client, admin_role_token_a, make_hub, make_vm, make_snapshot, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    baseline = await make_snapshot(vm=vm, name="1.8.1.6_orel", kind="os_baseline")
+
+    resp = await client.delete(
+        f"{BASE}/vms/{vm.id}/snapshots/{baseline.id}", headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 403, "VM_SNAPSHOT_BASELINE_PROTECTED")
+
+    # снимок остался — строку не снесли
+    resp = await client.get(f"{BASE}/vms/{vm.id}/snapshots", headers=_hdr(admin_role_token_a))
+    assert [s["name"] for s in resp.json()] == ["1.8.1.6_orel"]
+
+
+@pytest.mark.asyncio
+async def test_baseline_snapshot_revert_allowed(
+    client, admin_role_token_a, make_hub, make_vm, make_snapshot, monkeypatch,
+):
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub)
+    baseline = await make_snapshot(vm=vm, name="1.8.1.6_smolensk", kind="os_baseline")
+
+    resp = await client.post(
+        f"{BASE}/vms/{vm.id}/snapshots/{baseline.id}/revert", headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    assert calls[-1]["task_kind"] == "vm.snapshot_revert"
+    assert calls[-1]["payload"]["snapshot_name"] == "1.8.1.6_smolensk"
 
 
 @pytest.mark.asyncio

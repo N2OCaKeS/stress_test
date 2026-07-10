@@ -309,24 +309,32 @@ def parse_display_uri(stdout: str) -> int | None:
     return int(m.group(1))
 
 
-def guest_ssh(ip: str, remote_cmd: str, *, sudo: bool = False) -> str:
+def guest_ssh(
+    ip: str, remote_cmd: str, *, sudo: bool = False,
+    login: str | None = None, password: str | None = None,
+) -> str:
     """Собрать команду входа на гостя по `sshpass` из hub-сессии.
 
-    Дефолтный аккаунт образа — `u`/`1` (публичный дефолт артефакта, sudo
-    NOPASSWD). Пароль подаём через переменную окружения `SSHPASS` (`sshpass -e`),
-    а не аргументом `-p`, чтобы он не оседал в списке процессов и в тексте
-    команды/ошибки. `StrictHostKeyChecking=no` + `/dev/null` known_hosts — гость
-    только что развёрнут, host-key меняется на каждой пересборке.
+    Дефолтный аккаунт «сырого» бокса — `u`/`1` (публичный дефолт артефакта, sudo
+    NOPASSWD), но у каждого бокса он может быть свой: `login`/`password`
+    переопределяют его (значения приходят из реестра боксов через payload), при
+    отсутствии — фолбэк на `VMS_GUEST_LOGIN`/`VMS_GUEST_DEFAULT_PASSWORD`. Пароль
+    подаём через переменную окружения `SSHPASS` (`sshpass -e`), а не аргументом
+    `-p`, чтобы он не оседал в списке процессов и в тексте команды/ошибки.
+    `StrictHostKeyChecking=no` + `/dev/null` known_hosts — гость только что
+    развёрнут, host-key меняется на каждой пересборке.
 
     Удалённую команду заворачиваем через `shlex.quote`: она сама несёт
     `bash -c '...'` с одинарными кавычками, а `repr` экранировал бы их как
     `\'`, что внутри shell-одинарных кавычек не работает и рвёт команду.
     """
+    user = login or VMS_GUEST_LOGIN
+    secret = password if password is not None else VMS_GUEST_DEFAULT_PASSWORD
     inner = f"sudo {remote_cmd}" if sudo else remote_cmd
     return (
-        f"SSHPASS={VMS_GUEST_DEFAULT_PASSWORD} sshpass -e ssh "
+        f"SSHPASS={secret} sshpass -e ssh "
         "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
-        f"-o ConnectTimeout=15 {VMS_GUEST_LOGIN}@{ip} {shlex.quote(inner)}"
+        f"-o ConnectTimeout=15 {user}@{ip} {shlex.quote(inner)}"
     )
 
 
@@ -352,16 +360,17 @@ def guest_ssh_key(
     )
 
 
-def guest_connector(ip: str):
-    """Коннектор входа на гостя по дефолтным кредам образа (`u`/`1`).
+def guest_connector(ip: str, *, login: str | None = None, password: str | None = None):
+    """Коннектор входа на гостя по дефолтным кредам «сырого» бокса.
 
     Возвращает `connect(remote_cmd, *, sudo=False) -> ssh-команда` поверх
     `guest_ssh`. Провижн-шаги принимают такой коннектор, чтобы один и тот же код
-    ходил в гостя либо по паролю (пока `u` жив), либо по ключу
-    (`guest_key_connector`, после сноса `u`).
+    ходил в гостя либо по паролю (пока базовая учётка жива), либо по ключу
+    (`guest_key_connector`, после сноса базовой учётки). `login`/`password`
+    задают базовую учётку конкретного бокса; без них — дефолт `u`/`1`.
     """
     def _connect(remote_cmd: str, *, sudo: bool = False) -> str:
-        return guest_ssh(ip, remote_cmd, sudo=sudo)
+        return guest_ssh(ip, remote_cmd, sudo=sudo, login=login, password=password)
     return _connect
 
 
@@ -387,7 +396,7 @@ def bridge_label() -> str:
 
 # Режим безопасности в БД — латиницей (отображаемое имя выбирает UI). Орёл —
 # уровень 0 (бокс приходит в нём), Смоленск — уровень 2.
-MODE_OREL = "oryol"
+MODE_OREL = "orel"
 MODE_SMOLENSK = "smolensk"
 
 # Классификация снимка для группировки в UI: чистые снимки версий ОС после

@@ -1279,8 +1279,16 @@ async def create_snapshot(
 
 async def _load_snapshot_for_op(
     db: AsyncSession, vm: Vm, snapshot_id: str, *, audit_action: str, op: str,
+    baseline_immutable: bool = True,
 ) -> VmSnapshot:
-    """Загрузить снимок, проверить принадлежность ВМ и защиту системных `_build`."""
+    """Загрузить снимок, проверить принадлежность ВМ и защиту эталонных снимков.
+
+    Системные golden `<ver>_build` (`is_system`) заблокированы для любых ручных
+    операций. Чистые эталоны версии ОС (`kind == os_baseline`, публичные
+    `<ver>_orel`/`<ver>_smolensk`) защищены от изменения и удаления, но откат на
+    них разрешён — при `baseline_immutable=False` (revert) проверка kind не
+    выполняется. Пользовательские снимки (`kind == user`) — без ограничений.
+    """
     snapshot = await vm_snapshot_repo.get_by_id(db, snapshot_id)
     if snapshot is None or snapshot.vm_id != vm.id:
         audit_service.emit(
@@ -1302,6 +1310,16 @@ async def _load_snapshot_for_op(
             error_code="VM_SNAPSHOT_SYSTEM_PROTECTED",
             message="System golden snapshots (_build) cannot be reverted or deleted manually",
         )
+    if baseline_immutable and snapshot.kind == VmSnapshotKind.OS_BASELINE.value:
+        audit_service.emit(
+            audit_action, target_id=vm.id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "baseline_snapshot_protected", "op": op, "snapshot_id": snapshot_id},
+        )
+        raise AuthorizationError(
+            error_code="VM_SNAPSHOT_BASELINE_PROTECTED",
+            message="OS baseline snapshots cannot be modified or deleted manually",
+        )
     return snapshot
 
 
@@ -1314,9 +1332,10 @@ async def revert_snapshot(
 ) -> tuple[VmSnapshot, str]:
     """Dispatch VM_SNAPSHOT_REVERT. Право `(vm, vm_snapshot_manage)`.
 
-    Системные `<ver>_build` откатывать руками нельзя (403). В режиме per_snapshot
-    активные креды ВМ переключаются на «снимковые» — переключение подтверждает
-    callback `POST /internal/vms/{id}/snapshots` (is_current=true на снимке).
+    Системные `<ver>_build` откатывать руками нельзя (403). Эталоны версии ОС
+    (`os_baseline`) откатывать можно — откат не мутирует сам снимок. В режиме
+    per_snapshot активные креды ВМ переключаются на «снимковые» — переключение
+    подтверждает callback `POST /internal/vms/{id}/snapshots` (is_current=true).
     """
     vm, hub = await _load_vm_for_managed_op(
         db, identity, vm_id,
@@ -1325,6 +1344,7 @@ async def revert_snapshot(
     )
     snapshot = await _load_snapshot_for_op(
         db, vm, snapshot_id, audit_action="vm.snapshot_reverted", op="snapshot_revert",
+        baseline_immutable=False,
     )
     payload_task = {
         **_hub_payload(hub),
@@ -1360,7 +1380,8 @@ async def delete_snapshot(
 ) -> tuple[VmSnapshot, str]:
     """Dispatch VM_SNAPSHOT_DELETE + удалить строку снимка. Право `vm_snapshot_manage`.
 
-    Системные `<ver>_build` удалять руками нельзя (403).
+    Системные `<ver>_build` и эталоны версии ОС (`os_baseline`) удалять руками
+    нельзя (403). Пользовательские снимки — без ограничений.
     """
     vm, hub = await _load_vm_for_managed_op(
         db, identity, vm_id,
@@ -3131,10 +3152,15 @@ async def list_packages(
         "patterns": effective_patterns,
         "pattern": effective_patterns[0],
     }
-    task_id = await _dispatch_vm_task(
+    # Probe идёт на гостя по SSH через hub под управляющими кредами — стэшим
+    # mgmt-материал ровно как для guest-задач (в payload едет только stash-ключ).
+    stash_key = await stash_existing_vm_mgmt_creds(vm, "vm.packages_listed")
+    if stash_key:
+        payload["creds_stash_key"] = stash_key
+    task_id = await _dispatch_guest_task_with_stash(
         db=db, identity=identity, request=request,
         task_kind=VmTaskKind.VM_LIST_PACKAGES, hub=hub, vm=vm,
-        payload=payload, audit_action="vm.packages_listed",
+        payload=payload, audit_action="vm.packages_listed", stash_key=stash_key,
     )
     await db.commit()
     audit_service.emit(

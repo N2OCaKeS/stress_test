@@ -14,7 +14,7 @@ from src.clients.ssh import SshError
 from src.core.constants import TaskStatus
 from src.db.session import AsyncSessionLocal
 from src.models import Task
-from src.tasks import _vms_helpers, vms
+from src.tasks import _vm_prepare_helpers, _vms_helpers, vms
 
 
 # ── SSH mock ─────────────────────────────────────────────────────────────────
@@ -669,8 +669,8 @@ class TestVmCreateUniversal:
         assert "address 10.177.103.101" in body
         assert "gateway 10.177.103.254" in body
         # golden (скрытый) + Орёл + Смоленск
-        assert any("snapshot-create-as station-a --name 1.7.5.9_orel_build" in c for c in cmds)
-        assert any("snapshot-create-as station-a --name 1.7.5.9_oryol" in c for c in cmds)
+        assert any("snapshot-create-as station-a --name 1.7.5.9_build" in c for c in cmds)
+        assert any("snapshot-create-as station-a --name 1.7.5.9_orel" in c for c in cmds)
         assert any("snapshot-create-as station-a --name 1.7.5.9_smolensk" in c for c in cmds)
         # смена режима на Смоленск: modeswitch + МРД + МКЦ (и порядок до снимка)
         assert any("astra-modeswitch set 2" in c for c in cmds)
@@ -679,18 +679,18 @@ class TestVmCreateUniversal:
         i_switch = next(i for i, c in enumerate(cmds) if "astra-modeswitch set 2" in c)
         i_smol = next(i for i, c in enumerate(cmds) if "--name 1.7.5.9_smolensk" in c)
         assert i_switch < i_smol
-        # rich snapshot-callback: golden(is_system) + oryol + smolensk c mode/kind/os_version
+        # rich snapshot-callback: golden(is_system) + orel + smolensk c mode/kind/os_version
         snaps = stub_session_and_callbacks["calls"]["snapshots"][0]["snapshots"]
         by_name = {s["name"]: s for s in snaps}
-        assert by_name["1.7.5.9_orel_build"]["is_system"] is True
-        assert by_name["1.7.5.9_orel_build"]["mode"] == "oryol"
-        assert by_name["1.7.5.9_oryol"]["mode"] == "oryol"
-        assert by_name["1.7.5.9_oryol"]["kind"] == "os_baseline"
-        assert by_name["1.7.5.9_oryol"]["os_version"] == "1.7.5.9"
+        assert by_name["1.7.5.9_build"]["is_system"] is True
+        assert by_name["1.7.5.9_build"]["mode"] == "orel"
+        assert by_name["1.7.5.9_orel"]["mode"] == "orel"
+        assert by_name["1.7.5.9_orel"]["kind"] == "os_baseline"
+        assert by_name["1.7.5.9_orel"]["os_version"] == "1.7.5.9"
         assert by_name["1.7.5.9_smolensk"]["mode"] == "smolensk"
         # state-callback: plain-снимки без скрытого golden
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
-        assert state["snapshots"] == ["1.7.5.9_oryol", "1.7.5.9_smolensk"]
+        assert state["snapshots"] == ["1.7.5.9_orel", "1.7.5.9_smolensk"]
         assert state["power_state"] == "on"
         assert state["status"] == "free"
         assert state["ip_address"] == "10.177.103.101"
@@ -722,14 +722,14 @@ class TestVmCreateUniversal:
             and "--upload /tmp/dbos-if:/etc/network/interfaces" in c
         )
         assert n_customize == 2
-        # обе версии дают golden + oryol + smolensk
+        # обе версии дают golden + orel + smolensk
         for ver in ("1.7.5.9", "1.8.1.6"):
-            for suf in ("_orel_build", "_oryol", "_smolensk"):
+            for suf in ("_build", "_orel", "_smolensk"):
                 assert any(f"snapshot-create-as station-a --name {ver}{suf}" in c for c in cmds)
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state["snapshots"] == [
-            "1.7.5.9_oryol", "1.7.5.9_smolensk",
-            "1.8.1.6_oryol", "1.8.1.6_smolensk",
+            "1.7.5.9_orel", "1.7.5.9_smolensk",
+            "1.8.1.6_orel", "1.8.1.6_smolensk",
         ]
 
     async def test_universal_requires_ip_address(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
@@ -809,14 +809,19 @@ class TestVmCreateSingle:
             c for c in cmds if "virt-install -n xfs-1" in c
         )
         assert fake.sudo_for("virt-install -n xfs-1") is True
-        assert any("snapshot-create-as xfs-1 --name build" in c for c in cmds)
+        # single-бокс с известной версией: golden + Орёл + Смоленск (как universal)
+        assert any("snapshot-create-as xfs-1 --name 1.8.1.6_build" in c for c in cmds)
+        assert any("snapshot-create-as xfs-1 --name 1.8.1.6_orel" in c for c in cmds)
+        assert any("snapshot-create-as xfs-1 --name 1.8.1.6_smolensk" in c for c in cmds)
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
-        assert state["snapshots"] == ["build"]
+        assert state["snapshots"] == ["1.8.1.6_orel", "1.8.1.6_smolensk"]
         # NAT-адрес (детерминированная статика) докладывается в state
         assert state["ip_address"] == nat_ip
         snaps = stub_session_and_callbacks["calls"]["snapshots"][0]["snapshots"]
-        assert snaps[0]["name"] == "build"
-        assert snaps[0]["os_version"] == "1.8.1.6"
+        by_name = {s["name"]: s for s in snaps}
+        assert by_name["1.8.1.6_build"]["is_system"] is True
+        assert by_name["1.8.1.6_orel"]["os_version"] == "1.8.1.6"
+        assert by_name["1.8.1.6_smolensk"]["mode"] == "smolensk"
 
     async def test_single_nat_ensures_bridge_before_final_start(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         # NAT single: natbr0 гарантируется перед финальным подъёмом ВМ, чтобы
@@ -1010,17 +1015,17 @@ class TestVmCreateManaged:
         assert "ssh -i /tmp/dbos-if" in smol
         # чистый managed-baseline снят на ВЫКЛЮЧЕННОЙ ВМ: shutdown → snapshot → start
         i_shutdown = next(i for i, c in enumerate(cmds) if "virsh shutdown station-a" in c)
-        i_build = next(i for i, c in enumerate(cmds) if "snapshot-create-as station-a --name 1.7.5.9_orel_build" in c)
+        i_build = next(i for i, c in enumerate(cmds) if "snapshot-create-as station-a --name 1.7.5.9_build" in c)
         i_start_after = next(i for i, c in enumerate(cmds) if i > i_build and "virsh start station-a" in c)
         assert i_shutdown < i_build < i_start_after
-        # snapshots: golden(is_system) + oryol + smolensk
-        assert any("snapshot-create-as station-a --name 1.7.5.9_oryol" in c for c in cmds)
+        # snapshots: golden(is_system) + orel + smolensk
+        assert any("snapshot-create-as station-a --name 1.7.5.9_orel" in c for c in cmds)
         assert any("snapshot-create-as station-a --name 1.7.5.9_smolensk" in c for c in cmds)
         # callback managed: ВМ помечена управляемой с management_user
         prepared = stub_session_and_callbacks["calls"]["prepared"]
         assert prepared and prepared[0]["management_user"] == "dbos"
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
-        assert state["snapshots"] == ["1.7.5.9_oryol", "1.7.5.9_smolensk"]
+        assert state["snapshots"] == ["1.7.5.9_orel", "1.7.5.9_smolensk"]
 
     async def test_universal_managed_accounts_after_baseline_by_key(
         self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch,
@@ -1045,10 +1050,10 @@ class TestVmCreateManaged:
         # привязанный юзер заводится ПОСЛЕ чистого baseline и по ключу (ssh -i)
         useradd_deploy = next(c for c in cmds if "useradd -m deploy" in c)
         assert "ssh -i /tmp/dbos-if" in useradd_deploy
-        i_build = next(i for i, c in enumerate(cmds) if "--name 1.7.5.9_orel_build" in c)
+        i_build = next(i for i, c in enumerate(cmds) if "--name 1.7.5.9_build" in c)
         i_deploy = next(i for i, c in enumerate(cmds) if "useradd -m deploy" in c)
-        i_oryol = next(i for i, c in enumerate(cmds) if "--name 1.7.5.9_oryol" in c)
-        assert i_build < i_deploy < i_oryol
+        i_orel = next(i for i, c in enumerate(cmds) if "--name 1.7.5.9_orel" in c)
+        assert i_build < i_deploy < i_orel
 
     async def test_single_managed_build_deletes_base_user(
         self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch,
@@ -1071,10 +1076,13 @@ class TestVmCreateManaged:
         cmds = fake.commands
         assert any("useradd -m -s /bin/bash dbos" in c for c in cmds)
         assert any("userdel -rf u" in c for c in cmds)
-        assert any("snapshot-create-as single-1 --name build" in c for c in cmds)
-        # снимок build снят на ВЫКЛЮЧЕННОЙ ВМ: shutdown → snapshot → финальный start
+        # single-бокс с известной версией: golden `<ver>_build` + Орёл + Смоленск
+        assert any("snapshot-create-as single-1 --name 1.8.1.6_build" in c for c in cmds)
+        assert any("snapshot-create-as single-1 --name 1.8.1.6_orel" in c for c in cmds)
+        assert any("snapshot-create-as single-1 --name 1.8.1.6_smolensk" in c for c in cmds)
+        # golden снят на ВЫКЛЮЧЕННОЙ ВМ: shutdown → snapshot → старт под Орёл
         i_shutdown = next(i for i, c in enumerate(cmds) if "virsh shutdown single-1" in c)
-        i_build = next(i for i, c in enumerate(cmds) if "snapshot-create-as single-1 --name build" in c)
+        i_build = next(i for i, c in enumerate(cmds) if "snapshot-create-as single-1 --name 1.8.1.6_build" in c)
         i_start_after = next(i for i, c in enumerate(cmds) if i > i_build and "virsh start single-1" in c)
         assert i_shutdown < i_build < i_start_after
         prepared = stub_session_and_callbacks["calls"]["prepared"]
@@ -1100,9 +1108,12 @@ class TestVmCreateManaged:
         cmds = fake.commands
         assert not any("userdel -rf u" in c for c in cmds)
         assert not any("useradd -m -s /bin/bash dbos" in c for c in cmds)
-        # снимок build и в legacy-пути снят на ВЫКЛЮЧЕННОЙ ВМ, старт — после
+        # legacy с известной версией тоже даёт golden + Орёл + Смоленск (по u/1)
+        assert any("snapshot-create-as single-2 --name 1.8.1.6_build" in c for c in cmds)
+        assert any("snapshot-create-as single-2 --name 1.8.1.6_orel" in c for c in cmds)
+        # golden снят на ВЫКЛЮЧЕННОЙ ВМ, старт под Орёл — после
         i_shutdown = next(i for i, c in enumerate(cmds) if "virsh shutdown single-2" in c)
-        i_build = next(i for i, c in enumerate(cmds) if "snapshot-create-as single-2 --name build" in c)
+        i_build = next(i for i, c in enumerate(cmds) if "snapshot-create-as single-2 --name 1.8.1.6_build" in c)
         i_start_after = next(i for i, c in enumerate(cmds) if i > i_build and "virsh start single-2" in c)
         assert i_shutdown < i_build < i_start_after
         # managed-callback не вызывается в legacy-пути
@@ -1531,6 +1542,35 @@ class TestVmListPackages:
         details = captured_audit[0]["details"].get("result", {})
         assert "packages" not in details
         assert details.get("count") == 2
+
+    async def test_managed_lists_via_mgmt_key(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch):
+        # managed-ВМ (`creds_stash_key`): в гостя ходим по управляющему ключу
+        # (базовая учётка снесена), а не по паролю `u`/`1`. Пакетный путь тянет
+        # ключ через `load_guest_key` → `load_mgmt_material` из _vm_prepare_helpers.
+        async def _fake_load(stash_key, host):  # noqa: ARG001
+            return _mgmt_material()
+        monkeypatch.setattr(_vm_prepare_helpers, "load_mgmt_material", _fake_load)
+        self._stub_packages(monkeypatch)
+        fake = _FakeSshClient()
+        fake.set_response("mktemp", 0, "/tmp/dbos-mgmt-key")
+        fake.set_response("dpkg-query -W", 0, "htop 3.0.5-7\n")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vmp7", "hub_host": "10.0.0.7", "vm_name": "station-a",
+            "guest_ip": "192.168.100.24", "os_family": "apt", "pattern": "*",
+            "is_managed": True, "creds_stash_key": "dbos:dispatch_creds:dcd_pkg",
+        }
+        tid = await make_task(task_kind="vm.list_packages", target_server_id="hub1", payload=payload)
+        await vms.vm_list_packages.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # листинг ушёл по ключу управляющего пользователя, не по sshpass
+        query = next(c for c in fake.commands if "dpkg-query -W" in c)
+        assert "ssh -i /tmp/dbos-mgmt-key" in query
+        assert "dbos@192.168.100.24" in query
+        assert "sshpass" not in query
+        # временный ключ затёрт
+        assert any("shred -u /tmp/dbos-mgmt-key" in c for c in fake.commands)
 
     async def test_detect_rpm_when_no_os_family(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch):
         self._stub_packages(monkeypatch)

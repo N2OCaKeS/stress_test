@@ -99,10 +99,42 @@ export type VmPowerAction = "start" | "shutdown" | "reboot" | "reset" | "destroy
 export type VmCredStrategy = "per_snapshot" | "reroll";
 
 /**
- * Занятость ВМ (TTL-lock, зеркало серверного busy_state). Держим строкой с
- * хвостом — backend может расширить набор.
+ * Lifecycle-lock ВМ на время долгой операции (зеркало серверного busy_state).
+ * `null`/пусто — ВМ свободна от лока; пока значение непустое, управляющие
+ * операции над ВМ отбиваются до callback'а воркера. Хвост строкой — backend
+ * может расширить набор.
  */
-export type VmBusyState = "free" | "busy" | "testing" | (string & {});
+export type VmBusyState =
+  | "creating"
+  | "deleting"
+  | "updating"
+  | "powering"
+  | "snapshotting"
+  | "reverting"
+  | "preparing"
+  | "networking"
+  | (string & {});
+
+/** Русские подписи lifecycle-операций ВМ для индикатора в карточке/списке. */
+const VM_BUSY_LABELS: Record<string, string> = {
+  creating: "Создаётся",
+  deleting: "Удаляется",
+  updating: "Обновляется",
+  powering: "Переключение питания",
+  snapshotting: "Снимок",
+  reverting: "Откат снимка",
+  preparing: "Подготовка",
+  networking: "Смена сети",
+};
+
+/**
+ * Подпись текущей lifecycle-операции ВМ. `null` — ВМ не занята операцией
+ * (busy_state пуст или неизвестен), тогда показываем booking-статус.
+ */
+export function vmBusyLabel(state?: VmBusyState | null): string | null {
+  if (!state) return null;
+  return VM_BUSY_LABELS[state] ?? null;
+}
 
 /**
  * Сетевой интерфейс ВМ (`VmResponse.nics[]`). Зеркало серверного списка
@@ -144,7 +176,8 @@ export interface Vm {
   disk_gb: number;
   autostart: boolean;
   cred_strategy: VmCredStrategy;
-  busy_state: VmBusyState;
+  /** Lifecycle-lock: непустое значение = идёт долгая операция. null — свободна. */
+  busy_state: VmBusyState | null;
   busy_since?: Iso8601 | null;
   busy_note?: string | null;
   busy_user_id?: string | null;
@@ -397,8 +430,11 @@ export type VmSnapshotType = "disk_only" | "full" | (string & {});
  */
 export type VmSnapshotCategory = "os_baseline" | "user" | (string & {});
 
-/** Режим Астры снимка (уровень безопасности): Орёл (0) или Смоленск (2). */
-export type VmSnapshotMode = "oryol" | "smolensk" | (string & {});
+/**
+ * Режим Астры снимка (уровень безопасности): Орёл (0) или Смоленск (2).
+ * `orel` — текущее имя режима Орёл; `oryol` — прежнее (читаем на совместимость).
+ */
+export type VmSnapshotMode = "orel" | "oryol" | "smolensk" | (string & {});
 
 /**
  * Состояние снимка (`vm_snapshots.state`). `ready` — готов; промежуточные —

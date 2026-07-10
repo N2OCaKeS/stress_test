@@ -73,6 +73,7 @@ import {
   serversToVmHubs,
   updateVmIpPool,
   updateVmPreset,
+  vmBusyLabel,
   type Vm,
   type VmBulkCreateResponse,
   type VmBulkItemResult,
@@ -640,7 +641,9 @@ function HubDetail({
                     <td className="px-3 py-1.5">
                       <PowerBadge state={v.power_state} />
                     </td>
-                    <td className="px-3 py-1.5 text-xs">{v.status}</td>
+                    <td className="px-3 py-1.5 text-xs">
+                      {vmBusyLabel(v.busy_state) ?? v.status}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -826,7 +829,10 @@ function VmReserveControl({
   const toast = useToast();
   const { prompt, confirm } = useConfirm();
   const [pending, setPending] = useState(false);
-  const reserved = vm.busy_state !== "free" || !!vm.busy_note;
+  // Индикатор идущей операции (создание/удаление/…): пока busy_state непустой,
+  // ВМ занята lifecycle-локом. Бронь под тест — отдельно, через `status`.
+  const busyLabel = vmBusyLabel(vm.busy_state);
+  const reserved = vm.status !== "free" && vm.status !== "error";
 
   async function handleReserve() {
     if (pending || !canManage) return;
@@ -845,7 +851,7 @@ function VmReserveControl({
       const next = mock
         ? {
             ...vm,
-            busy_state: "busy",
+            busy_state: null,
             busy_note: reason.trim(),
             status: reason.trim(),
           }
@@ -871,7 +877,7 @@ function VmReserveControl({
     setPending(true);
     try {
       const next = mock
-        ? { ...vm, busy_state: "free", busy_note: null, status: "free" }
+        ? { ...vm, busy_state: null, busy_note: null, status: "free" }
         : await releaseVm(vm.id);
       onLocal(next as Vm);
       onChanged();
@@ -885,7 +891,11 @@ function VmReserveControl({
 
   return (
     <div className="mt-3 flex items-center gap-3 flex-wrap">
-      {reserved ? (
+      {busyLabel ? (
+        <span className="badge badge-warn flex items-center gap-1">
+          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> {busyLabel}…
+        </span>
+      ) : reserved ? (
         <>
           <span className="badge badge-warn flex items-center gap-1">
             <Lock className="w-3.5 h-3.5" /> Забронировано

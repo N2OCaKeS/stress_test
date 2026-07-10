@@ -187,6 +187,11 @@ def test_guest_ssh_command_builds_sshpass_login():
     # Пароль подан через SSHPASS-env, не аргументом.
     assert "SSHPASS=" in cmd
     assert "-p " not in cmd
+    # Форсим парольную аутентификацию, иначе ssh перебирает ключи dbos на хабе
+    # и упирается в MaxAuthTries до того, как дойдёт до пароля аккаунта.
+    assert "-o PreferredAuthentications=password" in cmd
+    assert "-o PubkeyAuthentication=no" in cmd
+    assert "-o NumberOfPasswordPrompts=1" in cmd
 
 
 def test_serial_command_uses_virsh_console():

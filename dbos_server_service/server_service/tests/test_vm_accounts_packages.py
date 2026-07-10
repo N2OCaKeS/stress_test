@@ -347,6 +347,47 @@ async def test_packages_refresh_default_pattern_star(
 
 
 @pytest.mark.asyncio
+async def test_packages_refresh_carries_mgmt_stash(
+    client, admin_role_token_a, make_hub, make_vm, db, monkeypatch,
+):
+    """Probe гостя идёт по SSH через hub под управляющими кредами: managed-ВМ с
+    mgmt-материалом кладёт в payload только `creds_stash_key`, plaintext не едет."""
+    import src.services.worker_client as worker_mod
+    from src.services import secrets_service
+
+    stashed: dict[str, dict] = {}
+
+    async def fake_store(stash_key, creds):
+        stashed[stash_key] = creds
+
+    monkeypatch.setattr(worker_mod, "store_dispatch_creds", fake_store)
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, is_managed=True, ip_address="10.40.0.84", mgmt_user="dbos")
+    vm.mgmt_ssh_private_key_encrypted = secrets_service.encrypt(
+        "PRIVATE-KEY-PEM", aad=secrets_service.aad_for_vm_mgmt_ssh_key(vm.id),
+    )
+    vm.mgmt_ssh_public_key = "ssh-ed25519 AAAA mgmt@dbos"
+    vm.mgmt_password_encrypted = secrets_service.encrypt(
+        "mgmtpw", aad=secrets_service.aad_for_vm_mgmt_password(vm.id),
+    )
+    await db.flush()
+
+    resp = await client.get(
+        f"{BASE}/vms/{vm.id}/packages?refresh=true", headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    p = calls[0]["payload"]
+    stash_key = p["creds_stash_key"]
+    assert stash_key.startswith("dbos:dispatch_creds:")
+    assert "mgmt_ssh_private_key" not in p
+    creds = stashed[stash_key]
+    assert creds["management_user"] == "dbos"
+    assert creds["private_key"] == "PRIVATE-KEY-PEM"
+    assert creds["password"] == "mgmtpw"
+
+
+@pytest.mark.asyncio
 async def test_packages_refresh_invalid_pattern_400(
     client, admin_role_token_a, make_hub, make_vm, monkeypatch,
 ):

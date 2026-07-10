@@ -316,7 +316,7 @@ class TestAstraUpdate:
         snap_cb = stub_session_and_callbacks["calls"]["snapshots"][0]
         snaps = {s["name"]: s for s in snap_cb["snapshots"]}
         assert snaps["1.8.1.6"]["is_current"] is True
-        assert snaps["1.8.1.6"]["mode"] == "oryol"
+        assert snaps["1.8.1.6"]["mode"] == "orel"
         assert snaps["1.8.1.6"]["kind"] == "os_baseline"
         assert snaps["1.8.1.6"]["snapshot_type"] == "full"
         assert snaps["1.8.1.6"]["os_version"] == "1.8.1.6"

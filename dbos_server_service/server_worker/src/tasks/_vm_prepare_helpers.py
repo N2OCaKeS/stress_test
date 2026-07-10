@@ -212,7 +212,10 @@ def choose_guest_connector(guest_ip: str, mgmt_user: str | None, key_path: str |
 # ── шаги bootstrap на госте ──────────────────────────────────────────────────
 
 
-async def _ensure_mgmt_user(ssh, host: str, guest_ip: str, mgmt_user: str) -> None:
+async def _ensure_mgmt_user(
+    ssh, host: str, guest_ip: str, mgmt_user: str,
+    *, base_login: str | None = None, base_password: str | None = None,
+) -> None:
     """Завести управляющего пользователя на госте (idempotent) + sudo-группа."""
     cmd = (
         f"bash -c 'id {mgmt_user} >/dev/null 2>&1 || "
@@ -220,12 +223,16 @@ async def _ensure_mgmt_user(ssh, host: str, guest_ip: str, mgmt_user: str) -> No
         f"usermod -aG sudo {mgmt_user}'"
     )
     await run_hub_cmd(
-        ssh, guest_ssh(guest_ip, cmd, sudo=True), host,
-        "VM_PREPARE_FAILED", "не удалось завести управляющего пользователя на госте",
+        ssh, guest_ssh(guest_ip, cmd, sudo=True, login=base_login, password=base_password),
+        host, "VM_PREPARE_FAILED",
+        "не удалось завести управляющего пользователя на госте",
     )
 
 
-async def _install_sudoers(ssh, host: str, guest_ip: str, mgmt_user: str) -> None:
+async def _install_sudoers(
+    ssh, host: str, guest_ip: str, mgmt_user: str,
+    *, base_login: str | None = None, base_password: str | None = None,
+) -> None:
     """Положить NOPASSWD-правило управляющему пользователю (+ `visudo -cf`)."""
     path = f"/etc/sudoers.d/{mgmt_user}-management"
     line = f"{mgmt_user} ALL=(ALL) NOPASSWD: ALL"
@@ -234,29 +241,39 @@ async def _install_sudoers(ssh, host: str, guest_ip: str, mgmt_user: str) -> Non
         f"chmod 440 {path} && visudo -cf {path}'"
     )
     await run_hub_cmd(
-        ssh, guest_ssh(guest_ip, cmd, sudo=True), host,
-        "VM_PREPARE_FAILED", "не удалось записать sudoers управляющего пользователя",
+        ssh, guest_ssh(guest_ip, cmd, sudo=True, login=base_login, password=base_password),
+        host, "VM_PREPARE_FAILED",
+        "не удалось записать sudoers управляющего пользователя",
     )
 
 
 async def _set_mgmt_password(
     ssh, host: str, guest_ip: str, mgmt_user: str, password: str,
+    *, base_login: str | None = None, base_password: str | None = None,
 ) -> None:
     """Поставить пароль управляющему пользователю (`chpasswd`)."""
     cmd = f"bash -c 'echo {mgmt_user}:{password} | chpasswd'"
     await run_hub_cmd(
-        ssh, guest_ssh(guest_ip, cmd, sudo=True), host,
-        "VM_PREPARE_FAILED", "не удалось поставить пароль управляющему пользователю",
+        ssh, guest_ssh(guest_ip, cmd, sudo=True, login=base_login, password=base_password),
+        host, "VM_PREPARE_FAILED",
+        "не удалось поставить пароль управляющему пользователю",
     )
 
 
-async def _install_guest_agent(ssh, host: str, guest_ip: str) -> None:
+async def _install_guest_agent(
+    ssh, host: str, guest_ip: str,
+    mgmt_user: str | None = None, key_path: str | None = None,
+    *, base_login: str | None = None, base_password: str | None = None,
+) -> None:
     """Доустановить qemu-guest-agent в гостя (best-effort).
 
     Нужен для graceful `virsh shutdown` (ACPI/agent-канал) и для чтения адреса
     через `domifaddr --source agent`. Ставим по семейству пакетника гостя и
     поднимаем сервис. Провал не валит bootstrap — агент не критичен для входа
     по ключу.
+
+    Заходим по управляющему ключу (`mgmt_user`/`key_path`), когда базовая учётка
+    уже снесена; без ключа — по базовой учётке бокса (`base_login`/`base_password`).
     """
     cmd = (
         "bash -c 'if command -v apt-get >/dev/null 2>&1; then "
@@ -265,11 +282,18 @@ async def _install_guest_agent(ssh, host: str, guest_ip: str) -> None:
         "dnf install -y qemu-guest-agent; fi; "
         "systemctl enable --now qemu-guest-agent 2>/dev/null || true'"
     )
-    await ssh.run(guest_ssh(guest_ip, cmd, sudo=True), sudo=True)
+    if key_path:
+        remote = guest_ssh_key(guest_ip, mgmt_user, key_path, cmd, sudo=True)
+    else:
+        remote = guest_ssh(
+            guest_ip, cmd, sudo=True, login=base_login, password=base_password,
+        )
+    await ssh.run(remote, sudo=True)
 
 
 async def _install_authorized_key(
     ssh, host: str, guest_ip: str, mgmt_user: str, public_key: str,
+    *, base_login: str | None = None, base_password: str | None = None,
 ) -> None:
     """Положить публичный ключ в `authorized_keys` управляющего пользователя.
 
@@ -285,8 +309,9 @@ async def _install_authorized_key(
         f"chown -R {mgmt_user}:{mgmt_user} {home}/.ssh'"
     )
     await run_hub_cmd(
-        ssh, guest_ssh(guest_ip, cmd, sudo=True), host,
-        "VM_PREPARE_FAILED", "не удалось положить публичный ключ управляющему пользователю",
+        ssh, guest_ssh(guest_ip, cmd, sudo=True, login=base_login, password=base_password),
+        host, "VM_PREPARE_FAILED",
+        "не удалось положить публичный ключ управляющему пользователю",
     )
 
 
@@ -358,15 +383,18 @@ async def _harden_guest_sshd(
 ) -> None:
     """Захардить sshd гостя через drop-in (после подтверждённого входа по ключу).
 
-    Выключаем парольную аутентификацию и root-login, оставляя pubkey. Правим
-    только отдельный snippet, `sshd -t` до reload'а. Идём под ключевой сессией —
-    к этому моменту ключ уже проверен.
+    Оставляем pubkey, запрещаем root-login и выключаем парольный вход ТОЛЬКО для
+    управляющего пользователя (`Match User`) — глобально пароль остаётся включён
+    (дефолт ОС), чтобы привязанные аккаунты пускало в веб-консоль по паролю.
+    Правим только отдельный snippet, `sshd -t` до reload'а. Идём под ключевой
+    сессией — к этому моменту ключ уже проверен.
     """
     path = f"/etc/ssh/sshd_config.d/{mgmt_user}-dbos.conf"
     snippet = (
         "PubkeyAuthentication yes\\n"
-        "PasswordAuthentication no\\n"
         "PermitRootLogin no\\n"
+        f"Match User {mgmt_user}\\n"
+        "    PasswordAuthentication no\\n"
     )
     remote = (
         f'bash -c \'printf "{snippet}" > {path} && sshd -t && '
@@ -381,18 +409,20 @@ async def _harden_guest_sshd(
 
 async def _delete_base_user(
     ssh, host: str, guest_ip: str, mgmt_user: str, key_path: str,
+    base_login: str | None = None,
 ) -> None:
-    """Удалить базовую учётку `u` образа (после подтверждённого входа по ключу).
+    """Удалить базовую учётку бокса (после подтверждённого входа по ключу).
 
-    Идём под ключевой сессией управляющего пользователя (парольный вход к этому
-    моменту уже выключен). `userdel -rf` сносит и домашний каталог; код 6 (юзера
-    нет) допускаем — retry идемпотентен.
+    Идём под ключевой сессией управляющего пользователя. `base_login` — фактический
+    базовый логин бокса (из реестра); без него сносим дефолтный `u`. `userdel -rf`
+    сносит и домашний каталог; код 6 (юзера нет) допускаем — retry идемпотентен.
     """
+    login = base_login or VMS_GUEST_LOGIN
     await run_hub_cmd(
         ssh,
         guest_ssh_key(
             guest_ip, mgmt_user, key_path,
-            f"userdel -rf {VMS_GUEST_LOGIN}", sudo=True,
+            f"userdel -rf {login}", sudo=True,
         ),
         host, "VM_PREPARE_FAILED", "не удалось удалить базовую учётку образа",
         ok=(0, 6),
@@ -401,24 +431,41 @@ async def _delete_base_user(
 
 async def apply_managed_baseline(
     ssh, host: str, guest_ip: str, mgmt: dict, key_path: str, *, harden: bool = True,
+    base_login: str | None = None, base_password: str | None = None,
 ) -> None:
-    """Прогнать полный bootstrap управления на госте (заходя по `u`/`1`).
+    """Прогнать полный bootstrap управления на госте.
 
-    `mgmt` — уже валидированный `load_mgmt_material` набор. Порядок безопасный:
-    заводим управляющего пользователя, кладём ключ + пароль + sudo NOPASSWD,
-    ставим qemu-guest-agent, проверяем вход по ключу (анти-локаут) и только после
-    этого хардим sshd (при `harden`) и сносим базовую учётку `u`. `key_path` —
-    временный приватный ключ на hub'е (пишет и подчищает caller).
+    `mgmt` — уже валидированный `load_mgmt_material` набор. Заходим на «сырой»
+    бокс по его базовой учётке (`base_login`/`base_password`; без них — дефолт
+    `u`/`1`), заводим управляющего пользователя, кладём ключ + пароль + sudo
+    NOPASSWD и проверяем вход по ключу (анти-локаут). Сразу после этого сносим
+    базовую учётку, а дальше всё идёт уже по управляющему ключу: ставим
+    qemu-guest-agent и хардим sshd (при `harden`). `key_path` — временный
+    приватный ключ на hub'е (пишет и подчищает caller).
     """
     management_user = mgmt["management_user"]
-    await _ensure_mgmt_user(ssh, host, guest_ip, management_user)
-    await _install_sudoers(ssh, host, guest_ip, management_user)
-    await _set_mgmt_password(ssh, host, guest_ip, management_user, mgmt["password"])
+    await _ensure_mgmt_user(
+        ssh, host, guest_ip, management_user,
+        base_login=base_login, base_password=base_password,
+    )
+    await _install_sudoers(
+        ssh, host, guest_ip, management_user,
+        base_login=base_login, base_password=base_password,
+    )
     await _install_authorized_key(
         ssh, host, guest_ip, management_user, mgmt["public_key"],
+        base_login=base_login, base_password=base_password,
     )
-    await _install_guest_agent(ssh, host, guest_ip)
+    await _set_mgmt_password(
+        ssh, host, guest_ip, management_user, mgmt["password"],
+        base_login=base_login, base_password=base_password,
+    )
     await _verify_key_login(ssh, host, guest_ip, management_user, key_path)
+    await _delete_base_user(
+        ssh, host, guest_ip, management_user, key_path, base_login,
+    )
+    await _install_guest_agent(
+        ssh, host, guest_ip, management_user, key_path,
+    )
     if harden:
         await _harden_guest_sshd(ssh, host, guest_ip, management_user, key_path)
-    await _delete_base_user(ssh, host, guest_ip, management_user, key_path)

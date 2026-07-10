@@ -69,7 +69,7 @@ class VmSnapshot(Base):
     )
     # Версия ОС, зафиксированная снимком (напр. `1.8.1.6`); NULL, если неизвестна.
     os_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # Режим Astra на момент снимка: oryol / smolensk / NULL.
+    # Режим Astra на момент снимка: orel / smolensk / NULL.
     mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Системный golden-снимок (`<ver>_build`): скрыт из выдачи, защищён от
     # ручного delete/revert.

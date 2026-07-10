@@ -249,6 +249,8 @@ class VmResponse(BaseModel):
     department_id: str = Field(description="Department-владелец.")
     os_version: str | None = Field(default=None, description="Версия ОС ВМ.")
     box: str | None = Field(default=None, description="Имя бокса-образа.")
+    kernel: str | None = Field(default=None, description="Версия ядра гостя (uname -r) с последней инвентаризации. None — инвентаризации не было.")
+    os_last_synced_at: datetime | None = Field(default=None, description="Когда воркер последний раз сдал факты гостя ВМ (UTC). None — инвентаризации не было.")
     network_mode: str = Field(description="bridge / nat.")
     ip_address: IPv4Address | IPv6Address | None = Field(default=None, description="IP ВМ (static/DHCP), None до назначения.")
     status: str = Field(description="Booking-статус: free / run test / debug test / <login>.")
@@ -599,6 +601,28 @@ class VmAvailableIpsResponse(BaseModel):
 
 
 # ── Internal callbacks (worker → server_service) ────────────────────────────
+
+
+class VmInventoryCallbackResponse(BaseModel):
+    """Ответ POST /internal/vms/{id}/inventory — что записали из фактов гостя.
+
+    Тело запроса — тот же `InventoryCallbackRequest`, что и на сервере (воркер
+    собирает факты общим кодом). У ВМ версия ОС — box-authoritative свободная
+    строка (`vms.os_version`), каталога `os_versions` тут нет, поэтому вместо
+    `os_version_id` отдаём саму строку и флаг её изменения. `drift_fields` —
+    поля, где факт гостя разошёлся с конфигурацией ВМ (например, гость видит не
+    столько vCPU, сколько задано карточке); они НЕ перетираются, по ним эмитится
+    WARNING `vm.inventory_drift_detected`.
+    """
+
+    ok: bool = True
+    vm_id: str = Field(description="ID ВМ.")
+    os_version: str | None = Field(default=None, description="Версия ОС ВМ после приёма (записанная с гостя).")
+    os_changed: bool = Field(default=False, description="Сменилась ли версия ОС относительно прежнего значения карточки.")
+    drift_fields: list[str] = Field(
+        default_factory=list,
+        description="Поля с расхождением гость↔конфигурация ВМ (НЕ перетёрты; WARNING-аудит).",
+    )
 
 
 class VmStateCallbackRequest(BaseModel):

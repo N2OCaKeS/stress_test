@@ -2725,6 +2725,323 @@ async def record_vm_packages(
     return {"ok": True, "vm_id": vm.id, "package_count": inventory.package_count}
 
 
+async def receive_vm_inventory(
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    payload: InventoryCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Принять факты гостя ВМ от worker'а после `vm.inventory_sync`.
+
+    VM-аналог `receive_inventory`. Тело — тот же `InventoryCallbackRequest`, что
+    и на сервере (воркер собирает факты общим кодом). Отличия ВМ:
+
+    * версия ОС — box-authoritative свободная строка (`vms.os_version`), каталога
+      `os_versions` тут нет: пишем присланную версию как есть (box→DB), в ответе
+      возвращаем строку и флаг её смены;
+    * hostname/kernel гостя — тоже box→DB (пишем то, что реально в госте);
+    * vCPU карточки (`vms.cpu`) — конфигурация, а не факт с гостя: расхождение
+      guest-видимых ядер с ней НЕ перетираем, поднимаем WARNING
+      `vm.inventory_drift_detected` (модель warn-on-drift, как hardware-поля
+      сервера). RAM/диски у ВМ так не сверяем — гость видит чуть меньше
+      сконфигурированного (kernel reserve), это шум.
+
+    Доступ: `(server, *, inventory_submit)` — тот же worker_bot-грант, что и у
+    серверного inventory-приёма. Аудит: `vm.inventory_received` (INFO).
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.INVENTORY_SUBMIT,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "vm.inventory_received", target_id=vm_id, target_type="vm",
+            status="denied", allowed=False, details={"reason": "permission_denied"},
+        )
+        raise
+    vm = await vm_repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            "vm.inventory_received", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "vm_not_found"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    _check_target_department(
+        audit_action="vm.inventory_received",
+        target_id=vm_id, target_type="vm",
+        server_department_id=vm.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        not_found_error_code="VM_NOT_FOUND",
+        not_found_message="VM not found",
+    )
+
+    # Версия ОС — box-authoritative: перезаписываем свободную строку карточки.
+    old_os = vm.os_version
+    vm.os_version = payload.os_version
+    os_changed = old_os is not None and old_os != payload.os_version
+
+    # Гостевые факты, тоже box→DB: реальный hostname гостя и версия ядра.
+    vm.hostname = payload.hostname
+    vm.kernel = payload.kernel
+    vm.os_last_synced_at = datetime.now(timezone.utc)
+
+    # Warn-on-drift: сконфигурированные vCPU карточки — не факт с гостя.
+    # Расхождение guest-видимых ядер с ним НЕ перетираем, только сигналим.
+    drift: dict = {}
+    if (
+        vm.cpu is not None
+        and payload.cpu_cores is not None
+        and payload.cpu_cores != vm.cpu
+    ):
+        drift["cpu"] = {"old": vm.cpu, "new": payload.cpu_cores}
+
+    await db.commit()
+    await db.refresh(vm)
+
+    if drift:
+        audit_service.emit(
+            "vm.inventory_drift_detected",
+            target_id=vm_id, target_type="vm",
+            status="warning", allowed=True,
+            details={
+                "fields": sorted(drift.keys()),
+                "drift": drift,
+                "department_id": vm.department_id,
+                "caller_type": identity.subject_type,
+            },
+        )
+    audit_service.emit(
+        "vm.inventory_received", target_id=vm_id, target_type="vm",
+        status="success", allowed=True,
+        details={
+            "hostname": payload.hostname,
+            "kernel": payload.kernel,
+            "os_version": payload.os_version,
+            "os_changed": os_changed,
+            "drift_fields": sorted(drift.keys()),
+            "department_id": vm.department_id,
+            "caller_type": identity.subject_type,
+        },
+    )
+    return {
+        "ok": True,
+        "vm_id": vm.id,
+        "os_version": vm.os_version,
+        "os_changed": os_changed,
+        "drift_fields": sorted(drift.keys()),
+    }
+
+
+async def receive_vm_users_inventory(
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    payload: UsersInventoryCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Принять список OS-пользователей гостя ВМ и reconcile'ить против привязок.
+
+    VM-аналог `receive_users_inventory`. Аккаунты ВМ живут в общем пуле
+    `server_accounts` через M2M `server_account_vms`; истина — БД. Reconcile
+    фиксирует факт-состояние гостя, но НЕ перетирает поля аккаунта — расхождение
+    поднимает WARNING `vm.account_drift_detected`, чтобы оператор разобрался.
+
+    Reconcile (по привязкам инвентаризуемой ВМ):
+
+      * найден в госте, привязка есть → present + `present_on_vm=True`; если
+        атрибуты (`has_sudo`/`unix_groups`/`shell`) разошлись с БД — drift, поля
+        НЕ трогаем;
+      * найден, привязки нет, логин в ignore-list'е отдела (или mgmt-учётка ВМ)
+        → пропускаем целиком;
+      * найден, привязки нет, но под login в отделе УЖЕ есть аккаунт → уходит в
+        `unlinked_existing` (оператор свяжет вручную), не дрейфим;
+      * найден, привязки нет, аккаунта под login в отделе тоже нет → в
+        `unknown_users` (оператор решает: импорт/игнор), поднимаем drift
+        `unknown_login`;
+      * привязан, но в госте не найден → drift `missing_on_box` + `present_on_vm=
+        False`, привязку НЕ удаляем.
+
+    Доступ: `(server_account, *, inventory_submit)` — тот же worker_bot-грант,
+    что и у серверного users-приёма. Аудит: `vm.users_inventory_received` (INFO).
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.INVENTORY_SUBMIT,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "vm.users_inventory_received", target_id=vm_id, target_type="vm",
+            status="denied", allowed=False, details={"reason": "permission_denied"},
+        )
+        raise
+    vm = await vm_repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            "vm.users_inventory_received", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True, details={"reason": "vm_not_found"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    _check_target_department(
+        audit_action="vm.users_inventory_received",
+        target_id=vm_id, target_type="vm",
+        server_department_id=vm.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        not_found_error_code="VM_NOT_FOUND",
+        not_found_message="VM not found",
+    )
+
+    vm_links = await account_repo.list_vm_links(db, vm.id)
+    linked_by_login = {account.login: (link, account) for link, account in vm_links}
+    seen_logins = {item.login for item in payload.users}
+    ignored_logins = await ignored_login_repo.ignored_logins_for_department(
+        db, vm.department_id,
+    )
+    # Управляющую учётку ВМ (та, под которой ходим по SSH) reconcile не
+    # классифицирует — расширяем локальный set, dept-запись не трогаем.
+    if vm.mgmt_user:
+        ignored_logins = ignored_logins | {vm.mgmt_user}
+    inventoried_logins = [item.login for item in payload.users]
+    dept_accounts_by_login = await account_repo.list_accounts_in_department_by_logins(
+        db, vm.department_id, inventoried_logins,
+    )
+
+    created = 0
+    present = 0
+    drifted = 0
+    unknown_users: list[dict] = []
+    unlinked_existing: list[dict] = []
+    drift_emits: list[dict] = []
+    attr_diffs: list[dict] = []
+
+    for item in payload.users:
+        if item.login in ignored_logins:
+            continue
+        linked = linked_by_login.get(item.login)
+        if linked is None:
+            candidates = dept_accounts_by_login.get(item.login)
+            if candidates:
+                unlinked_existing.append({
+                    "login": item.login,
+                    "uid": item.uid,
+                    "candidates": [
+                        {
+                            "account_id": acc.id,
+                            "department_id": acc.department_id,
+                            "source": acc.source,
+                        }
+                        for acc in candidates
+                    ],
+                })
+                continue
+            unknown_users.append({
+                "login": item.login,
+                "uid": item.uid,
+                "has_sudo": item.has_sudo,
+                "unix_groups": list(item.unix_groups),
+                "shell": item.shell,
+            })
+            drifted += 1
+            drift_emits.append({"login": item.login, "drift": "unknown_login"})
+        else:
+            link, account = linked
+            diff = _account_attr_drift(account, item)
+            link.present_on_vm = True
+            present += 1
+            if diff:
+                drifted += 1
+                drift_emits.append({
+                    "login": item.login,
+                    "drift": "attributes",
+                    "fields": sorted(diff.keys()),
+                    "diff": diff,
+                })
+                attr_diffs.append({
+                    "account_id": account.id,
+                    "login": account.login,
+                    "fields": diff,
+                })
+
+    # Привязанные, но не найденные в госте — drift. Emit только на переходе
+    # present_on_vm True → False, иначе периодический скан плодил бы дубли.
+    for link, _account in vm_links:
+        if link.login in ignored_logins:
+            continue
+        if link.login not in seen_logins:
+            is_new_drift = link.present_on_vm is True
+            link.present_on_vm = False
+            if is_new_drift:
+                drifted += 1
+                drift_emits.append({
+                    "login": link.login,
+                    "drift": "missing_on_box",
+                    "is_new_drift": True,
+                })
+
+    await db.commit()
+
+    for emit in drift_emits:
+        details = {
+            "vm_id": vm_id,
+            "login": emit["login"],
+            "drift": emit["drift"],
+            "department_id": vm.department_id,
+        }
+        if "fields" in emit:
+            details["fields"] = emit["fields"]
+        if "diff" in emit:
+            details["expected"] = {f: v["expected"] for f, v in emit["diff"].items()}
+            details["found"] = {f: v["found"] for f, v in emit["diff"].items()}
+        if "is_new_drift" in emit:
+            details["is_new_drift"] = emit["is_new_drift"]
+        audit_service.emit(
+            "vm.account_drift_detected",
+            target_id=vm_id, target_type="vm",
+            status="warning", allowed=True,
+            details=details,
+        )
+
+    audit_service.emit(
+        "vm.users_inventory_received", target_id=vm_id, target_type="vm",
+        status="success", allowed=True,
+        details={
+            "created": created,
+            "present": present,
+            "drifted": drifted,
+            "found": len(payload.users),
+            "unknown": len(unknown_users),
+            "unlinked_existing": len(unlinked_existing),
+            "department_id": vm.department_id,
+            "caller_type": identity.subject_type,
+        },
+    )
+
+    drift_items = [
+        {
+            "login": emit["login"],
+            "drift_type": emit["drift"],
+            "fields": emit.get("fields"),
+        }
+        for emit in drift_emits
+    ]
+    return {
+        "ok": True,
+        "created": created,
+        "present": present,
+        "drifted": drifted,
+        "diffs": attr_diffs,
+        "unknown_users": unknown_users,
+        "unlinked_existing": unlinked_existing,
+        "result_summary": {
+            "total_users": len(payload.users),
+            "created_discovered": created,
+            "drifts": drift_items,
+        },
+    }
+
+
 async def record_vm_snapshots(
     db: AsyncSession,
     identity: IdentityContext,

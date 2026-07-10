@@ -76,6 +76,7 @@ from src.schemas.server import (
 from src.schemas.vm import (
     VmDisksCallbackRequest,
     VmDisksCallbackResponse,
+    VmInventoryCallbackResponse,
     VmMgmtCredentialsResponse,
     VmPackagesCallbackRequest,
     VmPackagesCallbackResponse,
@@ -726,6 +727,65 @@ async def record_vm_snapshots(
         target_department_id=x_target_department_id,
     )
     return VmSnapshotsCallbackResponse(**data)
+
+
+@router.post(
+    "/vms/{vm_id}/inventory",
+    response_model=VmInventoryCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def receive_vm_inventory(
+    vm_id: str,
+    body: InventoryCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> VmInventoryCallbackResponse:
+    """Worker отдаёт факты гостя ВМ после успешного `vm.inventory_sync`.
+
+    VM-аналог серверного `receive_inventory`. Обновляет карточку ВМ фактами
+    гостя: os_version (box-authoritative), hostname/kernel, os_last_synced_at.
+    Расхождение guest-видимых vCPU со сконфигурированными НЕ перетирается —
+    поднимается WARNING `vm.inventory_drift_detected`.
+
+    Доступ: `(server, *, inventory_submit)`. Worker_bot роль (seed).
+
+    Аудит: `vm.inventory_received` (INFO).
+    """
+    data = await internal_service.receive_vm_inventory(
+        db, identity, vm_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return VmInventoryCallbackResponse(**data)
+
+
+@router.post(
+    "/vms/{vm_id}/users/inventory",
+    response_model=UsersInventoryCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def receive_vm_users_inventory(
+    vm_id: str,
+    body: UsersInventoryCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> UsersInventoryCallbackResponse:
+    """Worker отдаёт список OS-пользователей гостя ВМ после `vm.users_inventory`.
+
+    server_service reconcile'ит его против привязанных к ВМ учёток
+    (`server_account_vms`) по модели warn-on-drift: помечает present/drift,
+    отдаёт незнакомых и существующих-непривязанных — БД-истину не перетирает.
+
+    Доступ: `(server_account, *, inventory_submit)`. Worker_bot роль (seed).
+
+    Аудит: `vm.users_inventory_received` (INFO).
+    """
+    data = await internal_service.receive_vm_users_inventory(
+        db, identity, vm_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return UsersInventoryCallbackResponse(**data)
 
 
 @router.post(

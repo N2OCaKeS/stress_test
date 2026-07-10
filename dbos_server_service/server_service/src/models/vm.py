@@ -67,6 +67,14 @@ class Vm(Base):
     os_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Имя бокса-образа (`vm_station`, `1.8.1.o`, `xfs.*` …) из FTP-каталога.
     box: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Гостевые факты инвентаризации (vm.inventory_sync). Версия ядра гостя
+    # (`uname -r`) и момент последнего успешного приёма фактов от воркера.
+    # Оба nullable: до первой инвентаризации пусто. os_version выше —
+    # box-authoritative, обновляется тем же callback'ом.
+    kernel: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    os_last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     network_mode: Mapped[str] = mapped_column(
         String(16), default=VmNetworkMode.BRIDGE, nullable=False
     )

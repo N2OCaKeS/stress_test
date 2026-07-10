@@ -14,7 +14,22 @@ from src.clients.ssh import SshError
 from src.core.constants import TaskStatus
 from src.db.session import AsyncSessionLocal
 from src.models import Task
-from src.tasks import _vms_helpers, vms, vms_disks
+from src.tasks import _vm_prepare_helpers, _vms_helpers, vms, vms_disks
+
+_MGMT = {
+    "management_user": "dbos",
+    "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabc123 dbos@vm",
+    "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n",
+    "password": "S3cretPass",
+}
+
+
+@pytest.fixture
+def stub_mgmt(monkeypatch):
+    """Замокать чтение mgmt-материала из stash'а (managed-путь по ключу)."""
+    async def _read_mgmt(stash_key):  # noqa: ARG001
+        return dict(_MGMT)
+    monkeypatch.setattr(_vm_prepare_helpers, "_read_mgmt_install", _read_mgmt)
 
 
 # ── SSH mock ─────────────────────────────────────────────────────────────────
@@ -254,6 +269,42 @@ class TestDiskAttach:
         assert stub_disks["calls"]["disk_state"][0]["state"] == "error"
 
 
+class TestDiskAttachManagedKey:
+    """Managed-ВМ (`creds_stash_key`): mkfs/монтирование в госте идут по ключу
+    управляющего пользователя, временный ключ пишется и затирается на hub'е."""
+
+    async def test_mkfs_and_mount_use_key(
+        self, make_task, fetch_task, captured_audit, stub_disks, stub_mgmt,
+    ):
+        fake = _FakeSshClient()
+        fake.set_response("virsh pool-info additional", 0)
+        fake.set_response("virsh domblklist", 0, " file disk vda /vms/station-a.qcow2")
+        fake.set_response("mktemp", 0, "/tmp/dbos-key")
+        stub_disks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm1", "disk_id": "dsk1", "hub_host": "10.0.0.7",
+            "vm_name": "station-a", "disk_name": "data", "size_gb": 20,
+            "fs": "ext4", "mount": "/data", "ip_address": "10.177.103.101",
+            "storage_pool_path": "/vms", "is_managed": True,
+            "target_department_id": "dep1",
+            "creds_stash_key": "dbos:dispatch_creds:abc",
+        }
+        tid = await make_task(task_kind="vm.disk_attach", target_server_id="hub1", payload=payload)
+        await vms_disks.vm_disk_attach.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        assert any(
+            "mkfs.ext4 -F /dev/disk/by-id/virtio-station-a_data" in c
+            and "ssh -i /tmp/dbos-key" in c and "dbos@10.177.103.101" in c
+            for c in cmds
+        )
+        assert any("/etc/fstab" in c and "ssh -i /tmp/dbos-key" in c for c in cmds)
+        assert not any("sshpass" in c for c in cmds)
+        assert any("shred -u /tmp/dbos-key" in c for c in cmds)
+
+
 # ── vm.disk_delete ───────────────────────────────────────────────────────────
 
 
@@ -318,6 +369,36 @@ class TestDiskResize:
         _assert_session_no_sudo(fake.calls, "virsh domstate station-a")
         state = stub_disks["calls"]["disk_state"][0]
         assert state["state"] == "ready" and state["size_gb"] == 40
+
+
+class TestDiskResizeManagedKey:
+    """Managed-ВМ: growpart/resize2fs идут в госте по управляющему ключу."""
+
+    async def test_growpart_uses_key(
+        self, make_task, fetch_task, captured_audit, stub_disks, stub_mgmt,
+    ):
+        fake = _FakeSshClient()
+        fake.set_response("virsh domstate", 0, "running")
+        fake.set_response("mktemp", 0, "/tmp/dbos-key")
+        stub_disks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm1", "disk_id": "dsk1", "hub_host": "10.0.0.7",
+            "vm_name": "station-a", "path": "/vms/station-a.qcow2",
+            "size_gb": 40, "target_dev": "vda", "ip_address": "10.177.103.101",
+            "is_managed": True, "creds_stash_key": "dbos:dispatch_creds:abc",
+        }
+        tid = await make_task(task_kind="vm.disk_resize", target_server_id="hub1", payload=payload)
+        await vms_disks.vm_disk_resize.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        assert any(
+            "growpart /dev/vda 1" in c and "ssh -i /tmp/dbos-key" in c
+            and "dbos@10.177.103.101" in c for c in cmds
+        )
+        assert not any("sshpass" in c for c in cmds)
+        assert any("shred -u /tmp/dbos-key" in c for c in cmds)
 
 
 # ── vm.update ────────────────────────────────────────────────────────────────

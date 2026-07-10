@@ -16,7 +16,7 @@ from src.clients.ssh import SshError
 from src.core.constants import TaskStatus
 from src.db.session import AsyncSessionLocal
 from src.models import Task
-from src.tasks import vms_network
+from src.tasks import _vm_prepare_helpers, vms_network
 
 
 # ── SSH mock ─────────────────────────────────────────────────────────────────
@@ -100,7 +100,7 @@ def stub_session_and_callbacks(monkeypatch):
     async def _noop(*a, **kw):
         return None
 
-    monkeypatch.setattr(vms_network, "_read_mgmt_install", _read_mgmt)
+    monkeypatch.setattr(_vm_prepare_helpers, "_read_mgmt_install", _read_mgmt)
     monkeypatch.setattr(vms_network, "_read_verified_marker", _read_marker)
     monkeypatch.setattr(vms_network, "_set_verified_marker", _noop)
     monkeypatch.setattr(vms_network, "_delete_verified_marker", _noop)
@@ -537,18 +537,18 @@ class TestVmSetNetworkNat:
 
 class TestHelpers:
     def test_public_key_validator(self):
-        assert vms_network._validate_public_key(
+        assert _vm_prepare_helpers._validate_public_key(
             "ssh-rsa AAAAB3Nza+/x== root@h", "h",
         )
         for bad in ("ssh-rsa AAA$(x) c", "not-a-key", "ssh-rsa AAA;rm c"):
             with pytest.raises(SshError):
-                vms_network._validate_public_key(bad, "h")
+                _vm_prepare_helpers._validate_public_key(bad, "h")
 
     def test_secret_validator_rejects_metachars(self):
-        assert vms_network._validate_secret("Good1Pass", "h", "pw") == "Good1Pass"
+        assert _vm_prepare_helpers._validate_secret("Good1Pass", "h", "pw") == "Good1Pass"
         for bad in ("a'b", "a$b", "a\nb", ""):
             with pytest.raises(SshError):
-                vms_network._validate_secret(bad, "h", "pw")
+                _vm_prepare_helpers._validate_secret(bad, "h", "pw")
 
     def test_normalize_dns(self):
         assert vms_network._normalize_dns({"dns": "8.8.8.8"}, "h") == ["8.8.8.8"]

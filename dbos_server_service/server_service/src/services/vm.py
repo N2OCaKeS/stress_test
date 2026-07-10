@@ -460,6 +460,24 @@ async def create_vm(
             message="Two attached accounts share a login, or a login is already bound to this VM",
         ) from exc
 
+    # prepare встроен в сборку: server_service генерит per-VM управляющую пару +
+    # пароль, шифрует в модель (`mgmt_*`, `mgmt_creds_pending_apply=True`), а
+    # plaintext кладёт в Redis-stash — в payload едет только `creds_stash_key`.
+    # Воркер применяет материал на КАЖДУЮ версию сборки (заводит dbos-учётку,
+    # сносит `u`) и подтверждает управляемость callback'ом `vms/{id}/prepared`.
+    new_creds = _store_new_mgmt_creds(vm)
+    mgmt_user = (await management_user_config.get_config(db)).login
+    stash_key = await _stash_vm_mgmt_creds(
+        vm,
+        {
+            "management_user": mgmt_user,
+            "public_key": new_creds["public_key"],
+            "private_key": new_creds["private_key"],
+            "password": new_creds["password"],
+        },
+        audit_action="vm.create",
+    )
+
     payload_task = {
         **_hub_payload(hub),
         "vm_id": vm.id,
@@ -480,6 +498,7 @@ async def create_vm(
         "autostart": vm.autostart,
         "graphics": vm.graphics,
         "cred_strategy": vm.cred_strategy,
+        "creds_stash_key": stash_key,
         "accounts": [
             {
                 "account_id": a.id,
@@ -491,12 +510,18 @@ async def create_vm(
             for a in accounts
         ],
     }
-    task_id = await _dispatch_vm_task(
-        db=db, identity=identity, request=request,
-        task_kind=VmTaskKind.VM_CREATE, hub=hub, vm=vm,
-        payload=payload_task, audit_action="vm.create",
-        idempotency_key=idempotency_key,
-    )
+    try:
+        task_id = await _dispatch_vm_task(
+            db=db, identity=identity, request=request,
+            task_kind=VmTaskKind.VM_CREATE, hub=hub, vm=vm,
+            payload=payload_task, audit_action="vm.create",
+            idempotency_key=idempotency_key,
+        )
+    except Exception:
+        # Stash осиротел — задача в брокер не доехала, воркер за материалом не
+        # пойдёт; чистим ключ, чтобы plaintext не висел до TTL.
+        await worker_client.delete_dispatch_creds(stash_key)
+        raise
     await db.commit()
     await db.refresh(vm)
     audit_service.emit(
@@ -627,6 +652,36 @@ async def _dispatch_vm_task(
             status="failure", allowed=True,
             details={"reason": reason, "task_kind": task_kind, "hub_server_id": hub.id},
         )
+        raise
+
+
+async def _dispatch_guest_task_with_stash(
+    *,
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    task_kind: str,
+    hub,
+    vm: Vm,
+    payload: dict,
+    audit_action: str,
+    stash_key: str | None,
+) -> str:
+    """Dispatch guest-задачи ВМ с очисткой осиротевшего mgmt-stash'а при провале.
+
+    Тонкая обёртка над `_dispatch_vm_task`: если задача в брокер не доехала,
+    воркер за управляющим материалом не пойдёт — чистим ключ, чтобы plaintext
+    не висел в Redis до TTL. `stash_key=None` (не-managed ВМ) — чистить нечего.
+    """
+    try:
+        return await _dispatch_vm_task(
+            db=db, identity=identity, request=request,
+            task_kind=task_kind, hub=hub, vm=vm,
+            payload=payload, audit_action=audit_action,
+        )
+    except Exception:
+        if stash_key:
+            await worker_client.delete_dispatch_creds(stash_key)
         raise
 
 
@@ -901,10 +956,17 @@ async def create_disk(
         "fs": disk.fs,
         "mount": disk.mount,
     }
-    task_id = await _dispatch_vm_task(
+    # Guest-часть (mkfs/mount) идёт только при заданной ФС; managed-ВМ туда
+    # ходит по управляющему ключу — расшифровываем и стэшим mgmt-материал.
+    stash_key = None
+    if disk.fs:
+        stash_key = await stash_existing_vm_mgmt_creds(vm, "vm.disk_managed")
+        if stash_key:
+            payload_task["creds_stash_key"] = stash_key
+    task_id = await _dispatch_guest_task_with_stash(
         db=db, identity=identity, request=request,
         task_kind=VmTaskKind.VM_DISK_ATTACH, hub=hub, vm=vm,
-        payload=payload_task, audit_action="vm.disk_managed",
+        payload=payload_task, audit_action="vm.disk_managed", stash_key=stash_key,
     )
     await db.commit()
     await db.refresh(disk)
@@ -994,10 +1056,14 @@ async def resize_disk(
     }
     disk.size_gb = size_gb
     disk.state = VmDiskState.CREATING.value
-    task_id = await _dispatch_vm_task(
+    # growpart/resize2fs исполняются в госте — managed-ВМ по управляющему ключу.
+    stash_key = await stash_existing_vm_mgmt_creds(vm, "vm.disk_managed")
+    if stash_key:
+        payload_task["creds_stash_key"] = stash_key
+    task_id = await _dispatch_guest_task_with_stash(
         db=db, identity=identity, request=request,
         task_kind=VmTaskKind.VM_DISK_RESIZE, hub=hub, vm=vm,
-        payload=payload_task, audit_action="vm.disk_managed",
+        payload=payload_task, audit_action="vm.disk_managed", stash_key=stash_key,
     )
     await db.commit()
     await db.refresh(disk)
@@ -1396,10 +1462,15 @@ async def astra_update(
     }
     vm.busy_state = VmBusyState.UPDATING.value
     vm.busy_since = datetime.now(timezone.utc)
-    task_id = await _dispatch_vm_task(
+    # Guest-часть (перезапись sources.list, astra-update, смена пароля, перевод в
+    # Смоленск) на managed-ВМ идёт по управляющему ключу — стэшим mgmt-материал.
+    stash_key = await stash_existing_vm_mgmt_creds(vm, "vm.astra_updated")
+    if stash_key:
+        payload_task["creds_stash_key"] = stash_key
+    task_id = await _dispatch_guest_task_with_stash(
         db=db, identity=identity, request=request,
         task_kind=VmTaskKind.VM_ASTRA_UPDATE, hub=hub, vm=vm,
-        payload=payload_task, audit_action="vm.astra_updated",
+        payload=payload_task, audit_action="vm.astra_updated", stash_key=stash_key,
     )
     await db.commit()
     await db.refresh(vm)
@@ -1448,10 +1519,15 @@ async def _rotate_guest(
     }
     vm.busy_state = VmBusyState.UPDATING.value
     vm.busy_since = datetime.now(timezone.utc)
-    task_id = await _dispatch_vm_task(
+    # Guest-часть reroll'а (обновление guest-allta, опц. смена пароля) на
+    # managed-ВМ идёт по управляющему ключу — стэшим mgmt-материал.
+    stash_key = await stash_existing_vm_mgmt_creds(vm, audit_action)
+    if stash_key:
+        payload_task["creds_stash_key"] = stash_key
+    task_id = await _dispatch_guest_task_with_stash(
         db=db, identity=identity, request=request,
         task_kind=task_kind, hub=hub, vm=vm,
-        payload=payload_task, audit_action=audit_action,
+        payload=payload_task, audit_action=audit_action, stash_key=stash_key,
     )
     await db.commit()
     await db.refresh(vm)
@@ -2204,6 +2280,49 @@ def _store_new_mgmt_creds(vm: Vm) -> dict[str, str]:
         "private_key": private_pem,
         "password": password,
     }
+
+
+def _decrypt_vm_mgmt_creds(vm: Vm) -> dict[str, str] | None:
+    """Расшифровать сохранённый управляющий материал managed-ВМ для stash'а.
+
+    Managed-ВМ хранит per-VM управляющую пару + пароль в модели (`mgmt_*`,
+    envelope AES-256-GCM с AAD по vm_id). Пост-создательные guest-задачи (учётки,
+    диски, guest-часть astra/allta-update) ходят в гостя ключом управляющего
+    пользователя — базовая учётка `u` на managed-ВМ снесена. Возвращает
+    `{management_user, public_key, private_key, password}` либо None, если ВМ не
+    managed или ключ ещё не установлен (воркер сработает по `u`/`1`).
+    """
+    if not vm.is_managed or vm.mgmt_ssh_private_key_encrypted is None:
+        return None
+    private_key = secrets_service.decrypt(
+        vm.mgmt_ssh_private_key_encrypted,
+        aad=secrets_service.aad_for_vm_mgmt_ssh_key(vm.id),
+    )
+    password = ""
+    if vm.mgmt_password_encrypted is not None:
+        password = secrets_service.decrypt(
+            vm.mgmt_password_encrypted,
+            aad=secrets_service.aad_for_vm_mgmt_password(vm.id),
+        )
+    return {
+        "management_user": vm.mgmt_user or "",
+        "public_key": vm.mgmt_ssh_public_key or "",
+        "private_key": private_key,
+        "password": password,
+    }
+
+
+async def stash_existing_vm_mgmt_creds(vm: Vm, audit_action: str) -> str | None:
+    """Расшифровать и застэшить управляющий материал managed-ВМ; вернуть stash-ключ.
+
+    Для не-managed / ещё не онбординнутой ВМ возвращает None — guest-задача уедет
+    без `creds_stash_key` и воркер сработает по дефолтным кредам образа `u`/`1`.
+    Недоступный Redis → 503 (см. `_stash_vm_mgmt_creds`).
+    """
+    creds = _decrypt_vm_mgmt_creds(vm)
+    if creds is None:
+        return None
+    return await _stash_vm_mgmt_creds(vm, creds, audit_action=audit_action)
 
 
 async def prepare_vm(

@@ -14,7 +14,22 @@ from sqlalchemy import update
 from src.core.constants import TaskStatus
 from src.db.session import AsyncSessionLocal
 from src.models import Task
-from src.tasks import _vms_helpers, vms_snapshots
+from src.tasks import _vm_prepare_helpers, _vms_helpers, vms_snapshots
+
+_MGMT = {
+    "management_user": "dbos",
+    "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabc123 dbos@vm",
+    "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n",
+    "password": "S3cretPass",
+}
+
+
+@pytest.fixture
+def stub_mgmt(monkeypatch):
+    """Замокать чтение mgmt-материала из stash'а (managed-путь по ключу)."""
+    async def _read_mgmt(stash_key):  # noqa: ARG001
+        return dict(_MGMT)
+    monkeypatch.setattr(_vm_prepare_helpers, "_read_mgmt_install", _read_mgmt)
 
 
 # ── SSH mock ─────────────────────────────────────────────────────────────────
@@ -335,6 +350,46 @@ class TestAstraUpdate:
         assert "error" in state_cb
 
 
+class TestAstraUpdateManagedKey:
+    """Managed-ВМ (`creds_stash_key`): guest-шаги astra_update идут по ключу
+    управляющего пользователя, временный ключ пишется и затирается."""
+
+    async def test_guest_steps_use_key(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, stub_mgmt,
+    ):
+        fake = _astra_fake()
+        fake.set_response("mktemp", 0, "/tmp/dbos-key")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = _hub_block(
+            rc="1.8.1.6", base_snapshot="1.8_build", snapshot_id="snp-rc",
+            repository_urls=["deb http://repo/astra 1.8 main"],
+            password="newpass", ip_address="10.177.103.101", snapshot_type="full",
+            creds_stash_key="dbos:dispatch_creds:abc",
+        )
+        tid = await make_task(
+            task_kind="vm.astra_update", target_server_id="hub1", payload=payload,
+        )
+        await vms_snapshots.vm_astra_update.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        # guest-шаги (astra-update, chpasswd, смена режима) идут по ключу.
+        assert any(
+            "astra-update -A -T -r" in c and "ssh -i /tmp/dbos-key" in c
+            and "dbos@10.177.103.101" in c for c in cmds
+        )
+        assert any(
+            "chpasswd" in c and "u:newpass" in c and "ssh -i /tmp/dbos-key" in c
+            for c in cmds
+        )
+        assert any(
+            "astra-modeswitch set 2" in c and "ssh -i /tmp/dbos-key" in c for c in cmds
+        )
+        assert not any("sshpass" in c for c in cmds)
+        assert any("shred -u /tmp/dbos-key" in c for c in cmds)
+
+
 # ── allta_update / passwd (reroll) ───────────────────────────────────────────
 
 
@@ -377,6 +432,36 @@ class TestReroll:
         assert t.result["password_updated_vms"] == []
         snap_cb = stub_session_and_callbacks["calls"]["snapshots"][0]
         assert [s["name"] for s in snap_cb["snapshots"]] == ["1.8.1.6"]
+
+    async def test_reroll_managed_uses_key(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, stub_mgmt,
+    ):
+        fake = _reroll_fake()
+        fake.set_response("mktemp", 0, "/tmp/dbos-key")
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = _hub_block(
+            password="s3cret", ip_address="10.177.103.101",
+            creds_stash_key="dbos:dispatch_creds:abc",
+            snapshots=[{"snapshot_id": "p", "name": "1.8.1.6"}],
+        )
+        tid = await make_task(
+            task_kind="vm.passwd", target_server_id="hub1", payload=payload,
+        )
+        await vms_snapshots.vm_passwd.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        assert any(
+            "amd64.deb" in c and "ssh -i /tmp/dbos-key" in c
+            and "dbos@10.177.103.101" in c for c in cmds
+        )
+        assert any(
+            "chpasswd" in c and "u:s3cret" in c and "ssh -i /tmp/dbos-key" in c
+            for c in cmds
+        )
+        assert not any("sshpass" in c for c in cmds)
+        assert any("shred -u /tmp/dbos-key" in c for c in cmds)
 
     async def test_passwd_requires_password(
         self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,

@@ -71,7 +71,7 @@ def stub_session_and_callbacks(monkeypatch):
     списками вызовов callback'ов.
     """
     holder: dict = {"ssh": None}
-    calls: dict = {"vm_state": [], "hub_state": [], "snapshots": []}
+    calls: dict = {"vm_state": [], "hub_state": [], "snapshots": [], "prepared": []}
 
     async def _open(payload):  # noqa: ARG001
         fake = holder["ssh"]
@@ -91,14 +91,22 @@ def stub_session_and_callbacks(monkeypatch):
         calls["snapshots"].append({"vm_id": vm_id, "snapshots": snapshots, "target_department_id": target_department_id, **kw})
         return {"ok": True}
 
+    async def _vm_prepared(vm_id, management_user, target_department_id=None, **kw):
+        calls["prepared"].append({"vm_id": vm_id, "management_user": management_user, "target_department_id": target_department_id, **kw})
+        return {"ok": True}
+
     monkeypatch.setattr(vms.server_service_client, "submit_vm_state", _vm_state)
     monkeypatch.setattr(vms.server_service_client, "submit_vms_hub_state", _hub_state)
     monkeypatch.setattr(vms.server_service_client, "submit_vm_snapshots", _snapshots)
+    monkeypatch.setattr(vms.server_service_client, "submit_vm_prepared", _vm_prepared)
     # Смена режима гостя ребутит его — реальное ожидание минуты, в тестах 0.
     monkeypatch.setattr(_vms_helpers, "GUEST_MODE_REBOOT_SETTLE_S", 0)
     monkeypatch.setattr(_vms_helpers, "GUEST_MODE_REBOOT_POLL_DELAY_S", 0)
     # Ожидание DHCP-lease natbr0 — в тестах 0 (иначе ретраи по 4с).
     monkeypatch.setattr(vms, "_NAT_LEASE_DELAY_S", 0)
+    # Ожидание graceful-выключения перед managed-baseline снимком — в тестах 0/1.
+    monkeypatch.setattr(vms, "_SNAP_OFF_POLL_DELAY_S", 0)
+    monkeypatch.setattr(vms, "_SNAP_OFF_MAX_POLLS", 1)
     return {"holder": holder, "calls": calls}
 
 
@@ -799,6 +807,152 @@ class TestVmCreateSingle:
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state["ip_address"] == "10.177.103.108"
         assert state["snapshots"] == ["build"]
+
+
+def _mgmt_material():
+    return {
+        "management_user": "dbos",
+        "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA dbos@hub",
+        "private_key": (
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nZmFrZQ==\n"
+            "-----END OPENSSH PRIVATE KEY-----\n"
+        ),
+        "password": "Str0ngMgmtPass",
+    }
+
+
+def _managed_load(monkeypatch):
+    """Замокать чтение управляющего материала из stash фиксированным набором."""
+    async def _fake(stash_key, host):  # noqa: ARG001
+        return _mgmt_material()
+    monkeypatch.setattr(vms, "load_mgmt_material", _fake)
+
+
+class TestVmCreateManaged:
+    """prepare встроен в сборку: с `creds_stash_key` каждая версия становится
+    managed (dbos-учётка, `u` снесён), доступ переключается на ключ."""
+
+    async def test_universal_managed_baseline_then_key_access(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch,
+    ):
+        _managed_load(monkeypatch)
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm1", "hub_host": "10.0.0.7", "name": "station-a",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "vm_station",
+            "network_mode": "bridge", "ip_address": "10.177.103.101",
+            "os_versions": ["1.7.5.9"], "storage_pool_path": "/vms",
+            "is_managed": True, "target_department_id": "dep1",
+            "creds_stash_key": "dbos:dispatch_creds:dcd_abc",
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        # bootstrap управления: заведён dbos-юзер + снесена базовая учётка `u`
+        assert any("useradd -m -s /bin/bash dbos" in c for c in cmds)
+        assert any("userdel -rf u" in c for c in cmds)
+        # sudoers NOPASSWD для dbos
+        assert any("dbos ALL=(ALL) NOPASSWD: ALL" in c for c in cmds)
+        # снос `u` идёт по управляющему ключу (ssh -i), не по паролю
+        userdel = next(c for c in cmds if "userdel -rf u" in c)
+        assert "ssh -i /tmp/dbos-if" in userdel
+        assert "dbos@10.177.103.101" in userdel
+        # перевод в Смоленск — уже по ключу (u снесён)
+        smol = next(c for c in cmds if "astra-modeswitch set 2" in c)
+        assert "ssh -i /tmp/dbos-if" in smol
+        # чистый managed-baseline снят на ВЫКЛЮЧЕННОЙ ВМ: shutdown → snapshot → start
+        i_shutdown = next(i for i, c in enumerate(cmds) if "virsh shutdown station-a" in c)
+        i_build = next(i for i, c in enumerate(cmds) if "snapshot-create-as station-a --name 1.7.5.9_orel_build" in c)
+        i_start_after = next(i for i, c in enumerate(cmds) if i > i_build and "virsh start station-a" in c)
+        assert i_shutdown < i_build < i_start_after
+        # snapshots: golden(is_system) + oryol + smolensk
+        assert any("snapshot-create-as station-a --name 1.7.5.9_oryol" in c for c in cmds)
+        assert any("snapshot-create-as station-a --name 1.7.5.9_smolensk" in c for c in cmds)
+        # callback managed: ВМ помечена управляемой с management_user
+        prepared = stub_session_and_callbacks["calls"]["prepared"]
+        assert prepared and prepared[0]["management_user"] == "dbos"
+        state = stub_session_and_callbacks["calls"]["vm_state"][0]
+        assert state["snapshots"] == ["1.7.5.9_oryol", "1.7.5.9_smolensk"]
+
+    async def test_universal_managed_accounts_after_baseline_by_key(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch,
+    ):
+        _managed_load(monkeypatch)
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm1", "hub_host": "10.0.0.7", "name": "station-a",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "vm_station",
+            "network_mode": "bridge", "ip_address": "10.177.103.101",
+            "os_versions": ["1.7.5.9"], "storage_pool_path": "/vms",
+            "is_managed": True, "creds_stash_key": "dbos:dispatch_creds:dcd_abc",
+            "accounts": [{"account_id": "acc1", "login": "deploy", "password": "Deploy1", "has_sudo": False, "unix_groups": []}],
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        # привязанный юзер заводится ПОСЛЕ чистого baseline и по ключу (ssh -i)
+        useradd_deploy = next(c for c in cmds if "useradd -m deploy" in c)
+        assert "ssh -i /tmp/dbos-if" in useradd_deploy
+        i_build = next(i for i, c in enumerate(cmds) if "--name 1.7.5.9_orel_build" in c)
+        i_deploy = next(i for i, c in enumerate(cmds) if "useradd -m deploy" in c)
+        i_oryol = next(i for i, c in enumerate(cmds) if "--name 1.7.5.9_oryol" in c)
+        assert i_build < i_deploy < i_oryol
+
+    async def test_single_managed_build_deletes_base_user(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch,
+    ):
+        _managed_load(monkeypatch)
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm2", "hub_host": "10.0.0.7", "name": "single-1",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "single-box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "os_version": "1.8.1.6", "storage_pool_path": "/vms",
+            "is_managed": True, "creds_stash_key": "dbos:dispatch_creds:dcd_xyz",
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        assert any("useradd -m -s /bin/bash dbos" in c for c in cmds)
+        assert any("userdel -rf u" in c for c in cmds)
+        assert any("snapshot-create-as single-1 --name build" in c for c in cmds)
+        prepared = stub_session_and_callbacks["calls"]["prepared"]
+        assert prepared and prepared[0]["management_user"] == "dbos"
+
+    async def test_legacy_path_when_no_stash_key(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
+    ):
+        """Без `creds_stash_key` — прежнее поведение по `u`/`1`, без сноса `u`."""
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm3", "hub_host": "10.0.0.7", "name": "single-2",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "single-box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "os_version": "1.8.1.6", "storage_pool_path": "/vms", "is_managed": True,
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        assert not any("userdel -rf u" in c for c in cmds)
+        assert not any("useradd -m -s /bin/bash dbos" in c for c in cmds)
+        # managed-callback не вызывается в legacy-пути
+        assert stub_session_and_callbacks["calls"]["prepared"] == []
 
 
 class TestVmCreateHostnameAndAccounts:

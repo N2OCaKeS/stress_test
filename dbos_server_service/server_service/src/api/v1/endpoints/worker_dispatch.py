@@ -123,6 +123,7 @@ from src.services import (
     worker_client,
 )
 from src.services import server as server_svc
+from src.services import vm as vm_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.utils.ids import dispatch_creds_id, prepare_creds_id, rotation_batch_id
 
@@ -1369,6 +1370,11 @@ async def _dispatch_vm_account_task(
         hub=hub, vm=vm, account=account,
         include_attrs=include_attrs, remove_home=remove_home,
     )
+    # Managed-ВМ: воркер заходит в гостя по управляющему ключу (базовой учётки
+    # `u` нет) — расшифровываем сохранённый mgmt-материал и кладём в Redis-stash.
+    stash_key = await vm_svc.stash_existing_vm_mgmt_creds(vm, audit_action)
+    if stash_key:
+        payload["creds_stash_key"] = stash_key
     idempotency_key = read_idempotency_key(request)
     vm_id_v = vm.id
     vm_dept_v = vm.department_id
@@ -1386,6 +1392,8 @@ async def _dispatch_vm_account_task(
         )
         await db.commit()
     except ConflictError:
+        if stash_key:
+            await worker_client.delete_dispatch_creds(stash_key)
         audit_service.emit(
             audit_action, target_id=account.id, target_type="server_account",
             status="failure", allowed=True,
@@ -1396,6 +1404,8 @@ async def _dispatch_vm_account_task(
         )
         raise
     except ServiceUnavailableError:
+        if stash_key:
+            await worker_client.delete_dispatch_creds(stash_key)
         audit_service.emit(
             audit_action, target_id=account.id, target_type="server_account",
             status="failure", allowed=True,
@@ -1405,6 +1415,9 @@ async def _dispatch_vm_account_task(
             },
         )
         raise
+    # Idempotent-hit: оригинальная задача несёт свой stash — свежий не нужен.
+    if stash_key and idempotent_hit:
+        await worker_client.delete_dispatch_creds(stash_key)
     audit_service.emit(
         audit_action, target_id=account.id, target_type="server_account",
         status="success", allowed=True,
@@ -1509,14 +1522,23 @@ async def fanout_vm_deprovision(
             "account_id": account.id,
             "remove_home": False,
         }
+        stash_key = None
         try:
-            task_id, _ = await worker_client.dispatch_task_with_hit(
+            # Managed-ВМ: userdel в госте идёт по управляющему ключу — стэшим
+            # расшифрованный mgmt-материал (недоступный Redis трактуем как
+            # worker_unreachable и продолжаем).
+            stash_key = await vm_svc.stash_existing_vm_mgmt_creds(vm, audit_action)
+            if stash_key:
+                payload["creds_stash_key"] = stash_key
+            task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
                 db=db, task_kind="vm.account_deprovision",
                 target_server_id=hub.id, target_resource_id=account.id,
                 payload=payload, created_by=identity.user_id, request_id=request_id,
             )
             await db.commit()
         except (ConflictError, ServiceUnavailableError) as exc:
+            if stash_key:
+                await worker_client.delete_dispatch_creds(stash_key)
             await db.rollback()
             reason = (
                 "idempotent_conflict" if isinstance(exc, ConflictError)
@@ -1531,6 +1553,8 @@ async def fanout_vm_deprovision(
                 },
             )
             continue
+        if stash_key and idempotent_hit:
+            await worker_client.delete_dispatch_creds(stash_key)
         audit_service.emit(
             audit_action, target_id=account.id, target_type="server_account",
             status="success", allowed=True,

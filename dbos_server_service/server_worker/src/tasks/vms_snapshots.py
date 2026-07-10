@@ -30,12 +30,17 @@ from src.core.constants import VMS_FTP_ALLTA_DEB_URL, VMS_GUEST_LOGIN
 from src.main import broker
 from src.services import server_service_client
 from src.tasks._runner import run_task
+from src.tasks._vm_prepare_helpers import (
+    _shred_temp_key,
+    choose_guest_connector,
+    load_guest_key,
+)
 from src.tasks._vms_helpers import (
     LIBVIRT_SESSION_ENV,
     MODE_OREL,
     MODE_SMOLENSK,
     SNAPSHOT_KIND_OS_BASELINE,
-    guest_ssh,
+    guest_connector,
     map_domstate,
     open_hub_session,
     resolve_guest_ip,
@@ -115,12 +120,19 @@ def _validate_guest_password(value: str, host: str) -> str:
     return value
 
 
-async def _change_guest_password(ssh, host: str, guest_ip: str, password: str) -> None:
-    """Сменить пароль аккаунта `u` в госте (`echo u:<pwd> | chpasswd`)."""
+async def _change_guest_password(
+    ssh, host: str, guest_ip: str, password: str, *, connect=None,
+) -> None:
+    """Сменить пароль аккаунта `u` в госте (`echo u:<pwd> | chpasswd`).
+
+    `connect` — коннектор входа в гостя; по умолчанию `u`/`1`, на managed-ВМ
+    сюда передаётся ключевой коннектор управляющего пользователя.
+    """
+    if connect is None:
+        connect = guest_connector(guest_ip)
     await run_hub_cmd(
         ssh,
-        guest_ssh(
-            guest_ip,
+        connect(
             f"bash -c 'echo {VMS_GUEST_LOGIN}:{password} | chpasswd'",
             sudo=True,
         ),
@@ -406,12 +418,19 @@ def _sanitize_repositories(repositories, host: str) -> str:
     return "\\n".join(lines) + "\\n"
 
 
-async def _write_guest_sources(ssh, host: str, guest_ip: str, content: str) -> None:
-    """Перезаписать `/etc/apt/sources.list` в госте (`printf ... > file`)."""
+async def _write_guest_sources(
+    ssh, host: str, guest_ip: str, content: str, *, connect=None,
+) -> None:
+    """Перезаписать `/etc/apt/sources.list` в госте (`printf ... > file`).
+
+    `connect` — коннектор входа в гостя; по умолчанию `u`/`1`, на managed-ВМ —
+    ключевой коннектор управляющего пользователя.
+    """
+    if connect is None:
+        connect = guest_connector(guest_ip)
     await run_hub_cmd(
         ssh,
-        guest_ssh(
-            guest_ip,
+        connect(
             f"bash -c 'printf \"{content}\" > /etc/apt/sources.list'",
             sudo=True,
         ),
@@ -420,16 +439,20 @@ async def _write_guest_sources(ssh, host: str, guest_ip: str, content: str) -> N
     )
 
 
-async def _reboot_guest_and_wait(ssh, host: str, guest_ip: str) -> None:
+async def _reboot_guest_and_wait(ssh, host: str, guest_ip: str, *, connect=None) -> None:
     """Ребутнуть гостя и дождаться, пока SSH снова отвечает.
 
     Отдаём `reboot` (сессия рвётся), выжидаем settle, затем поллим `true` по
     SSH до успешного коннекта. Таймауты — модульные константы (в тестах 0).
+    `connect` — коннектор входа в гостя; по умолчанию `u`/`1`, на managed-ВМ —
+    ключевой коннектор управляющего пользователя.
     """
-    await ssh.run(guest_ssh(guest_ip, "reboot", sudo=True), sudo=True)
+    if connect is None:
+        connect = guest_connector(guest_ip)
+    await ssh.run(connect("reboot", sudo=True), sudo=True)
     await asyncio.sleep(_GUEST_REBOOT_SETTLE_S)
     for _ in range(_GUEST_REBOOT_MAX_POLLS):
-        rc, _out, _err = await ssh.run(guest_ssh(guest_ip, "true"), sudo=True)
+        rc, _out, _err = await ssh.run(connect("true"), sudo=True)
         if rc == 0:
             return
         await asyncio.sleep(_GUEST_REBOOT_POLL_DELAY_S)
@@ -502,39 +525,51 @@ async def vm_astra_update(task_id: str) -> None:
                 # старт на случай, если снимок снят с выключенной ВМ
                 await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {vm_name}")
                 guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
-                # 2. репозитории целевой версии + astra-update
-                await _write_guest_sources(ssh, host, guest_ip, sources_content)
-                await run_hub_cmd(
-                    ssh,
-                    guest_ssh(
-                        guest_ip,
-                        "bash -c 'DEBIAN_FRONTEND=noninteractive apt-get update && "
-                        "astra-update -A -T -r'",
-                        sudo=True,
-                    ),
-                    host, "VM_ASTRA_UPDATE_FAILED",
-                    "apt update / astra-update в госте упал",
-                )
-                # 3. reboot + ожидание
-                await _reboot_guest_and_wait(ssh, host, guest_ip)
-                # 4. смена пароля `u`
-                if password:
-                    await _change_guest_password(ssh, host, guest_ip, password)
-                # 5. deliverable Орла `<rc>`
-                await run_hub_cmd(
-                    ssh, _snapshot_create_cmd(vm_name, rc_ver, snapshot_type), host,
-                    "VM_SNAPSHOT_FAILED", f"не удалось снять снимок {rc_ver}",
-                )
-                # 6. перевод гостя в Смоленск + deliverable `<rc>_smolensk`
+                # managed-ВМ: guest-шаги идут по управляющему ключу (базовой
+                # учётки `u` нет); legacy-ВМ — по `u`/`1`.
+                mgmt_user, key_path = await load_guest_key(ssh, host, payload)
+                connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
                 smolensk_snap = f"{rc_ver}_{MODE_SMOLENSK}"
-                await switch_guest_to_smolensk(
-                    ssh, host, guest_ip, error_code="VM_ASTRA_UPDATE_FAILED",
-                )
-                await run_hub_cmd(
-                    ssh, _snapshot_create_cmd(vm_name, smolensk_snap, snapshot_type),
-                    host, "VM_SNAPSHOT_FAILED",
-                    f"не удалось снять снимок {smolensk_snap}",
-                )
+                try:
+                    # 2. репозитории целевой версии + astra-update
+                    await _write_guest_sources(
+                        ssh, host, guest_ip, sources_content, connect=connect,
+                    )
+                    await run_hub_cmd(
+                        ssh,
+                        connect(
+                            "bash -c 'DEBIAN_FRONTEND=noninteractive apt-get update && "
+                            "astra-update -A -T -r'",
+                            sudo=True,
+                        ),
+                        host, "VM_ASTRA_UPDATE_FAILED",
+                        "apt update / astra-update в госте упал",
+                    )
+                    # 3. reboot + ожидание
+                    await _reboot_guest_and_wait(ssh, host, guest_ip, connect=connect)
+                    # 4. смена пароля `u`
+                    if password:
+                        await _change_guest_password(
+                            ssh, host, guest_ip, password, connect=connect,
+                        )
+                    # 5. deliverable Орла `<rc>`
+                    await run_hub_cmd(
+                        ssh, _snapshot_create_cmd(vm_name, rc_ver, snapshot_type), host,
+                        "VM_SNAPSHOT_FAILED", f"не удалось снять снимок {rc_ver}",
+                    )
+                    # 6. перевод гостя в Смоленск + deliverable `<rc>_smolensk`
+                    await switch_guest_to_smolensk(
+                        ssh, host, guest_ip, error_code="VM_ASTRA_UPDATE_FAILED",
+                        connect=connect,
+                    )
+                    await run_hub_cmd(
+                        ssh, _snapshot_create_cmd(vm_name, smolensk_snap, snapshot_type),
+                        host, "VM_SNAPSHOT_FAILED",
+                        f"не удалось снять снимок {smolensk_snap}",
+                    )
+                finally:
+                    if key_path:
+                        await _shred_temp_key(ssh, key_path)
                 _rc, dom_out, _err = await ssh.run(
                     f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
                 )
@@ -636,61 +671,71 @@ async def _reroll_impl(payload: dict, *, require_password: bool) -> dict:
             )
         session, host = await open_hub_session(payload)
         async with session as ssh:
-            for raw in raw_snapshots:
-                if isinstance(raw, dict):
-                    snap_name = raw.get("snapshot_name") or raw.get("name")
-                    snap_id = raw.get("snapshot_id")
-                    snapshot_type = raw.get("snapshot_type")
-                else:
-                    snap_name, snap_id, snapshot_type = raw, None, None
-                snap = validate_name(str(snap_name), host, "snapshot_name")
-                # `_build` — защищённые golden-снимки: пропускаем целиком.
-                if snap.endswith(_BUILD_SUFFIX):
-                    continue
-                await run_hub_cmd(
-                    ssh,
-                    f"virsh snapshot-revert --domain {vm_name} --snapshotname {snap}",
-                    host, "VM_SNAPSHOT_FAILED",
-                    f"не удалось откатить на снимок {snap}",
-                )
-                await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {vm_name}")
-                guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
-                # обновить guest-allta CLI из свежего .deb на FTP
-                await run_hub_cmd(
-                    ssh,
-                    guest_ssh(
-                        guest_ip,
-                        "bash -c 'cd /tmp && rm -f allta_*_amd64.deb && "
-                        f"wget -q {VMS_FTP_ALLTA_DEB_URL} && "
-                        "DEBIAN_FRONTEND=noninteractive apt-get install -y "
-                        "./allta_*_amd64.deb'",
-                        sudo=True,
-                    ),
-                    host, "VM_ALLTA_UPDATE_FAILED",
-                    "обновление guest-allta в госте упало",
-                )
-                if password:
-                    await _change_guest_password(ssh, host, guest_ip, password)
-                    password_applied = True
-                # пересоздать снимок (перекатка «варианта b»)
-                await run_hub_cmd(
-                    ssh,
-                    f"virsh snapshot-delete --domain {vm_name} --snapshotname {snap}",
-                    host, "VM_SNAPSHOT_FAILED",
-                    f"не удалось удалить снимок {snap} перед пересъёмкой",
-                )
-                await run_hub_cmd(
-                    ssh, _snapshot_create_cmd(vm_name, snap, snapshot_type), host,
-                    "VM_SNAPSHOT_FAILED", f"не удалось пересоздать снимок {snap}",
-                )
-                # Пересъёмка не меняет категорию/режим снимка — их server_service
-                # хранит по имени; шлём только способ снятия, если он известен.
-                entry: dict = {"name": snap, "state": "ready"}
-                if snap_id is not None:
-                    entry["snapshot_id"] = snap_id
-                if snapshot_type is not None:
-                    entry["snapshot_type"] = snapshot_type
-                rerolled.append(entry)
+            # managed-ВМ: guest-шаги идут по управляющему ключу (базовой учётки
+            # `u` нет); ключ пишем один раз на весь reroll, коннектор пересобираем
+            # под адрес гостя каждой итерации. legacy-ВМ — по `u`/`1`.
+            mgmt_user, key_path = await load_guest_key(ssh, host, payload)
+            try:
+                for raw in raw_snapshots:
+                    if isinstance(raw, dict):
+                        snap_name = raw.get("snapshot_name") or raw.get("name")
+                        snap_id = raw.get("snapshot_id")
+                        snapshot_type = raw.get("snapshot_type")
+                    else:
+                        snap_name, snap_id, snapshot_type = raw, None, None
+                    snap = validate_name(str(snap_name), host, "snapshot_name")
+                    # `_build` — защищённые golden-снимки: пропускаем целиком.
+                    if snap.endswith(_BUILD_SUFFIX):
+                        continue
+                    await run_hub_cmd(
+                        ssh,
+                        f"virsh snapshot-revert --domain {vm_name} --snapshotname {snap}",
+                        host, "VM_SNAPSHOT_FAILED",
+                        f"не удалось откатить на снимок {snap}",
+                    )
+                    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {vm_name}")
+                    guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
+                    connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
+                    # обновить guest-allta CLI из свежего .deb на FTP
+                    await run_hub_cmd(
+                        ssh,
+                        connect(
+                            "bash -c 'cd /tmp && rm -f allta_*_amd64.deb && "
+                            f"wget -q {VMS_FTP_ALLTA_DEB_URL} && "
+                            "DEBIAN_FRONTEND=noninteractive apt-get install -y "
+                            "./allta_*_amd64.deb'",
+                            sudo=True,
+                        ),
+                        host, "VM_ALLTA_UPDATE_FAILED",
+                        "обновление guest-allta в госте упало",
+                    )
+                    if password:
+                        await _change_guest_password(
+                            ssh, host, guest_ip, password, connect=connect,
+                        )
+                        password_applied = True
+                    # пересоздать снимок (перекатка «варианта b»)
+                    await run_hub_cmd(
+                        ssh,
+                        f"virsh snapshot-delete --domain {vm_name} --snapshotname {snap}",
+                        host, "VM_SNAPSHOT_FAILED",
+                        f"не удалось удалить снимок {snap} перед пересъёмкой",
+                    )
+                    await run_hub_cmd(
+                        ssh, _snapshot_create_cmd(vm_name, snap, snapshot_type), host,
+                        "VM_SNAPSHOT_FAILED", f"не удалось пересоздать снимок {snap}",
+                    )
+                    # Пересъёмка не меняет категорию/режим снимка — их server_service
+                    # хранит по имени; шлём только способ снятия, если он известен.
+                    entry: dict = {"name": snap, "state": "ready"}
+                    if snap_id is not None:
+                        entry["snapshot_id"] = snap_id
+                    if snapshot_type is not None:
+                        entry["snapshot_type"] = snapshot_type
+                    rerolled.append(entry)
+            finally:
+                if key_path:
+                    await _shred_temp_key(ssh, key_path)
     except Exception as exc:
         error_text = getattr(exc, "error_code", type(exc).__name__)
         try:

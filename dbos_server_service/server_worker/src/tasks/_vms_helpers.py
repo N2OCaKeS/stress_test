@@ -349,6 +349,32 @@ def guest_ssh_key(
     )
 
 
+def guest_connector(ip: str):
+    """Коннектор входа на гостя по дефолтным кредам образа (`u`/`1`).
+
+    Возвращает `connect(remote_cmd, *, sudo=False) -> ssh-команда` поверх
+    `guest_ssh`. Провижн-шаги принимают такой коннектор, чтобы один и тот же код
+    ходил в гостя либо по паролю (пока `u` жив), либо по ключу
+    (`guest_key_connector`, после сноса `u`).
+    """
+    def _connect(remote_cmd: str, *, sudo: bool = False) -> str:
+        return guest_ssh(ip, remote_cmd, sudo=sudo)
+    return _connect
+
+
+def guest_key_connector(ip: str, user: str, key_path: str):
+    """Коннектор входа на гостя по управляющему ключу (после сноса `u`).
+
+    Возвращает `connect(remote_cmd, *, sudo=False) -> ssh-команда` поверх
+    `guest_ssh_key`. Используется в сборке managed-ВМ, когда базовая учётка `u`
+    уже удалена и парольный вход выключен — привязку учёток и перевод в Смоленск
+    добиваем под управляющим пользователем по ключу.
+    """
+    def _connect(remote_cmd: str, *, sudo: bool = False) -> str:
+        return guest_ssh_key(ip, user, key_path, remote_cmd, sudo=sudo)
+    return _connect
+
+
 def bridge_label() -> str:
     return VMS_BRIDGE
 
@@ -382,24 +408,28 @@ GUEST_MODE_REBOOT_MAX_POLLS = 60
 
 
 async def switch_guest_to_smolensk(
-    ssh, host: str, guest_ip: str, *, error_code: str,
+    ssh, host: str, guest_ip: str, *, error_code: str, connect=None,
 ) -> None:
     """Перевести гостя в режим Смоленск и дождаться его после перезагрузки.
 
     Выполняет в госте команды смены уровня + включения МРД/МКЦ, ребутит гостя
     (уровень применяется только после перезагрузки) и поллит SSH до отклика.
     `error_code` — код, под которым падает caller (`VM_CREATE_FAILED` в сборке,
-    `VM_ASTRA_UPDATE_FAILED` в обновлении версии).
+    `VM_ASTRA_UPDATE_FAILED` в обновлении версии). `connect` — коннектор входа на
+    гостя; по умолчанию `u`/`1` (`guest_connector`), в сборке managed-ВМ сюда
+    передаётся `guest_key_connector` (базовая учётка `u` уже снесена).
     """
+    if connect is None:
+        connect = guest_connector(guest_ip)
     for cmd in SMOLENSK_MODE_CMDS:
         await run_hub_cmd(
-            ssh, guest_ssh(guest_ip, cmd, sudo=True), host, error_code,
+            ssh, connect(cmd, sudo=True), host, error_code,
             f"не удалось выполнить смену режима в госте ({cmd})",
         )
-    await ssh.run(guest_ssh(guest_ip, "reboot", sudo=True), sudo=True)
+    await ssh.run(connect("reboot", sudo=True), sudo=True)
     await asyncio.sleep(GUEST_MODE_REBOOT_SETTLE_S)
     for _ in range(GUEST_MODE_REBOOT_MAX_POLLS):
-        rc, _out, _err = await ssh.run(guest_ssh(guest_ip, "true"), sudo=True)
+        rc, _out, _err = await ssh.run(connect("true", sudo=True), sudo=True)
         if rc == 0:
             return
         await asyncio.sleep(GUEST_MODE_REBOOT_POLL_DELAY_S)
@@ -737,6 +767,8 @@ __all__ = [
     "resolve_box_url",
     "guest_ssh",
     "guest_ssh_key",
+    "guest_connector",
+    "guest_key_connector",
     "bridge_label",
     "switch_guest_to_smolensk",
     "MODE_OREL",

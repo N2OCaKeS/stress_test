@@ -60,6 +60,13 @@ from src.main import broker
 from src.services import server_service_client
 from src.tasks import installed_packages as ip_helpers
 from src.tasks._runner import run_task
+from src.tasks._vm_prepare_helpers import (
+    _delete_stash,
+    _shred_temp_key,
+    _write_temp_key,
+    apply_managed_baseline,
+    load_mgmt_material,
+)
 from src.tasks._vms_helpers import (
     LIBVIRT_SESSION_ENV,
     MODE_OREL,
@@ -69,6 +76,8 @@ from src.tasks._vms_helpers import (
     VMS_DEFAULT_GATEWAY,
     VMS_DEFAULT_NETMASK,
     bridge_label,
+    guest_connector,
+    guest_key_connector,
     guest_ssh,
     map_domstate,
     normalize_dns,
@@ -146,6 +155,12 @@ _SHRINK_FS_MARGIN_BYTES = 256 * 1024 * 1024
 # Суффикс скрытого golden-снимка версии (сырой бокс-стейт, служебный). Кончается
 # на `_build` — reroll/passwd его защищают (см. `vms_snapshots._BUILD_SUFFIX`).
 _GOLDEN_SUFFIX = "_orel_build"
+
+# Ожидание graceful-выключения гостя перед снимком чистого managed-baseline.
+# domstate поллим до `off`; не выключился штатно — глушим жёстко (`virsh destroy`).
+# Тесты обнуляют задержку (реальное выключение Astra — десятки секунд).
+_SNAP_OFF_POLL_DELAY_S = 5.0
+_SNAP_OFF_MAX_POLLS = 60
 
 
 def _validate_guest_password(value: str, host: str) -> str:
@@ -1061,15 +1076,20 @@ def _nat_static_ip(name: str) -> str:
 
 async def _wait_guest_ssh(
     ssh, host: str, guest_ip: str, *, attempts: int = 30, delay: float = 6.0,
+    connect=None,
 ) -> None:
     """Дождаться, пока гость примет SSH.
 
     Гость только что стартовал из virt-install — sshd поднимается не мгновенно.
     Провижн (bridge берёт IP напрямую, без ожидания dhcp-lease) без этой паузы
     бьёт по гостю раньше времени и падает. Пробуем `true` по SSH до успеха.
+    `connect` — коннектор входа на гостя; по умолчанию `u`/`1`, в managed-сборке
+    после сноса `u` сюда передаётся ключевой коннектор.
     """
+    if connect is None:
+        connect = guest_connector(guest_ip)
     for _ in range(attempts):
-        rc, _out, _err = await ssh.run(guest_ssh(guest_ip, "true"))
+        rc, _out, _err = await ssh.run(connect("true"))
         if rc == 0:
             return
         await asyncio.sleep(delay)
@@ -1130,7 +1150,7 @@ _PUBKEY_RE = re.compile(r"^[A-Za-z0-9+/=@:.,_ \-]+$")
 
 async def _provision_guest_accounts(
     ssh, host: str, guest_ip: str, accounts, host_label: str,
-    target_dept: str | None,
+    target_dept: str | None, *, connect=None,
 ) -> list[str]:
     """Завести привязанные к ВМ учётки в госте (`useradd` + пароль/ключ/группы).
 
@@ -1142,8 +1162,12 @@ async def _provision_guest_accounts(
     `account_id` (`fetch_account_password_by_id`). Заводить учётку важнее пароля:
     если пароль вытянуть не удалось (нет доступа/эндпоинта), пользователя всё
     равно создаём, только без `chpasswd`. useradd/группы идемпотентны; их фейл
-    критичен (падаем `VM_CREATE_FAILED`). Возвращаем список заведённых логинов.
+    критичен (падаем `VM_CREATE_FAILED`). `connect` — коннектор входа на гостя;
+    по умолчанию `u`/`1`, в managed-сборке после сноса `u` — ключевой коннектор.
+    Возвращаем список заведённых логинов.
     """
+    if connect is None:
+        connect = guest_connector(guest_ip)
     provisioned: list[str] = []
     for acc in accounts or []:
         if not isinstance(acc, dict):
@@ -1179,8 +1203,7 @@ async def _provision_guest_accounts(
         # useradd идемпотентно (уже есть — не падаем); группы добиваем usermod'ом.
         await _run(
             ssh,
-            guest_ssh(
-                guest_ip,
+            connect(
                 f"bash -c 'id {login} >/dev/null 2>&1 "
                 f"|| useradd -m{gopt} {login}'",
                 sudo=True,
@@ -1191,8 +1214,8 @@ async def _provision_guest_accounts(
         if groups:
             await _run(
                 ssh,
-                guest_ssh(
-                    guest_ip, f"usermod -aG {','.join(groups)} {login}", sudo=True,
+                connect(
+                    f"usermod -aG {','.join(groups)} {login}", sudo=True,
                 ),
                 host, "VM_CREATE_FAILED",
                 f"не удалось добавить группы пользователю {login}",
@@ -1201,8 +1224,7 @@ async def _provision_guest_accounts(
             password = _validate_guest_password(str(password), host_label)
             await _run(
                 ssh,
-                guest_ssh(
-                    guest_ip,
+                connect(
                     f"bash -c 'echo {login}:{password} | chpasswd'",
                     sudo=True,
                 ),
@@ -1221,8 +1243,7 @@ async def _provision_guest_accounts(
             b64 = base64.b64encode(str(public_key).encode()).decode()
             await _run(
                 ssh,
-                guest_ssh(
-                    guest_ip,
+                connect(
                     f"bash -c 'umask 077 && mkdir -p ~{login}/.ssh && "
                     f"echo {b64} | base64 -d >> ~{login}/.ssh/authorized_keys && "
                     f"chown -R {login}: ~{login}/.ssh'",
@@ -1351,6 +1372,25 @@ async def _snapshot(ssh, host: str, name: str, snap: str) -> None:
     )
 
 
+async def _power_off_for_snapshot(ssh, name: str) -> None:
+    """Выключить гостя перед снимком чистого managed-baseline (disk-only).
+
+    Заказываем graceful `virsh shutdown` (qemu-guest-agent уже стоит) и поллим
+    `domstate` до `off`. Не выключился штатно за окно — глушим жёстко
+    (`virsh destroy`, non-zero на уже выключенном терпим). Снимок baseline
+    снимаем на выключенной ВМ, чтобы он нёс чистое disk-состояние без памяти.
+    """
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh shutdown {name}")
+    for _ in range(_SNAP_OFF_MAX_POLLS):
+        _rc, out, _err = await ssh.run(
+            f"{LIBVIRT_SESSION_ENV} virsh domstate {name}",
+        )
+        if map_domstate(out) == "off":
+            return
+        await asyncio.sleep(_SNAP_OFF_POLL_DELAY_S)
+    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh destroy {name}")
+
+
 def _os_baseline_entry(
     name: str, os_version: str, mode: str, *, is_system: bool = False,
 ) -> dict:
@@ -1376,7 +1416,7 @@ async def _build_universal(
     ssh, host: str, name: str, hostname: str, pool_path: str, ip_address: str,
     netmask: str, gateway: str, dns: list[str],
     os_versions: list[str], password: str | None, accounts,
-    host_label: str, target_dept: str | None,
+    host_label: str, target_dept: str | None, *, mgmt=None, key_path: str | None = None,
 ) -> list[dict]:
     """Построить universal-ВМ: на каждую версию — golden + Орёл + Смоленск.
 
@@ -1385,11 +1425,20 @@ async def _build_universal(
     заливаем статику версии в диск offline (`virt-customize` — на br0 без DHCP
     гость иначе не получит адрес и будет недостижим; каждая версия несёт свой
     rootfs, поэтому инъекция идёт на каждую заново), поднимаем ВМ и заходим по
-    боевому адресу. Провижним (hostname/ntp/deps + привязанные учётки), снимаем
-    скрытый golden `<ver>_orel_build`, опционально меняем пароль `u`, снимаем
-    deliverable Орла `<ver>_oryol`, переводим гостя в Смоленск (astra-modeswitch
-    + МРД/МКЦ + reboot) и снимаем deliverable Смоленска `<ver>_smolensk`.
-    Возвращаем rich-снимки (с golden).
+    боевому адресу.
+
+    Если передан управляющий материал (`mgmt`/`key_path` — managed-сборка), для
+    каждой версии заходим по `u`/`1`, ставим управляющего пользователя (ключ +
+    пароль + sudo, qemu-guest-agent), проверяем вход по ключу, хардим sshd и
+    сносим базовую учётку `u` (`apply_managed_baseline`). Скрытый golden
+    `<ver>_orel_build` снимаем на ВЫКЛЮЧЕННОЙ ВМ — это чистый managed-baseline без
+    привязанных пользователей. Затем поднимаем ВМ, добавляем привязанные учётки
+    уже по управляющему ключу, снимаем deliverable Орла `<ver>_oryol`, переводим
+    гостя в Смоленск (по ключу) и снимаем `<ver>_smolensk`.
+
+    Без управляющего материала (legacy-путь: `creds_stash_key` в payload нет)
+    сохраняется прежнее поведение — провижн и снимки идут по `u`/`1`, базовая
+    учётка не сносится, golden несёт привязанные учётки.
 
     Клон бокса под universal идёт plain `cp` (сохраняет внутренние qemu-снимки
     версий), а `disk_gb` для него игнорируется — версии зашиты в бокс
@@ -1397,6 +1446,7 @@ async def _build_universal(
     """
     disk_path = f"{pool_path}/{name}.qcow2"
     static_ip = ip_address.split("/")[0]
+    managed = mgmt is not None
     snapshots: list[dict] = []
     for raw_ver in os_versions:
         ver = validate_name(str(raw_ver), host_label, "os_version")
@@ -1415,6 +1465,43 @@ async def _build_universal(
         await _run(ssh, f"virsh start {name}", host,
                    "VM_CREATE_FAILED", f"не удалось запустить ВМ на версии {ver}")
         await _provision_guest_base(ssh, host, hostname, static_ip)
+
+        if managed:
+            # bootstrap управления по `u`/`1`: заводим dbos-юзера, проверяем вход
+            # по ключу, хардим sshd, сносим `u`. Дальше — только по ключу.
+            await apply_managed_baseline(ssh, host, static_ip, mgmt, key_path)
+            guest_conn = guest_key_connector(
+                static_ip, mgmt["management_user"], key_path,
+            )
+            # чистый managed-baseline (без привязанных юзеров) — на выключенной ВМ
+            await _power_off_for_snapshot(ssh, name)
+            await _snapshot(ssh, host, name, f"{ver}{_GOLDEN_SUFFIX}")
+            snapshots.append(
+                _os_baseline_entry(
+                    f"{ver}{_GOLDEN_SUFFIX}", ver, MODE_OREL, is_system=True,
+                ),
+            )
+            # поднимаем и добавляем привязанные учётки уже по управляющему ключу
+            await _run(ssh, f"virsh start {name}", host,
+                       "VM_CREATE_FAILED", f"не удалось поднять ВМ версии {ver}")
+            await _wait_guest_ssh(ssh, host, static_ip, connect=guest_conn)
+            await _provision_guest_accounts(
+                ssh, host, static_ip, accounts, host_label, target_dept,
+                connect=guest_conn,
+            )
+            await _snapshot(ssh, host, name, f"{ver}_{MODE_OREL}")
+            snapshots.append(_os_baseline_entry(f"{ver}_{MODE_OREL}", ver, MODE_OREL))
+            await switch_guest_to_smolensk(
+                ssh, host, static_ip, error_code="VM_CREATE_FAILED",
+                connect=guest_conn,
+            )
+            await _snapshot(ssh, host, name, f"{ver}_{MODE_SMOLENSK}")
+            snapshots.append(
+                _os_baseline_entry(f"{ver}_{MODE_SMOLENSK}", ver, MODE_SMOLENSK),
+            )
+            continue
+
+        # legacy-путь (без управляющего материала): всё по `u`/`1`
         await _provision_guest_accounts(
             ssh, host, static_ip, accounts, host_label, target_dept,
         )
@@ -1450,18 +1537,31 @@ async def _build_universal(
 async def _build_single(
     ssh, host: str, name: str, hostname: str, guest_ip: str,
     os_version: str | None, accounts, host_label: str,
-    target_dept: str | None,
+    target_dept: str | None, *, mgmt=None, key_path: str | None = None,
 ) -> list[dict]:
     """Построить single-ВМ из конкретного бокса: провижн + снимок `build`.
 
     Диск уже приведён к нужному размеру до virt-install (offline, virt-resize) в
     `vm.create`, адрес гостя резолвит caller (bridge — статик из пула, nat —
-    lease natbr0) — тут только провижн гостя (hostname/ntp/deps + учётки) и снимок.
+    lease natbr0). Провижним гостя (hostname/ntp/deps) по `u`/`1`.
+
+    Если передан управляющий материал (`mgmt`/`key_path` — managed-сборка),
+    ставим управляющего пользователя и сносим базовую учётку `u`
+    (`apply_managed_baseline`); привязанные учётки заводим уже по управляющему
+    ключу. Снимок `build` в этом случае — managed-baseline (dbos, без `u`).
+    Без управляющего материала (legacy) — прежнее поведение по `u`/`1`.
     """
     await _provision_guest_base(ssh, host, hostname, guest_ip)
-    await _provision_guest_accounts(
-        ssh, host, guest_ip, accounts, host_label, target_dept,
-    )
+    if mgmt is not None:
+        await apply_managed_baseline(ssh, host, guest_ip, mgmt, key_path)
+        conn = guest_key_connector(guest_ip, mgmt["management_user"], key_path)
+        await _provision_guest_accounts(
+            ssh, host, guest_ip, accounts, host_label, target_dept, connect=conn,
+        )
+    else:
+        await _provision_guest_accounts(
+            ssh, host, guest_ip, accounts, host_label, target_dept,
+        )
     await _snapshot(ssh, host, name, "build")
     entry: dict = {"name": "build", "state": "ready"}
     if os_version:
@@ -1540,6 +1640,14 @@ async def vm_create(task_id: str) -> None:
         # Для NAT адрес гостя заранее неизвестен — резолвим по lease natbr0 и
         # докладываем его в state (bridge/universal несут статик из payload).
         nat_ip: str | None = None
+        # Управляющий материал для managed-сборки: server_service генерит per-VM
+        # пару+пароль и кладёт в dispatch-stash, в payload едет `creds_stash_key`.
+        # Есть ключ → сборка сразу заводит dbos-учётку и сносит `u` (каждый снимок
+        # уже managed). Нет ключа (старый dispatch/ретрай до апгрейда) → legacy-
+        # путь по `u`/`1` без prepare.
+        stash_key = payload.get("creds_stash_key")
+        mgmt = await load_mgmt_material(stash_key, host_label) if stash_key else None
+        managed = mgmt is not None
 
         try:
             session, host = await open_hub_session(payload)
@@ -1632,52 +1740,63 @@ async def vm_create(task_id: str) -> None:
                     ),
                     host, "VM_CREATE_FAILED", "virt-install упал",
                 )
-                if is_universal:
-                    if not os_versions:
-                        raise SshError(
-                            error_code="VM_INVALID_ARG", host=host,
-                            message="universal-ВМ требует непустой os_versions",
+                # Временный приватный ключ на hub'е для managed-сборки (проверка
+                # входа по ключу + пост-хардинг шаги); подчищаем в finally.
+                key_path = (
+                    await _write_temp_key(ssh, host, mgmt["private_key"])
+                    if managed else None
+                )
+                try:
+                    if is_universal:
+                        if not os_versions:
+                            raise SshError(
+                                error_code="VM_INVALID_ARG", host=host,
+                                message="universal-ВМ требует непустой os_versions",
+                            )
+                        if not ip_address:
+                            raise SshError(
+                                error_code="VM_INVALID_ARG", host=host,
+                                message=(
+                                    "universal-ВМ требует ip_address — гость "
+                                    "провижнится по статике на br0 (DHCP на LAN нет)"
+                                ),
+                            )
+                        netmask = validate_ip(
+                            str(payload.get("netmask") or VMS_DEFAULT_NETMASK), host,
                         )
-                    if not ip_address:
-                        raise SshError(
-                            error_code="VM_INVALID_ARG", host=host,
-                            message=(
-                                "universal-ВМ требует ip_address — гость "
-                                "провижнится по статике на br0 (DHCP на LAN нет)"
-                            ),
+                        gateway = validate_ip(
+                            str(payload.get("gateway") or VMS_DEFAULT_GATEWAY), host,
                         )
-                    netmask = validate_ip(
-                        str(payload.get("netmask") or VMS_DEFAULT_NETMASK), host,
-                    )
-                    gateway = validate_ip(
-                        str(payload.get("gateway") or VMS_DEFAULT_GATEWAY), host,
-                    )
-                    dns = normalize_dns(payload, host)
-                    snapshots = await _build_universal(
-                        ssh, host, name, hostname, pool_path, ip_address,
-                        netmask, gateway, dns, os_versions, password, accounts,
-                        host_label, target_dept,
-                    )
-                else:
-                    if network_mode == "bridge" and ip_address:
-                        # bridge: статику залили в диск offline (virt-customize до
-                        # virt-install), гость уже на br0 с этим адресом.
-                        guest_ip = ip_address.split("/")[0]
-                    elif network_mode == "nat":
-                        # nat: статика в подсети natbr0 (залита offline выше),
-                        # детерминирована от имени — гость на этом адресе.
-                        guest_ip = _nat_static_ip(name)
-                        nat_ip = guest_ip
+                        dns = normalize_dns(payload, host)
+                        snapshots = await _build_universal(
+                            ssh, host, name, hostname, pool_path, ip_address,
+                            netmask, gateway, dns, os_versions, password, accounts,
+                            host_label, target_dept, mgmt=mgmt, key_path=key_path,
+                        )
                     else:
-                        guest_ip = await _guest_ip(ssh, host, name)
-                    snapshots = await _build_single(
-                        ssh, host, name, hostname, guest_ip, os_version,
-                        accounts, host_label, target_dept,
-                    )
-                    # снимок build (внутренний, с памятью) оставляет домен
-                    # выключенным — поднимаем, чтобы отдать рабочую ВМ. Уже
-                    # запущенный virsh start отдаст non-zero, это ок.
-                    await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {name}")
+                        if network_mode == "bridge" and ip_address:
+                            # bridge: статику залили в диск offline (virt-customize
+                            # до virt-install), гость уже на br0 с этим адресом.
+                            guest_ip = ip_address.split("/")[0]
+                        elif network_mode == "nat":
+                            # nat: статика в подсети natbr0 (залита offline выше),
+                            # детерминирована от имени — гость на этом адресе.
+                            guest_ip = _nat_static_ip(name)
+                            nat_ip = guest_ip
+                        else:
+                            guest_ip = await _guest_ip(ssh, host, name)
+                        snapshots = await _build_single(
+                            ssh, host, name, hostname, guest_ip, os_version,
+                            accounts, host_label, target_dept,
+                            mgmt=mgmt, key_path=key_path,
+                        )
+                        # снимок build (внутренний, с памятью) оставляет домен
+                        # выключенным — поднимаем, чтобы отдать рабочую ВМ. Уже
+                        # запущенный virsh start отдаст non-zero, это ок.
+                        await ssh.run(f"{LIBVIRT_SESSION_ENV} virsh start {name}")
+                finally:
+                    if key_path is not None:
+                        await _shred_temp_key(ssh, key_path)
                 _rc, dom_out, _err = await ssh.run(
                     f"{LIBVIRT_SESSION_ENV} virsh domstate {name}",
                 )
@@ -1713,6 +1832,16 @@ async def vm_create(task_id: str) -> None:
             power_state=power_state, ip_address=report_ip, status="free",
             snapshots=plain, clear_busy_state=True,
         )
+        if managed:
+            # Сборка сделала ВМ управляемой (dbos-учётка, `u` снесён): помечаем
+            # ВМ managed зеркально `vm.prepare` (`is_managed=True`,
+            # `management_user`, снят `mgmt_creds_pending_apply`). Управляющий
+            # материал server_service уже держит у себя — обратно ничего секретного
+            # не шлём. Stash больше не нужен.
+            await server_service_client.submit_vm_prepared(
+                vm_id, mgmt["management_user"], target_department_id=target_dept,
+            )
+            await _delete_stash(stash_key)
         return {
             "vm_id": vm_id,
             "name": name,

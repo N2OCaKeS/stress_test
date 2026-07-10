@@ -27,10 +27,14 @@ from src.core.constants import VMS_DEFAULT_POOL_PATH
 from src.main import broker
 from src.services import server_service_client
 from src.tasks._runner import run_task
+from src.tasks._vm_prepare_helpers import (
+    _shred_temp_key,
+    choose_guest_connector,
+    load_guest_key,
+)
 from src.tasks._vms_helpers import (
     LIBVIRT_SESSION_ENV,
     ensure_additional_pool,
-    guest_ssh,
     map_domstate,
     next_target_dev,
     open_hub_session,
@@ -155,24 +159,30 @@ async def vm_disk_attach(task_id: str) -> None:
                 )
                 if fs:
                     guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
+                    mgmt_user, key_path = await load_guest_key(ssh, host, payload)
+                    connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
                     dev = f"/dev/disk/by-id/virtio-{serial}"
-                    await run_hub_cmd(
-                        ssh, guest_ssh(guest_ip, f"mkfs.{fs} -F {dev}", sudo=True),
-                        host, "VM_DISK_ATTACH_FAILED", "mkfs в госте упал",
-                    )
-                    if mount:
-                        fstab = f"{dev} {mount} {fs} defaults 0 2"
-                        guest_cmd = (
-                            f"bash -c 'mkdir -p {mount}; "
-                            f"grep -q virtio-{serial} /etc/fstab || "
-                            f'echo "{fstab}" >> /etc/fstab; '
-                            "mount -a'"
-                        )
+                    try:
                         await run_hub_cmd(
-                            ssh, guest_ssh(guest_ip, guest_cmd, sudo=True), host,
-                            "VM_DISK_ATTACH_FAILED",
-                            "монтирование диска в госте упало",
+                            ssh, connect(f"mkfs.{fs} -F {dev}", sudo=True),
+                            host, "VM_DISK_ATTACH_FAILED", "mkfs в госте упал",
                         )
+                        if mount:
+                            fstab = f"{dev} {mount} {fs} defaults 0 2"
+                            guest_cmd = (
+                                f"bash -c 'mkdir -p {mount}; "
+                                f"grep -q virtio-{serial} /etc/fstab || "
+                                f'echo "{fstab}" >> /etc/fstab; '
+                                "mount -a'"
+                            )
+                            await run_hub_cmd(
+                                ssh, connect(guest_cmd, sudo=True), host,
+                                "VM_DISK_ATTACH_FAILED",
+                                "монтирование диска в госте упало",
+                            )
+                    finally:
+                        if key_path:
+                            await _shred_temp_key(ssh, key_path)
         except Exception as exc:
             await _report_disk_error(vm_id, disk_id, target_dept, "vm.disk_attach", exc)
             raise
@@ -309,11 +319,17 @@ async def vm_disk_resize(task_id: str) -> None:
                     "VM_DISK_RESIZE_FAILED", "ВМ не поднялась после resize",
                 )
                 guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
+                mgmt_user, key_path = await load_guest_key(ssh, host, payload)
+                connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
                 grow = (
                     f"bash -c 'growpart /dev/{target_dev} 1 || true; "
                     f"resize2fs /dev/{target_dev}1 || true'"
                 )
-                await ssh.run(guest_ssh(guest_ip, grow, sudo=True), sudo=True)
+                try:
+                    await ssh.run(connect(grow, sudo=True), sudo=True)
+                finally:
+                    if key_path:
+                        await _shred_temp_key(ssh, key_path)
                 _rc, dom_out, _err = await ssh.run(
                     f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}",
                 )

@@ -13,7 +13,22 @@ from sqlalchemy import update
 from src.core.constants import TaskStatus
 from src.db.session import AsyncSessionLocal
 from src.models import Task
-from src.tasks import vms, vms_accounts
+from src.tasks import _vm_prepare_helpers, vms, vms_accounts
+
+_MGMT = {
+    "management_user": "dbos",
+    "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabc123 dbos@vm",
+    "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n",
+    "password": "S3cretPass",
+}
+
+
+@pytest.fixture
+def stub_mgmt(monkeypatch):
+    """Замокать чтение mgmt-материала из stash'а для managed-пути (ключ)."""
+    async def _read_mgmt(stash_key):  # noqa: ARG001
+        return dict(_MGMT)
+    monkeypatch.setattr(_vm_prepare_helpers, "_read_mgmt_install", _read_mgmt)
 
 
 class _FakeSshClient:
@@ -141,3 +156,67 @@ class TestVmAccountDeprovision:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         assert any("userdel -r app" in c and "10.0.0.50" in c for c in fake.commands)
+
+
+class TestManagedGuestKey:
+    """Managed-ВМ (`creds_stash_key` в payload): guest-шаги идут по ключу
+    управляющего пользователя, а не по `sshpass`; временный ключ пишется и
+    затирается на hub'е."""
+
+    async def test_provision_uses_key_connector(
+        self, make_task, fetch_task, stub_session, stub_mgmt, monkeypatch,
+    ):
+        fake = _FakeSshClient()
+        fake.set_response("mktemp", 0, "/tmp/dbos-key")
+        stub_session["ssh"] = fake
+
+        async def _fetch_by_id(account_id, target_dept=None):  # noqa: ARG001
+            return {"password": "guestpw1"}
+
+        monkeypatch.setattr(
+            vms.server_service_client, "fetch_account_password_by_id", _fetch_by_id,
+        )
+        tid = await make_task(
+            task_kind="vm.account_provision", target_server_id="hub1",
+            payload=_base_payload(
+                has_sudo=True, unix_groups=["docker"],
+                creds_stash_key="dbos:dispatch_creds:abc",
+            ),
+        )
+        await vms_accounts.vm_account_provision.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        # useradd идёт по ключу управляющего пользователя (не sshpass).
+        assert any(
+            "useradd" in c and "ssh -i /tmp/dbos-key" in c and "dbos@10.0.0.50" in c
+            for c in cmds
+        )
+        assert not any("sshpass" in c for c in cmds)
+        # временный ключ затёрт на hub'е.
+        assert any("shred -u /tmp/dbos-key" in c for c in cmds)
+
+    async def test_deprovision_uses_key_connector(
+        self, make_task, fetch_task, stub_session, stub_mgmt,
+    ):
+        fake = _FakeSshClient()
+        fake.set_response("mktemp", 0, "/tmp/dbos-key")
+        stub_session["ssh"] = fake
+        tid = await make_task(
+            task_kind="vm.account_deprovision", target_server_id="hub1",
+            payload=_base_payload(
+                remove_home=True, creds_stash_key="dbos:dispatch_creds:abc",
+            ),
+        )
+        await vms_accounts.vm_account_deprovision.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        assert any(
+            "userdel -r app" in c and "ssh -i /tmp/dbos-key" in c and "dbos@10.0.0.50" in c
+            for c in cmds
+        )
+        assert not any("sshpass" in c for c in cmds)
+        assert any("shred -u /tmp/dbos-key" in c for c in cmds)

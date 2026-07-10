@@ -190,6 +190,38 @@ async def test_create_payload_carries_account_attributes(
 
 
 @pytest.mark.asyncio
+async def test_create_carries_mgmt_creds_stash(
+    client, admin_role_token_a, make_hub, db, monkeypatch,
+):
+    """prepare встроен в сборку: create кладёт управляющий материал в stash,
+    в payload едет только `creds_stash_key`, а ВМ помечается pending-apply."""
+    calls = make_dispatch_capture(monkeypatch)
+    stashed = _capture_dispatch_stash(monkeypatch)
+    hub = await make_hub()
+    resp = await client.post(
+        f"{BASE}/vms", json=_create_body(hub), headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    vm_id = resp.json()["vm_id"]
+    p = calls[0]["payload"]
+    # plaintext управляющего материала в payload не уезжает
+    assert "mgmt_ssh_public_key" not in p
+    assert "mgmt_ssh_private_key" not in p
+    assert "mgmt_password" not in p
+    stash_key = p["creds_stash_key"]
+    assert stash_key.startswith("dbos:dispatch_creds:")
+    creds = stashed[stash_key]
+    assert creds["management_user"] == "dbos"
+    assert creds["public_key"] and creds["private_key"] and creds["password"]
+    # ВМ ждёт применения управляющей пары; карточка это показывает
+    resp = await client.get(f"{BASE}/vms/{vm_id}", headers=_hdr(admin_role_token_a))
+    body = resp.json()
+    assert body["mgmt_creds_pending_apply"] is True
+    assert body["is_managed"] is False
+    assert "mgmt_ssh_public_key" in body and body["mgmt_ssh_public_key"]
+
+
+@pytest.mark.asyncio
 async def test_create_capacity_exceeded(client, admin_role_token_a, make_hub, monkeypatch):
     make_dispatch_capture(monkeypatch)
     hub = await make_hub(cpu_threads=16)

@@ -15,8 +15,12 @@ from __future__ import annotations
 
 from src.main import broker
 from src.tasks._runner import run_task
+from src.tasks._vm_prepare_helpers import (
+    _shred_temp_key,
+    choose_guest_connector,
+    load_guest_key,
+)
 from src.tasks._vms_helpers import (
-    guest_ssh,
     open_hub_session,
     resolve_guest_ip,
     run_hub_cmd,
@@ -77,9 +81,16 @@ async def vm_account_provision(task_id: str) -> None:
         session, host = await open_hub_session(payload)
         async with session as ssh:
             guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
-            provisioned = await _provision_guest_accounts(
-                ssh, host, guest_ip, [account], host_label, target_dept,
-            )
+            mgmt_user, key_path = await load_guest_key(ssh, host, payload)
+            connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
+            try:
+                provisioned = await _provision_guest_accounts(
+                    ssh, host, guest_ip, [account], host_label, target_dept,
+                    connect=connect,
+                )
+            finally:
+                if key_path:
+                    await _shred_temp_key(ssh, key_path)
         return {
             "vm_id": vm_id,
             "vm_name": vm_name,
@@ -121,15 +132,21 @@ async def vm_account_update_on_host(task_id: str) -> None:
         session, host = await open_hub_session(payload)
         async with session as ssh:
             guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
-            if groups:
-                await run_hub_cmd(
-                    ssh,
-                    guest_ssh(
-                        guest_ip, f"usermod -aG {','.join(groups)} {login}", sudo=True,
-                    ),
-                    host, "VM_UPDATE_FAILED",
-                    f"не удалось обновить группы пользователю {login} в госте",
-                )
+            mgmt_user, key_path = await load_guest_key(ssh, host, payload)
+            connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
+            try:
+                if groups:
+                    await run_hub_cmd(
+                        ssh,
+                        connect(
+                            f"usermod -aG {','.join(groups)} {login}", sudo=True,
+                        ),
+                        host, "VM_UPDATE_FAILED",
+                        f"не удалось обновить группы пользователю {login} в госте",
+                    )
+            finally:
+                if key_path:
+                    await _shred_temp_key(ssh, key_path)
         return {
             "vm_id": vm_id,
             "vm_name": vm_name,
@@ -172,16 +189,21 @@ async def vm_account_deprovision(task_id: str) -> None:
         session, host = await open_hub_session(payload)
         async with session as ssh:
             guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
-            await run_hub_cmd(
-                ssh,
-                guest_ssh(
-                    guest_ip,
-                    f"bash -c 'id {login} >/dev/null 2>&1 && userdel {flag}{login} || true'",
-                    sudo=True,
-                ),
-                host, "VM_DEPROVISION_FAILED",
-                f"не удалось удалить пользователя {login} в госте",
-            )
+            mgmt_user, key_path = await load_guest_key(ssh, host, payload)
+            connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
+            try:
+                await run_hub_cmd(
+                    ssh,
+                    connect(
+                        f"bash -c 'id {login} >/dev/null 2>&1 && userdel {flag}{login} || true'",
+                        sudo=True,
+                    ),
+                    host, "VM_DEPROVISION_FAILED",
+                    f"не удалось удалить пользователя {login} в госте",
+                )
+            finally:
+                if key_path:
+                    await _shred_temp_key(ssh, key_path)
         return {
             "vm_id": vm_id,
             "vm_name": vm_name,

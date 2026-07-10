@@ -646,6 +646,11 @@ async def list_tasks(
     if task_kind is not None:
         where_parts.append("task_kind = :task_kind")
         params["task_kind"] = task_kind
+    else:
+        # Пробы статуса (power.status/vm.status) снимают фоновые probe-циклы
+        # воркера и точечные refresh'ы — в общем списке задач это шум, прячем.
+        # Явный фильтр по kind их по-прежнему находит (для отладки).
+        where_parts.append("task_kind NOT IN ('power.status', 'vm.status')")
     if created_by is not None:
         where_parts.append("created_by = :created_by")
         params["created_by"] = created_by

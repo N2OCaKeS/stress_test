@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getTask } from "@/api/server/misc";
-import { apiErrMsg } from "@/api/client";
+import { apiErrMsg, ApiError } from "@/api/client";
 import type { TaskRead } from "@/api/server/types";
 import { isTerminalTaskStatus } from "@/api/server/types";
 
@@ -103,6 +103,12 @@ export function useTaskOutcome(pollMs: number = DEFAULT_POLL_MS): TaskOutcomePol
         })
         .catch((e: unknown) => {
           if (stopped || !aliveRef.current) return;
+          // Транзиентный сбой при опросе — обрыв сети или шлюз (502/503/504,
+          // напр. во время раската сервиса) — это не терминал задачи: не роняем
+          // поллинг, пропускаем тик и пробуем снова. Реальная ошибка (4xx,
+          // задача не найдена / нет прав) — останавливаемся и показываем.
+          const transient = !(e instanceof ApiError) || e.status >= 500;
+          if (transient) return;
           setTracked((prev) =>
             prev && prev.taskId === taskId
               ? {

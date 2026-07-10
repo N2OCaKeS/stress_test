@@ -397,6 +397,6 @@ EOF"""
                 },
             },
         }
-        provider.execute(commands=protopack, vms_dates=VMS_DATES,
-                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
+        provider.execute(commands=protopack, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, 
+                         username=USERNAME, password=PASSWORD, timeout=60)
 

@@ -120,16 +120,17 @@ class PreConfigure:
             password=PASSWORD,
         )
 
-    def prepare(self):
+    def prepare(self, type_test="balance"):
         if isinstance(self.provider, Libvirt):
+            data_disk_size = "50G" if type_test == "info-sys" else "10G"
             SystemCommands.cmd(
-                "sudo qemu-img create -f qcow2 /vms/db1.qcow2 10G && virsh attach-disk database1 /vms/db1.qcow2 vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio"
+                f"sudo qemu-img create -f qcow2 /vms/db1.qcow2 {data_disk_size} && virsh attach-disk database1 /vms/db1.qcow2 vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio"
             )
             SystemCommands.cmd(
-                "sudo qemu-img create -f qcow2 /vms/db2.qcow2 10G && virsh attach-disk database2 /vms/db2.qcow2 vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio"
+                f"sudo qemu-img create -f qcow2 /vms/db2.qcow2 {data_disk_size} && virsh attach-disk database2 /vms/db2.qcow2 vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio"
             )
             SystemCommands.cmd(
-                "sudo qemu-img create -f qcow2 /vms/db3.qcow2 10G && virsh attach-disk database3 /vms/db3.qcow2 vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio"
+                f"sudo qemu-img create -f qcow2 /vms/db3.qcow2 {data_disk_size} && virsh attach-disk database3 /vms/db3.qcow2 vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio"
             )
 
             sleep(10)

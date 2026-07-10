@@ -1020,6 +1020,34 @@ export function rotateVmMgmtCreds(vmId: string): Promise<TaskDispatchResponse> {
   );
 }
 
+// ── инвентаризация (наследовано от сервера) ─────────────────────────────────────
+
+/**
+ * `POST /api/server/v1/vms/{id}/inventory-sync` — снять hardware-inventory
+ * гостя ВМ (202). VM-аналог серверного inventory-sync: worker заходит по SSH
+ * через hub под управляющими кредами, снимает hostname/kernel/cpu/disks/os и
+ * сдаёт результат callback'ом (обновляет `vm.os_version`). ВМ обязана быть
+ * подготовлена (`is_managed`), иметь IP гостя и живой hub.
+ */
+export function inventorySyncVm(vmId: string): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(
+    `/server/v1/vms/${vmId}/inventory-sync`,
+  );
+}
+
+/**
+ * `POST /api/server/v1/vms/{id}/users-inventory` — снять OS-пользователей
+ * гостя ВМ (202). VM-аналог серверного users-inventory: worker читает
+ * getent passwd/group с гостя по SSH через hub, server_service reconcile'ит
+ * привязанные учётки (warn-on-drift, БД-истину не перетирает). ВМ обязана быть
+ * подготовлена (`is_managed`), иметь IP гостя и живой hub.
+ */
+export function usersInventoryVm(vmId: string): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(
+    `/server/v1/vms/${vmId}/users-inventory`,
+  );
+}
+
 // ── сеть ────────────────────────────────────────────────────────────────────────
 
 /**

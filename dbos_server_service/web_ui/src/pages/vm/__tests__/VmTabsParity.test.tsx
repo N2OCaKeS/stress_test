@@ -54,6 +54,12 @@ vi.mock("@/api/server/vms", async (importOriginal) => {
     setVmNetwork: vi.fn(() =>
       Promise.resolve({ task_id: "tsk_n", status: "queued" }),
     ),
+    inventorySyncVm: vi.fn(() =>
+      Promise.resolve({ task_id: "tsk_i", status: "queued" }),
+    ),
+    usersInventoryVm: vi.fn(() =>
+      Promise.resolve({ task_id: "tsk_u", status: "queued" }),
+    ),
   };
 });
 
@@ -105,7 +111,13 @@ import { OverviewTab } from "@/pages/server/tabs/overview";
 import { HardwareTab } from "@/pages/server/tabs/hardware";
 import { ManageTab } from "@/pages/server/tabs/manage";
 import { AccountsTab } from "@/pages/server/tabs/accounts";
-import { listVmDisks, astraUpdateVm, setVmNetwork } from "@/api/server/vms";
+import {
+  listVmDisks,
+  astraUpdateVm,
+  setVmNetwork,
+  inventorySyncVm,
+  usersInventoryVm,
+} from "@/api/server/vms";
 import * as accountsApi from "@/api/server/accounts";
 
 const VM: Vm = {
@@ -278,6 +290,14 @@ describe("Паритет вкладок ВМ с серверными (live-ре�
     await waitFor(() =>
       expect(astraUpdateVm).toHaveBeenCalledWith("vm-x1", { rc: "1.8.1.6" }),
     );
+  });
+
+  it("Управление ВМ: наследованные inventory sync / users inventory уходят в клиенты", async () => {
+    renderTab(<ManageTab serverId="" entity={vmEntity()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Inventory sync/ }));
+    await waitFor(() => expect(inventorySyncVm).toHaveBeenCalledWith("vm-x1"));
+    fireEvent.click(screen.getByRole("button", { name: /Users inventory/ }));
+    await waitFor(() => expect(usersInventoryVm).toHaveBeenCalledWith("vm-x1"));
   });
 
   it("Управление ВМ: смена сети на nat уходит в setVmNetwork", async () => {

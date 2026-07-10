@@ -69,8 +69,10 @@ import {
   astraUpdateVm,
   deleteVm,
   getAvailableIps,
+  inventorySyncVm,
   listVmIpPools,
   prepareVm,
+  usersInventoryVm,
   prepareVmsHub,
   releaseVm,
   reserveVm,
@@ -299,7 +301,10 @@ export function ManageTab(props: Props) {
     }
 
     const managed = vm.is_managed === true;
-    const reserved = vm.busy_state !== "free" || !!vm.busy_note;
+    // Бронь считаем из booking-статуса: `free`/`error` — свободна, иначе занята
+    // (run test / debug test / логин). busy_state — индикатор идущей
+    // lifecycle-операции, а не брони, поэтому в этот расчёт не входит.
+    const reserved = vm.status !== "free" && vm.status !== "error";
     const foreign = !!vm.busy_user_id && vm.busy_user_id !== persona.id;
 
     const handleVmPrepare = async () => {
@@ -331,6 +336,28 @@ export function ManageTab(props: Props) {
         toast.error(apiErrMsg(e, "Подготовка ВМ не удалась"));
       } finally {
         setBusyLocal(null);
+      }
+    };
+
+    const handleVmInventory = async () => {
+      taskOutcome.reset();
+      const res = await run("inventory_sync", () =>
+        mock ? Promise.resolve(fakeDispatch()) : inventorySyncVm(vm.id),
+      );
+      if (res) {
+        taskOutcome.track("inventory_sync", res.task_id, res.status);
+        onChanged();
+      }
+    };
+
+    const handleVmUsers = async () => {
+      taskOutcome.reset();
+      const res = await run("users_inventory", () =>
+        mock ? Promise.resolve(fakeDispatch()) : usersInventoryVm(vm.id),
+      );
+      if (res) {
+        taskOutcome.track("users_inventory", res.task_id, res.status);
+        onChanged();
       }
     };
 
@@ -488,6 +515,7 @@ export function ManageTab(props: Props) {
               </>
             )
           }
+          notPreparedHint="ВМ не подготовлена — инвентаризация ходит по управляющему ключу. Станет доступна после успешной подготовки."
           actions={[
             {
               key: "prepare",
@@ -497,6 +525,27 @@ export function ManageTab(props: Props) {
               primary: !managed,
               onClick: handleVmPrepare,
               title: managed ? "Повторно подготовить ВМ" : undefined,
+            },
+            {
+              key: "inventory_sync",
+              label: "Inventory sync",
+              Icon: RefreshCw,
+              spin: true,
+              requiresPrepared: true,
+              title: managed
+                ? undefined
+                : "Сначала подготовьте ВМ — инвентаризация ходит по управляющему ключу",
+              onClick: handleVmInventory,
+            },
+            {
+              key: "users_inventory",
+              label: "Users inventory",
+              Icon: UserCheck,
+              requiresPrepared: true,
+              title: managed
+                ? undefined
+                : "Сначала подготовьте ВМ — инвентаризация ходит по управляющему ключу",
+              onClick: handleVmUsers,
             },
           ]}
           outcome={taskOutcome.tracked}

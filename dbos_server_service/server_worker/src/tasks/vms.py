@@ -468,8 +468,9 @@ async def _trigger_reboot(ssh, host: str) -> None:
     работал: sshd бьёт SIGHUP по процессам канала при его закрытии, и фоновый
     `sleep 5; reboot` умирал до срабатывания. Фолбэк `shutdown -r` — на хостах
     без `systemd-run`. Небольшая задержка даёт таске завершиться и session
-    закрыться до ребута. Обрыв SSH на самом триггере таску не роняет: prepared
-    уже доложен, поэтому глушим SshError.
+    закрыться до ребута. Обрыв SSH на самом триггере таску не роняет: хаб уже
+    уходит в перезагрузку, дальше его подъём ждёт `_wait_hub_back`, поэтому
+    глушим SshError.
     """
     try:
         await ssh.run(
@@ -481,6 +482,79 @@ async def _trigger_reboot(ssh, host: str) -> None:
         logger.info(
             "vms_hub.prepare: reboot-триггер оборвал SSH (ожидаемо) host=%s", host,
         )
+
+
+# parsec-kiosk2 на профиле fly-desktop Astra включает kiosk-режим. На vm-hub'е
+# он не нужен и активно мешает: режет пользовательские systemd-юниты non-root
+# («PARSEC-UNIT [virtqemud.service] skipping for non-root»), из-за чего
+# session-ВМ (qemu:///session) гибнут за минуту — idle-exit virtqemud, а
+# systemd-scope сносит qemu следом.
+_KIOSK_UNIT = "parsec-kiosk2.service"
+
+
+async def _disable_kiosk(ssh, host: str) -> bool:
+    """Выключить kiosk-режим (parsec-kiosk2) на vm-hub'е.
+
+    Хаб — не киоск, режим тут только вредит: он не даёт держать ВМ в
+    пользовательской сессии libvirt. Если сервис и не запущен, и не включён —
+    менять нечего, возвращаем False. Иначе гасим, маскируем и снимаем
+    enforce-флаг одной best-effort/идемпотентной командой и возвращаем True:
+    эффект применяется только после reboot, поэтому caller обязан перезагрузить
+    хаб.
+    """
+    rc_active, _out, _err = await ssh.run(
+        f"systemctl is-active {_KIOSK_UNIT}", sudo=True,
+    )
+    rc_enabled, _out2, _err2 = await ssh.run(
+        f"systemctl is-enabled {_KIOSK_UNIT}", sudo=True,
+    )
+    if rc_active != 0 and rc_enabled != 0:
+        return False
+    await ssh.run(
+        f"sh -c 'systemctl disable --now {_KIOSK_UNIT}; "
+        f"systemctl mask {_KIOSK_UNIT}; "
+        "printf 0 > /etc/parsec/kiosk2_enforce 2>/dev/null || true'",
+        sudo=True,
+    )
+    return True
+
+
+# Ожидание подъёма хаба после самоперезагрузки в prepare. Хаб уходит в reboot с
+# небольшой задержкой (systemd-run --on-active=8), br0 встаёт на следующей
+# загрузке — поэтому первую пробу делаем не сразу, а после паузы, чтобы не
+# поймать ещё живой доребутный SSH. Каждую итерацию переоткрываем управляющую
+# сессию; пока хаб не поднялся, любой SSH-фейл (connect/auth/timeout) — это «ещё
+# не готов», а не терминал. Общее окно — attempts * delay (~240с при 24 × 10с).
+_HUB_REBOOT_WAIT_ATTEMPTS = 24
+_HUB_REBOOT_WAIT_DELAY_S = 10.0
+
+
+async def _wait_hub_back(payload: dict, host: str) -> None:
+    """Дождаться, пока hub снова примет управляющую SSH-сессию после reboot.
+
+    В цикле переоткрываем сессию (`open_hub_session`) и делаем лёгкий
+    health-check (`test -e /dev/kvm`). Пока хаб перезагружается, коннект не
+    поднимется — любую `SshError` глотаем и ретраим (сюда же попадает ремап
+    connect-фейла в `VMS_HUB_MANAGEMENT_AUTH_FAILED`, коды
+    `SSH_AUTH_FAILED`/`SSH_CONNECT_FAILED`/`SSH_TIMEOUT`). Не поднялся за
+    отведённое окно — `VMS_HUB_REBOOT_TIMEOUT`: net-guard вернёт сеть на
+    следующей загрузке, оператор повторит prepare.
+    """
+    for _ in range(_HUB_REBOOT_WAIT_ATTEMPTS):
+        await asyncio.sleep(_HUB_REBOOT_WAIT_DELAY_S)
+        try:
+            session, _host = await open_hub_session(payload)
+            async with session as ssh:
+                rc, _out, _err = await ssh.run("test -e /dev/kvm", sudo=True)
+                if rc == 0:
+                    return
+        except SshError:
+            pass
+    raise SshError(
+        error_code="VMS_HUB_REBOOT_TIMEOUT",
+        host=host,
+        message="hub не поднялся после reboot в отведённое окно",
+    )
 
 
 def _image_url(ref: str) -> tuple[str, str]:
@@ -817,10 +891,13 @@ async def vms_hub_prepare(task_id: str) -> None:
     server_service (`vms-hub-state`).
 
     Если мост `br0` создаётся впервые (живьём поднять его над управляющим NIC
-    нельзя — рвётся SSH), таска автономна: ставит reboot-переживающий guard,
-    докладывает успех и уходит в отложенный самоперезагруз. Мост встаёт на
-    следующей загрузке; не поднялась сеть — guard откатывает адресацию из
-    бэкапа. Если `br0` уже был — обычный callback без перезагрузки.
+    нельзя — рвётся SSH) или сняли kiosk-режим (parsec-kiosk2 ломает session-ВМ),
+    хабу нужен reboot: для br0 ставим reboot-переживающий guard, перезагружаем
+    хаб и ждём его подъёма (`_wait_hub_back`), и только после этого докладываем
+    успех. Мост встаёт на следующей загрузке; не поднялась сеть — guard
+    откатывает адресацию из бэкапа; не поднялся хаб за окно —
+    `VMS_HUB_REBOOT_TIMEOUT`, оператор повторит prepare. Если ни br0, ни kiosk
+    менять не пришлось — обычный callback без перезагрузки.
 
     Параметры: `task_id`. Payload — `server_id`, `host`/`hub_host` (str ip),
     `phy_if`, `os_family` (`apt`|`dnf`), `storage_pool_path` (опц., деф.
@@ -867,6 +944,9 @@ async def vms_hub_prepare(task_id: str) -> None:
                             "nested)"
                         ),
                     )
+                # Kiosk-режим (parsec-kiosk2) на хабе не нужен и рвёт session-ВМ;
+                # если он был активен/включён — гасим, потребуется reboot.
+                kiosk_changed = await _disable_kiosk(ssh, host)
                 await _run(
                     ssh, _install_packages_cmd(os_family), host,
                     "VMS_HUB_PACKAGES_FAILED", "установка пакетов hub'а упала",
@@ -896,24 +976,25 @@ async def vms_hub_prepare(task_id: str) -> None:
                 await _setup_user_libvirtd(ssh, host, mgmt_user)
                 await _ensure_pool(ssh, host, pool_path)
                 images = await _download_images(ssh, host, pool_path, image_refs)
-                if needs_reboot:
-                    # br0 записан, но живьём не поднят: ставим guard, докладываем
-                    # успех и уходим в отложенный reboot — мост встанет на
-                    # следующей загрузке. Callback обязан уйти ДО reboot-триггера.
-                    gateway = await _default_gateway(ssh)
-                    await _install_net_guard(ssh, host, gateway)
-                    await server_service_client.submit_vms_hub_state(
-                        server_id, prepared=True,
-                        target_department_id=target_dept, phy_if=phy_if,
-                    )
+                # Ребут нужен, если впервые записан br0 (мост встаёт только на
+                # следующей загрузке) или если сняли kiosk (эффект тоже после
+                # reboot). Успех докладываем не сейчас, а после подъёма хаба.
+                reboot_needed = needs_reboot or kiosk_changed
+                if reboot_needed:
+                    # br0 записан, но живьём не поднят: ставим reboot-переживающий
+                    # guard ПЕРЕД перезагрузкой (страховка отката сети, если мост
+                    # над управляющим NIC не встанет). Для чистого kiosk-ребута
+                    # (br0 уже был) guard не нужен — сеть не трогали.
+                    if needs_reboot:
+                        gateway = await _default_gateway(ssh)
+                        await _install_net_guard(ssh, host, gateway)
                     await _trigger_reboot(ssh, host)
-                    return {
-                        "server_id": server_id,
-                        "prepared": True,
-                        "phy_if": phy_if,
-                        "os_family": os_family,
-                        "images": images,
-                    }
+                # Выходим из async with — сессия закрыта, хаб перезагружается.
+            if reboot_needed:
+                # Ждём, пока хаб поднимется и снова примет управляющую сессию;
+                # только после этого докладываем prepared=True (см. финальный
+                # callback ниже). Не поднялся за окно — VMS_HUB_REBOOT_TIMEOUT.
+                await _wait_hub_back(payload, host)
         except Exception as exc:
             # Best-effort доложить провал, чтобы server_service снял «в
             # процессе» и показал причину; ошибку callback'а глушим.

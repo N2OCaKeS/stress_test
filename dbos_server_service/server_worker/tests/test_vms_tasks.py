@@ -107,6 +107,8 @@ def stub_session_and_callbacks(monkeypatch):
     # Ожидание graceful-выключения перед managed-baseline снимком — в тестах 0/1.
     monkeypatch.setattr(vms, "_SNAP_OFF_POLL_DELAY_S", 0)
     monkeypatch.setattr(vms, "_SNAP_OFF_MAX_POLLS", 1)
+    # Ожидание подъёма хаба после reboot — в тестах без пауз.
+    monkeypatch.setattr(vms, "_HUB_REBOOT_WAIT_DELAY_S", 0)
     return {"holder": holder, "calls": calls}
 
 
@@ -243,9 +245,17 @@ def _prepare_payload(os_family="apt"):
     }
 
 
+def _kiosk_off(fake):
+    """Проставить fake так, будто parsec-kiosk2 уже снят (не active, не enabled)."""
+    fake.set_response("is-active parsec-kiosk2", 3, "inactive")
+    fake.set_response("is-enabled parsec-kiosk2", 1, "disabled")
+    return fake
+
+
 def _prepare_fake():
     fake = _FakeSshClient()
     fake.set_response("test -e /dev/kvm", 0)
+    _kiosk_off(fake)  # kiosk снят → единственный драйвер ребута тут — br0
     fake.set_response("ip link show br0", 1)  # моста нет → настраиваем
     fake.set_response(
         "ip -o -4 addr show dev ens192", 0,
@@ -262,6 +272,7 @@ def _prepare_fake_bridge_present():
     """Как `_prepare_fake`, но br0 уже есть — ребут и guard не нужны."""
     fake = _FakeSshClient()
     fake.set_response("test -e /dev/kvm", 0)
+    _kiosk_off(fake)  # kiosk снят → без br0-ребута хабу перезагрузка не нужна
     fake.set_response("ip link show br0", 0)  # мост уже поднят
     fake.set_response("virsh pool-info", 1)
     fake.set_response("test -f", 1)
@@ -428,11 +439,15 @@ class TestVmsHubPrepare:
         assert "ping -c3 -W3 10.177.103.254" in script
         assert "interfaces.dbos-bak" in script
         assert "/sbin/reboot" in script
-        # reboot-триггер — последняя команда таски
+        # guard ставится ДО reboot-триггера
         reboot_idx = next(i for i, c in enumerate(cmds) if "systemctl reboot" in c)
-        assert reboot_idx == len(cmds) - 1
-        # callback ушёл ДО reboot-триггера
-        assert order and order[0] <= reboot_idx
+        assert guard_idx < reboot_idx
+        # health-check _wait_hub_back идёт ПОСЛЕ reboot (хаб пропинган на подъёме)
+        assert any(
+            "test -e /dev/kvm" in c for c in cmds[reboot_idx + 1:]
+        )
+        # callback prepared=True ушёл ПОСЛЕ reboot (reboot-then-wait-then-report)
+        assert order and order[0] > reboot_idx
 
     async def test_reboot_trigger_drop_does_not_fail_task(
         self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
@@ -492,6 +507,100 @@ class TestVmsHubPrepare:
         assert not any("virt" in c for c in fake.commands)
         # failed-callback prepared=False
         assert stub_session_and_callbacks["calls"]["hub_state"][0]["prepared"] is False
+
+    async def test_disable_kiosk_active_returns_true(self):
+        fake = _FakeSshClient()
+        fake.set_response("is-active parsec-kiosk2", 0, "active")
+        fake.set_response("is-enabled parsec-kiosk2", 0, "enabled")
+        result = await vms._disable_kiosk(fake, "10.0.0.7")
+        assert result is True
+        # kiosk снят: disable --now + mask + сброс enforce-флага
+        assert any(
+            "systemctl disable --now parsec-kiosk2.service" in c
+            and "systemctl mask parsec-kiosk2.service" in c
+            and "kiosk2_enforce" in c
+            for c in fake.commands
+        )
+        assert fake.sudo_for("systemctl disable --now parsec-kiosk2.service") is True
+
+    async def test_disable_kiosk_inactive_disabled_returns_false(self):
+        fake = _FakeSshClient()
+        fake.set_response("is-active parsec-kiosk2", 3, "inactive")
+        fake.set_response("is-enabled parsec-kiosk2", 1, "disabled")
+        result = await vms._disable_kiosk(fake, "10.0.0.7")
+        assert result is False
+        # менять нечего — ни disable, ни mask не выполнялись
+        assert not any("disable --now parsec-kiosk2" in c for c in fake.commands)
+        assert not any("mask parsec-kiosk2" in c for c in fake.commands)
+
+    async def test_kiosk_change_triggers_reboot_and_waits(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch,
+    ):
+        # br0 уже есть (needs_reboot=False), но kiosk активен → reboot всё равно
+        # нужен, а prepared=True должен уйти только после подъёма хаба.
+        fake = _FakeSshClient()
+        fake.set_response("test -e /dev/kvm", 0)
+        fake.set_response("is-active parsec-kiosk2", 0, "active")
+        fake.set_response("is-enabled parsec-kiosk2", 0, "enabled")
+        fake.set_response("ip link show br0", 0)  # мост уже поднят
+        fake.set_response("virsh pool-info", 1)
+        fake.set_response("test -f", 1)
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+
+        order: list[int] = []
+
+        async def _hub_state(server_id, prepared, target_department_id=None, **kw):  # noqa: ARG001
+            order.append(len(fake.commands))
+            return {"ok": True}
+
+        monkeypatch.setattr(vms.server_service_client, "submit_vms_hub_state", _hub_state)
+
+        tid = await make_task(task_kind="vms_hub.prepare", target_server_id="hub1", payload=_prepare_payload("apt"))
+        await vms.vms_hub_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        # kiosk снят
+        assert any("disable --now parsec-kiosk2.service" in c for c in cmds)
+        # br0 уже был → net-guard не ставили (сеть не трогали)
+        assert not any("dbos-net-guard" in c for c in cmds)
+        # reboot всё равно случился из-за kiosk
+        reboot_idx = next(i for i, c in enumerate(cmds) if "systemctl reboot" in c)
+        # health-check _wait_hub_back после reboot
+        assert any("test -e /dev/kvm" in c for c in cmds[reboot_idx + 1:])
+        # callback prepared=True ушёл ПОСЛЕ reboot (после подъёма хаба)
+        assert order and order[0] > reboot_idx
+
+    async def test_wait_hub_back_timeout_raises(self, monkeypatch, stub_session_and_callbacks):
+        # Хаб не поднимается: health-check всегда падает → VMS_HUB_REBOOT_TIMEOUT.
+        fake = _FakeSshClient()
+        fake.set_response("test -e /dev/kvm", 1)  # kvm-проба не проходит
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        monkeypatch.setattr(vms, "_HUB_REBOOT_WAIT_ATTEMPTS", 3)
+
+        with pytest.raises(SshError) as ei:
+            await vms._wait_hub_back(_prepare_payload("apt"), "10.0.0.7")
+        assert ei.value.error_code == "VMS_HUB_REBOOT_TIMEOUT"
+
+    async def test_wait_hub_back_swallows_connect_fail_then_succeeds(
+        self, monkeypatch, stub_session_and_callbacks,
+    ):
+        # Первые попытки — connect-фейл (хаб ещё в reboot), затем сессия встаёт.
+        fake = _FakeSshClient()
+        fake.set_response("test -e /dev/kvm", 0)
+        calls = {"n": 0}
+
+        async def _open(payload):  # noqa: ARG001
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise SshError(error_code="SSH_CONNECT_FAILED", host="10.0.0.7")
+            return fake, fake.host
+
+        monkeypatch.setattr(vms, "open_hub_session", _open)
+        # не должно бросить — connect-фейлы проглочены, на 3-й попытке успех
+        await vms._wait_hub_back(_prepare_payload("apt"), "10.0.0.7")
+        assert calls["n"] == 3
 
 
 # ── vm.create ────────────────────────────────────────────────────────────────

@@ -520,6 +520,67 @@ async def list_vm_packages_history(
 
 
 @router.post(
+    "/{vm_id}/inventory-sync",
+    response_model=VmTaskDispatchResponse,
+    status_code=202,
+    summary="Снять hardware-inventory гостя ВМ (202, dispatch vm.inventory_sync)",
+    description=(
+        "VM-аналог серверного inventory-sync. Гейтит право `(vm, vm_prepare)`. "
+        "ВМ обязана быть prepared (`is_managed`), иметь IP гостя и живой hub. "
+        "Диспатчит `vm.inventory_sync` — worker снимает hostname/kernel/cpu/disks/os "
+        "с гостя по SSH через hub под управляющими кредами и сдаёт callback'ом."
+    ),
+    responses={
+        202: {"description": "Задача поставлена."},
+        403: {"description": "Нет `vm_prepare`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_PREPARE_REQUIRED / VM_GUEST_IP_UNKNOWN / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def sync_vm_inventory(
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmTaskDispatchResponse:
+    """POST /vms/{id}/inventory-sync — снять inventory гостя + dispatch vm.inventory_sync."""
+    vm, task_id = await svc.sync_inventory(db, identity, request, vm_id)
+    return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
+
+
+@router.post(
+    "/{vm_id}/users-inventory",
+    response_model=VmTaskDispatchResponse,
+    status_code=202,
+    summary="Снять OS-пользователей гостя ВМ (202, dispatch vm.users_inventory)",
+    description=(
+        "VM-аналог серверного users-inventory. Гейтит право `(vm, vm_prepare)`. "
+        "ВМ обязана быть prepared (`is_managed`), иметь IP гостя и живой hub. "
+        "Диспатчит `vm.users_inventory` — worker снимает getent passwd/group с "
+        "гостя по SSH через hub; server_service reconcile'ит привязанные учётки "
+        "(warn-on-drift, БД-истину не перетирает)."
+    ),
+    responses={
+        202: {"description": "Задача поставлена."},
+        403: {"description": "Нет `vm_prepare`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_PREPARE_REQUIRED / VM_GUEST_IP_UNKNOWN / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def sync_vm_users(
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmTaskDispatchResponse:
+    """POST /vms/{id}/users-inventory — снять OS-юзеров гостя + dispatch vm.users_inventory."""
+    vm, task_id = await svc.users_inventory(db, identity, request, vm_id)
+    return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
+
+
+@router.post(
     "/{vm_id}/reserve",
     response_model=VmResponse,
     summary="Забронировать ВМ под тест",

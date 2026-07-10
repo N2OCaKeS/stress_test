@@ -79,6 +79,8 @@ SERVICE_EVENTS = [
     {"action": "vm.set_autostart", "description": "Смена флага автозапуска ВМ по SSH: virsh autostart / autostart --disable", "default_severity": "WARNING"},
     {"action": "vm.console_prep", "description": "Подготовка консоли ВМ по SSH: vnc/spice-graphics (+ serial) + чтение порта (virsh vncdisplay/domdisplay)", "default_severity": "INFO"},
     {"action": "vm.list_packages", "description": "Список установленных пакетов гостя ВМ снят по SSH (dpkg-query/rpm в госте)", "default_severity": "INFO"},
+    {"action": "vm.inventory_sync", "description": "Снятие hardware-фактов гостя ВМ по SSH через hub (VM-аналог server.inventory_sync)", "default_severity": "INFO"},
+    {"action": "vm.users_inventory", "description": "Снятие среза OS-пользователей гостя ВМ по SSH через hub (getent, VM-аналог server_account.users_inventory)", "default_severity": "INFO"},
     {"action": "vm.account_provision", "description": "Учётка общего пула заведена в госте ВМ по SSH через hub (useradd + пароль/ключ/группы)", "default_severity": "WARNING"},
     {"action": "vm.account_update_on_host", "description": "Группы/sudo учётки синхронизированы в госте ВМ по SSH через hub (usermod)", "default_severity": "INFO"},
     {"action": "vm.account_deprovision", "description": "Учётка удалена из гостя ВМ по SSH через hub (userdel)", "default_severity": "WARNING"},

@@ -287,6 +287,69 @@ async def submit_users_inventory(
     )
 
 
+async def submit_vm_inventory_facts(
+    vm_id: str,
+    inventory_payload: dict,
+    target_department_id: str | None = None,
+) -> dict:
+    """Отдать собранный inventory гостя ВМ обратно в server_service.
+
+    VM-аналог `submit_inventory_facts`: финал `vm.inventory_sync` task'а. По
+    этому callback'у server_service обновляет карточку ВМ свежими фактами гостя
+    (os_version и т.п.). `inventory_payload` — тот же flat dict под
+    `InventoryCallbackRequest`, что и на сервере (маппинг делает caller через
+    `ssh_client.inventory_facts_to_payload`).
+
+    Возвращает: тело `POST /api/server/v1/internal/vms/{id}/inventory`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `VM_INVENTORY_SUBMIT_REJECTED` — server_service вернул не 2xx.
+    """
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/vms/{vm_id}/inventory",
+        reject_code="VM_INVENTORY_SUBMIT_REJECTED",
+        target_department_id=target_department_id,
+        json=inventory_payload,
+        details={"vm_id": vm_id},
+        allow_empty_body=True,
+    )
+
+
+async def submit_vm_users_inventory(
+    vm_id: str,
+    users_payload: dict,
+    target_department_id: str | None = None,
+) -> dict:
+    """Отдать список OS-пользователей гостя ВМ обратно в server_service.
+
+    VM-аналог `submit_users_inventory`: финал `vm.users_inventory` task'а.
+    server_service reconcile'ит список против привязанных к ВМ учёток
+    (`server_account_vms`): помечает drift, отдаёт незнакомых — БД-истину не
+    перетирает (warn-on-drift, как на сервере).
+
+    `users_payload` — `{"users": [{login, uid, shell, home_dir, unix_groups,
+    has_sudo}, ...]}` под `UsersInventoryCallbackRequest`.
+
+    Возвращает: `{ok, created, present, drifted, diffs, unknown_users}` от
+    `POST /api/server/v1/internal/vms/{id}/users/inventory`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `VM_USERS_INVENTORY_SUBMIT_REJECTED` — server_service вернул не 2xx.
+    """
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/vms/{vm_id}/users/inventory",
+        reject_code="VM_USERS_INVENTORY_SUBMIT_REJECTED",
+        target_department_id=target_department_id,
+        json=users_payload,
+        details={"vm_id": vm_id},
+        allow_empty_body=True,
+    )
+
+
 async def submit_provision_status(
     server_id: str,
     account_id: str,

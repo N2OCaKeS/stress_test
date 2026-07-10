@@ -3219,6 +3219,135 @@ async def list_package_history(
     return vm.id, total, items
 
 
+# ── inventory / OS-users sync (VM-аналоги серверных inventory.sync/users) ─────
+
+
+async def _load_vm_for_guest_probe(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+    *,
+    audit_action: str,
+) -> tuple[Vm, object]:
+    """Пролог guest-probe операций ВМ: право `(vm, vm_prepare)` + видимость + готовность.
+
+    Инвентарь снимается по SSH через hub под управляющими кредами, поэтому ВМ
+    обязана быть prepared (`is_managed`), иметь IP гостя и живой hub. Read-only —
+    брони/lifecycle-lock не требует (как package-refresh). Возвращает (vm, hub).
+    """
+    with emit_denied_on_authz_error(
+        audit_action, target_id=vm_id, target_type="vm",
+        extra_details={"vm_id": vm_id}, identity=identity,
+    ):
+        await permissions.require_resource_action(
+            db, identity, EntityType.VM, vm_id, Action.VM_PREPARE
+        )
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            audit_action, target_id=vm_id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "not_found_or_cross_dept"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+    if not vm.is_managed:
+        raise ConflictError(
+            error_code="VM_PREPARE_REQUIRED",
+            message="VM is not prepared; run prepare before probing the guest",
+        )
+    if vm.ip_address is None:
+        raise ConflictError(
+            error_code="VM_GUEST_IP_UNKNOWN",
+            message="VM guest IP is unknown; cannot reach the guest to probe it",
+        )
+    hub = await server_repo.get_by_id(db, vm.hub_server_id)
+    if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+        raise ConflictError(
+            error_code="HUB_UNAVAILABLE",
+            message="Hub server is unavailable (missing or decommissioned)",
+        )
+    return vm, hub
+
+
+async def sync_inventory(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+) -> tuple[Vm, str]:
+    """Диспатч `vm.inventory_sync` — снять hardware-inventory гостя ВМ по SSH через hub.
+
+    VM-аналог серверного `inventory.sync`. Право `(vm, vm_prepare)`. ВМ обязана
+    быть prepared, иметь IP гостя и живой hub. Probe идёт под управляющими
+    кредами (в payload едет только stash-ключ). Возвращает (vm, task_id).
+    """
+    vm, hub = await _load_vm_for_guest_probe(
+        db, identity, request, vm_id, audit_action="vm.inventory_sync",
+    )
+    payload = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "guest_ip": str(vm.ip_address),
+    }
+    stash_key = await stash_existing_vm_mgmt_creds(vm, "vm.inventory_sync")
+    if stash_key:
+        payload["creds_stash_key"] = stash_key
+    task_id = await _dispatch_guest_task_with_stash(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_INVENTORY_SYNC, hub=hub, vm=vm,
+        payload=payload, audit_action="vm.inventory_sync", stash_key=stash_key,
+    )
+    await db.commit()
+    audit_service.emit(
+        "vm.inventory_sync", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "department_id": vm.department_id},
+    )
+    return vm, task_id
+
+
+async def users_inventory(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+) -> tuple[Vm, str]:
+    """Диспатч `vm.users_inventory` — снять OS-пользователей гостя ВМ по SSH через hub.
+
+    VM-аналог серверного `users.inventory`. Право `(vm, vm_prepare)`. ВМ обязана
+    быть prepared, иметь IP гостя и живой hub. Worker снимает getent-срез и сдаёт
+    его callback'ом; server_service reconcile'ит привязанные учётки (warn-on-drift).
+    Возвращает (vm, task_id).
+    """
+    vm, hub = await _load_vm_for_guest_probe(
+        db, identity, request, vm_id, audit_action="vm.users_inventory",
+    )
+    payload = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "guest_ip": str(vm.ip_address),
+    }
+    stash_key = await stash_existing_vm_mgmt_creds(vm, "vm.users_inventory")
+    if stash_key:
+        payload["creds_stash_key"] = stash_key
+    task_id = await _dispatch_guest_task_with_stash(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_USERS_INVENTORY, hub=hub, vm=vm,
+        payload=payload, audit_action="vm.users_inventory", stash_key=stash_key,
+    )
+    await db.commit()
+    audit_service.emit(
+        "vm.users_inventory", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "department_id": vm.department_id},
+    )
+    return vm, task_id
+
+
 # ── teardown VMS-hub (rm-vms-hub) ────────────────────────────────────────────
 
 

@@ -150,6 +150,10 @@ class TaskKind(StrEnum):
     VM_ALLTA_UPDATE = "vm.allta_update"
     VM_PASSWD = "vm.passwd"
     VM_LIST_PACKAGES = "vm.list_packages"
+    # Инвентаризация гостя ВМ — VM-аналоги inventory.sync / users.inventory, тем
+    # же общим кодом, но цель гость ВМ через hub (по управляющему ключу).
+    VM_INVENTORY_SYNC = "vm.inventory_sync"
+    VM_USERS_INVENTORY = "vm.users_inventory"
     # Учётки общего пула (server_account) в гостях ВМ — те же операции, что и на
     # серверах, только цель гость ВМ (useradd/usermod/userdel через hub).
     VM_ACCOUNT_PROVISION = "vm.account_provision"

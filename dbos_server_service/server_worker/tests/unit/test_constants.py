@@ -29,6 +29,7 @@ class TestTaskKind:
             "vm.snapshot_create", "vm.snapshot_delete", "vm.snapshot_revert",
             "vm.astra_update", "vm.allta_update", "vm.passwd",
             "vm.list_packages",
+            "vm.inventory_sync", "vm.users_inventory",
             "vm.account_provision", "vm.account_update_on_host",
             "vm.account_deprovision",
         }

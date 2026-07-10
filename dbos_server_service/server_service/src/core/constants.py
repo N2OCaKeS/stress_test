@@ -571,6 +571,11 @@ class VmTaskKind(StrEnum):
     # Live-инвентарь пакетов гостя: worker заходит на гостя по SSH через hub,
     # снимает dpkg/rpm-список и отдаёт его callback'ом record_vm_packages.
     VM_LIST_PACKAGES = "vm.list_packages"
+    # Инвентаризация гостя ВМ — VM-аналоги inventory.sync / users.inventory: worker
+    # снимает hardware-facts / OS-юзеров с гостя по SSH через hub (управляющий ключ)
+    # и сдаёт callback'ом (inventory / users/inventory).
+    VM_INVENTORY_SYNC = "vm.inventory_sync"
+    VM_USERS_INVENTORY = "vm.users_inventory"
     # Смена сетевого режима ВМ: NAT (libvirt, IP через domifaddr) ↔ bridge
     # (br0, статический IP из пула — провижн статики в госте + правка XML).
     VM_SET_NETWORK = "vm.set_network"

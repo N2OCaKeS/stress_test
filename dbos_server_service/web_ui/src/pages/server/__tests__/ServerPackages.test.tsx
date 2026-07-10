@@ -15,6 +15,7 @@ import type {
   PackagesBulkActionResponse,
   Server,
 } from "@/api/server/types";
+import type { Vm } from "@/api/server/vms";
 
 // Подтверждение деструктива — confirm всегда «да», чтобы Remove/Update
 // доходили до dispatch'а в тесте.
@@ -76,6 +77,52 @@ vi.mock("@/api/server/servers", () => ({
   listServers: vi.fn(() => Promise.resolve(SERVER_PAGE)),
 }));
 
+function mkVm(id: string, name: string): Vm {
+  return {
+    id,
+    name,
+    hostname: null,
+    number: 7,
+    hub_server_id: "srv_a",
+    department_id: "core",
+    os_version: "Astra 1.8",
+    box: "vm_station",
+    network_mode: "nat",
+    ip_address: "10.20.0.5",
+    status: "free",
+    power_state: "on",
+    cpu: 2,
+    ram_mb: 2048,
+    disk_gb: 20,
+    autostart: false,
+    cred_strategy: "per_snapshot",
+    busy_state: null,
+    is_managed: true,
+    created_at: "2026-06-11T00:00:00Z",
+    updated_at: "2026-06-11T00:00:00Z",
+  };
+}
+
+const VM_PAGE: OffsetPaginatedResponse<Vm> = {
+  items: [mkVm("vm_x", "vm-one")],
+  total: 1,
+  limit: 200,
+  offset: 0,
+};
+
+vi.mock("@/api/server/vms", () => ({
+  listVms: vi.fn(() => Promise.resolve(VM_PAGE)),
+  listVmPackages: vi.fn(() =>
+    Promise.resolve({
+      vm_id: "vm_x",
+      packages: [],
+      package_count: 0,
+      dispatched: true,
+      task_id: "vt1",
+    }),
+  ),
+}));
+
 vi.mock("@/api/server/osVersions", () => ({
   listOsVersions: vi.fn(() =>
     Promise.resolve({ items: [], total: 0, limit: 200, offset: 0 }),
@@ -105,10 +152,13 @@ import {
   packagesBulkAction,
 } from "@/api/server/misc";
 import { listServers } from "@/api/server/servers";
+import { listVms, listVmPackages } from "@/api/server/vms";
 
 const installedPackagesBulkMock = vi.mocked(installedPackagesBulk);
 const packagesBulkActionMock = vi.mocked(packagesBulkAction);
 const listServersMock = vi.mocked(listServers);
+const listVmsMock = vi.mocked(listVms);
+const listVmPackagesMock = vi.mocked(listVmPackages);
 
 function renderPage() {
   return render(
@@ -130,6 +180,8 @@ describe("ServerPackages", () => {
     installedPackagesBulkMock.mockClear();
     packagesBulkActionMock.mockClear();
     listServersMock.mockClear();
+    listVmsMock.mockClear();
+    listVmPackagesMock.mockClear();
   });
 
   it("показывает подсказку про мультипаттерн", async () => {
@@ -270,5 +322,36 @@ describe("ServerPackages", () => {
     const table2 = await screen.findByRole("table");
     expect(within(table2).getAllByText("—")).toHaveLength(1);
     expect(within(table2).getByText("·")).toBeInTheDocument();
+  });
+
+  it("ВМ показывается в селекторе отдельной секцией", async () => {
+    renderPage();
+    await screen.findByText("vm-one");
+    // Секция ВМ подписана и содержит имя ВМ.
+    expect(screen.getByText("ВМ (1)")).toBeInTheDocument();
+    // Серверная секция никуда не делась.
+    expect(screen.getByText("Серверы (2)")).toBeInTheDocument();
+  });
+
+  it("выбор ВМ ставит per-VM probe пакетов, а не серверный bulk", async () => {
+    renderPage();
+    await screen.findByText("vm-one");
+    // Чекбоксы: два сервера, затем ВМ последней.
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[checkboxes.length - 1]);
+    fireEvent.change(screen.getByPlaceholderText("ssh* bash* *libs*"), {
+      target: { value: "linux-image*" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Запросить/ }));
+    await waitFor(() =>
+      expect(listVmPackagesMock).toHaveBeenCalledTimes(1),
+    );
+    expect(listVmPackagesMock.mock.calls[0][0]).toBe("vm_x");
+    expect(listVmPackagesMock.mock.calls[0][1]).toMatchObject({
+      refresh: true,
+      pattern: "linux-image*",
+    });
+    // Серверный bulk не дёргается, раз выбрана только ВМ.
+    expect(installedPackagesBulkMock).not.toHaveBeenCalled();
   });
 });

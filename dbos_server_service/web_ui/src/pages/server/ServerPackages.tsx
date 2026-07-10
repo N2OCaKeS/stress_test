@@ -1,9 +1,13 @@
 /**
  * Страница /server/packages — массовый запрос установленных пакетов по набору
- * серверов отдела.
+ * серверов и ВМ отдела.
  *
- * Поток: оператор выбирает серверы (мультиселект) и pattern (shell-glob), жмёт
- * «Запросить» — backend (`POST /servers/installed-packages/bulk`) сразу отдаёт
+ * Поток: оператор выбирает серверы и/или ВМ (мультиселект) и pattern
+ * (shell-glob), жмёт «Запросить». Серверы уходят одним bulk-вызовом
+ * (`POST /servers/installed-packages/bulk`); ВМ bulk-эндпоинта не имеют, поэтому
+ * по каждой ставится отдельный probe `vm.list_packages` через
+ * `GET /vms/{id}/packages?refresh=true`. Оба потока сходятся в одну сводную
+ * таблицу. backend (`POST /servers/installed-packages/bulk`) сразу отдаёт
  * per-server исходы. Подготовленным серверам ставится probe-задача
  * (`status: ok`, `task_id`), остальным — статус-причина (`prepare_required` и
  * т.п.). Список пакетов приходит асинхронно в `task.result`, поэтому по каждому
@@ -45,11 +49,11 @@ import {
   packagesBulkAction,
   getTask,
 } from "@/api/server/misc";
+import { listVms, listVmPackages } from "@/api/server/vms";
 import { listOsVersions } from "@/api/server/osVersions";
 import { isDepAdmin, isServerZoneBlocked } from "@/lib/rbac";
 import { isTerminalTaskStatus } from "@/api/server/types";
 import type {
-  BulkPackagesServerStatus,
   OffsetPaginatedResponse,
   OsVersion,
   PackageInfo,
@@ -74,6 +78,7 @@ const STATUS_LABEL: Record<string, string> = {
   decommissioned: "decommissioned",
   not_found: "не найден",
   auth_failed: "auth failed",
+  error: "недоступна",
 };
 
 const STATUS_KIND: Record<string, "ok" | "warn" | "danger" | ""> = {
@@ -82,6 +87,7 @@ const STATUS_KIND: Record<string, "ok" | "warn" | "danger" | ""> = {
   decommissioned: "",
   not_found: "danger",
   auth_failed: "danger",
+  error: "danger",
 };
 
 /** Разбивает строку фильтра на отдельные glob'ы по пробелам, без пустых. */
@@ -107,14 +113,43 @@ function extractPackages(result: TaskRead["result"]): PackageInfo[] {
     .filter((p): p is PackageInfo => p !== null);
 }
 
-/** Локальное состояние одного сервера в таблице (исход + поллинг task'и). */
+/** Тип сущности в сводке: физический сервер или ВМ. */
+type EntityKind = "server" | "vm";
+
+/** Нормализованный элемент левого мультиселекта — сервер или ВМ. */
+interface PickEntity {
+  kind: EntityKind;
+  id: string;
+  /** Отображаемое имя (display_name сервера / name ВМ). */
+  name: string;
+  hostname: string;
+  ip: string | null;
+  /** Готовая подпись ОС. */
+  osName: string;
+  /** OS-версия сервера (id каталога); для ВМ — null. */
+  osVersionId: string | null;
+  /** Подготовлена ли сущность (is_managed). */
+  ready: boolean;
+  /** Booking-статус ВМ (free / run test / …); для сервера — null. */
+  statusText: string | null;
+}
+
+/**
+ * Локальное состояние одной сущности (сервер или ВМ) в таблице: исход
+ * dispatch'а + поллинг task'и. Сервер и ВМ ложатся в одну модель, чтобы
+ * попадать в общую сводную таблицу наравне.
+ */
 interface ServerState {
+  kind: EntityKind;
   serverId: string;
   hostname: string;
-  /** Человекочитаемое имя сервера (если задано) — показываем его как основное. */
+  /** Человекочитаемое имя сущности (если задано) — показываем его как основное. */
   displayName: string | null;
+  /** OS-версия сервера (id из каталога). Для ВМ — null, имя лежит в osName. */
   osVersionId: string | null;
-  status: BulkPackagesServerStatus;
+  /** Готовая подпись ОС для ВМ (backend отдаёт строкой). Для сервера — null. */
+  osName: string | null;
+  status: string;
   taskId: string | null;
   packages: PackageInfo[];
   /** true — по task'е ещё идёт поллинг result'а. */
@@ -223,19 +258,104 @@ export function ServerPackages() {
   );
   const servers = useMemo(() => serversQ.data?.items ?? [], [serversQ.data]);
 
+  const vmsQ = useQuery(
+    () => listVms({ limit: SERVER_LIMIT }),
+    [],
+    { enabled: !zoneBlocked },
+  );
+  const vms = useMemo(() => vmsQ.data?.items ?? [], [vmsQ.data]);
+
   const allowed = canProbe(persona);
   const canManage = canManagePackages(persona);
 
-  const filteredServers = useMemo(() => {
+  const osLabel = useCallback(
+    (id: string | null) => (id ? osMap.get(id) ?? id : "—"),
+    [osMap],
+  );
+
+  // Подпись ОС для строки сводки: сервер резолвится через каталог, ВМ несёт
+  // готовую строку в osName.
+  const osOf = useCallback(
+    (s: ServerState) =>
+      s.kind === "vm" ? s.osName ?? "—" : osLabel(s.osVersionId),
+    [osLabel],
+  );
+
+  // Общий пул выбора: серверы и ВМ в одной нормализованной форме, чтобы поиск,
+  // «выбрать все» и запуск probe работали над ними единообразно.
+  const serverEntities = useMemo<PickEntity[]>(
+    () =>
+      servers.map((s) => ({
+        kind: "server",
+        id: s.id,
+        name: s.display_name ?? s.hostname,
+        hostname: s.hostname,
+        ip: s.ip_address,
+        osName: osLabel(s.os_version_id),
+        osVersionId: s.os_version_id,
+        ready: s.is_managed,
+        statusText: null,
+      })),
+    [servers, osLabel],
+  );
+  const vmEntities = useMemo<PickEntity[]>(
+    () =>
+      vms.map((v) => ({
+        kind: "vm",
+        id: v.id,
+        name: v.name,
+        hostname: v.hostname ?? v.name,
+        ip: v.ip_address,
+        osName: v.os_version ?? "—",
+        osVersionId: null,
+        ready: v.is_managed ?? false,
+        statusText: v.status || null,
+      })),
+    [vms],
+  );
+
+  // Карта id → сущность: нужна на запуске, чтобы развести серверы и ВМ по своим
+  // ветвям dispatch'а.
+  const entityById = useMemo(() => {
+    const m = new Map<string, PickEntity>();
+    for (const e of serverEntities) m.set(e.id, e);
+    for (const e of vmEntities) m.set(e.id, e);
+    return m;
+  }, [serverEntities, vmEntities]);
+
+  const matchesSearch = useCallback(
+    (e: PickEntity, term: string) =>
+      e.name.toLowerCase().includes(term) ||
+      e.hostname.toLowerCase().includes(term) ||
+      (e.ip?.toLowerCase().includes(term) ?? false),
+    [],
+  );
+
+  const filteredServerEntities = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return servers;
-    return servers.filter(
-      (s) =>
-        s.hostname.toLowerCase().includes(term) ||
-        (s.display_name?.toLowerCase().includes(term) ?? false) ||
-        s.ip_address.toLowerCase().includes(term),
-    );
-  }, [servers, search]);
+    if (!term) return serverEntities;
+    return serverEntities.filter((e) => matchesSearch(e, term));
+  }, [serverEntities, search, matchesSearch]);
+  const filteredVmEntities = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return vmEntities;
+    return vmEntities.filter((e) => matchesSearch(e, term));
+  }, [vmEntities, search, matchesSearch]);
+
+  const filteredEntities = useMemo(
+    () => [...filteredServerEntities, ...filteredVmEntities],
+    [filteredServerEntities, filteredVmEntities],
+  );
+  const totalCount = serverEntities.length + vmEntities.length;
+
+  // Кол-во выбранных ВМ — их путь action'ов пока не поддержан бэком, показываем
+  // предупреждение и режем список для панели действий.
+  const selectedServerIds = useMemo(
+    () =>
+      [...selected].filter((id) => entityById.get(id)?.kind === "server"),
+    [selected, entityById],
+  );
+  const selectedVmCount = selected.size - selectedServerIds.length;
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -249,10 +369,10 @@ export function ServerPackages() {
   function toggleAllVisible() {
     setSelected((prev) => {
       const next = new Set(prev);
-      const allOn = filteredServers.every((s) => next.has(s.id));
-      for (const s of filteredServers) {
-        if (allOn) next.delete(s.id);
-        else next.add(s.id);
+      const allOn = filteredEntities.every((e) => next.has(e.id));
+      for (const e of filteredEntities) {
+        if (allOn) next.delete(e.id);
+        else next.add(e.id);
       }
       return next;
     });
@@ -271,7 +391,7 @@ export function ServerPackages() {
   async function handleRun() {
     if (dispatching || !allowed) return;
     if (selected.size === 0) {
-      setDispatchErr("Выберите хотя бы один сервер.");
+      setDispatchErr("Выберите хотя бы одну сущность (сервер или ВМ).");
       return;
     }
     setDispatchErr(null);
@@ -279,32 +399,95 @@ export function ServerPackages() {
     setStates([]);
     try {
       const patterns = parsePatterns(pattern);
-      const res = await installedPackagesBulk({
-        server_ids: [...selected],
-        ...(patterns.length ? { patterns } : {}),
-      });
-      if (!aliveRef.current) return;
-      const init: ServerState[] = res.results.map((r) => ({
-        serverId: r.server_id,
-        hostname: r.hostname ?? r.server_id,
-        displayName:
-          servers.find((s) => s.id === r.server_id)?.display_name ?? null,
-        osVersionId: r.os_version_id,
-        status: r.status,
-        taskId: r.task_id ?? null,
-        packages: r.packages ?? [],
-        // Поллим только серверы со статусом ok и непустым task_id, у которых
-        // пакеты ещё не приехали в самом bulk-ответе.
-        polling:
-          r.status === "ok" &&
-          !!r.task_id &&
-          (r.packages?.length ?? 0) === 0,
-        error: null,
-      }));
-      setStates(init);
-      toast.success(
-        `Запрос поставлен: ${res.dispatched} из ${res.requested} серверов`,
+      const rawPattern = pattern.trim();
+      const selectedIds = [...selected];
+      const serverIds = selectedIds.filter(
+        (id) => entityById.get(id)?.kind === "server",
       );
+      const vmIds = selectedIds.filter(
+        (id) => entityById.get(id)?.kind === "vm",
+      );
+
+      // Серверы — один bulk-вызов; ВМ — по probe на каждую (bulk-эндпоинта для
+      // ВМ нет). Оба потока сходятся в одну таблицу states.
+      const serverStatesP: Promise<ServerState[]> = serverIds.length
+        ? installedPackagesBulk({
+            server_ids: serverIds,
+            ...(patterns.length ? { patterns } : {}),
+          }).then((res) =>
+            res.results.map((r) => ({
+              kind: "server" as const,
+              serverId: r.server_id,
+              hostname: r.hostname ?? r.server_id,
+              displayName:
+                servers.find((s) => s.id === r.server_id)?.display_name ?? null,
+              osVersionId: r.os_version_id,
+              osName: null,
+              status: r.status,
+              taskId: r.task_id ?? null,
+              packages: r.packages ?? [],
+              // Поллим только серверы со статусом ok и непустым task_id, у
+              // которых пакеты ещё не приехали в самом bulk-ответе.
+              polling:
+                r.status === "ok" &&
+                !!r.task_id &&
+                (r.packages?.length ?? 0) === 0,
+              error: null,
+            })),
+          )
+        : Promise.resolve([]);
+
+      const vmStatesP: Promise<ServerState[]> = Promise.all(
+        vmIds.map(async (vmId): Promise<ServerState> => {
+          const ent = entityById.get(vmId);
+          const base = {
+            kind: "vm" as const,
+            serverId: vmId,
+            hostname: ent?.hostname ?? vmId,
+            displayName: ent?.name ?? null,
+            osVersionId: null,
+            osName: ent?.osName ?? null,
+            taskId: null as string | null,
+          };
+          try {
+            const res = await listVmPackages(vmId, {
+              refresh: true,
+              ...(rawPattern ? { pattern: rawPattern } : {}),
+            });
+            return {
+              ...base,
+              status: "ok",
+              taskId: res.task_id ?? null,
+              // Показываем сохранённый срез, пока свежий probe считается.
+              packages: res.packages.map((p) => ({
+                name: p.name,
+                version: p.version ?? "",
+              })),
+              polling: res.dispatched && !!res.task_id,
+              error: null,
+            };
+          } catch (e) {
+            return {
+              ...base,
+              status: "error",
+              packages: [],
+              polling: false,
+              error: apiErrMsg(e, "ВМ недоступна для probe пакетов"),
+            };
+          }
+        }),
+      );
+
+      const [serverStates, vmStates] = await Promise.all([
+        serverStatesP,
+        vmStatesP,
+      ]);
+      if (!aliveRef.current) return;
+      setStates([...serverStates, ...vmStates]);
+      const parts: string[] = [];
+      if (serverIds.length) parts.push(`серверов: ${serverIds.length}`);
+      if (vmIds.length) parts.push(`ВМ: ${vmIds.length}`);
+      toast.success(`Запрос поставлен (${parts.join(", ")})`);
     } catch (e) {
       if (!aliveRef.current) return;
       const msg = apiErrMsg(e, "Не удалось запустить массовый запрос пакетов");
@@ -384,7 +567,10 @@ export function ServerPackages() {
     );
   }
 
-  const osLabel = (id: string | null) => (id ? osMap.get(id) ?? id : "—");
+  // Серверы — первичный список: их ошибка блокирует панель. Список ВМ
+  // деградирует мягко (мелкая пометка), чтобы недоступность vm-домена не
+  // рушила серверный сценарий.
+  const listLoading = serversQ.loading || vmsQ.loading;
 
   const aside = (
     <aside className="border-r border-token surface flex flex-col min-h-0">
@@ -393,7 +579,7 @@ export function ServerPackages() {
           <Search className="w-4 h-4 text-dim" />
           <input
             className="bg-transparent outline-none flex-1 text-sm"
-            placeholder={`Поиск по ${servers.length} серверам…`}
+            placeholder={`Поиск по ${totalCount} серверам и ВМ…`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -404,10 +590,10 @@ export function ServerPackages() {
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={toggleAllVisible}
-            disabled={filteredServers.length === 0}
+            disabled={filteredEntities.length === 0}
           >
-            {filteredServers.every((s) => selected.has(s.id)) &&
-            filteredServers.length > 0
+            {filteredEntities.every((e) => selected.has(e.id)) &&
+            filteredEntities.length > 0
               ? "Снять все"
               : "Выбрать все"}
           </button>
@@ -415,14 +601,14 @@ export function ServerPackages() {
       </div>
 
       <div className="flex-1 overflow-y-auto py-2">
-        {serversQ.loading && (
+        {listLoading && (
           <div className="px-3 py-6 text-xs text-dim text-center">Загрузка…</div>
         )}
-        {serversQ.error && (
+        {!listLoading && serversQ.error && (
           <div className="m-3 alert alert-danger flex items-start gap-2">
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1 text-xs">
-              <div>{apiErrMsg(serversQ.error, "Список не загрузился")}</div>
+              <div>{apiErrMsg(serversQ.error, "Список серверов не загрузился")}</div>
               <button
                 className="btn btn-ghost mt-2"
                 onClick={() => serversQ.refetch()}
@@ -432,22 +618,50 @@ export function ServerPackages() {
             </div>
           </div>
         )}
-        {!serversQ.loading && !serversQ.error && filteredServers.length === 0 && (
+        {!listLoading && !serversQ.error && filteredEntities.length === 0 && (
           <div className="px-3 py-6 text-xs text-dim text-center">
-            {servers.length > 0 ? "Под фильтр серверов нет." : "Список пуст."}
+            {totalCount > 0 ? "Под фильтр ничего нет." : "Список пуст."}
           </div>
         )}
-        <div className="px-2 flex flex-col gap-0.5">
-          {filteredServers.map((s) => (
-            <ServerPickRow
-              key={s.id}
-              server={s}
-              checked={selected.has(s.id)}
-              osLabel={osLabel}
-              onToggle={() => toggle(s.id)}
-            />
-          ))}
-        </div>
+        {!listLoading && !serversQ.error && filteredServerEntities.length > 0 && (
+          <>
+            <div className="px-3 pt-1 pb-0.5 text-[10px] uppercase tracking-wide text-dim">
+              Серверы ({filteredServerEntities.length})
+            </div>
+            <div className="px-2 flex flex-col gap-0.5">
+              {filteredServerEntities.map((e) => (
+                <EntityPickRow
+                  key={e.id}
+                  entity={e}
+                  checked={selected.has(e.id)}
+                  onToggle={() => toggle(e.id)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+        {!listLoading && filteredVmEntities.length > 0 && (
+          <>
+            <div className="px-3 pt-3 pb-0.5 text-[10px] uppercase tracking-wide text-dim">
+              ВМ ({filteredVmEntities.length})
+            </div>
+            <div className="px-2 flex flex-col gap-0.5">
+              {filteredVmEntities.map((e) => (
+                <EntityPickRow
+                  key={e.id}
+                  entity={e}
+                  checked={selected.has(e.id)}
+                  onToggle={() => toggle(e.id)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+        {!listLoading && vmsQ.error && (
+          <div className="px-3 pt-3 text-[11px] text-dim italic">
+            Список ВМ не загрузился — доступны только серверы.
+          </div>
+        )}
       </div>
 
       <div className="border-t border-token p-3 shrink-0 flex flex-col gap-2">
@@ -483,10 +697,18 @@ export function ServerPackages() {
         )}
 
         {canManage && (
-          <PackageActionPanel
-            serverIds={[...selected]}
-            servers={servers}
-          />
+          <>
+            <PackageActionPanel
+              serverIds={selectedServerIds}
+              servers={servers}
+            />
+            {selectedVmCount > 0 && (
+              <div className="text-[11px] text-dim italic">
+                Действия install/remove/update для ВМ появятся позже — сейчас они
+                применяются только к выбранным серверам ({selectedServerIds.length}).
+              </div>
+            )}
+          </>
         )}
       </div>
     </aside>
@@ -501,7 +723,7 @@ export function ServerPackages() {
         anyPolling={anyPolling}
         dispatchErr={dispatchErr}
         pattern={parsePatterns(pattern).join(" ") || "*"}
-        osLabel={osLabel}
+        osOf={osOf}
       />
     </Shell>
   );
@@ -509,33 +731,38 @@ export function ServerPackages() {
 
 // ───────────────────────────────────────────────────────────────────────────
 
-function ServerPickRow({
-  server,
+function EntityPickRow({
+  entity,
   checked,
-  osLabel,
   onToggle,
 }: {
-  server: Server;
+  entity: PickEntity;
   checked: boolean;
-  osLabel: (id: string | null) => string;
   onToggle: () => void;
 }) {
-  const name = server.display_name ?? server.hostname;
+  const notReadyTitle =
+    entity.kind === "vm" ? "ВМ не подготовлена" : "Сервер не подготовлен";
   return (
     <label
       className={`cred-row text-left flex items-center gap-2 cursor-pointer ${checked ? "active" : ""}`}
     >
       <input type="checkbox" checked={checked} onChange={onToggle} />
       <div className="flex-1 min-w-0">
-        <div className="text-sm truncate" title={server.ip_address}>
-          {name}
+        <div
+          className="text-sm truncate flex items-center gap-1.5"
+          title={entity.ip ?? undefined}
+        >
+          {entity.kind === "vm" && (
+            <span className="badge badge-accent text-[9px]">ВМ</span>
+          )}
+          <span className="truncate">{entity.name}</span>
         </div>
         <div className="text-[11px] text-dim truncate">
-          ОС: {osLabel(server.os_version_id)}
+          ОС: {entity.osName}
         </div>
       </div>
-      {!server.is_managed && (
-        <span className="badge badge-warn" title="Сервер не подготовлен">
+      {!entity.ready && (
+        <span className="badge badge-warn" title={notReadyTitle}>
           не готов
         </span>
       )}
@@ -878,7 +1105,7 @@ function PackagesWorkzone({
   anyPolling,
   dispatchErr,
   pattern,
-  osLabel,
+  osOf,
 }: {
   states: ServerState[];
   orientation: Orientation;
@@ -886,7 +1113,7 @@ function PackagesWorkzone({
   anyPolling: boolean;
   dispatchErr: string | null;
   pattern: string;
-  osLabel: (id: string | null) => string;
+  osOf: (s: ServerState) => string;
 }) {
   // Полный отсортированный список имён пакетов по всем серверам.
   const packageNames = useMemo(() => {
@@ -914,10 +1141,12 @@ function PackagesWorkzone({
       pattern,
       exported_at: new Date().toISOString(),
       servers: states.map((s) => ({
+        kind: s.kind,
         server_id: s.serverId,
         hostname: s.hostname,
         display_name: s.displayName,
         os_version_id: s.osVersionId,
+        os_version: s.osName,
         status: s.status,
         packages: s.packages,
       })),
@@ -935,7 +1164,7 @@ function PackagesWorkzone({
     const header = [
       "package",
       ...states.map(
-        (s) => `${s.displayName ?? s.hostname} (${osLabel(s.osVersionId)})`,
+        (s) => `${s.displayName ?? s.hostname} (${osOf(s)})`,
       ),
     ];
     const lines = [header.map(csvCell).join(",")];
@@ -957,7 +1186,7 @@ function PackagesWorkzone({
           <h1 className="text-base font-semibold">Установленные пакеты — массово</h1>
           <div className="text-[11px] text-dim">
             pattern: <span className="mono">{pattern}</span>
-            {hasData && <> · серверов: {states.length}</>}
+            {hasData && <> · сущностей: {states.length}</>}
             {hasPackages && <> · уникальных пакетов: {packageNames.length}</>}
           </div>
         </div>
@@ -1013,7 +1242,8 @@ function PackagesWorkzone({
           <div className="empty-card max-w-md mx-auto text-center mt-10">
             <Package className="w-10 h-10 mx-auto text-dim mb-3" />
             <div className="text-sm text-dim">
-              Выберите серверы слева, задайте pattern и нажмите «Запросить».
+              Выберите серверы или ВМ слева, задайте pattern и нажмите
+              «Запросить».
             </div>
           </div>
         ) : (
@@ -1028,7 +1258,7 @@ function PackagesWorkzone({
               </div>
             )}
 
-            <StatusLegend states={states} osLabel={osLabel} />
+            <StatusLegend states={states} osOf={osOf} />
 
             {!hasPackages ? (
               <div className="text-xs text-dim italic">
@@ -1044,14 +1274,14 @@ function PackagesWorkzone({
                     states={states}
                     packageNames={packageNames}
                     cell={cell}
-                    osLabel={osLabel}
+                    osOf={osOf}
                   />
                 ) : (
                   <ServersByRows
                     states={states}
                     packageNames={packageNames}
                     cell={cell}
-                    osLabel={osLabel}
+                    osOf={osOf}
                   />
                 )}
               </>
@@ -1063,13 +1293,13 @@ function PackagesWorkzone({
   );
 }
 
-/** Шапка-легенда: статус каждого сервера в наборе. */
+/** Шапка-легенда: статус каждой сущности (сервера/ВМ) в наборе. */
 function StatusLegend({
   states,
-  osLabel,
+  osOf,
 }: {
   states: ServerState[];
-  osLabel: (id: string | null) => string;
+  osOf: (s: ServerState) => string;
 }) {
   return (
     <div className="flex flex-wrap gap-2">
@@ -1079,10 +1309,13 @@ function StatusLegend({
           <div
             key={s.serverId}
             className="surface-2 border border-token rounded px-2 py-1 text-[11px] flex items-center gap-2"
-            title={`${s.hostname} · ОС: ${osLabel(s.osVersionId)}`}
+            title={`${s.hostname} · ОС: ${osOf(s)}`}
           >
             <span className="flex flex-col leading-tight min-w-0">
-              <span className="truncate max-w-[160px]">
+              <span className="truncate max-w-[160px] flex items-center gap-1">
+                {s.kind === "vm" && (
+                  <span className="badge badge-accent text-[9px]">ВМ</span>
+                )}
                 {s.displayName ?? s.hostname}
               </span>
               {s.displayName && (
@@ -1165,17 +1398,17 @@ function MatrixMarkerHint() {
   );
 }
 
-/** Режим A: строки = пакеты, столбцы = серверы. */
+/** Режим A: строки = пакеты, столбцы = сущности (серверы/ВМ). */
 function PackagesByRows({
   states,
   packageNames,
   cell,
-  osLabel,
+  osOf,
 }: {
   states: ServerState[];
   packageNames: string[];
   cell: (serverId: string, pkg: string) => string;
-  osLabel: (id: string | null) => string;
+  osOf: (s: ServerState) => string;
 }) {
   return (
     <div className="surface-2 border border-token rounded overflow-auto">
@@ -1191,14 +1424,19 @@ function PackagesByRows({
                 className="text-left px-3 py-2 font-medium whitespace-nowrap"
                 title={s.serverId}
               >
-                <div>{s.displayName ?? s.hostname}</div>
+                <div className="flex items-center gap-1">
+                  {s.kind === "vm" && (
+                    <span className="badge badge-accent text-[9px]">ВМ</span>
+                  )}
+                  {s.displayName ?? s.hostname}
+                </div>
                 {s.displayName && (
                   <div className="mono text-dim font-normal normal-case">
                     {s.hostname}
                   </div>
                 )}
                 <div className="text-dim normal-case font-normal">
-                  ОС: {osLabel(s.osVersionId)}
+                  ОС: {osOf(s)}
                 </div>
               </th>
             ))}
@@ -1225,17 +1463,17 @@ function PackagesByRows({
   );
 }
 
-/** Режим B: строки = серверы, столбцы = пакеты (транспонированный). */
+/** Режим B: строки = сущности (серверы/ВМ), столбцы = пакеты (транспонированный). */
 function ServersByRows({
   states,
   packageNames,
   cell,
-  osLabel,
+  osOf,
 }: {
   states: ServerState[];
   packageNames: string[];
   cell: (serverId: string, pkg: string) => string;
-  osLabel: (id: string | null) => string;
+  osOf: (s: ServerState) => string;
 }) {
   return (
     <div className="surface-2 border border-token rounded overflow-auto">
@@ -1243,7 +1481,7 @@ function ServersByRows({
         <thead>
           <tr className="text-[11px] uppercase text-dim border-b border-token">
             <th className="text-left px-3 py-2 font-medium sticky left-0 surface-2 z-10">
-              Сервер
+              Сервер / ВМ
             </th>
             {packageNames.map((name) => (
               <th
@@ -1259,14 +1497,17 @@ function ServersByRows({
           {states.map((s) => (
             <tr key={s.serverId} className="border-b border-token last:border-b-0">
               <td className="px-3 py-1.5 sticky left-0 surface-2 whitespace-nowrap">
-                <div className="text-xs font-medium">
+                <div className="text-xs font-medium flex items-center gap-1">
+                  {s.kind === "vm" && (
+                    <span className="badge badge-accent text-[9px]">ВМ</span>
+                  )}
                   {s.displayName ?? s.hostname}
                 </div>
                 {s.displayName && (
                   <div className="mono text-[10px] text-dim">{s.hostname}</div>
                 )}
                 <div className="text-[10px] text-dim">
-                  ОС: {osLabel(s.osVersionId)}
+                  ОС: {osOf(s)}
                 </div>
               </td>
               {packageNames.map((name) => (

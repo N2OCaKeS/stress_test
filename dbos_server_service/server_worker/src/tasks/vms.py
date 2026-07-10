@@ -68,6 +68,7 @@ from src.tasks._vm_prepare_helpers import (
     _write_temp_key,
     apply_managed_baseline,
     choose_guest_connector,
+    install_build_deps,
     load_guest_key,
     load_mgmt_material,
 )
@@ -1688,6 +1689,9 @@ async def vm_create(task_id: str) -> None:
         # payload). Без хинтов — дефолт `u`/`1`.
         base_login = payload.get("base_user_login")
         base_password = payload.get("base_user_password")
+        # На доставляемую ВМ ставим build-зависимости CPython (dev-пакеты apt).
+        # По умолчанию включено; server_service может отключить флагом в payload.
+        install_deps = bool(payload.get("install_build_deps", True))
 
         try:
             session, host = await open_hub_session(payload)
@@ -1817,6 +1821,9 @@ async def vm_create(task_id: str) -> None:
                             host_label, target_dept, mgmt=mgmt, key_path=key_path,
                             base_login=base_login, base_password=base_password,
                         )
+                        # ВМ остаётся поднятой на последней версии по боевому
+                        # адресу — на неё и ставим build-deps ниже.
+                        deliverable_ip = ip_address.split("/")[0]
                     else:
                         if network_mode == "bridge" and ip_address:
                             # bridge: статику залили в диск offline (virt-customize
@@ -1847,6 +1854,28 @@ async def vm_create(task_id: str) -> None:
                         # рабочего состояния (уже запущенный virsh start — no-op).
                         await ssh.run(
                             f"{LIBVIRT_SESSION_ENV} virsh start {name}", sudo=True,
+                        )
+                        deliverable_ip = guest_ip
+                    # build-зависимости CPython ставим на доставляемую (поднятую)
+                    # ВМ уже ПОСЛЕ всех снимков — эталонные снимки остаются
+                    # чистой ОС, окружение сборки живёт только на живой ВМ.
+                    if install_deps:
+                        if managed:
+                            deps_conn = guest_key_connector(
+                                deliverable_ip, mgmt["management_user"], key_path,
+                            )
+                        else:
+                            deps_conn = guest_connector(
+                                deliverable_ip,
+                                login=base_login, password=base_password,
+                            )
+                        await _wait_guest_ssh(
+                            ssh, host, deliverable_ip, connect=deps_conn,
+                        )
+                        await install_build_deps(
+                            ssh, host, deliverable_ip,
+                            mgmt["management_user"] if managed else None, key_path,
+                            base_login=base_login, base_password=base_password,
                         )
                 finally:
                     if key_path is not None:

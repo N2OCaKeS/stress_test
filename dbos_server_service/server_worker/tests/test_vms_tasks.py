@@ -1120,6 +1120,85 @@ class TestVmCreateManaged:
         assert stub_session_and_callbacks["calls"]["prepared"] == []
 
 
+class TestVmCreateBuildDeps:
+    """build-зависимости CPython ставятся на доставляемую ВМ после снимков."""
+
+    async def test_managed_installs_build_deps_by_key_after_snapshots(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch,
+    ):
+        _managed_load(monkeypatch)
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm1", "hub_host": "10.0.0.7", "name": "station-a",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "vm_station",
+            "network_mode": "bridge", "ip_address": "10.177.103.101",
+            "os_versions": ["1.7.5.9"], "storage_pool_path": "/vms",
+            "is_managed": True, "creds_stash_key": "dbos:dispatch_creds:dcd_abc",
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        cmds = fake.commands
+        deps = next(c for c in cmds if "apt-get install -y build-essential" in c)
+        # ставятся по управляющему ключу (базовая учётка снесена)
+        assert "ssh -i /tmp/dbos-if" in deps
+        assert "dbos@10.177.103.101" in deps
+        # фиксированный набор dev-пакетов присутствует, но CPython не собираем
+        for pkg in ("libssl-dev", "libffi-dev", "libsqlite3-dev", "liblzma-dev"):
+            assert pkg in deps
+        assert "configure" not in deps
+        assert "altinstall" not in deps
+        # ставим ПОСЛЕ последнего снимка — эталонные снимки чистые
+        i_smol = next(i for i, c in enumerate(cmds) if "--name 1.7.5.9_smolensk" in c)
+        i_deps = next(i for i, c in enumerate(cmds) if "apt-get install -y build-essential" in c)
+        assert i_smol < i_deps
+
+    async def test_flag_false_skips_build_deps(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks, monkeypatch,
+    ):
+        _managed_load(monkeypatch)
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm1", "hub_host": "10.0.0.7", "name": "station-a",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "vm_station",
+            "network_mode": "bridge", "ip_address": "10.177.103.101",
+            "os_versions": ["1.7.5.9"], "storage_pool_path": "/vms",
+            "is_managed": True, "creds_stash_key": "dbos:dispatch_creds:dcd_abc",
+            "install_build_deps": False,
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert not any("apt-get install -y build-essential" in c for c in fake.commands)
+
+    async def test_legacy_installs_build_deps_by_password(
+        self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
+    ):
+        """Legacy-путь (без stash) ставит deps по базовой учётке (sshpass), не по ключу."""
+        fake = _create_fake()
+        stub_session_and_callbacks["holder"]["ssh"] = fake
+        payload = {
+            "vm_id": "vm3", "hub_host": "10.0.0.7", "name": "single-2",
+            "cpu": 4, "ram_mb": 4096, "disk_gb": 0, "box": "single-box",
+            "network_mode": "nat", "ip_address": None, "os_versions": [],
+            "os_version": "1.8.1.6", "storage_pool_path": "/vms",
+        }
+        tid = await make_task(task_kind="vm.create", target_server_id="hub1", payload=payload)
+        await vms.vm_create.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        deps = next(c for c in fake.commands if "apt-get install -y build-essential" in c)
+        assert "sshpass" in deps
+        assert "ssh -i /tmp/dbos-if" not in deps
+
+
 class TestVmCreateHostnameAndAccounts:
     async def test_hostname_from_payload_and_etc_hosts(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _create_fake()

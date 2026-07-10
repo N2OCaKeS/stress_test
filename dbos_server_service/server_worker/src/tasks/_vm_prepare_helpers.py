@@ -20,7 +20,7 @@ import logging
 import re
 
 from src.clients.ssh import SshError
-from src.core.constants import VMS_GUEST_LOGIN
+from src.core.constants import VMS_CPYTHON_BUILD_DEPS, VMS_GUEST_LOGIN
 from src.services import redis_pool
 from src.services.redis_stash_crypto import (
     aad_for_redis_stash,
@@ -289,6 +289,40 @@ async def _install_guest_agent(
             guest_ip, cmd, sudo=True, login=base_login, password=base_password,
         )
     await ssh.run(remote, sudo=True)
+
+
+async def install_build_deps(
+    ssh, host: str, guest_ip: str,
+    mgmt_user: str | None = None, key_path: str | None = None,
+    *, base_login: str | None = None, base_password: str | None = None,
+) -> None:
+    """Поставить в гостя пакеты-зависимости для сборки CPython (apt).
+
+    Один `apt-get update && apt-get install -y <VMS_CPYTHON_BUILD_DEPS>` под
+    sudo. Сам интерпретатор не качаем и не собираем — только dev-пакеты, чтобы
+    гость был готов собрать CPython вручную. Идемпотентно: повторный запуск на
+    уже установленных пакетах для apt — no-op.
+
+    Заходим по управляющему ключу (`mgmt_user`/`key_path`), когда базовая учётка
+    снесена; без ключа (legacy-путь) — по базовой учётке бокса
+    (`base_login`/`base_password`). Провал ставим фатальным (`VM_CREATE_FAILED`):
+    доставляемая ВМ должна приехать с готовым build-окружением.
+    """
+    packages = " ".join(VMS_CPYTHON_BUILD_DEPS)
+    cmd = (
+        "bash -c 'DEBIAN_FRONTEND=noninteractive apt-get update && "
+        f"DEBIAN_FRONTEND=noninteractive apt-get install -y {packages}'"
+    )
+    if key_path:
+        remote = guest_ssh_key(guest_ip, mgmt_user, key_path, cmd, sudo=True)
+    else:
+        remote = guest_ssh(
+            guest_ip, cmd, sudo=True, login=base_login, password=base_password,
+        )
+    await run_hub_cmd(
+        ssh, remote, host, "VM_CREATE_FAILED",
+        "не удалось поставить build-зависимости CPython в гость",
+    )
 
 
 async def _install_authorized_key(

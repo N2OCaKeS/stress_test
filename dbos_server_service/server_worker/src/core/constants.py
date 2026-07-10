@@ -86,6 +86,29 @@ VMS_FTP_ALLTA_DEB_URL = "ftp://10.177.103.10/allta_*_amd64.deb"
 # дотянуться до дисплея с самого hub'а; сузить до конкретного IP можно из UI.
 VMS_VNC_DEFAULT_LISTEN = "0.0.0.0"
 
+# Пакеты-зависимости для сборки CPython 3.12.1 из исходников на Debian/Astra.
+# Ставятся на доставляемую ВМ, чтобы гость был готов собрать интерпретатор
+# вручную; сам CPython мы не качаем и не собираем. Только имена apt-пакетов,
+# без версий — версию тянет apt из репозитория ОС гостя.
+VMS_CPYTHON_BUILD_DEPS = (
+    "build-essential",
+    "pkg-config",
+    "zlib1g-dev",
+    "libssl-dev",
+    "libffi-dev",
+    "libbz2-dev",
+    "libreadline-dev",
+    "libsqlite3-dev",
+    "libncurses-dev",
+    "libgdbm-dev",
+    "liblzma-dev",
+    "uuid-dev",
+    "tk-dev",
+    "libgdbm-compat-dev",
+    "wget",
+    "ca-certificates",
+)
+
 
 class TaskKind(StrEnum):
     """Поддерживаемые типы task'ов. Значения совпадают с taskiq broker labels.

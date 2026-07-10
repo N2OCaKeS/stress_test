@@ -294,10 +294,13 @@ async def _write_temp_key(ssh, host: str, private_key: str) -> str:
     """Записать приватный ключ во временный файл на hub'е; вернуть путь.
 
     Ключ нужен, чтобы проверить вход по нему на госте и добить пост-хардинг шаги
-    (удаление `u`), когда парольный вход уже выключен. Файл кладём с правами
-    `600`; caller обязан подчистить его в `finally`.
+    (удаление `u`), когда парольный вход уже выключен. Файл кладём БЕЗ sudo —
+    владельцем управляющей учётки (dbos), с правами `600`: так `-i key` читается
+    и под dbos (guest_ssh_key без hub-sudo), и под root (шаги с sudo=True). Под
+    sudo mktemp файл был бы root-owned mode 600 и dbos-ssh не смог бы его
+    прочитать («Load key: Permission denied»). Caller чистит его в `finally`.
     """
-    rc, out, err = await ssh.run("mktemp", sudo=True)
+    rc, out, err = await ssh.run("mktemp")
     if rc != 0 or not (out or "").strip():
         raise SshError(
             error_code="VM_PREPARE_FAILED", host=host, returncode=rc,
@@ -307,7 +310,7 @@ async def _write_temp_key(ssh, host: str, private_key: str) -> str:
     path = out.strip()
     material = private_key if private_key.endswith("\n") else private_key + "\n"
     rc, _out, err = await ssh.run(
-        f"tee {path} > /dev/null", sudo=True, stdin_payload=material,
+        f"tee {path} > /dev/null", stdin_payload=material,
     )
     if rc != 0:
         raise SshError(
@@ -315,7 +318,7 @@ async def _write_temp_key(ssh, host: str, private_key: str) -> str:
             stderr=(err or "").strip(),
             message="не удалось записать управляющий ключ во временный файл",
         )
-    await ssh.run(f"chmod 600 {path}", sudo=True)
+    await ssh.run(f"chmod 600 {path}")
     return path
 
 

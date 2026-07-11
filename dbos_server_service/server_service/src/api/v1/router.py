@@ -17,6 +17,7 @@ User-facing endpoints, требующие user identity, защищены гар
 from fastapi import APIRouter
 
 from src.api.v1.endpoints.admin_encryption import router as admin_encryption_router
+from src.api.v1.endpoints.boxes import router as boxes_router
 from src.api.v1.endpoints.admin_password_policy import (
     router as admin_password_policy_router,
 )
@@ -80,6 +81,8 @@ router.include_router(vms_images_router, tags=["vms"])
 router.include_router(vms_ip_pools_router, tags=["vms"])
 # Пресеты стандартных ВМ: CRUD под правом vm.preset_manage.
 router.include_router(vms_presets_router, tags=["vms"])
+# Каталог боксов-заготовок для создания ВМ (пер-департамент CRUD под матрицей box).
+router.include_router(boxes_router, tags=["boxes"])
 router.include_router(ipmi_router, tags=["ipmi"])
 router.include_router(ipmi_list_router, tags=["ipmi"])
 # Legacy snake_case `/ipmi_controllers` — алиас на тот же handler, скрыт из

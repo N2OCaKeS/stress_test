@@ -68,6 +68,11 @@ def vm_id() -> str:
     return _new_id("vm_")
 
 
+def box_id() -> str:
+    """`box_<uuid>` — для таблицы boxes (заготовки-образы для создания ВМ)."""
+    return _new_id("box_")
+
+
 def vm_disk_id() -> str:
     """`vmd_<uuid>` — для таблицы vm_disks (диски виртуальных машин)."""
     return _new_id("vmd_")

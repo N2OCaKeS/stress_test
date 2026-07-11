@@ -124,6 +124,13 @@ SERVICE_EVENTS = [
     {"action": "server_account.link_servers", "description": "Server account linked to additional servers", "default_severity": "INFO"},
     {"action": "server_account.unlink_servers", "description": "Server account unlinked from servers", "default_severity": "INFO"},
     {"action": "server_account.delete", "description": "Server account deleted", "default_severity": "CRITICAL"},
+    # Boxes — CRUD каталога боксов-заготовок для создания ВМ (user-facing)
+    {"action": "box.create", "description": "Box (VM image template) catalog entry created in the caller's department. base user password (if provided) is encrypted before storage. failure reasons: department_isolation / duplicate", "default_severity": "CRITICAL"},
+    {"action": "box.view", "description": "Box card viewed; with view_password the base user password is revealed (base64). failure reason: not_found_or_cross_dept", "default_severity": "INFO"},
+    {"action": "box.list", "description": "Boxes listed (emitted on denied)", "default_severity": "INFO"},
+    {"action": "box.update", "description": "Box updated (fields and/or base user password re-encrypted). failure reasons: not_found_or_cross_dept / duplicate", "default_severity": "INFO"},
+    {"action": "box.delete", "description": "Box catalog entry deleted. failure reason: not_found_or_cross_dept", "default_severity": "CRITICAL"},
+    {"action": "box.base_user_password_revealed", "description": "Decrypted base user password of a box revealed to the caller (base64) via GET with view_password. failure reason: decrypt_failed", "default_severity": "WARNING"},
     # Управление матрицей прав
     {"action": "permission.grant", "description": "entity_permission row granted", "default_severity": "CRITICAL"},
     {"action": "permission.revoke", "description": "entity_permission row revoked", "default_severity": "CRITICAL"},

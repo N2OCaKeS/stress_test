@@ -154,6 +154,9 @@ class EntityType(StrEnum):
     # Виртуальная машина на hub-сервере: создание, питание, бронь под тест,
     # диски и снимки. Отдельная зона матрицы прав со своим набором действий.
     VM = "vm"
+    # Бокс-заготовка (образ) для создания ВМ: пер-департамент каталог с
+    # предустановленным пользователем и списком ОС/снимков на диске.
+    BOX = "box"
 
 
 class Action(StrEnum):
@@ -336,6 +339,12 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.VM_PREPARE,
         Action.VM_ASTRA_UPDATE, Action.VM_ALLTA_UPDATE, Action.VM_PASSWD,
         Action.VM_NET_MANAGE, Action.VM_PRESET_MANAGE,
+    }),
+    # Бокс-заготовка: CRUD каталога + раскрытие пароля предустановленного
+    # пользователя (view_password — чувствительное, дефолтно только admin).
+    EntityType.BOX: frozenset({
+        Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
+        Action.VIEW_PASSWORD,
     }),
 }
 

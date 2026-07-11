@@ -119,11 +119,11 @@ class TestSensitiveActionsNotDefaultGranted:
 
 
 class TestGuestBaselineGrants:
-    async def test_guest_has_only_server_view(self, client, admin_token):
-        """guest несёт единственный seeded грант — server.view (метаданные).
+    async def test_guest_has_only_view_grants(self, client, admin_token):
+        """guest несёт только view-гранты метаданных (server / vm / box).
 
-        Чувствительного (ipmi-кред, паролей учёток, управляющих кред) у guest
-        по-прежнему нет — только тип-wide view карточек серверов отдела.
+        Чувствительного (ipmi-кред, паролей учёток и образов, управляющих кред)
+        у guest по-прежнему нет — только тип-wide view карточек отдела.
         """
         resp = await client.get(f"{BASE}?role=guest", headers=_hdr(admin_token))
         assert resp.status_code == 200
@@ -132,7 +132,7 @@ class TestGuestBaselineGrants:
         assert body["total"] == len(rows)
         assert body["described"] is False
         actual = {(r["entity_type"], r["action"]) for r in rows}
-        assert actual == {("server", "view"), ("vm", "view")}
+        assert actual == {("server", "view"), ("vm", "view"), ("box", "view")}
 
 
 class TestReaderOnlyViewGrants:

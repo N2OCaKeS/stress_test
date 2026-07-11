@@ -33,7 +33,6 @@ durable-retry на уровне `_runner`. Guest доступен по `sshpass`
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import json
 import logging
@@ -41,7 +40,6 @@ import math
 import re
 
 from src.clients.ssh import SshError
-from src.core.exceptions import CredentialFetchError
 from src.core.constants import (
     VMS_DEFAULT_POOL_PATH,
     VMS_FTP_BOXES_URL,
@@ -61,6 +59,7 @@ from src.main import broker
 from src.services import server_service_client
 from src.tasks import _packages_common as pkg
 from src.tasks._runner import run_task
+from src.tasks import _accounts_common as accounts_common
 from src.tasks._target_runner import GuestHopRunner
 from src.tasks._vm_prepare_helpers import (
     _delete_stash,
@@ -167,26 +166,6 @@ _GOLDEN_SUFFIX = "_build"
 # Тесты обнуляют задержку (реальное выключение Astra — десятки секунд).
 _SNAP_OFF_POLL_DELAY_S = 5.0
 _SNAP_OFF_MAX_POLLS = 60
-
-
-def _validate_guest_password(value: str, host: str) -> str:
-    """Отбить пароль гостя с символами, ломающими inline-`chpasswd`.
-
-    Пароль уходит в `bash -c 'echo <login>:<pwd> | chpasswd'` внутри вложенной
-    guest-сессии; перевод строки/кавычки/подстановка расклеили бы команду.
-    """
-    if not isinstance(value, str) or not value:
-        raise SshError(
-            error_code="VM_INVALID_ARG", host=host,
-            message="пароль гостя должен быть непустой строкой",
-        )
-    for bad in ("\n", "\r", "\0", "'", '"', "`", "$", ";"):
-        if bad in value:
-            raise SshError(
-                error_code="VM_INVALID_ARG", host=host,
-                message="пароль гостя содержит недопустимый символ",
-            )
-    return value
 
 
 # ── vms_hub.prepare ──────────────────────────────────────────────────────────
@@ -1119,116 +1098,27 @@ async def _provision_guest_base(
         )
 
 
-# Публичный SSH-ключ аккаунта: base64/PEM-безопасный набор для отбоя shell-мета
-# до заливки в госте (сам ключ уходит base64-обёрнутым, здесь — вход-валидатор).
-_PUBKEY_RE = re.compile(r"^[A-Za-z0-9+/=@:.,_ \-]+$")
-
-
 async def _provision_guest_accounts(
     ssh, host: str, guest_ip: str, accounts, host_label: str,
     target_dept: str | None, *, connect=None,
 ) -> list[str]:
     """Завести привязанные к ВМ учётки в госте (`useradd` + пароль/ключ/группы).
 
-    Каждый элемент `accounts` — dict привязанного `server_account`:
-    `{login, password?, ssh_public_key?, has_sudo?, unix_groups?, account_id?,
-    server_id?}`. Пароль берём из `password` (если server_service положил его в
-    dispatch); иначе тянем через internal: по `server_id`+`account_id`
-    (`fetch_account_password`) или, когда исходный сервер неизвестен — по одному
-    `account_id` (`fetch_account_password_by_id`). Заводить учётку важнее пароля:
-    если пароль вытянуть не удалось (нет доступа/эндпоинта), пользователя всё
-    равно создаём, только без `chpasswd`. useradd/группы идемпотентны; их фейл
-    критичен (падаем `VM_CREATE_FAILED`). `connect` — коннектор входа на гостя;
-    по умолчанию `u`/`1`, в managed-сборке после сноса `u` — ключевой коннектор.
-    Возвращаем список заведённых логинов.
+    Тонкая обёртка над `_accounts_common.provision_account`: собирает
+    `GuestHopRunner` (транспорт до гостя) и прогоняет по нему каждый аккаунт.
+    `connect` — коннектор входа на гостя; по умолчанию `u`/`1`, в managed-сборке
+    после сноса `u` — ключевой коннектор. Возвращаем список заведённых логинов.
     """
     if connect is None:
         connect = guest_connector(guest_ip)
+    runner = GuestHopRunner(ssh, connect, host=host)
     provisioned: list[str] = []
     for acc in accounts or []:
-        if not isinstance(acc, dict):
-            continue
-        login = validate_name(str(acc.get("login") or ""), host_label, "account login")
-        password = acc.get("password")
-        account_id = acc.get("account_id") or acc.get("id")
-        source_server_id = acc.get("server_id")
-        if password is None and account_id:
-            try:
-                if source_server_id:
-                    creds = await server_service_client.fetch_account_password(
-                        str(source_server_id), str(account_id), target_dept,
-                    )
-                else:
-                    creds = await server_service_client.fetch_account_password_by_id(
-                        str(account_id), target_dept,
-                    )
-                password = creds.get("password")
-            except CredentialFetchError:
-                logger.warning(
-                    "vm provision: пароль учётки %s недоступен — заводим без пароля",
-                    login,
-                )
-
-        groups = [
-            validate_name(str(g), host_label, "unix group")
-            for g in (acc.get("unix_groups") or [])
-        ]
-        if acc.get("has_sudo") and "sudo" not in groups:
-            groups.append("sudo")
-        gopt = f" -G {','.join(groups)}" if groups else ""
-        # useradd идемпотентно (уже есть — не падаем); группы добиваем usermod'ом.
-        await _run(
-            ssh,
-            connect(
-                f"bash -c 'id {login} >/dev/null 2>&1 "
-                f"|| useradd -m{gopt} {login}'",
-                sudo=True,
-            ),
-            host, "VM_CREATE_FAILED",
-            f"не удалось завести пользователя {login} в госте",
+        login = await accounts_common.provision_account(
+            runner, acc, host_label=host_label, target_dept=target_dept,
         )
-        if groups:
-            await _run(
-                ssh,
-                connect(
-                    f"usermod -aG {','.join(groups)} {login}", sudo=True,
-                ),
-                host, "VM_CREATE_FAILED",
-                f"не удалось добавить группы пользователю {login}",
-            )
-        if password:
-            password = _validate_guest_password(str(password), host_label)
-            await _run(
-                ssh,
-                connect(
-                    f"bash -c 'echo {login}:{password} | chpasswd'",
-                    sudo=True,
-                ),
-                host, "VM_CREATE_FAILED",
-                f"не удалось задать пароль пользователю {login}",
-            )
-        public_key = acc.get("ssh_public_key")
-        if public_key:
-            if not _PUBKEY_RE.fullmatch(str(public_key)):
-                raise SshError(
-                    error_code="VM_INVALID_ARG", host=host_label,
-                    message=f"публичный ключ {login} содержит недопустимые символы",
-                )
-            # Ключ несёт пробелы — заливаем base64-обёрткой, чтобы не расклеить
-            # вложенную guest-команду.
-            b64 = base64.b64encode(str(public_key).encode()).decode()
-            await _run(
-                ssh,
-                connect(
-                    f"bash -c 'umask 077 && mkdir -p ~{login}/.ssh && "
-                    f"echo {b64} | base64 -d >> ~{login}/.ssh/authorized_keys && "
-                    f"chown -R {login}: ~{login}/.ssh'",
-                    sudo=True,
-                ),
-                host, "VM_CREATE_FAILED",
-                f"не удалось положить ключ пользователю {login}",
-            )
-        provisioned.append(login)
+        if login is not None:
+            provisioned.append(login)
     return provisioned
 
 

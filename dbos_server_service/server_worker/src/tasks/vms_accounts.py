@@ -14,7 +14,9 @@ useradd + chpasswd + authorized_keys + группы, что и при `vm.create
 from __future__ import annotations
 
 from src.main import broker
+from src.tasks import _accounts_common as accounts_common
 from src.tasks._runner import run_task
+from src.tasks._target_runner import GuestHopRunner
 from src.tasks._vm_prepare_helpers import (
     _shred_temp_key,
     choose_guest_connector,
@@ -23,7 +25,6 @@ from src.tasks._vm_prepare_helpers import (
 from src.tasks._vms_helpers import (
     open_hub_session,
     resolve_guest_ip,
-    run_hub_cmd,
     validate_name,
 )
 from src.tasks.vms import _provision_guest_accounts
@@ -36,17 +37,6 @@ def _host_label(payload: dict) -> str:
         payload.get("host") or payload.get("hub_host")
         or payload.get("hub_server_id") or "hub",
     )
-
-
-def _guest_groups(payload: dict, login: str, host_label: str) -> list[str]:
-    """Собрать список unix-групп для usermod: `unix_groups` + `sudo` при has_sudo."""
-    groups = [
-        validate_name(str(g), host_label, "unix group")
-        for g in (payload.get("unix_groups") or [])
-    ]
-    if payload.get("has_sudo") and "sudo" not in groups:
-        groups.append("sudo")
-    return groups
 
 
 @broker.task("vm.account_provision")
@@ -128,22 +118,15 @@ async def vm_account_update_on_host(task_id: str) -> None:
             payload.get("vm_name") or payload["name"], host_label, "vm_name",
         )
         login = validate_name(str(payload.get("login") or ""), host_label, "account login")
-        groups = _guest_groups(payload, login, host_label)
+        groups = accounts_common.resolve_guest_groups(payload, host_label)
         session, host = await open_hub_session(payload)
         async with session as ssh:
             guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
             mgmt_user, key_path = await load_guest_key(ssh, host, payload)
             connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
+            runner = GuestHopRunner(ssh, connect, host=host)
             try:
-                if groups:
-                    await run_hub_cmd(
-                        ssh,
-                        connect(
-                            f"usermod -aG {','.join(groups)} {login}", sudo=True,
-                        ),
-                        host, "VM_UPDATE_FAILED",
-                        f"не удалось обновить группы пользователю {login} в госте",
-                    )
+                await accounts_common.update_account_on_host(runner, login, groups)
             finally:
                 if key_path:
                     await _shred_temp_key(ssh, key_path)
@@ -185,21 +168,15 @@ async def vm_account_deprovision(task_id: str) -> None:
         )
         login = validate_name(str(payload.get("login") or ""), host_label, "account login")
         remove_home = bool(payload.get("remove_home"))
-        flag = "-r " if remove_home else ""
         session, host = await open_hub_session(payload)
         async with session as ssh:
             guest_ip = await resolve_guest_ip(ssh, host, vm_name, payload)
             mgmt_user, key_path = await load_guest_key(ssh, host, payload)
             connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
+            runner = GuestHopRunner(ssh, connect, host=host)
             try:
-                await run_hub_cmd(
-                    ssh,
-                    connect(
-                        f"bash -c 'id {login} >/dev/null 2>&1 && userdel {flag}{login} || true'",
-                        sudo=True,
-                    ),
-                    host, "VM_DEPROVISION_FAILED",
-                    f"не удалось удалить пользователя {login} в госте",
+                await accounts_common.deprovision_account(
+                    runner, login, remove_home=remove_home,
                 )
             finally:
                 if key_path:

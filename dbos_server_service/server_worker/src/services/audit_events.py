@@ -102,6 +102,7 @@ SERVICE_EVENTS = [
     {"action": "bmc.endpoint_blocked", "description": "SSRF-guard заблокировал BMC-endpoint (loopback/link-local/unspecified)", "default_severity": "CRITICAL"},
     # Интерактивная SSH-консоль — services/console_bridge.py
     {"action": "ssh_console.command", "description": "Команда, введённая в интерактивной SSH-консоли (одна строка по Enter)", "default_severity": "WARNING"},
+    {"action": "box.download", "description": "Образ бокса скачан по download_url в storage-pool боксов hub'а (таска box.download) и импортирован по формату. Провалы: неподдержанная схема/формат, ошибка скачивания/импорта, сбой hub-сессии", "default_severity": "WARNING"},
     # CLI-интервенция в audit-pipeline — cli/outbox.py
     {"action": "audit.outbox_reattempt_manual", "description": "Оператор форсит CLI-командой повторную доставку row'ы worker'ского audit_outbox", "default_severity": "WARNING"},
 ]

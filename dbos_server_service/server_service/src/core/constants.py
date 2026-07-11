@@ -600,6 +600,9 @@ class VmTaskKind(StrEnum):
     # `apt purge` пакетов виртуализации. БД чистит server_service сразу (симметрия
     # старому rm-vms-hub), воркер добивает состояние на хосте.
     VMS_HUB_TEARDOWN = "vms_hub.teardown"
+    # Скачивание/импорт бокса реестра на hub: воркер тянет артефакт по
+    # download_url в storage-pool боксов hub'а (там же vm.create ищет образ).
+    BOX_DOWNLOAD = "box.download"
 
 
 # Действия питания ВМ, принимаемые `POST /vms/{id}/power`. Едут в payload

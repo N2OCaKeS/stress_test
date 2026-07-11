@@ -188,6 +188,10 @@ class TaskKind(StrEnum):
     VM_ACCOUNT_PROVISION = "vm.account_provision"
     VM_ACCOUNT_UPDATE_ON_HOST = "vm.account_update_on_host"
     VM_ACCOUNT_DEPROVISION = "vm.account_deprovision"
+    # Скачивание/импорт бокса реестра на hub: тянем артефакт по download_url в
+    # storage-pool боксов hub'а (там же vm.create ищет `<box>.qcow2`), tar
+    # распаковываем, qcow/raw кладём файлом. В гостя не заходим.
+    BOX_DOWNLOAD = "box.download"
 
 
 class TaskStatus(StrEnum):

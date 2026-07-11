@@ -2,6 +2,7 @@
 
 from src.tasks import (  # noqa: F401
     astra_update,
+    box_download,
     dispatch_outbox,
     installed_packages,
     inventory,

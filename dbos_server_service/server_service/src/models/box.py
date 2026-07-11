@@ -32,9 +32,15 @@ class Box(Base):
     # Формат артефакта: tar / qcow / qcow2 / raw / … — свободная строка, набор
     # открытый (валидацию на непустоту делает схема).
     format: Mapped[str] = mapped_column(String(32), nullable=False)
-    # Источник скачивания (https/ftp/smb/http/…). Только метаданные — сам
-    # download/import живёт в отдельной задаче. Опционален.
+    # Источник скачивания (https/ftp/smb/http/…). Триггер скачивания на hub —
+    # отдельная задача (`box.download`). Опционален.
     download_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # Статус скачивания/импорта бокса на hub: None (не запускалось) /
+    # downloading / ready / error. Выставляется при dispatch'е триггера и
+    # обновляется callback'ом воркера.
+    download_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Текст последней ошибки скачивания (для download_status='error').
+    download_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Предустановленный в образе пользователь. Логин — открытым текстом, пароль —
     # envelope AES-256-GCM (secrets_service) со своим AAD, как у server_account.
     # Оба nullable: у бокса без встроенной учётки их нет.

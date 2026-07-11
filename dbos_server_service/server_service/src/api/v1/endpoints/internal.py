@@ -89,7 +89,11 @@ from src.schemas.vm import (
     VmStateCallbackRequest,
     VmStateCallbackResponse,
 )
-from src.services import internal_service
+from src.schemas.box import (
+    BoxDownloadStateCallbackRequest,
+    BoxDownloadStateCallbackResponse,
+)
+from src.services import box_service, internal_service
 
 router = APIRouter(prefix="/internal", include_in_schema=False)
 
@@ -902,5 +906,33 @@ async def record_vms_hub_state(
         target_department_id=x_target_department_id,
     )
     return VmsHubStateCallbackResponse(**data)
+
+
+@router.post(
+    "/boxes/{box_id}/download-state",
+    response_model=BoxDownloadStateCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def record_box_download_state(
+    box_id: str,
+    body: BoxDownloadStateCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> BoxDownloadStateCallbackResponse:
+    """Worker сообщает исход скачивания/импорта бокса (`box.download`).
+
+    `status='ready'` → `download_status='ready'`, `download_last_error=NULL`;
+    `status='error'` → `download_status='error'` + `download_last_error`.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `box.download_state`.
+    """
+    data = await box_service.record_download_status(
+        db, identity, box_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return BoxDownloadStateCallbackResponse(**data)
 
 

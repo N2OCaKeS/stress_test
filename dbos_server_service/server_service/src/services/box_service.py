@@ -15,16 +15,32 @@ reveal-ручки нет. Пароль хранится envelope-формато�
 import base64
 import logging
 
+from fastapi import Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import Action, EntityType
-from src.core.exceptions import AppException, ConflictError, NotFoundError
+from src.core.constants import Action, EntityType, VmTaskKind
+from src.core.exceptions import (
+    AppException,
+    AuthorizationError,
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+)
+from src.dependencies.idempotency import read_idempotency_key
 from src.models import Box
 from src.repositories import box as repo
+from src.repositories import server as server_repo
 from src.schemas.box import BoxCreate, BoxUpdate
+from src.schemas.box import BoxDownloadStateCallbackRequest
 from src.schemas.identity import IdentityContext
-from src.services import audit_context, audit_service, permissions, secrets_service
+from src.services import (
+    audit_context,
+    audit_service,
+    permissions,
+    secrets_service,
+    worker_client,
+)
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.utils.ids import box_id as new_id
 
@@ -303,6 +319,202 @@ async def resolve_box_for_dispatch(
     if box.download_url:
         fragment["download_url"] = box.download_url
     return fragment
+
+
+def _hub_download_payload(box: Box, hub) -> dict:
+    """Собрать payload задачи `box.download` из бокса и hub-сервера.
+
+    Hub-блок адресации — как у VM-задач (SSH всегда по IP). `box_name` —
+    имя, под которым `vm.create` ищет образ в пуле; `download_url`/`format` —
+    из каталожной записи бокса.
+    """
+    return {
+        "box_id": box.id,
+        "box_name": box.name,
+        "download_url": box.download_url,
+        "format": box.format,
+        "target_department_id": hub.department_id,
+        # SSH-таргет — ВСЕГДА IP hub'а, не hostname.
+        "server_id": hub.id,
+        "hub_server_id": hub.id,
+        "host": str(hub.ip_address),
+        "ssh_port": hub.ssh_port,
+        "is_managed": hub.is_managed,
+        "management_user": hub.management_user,
+    }
+
+
+async def dispatch_download(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    box_id: str,
+    hub_server_id: str,
+) -> tuple[Box, str]:
+    """Запустить скачивание бокса на hub. Право `(box, update)` + изоляция отдела.
+
+    Проверяет бокс своего отдела (чужой/несуществующий → 404 BOX_NOT_FOUND),
+    наличие `download_url` (иначе 400 BOX_NO_DOWNLOAD_URL) и hub-сервер: свой
+    отдел (иначе 404 HUB_NOT_FOUND) и подготовленность как VMS-hub (иначе 409
+    HUB_NOT_PREPARED). Ставит боксу `download_status='downloading'`, диспатчит
+    `box.download` и коммитит (outbox-row в одну транзакцию с апдейтом бокса).
+    Возвращает `(box, task_id)`.
+    """
+    with emit_denied_on_authz_error(
+        "box.download",
+        target_id=box_id,
+        target_type="box",
+        identity=identity,
+    ):
+        await permissions.require_action(db, identity, EntityType.BOX, Action.UPDATE)
+
+    box = await repo.get_by_id(db, box_id)
+    if box is None or box.department_id != identity.department_id:
+        audit_service.emit(
+            "box.download", target_id=box_id, target_type="box",
+            status="failure", allowed=True,
+            details={"reason": "not_found_or_cross_dept"},
+        )
+        raise NotFoundError(error_code="BOX_NOT_FOUND", message="Box not found")
+
+    if not box.download_url:
+        audit_service.emit(
+            "box.download", target_id=box.id, target_type="box",
+            status="failure", allowed=True,
+            details={"reason": "no_download_url", "department_id": box.department_id},
+        )
+        raise BadRequestError(
+            error_code="BOX_NO_DOWNLOAD_URL",
+            message="Box has no download_url to fetch from",
+        )
+
+    hub = await server_repo.get_by_id(db, hub_server_id)
+    if hub is None or hub.department_id != identity.department_id:
+        audit_service.emit(
+            "box.download", target_id=box.id, target_type="box",
+            status="failure", allowed=True,
+            details={"reason": "hub_not_found_or_cross_dept", "hub_server_id": hub_server_id},
+        )
+        raise NotFoundError(error_code="HUB_NOT_FOUND", message="Hub server not found")
+    if not hub.is_vms_hub:
+        audit_service.emit(
+            "box.download", target_id=box.id, target_type="box",
+            status="failure", allowed=True,
+            details={"reason": "hub_not_prepared", "hub_server_id": hub.id},
+        )
+        raise ConflictError(
+            error_code="HUB_NOT_PREPARED",
+            message="Server is not prepared as a VMS-hub; run prepare-vms-hub first",
+        )
+
+    await repo.update(
+        db, box, {"download_status": "downloading", "download_last_error": None},
+    )
+    payload = _hub_download_payload(box, hub)
+    try:
+        task_id = await worker_client.dispatch_task(
+            db=db,
+            task_kind=VmTaskKind.BOX_DOWNLOAD.value,
+            target_server_id=hub.id,
+            target_resource_id=box.id,
+            payload=payload,
+            created_by=identity.user_id,
+            request_id=getattr(request.state, "request_id", None),
+            idempotency_key=read_idempotency_key(request),
+        )
+    except (ConflictError, AppException) as exc:
+        await db.rollback()
+        audit_service.emit(
+            "box.download", target_id=box.id, target_type="box",
+            status="failure", allowed=True,
+            details={"reason": "dispatch_failed", "hub_server_id": hub.id,
+                     "error_code": getattr(exc, "error_code", type(exc).__name__)},
+        )
+        raise
+    await db.commit()
+    await db.refresh(box)
+    audit_service.emit(
+        "box.download", target_id=box.id, target_type="box",
+        status="success", allowed=True,
+        details={
+            "task_id": task_id, "hub_server_id": hub.id,
+            "department_id": box.department_id, "format": box.format,
+        },
+    )
+    return box, task_id
+
+
+async def record_download_status(
+    db: AsyncSession,
+    identity: IdentityContext,
+    box_id: str,
+    payload: BoxDownloadStateCallbackRequest,
+    *,
+    target_department_id: str | None = None,
+) -> dict:
+    """Internal callback воркера: исход `box.download` (ready/error).
+
+    Гейт — `(server, prepare_callback)` (тот же worker_bot-грант, что у прочих
+    callback'ов). Cross-dept скоуп — заголовок `X-Target-Department-Id`, который
+    обязан совпасть с отделом бокса (иначе 404-маска, как в internal-эндпоинтах).
+    Пишет `download_status` и `download_last_error` на строке бокса.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "box.download_state", target_id=box_id, target_type="box",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+
+    box = await repo.get_by_id(db, box_id)
+    if box is None:
+        audit_service.emit(
+            "box.download_state", target_id=box_id, target_type="box",
+            status="failure", allowed=True,
+            details={"reason": "box_not_found"},
+        )
+        raise NotFoundError(error_code="BOX_NOT_FOUND", message="Box not found")
+
+    # Cross-dept гард: заголовок обязателен и должен совпасть с отделом бокса.
+    if target_department_id is None:
+        audit_service.emit(
+            "box.download_state", target_id=box_id, target_type="box",
+            status="denied", allowed=False,
+            details={"reason": "missing_target_department_header",
+                     "box_department_id": box.department_id},
+        )
+        raise AuthorizationError(
+            error_code="TARGET_DEPARTMENT_HEADER_REQUIRED",
+            message="X-Target-Department-Id header is required for internal endpoints",
+            details={"target_id": box_id},
+        )
+    if target_department_id != box.department_id:
+        # Чужой отдел — маскируем под not-found (как в internal_service).
+        audit_service.emit(
+            "box.download_state", target_id=box_id, target_type="box",
+            status="denied", allowed=False,
+            details={"reason": "target_department_mismatch",
+                     "box_department_id": box.department_id,
+                     "header_department_id": target_department_id},
+        )
+        raise NotFoundError(error_code="BOX_NOT_FOUND", message="Box not found")
+
+    changes: dict = {"download_status": payload.status}
+    changes["download_last_error"] = payload.error if payload.status == "error" else None
+    await repo.update(db, box, changes)
+    await db.commit()
+    audit_service.emit(
+        "box.download_state", target_id=box.id, target_type="box",
+        status="success", allowed=True,
+        details={"download_status": payload.status, "department_id": box.department_id,
+                 "caller_type": identity.subject_type},
+    )
+    return {"ok": True, "box_id": box.id, "download_status": payload.status}
 
 
 async def _reveal_base_user_password(box: Box) -> str | None:

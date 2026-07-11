@@ -9,12 +9,18 @@
 ведут каталог.
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
-from src.schemas.box import BoxCreate, BoxResponse, BoxUpdate
+from src.schemas.box import (
+    BoxCreate,
+    BoxDownloadRequest,
+    BoxDownloadResponse,
+    BoxResponse,
+    BoxUpdate,
+)
 from src.schemas.common import OkResponse, PaginatedResponse
 from src.services import box_service as svc
 
@@ -137,6 +143,43 @@ async def update_box(
     """Update-эндпоинт. Доступ: `(box, update)`."""
     box = await svc.update_box(db, identity, box_id, body)
     return _to_response(box)
+
+
+@router.post(
+    "/{box_id}/download",
+    response_model=BoxDownloadResponse,
+    status_code=202,
+    summary="Скачать бокс на hub (202, dispatch box.download)",
+    description=(
+        "Запускает скачивание/импорт артефакта бокса по его `download_url` на "
+        "указанный VMS-hub своего отдела: воркер тянет образ в storage-pool "
+        "боксов hub'а (там же `vm.create` ищет образ). Ставит боксу "
+        "`download_status='downloading'` и возвращает `task_id`. Доступ: "
+        "`(box, update)`. Бокс без `download_url` → 400; hub не подготовлен → 409."
+    ),
+    responses={
+        202: {"description": "Скачивание запущено."},
+        400: {"description": "BOX_NO_DOWNLOAD_URL — у бокса нет источника."},
+        403: {"description": "Нет `update` на box."},
+        404: {"description": "BOX_NOT_FOUND / HUB_NOT_FOUND."},
+        409: {"description": "HUB_NOT_PREPARED."},
+    },
+)
+async def download_box(
+    box_id: str,
+    body: BoxDownloadRequest,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> BoxDownloadResponse:
+    """Download-триггер. Доступ: `(box, update)`. Аудит: box.download."""
+    box, task_id = await svc.dispatch_download(
+        db, identity, request, box_id, body.hub_server_id,
+    )
+    return BoxDownloadResponse(
+        box_id=box.id, task_id=task_id,
+        download_status=box.download_status or "downloading",
+    )
 
 
 @router.delete(

@@ -131,6 +131,8 @@ SERVICE_EVENTS = [
     {"action": "box.update", "description": "Box updated (fields and/or base user password re-encrypted). failure reasons: not_found_or_cross_dept / duplicate", "default_severity": "INFO"},
     {"action": "box.delete", "description": "Box catalog entry deleted. failure reason: not_found_or_cross_dept", "default_severity": "CRITICAL"},
     {"action": "box.base_user_password_revealed", "description": "Decrypted base user password of a box revealed to the caller (base64) via GET with view_password. failure reason: decrypt_failed", "default_severity": "WARNING"},
+    {"action": "box.download", "description": "Box image download to a hub dispatched (box.download task): fetch download_url and import into the hub box pool. failure reasons: not_found_or_cross_dept / no_download_url / hub_not_prepared", "default_severity": "WARNING"},
+    {"action": "box.download_state", "description": "Worker callback with box download outcome (ready/error); updates box download_status. failure reason: not_found", "default_severity": "INFO"},
     # Управление матрицей прав
     {"action": "permission.grant", "description": "entity_permission row granted", "default_severity": "CRITICAL"},
     {"action": "permission.revoke", "description": "entity_permission row revoked", "default_severity": "CRITICAL"},

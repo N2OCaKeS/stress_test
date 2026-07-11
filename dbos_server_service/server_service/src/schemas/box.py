@@ -177,6 +177,72 @@ class BoxResponse(BaseModel):
     initial_snapshots: list[str] = Field(
         default_factory=list, description="Снимки на диске образа."
     )
+    download_status: str | None = Field(
+        default=None,
+        description=(
+            "Статус скачивания/импорта бокса на hub: null (не запускалось) / "
+            "downloading / ready / error."
+        ),
+    )
+    download_last_error: str | None = Field(
+        default=None, description="Текст последней ошибки скачивания (для status=error)."
+    )
     created_at: datetime = Field(description="Когда бокс создан.")
     updated_at: datetime = Field(description="Когда последний раз изменён.")
     created_by: str | None = Field(default=None, description="Кто создал бокс.")
+
+
+class BoxDownloadRequest(BaseModel):
+    """Тело POST /boxes/{id}/download — запустить скачивание бокса на hub.
+
+    `hub_server_id` — на какой подготовленный VMS-hub своего отдела качать
+    артефакт. Сам URL и формат берутся из каталожной записи бокса.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    hub_server_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID hub-сервера (VMS-hub своего отдела), куда качать бокс.",
+    )
+
+
+class BoxDownloadResponse(BaseModel):
+    """Ответ на триггер скачивания бокса (202)."""
+
+    box_id: str = Field(description="Бокс, для которого запущено скачивание.")
+    task_id: str = Field(description="ID задачи `box.download`.")
+    download_status: str = Field(description="Текущий статус (downloading).")
+
+
+class BoxDownloadStateCallbackRequest(BaseModel):
+    """Тело POST /internal/boxes/{id}/download-state — воркер об исходе `box.download`.
+
+    `status='ready'` — артефакт скачан и разложен в пул боксов hub'а;
+    `status='error'` — импорт упал, `error` несёт причину.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = Field(
+        ..., description="Итоговый статус: ready / error.",
+    )
+    error: str | None = Field(
+        default=None, max_length=1024,
+        description="Текст ошибки (для status='error').",
+    )
+
+    @field_validator("status")
+    @classmethod
+    def _check_status(cls, value: str) -> str:
+        if value not in ("ready", "error"):
+            raise ValueError("status должен быть 'ready' или 'error'")
+        return value
+
+
+class BoxDownloadStateCallbackResponse(BaseModel):
+    """Подтверждение записи download-state callback'а."""
+
+    ok: bool = True
+    box_id: str = Field(description="Бокс.")
+    download_status: str = Field(description="Записанный статус.")

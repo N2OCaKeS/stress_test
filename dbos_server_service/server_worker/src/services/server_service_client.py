@@ -1026,6 +1026,42 @@ async def submit_vms_hub_torn_down(
     )
 
 
+async def submit_box_download_state(
+    box_id: str,
+    status: str,
+    target_department_id: str | None = None,
+    *,
+    error: str | None = None,
+) -> dict:
+    """Сообщить server_service исход скачивания/импорта бокса (финал `box.download`).
+
+    `status='ready'` — артефакт скачан и разложен в storage-pool боксов hub'а
+    (там же `vm.create` ищет образ); server_service ставит боксу
+    `download_status='ready'`, снимает `download_last_error`. `status='error'`
+    едет из except-ветки handler'а с заполненным `error` — оператор увидит, на
+    чём импорт встал.
+
+    Возвращает: тело
+    `POST /api/server/v1/internal/boxes/{box_id}/download-state`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `BOX_DOWNLOAD_STATE_REJECTED` — server_service вернул не 2xx.
+    """
+    body: dict = {"status": status}
+    if error is not None:
+        body["error"] = error
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/boxes/{box_id}/download-state",
+        reject_code="BOX_DOWNLOAD_STATE_REJECTED",
+        target_department_id=target_department_id,
+        json=body,
+        details={"box_id": box_id},
+        allow_empty_body=True,
+    )
+
+
 async def submit_rotated_ipmi_password(
     ipmi_controller_id: str,
     new_password: str,

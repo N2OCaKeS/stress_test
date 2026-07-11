@@ -33,6 +33,7 @@ class TestTaskKind:
             "vm.inventory_sync", "vm.users_inventory",
             "vm.account_provision", "vm.account_update_on_host",
             "vm.account_deprovision",
+            "box.download",
         }
 
     def test_dot_namespaced(self):

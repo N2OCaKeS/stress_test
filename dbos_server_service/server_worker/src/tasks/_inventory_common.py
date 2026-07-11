@@ -6,12 +6,11 @@
 и ВМ. Транспорт спрятан за примитивом `run(cmd)`, поэтому цель может быть и
 прямым сервером (`DirectRunner`), и гостём ВМ через hub (`GuestHopRunner`).
 
-Сейчас поверх этого кода работает VM-инвентаризация (`vms_inventory`). Серверная
-`inventory.sync` пока ходит через `SshClient.get_inventory`; `collect_inventory`
-здесь повторяет её набор команд и имена/порядок блоков байт-в-байт, поэтому
-серверную сторону можно унифицировать одним шагом — делегировать
-`ssh_client.collect_inventory`/`collect_os_users` в этот модуль (правка в
-`services/ssh_client.py`).
+Поверх этого кода работают обе стороны инвентаризации. VM-путь
+(`vms_inventory`) зовёт `collect_inventory`/`collect_os_users` напрямую через
+`GuestHopRunner`. Серверный путь заходит сюда через `SshClient.get_inventory`/
+`get_os_users`, которые делегируют этим сборщикам поверх `DirectRunner(self)` —
+набор команд и имена/порядок блоков живут здесь в одном экземпляре.
 """
 
 from __future__ import annotations

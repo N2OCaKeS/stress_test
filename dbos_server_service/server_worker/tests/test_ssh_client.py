@@ -611,6 +611,25 @@ class TestSshClientGetInventory:
         assert facts["os"]["VERSION_ID"] == "1.7"
         assert any("Host bridge" in line for line in facts["pci"]["devices"])
         assert facts["virtualization"]["stdout"] == "1"
+        # Пин команд байт-в-байт. Сборка едет через общий `_inventory_common`
+        # (сервер — DirectRunner, ВМ — GuestHopRunner); дрейф набора/порядка
+        # сломал бы маппер, поэтому фиксируем весь список.
+        assert [c.args[0] for c in conn.run.await_args_list] == [
+            "hostname",
+            "uname -a",
+            "lscpu -J",
+            "lsblk -b -J -o NAME,SIZE,TYPE,MODEL,SERIAL,MOUNTPOINT",
+            "df -B1 --output=source,target,size,used,pcent",
+            "cat /proc/meminfo",
+            "ip -o link show",
+            "if [ -e /dev/kvm ] || grep -qE '(vmx|svm)' /proc/cpuinfo; "
+            "then echo 1; else echo 0; fi",
+            "cat /etc/os-release",
+            "lspci -mm",
+            "cat /etc/astra/build_version",
+            "cat /etc/astra_license",
+            "cat /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null",
+        ]
 
     async def test_partial_failure_lscpu_returns_error_block(self, monkeypatch):
         # Все ОК кроме lscpu (rc=127, command not found).
@@ -691,6 +710,49 @@ class TestSshClientGetInventory:
         assert "error" in facts["hostname"]
         assert facts["hostname"]["error"].startswith("SSH_TIMEOUT")
         assert facts["kernel"]["stdout"] == "Linux"
+
+
+# ── get_os_users() ──────────────────────────────────────────────────────────
+
+
+class TestSshClientGetOsUsers:
+    async def test_collects_passwd_group_login_defs(self, monkeypatch):
+        conn = _make_fake_conn(run_results=[
+            _run_result("root:x:0:0:root:/root:/bin/bash\nops:x:1000:1000::/home/ops:/bin/bash\n"),
+            _run_result("sudo:x:27:ops\n"),
+            _run_result("UID_MIN\t1000\nUID_MAX\t60000\n"),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "root", "p") as ssh:
+            facts = await ssh.get_os_users()
+
+        assert set(facts) == {"passwd", "group", "login_defs"}
+        assert facts["passwd"]["stdout"].startswith("root:x:0:0")
+        assert facts["group"]["stdout"].startswith("sudo:x:27")
+        # Пин команд: getent passwd/group + cat login.defs, ровно в этом порядке.
+        # Источник — общий `_inventory_common.collect_os_users`.
+        assert [c.args[0] for c in conn.run.await_args_list] == [
+            "getent passwd",
+            "getent group",
+            "cat /etc/login.defs",
+        ]
+
+    async def test_ssh_error_in_one_command_does_not_break_others(self, monkeypatch):
+        run_results = [
+            _ssh_timeout("passwd stuck"),
+            _run_result("sudo:x:27:\n"),
+            _run_result("UID_MIN\t1000\n"),
+        ]
+        conn = _make_fake_conn(run_results=run_results)
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "root", "p") as ssh:
+            facts = await ssh.get_os_users()
+
+        assert "error" in facts["passwd"]
+        assert facts["passwd"]["error"].startswith("SSH_TIMEOUT")
+        assert facts["group"]["stdout"].startswith("sudo:x:27")
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────

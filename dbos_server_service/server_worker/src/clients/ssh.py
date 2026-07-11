@@ -49,7 +49,6 @@ Sudo:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -1624,136 +1623,54 @@ class SshClient:
     async def get_inventory(self) -> dict:
         """Собрать структурированный inventory сервера.
 
-        Команды:
+        Набор команд (hostname/uname/lscpu/lsblk/df/meminfo/ip/virt-проба/
+        os-release/lspci/astra build+license/apt sources) и сборка блоков живут
+        в `src.tasks._inventory_common.collect_inventory` — один код на прямой
+        сервер (этот метод, через `DirectRunner`) и на гостя ВМ
+        (`tasks.vms_inventory`, через `GuestHopRunner`).
 
-        * `hostname` — короткое имя ноды;
-        * `uname -a` — kernel + arch;
-        * `lscpu -J` — JSON cpu (модель/ядра/сокеты);
-        * `lsblk -b -J -o NAME,SIZE,TYPE,MODEL,SERIAL,MOUNTPOINT` — диски
-          (размер в байтах + точки монтирования для определения системного);
-        * `df -B1 --output=source,target,size,used,pcent` — занятость
-          смонтированных ФС (байты), для used/used_percent по каждому диску;
-        * `cat /proc/meminfo` — объём ОЗУ (строка MemTotal);
-        * `ip -o link show` — сетевые интерфейсы (имена активных, без lo);
-        * проба виртуализации — `/dev/kvm` либо флаг `vmx`/`svm` в
-          `/proc/cpuinfo` (возвращает `1`/`0`);
-        * `cat /etc/os-release` — KEY=VALUE с дистрибутивом;
-        * `lspci -mm` — PCI-устройства (одной строкой `class "vendor"
-          "device" ...`);
-        * `cat /etc/astra/build_version` — версия сборки Astra Linux;
-        * `cat /etc/astra_license` — лицензия, из неё берём режим защищённости;
-        * `cat /etc/apt/sources.list` (+ `sources.list.d/*.list`) — репозитории.
-
-        Возврат — dict с ключами `hostname`, `kernel`, `cpu`, `disks`,
-        `os`, `pci`, `virtualization`, `astra_build`, `astra_license`,
-        `apt_sources`. Каждый
-        блок может содержать `error` с описанием, если команда вернула
-        non-zero — частичный inventory лучше, чем полный фейл одной команды.
-        Astra-блоки на не-Астре ожидаемо приходят с `error` (файлов нет).
+        Возврат — dict с ключами `hostname`, `kernel`, `cpu`, `disks`, `df`,
+        `meminfo`, `net_interfaces`, `virtualization`, `os`, `pci`,
+        `astra_build`, `astra_license`, `apt_sources`. Каждый блок best-effort:
+        упавшая команда кладёт `error`, остальные целы. Astra-блоки на не-Астре
+        ожидаемо приходят с `error` (файлов нет). Разбор в flat-payload —
+        `services.ssh_client.inventory_facts_to_payload`.
         """
-        facts: dict = {}
+        # Ленивый импорт: `_inventory_common` импортирует из этого модуля
+        # (`SshError`/`_parse_os_release`), поэтому на module-top импорт
+        # обратно замкнул бы цикл. К моменту вызова оба модуля загружены.
+        from src.tasks._inventory_common import collect_inventory
+        from src.tasks._target_runner import DirectRunner
 
-        # 1. hostname — самая дешёвая sanity-check команда, если она
-        # упадёт — остальные тоже упадут.
-        facts["hostname"] = await self._capture_text("hostname")
-        facts["kernel"] = await self._capture_text("uname -a")
-
-        # 2. lscpu -J → JSON.
-        facts["cpu"] = await self._capture_json("lscpu -J")
-
-        # 3. lsblk -b → JSON. `-b` даёт размеры в байтах (нужны для процента
-        # занятости), MOUNTPOINT — чтобы найти диск с примонтированным `/`.
-        facts["disks"] = await self._capture_json(
-            "lsblk -b -J -o NAME,SIZE,TYPE,MODEL,SERIAL,MOUNTPOINT"
-        )
-        # df по смонтированным ФС в байтах — источник used/used_percent.
-        # `-x tmpfs -x devtmpfs` не ставим: маппер сам матчит источники к
-        # физическим дискам по имени устройства, псевдо-ФС отсеются.
-        facts["df"] = await self._capture_text(
-            "df -B1 --output=source,target,size,used,pcent"
-        )
-        # Память: MemTotal из /proc/meminfo (kB) — маппер сконвертит в МБ/ГБ.
-        facts["meminfo"] = await self._capture_text("cat /proc/meminfo")
-        # Сетевые интерфейсы: активные имена без loopback.
-        facts["net_interfaces"] = await self._capture_text("ip -o link show")
-
-        # Аппаратная виртуализация: сервер тянет KVM, если есть /dev/kvm либо в
-        # /proc/cpuinfo присутствует флаг vmx (Intel VT-x) или svm (AMD-V).
-        # Отдаём ровно "1"/"0" — маппер превратит в bool. Это гейт для кнопки
-        # «Подготовить как VMS-hub».
-        facts["virtualization"] = await self._capture_text(
-            "if [ -e /dev/kvm ] || grep -qE '(vmx|svm)' /proc/cpuinfo; "
-            "then echo 1; else echo 0; fi"
-        )
-
-        # 4. /etc/os-release — KEY=VALUE (часть в кавычках).
-        # `_capture_text` всегда возвращает dict (см. сигнатуру), `isinstance`
-        # тут — defence-in-depth на случай тестовой подмены subclass'ом.
-        os_release_raw = await self._capture_text("cat /etc/os-release")
-        facts["os"] = _parse_os_release(os_release_raw.get("stdout", "")) if isinstance(os_release_raw, dict) else {}
-        if isinstance(os_release_raw, dict) and "error" in os_release_raw:
-            facts["os"]["error"] = os_release_raw["error"]
-
-        # 5. lspci -mm — построчно. Не парсим в class/vendor/device dict
-        # (нужно дополнительно lspci -nn для PCI ID) — отдаём raw lines.
-        # `isinstance` — то же defence-in-depth, что в os_release-блоке выше.
-        lspci_raw = await self._capture_text("lspci -mm")
-        if isinstance(lspci_raw, dict):
-            lines = [ln for ln in lspci_raw.get("stdout", "").splitlines() if ln.strip()]
-            facts["pci"] = {"devices": lines}
-            if "error" in lspci_raw:
-                facts["pci"]["error"] = lspci_raw["error"]
-
-        # 6. Astra-специфика и apt-репозитории. Каждая команда best-effort:
-        # на не-Астре build_version / astra_license отсутствуют, cat вернёт
-        # non-zero — `_capture_text` не raise'ит, положит `error`, а маппер
-        # (`services/ssh_client.py`) сам решит, Astra это или нет.
-        #
-        #   * build_version — основная версия сборки (например `1.7.5`);
-        #   * astra_license — из него определяем режим защищённости
-        #     (Орёл/Воронеж/Смоленск);
-        #   * apt sources — активные репозитории из sources.list и
-        #     sources.list.d/*.list (одной командой, ошибки глушим, stdout
-        #     остаётся даже при частичном фейле).
-        facts["astra_build"] = await self._capture_text(
-            "cat /etc/astra/build_version"
-        )
-        facts["astra_license"] = await self._capture_text("cat /etc/astra_license")
-        facts["apt_sources"] = await self._capture_text(
-            "cat /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null"
-        )
-
-        return facts
+        return await collect_inventory(DirectRunner(self))
 
     # ── User inventory: getent passwd / group / sudoers ─────────────────
 
     async def get_os_users(self) -> dict:
         """Собрать список реальных OS-пользователей сервера.
 
-        Команды:
+        Команды (`getent passwd` / `getent group` / `cat /etc/login.defs`) и
+        сборка блоков — в `src.tasks._inventory_common.collect_os_users`, общем
+        для прямого сервера (этот метод, `DirectRunner`) и гостя ВМ
+        (`GuestHopRunner`). sudo-членство определяется по `getent group`,
+        отдельного `sudo -l -U <login>` нет (дорого и требует root).
 
-        * `getent passwd` — все пользователи (`login:x:uid:gid:gecos:home:shell`);
-        * `getent group` — группы для определения sudo-членства;
-        * `getent /etc/login.defs UID_MIN` через `cat` — порог системных UID;
-        * `sudo -l -U <login>` тут НЕ делаем (дорого и требует root): sudo
-          определяем по членству в `sudo`/`wheel`/`admin`-группах.
-
-        Возврат — dict с ключами `passwd`, `group`, `login_defs`. Каждый блок —
-        результат `_capture_text` (`{stdout, returncode}` либо `{error}`).
-        Парсинг и UID-фильтр — на стороне `services/ssh_client.py`.
+        Возврат — dict с ключами `passwd`, `group`, `login_defs` (каждый —
+        `_capture_text`-результат). Парсинг и UID-фильтр — на стороне
+        `services.ssh_client.os_users_facts_to_payload`.
         """
-        facts: dict = {}
-        facts["passwd"] = await self._capture_text("getent passwd")
-        facts["group"] = await self._capture_text("getent group")
-        # login.defs читаем целиком — UID_MIN/UID_MAX парсятся на стороне
-        # facts-маппера. Если файла нет — fallback на дефолтный UID_MIN.
-        facts["login_defs"] = await self._capture_text("cat /etc/login.defs")
-        return facts
+        from src.tasks._inventory_common import collect_os_users
+        from src.tasks._target_runner import DirectRunner
+
+        return await collect_os_users(DirectRunner(self))
 
     async def _capture_text(self, command: str) -> dict:
         """Запустить команду, вернуть `{stdout, stderr, returncode}` либо
         `{error: ..., returncode}` при non-zero. Не raise'ит — caller
-        видит частичный inventory.
+        видит частичный результат.
+
+        Используется Astra-mode-пробой (`_check_astra_mode`); тот же по логике
+        сборщик поверх `runner.run` живёт в `tasks._inventory_common`.
         """
         try:
             rc, out, err = await self.run(command)
@@ -1762,21 +1679,6 @@ class SshClient:
         if rc != 0:
             return {"error": err.strip() or f"exit code {rc}", "returncode": rc, "stdout": out}
         return {"stdout": out.strip(), "stderr": err.strip(), "returncode": rc}
-
-    async def _capture_json(self, command: str) -> dict:
-        """То же, что _capture_text, но `stdout` парсится в JSON.
-
-        Если json-parse фейлит — возвращаем `{error, raw_stdout}` чтобы
-        caller мог увидеть, что пришло.
-        """
-        text = await self._capture_text(command)
-        if "error" in text:
-            return text
-        raw = text.get("stdout", "")
-        try:
-            return {"data": json.loads(raw)}
-        except (json.JSONDecodeError, ValueError) as exc:
-            return {"error": f"invalid JSON: {exc}", "raw_stdout": raw[:512]}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

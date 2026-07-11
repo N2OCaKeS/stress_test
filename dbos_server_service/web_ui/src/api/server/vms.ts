@@ -272,6 +272,8 @@ export interface VmCreateRequest {
    */
   disk_gb: number;
   box: string;
+  /** ID бокса из реестра отдела (реестр перекрывает base_user/os_versions/url). */
+  box_id?: string;
   network_mode: VmNetworkMode;
   ip_address?: string | null;
   /**

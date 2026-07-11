@@ -84,7 +84,12 @@ import {
   type VmPresetUpdateRequest,
 } from "@/api/server/vms";
 import { listAccounts } from "@/api/server/accounts";
-import type { ServerAccount, TaskDispatchResponse } from "@/api/server/types";
+import { listBoxes, type Box } from "@/api/server/boxes";
+import type {
+  OffsetPaginatedResponse,
+  ServerAccount,
+  TaskDispatchResponse,
+} from "@/api/server/types";
 import {
   MOCK_AVAILABLE_IPS,
   MOCK_VM_ACCOUNTS,
@@ -693,6 +698,8 @@ interface VmBlockData {
   ramMb: string;
   diskGb: string;
   box: string;
+  /** ID записи реестра боксов (опционально). Пусто — бокс не выбран. */
+  boxId: string;
   networkMode: VmNetworkMode;
   poolId: string;
   ipMode: "auto" | "pool" | "manual";
@@ -714,6 +721,7 @@ function newVmBlock(box: string): VmBlockData {
     ramMb: "4096",
     diskGb: "40",
     box,
+    boxId: "",
     networkMode: "bridge",
     poolId: "",
     ipMode: "auto",
@@ -774,12 +782,19 @@ function validateVmBlock(
   return { cpuN, ramN, diskN, minDisk, nameError, diskWarning, ipValid, valid };
 }
 
+/**
+ * Тело создания ВМ с необязательной привязкой к записи реестра боксов
+ * (`box_id`). Поле кладём поверх `VmCreateRequest`, пока backend не завёл его в
+ * типах клиента vms — при отсутствии выбора его в payload нет.
+ */
+type VmCreateItem = VmCreateRequest & { box_id?: string };
+
 function vmBlockToItem(
   b: VmBlockData,
   hubId: string,
   departmentId: string,
   v: VmBlockValidation,
-): VmCreateRequest {
+): VmCreateItem {
   const bridge = b.networkMode === "bridge";
   return {
     hub_server_id: hubId,
@@ -790,6 +805,7 @@ function vmBlockToItem(
     ram_mb: v.ramN,
     disk_gb: v.diskN,
     box: b.box,
+    box_id: b.boxId ? b.boxId : undefined,
     network_mode: b.networkMode,
     ip_address: !bridge
       ? null
@@ -824,6 +840,13 @@ export function CreateVmPane({
 }) {
   const toast = useToast();
   const defaultBox = images[0]?.name ?? "vm_station";
+  // Реестр боксов отдела хаба — для необязательного селектора «Бокс» в блоке.
+  const boxesQ = useQuery<OffsetPaginatedResponse<Box>>(
+    () => listBoxes({ department_id: hub.department_id }),
+    [hub.department_id],
+    { enabled: !mock, keepPreviousDataOnError: true },
+  );
+  const boxes: Box[] = mock ? [] : boxesQ.data?.items ?? [];
   const [blocks, setBlocks] = useState<VmBlockData[]>(() => [
     newVmBlock(defaultBox),
   ]);
@@ -971,6 +994,7 @@ export function CreateVmPane({
               block={b}
               validation={validations[i]}
               images={images}
+              boxes={boxes}
               mock={mock}
               hub={hub}
               canRemove={blocks.length > 1}
@@ -1017,6 +1041,7 @@ function VmBlockForm({
   block,
   validation,
   images,
+  boxes,
   mock,
   hub,
   canRemove,
@@ -1029,6 +1054,7 @@ function VmBlockForm({
   block: VmBlockData;
   validation: VmBlockValidation;
   images: VmImage[];
+  boxes: Box[];
   mock: boolean;
   hub: VmHub;
   canRemove: boolean;
@@ -1202,6 +1228,28 @@ function VmBlockForm({
             </span>
           )}
         </label>
+
+        {boxes.length > 0 && (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Бокс (реестр)</span>
+            <select
+              className="input"
+              value={block.boxId}
+              onChange={(e) => onPatch({ boxId: e.target.value })}
+            >
+              <option value="">— не выбран —</option>
+              {boxes.map((bx) => (
+                <option key={bx.id} value={bx.id}>
+                  {bx.name}
+                  {bx.format ? ` · ${bx.format}` : ""}
+                </option>
+              ))}
+            </select>
+            <span className="text-[11px] text-dim">
+              Необязательно: привязать ВМ к записи реестра боксов отдела.
+            </span>
+          </label>
+        )}
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">Сеть *</span>

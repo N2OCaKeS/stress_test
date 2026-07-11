@@ -81,6 +81,9 @@ const WikiExamples = lazy(() =>
 const OsCatalog = lazy(() =>
   import("@/pages/os/OsCatalog").then((m) => ({ default: m.OsCatalog }))
 );
+const BoxCatalog = lazy(() =>
+  import("@/pages/box/BoxCatalog").then((m) => ({ default: m.BoxCatalog }))
+);
 const TaskResultPage = lazy(() =>
   import("@/pages/tasks/TaskResultPage").then((m) => ({
     default: m.TaskResultPage,
@@ -291,6 +294,14 @@ export function App() {
               element={
                 <RouteGuard>
                   <OsCatalog />
+                </RouteGuard>
+              }
+            />
+            <Route
+              path="/boxes"
+              element={
+                <RouteGuard service="server">
+                  <BoxCatalog />
                 </RouteGuard>
               }
             />

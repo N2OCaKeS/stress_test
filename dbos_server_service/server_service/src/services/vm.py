@@ -67,6 +67,7 @@ from src.schemas.vm import (
     VmUpdateRequest,
 )
 from src.services import audit_service, console_token, permissions, secrets_service, worker_client
+from src.services import box_service
 from src.services import management_user_config
 from src.services import vm_ip_pool as ip_pool_svc
 from src.services.management_creds import generate_management_material
@@ -380,6 +381,11 @@ async def create_vm(
     # откуда скачивать образ. Нет записи в каталоге → 400 (карточку не заводим).
     box_url, box_os_versions = await _resolve_box_url(db, payload.box, hub.id)
 
+    # Бокс из реестра отдела: base_user-креды образа, его os_versions и
+    # download_url едут воркеру. Пароль расшифровывается под AAD бокса, наружу не
+    # отдаётся. Чужой/несуществующий бокс → 404 BOX_NOT_FOUND.
+    box_fields = await _resolve_registry_box(db, identity, payload.box_id)
+
     # Bridge-ВМ нужен статический адрес: берём заданный ip_address (с проверкой
     # занятости) либо авто-выбираем свободный из пула. nat — адрес выдаёт libvirt,
     # ничего не резолвим. Без адреса и без пула bridge создать нельзя.
@@ -484,9 +490,12 @@ async def create_vm(
         "name": vm.name,
         "hostname": vm.hostname or vm.name,
         "box": vm.box,
-        "box_url": box_url,
+        # download_url реестрового бокса — фолбэк, если box_url из vm_images-
+        # каталога не резолвился.
+        "box_url": box_url or box_fields.get("download_url"),
         "os_version": vm.os_version,
-        "os_versions": box_os_versions,
+        # os_versions реестрового бокса перекрывают версии из vm_images-каталога.
+        "os_versions": box_fields.get("os_versions") or box_os_versions,
         "network_mode": vm.network_mode,
         "ip_address": data["ip_address"],
         "gateway": str(net_pool.gateway) if net_pool is not None and net_pool.gateway is not None else None,
@@ -510,6 +519,12 @@ async def create_vm(
             for a in accounts
         ],
     }
+    # base_user-креды образа (login + plaintext пароль) — воркер провижнит base-
+    # учётку бокса. Пароль в HTTP-ответ не попадает, только в dispatch-payload.
+    if "base_user_login" in box_fields:
+        payload_task["base_user_login"] = box_fields["base_user_login"]
+    if "base_user_password" in box_fields:
+        payload_task["base_user_password"] = box_fields["base_user_password"]
     try:
         task_id = await _dispatch_vm_task(
             db=db, identity=identity, request=request,
@@ -712,6 +727,27 @@ async def _resolve_box_url(
             details={"box": box},
         )
     return image.url, list(image.os_versions or [])
+
+
+async def _resolve_registry_box(
+    db: AsyncSession, identity: IdentityContext, box_id: str | None,
+) -> dict:
+    """Резолв реестрового бокса в фрагмент dispatch-payload (или `{}`).
+
+    `box_id=None` → `{}` (прежнее поведение). Иначе тянем бокс своего отдела
+    через box_service (чужой/несуществующий → 404 BOX_NOT_FOUND) и получаем
+    base_user-креды образа + os_versions + download_url для payload'а воркера.
+    """
+    if box_id is None:
+        return {}
+    try:
+        return await box_service.resolve_box_for_dispatch(db, identity, box_id)
+    except NotFoundError:
+        audit_service.emit(
+            "vm.create", target_type="vm", status="failure", allowed=True,
+            details={"reason": "box_not_found_or_cross_dept", "box_id": box_id},
+        )
+        raise
 
 
 # ── update (cpu/ram) ─────────────────────────────────────────────────────────

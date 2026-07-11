@@ -122,6 +122,50 @@ async def make_vm(db):
     return _factory
 
 
+@pytest_asyncio.fixture
+async def make_box(db):
+    """Бокс реестра в БД: base_user + шифрованный пароль под AAD бокса."""
+    from src.models import Box
+    from src.services import secrets_service
+    from src.services.box_service import aad_for_box_base_user_password
+    from src.utils.ids import box_id as new_box_id
+
+    async def _factory(
+        *,
+        department_id: str = "dep_a",
+        base_user_login: str | None = "u",
+        base_user_password: str | None = "1",
+        os_versions: list[str] | None = None,
+        download_url: str | None = None,
+        name: str | None = None,
+    ) -> Box:
+        bid = new_box_id()
+        encrypted = (
+            secrets_service.encrypt(
+                base_user_password, aad=aad_for_box_base_user_password(bid)
+            )
+            if base_user_password is not None
+            else None
+        )
+        box = Box(
+            id=bid,
+            department_id=department_id,
+            name=name or f"box-{uuid.uuid4().hex[:6]}",
+            format="qcow2",
+            download_url=download_url,
+            base_user_login=base_user_login,
+            base_user_password_encrypted=encrypted,
+            os_versions=os_versions or [],
+            initial_snapshots=[],
+        )
+        db.add(box)
+        await db.flush()
+        await db.refresh(box)
+        return box
+
+    return _factory
+
+
 def _create_body(hub, **over) -> dict:
     body = {
         "hub_server_id": hub.id,
@@ -824,6 +868,94 @@ async def test_create_without_box_no_box_url(
     )
     assert resp.status_code == 202, resp.text
     assert calls[0]["payload"]["box_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_box_id_carries_base_user(
+    client, admin_role_token_a, make_hub, make_box, monkeypatch,
+):
+    """box_id реестра → base_user-креды образа, os_versions и download_url едут
+    воркеру; пароль plaintext в payload, но не в HTTP-ответе."""
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    box = await make_box(
+        base_user_login="astra", base_user_password="s3cret",
+        os_versions=["1.8.1.6"], download_url="ftp://boxes/reg.qcow2",
+    )
+    resp = await client.post(
+        f"{BASE}/vms", json=_create_body(hub, box_id=box.id),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    p = calls[0]["payload"]
+    assert p["base_user_login"] == "astra"
+    assert p["base_user_password"] == "s3cret"
+    assert p["os_versions"] == ["1.8.1.6"]
+    assert p["box_url"] == "ftp://boxes/reg.qcow2"
+    assert "base_user_password" not in resp.json()
+
+
+@pytest.mark.asyncio
+async def test_create_box_id_cross_dept_hidden(
+    client, admin_role_token_a, make_hub, make_box, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    box = await make_box(department_id="dep_b")
+    resp = await client.post(
+        f"{BASE}/vms", json=_create_body(hub, box_id=box.id),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 404, "BOX_NOT_FOUND")
+
+
+@pytest.mark.asyncio
+async def test_create_box_id_not_found(
+    client, admin_role_token_a, make_hub, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    resp = await client.post(
+        f"{BASE}/vms", json=_create_body(hub, box_id="box_ghost"),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 404, "BOX_NOT_FOUND")
+
+
+@pytest.mark.asyncio
+async def test_create_box_id_without_base_user_omits_keys(
+    client, admin_role_token_a, make_hub, make_box, monkeypatch,
+):
+    """Бокс без встроенной учётки → base_user-ключи в payload не кладём."""
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    box = await make_box(
+        base_user_login=None, base_user_password=None, os_versions=[],
+    )
+    resp = await client.post(
+        f"{BASE}/vms", json=_create_body(hub, box_id=box.id),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    p = calls[0]["payload"]
+    assert "base_user_login" not in p
+    assert "base_user_password" not in p
+
+
+@pytest.mark.asyncio
+async def test_create_without_box_id_no_base_user(
+    client, admin_role_token_a, make_hub, monkeypatch,
+):
+    """box_id не задан → прежнее поведение, base_user-ключей в payload нет."""
+    calls = make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    resp = await client.post(
+        f"{BASE}/vms", json=_create_body(hub), headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+    p = calls[0]["payload"]
+    assert "base_user_login" not in p
+    assert "base_user_password" not in p
 
 
 @pytest.mark.asyncio

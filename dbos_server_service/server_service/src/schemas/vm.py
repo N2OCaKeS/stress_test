@@ -27,6 +27,7 @@ class VmCreate(BaseModel):
     department_id: str = Field(description="Department-владелец ВМ. Должен совпадать с department'ом caller'а, иначе 403 DEPARTMENT_ISOLATION.")
     os_version: str | None = Field(default=None, max_length=64, description="Версия ОС ВМ (свободная строка, напр. 1.8.1.6). У universal-бокса опускается.")
     box: str | None = Field(default=None, max_length=128, description="Имя бокса-образа из FTP-каталога (vm_station / single-бокс).")
+    box_id: str | None = Field(default=None, max_length=64, description="ID бокса из реестра отдела (prefix box_). Задан — воркеру уезжают base_user-креды образа, его os_versions и download_url. Бокс обязан быть своего отдела.")
     network_mode: VmNetworkMode = Field(default=VmNetworkMode.BRIDGE, description="bridge (static в LAN) или nat (libvirt).")
     ip_address: IPv4Address | IPv6Address | None = Field(default=None, description="Статический IP для bridge-режима (проверяется на занятость). Опционален — если не задан, берётся из пула.")
     pool_id: str | None = Field(default=None, description="Пул для авто-выбора свободного IP (bridge, если ip_address не задан).")

@@ -274,6 +274,37 @@ async def delete_box(
     )
 
 
+async def resolve_box_for_dispatch(
+    db: AsyncSession, identity: IdentityContext, box_id: str,
+) -> dict:
+    """Собрать фрагмент dispatch-payload `vm.create` из бокса реестра.
+
+    Фетчит бокс, проверяет изоляцию отдела (чужой/несуществующий → 404
+    BOX_NOT_FOUND) и отдаёт то, что воркер читает при сборке ВМ: base_user-креды
+    образа (`base_user_login` + расшифрованный `base_user_password`), список
+    версий ОС (`os_versions`) и адрес скачивания (`download_url`). Пароль
+    расшифровывается под AAD бокса и наружу (в HTTP-ответ) не отдаётся — уезжает
+    только воркеру. Ключи, для которых у бокса нет данных, в фрагмент не кладём.
+    """
+    box = await repo.get_by_id(db, box_id)
+    if box is None or box.department_id != identity.department_id:
+        raise NotFoundError(error_code="BOX_NOT_FOUND", message="Box not found")
+
+    fragment: dict = {}
+    if box.base_user_login is not None:
+        fragment["base_user_login"] = box.base_user_login
+    if box.base_user_password_encrypted is not None:
+        fragment["base_user_password"] = secrets_service.decrypt(
+            box.base_user_password_encrypted,
+            aad=aad_for_box_base_user_password(box.id),
+        )
+    if box.os_versions:
+        fragment["os_versions"] = list(box.os_versions)
+    if box.download_url:
+        fragment["download_url"] = box.download_url
+    return fragment
+
+
 async def _reveal_base_user_password(box: Box) -> str | None:
     """Расшифровать пароль образного пользователя в base64 + аудит раскрытия.
 

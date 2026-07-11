@@ -10,10 +10,12 @@
 * `vm.snapshot_revert` — `virsh snapshot-revert`; в режиме `per_snapshot`
   server_service сам переключит активные креды ВМ по callback'у.
 * `vm.astra_update` — revert `<major>_build` → перезапись sources.list в госте →
-  `astra-update -A -T -r` → reboot(wait) → `passwd u` → снимок `<rc>`.
+  `astra-update -A -T -r` → reboot(wait) → смена пароля (managed → `dbos`, legacy
+  → `u`) → снимок `<rc>`.
 * `vm.allta_update` / `vm.passwd` — «reroll»: по каждому не-`_build` снимку
-  revert → обновить guest-allta `.deb` с FTP → опц. `chpasswd u` → пересоздать
-  снимок. Один и тот же op; `passwd` требует пароль обязательно.
+  revert → обновить guest-allta `.deb` с FTP → опц. смена пароля (managed →
+  `dbos`, legacy → `u`) → пересоздать снимок. Один и тот же op; `passwd` требует
+  пароль обязательно.
 
 Длинные операции идут как `astra_update`: без per-команда timeout'а,
 durable-retry на уровне `_runner`. Исход докладывается server_service через
@@ -102,7 +104,7 @@ def _snapshot_create_cmd(vm_name: str, snap: str, snapshot_type: str | None) -> 
 def _validate_guest_password(value: str, host: str) -> str:
     """Отбить пароль гостя с символами, ломающими inline-`chpasswd` в госте.
 
-    Пароль уходит в `bash -c 'echo u:<pwd> | chpasswd'` внутри вложенной
+    Пароль уходит в `bash -c 'echo <login>:<pwd> | chpasswd'` внутри вложенной
     guest-сессии; перевод строки/кавычки/подстановка расклеили бы команду или
     протащили постороннюю директиву. Пустой пароль тоже не пускаем.
     """
@@ -121,19 +123,22 @@ def _validate_guest_password(value: str, host: str) -> str:
 
 
 async def _change_guest_password(
-    ssh, host: str, guest_ip: str, password: str, *, connect=None,
+    ssh, host: str, guest_ip: str, password: str,
+    *, login: str = VMS_GUEST_LOGIN, connect=None,
 ) -> None:
-    """Сменить пароль аккаунта `u` в госте (`echo u:<pwd> | chpasswd`).
+    """Сменить пароль аккаунта в госте (`echo <login>:<pwd> | chpasswd`).
 
-    `connect` — коннектор входа в гостя; по умолчанию `u`/`1`, на managed-ВМ
-    сюда передаётся ключевой коннектор управляющего пользователя.
+    `login` — целевой аккаунт: на legacy-ВМ базовый `u`, на managed-ВМ (где `u`
+    снесён при create) — управляющий пользователь `dbos`. `connect` — коннектор
+    входа в гостя; по умолчанию `u`/`1`, на managed-ВМ сюда передаётся ключевой
+    коннектор управляющего пользователя.
     """
     if connect is None:
         connect = guest_connector(guest_ip)
     await run_hub_cmd(
         ssh,
         connect(
-            f"bash -c 'echo {VMS_GUEST_LOGIN}:{password} | chpasswd'",
+            f"bash -c 'echo {login}:{password} | chpasswd'",
             sudo=True,
         ),
         host, "VM_PASSWD_FAILED", "не удалось сменить пароль гостя",
@@ -472,7 +477,8 @@ async def vm_astra_update(task_id: str) -> None:
     Что делает: реверт golden-снимка `<major>_build` (`base_snapshot` из
     payload), в госте перезаписывает `/etc/apt/sources.list` репозиториями
     целевой версии, гонит `astra-update -A -T -r`, перезагружает гостя и ждёт
-    его, меняет пароль `u` на новый, снимает deliverable Орла `<rc>`, переводит
+    его, меняет пароль целевого аккаунта на новый (managed → управляющий `dbos`,
+    legacy → базовый `u`), снимает deliverable Орла `<rc>`, переводит
     гостя в Смоленск (astra-modeswitch + МРД/МКЦ + reboot) и снимает `<rc>_smolensk`.
     Оба снимка (mode orel/smolensk) докладывает `vms/{id}/snapshots`, состояние
     — `vms/{id}/state` power/ip.
@@ -529,6 +535,9 @@ async def vm_astra_update(task_id: str) -> None:
                 # учётки `u` нет); legacy-ВМ — по `u`/`1`.
                 mgmt_user, key_path = await load_guest_key(ssh, host, payload)
                 connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
+                # на managed-ВМ пароль меняем управляющему `dbos` (базовый `u`
+                # снесён при create); на legacy — прежней базовой учётке `u`.
+                guest_login = mgmt_user or VMS_GUEST_LOGIN
                 smolensk_snap = f"{rc_ver}_{MODE_SMOLENSK}"
                 try:
                     # 2. репозитории целевой версии + astra-update
@@ -547,10 +556,11 @@ async def vm_astra_update(task_id: str) -> None:
                     )
                     # 3. reboot + ожидание
                     await _reboot_guest_and_wait(ssh, host, guest_ip, connect=connect)
-                    # 4. смена пароля `u`
+                    # 4. смена пароля целевого аккаунта (managed → `dbos`)
                     if password:
                         await _change_guest_password(
-                            ssh, host, guest_ip, password, connect=connect,
+                            ssh, host, guest_ip, password,
+                            login=guest_login, connect=connect,
                         )
                     # 5. deliverable Орла `<rc>`
                     await run_hub_cmd(
@@ -675,6 +685,9 @@ async def _reroll_impl(payload: dict, *, require_password: bool) -> dict:
             # `u` нет); ключ пишем один раз на весь reroll, коннектор пересобираем
             # под адрес гостя каждой итерации. legacy-ВМ — по `u`/`1`.
             mgmt_user, key_path = await load_guest_key(ssh, host, payload)
+            # managed-ВМ: пароль меняем управляющему `dbos` (`u` снесён при
+            # create); legacy — прежней базовой учётке `u`.
+            guest_login = mgmt_user or VMS_GUEST_LOGIN
             try:
                 for raw in raw_snapshots:
                     if isinstance(raw, dict):
@@ -711,7 +724,8 @@ async def _reroll_impl(payload: dict, *, require_password: bool) -> dict:
                     )
                     if password:
                         await _change_guest_password(
-                            ssh, host, guest_ip, password, connect=connect,
+                            ssh, host, guest_ip, password,
+                            login=guest_login, connect=connect,
                         )
                         password_applied = True
                     # пересоздать снимок (перекатка «варианта b»)
@@ -771,8 +785,9 @@ async def vm_allta_update(task_id: str) -> None:
     """Обновить guest-allta во всех снимках ВМ (опц. со сменой пароля).
 
     Что делает: по каждому не-`_build` снимку — реверт, переустановка свежего
-    guest-allta `.deb` с FTP, опциональная смена пароля `u`, пересоздание
-    снимка. `_build`-снимки (golden) пропускает. Исход докладывает
+    guest-allta `.deb` с FTP, опциональная смена пароля (managed → `dbos`,
+    legacy → `u`), пересоздание снимка. `_build`-снимки (golden) пропускает.
+    Исход докладывает
     server_service (`vms/{id}/snapshots` пересозданные + снятие lock).
 
     Параметры: `task_id`. Payload — `vm_id`, `vm_name`/`name`, `snapshots`
@@ -800,12 +815,12 @@ async def vm_allta_update(task_id: str) -> None:
 
 @broker.task("vm.passwd")
 async def vm_passwd(task_id: str) -> None:
-    """Сменить пароль `u` во всех снимках ВМ (идентично `allta_update`).
+    """Сменить пароль во всех снимках ВМ (идентично `allta_update`).
 
     Тот же op, что `vm.allta_update`, но пароль обязателен: по каждому
-    не-`_build` снимку — реверт, переустановка guest-allta, `chpasswd u`,
-    пересоздание снимка. Исход докладывает server_service (`vms/{id}/snapshots`
-    + снятие lock).
+    не-`_build` снимку — реверт, переустановка guest-allta, смена пароля
+    целевого аккаунта (managed → `dbos`, legacy → `u`), пересоздание снимка.
+    Исход докладывает server_service (`vms/{id}/snapshots` + снятие lock).
 
     Параметры: `task_id`. Payload — `vm_id`, `vm_name`/`name`, `snapshots`,
     `password` (обязателен), опц. `ip_address`/`guest_ip`, hub-блок.

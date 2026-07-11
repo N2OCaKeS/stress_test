@@ -379,10 +379,12 @@ class TestAstraUpdateManagedKey:
             "astra-update -A -T -r" in c and "ssh -i /tmp/dbos-key" in c
             and "dbos@10.177.103.101" in c for c in cmds
         )
+        # managed-ВМ: базовый `u` снесён, пароль меняем управляющему `dbos`.
         assert any(
-            "chpasswd" in c and "u:newpass" in c and "ssh -i /tmp/dbos-key" in c
+            "chpasswd" in c and "dbos:newpass" in c and "ssh -i /tmp/dbos-key" in c
             for c in cmds
         )
+        assert not any("u:newpass" in c for c in cmds)
         assert any(
             "astra-modeswitch set 2" in c and "ssh -i /tmp/dbos-key" in c for c in cmds
         )
@@ -456,10 +458,12 @@ class TestReroll:
             "amd64.deb" in c and "ssh -i /tmp/dbos-key" in c
             and "dbos@10.177.103.101" in c for c in cmds
         )
+        # managed-ВМ: базовый `u` снесён, пароль меняем управляющему `dbos`.
         assert any(
-            "chpasswd" in c and "u:s3cret" in c and "ssh -i /tmp/dbos-key" in c
+            "chpasswd" in c and "dbos:s3cret" in c and "ssh -i /tmp/dbos-key" in c
             for c in cmds
         )
+        assert not any("u:s3cret" in c for c in cmds)
         assert not any("sshpass" in c for c in cmds)
         assert any("shred -u /tmp/dbos-key" in c for c in cmds)
 

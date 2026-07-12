@@ -105,6 +105,15 @@ parser.add_argument('-vbox', '--set-vbox',
                     required=True,
                     help='set-vbox to vm',
                     dest='SET_BOX')
+
+parser.add_argument('-tt', '--test-type',
+                    action='store',
+                    choices=['balance',
+                             'info-sys'],
+                    default='balance',
+                    required=False,
+                    help='test-type',
+                    dest='TEST_TYPE')
 args = parser.parse_args()
 
 
@@ -130,31 +139,32 @@ uzs.upload_test_cycle_status('progress')
 """
 VARIABLES
 """
+if args.TEST_TYPE == 'balance':
+    bl_lib.balance(args.TCV, type_test=args.TEST_TYPE)
 
-bl_lib.balance(args.TCV)
+    if os.path.isfile('results_balance.txt'):
+        print('File "results_balance.txt" exist')
+        with open('results_balance.txt', 'r') as r:
+            results = dict(line.rstrip().split(':') for line in r)
+            print(results)
+        
+        dates = {'Name':results.keys(),
+                'Results':results.values()}
+        
+        if not os.path.exists(REPORT_PATH):
+            os.mkdir(REPORT_PATH, mode=0o755)
+        
+        df = pandas.DataFrame(dates); print(df)
+        df.to_html(f'{REPORT_PATH}/results_balance.html', index=False)
 
+        uzs.public = True
+        #uzs.statistics = True
+        uzs.balance = True
+        uzs.upload_test_cycle_status(zefir_status='pass')
+    else:
+        print('Fail! File "results_balance.txt" not found')
+        uzs.upload_test_cycle_status(zefir_status='fail')
 
-
-
-if os.path.isfile('results_balance.txt'):
-    print('File "results_balance.txt" exist')
-    with open('results_balance.txt', 'r') as r:
-        results = dict(line.rstrip().split(':') for line in r)
-        print(results)
-    
-    dates = {'Name':results.keys(),
-             'Results':results.values()}
-    
-    if not os.path.exists(REPORT_PATH):
-        os.mkdir(REPORT_PATH, mode=0o755)
-    
-    df = pandas.DataFrame(dates); print(df)
-    df.to_html(f'{REPORT_PATH}/results_balance.html', index=False)
-
-    uzs.public = True
-    #uzs.statistics = True
-    uzs.balance = True
-    uzs.upload_test_cycle_status(zefir_status='pass')
-else:
-    print('Fail! File "results_balance.txt" not found')
-    uzs.upload_test_cycle_status(zefir_status='fail')
+if args.TEST_TYPE == 'info-sys':
+    bl_lib.balance(args.TCV, type_test=args.TEST_TYPE)
+    # uzs.upload_test_cycle_status(zefir_status='pass')

@@ -343,7 +343,7 @@ EOF"""
     def setup_protopack(self):
         """Создаёт БД protopack внутри кластера contrprimer (порт POSTGRES_PORT) и наполняет её
         данными из ftp://10.177.103.205/upload/ — источник тот же, что в psb_db_prep_stand12_olap.sh.
-        Вызывать после settings(), только для type_test == "info-sys": web/db.py::setup_mac()
+        Вызывать после settings(), только для type_test == "info-sys": setup_mac()
         расставляет MAC-метки на этих таблицах уже после того, как эта функция отработает."""
         provider = self.provider
 
@@ -361,6 +361,16 @@ EOF"""
 
         protopack = {
             'database1': {
+                'grant chmac privilege': {
+                    # Нужно только для info-sys (МРД на protopack): setup_mac()
+                    # меняет метки существующих строк через CHMAC, а это требует привилегии
+                    # ac_capable_chmac (PARSEC_CAP_CHMAC), которая не выдаётся в settings().
+                    # Привилегия применяется с новой сессии postgres, поэтому выдаём её здесь,
+                    # до первого su - postgres в этом методе.
+                    'command': 'sudo usercaps -m PARSEC_CAP_CHMAC postgres',
+                    'signal set': 'chmac privilege granted',
+                    'signal get': ''
+                },
                 'create protopack db': {
                     # Сигналы Libvirt.execute живут только в рамках одного вызова execute(),
                     # поэтому 'CreateDB' из settings() (отдельный вызов) сюда не пробрасывается.
@@ -368,7 +378,7 @@ EOF"""
                     # когда кластер contrprimer уже поднят.
                     'command': f'sudo su - postgres -c "createdb -p {POSTGRES_PORT} --encoding=UTF8 --locale=C --template=template0 protopack"',
                     'signal set': 'protopack db created',
-                    'signal get': ''
+                    'signal get': ['chmac privilege granted']
                 },
                 'protopack schema': {
                     'command': f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/protopack_schema.sql"',
@@ -378,10 +388,17 @@ EOF"""
                 'download protopack data': {
                     'command': 'sudo wget -P /tmp ftp://10.177.103.10/postgresql/build_*',
                     'signal set': 'protopack data downloaded',
-                    'signal get': ['protopack schema']
+                    'signal get': ['protopack schema'],
+                    'nowait': True,
+                    'nowait_mode': 'continue',
+                    'nowait_timeout': 600,
                 },
                 'import build_info': {
-                    'command': f'if [ -f /tmp/build_info ]; then sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/build_info"; else echo "build_info not found, skip"; fi',
+                    # 'protopack data downloaded' ставится через 10с после запуска wget (nowait/continue),
+                    # а не после реального завершения — поэтому здесь ждём, пока процесс wget
+                    # действительно закончит скачивание всех build_* файлов.
+                    'command': f'for i in $(seq 1 120); do pgrep -f "wget -P /tmp ftp://10.177.103.10/postgresql/build_" > /dev/null || break; sleep 5; done; \
+                        if [ -f /tmp/build_info ]; then sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/build_info"; else echo "build_info not found, skip"; fi',
                     'signal set': 'protopack build_info imported',
                     'signal get': ['protopack data downloaded']
                 },
@@ -397,6 +414,44 @@ EOF"""
                 },
             },
         }
-        provider.execute(commands=protopack, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS, 
+        provider.execute(commands=protopack, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS,
                          username=USERNAME, password=PASSWORD, timeout=60)
+
+    def setup_mac(self):
+        """Настройка MAC-меток на таблицах protopack и создание сервисного пользователя
+        protopack_web (потребляется ApacheVM.settings() / AstraMode).
+        Вызывать после setup_protopack(), только для type_test == "info-sys".
+        SQL — в template/mac_setup.sql (уровни МРД описаны там же)."""
+        provider = self.provider
+
+        scp_mac_setup = {
+            # Только primary: database2/database3 — read-only реплики contrprimer,
+            # изменения (MAC-метки, CREATE USER) разъедутся на них через WAL-репликацию.
+            "database1": [
+                {
+                    "mode": "push",
+                    "path_host": "./new_balance/roles/database/template/mac_setup.sql",
+                    "path_vm": "/tmp/mac_setup.sql",
+                }
+            ]
+        }
+        provider.scp(scp_settings=scp_mac_setup, vms_dates=VMS_DATES,
+                     username=USERNAME, password=PASSWORD)
+
+        commands = {
+            "database1": {
+                "apply mac labels to protopack": {
+                    "command": f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/mac_setup.sql"',
+                    "signal set": "",
+                    "signal get": "",
+                },
+            }
+        }
+        provider.execute(
+            commands=commands,
+            vms_dates=VMS_DATES,
+            vms_groups=VMS_GROUPS,
+            username=USERNAME,
+            password=PASSWORD,
+        )
 

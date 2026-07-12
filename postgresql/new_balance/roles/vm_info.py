@@ -27,8 +27,8 @@ if isinstance(PROVIDER, Libvirt):
 USERNAME = "u"
 PASSWORD = "1"
 
-VMS = ["database1", "database2", "database3", "lbdb1", "lbdb2", "lbdb3", "dcfreeipa"]
-# VMS = ["database1", "database2", "database3", "lbdb1", "lbdb2", "lbdb3", "dcfreeipa", "web1"]
+# VMS = ["database1", "database2", "database3", "lbdb1", "lbdb2", "lbdb3", "dcfreeipa"]
+VMS = ["database1", "database2", "database3", "lbdb1", "lbdb2", "lbdb3", "dcfreeipa", "web1", "loader"]
 
 VMS_DATES = {
     "database1": {
@@ -66,11 +66,16 @@ VMS_DATES = {
         "cpu": "8",
         "ram": "32768",
     },
-    # "web1": {
-    #     "host-port": "22",
-    #     "cpu": "2",
-    #     "ram": "4096",
-    # },
+    "web1": {
+        "host-port": "22",
+        "cpu": "2",
+        "ram": "4096",
+    },
+    "loader": {
+        "host-port": "22",
+        "cpu": "8",
+        "ram": "8192",
+    },
 }
 
 VMS_GROUPS = {
@@ -82,13 +87,15 @@ VMS_GROUPS = {
         "lbdb2",
         "lbdb3",
         "dcfreeipa",
-        "web1"
+        "web1",
+        "loader",
     ],
     "database": ["database1", "database2", "database3"],
     "load_balancer": ["lbdb1", "lbdb2", "lbdb3"],
     "replica": ["database2", "database3"],
-    "domain_client": ["database1", "database2", "database3", "lbdb1", "lbdb2", "lbdb3"],
-    # "web": ["web1"]
+    "domain_client": ["database1", "database2", "database3", "lbdb1", "lbdb2", "lbdb3", "web1", "loader"],
+    "web": ["web1"],
+    "loader": ["loader"],
 }
 
 

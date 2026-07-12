@@ -1,3 +1,4 @@
+import copy
 import os
 
 from allta import Libvirt, SystemCommands, LibvirtManager
@@ -5,12 +6,13 @@ from new_balance.roles.database.db import DatabaseVM
 from new_balance.roles.domain.domain import DomainVM
 from new_balance.roles.load_balancer.load_balancer import LoadBalancer
 from new_balance.roles.task.pre_configure import PreConfigure
-from new_balance.roles.task.test import Test
+from new_balance.roles.web.apache import ApacheVM
+from new_balance.roles.task.test import Test, InfoSysLoadTest
 from new_balance.roles.vm_info import VERSION_OS, VMS, VMS_DATES, PROVIDER
 
 # from new_balance.roles.web.apache import ApacheVM
 
-def balance(rc, sec_mode="s"):
+def balance(rc, sec_mode="s", type_test="balance"):
     provider = PROVIDER
     new_vms_data = {}
     if isinstance(provider, Libvirt):
@@ -25,10 +27,18 @@ def balance(rc, sec_mode="s"):
                 'sudo sed -i \'s|#cgroup_controllers = \\[ "cpu", "devices", "memory", "blkio", "cpuset", "cpuacct" \\]|cgroup_controllers = [ "cpu", "devices", "memory" ]|\' /etc/libvirt/qemu.conf && sudo systemctl restart libvirtd'
             )
 
+            build_vms_dates = VMS_DATES
+            if type_test == "info-sys":
+                # protopack (setup_protopack) грузит в /tmp дамп build_packages_new (~5G),
+                # дефолтного корневого диска для database1-3 на это не хватает
+                build_vms_dates = copy.deepcopy(VMS_DATES)
+                for db_vm in ("database1", "database2", "database3"):
+                    build_vms_dates[db_vm]["disk"] = "40"
+
             if VERSION_OS == "1.7":
-                new_vms_data = provider.build(box=f"1.7.5.{sec_mode}", rc=rc, vms=VMS, vms_dates=VMS_DATES)
+                new_vms_data = provider.build(box=f"1.7.5.{sec_mode}", rc=rc, vms=VMS, vms_dates=build_vms_dates)
             elif VERSION_OS == "1.8":
-                new_vms_data = provider.build(box=f"1.8.1.{sec_mode}", rc=rc, vms=VMS, vms_dates=VMS_DATES)
+                new_vms_data = provider.build(box=f"1.8.1.{sec_mode}", rc=rc, vms=VMS, vms_dates=build_vms_dates)
 
             LibvirtManager.Vm.save_vms_data(vms_dates=new_vms_data, save_path=save_path)  # сохраняем IP ВМ для следующего запуска / save VM IPs for next run
 
@@ -36,23 +46,32 @@ def balance(rc, sec_mode="s"):
     provider.check(vms=VMS, vms_dates=VMS_DATES)
 
     configure = PreConfigure()  # Проверено работает
-    configure.prepare()
+    configure.prepare(type_test=type_test)
 
 
     domain = DomainVM()  # Проверено работает
-    domain.settings()
+    domain.settings(type_test=type_test)
 
     database = DatabaseVM()  # Проверено работает
     database.settings()
 
+    if type_test == "info-sys":
+        database.setup_protopack()  # база protopack внутри contrprimer, для МРД-теста веб-приложения
+
     load_balancer = LoadBalancer()
     load_balancer.load()
 
-    # web = ApacheVM()            # <-- после domain, чтобы Kerberos уже работал
-    # web.settings()
+    if type_test == "info-sys":
+        database.setup_mac()        # MAC-метки на protopack + роль protopack_web, до web.settings()
 
-    test = Test()
-    test.test()
-    SystemCommands.cmd("cat results_balance.txt")
+        web = ApacheVM()            # после domain, чтобы Kerberos уже работал
+        web.settings()
+
+        info_sys_load = InfoSysLoadTest()  # нагрузка с loader на web1, сценарий 1 (см. roles/task/test.md)
+        info_sys_load.run()
+
+    # test = Test()
+    # test.test()
+    # SystemCommands.cmd("cat results_balance.txt")
     # LibvirtManager.Vm.stop(vms=VMS)
 

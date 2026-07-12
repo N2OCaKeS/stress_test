@@ -7,6 +7,8 @@ from pathlib import Path
 from allta import SystemCommands
 
 from new_balance.roles.vm_info import (
+    DOMAIN,
+    DOMAIN_USER_PASSWORD,
     PASSWORD,
     PGPOOL_CONFIG_PATH,
     PGPOOL_HOSTNAME,
@@ -380,3 +382,101 @@ class Test:
             username=USERNAME,
             password=PASSWORD,
         )
+
+
+class InfoSysLoadTest:
+    """Нагрузочный тест info-sys: сценарий 1 из roles/task/test.md — чистая нагрузка
+    (без привязки к МРД-уровню конкретной строки). Гоняет mrd_load_generator.py с
+    ВМ `loader` на `web1` (Apache AstraMode + Flask protopack) по пути `/` на
+    уровнях МРД 0/1/2, забирает JSON со статистикой (RPS/latency) на каждом уровне.
+    """
+
+    LEVELS = (0, 1, 2)
+    DOMAIN_USER = "user0"
+    WORKERS = 10
+    R_START, R_END, R_STEP = 100, 500, 100
+
+    def __init__(self):
+        self.provider = PROVIDER
+        self._results_dir = Path("/home/u")
+
+    def run(self):
+        """Прогоняет нагрузку на каждом уровне из LEVELS, пишет JSON per-level
+        в текущую директорию хоста (mrd_load_level{N}_results.json)."""
+        provider = self.provider
+        web1_ip  = VMS_DATES["web1"]["ip_bridge"]
+        hostname = f"web1.{DOMAIN}"
+
+        provider.scp(
+            scp_settings={
+                "loader": [
+                    {
+                        "mode": "push",
+                        "path_host": "./new_balance/roles/web/testing/mrd_load_generator.py",
+                        "path_vm": "/tmp/mrd_load_generator.py",
+                    }
+                ]
+            },
+            vms_dates=VMS_DATES,
+            username=USERNAME,
+            password=PASSWORD,
+        )
+
+        provider.execute(
+            commands={
+                "loader": {
+                    "install load generator deps": {
+                        "command": "sudo apt-get install -y libpdp-dev",
+                        "signal set": "",
+                        "signal get": "",
+                    },
+                    "kinit": {
+                        "command": f"yes {DOMAIN_USER_PASSWORD} | kinit {self.DOMAIN_USER}",
+                        "signal set": "",
+                        "signal get": "",
+                    },
+                }
+            },
+            vms_dates=VMS_DATES,
+            vms_groups=VMS_GROUPS,
+            username=USERNAME,
+            password=PASSWORD,
+        )
+
+        for level in self.LEVELS:
+            out_dir = f"/home/u/mrd_load_level{level}"
+            provider.execute(
+                commands={
+                    "loader": {
+                        f"run load level {level}": {
+                            "command": (
+                                f"sudo execaps -c 0x804 -- python3 /tmp/mrd_load_generator.py "
+                                f"-H {web1_ip} -n {hostname} -u / -l {level} -w {self.WORKERS} "
+                                f"--r-start {self.R_START} --r-end {self.R_END} --r-step {self.R_STEP} "
+                                f"--output-dir {out_dir}"
+                            ),
+                            "signal set": "",
+                            "signal get": "",
+                        },
+                    }
+                },
+                vms_dates=VMS_DATES,
+                vms_groups=VMS_GROUPS,
+                username=USERNAME,
+                password=PASSWORD,
+            )
+
+            provider.scp(
+                scp_settings={
+                    "loader": [
+                        {
+                            "mode": "pull",
+                            "path_host": f"mrd_load_level{level}_results.json",
+                            "path_vm": f"{out_dir}/results.json",
+                        }
+                    ]
+                },
+                vms_dates=VMS_DATES,
+                username=USERNAME,
+                password=PASSWORD,
+            )

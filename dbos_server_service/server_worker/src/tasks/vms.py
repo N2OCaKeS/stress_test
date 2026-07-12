@@ -1228,8 +1228,32 @@ async def _clone_disk_resized(
     сначала offline ужать ext4 в overlay бокса.
     """
     box_gb = await _box_virtual_gb(ssh, host, box_path)
+    rc_vr, _o, _e = await ssh.run("command -v virt-resize", sudo=True)
+    has_virt_resize = rc_vr == 0
     if box_gb is not None and disk_gb < box_gb:
+        if not has_virt_resize:
+            raise SshError(
+                error_code="VM_CREATE_FAILED", host=host,
+                message=(
+                    "уменьшение диска ВМ требует virt-resize (libguestfs), "
+                    "которого нет на хабе — задайте disk_gb не меньше размера бокса"
+                ),
+            )
         await _clone_disk_shrink(ssh, host, box_path, target_path, disk_gb)
+        return
+    if not has_virt_resize:
+        # Хаб без libguestfs (напр. Astra-редакция без пакета): клонируем бокс
+        # как есть и растим контейнер qcow2. ФС гостя сама не расширяется (это
+        # делает только virt-resize) — лишнее место остаётся неразмеченным, при
+        # необходимости растягивается уже в госте. Для рабочей ВМ достаточно.
+        await _run(
+            ssh, f"cp {box_path} {target_path}", host,
+            "VM_CREATE_FAILED", "не удалось склонировать диск бокса",
+        )
+        await _run(
+            ssh, f"qemu-img resize {target_path} {disk_gb}G", host,
+            "VM_CREATE_FAILED", "не удалось увеличить диск ВМ",
+        )
         return
     await _run(
         ssh, f"qemu-img create -f qcow2 {target_path} {disk_gb}G", host,

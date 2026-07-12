@@ -55,9 +55,21 @@ class TestCreateUser:
         assert "-d /home/deploy" in useradd_cmd
         assert "-G devs,sudo" in useradd_cmd
         assert useradd_cmd.rstrip().endswith("deploy")
+        # Байт-в-байт: порядок опций (-m, -s, -d, -G), объединение групп через
+        # запятую с доклеенной sudo, login в конце, sudo-обёртка `-S -p ''`.
+        # Замок против дрейфа при будущем выносе билдера команд.
+        assert useradd_cmd == (
+            "sudo -S -p '' useradd -m -s /bin/bash -d /home/deploy "
+            "-G devs,sudo deploy"
+        )
         # chpasswd получил новый пароль на stdin, не в команде.
+        chpasswd_cmd = conn.run.await_args_list[3].args[0]
+        assert chpasswd_cmd == "sudo -S -p '' chpasswd"
         chpasswd_stdin = conn.run.await_args_list[3].kwargs["input"]
         assert "deploy:NewPass!42\n" in chpasswd_stdin
+        # Пароль sudo первой строкой, затем ровно `login:newpwd\n` — на stdin,
+        # не в argv.
+        assert chpasswd_stdin == "sess-pwd\ndeploy:NewPass!42\n"
 
     async def test_useradd_idempotent_when_exists(self, monkeypatch):
         # getent (found rc=0) → sudo -n true → usermod (rc=0) → chpasswd (rc=0)
@@ -121,6 +133,12 @@ class TestModifyUser:
         assert "usermod" in cmd
         assert "-s /bin/sh" in cmd
         assert "-G devs,sudo" in cmd
+        # Байт-в-байт. Серверный флейвор usermod — перезапись групп через `-G`
+        # (БЕЗ `-a`): выпавшие из аккаунта группы должны сниматься. Гостевой
+        # VM-флейвор наоборот использует `-aG` (append) — эти два не должны
+        # съехать друг в друга при рефакторинге.
+        assert cmd == "sudo -S -p '' usermod -s /bin/sh -G devs,sudo deploy"
+        assert "-aG" not in cmd
 
     async def test_usermod_noop_when_nothing_to_change(self, monkeypatch):
         conn = _conn([_run_result("", "", 0)])
@@ -154,6 +172,22 @@ class TestDeleteUser:
         del_cmd = conn.run.await_args_list[2].args[0]
         assert "userdel" in del_cmd
         assert "--remove" in del_cmd
+        # Байт-в-байт: `--remove` (снос home + mail spool) перед login'ом.
+        assert del_cmd == "sudo -S -p '' userdel --remove deploy"
+
+    async def test_userdel_without_remove_home_omits_flag(self, monkeypatch):
+        # remove_home=False → команда без `--remove`, ровно `userdel <login>`.
+        conn = _conn([
+            _run_result("deploy:x:1001:1001::/home/deploy:/bin/bash", "", 0),
+            _sudo_probe(),
+            _run_result("", "", 0),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+        async with SshClient("h", "ops", "p") as ssh:
+            await ssh.delete_user("deploy", remove_home=False)
+        del_cmd = conn.run.await_args_list[2].args[0]
+        assert del_cmd == "sudo -S -p '' userdel deploy"
+        assert "--remove" not in del_cmd
 
     async def test_userdel_idempotent_when_missing(self, monkeypatch):
         conn = _conn([_run_result("", "", 2)])  # getent: not found

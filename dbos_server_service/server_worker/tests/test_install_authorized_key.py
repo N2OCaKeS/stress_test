@@ -84,6 +84,88 @@ class TestInstallAuthorizedKeyTruncateFlag:
         assert _PUBKEY in call.kwargs.get("input", "")
 
 
+class TestInstallAuthorizedKeyByteLevel:
+    """Байт-в-байт замок на всю bash-строку записи authorized_keys.
+
+    Три режима записи (`truncate` / managed-append / plain-append) отличаются
+    только `write_cmd`-фрагментом; общий каркас (getent home, case-guard
+    системных home'ов, mkdir, key=$(cat), chown/chmod) одинаков. Фиксируем всю
+    команду целиком — при выносе в общий builder любой сдвиг в guard-списке,
+    правах или redirect'е поймается здесь.
+    """
+
+    # Общий каркас команды; отличается только вставленным write_cmd.
+    _PREFIX = (
+        "sudo -S -p '' bash -c 'set -e; "
+        "home=$(getent passwd dbos | cut -d: -f6); "
+        'case "$home" in '
+        '""|"/"|"/dev"|"/var/empty"|"/nonexistent"|"/run/sshd"'
+        '|"/usr/sbin/nologin"|"/sbin/nologin"|"/bin/false") '
+        'echo "user dbos not found or has invalid home" >&2; exit 1;; esac; '
+        'mkdir -p "$home/.ssh"; key=$(cat); '
+    )
+    _SUFFIX = (
+        '; chown -R dbos: "$home/.ssh"; chmod 700 "$home/.ssh"; '
+        'chmod 600 "$home/.ssh/authorized_keys"\''
+    )
+
+    async def test_truncate_full_command(self):
+        ssh = _make_client_with_conn([sudo_probe_result(), run_result("", "", 0)])
+        await ssh._install_authorized_key(
+            target_user="dbos", public_key=_PUBKEY, truncate=True,
+            error_code="SSH_AUTHORIZED_KEYS_FAILED",
+        )
+        cmd = ssh._conn.run.await_args.args[0]
+        write = 'printf "%s\\n" "$key" > "$home/.ssh/authorized_keys"'
+        assert cmd == self._PREFIX + write + self._SUFFIX
+        # Ключ (без маркера) уходит на stdin после sudo-пароля (клиент завёлся
+        # с password="pwd", пробер сказал «sudo нужен пароль»).
+        assert ssh._conn.run.await_args.kwargs["input"] == f"pwd\n{_PUBKEY}\n"
+
+    async def test_managed_append_full_command(self):
+        from src.clients.ssh import _MANAGED_KEY_MARKER
+
+        ssh = _make_client_with_conn([sudo_probe_result(), run_result("", "", 0)])
+        await ssh._install_authorized_key(
+            target_user="dbos", public_key=_PUBKEY, truncate=False,
+            error_code="SSH_AUTHORIZED_KEYS_FAILED", managed=True,
+        )
+        cmd = ssh._conn.run.await_args.args[0]
+        write = (
+            'touch "$home/.ssh/authorized_keys"; tmp_ak=$(mktemp); '
+            f'grep -vF " {_MANAGED_KEY_MARKER}" "$home/.ssh/authorized_keys" '
+            '> "$tmp_ak" || true; mv "$tmp_ak" "$home/.ssh/authorized_keys"; '
+            'grep -qxF "$key" "$home/.ssh/authorized_keys" || '
+            'printf "%s\\n" "$key" >> "$home/.ssh/authorized_keys"'
+        )
+        assert cmd == self._PREFIX + write + self._SUFFIX
+        # На stdin — sudo-пароль первой строкой, затем ключ С маркером; в argv
+        # ключа нет.
+        stdin = ssh._conn.run.await_args.kwargs["input"]
+        assert stdin == f"pwd\n{_PUBKEY} {_MANAGED_KEY_MARKER}\n"
+
+    async def test_plain_append_full_command(self):
+        from src.clients.ssh import _MANAGED_KEY_MARKER
+
+        ssh = _make_client_with_conn([sudo_probe_result(), run_result("", "", 0)])
+        await ssh._install_authorized_key(
+            target_user="dbos", public_key=_PUBKEY, truncate=False,
+            error_code="SSH_PREPARE_FAILED", managed=False,
+        )
+        cmd = ssh._conn.run.await_args.args[0]
+        write = (
+            'touch "$home/.ssh/authorized_keys"; '
+            'grep -qxF "$key" "$home/.ssh/authorized_keys" || '
+            'printf "%s\\n" "$key" >> "$home/.ssh/authorized_keys"'
+        )
+        assert cmd == self._PREFIX + write + self._SUFFIX
+        # Bootstrap-путь: sudo-пароль первой строкой, затем голый ключ без
+        # маркера.
+        stdin = ssh._conn.run.await_args.kwargs["input"]
+        assert stdin == f"pwd\n{_PUBKEY}\n"
+        assert _MANAGED_KEY_MARKER not in stdin
+
+
 class TestInstallAuthorizedKeyValidation:
     async def test_empty_key_rejected(self):
         ssh = _make_client_with_conn([])

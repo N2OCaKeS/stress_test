@@ -300,6 +300,10 @@ class TestSshClientRun:
         assert cmd.startswith("sudo -S -p '' ")
         assert "whoami" in cmd
         assert stdin.startswith("s3cret\n")
+        # Байт-в-байт: sudo-обёртка ровно `sudo -S -p '' <cmd>`; пароль sudo
+        # первой (и единственной здесь) строкой stdin.
+        assert cmd == "sudo -S -p '' whoami"
+        assert stdin == "s3cret\n"
 
     async def test_run_sudo_without_password_does_not_prepend_newline(self, monkeypatch):
         # Key/NOPASSWD-сессия: пароля нет. sudo -S под NOPASSWD не потребляет
@@ -458,6 +462,10 @@ class TestSshClientSetPassword:
         stdin = conn.run.call_args.kwargs["input"]
         assert "root:NewP@ss123\n" in stdin
         assert stdin.startswith("current\n")
+        # Байт-в-байт: пароль в argv НЕ уходит — команда ровно `chpasswd` под
+        # sudo, а `login:newpwd` идёт вторым (после sudo-пароля) на stdin.
+        assert cmd == "sudo -S -p '' chpasswd"
+        assert stdin == "current\nroot:NewP@ss123\n"
 
     async def test_chpasswd_nonzero_raises_chpasswd_failed(self, monkeypatch):
         conn = _make_fake_conn(run_results=_run_result("", "incorrect password attempt", 1))
@@ -820,6 +828,74 @@ class TestScrubPasswordEcho:
             "error for ops: bad", "secret", login=None,
         )
         assert "ops:" in scrubbed
+
+
+class TestByteLevelCommandStrings:
+    """Байт-в-байт замок на shell-строки серверного account/management-флейвора.
+
+    Точный текст (и порядок опций, и распределение argv/stdin) фиксируется
+    здесь целиком — когда команды позже вынесут в общий builder, любой дрейф
+    хоть на символ поймается тут, а не в проде.
+    """
+
+    _PUB = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKey comment@host"
+
+    def _connected(self, run_results):
+        ssh = SshClient("h", "boot", "boot-pwd")
+        ssh._conn = _make_fake_conn(run_results=run_results)
+        return ssh
+
+    async def test_user_exists_getent_command(self):
+        ssh = self._connected([_run_result("d:x:1:1::/home/d:/bin/bash", "", 0)])
+        await ssh.user_exists("deploy")
+        assert ssh._conn.run.await_args_list[0].args[0] == "getent passwd deploy"
+
+    async def test_sudo_group_membership_id_command(self):
+        ssh = self._connected([_run_result("dbos sudo", "", 0)])
+        await ssh._sudo_group_membership("dbos")
+        assert ssh._conn.run.await_args_list[0].args[0] == "id -nG dbos"
+
+    async def test_bootstrap_sudoers_command_and_stdin(self):
+        # Юзера нет: getent(outer) → getent(create) → sudo -n true → useradd →
+        # sudoers → authorized_keys. sudoers — индекс 4.
+        ssh = self._connected([
+            _run_result("", "", 2),
+            _run_result("", "", 2),
+            _run_result("", "", 1),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+        ])
+        await ssh.bootstrap_management_user("dbos", self._PUB)
+        sudoers_cmd = ssh._conn.run.await_args_list[4].args[0]
+        # visudo-валидация во временном файле, атомарный mv на место, chmod 440.
+        assert sudoers_cmd == (
+            "sudo -S -p '' bash -c 'set -e; tmp=$(mktemp); cat > \"$tmp\"; "
+            "chmod 440 \"$tmp\"; visudo -cf \"$tmp\"; "
+            "mv \"$tmp\" /etc/sudoers.d/dbos-management; "
+            "chmod 440 /etc/sudoers.d/dbos-management'"
+        )
+        # NOPASSWD-правило — на stdin (после sudo-пароля), не в argv.
+        sudoers_stdin = ssh._conn.run.await_args_list[4].kwargs["input"]
+        assert sudoers_stdin == "boot-pwd\ndbos ALL=(ALL) NOPASSWD: ALL\n"
+
+    async def test_detect_management_mode_probe_command(self):
+        ssh = self._connected([_run_result("ASTRA=1\nLEVEL=2\n", "", 0)])
+        await ssh.detect_management_mode()
+        probe = ssh._conn.run.await_args_list[0].args[0]
+        assert probe == (
+            "bash -c 'astra=\"\"; "
+            "for f in /etc/astra_version /etc/astra/build_version "
+            "/etc/astra-release; do if [ -f \"$f\" ]; then astra=1; fi; done; "
+            "if [ -z \"$astra\" ] && grep -qi \"^ID=astra\" /etc/os-release "
+            "2>/dev/null; then astra=1; fi; echo \"ASTRA=$astra\"; level=\"\"; "
+            "if command -v astra-modeswitch >/dev/null 2>&1; then "
+            "level=$(astra-modeswitch get 2>/dev/null); fi; "
+            "if [ -z \"$level\" ] && [ -f /etc/parsec/mswitch.conf ]; then "
+            "level=$(grep -iE \"^[[:space:]]*mode[[:space:]]*=\" "
+            "/etc/parsec/mswitch.conf 2>/dev/null | head -1 | cut -d= -f2); fi; "
+            "echo \"LEVEL=$level\"'"
+        )
 
 
 class TestBootstrapHardening:

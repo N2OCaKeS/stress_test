@@ -78,13 +78,26 @@ class TestBootstrapManagementUser:
         assert "useradd" in useradd_cmd
         assert "dbos" in useradd_cmd
         assert "-G sudo" in useradd_cmd
+        # Байт-в-байт: bootstrap заводит управляющего юзера с sudo-группой и
+        # /bin/bash, без home_dir. sudo-группа единственная (has_sudo=False,
+        # groups=["sudo"]).
+        assert useradd_cmd == "sudo -S -p '' useradd -m -s /bin/bash -G sudo dbos"
 
         sudoers_cmd = conn.run.await_args_list[4].args[0]
         assert "/etc/sudoers.d/dbos-management" in sudoers_cmd
         assert "visudo -cf" in sudoers_cmd
+        # Байт-в-байт: запись через mktemp → visudo -cf → атомарный mv, chmod 440.
+        assert sudoers_cmd == (
+            "sudo -S -p '' bash -c 'set -e; tmp=$(mktemp); cat > \"$tmp\"; "
+            "chmod 440 \"$tmp\"; visudo -cf \"$tmp\"; "
+            "mv \"$tmp\" /etc/sudoers.d/dbos-management; "
+            "chmod 440 /etc/sudoers.d/dbos-management'"
+        )
         # NOPASSWD-правило едет на stdin, не в командную строку.
         sudoers_stdin = conn.run.await_args_list[4].kwargs["input"]
         assert "dbos ALL=(ALL) NOPASSWD: ALL" in sudoers_stdin
+        # Байт-в-байт: sudo-пароль первой строкой, затем ровно правило.
+        assert sudoers_stdin == "boot-pwd\ndbos ALL=(ALL) NOPASSWD: ALL\n"
 
         keys_cmd = conn.run.await_args_list[5].args[0]
         assert "authorized_keys" in keys_cmd
@@ -98,8 +111,16 @@ class TestBootstrapManagementUser:
             await ssh.bootstrap_management_user("ctl", _PUBKEY)
         sudoers_cmd = conn.run.await_args_list[4].args[0]
         assert "/etc/sudoers.d/ctl-management" in sudoers_cmd
+        # Байт-в-байт: имя юзера подставляется и в путь, и в правило — оба места.
+        assert sudoers_cmd == (
+            "sudo -S -p '' bash -c 'set -e; tmp=$(mktemp); cat > \"$tmp\"; "
+            "chmod 440 \"$tmp\"; visudo -cf \"$tmp\"; "
+            "mv \"$tmp\" /etc/sudoers.d/ctl-management; "
+            "chmod 440 /etc/sudoers.d/ctl-management'"
+        )
         sudoers_stdin = conn.run.await_args_list[4].kwargs["input"]
         assert "ctl ALL=(ALL) NOPASSWD: ALL" in sudoers_stdin
+        assert sudoers_stdin == "boot-pwd\nctl ALL=(ALL) NOPASSWD: ALL\n"
 
     async def test_idempotent_existing_user(self, monkeypatch):
         # Юзер существует и уже в sudo-группе: outer getent (rc=0) →

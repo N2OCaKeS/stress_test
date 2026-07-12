@@ -305,8 +305,9 @@ async def install_build_deps(
 
     Заходим по управляющему ключу (`mgmt_user`/`key_path`), когда базовая учётка
     снесена; без ключа (legacy-путь) — по базовой учётке бокса
-    (`base_login`/`base_password`). Провал ставим фатальным (`VM_CREATE_FAILED`):
-    доставляемая ВМ должна приехать с готовым build-окружением.
+    (`base_login`/`base_password`). Провал не фатален: если apt-репозиторий
+    гостя недоступен, ВМ всё равно создаётся, а неустановка логируется — деп-сет
+    идемпотентен и доставляется повторным запуском, ронять всю сборку не нужно.
     """
     packages = " ".join(VMS_CPYTHON_BUILD_DEPS)
     cmd = (
@@ -319,10 +320,16 @@ async def install_build_deps(
         remote = guest_ssh(
             guest_ip, cmd, sudo=True, login=base_login, password=base_password,
         )
-    await run_hub_cmd(
-        ssh, remote, host, "VM_CREATE_FAILED",
-        "не удалось поставить build-зависимости CPython в гость",
-    )
+    try:
+        await run_hub_cmd(
+            ssh, remote, host, "VM_CREATE_FAILED",
+            "не удалось поставить build-зависимости CPython в гость",
+        )
+    except SshError as exc:
+        logger.warning(
+            "build-зависимости CPython не установлены на %s (%s): %s",
+            guest_ip, host, str(exc)[:300],
+        )
 
 
 async def _install_authorized_key(

@@ -784,6 +784,54 @@ async def _write_interfaces_via_nbd(
         await ssh.run(f"rm -f {tmp}")
 
 
+async def fit_disk_fs_offline(
+    ssh, host: str, disk_path: str, disk_gb: int, box_gb: int | None,
+    *, error_code: str = "VM_CREATE_FAILED",
+) -> None:
+    """Дорастить последний раздел и ext-ФС клона до disk_gb без libguestfs.
+
+    Клон на входе равен размеру бокса. Растим qcow2-контейнер (`qemu-img
+    resize`), затем через `qemu-nbd` раздвигаем последний раздел (`sfdisk`, сам
+    переносит backup GPT-заголовок в конец) и ext-ФС (`resize2fs`). Уменьшение
+    тут не делаем — оно требует virt-resize. Не-ext ФС не трогаем: контейнер
+    вырастет, ФС останется прежней.
+    """
+    safe = validate_path(str(disk_path), host)
+    if box_gb is not None and disk_gb <= box_gb:
+        return
+    await run_hub_cmd(
+        ssh, f"qemu-img resize {safe} {disk_gb}G", host, error_code,
+        "не удалось увеличить контейнер диска ВМ",
+    )
+    script = (
+        "set -e; modprobe nbd max_part=8 2>/dev/null || true; "
+        "ND=; for n in 0 1 2 3 4 5 6 7; do "
+        "[ -e /sys/block/nbd$n/pid ] || { ND=/dev/nbd$n; break; }; done; "
+        '[ -n "$ND" ] || { echo NO_FREE_NBD >&2; exit 1; }; '
+        "qemu-nbd --connect=$ND " + safe + "; sleep 1; "
+        "partprobe $ND 2>/dev/null || true; BN=$(basename $ND); "
+        'LAST=$(ls /dev/${BN}p* 2>/dev/null | sed "s#.*p##" | sort -n | tail -1); '
+        'if [ -z "$LAST" ]; then qemu-nbd --disconnect $ND 2>/dev/null || true; '
+        "echo NO_PART >&2; exit 1; fi; P=${ND}p${LAST}; "
+        'FS=$(blkid -o value -s TYPE $P 2>/dev/null || echo ""); '
+        "if command -v sfdisk >/dev/null 2>&1; then "
+        'echo ", +" | sfdisk -N $LAST --no-reread --force $ND >/dev/null 2>&1 || true; '
+        "else parted -s $ND resizepart $LAST 100% >/dev/null 2>&1 || true; fi; "
+        "partx -u $ND 2>/dev/null || partprobe $ND 2>/dev/null || true; sleep 1; "
+        'case "$FS" in ext2|ext3|ext4) e2fsck -f -y $P >/dev/null 2>&1 || true; '
+        'resize2fs $P >/dev/null 2>&1 || echo RESIZE2FS_WARN >&2;; '
+        '*) echo "FS_SKIP:$FS" >&2;; esac; '
+        "sync; qemu-nbd --disconnect $ND 2>/dev/null || true; echo NBD_FS_OK"
+    )
+    rc, out, err = await ssh.run(f"sh -c {shlex.quote(script)}", sudo=True)
+    if rc != 0 or "NBD_FS_OK" not in (out or ""):
+        detail = ((err or "") + " " + (out or "")).strip()[:400]
+        raise SshError(
+            error_code=error_code, host=host, returncode=rc, stderr=detail,
+            message="не удалось дорастить ФС диска ВМ через qemu-nbd",
+        )
+
+
 # ── Каталог образов (страховка box_url) ──────────────────────────────────────
 
 
@@ -849,6 +897,7 @@ __all__ = [
     "normalize_dns",
     "ensure_virt_customize",
     "write_static_interfaces_offline",
+    "fit_disk_fs_offline",
     "VMS_DEFAULT_NETMASK",
     "VMS_DEFAULT_GATEWAY",
     "VMS_DEFAULT_DNS",

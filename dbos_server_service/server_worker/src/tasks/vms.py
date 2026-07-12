@@ -97,6 +97,7 @@ from src.tasks._vms_helpers import (
     validate_name,
     validate_path,
     write_static_interfaces_offline,
+    fit_disk_fs_offline,
 )
 
 logger = logging.getLogger(__name__)
@@ -1243,16 +1244,15 @@ async def _clone_disk_resized(
         return
     if not has_virt_resize:
         # Хаб без libguestfs (напр. Astra-редакция без пакета): клонируем бокс
-        # как есть и растим контейнер qcow2. ФС гостя сама не расширяется (это
-        # делает только virt-resize) — лишнее место остаётся неразмеченным, при
-        # необходимости растягивается уже в госте. Для рабочей ВМ достаточно.
+        # как есть и доганяем раздел+ФС под disk_gb через qemu-nbd (см.
+        # fit_disk_fs_offline) — как это делал бы virt-resize --expand.
         await _run(
             ssh, f"cp {box_path} {target_path}", host,
             "VM_CREATE_FAILED", "не удалось склонировать диск бокса",
         )
-        await _run(
-            ssh, f"qemu-img resize {target_path} {disk_gb}G", host,
-            "VM_CREATE_FAILED", "не удалось увеличить диск ВМ",
+        await fit_disk_fs_offline(
+            ssh, host, target_path, disk_gb, box_gb,
+            error_code="VM_CREATE_FAILED",
         )
         return
     await _run(

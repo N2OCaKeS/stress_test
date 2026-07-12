@@ -471,8 +471,12 @@ function BoxForm({
             />
             <datalist id="box-formats">
               <option value="qcow2" />
-              <option value="tar" />
+              <option value="qcow" />
               <option value="raw" />
+              <option value="tar" />
+              <option value="tar.gz" />
+              <option value="tgz" />
+              <option value="tar.xz" />
             </datalist>
           </label>
         </div>

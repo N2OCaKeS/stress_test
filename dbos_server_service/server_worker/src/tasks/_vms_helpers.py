@@ -665,7 +665,11 @@ async def _write_interfaces_offline(
     """Залить готовый `/etc/network/interfaces` + форс net.ifnames=0 в диск
     offline (`virt-customize`). Содержимое подаём на stdin (`tee`)."""
     safe_disk = validate_path(str(disk_path), host)
-    await ensure_virt_customize(ssh, host, error_code=error_code)
+    rc, _out, _err = await ssh.run("sh -c 'command -v virt-customize'", sudo=True)
+    if rc != 0:
+        # Хаб без libguestfs — правим диск offline через qemu-nbd (qemu-utils).
+        await _write_interfaces_via_nbd(ssh, host, safe_disk, content, error_code)
+        return
     # tmp-файлы создаём под управляющей учёткой (без sudo): virt-customize идёт
     # под root и такие файлы читает без проблем.
     rc, out, err = await ssh.run("mktemp")
@@ -716,6 +720,68 @@ async def _write_interfaces_offline(
         )
     finally:
         await ssh.run(f"rm -f {tmp} {gtmp}".rstrip())
+
+
+async def _write_interfaces_via_nbd(
+    ssh, host: str, safe_disk: str, content: str, error_code: str,
+) -> None:
+    """Залить `/etc/network/interfaces` в qcow2 offline без libguestfs.
+
+    Подключаем диск как блочное устройство через `qemu-nbd` (qemu-utils),
+    монтируем корневой раздел, пишем статик-конфиг и форсим `net.ifnames=0`
+    прямо в `/boot/grub/grub.cfg` (без chroot/update-grub), чтобы NIC поднялся
+    как `eth0`. Домен на момент вызова выключен — диск свободен.
+    """
+    rc, out, err = await ssh.run("mktemp")
+    if rc != 0 or not (out or "").strip():
+        raise SshError(
+            error_code=error_code, host=host, returncode=rc,
+            stderr=(err or "").strip(),
+            message="не удалось создать временный файл для статик-конфига",
+        )
+    tmp = out.strip()
+    rc, _out, err = await ssh.run(f"tee {tmp} > /dev/null", stdin_payload=content)
+    if rc != 0:
+        raise SshError(
+            error_code=error_code, host=host, returncode=rc,
+            stderr=(err or "").strip(),
+            message="не удалось записать статик-конфиг во временный файл",
+        )
+    grub_append = "net.ifnames=0 biosdevname=0"
+    script = (
+        "set -e; modprobe nbd max_part=8 2>/dev/null || true; "
+        "ND=; for n in 0 1 2 3 4 5 6 7; do "
+        "[ -e /sys/block/nbd$n/pid ] || { ND=/dev/nbd$n; break; }; done; "
+        '[ -n "$ND" ] || { echo NO_FREE_NBD >&2; exit 1; }; '
+        f"qemu-nbd --connect=$ND {safe_disk}; sleep 1; "
+        "partprobe $ND 2>/dev/null || true; MP=$(mktemp -d); ROOT=; "
+        "for p in ${ND}p2 ${ND}p3 ${ND}p1 ${ND}p5 ${ND}p4; do "
+        "[ -b $p ] || continue; mount $p $MP 2>/dev/null || continue; "
+        "if [ -d $MP/etc/network ]; then ROOT=$p; break; fi; umount $MP; done; "
+        'if [ -z "$ROOT" ]; then qemu-nbd --disconnect $ND 2>/dev/null || true; '
+        "rmdir $MP 2>/dev/null || true; echo NO_ROOT_PART >&2; exit 1; fi; "
+        f"cat {tmp} > $MP/etc/network/interfaces; "
+        "sed -i 's/net.ifnames=0//g; s/biosdevname=[01]//g' "
+        "$MP/etc/default/grub 2>/dev/null || true; "
+        "sed -i 's|GRUB_CMDLINE_LINUX=\"|GRUB_CMDLINE_LINUX=\""
+        f'{grub_append} |\' $MP/etc/default/grub 2>/dev/null || true; '
+        "for cfg in $MP/boot/grub/grub.cfg $MP/boot/grub2/grub.cfg; do "
+        "[ -f $cfg ] && sed -i "
+        f"'/[[:space:]]*linux/ {{ /net.ifnames=0/! s/$/ {grub_append}/ }}' "
+        "$cfg 2>/dev/null || true; done; "
+        "sync; umount $MP; qemu-nbd --disconnect $ND 2>/dev/null || true; "
+        "rmdir $MP 2>/dev/null || true; echo NBD_OK"
+    )
+    try:
+        rc, out, err = await ssh.run(f"sh -c {shlex.quote(script)}", sudo=True)
+        if rc != 0 or "NBD_OK" not in (out or ""):
+            detail = ((err or "") + " " + (out or "")).strip()[:400]
+            raise SshError(
+                error_code=error_code, host=host, returncode=rc, stderr=detail,
+                message="не удалось записать статику в диск ВМ через qemu-nbd",
+            )
+    finally:
+        await ssh.run(f"rm -f {tmp}")
 
 
 # ── Каталог образов (страховка box_url) ──────────────────────────────────────

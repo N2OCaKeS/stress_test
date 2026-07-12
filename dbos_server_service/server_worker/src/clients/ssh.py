@@ -55,6 +55,8 @@ from dataclasses import dataclass, field
 
 import asyncssh
 
+from src.clients import _command_builders as cmd_builders
+
 logger = logging.getLogger(__name__)
 
 
@@ -691,9 +693,11 @@ class SshClient:
 
         # Сам payload — `login:newpwd\n`. Не логируется, не попадает в
         # cmd_sanitized.
-        payload = f"{login}:{new_password}\n"
+        command, payload = cmd_builders.build_set_password(
+            login, new_password, flavor=cmd_builders.SERVER,
+        )
         rc, stdout, stderr = await self.run(
-            "chpasswd",
+            command,
             sudo=True,
             stdin_payload=payload,
         )
@@ -780,17 +784,18 @@ class SshClient:
                 )
             return
 
-        opts = ["-m"]
-        if shell is not None:
-            opts += ["-s", self._safe_path(shell, "shell")]
-        if home_dir is not None:
-            opts += ["-d", self._safe_path(home_dir, "home_dir")]
+        safe_shell = self._safe_path(shell, "shell") if shell is not None else None
+        safe_home = (
+            self._safe_path(home_dir, "home_dir") if home_dir is not None else None
+        )
         group_set = self._resolve_groups(groups, has_sudo)
-        if group_set:
-            opts += ["-G", ",".join(group_set)]
 
         rc, _out, stderr = await self.run(
-            f"useradd {' '.join(opts)} {login}", sudo=True,
+            cmd_builders.build_useradd(
+                login, flavor=cmd_builders.SERVER,
+                shell=safe_shell, home_dir=safe_home, groups=group_set,
+            ),
+            sudo=True,
         )
         if rc != 0:
             raise SshError(
@@ -919,72 +924,31 @@ class SshClient:
                     f"{target_home!r} for user {target_user!r}"
                 ),
             )
+        # Режим записи для билдера. `managed` фильтрует прежние строки с нашим
+        # маркером и делает idempotent append (ротация заменяет именно наш
+        # ключ, ручные строки оператора не трогаются); `plain` — idempotent
+        # append голого ключа (bootstrap управляющего пользователя, маркер там
+        # не нужен); `truncate` — перезапись файла одним ключом.
         if truncate:
-            write_cmd = (
-                'printf "%s\\n" "$key" > "$home/.ssh/authorized_keys"'
-            )
+            write_mode = "truncate"
         elif managed:
-            # Ротация managed-ключа: сносим прежние строки с нашим маркером,
-            # потом дописываем новую. `grep -vF` фильтрует все строки с
-            # маркером во временный файл, который атомарно подменяет оригинал;
-            # строки без маркера (ручные ключи) сохраняются как есть. После
-            # этого — idempotent append: повторная запись того же ключа не
-            # плодит дубль. Файла может не быть (touch создаёт), grep по
-            # отсутствующему маркеру — no-op (вернёт пустой tmp, оригинал без
-            # managed-строк). `|| true` у grep'а — он отдаёт rc=1, когда после
-            # фильтра не осталось строк (например, файл был ровно из нашего
-            # ключа); это штатно, а не ошибка.
-            marker = _MANAGED_KEY_MARKER
-            write_cmd = (
-                'touch "$home/.ssh/authorized_keys"; '
-                'tmp_ak=$(mktemp); '
-                f'grep -vF " {marker}" "$home/.ssh/authorized_keys" > "$tmp_ak" || true; '
-                'mv "$tmp_ak" "$home/.ssh/authorized_keys"; '
-                'grep -qxF "$key" "$home/.ssh/authorized_keys" || '
-                'printf "%s\\n" "$key" >> "$home/.ssh/authorized_keys"'
-            )
+            write_mode = "managed"
         else:
-            write_cmd = (
-                'touch "$home/.ssh/authorized_keys"; '
-                'grep -qxF "$key" "$home/.ssh/authorized_keys" || '
-                'printf "%s\\n" "$key" >> "$home/.ssh/authorized_keys"'
-            )
-        # `getent passwd <user>` — NSS-aware: проходит и через local
-        # `/etc/passwd`, и через LDAP/SSSD/NIS, если они подключены в
-        # `/etc/nsswitch.conf`. Прямое чтение `/etc/passwd` в стендах с
-        # LDAP-учётками вернуло бы пустую строку → шаг чтения home упал бы
-        # на работающем по факту пользователе. `cut -d: -f6` достаёт
-        # шестое поле (home) из passwd-формата.
-        # getent возвращает пустую строку, если пользователь не существует
-        # (удалён между provision'ом и установкой ключа, либо вообще не
-        # создан). Без guard'а home="" приводил бы к `mkdir -p /.ssh`
-        # под sudo и порче корневой ФС. Явный exit 1 с сообщением в stderr
-        # ловится caller'ом как обычный SSH_*_FAILED.
-        # Дополнительно отбиваем home-каталоги типичных системных учёток
-        # (`/dev`, `/var/empty`, `/nonexistent` у Debian nobody/_apt,
-        # `/run/sshd` у демона sshd, заблокированные shell'ы
-        # `/usr/sbin/nologin`, `/sbin/nologin`, `/bin/false`) — если кто-то
-        # по ошибке протащит такой login через провижн server_account,
-        # ключ не уляжется в неожиданном месте. Список синхронизирован
-        # с `_FORBIDDEN_HOMES`.
-        bash_cmd = (
-            f"bash -c 'set -e; "
-            f"home=$(getent passwd {target_user} | cut -d: -f6); "
-            'case "$home" in '
-            '""|"/"|"/dev"|"/var/empty"|"/nonexistent"|"/run/sshd"|"/usr/sbin/nologin"|"/sbin/nologin"|"/bin/false") '
-            f'echo "user {target_user} not found or has invalid home" >&2; '
-            'exit 1;; '
-            'esac; '
-            'mkdir -p "$home/.ssh"; '
-            "key=$(cat); "
-            f"{write_cmd}; "
-            f'chown -R {target_user}: "$home/.ssh"; '
-            'chmod 700 "$home/.ssh"; '
-            'chmod 600 "$home/.ssh/authorized_keys"\''
+            write_mode = "plain"
+        # Билдер собирает bash под sudo: `getent passwd <user>` (NSS-aware —
+        # видит и local `/etc/passwd`, и LDAP/SSSD/NIS), `cut -d: -f6` достаёт
+        # home; пустой home (юзера нет) и системные home'ы (`/dev`,
+        # `/var/empty`, `/nonexistent`, `/run/sshd`, nologin-shell'ы) отбиваются
+        # case-guard'ом — иначе `mkdir -p /.ssh` под sudo испортил бы корень ФС.
+        # Case-список зашит в билдере и синхронизирован с `_FORBIDDEN_HOMES`.
+        # Ключ приходит на stdin (`key=$(cat)`), в командную строку не попадает.
+        bash_cmd = cmd_builders.build_authorized_keys(
+            target_user, flavor=cmd_builders.SERVER,
+            write_mode=write_mode, marker=_MANAGED_KEY_MARKER,
         )
         # Sanity-guard: ни один из подставляемых аргументов (target_user через
-        # `_validate_login`, write_cmd литералом) не должен внести `\n` в
-        # bash-строку. Без этого многострочная команда могла бы попасть в
+        # `_validate_login`, write-фрагмент литералом в билдере) не должен
+        # внести `\n` в bash-строку. Без этого многострочная команда могла бы попасть в
         # asyncssh.run и быть интерпретирована как несколько отдельных
         # statement'ов. Защита эшелонированная — основной фильтр выше
         # (`_validate_login`, key newline guard), но invariant полезно
@@ -1023,17 +987,16 @@ class SshClient:
         менять (нет ни shell, ни групп, ни sudo) — no-op.
         """
         self._validate_login(login)
-        opts: list[str] = []
-        if shell is not None:
-            opts += ["-s", self._safe_path(shell, "shell")]
+        safe_shell = self._safe_path(shell, "shell") if shell is not None else None
         group_set = self._resolve_groups(groups, has_sudo)
-        if group_set:
-            opts += ["-G", ",".join(group_set)]
-        if not opts:
-            return
-        rc, _out, stderr = await self.run(
-            f"usermod {' '.join(opts)} {login}", sudo=True,
+        command = cmd_builders.build_usermod(
+            login, flavor=cmd_builders.SERVER,
+            shell=safe_shell, groups=group_set,
         )
+        # Нечего менять (ни shell, ни групп) — билдер вернул None, no-op.
+        if command is None:
+            return
+        rc, _out, stderr = await self.run(command, sudo=True)
         if rc != 0:
             raise SshError(
                 error_code="SSH_USERMOD_FAILED",
@@ -1055,9 +1018,11 @@ class SshClient:
         self._validate_login(login)
         if not await self.user_exists(login):
             return
-        flag = "--remove " if remove_home else ""
         rc, _out, stderr = await self.run(
-            f"userdel {flag}{login}", sudo=True,
+            cmd_builders.build_userdel(
+                login, flavor=cmd_builders.SERVER, remove_home=remove_home,
+            ),
+            sudo=True,
         )
         # rc=6 — «user does not exist», для idempotency это успех.
         if rc not in (0, 6):
@@ -1108,22 +1073,7 @@ class SshClient:
         или SSH-ошибке (`_capture_text` не raise'ит) считаем ОС не-Астрой и
         отдаём `other_os` — bootstrap тогда возьмёт конфиг общего режима.
         """
-        probe = (
-            "bash -c '"
-            "astra=\"\"; "
-            'for f in /etc/astra_version /etc/astra/build_version /etc/astra-release; do '
-            'if [ -f "$f" ]; then astra=1; fi; done; '
-            'if [ -z "$astra" ] && grep -qi "^ID=astra" /etc/os-release 2>/dev/null; then astra=1; fi; '
-            'echo "ASTRA=$astra"; '
-            "level=\"\"; "
-            'if command -v astra-modeswitch >/dev/null 2>&1; then '
-            'level=$(astra-modeswitch get 2>/dev/null); fi; '
-            'if [ -z "$level" ] && [ -f /etc/parsec/mswitch.conf ]; then '
-            'level=$(grep -iE "^[[:space:]]*mode[[:space:]]*=" /etc/parsec/mswitch.conf 2>/dev/null '
-            "| head -1 | cut -d= -f2); fi; "
-            'echo "LEVEL=$level"'
-            "'"
-        )
+        probe = cmd_builders.build_detect_management_mode_probe()
         captured = await self._capture_text(probe)
         if not isinstance(captured, dict) or "error" in captured:
             return MODE_OTHER_OS
@@ -1297,14 +1247,9 @@ class SshClient:
         # в начале метода). Ослаблять regex без перевода путей на shlex.quote
         # — мгновенный command-injection.
         sudoers_path = f"/etc/sudoers.d/{management_user}-management"
-        sudoers_line = f"{management_user} ALL=(ALL) NOPASSWD: ALL"
+        sudoers_line = cmd_builders.build_sudoers_line(management_user)
         rc, _out, stderr = await self.run(
-            "bash -c 'set -e; "
-            'tmp=$(mktemp); cat > "$tmp"; '
-            'chmod 440 "$tmp"; '
-            'visudo -cf "$tmp"; '
-            f'mv "$tmp" {sudoers_path}; '
-            f'chmod 440 {sudoers_path}\'',
+            cmd_builders.build_sudoers_install(sudoers_path),
             sudo=True,
             stdin_payload=f"{sudoers_line}\n",
         )
@@ -1468,40 +1413,13 @@ class SshClient:
         # только при успехе перемещаем на место. `management_user` уже прошёл
         # `_validate_login`, путь безопасен.
         dropin_path = f"/etc/ssh/sshd_config.d/{management_user}-dbos.conf"
-        snippet = (
-            "# Managed by DBOS prepare. Do not edit by hand.\n"
-            "PubkeyAuthentication yes\n"
-            "PasswordAuthentication no\n"
-            "PermitRootLogin no\n"
-        )
-        # Раскомментировать Include, проверить конфиг, переместить snippet.
-        # `sshd -t` читает основной конфиг (с уже подключённым drop-in каталогом
-        # через временно положенный файл) — кладём snippet во временный путь
-        # ВНУТРИ sshd_config.d, валидируем, при провале сносим его.
+        snippet = cmd_builders.SSHD_HARDEN_SNIPPET
+        # Билдер собирает bash: раскомментирует `Include` при необходимости,
+        # кладёт snippet во временный путь ВНУТРИ sshd_config.d, атомарно
+        # переносит, валидирует собранный конфиг доступным `sshd -t` и
+        # откатывает drop-in при провале. Snippet уходит на stdin `tee`.
         rc, _out, stderr = await self.run(
-            "bash -c 'set -e; "
-            'mkdir -p /etc/ssh/sshd_config.d; '
-            # Раскомментировать Include, если он закомментирован (idempotent).
-            'if grep -qE "^[[:space:]]*#[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config.d/\\*\\.conf" /etc/ssh/sshd_config; then '
-            'sed -i -E "s|^[[:space:]]*#[[:space:]]*(Include[[:space:]]+/etc/ssh/sshd_config.d/\\*\\.conf)|\\1|" /etc/ssh/sshd_config; '
-            'fi; '
-            f'tmp="{dropin_path}.tmp"; '
-            'cat > "$tmp"; chmod 644 "$tmp"; '
-            # Валидируем собранный конфиг; tmp с расширением .tmp не матчит
-            # *.conf, поэтому в сборку он не попадёт — валидируем целевой,
-            # подменив атомарно и откатив при провале.
-            f'mv "$tmp" {dropin_path}; chmod 644 {dropin_path}; '
-            # Бинарь sshd называется по-разному: `sshd` на Debian/Astra/RHEL,
-            # `sshd.pam` на linuxserver/Alpine-сборках. Берём первый доступный
-            # в PATH или из стандартных каталогов; если ни одного нет — пропускаем
-            # validate (config уже синтаксически наш, валидатора на боксе нет).
-            'sshd_bin=""; '
-            'for c in sshd sshd.pam /usr/sbin/sshd /usr/sbin/sshd.pam; do '
-            'if command -v "$c" >/dev/null 2>&1; then sshd_bin="$c"; break; fi; done; '
-            'if [ -n "$sshd_bin" ]; then '
-            f'if ! "$sshd_bin" -t 2>/tmp/dbos_sshd_test_err; then rm -f {dropin_path}; '
-            'cat /tmp/dbos_sshd_test_err >&2; exit 90; fi; '
-            'fi\'',
+            cmd_builders.build_sshd_harden(dropin_path),
             sudo=True,
             stdin_payload=snippet,
         )
@@ -1529,14 +1447,7 @@ class SshClient:
         уже валиден (прошёл `sshd -t`) и применится при следующем старте sshd,
         поэтому не валим prepare, а пишем warning.
         """
-        reload_cmds = (
-            "systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null",
-            "service sshd reload 2>/dev/null || service ssh reload 2>/dev/null",
-            "rc-service sshd reload 2>/dev/null",
-            # Fallback: HUP мастер-процессу. pidof покрывает и sshd, и sshd.pam.
-            "bash -c 'pid=$(cat /run/sshd.pid 2>/dev/null || pidof sshd sshd.pam 2>/dev/null | tr \" \" \"\\n\" | head -1); "
-            'if [ -n "$pid" ]; then kill -HUP "$pid"; else exit 1; fi\'',
-        )
+        reload_cmds = cmd_builders.build_sshd_reload_commands()
         for cmd in reload_cmds:
             rc, _out, _err = await self.run(cmd, sudo=True)
             if rc == 0:

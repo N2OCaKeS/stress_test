@@ -12,11 +12,13 @@ guest-шаги идут вложенным `ssh` из hub-сессии, а вы�
 дублирует шелл-строки. Тот же паттерн, что у пакетов
 (`_packages_common.mutate_packages`) и инвентаризации (`_inventory_common`).
 
-Расхождение с серверной стороной (`users.py` → `SshClient`) осознанное: там
-прямая SSH-сессия с подачей пароля на stdin и managed-маркером ключа, здесь —
-вложенный `ssh` одной строкой, поэтому пароль уходит инлайном
-(`echo login:pwd | chpasswd`), а ключ — base64-обёрткой. Значения перед
-подстановкой прогоняются по allow-list'ам (`validate_name`,
+Сами командные строки собирает общий модуль `clients._command_builders`
+(флейвор `VM`) — тот же источник, из которого серверный `SshClient` берёт свой
+флейвор `SERVER`. Расхождение форм с серверной стороной осознанное и живёт
+внутри билдера: там прямая SSH-сессия с подачей пароля на stdin и
+managed-маркером ключа, здесь — вложенный `ssh` одной строкой, поэтому пароль
+уходит инлайном (`echo login:pwd | chpasswd`), а ключ — base64-обёрткой.
+Значения перед подстановкой прогоняются по allow-list'ам (`validate_name`,
 `_validate_guest_password`, `_PUBKEY_RE`), поэтому break-out из команды
 невозможен.
 """
@@ -27,6 +29,7 @@ import base64
 import logging
 import re
 
+from src.clients import _command_builders as cmd_builders
 from src.clients.ssh import SshError
 from src.core.exceptions import CredentialFetchError
 from src.services import server_service_client
@@ -140,9 +143,12 @@ async def set_password(
     должен — caller решает, звать ли шаг (у discovered-аккаунта пароля нет).
     """
     safe = _validate_guest_password(str(password), host_label)
+    command, _stdin = cmd_builders.build_set_password(
+        login, safe, flavor=cmd_builders.VM,
+    )
     await _guest_step(
         runner,
-        f"bash -c 'echo {login}:{safe} | chpasswd'",
+        command,
         error_code,
         f"не удалось задать пароль пользователю {login}",
     )
@@ -165,10 +171,8 @@ async def _apply_guest_key(
     b64 = base64.b64encode(str(public_key).encode()).decode()
     await _guest_step(
         runner,
-        (
-            f"bash -c 'umask 077 && mkdir -p ~{login}/.ssh && "
-            f"echo {b64} | base64 -d >> ~{login}/.ssh/authorized_keys && "
-            f"chown -R {login}: ~{login}/.ssh'"
+        cmd_builders.build_authorized_keys(
+            login, flavor=cmd_builders.VM, b64_key=b64,
         ),
         error_code,
         f"не удалось положить ключ пользователю {login}",
@@ -200,17 +204,19 @@ async def provision_account(
         )
 
     groups = resolve_guest_groups(acc, host_label)
-    gopt = f" -G {','.join(groups)}" if groups else ""
     await _guest_step(
         runner,
-        f"bash -c 'id {login} >/dev/null 2>&1 || useradd -m{gopt} {login}'",
+        cmd_builders.build_useradd(login, flavor=cmd_builders.VM, groups=groups),
         "VM_CREATE_FAILED",
         f"не удалось завести пользователя {login} в госте",
     )
-    if groups:
+    usermod_cmd = cmd_builders.build_usermod(
+        login, flavor=cmd_builders.VM, groups=groups,
+    )
+    if usermod_cmd is not None:
         await _guest_step(
             runner,
-            f"usermod -aG {','.join(groups)} {login}",
+            usermod_cmd,
             "VM_CREATE_FAILED",
             f"не удалось добавить группы пользователю {login}",
         )
@@ -231,10 +237,13 @@ async def update_account_on_host(
     Аддитивно к текущим группам — как серверный `account.update_on_host`.
     Пустой список групп — no-op (пароль здесь не трогаем).
     """
-    if groups:
+    usermod_cmd = cmd_builders.build_usermod(
+        login, flavor=cmd_builders.VM, groups=groups,
+    )
+    if usermod_cmd is not None:
         await _guest_step(
             runner,
-            f"usermod -aG {','.join(groups)} {login}",
+            usermod_cmd,
             error_code,
             f"не удалось обновить группы пользователю {login} в госте",
         )
@@ -248,10 +257,11 @@ async def deprovision_account(
 
     Идемпотентно: если пользователя в госте нет — не падает (`id ... || true`).
     """
-    flag = "-r " if remove_home else ""
     await _guest_step(
         runner,
-        f"bash -c 'id {login} >/dev/null 2>&1 && userdel {flag}{login} || true'",
+        cmd_builders.build_userdel(
+            login, flavor=cmd_builders.VM, remove_home=remove_home,
+        ),
         error_code,
         f"не удалось удалить пользователя {login} в госте",
     )

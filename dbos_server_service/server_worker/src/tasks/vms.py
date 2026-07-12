@@ -107,14 +107,18 @@ logger = logging.getLogger(__name__)
 # ручной список для RHEL/RedOS. libguestfs-tools нужен для virt-customize —
 # offline-инъекции статики в диск ВМ (single-bridge в `vm.create` и фолбэк в
 # `vm.set_network`).
+# Обязательные пакеты hub'а — без них ВМ не создать (kvm/virtinst/qemu/сеть).
 _APT_PACKAGES = (
-    "astra-kvm virtinst qemu-utils wget tar sshpass bridge-utils "
-    "libguestfs-tools dnsmasq"
+    "astra-kvm virtinst qemu-utils wget tar sshpass bridge-utils dnsmasq"
 )
 _DNF_PACKAGES = (
-    "qemu-kvm libvirt virt-install qemu-img wget tar sshpass bridge-utils "
-    "libguestfs-tools dnsmasq"
+    "qemu-kvm libvirt virt-install qemu-img wget tar sshpass bridge-utils dnsmasq"
 )
+# libguestfs-tools (virt-customize) нужен только для offline-инъекции статики в
+# bridge-режиме; для NAT (DHCP от libvirt) не требуется. На части Astra-редакций
+# пакета нет в репозитории — ставим best-effort, prepare на его отсутствии не валим.
+_APT_PACKAGES_OPTIONAL = "libguestfs-tools"
+_DNF_PACKAGES_OPTIONAL = "libguestfs-tools"
 
 # Группы libvirt/kvm, в которые доклеиваем управляющего пользователя hub'а.
 _LIBVIRT_GROUPS = ("kvm", "libvirt", "libvirt-qemu", "libvirt-admin")
@@ -176,9 +180,16 @@ def _install_packages_cmd(os_family: str) -> str:
     if os_family == "apt":
         return (
             "sh -c 'DEBIAN_FRONTEND=noninteractive apt-get update && "
-            f"DEBIAN_FRONTEND=noninteractive apt-get install -y {_APT_PACKAGES}'"
+            f"DEBIAN_FRONTEND=noninteractive apt-get install -y {_APT_PACKAGES} && "
+            f"(DEBIAN_FRONTEND=noninteractive apt-get install -y {_APT_PACKAGES_OPTIONAL} "
+            "|| echo \"libguestfs-tools недоступен в репозитории — bridge-инъекция "
+            "статики будет недоступна, NAT-ВМ работают\" >&2)'"
         )
-    return f"dnf install -y {_DNF_PACKAGES}"
+    return (
+        f"sh -c 'dnf install -y {_DNF_PACKAGES} && "
+        f"(dnf install -y {_DNF_PACKAGES_OPTIONAL} || echo \"libguestfs-tools "
+        "недоступен — bridge-инъекция статики недоступна, NAT работает\" >&2)'"
+    )
 
 
 def _usermod_cmd(management_user: str | None) -> str:

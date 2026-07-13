@@ -8,7 +8,7 @@ from datetime import datetime
 
 from src.osb_logger import log
 from src.lib import system
-from config.conf import VENV_PATH, OSBENCH_LOGO
+from config.conf import VENV_PATH, OSBENCH_SHORT_LOGO
 
 
 parser = argparse.ArgumentParser()
@@ -47,6 +47,6 @@ if args.PREP:
 elif args.RUN:
     log.info("Очистка предыдущих результатов")
     system.leave_command(f'sudo bash scripts/cleare.sh', returncode=True, console=False, debug=True)
-    log.info(f"\n{OSBENCH_LOGO}\n")
+    log.info(f"\n{OSBENCH_SHORT_LOGO}\n")
     subprocess.run(f'sudo {VENV_PATH} src/osbench.py', shell=True)
 

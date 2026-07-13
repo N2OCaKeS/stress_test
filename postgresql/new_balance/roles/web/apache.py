@@ -66,17 +66,19 @@ class ApacheVM:
                     "signal set": "modules enabled",
                     "signal get": "mpm prefork",
                 },
-                # Мандатный режим Apache: дочерний процесс запускается с MAC-меткой
-                # аутентифицированного пользователя (см. conf/protopack.conf)
                 "enable astramode": {
                     "command": (
                         "sudo sh -c \""
-                        "grep -q '^AstraMode' /etc/apache2/apache2.conf && "
-                        "sed -i 's/^AstraMode.*/AstraMode on/' /etc/apache2/apache2.conf || "
-                        "echo 'AstraMode on' >> /etc/apache2/apache2.conf; "
-                        "grep -q '^IncludeRealm' /etc/apache2/apache2.conf && "
-                        "sed -i 's/^IncludeRealm.*/IncludeRealm on/' /etc/apache2/apache2.conf || "
-                        "sed -i 's/^#\\s*IncludeRealm on/IncludeRealm on/' /etc/apache2/apache2.conf"
+                        "if grep -q '^AstraMode' /etc/apache2/apache2.conf; then "
+                        "sed -i 's/^AstraMode.*/AstraMode on/' /etc/apache2/apache2.conf; "
+                        "elif grep -q '^#\\s*AstraMode' /etc/apache2/apache2.conf; then "
+                        "sed -i 's/^#\\s*AstraMode.*/AstraMode on/' /etc/apache2/apache2.conf; "
+                        "else echo 'AstraMode on' >> /etc/apache2/apache2.conf; fi; "
+                        "if grep -q '^IncludeRealm' /etc/apache2/apache2.conf; then "
+                        "sed -i 's/^IncludeRealm.*/IncludeRealm on/' /etc/apache2/apache2.conf; "
+                        "elif grep -q '^#\\s*IncludeRealm' /etc/apache2/apache2.conf; then "
+                        "sed -i 's/^#\\s*IncludeRealm.*/IncludeRealm on/' /etc/apache2/apache2.conf; "
+                        "else echo 'IncludeRealm on' >> /etc/apache2/apache2.conf; fi"
                         "\""
                     ),
                     "signal set": "astramode set",
@@ -94,7 +96,10 @@ class ApacheVM:
                 },
 
                 "mark var-www-html directory": {
-                    "command": "sudo pdpl-file -u 3:0:-1:ccnr /var/www/html",
+                    "command": (
+                        "sudo pdpl-file -u 3:0:-1:ccnr /var/www && "
+                        "sudo pdpl-file -u 3:0:-1:ccnr /var/www/html"
+                    ),
                     "signal set": "www-html labeled",
                     "signal get": "macdb acl set",
                 },
@@ -142,8 +147,12 @@ class ApacheVM:
                 },
                 "install python deps": {
                     "command": (
-                        f"sudo pip3 install -q -r {APP_DIR}/requirements.txt || "
-                        f"sudo pip3 install -q --break-system-packages -r {APP_DIR}/requirements.txt"
+                        "sudo sh -c \""
+                        "if test \\\"$(grep 1.7 /etc/astra_version)\\\"; then "
+                        f"pip3 install -q -r {APP_DIR}/requirements.txt; "
+                        "else "
+                        f"pip3 install -q --break-system-packages -r {APP_DIR}/requirements.txt; "
+                        "fi\""
                     ),
                     "signal set": "python deps installed",
                     "signal get": "app deployed",

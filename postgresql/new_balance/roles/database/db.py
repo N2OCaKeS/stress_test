@@ -414,8 +414,9 @@ EOF"""
                 },
             },
         }
+        # timeout — верхняя граница ожидания сигнала в минутах (проверяет каждые 10с и возвращается сразу, как только сигнал появился)
         provider.execute(commands=protopack, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS,
-                         username=USERNAME, password=PASSWORD, timeout=60)
+                         username=USERNAME, password=PASSWORD, timeout=180)
 
     def setup_mac(self):
         """Настройка MAC-меток на таблицах protopack и создание сервисного пользователя

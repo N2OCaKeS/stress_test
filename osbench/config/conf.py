@@ -104,7 +104,7 @@ RESULT_PERF_BENCH_NAME = "perf_bench_results.json"
 # Index Criterions                                                              #
 #################################################################################
 KERNEL_CRITERIONS = {
-    # ========== СИСТЕМНЫЕ ВЫЗОВЫ (36%) ==========
+    # ========== СИСТЕМНЫЕ ВЫЗОВЫ (39%) ==========
     'syscall': {                              # базовые системные вызовы
         'weight': 0.20, 
         'negative': False,
@@ -125,7 +125,7 @@ KERNEL_CRITERIONS = {
         'reference': 0.420
         },     
     'lat_syscall write': {                    # запись - частая операция
-        'weight': 0.05, 
+        'weight': 0.06, 
         'negative': True,
         'bounds': (0.0, 150),
         'reference': 0.390
@@ -151,7 +151,7 @@ KERNEL_CRITERIONS = {
         'reference': 0.050
     },
     
-    # ========== СИНХРОНИЗАЦИЯ (11%) ==========           
+    # ========== СИНХРОНИЗАЦИЯ (10%) ==========           
     'futex hash': {                           # хэш-таблица с futex
         'weight': 0.08, 
         'negative': False,
@@ -159,7 +159,7 @@ KERNEL_CRITERIONS = {
         'reference': 1840000.0
     },
     'futex wake': {                           # пробуждение futex
-        'weight': 0.02, 
+        'weight': 0.01, 
         'negative': True,
         'bounds': (0.0, 1500),
         'reference': 35.0

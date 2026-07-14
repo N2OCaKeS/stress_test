@@ -240,3 +240,23 @@
 - https://github.com/intel/lmbench.git
 
 ---
+
+
+## Запуск
+
+### Подготовка окружения
+Выполняется запуском команды из директории проекта `git`
+```bash
+sudo python3 run.py -p
+``` 
+![Prepare](static/prepare.png)   
+   
+### Запуск теста
+```bash
+sudo python3 run.py -r
+```
+![Run](static/run.png)   
+   
+### Пример таблицы с результатами
+![Result](static/result.png)   
+

@@ -63,6 +63,8 @@ def balance(rc, sec_mode="s", type_test="balance"):
 
     if type_test == "info-sys":
         database.setup_mac()        # MAC-метки на protopack + роль protopack_web, до web.settings()
+        database.setup_privsock()   # PARSEC_CAP_PRIV_SOCK на database1/2/3, иначе МРД-уровень >=1 виснет
+                                     # на connect() к contrprimer — см. parsec_sock_rcv_fix.md
 
         web = ApacheVM()            # после domain, чтобы Kerberos уже работал
         web.settings()

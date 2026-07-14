@@ -423,7 +423,7 @@ def main() -> None:
 
     try:
         self_ptr = pdp.get_pid()
-        print(f"[pdp]  Метка процесса (начальная): \"{pdp.label_text(self_ptr)}\"")
+        # print(f"[pdp]  Метка процесса (начальная): \"{pdp.label_text(self_ptr)}\"")  # всегда Уровень_0 — вводит в заблуждение, реальный уровень выставляется на сокет запроса, см. do_one_request()
         cur_ilev = pdp.ilev(self_ptr)
     except Exception as exc:
         pdp.release()

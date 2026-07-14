@@ -8,7 +8,8 @@ from allta import SystemCommands
 
 from new_balance.roles.vm_info import (
     DOMAIN,
-    DOMAIN_USER_PASSWORD,
+    DOMAIN_ADMIN_PASSWORD,
+    DOMAIN_ADMIN_USER,
     PASSWORD,
     PGPOOL_CONFIG_PATH,
     PGPOOL_HOSTNAME,
@@ -392,7 +393,8 @@ class InfoSysLoadTest:
     """
 
     LEVELS = (0, 1, 2)
-    DOMAIN_USER = "user0"
+    DOMAIN_USER = "user_level3"
+    LEVEL3_PASSWORD = "Level3TestMac2026!"
     WORKERS = 10
     R_START, R_END, R_STEP = 100, 500, 100
 
@@ -430,10 +432,21 @@ class InfoSysLoadTest:
                         "signal set": "",
                         "signal get": "",
                     },
-                    "kinit": {
-                        "command": f"yes {DOMAIN_USER_PASSWORD} | kinit {self.DOMAIN_USER}",
-                        "signal set": "",
+                    "create level3 user": {
+                        "command": (
+                            f'yes {DOMAIN_ADMIN_PASSWORD} | kinit {DOMAIN_ADMIN_USER} && '
+                            f'yes {self.LEVEL3_PASSWORD}| ipa user-add {self.DOMAIN_USER} '
+                            f'--first={self.DOMAIN_USER} --last={self.DOMAIN_USER} '
+                            f'--macmin=0 --macmax=3 --miclevel=63 --password '
+                            f'--password-expiration="2099-12-31Z"'
+                        ),
+                        "signal set": "level3 user created",
                         "signal get": "",
+                    },
+                    "kinit": {
+                        "command": f"yes {self.LEVEL3_PASSWORD} | kinit {self.DOMAIN_USER}",
+                        "signal set": "",
+                        "signal get": ["level3 user created"],
                     },
                 }
             },

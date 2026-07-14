@@ -456,3 +456,69 @@ EOF"""
             password=PASSWORD,
         )
 
+    def setup_privsock(self):
+        """Даёт постгресу привилегию PARSEC_CAP_PRIV_SOCK так, чтобы она реально
+        применялась к процессу. Без этого слушающий сокет contrprimer создаётся
+        с МРД-меткой уровня 0 (метка процесса на момент bind()/listen() никогда
+        не поднимается), и ядро (parsec_sock_rcv) молча отбрасывает любое входящее
+        соединение с ненулевой меткой — это выглядит как обычный connect()-таймаут.
+
+
+        Выставляет ac_ignore_socket_maclabel = false: без этого Postgres
+        игнорирует метку входящего соединения при определении метки сессии, и
+        построчная МРД-фильтрация (CHMAC-метки в mac_setup.sql) не работает"""
+        provider = self.provider
+        postgres_config_path = f'/etc/postgresql/{VERSION_PG}/contrprimer'
+
+        commands = {
+            "g_database": {
+                "grant priv_sock to postgres": {
+                    "command": "sudo usercaps -m PARSEC_CAP_PRIV_SOCK postgres",
+                    "signal set": "privsock granted",
+                    "signal get": "",
+                },
+                "create pam service for postgres": {
+                    "command": (
+                        "sudo tee /etc/pam.d/postgresql-contrprimer > /dev/null <<'EOF'\n"
+                        "account required pam_permit.so\n"
+                        "session required pam_parsec_cap.so\n"
+                        "EOF"
+                    ),
+                    "signal set": "pam service created",
+                    "signal get": ["privsock granted"],
+                },
+                "add PAMName to unit": {
+                    "command": (
+                        f"grep -q '^PAMName=' /etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service || "
+                        f"sudo sed -i '/^Type=forking/a PAMName=postgresql-contrprimer' "
+                        f"/etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service"
+                    ),
+                    "signal set": "pamname added",
+                    "signal get": ["pam service created"],
+                },
+                "enforce socket maclabel for row security": {
+                    "command": (
+                        f"sudo sed -i 's/ac_ignore_socket_maclabel = true/ac_ignore_socket_maclabel = false/' "
+                        f"{postgres_config_path}/postgresql.conf"
+                    ),
+                    "signal set": "socket maclabel enforced",
+                    "signal get": ["pamname added"],
+                },
+                "reload and restart contrprimer": {
+                    "command": (
+                        "sudo systemctl daemon-reload && "
+                        f"sudo systemctl restart postgresql@{VERSION_PG}-contrprimer"
+                    ),
+                    "signal set": "",
+                    "signal get": ["socket maclabel enforced"],
+                },
+            }
+        }
+        provider.execute(
+            commands=commands,
+            vms_dates=VMS_DATES,
+            vms_groups=VMS_GROUPS,
+            username=USERNAME,
+            password=PASSWORD,
+        )
+

@@ -419,11 +419,24 @@ EOF"""
                          username=USERNAME, password=PASSWORD, timeout=180)
 
     def setup_mac(self):
-        """Настройка MAC-меток на таблицах protopack и создание сервисного пользователя
-        protopack_web (потребляется ApacheVM.settings() / AstraMode).
-        Вызывать после setup_protopack(), только для type_test == "info-sys".
-        SQL — в template/mac_setup.sql (уровни МРД описаны там же)."""
+        """Настройка MAC-меток на таблицах protopack и создание сервисного пользователя protopack_web"""
         provider = self.provider
+
+        os_account = {
+            "g_database": {
+                "create protopack_web os account": {
+                    "command": (
+                        "id protopack_web > /dev/null 2>&1 || "
+                        "(sudo useradd --no-create-home --shell /usr/sbin/nologin protopack_web && "
+                        "sudo pdpl-user -l 0:3 -i 63 -c 0:8 protopack_web)"
+                    ),
+                    "signal set": "protopack_web os account ready",
+                    "signal get": "",
+                },
+            }
+        }
+        provider.execute(commands=os_account, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS,
+                         username=USERNAME, password=PASSWORD)
 
         scp_mac_setup = {
             # Только primary: database2/database3 — read-only реплики contrprimer,

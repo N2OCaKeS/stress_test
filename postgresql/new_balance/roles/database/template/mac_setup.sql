@@ -127,5 +127,9 @@ GRANT USAGE   ON SCHEMA other TO protopack_web;
 GRANT SELECT  ON ALL TABLES IN SCHEMA other TO protopack_web;
 ALTER DEFAULT PRIVILEGES IN SCHEMA other GRANT SELECT ON TABLES TO protopack_web;
 
--- Метка сервисного пользователя: максимальный уровень, чтобы Apache AstraMode
--- мог понизить его до уровня конкретного пользователя через метку сокета
+-- Собственной MAC-меткой роль не наделяется (фильтрация строк идёт по метке
+-- сокета, которую подставляет Apache/AstraMode, а не по правам роли). Но
+-- postgres требует, чтобы у роли был соответствующий ОС-пользователь с
+-- диапазоном MAC (pdpl-user) в /etc/parsec/macdb, иначе подключение падает с
+-- "error obtaining MAC configuration for user protopack_web" — это делается
+-- на уровне ОС, в db.py::setup_mac() (Python), не здесь.

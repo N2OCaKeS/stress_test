@@ -20,6 +20,8 @@ PACKAGES=(
   gcc 
   make 
   libpdp-dev
+  parted
+  xfsprogs
 )
 
 

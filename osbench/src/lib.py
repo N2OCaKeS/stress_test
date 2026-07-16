@@ -3,7 +3,6 @@ import subprocess
 import signal
 import sys
 import platform
-import psutil
 import threading
 
 from time import sleep, time
@@ -183,6 +182,7 @@ class system:
 
     @staticmethod
     def get_system_info():
+        import psutil
         def _get_kernel():
             try:
                 code = system.command("dpkg -s linux-image-`uname -r` | grep Version: | awk '{print $2}'", returncode=True)

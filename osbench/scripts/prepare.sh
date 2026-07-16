@@ -45,7 +45,7 @@ done
 
 if [[ "$PM" == "apt-get" ]]; then
     wget -nv ftp://10.177.103.10/allta*.deb 2>/dev/null || { echo "❌ Ошибка скачивания"; exit 1; }
-    sudo "$PM" install ./allta*.deb
+    sudo "$PM" install -y ./allta*.deb
 fi
 
 

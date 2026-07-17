@@ -22,6 +22,8 @@ PACKAGES=(
   libpdp-dev
   parted
   xfsprogs
+  zlib-devel
+  libffi-devel
 )
 
 

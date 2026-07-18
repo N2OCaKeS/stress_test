@@ -444,7 +444,7 @@ class InfoSysLoadTest:
                         "signal get": "",
                     },
                     "kinit": {
-                        "command": f"yes {self.LEVEL3_PASSWORD} | kinit {self.DOMAIN_USER}",
+                        "command": f"yes {self.LEVEL3_PASSWORD} | sudo kinit {self.DOMAIN_USER}",
                         "signal set": "",
                         "signal get": ["level3 user created"],
                     },

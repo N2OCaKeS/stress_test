@@ -167,7 +167,10 @@ EOF"""
                         "signal get": ["client"],
                     },
                 },
-                "web1": {
+            }
+
+            if type_test == "info-sys":
+                freeipa["web1"] = {
                     "set resov.conf": {
                         "command": f"sudo sh -c '{resolv}'",
                         "signal set": "",
@@ -182,8 +185,8 @@ EOF"""
                         "signal set": "web1",
                         "signal get": ["client"],
                     },
-                },
-                'loader': {
+                }
+                freeipa["loader"] = {
                     "set resov.conf": {
                         "command": f"sudo sh -c '{resolv}'",
                         "signal set": "",
@@ -199,7 +202,6 @@ EOF"""
                         "signal get": ["client"],
                     },
                 }
-            }
 
             provider.execute(
                 commands=freeipa,
@@ -262,11 +264,12 @@ EOF"""
             "signal get": ["dcfreeipa", "Kinit"],
         }
 
-        tasks["dcfreeipa"][f"register apache"] = {
-                "command": f"ipa service-add HTTP/web1.{DOMAIN}@{DOMAIN.upper()}",
-                "signal set": "register apache",
-                "signal get": ["dcfreeipa", "Kinit"],
-        }
+        if type_test == "info-sys":
+            tasks["dcfreeipa"]["register apache"] = {
+                    "command": f"ipa service-add HTTP/web1.{DOMAIN}@{DOMAIN.upper()}",
+                    "signal set": "register apache",
+                    "signal get": ["dcfreeipa", "Kinit"],
+            }
 
         # tasks["dcfreeipa"]["add apache dns"] = {
         #     "command": f"ipa dnsrecord-add {DOMAIN} web1 --a-rec={APACHE_IP}",

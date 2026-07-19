@@ -183,14 +183,13 @@ def do_one_request(
     pdp: PDP,
     label_mutex: threading.Lock,
 ) -> int:
-    token:    Optional[str]    = None
+    token = get_negotiate_token(hostname, verbose=False)
+
     sockfd:   Optional[socket.socket] = None
     orig_ptr: int = 0
     new_ptr:  int = 0
 
     with label_mutex:
-        token = get_negotiate_token(hostname, verbose=False)
-
         try:
             orig_ptr = pdp.get_pid()
         except Exception:

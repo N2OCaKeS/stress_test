@@ -389,14 +389,15 @@ class InfoSysLoadTest:
     """Нагрузочный тест info-sys: сценарий 1 из roles/task/test.md — чистая нагрузка
     (без привязки к МРД-уровню конкретной строки). Гоняет mrd_load_generator.py с
     ВМ `loader` на `web1` (Apache AstraMode + Flask protopack) по пути `/` на
-    уровнях МРД 0/1/2, забирает JSON со статистикой (RPS/latency) на каждом уровне.
+    уровне МРД 1, забирает JSON со статистикой (RPS/latency), 5 шагов от 500 до
+    2500 запросов (MAX_ITERATIONS в mrd_load_generator.py = 5).
     """
 
-    LEVELS = (0, 1, 2)
+    LEVELS = (1,)
     DOMAIN_USER = "user_level3"
     LEVEL3_PASSWORD = "Level3TestMac2026!"
     WORKERS = 10
-    R_START, R_END, R_STEP = 100, 500, 100
+    R_START, R_END, R_STEP = 500, 2500, 500
 
     def __init__(self):
         self.provider = PROVIDER

@@ -8,18 +8,40 @@ from new_balance.roles.load_balancer.load_balancer import LoadBalancer
 from new_balance.roles.task.pre_configure import PreConfigure
 from new_balance.roles.web.apache import ApacheVM
 from new_balance.roles.task.test import Test, InfoSysLoadTest
-from new_balance.roles.vm_info import VERSION_OS, VMS, VMS_DATES, PROVIDER
+from new_balance.roles.vm_info import (VERSION_OS, VMS, VMS_DATES, VMS_GROUPS,
+                           INFO_SYS_ONLY_VMS, INFO_SYS_VMS_DATES, PROVIDER)
 
 # from new_balance.roles.web.apache import ApacheVM
 
 def balance(rc, sec_mode="s", type_test="balance"):
     provider = PROVIDER
+
+    if type_test == "info-sys":
+        # web1/loader по умолчанию отсутствуют в VMS/VMS_DATES/VMS_GROUPS (см.
+        # vm_info.py) — добавляем их здесь (изменяем те же объекты, что импортированы
+        # во всех модулях, поэтому domain.py/pre_configure.py и т.д. их увидят).
+        for vm in INFO_SYS_ONLY_VMS:
+            if vm not in VMS:
+                VMS.append(vm)
+        VMS_DATES.update(INFO_SYS_VMS_DATES)
+        for group in ("all", "domain_client"):
+            for vm in INFO_SYS_ONLY_VMS:
+                if vm not in VMS_GROUPS[group]:
+                    VMS_GROUPS[group].append(vm)
+        if "web1" not in VMS_GROUPS["web"]:
+            VMS_GROUPS["web"].append("web1")
+        if "loader" not in VMS_GROUPS["loader"]:
+            VMS_GROUPS["loader"].append("loader")
+
     new_vms_data = {}
     if isinstance(provider, Libvirt):
         save_path = "vms.json"
 
         if os.path.exists(save_path):
             new_vms_data = LibvirtManager.Vm.load_vms_data(save_path)
+            if type_test != "info-sys":
+                for vm in INFO_SYS_ONLY_VMS:
+                    new_vms_data.pop(vm, None)
             LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="build")
         else:
             provider.prepare()
@@ -64,16 +86,16 @@ def balance(rc, sec_mode="s", type_test="balance"):
     if type_test == "info-sys":
         database.setup_mac()        # MAC-метки на protopack + роль protopack_web, до web.settings()
         database.setup_privsock()   # PARSEC_CAP_PRIV_SOCK на database1/2/3, иначе МРД-уровень >=1 виснет
-                                     # на connect() к contrprimer — см. parsec_sock_rcv_fix.md
-
+                                    
         web = ApacheVM()            # после domain, чтобы Kerberos уже работал
         web.settings()
 
-        info_sys_load = InfoSysLoadTest()  # нагрузка с loader на web1, сценарий 1 (см. roles/task/test.md)
+        info_sys_load = InfoSysLoadTest()
         info_sys_load.run()
-
-    # test = Test()
-    # test.test()
-    # SystemCommands.cmd("cat results_balance.txt")
-    # LibvirtManager.Vm.stop(vms=VMS)
+    
+    if type_test == "balance":
+        test = Test()
+        test.test()
+        SystemCommands.cmd("cat results_balance.txt")
+        LibvirtManager.Vm.stop(vms=VMS)
 

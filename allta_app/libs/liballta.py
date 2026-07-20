@@ -75,7 +75,8 @@ from allta_image_conf import (
     tokens,
     ilo,
     ACS_BASE_URL,
-    stands_type
+    stands_type,
+    partimag
 )
 
 
@@ -834,18 +835,18 @@ def info_collector(page, ajax=None):
                                 repo_path=releases_dict().keys(),
                                 stand1_snap=cz_comm()['stand1'].keys(),
                                 stand2_snap=cz_comm()['stand2'].keys(),
-                                stand3_snap=cz_comm()['stand3'].keys(),
-                                stand4_snap=cz_comm()['stand4'].keys(),
-                                stand5_snap=cz_comm()['stand5'].keys(),
+                                stand3_snap=partimag()['stand3'].keys(),
+                                stand4_snap=partimag()['stand4'].keys(),
+                                stand5_snap=partimag()['stand5'].keys(),
                                 stand6_snap=cz_comm()['stand6'].keys(),
                                 stand7_snap=cz_comm()['stand7'].keys(),
                                 stand8_snap=cz_comm()['stand8'].keys(),
                                 stand9_snap=cz_comm()['stand9'].keys(),
-                                stand10_snap=cz_comm()['stand10'].keys(),
-                                stand11_snap=cz_comm()['stand11'].keys(),
-                                stand12_snap=cz_comm()['stand12'].keys(),
-                                stand13_snap=cz_comm()['stand13'].keys(),
-                                stand14_snap=cz_comm()['stand14'].keys(),
+                                stand10_snap=partimag()['stand10'].keys(),
+                                stand11_snap=partimag()['stand11'].keys(),
+                                stand12_snap=partimag()['stand12'].keys(),
+                                stand13_snap=partimag()['stand13'].keys(),
+                                stand14_snap=partimag()['stand14'].keys(),
                                 **server_diskspace_used())
 
 
@@ -1492,8 +1493,8 @@ def create_vm_snapshot(stand, snapshot_name):
         ssh_command(command=cmd, stand_ip=stands_ip['stand5'])
 
 
-def backup_snapshot(stand, snapshot):
-    command = f'{cz_comm()[stand][snapshot]}'
+def backup_image(stand, snapshot):
+    command = f'{partimag()[stand][snapshot]}'
     subprocess.run(command, shell=True)
 
 

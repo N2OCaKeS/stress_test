@@ -403,8 +403,8 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
         topics = {
             'orel_stand3':      ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'FreeIPA auth', 'unix', 'FreeIPA c-users'],
             'smolensk_stand3':  ['EXT4 parsec', 'XFS parsec', 'unix parsec', 'FreeIPA plugin'],
-            'orel_stand4':      ['postgresql-aud-off', 'postgresql', 'psql balance', 'steal time', 'psql kernels'],
-            'smolensk_stand4':  ['postgresql-sm', 'psql parsec', 'psql vanilla', 'steal time-sm'],
+            'orel_stand4':      ['postgresql-aud-off', 'postgresql'],
+            'smolensk_stand4':  ['postgresql-sm', 'psql parsec', 'psql vanilla'],
             'orel_stand10':     ['NTFS', 'OCFS2', 'CEPH', 'CEPH fio'],
             'smolensk_stand10': ['CEPH parsec', 'raw-spin-lock'],
             'orel_stand11':     ['docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large'],
@@ -413,8 +413,8 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
             'smolensk_stand12': ['auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'apache-bp', 'PSQL OLAP-hq'],
             'orel_stand13':     ['syslog-ng-cwl'],
             'smolensk_stand13': [],
-            'orel_stand14':     [],
-            'smolensk_stand14': ['psql info-sys']
+            'orel_stand14':     ['psql balance', 'steal time', 'psql kernels'],
+            'smolensk_stand14': ['psql info-sys', 'steal time-sm']
         }
 
 
@@ -427,7 +427,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
 
 stands_groups = {
     'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'FreeIPA auth', 'unix', 'unix parsec', 'FreeIPA c-users', 'FreeIPA plugin'],
-    'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla', 'psql balance', 'steal time', 'steal time-sm', 'psql kernels'],
+    'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla'],
     'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec', 'raw-spin-lock'],
 
     'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large'],
@@ -435,7 +435,7 @@ stands_groups = {
 
     'stand13_group':['syslog-ng-cwl'],
 
-    'stand14_group':['psql info-sys']
+    'stand14_group':['psql info-sys', 'psql balance', 'steal time', 'steal time-sm', 'psql kernels']
 }
 
 test_run_stands = [f'stand{x}' for x in ['3', '4', '10', '11', '12', '13', '14']] #range(3, 6, 1)]

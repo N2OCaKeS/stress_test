@@ -4,34 +4,108 @@ set -e
 export CFLAGS="-Wno-error -Wno-stringop-overflow -Wno-stringop-truncation -Wno-unused-result"
 export CXXFLAGS="-Wno-error -Wno-stringop-overflow -Wno-stringop-truncation -Wno-unused-result"
 
-PACKAGES=(
-  wget 
-  build-essential 
-  zlib1g-dev
-  libncurses5-dev
-  libgdbm-dev
-  libnss3-dev 
-  libssl-dev 
-  libreadline-dev 
-  libsqlite3-dev  
-  libbz2-dev
-  libffi-dev 
-  strace 
-  gcc 
-  make 
-  libpdp-dev
-  parted
-  xfsprogs
-  zlib-devel
-  libffi-devel
-)
+detect_distro() {
+    if grep -q "ALT Linux" /etc/os-release 2>/dev/null; then
+        echo "alt"
+    elif grep -q "astra" /etc/os-release 2>/dev/null; then
+        echo "astra"
+    elif grep -q "Debian" /etc/os-release 2>/dev/null; then
+        echo "debian"
+    elif grep -q "Red Hat" /etc/redhat-release 2>/dev/null; then
+        echo "rhel"
+    else
+        echo "unknown"
+    fi
+}
 
+DISTRO=$(detect_distro)
 
+# Определяем пакетный менеджер
 if command -v apt-get &> /dev/null; then
     PM="apt-get"
 elif command -v dnf &> /dev/null; then
     PM="dnf"
+elif command -v yum &> /dev/null; then
+    PM="yum"
+elif command -v pacman &> /dev/null; then
+    PM="pacman"
+else
+    echo "Не найден пакетный менеджер"
+    exit 1
 fi
+
+# Определяем список пакетов в зависимости от дистрибутива
+case $DISTRO in
+    debian|astra)
+        PACKAGES=(
+            wget
+            build-essential
+            zlib1g-dev
+            libncurses5-dev
+            libgdbm-dev
+            libnss3-dev
+            libssl-dev
+            libreadline-dev
+            libsqlite3-dev
+            libbz2-dev
+            libffi-dev
+            strace
+            gcc
+            make
+            parted
+            xfsprogs
+        )
+        ;;
+    alt)
+        PACKAGES=(
+            wget
+            gcc
+            make
+            glibc-devel
+            zlib-devel
+            ncurses-devel
+            gdbm-devel
+            nss-devel
+            openssl-devel
+            readline-devel
+            sqlite3-devel
+            bzip2-devel
+            libffi-devel
+            strace
+            parted
+            xfsprogs
+            perl-core
+            perl-Time-HiRes
+        )
+        ;;
+    rhel)
+        PACKAGES=(
+            wget
+            gcc
+            make
+            glibc-devel
+            zlib-devel
+            ncurses-devel
+            gdbm-devel
+            nss-devel
+            openssl-devel
+            readline-devel
+            sqlite-devel
+            bzip2-devel
+            libffi-devel
+            strace
+            parted
+            xfsprogs
+            perl-core
+            perl-Time-HiRes
+        )
+        ;;
+    *)
+        echo "Неизвестный дистрибутив"
+        exit 1
+        ;;
+esac
+
 
 
 if [ -z "$PM" ]; then
@@ -47,9 +121,9 @@ for pkg in "${PACKAGES[@]}"; do
 done
 
 
-if [[ "$PM" == "apt-get" ]]; then
+if [[ "$PM" == "apt-get" ]] && [[ "$DISTRO" != "alt" ]]; then
     wget -nv ftp://10.177.103.10/allta*.deb 2>/dev/null || { echo "❌ Ошибка скачивания"; exit 1; }
-    sudo "$PM" install -y ./allta*.deb
+    sudo "$PM" install -y ./allta*.deb 2>/dev/null || echo "⚠️ Не удалось установить allta"
 fi
 
 

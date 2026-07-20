@@ -32,7 +32,7 @@ from libs.liballta import (index_page,
                           update_settings_block,
                           update_changelog_block,
                           get_kernels_from_rc,
-                          backup_snapshot,
+                          backup_image,
                           backup_vm_snapshot,
                           busy_status_control,
                           prepare_testenv_status,
@@ -668,7 +668,7 @@ def backup(stand, version):
     or stand == "stand9" or stand == "stand1" or stand == "stand2":
         backup_vm_snapshot(stand, version)
     else:
-        backup_snapshot(stand, version)
+        backup_image(stand, version)
     return index_page('main')
 
 

@@ -1,7 +1,7 @@
 import json
 import requests
 
-from os import getenv
+from os import getenv, listdir
 from dotenv import load_dotenv
 
 
@@ -552,10 +552,32 @@ startswith_kernel_list = ['6.1', '6.6', '6.12', '5.15', '5.10']
 
 
 #################################################################################################################################################
-#Перечень снимков clonezilla 
+#Перечень образов clonezilla из allta_conf
 #################################################################################################################################################
 def cz_comm():
     return get_allta_conf()['cz_comm']
+
+
+
+#################################################################################################################################################
+#Перечень образов clonezilla из partimag
+#################################################################################################################################################
+def partimag():
+    def get_dirs():
+        path = "/home/partimag"
+        items = listdir(path)
+
+        return items
+
+    images = get_dirs()
+    drbl_cmd = "sudo drbl-ocs -g auto -e1 auto -e2 -r -x -j2 -k0 -sc0 -p reboot -h \"{ip}\" -l ru_RU.UTF-8 startdisk restore {image} nvme0n1"
+
+    cz_images = {
+        stand: {
+            image.split('-')[1]: drbl_cmd.format(ip=stands_ip[stand], image=image) for image in images if stands_type['phys'][stand] == image.split('-')[0]
+        } for stand, type in stands_type['phys'].items()
+    }
+    return cz_images
 
 
 

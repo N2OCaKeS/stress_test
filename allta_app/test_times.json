@@ -22,10 +22,6 @@
             "postgresql-sm": "5:38:59",
             "psql parsec": "3:04:26",
             "psql vanilla": "2:49:19",
-            "psql balance": "2:24:27",
-            "psql kernels": "2:09:44",
-            "steal time": "2:52:28",
-            "steal time-sm": "2:50:07",
             "Total time": "0:00:00"
         },
         "stand10": {
@@ -73,6 +69,10 @@
         },
         "stand14": {
             "psql info-sys": "2:28:15",
+            "psql balance": "2:24:27",
+            "psql kernels": "2:09:44",
+            "steal time": "2:52:28",
+            "steal time-sm": "2:50:07",
             "Total time": "0:00:00"
         }
     },
@@ -99,10 +99,6 @@
             "postgresql-sm": "3:34:40",
             "psql parsec": "3:17:50",
             "psql vanilla": "3:05:02",
-            "psql balance": "2:54:15",
-            "psql kernels": "2:23:59",
-            "steal time": "3:12:40",
-            "steal time-sm": "3:14:29",
             "Total time": "0:00:00"
         },
         "stand10": {
@@ -150,6 +146,10 @@
         },
         "stand14": {
             "psql info-sys": "2:28:15",
+            "psql balance": "2:54:15",
+            "psql kernels": "2:23:59",
+            "steal time": "3:12:40",
+            "steal time-sm": "3:14:29",
             "Total time": "0:00:00"
         }
     }

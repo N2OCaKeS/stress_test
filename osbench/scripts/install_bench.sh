@@ -32,7 +32,7 @@ install_deps() {
                 libtirpc-devel \
                 glibc-devel-static \
                 perl-Time-HiRes \
-                perl-core \
+                perl \
                 gcc \
                 make
             ;;

@@ -1,3 +1,10 @@
+allta_app - v2.68.4
+* Fixed backup image, added stand14 in argument stand num
+
+
+
+
+
 allta_app - v2.68.3
 * Fixes backup stand14 for psql info test
 

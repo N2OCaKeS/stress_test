@@ -167,4 +167,6 @@ if args.TEST_TYPE == 'balance':
 
 if args.TEST_TYPE == 'info-sys':
     bl_lib.balance(args.TCV, type_test=args.TEST_TYPE)
-    # uzs.upload_test_cycle_status(zefir_status='pass')
+    uzs.public = True
+    uzs.info_sys = True
+    uzs.upload_test_cycle_status(zefir_status='pass')

@@ -3,10 +3,11 @@ import json
 import pandas as pd
 from collections import defaultdict
 from libs.libreport import ReportToConfluence
-from libs.libpsb import perf, build_mrd_dataframe
+from libs.libpsb import perf, build_mrd_dataframe, build_info_sys_dataframe
 from libs.libtable import Report
 from psb_conf import DEFAULT_SCALE_FACTOR, DEFAULT_TRANSACTIONS, DEFAULT_THREADS, \
-    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, GRAPH_DESCRIPTIONS
+    CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, \
+    GRAPH_DESCRIPTIONS, SCRIPT_DIR
 
 
 class Public:
@@ -24,7 +25,8 @@ class Public:
                  test_cycle_version=None,
                  storage=False,
                  kernel_check=False,
-                 balance=False):
+                 balance=False,
+                 info_sys=False):
     
         self.username = username
         self.token = token
@@ -37,6 +39,8 @@ class Public:
         self.storage = storage
         self.kernel_check = kernel_check
         self.balance = balance
+        self.info_sys = info_sys
+
 
         self.stands = {
                 '1':{'grade':'low(141)',
@@ -153,6 +157,15 @@ class Public:
                                                         arm_proc=self.stands[self.grade_stand]['cpu'],
                                                         arm_mem=self.stands[self.grade_stand]['ram'],
                                                         arm_st=self.stands[self.grade_stand]['storage'])
+        elif self.info_sys:
+            with open('{}/header_table_template_info_sys.html'.format(TEMPLATE_PATH), 'r') as file:
+                header_table_temp = file.read()
+                header_table = header_table_temp.format(av=info_lst[0],
+                                                        kernel=info_lst[1],
+                                                        arm_num=self.stands[self.grade_stand]['grade'],
+                                                        arm_proc=self.stands[self.grade_stand]['cpu'],
+                                                        arm_mem=self.stands[self.grade_stand]['ram'],
+                                                        arm_st=self.stands[self.grade_stand]['storage'])
         elif self.balance:
             with open('{}/header_table_template_balance.html'.format(TEMPLATE_PATH), 'r') as file:
                 header_table_temp = file.read()
@@ -206,17 +219,26 @@ class Public:
                 balance_table = file.read()
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
             html_page = '\n'.join([header_table, head_row, balance_table])
-        
-        # TODO: назвать тест
-        elif self.c_np.startswith('...'):
-            head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-            with open(f'{REPORT_PATH}/results.json', 'r') as file:
+        elif self.info_sys:
+            with open(f'{SCRIPT_DIR}/mrd_load_level1_results.json', 'r') as file:
                 report_data = json.load(file)
 
-            df = build_mrd_dataframe(report_data)
-            result_table = df.to_html(index=False)
+            df = build_info_sys_dataframe(report_data)
+            info_sys_table = df.to_html(index=False)
 
-            html_page = '\n'.join([header_table, head_row, result_table])
+            head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
+            html_page = '\n'.join([header_table, head_row, info_sys_table])
+        
+        # # TODO: назвать тест
+        # elif self.c_np.startswith('...'):
+        #     head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
+        #     with open(f'{REPORT_PATH}/results.json', 'r') as file:
+        #         report_data = json.load(file)
+
+        #     df = build_mrd_dataframe(report_data)
+        #     result_table = df.to_html(index=False)
+
+        #     html_page = '\n'.join([header_table, head_row, result_table])
         
         elif self.c_np.startswith('PSQL OLAP-hq'):
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'

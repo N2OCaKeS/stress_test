@@ -37,7 +37,7 @@ INFO_SYS_VMS_DATES = {
     "web1": {
         "host-port": "22",
         "cpu": "8",
-        "ram": "32768",
+        "ram": "8192",
     },
     "loader": {
         "host-port": "22",

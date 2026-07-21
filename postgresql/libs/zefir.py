@@ -35,7 +35,8 @@ class UploaderZC(Public, PSQLStatistics):
                  statistics=False,
                  storage=False,
                  kernel_check=False,
-                 balance=False):
+                 balance=False,
+                 info_sys=False):
 
         self.FTI = folder_tree_id
         self.TCYC = test_cycle_name
@@ -54,6 +55,7 @@ class UploaderZC(Public, PSQLStatistics):
         self.storage = storage
         self.kernel_check = kernel_check
         self.balance = balance
+        self.info_sys = info_sys
 
     def test_cycle_status_changer(self, status):
 
@@ -68,7 +70,9 @@ class UploaderZC(Public, PSQLStatistics):
                             test_cycle_version=self.TCV,
                             storage=self.storage,
                             kernel_check=self.kernel_check,
-                            balance=self.balance)
+                            balance=self.balance,
+                            info_sys=self.info_sys
+                            )
             public.run_publish()
 
         zefir = ZefirStatusAPI(folder_tree_id=self.FTI,

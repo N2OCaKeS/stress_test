@@ -364,3 +364,21 @@ def build_mrd_dataframe(results: dict) -> pd.DataFrame:
         })
     return pd.DataFrame(rows)
 
+
+def build_info_sys_dataframe(results: dict) -> pd.DataFrame:
+    rows = []
+    for key in sorted(results, key=lambda k: int(k)):
+        r = results[key]
+        rows.append({
+            "Requests":     r["requests"],
+            "Time, s":      r["wall_sec"],
+            "RPS":          r["rps"],
+            "Latency, ms":  r["avg_latency_ms"],
+            "200 OK":       r["ok_200"],
+            "403":          r["forbidden_403"],
+            "401":          r["unauth_401"],
+            "Other Status": r["other"],
+            "No Response":  r["err_total"],
+        })
+    return pd.DataFrame(rows)
+

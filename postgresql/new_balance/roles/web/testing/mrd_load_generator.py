@@ -27,7 +27,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Конфигурация итераций
@@ -134,7 +134,7 @@ class PDP:
 # GSSAPI
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_negotiate_token(hostname: str, verbose: bool = False) -> Optional[str]:
+def get_negotiate_token(hostname: str, ccache: Optional[str] = None, verbose: bool = False) -> Optional[str]:
     if not _HAS_GSSAPI:
         return None
     spn = f"HTTP@{hostname}"
@@ -149,7 +149,13 @@ def get_negotiate_token(hostname: str, verbose: bool = False) -> Optional[str]:
                 break
             except AttributeError:
                 pass
-        ctx         = gssapi.SecurityContext(name=name, flags=flags, usage="initiate")
+        creds = None
+        if ccache:
+            # Явно грузим тикет из конкретного файла-кэша, а не из общего
+            # (default ccache процесса) — так разные воркеры могут работать под
+            # разными Kerberos-принципалами вместо одного общего user_level3.
+            creds = gssapi.Credentials(usage="initiate", store={"ccache": f"FILE:{ccache}"})
+        ctx         = gssapi.SecurityContext(name=name, creds=creds, flags=flags, usage="initiate")
         token_bytes = ctx.step()
         if not token_bytes:
             return None
@@ -182,8 +188,9 @@ def do_one_request(
     url: str, level: int,
     pdp: PDP,
     label_mutex: threading.Lock,
+    ccache: Optional[str] = None,
 ) -> int:
-    token = get_negotiate_token(hostname, verbose=False)
+    token = get_negotiate_token(hostname, ccache=ccache, verbose=False)
 
     sockfd:   Optional[socket.socket] = None
     orig_ptr: int = 0
@@ -318,6 +325,7 @@ def worker_thread(
     label_mutex: threading.Lock,
     work_queue: "queue.Queue[int]",
     stats: Stats,
+    ccache: Optional[str] = None,
 ) -> None:
     while True:
         try:
@@ -326,7 +334,7 @@ def worker_thread(
             return
 
         t0     = time.monotonic()
-        status = do_one_request(ip, port, hostname, url, level, pdp, label_mutex)
+        status = do_one_request(ip, port, hostname, url, level, pdp, label_mutex, ccache=ccache)
         usec   = int((time.monotonic() - t0) * 1_000_000)
         stats.record(status, usec)
 
@@ -342,6 +350,7 @@ def run_iteration(
     workers: int, requests: int,
     pdp: PDP, label_mutex: threading.Lock,
     iteration_num: int,
+    ccaches: Optional[List[str]] = None,
 ) -> dict:
     print(f"\n{'─'*50}")
     print(f"  Итерация {iteration_num}: -r {requests} запросов, -w {workers} потоков")
@@ -354,11 +363,17 @@ def run_iteration(
 
     t_start = time.monotonic()
     threads = []
-    for _ in range(workers):
+    for worker_idx in range(workers):
+        # Каждому воркеру — свой ccache по кругу, если задан
+        # список: разные потоки аутентифицируются разными Kerberos-пользователями
+        # вместо одного общего, что убирает гонку в AstraMode при большой
+        # конкурентности.
+        ccache = ccaches[worker_idx % len(ccaches)] if ccaches else None
         t = threading.Thread(
             target=worker_thread,
             args=(ip, port, hostname, url, level,
                   pdp, label_mutex, wq, stats),
+            kwargs={"ccache": ccache},
             daemon=True,
         )
         t.start()
@@ -427,10 +442,18 @@ def main() -> None:
                     help=f"Шаг (по умолчанию {DEFAULT_R_STEP})")
     ap.add_argument("--output-dir", default=".", metavar="DIR",
                     help="Папка для JSON-файлов результатов (по умолчанию .)")
+    ap.add_argument("--ccache-list", default="", metavar="PATH1,PATH2,...",
+                    help="Через запятую пути к файлам Kerberos ccache — воркеры "
+                         "разбираются по кругу, каждый под своим принципалом "
+                         "(по умолчанию все используют ccache процесса)")
     args = ap.parse_args()
 
     ip       = args.host
     hostname = args.name or args.host
+    ccaches: Optional[List[str]] = (
+        [c.strip() for c in args.ccache_list.split(",") if c.strip()]
+        if args.ccache_list else None
+    )
     if not args.name:
         print(
             "[warn] -n/--name не задан, используем IP как hostname.\n"
@@ -504,11 +527,15 @@ def main() -> None:
     if not _HAS_GSSAPI:
         print("[warn] Модуль gssapi не найден. pip install gssapi", file=sys.stderr)
     else:
-        probe = get_negotiate_token(hostname, verbose=True)
+        probe_ccache = ccaches[0] if ccaches else None
+        probe = get_negotiate_token(hostname, ccache=probe_ccache, verbose=True)
         if probe:
             print("[gss]  Kerberos OK.")
         else:
             print("[warn] Kerberos-токен не получен (ожидайте 401)", file=sys.stderr)
+
+    if ccaches:
+        print(f"[gss]  Ccache-файлов: {len(ccaches)} (round-robin по воркерам)")
 
     # ── Итеративный запуск ───────────────────────────────────────────────────
     results_by_iter: dict = {}
@@ -521,6 +548,7 @@ def main() -> None:
             workers=args.workers, requests=r_val,
             pdp=pdp, label_mutex=label_mutex,
             iteration_num=idx,
+            ccaches=ccaches,
         )
         results_by_iter[str(idx)] = result
 

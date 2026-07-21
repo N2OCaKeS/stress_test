@@ -391,13 +391,16 @@ class InfoSysLoadTest:
     ВМ `loader` на `web1` (Apache AstraMode + Flask protopack) по пути `/` на
     уровне МРД 1, забирает JSON со статистикой (RPS/latency), 5 шагов от 500 до
     2500 запросов (MAX_ITERATIONS в mrd_load_generator.py = 5).
+
     """
 
     LEVELS = (1,)
     DOMAIN_USER = "user_level3"
     LEVEL3_PASSWORD = "Level3TestMac2026!"
-    WORKERS = 10
+    WORKERS = 40
+    N_USERS = WORKERS
     R_START, R_END, R_STEP = 500, 2500, 500
+    CCACHE_PREFIX = "/tmp/mrd_load_ccache"
 
     def __init__(self):
         self.provider = PROVIDER
@@ -425,6 +428,23 @@ class InfoSysLoadTest:
             password=PASSWORD,
         )
 
+        users   = [f"{self.DOMAIN_USER}_{i}" for i in range(self.N_USERS)]
+        ccaches = [f"{self.CCACHE_PREFIX}_{i}" for i in range(self.N_USERS)]
+
+        create_users_cmd = f"yes {DOMAIN_ADMIN_PASSWORD} | kinit {DOMAIN_ADMIN_USER}"
+        for u in users:
+            create_users_cmd += (
+                f" && (ipa user-show {u} > /dev/null 2>&1 || "
+                f'yes {self.LEVEL3_PASSWORD}| ipa user-add {u} '
+                f'--first={u} --last={u} --macmin=0 --macmax=3 --miclevel=63 --password '
+                f'--password-expiration="2099-12-31Z")'
+            )
+
+        kinit_cmd = " && ".join(
+            f"yes {self.LEVEL3_PASSWORD} | sudo kinit -c FILE:{cc} {u}"
+            for u, cc in zip(users, ccaches)
+        )
+
         provider.execute(
             commands={
                 "loader": {
@@ -433,21 +453,15 @@ class InfoSysLoadTest:
                         "signal set": "",
                         "signal get": "",
                     },
-                    "create level3 user": {
-                        "command": (
-                            f'yes {DOMAIN_ADMIN_PASSWORD} | kinit {DOMAIN_ADMIN_USER} && '
-                            f'yes {self.LEVEL3_PASSWORD}| ipa user-add {self.DOMAIN_USER} '
-                            f'--first={self.DOMAIN_USER} --last={self.DOMAIN_USER} '
-                            f'--macmin=0 --macmax=3 --miclevel=63 --password '
-                            f'--password-expiration="2099-12-31Z"'
-                        ),
-                        "signal set": "level3 user created",
+                    "create level3 users": {
+                        "command": create_users_cmd,
+                        "signal set": "level3 users created",
                         "signal get": "",
                     },
-                    "kinit": {
-                        "command": f"yes {self.LEVEL3_PASSWORD} | sudo kinit {self.DOMAIN_USER}",
+                    "kinit users": {
+                        "command": kinit_cmd,
                         "signal set": "",
-                        "signal get": ["level3 user created"],
+                        "signal get": ["level3 users created"],
                     },
                 }
             },
@@ -456,6 +470,8 @@ class InfoSysLoadTest:
             username=USERNAME,
             password=PASSWORD,
         )
+
+        ccache_list_arg = ",".join(ccaches)
 
         for level in self.LEVELS:
             out_dir = f"/home/u/mrd_load_level{level}"
@@ -467,6 +483,7 @@ class InfoSysLoadTest:
                                 f"sudo execaps -c 0x804 -- python3 /tmp/mrd_load_generator.py "
                                 f"-H {web1_ip} -n {hostname} -u / -l {level} -w {self.WORKERS} "
                                 f"--r-start {self.R_START} --r-end {self.R_END} --r-step {self.R_STEP} "
+                                f"--ccache-list {ccache_list_arg} "
                                 f"--output-dir {out_dir}"
                             ),
                             "signal set": "",
@@ -494,3 +511,56 @@ class InfoSysLoadTest:
                 username=USERNAME,
                 password=PASSWORD,
             )
+
+        provider.execute(
+            commands={
+                "web1": {
+                    "write astra version": {
+                        "command": (
+                            "echo \"$(cat /etc/astra_version)"
+                            "($(grep -oE 'orel|smolensk|voronezh' /etc/astra_license 2>/dev/null | head -1))\" "
+                            "| sudo tee /home/u/psb_info.txt > /dev/null"
+                        ),
+                        "signal set": "psb_info av",
+                        "signal get": "",
+                    },
+                    "write kernel version": {
+                        "command": "uname -r | sudo tee -a /home/u/psb_info.txt > /dev/null",
+                        "signal set": "psb_info kernel",
+                        "signal get": ["psb_info av"],
+                    },
+                    "write apache2 version": {
+                        "command": (
+                            "dpkg-query -W -f='${Version}\\n' apache2 "
+                            "| sudo tee -a /home/u/psb_info.txt > /dev/null"
+                        ),
+                        "signal set": "psb_info apache",
+                        "signal get": ["psb_info kernel"],
+                    },
+                    "fix psb_info owner": {
+                        "command": "sudo chown u:u /home/u/psb_info.txt",
+                        "signal set": "",
+                        "signal get": ["psb_info apache"],
+                    },
+                }
+            },
+            vms_dates=VMS_DATES,
+            vms_groups=VMS_GROUPS,
+            username=USERNAME,
+            password=PASSWORD,
+        )
+
+        provider.scp(
+            scp_settings={
+                "web1": [
+                    {
+                        "mode": "pull",
+                        "path_host": "psb_info.txt",
+                        "path_vm": str(self._results_dir / "psb_info.txt"),
+                    }
+                ]
+            },
+            vms_dates=VMS_DATES,
+            username=USERNAME,
+            password=PASSWORD,
+        )

@@ -17,7 +17,7 @@ class DomainVM:
     def __init__(self):
         self.provider = PROVIDER
 
-    def settings(self):
+    def settings(self, type_test="balance"):
         """Полная настройка домена на всех ВМ"""
         provider = self.provider
         if isinstance(provider, VBox):
@@ -169,6 +169,40 @@ EOF"""
                 },
             }
 
+            if type_test == "info-sys":
+                freeipa["web1"] = {
+                    "set resov.conf": {
+                        "command": f"sudo sh -c '{resolv}'",
+                        "signal set": "",
+                        "signal get": "",
+                    },
+                    "client settings": {
+                        "command": client,
+                        "signal set": "client",
+                        "signal get": ["lbdb3", "lbdb3"],
+                    },
+                    "reboot": {
+                        "signal set": "web1",
+                        "signal get": ["client"],
+                    },
+                }
+                freeipa["loader"] = {
+                    "set resov.conf": {
+                        "command": f"sudo sh -c '{resolv}'",
+                        "signal set": "",
+                        "signal get": "",
+                    },
+                    "client settings": {
+                        "command": client,
+                        "signal set": "client",
+                        "signal get": ["web1", "web1"],
+                    },
+                    "reboot": {
+                        "signal set": "loader",
+                        "signal get": ["client"],
+                    },
+                }
+
             provider.execute(
                 commands=freeipa,
                 vms_dates=VMS_DATES,
@@ -187,18 +221,41 @@ EOF"""
                 },
             }
         }
-
         # генератор словаря создает однотипные задачи в словарь
+        user_signals = []
         for n in range(3):
             tasks["dcfreeipa"][f"create user{n}"] = {
                 "command": f'yes {DOMAIN_USER_PASSWORD}| ipa user-add user{n} --first=user{n} --last=user{n} --macmin=0 --macmax=3 --miclevel=63 --password --password-expiration="2099-12-31Z"',
-                "signal set": "",
+                "signal set": f"user{n} created",
                 "signal get": ["dcfreeipa", "Kinit"],
             }
+            user_signals.append(f"user{n} created")
             tasks["dcfreeipa"][f"register database{n + 1}"] = {
                 "command": f"ipa service-add postgres/database{n + 1}.{DOMAIN}@{DOMAIN.upper()}",
                 "signal set": "",
                 "signal get": ["dcfreeipa", "Kinit"],
+            }
+
+        if type_test == "info-sys":
+            # ФСТЭК Приказ №17/№21, меры ИАФ.3, УПД.3: политика паролей для К1/УЗ1.
+            # Только для info-sys: применяется ПОСЛЕ create userN (signal get на
+            # user_signals), потому что DOMAIN_USER_PASSWORD = "1" не пройдёт
+            # --minlength=12/--minclasses=3, если политика подействует раньше
+            # ipa user-add. Блокировка по неверным попыткам (--maxfail/--lockouttime)
+            # при этом всё равно действует для всех входов, начиная с этого момента.
+            tasks["dcfreeipa"]["fstec password policy"] = {
+                "command": (
+                    "ipa pwpolicy-mod "
+                    "--minlength=12 "       # минимальная длина пароля
+                    "--minclasses=3 "       # минимум 3 класса символов (буквы, цифры, спецсимволы)
+                    "--maxfail=3 "          # блокировка после 3 неверных попыток
+                    "--lockouttime=1800 "   # время блокировки учётной записи — 30 минут
+                    "--history=10 "         # запрет повторения последних 10 паролей
+                    "--maxlife=90 "         # срок действия пароля — 90 дней
+                    "--minlife=1"           # минимальный срок до смены — 1 день
+                ),
+                "signal set": "fstec pwpolicy",
+                "signal get": ["dcfreeipa", "Kinit"] + user_signals,
             }
 
         tasks["dcfreeipa"]["add pgpool dns"] = {
@@ -206,6 +263,21 @@ EOF"""
             "signal set": "pgpool dns",
             "signal get": ["dcfreeipa", "Kinit"],
         }
+
+        if type_test == "info-sys":
+            tasks["dcfreeipa"]["register apache"] = {
+                    "command": f"ipa service-add HTTP/web1.{DOMAIN}@{DOMAIN.upper()}",
+                    "signal set": "register apache",
+                    "signal get": ["dcfreeipa", "Kinit"],
+            }
+
+        # tasks["dcfreeipa"]["add apache dns"] = {
+        #     "command": f"ipa dnsrecord-add {DOMAIN} web1 --a-rec={APACHE_IP}",
+        #     "signal set": "apache dns",
+        #     "signal get": ["dcfreeipa", "Kinit"],
+        # }
+
+        # ipa dnsrecord-add balance.rbt web1 --a-rec=192.168.100.219
 
         provider.execute(
             commands=tasks,

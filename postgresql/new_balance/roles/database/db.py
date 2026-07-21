@@ -338,6 +338,200 @@ EOF"""
         }
 
         provider.execute(commands=wal_folder, vms_dates=VMS_DATES,
-                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)     
+                         vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
+    def setup_protopack(self):
+        """Создаёт БД protopack внутри кластера contrprimer (порт POSTGRES_PORT) и наполняет её
+        данными из ftp://10.177.103.205/upload/ — источник тот же, что в psb_db_prep_stand12_olap.sh.
+        Вызывать после settings(), только для type_test == "info-sys": setup_mac()
+        расставляет MAC-метки на этих таблицах уже после того, как эта функция отработает."""
+        provider = self.provider
+
+        scp_protopack = {
+            'database1': [
+                {
+                    'mode': 'push',
+                    'path_host': './new_balance/roles/database/template/protopack_schema.sql',
+                    'path_vm': '/tmp/protopack_schema.sql'
+                }
+            ]
+        }
+        provider.scp(scp_settings=scp_protopack, vms_dates=VMS_DATES,
+                     username=USERNAME, password=PASSWORD)
+
+        protopack = {
+            'database1': {
+                'grant chmac privilege': {
+                    # Нужно только для info-sys (МРД на protopack): setup_mac()
+                    # меняет метки существующих строк через CHMAC, а это требует привилегии
+                    # ac_capable_chmac (PARSEC_CAP_CHMAC), которая не выдаётся в settings().
+                    # Привилегия применяется с новой сессии postgres, поэтому выдаём её здесь,
+                    # до первого su - postgres в этом методе.
+                    'command': 'sudo usercaps -m PARSEC_CAP_CHMAC postgres',
+                    'signal set': 'chmac privilege granted',
+                    'signal get': ''
+                },
+                'create protopack db': {
+                    # Сигналы Libvirt.execute живут только в рамках одного вызова execute(),
+                    # поэтому 'CreateDB' из settings() (отдельный вызов) сюда не пробрасывается.
+                    # Зависимость не нужна: контракт метода — вызывать после settings(),
+                    # когда кластер contrprimer уже поднят.
+                    'command': f'sudo su - postgres -c "createdb -p {POSTGRES_PORT} --encoding=UTF8 --locale=C --template=template0 protopack"',
+                    'signal set': 'protopack db created',
+                    'signal get': ['chmac privilege granted']
+                },
+                'protopack schema': {
+                    'command': f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/protopack_schema.sql"',
+                    'signal set': 'protopack schema',
+                    'signal get': ['protopack db created']
+                },
+                'download protopack data': {
+                    'command': 'sudo wget -P /tmp ftp://10.177.103.10/postgresql/build_*',
+                    'signal set': 'protopack data downloaded',
+                    'signal get': ['protopack schema'],
+                    'nowait': True,
+                    'nowait_mode': 'continue',
+                    'nowait_timeout': 600,
+                },
+                'import build_info': {
+                    # 'protopack data downloaded' ставится через 10с после запуска wget (nowait/continue),
+                    # а не после реального завершения — поэтому здесь ждём, пока процесс wget
+                    # действительно закончит скачивание всех build_* файлов.
+                    'command': f'for i in $(seq 1 120); do pgrep -f "wget -P /tmp ftp://10.177.103.10/postgresql/build_" > /dev/null || break; sleep 5; done; \
+                        if [ -f /tmp/build_info ]; then sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/build_info"; else echo "build_info not found, skip"; fi',
+                    'signal set': 'protopack build_info imported',
+                    'signal get': ['protopack data downloaded']
+                },
+                'import build_packages_new': {
+                    'command': f'if [ -f /tmp/build_packages_new ]; then sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/build_packages_new"; else echo "build_packages_new not found, skip"; fi',
+                    'signal set': 'protopack build_packages imported',
+                    'signal get': ['protopack build_info imported']
+                },
+                'import build_sourses': {
+                    'command': f'if [ -f /tmp/build_sourses ]; then sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/build_sourses"; else echo "build_sourses not found, skip"; fi',
+                    'signal set': 'protopack imported',
+                    'signal get': ['protopack build_packages imported']
+                },
+            },
+        }
+        # timeout — верхняя граница ожидания сигнала в минутах (проверяет каждые 10с и возвращается сразу, как только сигнал появился)
+        provider.execute(commands=protopack, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS,
+                         username=USERNAME, password=PASSWORD, timeout=180)
+
+    def setup_mac(self):
+        """Настройка MAC-меток на таблицах protopack и создание сервисного пользователя protopack_web"""
+        provider = self.provider
+
+        os_account = {
+            "g_database": {
+                "create protopack_web os account": {
+                    "command": (
+                        "id protopack_web > /dev/null 2>&1 || "
+                        "(sudo useradd --no-create-home --shell /usr/sbin/nologin protopack_web && "
+                        "sudo pdpl-user -l 0:3 -i 63 -c 0:8 protopack_web)"
+                    ),
+                    "signal set": "protopack_web os account ready",
+                    "signal get": "",
+                },
+            }
+        }
+        provider.execute(commands=os_account, vms_dates=VMS_DATES, vms_groups=VMS_GROUPS,
+                         username=USERNAME, password=PASSWORD)
+
+        scp_mac_setup = {
+            # Только primary: database2/database3 — read-only реплики contrprimer,
+            # изменения (MAC-метки, CREATE USER) разъедутся на них через WAL-репликацию.
+            "database1": [
+                {
+                    "mode": "push",
+                    "path_host": "./new_balance/roles/database/template/mac_setup.sql",
+                    "path_vm": "/tmp/mac_setup.sql",
+                }
+            ]
+        }
+        provider.scp(scp_settings=scp_mac_setup, vms_dates=VMS_DATES,
+                     username=USERNAME, password=PASSWORD)
+
+        commands = {
+            "database1": {
+                "apply mac labels to protopack": {
+                    "command": f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/mac_setup.sql"',
+                    "signal set": "",
+                    "signal get": "",
+                },
+            }
+        }
+        provider.execute(
+            commands=commands,
+            vms_dates=VMS_DATES,
+            vms_groups=VMS_GROUPS,
+            username=USERNAME,
+            password=PASSWORD,
+        )
+
+    def setup_privsock(self):
+        """Даёт постгресу привилегию PARSEC_CAP_PRIV_SOCK так, чтобы она реально
+        применялась к процессу. Без этого слушающий сокет contrprimer создаётся
+        с МРД-меткой уровня 0 (метка процесса на момент bind()/listen() никогда
+        не поднимается), и ядро (parsec_sock_rcv) молча отбрасывает любое входящее
+        соединение с ненулевой меткой — это выглядит как обычный connect()-таймаут.
+
+
+        Выставляет ac_ignore_socket_maclabel = false: без этого Postgres
+        игнорирует метку входящего соединения при определении метки сессии, и
+        построчная МРД-фильтрация (CHMAC-метки в mac_setup.sql) не работает"""
+        provider = self.provider
+        postgres_config_path = f'/etc/postgresql/{VERSION_PG}/contrprimer'
+
+        commands = {
+            "g_database": {
+                "grant priv_sock to postgres": {
+                    "command": "sudo usercaps -m PARSEC_CAP_PRIV_SOCK postgres",
+                    "signal set": "privsock granted",
+                    "signal get": "",
+                },
+                "create pam service for postgres": {
+                    "command": (
+                        "sudo tee /etc/pam.d/postgresql-contrprimer > /dev/null <<'EOF'\n"
+                        "account required pam_permit.so\n"
+                        "session required pam_parsec_cap.so\n"
+                        "EOF"
+                    ),
+                    "signal set": "pam service created",
+                    "signal get": ["privsock granted"],
+                },
+                "add PAMName to unit": {
+                    "command": (
+                        f"grep -q '^PAMName=' /etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service || "
+                        f"sudo sed -i '/^Type=forking/a PAMName=postgresql-contrprimer' "
+                        f"/etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service"
+                    ),
+                    "signal set": "pamname added",
+                    "signal get": ["pam service created"],
+                },
+                "enforce socket maclabel for row security": {
+                    "command": (
+                        f"sudo sed -i 's/ac_ignore_socket_maclabel = true/ac_ignore_socket_maclabel = false/' "
+                        f"{postgres_config_path}/postgresql.conf"
+                    ),
+                    "signal set": "socket maclabel enforced",
+                    "signal get": ["pamname added"],
+                },
+                "reload and restart contrprimer": {
+                    "command": (
+                        "sudo systemctl daemon-reload && "
+                        f"sudo systemctl restart postgresql@{VERSION_PG}-contrprimer"
+                    ),
+                    "signal set": "",
+                    "signal get": ["socket maclabel enforced"],
+                },
+            }
+        }
+        provider.execute(
+            commands=commands,
+            vms_dates=VMS_DATES,
+            vms_groups=VMS_GROUPS,
+            username=USERNAME,
+            password=PASSWORD,
+        )
 

@@ -6,7 +6,7 @@ DEBUG="False"
 
 TEST_DIR="/home/u/test"
 PERF_DATA="perf.data"
-THREADS="150"
+PROCESSES="150"
 FILE_COUNT="20000"
 ARCH_LOOP="5"
 
@@ -42,17 +42,21 @@ echo -e "$INFO Наименование файла Flame Graph: $FILE_NAME"
 
 
 echo "=== Подготовка директории ==="
-sudo mkdir -p "$TEST_DIR" && \
-sudo chmod -R 777 "$TEST_DIR" && \
-echo -e "$INFO Директория готова"
+if [[ ! -d "$TEST_DIR" ]]; then
+    sudo mkdir -p "$TEST_DIR" && \
+    sudo chmod -R 777 "$TEST_DIR" && \
+    echo -e "$INFO Директория готова"
+else
+    echo -e "$INFO Директория уже существует"
+fi
 
 echo ""
 echo "=== Запуск профилирования ==="
 if [[ $DEBUG == "True" ]]; then
-    sudo perf record -g -a -o "$PERF_DATA" -- ./load2noarch "$TEST_DIR" "$THREADS" "$FILE_COUNT" "$ARCH_LOOP" && \
+    sudo perf record -g -a -o "$PERF_DATA" -- ./load2noarch "$TEST_DIR" "$PROCESSES" "$FILE_COUNT" "$ARCH_LOOP" && \
     echo -e "$INFO Профилирование завершено, данные сохранены в $PERF_DATA"
 else
-    sudo perf record -g -a -o "$PERF_DATA" -- ./load2noarch "$TEST_DIR" "$THREADS" "$FILE_COUNT" "$ARCH_LOOP" 2>&1 > /dev/null && \
+    sudo perf record -g -a -o "$PERF_DATA" -- ./load2noarch "$TEST_DIR" "$PROCESSES" "$FILE_COUNT" "$ARCH_LOOP" 2>&1 > /dev/null && \
     echo -e "$INFO Профилирование завершено, данные сохранены в $PERF_DATA"
 fi
 
@@ -78,3 +82,7 @@ if [[ -n "$DURATION_MS" ]]; then
 fi
 echo -e "$INFO Данные о сэмплах получены"
 
+echo ""
+echo "=== Параметры запуска ==="
+echo -e "$INFO Процессы - $PROCESSES"
+echo -e "$INFO Файлы - $FILE_COUNT"

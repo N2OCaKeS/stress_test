@@ -28,7 +28,23 @@ USERNAME = "u"
 PASSWORD = "1"
 
 VMS = ["database1", "database2", "database3", "lbdb1", "lbdb2", "lbdb3", "dcfreeipa"]
-# VMS = ["database1", "database2", "database3", "lbdb1", "lbdb2", "lbdb3", "dcfreeipa", "web1"]
+
+# web1/loader нужны только для type_test == "info-sys" — по умолчанию их нет ни в VMS, ни в VMS_DATES, ни в VMS_GROUPS. bl_lib.balance()
+# добавляет их (VMS, VMS_DATES.update(INFO_SYS_VMS_DATES), группы ниже) в начале
+# прогона, если type_test == "info-sys".
+INFO_SYS_ONLY_VMS = ["web1", "loader"]
+INFO_SYS_VMS_DATES = {
+    "web1": {
+        "host-port": "22",
+        "cpu": "8",
+        "ram": "8192",
+    },
+    "loader": {
+        "host-port": "22",
+        "cpu": "8",
+        "ram": "8192",
+    },
+}
 
 VMS_DATES = {
     "database1": {
@@ -66,11 +82,6 @@ VMS_DATES = {
         "cpu": "8",
         "ram": "32768",
     },
-    # "web1": {
-    #     "host-port": "22",
-    #     "cpu": "2",
-    #     "ram": "4096",
-    # },
 }
 
 VMS_GROUPS = {
@@ -82,13 +93,13 @@ VMS_GROUPS = {
         "lbdb2",
         "lbdb3",
         "dcfreeipa",
-        "web1"
     ],
     "database": ["database1", "database2", "database3"],
     "load_balancer": ["lbdb1", "lbdb2", "lbdb3"],
     "replica": ["database2", "database3"],
     "domain_client": ["database1", "database2", "database3", "lbdb1", "lbdb2", "lbdb3"],
-    # "web": ["web1"]
+    "web": [],
+    "loader": [],
 }
 
 

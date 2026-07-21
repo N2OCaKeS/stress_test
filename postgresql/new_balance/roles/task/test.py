@@ -7,6 +7,9 @@ from pathlib import Path
 from allta import SystemCommands
 
 from new_balance.roles.vm_info import (
+    DOMAIN,
+    DOMAIN_ADMIN_PASSWORD,
+    DOMAIN_ADMIN_USER,
     PASSWORD,
     PGPOOL_CONFIG_PATH,
     PGPOOL_HOSTNAME,
@@ -374,6 +377,187 @@ class Test:
                         "path_host": "psb_info.txt",
                         "path_vm": str(self._results_dir / "psb_info.txt"),
                     },
+                ]
+            },
+            vms_dates=VMS_DATES,
+            username=USERNAME,
+            password=PASSWORD,
+        )
+
+
+class InfoSysLoadTest:
+    """Нагрузочный тест info-sys: сценарий 1 из roles/task/test.md — чистая нагрузка
+    (без привязки к МРД-уровню конкретной строки). Гоняет mrd_load_generator.py с
+    ВМ `loader` на `web1` (Apache AstraMode + Flask protopack) по пути `/` на
+    уровне МРД 1, забирает JSON со статистикой (RPS/latency), 5 шагов от 500 до
+    2500 запросов (MAX_ITERATIONS в mrd_load_generator.py = 5).
+
+    """
+
+    LEVELS = (1,)
+    DOMAIN_USER = "user_level3"
+    LEVEL3_PASSWORD = "Level3TestMac2026!"
+    WORKERS = 40
+    N_USERS = WORKERS
+    R_START, R_END, R_STEP = 500, 2500, 500
+    CCACHE_PREFIX = "/tmp/mrd_load_ccache"
+
+    def __init__(self):
+        self.provider = PROVIDER
+        self._results_dir = Path("/home/u")
+
+    def run(self):
+        """Прогоняет нагрузку на каждом уровне из LEVELS, пишет JSON per-level
+        в текущую директорию хоста (mrd_load_level{N}_results.json)."""
+        provider = self.provider
+        web1_ip  = VMS_DATES["web1"]["ip_bridge"]
+        hostname = f"web1.{DOMAIN}"
+
+        provider.scp(
+            scp_settings={
+                "loader": [
+                    {
+                        "mode": "push",
+                        "path_host": "./new_balance/roles/web/testing/mrd_load_generator.py",
+                        "path_vm": "/tmp/mrd_load_generator.py",
+                    }
+                ]
+            },
+            vms_dates=VMS_DATES,
+            username=USERNAME,
+            password=PASSWORD,
+        )
+
+        users   = [f"{self.DOMAIN_USER}_{i}" for i in range(self.N_USERS)]
+        ccaches = [f"{self.CCACHE_PREFIX}_{i}" for i in range(self.N_USERS)]
+
+        create_users_cmd = f"yes {DOMAIN_ADMIN_PASSWORD} | kinit {DOMAIN_ADMIN_USER}"
+        for u in users:
+            create_users_cmd += (
+                f" && (ipa user-show {u} > /dev/null 2>&1 || "
+                f'yes {self.LEVEL3_PASSWORD}| ipa user-add {u} '
+                f'--first={u} --last={u} --macmin=0 --macmax=3 --miclevel=63 --password '
+                f'--password-expiration="2099-12-31Z")'
+            )
+
+        kinit_cmd = " && ".join(
+            f"yes {self.LEVEL3_PASSWORD} | sudo kinit -c FILE:{cc} {u}"
+            for u, cc in zip(users, ccaches)
+        )
+
+        provider.execute(
+            commands={
+                "loader": {
+                    "install load generator deps": {
+                        "command": "sudo apt-get install -y libpdp-dev",
+                        "signal set": "",
+                        "signal get": "",
+                    },
+                    "create level3 users": {
+                        "command": create_users_cmd,
+                        "signal set": "level3 users created",
+                        "signal get": "",
+                    },
+                    "kinit users": {
+                        "command": kinit_cmd,
+                        "signal set": "",
+                        "signal get": ["level3 users created"],
+                    },
+                }
+            },
+            vms_dates=VMS_DATES,
+            vms_groups=VMS_GROUPS,
+            username=USERNAME,
+            password=PASSWORD,
+        )
+
+        ccache_list_arg = ",".join(ccaches)
+
+        for level in self.LEVELS:
+            out_dir = f"/home/u/mrd_load_level{level}"
+            provider.execute(
+                commands={
+                    "loader": {
+                        f"run load level {level}": {
+                            "command": (
+                                f"sudo execaps -c 0x804 -- python3 /tmp/mrd_load_generator.py "
+                                f"-H {web1_ip} -n {hostname} -u / -l {level} -w {self.WORKERS} "
+                                f"--r-start {self.R_START} --r-end {self.R_END} --r-step {self.R_STEP} "
+                                f"--ccache-list {ccache_list_arg} "
+                                f"--output-dir {out_dir}"
+                            ),
+                            "signal set": "",
+                            "signal get": "",
+                        },
+                    }
+                },
+                vms_dates=VMS_DATES,
+                vms_groups=VMS_GROUPS,
+                username=USERNAME,
+                password=PASSWORD,
+            )
+
+            provider.scp(
+                scp_settings={
+                    "loader": [
+                        {
+                            "mode": "pull",
+                            "path_host": f"mrd_load_level{level}_results.json",
+                            "path_vm": f"{out_dir}/results.json",
+                        }
+                    ]
+                },
+                vms_dates=VMS_DATES,
+                username=USERNAME,
+                password=PASSWORD,
+            )
+
+        provider.execute(
+            commands={
+                "web1": {
+                    "write astra version": {
+                        "command": (
+                            "echo \"$(cat /etc/astra_version)"
+                            "($(grep -oE 'orel|smolensk|voronezh' /etc/astra_license 2>/dev/null | head -1))\" "
+                            "| sudo tee /home/u/psb_info.txt > /dev/null"
+                        ),
+                        "signal set": "psb_info av",
+                        "signal get": "",
+                    },
+                    "write kernel version": {
+                        "command": "uname -r | sudo tee -a /home/u/psb_info.txt > /dev/null",
+                        "signal set": "psb_info kernel",
+                        "signal get": ["psb_info av"],
+                    },
+                    "write apache2 version": {
+                        "command": (
+                            "dpkg-query -W -f='${Version}\\n' apache2 "
+                            "| sudo tee -a /home/u/psb_info.txt > /dev/null"
+                        ),
+                        "signal set": "psb_info apache",
+                        "signal get": ["psb_info kernel"],
+                    },
+                    "fix psb_info owner": {
+                        "command": "sudo chown u:u /home/u/psb_info.txt",
+                        "signal set": "",
+                        "signal get": ["psb_info apache"],
+                    },
+                }
+            },
+            vms_dates=VMS_DATES,
+            vms_groups=VMS_GROUPS,
+            username=USERNAME,
+            password=PASSWORD,
+        )
+
+        provider.scp(
+            scp_settings={
+                "web1": [
+                    {
+                        "mode": "pull",
+                        "path_host": "psb_info.txt",
+                        "path_vm": str(self._results_dir / "psb_info.txt"),
+                    }
                 ]
             },
             vms_dates=VMS_DATES,

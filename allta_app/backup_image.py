@@ -273,7 +273,9 @@ port = 22
 ipmi = BootOrder(stand=args.STAND)
 clonezilla_command = cz_comm()[args.STAND][args.RELEASE]
 balance_host_release = '1.8.1.6'
-if args.PSQL_BALANCE:
+if args.PSQL_BALANCE == "info-sys":
+    clonezilla_command_balance = cz_comm()['stand14'][args.RELEASE]
+elif args.PSQL_BALANCE == "balance":
     #clonezilla_command_balance = cz_comm()['stand4'][balance_host_release]
     clonezilla_command_balance = cz_comm()['stand4'][args.RELEASE]
 branch = args.BRANCH

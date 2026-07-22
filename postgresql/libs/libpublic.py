@@ -5,6 +5,7 @@ from collections import defaultdict
 from libs.libreport import ReportToConfluence
 from libs.libpsb import perf, build_mrd_dataframe, build_info_sys_dataframe
 from libs.libtable import Report
+from libs.libmathmodel import get_total_rating_info_sys
 from psb_conf import DEFAULT_SCALE_FACTOR, DEFAULT_TRANSACTIONS, DEFAULT_THREADS, \
     CLIENTS, CLIENTS_STEP, LIMITE_CLIENTS, REPORT_PATH, TEMPLATE_PATH, INFO_FILENAME, \
     GRAPH_DESCRIPTIONS, SCRIPT_DIR
@@ -227,12 +228,17 @@ class Public:
         elif self.info_sys:
             with open(f'{SCRIPT_DIR}/mrd_load_level1_results.json', 'r') as file:
                 report_data = json.load(file)
+            
+            rating_info_sys = get_total_rating_info_sys(report_data)["total_rating"]
+            with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
+                rating_temp = template.read()
+                rating = rating_temp.format(r=str(round(rating_info_sys)))
 
             df = build_info_sys_dataframe(report_data)
             info_sys_table = df.to_html(index=False)
 
-            head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-            html_page = '\n'.join([header_table, head_row, info_sys_table])
+            # head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
+            html_page = '\n'.join([header_table, rating, info_sys_table])
         
         # # TODO: назвать тест
         # elif self.c_np.startswith('...'):

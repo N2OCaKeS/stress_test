@@ -77,10 +77,16 @@ fi
 sudo apt-get install -y python3-pip
 if (grep -q 1.8 /etc/astra_version); then
     python3 -m pip install --upgrade pip --break-system-packages
-    python3 -m pip install psycopg2-binary --break-system-packages
+    # web1 получает psycopg2 только из подписанного apt-пакета (python3-psycopg2,
+    # неподписанный pip psycopg2-binary ломается под astra-digsig-control ("failed to map segment from shared object").
+    if [ "$1" != "web1" ]; then
+        python3 -m pip install psycopg2-binary --break-system-packages
+    fi
 else
     python3 -m pip install --upgrade pip
-    python3 -m pip install psycopg2-binary
+    if [ "$1" != "web1" ]; then
+        python3 -m pip install psycopg2-binary
+    fi
 fi
 dpkg -s ntpsec &>/dev/null || sudo apt-get install ntpsec -y
 

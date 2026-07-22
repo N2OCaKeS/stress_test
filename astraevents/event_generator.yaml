@@ -1,0 +1,5 @@
+transport: astraeventsd
+delay: 1000
+
+events:
+- custom-event

@@ -31,7 +31,13 @@ class PreConfigure:
                 "sshpass",
             ],
             "dcfreeipa": ["astra-freeipa-server"],
-            "g_web": ["apache2", "libapache2-mod-auth-gssapi"],  # mod-auth-gssapi для Kerberos
+            "g_web": [
+                "apache2",
+                "libapache2-mod-auth-gssapi",  # для Kerberos
+                "python3-psycopg2",  # из подписанного репозитория Astra, а не pip —
+                                     # под digsig неподписанный psycopg2-binary (pip)
+                                     # падает "failed to map segment from shared object"
+            ],
         }
         self.provider.apt.install(
             apt_structure=apt_install,
@@ -64,54 +70,56 @@ class PreConfigure:
         )
 
     def szi_configure(self):
-        """СЗИ по ФСТЭК К1"""
-
-        # secdel, MAC, MIC — на всех ВМ включая load_tester
+        """СЗИ по ФСТЭК К1
+        """
         commands = {
-            "g_all": {
+            "web1": {
                 "secdel enable": {
                     "command": "sudo astra-secdel-control enable -s secdelrnd=3",
-                    "signal set": "",
+                    "signal set": "szi secdel enable",
                     "signal get": "",
                 },
-                "mac enable": {
-                    "command": "sudo astra-mac-control enable",
-                    "signal set": "",
-                    "signal get": "",
-                },
-                "mic enable": {
-                    "command": "sudo astra-mic-control enable",
-                    "signal set": "",
-                    "signal get": "",
-                },
-                # "swapwiper enable": {       # затирание swap при завершении ОС
-                #     "command": "sudo astra-swapwiper-control enable",
-                #     "signal set": "",
-                #     "signal get": "",
+                # "mac enable": {
+                #     "command": "sudo astra-mac-control enable", # Уже включено
+                #     "signal set": "szi mac enable",
+                #     "signal get": ["szi secdel enable"],
                 # },
-                # "sysrq lock": {
-                #     "command": "sudo astra-sysrq-lock enable",
-                #     "signal set": "",
-                #     "signal get": "",
+                # "mic enable": {
+                #     "command": "sudo astra-mic-control enable", # Уже включено
+                #     "signal set": "szi mic enable",
+                #     "signal get": ["szi mac enable"],
                 # },
-            },
-        }
-
-        # ЗПС и ptrace — без load_tester (там запускается неподписанный нагрузочный код)
-        for group in ["g_database", "g_load_balancer", "g_web", "dcfreeipa"]:
-            commands[group] = {
                 "digsig enable": {
                     "command": "sudo astra-digsig-control enable",
-                    "signal set": "",
-                    "signal get": "",
+                    "signal set": "szi digsig enable",
+                    "signal get": ["szi secdel enable"],
                 },
                 "ptrace lock": {
                     "command": "sudo astra-ptrace-lock enable",
                     "signal set": "",
+                    "signal get": ["szi digsig enable"],
+                },
+            },
+        }
+
+        self.provider.execute(
+            commands=commands,
+            vms_dates=VMS_DATES,
+            vms_groups=VMS_GROUPS,
+            username=USERNAME,
+            password=PASSWORD,
+        )
+
+    def reboot_after_szi(self):
+        """Явная перезагрузка web1 после szi_configure()."""
+        commands = {
+            "web1": {
+                "reboot": {
+                    "signal set": "",
                     "signal get": "",
                 },
-            }
-
+            },
+        }
         self.provider.execute(
             commands=commands,
             vms_dates=VMS_DATES,
@@ -174,6 +182,10 @@ class PreConfigure:
             )
         self.set_hosts()
         self.apt_install()
+
+        if type_test == "info-sys":
+            self.szi_configure()
+            self.reboot_after_szi()
 
 
 # virsh -c qemu:///system snapshot-delete --domain database1 --snapshotname build

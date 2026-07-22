@@ -228,28 +228,25 @@ class Public:
         elif self.info_sys:
             with open(f'{SCRIPT_DIR}/mrd_load_level1_results.json', 'r') as file:
                 report_data = json.load(file)
-            
+
             rating_info_sys = get_total_rating_info_sys(report_data)["total_rating"]
             with open('{}/rating_template.html'.format(TEMPLATE_PATH), 'r') as template:
                 rating_temp = template.read()
                 rating = rating_temp.format(r=str(round(rating_info_sys)))
 
+            szi_head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>СЗИ:</b></h2></p>'
+            szi_df = pd.DataFrame([{
+                'Хост': 'web1',
+                'Роль': 'веб сервер Apache2',
+                'Дополнительно включенные СЗИ': 'astra-secdel-control, astra-digsig-control, astra-ptrace-lock',
+            }])
+            szi_table = szi_df.to_html(index=False)
+
             df = build_info_sys_dataframe(report_data)
             info_sys_table = df.to_html(index=False)
 
-            # head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-            html_page = '\n'.join([header_table, rating, info_sys_table])
-        
-        # # TODO: назвать тест
-        # elif self.c_np.startswith('...'):
-        #     head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-        #     with open(f'{REPORT_PATH}/results.json', 'r') as file:
-        #         report_data = json.load(file)
-
-        #     df = build_mrd_dataframe(report_data)
-        #     result_table = df.to_html(index=False)
-
-        #     html_page = '\n'.join([header_table, head_row, result_table])
+            head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
+            html_page = '\n'.join([header_table, rating, szi_head_row, szi_table, head_row, info_sys_table])
         
         elif self.c_np.startswith('PSQL OLAP-hq'):
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'

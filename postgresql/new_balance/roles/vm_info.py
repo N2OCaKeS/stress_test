@@ -36,8 +36,8 @@ INFO_SYS_ONLY_VMS = ["web1", "loader"]
 INFO_SYS_VMS_DATES = {
     "web1": {
         "host-port": "22",
-        "cpu": "8",
-        "ram": "8192",
+        "cpu": "16",
+        "ram": "16384",
     },
     "loader": {
         "host-port": "22",

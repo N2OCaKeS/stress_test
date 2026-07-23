@@ -337,3 +337,21 @@ class PostgresqlInformation:
                 result[key] = value
 
         return result
+
+if __name__ == "__main__":
+    sys_info = system.get_system_info()
+    system.print_info_frame("ИНФОРМАЦИЯ О СИСТЕМЕ", [
+        ("ОС:", f"{sys_info['os_name']} {sys_info['os_version']}"),
+        ("Ядро:", sys_info['kernel_version']),
+        ("Процессор:", sys_info['cpu_model']),
+        ("Ядер/потоков:", f"{sys_info['cpu_cores']}/{sys_info['cpu_threads']}"),
+        ("ОЗУ:", sys_info['ram_total']),
+        ("Хост:", sys_info['hostname']),
+    ])
+    print()
+
+    pg_rows = [("Версия:", PostgresqlInformation.get_postgresql_version() or "—")]
+    pg_config = PostgresqlInformation.get_postgresql_config()
+    pg_rows += [(f"{key}:", value or "—") for key, value in pg_config.items()]
+    system.print_info_frame("ИНФОРМАЦИЯ О POSTGRESQL", pg_rows)
+    print()

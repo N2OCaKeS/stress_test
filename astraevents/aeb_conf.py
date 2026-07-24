@@ -27,7 +27,7 @@ VM_INFONAME = f'{VM_OS_INFO_PATH}/av.txt'
 VM_KERNEL = f'{VM_OS_INFO_PATH}/kernel.txt'
 
 
-# Test Params
+VM_RESULTS_PATH = f"{BASE_PATH}/results"
 
 VM_COUNT = 2
 VCPU_MIN = 2

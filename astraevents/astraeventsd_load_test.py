@@ -452,7 +452,7 @@ def run_suite(args) -> list[VolumeResult]:
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    out_path = out_dir / f"{args.label}_{int(time.time())}.json"
+    out_path = out_dir / "report.json"
     payload = {
         "label": args.label,
         "generated_at": time.time(),

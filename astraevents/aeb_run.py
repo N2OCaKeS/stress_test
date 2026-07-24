@@ -104,7 +104,8 @@ uzs.upload_test_cycle_status(zefir_status='progress')
 #Start test
 if args.TESTNAME == 'astraevents':
     time_start_script = datetime.now()
-    
+
+    # TODO поправить аргументы
     astra_events_load_test = AstraEventsLoadTest(rc_name=args.TCV,
                                                  testdir=BASE_PATH,
                                                  vm_count=VM_COUNT,

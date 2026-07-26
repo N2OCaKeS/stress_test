@@ -237,10 +237,22 @@ EOF"""
             }
 
         if type_test == "info-sys":
+            tasks["dcfreeipa"]["create bulk users"] = {
+                "command": (
+                    "for i in $(seq 0 999); do "
+                    'ipa user-show "usertest$i" > /dev/null 2>&1 || '
+                    f'yes {DOMAIN_USER_PASSWORD} | ipa user-add "usertest$i" --first="usertest$i" --last="usertest$i" '
+                    '--macmin=0 --macmax=3 --miclevel=63 --password --password-expiration="2099-12-31Z"; '
+                    "done"
+                ),
+                "signal set": "bulk users created",
+                "signal get": ["dcfreeipa", "Kinit"],
+            }
+
             # ФСТЭК Приказ №17/№21, меры ИАФ.3, УПД.3: политика паролей для К1/УЗ1.
             # Только для info-sys: применяется ПОСЛЕ create userN (signal get на
-            # user_signals), потому что DOMAIN_USER_PASSWORD = "1" не пройдёт
-            # --minlength=12/--minclasses=3, если политика подействует раньше
+            # user_signals + bulk users created), потому что DOMAIN_USER_PASSWORD = "1"
+            # не пройдёт --minlength=12/--minclasses=3, если политика подействует раньше
             # ipa user-add. Блокировка по неверным попыткам (--maxfail/--lockouttime)
             # при этом всё равно действует для всех входов, начиная с этого момента.
             tasks["dcfreeipa"]["fstec password policy"] = {
@@ -255,7 +267,7 @@ EOF"""
                     "--minlife=1"           # минимальный срок до смены — 1 день
                 ),
                 "signal set": "fstec pwpolicy",
-                "signal get": ["dcfreeipa", "Kinit"] + user_signals,
+                "signal get": ["dcfreeipa", "Kinit"] + user_signals + ["bulk users created"],
             }
 
         tasks["dcfreeipa"]["add pgpool dns"] = {
@@ -285,4 +297,6 @@ EOF"""
             vms_groups=VMS_GROUPS,
             username=USERNAME,
             password=PASSWORD,
+            # Для info-sys увеличен до 2 часов: "fstec password policy" ждёт сигнал "bulk users created" от создания 1000 пользователей, что может занять больше дефолтных 15 минут.
+            timeout=120 if type_test == "info-sys" else 15,
         )

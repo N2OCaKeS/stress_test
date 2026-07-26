@@ -20,7 +20,7 @@ RPS_WEIGHT = 0.5
 LATENCY_WEIGHT = 0.3
 FAIL_RATE_WEIGHT = 0.2
 
-DEFAULT_POWER = 0.9
+DEFAULT_POWER = 0.786622
 
 
 def get_total_rating_info_sys(results: dict, power: float = DEFAULT_POWER) -> dict:

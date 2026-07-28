@@ -116,7 +116,7 @@ _DEV_WORKER_BOT_TOKEN = dbos_bot_dev_worker_local_token_do_not_use_in_prod
         k8s-rotation-disable k8s-rotation-enable \
         k8s-backup-secret-full k8s-tls-renew \
         k8s-cronjob-list k8s-cronjob-history k8s-cronjob-suspend k8s-cronjob-resume \
-        prod-deploy deploy \
+        prod-deploy deploy prepare-docker prepare-k3s \
         prod-up prod-down prod-down-v prod-logs prod-ps prod-build
 
 ##@ Dev: стек в Docker (без devcontainer)
@@ -506,6 +506,24 @@ k8s-secrets: ## Сгенерировать k8s/20-secrets.yaml + 50-ingress.yaml
 	@echo "  Дальше: проверь k8s/20-secrets.yaml и k8s/50-ingress.yaml,"
 	@echo "  затем 'make k8s-deploy' применит их через kustomize."
 
+prepare-k3s: ## [k3s] Сгенерировать секреты+ingress (DOMAIN=/сохранённый INGRESS_HOST) и напечатать, что править руками.
+	@echo "→ [1/2] secrets + ingress (gen_secrets.sh)..."
+	@bash scripts/k8s/gen_secrets.sh $(if $(DOMAIN),$(DOMAIN),)
+	@echo "→ [2/2] Готово. Проверь и при необходимости поправь руками:"
+	@echo "═══════════════════════════════════════════════════════════════════"
+	@echo "  Домен деплоя:  k8s/.env.k8s → INGRESS_HOST=<домен-или-IP>"
+	@echo "                 (сменил домен → перезапусти: make prepare-k3s DOMAIN=<new>)"
+	@echo "  Секреты:       k8s/20-secrets.yaml (VM_CONSOLE_PROXY_WS_BASE=wss://<host> проставлен авто)"
+	@echo "  Ingress:       k8s/50-ingress.yaml — только websecure (443); порт 80 (redirect + CA-http) убран."
+	@echo ""
+	@echo "  Порт 80 у traefik в k3s открыт на уровне entryPoint. Чтобы закрыть наружу полностью:"
+	@echo "    отредактируй HelmChartConfig traefik — убери ports.web (:80) или ограничь loopback."
+	@echo "    Файл: /var/lib/rancher/k3s/server/manifests/traefik-config.yaml (см. obsidian/infra/Kubernetes.md)."
+	@echo "  CA (до импорта): curl -k https://<INGRESS_HOST>/emm-ca.crt -o emm-ca.crt   (порт 80 закрыт)"
+	@echo ""
+	@echo "  Затем: make k8s-deploy"
+	@echo "═══════════════════════════════════════════════════════════════════"
+
 k8s-deploy: ## kubectl apply -k k8s/ + миграции (Job'ы) + ожидание готовности всех deployments
 	bash scripts/k8s/deploy.sh
 
@@ -788,6 +806,27 @@ deploy: prod-deploy ## Алиас prod-deploy: одна команда подн�
 
 ##@ Prod-стек в docker-compose (без k8s)
 
+prepare-docker: ## [docker] Подготовить .env.prod + TLS-сертификаты и напечатать, что править руками. PROD_HOST=/PROD_IP= — домен/IP.
+	@echo "→ [1/3] .env.prod (секреты, идемпотентно — существующий не трогаю)..."
+	@DBOS_PUBLIC_HOST="$(PROD_HOST)" PROD_HOST="$(PROD_HOST)" PROD_IP="$(PROD_IP)" bash scripts/compose/gen_prod_env.sh
+	@# Дозаливаем URL-ключи в уже существующий .env.prod, если их там ещё нет.
+	@grep -q '^DBOS_PUBLIC_HOST=' $(PROD_ENV) 2>/dev/null || printf 'DBOS_PUBLIC_HOST=%s\n' "$(if $(PROD_HOST),$(PROD_HOST),$(PROD_IP))" >> $(PROD_ENV)
+	@grep -q '^DBOS_HTTPS_PORT=' $(PROD_ENV) 2>/dev/null || printf 'DBOS_HTTPS_PORT=443\n' >> $(PROD_ENV)
+	@echo "→ [2/3] TLS-сертификаты под публичный хост из .env.prod..."
+	@HOST=$$(grep -E '^DBOS_PUBLIC_HOST=' $(PROD_ENV) | cut -d= -f2-); \
+	 PROD_HOST="$$HOST" PROD_IP="$(PROD_IP)" bash scripts/compose/gen_certs.sh
+	@echo "→ [3/3] Готово. Проверь и при необходимости поправь руками:"
+	@echo "═══════════════════════════════════════════════════════════════════"
+	@echo "  Файл $(PROD_ENV):"
+	@echo "    DBOS_PUBLIC_HOST=<домен-или-IP>   # адрес снаружи; идёт в SAN TLS-сертификата"
+	@echo "    DBOS_HTTPS_PORT=443               # внешний порт reverse-proxy (внутри всегда 443)"
+	@echo "    INITIAL_ADMIN_PASSWORD=<...>      # пароль первого админа (сменить при входе)"
+	@echo "  Сменил DBOS_PUBLIC_HOST → перевыпусти cert: make prepare-docker PROD_HOST=<host>"
+	@echo "  Поднять стек:  make prod-up"
+	@echo "  Доступ:        https://<DBOS_PUBLIC_HOST>:<DBOS_HTTPS_PORT>/   (порт 80 наружу закрыт)"
+	@echo "  CA (до импорта): curl -k https://<host>:<port>/emm-ca.crt -o emm-ca.crt"
+	@echo "═══════════════════════════════════════════════════════════════════"
+
 prod-up: ## Поднять prod-подобный стек: gen секретов+сертов → build → up → миграции → показать доступ. PROD_HOST=/PROD_IP= для SAN сертификата.
 	@echo "→ [1/5] Секреты (.env.prod)..."
 	@bash scripts/compose/gen_prod_env.sh
@@ -810,7 +849,7 @@ prod-up: ## Поднять prod-подобный стек: gen секретов+
 	@printf "  Пароль:   %s   (СМЕНИТЬ при первом входе)\n" "$$(grep -E '^INITIAL_ADMIN_PASSWORD=' $(PROD_ENV) | cut -d= -f2-)"
 	@echo ""
 	@echo "  TLS — самоподписанный внутренний CA. Импортируй в доверенные корневые:"
-	@printf "    curl -k https://%s/emm-ca.crt -o emm-ca.crt   (или http://.../emm-ca.crt без TLS)\n" "$(if $(PROD_HOST),$(PROD_HOST),$(if $(PROD_IP),$(PROD_IP),localhost))"
+	@printf "    curl -k https://%s/emm-ca.crt -o emm-ca.crt   (порт 80 закрыт, CA только по HTTPS)\n" "$(if $(PROD_HOST),$(PROD_HOST),$(if $(PROD_IP),$(PROD_IP),localhost))"
 	@echo "  Пока CA не импортирован — обращайся с curl -k / verify=False."
 	@echo "═══════════════════════════════════════════════════════════════════"
 

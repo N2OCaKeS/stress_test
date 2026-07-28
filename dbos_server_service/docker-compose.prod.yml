@@ -486,9 +486,10 @@ services:
   reverse_proxy:
     image: nginx:1.27-alpine
     init: true
+    # Наружу публикуем только HTTPS-порт из env (по умолчанию 443). Порт 80
+    # снаружи не открыт: внутри listen 80 остаётся лишь для healthcheck.
     ports:
-      - "443:443"
-      - "80:80"
+      - "${DBOS_HTTPS_PORT:-443}:443"
     volumes:
       - ./docker/compose-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certs:/etc/nginx/certs:ro

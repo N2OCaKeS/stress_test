@@ -115,6 +115,13 @@ cat <<EOF
 # СГЕНЕРИРОВАНО $(date -u +%Y-%m-%dT%H:%M:%SZ) скриптом scripts/compose/gen_prod_env.sh
 # DO NOT COMMIT. Файл в .gitignore. Персистится вместе с volume'ами стека.
 
+# ── Публичный адрес и порт (правь под свой домен/IP) ──────────────────────────
+# DBOS_PUBLIC_HOST — hostname или IP, по которому стек доступен снаружи. Идёт в
+#   SAN TLS-сертификата (make prepare-docker) и в ссылку доступа. Пусто = localhost.
+# DBOS_HTTPS_PORT — внешний порт reverse-proxy (внутри контейнера всегда 443).
+DBOS_PUBLIC_HOST=${DBOS_PUBLIC_HOST:-${PROD_HOST:-${PROD_IP:-}}}
+DBOS_HTTPS_PORT=${DBOS_HTTPS_PORT:-443}
+
 # ── Postgres (per-service) ────────────────────────────────────────────────────
 AUTH_DB_USER=auth_user
 AUTH_DB_PASSWORD=${AUTH_DB_PASSWORD}

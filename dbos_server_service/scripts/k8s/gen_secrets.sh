@@ -623,6 +623,10 @@ cat <<EOF
 
   # Redis (taskiq broker + rate-limit storage)
   REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  # VM-консоль: ws(s)-база console-прокси. Следует за доменом деплоя
+  # (INGRESS_HOST) — server_service отдаёт её в ws_url ответа POST /vms/{id}/console.
+  VM_CONSOLE_PROXY_WS_BASE: "wss://${DOMAIN}"
 EOF
 } > "$SECRETS_OUT"
 

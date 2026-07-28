@@ -158,8 +158,11 @@ spec:
             - name: VM_CONSOLE_TOKEN_SECRET
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: VM_CONSOLE_TOKEN_SECRET }
+            # wss://<INGRESS_HOST> — наполняет gen_secrets.sh в dbos-secrets
+            # (следует за доменом деплоя, не хардкодим).
             - name: VM_CONSOLE_PROXY_WS_BASE
-              value: "wss://emm.devos.astralinux.ru"
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: VM_CONSOLE_PROXY_WS_BASE }
           # Миграции вынесены в Job server-migrate (см. 45-migrations.yaml).
           command: ["uvicorn"]
           args:

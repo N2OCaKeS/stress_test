@@ -81,61 +81,8 @@ spec:
                 port:
                   number: 8080
 
----
-# Отдельный Ingress на HTTP (80) — редиректит на HTTPS
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: dbos-ingress-redirect
-  namespace: dbos
-  annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
-    # Middleware для редиректа HTTP → HTTPS
-    traefik.ingress.kubernetes.io/router.middlewares: dbos-https-redirect@kubernetescrd
-spec:
-  ingressClassName: traefik
-  rules:
-    - host: __INGRESS_HOST__
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: auth-service
-                port:
-                  number: 8000
-
----
-# Middleware для редиректа HTTP→HTTPS (Traefik CRD)
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: https-redirect
-  namespace: dbos
-spec:
-  redirectScheme:
-    scheme: https
-    permanent: true
-
----
-# Раздача CA по ПЛЕЙН-HTTP без редиректа — для bootstrap доверия в
-# автоматизациях: скрипт качает `http://<host>/emm-ca.crt` и передаёт файл в
-# verify (например requests verify=...), после чего ходит по HTTPS. Exact-Path
-# + высокий priority, чтобы этот роут матчился раньше catch-all redirect'а на
-# entryPoint web. Без host — работает и по IP, и по DNS.
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
-metadata:
-  name: dbos-ca-http
-  namespace: dbos
-spec:
-  entryPoints:
-    - web
-  routes:
-    - match: Path(`/emm-ca.crt`)
-      kind: Rule
-      priority: 1000
-      services:
-        - name: web-ui
-          port: 8080
+# Порт 80 наружу не открываем: HTTP→HTTPS-редирект и раздача CA по плейн-HTTP
+# удалены намеренно. Доступ только по HTTPS (websecure). CA качается по HTTPS
+# (curl -k один раз) или отдаётся оператору файлом вне сети — см. make prepare-k3s.
+# Полностью закрыть порт 80 на уровне traefik: убрать entryPoint web (см.
+# инструкцию в make prepare-k3s).

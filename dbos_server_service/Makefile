@@ -116,7 +116,7 @@ _DEV_WORKER_BOT_TOKEN = dbos_bot_dev_worker_local_token_do_not_use_in_prod
         k8s-rotation-disable k8s-rotation-enable \
         k8s-backup-secret-full k8s-tls-renew \
         k8s-cronjob-list k8s-cronjob-history k8s-cronjob-suspend k8s-cronjob-resume \
-        prod-deploy deploy prepare-docker prepare-k3s \
+        prod-deploy deploy prepare-docker prepare-k3s update k8s-update \
         prod-up prod-down prod-down-v prod-logs prod-ps prod-build
 
 ##@ Dev: стек в Docker (без devcontainer)
@@ -627,6 +627,15 @@ k8s-zero: ## [VM, sudo] Полный deploy с нуля. Без аргумент
 k8s-rollout: ## Пересобрать образы и сделать rolling update. SVC=auth|logging|server|worker|secret|web|all (default: all)
 	bash scripts/k8s/rollout.sh $(SVC)
 
+k8s-update: ## [k3s] Обновить стек из git: git pull → пересборка+импорт образов → rolling update → миграции. Нужен git-checkout на хосте.
+	@echo "→ [1/3] git pull (--ff-only)..."
+	@git pull --ff-only
+	@echo "→ [2/3] Пересборка образов + rolling update (SVC=$(if $(SVC),$(SVC),all))..."
+	@bash scripts/k8s/rollout.sh $(SVC)
+	@echo "→ [3/3] Миграции (alembic upgrade head в pod'ах)..."
+	@$(MAKE) k8s-migrate
+	@echo "✓ k8s-update завершён."
+
 k8s-rollback: ## Откатить deployment. SVC=auth|logging, REV=<revision> (по умолчанию предыдущая)
 	bash scripts/k8s/rollback.sh $(SVC) $(REV)
 
@@ -852,6 +861,15 @@ prod-up: ## Поднять prod-подобный стек: gen секретов+
 	@printf "    curl -k https://%s/emm-ca.crt -o emm-ca.crt   (порт 80 закрыт, CA только по HTTPS)\n" "$(if $(PROD_HOST),$(PROD_HOST),$(if $(PROD_IP),$(PROD_IP),localhost))"
 	@echo "  Пока CA не импортирован — обращайся с curl -k / verify=False."
 	@echo "═══════════════════════════════════════════════════════════════════"
+
+update: ## [docker] Обновить стек из git: git pull → пересборка → рестарт (миграции — one-shot на up). Нужен git-checkout на хосте.
+	@echo "→ [1/3] git pull (--ff-only)..."
+	@git pull --ff-only
+	@echo "→ [2/3] Пересборка образов..."
+	@$(PROD) build
+	@echo "→ [3/3] Рестарт стека + миграции (up -d --wait)..."
+	@$(PROD) up -d --wait
+	@echo "✓ update завершён."
 
 prod-build: ## Пересобрать образы prod-стека (без подъёма)
 	@$(PROD) build

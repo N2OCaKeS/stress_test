@@ -387,7 +387,7 @@ describe("vms api client", () => {
     // Абсолютный host из ws_url (может не резолвиться при заходе по IP) отброшен.
     expect(
       vmConsoleViewerUrl({
-        ws_url: "wss://emm.devos.astralinux.ru/vm-console/vnc/vm-101",
+        ws_url: "wss://emm.example.com/vm-console/vnc/vm-101",
         token: "sig abc",
       }),
     ).toBe(`${origin}/vm-console/vnc/vm-101?token=sig%20abc`);

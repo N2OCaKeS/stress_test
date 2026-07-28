@@ -65,17 +65,17 @@ export const GROUPS: MockGroup[] = [
     cross_dept: false,
   },
   {
-    id: "g-dtkk-qa",
-    name: "dtkk-qa",
-    description: "QA-инженеры ДТКК — доступ к тестовым стендам",
-    owner_dept: "dtkk",
+    id: "g-dev-qa",
+    name: "dev-qa",
+    description: "QA-инженеры Разработка — доступ к тестовым стендам",
+    owner_dept: "dev",
     cross_dept: false,
   },
   {
-    id: "g-dtkk-leads",
-    name: "dtkk-leads",
-    description: "Тимлиды ДТКК — управление пользователями депа",
-    owner_dept: "dtkk",
+    id: "g-dev-leads",
+    name: "dev-leads",
+    description: "Тимлиды Разработка — управление пользователями депа",
+    owner_dept: "dev",
     cross_dept: false,
   },
   {
@@ -284,31 +284,31 @@ export const USER_ASSIGNMENTS: Record<string, UserAssignments> = {
     ],
   },
   "u-igor": {
-    groups: ["g-dtkk-qa", "g-cross-secret-readers"],
+    groups: ["g-dev-qa", "g-cross-secret-readers"],
     roles: [
       {
         role_id: "r-svc-secret-rotator",
         scope_kind: "dept",
-        scope_ref: "dtkk",
+        scope_ref: "dev",
         granted_by: "u-bob",
         granted_at: "2026-03-22T16:30:00Z",
       },
     ],
   },
-  "u-dtkk-1": {
-    groups: ["g-dtkk-leads"],
+  "u-dev-1": {
+    groups: ["g-dev-leads"],
     roles: [
       {
         role_id: "r-dep-admin",
         scope_kind: "dept",
-        scope_ref: "dtkk",
+        scope_ref: "dev",
         granted_by: "u-bob",
         granted_at: "2025-12-15T10:00:00Z",
       },
     ],
   },
-  "u-dtkk-2": {
-    groups: ["g-dtkk-qa"],
+  "u-dev-2": {
+    groups: ["g-dev-qa"],
     roles: [],
   },
   "u-pavel": {
@@ -371,20 +371,20 @@ export const GROUP_ASSIGNMENTS: Record<string, RoleAssignment[]> = {
       granted_at: "2026-01-10T09:00:00Z",
     },
   ],
-  "g-dtkk-qa": [
+  "g-dev-qa": [
     {
       role_id: "r-svc-server-viewer",
       scope_kind: "dept",
-      scope_ref: "dtkk",
-      granted_by: "u-dtkk-1",
+      scope_ref: "dev",
+      granted_by: "u-dev-1",
       granted_at: "2026-01-12T10:00:00Z",
     },
   ],
-  "g-dtkk-leads": [
+  "g-dev-leads": [
     {
       role_id: "r-svc-worker-operator",
       scope_kind: "dept",
-      scope_ref: "dtkk",
+      scope_ref: "dev",
       granted_by: "u-bob",
       granted_at: "2025-12-15T10:00:00Z",
     },
@@ -438,8 +438,8 @@ export const GROUP_ASSIGNMENTS: Record<string, RoleAssignment[]> = {
 export const GROUP_MEMBERS: Record<string, string[]> = {
   "g-core-ops": ["u-alice", "u-core-1", "u-core-3"],
   "g-core-reviewers": ["u-core-2"],
-  "g-dtkk-qa": ["u-igor", "u-dtkk-2"],
-  "g-dtkk-leads": ["u-dtkk-1"],
+  "g-dev-qa": ["u-igor", "u-dev-2"],
+  "g-dev-leads": ["u-dev-1"],
   "g-infra-sre": ["u-pavel", "u-infra-1"],
   "g-cross-audit-readers": ["u-carol", "u-dave"],
   "g-cross-secret-readers": ["u-core-1", "u-igor"],
@@ -531,23 +531,23 @@ export const BOTS: MockBot[] = [
     initial_spec: ["read:server:dept"],
   },
   {
-    id: "b-jira-dtkk",
-    name: "bot-jira-dtkk",
-    owner_dept: "dtkk",
+    id: "b-jira-dev",
+    name: "bot-jira-dev",
+    owner_dept: "dev",
     token_status: "active",
     last_used: "2026-06-10T09:10:00Z",
     created_at: "2026-02-01T10:00:00Z",
-    created_by: "u-dtkk-1",
+    created_by: "u-dev-1",
     initial_spec: ["read:audit:*"],
   },
   {
-    id: "b-build-dtkk",
-    name: "bot-build-dtkk",
-    owner_dept: "dtkk",
+    id: "b-build-dev",
+    name: "bot-build-dev",
+    owner_dept: "dev",
     token_status: "rotated",
     last_used: "2026-06-10T08:50:00Z",
     created_at: "2026-02-15T11:00:00Z",
-    created_by: "u-dtkk-1",
+    created_by: "u-dev-1",
     initial_spec: ["read:server:dept", "read:secret:dept"],
   },
   {
@@ -598,7 +598,7 @@ export const BOT_ASSIGNMENTS: Record<string, { groups: string[]; roles: RoleAssi
       },
     ],
   },
-  "b-jira-dtkk": {
+  "b-jira-dev": {
     groups: [],
     roles: [
       {
@@ -610,14 +610,14 @@ export const BOT_ASSIGNMENTS: Record<string, { groups: string[]; roles: RoleAssi
       },
     ],
   },
-  "b-build-dtkk": {
+  "b-build-dev": {
     groups: [],
     roles: [
       {
         role_id: "r-svc-server-viewer",
         scope_kind: "dept",
-        scope_ref: "dtkk",
-        granted_by: "u-dtkk-1",
+        scope_ref: "dev",
+        granted_by: "u-dev-1",
         granted_at: "2026-02-15T11:00:00Z",
       },
     ],
@@ -691,8 +691,8 @@ export const USER_AUDIT: Record<string, AuditEvent[]> = {
     { id: "b2", ts: "2026-06-10T08:15:00Z", action: "user.create", resource: "u-infra-5", outcome: "success" },
     { id: "b3", ts: "2026-06-10T08:20:00Z", action: "dept.delete", resource: "ops-legacy", outcome: "denied" },
     { id: "b4", ts: "2026-06-10T08:25:00Z", action: "cluster.rotation.trigger", resource: "platform-master-key", outcome: "success" },
-    { id: "b5", ts: "2026-06-10T08:40:00Z", action: "tls.renew", resource: "emm.devos.astralinux.ru", outcome: "success" },
-    { id: "b6", ts: "2026-06-09T21:05:00Z", action: "user.create", resource: "u-dtkk-12", outcome: "success" },
+    { id: "b5", ts: "2026-06-10T08:40:00Z", action: "tls.renew", resource: "emm.example.com", outcome: "success" },
+    { id: "b6", ts: "2026-06-09T21:05:00Z", action: "user.create", resource: "u-dev-12", outcome: "success" },
     { id: "b7", ts: "2026-06-09T20:00:00Z", action: "role.grant", resource: "r-dep-admin → u-infra-1", outcome: "success" },
     { id: "b8", ts: "2026-06-09T15:00:00Z", action: "dept.create", resource: "ops", outcome: "success" },
     { id: "b9", ts: "2026-06-08T11:00:00Z", action: "bot.revoke", resource: "b-backup", outcome: "success" },
@@ -712,7 +712,7 @@ export const USER_AUDIT: Record<string, AuditEvent[]> = {
     { id: "d2", ts: "2026-06-10T07:33:00Z", action: "audit.query", resource: "filter:service=secret&since=24h", outcome: "success" },
     { id: "d3", ts: "2026-06-10T07:45:00Z", action: "audit.view.event_detail", resource: "ev-0089", outcome: "success" },
     { id: "d4", ts: "2026-06-10T07:55:00Z", action: "audit.query", resource: "filter:actor=u-igor&action=secret.*", outcome: "success" },
-    { id: "d5", ts: "2026-06-10T08:10:00Z", action: "audit.export", resource: "csv:2026-06-09..2026-06-10&dept=dtkk", outcome: "success" },
+    { id: "d5", ts: "2026-06-10T08:10:00Z", action: "audit.export", resource: "csv:2026-06-09..2026-06-10&dept=dev", outcome: "success" },
     { id: "d6", ts: "2026-06-09T17:42:00Z", action: "login", resource: "/ui", outcome: "success" },
     { id: "d7", ts: "2026-06-09T18:00:00Z", action: "audit.query", resource: "filter:severity=CRITICAL", outcome: "success" },
     { id: "d8", ts: "2026-06-09T18:30:00Z", action: "audit.view.event_detail", resource: "ev-0144", outcome: "success" },
@@ -722,17 +722,17 @@ export const USER_AUDIT: Record<string, AuditEvent[]> = {
   ],
   "u-igor": [
     { id: "e1", ts: "2026-06-10T06:11:00Z", action: "login", resource: "/ui", outcome: "success" },
-    { id: "e2", ts: "2026-06-10T06:18:00Z", action: "secret.create", resource: "dtkk-stand-token-12", outcome: "success" },
-    { id: "e3", ts: "2026-06-10T06:35:00Z", action: "secret.rotate", resource: "dtkk-ci-secret", outcome: "success" },
-    { id: "e4", ts: "2026-06-10T07:02:00Z", action: "secret.policy.update", resource: "rotation:dtkk-ci-secret=30d", outcome: "success" },
+    { id: "e2", ts: "2026-06-10T06:18:00Z", action: "secret.create", resource: "dev-stand-token-12", outcome: "success" },
+    { id: "e3", ts: "2026-06-10T06:35:00Z", action: "secret.rotate", resource: "dev-ci-secret", outcome: "success" },
+    { id: "e4", ts: "2026-06-10T07:02:00Z", action: "secret.policy.update", resource: "rotation:dev-ci-secret=30d", outcome: "success" },
     { id: "e5", ts: "2026-06-10T07:20:00Z", action: "secret.rotate", resource: "db-master", outcome: "success" },
     { id: "e6", ts: "2026-06-09T16:00:00Z", action: "secret.read", resource: "db-master", outcome: "denied" },
     { id: "e7", ts: "2026-06-09T16:10:00Z", action: "login", resource: "/ui", outcome: "success" },
-    { id: "e8", ts: "2026-06-09T16:30:00Z", action: "secret.create", resource: "dtkk-build-token-4", outcome: "success" },
+    { id: "e8", ts: "2026-06-09T16:30:00Z", action: "secret.create", resource: "dev-build-token-4", outcome: "success" },
     { id: "e9", ts: "2026-06-09T17:00:00Z", action: "secret.policy.update", resource: "min-length:32", outcome: "success" },
-    { id: "e10", ts: "2026-06-08T10:00:00Z", action: "secret.rotate", resource: "dtkk-stand-token-7", outcome: "error" },
-    { id: "e11", ts: "2026-06-08T10:05:00Z", action: "secret.rotate", resource: "dtkk-stand-token-7", outcome: "success" },
-    { id: "e12", ts: "2026-06-08T11:30:00Z", action: "secret.policy.update", resource: "rotation:dtkk-stand-*=14d", outcome: "success" },
+    { id: "e10", ts: "2026-06-08T10:00:00Z", action: "secret.rotate", resource: "dev-stand-token-7", outcome: "error" },
+    { id: "e11", ts: "2026-06-08T10:05:00Z", action: "secret.rotate", resource: "dev-stand-token-7", outcome: "success" },
+    { id: "e12", ts: "2026-06-08T11:30:00Z", action: "secret.policy.update", resource: "rotation:dev-stand-*=14d", outcome: "success" },
   ],
   "u-pavel": [
     { id: "f1", ts: "2026-06-10T08:01:00Z", action: "login", resource: "/ui", outcome: "success" },
@@ -755,7 +755,7 @@ export const USER_AUDIT: Record<string, AuditEvent[]> = {
 // rendering is stable across reloads.
 const ORDINARY_ACTIONS_BY_DEPT: Record<string, string[]> = {
   core: ["server.read", "worker.requeue", "audit.query", "secret.read"],
-  dtkk: ["server.read", "secret.read", "audit.query", "worker.read"],
+  dev: ["server.read", "secret.read", "audit.query", "worker.read"],
   infra: ["server.read", "server.bmc.diag", "secret.read", "audit.query"],
   ops: ["server.read", "worker.read", "audit.query"],
 };
@@ -816,10 +816,10 @@ export interface ResourceRef {
 export const RESOURCES: ResourceRef[] = [
   { id: "core-web-01", kind: "server", name: "core-web-01", dept: "core" },
   { id: "core-db-02", kind: "server", name: "core-db-02", dept: "core" },
-  { id: "dtkk-stand-1", kind: "server", name: "dtkk-stand-1", dept: "dtkk" },
+  { id: "dev-stand-1", kind: "server", name: "dev-stand-1", dept: "dev" },
   { id: "infra-mon-01", kind: "server", name: "infra-mon-01", dept: "infra" },
   { id: "db-master", kind: "secret", name: "db-master", dept: "core" },
   { id: "core-app-token", kind: "secret", name: "core-app-token", dept: "core" },
-  { id: "dtkk-ci-secret", kind: "secret", name: "dtkk-ci-secret", dept: "dtkk" },
+  { id: "dev-ci-secret", kind: "secret", name: "dev-ci-secret", dept: "dev" },
   { id: "infra-grafana-key", kind: "secret", name: "infra-grafana-key", dept: "infra" },
 ];

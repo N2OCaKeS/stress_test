@@ -37,11 +37,11 @@ const CORE: Row[] = [
   { id: "grafana-admin", name: "grafana-admin", kindLabel: "password", tail: "2 нед назад", badge: "must_rotate", badgeKind: "warn", icon: Lock },
 ];
 
-const DTKK: Row[] = [
+const Dev: Row[] = [
   { id: "prod-postgres-master", name: "prod-postgres-master", kindLabel: "db-password", tail: "владелец: carol", badge: "истекает через 3д", badgeKind: "warn", icon: Database },
-  { id: "dtkk-jira-api", name: "dtkk-jira-api", kindLabel: "api-token", tail: "владелец: igor", badge: "active", badgeKind: "ok", icon: Key },
-  { id: "dtkk-pagerduty-webhook", name: "dtkk-pagerduty-webhook", kindLabel: "webhook", tail: "2 мес назад", badge: "active", badgeKind: "ok", icon: Webhook },
-  { id: "dtkk-s3-backups", name: "dtkk-s3-backups", kindLabel: "aws-key", tail: "общий", badge: "active", badgeKind: "ok", icon: Cloud },
+  { id: "dev-jira-api", name: "dev-jira-api", kindLabel: "api-token", tail: "владелец: igor", badge: "active", badgeKind: "ok", icon: Key },
+  { id: "dev-pagerduty-webhook", name: "dev-pagerduty-webhook", kindLabel: "webhook", tail: "2 мес назад", badge: "active", badgeKind: "ok", icon: Webhook },
+  { id: "dev-s3-backups", name: "dev-s3-backups", kindLabel: "aws-key", tail: "общий", badge: "active", badgeKind: "ok", icon: Cloud },
 ];
 
 const INFRA: Row[] = [
@@ -126,11 +126,11 @@ export function SecretAccountAdmin() {
           </div>
 
           <div className="group-header flex items-center gap-2 mt-3">
-            <Building2 className="w-3 h-3" /> ДТКК · 28
+            <Building2 className="w-3 h-3" /> Разработка · 28
           </div>
-          <div className="px-2 flex flex-col gap-0.5">{renderGroup(DTKK)}</div>
+          <div className="px-2 flex flex-col gap-0.5">{renderGroup(Dev)}</div>
           <div className="cred-row text-dim text-xs px-3 py-2">
-            + 24 ещё в ДТКК · нажмите чтобы развернуть
+            + 24 ещё в Разработка · нажмите чтобы развернуть
           </div>
 
           <div className="group-header flex items-center gap-2 mt-3">
@@ -159,7 +159,7 @@ export function SecretAccountAdmin() {
         statusBadge={
           <span className="badge badge-warn">истекает через 3д</span>
         }
-        scope="ДТКК"
+        scope="Разработка"
         scopePrefix="отдел: "
         idStr="cred_a42f1c8b9e02d144"
         kind="db-password"
@@ -173,7 +173,7 @@ export function SecretAccountAdmin() {
           </>
         }
         meta={{
-          dept: "ДТКК",
+          dept: "Разработка",
           owner: "carol",
           ownerId: "usr_c3d4e5...",
           created: "2026-03-14 09:11 UTC",
@@ -182,9 +182,9 @@ export function SecretAccountAdmin() {
         }}
         accessMatrix={{
           scopeBadge: "department (my_dep)",
-          deptAdmins: "carol, igor (ДТКК)",
+          deptAdmins: "carol, igor (Разработка)",
           explicitGrants: "alice (Ядро DBOS, ro)",
-          bots: "prod_db_migrator (ДТКК)",
+          bots: "prod_db_migrator (Разработка)",
           accountAdmin: (
             <span className="text-warn">только чтение аудита (вы)</span>
           ),

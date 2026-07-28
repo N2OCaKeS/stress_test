@@ -22,7 +22,7 @@ const OSES = [
   "Ubuntu 22.04",
   "Debian 12",
 ];
-const DEPTS = ["core", "dtkk", "infra", "ops"];
+const DEPTS = ["core", "dev", "infra", "ops"];
 
 function genServers(): MockServer[] {
   const out: MockServer[] = [];

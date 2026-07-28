@@ -31,7 +31,7 @@ export const EVENT_ROWS: EventRow[] = [
   { id: "ev-016", time: "15:07:51", action: "task.retry", meta: "worker-1 → task_8a1c · attempt 2/3", severity: "WARNING", label: "WARN" },
   { id: "ev-017", time: "15:02:14", action: "service.rotation_started", meta: "secret_service → master_key", severity: "CRITICAL", label: "CRIT" },
   { id: "ev-018", time: "14:58:39", action: "credential.create", meta: "bob → bmc-rack-C-ipmi", severity: "INFO", label: "INFO" },
-  { id: "ev-019", time: "14:54:17", action: "dep_grant_added", meta: "alice → grant:ДТКК.read", severity: "WARNING", label: "WARN" },
+  { id: "ev-019", time: "14:54:17", action: "dep_grant_added", meta: "alice → grant:Разработка.read", severity: "WARNING", label: "WARN" },
   { id: "ev-020", time: "14:50:02", action: "credential.read", meta: "ci_runner → github-deploy-token", severity: "INFO", label: "INFO" },
   { id: "ev-021", time: "14:46:25", action: "user.login_success", meta: "dave@10.20.30.5 · web", severity: "INFO", label: "INFO" },
   { id: "ev-022", time: "14:42:48", action: "server.account_create", meta: "bob → srv-rack-A-08 · admin", severity: "WARNING", label: "WARN" },

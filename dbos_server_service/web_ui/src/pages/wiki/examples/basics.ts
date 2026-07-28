@@ -15,8 +15,8 @@ export const BASICS: ApiSection = {
       description:
         "Все запросы идут на один base URL. У каждого сервиса свой префикс: " +
         "auth_service — /api/auth/v1, loging_service — /api/logging/v1, " +
-        "server_service — /api/server/v1. Подставь свой хост в {{BASE_URL}} " +
-        "(в проде — https://emm.devos.astralinux.ru, в dev-стеке — http://localhost:8000). " +
+        "server_service — /api/server/v1. По умолчанию {{BASE_URL}} — адрес этой " +
+        "страницы (текущий origin); для локального dev-стека укажи http://localhost:8000. " +
         "Проверить, что сервис жив, можно через /health.",
       curl: 'base_url="{{BASE_URL}}"\ncurl "$base_url/api/auth/v1/health"',
       python:

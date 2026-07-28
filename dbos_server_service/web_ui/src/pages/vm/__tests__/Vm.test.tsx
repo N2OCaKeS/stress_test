@@ -318,7 +318,7 @@ describe("Vm zone (mock mode)", () => {
       await screen.findByRole("heading", { name: /IP-пулы \(IPAM\)/ }),
     ).toBeInTheDocument();
     expect(screen.getByText("core-lan")).toBeInTheDocument();
-    expect(screen.getByText("dtkk-lan")).toBeInTheDocument();
+    expect(screen.getByText("dev-lan")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Создать пул/ }),
     ).toBeInTheDocument();

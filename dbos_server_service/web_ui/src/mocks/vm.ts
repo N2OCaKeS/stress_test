@@ -48,9 +48,9 @@ export const MOCK_VM_HUBS: VmHub[] = [
   {
     id: "srv-24",
     hostname: "srv-node-24",
-    display_name: "kvm-hub-dtkk-1",
+    display_name: "kvm-hub-dev-1",
     ip_address: "10.177.101.44",
-    department_id: "dtkk",
+    department_id: "dev",
     vm_count: 1,
   },
 ];
@@ -218,10 +218,10 @@ export const MOCK_VMS: Vm[] = [
   },
   {
     id: "vm-201",
-    name: "dtkk-sandbox",
+    name: "dev-sandbox",
     number: 201,
     hub_server_id: "srv-24",
-    department_id: "dtkk",
+    department_id: "dev",
     os_version: "1.8.1.6",
     box: "vm_station",
     network_mode: "nat",
@@ -248,7 +248,7 @@ export const MOCK_VMS: Vm[] = [
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMockKeyVm201 dbosmgr@vm-201",
     mgmt_creds_rotated_at: NOW,
     mgmt_creds_pending_apply: false,
-    hostname: "dtkk-sandbox",
+    hostname: "dev-sandbox",
     network_interfaces: ["eth0"],
     nics: [
       {
@@ -603,9 +603,9 @@ export const MOCK_VM_ACCOUNTS: ServerAccount[] = [
     created_by: "alice",
   },
   {
-    id: "acc-dtkk-ops",
+    id: "acc-dev-ops",
     server_ids: [],
-    department_id: "dtkk",
+    department_id: "dev",
     login: "ops",
     source: "managed",
     has_sudo: true,
@@ -657,15 +657,15 @@ export const MOCK_VM_IP_POOLS: VmIpPool[] = [
     updated_at: NOW,
   },
   {
-    id: "pool-dtkk",
-    name: "dtkk-lan",
+    id: "pool-dev",
+    name: "dev-lan",
     cidr: "10.177.101.0/24",
     gateway: "10.177.101.1",
     netmask: "255.255.255.0",
     dns: ["10.177.100.10"],
     range_start: "10.177.101.40",
     range_end: "10.177.101.80",
-    department_id: "dtkk",
+    department_id: "dev",
     server_id: null,
   },
 ];
@@ -679,7 +679,7 @@ export const MOCK_AVAILABLE_IPS: Record<string, string[]> = {
     "10.177.103.56",
   ],
   "pool-core-hub07": ["10.177.103.151", "10.177.103.152"],
-  "pool-dtkk": ["10.177.101.45", "10.177.101.46", "10.177.101.47"],
+  "pool-dev": ["10.177.101.45", "10.177.101.46", "10.177.101.47"],
 };
 
 /**
@@ -719,9 +719,9 @@ export const MOCK_VM_PRESETS: VmPreset[] = [
     updated_at: NOW,
   },
   {
-    id: "preset-dtkk-xfs",
-    name: "dtkk-xfs-nat",
-    department_id: "dtkk",
+    id: "preset-dev-xfs",
+    name: "dev-xfs-nat",
+    department_id: "dev",
     box: "xfs.15GB",
     os_version: "1.8.1.6",
     cpu: 2,

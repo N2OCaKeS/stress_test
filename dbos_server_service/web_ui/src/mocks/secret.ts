@@ -24,7 +24,7 @@ const NAMES = [
   "etcd-root", "prom-scrape", "alertmanager-svc", "loki-svc", "tempo-svc",
 ];
 const KINDS: CredentialKind[] = ["password", "token", "ssh_key", "cert"];
-const DEPTS = ["core", "dtkk", "infra", "ops"];
+const DEPTS = ["core", "dev", "infra", "ops"];
 
 function genCredentials(): MockCredential[] {
   const out: MockCredential[] = [];

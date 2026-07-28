@@ -322,10 +322,10 @@ export function LogRules() {
               </thead>
               <tbody>
                 {[
-                  { time: "2 ч назад", actor: "igor", dept: "ДТКК", target: "cred_8f2a1c" },
+                  { time: "2 ч назад", actor: "igor", dept: "Разработка", target: "cred_8f2a1c" },
                   { time: "8 ч назад", actor: "mira", dept: "—", target: "cred_7d9b3e" },
                   { time: "1 дн назад", actor: "rachel", dept: "—", target: "cred_4a1f8c" },
-                  { time: "3 дн назад", actor: "igor", dept: "ДТКК", target: "cred_6c2d9a" },
+                  { time: "3 дн назад", actor: "igor", dept: "Разработка", target: "cred_6c2d9a" },
                   { time: "7 дн назад", actor: "mira", dept: "—", target: "cred_1e8b4f" },
                 ].map((m, i) => (
                   <tr key={i} className="border-t border-token">

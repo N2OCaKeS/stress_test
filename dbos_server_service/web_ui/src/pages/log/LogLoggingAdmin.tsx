@@ -224,7 +224,7 @@ function EventDetail() {
           </div>
           <div className="stat-row">
             <span className="text-dim">Отдел</span>
-            <span>ДТКК</span>
+            <span>Разработка</span>
           </div>
           <div className="stat-row">
             <span className="text-dim">Предыдущая версия</span>

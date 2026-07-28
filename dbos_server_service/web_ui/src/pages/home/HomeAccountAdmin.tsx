@@ -237,7 +237,7 @@ export function HomeAccountAdmin() {
             <div className="flex items-start gap-3 p-2 surface-2 rounded">
               <AlertTriangle className="w-4 h-4 text-warn shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <div>2 ротации просрочены в депе <b>ДТКК</b></div>
+                <div>2 ротации просрочены в депе <b>Разработка</b></div>
                 <div className="text-xs text-dim">deadline истёк 2 дня назад</div>
               </div>
             </div>

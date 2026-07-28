@@ -284,7 +284,7 @@ export function Patterns() {
               <AlertTriangle className="w-6 h-6 text-danger shrink-0" />
               <div>
                 <div className="text-base font-semibold text-danger mb-1">
-                  Удалить департамент «ДТКК»?
+                  Удалить департамент «Разработка»?
                 </div>
                 <div className="text-xs text-dim">
                   Действие <b>необратимое</b>. Будут удалены:
@@ -309,21 +309,21 @@ export function Patterns() {
 
             <label className="field-label">
               Чтобы подтвердить, введи имя депа дословно:{" "}
-              <span className="mono text-danger">ДТКК</span>
+              <span className="mono text-danger">Разработка</span>
             </label>
             <input
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
               className="field-input mono mb-4"
-              placeholder="ДТКК"
+              placeholder="Разработка"
             />
 
             <div className="flex items-center gap-2 justify-end">
               <button className="btn">Отмена</button>
               <button
                 className="btn btn-danger-solid flex items-center gap-1"
-                disabled={confirmText !== "ДТКК"}
-                style={{ opacity: confirmText === "ДТКК" ? 1 : 0.5 }}
+                disabled={confirmText !== "Разработка"}
+                style={{ opacity: confirmText === "Разработка" ? 1 : 0.5 }}
               >
                 <Trash2 className="w-4 h-4" /> Удалить депaртамент
               </button>

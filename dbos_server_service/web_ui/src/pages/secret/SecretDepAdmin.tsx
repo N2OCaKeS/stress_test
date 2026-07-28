@@ -59,7 +59,7 @@ interface CrossRow {
 }
 
 const CROSS: CrossRow[] = [
-  { id: "dtkk-jira-api", name: "dtkk-jira-api", dept: "ДТКК", note: "только чтение", noteClass: "text-warn", badge: "active", badgeKind: "ok", icon: Key },
+  { id: "dev-jira-api", name: "dev-jira-api", dept: "Разработка", note: "только чтение", noteClass: "text-warn", badge: "active", badgeKind: "ok", icon: Key },
   { id: "shared-monitoring-readonly", name: "shared-monitoring-readonly", dept: "Инфра", note: "общий", badge: "active", badgeKind: "ok", icon: Database },
   { id: "guest-network-wifi", name: "guest-network-wifi", dept: "Гость", note: "все", badge: "active", badgeKind: "ok", icon: Key },
 ];

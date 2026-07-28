@@ -31,7 +31,7 @@ export function userByUsername(name: string): MockUser | undefined {
 
 export const DEPTS: MockDept[] = [
   { id: "core", name: "Ядро DBOS", description: "Платформенная команда", user_count: 8 },
-  { id: "dtkk", name: "ДТКК", description: "Дирекция тестирования и контроля качества", user_count: 14 },
+  { id: "dev", name: "Разработка", description: "Дирекция тестирования и контроля качества", user_count: 14 },
   { id: "infra", name: "Инфра", description: "Инфраструктура и сети", user_count: 11 },
   { id: "ops", name: "Operations", description: "Эксплуатация", user_count: 14 },
 ];
@@ -66,8 +66,8 @@ export const USERS: MockUser[] = [
   ...PLATFORM_USERS,
   { id: "u-alice", username: "alice", email: "alice@dbos.local", dept_id: "core", platform_role: "dep_admin", status: "active", last_login: "2026-06-10T07:50:00Z", is_bot: false, created_by: "u-bob" },
   ...fillDept("core", 7, 1),
-  { id: "u-igor", username: "igor", email: "igor@dbos.local", dept_id: "dtkk", platform_role: null, status: "active", last_login: "2026-06-10T06:11:00Z", is_bot: false, created_by: "u-bob" },
-  ...fillDept("dtkk", 13, 1),
+  { id: "u-igor", username: "igor", email: "igor@dbos.local", dept_id: "dev", platform_role: null, status: "active", last_login: "2026-06-10T06:11:00Z", is_bot: false, created_by: "u-bob" },
+  ...fillDept("dev", 13, 1),
   { id: "u-pavel", username: "pavel", email: "pavel@dbos.local", dept_id: "infra", platform_role: null, status: "active", last_login: "2026-06-10T08:01:00Z", is_bot: false, created_by: "u-bob" },
   ...fillDept("infra", 10, 1),
   ...fillDept("ops", 14, 1),

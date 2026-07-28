@@ -26,7 +26,7 @@ export interface ServerGroup {
 
 export const SERVER_GROUPS: ServerGroup[] = [
   { id: "core-pg", name: "core-pg", dept: "core", size: 6, note: "PostgreSQL kernel cluster" },
-  { id: "dtkk-prod", name: "dtkk-prod", dept: "dtkk", size: 14, note: "ДТКК prod servers" },
+  { id: "dev-prod", name: "dev-prod", dept: "dev", size: 14, note: "Разработка prod servers" },
   { id: "infra-bmc-rack-A", name: "infra-bmc-rack-A", dept: "infra", size: 18, note: "BMC-managed rack A" },
   { id: "infra-bmc-rack-B", name: "infra-bmc-rack-B", dept: "infra", size: 18, note: "BMC-managed rack B" },
   { id: "ops-monitoring", name: "ops-monitoring", dept: "ops", size: 4, note: "Prometheus + Grafana" },

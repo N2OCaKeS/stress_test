@@ -109,8 +109,8 @@ function SettingsPanel() {
             label="Base URL"
             value={s.baseUrl}
             onChange={s.setBaseUrl}
-            placeholder="https://emm.devos.astralinux.ru"
-            hint="По умолчанию — текущий origin. Можно указать прямой порт сервиса, например http://localhost:8000."
+            placeholder={typeof window !== "undefined" ? window.location.origin : "https://<ваш-хост>"}
+            hint="По умолчанию — адрес этой страницы (текущий origin). Можно указать прямой порт сервиса, например http://localhost:8000."
           />
 
           <div className="flex flex-col gap-2">

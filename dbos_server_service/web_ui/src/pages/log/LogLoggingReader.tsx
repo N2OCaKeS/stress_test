@@ -122,7 +122,7 @@ export function LogLoggingReader() {
                   </div>
                   <div className="stat-row">
                     <span className="text-dim">Отдел</span>
-                    <span>ДТКК</span>
+                    <span>Разработка</span>
                   </div>
                   <div className="stat-row">
                     <span className="text-dim">Статус</span>

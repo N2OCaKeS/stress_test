@@ -18,7 +18,6 @@ const SERVICE_NAME = "EMM";
 const SERVICE_VERSION = "1.0.0";
 const SERVICE_FULL =
   "Easy Machine Manager — платформа управления тестовыми серверами и виртуальными машинами";
-const SERVICE_OWNER = "ДБОС ДТиКК";
 const SERVICE_TOOLTIP = "EMM — Easy Machine Manager";
 
 export function Login() {
@@ -98,7 +97,6 @@ export function Login() {
               <p className="text-xs text-dim mt-1 leading-snug">
                 {SERVICE_FULL}
               </p>
-              <p className="text-[11px] text-dim mt-1">{SERVICE_OWNER}</p>
             </div>
 
             {error && (

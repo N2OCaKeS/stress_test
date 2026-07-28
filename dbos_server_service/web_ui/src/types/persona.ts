@@ -34,7 +34,7 @@ export type PersonaId = string;
  * Human-readable name is rendered through `useDeptLabel(dept_id)` из
  * `@/lib/labels` (читает LabelsProvider, backed by listDepartments).
  */
-export type DeptId = "core" | "dtkk" | "infra" | "ops";
+export type DeptId = "core" | "dev" | "infra" | "ops";
 
 export interface Persona {
   id: PersonaId;

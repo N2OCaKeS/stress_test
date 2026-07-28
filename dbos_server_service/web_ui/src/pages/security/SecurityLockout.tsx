@@ -32,7 +32,7 @@ const MOCK_LOCKED: LockedUser[] = [
   {
     user_id: "usr_2f1a",
     username: "ivanov",
-    department_id: "dtkk",
+    department_id: "dev",
     failed_login_attempts: 5,
     locked_until: "2026-06-23T12:40:00Z",
     is_banned: false,

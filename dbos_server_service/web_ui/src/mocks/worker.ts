@@ -26,7 +26,7 @@ const KINDS = [
   "backup_db", "sync_users", "send_notification",
   "rebuild_cache", "verify_ipmi",
 ];
-const DEPTS = ["core", "dtkk", "infra", "ops"];
+const DEPTS = ["core", "dev", "infra", "ops"];
 
 function genTasks(count: number, baseState: TaskState | null = null): MockTask[] {
   const out: MockTask[] = [];

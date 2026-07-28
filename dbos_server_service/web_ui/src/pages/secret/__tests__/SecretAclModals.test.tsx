@@ -44,7 +44,7 @@ vi.mock("@/lib/labels", () => ({
   useLabelMaps: () => ({
     depts: new Map<string, string>([
       ["dep_core", "Core"],
-      ["dep_dtkk", "ДТКК"],
+      ["dep_dev", "Разработка"],
     ]),
     groups: new Map(),
     services: new Map(),
@@ -189,11 +189,11 @@ describe("AclModal — выбор роли", () => {
     expect(listServiceRolesMock).not.toHaveBeenCalled();
 
     const deptSelect = screen.getByRole("combobox");
-    fireEvent.change(deptSelect, { target: { value: "dep_dtkk" } });
+    fireEvent.change(deptSelect, { target: { value: "dep_dev" } });
 
     await waitFor(() => {
       expect(listServiceRolesMock).toHaveBeenCalledWith(
-        "dep_dtkk",
+        "dep_dev",
         "secret_service",
       );
     });

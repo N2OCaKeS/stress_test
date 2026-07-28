@@ -44,6 +44,7 @@ import { ServicesOsVersions } from "./services/ServicesOsVersions";
 import { ServicesIgnoredLogins } from "./services/ServicesIgnoredLogins";
 import { ServicesManagementUser } from "./services/ServicesManagementUser";
 import { ServicesProbeSettings } from "./services/ServicesProbeSettings";
+import { ServicesPasswordPolicy } from "./services/ServicesPasswordPolicy";
 import { ServicesNavLink } from "./services/ServicesNavLink";
 import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
 import { ServicesSecretPermissions } from "./services/ServicesSecretPermissions";
@@ -286,6 +287,18 @@ const STATIC_ITEMS: AdminItem[] = [
     content: ServicesProbeSettings,
     // Настройки проб — платформенный singleton под account_admin; воркер читает
     // их через internal-эндпоинт. Остальным backend ответит 403.
+    visibleFor: (p) => isAccountAdmin(p),
+  },
+  {
+    id: "services.auth.password_policy",
+    label: "Парольная политика",
+    hint: "требования к паролям логина",
+    icon: KeyRound,
+    block: "services",
+    group: "auth",
+    content: ServicesPasswordPolicy,
+    // Политика логина — платформенный singleton под account_admin
+    // (`/api/auth/v1/admin/password-policy`). Остальным backend ответит 403.
     visibleFor: (p) => isAccountAdmin(p),
   },
 

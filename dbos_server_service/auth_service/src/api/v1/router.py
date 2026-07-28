@@ -3,6 +3,10 @@
 from fastapi import APIRouter
 
 from src.api.v1.endpoints.admin import router as admin_router
+from src.api.v1.endpoints.admin_password_policy import (
+    public_router as password_policy_public_router,
+    router as password_policy_router,
+)
 from src.api.v1.endpoints.auth import router as auth_router
 from src.api.v1.endpoints.authorization import router as authorization_router
 from src.api.v1.endpoints.bots import router as bots_router
@@ -30,3 +34,5 @@ router.include_router(oauth2_router, tags=["oauth2"])
 router.include_router(docker_router, tags=["docker-registry"])
 router.include_router(nav_links_router, tags=["nav-links"])
 router.include_router(admin_router, tags=["admin"])
+router.include_router(password_policy_router, tags=["admin-password-policy"])
+router.include_router(password_policy_public_router, tags=["password-policy"])

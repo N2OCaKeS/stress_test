@@ -216,6 +216,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | Action | Default severity | Emitter | Key details |
 |------|------|------|------|
 | `secret_lifecycle.notify_failed` | WARNING | `secret_service_client.notify_*` | Best-effort callback в secret_service (на user/dept hard-delete) не дошёл. `endpoint`, `status_code` или `error`, `target_id`. |
+| `password_policy.updated` | WARNING | `password_policy_service.update_settings` | account_admin сменил парольную политику логина. `min_length`, `require_letter`, `require_digit`. |
 
 ---
 

@@ -29,6 +29,7 @@ from src.dependencies.db import get_db
 from src.services import audit_context, audit_service, http_pool, secret_service_client
 from src.services.audit_context import AuditContext, extract_client_ip
 from src.services.audit_events import register_events
+from src.services import password_policy_service
 from src.services.bootstrap_service import (
     bootstrap_admin,
     bootstrap_platform_services,
@@ -317,6 +318,14 @@ def create_application() -> FastAPI:
                 _startup_logger.exception(
                     "bootstrap platform services / worker bot failed"
                 )
+            # Засеять активную парольную политику логина: первый запуск — из env
+            # (AUTH_PASSWORD_POLICY_*) в БД, дальше из БД. Best-effort: свежая БД
+            # до миграции / сбой не роняют старт — валидаторы едут на дефолте
+            # кэша (12). INITIAL_ADMIN_PASSWORD этой политике не подчиняется.
+            try:
+                await password_policy_service.load_active_policy(db)
+            except Exception:
+                _startup_logger.exception("password policy load failed")
 
         # Pooled httpx.AsyncClient для audit-emit в loging_service.
         # Конструирование клиента вынесено в `services/http_pool.init_pools` —

@@ -80,6 +80,26 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = Field(default=10, alias="ACCESS_TOKEN_TTL_MINUTES")
     refresh_token_ttl_days: int = Field(default=14, alias="REFRESH_TOKEN_TTL_DAYS")
 
+    # Начальная парольная политика логина (пользовательские пароли). На старте:
+    # если строки в БД ещё нет (первый запуск) — политика пишется в БД из этих
+    # env и дальше берётся из БД; на последующих стартах env не читается.
+    # INITIAL_ADMIN_PASSWORD этой политике НЕ подчиняется (жёсткий guard = 12).
+    auth_password_policy_min_length: int = Field(
+        default=12, ge=1, le=128,
+        alias="AUTH_PASSWORD_POLICY_MIN_LENGTH",
+        description="Начальная мин. длина пароля логина (перенастраивается в UI).",
+    )
+    auth_password_policy_require_letter: bool = Field(
+        default=True,
+        alias="AUTH_PASSWORD_POLICY_REQUIRE_LETTER",
+        description="Начальное требование буквы в пароле (перенастраивается в UI).",
+    )
+    auth_password_policy_require_digit: bool = Field(
+        default=True,
+        alias="AUTH_PASSWORD_POLICY_REQUIRE_DIGIT",
+        description="Начальное требование цифры в пароле (перенастраивается в UI).",
+    )
+
     # Grace-окно на непосредственно-предыдущий (только что ротированный)
     # refresh-hash. Два параллельных `/refresh` с одним токеном: победитель
     # ротирует и получает новую пару, проигравший ловит CAS-miss. Если

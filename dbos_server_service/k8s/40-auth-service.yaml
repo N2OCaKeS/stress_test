@@ -13,6 +13,12 @@ data:
   APP_DEBUG: "false"
   ACCESS_TOKEN_TTL_MINUTES: "10"
   REFRESH_TOKEN_TTL_DAYS: "14"
+  # Начальная парольная политика логина (перенастраивается в UI account_admin;
+  # применяется на первом запуске, дальше — из БД). INITIAL_ADMIN_PASSWORD ей
+  # не подчиняется (жёсткий guard = 12).
+  AUTH_PASSWORD_POLICY_MIN_LENGTH: "12"
+  AUTH_PASSWORD_POLICY_REQUIRE_LETTER: "true"
+  AUTH_PASSWORD_POLICY_REQUIRE_DIGIT: "true"
   # URL logging_service внутри namespace. Plain http внутри cluster'а:
   # сервисы стартуют uvicorn'ом без --ssl-*, TLS-терминация только на Ingress.
   # Изоляция cluster-internal трафика — NetworkPolicy (80-networkpolicy.yaml).

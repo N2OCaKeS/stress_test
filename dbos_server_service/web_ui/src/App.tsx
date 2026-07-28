@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -12,6 +12,8 @@ import { PersonaProvider } from "@/contexts/PersonaContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import { LabelsProvider } from "@/lib/labels";
+import { getPublicPasswordPolicy } from "@/api/auth/passwordPolicy";
+import { setActivePasswordPolicy } from "@/lib/passwordPolicy";
 import { PersonaSelector } from "@/pages/auth/PersonaSelector";
 import { Login } from "@/pages/system/Login";
 import { NotFound } from "@/pages/system/NotFound";
@@ -113,6 +115,14 @@ function RouteFallback() {
 }
 
 export function App() {
+  // Подтягиваем актуальную парольную политику логина для клиентских
+  // валидаторов (публичный эндпоинт, best-effort). В mock-режиме backend'а нет.
+  useEffect(() => {
+    if (USE_MOCK_AUTH) return;
+    getPublicPasswordPolicy()
+      .then(setActivePasswordPolicy)
+      .catch(() => {});
+  }, []);
   return (
     <ThemeProvider>
       <BrowserRouter>

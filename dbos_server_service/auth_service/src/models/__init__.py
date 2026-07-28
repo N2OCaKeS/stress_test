@@ -15,6 +15,7 @@ from src.models.nav_link import NavLink
 from src.models.oauth_authorization_code import OAuthAuthorizationCode
 from src.models.oauth_client import OAuthClient
 from src.models.oauth_refresh_token import OAuthRefreshToken
+from src.models.password_policy_settings import PasswordPolicySettings
 from src.models.personal_access_token import PersonalAccessToken
 from src.models.platform_service import PlatformService
 from src.models.service_role_definition import ServiceRoleDefinition
@@ -40,6 +41,7 @@ __all__ = [
     "OAuthAuthorizationCode",
     "OAuthClient",
     "OAuthRefreshToken",
+    "PasswordPolicySettings",
     "PersonalAccessToken",
     "PlatformService",
     "ServiceRoleDefinition",

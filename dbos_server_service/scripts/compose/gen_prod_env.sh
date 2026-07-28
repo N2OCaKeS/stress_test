@@ -144,6 +144,13 @@ PASSWORD_POLICY_MIN_LENGTH=${PASSWORD_POLICY_MIN_LENGTH:-8}
 PASSWORD_POLICY_REQUIRE_LETTER=${PASSWORD_POLICY_REQUIRE_LETTER:-true}
 PASSWORD_POLICY_REQUIRE_DIGIT=${PASSWORD_POLICY_REQUIRE_DIGIT:-true}
 
+# ── Начальная парольная политика ЛОГИНА (auth) — перенастраивается в UI ────────
+# Применяется на ПЕРВОМ запуске (пишется в БД), дальше правится в UI account_admin.
+# INITIAL_ADMIN_PASSWORD этой политике НЕ подчиняется (жёсткий guard = 12 символов).
+AUTH_PASSWORD_POLICY_MIN_LENGTH=${AUTH_PASSWORD_POLICY_MIN_LENGTH:-12}
+AUTH_PASSWORD_POLICY_REQUIRE_LETTER=${AUTH_PASSWORD_POLICY_REQUIRE_LETTER:-true}
+AUTH_PASSWORD_POLICY_REQUIRE_DIGIT=${AUTH_PASSWORD_POLICY_REQUIRE_DIGIT:-true}
+
 #══════════════════════════════════════════════════════════════════════════════
 # Ниже — сгенерированные секреты (обычно не трогаем).
 #══════════════════════════════════════════════════════════════════════════════

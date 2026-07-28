@@ -1,21 +1,49 @@
 /**
- * Зеркало `auth_service/src/core/password_policy.py`:
- *   ≥12 символов, минимум одна буква и одна цифра.
- * UI-валидаторы используют это, чтобы не отправлять заранее обречённый
- * запрос на backend.
+ * Клиентское зеркало настраиваемой парольной политики логина
+ * (`auth_service` `/admin/password-policy`). Дефолт — историческое поведение
+ * (≥12 символов, буква и цифра). Активная политика подгружается на старте
+ * приложения из публичного эндпоинта `GET /api/auth/v1/password-policy`
+ * (`setActivePasswordPolicy` вызывается из App), чтобы формы не блокировали
+ * пароль, который backend по текущей политике примет (напр. после ослабления
+ * account_admin'ом). Enforcement всё равно на backend'е — это лишь пред-проверка.
  */
 
+// Дефолт/фолбэк — для генератора паролей и хинтов до загрузки политики.
 export const MIN_PASSWORD_LENGTH = 12;
 
 export const PASSWORD_POLICY_MESSAGE =
   "Минимум 12 символов, минимум одна буква и одна цифра";
 
+// Активная политика. Обновляется `setActivePasswordPolicy` из App на старте.
+let _active = {
+  minLength: MIN_PASSWORD_LENGTH,
+  requireLetter: true,
+  requireDigit: true,
+};
+
+/** Залить актуальную политику логина (ответ публичного эндпоинта auth). */
+export function setActivePasswordPolicy(p: {
+  min_length: number;
+  require_letter: boolean;
+  require_digit: boolean;
+}): void {
+  _active = {
+    minLength: p.min_length,
+    requireLetter: p.require_letter,
+    requireDigit: p.require_digit,
+  };
+}
+
 export function validatePassword(value: string): string | null {
-  if (value.length < MIN_PASSWORD_LENGTH) {
-    return `Минимум ${MIN_PASSWORD_LENGTH} символов`;
+  if (value.length < _active.minLength) {
+    return `Минимум ${_active.minLength} символов`;
   }
-  if (!/[A-Za-zА-Яа-яЁё]/.test(value)) return "Нужна хотя бы одна буква";
-  if (!/\d/.test(value)) return "Нужна хотя бы одна цифра";
+  if (_active.requireLetter && !/[A-Za-zА-Яа-яЁё]/.test(value)) {
+    return "Нужна хотя бы одна буква";
+  }
+  if (_active.requireDigit && !/\d/.test(value)) {
+    return "Нужна хотя бы одна цифра";
+  }
   return null;
 }
 

@@ -29,7 +29,7 @@ class UserCreate(BaseModel):
         pattern=r"^[A-Za-z0-9_\-\.]+$",
         description="Уникальный username (3..128 символов, латиница + цифры + `_-.`).",
     )
-    password: str = Field(min_length=12, description="Пароль в plaintext. Минимум 12 символов, буквы + цифры. Хэшируется Argon2id перед записью.")
+    password: str = Field(min_length=1, description="Пароль в plaintext. Требования — по настраиваемой парольной политике логина. Хэшируется Argon2id перед записью.")
     email: EmailStr | None = Field(default=None, description="Email (опционально).")
     last_name: str | None = Field(default=None, max_length=128, description="Фамилия (опционально).")
     first_name: str | None = Field(default=None, max_length=128, description="Имя (опционально).")
@@ -212,7 +212,7 @@ class AssignRolesRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     """Тело `POST /users/{user_id}/reset-password`."""
-    new_password: str = Field(min_length=12, description="Новый пароль (минимум 12 символов, буквы + цифры).")
+    new_password: str = Field(min_length=1, description="Новый пароль. Требования — по настраиваемой парольной политике логина.")
 
     @field_validator("new_password")
     @classmethod
@@ -233,8 +233,8 @@ class SelfChangePasswordRequest(BaseModel):
         description="Текущий пароль юзера. Проверяется через Argon2id verify.",
     )
     new_password: str = Field(
-        min_length=12,
-        description="Новый пароль (минимум 12 символов, буквы + цифры).",
+        min_length=1,
+        description="Новый пароль. Требования — по настраиваемой парольной политике логина.",
     )
 
     @field_validator("new_password")

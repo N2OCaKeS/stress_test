@@ -142,6 +142,7 @@ SERVICE_EVENTS = [
     {"action": "docker.pull_denied", "description": "Docker registry pull action denied", "default_severity": "INFO"},
     # Outbound lifecycle callbacks → secret_service
     {"action": "secret_lifecycle.notify_failed", "description": "Outbound lifecycle callback to secret_service failed (transport or HTTP error)", "default_severity": "WARNING"},
+    {"action": "password_policy.updated", "description": "Login password policy changed by account_admin (min length / require letter / require digit)", "default_severity": "WARNING"},
 ]
 
 

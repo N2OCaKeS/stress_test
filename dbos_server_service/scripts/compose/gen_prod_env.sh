@@ -115,19 +115,38 @@ cat <<EOF
 # СГЕНЕРИРОВАНО $(date -u +%Y-%m-%dT%H:%M:%SZ) скриптом scripts/compose/gen_prod_env.sh
 # DO NOT COMMIT. Файл в .gitignore. Персистится вместе с volume'ами стека.
 
-# ── Публичный адрес и порт (правь под свой домен/IP) ──────────────────────────
+#══════════════════════════════════════════════════════════════════════════════
+# ОПЕРАТОРСКИЕ НАСТРОЙКИ — правь здесь. Ниже (Postgres/Redis/ключи) — сгенери-
+# рованные секреты, их обычно трогать не нужно.
+#══════════════════════════════════════════════════════════════════════════════
+
+# ── Публичный адрес и порт ────────────────────────────────────────────────────
 # DBOS_PUBLIC_HOST — hostname или IP, по которому стек доступен снаружи. Идёт в
 #   SAN TLS-сертификата (make prepare-docker) и в ссылку доступа. Пусто = localhost.
 # DBOS_HTTPS_PORT — внешний порт reverse-proxy (внутри контейнера всегда 443).
 DBOS_PUBLIC_HOST=${DBOS_PUBLIC_HOST:-${PROD_HOST:-${PROD_IP:-}}}
 DBOS_HTTPS_PORT=${DBOS_HTTPS_PORT:-443}
 
+# ── Первый администратор платформы ────────────────────────────────────────────
+# Заводится auth_service при первом старте. Пароль сгенерирован — при желании
+# замени (сменить рекомендуется при первом входе). NO_FORCE_CHANGE=true отключает
+# принудительную смену пароля на первом логине.
+INITIAL_ADMIN_USERNAME=${INITIAL_ADMIN_USERNAME}
+INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
+INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL}
+DBOS_BOOTSTRAP_NO_FORCE_CHANGE=${DBOS_BOOTSTRAP_NO_FORCE_CHANGE}
+
 # ── Начальная парольная политика server-аккаунтов (перенастраивается в UI) ────
 # Дефолт «из коробки» до того, как account_admin задаст политику в UI
 # (PUT /admin/password-policy → значение ложится в БД и перекрывает эти env).
+# Это политика паролей server-аккаунтов / IPMI-кред, НЕ пароля админа выше.
 PASSWORD_POLICY_MIN_LENGTH=${PASSWORD_POLICY_MIN_LENGTH:-8}
 PASSWORD_POLICY_REQUIRE_LETTER=${PASSWORD_POLICY_REQUIRE_LETTER:-true}
 PASSWORD_POLICY_REQUIRE_DIGIT=${PASSWORD_POLICY_REQUIRE_DIGIT:-true}
+
+#══════════════════════════════════════════════════════════════════════════════
+# Ниже — сгенерированные секреты (обычно не трогаем).
+#══════════════════════════════════════════════════════════════════════════════
 
 # ── Postgres (per-service) ────────────────────────────────────────────────────
 AUTH_DB_USER=auth_user
@@ -145,11 +164,8 @@ SECRET_DB_PASSWORD=${SECRET_DB_PASSWORD}
 REDIS_PASSWORD=${REDIS_PASSWORD}
 
 # ── auth_service ──────────────────────────────────────────────────────────────
+# (INITIAL_ADMIN_* и DBOS_BOOTSTRAP_NO_FORCE_CHANGE — в операторском блоке выше)
 AUTH_SECRET_KEY=${AUTH_SECRET_KEY}
-INITIAL_ADMIN_USERNAME=${INITIAL_ADMIN_USERNAME}
-INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
-INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL}
-DBOS_BOOTSTRAP_NO_FORCE_CHANGE=${DBOS_BOOTSTRAP_NO_FORCE_CHANGE}
 DOCKER_RSA_PRIVATE_KEY="${DOCKER_RSA_PRIVATE_KEY}"
 
 # ── loging_service ────────────────────────────────────────────────────────────

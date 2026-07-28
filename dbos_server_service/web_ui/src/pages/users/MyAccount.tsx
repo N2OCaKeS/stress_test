@@ -36,7 +36,10 @@ import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
 import { formatFio } from "@/lib/fio";
-import { PASSWORD_POLICY_MESSAGE } from "@/lib/passwordPolicy";
+import {
+  passwordPolicyMessage,
+  getActivePasswordPolicy,
+} from "@/lib/passwordPolicy";
 import { formatMskShort, mskDateOffset } from "@/lib/datetime";
 import type {
   Group,
@@ -352,10 +355,12 @@ function PasswordCard({ mockMode }: { mockMode: boolean }) {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const pol = getActivePasswordPolicy();
   const mismatch = newPwd.length > 0 && confirm.length > 0 && newPwd !== confirm;
-  const tooShort = newPwd.length > 0 && newPwd.length < 12;
-  const noLetter = newPwd.length > 0 && !/[A-Za-zА-Яа-яЁё]/.test(newPwd);
-  const noDigit = newPwd.length > 0 && !/\d/.test(newPwd);
+  const tooShort = newPwd.length > 0 && newPwd.length < pol.minLength;
+  const noLetter =
+    newPwd.length > 0 && pol.requireLetter && !/[A-Za-zА-Яа-яЁё]/.test(newPwd);
+  const noDigit = newPwd.length > 0 && pol.requireDigit && !/\d/.test(newPwd);
   const policyBad = tooShort || noLetter || noDigit;
 
   async function submit() {
@@ -364,7 +369,7 @@ function PasswordCard({ mockMode }: { mockMode: boolean }) {
       return;
     }
     if (policyBad) {
-      toast.warn(PASSWORD_POLICY_MESSAGE);
+      toast.warn(passwordPolicyMessage());
       return;
     }
     if (mockMode) {
@@ -417,7 +422,7 @@ function PasswordCard({ mockMode }: { mockMode: boolean }) {
         onChange={(e) => setNewPwd(e.target.value)}
         autoComplete="new-password"
       />
-      <div className="text-[11px] text-dim mb-2">{PASSWORD_POLICY_MESSAGE}</div>
+      <div className="text-[11px] text-dim mb-2">{passwordPolicyMessage()}</div>
       <input
         type="password"
         className="input mb-2"
@@ -426,7 +431,7 @@ function PasswordCard({ mockMode }: { mockMode: boolean }) {
         onChange={(e) => setConfirm(e.target.value)}
         autoComplete="new-password"
       />
-      {tooShort && <div className="text-xs text-warn mb-2">Минимум 12 символов</div>}
+      {tooShort && <div className="text-xs text-warn mb-2">Минимум {pol.minLength} символов</div>}
       {!tooShort && noLetter && <div className="text-xs text-warn mb-2">Нужна минимум одна буква</div>}
       {!tooShort && !noLetter && noDigit && <div className="text-xs text-warn mb-2">Нужна минимум одна цифра</div>}
       {mismatch && <div className="text-xs text-warn mb-2">Пароли не совпадают</div>}

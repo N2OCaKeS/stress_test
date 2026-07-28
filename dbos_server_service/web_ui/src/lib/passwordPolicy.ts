@@ -8,20 +8,18 @@
  * account_admin'ом). Enforcement всё равно на backend'е — это лишь пред-проверка.
  */
 
-// Дефолт/фолбэк — для генератора паролей и хинтов до загрузки политики.
+// Дефолт/фолбэк — для генератора паролей до загрузки политики.
 export const MIN_PASSWORD_LENGTH = 12;
 
-export const PASSWORD_POLICY_MESSAGE =
-  "Минимум 12 символов, минимум одна буква и одна цифра";
-
-// Активная политика. Обновляется `setActivePasswordPolicy` из App на старте.
+// Активная политика. Обновляется `setActivePasswordPolicy` из App на старте и
+// из ServicesPasswordPolicy сразу после сохранения account_admin'ом.
 let _active = {
   minLength: MIN_PASSWORD_LENGTH,
   requireLetter: true,
   requireDigit: true,
 };
 
-/** Залить актуальную политику логина (ответ публичного эндпоинта auth). */
+/** Залить актуальную политику логина (ответ публичного/админ-эндпоинта auth). */
 export function setActivePasswordPolicy(p: {
   min_length: number;
   require_letter: boolean;
@@ -32,6 +30,24 @@ export function setActivePasswordPolicy(p: {
     requireLetter: p.require_letter,
     requireDigit: p.require_digit,
   };
+}
+
+/** Копия активной политики — для гранулярных хинтов в формах. */
+export function getActivePasswordPolicy(): {
+  minLength: number;
+  requireLetter: boolean;
+  requireDigit: boolean;
+} {
+  return { ..._active };
+}
+
+/** Человекочитаемые требования текущей политики (для хинтов/тостов). */
+export function passwordPolicyMessage(): string {
+  const parts = [`минимум ${_active.minLength} символов`];
+  if (_active.requireLetter) parts.push("минимум одна буква");
+  if (_active.requireDigit) parts.push("минимум одна цифра");
+  const s = parts.join(", ");
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export function validatePassword(value: string): string | null {

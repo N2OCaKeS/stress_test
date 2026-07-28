@@ -5,8 +5,8 @@ import { ApiError } from "@/api/client";
 import { changeMyPassword } from "@/api/auth/users";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  MIN_PASSWORD_LENGTH,
-  PASSWORD_POLICY_MESSAGE,
+  passwordPolicyMessage,
+  getActivePasswordPolicy,
 } from "@/lib/passwordPolicy";
 
 /**
@@ -28,14 +28,18 @@ export function ForcePasswordChangeModal() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const minLen = MIN_PASSWORD_LENGTH;
+  const pol = getActivePasswordPolicy();
+  const minLen = pol.minLength;
   const hasLetter = /[A-Za-zА-Яа-яЁё]/.test(newPwd);
   const hasDigit = /\d/.test(newPwd);
   const mismatch = confirm.length > 0 && newPwd !== confirm;
   const tooShort = newPwd.length > 0 && newPwd.length < minLen;
-  const noLetter = newPwd.length > 0 && !hasLetter;
-  const noDigit = newPwd.length > 0 && !hasDigit;
-  const policyOk = newPwd.length >= minLen && hasLetter && hasDigit;
+  const noLetter = newPwd.length > 0 && pol.requireLetter && !hasLetter;
+  const noDigit = newPwd.length > 0 && pol.requireDigit && !hasDigit;
+  const policyOk =
+    newPwd.length >= minLen &&
+    (!pol.requireLetter || hasLetter) &&
+    (!pol.requireDigit || hasDigit);
   const canSubmit =
     !busy && oldPwd.length > 0 && policyOk && newPwd === confirm;
 
@@ -101,7 +105,7 @@ export function ForcePasswordChangeModal() {
                 </div>
                 <div>
                   <label className="field-label">
-                    Новый пароль ({PASSWORD_POLICY_MESSAGE})
+                    Новый пароль ({passwordPolicyMessage()})
                   </label>
                   <input
                     type="password"

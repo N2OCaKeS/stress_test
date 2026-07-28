@@ -54,7 +54,7 @@ import {
   unbanUser,
   unlockUser,
 } from "@/api/auth/users";
-import { PASSWORD_POLICY_MESSAGE } from "@/lib/passwordPolicy";
+import { passwordPolicyMessage } from "@/lib/passwordPolicy";
 import {
   addUserToGroup,
   listGroupsWithTotal,
@@ -352,7 +352,7 @@ export function UserDetail() {
               onClick={async () => {
                 const { ok, reason: pwd } = await confirm.prompt({
                   title: "Сброс пароля",
-                  message: `Новый пароль. ${PASSWORD_POLICY_MESSAGE}.`,
+                  message: `Новый пароль. ${passwordPolicyMessage()}.`,
                   reason: true,
                   reasonSecret: true,
                   reasonRequired: true,

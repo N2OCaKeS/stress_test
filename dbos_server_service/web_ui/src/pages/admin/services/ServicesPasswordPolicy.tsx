@@ -24,6 +24,7 @@ import {
   MAX_CONFIGURABLE_LENGTH,
   type PasswordPolicy,
 } from "@/api/auth/passwordPolicy";
+import { setActivePasswordPolicy } from "@/lib/passwordPolicy";
 
 interface FormState {
   minLength: string;
@@ -86,11 +87,14 @@ export function ServicesPasswordPolicy() {
     if (pending || !form || error) return;
     setPending(true);
     try {
-      await putPasswordPolicy({
+      const updated = await putPasswordPolicy({
         min_length: Number(form.minLength),
         require_letter: form.requireLetter,
         require_digit: form.requireDigit,
       });
+      // Сразу обновляем клиентскую активную политику — формы смены пароля
+      // подхватят новые требования без перезагрузки страницы.
+      setActivePasswordPolicy(updated);
       toast.success("Парольная политика сохранена");
       cfgQ.refetch();
     } catch (err) {

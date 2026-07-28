@@ -16,7 +16,7 @@ import {
 import {
   generateInitialPassword,
   isValidEmail,
-  PASSWORD_POLICY_MESSAGE,
+  passwordPolicyMessage,
   validatePassword,
 } from "@/lib/passwordPolicy";
 import { usePersona } from "@/contexts/PersonaContext";
@@ -843,7 +843,7 @@ function UserForm({
         {mode === "new" && (
           <FormRow
             label="пароль (виден, юзер сменит при первом входе)"
-            hint={PASSWORD_POLICY_MESSAGE}
+            hint={passwordPolicyMessage()}
           >
             <div className="flex gap-2 items-center">
               <input

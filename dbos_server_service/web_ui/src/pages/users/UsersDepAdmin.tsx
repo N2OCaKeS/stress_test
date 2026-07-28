@@ -35,7 +35,7 @@ import {
 } from "@/api/auth/users";
 import { listBotsWithTotal } from "@/api/auth/bots";
 import { listGroupsWithTotal } from "@/api/auth/groups";
-import { PASSWORD_POLICY_MESSAGE } from "@/lib/passwordPolicy";
+import { passwordPolicyMessage } from "@/lib/passwordPolicy";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
@@ -276,7 +276,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
     if (!targetUser) return;
     const { ok, reason: pwd } = await confirm.prompt({
       title: "Сброс пароля",
-      message: `Новый пароль для ${tgtLabel}. ${PASSWORD_POLICY_MESSAGE}.`,
+      message: `Новый пароль для ${tgtLabel}. ${passwordPolicyMessage()}.`,
       reason: true,
       reasonSecret: true,
       reasonRequired: true,

@@ -1744,6 +1744,42 @@ async def delete_vm(
     return vm, task_id
 
 
+async def delete_vms_for_clean(
+    db: AsyncSession, hub, *, request_id: str | None = None,
+) -> dict:
+    """Снести все ВМ хаба при clean после переустановки ОС.
+
+    Переустановка ОС на хабе физически стирает qcow2-диски всех его ВМ, так что
+    записи становятся orphan'ами. Удаляем строки каскадом (`repo.delete` → FK
+    ON DELETE CASCADE по vm_disks / vm_snapshots / vm_package_inventory /
+    server_account_vms) без диспатча на хаб — домены на свежей ОС уже
+    отсутствуют. На каждую снятую ВМ эмитим `vm.deleted` c `reason=server_clean`.
+
+    Возвращает `{deleted, names}`.
+    """
+    vms = await repo.list_for_hub(db, hub.id)
+    removed: list[dict] = []
+    for vm in vms:
+        removed.append(
+            {"vm_id": vm.id, "name": vm.name, "department_id": vm.department_id}
+        )
+        await repo.delete(db, vm)
+    if removed:
+        await db.commit()
+    for item in removed:
+        audit_service.emit(
+            "vm.deleted", target_id=item["vm_id"], target_type="vm",
+            status="success", allowed=True,
+            details={
+                "reason": "server_clean",
+                "name": item["name"],
+                "department_id": item["department_id"],
+                "hub_server_id": hub.id,
+            },
+        )
+    return {"deleted": len(removed), "names": [i["name"] for i in removed]}
+
+
 # ── статус-sweep ВМ (domstate/ping/ssh) ──────────────────────────────────────
 
 # Источник частого статус-прогона ВМ — идёт в `details.source` audit-события,

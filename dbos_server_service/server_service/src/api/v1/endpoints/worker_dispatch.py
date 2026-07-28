@@ -2675,8 +2675,8 @@ async def server_rotate_management_credentials_dispatch(
     description=(
         "Оркестрирует выбранные в модалке действия в фиксированном порядке: "
         "① `unbind_accounts` → ③ `rerun_prepare` → ② `update_os_version` → "
-        "④ `run_inventory_sync`. Каждое действие переиспользует существующий "
-        "путь:\n\n"
+        "④ `run_inventory_sync` → ⑤ `delete_vms`. Каждое действие переиспользует "
+        "существующий путь:\n\n"
         "* `unbind_accounts` — отвязать ВСЕ привязанные учётки сервера (снять "
         "связки + userdel-fanout на боксы, где учётка стояла);\n"
         "* `rerun_prepare` — `server.prepare` с bootstrap-кредами из блока "
@@ -2684,7 +2684,9 @@ async def server_rotate_management_credentials_dispatch(
         "управляющую учётку и ре-провижнит привязанные аккаунты;\n"
         "* `update_os_version` — ручной os-sync (`os_version_id`, `null` "
         "сбрасывает);\n"
-        "* `run_inventory_sync` — `inventory.sync` (требует prepared-сервер).\n\n"
+        "* `run_inventory_sync` — `inventory.sync` (требует prepared-сервер);\n"
+        "* `delete_vms` — снести все ВМ этого хаба (переустановка ОС стёрла их "
+        "qcow2-диски): row-only каскад строк, без диспатча на хаб.\n\n"
         "Порядок фиксированный: если выбраны и `unbind_accounts`, и "
         "`rerun_prepare` — после unbind привязанных учёток не остаётся, prepare "
         "пере-создаст только управляющую (как «только поставили ОС»).\n\n"
@@ -2778,6 +2780,7 @@ async def server_clean_dispatch(
     prepare_res = _not_selected()
     os_res = _not_selected()
     inv_res = _not_selected()
+    delvm_res = _not_selected()
 
     # ① unbind_accounts — отвязать все учётки + userdel-fanout.
     if body.unbind_accounts:
@@ -2844,6 +2847,20 @@ async def server_clean_dispatch(
         except ServiceUnavailableError:
             inv_res = ServerCleanActionResult(status="failed", reason="worker_unreachable")
 
+    # ⑤ delete_vms — снести orphan-ВМ хаба (диски стёрты переустановкой ОС).
+    # Идёт последним: row-only каскад с собственным commit'ом, ничьи атрибуты
+    # `server` дальше не читаем (кроме PK).
+    if body.delete_vms:
+        try:
+            detail = await vm_svc.delete_vms_for_clean(
+                db, server, request_id=request_id,
+            )
+            delvm_res = ServerCleanActionResult(status="done", detail=detail)
+        except (NotFoundError, ConflictError) as exc:
+            delvm_res = ServerCleanActionResult(
+                status="failed", reason=exc.error_code.lower(),
+            )
+
     audit_service.emit(
         audit_action, target_id=server_id, target_type="server",
         status="success", allowed=True,
@@ -2854,12 +2871,14 @@ async def server_clean_dispatch(
                 "rerun_prepare": body.rerun_prepare,
                 "update_os_version": body.update_os_version,
                 "run_inventory_sync": body.run_inventory_sync,
+                "delete_vms": body.delete_vms,
             },
             "results": {
                 "unbind_accounts": unbind_res.status,
                 "rerun_prepare": prepare_res.status,
                 "update_os_version": os_res.status,
                 "run_inventory_sync": inv_res.status,
+                "delete_vms": delvm_res.status,
             },
         },
     )
@@ -2869,6 +2888,7 @@ async def server_clean_dispatch(
         rerun_prepare=prepare_res,
         update_os_version=os_res,
         run_inventory_sync=inv_res,
+        delete_vms=delvm_res,
     )
 
 

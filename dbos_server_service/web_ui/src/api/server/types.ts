@@ -362,6 +362,8 @@ export interface ServerCleanRequest {
   update_os_version: boolean;
   rerun_prepare: boolean;
   run_inventory_sync: boolean;
+  /** Снести все ВМ хаба (переустановка ОС стёрла их диски). */
+  delete_vms: boolean;
   os_version_id?: string | null;
   prepare?: ServerPrepareRequest | null;
 }
@@ -373,6 +375,7 @@ export interface ServerCleanResponse {
   rerun_prepare: ServerCleanActionResult;
   update_os_version: ServerCleanActionResult;
   run_inventory_sync: ServerCleanActionResult;
+  delete_vms: ServerCleanActionResult;
 }
 
 // ── ipmi ────────────────────────────────────────────────────────────────────

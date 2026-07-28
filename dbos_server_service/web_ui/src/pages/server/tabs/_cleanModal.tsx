@@ -52,6 +52,7 @@ const ACTION_ORDER: {
   { key: "rerun_prepare", label: "Повторный prepare" },
   { key: "update_os_version", label: "Обновление версии ОС" },
   { key: "run_inventory_sync", label: "Inventory sync" },
+  { key: "delete_vms", label: "Удаление ВМ хаба" },
 ];
 
 function statusBadge(status: string) {
@@ -132,6 +133,7 @@ export function CleanModal({
   const [updateOs, setUpdateOs] = useState(false);
   const [rerun, setRerun] = useState(false);
   const [inventory, setInventory] = useState(false);
+  const [delVms, setDelVms] = useState(false);
   const [osVersionId, setOsVersionId] = useState<string>(
     currentOsVersionId ?? "",
   );
@@ -149,7 +151,7 @@ export function CleanModal({
   );
   const osVersions = useMemo(() => osQ.data?.items ?? [], [osQ.data]);
 
-  const anyFlag = unbind || updateOs || rerun || inventory;
+  const anyFlag = unbind || updateOs || rerun || inventory || delVms;
   const prepareValid = !rerun || bootstrapFormValid(form);
   const canSubmit = anyFlag && prepareValid;
 
@@ -162,6 +164,7 @@ export function CleanModal({
       rerun && "повторный prepare",
       updateOs && "смена версии ОС",
       inventory && "inventory sync",
+      delVms && "удаление всех ВМ хаба",
     ].filter(Boolean) as string[];
     const ok = await confirm({
       title: "Очистить сервер",
@@ -179,6 +182,7 @@ export function CleanModal({
         update_os_version: updateOs,
         rerun_prepare: rerun,
         run_inventory_sync: inventory,
+        delete_vms: delVms,
         ...(updateOs ? { os_version_id: osVersionId || null } : {}),
         ...(rerun ? { prepare: bootstrapFormToBody(form) } : {}),
       });
@@ -240,7 +244,7 @@ export function CleanModal({
                 <Dialog.Description className="text-sm text-dim">
                   Оркестрация очистки после переустановки ОС. Выберите действия —
                   они выполнятся в порядке: отвязка → prepare → версия ОС →
-                  inventory.
+                  inventory → удаление ВМ.
                 </Dialog.Description>
 
                 {err && <div className="alert-danger text-sm">{err}</div>}
@@ -316,6 +320,16 @@ export function CleanModal({
                     disabled={pending}
                   />
                   Выполнить inventory.sync (SSH-probe)
+                </label>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={delVms}
+                    onChange={(e) => setDelVms(e.target.checked)}
+                    disabled={pending}
+                  />
+                  Удалить все ВМ хаба (переустановка ОС стёрла их диски)
                 </label>
               </div>
 

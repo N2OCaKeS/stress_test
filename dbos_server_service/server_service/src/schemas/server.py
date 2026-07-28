@@ -866,9 +866,9 @@ class ServerPrepareBatchResponse(BaseModel):
 class ServerCleanRequest(BaseModel):
     """Тело POST /servers/{id}/clean — оркестрация очистки после переустановки ОС.
 
-    Четыре независимых флага из модалки. Выбранные действия выполняются в
+    Пять независимых флагов из модалки. Выбранные действия выполняются в
     фиксированном порядке: `unbind_accounts` → `rerun_prepare` →
-    `update_os_version` → `run_inventory_sync`.
+    `update_os_version` → `run_inventory_sync` → `delete_vms`.
 
     * `unbind_accounts` — отвязать ВСЕ привязанные учётки сервера (снять связки
       + userdel-fanout на боксы, где учётка стояла).
@@ -880,6 +880,9 @@ class ServerCleanRequest(BaseModel):
       `os_version_id`; `null` сбрасывает версию).
     * `run_inventory_sync` — поставить `inventory.sync` (SSH-probe, требует
       prepared-сервер).
+    * `delete_vms` — снести все ВМ этого хаба: переустановка ОС стёрла их
+      qcow2-диски, записи становятся orphan'ами. Row-only каскад, без диспатча
+      на хаб.
 
     Хотя бы один флаг должен быть выбран (иначе 422).
     """
@@ -895,6 +898,13 @@ class ServerCleanRequest(BaseModel):
     )
     run_inventory_sync: bool = Field(
         default=False, description="Поставить inventory.sync (SSH-probe).",
+    )
+    delete_vms: bool = Field(
+        default=False,
+        description=(
+            "Снести все ВМ этого хаба: переустановка ОС стёрла их qcow2-диски, "
+            "записи становятся orphan'ами. Row-only каскад, без диспатча на хаб."
+        ),
     )
     os_version_id: str | None = Field(
         default=None,
@@ -922,6 +932,7 @@ class ServerCleanRequest(BaseModel):
             or self.update_os_version
             or self.rerun_prepare
             or self.run_inventory_sync
+            or self.delete_vms
         ):
             raise ValueError("at least one clean action must be selected")
         return self
@@ -956,6 +967,7 @@ class ServerCleanResponse(BaseModel):
     rerun_prepare: ServerCleanActionResult
     update_os_version: ServerCleanActionResult
     run_inventory_sync: ServerCleanActionResult
+    delete_vms: ServerCleanActionResult
 
 
 class ServerPrepareCallbackRequest(BaseModel):

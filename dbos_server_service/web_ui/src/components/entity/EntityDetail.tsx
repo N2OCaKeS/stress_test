@@ -22,7 +22,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
 import { setBusy, clearBusy } from "@/api/server/servers";
 import { reserveVm, releaseVm, vmBusyLabel } from "@/api/server/vms";
-import { useDeptLabel, useUserLabel } from "@/lib/labels";
+import { useDeptLabel, useUserLabel, useServerLabel } from "@/lib/labels";
 import { isDepAdmin } from "@/lib/rbac";
 import { apiErrMsg } from "@/api/client";
 import { EntityHeader } from "@/components/entity/EntityHeader";
@@ -389,6 +389,14 @@ function VmDetailHeader({
   backLabel?: string;
 }) {
   const deptLabel = useDeptLabel(vm.department_id);
+  const hubLabel = useServerLabel(vm.hub_server_id);
+  // ВМ недоступна: не выключена штатно (power on/unknown — напр. хаб недоступен),
+  // но ни ping, ни ssh до гостя не отвечают. При power=off это штатное
+  // «выключена» (его показывает PowerStateBadge), не дублируем как «недоступна».
+  const unreachable =
+    vm.power_state !== "off" &&
+    vm.ping_reachable === false &&
+    vm.ssh_reachable === false;
   return (
     <EntityHeader
       icon={<MonitorPlay className="w-7 h-7" />}
@@ -398,13 +406,19 @@ function VmDetailHeader({
       badges={
         <>
           <span className="badge">ВМ</span>
+          {/* Состояние питания домена снимается из virsh на hub'е. */}
+          <PowerStateBadge state={vm.power_state} />
           <ReachSignal
             label="ping"
             reachable={vm.ping_reachable}
             latencyMs={vm.ping_latency_ms}
           />
-          {/* Состояние питания домена снимается из virsh. */}
-          <PowerStateBadge state={vm.power_state} />
+          <ReachSignal label="ssh" reachable={vm.ssh_reachable} />
+          {unreachable && (
+            <span className="badge badge-danger" title="домен включён, но гость не отвечает ни по ping, ни по ssh">
+              недоступна
+            </span>
+          )}
         </>
       }
       meta={
@@ -413,6 +427,10 @@ function VmDetailHeader({
           <span>·</span>
           <span>
             № <b className="mono">{vm.number ?? "—"}</b>
+          </span>
+          <span>·</span>
+          <span>
+            хаб: <b>{hubLabel}</b>
           </span>
           <span>·</span>
           <span>

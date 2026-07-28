@@ -151,6 +151,18 @@ async def _probe_vm_reachability(sem: asyncio.Semaphore, target: dict) -> None:
                 target.get("vm_id"),
                 redact_error_message(f"{type(exc).__name__}: {exc}"),
             )
+            # Хаб/гость недоступны (напр. хаб потерял prepared-состояние) —
+            # помечаем ВМ недоступной, а не оставляем протухшие ping/ssh (иначе
+            # UI показывает старое «доступна» с прошлой удачной пробы).
+            try:
+                await server_service_client.submit_vm_state(
+                    target["vm_id"],
+                    target_department_id=target.get("department_id"),
+                    ping_reachable=False,
+                    ssh_reachable=False,
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
 
 # ── power loop ───────────────────────────────────────────────────────────────
@@ -221,6 +233,16 @@ async def _probe_vm_power(sem: asyncio.Semaphore, target: dict) -> None:
                 target.get("vm_id"),
                 redact_error_message(f"{type(exc).__name__}: {exc}"),
             )
+            # Хаб недоступен / домен не опрошен — питание неизвестно (не
+            # оставляем протухшее on/off с прошлой пробы).
+            try:
+                await server_service_client.submit_vm_state(
+                    target["vm_id"],
+                    target_department_id=target.get("department_id"),
+                    power_state="unknown",
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def _vm_hub_payload(target: dict) -> dict:

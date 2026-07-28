@@ -248,6 +248,12 @@ parser.add_argument('-kernel',
                     help='testlist',
                     dest='KERNELTEST')
 
+parser.add_argument('-astraevents',
+                    action='store',
+                    required=False,
+                    help='testlist',
+                    dest='ASTRAEVENTS')
+
 parser.add_argument('-olap',
                     action='store',
                     required=False,
@@ -313,6 +319,7 @@ tantor_vanilla = '-tantor_van tv'
 lvirt_test = f'-testname {args.LVIRT}'
 network_test = f'-testname {args.NETWORK}'
 kernel_test = f'-testname {args.KERNELTEST}'
+astraevents_test = f'-testname {args.ASTRAEVENTS}'
 apache_test = f'-testname {args.APACHE}'
 ovf = f'-ovf {args.OVF}'
 ovf_ram_dates = f'{username} {token} {fti} {tcyc} {tcas} {ba} {tcv} -check drop'
@@ -406,6 +413,9 @@ elif args.NETWORK:
 elif args.KERNELTEST:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} {balance_vbox} {kernel_test}'
+elif args.ASTRAEVENTS:
+    dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
+              {sn} {fti} {tcyc} {tcas} {ba} {tcv} {balance_vbox} {astraevents_test}'
 elif args.PSQL_OLAP:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {pack_sql} {psql_olap}'

@@ -31,7 +31,8 @@
             "CEPH fio": "2:16:11",
             "Total time": "0:00:00",
             "CEPH parsec": "5:42:47",
-            "raw-spin-lock": "2:33:30"
+            "raw-spin-lock": "2:33:30",
+            "astraevents": "2:33:30"
         },
         "stand11": {
             "parsec impact-fs": "0:35:17",
@@ -108,7 +109,8 @@
             "CEPH fio": "0:31:04",
             "Total time": "0:00:00",
             "CEPH parsec": "2:51:24",
-            "raw-spin-lock": "1:19:45"
+            "raw-spin-lock": "1:19:45",
+            "astraevents": "2:33:30"
         },
         "stand11": {
             "parsec impact-fs": "0:36:42",

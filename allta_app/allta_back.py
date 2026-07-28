@@ -95,6 +95,9 @@ TEST_FLAGS: dict[str, str] = {
     
     # -olap (dest='PSQL_OLAP')
     'PSQL OLAP-hq': '-olap heavy_queries',
+
+    # -astraevents (dest='ASTRAEVENTS')
+    'astraevents': '-astraevents astraevents',
 }
 
 # Специальные флаги для auditd 

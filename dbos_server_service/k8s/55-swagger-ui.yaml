@@ -1,10 +1,11 @@
 # Общий Swagger UI для четырёх сервисов: auth / logging / server / secret.
 #
-# Spec'ы лежат в ConfigMap `dbos-openapi-specs` (auth.json, logging.json,
-# server.json, secret.json) — генерируются скриптом scripts/k8s/dump_openapi.sh из
-# работающих pod'ов через `python -c app.openapi()`. Регенерация — только
-# когда меняется набор endpoint'ов; в проде /openapi.json у сервисов отключён
-# намеренно.
+# Spec'ы лежат в отдельных ConfigMap'ах на сервис (dbos-openapi-auth /
+# -logging / -server / -secret) — генерируются скриптом scripts/k8s/dump_openapi.sh
+# из работающих pod'ов через `python -c app.openapi()`. По одному ConfigMap'у
+# на spec: server.json в одиночку ~0.8 МБ, а суммарный ConfigMap упирается в
+# лимит 1 МБ. Регенерация — когда меняется набор endpoint'ов; в проде
+# /openapi.json у сервисов отключён намеренно.
 #
 # Доступ: https://<host>/docs (через Ingress, см. 50-ingress.yaml).
 # В dropdown'е переключение между Auth / Logging / Server.
@@ -53,16 +54,38 @@ spec:
             - name: DEEP_LINKING
               value: "true"
           volumeMounts:
-            - name: specs
-              mountPath: /usr/share/nginx/html/specs
+            - name: spec-auth
+              mountPath: /usr/share/nginx/html/specs/auth.json
+              subPath: auth.json
+              readOnly: true
+            - name: spec-logging
+              mountPath: /usr/share/nginx/html/specs/logging.json
+              subPath: logging.json
+              readOnly: true
+            - name: spec-server
+              mountPath: /usr/share/nginx/html/specs/server.json
+              subPath: server.json
+              readOnly: true
+            - name: spec-secret
+              mountPath: /usr/share/nginx/html/specs/secret.json
+              subPath: secret.json
               readOnly: true
           resources:
             requests: { cpu: "10m", memory: "32Mi" }
             limits:   { cpu: "200m", memory: "128Mi" }
       volumes:
-        - name: specs
+        - name: spec-auth
           configMap:
-            name: dbos-openapi-specs
+            name: dbos-openapi-auth
+        - name: spec-logging
+          configMap:
+            name: dbos-openapi-logging
+        - name: spec-server
+          configMap:
+            name: dbos-openapi-server
+        - name: spec-secret
+          configMap:
+            name: dbos-openapi-secret
 
 ---
 apiVersion: v1

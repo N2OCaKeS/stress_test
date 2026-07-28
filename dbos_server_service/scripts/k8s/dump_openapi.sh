@@ -41,13 +41,21 @@ for svc in "${!SVC_TO_FILE[@]}"; do
     [[ -s "$TMP/$file" ]] || { echo "ОШИБКА: пустой spec для $svc" >&2; exit 1; }
 done
 
-echo "→ Пересоздаём ConfigMap dbos-openapi-specs..."
+# По одному ConfigMap'у на spec: server.json уже ~0.8 МБ, а суммарный
+# ConfigMap упирается в лимит 1 МБ. Старый общий dbos-openapi-specs удаляем.
+echo "→ Пересоздаём ConfigMap'ы спецификаций (по одному на сервис)..."
 kubectl -n dbos delete configmap dbos-openapi-specs --ignore-not-found
-kubectl -n dbos create configmap dbos-openapi-specs \
-    --from-file=auth.json="$TMP/auth.json" \
-    --from-file=logging.json="$TMP/logging.json" \
-    --from-file=server.json="$TMP/server.json" \
-    --from-file=secret.json="$TMP/secret.json"
+declare -A SPEC_TO_CM=(
+    [auth.json]=dbos-openapi-auth
+    [logging.json]=dbos-openapi-logging
+    [server.json]=dbos-openapi-server
+    [secret.json]=dbos-openapi-secret
+)
+for spec in "${!SPEC_TO_CM[@]}"; do
+    cm="${SPEC_TO_CM[$spec]}"
+    kubectl -n dbos delete configmap "$cm" --ignore-not-found
+    kubectl -n dbos create configmap "$cm" --from-file="$spec=$TMP/$spec"
+done
 
 echo "→ Рестартим dbos-swagger-ui (чтобы подхватил новые файлы)..."
 kubectl -n dbos rollout restart deploy/dbos-swagger-ui

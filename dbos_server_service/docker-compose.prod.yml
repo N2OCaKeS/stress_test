@@ -222,7 +222,7 @@ services:
     init: true
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001", "--proxy-headers", "--forwarded-allow-ips=*"]
     env_file: [.env.prod]
-    environment:
+    environment: &logging_env
       APP_ENV: production
       APP_DEBUG: "false"
       DBOS_HTTPS_GUARD_DISABLED: "true"
@@ -254,7 +254,7 @@ services:
     init: true
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
     env_file: [.env.prod]
-    environment:
+    environment: &auth_env
       APP_ENV: production
       APP_DEBUG: "false"
       DBOS_HTTPS_GUARD_DISABLED: "true"
@@ -301,7 +301,7 @@ services:
       dockerfile: docker/Dockerfile
     init: true
     env_file: [.env.prod]
-    environment:
+    environment: &server_env
       APP_ENV: production
       APP_DEBUG: "false"
       DBOS_HTTPS_GUARD_DISABLED: "true"
@@ -348,7 +348,7 @@ services:
       dockerfile: docker/Dockerfile
     init: true
     env_file: [.env.prod]
-    environment:
+    environment: &secret_env
       APP_ENV: production
       APP_DEBUG: "false"
       DBOS_HTTPS_GUARD_DISABLED: "true"
@@ -503,8 +503,100 @@ services:
         condition: service_healthy
       web_ui:
         condition: service_healthy
+      swagger_ui:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/emm-ca.crt || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # ── Swagger UI: агрегированный /docs для 4 сервисов ──────────────────────────
+  # В проде /openapi.json у сервисов закрыт (404), поэтому specs не забрать по
+  # HTTP. Каждый openapi-dump-* one-shot'ом пишет свой spec в общий том
+  # openapi_specs через app.openapi() in-process (env берётся из anchor'а
+  # сервиса), а swagger_ui раздаёт их на /docs. Аналог k8s dbos-swagger-ui.
+  openapi-dump-auth:
+    build:
+      context: ./auth_service
+      dockerfile: docker/Dockerfile
+    env_file: [.env.prod]
+    environment: *auth_env
+    command: ["python", "-c", "import json;from src.main import app;open('/specs/auth.json','w').write(json.dumps(app.openapi()))"]
+    volumes:
+      - openapi_specs:/specs
+    depends_on:
+      auth_service:
+        condition: service_healthy
+    restart: "no"
+
+  openapi-dump-logging:
+    build:
+      context: ./loging_service
+      dockerfile: docker/Dockerfile
+    env_file: [.env.prod]
+    environment: *logging_env
+    command: ["python", "-c", "import json;from src.main import app;open('/specs/logging.json','w').write(json.dumps(app.openapi()))"]
+    volumes:
+      - openapi_specs:/specs
+    depends_on:
+      logging_service:
+        condition: service_healthy
+    restart: "no"
+
+  openapi-dump-server:
+    build:
+      context: ./server_service
+      dockerfile: docker/Dockerfile
+    env_file: [.env.prod]
+    environment: *server_env
+    command: ["python", "-c", "import json;from src.main import app;open('/specs/server.json','w').write(json.dumps(app.openapi()))"]
+    volumes:
+      - openapi_specs:/specs
+      - server_keystore:/data
+    depends_on:
+      server_service:
+        condition: service_healthy
+    restart: "no"
+
+  openapi-dump-secret:
+    build:
+      context: ./secret_service
+      dockerfile: docker/Dockerfile
+    env_file: [.env.prod]
+    environment: *secret_env
+    command: ["python", "-c", "import json;from src.main import app;open('/specs/secret.json','w').write(json.dumps(app.openapi()))"]
+    volumes:
+      - openapi_specs:/specs
+      - secret_keystore:/data
+    depends_on:
+      secret_service:
+        condition: service_healthy
+    restart: "no"
+
+  swagger_ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    init: true
+    environment:
+      BASE_URL: /docs
+      URLS: '[{"url":"/docs/specs/auth.json","name":"auth_service"},{"url":"/docs/specs/logging.json","name":"loging_service"},{"url":"/docs/specs/server.json","name":"server_service"},{"url":"/docs/specs/secret.json","name":"secret_service"}]'
+      URLS_PRIMARY_NAME: auth_service
+      PERSIST_AUTHORIZATION: "true"
+      DEEP_LINKING: "true"
+    volumes:
+      - openapi_specs:/usr/share/nginx/html/specs:ro
+    depends_on:
+      openapi-dump-auth:
+        condition: service_completed_successfully
+      openapi-dump-logging:
+        condition: service_completed_successfully
+      openapi-dump-server:
+        condition: service_completed_successfully
+      openapi-dump-secret:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -519,3 +611,4 @@ volumes:
   redis_data:
   server_keystore:
   secret_keystore:
+  openapi_specs:

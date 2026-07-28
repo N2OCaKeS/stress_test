@@ -122,6 +122,13 @@ cat <<EOF
 DBOS_PUBLIC_HOST=${DBOS_PUBLIC_HOST:-${PROD_HOST:-${PROD_IP:-}}}
 DBOS_HTTPS_PORT=${DBOS_HTTPS_PORT:-443}
 
+# ── Начальная парольная политика server-аккаунтов (перенастраивается в UI) ────
+# Дефолт «из коробки» до того, как account_admin задаст политику в UI
+# (PUT /admin/password-policy → значение ложится в БД и перекрывает эти env).
+PASSWORD_POLICY_MIN_LENGTH=${PASSWORD_POLICY_MIN_LENGTH:-8}
+PASSWORD_POLICY_REQUIRE_LETTER=${PASSWORD_POLICY_REQUIRE_LETTER:-true}
+PASSWORD_POLICY_REQUIRE_DIGIT=${PASSWORD_POLICY_REQUIRE_DIGIT:-true}
+
 # ── Postgres (per-service) ────────────────────────────────────────────────────
 AUTH_DB_USER=auth_user
 AUTH_DB_PASSWORD=${AUTH_DB_PASSWORD}

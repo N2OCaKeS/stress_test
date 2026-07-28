@@ -699,9 +699,21 @@ async def _load_password_policy() -> None:
     логгируем WARNING и едем на дефолтах кэша (историческое поведение). Открываем
     отдельную короткую сессию, чтобы не завязываться на request-scoped `get_db`.
     """
+    from src.core import password_policy
+    from src.core.config import get_settings
     from src.db.session import AsyncSessionLocal
     from src.services import password_policy_service
 
+    # Начальная политика из env — база «из коробки». Строка из БД (её пишет
+    # account_admin через UI) при наличии перекроет это в load_active_policy.
+    settings = get_settings()
+    password_policy.apply_policy(
+        {
+            "min_length": settings.password_policy_min_length,
+            "require_letter": settings.password_policy_require_letter,
+            "require_digit": settings.password_policy_require_digit,
+        }
+    )
     try:
         async with AsyncSessionLocal() as session:
             await password_policy_service.load_active_policy(session)

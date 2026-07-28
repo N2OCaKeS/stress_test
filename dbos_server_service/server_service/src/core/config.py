@@ -834,6 +834,26 @@ class Settings(BaseSettings):
             "jsdelivr. Задан → /docs раздаётся своим маршрутом с этого адреса."
         ),
     )
+    # Начальная базовая парольная политика (server-аккаунты / IPMI-креды).
+    # Читается на старте в процессный кэш ДО чтения singleton'а из БД, так что
+    # это дефолт «из коробки». Как только account_admin поменяет политику в UI
+    # (PUT /admin/password-policy), её значение ложится строкой в БД и с этого
+    # момента перекрывает env при каждом старте/чтении.
+    password_policy_min_length: int = Field(
+        default=8, ge=1, le=128,
+        alias="PASSWORD_POLICY_MIN_LENGTH",
+        description="Начальная мин. длина пароля (перенастраивается в UI).",
+    )
+    password_policy_require_letter: bool = Field(
+        default=True,
+        alias="PASSWORD_POLICY_REQUIRE_LETTER",
+        description="Начальное требование буквы в пароле (перенастраивается в UI).",
+    )
+    password_policy_require_digit: bool = Field(
+        default=True,
+        alias="PASSWORD_POLICY_REQUIRE_DIGIT",
+        description="Начальное требование цифры в пароле (перенастраивается в UI).",
+    )
     internal_require_dept_header: bool = Field(
         default=True,
         description=(

@@ -22,6 +22,11 @@ data:
   INTERNAL_REQUIRE_DEPT_HEADER: "true"
   # slowapi: глобальный per-IP rate-limit. Health/ready исключены.
   SLOWAPI_RATE_LIMIT: "500/minute"
+  # Начальная парольная политика server-аккаунтов (перенастраивается в UI
+  # account_admin'ом; после PUT значение ложится в БД и перекрывает эти env).
+  PASSWORD_POLICY_MIN_LENGTH: "8"
+  PASSWORD_POLICY_REQUIRE_LETTER: "true"
+  PASSWORD_POLICY_REQUIRE_DIGIT: "true"
   # DB connection pool: per-pod 5 + overflow 10 = max 15 conn × replicas=2 = 30,
   # с запасом помещается в PG max_connections=100.
   DB_POOL_SIZE: "5"

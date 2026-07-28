@@ -43,6 +43,31 @@ def test_default_cache_matches_legacy_behaviour():
     assert is_compliant("short1") is False
 
 
+def test_env_policy_fields_defined():
+    """Начальная политика читается из env-алиасов с дефолтами 8/true/true."""
+    from src.core.config import Settings
+
+    fields = Settings.model_fields
+    ml = fields["password_policy_min_length"]
+    assert ml.default == 8 and ml.alias == "PASSWORD_POLICY_MIN_LENGTH"
+    rl = fields["password_policy_require_letter"]
+    assert rl.default is True and rl.alias == "PASSWORD_POLICY_REQUIRE_LETTER"
+    rd = fields["password_policy_require_digit"]
+    assert rd.default is True and rd.alias == "PASSWORD_POLICY_REQUIRE_DIGIT"
+
+
+def test_env_seed_relaxes_policy():
+    """Сид начальной политики из env реально меняет вердикт валидатора."""
+    apply_policy({"min_length": 4, "require_letter": False, "require_digit": False})
+    assert current_policy() == {
+        "min_length": 4,
+        "require_letter": False,
+        "require_digit": False,
+    }
+    assert is_compliant("abcd") is True   # 4 символа, без требований букв/цифр
+    assert is_compliant("a") is False     # короче min_length
+
+
 def test_apply_shorter_length_relaxes_check():
     apply_policy({"min_length": 4, "require_letter": True, "require_digit": True})
     assert is_compliant("ab12") is True

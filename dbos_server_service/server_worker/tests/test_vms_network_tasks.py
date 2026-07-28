@@ -400,7 +400,7 @@ class TestVmSetNetworkBridgeFallback:
         state = stub_session_and_callbacks["calls"]["vm_state"][0]
         assert state["ip_address"] == "10.177.103.101"
 
-    async def test_missing_virt_customize_fails(
+    async def test_missing_virt_customize_falls_back_to_nbd(
         self, make_task, fetch_task, captured_audit, stub_session_and_callbacks,
     ):
         fake = _FakeSshClient()
@@ -408,7 +408,8 @@ class TestVmSetNetworkBridgeFallback:
         fake.set_response(
             "virsh domblklist", 0, " vda      /vms/station-a.qcow2\n",
         )
-        fake.set_response("command -v virt-customize", 1)  # бинаря нет и не встал
+        fake.set_response("command -v virt-customize", 1)  # libguestfs нет
+        fake.set_response("mktemp", 0, "/tmp/dbos-if")  # tmp под interfaces (nbd-путь)
         stub_session_and_callbacks["holder"]["ssh"] = fake
         payload = {
             "vm_id": "vm1", "hub_host": "10.0.0.7", "vm_name": "station-a",
@@ -423,8 +424,9 @@ class TestVmSetNetworkBridgeFallback:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.FAILED
         assert t.last_error and "VM_NET_APPLY_FAILED" in t.last_error
-        # best-effort доустановка libguestfs-tools была попытана
-        assert any("libguestfs-tools" in c for c in fake.commands)
+        # без libguestfs статику льём offline через qemu-nbd — фолбэк задействован
+        # (в моке nbd не отдаёт NBD_OK, поэтому набор падает — но путь тот).
+        assert any("qemu-nbd" in c for c in fake.commands)
 
 
 class TestVmSetNetworkNat:

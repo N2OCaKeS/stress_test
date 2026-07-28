@@ -914,9 +914,10 @@ class TestVmCreateSingle:
         assert t.last_error and "VM_CREATE_FAILED" in t.last_error
         cmds = fake.commands
         # никакой тяжёлой работы: ни overlay, ни ужатия ФС, ни virt-resize
+        # (`command -v virt-resize` — лишь проба наличия тула, не работа).
         assert not any("shrink-src" in c for c in cmds)
         assert not any("resize2fs-size" in c for c in cmds)
-        assert not any("virt-resize" in c for c in cmds)
+        assert not any("virt-resize --" in c for c in cmds)
 
     async def test_single_bridge_injects_static_before_install(self, make_task, fetch_task, captured_audit, stub_session_and_callbacks):
         fake = _create_fake()

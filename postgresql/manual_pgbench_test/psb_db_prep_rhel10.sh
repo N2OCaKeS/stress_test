@@ -71,33 +71,33 @@ sed -e "s/shared_preload_libraries.*/shared_preload_libraries = 'pg_stat_stateme
 mv "$SETEST_CFG_NEW" "$SETEST_CFG"
 
 # Порт
-sed -i "s/.*port.*/port = ${PG_SETEST_PORT}/g" "$SETEST_CFG"
+sed -i "s/^#\?\s*port\s*=.*/port = ${PG_SETEST_PORT}/" "$SETEST_CFG"
 
 # Соединения
-sed -i "s/.*max_connections.*/max_connections = ${MAX_CONNECTIONS}/g" "$SETEST_CFG"
+sed -i "s/^#\?\s*max_connections\s*=.*/max_connections = ${MAX_CONNECTIONS}/" "$SETEST_CFG"
 
 # Память
-sed -i "s/.*shared_buffers.*/shared_buffers = ${MEM_SHARED_BUFFERS}/g" "$SETEST_CFG"
-sed -i "s/.*effective_cache_size.*/effective_cache_size = ${MEM_EFFECTIVE_CACHE}/g" "$SETEST_CFG"
-sed -i "s/.*maintenance_work_mem.*/maintenance_work_mem = ${MEM_MAINTENANCE_WORK}/g" "$SETEST_CFG"
-sed -i "s/.*work_mem.*/work_mem = ${MEM_WORK}/g" "$SETEST_CFG"
-sed -i "s/.*wal_buffers.*/wal_buffers = ${MEM_WAL_BUFFERS}/g" "$SETEST_CFG"
+sed -i "s/^#\?\s*shared_buffers\s*=.*/shared_buffers = ${MEM_SHARED_BUFFERS}/" "$SETEST_CFG"
+sed -i "s/^#\?\s*effective_cache_size\s*=.*/effective_cache_size = ${MEM_EFFECTIVE_CACHE}/" "$SETEST_CFG"
+sed -i "s/^#\?\s*maintenance_work_mem\s*=.*/maintenance_work_mem = ${MEM_MAINTENANCE_WORK}/" "$SETEST_CFG"
+sed -i "s/^#\?\s*work_mem\s*=.*/work_mem = ${MEM_WORK}/" "$SETEST_CFG"
+sed -i "s/^#\?\s*wal_buffers\s*=.*/wal_buffers = ${MEM_WAL_BUFFERS}/" "$SETEST_CFG"
 
 # Планировщик
-sed -i "s/.*checkpoint_completion_target.*/checkpoint_completion_target = 0.9/g" "$SETEST_CFG"
-sed -i "s/.*default_statistics_target.*/default_statistics_target = 100/g" "$SETEST_CFG"
-sed -i "s/.*random_page_cost.*/random_page_cost = 1.1/g" "$SETEST_CFG"
-sed -i "s/.*effective_io_concurrency.*/effective_io_concurrency = 200/g" "$SETEST_CFG"
+sed -i "s/^#\?\s*checkpoint_completion_target\s*=.*/checkpoint_completion_target = 0.9/" "$SETEST_CFG"
+sed -i "s/^#\?\s*default_statistics_target\s*=.*/default_statistics_target = 100/" "$SETEST_CFG"
+sed -i "s/^#\?\s*random_page_cost\s*=.*/random_page_cost = 1.1/" "$SETEST_CFG"
+sed -i "s/^#\?\s*effective_io_concurrency\s*=.*/effective_io_concurrency = 200/" "$SETEST_CFG"
 
 # WAL
-sed -i "s/.*min_wal_size.*/min_wal_size = 1GB/g" "$SETEST_CFG"
-sed -i "s/.*max_wal_size.*/max_wal_size = 4GB/g" "$SETEST_CFG"
+sed -i "s/^#\?\s*min_wal_size\s*=.*/min_wal_size = 1GB/" "$SETEST_CFG"
+sed -i "s/^#\?\s*max_wal_size\s*=.*/max_wal_size = 4GB/" "$SETEST_CFG"
 
 # Параллелизм (авто по числу CPU)
-sed -i "s/.*max_worker_processes.*/max_worker_processes = ${NCPUS}/g" "$SETEST_CFG"
-sed -i "s/.*max_parallel_workers_per_gather.*/max_parallel_workers_per_gather = ${PARALLEL_GATHER}/g" "$SETEST_CFG"
-sed -i "s/.*max_parallel_workers.*/max_parallel_workers = ${NCPUS}/g" "$SETEST_CFG"
-sed -i "s/.*max_parallel_maintenance_workers.*/max_parallel_maintenance_workers = ${PARALLEL_MAINT}/g" "$SETEST_CFG"
+sed -i "s/^#\?\s*max_worker_processes\s*=.*/max_worker_processes = ${NCPUS}/" "$SETEST_CFG"
+sed -i "s/^#\?\s*max_parallel_workers_per_gather\s*=.*/max_parallel_workers_per_gather = ${PARALLEL_GATHER}/" "$SETEST_CFG"
+sed -i "s/^#\?\s*max_parallel_workers\s*=.*/max_parallel_workers = ${NCPUS}/" "$SETEST_CFG"
+sed -i "s/^#\?\s*max_parallel_maintenance_workers\s*=.*/max_parallel_maintenance_workers = ${PARALLEL_MAINT}/" "$SETEST_CFG"
 
 chown postgres:postgres "$SETEST_CFG"
 

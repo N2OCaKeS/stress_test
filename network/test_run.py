@@ -3,10 +3,10 @@ from datetime import datetime
 
 from allta import UploaderZC
 from libs.libnet import get_duration
-from libs.libtests import NetworkLoad
+from libs.libtests import NetworkLoad, Dhcp
 from libs.libpublic import net_publisher
 
-from net_conf import BASE_PATH, KERNEL_NET_VM_COUNT, KERNEL_NET_VCPU, KERNEL_NET_RAM
+from net_conf import BASE_PATH, KERNEL_NET_VM_COUNT, KERNEL_NET_VCPU, KERNEL_NET_RAM, DHCP_VM_COUNT, DHCP_VCPU, DHCP_RAM
 
 
 parser = argparse.ArgumentParser()
@@ -111,16 +111,47 @@ uzs.upload_test_cycle_status(zefir_status='progress')
 if args.TESTNAME == 'iof':
     time_start_script = datetime.now()
     
-    kernel_network = NetworkLoad(rc_name=args.TCV,
+    iof = NetworkLoad(rc_name=args.TCV,
                                 testdir=BASE_PATH,
                                 vm_count=KERNEL_NET_VM_COUNT,
                                 vcpu=KERNEL_NET_VCPU,
                                 ram=KERNEL_NET_RAM)
 
-    kernel_network.prepare_vms()
-    kernel_network.start_test()
-    kernel_network.results_processing()
-    kernel_network.vms_destroy()    
+    iof.prepare_vms()
+    iof.start_test()
+    iof.results_processing()
+    iof.vms_destroy()    
+
+
+    lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
+    publisher = net_publisher(
+        username=args.USER,
+        token=args.TOKEN,
+        space=args.SPACE,
+        parent_title=args.PPAGE,
+        title=args.NPAGE,
+        stand_number=args.STAND,
+        lead_time=lead_time,
+        test_cycle_version=args.TCV,
+    )
+
+    # uzs.public = True
+    #uzs.statistics = True
+    uzs.upload_test_cycle_status(zefir_status='pass')
+
+elif args.TESTNAME == 'dhcp':
+    time_start_script = datetime.now()
+    
+    dhcp = Dhcp(rc_name=args.TCV,
+                                testdir=BASE_PATH,
+                                vm_count=DHCP_VM_COUNT,
+                                vcpu=DHCP_VCPU,
+                                ram=DHCP_RAM)
+
+    dhcp.prepare_vms()
+    dhcp.start_test()
+    dhcp.results_processing()
+    dhcp.vms_destroy()    
 
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())

@@ -1,5 +1,5 @@
 # import os
-from libs.libtests import NetworkLoad
+from libs.libtests import NetworkLoad, Dhcp
 # from libs.libpublic import Public
 # from libs.virtlib import info_list
 from net_conf import BASE_PATH, KERNEL_NET_VM_COUNT, KERNEL_NET_VCPU, KERNEL_NET_RAM
@@ -12,7 +12,7 @@ KERNEL = ""
 # # 0. Готовим каталоги под результаты/шаблоны
 # os.makedirs(REPORT_PATH, exist_ok=True)
 # 1. Гоним тест
-kernel = NetworkLoad(rc_name=TEST_CYCLE_VERSION, testdir=BASE_PATH, vm_count=KERNEL_NET_VM_COUNT, kernel=KERNEL, vcpu=KERNEL_NET_VCPU, ram=KERNEL_NET_RAM)
+kernel = Dhcp(rc_name=TEST_CYCLE_VERSION, testdir=BASE_PATH, vm_count=KERNEL_NET_VM_COUNT, kernel=KERNEL, vcpu=KERNEL_NET_VCPU, ram=KERNEL_NET_RAM)
 kernel.prepare_vms()
 kernel.start_test()
 kernel.results_processing()

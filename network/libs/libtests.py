@@ -11,16 +11,27 @@ from pathlib import Path
 from time import sleep
 from os import path
 
-from net_conf import (USERNAME, 
-                      PASSWORD, 
-                      VM_OS_INFO_PATH, 
+from net_conf import (USERNAME,
+                      PASSWORD,
+                      VM_OS_INFO_PATH,
                       BASE_PATH,
                       IOF_OFF_PATH,
                       IOF_ON_PATH,
                       IOF_ON_NAME,
                       IOF_OFF_NAME,
                       ITERATIONS,
-                      IOF_RESULTS)
+                      IOF_RESULTS,
+                      DHCP_SERVER_VM,
+                      DHCP_SUBNET,
+                      DHCP_NETMASK,
+                      DHCP_SERVER_IP,
+                      DHCP_CLIENT_IPS,
+                      KEA_SERVER_PACKAGES,
+                      KEA_CLIENT_PACKAGES,
+                      DHCP_CONF_LOCAL_PATH,
+                      DHCP_CONF_REMOTE_PATH,
+                      DHCP_SERVER_BOOT_SLEEP,
+                      DHCP_CLIENT_BOOT_SLEEP)
 
 
 class CreateVM:
@@ -394,3 +405,199 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
         )
         print ("results gets")
         pass
+
+class Dhcp(CreateVM):
+    def start_test(self):
+        """
+        testvm1            - kea-dhcp4-server (статический IP)
+        testvm2..testvm5   - клиенты perfdhcp, получают адрес от kea по MAC-резервации
+        """
+
+        print("\n\n\nНачинаем выполнение теста\n\n\n")
+        print("\n\n\nВыполнение подготовки к тесту\n\n\n")
+
+        clients = [vm for vm in self.vms if vm != DHCP_SERVER_VM]
+        self.vms_group = {
+            "all": self.vms,
+            "server": [DHCP_SERVER_VM],
+            "clients": clients,
+        }
+
+        print("\n\n\nСобираем MAC-адреса клиентов для host-reservations в kea\n\n\n")
+        mac_pattern = re.compile(r"([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})")
+        macs = {}
+        for vm in self.vms_group["clients"]:
+            output = SystemCommands.check_output_command(f"virsh -c qemu:///system domiflist {vm}")
+            match = mac_pattern.search(output)
+            if not match:
+                raise RuntimeError(f"Не удалось получить MAC-адрес интерфейса ВМ {vm}: {output}")
+            macs[vm] = match.group(1)
+            print(f"{vm}: {macs[vm]}")
+
+        # Пул целиком пустой: адрес получают только заранее известные MAC из reservations,
+        # посторонние DHCPDISCOVER на стенде остаются без ответа
+        reservations = [
+            {"hw-address": macs[vm], "ip-address": ip}
+            for vm, ip in DHCP_CLIENT_IPS.items()
+            if vm in macs
+        ]
+
+        kea_config = {
+            "Dhcp4": {
+                "interfaces-config": {
+                    "interfaces": ["*"],
+                },
+                "control-socket": {
+                    "socket-type": "unix",
+                    "socket-name": "/tmp/kea4-ctrl-socket",
+                },
+                "lease-database": {
+                    "type": "memfile",
+                    "persist": True,
+                    "name": "/var/lib/kea/kea-leases4.csv",
+                },
+                "valid-lifetime": 3600,
+                "renew-timer": 900,
+                "rebind-timer": 1800,
+                "subnet4": [
+                    {
+                        "id": 1,
+                        "subnet": DHCP_SUBNET,
+                        "pools": [],
+                        "reservations": reservations,
+                    }
+                ],
+                "loggers": [
+                    {
+                        "name": "kea-dhcp4",
+                        "output-options": [{"output": "/var/log/kea/kea-dhcp4.log"}],
+                        "severity": "INFO",
+                    }
+                ],
+            }
+        }
+
+        with open(DHCP_CONF_LOCAL_PATH, "w") as f:
+            json.dump(kea_config, f, indent=2, ensure_ascii=False)
+
+        print("\n\n\nПодготовка завершена\n\n\n")
+
+        # kea ещё не запущен -> testvm1 не может получить адрес по DHCP от себя же,
+        # поэтому адрес прибивается статикой в /etc/network/interfaces заранее,
+        # пока сервер ещё доступен по старому ip_bridge (DHCP гипервизора)
+        print("\n\n\nНастраиваем статический IP на сервере kea\n\n\n")
+
+        static_ip_command = f"""iface=$(ip a | grep '2: ' | awk '{{print$2}}' | tr -d ':' | head -n1)
+sudo tee /etc/network/interfaces > /dev/null <<EOF
+source /etc/network/interfaces.d/*
+
+auto lo
+iface lo inet loopback
+
+auto $iface
+iface $iface inet static
+    address {DHCP_SERVER_IP}
+    netmask {DHCP_NETMASK}
+EOF"""
+
+        set_static_ip = {
+            DHCP_SERVER_VM: {
+                "set_static_ip": {
+                    "command": static_ip_command,
+                },
+            },
+        }
+        self.provider.execute(commands=set_static_ip, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        print("\n\n\nУстанавливаем kea-dhcp4-server на сервере и kea-common/kea-admin на клиентах\n\n\n")
+
+        install_packages = {
+            "g_server": {
+                "install_kea_server": {
+                    "command": f"sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y {' '.join(KEA_SERVER_PACKAGES)}",
+                },
+            },
+            "g_clients": {
+                "install_kea_clients": {
+                    "command": f"sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y {' '.join(KEA_CLIENT_PACKAGES)}",
+                },
+            },            
+        }
+        self.provider.execute(commands=install_packages, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        print("\n\n\nПушим сгенерированный kea-dhcp4.conf на сервер\n\n\n")
+
+        scp_conf = {
+            DHCP_SERVER_VM: [
+                {
+                    "mode": "push",
+                    "path_host": DHCP_CONF_LOCAL_PATH,
+                    "path_vm": "/home/u/kea-dhcp4.conf",
+                },
+            ],
+        }
+        self.provider.scp(scp_settings=scp_conf, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        apply_conf = {
+            DHCP_SERVER_VM: {
+                "install_kea_conf": {
+                    "command": (
+                        f"sudo mkdir -p $(dirname {DHCP_CONF_REMOTE_PATH}) && "
+                        f"sudo mv /home/u/kea-dhcp4.conf {DHCP_CONF_REMOTE_PATH} && "
+                        f"sudo chown root:root {DHCP_CONF_REMOTE_PATH}"
+                    ),
+                },
+                "enable_kea": {
+                    "command": "sudo systemctl enable kea-dhcp4-server",
+                },
+            },
+        }
+        self.provider.execute(commands=apply_conf, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        print("\n\n\n Настраиваем сеть  \n\n\n")
+
+        print("\n\n\nОтключаем DHCP гипервизора: убираем <dhcp> из /vms/network.xml, единственным DHCP-сервером на сегменте остаётся kea\n\n\n")
+
+        LibvirtManager.Vm.stop(vms=self.vms)
+        print(SystemCommands.check_output_command(r"sudo sed -i '/<dhcp>/,/<\/dhcp>/d' \"/vms/network.xml\""))
+        print(SystemCommands.check_output_command("sudo virsh net-destroy test"))
+        print(SystemCommands.check_output_command("sudo virsh --connect qemu:///system net-create /vms/network.xml"))
+
+        print("\n\n\nСтартуем сервер kea первым, ждём загрузки\n\n\n")
+        LibvirtManager.Vm.start(vms=[DHCP_SERVER_VM])
+        sleep(DHCP_SERVER_BOOT_SLEEP)
+
+        # domifaddr больше не увидит адрес сервера (свой DHCP гипервизора отключён) -
+        # адрес известен заранее, он же зашит в /etc/network/interfaces сервера
+        self.vms_data[DHCP_SERVER_VM]["ip_bridge"] = DHCP_SERVER_IP
+
+        check_kea_active = {
+            DHCP_SERVER_VM: {
+                "check_kea_active": {
+                    "command": "systemctl status kea-dhcp4-server.service | grep active",
+                },
+            },
+        }
+        self.provider.execute(commands=check_kea_active, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        print("\n\n\nСтартуем клиентов, ждём получения аренд по DHCP от kea\n\n\n")
+        LibvirtManager.Vm.start(vms=self.vms_group["clients"])
+        sleep(DHCP_CLIENT_BOOT_SLEEP)
+
+        # адреса клиентов зарезервированы по MAC в kea-конфиге, поэтому пишем их напрямую,
+        # без discovery через virsh domifaddr
+        for vm, ip in DHCP_CLIENT_IPS.items():
+            self.vms_data[vm]["ip_bridge"] = ip
+
+        print("\n\n\n Сеть настроена  \n\n\n")
+
+        print("\n\n\nПроверяем доступность стенда по SSH на новых адресах\n\n\n")
+
+        self.provider.check(vms=self.vms, vms_dates=self.vms_data)
+
+        print("\n\n\nСтенд для DHCP-теста развёрнут\n\n\n")
+
+        # TODO: нагрузочная часть теста 
+
+    def results_processing(self):
+        print("\n\n\nОбработка результатов\n\n\n")

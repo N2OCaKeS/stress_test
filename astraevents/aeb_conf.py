@@ -23,8 +23,11 @@ PASSWORD = "1"
 # Create dir if not created
 VM_OS_INFO_PATH = f"{BASE_PATH}/vm_info"
 Path(VM_OS_INFO_PATH).mkdir(mode=0o777, parents=True, exist_ok=True)
-VM_INFONAME = f'{VM_OS_INFO_PATH}/av.txt'
-VM_KERNEL = f'{VM_OS_INFO_PATH}/kernel.txt'
+
+
+PRIMARY_VM = "testvm1"
+VM_INFONAME = f'{VM_OS_INFO_PATH}/{PRIMARY_VM}/av.txt'
+VM_KERNEL = f'{VM_OS_INFO_PATH}/{PRIMARY_VM}/kernel.txt'
 
 
 VM_RESULTS_PATH = f"{BASE_PATH}/results"

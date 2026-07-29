@@ -109,18 +109,20 @@ if args.TESTNAME == 'astraevents':
     astra_events_load_test = AstraEventsLoadTest(rc_name=args.TCV,
                                                  testdir=BASE_PATH,
                                                  vm_count=VM_COUNT,
-                                                 vcpu=VCPU_MIN,
-                                                 ram=RAM_MIN)
+                                                 vcpu_min=VCPU_MIN,
+                                                 ram_min=RAM_MIN,
+                                                 vcpu_max=VCPU_MAX,
+                                                 ram_max=RAM_MAX)
 
     astra_events_load_test.prepare_vms()
     astra_events_load_test.start_test()
-    status = astra_events_load_test.results_processing()
+    astra_events_load_test.results_processing()
     # astra_events_load_test.vms_destroy()
 
     # if status:
     #     uzs.upload_test_cycle_status(zefir_status='fail')
     # else:
-    #     uzs.upload_test_cycle_status(zefir_status='pass')
+    uzs.upload_test_cycle_status(zefir_status='pass')
 
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())

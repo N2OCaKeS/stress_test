@@ -28,11 +28,11 @@ def _runs_table_spec(title: str, runs: list) -> dict:
 
 # Эталон (baseline) нагрузочного теста astraeventsd: testvm1 (2 vCPU/4GB), label=baseline,
 REFERENCE_RUNS = {
-    1000: {"throughput_eps": 13833.2, "stabilization_duration_s": 0.089},
-    10000: {"throughput_eps": 26233.4, "stabilization_duration_s": 0.443},
-    50000: {"throughput_eps": 23227.3, "stabilization_duration_s": 2.471},
-    100000: {"throughput_eps": 21642.9, "stabilization_duration_s": 5.213},
-    150000: {"throughput_eps": 23099.6, "stabilization_duration_s": 7.405},
+    1000: {"throughput_eps": 10843.0, "stabilization_duration_s": 0.108},
+    10000: {"throughput_eps": 28870.0, "stabilization_duration_s": 0.422},
+    50000: {"throughput_eps": 19690.9, "stabilization_duration_s": 2.914},
+    100000: {"throughput_eps": 22093.2, "stabilization_duration_s": 5.233},
+    150000: {"throughput_eps": 23013.9, "stabilization_duration_s": 7.570},
 }
 
 
@@ -178,3 +178,13 @@ def astra_events_publisher(
     builder.add_paragraph(text="Нагрузочный тест проводится на двух ВМ с разными ресурсами, чтобы оценить производительность и стабильность системы при различных нагрузках. Результаты теста сравниваются с эталонными значениями для определения рейтинга каждой ВМ относительно эталона.")
 
     build_rating_report(builder)
+
+    publish_result = reporter.publish_results_from_params(
+        conf_space=space,
+        conf_parent_page=parent_title,
+        conf_new_page_name=title,
+        test_cycle_version=test_cycle_version,
+        body=builder,
+        attachments=[*builder.attachments],
+    )
+    return builder, preview_path, publish_result

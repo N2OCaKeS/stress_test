@@ -559,7 +559,7 @@ EOF"""
         print("\n\n\nОтключаем DHCP гипервизора: убираем <dhcp> из /vms/network.xml, единственным DHCP-сервером на сегменте остаётся kea\n\n\n")
 
         LibvirtManager.Vm.stop(vms=self.vms)
-        print(SystemCommands.check_output_command(r"sudo sed -i '/<dhcp>/,/<\/dhcp>/d' \"/vms/network.xml\""))
+        print(SystemCommands.check_output_command('sudo sed -i \'/<dhcp>/,/<\\/dhcp>/d\' "/vms/network.xml"'))
         print(SystemCommands.check_output_command("sudo virsh net-destroy test"))
         print(SystemCommands.check_output_command("sudo virsh --connect qemu:///system net-create /vms/network.xml"))
 

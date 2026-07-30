@@ -29,9 +29,8 @@ from net_conf import (USERNAME,
                       KEA_SERVER_PACKAGES,
                       KEA_CLIENT_PACKAGES,
                       DHCP_CONF_LOCAL_PATH,
-                      DHCP_CONF_REMOTE_PATH,
-                      DHCP_SERVER_BOOT_SLEEP,
-                      DHCP_CLIENT_BOOT_SLEEP)
+                      DHCP_CONF_REMOTE_PATH
+                      )
 
 
 class CreateVM:
@@ -594,7 +593,7 @@ EOF"""
 
         print("\n\n\nСтартуем сервер kea первым, ждём загрузки\n\n\n")
         LibvirtManager.Vm.start(vms=[DHCP_SERVER_VM])
-        sleep(DHCP_SERVER_BOOT_SLEEP)
+        sleep(60)
 
         # domifaddr больше не увидит адрес сервера (свой DHCP гипервизора отключён) -
         # адрес известен заранее, он же зашит в /etc/network/interfaces сервера
@@ -611,7 +610,7 @@ EOF"""
 
         print("\n\n\nСтартуем клиентов, ждём получения аренд по DHCP от kea\n\n\n")
         LibvirtManager.Vm.start(vms=self.vms_group["clients"])
-        sleep(DHCP_CLIENT_BOOT_SLEEP)
+        sleep(60)
 
         # адреса клиентов зарезервированы по MAC в kea-конфиге, поэтому пишем их напрямую,
         # без discovery через virsh domifaddr

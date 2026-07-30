@@ -69,8 +69,4 @@ Path(DHCP_CONF_DIR).mkdir(mode=0o777, exist_ok=True)
 DHCP_CONF_LOCAL_PATH = f"{DHCP_CONF_DIR}/kea-dhcp4.conf"
 DHCP_CONF_REMOTE_PATH = "/etc/kea/kea-dhcp4.conf"
 
-
-DHCP_SERVER_BOOT_SLEEP = 90
-DHCP_CLIENT_BOOT_SLEEP = 60
-
 DHCP_RESULTS = f"{REPORT_PATH}/dhcp_results.json"

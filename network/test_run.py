@@ -4,7 +4,7 @@ from datetime import datetime
 from allta import UploaderZC
 from libs.libnet import get_duration
 from libs.libtests import NetworkLoad, Dhcp
-from libs.libpublic import net_publisher
+from libs.libpublic import net_publisher, dhcp_publisher
 
 from net_conf import BASE_PATH, KERNEL_NET_VM_COUNT, KERNEL_NET_VCPU, KERNEL_NET_RAM, DHCP_VM_COUNT, DHCP_VCPU, DHCP_RAM
 
@@ -155,7 +155,7 @@ elif args.TESTNAME == 'dhcp':
 
 
     lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
-    publisher = net_publisher(
+    publisher = dhcp_publisher(
         username=args.USER,
         token=args.TOKEN,
         space=args.SPACE,

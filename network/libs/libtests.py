@@ -511,18 +511,43 @@ EOF"""
 
         print("\n\n\nУстанавливаем kea-dhcp4-server на сервере и kea-common/kea-admin на клиентах\n\n\n")
 
-        install_packages = {
-            "g_server": {
-                "install_kea_server": {
-                    "command": f"sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y {' '.join(KEA_SERVER_PACKAGES)}",
+        if self.rc_name.startswith("1.7"):
+            short = ".".join(self.rc_name.split(".")[:3])
+            install_packages = {
+                "g_server": {
+                    "add repo": {
+                        "command": f"echo \"deb https://releases.devos.astralinux.ru/frozen/1.7/{short}/EXT_latest/extended-repository 1.7_x86-64 main contrib non-free\" | sudo tee -a /etc/apt/sources.list ",
+                        "signal set": "1",
+                    },
+                    "install_kea_server": {
+                        "command": f"sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y {' '.join(KEA_SERVER_PACKAGES)}",
+                        "signal get": "1"
+                    },
                 },
-            },
-            "g_clients": {
-                "install_kea_clients": {
-                    "command": f"sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y {' '.join(KEA_CLIENT_PACKAGES)}",
+                "g_clients": {
+                    "add repo": {
+                        "command": f"echo \"deb https://releases.devos.astralinux.ru/frozen/1.7/{short}/EXT_latest/extended-repository 1.7_x86-64 main contrib non-free\" | sudo tee -a /etc/apt/sources.list ",
+                        "signal set": "1",
+                    },                    
+                    "install_kea_clients": {
+                        "command": f"sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y {' '.join(KEA_CLIENT_PACKAGES)}",
+                        "signal get": "1"
+                    },
+                },            
+            }
+        elif self.rc_name.startswith("1.8"):
+            install_packages = {
+                "g_server": {
+                    "install_kea_server": {
+                        "command": f"sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y {' '.join(KEA_SERVER_PACKAGES)}",
+                    },
                 },
-            },            
-        }
+                "g_clients": {
+                    "install_kea_clients": {
+                        "command": f"sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y {' '.join(KEA_CLIENT_PACKAGES)}",
+                    },
+                },            
+            }
         self.provider.execute(commands=install_packages, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
 
         print("\n\n\nПушим сгенерированный kea-dhcp4.conf на сервер\n\n\n")

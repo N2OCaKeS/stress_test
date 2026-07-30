@@ -1,12 +1,26 @@
 import json
+import shutil
 from pathlib import Path
 
 from allta import PageBuilder, ConfluencePublisher, MathModel
 
 from aeb_conf import VM_INFONAME, VM_KERNEL, VM_RESULTS_PATH, VCPU_MIN, RAM_MIN, VCPU_MAX, RAM_MAX
 
+def _report_path(vm: str) -> Path:
+    return Path(VM_RESULTS_PATH) / vm / "report.json"
+
+
 def _load_report(vm: str) -> dict:
-    return json.loads((Path(VM_RESULTS_PATH) / vm / "report.json").read_text())
+    return json.loads(_report_path(vm).read_text())
+
+
+def _attachment_path(vm: str) -> Path:
+    # Оба report.json называются одинаково — Confluence различает вложения на
+    # странице по имени файла, а не по полному пути, поэтому для вложения нужна
+    # копия с именем, включающим ВМ, иначе второй файл перезапишет первый.
+    destination = Path(VM_RESULTS_PATH) / f"{vm}_report.json"
+    shutil.copyfile(_report_path(vm), destination)
+    return destination
 
 
 def _runs_table_spec(title: str, runs: list) -> dict:
@@ -26,13 +40,21 @@ def _runs_table_spec(title: str, runs: list) -> dict:
     }
 
 
-# Эталон (baseline) нагрузочного теста astraeventsd: testvm1 (2 vCPU/4GB), label=baseline,
 REFERENCE_RUNS = {
-    1000: {"throughput_eps": 10843.0, "stabilization_duration_s": 0.108},
-    10000: {"throughput_eps": 28870.0, "stabilization_duration_s": 0.422},
-    50000: {"throughput_eps": 19690.9, "stabilization_duration_s": 2.914},
-    100000: {"throughput_eps": 22093.2, "stabilization_duration_s": 5.233},
-    150000: {"throughput_eps": 23013.9, "stabilization_duration_s": 7.570},
+    "testvm1": {
+        1000: {"throughput_eps": 13718.4, "stabilization_duration_s": 0.088},
+        10000: {"throughput_eps": 28297.3, "stabilization_duration_s": 0.425},
+        50000: {"throughput_eps": 35627.1, "stabilization_duration_s": 1.762},
+        100000: {"throughput_eps": 26506.1, "stabilization_duration_s": 4.460},
+        150000: {"throughput_eps": 22352.8, "stabilization_duration_s": 7.759},
+    },
+    "testvm2": {
+        1000: {"throughput_eps": 13477.6, "stabilization_duration_s": 0.090},
+        10000: {"throughput_eps": 27874.8, "stabilization_duration_s": 0.444},
+        50000: {"throughput_eps": 28247.4, "stabilization_duration_s": 2.132},
+        100000: {"throughput_eps": 30631.8, "stabilization_duration_s": 3.993},
+        150000: {"throughput_eps": 30031.4, "stabilization_duration_s": 6.048},
+    },
 }
 
 
@@ -60,26 +82,34 @@ def _throughput_chart_spec(runs_by_vm: dict[str, dict[int, dict]]) -> dict:
     }
 
 
-def _rate_against_reference(runs: dict[int, dict]) -> tuple[float, dict]:
-    volumes = sorted(set(REFERENCE_RUNS) & set(runs))
-
+def _rate_against_reference(runs_by_vm: dict[str, dict[int, dict]]) -> tuple[float, dict]:
+    """
+    Один total_rating по обеим ВМ: для каждой ВМ throughput_eps и stabilization_duration_s
+    добавляются в MathModel как отдельные критерии (per-VM), вес поровну на всех.
+    Итог — одно число, но baseline/result/ratio каждой ВМ по-прежнему видны отдельно
+    в criteria — расхождение между ВМ не теряется внутри total_rating.
+    """
     model = MathModel(type="ratio")
-    model.add_criterion(
-        "throughput_eps",
-        iterations=volumes,
-        values=[runs[v]["throughput_eps"] for v in volumes],
-        weight=0.5,
-        negative=False,
-        reference=[REFERENCE_RUNS[v]["throughput_eps"] for v in volumes],
-    )
-    model.add_criterion(
-        "stabilization_duration_s",
-        iterations=volumes,
-        values=[runs[v]["stabilization_duration_s"] for v in volumes],
-        weight=0.5,
-        negative=True,
-        reference=[REFERENCE_RUNS[v]["stabilization_duration_s"] for v in volumes],
-    )
+    weight = 1.0 / (len(runs_by_vm) * 2)
+    for vm, runs in runs_by_vm.items():
+        reference = REFERENCE_RUNS[vm]
+        volumes = sorted(set(reference) & set(runs))
+        model.add_criterion(
+            f"throughput_eps_{vm}",
+            iterations=volumes,
+            values=[runs[v]["throughput_eps"] for v in volumes],
+            weight=weight,
+            negative=False,
+            reference=[reference[v]["throughput_eps"] for v in volumes],
+        )
+        model.add_criterion(
+            f"stabilization_duration_s_{vm}",
+            iterations=volumes,
+            values=[runs[v]["stabilization_duration_s"] for v in volumes],
+            weight=weight,
+            negative=True,
+            reference=[reference[v]["stabilization_duration_s"] for v in volumes],
+        )
     return model.total_rating()
 
 
@@ -90,30 +120,22 @@ def build_rating_report(builder: PageBuilder, result_vms: tuple[str, ...] = ("te
     builder.add_heading(text="Результаты нагрузочного теста", level=2)
 
     reports: dict[str, dict] = {}
-    ratings: dict[str, tuple[float, dict]] = {}
     runs_by_vm: dict[str, dict[int, dict]] = {}
     for vm in result_vms:
         report = _load_report(vm)
         reports[vm] = report
-        runs = {r["volume"]: r for r in report["runs"]}
-        runs_by_vm[vm] = runs
-        ratings[vm] = _rate_against_reference(runs)
+        runs_by_vm[vm] = {r["volume"]: r for r in report["runs"]}
 
-    builder.add_table({
-        "title": "Total rating",
-        "headers": ["VM", "total_rating"],
-        "rows": [
-            {"VM": vm, "total_rating": round(total, 2)}
-            for vm, (total, _criteria) in ratings.items()
-        ],
-    })
+    total, criteria = _rate_against_reference(runs_by_vm)
+    builder.add_paragraph(text=f"Total rating: {round(total)}")
 
     for vm in result_vms:
         builder.add_table(_runs_table_spec(f"{vm} (результат)", reports[vm]["runs"]))
+        builder.add_attachment(_attachment_path(vm), title=f"{vm} report.json")
 
     builder.add_chart(_throughput_chart_spec(runs_by_vm))
 
-    return ratings
+    return total, criteria
 
 
 def astra_events_publisher(

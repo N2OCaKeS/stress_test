@@ -73,6 +73,9 @@ class CreateVM:
                 "all": self.vms,
             }
             LibvirtManager.Snapshot.revert(vms=self.vms, snapshot_name="provision")
+            SystemCommands.check_output_command('sudo cp /vms/network.xml.bak /vms/network.xml')
+            SystemCommands.check_output_command("sudo virsh net-destroy test")
+            SystemCommands.check_output_command("sudo virsh --connect qemu:///system net-create /vms/network.xml")
             LibvirtManager.Vm.start(vms=self.vms)
             print("\n\n\nОжидаем 90 секунд для включения ВМ\n\n\n")
             sleep(90)
@@ -167,6 +170,7 @@ class CreateVM:
             LibvirtManager.Vm.stop(self.vms)
             LibvirtManager.Snapshot.create(vms=self.vms, snapshot_name="provision")
             LibvirtManager.Vm.start(self.vms)
+            SystemCommands.check_output_command('sudo cp /vms/network.xml /vms/network.xml.bak')
             sleep(90)
             print("\n\n\nСнимок создан, ВМ созданы и к выполнению теста готовы\n\n\n")
 
@@ -510,7 +514,7 @@ EOF"""
         self.provider.execute(commands=set_static_ip, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
 
         print("\n\n\nУстанавливаем kea-dhcp4-server на сервере и kea-common/kea-admin на клиентах\n\n\n")
-
+        install_packages = {}
         if self.rc_name.startswith("1.7"):
             short = ".".join(self.rc_name.split(".")[:3])
             install_packages = {

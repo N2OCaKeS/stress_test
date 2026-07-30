@@ -117,7 +117,7 @@ class CreateVM:
                 "all": self.vms,
             }
             LibvirtManager.Vm.save_vms_data(
-                vms_dates=VMS_DATES, save_path=self.vms_date_save_path
+                vms_dates=self.vms_data, save_path=self.vms_date_save_path
             )
 
             provision_path = "/home/u/provision.sh"

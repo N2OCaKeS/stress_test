@@ -127,7 +127,7 @@ def build_rating_report(builder: PageBuilder, result_vms: tuple[str, ...] = ("te
         runs_by_vm[vm] = {r["volume"]: r for r in report["runs"]}
 
     total, criteria = _rate_against_reference(runs_by_vm)
-    builder.add_paragraph(text=f"Total rating: {round(total)}")
+    builder.add_heading(text=f"Total rating: {round(total)}", level=2)
 
     for vm in result_vms:
         builder.add_table(_runs_table_spec(f"{vm} (результат)", reports[vm]["runs"]))

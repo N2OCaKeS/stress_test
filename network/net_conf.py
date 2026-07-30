@@ -41,15 +41,15 @@ IOF_OFF_PATH = f'/home/u/{IOF_OFF_NAME}'
 IOF_ON_PATH = f'/home/u/{IOF_ON_NAME}'
 ITERATIONS = 10
 
-# DHCP (kea-dhcp4-server), BT-T16055 / BT-T16062
-# 1 сервер kea + 4 клиента perfdhcp, та же сеть test, что создаёт allta
+# DHCP (kea-dhcp4-server)
+
 DHCP_VM_COUNT = 5
 DHCP_VCPU = 4
 DHCP_RAM = 8192
+DHCP_ITERATIONS = 10
 
 DHCP_SERVER_VM = "testvm1"
-# та же подсеть, что у сети test в allta (_virt_install.py: 192.168.100.1/24) -
-# берём адреса вне .1 (мост) и вне старого DHCP-пула гипервизора .128-.254
+
 DHCP_SUBNET = "192.168.100.0/24"
 DHCP_NETMASK = "255.255.255.0"
 DHCP_SERVER_IP = "192.168.100.10"
@@ -69,6 +69,8 @@ Path(DHCP_CONF_DIR).mkdir(mode=0o777, exist_ok=True)
 DHCP_CONF_LOCAL_PATH = f"{DHCP_CONF_DIR}/kea-dhcp4.conf"
 DHCP_CONF_REMOTE_PATH = "/etc/kea/kea-dhcp4.conf"
 
-# Время ожидания загрузки ВМ после сетевого cutover-а
+
 DHCP_SERVER_BOOT_SLEEP = 90
 DHCP_CLIENT_BOOT_SLEEP = 60
+
+DHCP_RESULTS = f"{REPORT_PATH}/dhcp_results.json"

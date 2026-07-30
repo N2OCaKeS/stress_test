@@ -470,7 +470,7 @@ class Dhcp(CreateVM):
                 "loggers": [
                     {
                         "name": "kea-dhcp4",
-                        "output-options": [{"output": "/var/log/kea/kea-dhcp4.log"}],
+                        "output_options": [{"output": "/var/log/kea/kea-dhcp4.log"}],
                         "severity": "INFO",
                     }
                 ],

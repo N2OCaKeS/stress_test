@@ -158,24 +158,26 @@ def dhcp_publisher(
     builder.add_header_table(rows=header_table)
     builder.add_heading(text="Описание", level=2)
     builder.add_paragraph(
-        text="В тесте производится оценка сетевой производительности DHCP-сервера с помощью iperf"
+        text="В тесте производится оценка сетевой производительности DHCP-сервера kea с помощью dhcpperf"
     )
 
     with open(DHCP_RESULTS, "r") as f:
         dhcp_results_dict = json.load(f)
 
+    builder.add_heading(text="Total rating:", level=2)
+    builder.add_paragraph(dhcp_results_dict["total_rating"])
+
     builder.add_table(
+        # TODO Проработать таблицу когда будут результаты
         {
             "title": "Результаты тестирования",
             "headers": [
-                "init_on_free=on MBytes/sec (mean)",
-                "init_on_free=off MBytes/sec (mean)",
+                "Kea MBytes/sec (mean)",
                 "Difference %",
             ],
             "rows": [
                 [
                     dhcp_results_dict["init_on_free_ON"],
-                    dhcp_results_dict["init_on_free_OFF"],
                     dhcp_results_dict["difference"],
                 ]
             ],

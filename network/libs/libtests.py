@@ -29,7 +29,19 @@ from net_conf import (USERNAME,
                       KEA_SERVER_PACKAGES,
                       KEA_CLIENT_PACKAGES,
                       DHCP_CONF_LOCAL_PATH,
-                      DHCP_CONF_REMOTE_PATH
+                      DHCP_CONF_REMOTE_PATH,
+                      DHCP_POOL_START,
+                      DHCP_POOL_END,
+                      DHCP_LOAD_CLIENT_VM,
+                      DHCP_PERFDHCP_RATE,
+                      DHCP_PERFDHCP_CLIENT_STEPS,
+                      DHCP_PERFDHCP_REMOTE_PATH,
+                      DHCP_PERFDHCP_LOCAL_NAME,
+                      DHCP_PERFDHCP_STEP_MARKER_PREFIX,
+                      DHCP_KEA_STATS_BEFORE_REMOTE,
+                      DHCP_KEA_STATS_AFTER_REMOTE,
+                      DHCP_KEA_PROC_STATS_REMOTE,
+                      DHCP_RESULTS,
                       )
 
 
@@ -466,7 +478,9 @@ class Dhcp(CreateVM):
                     {
                         "id": 1,
                         "subnet": DHCP_SUBNET,
-                        "pools": [],
+                        # Пул под синтетических клиентов perfdhcp, не пересекается
+                        # с DHCP_SERVER_IP и MAC-резервациями ниже
+                        "pools": [{"pool": f"{DHCP_POOL_START} - {DHCP_POOL_END}"}],
                         "reservations": reservations,
                     }
                 ],
@@ -625,7 +639,104 @@ EOF"""
 
         print("\n\n\nСтенд для DHCP-теста развёрнут\n\n\n")
 
-        # TODO: нагрузочная часть теста 
+        
+
+        kea_stats_query = 'echo \'{"command": "statistic-get-all", "arguments": {}}\' | sudo nc -U /tmp/kea4-ctrl-socket -q 1'
+
+        print(f"\n\n\nЗапускаем ступенчатую нагрузку perfdhcp при фиксированном rate={DHCP_PERFDHCP_RATE}, шаги по N клиентов: {DHCP_PERFDHCP_CLIENT_STEPS}\n\n\n")
+
+        for step_idx, n_clients in enumerate(DHCP_PERFDHCP_CLIENT_STEPS):
+            print(f"\n\n\n=== Шаг {step_idx}: N={n_clients} клиентов ===\n\n\n")
+
+            kea_stats_before = {
+                DHCP_SERVER_VM: {
+                    "kea_stats_before": {
+                        "command": f"{kea_stats_query} > {DHCP_KEA_STATS_BEFORE_REMOTE}",
+                    },
+                },
+            }
+            self.provider.execute(commands=kea_stats_before, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+            kea_proc_sampler_start = {
+                DHCP_SERVER_VM: {
+                    "start_proc_sampler": {
+                        "command": f"bash -c 'LC_ALL=C pidstat -u -r -p $(pgrep -x kea-dhcp4) 1 > {DHCP_KEA_PROC_STATS_REMOTE} 2>&1'",
+                        "nowait": True,
+                        "nowait_mode": "continue",
+                    },
+                },
+            }
+            self.provider.execute(commands=kea_proc_sampler_start, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+            perfdhcp_step = {
+                DHCP_LOAD_CLIENT_VM: {
+                    "perfdhcp_step": {
+                        "command": (
+                            f"echo '{DHCP_PERFDHCP_STEP_MARKER_PREFIX}{n_clients} ===' >> {DHCP_PERFDHCP_REMOTE_PATH}; "
+                            "iface=$(ip a | grep '2: ' | awk '{print$2}' | tr -d ':' | head -n1); "
+                            f"sudo perfdhcp -4 -r {DHCP_PERFDHCP_RATE} -R {n_clients} -n {n_clients} "
+                            f"-l $iface {DHCP_SERVER_IP} "
+                            f">> {DHCP_PERFDHCP_REMOTE_PATH} 2>&1 || true"
+                        ),
+                    },
+                },
+            }
+            self.provider.execute(commands=perfdhcp_step, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+            kea_proc_sampler_stop = {
+                DHCP_SERVER_VM: {
+                    "stop_proc_sampler": {
+                        "command": "sudo pkill -INT -x pidstat 2>/dev/null || true; sleep 2",
+                    },
+                },
+            }
+            self.provider.execute(commands=kea_proc_sampler_stop, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+            kea_stats_after = {
+                DHCP_SERVER_VM: {
+                    "kea_stats_after": {
+                        "command": f"{kea_stats_query} > {DHCP_KEA_STATS_AFTER_REMOTE}",
+                    },
+                },
+            }
+            self.provider.execute(commands=kea_stats_after, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+            scp_get_step_results = {
+                DHCP_SERVER_VM: [
+                    {
+                        "mode": "pull",
+                        "path_host": f"{BASE_PATH}/kea_stats_before_step{step_idx}.json",
+                        "path_vm": DHCP_KEA_STATS_BEFORE_REMOTE,
+                    },
+                    {
+                        "mode": "pull",
+                        "path_host": f"{BASE_PATH}/kea_stats_after_step{step_idx}.json",
+                        "path_vm": DHCP_KEA_STATS_AFTER_REMOTE,
+                    },
+                    {
+                        "mode": "pull",
+                        "path_host": f"{BASE_PATH}/kea_proc_stats_step{step_idx}.txt",
+                        "path_vm": DHCP_KEA_PROC_STATS_REMOTE,
+                    },
+                ],
+            }
+            self.provider.scp(scp_settings=scp_get_step_results, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        print("\n\n\nЗабираем общий файл вывода perfdhcp (все шаги через маркеры)\n\n\n")
+        scp_get_perfdhcp = {
+            DHCP_LOAD_CLIENT_VM: [
+                {
+                    "mode": "pull",
+                    "path_host": f"{BASE_PATH}/{DHCP_PERFDHCP_LOCAL_NAME}",
+                    "path_vm": DHCP_PERFDHCP_REMOTE_PATH,
+                },
+            ],
+        }
+        self.provider.scp(scp_settings=scp_get_perfdhcp, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+
+        print("\n\n\nНагрузочный тест завершён\n\n\n")
 
     def results_processing(self):
         print("\n\n\nОбработка результатов\n\n\n")
+
+        print("\n\n\nОбработка результатов завершена\n\n\n")

@@ -44,22 +44,19 @@ ITERATIONS = 10
 
 # DHCP (kea-dhcp4-server)
 
-DHCP_VM_COUNT = 5
+DHCP_VM_COUNT = 2
 DHCP_VCPU = 4
 DHCP_RAM = 8192
-DHCP_ITERATIONS = 10
+DHCP_ITERATIONS = 5
 
 DHCP_SERVER_VM = "testvm1"
 
 DHCP_SUBNET = "192.168.0.0/15"
 DHCP_NETMASK = "255.254.0.0"
 DHCP_SERVER_IP = "192.168.100.10"
-# testvm2..testvm5 -> заранее зарезервированные в kea по MAC адреса
+# testvm2 заранее зарезервирован ip в kea по MAC адреса
 DHCP_CLIENT_IPS = {
-    "testvm2": "192.168.100.11",
-    "testvm3": "192.168.100.12",
-    "testvm4": "192.168.100.13",
-    "testvm5": "192.168.100.14",
+    "testvm2": "192.168.100.11"
 }
 
 KEA_SERVER_PACKAGES = ["kea-dhcp4-server"]

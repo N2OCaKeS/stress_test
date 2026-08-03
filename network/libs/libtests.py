@@ -639,8 +639,6 @@ EOF"""
 
         print("\n\n\nСтенд для DHCP-теста развёрнут\n\n\n")
 
-        
-
         kea_stats_query = 'echo \'{"command": "statistic-get-all", "arguments": {}}\' | sudo nc -U /tmp/kea4-ctrl-socket -q 1'
 
         print(f"\n\n\nЗапускаем ступенчатую нагрузку perfdhcp при фиксированном rate={DHCP_PERFDHCP_RATE}, шаги по N клиентов: {DHCP_PERFDHCP_CLIENT_STEPS}\n\n\n")
@@ -739,4 +737,129 @@ EOF"""
     def results_processing(self):
         print("\n\n\nОбработка результатов\n\n\n")
 
+        kv_pattern = re.compile(r"^\s*([A-Za-z][\w \-/]*?)\s*:\s*(-?\d+(?:\.\d+)?)\s*(?:ms|%)?\s*$", re.MULTILINE)
+
+        step_pattern = re.compile(re.escape(DHCP_PERFDHCP_STEP_MARKER_PREFIX) + r"(\d+)\s*===")
+
+        def parse_step_sections(body: str):
+            sections = {}
+
+            def merge(section_name, section_body):
+                values = {label.strip(): float(value) for label, value in kv_pattern.findall(section_body)}
+                if values:
+                    sections[section_name] = values
+
+            parts = re.split(r"\*\*\*Statistics for:\s*(.+?)\*\*\*", body)
+            merge("overall", parts[0])
+            for i in range(1, len(parts), 2):
+                merge(parts[i].strip(), parts[i + 1])
+            return sections
+
+        def load_kea_stat_values(file_path: str):
+            with open(file_path) as f:
+                data = json.load(f)
+            arguments = data.get("arguments", {})
+            return {name: samples[0][0] for name, samples in arguments.items() if samples}
+
+        def parse_pidstat_averages(text: str):
+            lines = [ln for ln in text.splitlines() if ln.strip()]
+            result = {}
+            for i, line in enumerate(lines):
+                if line.startswith("Average:") and "Command" in line and i + 1 < len(lines):
+                    headers = line.split()
+                    data_row = lines[i + 1].split()
+                    if len(data_row) != len(headers) or data_row[0] != "Average:":
+                        continue
+                    row = dict(zip(headers, data_row))
+                    if "%CPU" in row:
+                        result["cpu_percent_avg"] = float(row["%CPU"])
+                    if "RSS" in row:
+                        result["rss_kb_avg"] = float(row["RSS"])
+                    if "%MEM" in row:
+                        result["mem_percent_avg"] = float(row["%MEM"])
+            return result
+
+        perfdhcp_by_step = {}
+        perfdhcp_path = f"{BASE_PATH}/{DHCP_PERFDHCP_LOCAL_NAME}"
+        if path.exists(perfdhcp_path):
+            with open(perfdhcp_path) as f:
+                perfdhcp_raw = f.read()
+
+            chunks = step_pattern.split(perfdhcp_raw)
+            for i in range(1, len(chunks), 2):
+                n_target = int(chunks[i])
+                body = chunks[i + 1]
+                rate_achieved = re.findall(r"Rate:\s*(-?\d+(?:\.\d+)?)\s+.*?exchanges/second", body)
+                rate_expected = re.findall(r"expected rate:\s*(-?\d+(?:\.\d+)?)", body)
+                perfdhcp_by_step[n_target] = {
+                    "sections": parse_step_sections(body),
+                    "rate_achieved": float(rate_achieved[0]) if rate_achieved else None,
+                    "rate_expected": float(rate_expected[0]) if rate_expected else None,
+                }
+        else:
+            print(f'\n\nОшибка:\nФайл не найден: "{perfdhcp_path}"')
+
+        steps = []
+        for step_idx, n_target in enumerate(DHCP_PERFDHCP_CLIENT_STEPS):
+            step_result = {"clients_target": n_target}
+
+            step_perfdhcp = perfdhcp_by_step.get(n_target)
+            if step_perfdhcp:
+                step_result["perfdhcp"] = step_perfdhcp["sections"]
+                step_result["perfdhcp_rate"] = {
+                    "achieved": step_perfdhcp["rate_achieved"],
+                    "expected": step_perfdhcp["rate_expected"] if step_perfdhcp["rate_expected"] is not None else DHCP_PERFDHCP_RATE,
+                }
+            else:
+                print(f'\n\nОшибка:\nВ выводе perfdhcp не найден шаг N={n_target}\n')
+
+            kea_before_path = f"{BASE_PATH}/kea_stats_before_step{step_idx}.json"
+            kea_after_path = f"{BASE_PATH}/kea_stats_after_step{step_idx}.json"
+            if path.exists(kea_before_path) and path.exists(kea_after_path):
+                before_stats = load_kea_stat_values(kea_before_path)
+                after_stats = load_kea_stat_values(kea_after_path)
+                step_result["kea_stats_delta"] = {
+                    name: after_stats[name] - before_stats.get(name, 0)
+                    for name in after_stats
+                }
+            else:
+                print(f'\n\nОшибка:\nФайлы статистики kea для шага {step_idx} (N={n_target}) не найдены\n')
+
+            kea_proc_path = f"{BASE_PATH}/kea_proc_stats_step{step_idx}.txt"
+            if path.exists(kea_proc_path):
+                with open(kea_proc_path) as f:
+                    step_result["kea_process"] = parse_pidstat_averages(f.read())
+            else:
+                print(f'\n\nОшибка:\nФайл pidstat для шага {step_idx} (N={n_target}) не найден\n')
+
+            print(f"\nШаг N={n_target}:\n{step_result}")
+            steps.append(step_result)
+
+        dhcp_results = {"steps": steps}
+
+        with open(DHCP_RESULTS, "w") as w:
+            w.write(json.dumps(dhcp_results, ensure_ascii=False))
+
+        print('\n\nЗабираем данные о ОС с ВМ\n')
+        scp_vm_params = {
+            DHCP_SERVER_VM: [
+                {
+                    "mode": "pull",
+                    "path_host": VM_OS_INFO_PATH + "/av.txt",
+                    "path_vm": "/home/u/av.txt",
+                },
+                {
+                    "mode": "pull",
+                    "path_host": VM_OS_INFO_PATH + "/kernel.txt",
+                    "path_vm": "/home/u/kernel.txt",
+                },
+            ]
+        }
+        self.provider.scp(
+            scp_settings=scp_vm_params,
+            vms_dates=self.vms_data,
+            vms_groups=self.vms_group,
+            username=USERNAME,
+            password=PASSWORD,
+        )
         print("\n\n\nОбработка результатов завершена\n\n\n")

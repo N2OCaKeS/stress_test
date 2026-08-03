@@ -1,7 +1,8 @@
 # from allta import PageBuilder, ConfluencePublisher Uncomment to work
 
 import json
-from allta import PageBuilder, ConfluencePublisher
+import pandas as pd
+from allta import PageBuilder, ConfluencePublisher, MathModel
 
 from net_conf import (
     IOF_RESULTS,
@@ -103,6 +104,97 @@ def net_publisher(
         attachments=[*builder.attachments],
     )
     return builder, preview_path, publish_result
+
+
+def build_dhcp_dataframe(results_path: str = DHCP_RESULTS) -> pd.DataFrame:
+    with open(results_path) as f:
+        data = json.load(f)
+
+    rows = []
+    for step in data.get("steps", []):
+        perfdhcp = step.get("perfdhcp", {})
+        discover_offer = perfdhcp.get("DISCOVER-OFFER", {})
+        request_ack = perfdhcp.get("REQUEST-ACK", {})
+        rate = step.get("perfdhcp_rate", {})
+        kea_process = step.get("kea_process", {})
+        kea_delta = step.get("kea_stats_delta", {})
+
+        rows.append(
+            {
+                "clients_target": step.get("clients_target"),
+                "rate_achieved": rate.get("achieved"),
+                "rate_expected": rate.get("expected"),
+                "do_sent": discover_offer.get("sent packets"),
+                "do_received": discover_offer.get("received packets"),
+                "do_drops_ratio": discover_offer.get("drops ratio"),
+                "do_avg_delay_ms": discover_offer.get("avg delay"),
+                "ra_sent": request_ack.get("sent packets"),
+                "ra_received": request_ack.get("received packets"),
+                "ra_drops_ratio": request_ack.get("drops ratio"),
+                "ra_avg_delay_ms": request_ack.get("avg delay"),
+                "kea_cpu_percent": kea_process.get("cpu_percent_avg"),
+                "kea_rss_kb": kea_process.get("rss_kb_avg"),
+                "kea_assigned_addresses": kea_delta.get("subnet[1].assigned-addresses"),
+                "kea_allocation_fail": kea_delta.get("v4-allocation-fail", 0),
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df = df.sort_values("clients_target").reset_index(drop=True)
+    return df
+
+
+DHCP_RATING_POWER = 0.9998061238066913
+
+DHCP_RATING_SCALE = 100000
+
+
+def build_dhcp_rating(df: pd.DataFrame, power: float = DHCP_RATING_POWER) -> dict:
+    if df.empty or len(df) < 2:
+        raise ValueError("Нужно минимум 2 шага (строки) в df для расчёта рейтинга")
+
+    iterations = df["clients_target"].tolist()
+    model = MathModel()
+
+    drops_avg = ((df["do_drops_ratio"].fillna(0.0) + df["ra_drops_ratio"].fillna(0.0)) / 2).tolist()
+    model.add_criterion(
+        name="drops_ratio_avg_percent",
+        iterations=iterations,
+        values=drops_avg,
+        weight=0.75,
+        negative=True,
+        bounds=(0.0, 100.0),
+    )
+
+    model.add_criterion(
+        name="do_avg_delay_ms",
+        iterations=iterations,
+        values=df["do_avg_delay_ms"].fillna(0.0).tolist(),
+        weight=0.25,
+        negative=True,
+        bounds=(0.0, 10.0),
+    )
+
+    result = model.total_rating(power=power)
+    result["total_rating_raw"] = result["total_rating"]
+    result["total_rating"] = round(result["total_rating"] / DHCP_RATING_SCALE)
+    return result
+
+
+def update_dhcp_results_with_rating(
+    results_path: str = DHCP_RESULTS, power: float = DHCP_RATING_POWER
+) -> pd.DataFrame:
+    df = build_dhcp_dataframe(results_path)
+    rating = build_dhcp_rating(df, power=power)
+
+    with open(results_path) as f:
+        data = json.load(f)
+    data["total_rating"] = rating
+    with open(results_path, "w") as f:
+        json.dump(data, f, ensure_ascii=False)
+
+    return df
 
 
 def dhcp_publisher(

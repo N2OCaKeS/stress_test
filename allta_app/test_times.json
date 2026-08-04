@@ -97,7 +97,7 @@
         "stand4": {
             "postgresql": "3:32:34",
             "postgresql-aud-off": "3:03:32",
-            "postgresql-sm": "3:34:40",
+            "postgresql-sm": "1:08:55",
             "psql parsec": "3:17:50",
             "psql vanilla": "3:05:02",
             "Total time": "0:00:00"
@@ -110,7 +110,7 @@
             "Total time": "0:00:00",
             "CEPH parsec": "2:51:24",
             "raw-spin-lock": "1:19:45",
-            "astraevents": "2:33:30"
+            "astraevents": "0:58:36"
         },
         "stand11": {
             "parsec impact-fs": "0:36:42",

@@ -57,7 +57,10 @@
                     "1.8.4.o",
                     "1.8.5.s",
                     "1.8.5.v",
-                    "1.8.5.o"
+                    "1.8.5.o",
+                    "1.8.6.s",
+                    "1.8.6.v",
+                    "1.8.6.o"
                 ]
             },
             {
@@ -130,7 +133,10 @@
                     "1.7.9.UU.1.o",
                     "1.7.10.s",
                     "1.7.10.v",
-                    "1.7.10.o"
+                    "1.7.10.o",
+                    "1.7.11.s",
+                    "1.7.11.v",
+                    "1.7.11.o"
                 ]
             },
             {
@@ -475,38 +481,56 @@
             },
             {
                 "1.8-testing.s": [
-                    "alse-gui-max/1.8.5",
-                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-max%2F1.8.5"
+                    "alse-gui-max/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-max%2F1.8.6"
                 ]
             },
             {
                 "1.8-testing.v": [
-                    "alse-gui-adv/1.8.5",
-                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-adv%2F1.8.5"
+                    "alse-gui-adv/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-adv%2F1.8.6"
                 ]
             },
             {
                 "1.8-testing.o": [
-                    "alse-gui-base/1.8.5",
-                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-base%2F1.8.5"
+                    "alse-gui-base/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-base%2F1.8.6"
                 ]
             },
             {
                 "1.8-night.s": [
-                    "alse-gui-max/1.8.5",
-                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-max%2F1.8.5"
+                    "alse-gui-max/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-max%2F1.8.6"
                 ]
             },
             {
                 "1.8-night.v": [
-                    "alse-gui-adv/1.8.5",
-                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-adv%2F1.8.5"
+                    "alse-gui-adv/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-adv%2F1.8.6"
                 ]
             },
             {
                 "1.8-night.o": [
-                    "alse-gui-base/1.8.5",
-                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-base%2F1.8.5"
+                    "alse-gui-base/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-base%2F1.8.6"
+                ]
+            },
+            {
+                "1.8.6.s": [
+                    "alse-gui-max/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-max%2F1.8.6"
+                ]
+            },
+            {
+                "1.8.6.v": [
+                    "alse-gui-adv/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-adv%2F1.8.6"
+                ]
+            },
+            {
+                "1.8.6.o": [
+                    "alse-gui-base/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-base%2F1.8.6"
                 ]
             },
             {
@@ -1266,39 +1290,57 @@
                 ]
             },
             {
+                "1.7.11.s": [
+                    "alse-gui-max/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.11"
+                ]
+            },
+            {
+                "1.7.11.v": [
+                    "alse-gui-adv/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.11"
+                ]
+            },
+            {
+                "1.7.11.o": [
+                    "alse-gui-base/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.11"
+                ]
+            },
+            {
                 "1.7-testing.s": [
-                    "alse-gui-max/1.7.10",
-                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.10"
+                    "alse-gui-max/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.11"
                 ]
             },
             {
                 "1.7-testing.v": [
-                    "alse-gui-adv/1.7.10",
-                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.10"
+                    "alse-gui-adv/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.11"
                 ]
             },
             {
                 "1.7-testing.o": [
-                    "alse-gui-base/1.7.10",
-                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.10"
+                    "alse-gui-base/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.11"
                 ]
             },
             {
                 "1.7-night.s": [
-                    "alse-gui-max/1.7.10",
-                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.10"
+                    "alse-gui-max/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.11"
                 ]
             },
             {
                 "1.7-night.v": [
-                    "alse-gui-adv/1.7.10",
-                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.10"
+                    "alse-gui-adv/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.11"
                 ]
             },
             {
                 "1.7-night.o": [
-                    "alse-gui-base/1.7.10",
-                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.10"
+                    "alse-gui-base/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.11"
                 ]
             },
             {

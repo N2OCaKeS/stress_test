@@ -13,7 +13,7 @@ from net_conf import (
     ITERATIONS,
     DHCP_VCPU,
     DHCP_RAM,
-    DHCP_ITERATIONS,
+    DHCP_PERFDHCP_CLIENT_STEPS,
     DHCP_RESULTS,
 )
 
@@ -105,9 +105,12 @@ def net_publisher(
     )
     return builder, preview_path, publish_result
 
+
 """
     DHCP
 """
+
+
 def build_dhcp_dataframe(results_path: str = DHCP_RESULTS) -> pd.DataFrame:
     with open(results_path) as f:
         data = json.load(f)
@@ -155,7 +158,7 @@ DHCP_RATING_POWER = 0.9998061238066913
 DHCP_RATING_SCALE = 100000
 
 
-def get_dhcp_total_rating(df: pd.DataFrame, power: float = DHCP_RATING_POWER) -> dict:
+def get_dhcp_total_rating(df: pd.DataFrame, power: float = DHCP_RATING_POWER) -> int:
     if df.empty or len(df) < 2:
         raise ValueError("Нужно минимум 2 шага (строки) в df для расчёта рейтинга")
 
@@ -179,10 +182,10 @@ def get_dhcp_total_rating(df: pd.DataFrame, power: float = DHCP_RATING_POWER) ->
         negative=True,
         bounds=(0.0, 10.0),
     )
-
-    result = model.total_rating(power=power)
-    result["total_rating_raw"] = result["total_rating"]
-    result["total_rating"] = round(result["total_rating"] / DHCP_RATING_SCALE)
+    model.test_power()
+    ext_result = model.total_rating(power=power)
+    result = ext_result.total
+    result = round(result / DHCP_RATING_SCALE)
     return result
 
 
@@ -225,7 +228,12 @@ def dhcp_publisher(
     params = [
         {"label": "VCPU", "value": DHCP_VCPU},
         {"label": "RAM", "value": DHCP_RAM},
-        {"label": "Test iterations", "value": DHCP_ITERATIONS},
+        {"label": "Test iterations", "value": str(DHCP_PERFDHCP_CLIENT_STEPS)},
+    ]
+
+    criteria = [
+        {"label": "drops_ratio_avg_percent", "value": "weight: 0.75; negative; "},
+        {"label": "do_avg_delay_ms", "value": "weight: 0.25; negative; "},
     ]
 
     header_table = [
@@ -235,6 +243,12 @@ def dhcp_publisher(
             "label": "Params",
             "value": {
                 "items": params,
+            },
+        },
+        {
+            "label": "Criteria",
+            "value": {
+                "items": criteria,
             },
         },
         {
@@ -307,5 +321,6 @@ def dhcp_publisher(
         attachments=[*builder.attachments],
     )
     return builder, preview_path, publish_result
+
 
 #### DHCP END

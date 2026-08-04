@@ -424,8 +424,8 @@ class NetworkLoad(CreateVM):  # In vm work allta_cli!
 class Dhcp(CreateVM):
     def start_test(self):
         """
-        testvm1            - kea-dhcp4-server (статический IP)
-        testvm2..testvm5   - клиенты perfdhcp, получают адрес от kea по MAC-резервации
+        testvm1 - kea-dhcp4-server (статический IP)
+        testvm2 - клиент perfdhcp, получает адрес от kea по MAC-резервации
         """
 
         print("\n\n\nНачинаем выполнение теста\n\n\n")
@@ -852,7 +852,7 @@ EOF"""
 
         print('\n\nЗабираем данные о ОС с ВМ\n')
         scp_vm_params = {
-            DHCP_SERVER_VM: [
+            DHCP_LOAD_CLIENT_VM: [
                 {
                     "mode": "pull",
                     "path_host": VM_OS_INFO_PATH + "/av.txt",

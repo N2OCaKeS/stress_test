@@ -684,6 +684,7 @@ EOF"""
             kea_proc_sampler_stop = {
                 DHCP_SERVER_VM: {
                     "stop_proc_sampler": {
+                        # -INT (не -TERM), чтобы pidstat успел дописать
                         "command": "sudo pkill -INT -x pidstat 2>/dev/null || true; sleep 2",
                     },
                 },
@@ -699,6 +700,9 @@ EOF"""
             }
             self.provider.execute(commands=kea_stats_after, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
 
+            # kea-статистику и pidstat-семпл этого шага сразу забираем под
+            # именем с номером шага - иначе следующий шаг перезапишет remote-файлы
+            # до того, как мы их подтянем
             scp_get_step_results = {
                 DHCP_SERVER_VM: [
                     {
@@ -737,8 +741,12 @@ EOF"""
     def results_processing(self):
         print("\n\n\nОбработка результатов\n\n\n")
 
+        # "***Statistics for: DISCOVER-OFFER***" / "REQUEST-ACK***", внутри
+        # каждой - чистые строки "label: value[ %|ms]". Если внутри секции
+        # exchange не завершился, delay печатается как "inf ms"/"n/a" - такие
+        # строки просто не попадают в числовой парсинг.
         kv_pattern = re.compile(r"^\s*([A-Za-z][\w \-/]*?)\s*:\s*(-?\d+(?:\.\d+)?)\s*(?:ms|%)?\s*$", re.MULTILINE)
-
+        # Маркер шага содержит N - им режем общий файл на куски по шагам
         step_pattern = re.compile(re.escape(DHCP_PERFDHCP_STEP_MARKER_PREFIX) + r"(\d+)\s*===")
 
         def parse_step_sections(body: str):
@@ -761,6 +769,8 @@ EOF"""
             arguments = data.get("arguments", {})
             return {name: samples[0][0] for name, samples in arguments.items() if samples}
 
+        # pidstat -u -r в непрерывном режиме, остановлен SIGINT - в конце
+        # печатает готовый "Average:" блок отдельно для CPU и для памяти
         def parse_pidstat_averages(text: str):
             lines = [ln for ln in text.splitlines() if ln.strip()]
             result = {}

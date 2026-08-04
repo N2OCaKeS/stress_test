@@ -105,7 +105,9 @@ def net_publisher(
     )
     return builder, preview_path, publish_result
 
-
+"""
+    DHCP
+"""
 def build_dhcp_dataframe(results_path: str = DHCP_RESULTS) -> pd.DataFrame:
     with open(results_path) as f:
         data = json.load(f)
@@ -142,6 +144,9 @@ def build_dhcp_dataframe(results_path: str = DHCP_RESULTS) -> pd.DataFrame:
     df = pd.DataFrame(rows)
     if not df.empty:
         df = df.sort_values("clients_target").reset_index(drop=True)
+        df["drops_ratio_avg_percent"] = (
+            df["do_drops_ratio"].fillna(0.0) + df["ra_drops_ratio"].fillna(0.0)
+        ) / 2
     return df
 
 
@@ -150,18 +155,17 @@ DHCP_RATING_POWER = 0.9998061238066913
 DHCP_RATING_SCALE = 100000
 
 
-def build_dhcp_rating(df: pd.DataFrame, power: float = DHCP_RATING_POWER) -> dict:
+def get_dhcp_total_rating(df: pd.DataFrame, power: float = DHCP_RATING_POWER) -> dict:
     if df.empty or len(df) < 2:
         raise ValueError("Нужно минимум 2 шага (строки) в df для расчёта рейтинга")
 
     iterations = df["clients_target"].tolist()
     model = MathModel()
 
-    drops_avg = ((df["do_drops_ratio"].fillna(0.0) + df["ra_drops_ratio"].fillna(0.0)) / 2).tolist()
     model.add_criterion(
         name="drops_ratio_avg_percent",
         iterations=iterations,
-        values=drops_avg,
+        values=df["drops_ratio_avg_percent"].tolist(),
         weight=0.75,
         negative=True,
         bounds=(0.0, 100.0),
@@ -186,7 +190,7 @@ def update_dhcp_results_with_rating(
     results_path: str = DHCP_RESULTS, power: float = DHCP_RATING_POWER
 ) -> pd.DataFrame:
     df = build_dhcp_dataframe(results_path)
-    rating = build_dhcp_rating(df, power=power)
+    rating = get_dhcp_total_rating(df, power=power)
 
     with open(results_path) as f:
         data = json.load(f)
@@ -250,31 +254,49 @@ def dhcp_publisher(
     builder.add_header_table(rows=header_table)
     builder.add_heading(text="Описание", level=2)
     builder.add_paragraph(
-        text="В тесте производится оценка сетевой производительности DHCP-сервера kea с помощью dhcpperf"
+        text="В тесте производится оценка сетевой производительности DHCP-сервера kea с помощью perfdhcp"
     )
+
+
+    df = update_dhcp_results_with_rating()
 
     with open(DHCP_RESULTS, "r") as f:
         dhcp_results_dict = json.load(f)
 
     builder.add_heading(text="Total rating:", level=2)
-    builder.add_paragraph(dhcp_results_dict["total_rating"])
+    builder.add_paragraph(str(dhcp_results_dict["total_rating"]["total_rating"]))
 
     builder.add_table(
-        # TODO Проработать таблицу когда будут результаты
         {
-            "title": "Результаты тестирования",
+            "title": "Результаты тестирования по шагам (N клиентов)",
             "headers": [
-                "Kea MBytes/sec (mean)",
-                "Difference %",
+                "Клиенты",
+                "Rate achieved",
+                "Rate expected",
+                "DISCOVER-OFFER drops %",
+                "REQUEST-ACK drops %",
+                "Drops avg %",
+                "Avg delay, мс",
+                "Kea CPU %",
+                "Kea RSS, KB",
             ],
-            "rows": [
+            "rows": df[
                 [
-                    dhcp_results_dict["init_on_free_ON"],
-                    dhcp_results_dict["difference"],
+                    "clients_target",
+                    "rate_achieved",
+                    "rate_expected",
+                    "do_drops_ratio",
+                    "ra_drops_ratio",
+                    "drops_ratio_avg_percent",
+                    "do_avg_delay_ms",
+                    "kea_cpu_percent",
+                    "kea_rss_kb",
                 ]
-            ],
+            ].values.tolist(),
         }
     )
+
+    builder.add_attachment(DHCP_RESULTS, title="dhcp_results.json")
 
     publish_result = reporter.publish_results_from_params(
         conf_space=space,
@@ -285,3 +307,5 @@ def dhcp_publisher(
         attachments=[*builder.attachments],
     )
     return builder, preview_path, publish_result
+
+#### DHCP END

@@ -67,8 +67,17 @@ Path(DHCP_CONF_DIR).mkdir(mode=0o777, exist_ok=True)
 DHCP_CONF_LOCAL_PATH = f"{DHCP_CONF_DIR}/kea-dhcp4.conf"
 DHCP_CONF_REMOTE_PATH = "/etc/kea/kea-dhcp4.conf"
 
+# Pool для синтетических клиентов perfdhcp - вынесен за пределы 192.168.100.0/24
+# целиком, чтобы не пересекаться с DHCP_SERVER_IP и MAC-резервациями
+# DHCP_CLIENT_IPS. Расширен до /15 (см. DHCP_SUBNET) - максимальный шаг
+# DHCP_PERFDHCP_CLIENT_STEPS сейчас 80000, пул должен быть заметно больше,
+# иначе результат смешается с исчерпанием пула, а не с реальным поведением
+# сервера. Сам виртуальный мост (virbr1) L2, ему не важен netmask, поэтому
+# /vms/network.xml на хосте трогать не нужно, расширяем только объявление в
+# конфиге kea
 DHCP_POOL_START = "192.168.101.0"
 DHCP_POOL_END = "192.169.255.254"
+
 
 DHCP_LOAD_CLIENT_VM = "testvm2"
 

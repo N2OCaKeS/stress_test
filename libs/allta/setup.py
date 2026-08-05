@@ -6,7 +6,7 @@ def readme():
 
 setup(
   name='allta',
-  version='1.2.0',
+  version='1.2.2',
   author='team13',
   author_email='mfilippenko@astralinux.ru',
   description='Библиотеки для stress тестов',

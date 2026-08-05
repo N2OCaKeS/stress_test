@@ -63,6 +63,7 @@ def _looks_like_server_query(value: str) -> bool:
 
 
 _STAND_ONLY_RE = re.compile(r"^(?i:stand)(\d+)$")
+_VM_STAND_NAME_RE = re.compile(r"^\s*(?:stand)?(?P<stand>\d+)[-_]", flags=re.IGNORECASE)
 
 
 def _stand_query_number(value: str) -> int | None:
@@ -76,10 +77,17 @@ def _stand_query_number(value: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _vm_stand_number_from_name(name: str) -> int | None:
+    match = _VM_STAND_NAME_RE.match(name)
+    if not match:
+        return None
+    return int(match.group("stand"))
+
+
 def _get_vm_by_stand_no(stand_no: int) -> dict:
     matches = [
         vm for vm in list_vms()
-        if vm.get("stand_no") is not None and int(vm["stand_no"]) == stand_no
+        if _vm_stand_number_from_name(str(vm.get("name") or "")) == stand_no
     ]
     if not matches:
         raise VMError(f"ВМ со стендом #{stand_no} не найдена.")
@@ -108,6 +116,40 @@ def get_vm_by_name(name: str) -> dict:
     raise VMError(f"ВМ '{name}' не найдена")
 
 
+def resolve_vm_query(query: str) -> dict:
+    value = query.strip()
+    if not value:
+        raise VMError("Не указано имя ВМ или номер стенда.")
+
+    vm: dict | None = None
+    vm_by_name_error: Exception | None = None
+    try:
+        vm = get_vm_by_name(value)
+    except Exception as e:
+        vm_by_name_error = e
+
+    if vm is None:
+        stand_no = _stand_query_number(value)
+        if stand_no is not None:
+            vm = _get_vm_by_stand_no(stand_no)
+
+    if vm is None and _looks_like_server_query(value):
+        vm = _get_vm_by_server_query(value)
+
+    if vm is None:
+        assert vm_by_name_error is not None
+        raise vm_by_name_error
+    return vm
+
+
+def resolve_vm_name(query: str) -> str:
+    vm = resolve_vm_query(query)
+    name = str(vm.get("name") or "").strip()
+    if not name:
+        raise VMError(f"Не удалось определить имя ВМ для '{query}'.")
+    return name
+
+
 def create_vms(server_id: int, password: str, vm_specs: List[str]) -> dict:
     payload_vms: Dict[str, Dict[str, Any]] = {}
     for item in vm_specs:
@@ -131,12 +173,12 @@ def create_vms(server_id: int, password: str, vm_specs: List[str]) -> dict:
 
 
 def status_vm(name: str) -> dict:
-    vm = get_vm_by_name(name)
+    vm = resolve_vm_query(name)
     return {"name": vm.get("name"), "status": vm.get("status"), "password": vm.get("password")}
 
 
 def status_set_vm(name: str) -> dict:
-    vm = get_vm_by_name(name)
+    vm = resolve_vm_query(name)
     vm_id = vm.get("id")
     if not vm_id:
         raise VMError("Не удалось определить id ВМ.")
@@ -152,7 +194,7 @@ def status_set_vm(name: str) -> dict:
 
 
 def status_free_vm(name: str) -> dict:
-    vm = get_vm_by_name(name)
+    vm = resolve_vm_query(name)
     vm_id = vm.get("id")
     if not vm_id:
         raise VMError("Не удалось определить id ВМ.")
@@ -266,24 +308,7 @@ def resolve_vm_ssh_target(name: str) -> dict:
     if not query:
         raise VMError("Не указано имя ВМ или сервера.")
 
-    vm: dict | None = None
-    vm_by_name_error: Exception | None = None
-    try:
-        vm = get_vm_by_name(query)
-    except Exception as e:
-        vm_by_name_error = e
-
-    if vm is None:
-        stand_no = _stand_query_number(query)
-        if stand_no is not None:
-            vm = _get_vm_by_stand_no(stand_no)
-
-    if vm is None and _looks_like_server_query(query):
-        vm = _get_vm_by_server_query(query)
-
-    if vm is None:
-        assert vm_by_name_error is not None
-        raise vm_by_name_error
+    vm = resolve_vm_query(query)
 
     ip = str(vm.get("ip_address") or "").strip()
     user = str(vm.get("server_user") or vm.get("username") or vm.get("user") or "u").strip() or "u"

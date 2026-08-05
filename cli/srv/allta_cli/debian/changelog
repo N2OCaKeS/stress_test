@@ -1,3 +1,11 @@
+allta (1.0.10) stable; urgency=medium
+
+  * Исправлены ошибки с зависимостями, а так же сборка большого кол-ва
+    локальных ВМ
+  * Добавлен резолв ВМ по номеру стенда в VM-командах CLI
+
+ -- Filippenko Maksim <mfilippenko@astralinux.ru>  Wed, 05 Aug 2026 14:30:52 +0300
+
 allta (1.0.9) stable; urgency=medium
 
   * Исправлена ошибка в команде allta jira testcase

@@ -28,6 +28,14 @@ def _install_cli_stubs() -> None:
             )
 
     _install_module_stub(
+        "allta._math_models.math_model",
+        {"MathModel": _Unavailable},
+    )
+    _install_module_stub(
+        "allta._math_models.old_math_model",
+        {"OldMathModel": _Unavailable},
+    )
+    _install_module_stub(
         "allta._math_models.math_models",
         {"Criterion": _Unavailable, "MathModels": _Unavailable},
     )

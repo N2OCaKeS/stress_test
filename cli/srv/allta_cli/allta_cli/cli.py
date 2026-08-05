@@ -367,14 +367,22 @@ def _dedupe_keep_order(items: list[str]) -> list[str]:
     return result
 
 
-def _resolve_vm_names(*, positional: tuple[str, ...], option_values: tuple[str, ...]) -> list[str]:
+def _resolve_vm_queries(*, positional: tuple[str, ...], option_values: tuple[str, ...]) -> list[str]:
     names = _dedupe_keep_order([*_split_csv_values(option_values), *[x.strip() for x in positional if x.strip()]])
     if not names:
         raise click.UsageError("Нужно указать хотя бы одну ВМ: позиционно или через --vms.")
     return names
 
 
-def _resolve_single_vm_name(*, positional: str | None, option_value: str | None) -> str:
+def _resolve_vm_names(*, positional: tuple[str, ...], option_values: tuple[str, ...]) -> list[str]:
+    return [vm_api.resolve_vm_name(query) for query in _resolve_vm_queries(positional=positional, option_values=option_values)]
+
+
+def _resolve_local_vm_names(*, positional: tuple[str, ...], option_values: tuple[str, ...]) -> list[str]:
+    return _resolve_vm_queries(positional=positional, option_values=option_values)
+
+
+def _resolve_single_vm_query(*, positional: str | None, option_value: str | None) -> str:
     pos = positional.strip() if positional else None
     opt = option_value.strip() if option_value else None
     if pos and opt and pos != opt:
@@ -383,6 +391,14 @@ def _resolve_single_vm_name(*, positional: str | None, option_value: str | None)
     if not vm_name:
         raise click.UsageError("Нужно указать имя ВМ: позиционно или через --vm.")
     return vm_name
+
+
+def _resolve_single_vm_name(*, positional: str | None, option_value: str | None) -> str:
+    return vm_api.resolve_vm_name(_resolve_single_vm_query(positional=positional, option_value=option_value))
+
+
+def _resolve_single_local_vm_name(*, positional: str | None, option_value: str | None) -> str:
+    return _resolve_single_vm_query(positional=positional, option_value=option_value)
 
 
 def _first_env_value(names: tuple[str, ...]) -> str | None:
@@ -2388,7 +2404,7 @@ def vm_status_cli(name: str, json_output: bool, raw_output: bool):
         raise click.UsageError("Используйте только один флаг: --json или --raw.")
     try:
         if raw_output:
-            info = vm_api.get_vm_by_name(name)
+            info = vm_api.resolve_vm_query(name)
             _print_raw_json(info)
             return
         info = vm_api.status_vm(name)
@@ -2700,7 +2716,7 @@ def local_vm_status_cli(name: str, json_output: bool):
 @click.option("--vms", multiple=True, metavar="VM[,VM2,...]", help="Имена ВМ. Можно через запятую и вместе с позиционными.")
 def local_vm_start_cli(vm_names: tuple[str, ...], vms: tuple[str, ...]):
     try:
-        names = _resolve_vm_names(positional=vm_names, option_values=vms)
+        names = _resolve_local_vm_names(positional=vm_names, option_values=vms)
         vm_local_api.start_vms(names)
         ui.ok(f"Запущены local VM: {', '.join(names)}")
     except Exception as e:
@@ -2713,7 +2729,7 @@ def local_vm_start_cli(vm_names: tuple[str, ...], vms: tuple[str, ...]):
 @click.option("--vms", multiple=True, metavar="VM[,VM2,...]", help="Имена ВМ. Можно через запятую и вместе с позиционными.")
 def local_vm_stop_cli(vm_names: tuple[str, ...], vms: tuple[str, ...]):
     try:
-        names = _resolve_vm_names(positional=vm_names, option_values=vms)
+        names = _resolve_local_vm_names(positional=vm_names, option_values=vms)
         vm_local_api.stop_vms(names)
         ui.ok(f"Остановлены local VM: {', '.join(names)}")
     except Exception as e:
@@ -2727,7 +2743,7 @@ def local_vm_stop_cli(vm_names: tuple[str, ...], vms: tuple[str, ...]):
 @click.option("--vms", multiple=True, metavar="VM[,VM2,...]", help="Имена ВМ. Можно через запятую и вместе с позиционными.")
 def local_vm_astra_update_cli(rc: str, vm_names: tuple[str, ...], vms: tuple[str, ...]):
     try:
-        names = _resolve_vm_names(positional=vm_names, option_values=vms)
+        names = _resolve_local_vm_names(positional=vm_names, option_values=vms)
         task_id = vm_local_api.astra_update(rc=rc, vm_names=names)
         ui.ok(f"Операция выполнена: {task_id}")
     except Exception as e:
@@ -2740,7 +2756,7 @@ def local_vm_astra_update_cli(rc: str, vm_names: tuple[str, ...], vms: tuple[str
 @click.option("--vm", "vm_name", required=False, help="Имя ВМ")
 def local_vm_snapshots_cli(name: str | None, vm_name: str | None):
     try:
-        snapshots = vm_local_api.list_snapshots(_resolve_single_vm_name(positional=name, option_value=vm_name))
+        snapshots = vm_local_api.list_snapshots(_resolve_single_local_vm_name(positional=name, option_value=vm_name))
         if not snapshots:
             ui.echo("Снимки не найдены.")
             return
@@ -2759,7 +2775,7 @@ def local_vm_snapshots_cli(name: str | None, vm_name: str | None):
 @click.option("--vms", multiple=True, metavar="VM[,VM2,...]", help="Имена ВМ. Можно через запятую и вместе с позиционными.")
 def local_vm_snapshot_create_cli(snap_name: str, vm_names: tuple[str, ...], vms: tuple[str, ...]):
     try:
-        names = _resolve_vm_names(positional=vm_names, option_values=vms)
+        names = _resolve_local_vm_names(positional=vm_names, option_values=vms)
         task_id = vm_local_api.create_snapshot(vm_names=names, snap_name=snap_name)
         ui.ok(f"Операция выполнена: {task_id}")
     except Exception as e:
@@ -2773,7 +2789,7 @@ def local_vm_snapshot_create_cli(snap_name: str, vm_names: tuple[str, ...], vms:
 @click.option("--vms", multiple=True, metavar="VM[,VM2,...]", help="Имена ВМ. Можно через запятую и вместе с позиционными.")
 def local_vm_snapshot_delete_cli(snap_name: str, vm_names: tuple[str, ...], vms: tuple[str, ...]):
     try:
-        names = _resolve_vm_names(positional=vm_names, option_values=vms)
+        names = _resolve_local_vm_names(positional=vm_names, option_values=vms)
         task_id = vm_local_api.delete_snapshot(vm_names=names, snap_name=snap_name)
         ui.ok(f"Операция выполнена: {task_id}")
     except Exception as e:
@@ -2787,7 +2803,7 @@ def local_vm_snapshot_delete_cli(snap_name: str, vm_names: tuple[str, ...], vms:
 @click.option("--vms", multiple=True, metavar="VM[,VM2,...]", help="Имена ВМ. Можно через запятую и вместе с позиционными.")
 def local_vm_snapshot_revert_cli(snap_name: str, vm_names: tuple[str, ...], vms: tuple[str, ...]):
     try:
-        names = _resolve_vm_names(positional=vm_names, option_values=vms)
+        names = _resolve_local_vm_names(positional=vm_names, option_values=vms)
         task_id = vm_local_api.revert_snapshot(vm_names=names, snap_name=snap_name)
         ui.ok(f"Операция выполнена: {task_id}")
     except Exception as e:

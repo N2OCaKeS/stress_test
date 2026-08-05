@@ -51,7 +51,7 @@ prepare_embedded_runtime() {
 import importlib
 import importlib.util
 
-for mod in ("allta_cli.__main__",):
+for mod in ("allta_cli.__main__", "allta_cli.vm_local.vm_builder"):
     importlib.import_module(mod)
 
 if importlib.util.find_spec("allta") is None:

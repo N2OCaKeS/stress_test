@@ -225,6 +225,7 @@ class StealTime(CreateVM):
         self.set_exec_bit = 'sudo chmod +x /home/{}/cpu_load'
         self.run_test = 'cd /home/{} && sudo ./cpu_load'
         self.power_off = 'virsh destroy {}'
+        self.undefine = 'virsh undefine {} --remove-all-storage'
         self.user = 'u'
         self.password = '1'
         self.stop_host_monitor = False
@@ -329,6 +330,9 @@ class StealTime(CreateVM):
         try:
             [
                 cmd(self.power_off.format(vm_name)) for vm_name in self.vms
+            ]
+            [
+                cmd(self.undefine.format(vm_name)) for vm_name in self.vms
             ]
         except Exception as e:
             print(f'Error is: {str(type(e).__name__)}\nMessage: {str(e)}')

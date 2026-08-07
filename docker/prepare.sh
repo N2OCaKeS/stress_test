@@ -79,6 +79,8 @@ sudo make altinstall
 
 python3.12 -m venv venv
 source venv/bin/activate
+python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
 pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allta
 python3.12 -m pip install --upgrade pip
 python3.12 -m pip install -r ${CPATH}requirements.txt

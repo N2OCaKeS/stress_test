@@ -14,6 +14,7 @@ BASE_PATH = "/home/u/git/stress_test/network"
 
 # Confluence
 REPORT_PATH = f'{os.getcwd()}/test_results'
+Path(REPORT_PATH).mkdir(mode=0o777, exist_ok=True)
 
 #VM Settings
 USERNAME = "u"
@@ -40,3 +41,57 @@ IOF_ON_NAME = 'results_iof_on.txt'
 IOF_OFF_PATH = f'/home/u/{IOF_OFF_NAME}'
 IOF_ON_PATH = f'/home/u/{IOF_ON_NAME}'
 ITERATIONS = 10
+
+# DHCP (kea-dhcp4-server)
+
+DHCP_VM_COUNT = 2
+DHCP_VCPU = 4
+DHCP_RAM = 8192
+DHCP_ITERATIONS = 5
+
+DHCP_SERVER_VM = "testvm1"
+
+DHCP_SUBNET = "192.168.0.0/15"
+DHCP_NETMASK = "255.254.0.0"
+DHCP_SERVER_IP = "192.168.100.10"
+# testvm2 заранее зарезервирован ip в kea по MAC адреса
+DHCP_CLIENT_IPS = {
+    "testvm2": "192.168.100.11"
+}
+
+KEA_SERVER_PACKAGES = ["kea-dhcp4-server"]
+KEA_CLIENT_PACKAGES = ["kea-common", "kea-admin"]  # kea-admin для perfdhcp
+
+DHCP_CONF_DIR = f"{BASE_PATH}/dhcp_conf"
+Path(DHCP_CONF_DIR).mkdir(mode=0o777, exist_ok=True)
+DHCP_CONF_LOCAL_PATH = f"{DHCP_CONF_DIR}/kea-dhcp4.conf"
+DHCP_CONF_REMOTE_PATH = "/etc/kea/kea-dhcp4.conf"
+
+# Pool для синтетических клиентов perfdhcp - вынесен за пределы 192.168.100.0/24
+# целиком, чтобы не пересекаться с DHCP_SERVER_IP и MAC-резервациями
+# DHCP_CLIENT_IPS. Расширен до /15 (см. DHCP_SUBNET) - максимальный шаг
+# DHCP_PERFDHCP_CLIENT_STEPS сейчас 80000, пул должен быть заметно больше,
+# иначе результат смешается с исчерпанием пула, а не с реальным поведением
+# сервера. Сам виртуальный мост (virbr1) L2, ему не важен netmask, поэтому
+# /vms/network.xml на хосте трогать не нужно, расширяем только объявление в
+# конфиге kea
+DHCP_POOL_START = "192.168.101.0"
+DHCP_POOL_END = "192.169.255.254"
+
+
+DHCP_LOAD_CLIENT_VM = "testvm2"
+
+DHCP_PERFDHCP_RATE = 2000
+DHCP_PERFDHCP_CLIENT_STEPS = [5000, 10000, 20000, 40000, 80000]
+
+DHCP_PERFDHCP_REMOTE_PATH = "/home/u/perfdhcp_result.txt"
+DHCP_PERFDHCP_LOCAL_NAME = "perfdhcp_result.txt"
+
+DHCP_PERFDHCP_STEP_MARKER_PREFIX = "=== perfdhcp step N="
+
+DHCP_KEA_STATS_BEFORE_REMOTE = "/home/u/kea_stats_before.json"
+DHCP_KEA_STATS_AFTER_REMOTE = "/home/u/kea_stats_after.json"
+
+DHCP_KEA_PROC_STATS_REMOTE = "/home/u/kea_proc_stats.txt"
+
+DHCP_RESULTS = f"{REPORT_PATH}/dhcp_results.json"

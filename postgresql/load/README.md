@@ -76,3 +76,10 @@ sudo reboot
 ```bash
 echo 1 | sudo tee /parsecfs/disable-all-audit
 ```
+
+
+#### Монтирование папки parsec
+Перед монтированием необходимо
+```bash
+sudo pdpl-file 3:63:ffffffffffffffff:ccnr <место монтирования>
+```

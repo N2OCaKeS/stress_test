@@ -29,9 +29,10 @@ def initialization_freeipa_server():
         Обновление списка пакетов
     """    
     cmd("sudo apt update -y")
-    cmd("sudo apt install python3-venv build-essential python3-dev gcc -y")
+    cmd("sudo apt install python3-venv build-essential python3-dev python3-pip gcc -y")
     cmd("sudo apt install libkrb5-dev -y")
-
+    cmd("python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple")
+    cmd("sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple")
     """
         Установка пакетов astra-freeipa-server
     """    

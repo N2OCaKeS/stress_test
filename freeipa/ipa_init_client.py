@@ -35,6 +35,9 @@ def initialization_freeipa_client():
     """    
     cmd("apt update")
     cmd("apt install -y astra-freeipa-client")
+    cmd("apt install -y python3-pip")
+    cmd("python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple")
+    cmd("sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple")
     
     """
         Костыль для временной замены записей DNS (Чтобы не перезагружая ввести в домен)

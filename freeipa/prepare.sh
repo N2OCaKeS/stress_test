@@ -17,6 +17,11 @@ sudo apt update
 # TODO ВРЕМЕННОЕ РЕШЕНИЕ, ПОКА НЕ ИСПРАВЛЕНА ОШИБКА С ЗАВИСИМОСТЬЮ ОТ SSHPASS
 sudo apt install sshpass -y
 sudo apt --fix-broken install -y
+
+sudo apt install python3-pip -y
+python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+
 # create venv in script_dir
 #sudo apt-get install -y python3-dev python3-venv python3-requests python3-pip libffi-dev
 #python3 -m venv venv

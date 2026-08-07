@@ -15,8 +15,8 @@ for pkg in "${PACKAGES[@]}"; do
 done
 
 sudo apt install -y python3-pip
-python3.12 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
-sudo python3.12 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
 
 wget ftp://10.177.103.10/allta_*_amd64.deb
 sudo dpkg -i allta_*_amd64.deb

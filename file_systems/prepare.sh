@@ -33,6 +33,9 @@ sudo make altinstall
 python3.12 -m venv venv
 source venv/bin/activate
 
+python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+
 cd /home/u/git/stress_test/$1
 python3.12 -m pip install --upgrade pip
 python3.12 -m pip install -r req.txt

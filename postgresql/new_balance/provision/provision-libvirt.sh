@@ -75,6 +75,10 @@ else
 fi
 
 sudo apt-get install -y python3-pip
+
+python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+
 if (grep -q 1.8 /etc/astra_version); then
     python3 -m pip install --upgrade pip --break-system-packages
     # web1 получает psycopg2 только из подписанного apt-пакета (python3-psycopg2,

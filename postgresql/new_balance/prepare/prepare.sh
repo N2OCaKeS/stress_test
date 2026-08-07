@@ -13,7 +13,8 @@ sudo mkdir -p /home/iface
 
 # venv
 source /home/u/python/Python-3.12.1/venv/bin/activate
-
+python3.12 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+sudo python3.12 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
 
 
 #virtualbox

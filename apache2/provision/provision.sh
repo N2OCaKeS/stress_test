@@ -14,6 +14,10 @@ for pkg in "${PACKAGES[@]}"; do
   sudo apt-get install -y "$pkg" || echo "⚠ Предупреждение: не удалось установить ${pkg}"
 done
 
+sudo apt install python3-pip -y
+python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+
 wget ftp://10.177.103.10/allta*.deb
 sudo dpkg -i allta*.deb
 

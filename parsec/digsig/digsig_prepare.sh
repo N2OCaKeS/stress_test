@@ -2,7 +2,8 @@
 set -vx
 
 astra-modeswitch set 2 && astra-mac-control enable && astra-mic-control enable && astra-digsig-control enable && reboot
-
+# Режим замкнутой программной среды в Astra Linux Special Edition x.8
+# https://wiki.astralinux.ru/pages/viewpage.action?pageId=321820023
 
 #Нижеследующее запускать отдельным скриптом
 astra-digsig-control status

@@ -44,6 +44,9 @@ sudo apt-get install linux-[5-6].*-lowlatency -y
 sudo apt-get install -y libffi-dev gcc make libpdp-dev
 sudo apt-get install -y python3-numpy
 
+sudo apt-get install -y python3-pip
+python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
 
 kernel="$2"
 kernel_conf=$(sudo cat /boot/grub/grub.cfg | grep menuentry_id | awk '{print $17}' | grep $kernel | tr -d "\'")

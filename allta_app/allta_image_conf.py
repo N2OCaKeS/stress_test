@@ -117,7 +117,7 @@ tests_list = {'PostgreSQL':     ['postgresql', 'psql parsec', 'psql kernels', 'p
             'Apache':           ['apache-rp', 'apache-bp'],
             'Docker/Podman/LXC':['docker-wa'],
             'Qemu/KVM/Libvirt': ['steal time', 'steal time-sm', 'FIO', 'vUnixBench', 'vPingPong', 'FIO large'],
-            'Network':          ['InitOnFree']}
+            'Network':          ['InitOnFree', 'DHCP']}
 
 def parent_page_list():
     parent_page_list = {
@@ -208,6 +208,7 @@ branches = {
     'dovecot benchmark':'exim',
     'exim benchmark':'exim',
     'Network benchmark. Init_on_free':'network',
+    'Network benchmark. DHCP':'network',
     'segmentation_fault':'kernel',
     'postgresql benchmark olap':'postgresql',
     'xfs memory leak':'kernel',
@@ -282,6 +283,7 @@ tests = {
     'dovecot benchmark':'Dovecot-IMAP',
     'exim benchmark':'Exim4-SMTP',
     'Network benchmark. Init_on_free':'InitOnFree',
+    'Network benchmark. DHCP':'DHCP',
     'segmentation_fault':'SegFault',
     'postgresql benchmark olap':'PSQL OLAP-hq',
     'xfs memory leak': 'XFS mem leak',
@@ -320,7 +322,7 @@ main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
               'apache-rp', 'apache-bp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
               'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio', 'FreeIPA c-users', 'CEPH parsec', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP',
-              'FIO large', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'FreeIPA plugin', 'XFS mem leak', 'raw-spin-lock', 'psql info-sys', 'astraevents']
+              'FIO large', 'InitOnFree', 'DHCP', 'SegFault', 'PSQL OLAP-hq', 'FreeIPA plugin', 'XFS mem leak', 'raw-spin-lock', 'psql info-sys', 'astraevents']
 
 
 
@@ -409,7 +411,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
             'smolensk_stand4':  ['postgresql-sm', 'psql parsec', 'psql vanilla'],
             'orel_stand10':     ['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'astraevents'],
             'smolensk_stand10': ['CEPH parsec', 'raw-spin-lock'],
-            'orel_stand11':     ['docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large'],
+            'orel_stand11':     ['docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large', 'DHCP'],
             'smolensk_stand11': ['parsec impact-fs', 'parsec impact-fs aud-off', 'psql oom'],
             'orel_stand12':     ['syslog-ng', 'InitOnFree', 'SegFault', 'XFS mem leak'],
             'smolensk_stand12': ['auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'apache-bp', 'PSQL OLAP-hq'],
@@ -432,7 +434,7 @@ stands_groups = {
     'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla'],
     'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec', 'raw-spin-lock', 'astraevents'],
 
-    'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large'],
+    'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large', 'DHCP'],
     'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'apache-bp', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'XFS mem leak'],
 
     'stand13_group':['syslog-ng-cwl'],
@@ -493,6 +495,7 @@ tests_case_zefir_key = {
     'Exim4-SMTP':'BT-T18554',
     'FIO large':'BT-T18278',
     'InitOnFree':'BT-T18909',
+    'DHCP':'BT-T20891',
     'SegFault':'BT-T18927',
     'PSQL OLAP-hq':'BT-T19100',
     'FreeIPA plugin':'BT-T19492',
@@ -529,7 +532,7 @@ testname_columns = {
                     'ceph fio benchmark':'FS_CEPH_fio', 'freeipa create users test':'FreeIPA_c-users',
                     'ceph parsec benchmark':'FS_CEPH_parsec', 'astra openvpn client connections':'AOpenVPNcc',
                     'dovecot benchmark':'Dovecot-IMAP', 'exim benchmark':'Exim4-SMTP', 'Large FIO benchmark':'FIO_large',
-                    'Network benchmark. Init_on_free':'InitOnFree', 'segmentation_fault':'SegFault',
+                    'Network benchmark. Init_on_free':'InitOnFree', 'Network benchmark. DHCP':'DHCP', 'segmentation_fault':'SegFault',
                     'postgresql benchmark olap':'PSQL_OLAP-hq',
                     'freeipa plugin test':'FreeIPA_plugin',
                     'xfs memory leak':'XFS_mem_leak',

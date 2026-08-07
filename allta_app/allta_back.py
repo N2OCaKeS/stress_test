@@ -86,8 +86,9 @@ TEST_FLAGS: dict[str, str] = {
     'Dovecot-IMAP': '-mail imap',
     'Exim4-SMTP': '-mail smtp',
     
-    # -network (dest='NETWORK')
+    # -network (dest='NETWORK', choices=['iof', 'dhcp'])
     'InitOnFree': '-network iof',
+    'DHCP': '-network dhcp',
     
     # -kernel (dest='KERNELTEST')
     'SegFault': '-kernel segfault',

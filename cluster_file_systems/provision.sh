@@ -67,8 +67,8 @@ sudo mount $3:/home/u/git/stress_test/cluster_file_systems /git
 
 sleep 30
 
-python3.12 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
-sudo python3.12 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
 
 test "$(grep 1.7 /etc/astra_version)" && sudo pip3 install fabric
 test "$(grep 1.8 /etc/astra_version)" && sudo pip3 install fabric --break-system-packages

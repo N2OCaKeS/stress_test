@@ -33,6 +33,6 @@ statistics_conf = {
         "set_of_test_types": ['docker-wa']
     },
     "Network": {
-        "set_of_test_types": ['InitOnFree']
+        "set_of_test_types": ['InitOnFree', 'DHCP']
     }
 }

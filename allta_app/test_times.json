@@ -47,7 +47,8 @@
             "AOpenVPNcc": "1:31:35",
             "FIO_large": "1:17:47",
             "Total time": "0:00:00",
-            "FIO large": "3:28:30"
+            "FIO large": "3:28:30",
+            "DHCP": "1:04:09"
         },
         "stand12": {
             "syslog-ng": "2:15:52",
@@ -97,7 +98,7 @@
         "stand4": {
             "postgresql": "3:32:34",
             "postgresql-aud-off": "3:03:32",
-            "postgresql-sm": "3:34:40",
+            "postgresql-sm": "1:08:55",
             "psql parsec": "3:17:50",
             "psql vanilla": "3:05:02",
             "Total time": "0:00:00"
@@ -110,7 +111,7 @@
             "Total time": "0:00:00",
             "CEPH parsec": "2:51:24",
             "raw-spin-lock": "1:19:45",
-            "astraevents": "2:33:30"
+            "astraevents": "0:58:36"
         },
         "stand11": {
             "parsec impact-fs": "0:36:42",
@@ -125,7 +126,8 @@
             "FIO_large": "1:21:28",
             "Total time": "0:00:00",
             "AOpenVPNcc": "1:32:52",
-            "FIO large": "3:28:46"
+            "FIO large": "3:28:46",
+            "DHCP": "1:04:09"
         },
         "stand12": {
             "syslog-ng": "2:28:02",

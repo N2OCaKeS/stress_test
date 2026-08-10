@@ -117,7 +117,8 @@ class CreateVM:
             vms_dates=VMS_DATES,
             vms_groups={
                 'VMS':VMS
-            }
+            },
+            timeout=20
         )
         print(f'<{str(self.provider.execute.__name__).upper()}> block done ' + ('*' * 50))
 
@@ -225,6 +226,8 @@ class StealTime(CreateVM):
         self.set_exec_bit = 'sudo chmod +x /home/{}/cpu_load'
         self.run_test = 'cd /home/{} && sudo ./cpu_load'
         self.power_off = 'virsh destroy {}'
+        self.snapshot_list = 'virsh snapshot-list {} --name'
+        self.snapshot_delete = 'virsh snapshot-delete {} {} --children'
         self.undefine = 'virsh undefine {} --remove-all-storage'
         self.user = 'u'
         self.password = '1'
@@ -232,6 +235,12 @@ class StealTime(CreateVM):
         self.load_host_monitor_results = {}
         self.stop_host_monitor = False
 
+    def __delete_snapshots(self, vm_name):
+        snapshots = check_output_command(self.snapshot_list.format(vm_name))
+        for snapshot_name in snapshots.splitlines():
+            snapshot_name = snapshot_name.strip()
+            if snapshot_name:
+                cmd(self.snapshot_delete.format(vm_name, snapshot_name))
 
     def start_test(self):
         self.vm_dates = {
@@ -330,6 +339,9 @@ class StealTime(CreateVM):
         try:
             [
                 cmd(self.power_off.format(vm_name)) for vm_name in self.vms
+            ]
+            [
+                self.__delete_snapshots(vm_name) for vm_name in self.vms
             ]
             [
                 cmd(self.undefine.format(vm_name)) for vm_name in self.vms

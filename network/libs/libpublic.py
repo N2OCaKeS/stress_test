@@ -183,7 +183,7 @@ def get_dhcp_total_rating(df: pd.DataFrame, power: float = DHCP_RATING_POWER) ->
         bounds=(0.0, 10.0),
     )
     ext_result = model.total_rating(power=power)
-    result = ext_result.total
+    result = ext_result["total_rating"]
     result = round(result / DHCP_RATING_SCALE)
     return result
 

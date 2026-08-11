@@ -277,7 +277,7 @@ def dhcp_publisher(
         dhcp_results_dict = json.load(f)
 
     builder.add_heading(text="Total rating:", level=2)
-    builder.add_paragraph(str(dhcp_results_dict["total_rating"]["total_rating"]))
+    builder.add_paragraph(str(dhcp_results_dict["total_rating"]))
 
     builder.add_table(
         {

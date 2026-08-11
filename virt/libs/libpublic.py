@@ -67,6 +67,10 @@ class Public:
                     'cpu':'Intel(R) Xeon(R) Silver 4210 CPU @ 2.2GHz',
                     'ram':'128GB',
                     'storage':'SAS SSD 3.8Tb'},
+                '14':{'grade':'MiddleServer2',
+                    'cpu':'Intel(R) Xeon(R) CPU E5-2697 v3 @ 2.60GHz',
+                    'ram':'512GB',
+                    'storage':'NVME0n1 3.2Tb'},
         }
 
         if self.storage == 'nvme':

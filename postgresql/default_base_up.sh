@@ -80,7 +80,7 @@ if [ "$2" == "psql" ]; then
     sed -i "s/^#\?\s*max_parallel_workers_per_gather\s*=.*/max_parallel_workers_per_gather = 4/" /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
     sed -i "s/^#\?\s*max_parallel_workers\s*=.*/max_parallel_workers = 8/" /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
     sed -i "s/^#\?\s*max_parallel_maintenance_workers\s*=.*/max_parallel_maintenance_workers = 4/" /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
-    sed -i 's/md5/trust/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/pg_hba.conf
+    sed -i -e 's/md5/trust/g' -e 's/scram-sha-256/trust/g' -e 's/peer/trust/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/pg_hba.conf
   else
     #sed -i 's/ac_enable_maclabels_on_files.*/ac_enable_maclabels_on_files = true/g' /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf
     sed -i "s/^#\?\s*max_connections\s*=.*/max_connections = 2000/" /etc/postgresql/$PG_VERSION/$PG_SETEST_CLUSTER/postgresql.conf

@@ -105,12 +105,11 @@ class CreateVM:
                 'g_VMS':{
                     'provision':{
                         'command':f"sudo bash /home/u/env_provision.sh {self.rc_name} {self.kernel}",
-                        'signal set': 'provision', 
-                        'signal get': ''
+                        'signal set': 'provision',
                     },
                     'reboot':{ 
                         'signal set': '', 
-                        'signal get': ['provision']
+                        'signal get': 'provision'
                     }
                 }
             },
@@ -118,7 +117,7 @@ class CreateVM:
             vms_groups={
                 'VMS':VMS
             },
-            timeout=20
+            timeout=40
         )
         print(f'<{str(self.provider.execute.__name__).upper()}> block done ' + ('*' * 50))
 

@@ -55,7 +55,9 @@ git_directory="stress_test"
 #args=`cat "$dates_file"`
 
 #Удаление неиспользуемых ядер
-cleanup_kernel
+# cleanup_kernel
+
+export DEBIAN_FRONTEND=noninteractive
 
 #Предустановка пакетов
 dpkg -s sysstat &> /dev/null || sudo apt-get install sysstat -y

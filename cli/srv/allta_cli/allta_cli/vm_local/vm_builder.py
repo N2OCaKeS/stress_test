@@ -21,11 +21,22 @@ VM_STATE_FILE = STATE_DIR / "vms.json"
 SNAPSHOT_STATE_FILE = STATE_DIR / "snapshots.json"
 PREPARE_STATE_FILE = STATE_DIR / "prepare.json"
 PROVIDER_VM_STATE_FILE = STATE_DIR / "provider_vms_dates.json"
+SNAPSHOT_LIST_STATE_FILES = (
+    STATE_DIR / "snapshot_list.json",
+    STATE_DIR / "snapshots_list.json",
+    STATE_DIR / "all_snapshots.json",
+    STATE_DIR / "provider_snapshots.json",
+)
 
 DEFAULT_LOCAL_USER = "u"
 DEFAULT_LOCAL_PASSWORD = "1"
 DEFAULT_LOCAL_SSH_PORT = "22"
 RELEASES_URL = "https://allta.devos.astralinux.ru/rest/api/get-repo-path"
+VM_DISK_DIRS = (
+    Path("/vms"),
+    Path("/var/lib/libvirt/images"),
+)
+VM_DISK_SUFFIXES = (".qcow2", ".qcow", ".img", ".raw", ".vmdk", ".vdi")
 
 
 def _utc_now() -> str:
@@ -162,6 +173,65 @@ def _save_snapshot_state(snapshots: dict[str, list[str]]) -> None:
         "snapshots": snapshots,
     }
     _write_json(SNAPSHOT_STATE_FILE, payload)
+
+
+def _item_belongs_to_vm(item: Any, vm_names: set[str]) -> bool:
+    if isinstance(item, str):
+        text = item.strip()
+        return text in vm_names or any(text.startswith(f"{name}:") for name in vm_names)
+
+    if isinstance(item, dict):
+        for key in ("vm", "vm_name", "name_vm", "domain", "domain_name", "host"):
+            value = item.get(key)
+            if value is not None and str(value).strip() in vm_names:
+                return True
+        name = item.get("name")
+        if name is not None and str(name).strip() in vm_names:
+            return True
+    return False
+
+
+def _remove_vms_from_snapshot_payload(payload: Any, vm_names: set[str]) -> tuple[Any, bool]:
+    if isinstance(payload, dict):
+        changed = False
+        result: dict[str, Any] = {}
+        for key, value in payload.items():
+            key_name = str(key).strip()
+            if key_name in vm_names:
+                changed = True
+                continue
+            if key_name in {"snapshots", "items", "data", "vms"}:
+                new_value, nested_changed = _remove_vms_from_snapshot_payload(value, vm_names)
+                result[key] = new_value
+                changed = changed or nested_changed
+                continue
+            if _item_belongs_to_vm(value, vm_names):
+                changed = True
+                continue
+            result[key] = value
+        return result, changed
+
+    if isinstance(payload, list):
+        result = [item for item in payload if not _item_belongs_to_vm(item, vm_names)]
+        return result, len(result) != len(payload)
+
+    return payload, False
+
+
+def _cleanup_snapshot_list_files(vm_names: set[str]) -> list[str]:
+    changed_files: list[str] = []
+    for path in SNAPSHOT_LIST_STATE_FILES:
+        if not path.exists() or not path.is_file():
+            continue
+        payload = _read_json(path, default=None)
+        if payload is None:
+            continue
+        cleaned_payload, changed = _remove_vms_from_snapshot_payload(payload, vm_names)
+        if not changed:
+            continue
+        _write_json(path, cleaned_payload)
+        changed_files.append(path.name)
+    return changed_files
 
 
 def _is_prepare_completed() -> bool:
@@ -323,6 +393,201 @@ def _virsh_list_domains(*, uri: str, running_only: bool) -> set[str] | None:
     return {line.strip() for line in text.splitlines() if line.strip()}
 
 
+def _parse_virsh_table_domains(text: str) -> set[str]:
+    result: set[str] = set()
+    for line in str(text or "").splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[0].isdigit():
+            result.add(parts[1])
+        elif len(parts) >= 2 and parts[0] == "-":
+            result.add(parts[1])
+    return result
+
+
+def _virsh_all_domains() -> set[str]:
+    domains: set[str] = set()
+    saw_output = False
+    for uri in ("qemu:///system", "qemu:///session"):
+        names = _virsh_list_domains(uri=uri, running_only=False)
+        if names is not None:
+            saw_output = True
+            domains.update(names)
+
+        rc, text = _run_virsh(["virsh", "--connect", uri, "list", "--all"])
+        if rc == 0:
+            saw_output = True
+            domains.update(_parse_virsh_table_domains(text))
+
+    if not saw_output:
+        raise RuntimeError("Не удалось получить список VM через virsh list --all.")
+    return domains
+
+
+def _domain_exists_in_virsh(name: str) -> bool:
+    candidates = set(_candidate_domain_names(name))
+    return bool(candidates.intersection(_virsh_all_domains()))
+
+
+def _domain_name_in_text(name: str, text: str) -> bool:
+    candidates = set(_candidate_domain_names(name))
+    return any(candidate in _parse_virsh_table_domains(text) for candidate in candidates)
+
+
+def _virsh_domain_in_table_output(name: str) -> bool | None:
+    saw_output = False
+    saw_error = False
+    for uri in ("qemu:///system", "qemu:///session"):
+        rc, text = _run_virsh(["virsh", "--connect", uri, "list", "--all"])
+        if rc != 0:
+            saw_error = True
+            continue
+        saw_output = True
+        if _domain_name_in_text(name, text):
+            return True
+
+    if saw_output and not saw_error:
+        return False
+    return None
+
+
+def _provider_vm_list_contains(name: str) -> bool | None:
+    try:
+        text = LibvirtManager.Vm.vm_list()
+    except Exception:
+        return None
+    if text is None:
+        return None
+    return _domain_name_in_text(name, str(text))
+
+
+def _virsh_list_snapshots(*, uri: str, domain_name: str) -> list[str] | None:
+    rc, text = _run_virsh(["virsh", "--connect", uri, "snapshot-list", domain_name, "--name"])
+    if rc != 0:
+        return None
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _is_safe_disk_path(path: str) -> bool:
+    disk_path = str(path or "").strip()
+    if not disk_path.startswith("/"):
+        return False
+    if disk_path.startswith(("/dev/", "/proc/", "/sys/", "/run/")):
+        return False
+    return Path(disk_path).suffix.lower() in VM_DISK_SUFFIXES
+
+
+def _path_name_matches_vm(path: str, vm_name: str) -> bool:
+    stem = Path(str(path or "").strip()).stem
+    candidates = _candidate_domain_names(vm_name)
+    return any(candidate and candidate in stem for candidate in candidates)
+
+
+def _collect_disk_paths_from_value(value: Any, vm_name: str, result: list[str], seen: set[str]) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_text = str(key).lower()
+            if isinstance(item, str) and any(token in key_text for token in ("disk", "image", "path", "source", "device")):
+                disk_path = item.strip()
+                if _is_safe_disk_path(disk_path) and _path_name_matches_vm(disk_path, vm_name) and disk_path not in seen:
+                    seen.add(disk_path)
+                    result.append(disk_path)
+                continue
+            _collect_disk_paths_from_value(item, vm_name, result, seen)
+        return
+
+    if isinstance(value, list):
+        for item in value:
+            _collect_disk_paths_from_value(item, vm_name, result, seen)
+
+
+def _guessed_disk_paths(vm_name: str) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for candidate in _candidate_domain_names(vm_name):
+        for disk_dir in VM_DISK_DIRS:
+            for suffix in VM_DISK_SUFFIXES:
+                disk_path = str(disk_dir / f"{candidate}{suffix}")
+                if disk_path in seen:
+                    continue
+                seen.add(disk_path)
+                result.append(disk_path)
+    return result
+
+
+def _disk_paths_from_inventory(vm_name: str, record: Any) -> list[str]:
+    result = _guessed_disk_paths(vm_name)
+    seen = set(result)
+    _collect_disk_paths_from_value(record, vm_name, result, seen)
+    return result
+
+
+def _virsh_domain_disk_paths(*, uri: str, domain_name: str) -> list[str]:
+    rc, text = _run_virsh(["virsh", "--connect", uri, "domblklist", domain_name, "--details"])
+    if rc != 0:
+        return []
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        if parts[0] != "file" or parts[1] != "disk":
+            continue
+        disk_path = parts[-1].strip()
+        if not _is_safe_disk_path(disk_path) or disk_path in seen:
+            continue
+        seen.add(disk_path)
+        result.append(disk_path)
+    return result
+
+
+def _delete_disk_files(paths: list[str]) -> str:
+    for disk_path in paths:
+        if not _is_safe_disk_path(disk_path):
+            continue
+        command = ["rm", "-f", "--", disk_path]
+        try:
+            is_root = os.geteuid() == 0
+        except AttributeError:
+            is_root = False
+        if not is_root:
+            sudo_bin = shutil.which("sudo")
+            if sudo_bin:
+                command = [sudo_bin, "-n", *command]
+        rc, text = _run_process(command)
+        if rc != 0:
+            return text or f"Не удалось удалить диск {disk_path}: rm завершился с кодом {rc}"
+    return ""
+
+
+def _virsh_domain_exists(name: str) -> bool | None:
+    candidates = set(_candidate_domain_names(name))
+    saw_virsh = False
+    saw_error = False
+    for uri in ("qemu:///system", "qemu:///session"):
+        domains = _virsh_list_domains(uri=uri, running_only=False)
+        if domains is None:
+            saw_error = True
+            continue
+        saw_virsh = True
+        if candidates.intersection(domains):
+            return True
+    table_exists = _virsh_domain_in_table_output(name)
+    if table_exists is True:
+        return True
+
+    provider_exists = _provider_vm_list_contains(name)
+    if provider_exists is True:
+        return True
+
+    if saw_virsh and not saw_error:
+        return False
+    if table_exists is False and provider_exists is False:
+        return False
+    return None
+
+
 def _candidate_domain_names(name: str) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
@@ -368,6 +633,138 @@ def _power_status_from_domstate(raw_state: str) -> str:
     if any(token in text for token in on_tokens):
         return "on"
     return "unknown"
+
+
+def _cleanup_vm_state(vm_names: list[str]) -> list[str]:
+    names = _dedupe_names(vm_names)
+    if not names:
+        return []
+    name_set = set(names)
+    removed: set[str] = set()
+
+    vms = _load_vm_state()
+    remaining_vms = {name: data for name, data in vms.items() if name not in name_set}
+    removed.update(name for name in vms if name in name_set)
+    if remaining_vms != vms:
+        _save_vm_state(remaining_vms)
+
+    snapshots = _load_snapshot_state()
+    remaining_snapshots = {name: data for name, data in snapshots.items() if name not in name_set}
+    removed.update(name for name in snapshots if name in name_set)
+    if remaining_snapshots != snapshots:
+        _save_snapshot_state(remaining_snapshots)
+    if _cleanup_snapshot_list_files(name_set):
+        removed.update(names)
+
+    try:
+        provider_data = _load_provider_vms_data()
+    except Exception:
+        provider_data = {}
+    if isinstance(provider_data, dict):
+        remaining_provider = {
+            name: data for name, data in provider_data.items() if str(name).strip() not in name_set
+        }
+        removed.update(str(name).strip() for name in provider_data if str(name).strip() in name_set)
+        if remaining_provider != provider_data:
+            _save_provider_vms_data(remaining_provider)
+
+    return [name for name in names if name in removed]
+
+
+def _delete_domain_snapshots_with_virsh(*, uri: str, domain_name: str) -> str:
+    snapshots = _virsh_list_snapshots(uri=uri, domain_name=domain_name)
+    if snapshots is None:
+        return f"Не удалось получить список snapshot'ов для {domain_name}"
+    if not snapshots:
+        return ""
+
+    remaining = list(snapshots)
+    while remaining:
+        snapshot_name = remaining[0]
+        delete_commands = (
+            ["virsh", "--connect", uri, "snapshot-delete", domain_name, snapshot_name, "--children"],
+            ["virsh", "--connect", uri, "snapshot-delete", domain_name, snapshot_name, "--children", "--metadata"],
+            ["virsh", "--connect", uri, "snapshot-delete", domain_name, snapshot_name],
+            ["virsh", "--connect", uri, "snapshot-delete", domain_name, snapshot_name, "--metadata"],
+        )
+        last_error = ""
+        deleted = False
+        for command in delete_commands:
+            rc, text = _run_virsh(command)
+            if rc == 0:
+                deleted = True
+                break
+            last_error = text or f"{' '.join(command)} завершился с кодом {rc}"
+        if not deleted:
+            return f"Не удалось удалить snapshot '{snapshot_name}' для {domain_name}: {last_error}"
+
+        refreshed = _virsh_list_snapshots(uri=uri, domain_name=domain_name)
+        if refreshed is None:
+            return f"Не удалось проверить snapshot'ы после удаления '{snapshot_name}' для {domain_name}"
+        if refreshed == remaining:
+            return f"Snapshot '{snapshot_name}' для {domain_name} не удалился"
+        remaining = refreshed
+
+    return ""
+
+
+def _delete_domain_with_virsh(name: str) -> tuple[bool, str]:
+    candidates = _candidate_domain_names(name)
+    saw_any_domain = False
+    saw_error = False
+    saw_success = False
+    last_error = ""
+
+    for uri in ("qemu:///system", "qemu:///session"):
+        domains = _virsh_list_domains(uri=uri, running_only=False)
+        if domains is None:
+            domains = set()
+            saw_error = True
+        else:
+            saw_success = True
+
+        rc, text = _run_virsh(["virsh", "--connect", uri, "list", "--all"])
+        if rc == 0:
+            saw_success = True
+            domains.update(_parse_virsh_table_domains(text))
+
+        existing = [candidate for candidate in candidates if candidate in domains]
+        if not existing:
+            continue
+
+        saw_any_domain = True
+        running = _virsh_list_domains(uri=uri, running_only=True)
+        for domain_name in existing:
+            disk_paths = _virsh_domain_disk_paths(uri=uri, domain_name=domain_name)
+            snapshot_error = _delete_domain_snapshots_with_virsh(uri=uri, domain_name=domain_name)
+            if snapshot_error:
+                last_error = snapshot_error
+                continue
+
+            if running is None or domain_name in running:
+                rc, text = _run_virsh(["virsh", "--connect", uri, "destroy", domain_name])
+                if rc != 0:
+                    last_error = text or f"virsh destroy {domain_name} завершился с кодом {rc}"
+
+            undefine_commands = (
+                ["virsh", "--connect", uri, "undefine", domain_name, "--remove-all-storage", "--nvram"],
+                ["virsh", "--connect", uri, "undefine", domain_name, "--remove-all-storage"],
+                ["virsh", "--connect", uri, "undefine", domain_name],
+            )
+            for command in undefine_commands:
+                rc, text = _run_virsh(command)
+                if rc == 0:
+                    disk_error = _delete_disk_files(disk_paths)
+                    if disk_error:
+                        return False, disk_error
+                    return True, ""
+                last_error = text or f"{' '.join(command)} завершился с кодом {rc}"
+
+    if not saw_any_domain:
+        if saw_error and not saw_success:
+            return False, "Не удалось проверить libvirt через virsh. Проверьте доступ к sudo virsh."
+        return False, ""
+    return False, last_error
 
 
 def _query_vm_power_status(vm_name: str, running_domains: set[str] | None = None) -> str:
@@ -614,6 +1011,115 @@ class VmManager:
         names = self._assert_vms_exist(vms)
         self.provider.Vm.stop(vms=names)
         self._set_status_for_vms(names, "off")
+
+    def delete(
+        self,
+        vms: list[str] | None = None,
+        *,
+        all_vms: bool = False,
+        force: bool = False,
+    ) -> dict[str, list[str]]:
+        known = self._known_vms()
+        try:
+            provider_known = _load_provider_vms_data()
+        except Exception:
+            provider_known = {}
+        if not isinstance(provider_known, dict):
+            provider_known = {}
+        if all_vms:
+            try:
+                virsh_domains = _virsh_all_domains()
+            except RuntimeError as e:
+                raise RuntimeError(f"Не удалось получить список VM для --all: {e}") from e
+
+            if force:
+                names = sorted(virsh_domains)
+            else:
+                names = []
+                for name in sorted(known.keys()):
+                    candidates = set(_candidate_domain_names(name))
+                    if candidates.intersection(virsh_domains):
+                        names.append(name)
+        else:
+            requested = _dedupe_names(vms or [])
+            if force:
+                names = requested
+            else:
+                missing_from_inventory = [name for name in requested if name not in known]
+                if missing_from_inventory:
+                    raise ValueError(
+                        "ВМ не найдены в local inventory: "
+                        f"{', '.join(missing_from_inventory)}. "
+                        "Для удаления домена без записи в inventory используйте --force."
+                    )
+                names = requested
+
+        if not names:
+            if all_vms:
+                return {"deleted": [], "missing": [], "cleaned": [], "failed": []}
+            raise ValueError("Список ВМ пуст.")
+
+        deleted: list[str] = []
+        missing: list[str] = []
+        failed: list[str] = []
+        failed_errors: list[str] = []
+
+        for name in names:
+            removed_from_host, error = _delete_domain_with_virsh(name)
+            if error:
+                failed.append(name)
+                failed_errors.append(f"{name}: {error}")
+                continue
+            if removed_from_host:
+                deleted.append(name)
+            else:
+                disk_error = _delete_disk_files(
+                    _disk_paths_from_inventory(
+                        name,
+                        {
+                            "inventory": known.get(name, {}),
+                            "provider": provider_known.get(name, {}),
+                        },
+                    )
+                )
+                if disk_error:
+                    failed.append(name)
+                    failed_errors.append(f"{name}: {disk_error}")
+                    continue
+                missing.append(name)
+
+        cleanup_candidates = [name for name in names if name not in set(failed)]
+        cleaned = _cleanup_vm_state(cleanup_candidates)
+        result = {
+            "deleted": deleted,
+            "missing": missing,
+            "cleaned": cleaned,
+            "failed": failed,
+        }
+        if failed_errors:
+            result["errors"] = failed_errors
+        return result
+
+    def clear_missing(self) -> dict[str, list[str]]:
+        known = self._known_vms()
+        if not known:
+            return {"kept": [], "cleaned": []}
+
+        virsh_domains = _virsh_all_domains()
+        kept: list[str] = []
+        stale: list[str] = []
+        for name in sorted(known.keys()):
+            candidates = set(_candidate_domain_names(name))
+            if candidates.intersection(virsh_domains):
+                kept.append(name)
+            else:
+                stale.append(name)
+
+        cleaned = _cleanup_vm_state(stale)
+        return {
+            "kept": kept,
+            "cleaned": cleaned,
+        }
 
     def snapshots(self, vm: str) -> list[str]:
         vm_info = self.get_vm_record(vm)

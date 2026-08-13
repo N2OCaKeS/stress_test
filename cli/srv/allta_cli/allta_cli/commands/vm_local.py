@@ -198,6 +198,36 @@ def stop_vms(vm_names: list[str]) -> None:
         raise LocalVMError(f"Ошибка остановки local VM: {e}") from e
 
 
+def delete_vms(
+    vm_names: list[str] | None = None,
+    *,
+    all_vms: bool = False,
+    force: bool = False,
+) -> dict[str, list[str]]:
+    try:
+        with system_ld_library_path_scope():
+            return _manager().delete(vms=vm_names or [], all_vms=all_vms, force=force)
+    except Exception as e:
+        raise LocalVMError(f"Ошибка удаления local VM: {e}") from e
+
+
+def clear_vms() -> dict[str, list[str]]:
+    try:
+        with system_ld_library_path_scope():
+            return _manager().clear_missing()
+    except Exception as e:
+        raise LocalVMError(f"Ошибка очистки local VM inventory: {e}") from e
+
+
+def list_host_vm_names() -> list[str]:
+    runtime = _load_vm_runtime()
+    try:
+        with system_ld_library_path_scope():
+            return sorted(runtime._virsh_all_domains())
+    except Exception as e:
+        raise LocalVMError(f"Ошибка получения списка VM через virsh: {e}") from e
+
+
 def _normalize_snapshots(raw: Any) -> list[dict[str, Any]]:
     if raw is None:
         return []

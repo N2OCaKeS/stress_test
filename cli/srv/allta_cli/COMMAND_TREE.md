@@ -225,6 +225,14 @@ allta
 │     │  - `[VM]...`
 │     │  options:
 │     │  - `--vms` - metavar=VM[,VM2,...] - Имена ВМ. Можно через запятую и вместе с позиционными.
+│     ├─ `delete` - Удалить local VM и очистить inventory.
+│     │  args:
+│     │  - `[VM]...`
+│     │  options:
+│     │  - `--all` - flag - Удалить все local VM, которые есть и в virsh, и в inventory.
+│     │  - `--force` - flag - Удалять VM из libvirt даже без записи в inventory. С --all требует подтверждения.
+│     │  - `--vms` - metavar=VM[,VM2,...] - Имена ВМ. Можно через запятую и вместе с позиционными.
+│     ├─ `clear` - Очистить inventory от отсутствующих local VM.
 │     ├─ `astra-update` - Astra update для local VM.
 │     │  args:
 │     │  - `[VM]...`

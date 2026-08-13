@@ -283,7 +283,7 @@ class VmGroup(SectionedGroup):
 class LocalVmGroup(SectionedGroup):
     command_sections = (
         ("Информация", ("list", "status", "snapshots")),
-        ("Действия с ВМ", ("build", "start", "stop", "astra-update")),
+        ("Действия с ВМ", ("build", "start", "stop", "delete", "clear", "astra-update")),
         ("Снимки", ("snapshot-create", "snapshot-delete", "snapshot-revert")),
     )
 
@@ -1257,6 +1257,7 @@ def local_group():
         "Состояние хранится в ~/.config/allta/local_vm/:\n"
         "- vms.json: inventory локальных ВМ\n"
         "- snapshots.json: inventory snapshot'ов\n"
+        "- snapshot_list.json / snapshots_list.json / all_snapshots.json / provider_snapshots.json: общий список snapshot'ов, если есть\n"
         "- prepare.json: состояние этапа prepare\n"
         "- provider_vms_dates.json: сырые данные провайдера\n\n"
         "ВМ поднимаются в системном libvirt пользователя root.\n"
@@ -2302,6 +2303,7 @@ def ssh_cli(target_query: str):
         "Локальный inventory читается из ~/.config/allta/local_vm/:\n"
         "- vms.json\n"
         "- snapshots.json\n"
+        "- snapshot_list.json / snapshots_list.json / all_snapshots.json / provider_snapshots.json, если есть\n"
         "- prepare.json\n"
         "- provider_vms_dates.json\n\n"
         "ВМ поднимаются в системном libvirt пользователя root.\n"
@@ -2732,6 +2734,70 @@ def local_vm_stop_cli(vm_names: tuple[str, ...], vms: tuple[str, ...]):
         names = _resolve_local_vm_names(positional=vm_names, option_values=vms)
         vm_local_api.stop_vms(names)
         ui.ok(f"Остановлены local VM: {', '.join(names)}")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+def _print_local_vm_cleanup_result(result: dict[str, list[str]]) -> None:
+    deleted = result.get("deleted") or []
+    missing = result.get("missing") or []
+    cleaned = result.get("cleaned") or []
+    kept = result.get("kept") or []
+    failed = result.get("failed") or []
+    unknown = result.get("unknown") or []
+    errors = result.get("errors") or []
+
+    if deleted:
+        ui.ok(f"Удалены из libvirt: {', '.join(deleted)}")
+    if missing:
+        ui.warn(f"Не найдены в libvirt, очищены только файлы: {', '.join(missing)}")
+    if cleaned:
+        ui.ok(f"Очищены записи inventory: {', '.join(cleaned)}")
+    if kept:
+        ui.ok(f"Оставлены актуальные VM: {', '.join(kept)}")
+    if unknown:
+        ui.warn(f"Не удалось проверить через virsh, записи оставлены: {', '.join(unknown)}")
+    if failed:
+        ui.err(f"Не удалось удалить: {', '.join(failed)}")
+    for error in errors:
+        ui.err(error)
+    if not any((deleted, missing, cleaned, kept, failed, unknown)):
+        ui.echo("Локальные VM не найдены.")
+
+
+@local_vm_group.command("delete", short_help="Удалить local VM и очистить inventory.")
+@click.argument("vm_names", nargs=-1, metavar="[VM]...")
+@click.option("--all", "all_vms", is_flag=True, help="Удалить все local VM, которые есть и в virsh, и в inventory.")
+@click.option("--force", is_flag=True, help="Удалять VM из libvirt даже без записи в inventory. С --all требует подтверждения.")
+@click.option("--vms", multiple=True, metavar="VM[,VM2,...]", help="Имена ВМ. Можно через запятую и вместе с позиционными.")
+def local_vm_delete_cli(vm_names: tuple[str, ...], all_vms: bool, force: bool, vms: tuple[str, ...]):
+    try:
+        if all_vms and (vm_names or vms):
+            raise click.UsageError("Для delete используйте либо --all, либо список ВМ/--vms.")
+        names = [] if all_vms else _resolve_local_vm_names(positional=vm_names, option_values=vms)
+        if all_vms and force:
+            host_names = vm_local_api.list_host_vm_names()
+            if host_names:
+                ui.warn("Будут удалены все VM из virsh list --all, включая VM без записи в allta inventory:")
+                ui.echo(", ".join(host_names))
+                click.confirm("Продолжить удаление всех VM с хоста?", abort=True)
+        result = vm_local_api.delete_vms(names, all_vms=all_vms, force=force)
+        _print_local_vm_cleanup_result(result)
+        if result.get("failed"):
+            sys.exit(1)
+    except click.UsageError:
+        raise
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@local_vm_group.command("clear", short_help="Очистить inventory от отсутствующих local VM.")
+def local_vm_clear_cli():
+    try:
+        result = vm_local_api.clear_vms()
+        _print_local_vm_cleanup_result(result)
     except Exception as e:
         ui.err(f"Ошибка: {e}")
         sys.exit(1)

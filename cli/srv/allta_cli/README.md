@@ -110,6 +110,34 @@ allta vm snapshot-delete --name snap1 --vms vm1,vm2
 allta vm snapshot-revert --name snap1 vm1
 ```
 
+## Local VM команды
+
+Local VM хранят inventory в `~/.config/allta/local_vm/`. Команды удаления чистят VM,
+libvirt snapshot'ы, дисковые файлы VM и локальные файлы состояния (`vms.json`,
+`snapshots.json`, `provider_vms_dates.json` и общий список snapshot'ов, если он есть).
+
+```bash
+allta local vm delete --all
+allta local vm delete --vms vm1
+allta local vm delete --vms vm1,vm2
+allta local vm delete --vms vm1 --force
+allta local vm delete --all --force
+allta local vm clear
+```
+
+`delete --all` берёт список VM из `virsh list --all`, сверяет его с inventory и удаляет
+только те VM, которые есть в обоих местах. Чужие VM без записи в inventory не трогает.
+`delete --all --force` удаляет все VM из `virsh list --all`, включая VM без записи в
+inventory, и всегда требует интерактивного подтверждения.
+
+`delete --vms` удаляет только VM, которые есть в inventory. Если VM уже удалена с хоста
+вручную, команда не падает, удаляет найденные дисковые файлы по inventory/типовому имени
+и вычищает локальные записи. `--force` разрешает удалить указанную VM из libvirt даже без
+записи в inventory.
+
+`clear` сверяет inventory с libvirt и удаляет из файлов записи о VM, которых уже нет
+на хосте.
+
 ## SSH команды
 
 ```bash

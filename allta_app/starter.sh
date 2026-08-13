@@ -14,9 +14,7 @@ installed_kernels=$(dpkg --list | grep 'linux-image-[0-9]' | awk '{print $2}')
 for kernel in $installed_kernels; do
     if [[ "$kernel" != *"$current_kernel"* && "$kernel" != linux-image-5.10* ]]; then
         echo "Removing $kernel..."
-        sleep 15
         sudo apt remove --purge -y $kernel
-        sleep 15
     fi
 done
 
@@ -24,9 +22,7 @@ installed_headers=$(dpkg --list | grep 'linux-headers-[0-9]' | awk '{print $2}')
 for header in $installed_headers; do
     if [[ "$header" != *"$current_kernel"* && "$header" != linux-headers-5.10* ]]; then
         echo "Removing $header..."
-        sleep 15
         sudo apt remove --purge -y $header
-        sleep 15
     fi
 done
 sudo apt-get install linux-headers-$current_kernel -y
@@ -35,9 +31,7 @@ installed_lam=$(dpkg --list | grep 'linux-astra-modules-[0-9]' | awk '{print $2}
 for lam in $installed_lam; do
     if [[ "$lam" != *"$current_kernel"* && "$lam" != linux-astra-modules-5.10* ]]; then
         echo "Removing $lam..."
-        sleep 15
         sudo apt remove --purge -y $lam
-        sleep 15
     fi
 done
 
@@ -55,9 +49,9 @@ git_directory="stress_test"
 #args=`cat "$dates_file"`
 
 #Удаление неиспользуемых ядер
-# cleanup_kernel
+cleanup_kernel
 
-export DEBIAN_FRONTEND=noninteractive
+# export DEBIAN_FRONTEND=noninteractive
 
 #Предустановка пакетов
 dpkg -s sysstat &> /dev/null || sudo apt-get install sysstat -y

@@ -283,7 +283,7 @@ class VmGroup(SectionedGroup):
 class LocalVmGroup(SectionedGroup):
     command_sections = (
         ("Информация", ("list", "status", "snapshots")),
-        ("Действия с ВМ", ("build", "start", "stop", "delete", "clear", "astra-update")),
+        ("Действия с ВМ", ("build", "edit", "disk", "start", "stop", "delete", "clear", "astra-update")),
         ("Снимки", ("snapshot-create", "snapshot-delete", "snapshot-revert")),
     )
 
@@ -2734,6 +2734,110 @@ def local_vm_stop_cli(vm_names: tuple[str, ...], vms: tuple[str, ...]):
         names = _resolve_local_vm_names(positional=vm_names, option_values=vms)
         vm_local_api.stop_vms(names)
         ui.ok(f"Остановлены local VM: {', '.join(names)}")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@local_vm_group.command("edit", short_help="Изменить CPU/RAM/основной диск local VM.")
+@click.argument("vm_name", metavar="VM")
+@click.option("--cpu", default=None, show_default=False, type=click.IntRange(min=1), help="Новое количество CPU.")
+@click.option("--ram", default=None, show_default=False, type=click.IntRange(min=2), help="Новый размер RAM в GB.")
+@click.option("--disk", "disk_size", default=None, show_default=False, type=click.IntRange(min=1), help="Новый размер основного диска в GB.")
+@click.option("--yes", is_flag=True, help="Применить без подтверждения.")
+def local_vm_edit_cli(vm_name: str, cpu: int | None, ram: int | None, disk_size: int | None, yes: bool):
+    try:
+        changes = []
+        if cpu is not None:
+            changes.append(f"CPU: {cpu}")
+        if ram is not None:
+            changes.append(f"RAM: {ram}G")
+        if disk_size is not None:
+            changes.append(f"Основной диск: {disk_size}G")
+        if not changes:
+            raise click.UsageError("Укажите хотя бы один параметр: --cpu, --ram или --disk.")
+
+        ui.warn(f"Будет изменена local VM '{vm_name}': {', '.join(changes)}.")
+        ui.warn("Для применения будет выполнено: virsh destroy && virsh start.")
+        if not yes:
+            click.confirm("Продолжить?", abort=True)
+
+        result = vm_local_api.edit_vm(vm_name=vm_name, cpu=cpu, ram=ram, disk_size=disk_size)
+        ui.ok(f"Изменена local VM: {result.get('vm')}")
+        if result.get("changes"):
+            ui.echo(", ".join(result["changes"]))
+        if result.get("resized_disk"):
+            ui.echo(f"Диск: {result['resized_disk']}")
+    except click.UsageError:
+        raise
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@local_vm_group.group("disk", short_help="Создать или подключить дополнительный диск.")
+def local_vm_disk_group():
+    pass
+
+
+@local_vm_disk_group.command("create", short_help="Создать диск и подключить к local VM.")
+@click.argument("vm_name", metavar="VM")
+@click.option("--path", required=True, help="Абсолютный путь нового диска.")
+@click.option("--size", required=True, type=click.IntRange(min=1), help="Размер нового диска в GB.")
+@click.option("--target", default=None, show_default=False, help="Имя устройства в VM, например vdb. Если не задано: автоподбор.")
+@click.option("--format", "format_name", default="qcow2", show_default=True, help="Формат qemu-img.")
+@click.option("--yes", is_flag=True, help="Создать и подключить без подтверждения.")
+def local_vm_disk_create_cli(
+    vm_name: str,
+    path: str,
+    size: int,
+    target: str | None,
+    format_name: str,
+    yes: bool,
+):
+    try:
+        ui.warn(f"Будет создан диск {path} ({size}G, {format_name}) и подключен к local VM '{vm_name}'.")
+        ui.warn("Для применения будет выполнено: virsh destroy && virsh start.")
+        if not yes:
+            click.confirm("Продолжить?", abort=True)
+        result = vm_local_api.create_disk(
+            vm_name=vm_name,
+            path=path,
+            size=size,
+            target=target,
+            format_name=format_name,
+        )
+        ui.ok(f"Диск подключен к {result.get('vm')}: {result.get('disk')} -> {result.get('target')}")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@local_vm_disk_group.command("attach", short_help="Подключить существующий свободный диск.")
+@click.argument("vm_name", metavar="VM")
+@click.option("--path", required=True, help="Абсолютный путь существующего диска.")
+@click.option("--target", default=None, show_default=False, help="Имя устройства в VM, например vdb. Если не задано: автоподбор.")
+@click.option("--format", "format_name", default="qcow2", show_default=True, help="Формат диска для libvirt.")
+@click.option("--yes", is_flag=True, help="Подключить без подтверждения.")
+def local_vm_disk_attach_cli(
+    vm_name: str,
+    path: str,
+    target: str | None,
+    format_name: str,
+    yes: bool,
+):
+    try:
+        ui.warn(f"Будет подключен существующий диск {path} к local VM '{vm_name}'.")
+        ui.warn("Для применения будет выполнено: virsh destroy && virsh start.")
+        if not yes:
+            click.confirm("Продолжить?", abort=True)
+        result = vm_local_api.attach_disk(
+            vm_name=vm_name,
+            path=path,
+            target=target,
+            format_name=format_name,
+        )
+        ui.ok(f"Диск подключен к {result.get('vm')}: {result.get('disk')} -> {result.get('target')}")
     except Exception as e:
         ui.err(f"Ошибка: {e}")
         sys.exit(1)

@@ -198,6 +198,60 @@ def stop_vms(vm_names: list[str]) -> None:
         raise LocalVMError(f"Ошибка остановки local VM: {e}") from e
 
 
+def edit_vm(
+    *,
+    vm_name: str,
+    cpu: int | None = None,
+    ram: int | None = None,
+    disk_size: int | None = None,
+) -> dict[str, Any]:
+    try:
+        with system_ld_library_path_scope():
+            return _manager().edit(vm=vm_name, cpu=cpu, ram=ram, disk_size=disk_size)
+    except Exception as e:
+        raise LocalVMError(f"Ошибка изменения local VM: {e}") from e
+
+
+def create_disk(
+    *,
+    vm_name: str,
+    path: str,
+    size: int,
+    target: str | None = None,
+    format_name: str = "qcow2",
+) -> dict[str, Any]:
+    try:
+        with system_ld_library_path_scope():
+            return _manager().disk_create(
+                vm=vm_name,
+                path=path,
+                size=size,
+                target=target,
+                format_name=format_name,
+            )
+    except Exception as e:
+        raise LocalVMError(f"Ошибка создания/подключения диска local VM: {e}") from e
+
+
+def attach_disk(
+    *,
+    vm_name: str,
+    path: str,
+    target: str | None = None,
+    format_name: str = "qcow2",
+) -> dict[str, Any]:
+    try:
+        with system_ld_library_path_scope():
+            return _manager().disk_attach(
+                vm=vm_name,
+                path=path,
+                target=target,
+                format_name=format_name,
+            )
+    except Exception as e:
+        raise LocalVMError(f"Ошибка подключения диска local VM: {e}") from e
+
+
 def delete_vms(
     vm_names: list[str] | None = None,
     *,

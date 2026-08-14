@@ -1,5 +1,5 @@
 {
-  "date": "2026-08-06 14:49:08.604227",
+  "date": "2026-08-14 08:07:31.672863",
   "scheme": {
     "file_types": {
       "main": "Основной репозиторий",
@@ -11726,6 +11726,80 @@
             }
           ],
           "path": "frozen/1.7/1.7.11/1.7.11.44",
+          "is_main_symlinked": false
+        },
+        "1.7.11.45": {
+          "astra_lists_commit": "e99ae8899f8676f380dfa119270684b9d31c3c50",
+          "version": {
+            "arch": 1,
+            "family": 7,
+            "release": 11,
+            "special": null,
+            "special_version": null,
+            "build": 45,
+            "real_family": 7,
+            "major_family": "1.7",
+            "release_family": "1.7.11",
+            "comparable_tuple": [
+              1,
+              7,
+              11,
+              "",
+              0,
+              45
+            ]
+          },
+          "files": [
+            {
+              "path": "frozen/1.7/1.7.11/1.7.11.45/iso/installation-1.7.11.45-12.08.2026_15.45.iso",
+              "type": "installation",
+              "mount_point": "frozen/1.7/1.7.11/1.7.11.45/installation",
+              "is_iso": true,
+              "is_bootable_iso": true,
+              "is_tarball": false,
+              "date": "2026-08-12T15:45:00",
+              "device": null,
+              "hashsums": {
+                "gost": "a37e310fbd447b8ca82d1473b1a1c0ff229a0332dc7d2c3833e25c75fd51a8f0",
+                "md5": "eb79a22f03da6963c8e9b2e38f1a9dbd"
+              },
+              "changelog": "frozen/1.7/1.7.11/1.7.11.45/sources/changelogs/changelog-installation-1.7.11.45.html",
+              "release_notes": "frozen/1.7/1.7.11/1.7.11.45/sources/release-notes/release-notes-installation-1.7.11.45.html"
+            },
+            {
+              "path": "frozen/1.7/1.7.11/1.7.11.45/iso/main_update-1.7.11.45-12.08.2026_15.45.iso",
+              "type": "main_update",
+              "mount_point": "frozen/1.7/1.7.11/1.7.11.45/update-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "2026-08-12T15:45:00",
+              "device": null,
+              "hashsums": {
+                "gost": "6b3b446751af69df871e7760c503c7a0791e1474bcf8b129bfef81b443d06fb4",
+                "md5": "dda45eb14286169b367e217a9afe1766"
+              },
+              "changelog": null,
+              "release_notes": null
+            },
+            {
+              "path": "frozen/1.7/1.7.11/1.7.11.45/iso/base-1.7.11.45-12.08.2026_15.45.iso",
+              "type": "base",
+              "mount_point": "frozen/1.7/1.7.11/1.7.11.45/base-repository",
+              "is_iso": true,
+              "is_bootable_iso": false,
+              "is_tarball": false,
+              "date": "2026-08-12T15:45:00",
+              "device": null,
+              "hashsums": {
+                "gost": "84059741d8ac8d65bc8ac553f43011cc7496f6fb6d443042f3605dcb27528161",
+                "md5": "469b6026e90690c4273c8a98f2563a74"
+              },
+              "changelog": "frozen/1.7/1.7.11/1.7.11.45/sources/changelogs/changelog-base-1.7.11.45.html",
+              "release_notes": "frozen/1.7/1.7.11/1.7.11.45/sources/release-notes/release-notes-base-1.7.11.45.html"
+            }
+          ],
+          "path": "frozen/1.7/1.7.11/1.7.11.45",
           "is_main_symlinked": false
         },
         "1.7.11.EXT1.1": {

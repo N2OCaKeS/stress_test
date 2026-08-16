@@ -1,4 +1,4 @@
 requests
 numpy
-atlassian-python-api
+atlassian-python-api<5  # 5.0.1 hardcodes /rest/api/1.0/ in the legacy Server class -> breaks page lookup on Confluence Server (404 "null for uri")
 pandas==2.2.3

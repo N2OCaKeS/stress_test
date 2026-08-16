@@ -17,7 +17,12 @@ deb https://releases.devos.astralinux.ru/frozen/1.7/1.7.1/EXT_latest/extended-re
 EOF
 }
 
-test "$(grep 1.7 /etc/astra_version)" && 17repo && sudo apt update
+nx_huge_pages_workaround() {
+    echo "options kvm nx_huge_pages=0" | sudo tee /etc/modprobe.d/kvm-nx-huge-pages.conf
+    [ -e /sys/module/kvm/parameters/nx_huge_pages ] && echo N | sudo tee /sys/module/kvm/parameters/nx_huge_pages
+}
+
+test "$(grep 1.7 /etc/astra_version)" && 17repo && sudo apt update && nx_huge_pages_workaround
 test "$(grep 1.8 /etc/astra_version)" && 18repo && sudo apt update
 
 dpkg -s jq &> /dev/null || sudo apt-get install jq -y

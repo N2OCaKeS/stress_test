@@ -59,7 +59,7 @@ DHCP_CLIENT_IPS = {
     "testvm2": "192.168.100.11"
 }
 
-KEA_SERVER_PACKAGES = ["kea-dhcp4-server"]
+KEA_SERVER_PACKAGES = ["kea-dhcp4-server", "socat"]
 KEA_CLIENT_PACKAGES = ["kea-common", "kea-admin"]  # kea-admin для perfdhcp
 
 DHCP_CONF_DIR = f"{BASE_PATH}/dhcp_conf"

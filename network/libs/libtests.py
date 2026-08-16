@@ -639,7 +639,7 @@ EOF"""
 
         print("\n\n\nСтенд для DHCP-теста развёрнут\n\n\n")
 
-        kea_stats_query = 'echo \'{"command": "statistic-get-all", "arguments": {}}\' | sudo nc -U /tmp/kea4-ctrl-socket -q 1'
+        kea_stats_query = 'echo \'{"command": "statistic-get-all", "arguments": {}}\' | sudo socat - UNIX-CONNECT:/tmp/kea4-ctrl-socket'
 
         print(f"\n\n\nЗапускаем ступенчатую нагрузку perfdhcp при фиксированном rate={DHCP_PERFDHCP_RATE}, шаги по N клиентов: {DHCP_PERFDHCP_CLIENT_STEPS}\n\n\n")
 

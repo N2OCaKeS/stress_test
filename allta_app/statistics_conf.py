@@ -23,7 +23,8 @@ statistics_conf = {
         "comparison_list": [["unix", "unix parsec"]]
     },
     "Системные службы": {
-        "set_of_test_types": ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP']
+        "set_of_test_types": ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'astraevents', 'astraevents-sm'],
+        "comparison_list": [['astraevents', 'astraevents-sm']]
     },
     "Файловые системы": {
         "set_of_test_types": ['EXFAT', 'EXT2', 'EXT4', 'EXT4 parsec', 'FAT', 'NTFS', 'XFS', 'XFS parsec', 'OCFS2', 'CEPH', 'CEPH fio'],

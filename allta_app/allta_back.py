@@ -99,6 +99,7 @@ TEST_FLAGS: dict[str, str] = {
 
     # -astraevents (dest='ASTRAEVENTS')
     'astraevents': '-astraevents astraevents',
+    'astraevents-sm': '-astraevents astraevents',
 }
 
 # Специальные флаги для auditd 

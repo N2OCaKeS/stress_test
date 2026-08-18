@@ -2,24 +2,29 @@ import threading
 import time
 import subprocess
 import traceback
+import os
+import select
 from itertools import count
 from datetime import datetime
 from os.path import exists, isfile
 
 import psycopg2
-from psycopg2 import Error
+from psycopg2 import Error, OperationalError, extensions
 
 # ===================== Конфиг =====================
 NUM_CLIENTS = 20
 NUM_TRANSACTIONS = 10000  # на поток
+DB_WAIT_TIMEOUT = 0.2
+OUTPUT_DIR = "/tmp/clients-test"
 
 DB_PARAMS = {
     "dbname": "test",
     "user": "postgres",
     "host": "pgpool.balance.rbt",
     "port": "5440",
-    "connect_timeout": 0,
+    "connect_timeout": 1,
     "application_name": "pgbench_test",
+    "options": "-c statement_timeout=1000 -c lock_timeout=1000",
 }
 
 
@@ -55,6 +60,30 @@ class ResultCounter:
 
 results = ResultCounter()
 
+
+def wait_callback(conn):
+    deadline = time.monotonic() + DB_WAIT_TIMEOUT
+    while True:
+        state = conn.poll()
+        if state == extensions.POLL_OK:
+            return
+        if state == extensions.POLL_READ:
+            rlist, wlist = [conn.fileno()], []
+        elif state == extensions.POLL_WRITE:
+            rlist, wlist = [], [conn.fileno()]
+        else:
+            raise OperationalError(f"unexpected libpq poll state: {state}")
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise OperationalError(f"database operation timed out after {DB_WAIT_TIMEOUT:.3f}s")
+        ready_r, ready_w, _ = select.select(rlist, wlist, [], remaining)
+        if not ready_r and not ready_w:
+            raise OperationalError(f"database operation timed out after {DB_WAIT_TIMEOUT:.3f}s")
+
+
+extensions.set_wait_callback(wait_callback)
+
 # Глобальная нумерация запросов (потокобезопасно)
 _tx_lock = threading.Lock()
 _tx_counter = count(1)
@@ -63,8 +92,13 @@ def next_no():
         return next(_tx_counter)
 
 # ===================== Логи =====================
+def output_path(filename):
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    return os.path.join(OUTPUT_DIR, filename)
+
+
 def log_error(e, no=None):
-    with open('errors.log', 'a', encoding='utf-8') as f:
+    with open(output_path('errors.log'), 'a', encoding='utf-8') as f:
         f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S}\n")
         if no is not None:
             f.write(f"no={no}\n")
@@ -86,19 +120,12 @@ def ensure_table():
 
 # ===================== Прогрев =====================
 def prewarm_connection():
-    while True:
-        try:
-            with psycopg2.connect(**DB_PARAMS) as c:
-                with c.cursor() as cur:
-                    cur.execute("SELECT 1;")
-            return
-        except Exception:
-            time.sleep(0.005)
+    with psycopg2.connect(**DB_PARAMS) as c:
+        with c.cursor() as cur:
+            cur.execute("SELECT 1;")
 
 # ===================== Основной цикл =====================
 def run_worker():
-    prewarm_connection()
-
     for _ in range(NUM_TRANSACTIONS):
         no = next_no()
         try:
@@ -115,6 +142,7 @@ def run_worker():
             continue
         except Exception as e:
             results.add_fail()
+            s, f = results.get_stats()
             print(f"Success: {s}, Fail: {f}")
             log_error(e, no=no)
             continue
@@ -154,11 +182,11 @@ def info_list():
                 cmd('apt-cache show pgpool2', regex=True) + '\n',
                 psql_version + '\n',
                 'pgpool2']
-    with open('psb_info.txt', 'a+') as info:
+    with open(output_path('psb_info.txt'), 'a+') as info:
         info.writelines(info_lst)
-    if isfile('available_packages.txt'):
-        subprocess.run('sudo chown $USER:$USER available_packages.txt', shell=True)
-    with open('available_packages.txt', 'a') as file:
+    if isfile(output_path('available_packages.txt')):
+        subprocess.run(f"sudo chown $USER:$USER {output_path('available_packages.txt')}", shell=True)
+    with open(output_path('available_packages.txt'), 'a') as file:
         pkgs = cmd('apt list postgresql*')
         file.write('\n2nd iteration:\n')
         file.write(pkgs)
@@ -166,6 +194,7 @@ def info_list():
 # ===================== Точка входа =====================
 def main():
     # Таблица создаётся заранее в db.py при настройке БД / Table is pre-created in db.py during DB setup
+    open(output_path('errors.log'), 'a', encoding='utf-8').close()
     threads = []
     for _ in range(NUM_CLIENTS):
         t = threading.Thread(target=run_worker, daemon=True)
@@ -184,7 +213,7 @@ def main():
         f"({fail} / {total})"
     )
     print(stats)
-    with open('results_balance.txt', 'w') as f:
+    with open(output_path('results_balance.txt'), 'w') as f:
         f.write(stats)
 
 if __name__ == '__main__':

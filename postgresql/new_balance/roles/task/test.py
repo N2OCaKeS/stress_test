@@ -167,7 +167,7 @@ class Test:
             commands={
                 "database3": {
                     "start test": {
-                        "command": "sudo chmod 777 /tmp/clients.py && sudo systemd-run --no-block --unit=clients-test --working-directory=/home/u python3 /tmp/clients.py",
+                        "command": "sudo mkdir -p /tmp/clients-test && sudo chmod 777 /tmp/clients-test /tmp/clients.py && sudo systemd-run --no-block --unit=clients-test --working-directory=/tmp/clients-test python3 /tmp/clients.py",
                         "signal set": "",
                         "signal get": "",
                     },
@@ -365,17 +365,22 @@ class Test:
                     {
                         "mode": "pull",
                         "path_host": "results_balance.txt",
-                        "path_vm": str(self._results_dir / "results_balance.txt"),
+                        "path_vm": "/tmp/clients-test/results_balance.txt",
                     },
                     {
                         "mode": "pull",
                         "path_host": "available_packages.txt",
-                        "path_vm": str(self._results_dir / "available_packages.txt"),
+                        "path_vm": "/tmp/clients-test/available_packages.txt",
                     },
                     {
                         "mode": "pull",
                         "path_host": "psb_info.txt",
-                        "path_vm": str(self._results_dir / "psb_info.txt"),
+                        "path_vm": "/tmp/clients-test/psb_info.txt",
+                    },
+                    {
+                        "mode": "pull",
+                        "path_host": "errors.log",
+                        "path_vm": "/tmp/clients-test/errors.log",
                     },
                 ]
             },

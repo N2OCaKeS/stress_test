@@ -15,8 +15,9 @@ from new_balance.roles.vm_info import (VERSION_OS, VMS, VMS_DATES, VMS_GROUPS,
 
 def balance(rc, sec_mode="s", type_test="balance"):
     provider = PROVIDER
+    info_sys_types = ("info-sys", "info-sys-orel")
 
-    if type_test == "info-sys":
+    if type_test in info_sys_types:
         # web1/loader по умолчанию отсутствуют в VMS/VMS_DATES/VMS_GROUPS (см.
         # vm_info.py) — добавляем их здесь (изменяем те же объекты, что импортированы
         # во всех модулях, поэтому domain.py/pre_configure.py и т.д. их увидят).
@@ -39,7 +40,7 @@ def balance(rc, sec_mode="s", type_test="balance"):
 
         if os.path.exists(save_path):
             new_vms_data = LibvirtManager.Vm.load_vms_data(save_path)
-            if type_test != "info-sys":
+            if type_test not in info_sys_types:
                 for vm in INFO_SYS_ONLY_VMS:
                     new_vms_data.pop(vm, None)
             LibvirtManager.Snapshot.revert(vms=VMS, snapshot_name="build")
@@ -50,7 +51,7 @@ def balance(rc, sec_mode="s", type_test="balance"):
             )
 
             build_vms_dates = VMS_DATES
-            if type_test == "info-sys":
+            if type_test in info_sys_types:
                 # protopack (setup_protopack) грузит в /tmp дамп build_packages_new (~5G),
                 # дефолтного корневого диска для database1-3 на это не хватает
                 build_vms_dates = copy.deepcopy(VMS_DATES)
@@ -75,20 +76,26 @@ def balance(rc, sec_mode="s", type_test="balance"):
     domain.settings(type_test=type_test)
 
     database = DatabaseVM()  # Проверено работает
-    database.settings()
+    database.settings(type_test=type_test)
 
-    if type_test == "info-sys":
-        database.setup_protopack()  # база protopack внутри contrprimer, для МРД-теста веб-приложения
+    if type_test in info_sys_types:
+        database.setup_protopack(type_test=type_test)  # база protopack внутри contrprimer, для info-sys
 
     load_balancer = LoadBalancer()
-    load_balancer.load()
+    load_balancer.load(type_test=type_test)
 
     if type_test == "info-sys":
         database.setup_mac()        # MAC-метки на protopack + роль protopack_web, до web.settings()
         database.setup_privsock()   # PARSEC_CAP_PRIV_SOCK на database1/2/3, иначе МРД-уровень >=1 виснет
                                     
         web = ApacheVM()            # после domain, чтобы Kerberos уже работал
-        web.settings()
+        web.settings(type_test=type_test)
+
+        info_sys_load = InfoSysLoadTest()
+        info_sys_load.run()
+    elif type_test == "info-sys-orel":
+        web = ApacheVM()
+        web.settings(type_test=type_test)
 
         info_sys_load = InfoSysLoadTest()
         info_sys_load.run()
@@ -98,4 +105,3 @@ def balance(rc, sec_mode="s", type_test="balance"):
         test.test()
         SystemCommands.cmd("cat results_balance.txt")
         LibvirtManager.Vm.stop(vms=VMS)
-

@@ -33,7 +33,8 @@ if args.security_mode not in ['o', 's']:
 
 
 print(f"\nЗапуск баланса с версией {args.build_version}, режим защищённости: {args.security_mode}")
-bl_lib.balance(rc=args.build_version, sec_mode=args.security_mode, type_test="info-sys")
+type_test = "info-sys-orel" if args.security_mode == "o" else "info-sys"
+bl_lib.balance(rc=args.build_version, sec_mode=args.security_mode, type_test=type_test)
 
 print("\n\n_____________________________________\n\n")
 SystemCommands.check_output_command('cat ./available_packages.txt')

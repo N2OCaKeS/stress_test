@@ -20,6 +20,7 @@ class DomainVM:
     def settings(self, type_test="balance"):
         """Полная настройка домена на всех ВМ"""
         provider = self.provider
+        info_sys_types = ("info-sys", "info-sys-orel")
         if isinstance(provider, VBox):
             domain = {
                 "settings": {"domain": DOMAIN, "admin_password": DOMAIN_ADMIN_PASSWORD},
@@ -169,7 +170,7 @@ EOF"""
                 },
             }
 
-            if type_test == "info-sys":
+            if type_test in info_sys_types:
                 freeipa["web1"] = {
                     "set resov.conf": {
                         "command": f"sudo sh -c '{resolv}'",
@@ -224,8 +225,14 @@ EOF"""
         # генератор словаря создает однотипные задачи в словарь
         user_signals = []
         for n in range(3):
+            if type_test == "info-sys":
+                user_add_options = "--macmin=0 --macmax=3 --miclevel=63 "
+            elif type_test == "info-sys-orel":
+                user_add_options = ""
+            else:
+                user_add_options = "--macmin=0 --macmax=3 --miclevel=63 "
             tasks["dcfreeipa"][f"create user{n}"] = {
-                "command": f'yes {DOMAIN_USER_PASSWORD}| ipa user-add user{n} --first=user{n} --last=user{n} --macmin=0 --macmax=3 --miclevel=63 --password --password-expiration="2099-12-31Z"',
+                "command": f'yes {DOMAIN_USER_PASSWORD}| ipa user-add user{n} --first=user{n} --last=user{n} {user_add_options}--password --password-expiration="2099-12-31Z"',
                 "signal set": f"user{n} created",
                 "signal get": ["dcfreeipa", "Kinit"],
             }
@@ -236,19 +243,24 @@ EOF"""
                 "signal get": ["dcfreeipa", "Kinit"],
             }
 
-        if type_test == "info-sys":
+        if type_test in info_sys_types:
+            if type_test == "info-sys":
+                bulk_user_add_options = "--macmin=0 --macmax=3 --miclevel=63 "
+            elif type_test == "info-sys-orel":
+                bulk_user_add_options = ""
             tasks["dcfreeipa"]["create bulk users"] = {
                 "command": (
                     "for i in $(seq 0 999); do "
                     'ipa user-show "usertest$i" > /dev/null 2>&1 || '
                     f'yes {DOMAIN_USER_PASSWORD} | ipa user-add "usertest$i" --first="usertest$i" --last="usertest$i" '
-                    '--macmin=0 --macmax=3 --miclevel=63 --password --password-expiration="2099-12-31Z"; '
+                    f'{bulk_user_add_options}--password --password-expiration="2099-12-31Z"; '
                     "done"
                 ),
                 "signal set": "bulk users created",
                 "signal get": ["dcfreeipa", "Kinit"],
             }
 
+        if type_test == "info-sys":
             # ФСТЭК Приказ №17/№21, меры ИАФ.3, УПД.3: политика паролей для К1/УЗ1.
             # Только для info-sys: применяется ПОСЛЕ create userN (signal get на
             # user_signals + bulk users created), потому что DOMAIN_USER_PASSWORD = "1"
@@ -276,7 +288,7 @@ EOF"""
             "signal get": ["dcfreeipa", "Kinit"],
         }
 
-        if type_test == "info-sys":
+        if type_test in info_sys_types:
             tasks["dcfreeipa"]["register apache"] = {
                     "command": f"ipa service-add HTTP/web1.{DOMAIN}@{DOMAIN.upper()}",
                     "signal set": "register apache",
@@ -297,6 +309,6 @@ EOF"""
             vms_groups=VMS_GROUPS,
             username=USERNAME,
             password=PASSWORD,
-            # Для info-sys увеличен до 2 часов: "fstec password policy" ждёт сигнал "bulk users created" от создания 1000 пользователей, что может занять больше дефолтных 15 минут.
-            timeout=120 if type_test == "info-sys" else 15,
+            # Для info-sys веток увеличен до 2 часов: создание bulk users может занять больше дефолтных 15 минут.
+            timeout=120 if type_test in info_sys_types else 15,
         )

@@ -8,7 +8,7 @@ class DatabaseVM():
     def __init__(self):
         self.provider = PROVIDER
 
-    def settings(self):
+    def settings(self, type_test="balance"):
         """Настройка БД + репликация"""
         provider = self.provider
         postgres_config_path = f'/etc/postgresql/{VERSION_PG}/contrprimer'
@@ -36,6 +36,21 @@ EOF"""
         elif VERSION_PG == '15':
             pg_hba_proto = 'scram-sha-256'
 
+        if type_test == "info-sys-orel":
+            postgres_privilege_command = 'echo "postgres ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/postgres && sudo chmod 0440 /etc/sudoers.d/postgres'
+        else:
+            postgres_privilege_command = 'sudo pdpl-user -l 0:3 -i 63 -c 0:8 postgres && \
+                        sudo usermod -a -G shadow postgres && \
+                        sudo setfacl -d -m u:postgres:r /etc/parsec/macdb && \
+                        sudo setfacl -R -m u:postgres:r /etc/parsec/macdb && \
+                        sudo setfacl -m u:postgres:rx /etc/parsec/macdb && \
+                        sudo setfacl -d -m u:postgres:r /etc/parsec/capdb && \
+                        sudo setfacl -R -m u:postgres:r /etc/parsec/capdb && \
+                        sudo setfacl -m u:postgres:rx /etc/parsec/capdb && \
+                        echo "postgres ALL=(ALL) NOPASSWD:ALL" | \
+                        sudo tee /etc/sudoers.d/postgres && \
+                        sudo chmod 0440 /etc/sudoers.d/postgres'
+
         prepare = {
             'g_database': {
                 'create unit file': {
@@ -50,17 +65,7 @@ EOF"""
                     'signal get': ''
                 },                
                 'set postgres privilege': {
-                    'command': 'sudo pdpl-user -l 0:3 -i 63 -c 0:8 postgres && \
-                        sudo usermod -a -G shadow postgres && \
-                        sudo setfacl -d -m u:postgres:r /etc/parsec/macdb && \
-                        sudo setfacl -R -m u:postgres:r /etc/parsec/macdb && \
-                        sudo setfacl -m u:postgres:rx /etc/parsec/macdb && \
-                        sudo setfacl -d -m u:postgres:r /etc/parsec/capdb && \
-                        sudo setfacl -R -m u:postgres:r /etc/parsec/capdb && \
-                        sudo setfacl -m u:postgres:rx /etc/parsec/capdb && \
-                        echo "postgres ALL=(ALL) NOPASSWD:ALL" | \
-                        sudo tee /etc/sudoers.d/postgres && \
-                        sudo chmod 0440 /etc/sudoers.d/postgres',
+                    'command': postgres_privilege_command,
                     'signal set': 'Postgres privilege',
                     'signal get': ''
                 },
@@ -340,7 +345,7 @@ EOF"""
         provider.execute(commands=wal_folder, vms_dates=VMS_DATES,
                          vms_groups=VMS_GROUPS, username=USERNAME, password=PASSWORD)
 
-    def setup_protopack(self):
+    def setup_protopack(self, type_test="info-sys"):
         """Создаёт БД protopack внутри кластера contrprimer (порт POSTGRES_PORT) и наполняет её
         данными из ftp://10.177.103.205/upload/ — источник тот же, что в psb_db_prep_stand12_olap.sh.
         Вызывать после settings(), только для type_test == "info-sys": setup_mac()
@@ -359,8 +364,16 @@ EOF"""
         provider.scp(scp_settings=scp_protopack, vms_dates=VMS_DATES,
                      username=USERNAME, password=PASSWORD)
 
-        protopack = {
-            'database1': {
+        if type_test == "info-sys-orel":
+            protopack_prereq = {
+                'plain protopack prereq': {
+                    'command': 'true',
+                    'signal set': 'protopack prerequisite ready',
+                    'signal get': ''
+                },
+            }
+        else:
+            protopack_prereq = {
                 'grant chmac privilege': {
                     # Нужно только для info-sys (МРД на protopack): setup_mac()
                     # меняет метки существующих строк через CHMAC, а это требует привилегии
@@ -368,9 +381,42 @@ EOF"""
                     # Привилегия применяется с новой сессии postgres, поэтому выдаём её здесь,
                     # до первого su - postgres в этом методе.
                     'command': 'sudo usercaps -m PARSEC_CAP_CHMAC postgres',
-                    'signal set': 'chmac privilege granted',
+                    'signal set': 'protopack prerequisite ready',
                     'signal get': ''
                 },
+            }
+
+        protopack_access = {}
+        if type_test == "info-sys-orel":
+            protopack_access = {
+                'grant plain protopack access': {
+                    'command': (
+                        "sudo tee /tmp/plain_protopack_access.sql > /dev/null <<'SQL'\n"
+                        "DO $$\n"
+                        "BEGIN\n"
+                        "    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'protopack_web') THEN\n"
+                        "        CREATE ROLE protopack_web LOGIN;\n"
+                        "    END IF;\n"
+                        "END\n"
+                        "$$;\n"
+                        "GRANT CONNECT ON DATABASE protopack TO protopack_web;\n"
+                        "GRANT USAGE ON SCHEMA main TO protopack_web;\n"
+                        "GRANT SELECT ON ALL TABLES IN SCHEMA main TO protopack_web;\n"
+                        "ALTER DEFAULT PRIVILEGES IN SCHEMA main GRANT SELECT ON TABLES TO protopack_web;\n"
+                        "GRANT USAGE ON SCHEMA other TO protopack_web;\n"
+                        "GRANT SELECT ON ALL TABLES IN SCHEMA other TO protopack_web;\n"
+                        "ALTER DEFAULT PRIVILEGES IN SCHEMA other GRANT SELECT ON TABLES TO protopack_web;\n"
+                        "SQL\n"
+                        f"sudo su - postgres -c \"psql -p {POSTGRES_PORT} -d protopack -f /tmp/plain_protopack_access.sql\""
+                    ),
+                    'signal set': 'plain protopack access granted',
+                    'signal get': ['protopack imported']
+                },
+            }
+
+        protopack = {
+            'database1': {
+                **protopack_prereq,
                 'create protopack db': {
                     # Сигналы Libvirt.execute живут только в рамках одного вызова execute(),
                     # поэтому 'CreateDB' из settings() (отдельный вызов) сюда не пробрасывается.
@@ -378,7 +424,7 @@ EOF"""
                     # когда кластер contrprimer уже поднят.
                     'command': f'sudo su - postgres -c "createdb -p {POSTGRES_PORT} --encoding=UTF8 --locale=C --template=template0 protopack"',
                     'signal set': 'protopack db created',
-                    'signal get': ['chmac privilege granted']
+                    'signal get': ['protopack prerequisite ready']
                 },
                 'protopack schema': {
                     'command': f'sudo su - postgres -c "psql -p {POSTGRES_PORT} -d protopack -f /tmp/protopack_schema.sql"',
@@ -412,6 +458,7 @@ EOF"""
                     'signal set': 'protopack imported',
                     'signal get': ['protopack build_packages imported']
                 },
+                **protopack_access,
             },
         }
         # timeout — верхняя граница ожидания сигнала в минутах (проверяет каждые 10с и возвращается сразу, как только сигнал появился)
@@ -534,4 +581,3 @@ EOF"""
             username=USERNAME,
             password=PASSWORD,
         )
-

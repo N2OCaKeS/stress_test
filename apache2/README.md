@@ -21,6 +21,16 @@
 Нагрузка генерируется с нарастающим параллелизмом (concurrency) от минимального шага до максимального значения.  
 Выполняется в режиме **смоленск**.
 
+### Test 3
+### Apache_Balance
+
+Нагрузочное тестирование Apache2 в режиме балансировки встроенными средствами Apache, посредством Apache Benchmark.
+Тест разворачивает 5 ВМ (виртуальные машины): `testvm1` и `testvm2` — Apache load balancer с keepalived VIP, `testvm3` и `testvm4` — backend Apache, `testvm5` — клиент.
+
+Нагрузка подается на VIP балансировщика с нарастающим параллелизмом (concurrency): `1`, `50`, `100`, `150`, `200`.
+На каждой ступени выполняется `200000` HTTP-запросов. Перед началом нагрузочной части внешняя сеть отключается, поэтому трафик остается внутри изолированной сети стенда.
+Выполняется в режиме **орёл**.
+
 #### Зависимости
 
 - fabric
@@ -50,4 +60,3 @@
 
 - [Пространство](https://life.astralinux.ru/pages/viewpage.action?pageId=140673304&src=contextnavpagetreemode)
 - [Статистика](https://life.astralinux.ru/pages/viewpage.action?pageId=140674766&src=contextnavpagetreemode)
-

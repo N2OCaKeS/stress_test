@@ -16,20 +16,23 @@ from apa_conf import (
     A_BALANCE_VIP,
     A_BALANCE_VM_COUNT,
     BALANCE_RESULTS,
+    CONCURRENCY_STEP,
+    MAX_REQUESTS,
     VM_INFONAME,
     VM_KERNEL,
 )
 
+
 def apache2_publisher(
-        username,
-        token,
-        space,
-        parent_title,
-        title,
-        stand_number,
-        total_rating,
-        lead_time="",
-        test_cycle_version: str | None = None,
+    username,
+    token,
+    space,
+    parent_title,
+    title,
+    stand_number,
+    total_rating,
+    lead_time="",
+    test_cycle_version: str | None = None,
 ):
     preview_path = "report/confluence_report.html"
     reporter = ConfluencePublisher(
@@ -48,14 +51,8 @@ def apache2_publisher(
     ]
 
     header_table = [
-        {
-            "label": "VM Astra Version",
-            "value": vm_info_av
-        },
-        {
-            "label": "VM Kernel",
-            "value": vm_info_kernel
-        },
+        {"label": "VM Astra Version", "value": vm_info_av},
+        {"label": "VM Kernel", "value": vm_info_kernel},
         {
             "label": "Params",
             "value": {
@@ -78,32 +75,36 @@ def apache2_publisher(
 
     builder.add_header_table(rows=header_table)
     builder.add_heading(text=f"Total Rating: {total_rating}", level=2)
-    
+
     builder.add_heading(text="Описание", level=2)
     builder.add_paragraph(
         text="Нагрузочное тестирование веб сервера Apache2 с PAM-аутентификацией \
             (Pluggable Authentication Modules — подключаемые модули аутентификации), посредством Apache Benchmark. \nТест разворачивает 2 ВМ (виртуальные машины): testvm1 — сервер, testvm2 — клиент."
     )
-    builder.add_paragraph(text="Сравнивается производительность Apache2 в двух режимах: \
+    builder.add_paragraph(
+        text="Сравнивается производительность Apache2 в двух режимах: \
                           1. С PAM (AstraMode on): запросы выполняются от пользователей с разными метками МАС (мандатное управление доступом) — без категорий и с категориями. \
-                          2. Без PAM (AstraMode off): запросы выполняются без аутентификации.")
+                          2. Без PAM (AstraMode off): запросы выполняются без аутентификации."
+    )
 
     builder.add_heading(text="Результаты", level=2)
-    
+
     df_rps, df_waiting = build_tables_separately_for_each_metric()
     df_rps_reset = df_rps.reset_index()
-    df_rps_reset['concurrency_level'] = df_rps_reset['concurrency_level'].astype('Int64')
+    df_rps_reset["concurrency_level"] = df_rps_reset["concurrency_level"].astype(
+        "Int64"
+    )
     dict_rps = {
         "title": "RPS",
         "headers": df_rps_reset.columns.tolist(),
-        "rows": df_rps_reset.values.tolist()
+        "rows": df_rps_reset.values.tolist(),
     }
 
-    df_waiting_reset = df_waiting.reset_index().astype('Int64')
+    df_waiting_reset = df_waiting.reset_index().astype("Int64")
     dict_waiting = {
         "title": "Waiting (ms)",
         "headers": df_waiting_reset.columns.tolist(),
-        "rows": df_waiting_reset.values.tolist()
+        "rows": df_waiting_reset.values.tolist(),
     }
 
     builder.add_table(dict_rps)
@@ -121,15 +122,15 @@ def apache2_publisher(
 
 
 def apache_balance_publisher(
-        username,
-        token,
-        space,
-        parent_title,
-        title,
-        stand_number,
-        total_rating,
-        lead_time="",
-        test_cycle_version: str | None = None,
+    username,
+    token,
+    space,
+    parent_title,
+    title,
+    stand_number,
+    total_rating,
+    lead_time="",
+    test_cycle_version: str | None = None,
 ):
     preview_path = "report/confluence_report.html"
     reporter = ConfluencePublisher(
@@ -145,19 +146,11 @@ def apache_balance_publisher(
     params = [
         {"label": "VCPU", "value": A_BALANCE_VCPU},
         {"label": "RAM", "value": A_BALANCE_RAM},
-        {"label": "VM count", "value": A_BALANCE_VM_COUNT},
-        {"label": "Topology", "value": f"{A_BALANCE_LB_COUNT} LB + VIP + {A_BALANCE_BACKEND_COUNT} backend + {A_BALANCE_CLIENT_COUNT} client"},
     ]
 
     header_table = [
-        {
-            "label": "VM Astra Version",
-            "value": vm_info_av
-        },
-        {
-            "label": "VM Kernel",
-            "value": vm_info_kernel
-        },
+        {"label": "VM Astra Version", "value": vm_info_av},
+        {"label": "VM Kernel", "value": vm_info_kernel},
         {
             "label": "Params",
             "value": {
@@ -179,21 +172,23 @@ def apache_balance_publisher(
     ]
 
     builder.add_header_table(rows=header_table)
-    builder.add_heading(text=f"Total Rating: {total_rating}", level=2)
 
     builder.add_heading(text="Описание", level=2)
     builder.add_paragraph(
-        text="Нагрузочное тестирование Apache2 в режиме балансировки встроенными "
-             "средствами Apache, посредством Apache Benchmark. Тест разворачивает "
-             "5 ВМ: testvm1 и testvm2 — Apache LB с keepalived VIP, "
-             "testvm3 и testvm4 — backend Apache, testvm5 — ab client."
+        text="Нагрузочное тестирование Apache2 выполняется для схемы балансировки "
+        "на встроенном модуле mod_proxy_balancer, посредством Apache Benchmark. "
+        "Тест разворачивает 5 ВМ: testvm1 и testvm2 — Apache LB с keepalived VIP, "
+        "testvm3 и testvm4 — backend Apache, testvm5 — клиент."
     )
     builder.add_paragraph(
-        text=f"Ступенчатая нагрузка с нарастающим concurrency подается клиентом на VIP {A_BALANCE_VIP}. "
-             "В расчет берутся Requests per second и медиана Waiting из общего summary_balance.txt."
+        text=f"Нагрузка подается на VIP {A_BALANCE_VIP} пятью ступенями concurrency: "
+        f"1, {CONCURRENCY_STEP}, {CONCURRENCY_STEP * 2}, "
+        f"{CONCURRENCY_STEP * 3}, {CONCURRENCY_STEP * 4}; по {MAX_REQUESTS} "
+        "HTTP-запросов на каждую ступень. Перед нагрузкой внешняя сеть отключается."
     )
 
     builder.add_heading(text="Результаты", level=2)
+    builder.add_heading(text=f"Total Rating: {total_rating}", level=3)
 
     records = []
     with open(BALANCE_RESULTS, encoding="utf-8") as result_file:
@@ -207,19 +202,49 @@ def apache_balance_publisher(
         )
         if not all([concurrency, rps, waiting]):
             continue
-        records.append([
-            int(concurrency.group(1)),
-            float(rps.group(1)),
-            float(waiting.group(4)),
-        ])
+        records.append(
+            {
+                "concurrency": int(concurrency.group(1)),
+                "requests_per_second": float(rps.group(1)),
+                "waiting_median_ms": float(waiting.group(4)),
+            }
+        )
+
+    records = sorted(records, key=lambda record: record["concurrency"])
+    metric_rows = [
+        ("Requests per second", "requests_per_second"),
+        ("Waiting median, ms", "waiting_median_ms"),
+    ]
+    rows = []
+    for label, key in metric_rows:
+        rows.append([label] + [record[key] for record in records])
 
     dict_metrics = {
         "title": "Apache balance metrics",
-        "headers": ["concurrency_level", "requests_per_second", "waiting_median_ms"],
-        "rows": records,
+        "headers": ["load_parameter"] + [record["concurrency"] for record in records],
+        "rows": rows,
     }
 
     builder.add_table(dict_metrics)
+    graphics = [
+        {
+            "title": "Apache balance metrics by concurrency",
+            "type": "line",
+            "x_key": "concurrency",
+            "series": ["requests_per_second", "waiting_median_ms"],
+            "series_colors": {
+                "requests_per_second": "#0052CC",
+                "waiting_median_ms": "#FF5630",
+            },
+            "width": 800,
+            "height": 360,
+            "x_label": "Concurrency level",
+            "y_label": "Metric value",
+            "data": records,
+            "view_table": False,
+        },
+    ]
+    builder.add_chart(chart_spec=graphics, columns=1)
 
     publish_result = reporter.publish_results_from_params(
         conf_space=space,

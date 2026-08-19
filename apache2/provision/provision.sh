@@ -6,6 +6,7 @@ PACKAGES=(
   apache2 
   libapache2-mod-authnz-pam
   apache2-utils
+  curl
 )
 
 sudo apt-get update

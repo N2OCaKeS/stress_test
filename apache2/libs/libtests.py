@@ -75,6 +75,10 @@ class CreateVM:
             self.vms_group = {
                 "all": self.vms,
             }
+            print(SystemCommands.check_output_command('sudo sed -i \'s#<forward mode="none"/>#<forward mode="nat"/>#\' "/vms/network.xml"'))
+            print(SystemCommands.check_output_command("sudo virsh net-destroy test"))
+            print(SystemCommands.check_output_command("sudo virsh --connect qemu:///system net-create /vms/network.xml"))
+
             LibvirtManager.Snapshot.revert(vms=self.vms, snapshot_name="provision")
             LibvirtManager.Vm.start(vms=self.vms)
             print("\n\n\nОжидаем 90 секунд для включения ВМ\n\n\n")
@@ -118,8 +122,9 @@ class CreateVM:
                 "all": self.vms,
             }
             LibvirtManager.Vm.save_vms_data(
-                vms_dates=VMS_DATES, save_path=self.vms_date_save_path
+                vms_dates=self.vms_data, save_path=self.vms_date_save_path
             )
+            VMS_DATES.update(self.vms_data)
 
             provision_path = "/home/u/provision.sh"
             scp_provision = {
@@ -556,6 +561,14 @@ class ApacheBalance(CreateVM):
         """
 
         print ("\n\n\nНачинаем подготовку тестового окружения\n\n\n")
+        self.vms_group.update(
+            {
+                "lb": ["testvm1", "testvm2"],
+                "backend": ["testvm3", "testvm4"],
+                "client": ["testvm5"],
+            }
+        )
+
 
         backend_1_ip = self.vms_data["testvm3"]["ip_bridge"]
         backend_2_ip = self.vms_data["testvm4"]["ip_bridge"]
@@ -584,16 +597,7 @@ DocumentRoot /var/www
 ErrorLog ${APACHE_LOG_DIR}/backend_error.log
 CustomLog ${APACHE_LOG_DIR}/backend_access.log combined
 </VirtualHost>"""
-        backend_html_prepare_command = (
-            "sudo mkdir -p /var/www; "
-            "printf '<html><body><h2>Apache balance backend: $(hostname)</h2></body></html>' | sudo tee /var/www/index.html >/dev/null; "
-            "sudo chmod 644 /var/www/index.html"
-        )
-        keepalived_base_command = (
-            "command -v keepalived >/dev/null || "
-            "(sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y keepalived); "
-            "sudo sysctl -w net.ipv4.ip_nonlocal_bind=1; "
-        )
+        backend_html = "<html><body><h2>Apache balance backend</h2></body></html>"
         keepalived_master_conf = f"""vrrp_script chk_apache {{
     script "/usr/bin/systemctl is-active --quiet apache2"
     interval {A_BALANCE_KEEPALIVED_CHECK_INTERVAL}
@@ -651,18 +655,137 @@ vrrp_instance apache_balance_vip {{
     }}
 }}"""
 
+        def lb_prepare_tasks(prefix):
+            return {
+                "disable_astra_mode": {
+                    "command": "sudo sed -i -e 's/# AstraMode on/AstraMode off/' -e 's/AstraMode on/AstraMode off/' /etc/apache2/apache2.conf",
+                    "signal set": f"{prefix}_disable_astra_mode",
+                },
+                "balancer_conf": {
+                    "command": f"printf '%b' {balancer_conf!r} | sudo tee /etc/apache2/sites-available/000-default.conf",
+                    "signal set": f"{prefix}_balancer_conf",
+                    "signal get": f"{prefix}_disable_astra_mode",
+                },
+                "modules": {
+                    "command": "sudo a2enmod proxy proxy_http proxy_balancer lbmethod_byrequests headers slotmem_shm",
+                    "signal set": f"{prefix}_modules",
+                    "signal get": f"{prefix}_balancer_conf",
+                },
+                "site": {
+                    "command": "sudo a2ensite 000-default.conf",
+                    "signal set": f"{prefix}_site",
+                    "signal get": f"{prefix}_modules",
+                },
+                "configtest": {
+                    "command": "sudo apache2ctl configtest",
+                    "signal set": f"{prefix}_configtest",
+                    "signal get": f"{prefix}_site",
+                },
+                "restart": {
+                    "command": "sudo systemctl restart apache2.service",
+                    "signal set": f"{prefix}_restart",
+                    "signal get": f"{prefix}_configtest",
+                },
+            }
+
+        def keepalived_prepare_tasks(prefix, keepalived_conf):
+            return {
+                "apt_update": {
+                    "command": "sudo apt-get update",
+                    "signal set": f"{prefix}_apt_update",
+                    "signal get": f"{prefix}_restart",
+                },
+                "install_keepalived": {
+                    "command": "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y keepalived",
+                    "signal set": f"{prefix}_install_keepalived",
+                    "signal get": f"{prefix}_apt_update",
+                },
+                "keepalived_dir": {
+                    "command": "sudo mkdir -p /etc/keepalived",
+                    "signal set": f"{prefix}_keepalived_dir",
+                    "signal get": f"{prefix}_install_keepalived",
+                },
+                "sysctl": {
+                    "command": "sudo sysctl -w net.ipv4.ip_nonlocal_bind=1",
+                    "signal set": f"{prefix}_sysctl",
+                    "signal get": f"{prefix}_keepalived_dir",
+                },
+                "keepalived_conf": {
+                    "command": f"printf '%b' {keepalived_conf.replace('__INTERFACE__', 'eth0')!r} | sudo tee /etc/keepalived/keepalived.conf",
+                    "signal set": f"{prefix}_keepalived_conf",
+                    "signal get": f"{prefix}_sysctl",
+                },
+                "keepalived_enable": {
+                    "command": "sudo systemctl enable keepalived.service",
+                    "signal set": f"{prefix}_keepalived_enable",
+                    "signal get": f"{prefix}_keepalived_conf",
+                },
+                "keepalived_restart": {
+                    "command": "sudo systemctl restart keepalived.service",
+                    "signal set": f"{prefix}_keepalived",
+                    "signal get": f"{prefix}_keepalived_enable",
+                },
+            }
+
+        def backend_prepare_tasks(prefix):
+            return {
+                "disable_astra_mode": {
+                    "command": "sudo sed -i -e 's/# AstraMode on/AstraMode off/' -e 's/AstraMode on/AstraMode off/' /etc/apache2/apache2.conf",
+                    "signal set": f"{prefix}_disable_astra_mode",
+                },
+                "www_dir": {
+                    "command": "sudo mkdir -p /var/www",
+                    "signal set": f"{prefix}_www_dir",
+                    "signal get": f"{prefix}_disable_astra_mode",
+                },
+                "html": {
+                    "command": f"printf '%b' {backend_html!r} | sudo tee /var/www/index.html",
+                    "signal set": f"{prefix}_html",
+                    "signal get": f"{prefix}_www_dir",
+                },
+                "html_chmod": {
+                    "command": "sudo chmod 644 /var/www/index.html",
+                    "signal set": f"{prefix}_html_chmod",
+                    "signal get": f"{prefix}_html",
+                },
+                "backend_conf": {
+                    "command": f"printf '%b' {remote_backend_conf!r} | sudo tee /etc/apache2/sites-available/000-default.conf",
+                    "signal set": f"{prefix}_backend_conf",
+                    "signal get": f"{prefix}_html_chmod",
+                },
+                "restart": {
+                    "command": "sudo systemctl restart apache2.service",
+                    "signal set": f"{prefix}_restart",
+                    "signal get": f"{prefix}_backend_conf",
+                },
+            }
+
         print ("\n\n\nПодготовка клиента и backend-серверов\n\n\n")
         env_prepare = {
-            "testvm5": {
-                "report": {
-                    "command": (
-                        f"sudo mkdir -p {REPORT_PATH} && sudo chmod -R 777 {REPORT_PATH}; "
-                        "command -v ab >/dev/null || "
-                        "(sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y apache2-utils); "
-                        "command -v curl >/dev/null || "
-                        "(sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y curl)"
-                    ),
+            "g_client": {
+                "apt_update": {
+                    "command": "sudo apt-get update",
+                    "signal set": "apt_update",
+                },
+                "install_ab": {
+                    "command": "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y apache2-utils",
+                    "signal set": "install_ab",
+                    "signal get": "apt_update",
+                },
+                "install_curl": {
+                    "command": "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y curl",
+                    "signal set": "install_curl",
+                    "signal get": "install_ab",
+                },
+                "report_dir": {
+                    "command": f"sudo mkdir -p {REPORT_PATH}",
+                    "signal set": "report_dir",
+                    "signal get": "install_curl",
+                },
+                "report_chmod": {
+                    "command": f"sudo chmod -R 777 {REPORT_PATH}",
                     "signal set": "add_report",
+                    "signal get": "report_dir",
                 },
                 "clear_results": {
                     "command": f"sudo rm -f {AB_OUTPUT_FILE_BALANCE} {CSV_RESULTS_FILE} {PLOT_FILE}",
@@ -671,125 +794,15 @@ vrrp_instance apache_balance_vip {{
                 },
             },
             "testvm1": {
-                "disable_astra_mode": {
-                    "command": "sudo sed -i -e 's/# AstraMode on/AstraMode off/' -e 's/AstraMode on/AstraMode off/' /etc/apache2/apache2.conf",
-                    "signal set": "disable_astra_mode",
-                },
-                "balancer_conf": {
-                    "command": f"printf '%b' {balancer_conf!r} | sudo tee /etc/apache2/sites-available/000-default.conf",
-                    "signal set": "balancer_conf",
-                    "signal get": "disable_astra_mode",
-                },
-                "modules": {
-                    "command": "sudo a2enmod proxy proxy_http proxy_balancer lbmethod_byrequests headers slotmem_shm",
-                    "signal set": "modules",
-                    "signal get": "balancer_conf",
-                },
-                "site": {
-                    "command": "sudo a2ensite 000-default.conf && sudo apache2ctl configtest",
-                    "signal set": "site",
-                    "signal get": "modules",
-                },
-                "restart": {
-                    "command": "sudo systemctl restart apache2.service",
-                    "signal set": "restart",
-                    "signal get": "site",
-                },
-                "keepalived": {
-                    "command": (
-                        keepalived_base_command
-                        + f"interface=$(ip -o route get {lb_backup_ip} | awk '{{ for (i = 1; i <= NF; i++) if ($i == \"dev\") {{ print $(i + 1); exit }} }}'); "
-                        "test -n \"$interface\"; "
-                        + f"printf '%b' {keepalived_master_conf!r} | sudo tee /etc/keepalived/keepalived.conf; "
-                        "sudo sed -i \"s/__INTERFACE__/$interface/g\" /etc/keepalived/keepalived.conf; "
-                        "sudo systemctl enable keepalived.service; "
-                        "sudo systemctl restart keepalived.service"
-                    ),
-                    "signal set": "keepalived",
-                    "signal get": "restart",
-                },
+                **lb_prepare_tasks("lb1"),
+                **keepalived_prepare_tasks("lb1", keepalived_master_conf),
             },
             "testvm2": {
-                "disable_astra_mode": {
-                    "command": "sudo sed -i -e 's/# AstraMode on/AstraMode off/' -e 's/AstraMode on/AstraMode off/' /etc/apache2/apache2.conf",
-                    "signal set": "disable_astra_mode",
-                },
-                "balancer_conf": {
-                    "command": f"printf '%b' {balancer_conf!r} | sudo tee /etc/apache2/sites-available/000-default.conf",
-                    "signal set": "balancer_conf",
-                    "signal get": "disable_astra_mode",
-                },
-                "modules": {
-                    "command": "sudo a2enmod proxy proxy_http proxy_balancer lbmethod_byrequests headers slotmem_shm",
-                    "signal set": "modules",
-                    "signal get": "balancer_conf",
-                },
-                "site": {
-                    "command": "sudo a2ensite 000-default.conf && sudo apache2ctl configtest",
-                    "signal set": "site",
-                    "signal get": "modules",
-                },
-                "restart": {
-                    "command": "sudo systemctl restart apache2.service",
-                    "signal set": "restart",
-                    "signal get": "site",
-                },
-                "keepalived": {
-                    "command": (
-                        keepalived_base_command
-                        + f"interface=$(ip -o route get {lb_master_ip} | awk '{{ for (i = 1; i <= NF; i++) if ($i == \"dev\") {{ print $(i + 1); exit }} }}'); "
-                        "test -n \"$interface\"; "
-                        + f"printf '%b' {keepalived_backup_conf!r} | sudo tee /etc/keepalived/keepalived.conf; "
-                        "sudo sed -i \"s/__INTERFACE__/$interface/g\" /etc/keepalived/keepalived.conf; "
-                        "sudo systemctl enable keepalived.service; "
-                        "sudo systemctl restart keepalived.service"
-                    ),
-                    "signal set": "keepalived",
-                    "signal get": "restart",
-                },
+                **lb_prepare_tasks("lb2"),
+                **keepalived_prepare_tasks("lb2", keepalived_backup_conf),
             },
-            "testvm3": {
-                "disable_astra_mode": {
-                    "command": "sudo sed -i -e 's/# AstraMode on/AstraMode off/' -e 's/AstraMode on/AstraMode off/' /etc/apache2/apache2.conf",
-                    "signal set": "disable_astra_mode",
-                },
-                "html": {
-                    "command": backend_html_prepare_command,
-                    "signal set": "html",
-                    "signal get": "disable_astra_mode",
-                },
-                "backend_conf": {
-                    "command": f"printf '%b' {remote_backend_conf!r} | sudo tee /etc/apache2/sites-available/000-default.conf",
-                    "signal set": "backend_conf",
-                    "signal get": "html",
-                },
-                "restart": {
-                    "command": "sudo systemctl restart apache2.service",
-                    "signal set": "restart",
-                    "signal get": "backend_conf",
-                },
-            },
-            "testvm4": {
-                "disable_astra_mode": {
-                    "command": "sudo sed -i -e 's/# AstraMode on/AstraMode off/' -e 's/AstraMode on/AstraMode off/' /etc/apache2/apache2.conf",
-                    "signal set": "disable_astra_mode",
-                },
-                "html": {
-                    "command": backend_html_prepare_command,
-                    "signal set": "html",
-                    "signal get": "disable_astra_mode",
-                },
-                "backend_conf": {
-                    "command": f"printf '%b' {remote_backend_conf!r} | sudo tee /etc/apache2/sites-available/000-default.conf",
-                    "signal set": "backend_conf",
-                    "signal get": "html",
-                },
-                "restart": {
-                    "command": "sudo systemctl restart apache2.service",
-                    "signal set": "restart",
-                    "signal get": "backend_conf",
-                },
-            },
+            "testvm3": backend_prepare_tasks("backend1"),
+            "testvm4": backend_prepare_tasks("backend2"),
         }
 
         self.provider.execute(commands=env_prepare, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
@@ -805,21 +818,105 @@ vrrp_instance apache_balance_vip {{
         testvm5 - ApacheBench client
         """
 
-        print ("\n\n\nВыполнение подготовки к тесту\n\n\n")
-        # Подготовка к выполнению теста
-        print("\n\n\nПодготовка завершена\n\n\n")
-
-        print("\n\n\n Настраиваем сеть  \n\n\n")
+        print("\n\n\n Отключаем внешнюю сеть перед нагрузкой  \n\n\n")
         LibvirtManager.Vm.stop(vms=self.vms)
         print(SystemCommands.check_output_command('sudo sed -i \'s#<forward mode="nat"/>#<forward mode="none"/>#\' "/vms/network.xml"'))
+        print(SystemCommands.check_output_command('grep -q \'<forward mode="none"/>\' "/vms/network.xml"'))
         print(SystemCommands.check_output_command("sudo virsh net-destroy test"))
         print(SystemCommands.check_output_command("sudo virsh --connect qemu:///system net-create /vms/network.xml"))
 
         LibvirtManager.Vm.start(vms=self.vms)
         sleep(90)
-        print("\n\n\n Сеть настроена  \n\n\n")
+        print("\n\n\n Внешняя сеть отключена  \n\n\n")
 
+        lb_master_ip = self.vms_data["testvm1"]["ip_bridge"]
+        lb_backup_ip = self.vms_data["testvm2"]["ip_bridge"]
         vip = A_BALANCE_VIP
+
+        keepalived_master_conf = f"""vrrp_script chk_apache {{
+    script "/usr/bin/systemctl is-active --quiet apache2"
+    interval {A_BALANCE_KEEPALIVED_CHECK_INTERVAL}
+    fall 2
+    rise 2
+}}
+
+vrrp_instance apache_balance_vip {{
+    state MASTER
+    interface eth0
+    virtual_router_id {A_BALANCE_KEEPALIVED_VRID}
+    priority {A_BALANCE_KEEPALIVED_LB1_PRIORITY}
+    advert_int 1
+    authentication {{
+        auth_type PASS
+        auth_pass {A_BALANCE_KEEPALIVED_AUTH_PASS}
+    }}
+    unicast_src_ip {lb_master_ip}
+    unicast_peer {{
+        {lb_backup_ip}
+    }}
+    virtual_ipaddress {{
+        {vip}/24
+    }}
+    track_script {{
+        chk_apache
+    }}
+}}"""
+        keepalived_backup_conf = f"""vrrp_script chk_apache {{
+    script "/usr/bin/systemctl is-active --quiet apache2"
+    interval {A_BALANCE_KEEPALIVED_CHECK_INTERVAL}
+    fall 2
+    rise 2
+}}
+
+vrrp_instance apache_balance_vip {{
+    state BACKUP
+    interface eth0
+    virtual_router_id {A_BALANCE_KEEPALIVED_VRID}
+    priority {A_BALANCE_KEEPALIVED_LB2_PRIORITY}
+    advert_int 1
+    authentication {{
+        auth_type PASS
+        auth_pass {A_BALANCE_KEEPALIVED_AUTH_PASS}
+    }}
+    unicast_src_ip {lb_backup_ip}
+    unicast_peer {{
+        {lb_master_ip}
+    }}
+    virtual_ipaddress {{
+        {vip}/24
+    }}
+    track_script {{
+        chk_apache
+    }}
+}}"""
+
+        print ("\n\n\nПерезаписываем keepalived после старта изолированной сети\n\n\n")
+        keepalived_restart = {
+            "testvm1": {
+                "keepalived_conf": {
+                    "command": f"printf '%b' {keepalived_master_conf!r} | sudo tee /etc/keepalived/keepalived.conf",
+                    "signal set": "lb1_isolated_keepalived_conf",
+                },
+                "keepalived_restart": {
+                    "command": "sudo systemctl restart keepalived.service",
+                    "signal set": "lb1_isolated_keepalived_restart",
+                    "signal get": "lb1_isolated_keepalived_conf",
+                },
+            },
+            "testvm2": {
+                "keepalived_conf": {
+                    "command": f"printf '%b' {keepalived_backup_conf!r} | sudo tee /etc/keepalived/keepalived.conf",
+                    "signal set": "lb2_isolated_keepalived_conf",
+                },
+                "keepalived_restart": {
+                    "command": "sudo systemctl restart keepalived.service",
+                    "signal set": "lb2_isolated_keepalived_restart",
+                    "signal get": "lb2_isolated_keepalived_conf",
+                },
+            },
+        }
+        self.provider.execute(commands=keepalived_restart, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
+        sleep(10)
 
         print ("\n\n\nПроверяем доступность VIP балансировщика\n\n\n")
         healthcheck = {
@@ -893,14 +990,20 @@ vrrp_instance apache_balance_vip {{
         )
         print("\n\n\nДанные о ОС с ВМ собраны\n\n\n")
 
-        with open(f"{self.testdir}/summary_balance.txt", encoding="utf-8") as result_file:
-            result_content = result_file.read()
+        if not os.path.isfile(f"{self.testdir}/summary_balance.txt"):
+            print("\n\nFail\nНе найден файл результатов summary_balance.txt\n\n\n")
+            return ""
 
         records = []
-        for block in re.split(r"This is ApacheBench", result_content):
+        with open(f"{self.testdir}/summary_balance.txt", encoding="utf-8") as result_file:
+            content = result_file.read()
+        for block in re.split(r"This is ApacheBench", content):
             concurrency = re.search(r"Concurrency Level:\s+(\d+)", block)
             rps = re.search(r"Requests per second:\s+([\d.]+)", block)
-            waiting = re.search(r"Waiting:\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)", block)
+            waiting = re.search(
+                r"Waiting:\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)",
+                block,
+            )
             if not all([concurrency, rps, waiting]):
                 continue
             records.append(
@@ -911,9 +1014,14 @@ vrrp_instance apache_balance_vip {{
                 }
             )
 
+        records = sorted(records, key=lambda record: record["concurrency"])
+        if len(records) < 2:
+            print("\n\nFail\nНедостаточно данных для расчета мат модели ApacheBalance\n\n\n")
+            return ""
+
         model = MathModel()
         model.add_criterion(
-            "apache_balance_rps",
+            "balance_rps",
             iterations=[record["concurrency"] for record in records],
             values=[record["requests_per_second"] for record in records],
             weight=0.5,
@@ -921,7 +1029,7 @@ vrrp_instance apache_balance_vip {{
             bounds=(0.0, 140000.0),
         )
         model.add_criterion(
-            "apache_balance_waiting",
+            "balance_waiting",
             iterations=[record["concurrency"] for record in records],
             values=[record["waiting_median_ms"] for record in records],
             weight=0.5,
@@ -929,7 +1037,8 @@ vrrp_instance apache_balance_vip {{
             bounds=(0.0, 65000.0),
         )
 
-        fixed_power = 0.9996180247850317
+        fixed_power = 0.9995904745394348
         result = model.total_rating(power=fixed_power)
+        total_rating = result["total_rating"] if isinstance(result, dict) else result[0]
 
-        return round(result['total_rating'] / 100)
+        return round(total_rating / 100)

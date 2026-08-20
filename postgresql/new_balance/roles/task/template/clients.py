@@ -14,7 +14,7 @@ from psycopg2 import Error, OperationalError, extensions
 # ===================== Конфиг =====================
 NUM_CLIENTS = 20
 NUM_TRANSACTIONS = 10000  # на поток
-DB_WAIT_TIMEOUT = 0.2
+DB_WAIT_TIMEOUT = 0.6
 OUTPUT_DIR = "/tmp/clients-test"
 
 DB_PARAMS = {

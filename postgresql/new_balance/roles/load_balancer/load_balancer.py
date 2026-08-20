@@ -18,7 +18,7 @@ class LoadBalancer:
     def __init__(self):
         self.provider = PROVIDER
 
-    def load(self):
+    def load(self, type_test="balance"):
         k = Keepalived()
         k.keepalived()
         provider = self.provider
@@ -301,6 +301,9 @@ EOF
                 },
             }
         }
+        if type_test == "info-sys-orel":
+            start_pgpool["g_load_balancer"]["set postgres privilege"]["command"] = "true"
+            start_pgpool["g_load_balancer"]["fix pgpool2.service"]["command"] = "true"
 
         provider.execute(
             commands=start_pgpool,

@@ -24,14 +24,21 @@
 3. Запуск скрипта
 
     ```bash
-    python manual_bl_run.py -bv <версия rc> -sec <режим защищенности буква>
+    python manual_bl_run.py --bv <версия rc> --sec <режим защищенности буква> --tt <тип теста>
     ```
 
     Пример использования:
 
     ```bash
-    python manual_bl_run.py -bv 1.8.1.UU.2.4 -sec s
+    python manual_bl_run.py --bv 1.8.1.UU.2.4 --sec s --tt balance
     ```
+
+    Доступные типы теста:
+
+    - `balance`
+    - `infosys`
+    - `infosys-orel`
+    - `onfosys-orel`
 
 Для получения дополнительной информации о запуске скрипта выполните:
 

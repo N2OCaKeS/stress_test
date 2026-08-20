@@ -10,7 +10,7 @@ class ApacheVM:
     def __init__(self):
         self.provider = PROVIDER
 
-    def settings(self):
+    def settings(self, type_test="info-sys"):
         """Разворачивает Protopack (Flask/WSGI) на web1 в мандатном режиме Apache.
 
         Требования к порядку вызова: должен выполняться после DomainVM.settings()
@@ -184,6 +184,15 @@ class ApacheVM:
                 },
             }
         }
+        if type_test == "info-sys-orel":
+            for task in (
+                "enable astramode",
+                "grant www-data macdb access",
+                "mark var-www-html directory",
+                "deploy mrd test file",
+            ):
+                commands["g_web"].pop(task, None)
+            commands["g_web"]["kinit"]["signal get"] = "modules enabled"
         self.provider.execute(
             commands=commands,
             vms_dates=VMS_DATES,

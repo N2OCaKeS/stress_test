@@ -109,7 +109,8 @@ parser.add_argument('-vbox', '--set-vbox',
 parser.add_argument('-tt', '--test-type',
                     action='store',
                     choices=['balance',
-                             'info-sys'],
+                             'info-sys',
+                             'info-sys-orel'],
                     default='balance',
                     required=False,
                     help='test-type',
@@ -165,8 +166,9 @@ if args.TEST_TYPE == 'balance':
         print('Fail! File "results_balance.txt" not found')
         uzs.upload_test_cycle_status(zefir_status='fail')
 
-if args.TEST_TYPE == 'info-sys':
-    bl_lib.balance(args.TCV, type_test=args.TEST_TYPE)
+if args.TEST_TYPE in ('info-sys', 'info-sys-orel'):
+    sec_mode = 'o' if args.TEST_TYPE == 'info-sys-orel' else 's'
+    bl_lib.balance(args.TCV, sec_mode=sec_mode, type_test=args.TEST_TYPE)
     uzs.public = True
     uzs.info_sys = True
     uzs.upload_test_cycle_status(zefir_status='pass')

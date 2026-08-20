@@ -34,10 +34,11 @@ TEST_FLAGS: dict[str, str] = {
     # -psql-vanilla (dest='PSQL_VANILLA')
     'psql vanilla': '-psql-vanilla pv',
     
-    # -psql-bl (dest='PSQL_BALANCE', choices=['balance', 'info-sys'])
+    # -psql-bl (dest='PSQL_BALANCE', choices=['balance', 'info-sys', 'info-sys-orel'])
     'psql balance': '-psql-bl balance',
     'psql info-sys': '-psql-bl info-sys',
-    
+    'psql info-sys-orel': '-psql-bl info-sys-orel',
+
 
     # -psql-oom (dest='PSQL_OOM')
     'psql oom': '-psql-oom oom',

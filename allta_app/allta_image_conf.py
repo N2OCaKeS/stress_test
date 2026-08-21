@@ -214,7 +214,7 @@ branches = {
     'xfs memory leak':'kernel',
     'Raw spin lock benchmark':'parsec',
     'postgresql benchmark info-sys':'postgresql',
-    'postgresql benchmark info-sys orel':'postgresql',
+    'postgresql benchmark info-sys-orel':'postgresql',
     'astraeventsd benchmark':'astraevents',
     'astraeventsd benchmark smolensk':'astraevents'
 }
@@ -291,7 +291,7 @@ tests = {
     'xfs memory leak': 'XFS mem leak',
     'Raw spin lock benchmark': 'raw-spin-lock',
     'postgresql benchmark info-sys':'psql info-sys',
-    'postgresql benchmark info-sys orel':'psql info-sys-orel',
+    'postgresql benchmark info-sys-orel':'psql info-sys-orel',
     'astraeventsd benchmark':'astraevents',
     'astraeventsd benchmark smolensk':'astraevents-sm'
 }

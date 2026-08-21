@@ -1,3 +1,10 @@
+allta_app - v2.73.1
+* Fix psql info-sys-orel test for STP
+
+
+
+
+
 allta_app - v2.73.0
 * Add psql info-sys-orel test
 

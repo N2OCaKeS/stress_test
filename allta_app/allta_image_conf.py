@@ -544,7 +544,7 @@ testname_columns = {
                     'xfs memory leak':'XFS_mem_leak',
                     'Raw spin lock benchmark': 'Raw_spin-lock',
                     'postgresql benchmark info-sys': 'PSQL_info-sys',
-                    'postgresql benchmark info-sys orel': 'PSQL_info-sys_orel',
+                    'postgresql benchmark info-sys-orel': 'PSQL_info-sys_orel',
                     'astraeventsd benchmark':'Astraevents',
                     'astraeventsd benchmark smolensk':'Astraevents_sm'
                     }

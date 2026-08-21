@@ -495,7 +495,7 @@ class InfoSysLoadTest:
                 # Без подмены метки процесса — execaps не нужен, флага -l нет
                 # (уровень фиксирован на 0 внутри orel_load_generator.py).
                 run_cmd = (
-                    f"python3 /tmp/{self.script_name} "
+                    f"sudo python3 /tmp/{self.script_name} "
                     f"-H {web1_ip} -n {hostname} -u / -w {self.WORKERS} "
                     f"--r-start {self.R_START} --r-end {self.R_END} --r-step {self.R_STEP} "
                     f"--ccache-list {ccache_list_arg} "

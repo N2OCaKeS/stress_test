@@ -66,16 +66,19 @@ VMS_DATES = {
         "host-port": "22",
         "cpu": "8",
         "ram": "32768",
+        "disk": "40",
     },
     "lbdb2": {
         "host-port": "22",
         "cpu": "8",
         "ram": "32768",
+        "disk": "40",
     },
     "lbdb3": {
         "host-port": "22",
         "cpu": "8",
         "ram": "32768",
+        "disk": "40",
     },
     "dcfreeipa": {
         "host-port": "22",

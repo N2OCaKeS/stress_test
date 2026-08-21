@@ -32,7 +32,8 @@
             "Total time": "0:00:00",
             "CEPH parsec": "5:42:47",
             "raw-spin-lock": "2:33:30",
-            "astraevents": "1:49:28"
+            "astraevents": "1:49:28",
+            "astraevents-sm": "1:49:28"
         },
         "stand11": {
             "parsec impact-fs": "0:35:17",
@@ -71,6 +72,7 @@
         },
         "stand14": {
             "psql info-sys": "2:28:15",
+            "psql info-sys-orel": "2:28:15",
             "psql balance": "2:24:27",
             "psql kernels": "2:09:44",
             "steal time": "12:00:00",
@@ -111,7 +113,8 @@
             "Total time": "0:00:00",
             "CEPH parsec": "2:51:24",
             "raw-spin-lock": "1:19:45",
-            "astraevents": "0:58:36"
+            "astraevents": "0:58:36",
+            "astraevents-sm": "0:58:36"
         },
         "stand11": {
             "parsec impact-fs": "0:36:42",
@@ -150,6 +153,7 @@
         },
         "stand14": {
             "psql info-sys": "2:28:15",
+            "psql info-sys-orel": "2:28:15",
             "psql balance": "2:54:15",
             "psql kernels": "2:23:59",
             "steal time": "3:12:40",

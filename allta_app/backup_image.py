@@ -280,7 +280,7 @@ port = 22
 ipmi = BootOrder(stand=args.STAND)
 clonezilla_command = cz_comm()[args.STAND][args.RELEASE]
 balance_host_release = '1.8.1.6'
-if args.PSQL_BALANCE == "info-sys":
+if args.PSQL_BALANCE in ("info-sys", "info-sys-orel"):
     clonezilla_command_balance = cz_comm()['stand14'][args.RELEASE]
 elif args.PSQL_BALANCE == "balance":
     #clonezilla_command_balance = cz_comm()['stand4'][balance_host_release]
@@ -328,7 +328,7 @@ freeipa_test = f'-tt {args.FREEIPA}'
 vpn = f'--test {args.VPN}'
 mail = f'-tt {args.MAIL}'
 psql_olap = f'-olap {args.PSQL_OLAP}'
-psql_info_sys = f'-tt info-sys'
+psql_info_sys = f'-tt {args.PSQL_BALANCE}'
 
 if args.PSQL:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
@@ -339,7 +339,7 @@ elif args.PSQL_VANILLA:
 elif args.TANTOR_VANILLA:
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               -db {sn} {fti} {tcyc} {tcas} {ba} {tcv} -c {tantor_pkg} {tantor_vanilla}'
-elif args.PSQL_BALANCE == "info-sys":
+elif args.PSQL_BALANCE in ("info-sys", "info-sys-orel"):
     dates = f'{username} {token} {confluence_space} {confluence_parent_page} {confluence_new_page} \
               {sn} {fti} {tcyc} {tcas} {ba} {tcv} {balance_vbox} {psql_info_sys}'
 elif args.PSQL_BALANCE or args.PSQL_OOM:

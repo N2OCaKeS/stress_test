@@ -107,10 +107,10 @@ modes = {
 #Симлинки на страницы с местами хранения результатов
 #################################################################################################################################################
 tests_list = {'PostgreSQL':     ['postgresql', 'psql parsec', 'psql kernels', 'psql vanilla', 'psql balance', 'PSQL OLAP-hq',
-                                 'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom', 'psql info-sys'],
+                                 'postgresql-sm', 'postgresql-aud-off', 'tantor vanilla', 'tantor kernels', 'psql oom', 'psql info-sys', 'psql info-sys-orel'],
             'Файловые системы': ['XFS', 'EXT2', 'EXT3', 'EXT4', 'EXT4 parsec', 'NTFS', 'XFS parsec', 'FAT', 'EXFAT', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec'],
             'Системные службы': ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'RAM-overflow', 'SD-overflow', 'syslog-ng-cwl', 'AOpenVPNcc',
-                                 'Dovecot-IMAP', 'Exim4-SMTP', 'SegFault', "XFS mem leak", "astraevents"],
+                                 'Dovecot-IMAP', 'Exim4-SMTP', 'SegFault', "XFS mem leak", "astraevents", "astraevents-sm"],
             'UnixBench':        ['unix', 'unix parsec'],
             'FreeIPA':          ['FreeIPA auth', 'FreeIPA c-users', "FreeIPA plugin"],
             'Parsec':           ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt', 'raw-spin-lock'],
@@ -214,7 +214,9 @@ branches = {
     'xfs memory leak':'kernel',
     'Raw spin lock benchmark':'parsec',
     'postgresql benchmark info-sys':'postgresql',
-    'astraeventsd benchmark':'astraevents'
+    'postgresql benchmark info-sys orel':'postgresql',
+    'astraeventsd benchmark':'astraevents',
+    'astraeventsd benchmark smolensk':'astraevents'
 }
 
 
@@ -289,7 +291,9 @@ tests = {
     'xfs memory leak': 'XFS mem leak',
     'Raw spin lock benchmark': 'raw-spin-lock',
     'postgresql benchmark info-sys':'psql info-sys',
-    'astraeventsd benchmark':'astraevents'
+    'postgresql benchmark info-sys orel':'psql info-sys-orel',
+    'astraeventsd benchmark':'astraevents',
+    'astraeventsd benchmark smolensk':'astraevents-sm'
 }
 
 
@@ -322,7 +326,7 @@ main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
               'apache-rp', 'apache-bp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
               'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio', 'FreeIPA c-users', 'CEPH parsec', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP',
-              'FIO large', 'InitOnFree', 'DHCP', 'SegFault', 'PSQL OLAP-hq', 'FreeIPA plugin', 'XFS mem leak', 'raw-spin-lock', 'psql info-sys', 'astraevents']
+              'FIO large', 'InitOnFree', 'DHCP', 'SegFault', 'PSQL OLAP-hq', 'FreeIPA plugin', 'XFS mem leak', 'raw-spin-lock', 'psql info-sys', 'psql info-sys-orel', 'astraevents', 'astraevents-sm']
 
 
 
@@ -410,14 +414,14 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
             'orel_stand4':      ['postgresql-aud-off', 'postgresql'],
             'smolensk_stand4':  ['postgresql-sm', 'psql parsec', 'psql vanilla'],
             'orel_stand10':     ['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'astraevents'],
-            'smolensk_stand10': ['CEPH parsec', 'raw-spin-lock'],
+            'smolensk_stand10': ['CEPH parsec', 'raw-spin-lock', 'astraevents-sm'],
             'orel_stand11':     ['docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large', 'DHCP'],
             'smolensk_stand11': ['parsec impact-fs', 'parsec impact-fs aud-off', 'psql oom'],
             'orel_stand12':     ['syslog-ng', 'InitOnFree', 'SegFault', 'XFS mem leak'],
             'smolensk_stand12': ['auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'apache-bp', 'PSQL OLAP-hq'],
             'orel_stand13':     ['syslog-ng-cwl'],
             'smolensk_stand13': [],
-            'orel_stand14':     ['psql balance', 'steal time', 'psql kernels'],
+            'orel_stand14':     ['psql balance', 'steal time', 'psql kernels', 'psql info-sys-orel'],
             'smolensk_stand14': ['psql info-sys', 'steal time-sm']
         }
 
@@ -432,14 +436,14 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
 stands_groups = {
     'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'FreeIPA auth', 'unix', 'unix parsec', 'FreeIPA c-users', 'FreeIPA plugin'],
     'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla'],
-    'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec', 'raw-spin-lock', 'astraevents'],
+    'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec', 'raw-spin-lock', 'astraevents', 'astraevents-sm'],
 
     'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large', 'DHCP'],
     'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'apache-bp', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'XFS mem leak'],
 
     'stand13_group':['syslog-ng-cwl'],
 
-    'stand14_group':['psql info-sys', 'psql balance', 'steal time', 'steal time-sm', 'psql kernels']
+    'stand14_group':['psql info-sys', 'psql info-sys-orel', 'psql balance', 'steal time', 'steal time-sm', 'psql kernels']
 }
 
 test_run_stands = [f'stand{x}' for x in ['3', '4', '10', '11', '12', '13', '14']] #range(3, 6, 1)]
@@ -502,7 +506,9 @@ tests_case_zefir_key = {
     'XFS mem leak':'BT-T19753',
     'raw-spin-lock': 'BT-T19967',
     'psql info-sys':'BT-T20710',
-    'astraevents':'BT-T20834'
+    'psql info-sys-orel':'BT-T21017',
+    'astraevents':'BT-T20834',
+    'astraevents-sm':'BT-T20980'
 }
 
 
@@ -538,7 +544,9 @@ testname_columns = {
                     'xfs memory leak':'XFS_mem_leak',
                     'Raw spin lock benchmark': 'Raw_spin-lock',
                     'postgresql benchmark info-sys': 'PSQL_info-sys',
-                    'astraeventsd benchmark':'Astraevents'
+                    'postgresql benchmark info-sys orel': 'PSQL_info-sys_orel',
+                    'astraeventsd benchmark':'Astraevents',
+                    'astraeventsd benchmark smolensk':'Astraevents_sm'
                     }
 
 

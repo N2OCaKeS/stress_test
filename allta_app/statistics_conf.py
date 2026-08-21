@@ -10,8 +10,8 @@ statistics_conf = {
         "comparison_list": [["parsec impact-fs", "parsec impact-fs aud-off"]]
     },
     "PostgreSQL": {
-        "set_of_test_types": ['postgresql', 'postgresql-sm', 'postgresql-aud-off', 'psql parsec', 'psql vanilla', 'tantor vanilla', 'psql balance', 'PSQL OLAP-hq', 'psql info-sys'],
-        "comparison_list": [['postgresql', 'postgresql-sm'], ['postgresql', 'postgresql-aud-off'], ['postgresql', 'psql parsec'], ['postgresql', 'psql vanilla'], ["psql vanilla", "postgresql-aud-off"]],
+        "set_of_test_types": ['postgresql', 'postgresql-sm', 'postgresql-aud-off', 'psql parsec', 'psql vanilla', 'tantor vanilla', 'psql balance', 'PSQL OLAP-hq', 'psql info-sys', 'psql info-sys-orel'],
+        "comparison_list": [['postgresql', 'postgresql-sm'], ['postgresql', 'postgresql-aud-off'], ['postgresql', 'psql parsec'], ['postgresql', 'psql vanilla'], ["psql vanilla", "postgresql-aud-off"], ['psql info-sys', 'psql info-sys-orel']],
         "comparison_kernel_list": ['postgresql']
     },
     "Qemu/KVM/Libvirt": {

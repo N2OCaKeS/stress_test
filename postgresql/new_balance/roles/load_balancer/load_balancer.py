@@ -303,7 +303,6 @@ EOF
         }
         if type_test == "info-sys-orel":
             start_pgpool["g_load_balancer"]["set postgres privilege"]["command"] = "true"
-            start_pgpool["g_load_balancer"]["fix pgpool2.service"]["command"] = "true"
 
         provider.execute(
             commands=start_pgpool,

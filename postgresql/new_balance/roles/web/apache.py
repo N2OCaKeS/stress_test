@@ -186,13 +186,12 @@ class ApacheVM:
         }
         if type_test == "info-sys-orel":
             for task in (
-                "enable astramode",
                 "grant www-data macdb access",
                 "mark var-www-html directory",
                 "deploy mrd test file",
             ):
                 commands["g_web"].pop(task, None)
-            commands["g_web"]["kinit"]["signal get"] = "modules enabled"
+            commands["g_web"]["kinit"]["signal get"] = "astramode set"
         self.provider.execute(
             commands=commands,
             vms_dates=VMS_DATES,

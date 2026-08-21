@@ -392,11 +392,16 @@ class Test:
 
 class InfoSysLoadTest:
     """Нагрузочный тест info-sys: сценарий 1 из roles/task/test.md — чистая нагрузка
-    (без привязки к МРД-уровню конкретной строки). Гоняет mrd_load_generator.py с
-    ВМ `loader` на `web1` (Apache AstraMode + Flask protopack) по пути `/` на
-    уровне МРД 1, забирает JSON со статистикой (RPS/latency), 5 шагов от 500 до
-    2500 запросов (MAX_ITERATIONS в mrd_load_generator.py = 5).
+    (без привязки к МРД-уровню конкретной строки). Гоняет генератор нагрузки с
+    ВМ `loader` на `web1` (Apache AstraMode + Flask protopack) по пути `/`,
+    забирает JSON со статистикой (RPS/latency), 5 шагов от 500 до
+    2500 запросов (MAX_ITERATIONS в генераторе = 5).
 
+    type_test == "info-sys":      mrd_load_generator.py — с подменой метки
+                                   процесса (libpdp/execaps), уровень МРД 1.
+    type_test == "info-sys-orel": orel_load_generator.py — без подмены метки
+                                   процесса, всегда уровень МРД 0, execaps не
+                                   нужен.
     """
 
     LEVELS = (1,)
@@ -407,13 +412,16 @@ class InfoSysLoadTest:
     R_START, R_END, R_STEP = 500, 2500, 500
     CCACHE_PREFIX = "/tmp/mrd_load_ccache"
 
-    def __init__(self):
+    def __init__(self, type_test="info-sys"):
         self.provider = PROVIDER
         self._results_dir = Path("/home/u")
+        self.type_test = type_test
+        self.is_orel = type_test == "info-sys-orel"
+        # orel_load_generator.py не подменяет метку процесса — уровень всегда 0
+        self.levels = (0,) if self.is_orel else self.LEVELS
+        self.script_name = "orel_load_generator.py" if self.is_orel else "mrd_load_generator.py"
 
     def run(self):
-        """Прогоняет нагрузку на каждом уровне из LEVELS, пишет JSON per-level
-        в текущую директорию хоста (mrd_load_level{N}_results.json)."""
         provider = self.provider
         web1_ip  = VMS_DATES["web1"]["ip_bridge"]
         hostname = f"web1.{DOMAIN}"
@@ -423,8 +431,8 @@ class InfoSysLoadTest:
                 "loader": [
                     {
                         "mode": "push",
-                        "path_host": "./new_balance/roles/web/testing/mrd_load_generator.py",
-                        "path_vm": "/tmp/mrd_load_generator.py",
+                        "path_host": f"./new_balance/roles/web/testing/{self.script_name}",
+                        "path_vm": f"/tmp/{self.script_name}",
                     }
                 ]
             },
@@ -450,26 +458,29 @@ class InfoSysLoadTest:
             for u, cc in zip(users, ccaches)
         )
 
-        provider.execute(
-            commands={
-                "loader": {
-                    "install load generator deps": {
-                        "command": "sudo apt-get install -y libpdp-dev",
-                        "signal set": "",
-                        "signal get": "",
-                    },
-                    "create level3 users": {
-                        "command": create_users_cmd,
-                        "signal set": "level3 users created",
-                        "signal get": "",
-                    },
-                    "kinit users": {
-                        "command": kinit_cmd,
-                        "signal set": "",
-                        "signal get": ["level3 users created"],
-                    },
-                }
+        loader_commands = {
+            "create level3 users": {
+                "command": create_users_cmd,
+                "signal set": "level3 users created",
+                "signal get": "",
             },
+            "kinit users": {
+                "command": kinit_cmd,
+                "signal set": "",
+                "signal get": ["level3 users created"],
+            },
+        }
+        if not self.is_orel:
+            # libpdp нужна только mrd_load_generator.py (подмена метки процесса) —
+            # orel_load_generator.py её не использует.
+            loader_commands["install load generator deps"] = {
+                "command": "sudo apt-get install -y libpdp-dev",
+                "signal set": "",
+                "signal get": "",
+            }
+
+        provider.execute(
+            commands={"loader": loader_commands},
             vms_dates=VMS_DATES,
             vms_groups=VMS_GROUPS,
             username=USERNAME,
@@ -478,19 +489,31 @@ class InfoSysLoadTest:
 
         ccache_list_arg = ",".join(ccaches)
 
-        for level in self.LEVELS:
+        for level in self.levels:
             out_dir = f"/home/u/mrd_load_level{level}"
+            if self.is_orel:
+                # Без подмены метки процесса — execaps не нужен, флага -l нет
+                # (уровень фиксирован на 0 внутри orel_load_generator.py).
+                run_cmd = (
+                    f"sudo python3 /tmp/{self.script_name} "
+                    f"-H {web1_ip} -n {hostname} -u / -w {self.WORKERS} "
+                    f"--r-start {self.R_START} --r-end {self.R_END} --r-step {self.R_STEP} "
+                    f"--ccache-list {ccache_list_arg} "
+                    f"--output-dir {out_dir}"
+                )
+            else:
+                run_cmd = (
+                    f"sudo execaps -c 0x804 -- python3 /tmp/{self.script_name} "
+                    f"-H {web1_ip} -n {hostname} -u / -l {level} -w {self.WORKERS} "
+                    f"--r-start {self.R_START} --r-end {self.R_END} --r-step {self.R_STEP} "
+                    f"--ccache-list {ccache_list_arg} "
+                    f"--output-dir {out_dir}"
+                )
             provider.execute(
                 commands={
                     "loader": {
                         f"run load level {level}": {
-                            "command": (
-                                f"sudo execaps -c 0x804 -- python3 /tmp/mrd_load_generator.py "
-                                f"-H {web1_ip} -n {hostname} -u / -l {level} -w {self.WORKERS} "
-                                f"--r-start {self.R_START} --r-end {self.R_END} --r-step {self.R_STEP} "
-                                f"--ccache-list {ccache_list_arg} "
-                                f"--output-dir {out_dir}"
-                            ),
+                            "command": run_cmd,
                             "signal set": "",
                             "signal get": "",
                         },
@@ -507,7 +530,7 @@ class InfoSysLoadTest:
                     "loader": [
                         {
                             "mode": "pull",
-                            "path_host": f"mrd_load_level{level}_results.json",
+                            "path_host": f"results_infosys.json",
                             "path_vm": f"{out_dir}/results.json",
                         }
                     ]

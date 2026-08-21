@@ -91,13 +91,13 @@ def balance(rc, sec_mode="s", type_test="balance"):
         web = ApacheVM()            # после domain, чтобы Kerberos уже работал
         web.settings(type_test=type_test)
 
-        info_sys_load = InfoSysLoadTest()
+        info_sys_load = InfoSysLoadTest(type_test=type_test)
         info_sys_load.run()
     elif type_test == "info-sys-orel":
         web = ApacheVM()
         web.settings(type_test=type_test)
 
-        info_sys_load = InfoSysLoadTest()
+        info_sys_load = InfoSysLoadTest(type_test=type_test)
         info_sys_load.run()
     
     if type_test == "balance":

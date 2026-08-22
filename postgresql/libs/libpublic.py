@@ -226,7 +226,7 @@ class Public:
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
             html_page = '\n'.join([header_table, head_row, balance_table])
         elif self.info_sys:
-            with open(f'{REPORT_PATH}/results_infosys.json', 'r') as file:
+            with open(f'{SCRIPT_DIR}/results_infosys.json', 'r') as file:
                 report_data = json.load(file)
 
             rating_info_sys = get_total_rating_info_sys(report_data)["total_rating"]

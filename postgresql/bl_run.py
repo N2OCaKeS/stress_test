@@ -171,4 +171,5 @@ if args.TEST_TYPE in ('info-sys', 'info-sys-orel'):
     bl_lib.balance(args.TCV, sec_mode=sec_mode, type_test=args.TEST_TYPE)
     uzs.public = True
     uzs.info_sys = True
+    uzs.info_sys_orel = args.TEST_TYPE == 'info-sys-orel'
     uzs.upload_test_cycle_status(zefir_status='pass')

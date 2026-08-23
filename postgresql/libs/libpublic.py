@@ -11,6 +11,10 @@ from psb_conf import DEFAULT_SCALE_FACTOR, DEFAULT_TRANSACTIONS, DEFAULT_THREADS
     GRAPH_DESCRIPTIONS, SCRIPT_DIR
 
 
+MRD_NOTE = ('Информационная система предоставляет данные пользователям в соответствии с их уровнем МРД. '
+            'Для этого реализована утилита эмуляции пользователей с помощью подмены метки сокета.')
+
+
 class Public:
     '''
     Публикация результатов в confluence
@@ -27,8 +31,9 @@ class Public:
                  storage=False,
                  kernel_check=False,
                  balance=False,
-                 info_sys=False):
-    
+                 info_sys=False,
+                 info_sys_orel=False):
+
         self.username = username
         self.token = token
         self.c_space = conf_space
@@ -41,6 +46,7 @@ class Public:
         self.kernel_check = kernel_check
         self.balance = balance
         self.info_sys = info_sys
+        self.info_sys_orel = info_sys_orel
 
 
         self.stands = {
@@ -171,7 +177,8 @@ class Public:
                                                         arm_num=self.stands[self.grade_stand]['grade'],
                                                         arm_proc=self.stands[self.grade_stand]['cpu'],
                                                         arm_mem=self.stands[self.grade_stand]['ram'],
-                                                        arm_st=self.stands[self.grade_stand]['storage'])
+                                                        arm_st=self.stands[self.grade_stand]['storage'],
+                                                        mrd_note='' if self.info_sys_orel else MRD_NOTE)
         elif self.balance:
             with open('{}/header_table_template_balance.html'.format(TEMPLATE_PATH), 'r') as file:
                 header_table_temp = file.read()
@@ -234,19 +241,22 @@ class Public:
                 rating_temp = template.read()
                 rating = rating_temp.format(r=str(round(rating_info_sys)))
 
-            szi_head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>СЗИ:</b></h2></p>'
-            szi_df = pd.DataFrame([{
-                'Хост': 'web1',
-                'Роль': 'веб сервер Apache2',
-                'Дополнительно включенные СЗИ': 'astra-secdel-control, astra-digsig-control, astra-ptrace-lock',
-            }])
-            szi_table = szi_df.to_html(index=False)
-
             df = build_info_sys_dataframe(report_data)
             info_sys_table = df.to_html(index=False)
 
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'
-            html_page = '\n'.join([header_table, rating, szi_head_row, szi_table, head_row, info_sys_table])
+
+            if self.info_sys_orel:
+                html_page = '\n'.join([header_table, rating, head_row, info_sys_table])
+            else:
+                szi_head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>СЗИ:</b></h2></p>'
+                szi_df = pd.DataFrame([{
+                    'Хост': 'web1',
+                    'Роль': 'веб сервер Apache2',
+                    'Дополнительно включенные СЗИ': 'astra-secdel-control, astra-digsig-control, astra-ptrace-lock',
+                }])
+                szi_table = szi_df.to_html(index=False)
+                html_page = '\n'.join([header_table, rating, szi_head_row, szi_table, head_row, info_sys_table])
         
         elif self.c_np.startswith('PSQL OLAP-hq'):
             head_row = '<p><h2 style="font-family: Century Gothic, sans-serif;"><b>Результаты:</b></h2></p>'

@@ -36,7 +36,8 @@ class UploaderZC(Public, PSQLStatistics):
                  storage=False,
                  kernel_check=False,
                  balance=False,
-                 info_sys=False):
+                 info_sys=False,
+                 info_sys_orel=False):
 
         self.FTI = folder_tree_id
         self.TCYC = test_cycle_name
@@ -56,6 +57,7 @@ class UploaderZC(Public, PSQLStatistics):
         self.kernel_check = kernel_check
         self.balance = balance
         self.info_sys = info_sys
+        self.info_sys_orel = info_sys_orel
 
     def test_cycle_status_changer(self, status):
 
@@ -71,7 +73,8 @@ class UploaderZC(Public, PSQLStatistics):
                             storage=self.storage,
                             kernel_check=self.kernel_check,
                             balance=self.balance,
-                            info_sys=self.info_sys
+                            info_sys=self.info_sys,
+                            info_sys_orel=self.info_sys_orel
                             )
             public.run_publish()
 

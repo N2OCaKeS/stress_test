@@ -1,3 +1,10 @@
+allta_app - v2.73.3
+* added audit-u test 20 hours timeout
+
+
+
+
+
 allta_app - v2.73.2
 * Fix psql info-sys-orel test
 

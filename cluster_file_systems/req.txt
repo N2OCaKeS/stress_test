@@ -1,5 +1,5 @@
 fabric
-atlassian-python-api
+atlassian-python-api<5
 pretty-html-table
 pandas<=2.2.3
 scikit-learn

@@ -4,5 +4,5 @@ requests
 matplotlib
 numpy
 pandas == 2.2.3
-atlassian-python-api
+atlassian-python-api<5
 allta==1.1.8

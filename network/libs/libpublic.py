@@ -155,7 +155,7 @@ def build_dhcp_dataframe(results_path: str = DHCP_RESULTS) -> pd.DataFrame:
 
 DHCP_RATING_POWER = 0.9998061238066913
 
-DHCP_RATING_SCALE = 100000
+DHCP_RATING_SCALE = 100000000
 
 
 def get_dhcp_total_rating(df: pd.DataFrame, power: float = DHCP_RATING_POWER) -> int:

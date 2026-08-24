@@ -399,6 +399,7 @@ EOF
                     password,
                     signal_get=sig_get,  # type: ignore[arg-type]
                     ready_signal=sig_set,  # type: ignore[arg-type]
+                    signal_timeout=timeout,
                 )
                 if not reboot_status:
                     print(f"Перезагрузка {host} не удалась.")
@@ -461,6 +462,7 @@ EOF
                                         task.get("signal get")
                                     ),  # type: ignore[arg-type]
                                     ready_signal=cast(Optional[str], task.get("signal set")),  # type: ignore[arg-type]
+                                    signal_timeout=timeout,
                                 )
 
                             t = threading.Thread(target=group_worker)
@@ -490,6 +492,7 @@ EOF
                                     task.get("signal get")
                                 ),  # type: ignore[arg-type]
                                 ready_signal=cast(Optional[str], task.get("signal set")),  # type: ignore[arg-type]
+                                signal_timeout=timeout,
                             )
                         )
                         threads.append(t)

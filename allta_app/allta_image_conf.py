@@ -114,7 +114,7 @@ tests_list = {'PostgreSQL':     ['postgresql', 'psql parsec', 'psql kernels', 'p
             'UnixBench':        ['unix', 'unix parsec'],
             'FreeIPA':          ['FreeIPA auth', 'FreeIPA c-users', "FreeIPA plugin"],
             'Parsec':           ['parsec impact-fs', 'parsec impact-fs aud-off', 'digsig-cdt', 'raw-spin-lock'],
-            'Apache':           ['apache-rp', 'apache-bp'],
+            'Apache':           ['apache-rp', 'apache-bp', 'apache-balance'],
             'Docker/Podman/LXC':['docker-wa'],
             'Qemu/KVM/Libvirt': ['steal time', 'steal time-sm', 'FIO', 'vUnixBench', 'vPingPong', 'FIO large'],
             'Network':          ['InitOnFree', 'DHCP']}
@@ -197,6 +197,7 @@ branches = {
     'DIGSIG. Check digsig time':'parsec',
     'Apache_ReverseProxy':'apache2',
     'Apache_BenchPam':'apache2',
+    'Apache_Balance':'apache2',
     'Steal time':'virt',
     'Steal time smolensk':'virt',
     'FIO benchmark':'virt',
@@ -274,6 +275,7 @@ tests = {
     'ram overflow':'RAM-overflow',
     'Apache_ReverseProxy':'apache-rp',
     'Apache_BenchPam':'apache-bp',
+    'Apache_Balance':'apache-balance',
     'Steal time':'steal time',
     'Steal time smolensk':'steal time-sm',
     'FIO benchmark':'FIO',
@@ -324,9 +326,10 @@ group_tests = ['_stand3 group', '_stand4 group', '_stand10 group', '_stand11 gro
 main_tests = ['XFS', 'EXT4', 'NTFS', 'EXT4 parsec', 'postgresql', 'postgresql-sm', 'psql parsec', 'auditd-p', 'auditd-u', 'tantor vanilla',
               'auditd-f', 'syslog-ng', 'unix', 'postgresql-aud-off', 'SD-overflow', 'RAM-overflow', 'XFS parsec', 'psql vanilla', 'syslog-ng-cwl',
               'psql kernels', 'tantor kernels', 'unix parsec', 'psql balance', 'FreeIPA auth', 'parsec impact-fs', 'parsec impact-fs aud-off',
-              'apache-rp', 'apache-bp', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 'steal time-sm', 'psql oom',
-              'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio', 'FreeIPA c-users', 'CEPH parsec', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP',
-              'FIO large', 'InitOnFree', 'DHCP', 'SegFault', 'PSQL OLAP-hq', 'FreeIPA plugin', 'XFS mem leak', 'raw-spin-lock', 'psql info-sys', 'psql info-sys-orel', 'astraevents', 'astraevents-sm']
+              'apache-rp', 'apache-bp', 'apache-balance', 'steal time', 'EXT2', 'EXT3', 'FAT', 'EXFAT', 'FIO', 'vUnixBench', 'vPingPong', 'OCFS2', 
+              'steal time-sm', 'psql oom', 'digsig-cdt', 'docker-wa', 'CEPH', 'CEPH fio', 'FreeIPA c-users', 'CEPH parsec', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP',
+              'FIO large', 'InitOnFree', 'DHCP', 'SegFault', 'PSQL OLAP-hq', 'FreeIPA plugin', 'XFS mem leak', 'raw-spin-lock', 'psql info-sys', 'psql info-sys-orel', 
+              'astraevents', 'astraevents-sm']
 
 
 
@@ -413,7 +416,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
             'smolensk_stand3':  ['EXT4 parsec', 'XFS parsec', 'unix parsec', 'FreeIPA plugin'],
             'orel_stand4':      ['postgresql-aud-off', 'postgresql'],
             'smolensk_stand4':  ['postgresql-sm', 'psql parsec', 'psql vanilla'],
-            'orel_stand10':     ['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'astraevents'],
+            'orel_stand10':     ['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'astraevents', 'apache-balance'],
             'smolensk_stand10': ['CEPH parsec', 'raw-spin-lock', 'astraevents-sm'],
             'orel_stand11':     ['docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large', 'DHCP'],
             'smolensk_stand11': ['parsec impact-fs', 'parsec impact-fs aud-off', 'psql oom'],
@@ -436,7 +439,7 @@ def changelog_testcycle_handler(rc: str, final=False) -> tuple:
 stands_groups = {
     'stand3_group': ['EXT2', 'EXT3', 'EXT4', 'FAT',  'EXFAT', 'XFS', 'EXT4 parsec', 'XFS parsec', 'FreeIPA auth', 'unix', 'unix parsec', 'FreeIPA c-users', 'FreeIPA plugin'],
     'stand4_group': ['postgresql-aud-off', 'postgresql', 'postgresql-sm', 'psql parsec', 'psql vanilla'],
-    'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec', 'raw-spin-lock', 'astraevents', 'astraevents-sm'],
+    'stand10_group':['NTFS', 'OCFS2', 'CEPH', 'CEPH fio', 'CEPH parsec', 'raw-spin-lock', 'astraevents', 'astraevents-sm', 'apache-balance'],
 
     'stand11_group':['parsec impact-fs', 'parsec impact-fs aud-off', 'docker-wa', 'FIO', 'vUnixBench', 'vPingPong', 'psql oom', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'FIO large', 'DHCP'],
     'stand12_group':['syslog-ng', 'auditd-f', 'auditd-p', 'auditd-u', 'digsig-cdt', 'apache-rp', 'apache-bp', 'InitOnFree', 'SegFault', 'PSQL OLAP-hq', 'XFS mem leak'],
@@ -446,7 +449,7 @@ stands_groups = {
     'stand14_group':['psql info-sys', 'psql info-sys-orel', 'psql balance', 'steal time', 'steal time-sm', 'psql kernels']
 }
 
-test_run_stands = [f'stand{x}' for x in ['3', '4', '10', '11', '12', '13', '14']] #range(3, 6, 1)]
+test_run_stands = [f'stand{x}' for x in ['3', '4', '10', '11', '12', '13', '14']] 
 test_run_modes = ['orel', 'smolensk']
 tests_case_zefir_key = {
     'postgresql':'BT-T7555',
@@ -477,6 +480,7 @@ tests_case_zefir_key = {
     'parsec impact-fs aud-off':'BT-T13489',
     'apache-rp':'BT-T13621',
     'apache-bp':'BT-T19797',
+    'apache-balance':'BT-T21001',
     'steal time':'BT-T13735',
     'EXT2':'BT-T7560',
     'EXT3':'BT-T7561',
@@ -546,7 +550,8 @@ testname_columns = {
                     'postgresql benchmark info-sys': 'PSQL_info-sys',
                     'postgresql benchmark info-sys-orel': 'PSQL_info-sys_orel',
                     'astraeventsd benchmark':'Astraevents',
-                    'astraeventsd benchmark smolensk':'Astraevents_sm'
+                    'astraeventsd benchmark smolensk':'Astraevents_sm',
+                    'Apache_Balance':'Apache_Balance'
                     }
 
 

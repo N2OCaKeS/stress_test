@@ -71,6 +71,7 @@ TEST_FLAGS: dict[str, str] = {
     # -apache (dest='APACHE')
     'apache-rp': '-apache rp',
     'apache-bp': '-apache apache_pam',
+    'apache-balance': '-apache apache_balance',
     
     # -lvirt (dest='LVIRT')
     'steal time': '-lvirt stealtime',

@@ -4,10 +4,10 @@ from datetime import datetime
 
 from libs.zefir import UploaderZC
 from libs.libapa import get_duration, info_list
-from libs.libtests import ApacheBenchPam
-from libs.libpublic_new import apache2_publisher
+from libs.libtests import ApacheBenchPam, ApacheBalance
+from libs.libpublic_new import apache2_publisher, apache_balance_publisher
 from apache_tests import ApacheBenchReverseProxy
-from apa_conf import ABP_RAM, ABP_VCPU, ABP_VM_COUNT, SCRIPT_DIR
+from apa_conf import ABP_RAM, ABP_VCPU, ABP_VM_COUNT, SCRIPT_DIR, A_BALANCE_VM_COUNT, A_BALANCE_VCPU, A_BALANCE_RAM
 
 
 parser = argparse.ArgumentParser()
@@ -110,7 +110,7 @@ if args.TESTNAME == 'apache_pam':
                         vcpu=ABP_VCPU,
                         ram=ABP_RAM,
                         kernel=str(args.TCYC).split('_')[2])
-    
+
     abp.prepare_vms()
     abp.create_test_env()
     abp.start_test()
@@ -128,6 +128,36 @@ if args.TESTNAME == 'apache_pam':
                                   total_rating=total_rating,
                                   lead_time=lead_time, 
                                   test_cycle_version=args.TCV)
+
+    uzs.upload_test_cycle_status(zefir_status='pass')
+
+elif args.TESTNAME == 'apache_balance':
+    time_start_script = datetime.now()
+
+    abp = ApacheBalance(rc_name=args.TCV,
+                        testdir=SCRIPT_DIR,
+                        vm_count=A_BALANCE_VM_COUNT,
+                        vcpu=A_BALANCE_VCPU,
+                        ram=A_BALANCE_RAM,
+                        kernel=str(args.TCYC).split('_')[2])
+
+    abp.prepare_vms()
+    abp.create_test_env()
+    abp.start_test()
+    total_rating = abp.preprocessing_results()
+    abp.vms_destroy()
+
+
+    lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
+    publisher = apache_balance_publisher(username=args.USER,
+                                         token=args.TOKEN,
+                                         space=args.SPACE,
+                                         parent_title=args.PPAGE,
+                                         title=args.NPAGE,
+                                         stand_number=args.STAND,
+                                         total_rating=total_rating,
+                                         lead_time=lead_time,
+                                         test_cycle_version=args.TCV)
 
     uzs.upload_test_cycle_status(zefir_status='pass')
 

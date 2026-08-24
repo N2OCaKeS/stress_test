@@ -16,8 +16,16 @@ CSV_RESULTS_FILE = f'{REPORT_PATH}/percentages.csv'
 PLOT_FILE = f'{REPORT_PATH}/values.tsv'
 AB_OUTPUT_FILE_PAM = f'{REPORT_PATH}/summary_pam.txt'
 AB_OUTPUT_FILE_NOPAM = f'{REPORT_PATH}/summary_no-pam.txt'
+AB_OUTPUT_FILE_BALANCE = f'{REPORT_PATH}/summary_balance.txt'
+# Compatibility names for older intermediate balance code. The VIP test uses
+# only AB_OUTPUT_FILE_BALANCE/BALANCE_RESULTS as the single benchmark result.
+AB_OUTPUT_FILE_BALANCE_LB1 = f'{REPORT_PATH}/summary_balance_testvm1.txt'
+AB_OUTPUT_FILE_BALANCE_LB2 = f'{REPORT_PATH}/summary_balance_testvm2.txt'
 NOPAM_RESULTS = f'{SCRIPT_DIR}/summary_no-pam.txt'
 PAM_RESULTS = f'{SCRIPT_DIR}/summary_pam.txt'
+BALANCE_RESULTS = f'{SCRIPT_DIR}/summary_balance.txt'
+BALANCE_RESULTS_LB1 = f'{SCRIPT_DIR}/summary_balance_testvm1.txt'
+BALANCE_RESULTS_LB2 = f'{SCRIPT_DIR}/summary_balance_testvm2.txt'
 REPORT_FILENAME = 'report.txt'
 INFO_FILENAME = 'ap_info.txt'
 VENV_PATH = '/home/u/python/Python-3.12.1/venv/bin/python3.12'
@@ -74,7 +82,21 @@ CLIENT_ADMIN_CREDS = {"password": CLIENT_ADMIN_PASS}
 MAX_CONCURRENCY = 201
 CONCURRENCY_STEP = 50
 
-MAX_REQUESTS = 2500
+MAX_REQUESTS = 200000
+
+# APACHE BALANCE
+A_BALANCE_VM_COUNT = 5
+A_BALANCE_VCPU = 16
+A_BALANCE_RAM = 8192
+A_BALANCE_LB_COUNT = 2
+A_BALANCE_BACKEND_COUNT = 2
+A_BALANCE_CLIENT_COUNT = 1
+A_BALANCE_VIP = "192.168.100.10"
+A_BALANCE_KEEPALIVED_VRID = 51
+A_BALANCE_KEEPALIVED_AUTH_PASS = "apachebalance"
+A_BALANCE_KEEPALIVED_LB1_PRIORITY = 150
+A_BALANCE_KEEPALIVED_LB2_PRIORITY = 100
+A_BALANCE_KEEPALIVED_CHECK_INTERVAL = 2
 
 
 # Base params
@@ -83,5 +105,3 @@ VM_OS_INFO_PATH = f"{SCRIPT_DIR}/vm_info"
 Path(VM_OS_INFO_PATH).mkdir(mode=0o777, parents=True, exist_ok=True)
 VM_INFONAME = f'{VM_OS_INFO_PATH}/av.txt'
 VM_KERNEL = f'{VM_OS_INFO_PATH}/kernel.txt'
-
-

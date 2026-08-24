@@ -2,6 +2,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import sleep, time
 import copy
+import re
 import requests
 
 from importlib.resources import files, as_file
@@ -149,18 +150,76 @@ class _VirtInstall:
             return None
 
     @staticmethod
-    def _get_ip(hostname, system_commands):
-        sleep(10)
-        try:
-            ip_output = system_commands.check_output_command(
-                f"virsh -c qemu:///system domifaddr {hostname} | awk '{{print $4}}' | tail -n 2"
-            ).strip()
-            ip = ip_output.split("/")[0] if ip_output else None
-            print(f"[{hostname}] IP: {ip}")
-            return hostname, ip
-        except Exception as e:
-            print(f"[{hostname}] IP ERROR: {e}")
-            return hostname, None
+    def _parse_ip(output):
+        for match in re.finditer(r"\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b", output or ""):
+            ip = match.group(0).split("/", 1)[0]
+            parts = ip.split(".")
+            if len(parts) != 4:
+                continue
+            try:
+                if all(0 <= int(part) <= 255 for part in parts) and ip != "127.0.0.1":
+                    return ip
+            except ValueError:
+                continue
+        return None
+
+    @classmethod
+    def _get_ip(cls, hostname, system_commands, attempts=3, interval_sec=10):
+        last_error = None
+        commands = (
+            f"virsh -c qemu:///system domifaddr {hostname} --source lease",
+            f"virsh -c qemu:///system domifaddr {hostname} --source agent",
+            f"virsh -c qemu:///system domifaddr {hostname} --source arp",
+            f"virsh -c qemu:///system domifaddr {hostname}",
+        )
+
+        for attempt in range(1, attempts + 1):
+            for command in commands:
+                try:
+                    ip_output = system_commands.check_output_command(command).strip()
+                    ip = cls._parse_ip(ip_output)
+                    if ip:
+                        print(f"[{hostname}] IP: {ip}")
+                        return hostname, ip
+                    if ip_output:
+                        last_error = ip_output
+                except Exception as e:
+                    last_error = str(e)
+            if attempt < attempts:
+                print(f"[{hostname}] IP не получен, попытка {attempt}/{attempts}. Повтор через {interval_sec} сек")
+                sleep(interval_sec)
+
+        print(f"[{hostname}] IP ERROR: IP не получен за {attempts} попытки. Последняя ошибка: {last_error}")
+        return hostname, None
+
+    def _refresh_ips(self, batch_size=4):
+        hostnames = list(self.vms_date.keys())
+        for start in range(0, len(hostnames), batch_size):
+            batch = hostnames[start:start + batch_size]
+            with ThreadPoolExecutor(max_workers=len(batch)) as executor:
+                ip_futures = [
+                    executor.submit(self._get_ip, hostname, system_commands)
+                    for hostname in batch
+                ]
+                for future in as_completed(ip_futures):
+                    hostname, ip = future.result()
+                    self.vms_date[hostname]["ip_bridge"] = ip
+
+    def _hosts_without_ip(self):
+        return [
+            hostname
+            for hostname, info in self.vms_date.items()
+            if not self._parse_ip(str(info.get("ip_bridge", "")))
+        ]
+
+    def _ensure_all_hosts_have_ip(self):
+        missing = self._hosts_without_ip()
+        if missing:
+            raise RuntimeError(
+                "Не удалось получить IP адреса для ВМ: "
+                + ", ".join(missing)
+                + ". SSH prepare не запущен для ВМ без IP."
+            )
 
     def _set_ip_bridge(self, vms_date):
         LibvirtManager.Vm.bridge(
@@ -302,15 +361,8 @@ class _VirtInstall:
         print("Ждём запуска всех ВМ (90 сек)...")
         sleep(90)
         print("\n==> Получение IP адресов...")
-
-        with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
-            ip_futures = [
-                executor.submit(self._get_ip, hostname, system_commands)
-                for hostname in self.vms_date.keys()
-            ]
-            for future in as_completed(ip_futures):
-                hostname, ip = future.result()
-                self.vms_date[hostname]["ip_bridge"] = ip
+        self._refresh_ips()
+        self._ensure_all_hosts_have_ip()
         system_commands.cmd(
             f"rm {vm_path}/{self.box}.qcow2 {vm_path}/{self.box}.tar.gz"
         )
@@ -328,6 +380,7 @@ class _VirtInstall:
             )
 
             def start_prepare_vm_station(cmd_template: Optional[str] = None, reboot: Optional[int] = None):
+                self._ensure_all_hosts_have_ip()
                 with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
                     futures = []
                     for host in self.vms_date:
@@ -384,6 +437,9 @@ class _VirtInstall:
                         f"virsh --connect qemu:///system start {vm}"
                     )
                 sleep(60)
+                print("\n==> Получение IP адресов...")
+                self._refresh_ips()
+                self._ensure_all_hosts_have_ip()
                 print("\n\n\nСтавим hostname\n\n\n")
                 start_prepare_vm_station(hostname_cmd)
                 print("\n\n\nAtra Update\n\n\n")
@@ -444,6 +500,7 @@ class _VirtInstall:
                         # если ключа нет — возвращаем его же в фигурных скобках
                         return "{" + key + "}"
 
+                self._ensure_all_hosts_have_ip()
                 with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
                     futures = []
                     for host in self.vms_date:
@@ -559,15 +616,8 @@ class _VirtInstall:
                     print(f"Изменяем размер диска для следующих ВМ: {vm_str}")
                     self._resize_disk(vms_date=vms_dates_disk)
                     print("\n==> Повторное получение IP адресов...")
-
-                    with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
-                        ip_futures = [
-                            executor.submit(self._get_ip, hostname, system_commands)
-                            for hostname in self.vms_date.keys()
-                        ]
-                        for future in as_completed(ip_futures):
-                            hostname, ip = future.result()
-                            self.vms_date[hostname]["ip_bridge"] = ip
+                    self._refresh_ips()
+                    self._ensure_all_hosts_have_ip()
 
                 # Bridge Ip
                 if bridge:
@@ -632,15 +682,8 @@ class _VirtInstall:
                     print(f"Изменяем размер диска для следующих ВМ: {vm_str}")
                     self._resize_disk(vms_date=vms_dates_disk)
                     print("\n==> Повторное получение IP адресов...")
-
-                    with ThreadPoolExecutor(max_workers=len(self.vms_date)) as executor:
-                        ip_futures = [
-                            executor.submit(self._get_ip, hostname, system_commands)
-                            for hostname in self.vms_date.keys()
-                        ]
-                        for future in as_completed(ip_futures):
-                            hostname, ip = future.result()
-                            self.vms_date[hostname]["ip_bridge"] = ip
+                    self._refresh_ips()
+                    self._ensure_all_hosts_have_ip()
 
                 # Bridge Ip
                 if bridge:

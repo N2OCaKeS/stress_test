@@ -13,7 +13,7 @@ docutils==0.21.2
 idna==3.10
 imagesize==1.4.1
 iniconfig==2.1.0
-itcase-sphinx-theme==0.3.1
+furo==2024.8.6
 Jinja2==3.1.6
 lazy==1.6
 MarkupSafe==3.0.2

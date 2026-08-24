@@ -3,7 +3,7 @@ from allta import SystemCommands
 
 from new_balance import bl_lib
 
-TEST_TYPE_CHOICES = ["balance", "infosys", "infosys-orel", "onfosys-orel"]
+TEST_TYPE_CHOICES = ["balance", "infosys", "infosys-orel"]
 TEST_TYPE_MAP = {
     "balance": "balance",
     "infosys": "info-sys",
@@ -22,16 +22,16 @@ class Description(argparse.ArgumentParser):
 
 parser = Description(description="Запуск баланса с заданными параметрами")
 
-parser.add_argument('--bv', '--build-version', type=str, required=True,
+parser.add_argument('-bv', '--bv', '--build-version', dest='build_version', type=str, required=True,
                     help='Версия билда (например: 1.7.7.6)')
 
-parser.add_argument('--sec', '--security-mode', type=str, required=True,
+parser.add_argument('-sec', '--sec', '--security-mode', type=str, required=True,
                     choices=['o', 's'],
                     help='Режим защищенности: "o" — Орёл, "s" — Смоленск')
 
-parser.add_argument('--tt', '--test-type', type=str, required=True,
+parser.add_argument('-tt', '--tt', '--test-type', type=str, required=True,
                     choices=TEST_TYPE_CHOICES,
-                    help='Тип теста: balance, infosys, infosys-orel, onfosys-orel')
+                    help='Тип теста: balance, infosys, infosys-orel')
 
 args = parser.parse_args()
 

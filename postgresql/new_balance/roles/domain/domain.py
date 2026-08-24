@@ -210,7 +210,7 @@ EOF"""
                 vms_groups=VMS_GROUPS,
                 username=USERNAME,
                 password=PASSWORD,
-                timeout=60,
+                timeout=120 if type_test in info_sys_types else 60,
             )
 
         tasks = {

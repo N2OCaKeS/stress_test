@@ -113,10 +113,16 @@ class UploaderZC(Public, ApacheStatistics):
                         err.write(f'jira_status = {jira}\nlife_status = {life}')
                         err.write('---------' * 25)
                         err.write('\n\n')
+                        print('start:\n')
+                        print(str(ctime()) + '\n')
+                        print(f'jira_status = {jira}\nlife_status = {life}')
+                        print('---------' * 25)
+                        print('\n\n')
                     except_counter += 1
                     sleep(requests_frequency)
                     if except_counter == wait_time * 60 / requests_frequency:
                         err.write(f'Except count = {except_counter}, aborted')
+                        print(f'Except count = {except_counter}, aborted')
                         status += 1
             except Exception as e:
                 with open('JIRA_ERROR.log', 'a') as err:
@@ -125,10 +131,16 @@ class UploaderZC(Public, ApacheStatistics):
                     err.write(f'Type: {type(e).__name__}, Message: {str(e)}')
                     err.write('---------' * 25)
                     err.write('\n\n')
+                    print('start:\n')
+                    print(str(ctime()) + '\n')
+                    print(f'Type: {type(e).__name__}, Message: {str(e)}')
+                    print('---------' * 25)
+                    print('\n\n')
                     except_counter += 1
                     sleep(requests_frequency)
                     if except_counter == wait_time * 60 / requests_frequency:
                         err.write(f'Except count = {except_counter}, aborted')
+                        print(f'Except count = {except_counter}, aborted')
                         status += 1
 
 

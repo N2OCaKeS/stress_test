@@ -930,7 +930,7 @@ def db_kernel_changer(cpu_count, database, position=None):
 
     if position == 'begin':
         create_remote_file('/home/u/git/stress_test/allta_app/starter.sh', '/home/u/starter.sh')
-        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE} kernel')
+        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {__git_token} {dates_name} {args.RELEASE} kernel')
     else: 
         if database == 'tantor':
             send_remote_command('sudo systemctl restart tantor-se-server-15.service')
@@ -1031,13 +1031,13 @@ def remote_test_run():
         db_kernel_changer(24, args.DB_KERNELS)
         db_kernel_changer(32, args.DB_KERNELS, position='end')
     elif args.PSQL_BALANCE:
-        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE} balance') #{balance_host_release}')
+        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {__git_token} {dates_name} {args.RELEASE} balance') #{balance_host_release}')
     elif args.PSQL_OOM:
-        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE} oom')
+        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {__git_token} {dates_name} {args.RELEASE} oom')
     elif args.FREEIPA:
         freeipa_authentication_test()
     else:    
-        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {dates_name} {args.RELEASE}')
+        send_remote_command(f'sudo bash /home/u/starter.sh {branch} {__git_token} {dates_name} {args.RELEASE}')
         write_status(done)
 
 

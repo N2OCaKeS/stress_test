@@ -23,7 +23,7 @@ FAIL_RATE_WEIGHT = 0.2
 DEFAULT_POWER = 0.786622
 
 
-def get_total_rating_info_sys(results: dict, power: float = DEFAULT_POWER) -> dict:
+def get_total_rating_info_sys(results: dict, power: float = DEFAULT_POWER):
     """Считает итоговый рейтинг по результатам нагрузочного теста info-sys.
 
     Критерии по оси числа отправленных запросов (requests) внутри уровня:
@@ -55,8 +55,8 @@ def get_total_rating_info_sys(results: dict, power: float = DEFAULT_POWER) -> di
         "fail_rate", iterations=requests, values=fail_rate,
         weight=FAIL_RATE_WEIGHT, negative=True, bounds=FAIL_RATE_BOUNDS_PCT,
     )
-
-    return model.total_rating(power=power)
+    result = model.total_rating(power=power)
+    return result.total
 
 
 if __name__ == "__main__":

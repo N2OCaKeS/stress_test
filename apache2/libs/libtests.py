@@ -1056,4 +1056,4 @@ vrrp_instance apache_balance_vip {{
         result = model.total_rating(power=fixed_power)
         total_rating = result["total_rating"] if isinstance(result, dict) else result[0]
 
-        return round(total_rating / 100)
+        return round(total_rating / 1000)

@@ -79,7 +79,7 @@ if [[ "$testenv" == 'on' ]]; then
 else
     if [ "$5" == "kernel" ]; then
         python3 run.py -n "$3" -kn "$5"
-    elif [ "$4" == "balance" ]; then
+    elif [ "$5" == "balance" ]; then
         python3 run.py -n "$3" -bl "$5"
     elif [ "$5" == "oom" ]; then
         python3 run.py -n "$3" -oom "$5"

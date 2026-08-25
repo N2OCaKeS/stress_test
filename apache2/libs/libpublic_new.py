@@ -188,7 +188,7 @@ def apache_balance_publisher(
     )
 
     builder.add_heading(text="Результаты", level=2)
-    builder.add_heading(text=f"Total Rating: {total_rating}", level=3)
+    builder.add_heading(text=f"Total Rating: {total_rating}", level=2)
 
     records = []
     with open(BALANCE_RESULTS, encoding="utf-8") as result_file:

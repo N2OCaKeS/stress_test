@@ -710,10 +710,15 @@ vrrp_instance apache_balance_vip {{
                     "signal set": f"{prefix}_sysctl",
                     "signal get": f"{prefix}_keepalived_dir",
                 },
-                "keepalived_conf": {
-                    "command": f"printf '%b' {keepalived_conf.replace('__INTERFACE__', 'eth0')!r} | sudo tee /etc/keepalived/keepalived.conf",
-                    "signal set": f"{prefix}_keepalived_conf",
+                "keepalived_interface": {
+                    "command": "ip -o -4 route get 192.168.100.1 | sed -n 's/.* dev \\([^ ]*\\).*/\\1/p' | sudo tee /tmp/apache_balance_keepalived_interface",
+                    "signal set": f"{prefix}_keepalived_interface",
                     "signal get": f"{prefix}_sysctl",
+                },
+                "keepalived_conf": {
+                    "command": f"interface=$(cat /tmp/apache_balance_keepalived_interface); printf '%b' {keepalived_conf!r} | sed \"s/__INTERFACE__/$interface/g\" | sudo tee /etc/keepalived/keepalived.conf",
+                    "signal set": f"{prefix}_keepalived_conf",
+                    "signal get": f"{prefix}_keepalived_interface",
                 },
                 "keepalived_enable": {
                     "command": "sudo systemctl enable keepalived.service",
@@ -842,7 +847,7 @@ vrrp_instance apache_balance_vip {{
 
 vrrp_instance apache_balance_vip {{
     state MASTER
-    interface eth0
+    interface __INTERFACE__
     virtual_router_id {A_BALANCE_KEEPALIVED_VRID}
     priority {A_BALANCE_KEEPALIVED_LB1_PRIORITY}
     advert_int 1
@@ -870,7 +875,7 @@ vrrp_instance apache_balance_vip {{
 
 vrrp_instance apache_balance_vip {{
     state BACKUP
-    interface eth0
+    interface __INTERFACE__
     virtual_router_id {A_BALANCE_KEEPALIVED_VRID}
     priority {A_BALANCE_KEEPALIVED_LB2_PRIORITY}
     advert_int 1
@@ -893,9 +898,14 @@ vrrp_instance apache_balance_vip {{
         print ("\n\n\nПерезаписываем keepalived после старта изолированной сети\n\n\n")
         keepalived_restart = {
             "testvm1": {
+                "keepalived_interface": {
+                    "command": "ip -o -4 route get 192.168.100.1 | sed -n 's/.* dev \\([^ ]*\\).*/\\1/p' | sudo tee /tmp/apache_balance_keepalived_interface",
+                    "signal set": "lb1_isolated_keepalived_interface",
+                },
                 "keepalived_conf": {
-                    "command": f"printf '%b' {keepalived_master_conf!r} | sudo tee /etc/keepalived/keepalived.conf",
+                    "command": f"interface=$(cat /tmp/apache_balance_keepalived_interface); printf '%b' {keepalived_master_conf!r} | sed \"s/__INTERFACE__/$interface/g\" | sudo tee /etc/keepalived/keepalived.conf",
                     "signal set": "lb1_isolated_keepalived_conf",
+                    "signal get": "lb1_isolated_keepalived_interface",
                 },
                 "keepalived_restart": {
                     "command": "sudo systemctl restart keepalived.service",
@@ -904,9 +914,14 @@ vrrp_instance apache_balance_vip {{
                 },
             },
             "testvm2": {
+                "keepalived_interface": {
+                    "command": "ip -o -4 route get 192.168.100.1 | sed -n 's/.* dev \\([^ ]*\\).*/\\1/p' | sudo tee /tmp/apache_balance_keepalived_interface",
+                    "signal set": "lb2_isolated_keepalived_interface",
+                },
                 "keepalived_conf": {
-                    "command": f"printf '%b' {keepalived_backup_conf!r} | sudo tee /etc/keepalived/keepalived.conf",
+                    "command": f"interface=$(cat /tmp/apache_balance_keepalived_interface); printf '%b' {keepalived_backup_conf!r} | sed \"s/__INTERFACE__/$interface/g\" | sudo tee /etc/keepalived/keepalived.conf",
                     "signal set": "lb2_isolated_keepalived_conf",
+                    "signal get": "lb2_isolated_keepalived_interface",
                 },
                 "keepalived_restart": {
                     "command": "sudo systemctl restart keepalived.service",

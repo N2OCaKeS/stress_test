@@ -31,18 +31,5 @@ except Exception as e:
     print(e)
     print(attention_line, '\n')
 
-#Скачиваем конфиг
-def download_conf():
-    ftp = FTP('10.177.5.111')
-    ftp.login()
-    ftp.cwd('stress_reports/stress_test_config')
-    with open(conf_file, 'wb') as wf:
-        ftp.retrbinary('RETR gitclone.conf', wf.write)
-    ftp.quit()
-    with open(conf_file, 'r') as r:
-        conf = r.read()
-    return conf
-
 #Клонируем гит
-#cmd(download_conf())
 cmd(conf)

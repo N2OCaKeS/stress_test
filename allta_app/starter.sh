@@ -8,6 +8,7 @@ set -vx
 localhost=`hostname -I | awk '{print $1}'`
 current_kernel=`uname -r`
 testenv=`cat /home/u/testenv_*.conf`
+git_directory="stress_test"
 
 cleanup_kernel() {
 installed_kernels=$(dpkg --list | grep 'linux-image-[0-9]' | awk '{print $2}')
@@ -42,31 +43,21 @@ sudo apt autoremove -y
 
 echo $localhost
 echo git bench = $1
-echo git bench = $2
-
-git_directory="stress_test"
-#dates_file="/home/u/dates.txt"
-#args=`cat "$dates_file"`
 
 #Удаление неиспользуемых ядер
 cleanup_kernel
-
-# export DEBIAN_FRONTEND=noninteractive
 
 #Предустановка пакетов
 dpkg -s sysstat &> /dev/null || sudo apt-get install sysstat -y
 
 #Клонируем репозиторий, удаляем старый, если есть
 cd /home/u/git
-python3 git_clone.py
-
-#Подключаем нужную ветку с проектом
+sudo rm -r /home/u/git/stress_test
+git -c http.extraHeader="Authorization: $2" clone --branch "$1" --single-branch https://git.astralinux.ru/scm/qa/stress_test.git
 cd "$git_directory"
-git checkout $1
-
-#Настраиваем окружение и запускаем тест
 cd $1
-#sed -i '2i export DEBIAN_FRONTEND=noninteractive' prepare.sh
+
+
 echo sudo mkdir /etc/docker >> prepare.sh
 cat << 'EOF' >> prepare.sh
 cat << INTERNAL_EOF > /etc/docker/daemon.json
@@ -80,19 +71,19 @@ echo sudo systemctl restart docker >> prepare.sh
 echo curl http://10.177.103.10:18181/rest/api/dashboard/$localhost/full >> prepare.sh
 echo sed -i \'s/.*cgroup_controllers.*/cgroup_controllers = [ \"cpu\", \"devices\", \"memory\", \"blkio\", \"cpuacct\" ]/g\' /etc/libvirt/qemu.conf >> prepare.sh
 echo sudo systemctl restart libvirtd >> prepare.sh
-bash prepare.sh $1 $3 $5
+bash prepare.sh $1 $4 $6
 
 if [[ "$testenv" == 'on' ]]; then
     echo 'Подготовка тестового окружения завершена'
     exit 0
 else
-    if [ "$4" == "kernel" ]; then
-        python3 run.py -n "$2" -kn "$4"
+    if [ "$5" == "kernel" ]; then
+        python3 run.py -n "$3" -kn "$5"
     elif [ "$4" == "balance" ]; then
-        python3 run.py -n "$2" -bl "$4"
-    elif [ "$4" == "oom" ]; then
-        python3 run.py -n "$2" -oom "$4"
+        python3 run.py -n "$3" -bl "$5"
+    elif [ "$5" == "oom" ]; then
+        python3 run.py -n "$3" -oom "$5"
     else
-        python3 run.py -n "$2"
+        python3 run.py -n "$3"
     fi
 fi

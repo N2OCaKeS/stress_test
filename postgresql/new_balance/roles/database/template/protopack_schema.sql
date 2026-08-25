@@ -4,6 +4,8 @@
 CREATE SCHEMA IF NOT EXISTS main;
 CREATE SCHEMA IF NOT EXISTS other;
 
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+
 CREATE TABLE IF NOT EXISTS main.build_info (
     build text PRIMARY KEY,
     build_type text[],

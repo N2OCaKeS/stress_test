@@ -549,9 +549,17 @@ EOF"""
                 },
                 "add PAMName to unit": {
                     "command": (
+                        f"if grep -q '^1\\.7' /etc/astra_version; then "
+                        f"sudo sed -i '/^PAMName=postgresql-contrprimer$/d' "
+                        f"/etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service; "
+                        f"grep -q '^CapabilitiesParsec=' /etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service || "
+                        f"sudo sed -i '/^\\[Service\\]/a CapabilitiesParsec=PARSEC_CAP_PRIV_SOCK' "
+                        f"/etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service; "
+                        f"else "
                         f"grep -q '^PAMName=' /etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service || "
                         f"sudo sed -i '/^Type=forking/a PAMName=postgresql-contrprimer' "
-                        f"/etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service"
+                        f"/etc/systemd/system/postgresql@{VERSION_PG}-contrprimer.service; "
+                        f"fi"
                     ),
                     "signal set": "pamname added",
                     "signal get": ["pam service created"],

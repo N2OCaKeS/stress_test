@@ -118,6 +118,6 @@ PGPOOL_HOSTNAME = f"pgpool.{DOMAIN}"
 PGPOOL_CONFIG_PATH = "/etc/pgpool2/pgpool.conf"
 PGPOOL_PCP_USER = "pgpool"
 PGPOOL_PASSWORD = "1"
-PGPOOL_PASSWORD_MD5 = hashlib.md5((PGPOOL_PASSWORD).encode()).hexdigest()
+PGPOOL_PASSWORD_MD5 = hashlib.md5((PGPOOL_PASSWORD + PGPOOL_PCP_USER).encode()).hexdigest()
 
 PROVISION_PATH = "./provision/provision.sh"

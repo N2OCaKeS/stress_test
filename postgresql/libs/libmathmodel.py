@@ -56,7 +56,15 @@ def get_total_rating_info_sys(results: dict, power: float = DEFAULT_POWER):
         weight=FAIL_RATE_WEIGHT, negative=True, bounds=FAIL_RATE_BOUNDS_PCT,
     )
     result = model.total_rating(power=power)
-    return result.total
+
+    if isinstance(result, dict):
+        total_rating = result["total_rating"]
+    elif hasattr(result, "total"):
+        total_rating = result.total
+    else:
+        total_rating = result
+
+    return {"total_rating": int(round(float(total_rating)))}
 
 
 if __name__ == "__main__":
@@ -64,7 +72,4 @@ if __name__ == "__main__":
         data = json.load(file)
 
     result = get_total_rating_info_sys(data)
-    print(f"total_rating: {result['total_rating']:.4f}")
-    for name, criterion in result["criteria"].items():
-        print(f"  {name}: contribution={criterion['contribution']:.4f}, "
-              f"odds={criterion['odds']:.4f}")
+    print(f"total_rating: {result['total_rating']}")

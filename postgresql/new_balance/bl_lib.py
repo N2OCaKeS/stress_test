@@ -56,7 +56,7 @@ def balance(rc, sec_mode="s", type_test="balance"):
                 # дефолтного корневого диска для database1-3 на это не хватает
                 build_vms_dates = copy.deepcopy(VMS_DATES)
                 for db_vm in ("database1", "database2", "database3"):
-                    build_vms_dates[db_vm]["disk"] = "40"
+                    build_vms_dates[db_vm]["disk"] = "100"
 
             if VERSION_OS == "1.7":
                 new_vms_data = provider.build(box=f"1.7.5.{sec_mode}", rc=rc, vms=VMS, vms_dates=build_vms_dates)

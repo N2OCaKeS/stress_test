@@ -33,9 +33,7 @@ from os import (path,
                 linesep,
                 killpg,
                 getpgid,
-                getppid,
-                rename,
-                getpid)
+                rename)
 from multiprocessing import Process
 from tempfile import mkstemp
 from paramiko import ssh_exception
@@ -446,365 +444,113 @@ class StandWorker:
         self.thread: Optional[threading.Thread] = None
         self.running = False
         self.current_process: Optional[subprocess.Popen] = None
-        self.current_task_id: Optional[str] = None
         self.queue_file = Path(f'./conf/task_queues/queue_stand{stand_num}.json')
-        self.log_file = Path(f'front_stand{stand_num}.log')
-        self.worker_pid = getpid()
-        self.start_time = None
-        self.task_start_time = None
-        self.loop_iteration = 0
-
-    def _log(self, message: str, level: str = "INFO"):
-        """Универсальная функция логирования в front_stand.log"""
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        with open(self.log_file, 'a') as log:
-            log.write(f"[{timestamp}] [{level}] [PID:{self.worker_pid}] {message}\n")
-            log.flush()
-    
-    def _log_section(self, title: str, char: str = "=", length: int = 80):
-        """Логирование разделителя"""
-        with open(self.log_file, 'a') as log:
-            log.write(f"\n{char * length}\n")
-            log.write(f"{title}\n")
-            log.write(f"{char * length}\n")
-            log.flush()
-    
-    def _log_process_state(self, prefix: str = ""):
-        """Логирование состояния процессов для стенда"""
-        try:
-            with open(self.log_file, 'a') as log:
-                log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DEBUG] {prefix} Process state:\n")
-                
-                # Ищем все процессы для этого стенда
-                result = subprocess.run(
-                    f"ps -ef --forest | grep -E 'allta_back|backup_image' | grep stand{self.stand_num} | grep -v grep || true",
-                    shell=True,
-                    text=True,
-                    capture_output=True
-                )
-                
-                if result.stdout.strip():
-                    log.write(f"[DEBUG] Found processes for stand{self.stand_num}:\n")
-                    for line in result.stdout.strip().split('\n'):
-                        log.write(f"  {line}\n")
-                else:
-                    log.write(f"[DEBUG] No processes found for stand{self.stand_num}\n")
-                
-                # Информация о текущем процессе воркера
-                log.write(f"[DEBUG] Worker PID: {self.worker_pid}\n")
-                if self.current_process:
-                    log.write(f"[DEBUG] Current subprocess PID: {self.current_process.pid}\n")
-                    try:
-                        pgid = getpgid(self.current_process.pid)
-                        log.write(f"[DEBUG] Process group ID: {pgid}\n")
-                        status = subprocess.run(
-                            f"ps -p {self.current_process.pid} -o pid,pgid,stat,comm --no-headers",
-                            shell=True,
-                            text=True,
-                            capture_output=True
-                        )
-                        if status.stdout.strip():
-                            log.write(f"[DEBUG] Process status: {status.stdout.strip()}\n")
-                    except ProcessLookupError:
-                        log.write(f"[DEBUG] Process {self.current_process.pid} no longer exists\n")
-                    except Exception as e:
-                        log.write(f"[DEBUG] Failed to get process info: {e}\n")
-                
-                log.flush()
-        except Exception as e:
-            self._log(f"Failed to log process state: {e}", "ERROR")
-    
-    def _log_system_resources(self, prefix: str = ""):
-        """Логирование системных ресурсов"""
-        try:
-            import psutil
-            mem = psutil.virtual_memory()
-            disk = psutil.disk_usage('/')
-            
-            with open(self.log_file, 'a') as log:
-                log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DEBUG] {prefix} System resources:\n")
-                log.write(f"  Memory: {mem.used/1024**3:.1f}GB / {mem.total/1024**3:.1f}GB ({mem.percent}%)\n")
-                log.write(f"  Disk: {disk.used/1024**3:.1f}GB / {disk.total/1024**3:.1f}GB ({disk.percent}%)\n")
-                log.flush()
-        except Exception as e:
-            self._log(f"Failed to log system resources: {e}", "ERROR")
-    
-    def _log_signal_received(self, signum: int):
-        """Логирование получения сигнала"""
-        import signal
-        signal_names = {
-            signal.SIGINT: 'SIGINT (2)',
-            signal.SIGTERM: 'SIGTERM (15)',
-            signal.SIGKILL: 'SIGKILL (9)',
-            signal.SIGHUP: 'SIGHUP (1)',
-            signal.SIGQUIT: 'SIGQUIT (3)',
-            signal.SIGABRT: 'SIGABRT (6)',
-        }
-        sig_name = signal_names.get(signum, f'UNKNOWN({signum})')
-        
-        self._log_section(f"SIGNAL RECEIVED: {sig_name}", "!")
-        self._log(f"Signal received at {datetime.now().isoformat()}", "WARNING")
-        self._log(f"Current task: {self.current_task_id}", "WARNING")
-        self._log(f"Current process PID: {self.current_process.pid if self.current_process else 'None'}", "WARNING")
-        
-        # Логируем стек вызовов
-        import traceback
-        with open(self.log_file, 'a') as log:
-            log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARNING] Stack trace:\n")
-            for line in traceback.format_stack():
-                log.write(f"  {line}")
-            log.flush()
-        
-        self._log_process_state("ON SIGNAL")
     
     def start(self) -> bool:
         """Запустить воркера"""
-        self._log_section(f"STARTING WORKER FOR STAND {self.stand_num}")
-        self._log(f"Worker PID: {self.worker_pid}")
-        self._log(f"Parent PID: {getppid()}")
-        self._log(f"Queue file: {self.queue_file}")
-        
-        # Логируем состояние перед запуском
-        self._log_process_state("BEFORE START")
-        self._log_system_resources("BEFORE START")
-
         if self.running and self.thread and self.thread.is_alive():
-            self._log("Worker already running, ignoring start request", "WARNING")
             return False
         
         self.running = True
         self.thread = threading.Thread(target=self._worker_loop, daemon=True)
         self.thread.start()
-
-        self._log(f"Worker started successfully (thread: {self.thread.name})")
         return True
     
     def stop(self):
         """Остановить воркера"""
-        self._log_section(f"STOPPING WORKER FOR STAND {self.stand_num}", "!")
-        self._log(f"Stop called at {datetime.now().isoformat()}")
-        self._log(f"Current task: {self.current_task_id}")
-        self._log(f"Worker uptime: {datetime.now() - self.start_time if self.start_time else 'N/A'}")
-
         self.running = False
-
-        self._log_process_state("BEFORE STOP")
-        self._log_system_resources("BEFORE STOP")
         
         # Останавливаем текущий процесс
         if self.current_process:
-            self._log(f"Stopping current process: PID {self.current_process.pid}")
-            
             try:
-                pgid = getpgid(self.current_process.pid)
-                self._log(f"Process group ID: {pgid}")
-                self._log(f"Sending SIGTERM to process group {pgid}")
-                
-                # Логируем дерево процессов
-                result = subprocess.run(
-                    f"pstree -p {self.current_process.pid} 2>/dev/null || true",
-                    shell=True,
-                    text=True,
-                    capture_output=True
-                )
-                if result.stdout:
-                    with open(self.log_file, 'a') as log:
-                        log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [DEBUG] Process tree:\n")
-                        log.write(f"{result.stdout}\n")
-                        log.flush()
-                
-                killpg(pgid, signal.SIGTERM)
-                self._log(f"SIGTERM sent to process group {pgid}")
-                
-                # Ждем 5 секунд
-                time.sleep(5)
-                
-                # Проверяем, завершился ли процесс
-                if self.current_process.poll() is None:
-                    self._log(f"Process still running, sending SIGKILL")
-                    killpg(pgid, signal.SIGKILL)
-                    self._log(f"SIGKILL sent to process group {pgid}")
-
-            except ProcessLookupError:
-                self._log(f"Process {self.current_process.pid} already terminated", "WARNING")
-                self.current_process = None
-                return
-            except Exception as e:
-                self._log(f"Failed to stop process: {e}", "ERROR")
-            finally:
-                self.current_process = None
-                self._log("Process reference cleared")
+                # Отправляем SIGTERM всей группе процессов
+                killpg(getpgid(self.current_process.pid), signal.SIGTERM)
+            except:
+                pass
+            self.current_process = None
         
         # Обновляем статус в файле
         if self.queue_file.exists():
-            try:
-                with open(self.queue_file, 'r') as f:
-                    queue_data = json.load(f)
-                
-                self._log(f"Current queue status: {queue_data.get('status', 'unknown')}")
-                queue_data['status'] = 'stopped'
-                
-                with open(self.queue_file, 'w') as f:
-                    json.dump(queue_data, f, indent=2)
-                self._log("Queue status updated to 'stopped'")
-                
-            except Exception as e:
-                self._log(f"Failed to update queue status: {e}", "ERROR")
-        
-        # Логируем состояние после остановки
-        self._log_process_state("AFTER STOP")
-        self._log("Worker stopped successfully")
-        self._log_section("WORKER STOPPED", "!")
+            with open(self.queue_file, 'r') as f:
+                queue_data = json.load(f)
+            
+            queue_data['status'] = 'stopped'
+            
+            with open(self.queue_file, 'w') as f:
+                json.dump(queue_data, f, indent=2)
     
     def is_alive(self) -> bool:
         """Проверить, работает ли воркер"""
-        alive = self.running and self.thread and self.thread.is_alive()
-        self._log(f"is_alive check: running={self.running}, thread_alive={self.thread and self.thread.is_alive()}", "DEBUG")
-        return alive
+        return self.running and self.thread and self.thread.is_alive()
     
     def _worker_loop(self):
-        """Основной цикл воркера с подробным логированием"""
-        self._log_section("WORKER LOOP STARTED")
-        self._log(f"Worker loop started at {datetime.now().isoformat()}")
-        
-        # Регистрируем обработчики сигналов для логирования
-        def signal_handler(signum, frame):
-            self._log_signal_received(signum)
-            if signum in (signal.SIGTERM, signal.SIGINT):
-                self.running = False
-        
-        signal.signal(signal.SIGTERM, signal_handler)
-        signal.signal(signal.SIGINT, signal_handler)
-        
+        """Основной цикл воркера"""
         while self.running:
-            self.loop_iteration += 1
-            self._log(f"Loop iteration #{self.loop_iteration} started", "DEBUG")
+            if not self.queue_file.exists():
+                time.sleep(2)
+                continue
             
-            try:
-                if not self.queue_file.exists():
-                    self._log(f"Queue file {self.queue_file} not found, waiting...", "DEBUG")
-                    time.sleep(2)
-                    continue
-                
-                # Читаем очередь
-                with open(self.queue_file, 'r') as f:
-                    queue_data = json.load(f)
-                
-                self._log(f"Queue status: {queue_data.get('status', 'unknown')}", "DEBUG")
-                self._log(f"Total tasks: {len(queue_data.get('tasks', []))}", "DEBUG")
-                
-                # Проверяем статус остановки
-                if queue_data.get('status') == 'stopped':
-                    self._log("Queue status is 'stopped', breaking loop", "WARNING")
+            with open(self.queue_file, 'r') as f:
+                queue_data = json.load(f)
+            
+            # Проверяем статус остановки
+            if queue_data.get('status') == 'stopped':
+                break
+            
+            # Находим следующую задачу
+            tasks = queue_data.get('tasks', [])
+            pending = [t for t in tasks if t.get('status') == 'pending']
+            
+            if not pending:
+                # Нет задач — останавливаем воркер
+                break
+            
+            task = pending[0]
+            
+            # Помечаем как выполняемую
+            for t in tasks:
+                if t['id'] == task['id']:
+                    t['status'] = 'running'
                     break
-                
-                # Находим следующую задачу
-                tasks = queue_data.get('tasks', [])
-                pending = [t for t in tasks if t.get('status') == 'pending']
-                
-                if not pending:
-                    self._log("No pending tasks, breaking loop")
-                    break
-                
-                task = pending[0]
-                self.current_task_id = task['id']
-                self._log_section(f"PROCESSING TASK: {task['id']}")
-                self._log(f"Task details:")
-                self._log(f"  Tests: {task.get('tests', [])}")
-                self._log(f"  Release: {task.get('release', [])}")
-                self._log(f"  Kernel: {task.get('kernel', [])}")
-                self._log(f"  Created at: {task.get('created_at', 'N/A')}")
-                
-                # Логируем состояние перед выполнением
-                self._log_process_state("BEFORE TASK EXECUTION")
-                self._log_system_resources("BEFORE TASK EXECUTION")
-                
-                # Помечаем как выполняемую
-                for t in tasks:
+            
+            queue_data['current_task'] = task
+            queue_data['status'] = 'running'
+            with open(self.queue_file, 'w') as f:
+                json.dump(queue_data, f, indent=2)
+            
+            # Выполняем задачу
+            success, message = self._execute_task(task)
+            
+            # Обновляем после выполнения
+            with open(self.queue_file, 'r') as f:
+                queue_data = json.load(f)
+            
+            if success:
+                # Удаляем задачу
+                queue_data['tasks'] = [t for t in queue_data['tasks'] if t['id'] != task['id']]
+            else:
+                # Помечаем как failed
+                for t in queue_data['tasks']:
                     if t['id'] == task['id']:
-                        t['status'] = 'running'
-                        self._log(f"Task {task['id']} marked as 'running'")
+                        t['status'] = 'failed'
+                        t['error'] = message
                         break
-                
-                queue_data['current_task'] = task
-                queue_data['status'] = 'running'
-                with open(self.queue_file, 'w') as f:
-                    json.dump(queue_data, f, indent=2)
-                self._log("Queue status updated to 'running'")
-                
-                # Выполняем задачу
-                self.task_start_time = datetime.now()
-                self._log(f"Task execution started at: {self.task_start_time.isoformat()}")
-                
-                success, message = self._execute_task(task)
-                
-                task_end_time = datetime.now()
-                duration = task_end_time - self.task_start_time
-                self._log(f"Task execution finished at: {task_end_time.isoformat()}")
-                self._log(f"Task duration: {duration}")
-                self._log(f"Task duration (hours): {duration.total_seconds()/3600:.2f}h")
-                
-                # Обновляем после выполнения
-                with open(self.queue_file, 'r') as f:
-                    queue_data = json.load(f)
-                
-                if success:
-                    self._log(f"Task {task['id']} completed successfully: {message}")
-                    # Удаляем задачу
-                    queue_data['tasks'] = [t for t in queue_data['tasks'] if t['id'] != task['id']]
-                    self._log(f"Task removed from queue. Remaining tasks: {len(queue_data['tasks'])}")
-                else:
-                    self._log(f"Task {task['id']} FAILED: {message}", "ERROR")
-                    # Помечаем как failed
-                    for t in queue_data['tasks']:
-                        if t['id'] == task['id']:
-                            t['status'] = 'failed'
-                            t['error'] = message
-                            self._log(f"Task marked as 'failed' with error: {message}", "ERROR")
-                            break
-                
-                queue_data['current_task'] = None
-                
-                # Если есть еще задачи — остаемся в статусе running
-                pending_remaining = [t for t in queue_data['tasks'] if t.get('status') == 'pending']
-                if not pending_remaining:
-                    queue_data['status'] = 'idle'
-                    self._log("No pending tasks remaining, status set to 'idle'")
-                else:
-                    self._log(f"{len(pending_remaining)} pending tasks remaining")
-                
-                with open(self.queue_file, 'w') as f:
-                    json.dump(queue_data, f, indent=2)
-                self._log("Queue status updated")
-                
-                # Логируем состояние после выполнения
-                self._log_process_state("AFTER TASK EXECUTION")
-                self._log_system_resources("AFTER TASK EXECUTION")
-                
-                self.current_task_id = None
-                
-            except Exception as e:
-                self._log(f"Worker loop exception: {e}", "ERROR")
-                import traceback
-                with open(self.log_file, 'a') as log:
-                    log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Traceback:\n")
-                    log.write(traceback.format_exc())
-                    log.flush()
-                
-                self._log_process_state("ON ERROR")
-                self._log_system_resources("ON ERROR")
-                
-                time.sleep(5)
+            
+            queue_data['current_task'] = None
+            
+            # Если есть еще задачи — остаемся в статусе running
+            pending_remaining = [t for t in queue_data['tasks'] if t.get('status') == 'pending']
+            if not pending_remaining:
+                queue_data['status'] = 'idle'
+            
+            with open(self.queue_file, 'w') as f:
+                json.dump(queue_data, f, indent=2)
         
-        self._log("Worker loop finished")
+        # Завершаем работу
         self.running = False
-        self._log(f"Worker {self.stand_num} stopped gracefully")
-        self._log_section("WORKER LOOP ENDED")
     
     def _execute_task(self, task: Dict) -> tuple[bool, str]:
-        """Выполнить задачу с подробным логированием"""
-        self._log_section(f"EXECUTING TASK: {task['id']}")
-        
+        """Выполнить задачу"""
         testenv_status = prepare_testenv_status(method='get')
         
         tests = task['tests']
@@ -816,268 +562,43 @@ class StandWorker:
         else:
             command = f'{VENV_PATH} allta_back.py -rs {release} -st stand{self.stand_num} -ts "{tests}" -te {testenv_status}'
         
-        self._log(f"Command: {command}")
-        self._log(f"Testenv status: {testenv_status}")
-        
-        # Проверяем существующие процессы
-        self._log("Checking for existing processes...")
-        existing = subprocess.run(
-            f"ps -ef | grep -E 'allta_back|backup_image' | grep stand{self.stand_num} | grep -v grep || true",
-            shell=True,
-            text=True,
-            capture_output=True
-        )
-        if existing.stdout.strip():
-            self._log(f"Found existing processes for stand{self.stand_num}:", "WARNING")
-            with open(self.log_file, 'a') as log:
-                for line in existing.stdout.strip().split('\n'):
-                    log.write(f"  {line}\n")
-                log.flush()
-        else:
-            self._log("No existing processes found")
-        
-        try:
-            with open(self.log_file, 'a') as log:
-                log.write(f"\n{'='*60}\n")
-                log.write(f"Task: {task['id']}\n")
-                log.write(f"Release: {release}\n")
-                log.write(f"Tests: {tests}\n")
-                log.write(f"Kernel: {kernel}\n")
-                log.write(f"Command: {command}\n")
-                log.write(f"Worker PID: {self.worker_pid}\n")
-                log.write(f"Start time: {datetime.now().isoformat()}\n")
-                log.write(f"{'='*60}\n")
-                log.flush()
-                
-                self._log(f"Starting subprocess.Popen...")
-                
-                # Запускаем процесс
-                process = subprocess.Popen(
+        with open(f'front_stand{self.stand_num}.log', 'a') as log:
+            log.write(f"\n{'='*60}\n")
+            log.write(f"Task: {task['id']}\n")
+            log.write(f"Release: {release}\n")
+            log.write(f"Tests: {tests}\n")
+            log.write(f"Kernel: {kernel}\n")
+            log.write(f"Command: {command}\n")
+            log.write(f"{'='*60}\n")
+            log.flush()
+            
+            try:
+                result = subprocess.run(
                     command,
                     shell=True,
                     text=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    capture_output=True,  # захватываем stdout и stderr
                     preexec_fn=setsid
                 )
-                self.current_process = process
-                self._log(f"Process started with PID: {process.pid}")
                 
-                try:
-                    pgid = getpgid(process.pid)
-                    self._log(f"Process group ID: {pgid}")
-                except Exception as e:
-                    self._log(f"Failed to get PGID: {e}", "WARNING")
+                # Записываем stdout и stderr в лог
+                if result.stdout:
+                    log.write(f"STDOUT:\n{result.stdout}\n")
+                if result.stderr:
+                    log.write(f"STDERR:\n{result.stderr}\n")
+                log.flush()
                 
-                # Запускаем мониторинг процесса
-                self._log("Starting process monitor thread...")
-                monitor_thread = threading.Thread(
-                    target=self._monitor_process,
-                    args=(process, task['id'])
-                )
-                monitor_thread.daemon = True
-                monitor_thread.start()
-                self._log("Monitor thread started")
-                
-                # Ждем завершения с таймаутом
-                timeout_hours = 24  # Увеличенный таймаут для диагностики
-                self._log(f"Waiting for process completion (timeout: {timeout_hours}h)...")
-                
-                try:
-                    start_wait = time.time()
-                    stdout, stderr = process.communicate(timeout=timeout_hours * 3600)
-                    wait_duration = time.time() - start_wait
-                    returncode = process.returncode
-                    
-                    self._log(f"Process completed after {wait_duration/3600:.2f}h")
-                    self._log(f"Process return code: {returncode}")
-                    self._log(f"STDOUT size: {len(stdout) if stdout else 0} chars")
-                    self._log(f"STDERR size: {len(stderr) if stderr else 0} chars")
-                    
-                    # Записываем вывод
-                    if stdout:
-                        log.write(f"STDOUT:\n{stdout}\n")
-                    if stderr:
-                        log.write(f"STDERR:\n{stderr}\n")
-                    log.flush()
-                    
-                except subprocess.TimeoutExpired as e:
-                    wait_duration = time.time() - start_wait
-                    self._log(f"TIMEOUT EXPIRED after {wait_duration/3600:.2f}h!", "ERROR")
-                    self._log(f"Timeout was set to {timeout_hours}h", "ERROR")
-                    
-                    # Логируем состояние процесса
-                    self._log_process_state("ON TIMEOUT")
-                    
-                    # Пытаемся убить процесс
-                    try:
-                        pgid = getpgid(process.pid)
-                        self._log(f"Killing process group {pgid}")
-                    except ProcessLookupError:
-                        self._log("Process already terminated, cannot get PGID")
-                        return False, "Процесс завершился до таймаута"
-                    try:
-                        killpg(getpgid(process.pid), signal.SIGTERM)
-                        self._log("SIGTERM sent")
-                        time.sleep(5)
-                        
-                        if process.poll() is None:
-                            self._log("Process still running, sending SIGKILL")
-                            try:
-                                pgid = getpgid(process.pid)
-                                killpg(pgid, signal.SIGKILL)
-                                self._log("SIGKILL sent")
-                            except ProcessLookupError:
-                                self._log("Process already terminated")
-                    except ProcessLookupError:
-                        self._log("Process already terminated, skipping kill")
-                    except Exception as kill_error:
-                        self._log(f"Failed to kill process: {kill_error}", "ERROR")
-                    
-                    stdout, stderr = process.communicate()
-                    returncode = process.returncode
-                    self._log(f"Process killed. Final return code: {returncode}")
-                    
-                    if stdout:
-                        log.write(f"STDOUT (before timeout):\n{stdout}\n")
-                    if stderr:
-                        log.write(f"STDERR (before timeout):\n{stderr}\n")
-                    log.write(f"TIMEOUT EXPIRED after {timeout_hours} hours\n")
-                    log.flush()
-                    
-                    return False, f"Превышено время выполнения ({timeout_hours} часов)"
-                
-                finally:
-                    self.current_process = None
-                    self._log("Process reference cleared")
-                
-                # Анализируем результат
-                self._log_section(f"TASK COMPLETED: {task['id']}")
-                self._log(f"Return code: {returncode}")
-                
-                if returncode == 0:
-                    self._log("✅ Process returned 0 (success)")
+                if result.returncode == 0:
                     return True, "Выполнено успешно"
                 else:
-                    self._log(f"❌ Process returned {returncode}", "ERROR")
-                    
-                    # Анализируем код возврата
-                    error_msg = self._analyze_return_code(returncode, stderr)
-                    self._log(f"Error analysis: {error_msg}", "ERROR")
-                    
+                    error_msg = result.stderr.strip() if result.stderr else f"Завершился с кодом {result.returncode}"
                     return False, error_msg
-                    
-        except Exception as e:
-            self._log(f"Exception in _execute_task: {e}", "ERROR")
-            import traceback
-            with open(self.log_file, 'a') as log:
-                log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] Traceback:\n")
-                log.write(traceback.format_exc())
-                log.flush()
-            
-            self._log_process_state("ON EXECUTE_TASK_ERROR")
-            return False, str(e)
-    
-    def _monitor_process(self, process: subprocess.Popen, task_id: str):
-        """Мониторинг процесса в отдельном потоке"""
-        self._log(f"Monitor thread started for task {task_id}")
-        
-        check_interval = 30
-        last_log_time = time.time()
-        last_status_check = time.time()
-        status_file = Path(f'./conf/work_status_stand{self.stand_num}.conf')
-        
-        while process.poll() is None:
-            try:
-                current_time = time.time()
-                
-                # Логируем каждые 5 минут
-                if current_time - last_log_time > 300:
-                    elapsed = current_time - self.task_start_time.timestamp() if self.task_start_time else 0
-                    self._log(f"Process {process.pid} still running, elapsed: {elapsed/3600:.1f}h")
-                    
-                    # Проверяем использование ресурсов
-                    try:
-                        import psutil
-                        proc = psutil.Process(process.pid)
-                        cpu = proc.cpu_percent(interval=1)
-                        mem = proc.memory_percent()
-                        self._log(f"  CPU: {cpu}%, Memory: {mem:.1f}%", "DEBUG")
-                    except:
-                        pass
-                    
-                    last_log_time = current_time
-                
-                # Проверяем статусный файл каждые 2 минуты
-                if current_time - last_status_check > 120:
-                    if status_file.exists():
-                        status = status_file.read_text().strip()
-                        self._log(f"Status file content: '{status}'", "DEBUG")
-                        
-                        if status == 'Готово' or status == 'Done' or status == 'DONE':
-                            self._log(f"Status file says '{status}' but process still running!", "WARNING")
-                            
-                            # Проверяем, действительно ли процесс жив
-                            try:
-                                if process.poll() is not None:
-                                    self._log(f"Process actually completed, returncode: {process.returncode}")
-                                    break
-                            except:
-                                pass
-                    
-                    last_status_check = current_time
-                
-                time.sleep(check_interval)
-                
             except Exception as e:
-                self._log(f"Monitor thread error: {e}", "ERROR")
-                time.sleep(60)
-        
-        self._log(f"🔍 Monitor thread finished for task {task_id}")
-    
-    def _analyze_return_code(self, returncode: int, stderr: str) -> str:
-        """Анализировать код возврата и stderr"""
-        # Сигналы
-        if returncode == 0:
-            return "Выполнено успешно"
-        elif returncode == 1:
-            return "Общая ошибка выполнения"
-        elif returncode == 2:
-            return "Ошибка в командной строке или аргументах"
-        elif returncode == 9:
-            return "Процесс убит SIGKILL (9)"
-        elif returncode == 15:
-            return "Процесс остановлен SIGTERM (15)"
-        elif returncode == 137:
-            return "Процесс убит SIGKILL (137 = 128 + 9)"
-        elif returncode == 143:
-            return "Процесс остановлен SIGTERM (143 = 128 + 15)"
-        elif returncode == -9:
-            return "Процесс убит SIGKILL (-9)"
-        elif returncode == -15:
-            return "Процесс остановлен SIGTERM (-15)"
-        else:
-            # Проверяем stderr на наличие критических ошибок
-            if stderr:
-                critical_patterns = [
-                    'Error:', 'ERROR:', 'Exception:', 'Traceback',
-                    'Fatal:', 'FATAL:', 'failed', 'FAILED'
-                ]
-                error_lines = []
-                for line in stderr.split('\n'):
-                    if any(pattern in line for pattern in critical_patterns):
-                        error_lines.append(line.strip())
-                
-                if error_lines:
-                    return f"Код {returncode}: {error_lines[0][:200]}"
-                else:
-                    # Только предупреждения
-                    if any(p in stderr for p in ['Warning:', 'warning:', 'WARNING:']):
-                        return f"Код {returncode} (только предупреждения)"
-                    else:
-                        return f"Завершился с кодом {returncode}"
-            else:
-                return f"Завершился с кодом {returncode}"
+                log.write(f"Failed: {e}\n")
+                log.flush()
+                return False, str(e)
+
+_workers: Dict[str, StandWorker] = {}
 
 
 def get_worker(stand_num: str) -> StandWorker:
@@ -1102,76 +623,15 @@ def is_worker_running(stand_num: str) -> bool:
     return worker.is_alive()
 
 def stop_current_test(stand_num: str):
-    """Остановить текущий запущенный тест/прогон с подробным логированием"""
-    log_file = f'front_stand{stand_num}.log'
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
-    with open(log_file, 'a') as log:
-        log.write(f"\n{'!'*60}\n")
-        log.write(f"[{timestamp}] [STOP] stop_current_test called for stand {stand_num}\n")
-        log.write(f"[{timestamp}] [STOP] Caller PID: {getpid()}\n")
-        log.write(f"[{timestamp}] [STOP] Caller PPID: {getppid()}\n")
-        
-        import traceback
-        log.write(f"[{timestamp}] [STOP] Stack trace:\n")
-        for line in traceback.format_stack()[-5:-1]:
-            log.write(f"  {line}")
-        log.write(f"{'!'*60}\n")
-        log.flush()
-    
-    # Получаем все PID'ы
-    ppid = check_output_command(
-        f"ps -fad -N | grep -E 'allta_back|backup_image' | grep stand{stand_num} | grep -v grep | awk '{{print $2}}'"
-    )
-    
-    with open(log_file, 'a') as log:
-        log.write(f"[{timestamp}] [STOP] Found PIDs: {ppid if ppid else 'None'}\n")
-        log.flush()
-    
+    """
+    Остановить текущий запущенный тест/прогон
+    """
+    # Останавливаем процесс по PID
+    ppid = check_output_command(f"ps -fad -N | grep stand{stand_num} | awk {{'print $2'}}")
     if ppid:
-        pids = ppid.strip().split()
-        with open(log_file, 'a') as log:
-            log.write(f"[{timestamp}] [STOP] Processing {len(pids)} PIDs\n")
-            
-            for pid in pids:
-                try:
-                    log.write(f"[{timestamp}] [STOP] Stopping PID {pid}\n")
-                    pgid = check_output_command(f"ps -o pgid= -p {pid}").strip()
-                    
-                    if pgid:
-                        log.write(f"[{timestamp}] [STOP] PGID for PID {pid}: {pgid}\n")
-                        
-                        comm_and_log(f"kill -TERM -{pgid}")
-                        log.write(f"[{timestamp}] [STOP] Sent SIGTERM to PGID {pgid}\n")
-                        time.sleep(1)
-                        
-                        is_alive = check_output_command(f"ps -p {pid} -o pid= 2>/dev/null")
-                        if is_alive:
-                            log.write(f"[{timestamp}] [STOP] Process {pid} still alive, sending SIGKILL\n")
-                            comm_and_log(f"kill -KILL -{pgid}")
-                            log.write(f"[{timestamp}] [STOP] Sent SIGKILL to PGID {pgid}\n")
-                        else:
-                            log.write(f"[{timestamp}] [STOP] Process {pid} terminated successfully\n")
-                except Exception as e:
-                    log.write(f"[{timestamp}] [STOP] Failed to stop PID {pid}: {e}\n")
-            
-            log.flush()
-    else:
-        with open(log_file, 'a') as log:
-            log.write(f"[{timestamp}] [STOP] No PIDs found to stop\n")
-            log.flush()
-    
-    # Освобождаем сервер
-    with open(log_file, 'a') as log:
-        log.write(f"[{timestamp}] [STOP] Calling busy_status_control with 'stop'\n")
-        log.flush()
-    
+        comm_and_log(f"pkill -TERM -g {ppid}")
+    # Освобождаем сервер с помощью индикатора занятости
     busy_status_control(f'stand{stand_num}', 'stop')
-    
-    with open(log_file, 'a') as log:
-        log.write(f"[{timestamp}] [STOP] busy_status_control completed\n")
-        log.write(f"{'!'*60}\n")
-        log.flush()
  
 def stop_queue(stand_num: str):
     """

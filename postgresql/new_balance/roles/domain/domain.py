@@ -238,7 +238,10 @@ EOF"""
             }
             user_signals.append(f"user{n} created")
             tasks["dcfreeipa"][f"register database{n + 1}"] = {
-                "command": f"ipa service-add postgres/database{n + 1}.{DOMAIN}@{DOMAIN.upper()}",
+                "command": (
+                    f"ipa service-show postgres/database{n + 1}.{DOMAIN} >/dev/null 2>&1 || "
+                    f"ipa service-add --force postgres/database{n + 1}.{DOMAIN}"
+                ),
                 "signal set": "",
                 "signal get": ["dcfreeipa", "Kinit"],
             }
@@ -283,14 +286,20 @@ EOF"""
             }
 
         tasks["dcfreeipa"]["add pgpool dns"] = {
-            "command": f"ipa dnsrecord-add {DOMAIN} pgpool --a-rec={PGPOOL_IP}",
+            "command": (
+                f"ipa dnsrecord-show {DOMAIN} pgpool >/dev/null 2>&1 || "
+                f"ipa dnsrecord-add {DOMAIN} pgpool --a-rec={PGPOOL_IP}"
+            ),
             "signal set": "pgpool dns",
             "signal get": ["dcfreeipa", "Kinit"],
         }
 
         if type_test in info_sys_types:
             tasks["dcfreeipa"]["register apache"] = {
-                    "command": f"ipa service-add HTTP/web1.{DOMAIN}@{DOMAIN.upper()}",
+                    "command": (
+                        f"ipa service-show HTTP/web1.{DOMAIN} >/dev/null 2>&1 || "
+                        f"ipa service-add --force HTTP/web1.{DOMAIN}"
+                    ),
                     "signal set": "register apache",
                     "signal get": ["dcfreeipa", "Kinit"],
             }

@@ -589,9 +589,11 @@ class StandWorker:
                 log.flush()
                 
                 if result.returncode == 0:
+                    log.write("Выполнено успешно")
                     return True, "Выполнено успешно"
                 else:
                     error_msg = result.stderr.strip() if result.stderr else f"Завершился с кодом {result.returncode}"
+                    log.write(error_msg)
                     return False, error_msg
             except Exception as e:
                 log.write(f"Failed: {e}\n")

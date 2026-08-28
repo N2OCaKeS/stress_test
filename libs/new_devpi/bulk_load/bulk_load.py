@@ -7,8 +7,8 @@
   2. Загружает каждый скачанный дистрибутив в индекс devpi через devpi-client.
 
 Источник пакетов — requirements-файлы (--req) и/или явные спеки (--package).
-Пароль upload-пользователя берётся из DEVPI_UPLOAD_PASSWORD,
-DEVPI_LOCAL_UPLOAD_PASSWORD или DEVPI_ROOT_PASSWORD (не хардкодим).
+Пароль upload-пользователя берётся из DEVPI_UPLOAD_PASSWORD
+или DEVPI_ROOT_PASSWORD (не хардкодим).
 """
 import argparse
 import os
@@ -194,11 +194,10 @@ def main():
     else:
         password = (
             os.getenv('DEVPI_UPLOAD_PASSWORD')
-            or os.getenv('DEVPI_LOCAL_UPLOAD_PASSWORD')
             or os.getenv('DEVPI_ROOT_PASSWORD')
         )
         if not password:
-            print('❌ Не задана переменная окружения DEVPI_UPLOAD_PASSWORD/DEVPI_LOCAL_UPLOAD_PASSWORD/DEVPI_ROOT_PASSWORD.', file=sys.stderr)
+            print('❌ Не задана переменная окружения DEVPI_UPLOAD_PASSWORD/DEVPI_ROOT_PASSWORD.', file=sys.stderr)
             return 1
         if not devpi_login(args, password):
             print('❌ Не удалось настроить/авторизовать devpi-client.', file=sys.stderr)

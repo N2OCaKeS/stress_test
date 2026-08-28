@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y git curl && rm -rf /var/lib/apt/lists/*
 EXPOSE 3141
 
 COPY devpi_allta_auth /git/devpi_allta_auth
+RUN pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+
 RUN pip install --no-cache-dir /git/devpi_allta_auth
 
 COPY auto_check_new_version/new_release.py /git/

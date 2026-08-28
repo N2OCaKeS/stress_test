@@ -37,6 +37,7 @@
 | `DEVPI_AUTH_API_URL` | Базовый URL Allta Auth API. По умолчанию `https://allta.devos.astralinux.ru:21500`. |
 | `DEVPI_AUTH_API_VERIFY_TLS` | Проверять TLS сертификат Allta Auth API. По умолчанию `0`. |
 | `DEVPI_AUTH_API_AUTHORIZE_PATH` | Endpoint проверки devpi-доступа. По умолчанию `/api/auth/v1/integrations/devpi/authorize`. |
+| `DEVPI_AUTH_ACCEPT_RAW_TOKEN` | `1` — принимать пароль devpi-login как raw Bearer token Allta CLI, если он передан без префикса `Bearer `. По умолчанию `1`. |
 | `DEVPI_ACL_UPLOAD` | Upload-principals для `root/release` и `root/test`. По умолчанию `root,allta,:devpi_upload`. |
 | `DEVPI_PYPI_INDEX` | Имя локального PyPI-cache индекса (по умолчанию `pypi` → `root/pypi`). |
 | `DEVPI_PYPI_ACL_UPLOAD` | Кто может upload в `root/pypi`. По умолчанию только `allta`. |
@@ -107,6 +108,8 @@ pip install --index-url http://devpi.example:3141/root/test/+simple/ allta
 
 При успешном `devpi login` плагин проверяет пользователя через
 `GET {DEVPI_AUTH_API_URL}{DEVPI_AUTH_API_AUTHORIZE_PATH}?action=read`.
+В качестве devpi-пароля можно передать обычный пароль Allta Auth, строку
+`Bearer <token>` или сам token из локальной сессии Allta CLI после `allta login`.
 Если Allta Auth возвращает `capabilities.devpi_write=true`, пользователь получает
 devpi-группу `:devpi_upload` и может загружать в `root/release`/`root/test`.
 Если `devpi_write=false`, пользователь всё равно получает личный `<user>/dev`,

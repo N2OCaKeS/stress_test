@@ -10,6 +10,7 @@ from devpi_server.log import threadlog
 
 
 UPLOAD_GROUP = "devpi_upload"
+AUTH_FAILED = object()
 
 
 def _env_bool(name, default):
@@ -41,27 +42,43 @@ def _ssl_context():
     return ssl._create_unverified_context()
 
 
-def _auth_header(username, password):
+def _basic_auth_header(username, password):
     password = password or ""
-    if password.lower().startswith("bearer "):
-        return password
     raw = f"{username}:{password}".encode("utf-8")
     encoded = base64.b64encode(raw).decode("ascii")
     return f"Basic {encoded}"
 
 
-def _request_identity(username, password):
+def _auth_headers(username, password):
+    password = password or ""
+    stripped = password.strip()
+    if stripped.lower().startswith("bearer "):
+        return (("bearer token", stripped),)
+
+    headers = []
+    if stripped and _env_bool("DEVPI_AUTH_ACCEPT_RAW_TOKEN", True):
+        headers.append(("raw bearer token", f"Bearer {stripped}"))
+    headers.append(("basic password", _basic_auth_header(username, password)))
+    return tuple(headers)
+
+
+def _fetch_identity(username, auth_header, auth_method):
     request = urllib.request.Request(_authorize_url(), method="GET")
     request.add_header("Accept", "application/json")
-    request.add_header("Authorization", _auth_header(username, password))
+    request.add_header("Authorization", auth_header)
 
     try:
         with urllib.request.urlopen(request, timeout=15, context=_ssl_context()) as response:
             payload = response.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         if exc.code in {401, 403}:
-            return None
-        threadlog.error("Allta Auth API returned HTTP %s for user %r", exc.code, username)
+            return AUTH_FAILED
+        threadlog.error(
+            "Allta Auth API returned HTTP %s for user %r via %s",
+            exc.code,
+            username,
+            auth_method,
+        )
         return None
     except urllib.error.URLError as exc:
         threadlog.error("Allta Auth API is unavailable for user %r: %s", username, exc)
@@ -77,12 +94,22 @@ def _request_identity(username, password):
         return None
     if data.get("login") != username:
         threadlog.warning(
-            "Allta Auth API login mismatch: requested %r, got %r",
+            "Allta Auth API login mismatch via %s: requested %r, got %r",
+            auth_method,
             username,
             data.get("login"),
         )
-        return None
+        return AUTH_FAILED
     return data
+
+
+def _request_identity(username, password):
+    for auth_method, auth_header in _auth_headers(username, password):
+        identity = _fetch_identity(username, auth_header, auth_method)
+        if identity is AUTH_FAILED:
+            continue
+        return identity
+    return None
 
 
 def _groups_from_identity(identity):

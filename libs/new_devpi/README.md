@@ -31,8 +31,8 @@
 | `DEVPI_ROOT_PASSWORD` | Пароль пользователя `root` devpi. Обязателен. |
 | `DEVPI_DISABLE_ROOT_PYPI` | `1` — не создавать штатный внешний mirror `root/pypi` при первичной инициализации. По умолчанию `1`. |
 | `DEVPI_RESTRICT_MODIFY` | Кто может создавать/менять пользователей и индексы. По умолчанию `root`; upload по `acl_upload` не блокирует. |
-| `DEVPI_LOCAL_UPLOAD_USER` | Локальный пользователь для наполнения `root/pypi` и автоматической загрузки библиотек. По умолчанию `allta`. |
-| `DEVPI_UPLOAD_PASSWORD` | Пароль локального upload-пользователя и автозагрузчика. Обязателен, если задан `DEVPI_LOCAL_UPLOAD_USER`. |
+| `DEVPI_UPLOAD_USER` | Пользователь для наполнения `root/pypi` и автоматической загрузки библиотек. По умолчанию `allta`. |
+| `DEVPI_UPLOAD_PASSWORD` | Пароль upload-пользователя и автозагрузчика. Обязателен, если задан `DEVPI_UPLOAD_USER`. |
 | `DEVPI_AUTOCREATE_USERS` | `1` — создавать локального devpi-пользователя после успешной внешней авторизации. |
 | `DEVPI_AUTH_API_URL` | Базовый URL Allta Auth API. По умолчанию `https://allta.devos.astralinux.ru:21500`. |
 | `DEVPI_AUTH_API_VERIFY_TLS` | Проверять TLS сертификат Allta Auth API. По умолчанию `0`. |

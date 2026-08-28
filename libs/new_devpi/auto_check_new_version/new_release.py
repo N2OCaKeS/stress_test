@@ -19,7 +19,7 @@ DEVPI_TEST_INDEX_URL = os.getenv('DEVPI_TEST_INDEX_URL') or (
     f"http://localhost:{os.getenv('DEVPI_PORT', '3141')}/root/"
     f"{os.getenv('DEVPI_TEST_INDEX', 'test')}"
 )
-DEVPI_UPLOAD_USER = os.getenv('DEVPI_UPLOAD_USER') or os.getenv('DEVPI_LOCAL_UPLOAD_USER', 'allta')
+DEVPI_UPLOAD_USER = os.getenv('DEVPI_UPLOAD_USER', 'allta')
 DEVPI_UPLOAD_PASSWORD = os.getenv('DEVPI_UPLOAD_PASSWORD')
 PACKAGE_NAME = 'allta'
 BASE_VERSION = os.getenv('DEVPI_BASE_VERSION', '0.0.1')

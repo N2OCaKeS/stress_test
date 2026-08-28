@@ -41,8 +41,8 @@ def parse_args():
                         help=f'Базовый URL devpi (по умолчанию {DEFAULT_DEVPI_URL}).')
     parser.add_argument('--index', default=os.getenv('DEVPI_INDEX', DEFAULT_INDEX),
                         help=f'Индекс devpi (по умолчанию {DEFAULT_INDEX}).')
-    parser.add_argument('--user', default=os.getenv('DEVPI_UPLOAD_USER') or os.getenv('DEVPI_LOCAL_UPLOAD_USER') or 'allta',
-                        help='Пользователь devpi для upload (по умолчанию DEVPI_UPLOAD_USER/DEVPI_LOCAL_UPLOAD_USER/allta).')
+    parser.add_argument('--user', default=os.getenv('DEVPI_UPLOAD_USER') or 'allta',
+                        help='Пользователь devpi для upload (по умолчанию DEVPI_UPLOAD_USER/allta).')
     parser.add_argument('--root-user', dest='user', default=argparse.SUPPRESS,
                         help='Deprecated alias для --user.')
     # Платформенные флаги для pip download. Пустое значение -> флаг не передаётся.

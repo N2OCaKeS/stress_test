@@ -32,7 +32,7 @@
 | `DEVPI_DISABLE_ROOT_PYPI` | `1` — не создавать штатный внешний mirror `root/pypi` при первичной инициализации. По умолчанию `1`. |
 | `DEVPI_RESTRICT_MODIFY` | Кто может создавать/менять пользователей и индексы. По умолчанию `root`; upload по `acl_upload` не блокирует. |
 | `DEVPI_LOCAL_UPLOAD_USER` | Локальный пользователь для наполнения `root/pypi` и автоматической загрузки библиотек. По умолчанию `allta`. |
-| `DEVPI_LOCAL_UPLOAD_PASSWORD` | Пароль локального upload-пользователя. Обязателен, если задан `DEVPI_LOCAL_UPLOAD_USER`. |
+| `DEVPI_UPLOAD_PASSWORD` | Пароль локального upload-пользователя и автозагрузчика. Обязателен, если задан `DEVPI_LOCAL_UPLOAD_USER`. |
 | `DEVPI_AUTOCREATE_USERS` | `1` — создавать локального devpi-пользователя после успешной внешней авторизации. |
 | `DEVPI_AUTH_API_URL` | Базовый URL Allta Auth API. По умолчанию `https://allta.devos.astralinux.ru:21500`. |
 | `DEVPI_AUTH_API_VERIFY_TLS` | Проверять TLS сертификат Allta Auth API. По умолчанию `0`. |
@@ -57,7 +57,7 @@
 | `ALLTA_API_VERIFY_TLS` | Проверять ли TLS config_api (`0` — отключено по умолчанию). |
 | `DEVPI_BASE_VERSION` | Базовая версия для сброса репозитория (по умолчанию `0.0.1`). |
 | `DEVPI_GIT_BRANCH` | Единственная git-ветка, которую клонирует и мониторит автозагрузчик. По умолчанию `libs`. |
-| `DEVPI_UPLOAD_USER` / `DEVPI_UPLOAD_PASSWORD` | Пользователь devpi для автозагрузки пакетов. По умолчанию локальный `allta`. |
+| `DEVPI_UPLOAD_USER` / `DEVPI_UPLOAD_PASSWORD` | Пользователь и пароль devpi для автозагрузки пакетов. По умолчанию локальный `allta`; пароль также используется при создании локального пользователя. |
 | `DEVPI_INDEX_URL` | Целевой индекс для стабильных автозагрузок внутри контейнера. По умолчанию `root/release`. |
 | `DEVPI_TEST_INDEX_URL` | Целевой индекс для dev-автозагрузок внутри контейнера. По умолчанию `root/test`. |
 

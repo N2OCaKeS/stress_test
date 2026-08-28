@@ -15,6 +15,7 @@ allta --help
 3. Получение releases.json
 4. Получение iLO-кредов (`allta ilo`)
 5. Работа с сервисными логинами и паролями (`allta creds`)
+6. Загрузка и удаление пакетов в devpi `root/pypi` (`allta devpi`)
 
 ## Команды без входа
 
@@ -35,6 +36,16 @@ allta creds
 allta creds -s nexus
 allta tokens git_token
 allta git
+allta devpi load requests==2.32.3
+allta devpi load -r /path/to/req.txt
+DEVPI_URL=http://localhost:3141 allta devpi debug -R root/pypi
+allta devpi repos
+allta devpi list -R root/pypi requests
+allta devpi check -R root/release allta
+allta devpi download -R root/test allta -d /tmp/wheelhouse
+allta devpi install -R root/test -p /usr/bin/python3 allta
+allta devpi remove requests==2.32.3 -y
+allta devpi remove -r /path/to/req.txt -y
 ```
 
 ## Шорткаты команд
@@ -68,6 +79,58 @@ allta login --token user
 ```
 
 Передача пароля в аргументах командной строки остаётся для совместимости, но небезопасна и будет удалена в будущих версиях. Предпочтительные варианты: `ALLTA_PASSWORD`, `ALLTA_API_TOKEN`/`ALLTA_TOKEN` или интерактивный скрытый ввод.
+
+## Devpi команды
+
+```bash
+allta devpi load 'requests==2.32.3'
+allta devpi load 'requests>=2.32,<3'
+allta devpi load -r /path/to/req.txt
+allta devpi debug -R root/pypi
+allta devpi repos
+allta devpi list
+allta devpi list -R root/pypi
+allta devpi list --repo root/pypi requests
+allta devpi list --repo root/pypi requests '>2.32.3' '<2.33.1'
+allta devpi list -R root/pypi -r /path/to/req.txt
+allta devpi check -R root/release allta
+allta devpi download -R root/test allta -d /tmp/wheelhouse
+allta devpi install -R root/test -p /usr/bin/python3 allta
+allta devpi install -R root/test -p /usr/bin/python3 -r /path/to/req.txt
+allta devpi remove requests -y
+allta devpi remove 'requests==2.32.3' -y
+allta devpi remove -r /path/to/req.txt -y
+```
+
+`load` скачивает указанные пакеты из внешнего PyPI вместе с транзитивными зависимостями
+и загружает дистрибутивы в `root/pypi`. `allta` намеренно не загружается в `root/pypi`,
+он публикуется в `root/release`.
+
+Repo передаётся через `--repo`/`-R`: `root/pypi`, `root/release`, `root/test`,
+`user/dev`. Если repo не указан, используется `root/pypi`. Файлы требований всегда
+передаются через `--requirement`/`-r`; Python для установки — через `--python`/`-p`.
+
+URL devpi задаётся через `ALLTA_DEVPI_URL` или `DEVPI_URL`. `ALLTA_DEVPI_URL`
+имеет приоритет. Если переменные не заданы, используется
+`http://allta.devos.astralinux.ru:3141`.
+Источник для `allta devpi load` задаётся через `ALLTA_DEVPI_SOURCE_INDEX_URL`
+или `DEVPI_SOURCE_INDEX_URL`; по умолчанию используется `https://pypi.org/simple`.
+Для локальной отладки allta API с self-signed сертификатом можно задать
+`ALLTA_API_VERIFY_TLS=0`.
+Проверить эффективные настройки можно так:
+
+```bash
+DEVPI_URL=http://localhost:3141 allta devpi debug -R root/pypi
+```
+
+Для `root/pypi` CLI сначала ищет config-service credential `devpi_allta`, потому что
+upload в этот repo закреплён за локальным пользователем `allta`. Затем пробует текущий
+`allta login` token и env fallback.
+
+Для остальных repo сначала используется текущий `allta login`: сохранённый login и token
+передаются в `devpi login`, а devpi-плагин проверяет token через Allta Auth API. Затем
+идёт fallback на config-service credential `devpi_allta`/`devpi_root` и env
+`ALLTA_DEVPI_USERNAME`/`ALLTA_DEVPI_PASSWORD`.
 
 ## Автодополнение
 

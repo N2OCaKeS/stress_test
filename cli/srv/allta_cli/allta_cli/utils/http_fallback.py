@@ -43,9 +43,14 @@ def request_with_http_fallback(
     **kwargs: Any,
 ) -> "requests.Response":
     import requests
+    import urllib3
+    from allta_cli.utils.config import ALLTA_API_VERIFY_TLS
 
     primary_url = prefer_https_url(url)
     fallback_url = http_fallback_url(primary_url)
+    kwargs.setdefault("verify", ALLTA_API_VERIFY_TLS)
+    if kwargs.get("verify") is False:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     if log:
         ui.http(f"{method.upper()} {primary_url}")

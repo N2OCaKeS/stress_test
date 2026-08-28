@@ -28,7 +28,7 @@ from allta_cli.commands.creds import (
 from allta_cli.commands.ilo import ilo_cmd as ilo_run
 from allta_cli.commands.git import git_clone
 from allta_cli.commands.python import install_python, create_venv
-from allta_cli.commands.python_pkg import python_pkg
+from allta_cli.commands import devpi as devpi_api
 from allta_cli.commands import mc as mc_cmd
 from allta_cli.commands import vm as vm_api
 from allta_cli.commands import vm_local as vm_local_api
@@ -62,7 +62,7 @@ COMMANDS_WITH_AUTH = (
     "server",
     "vm",
     "jira",
-    "python-pkg",
+    "devpi",
 )
 
 COMMAND_SHORTCUTS = {
@@ -82,7 +82,6 @@ COMMAND_SHORTCUTS = {
     "k": "kernel",
     "ms": "modeswitch",
     "up": "upgrade",
-    "pip": "python-pkg",
 }
 COMMAND_SHORTCUT_NAMES = tuple(COMMAND_SHORTCUTS.keys())
 
@@ -1130,41 +1129,144 @@ def venv_cmd(venv_path: str | None):
     sys.exit(rc)
 
 
-@cli.command(
-    "python-pkg",
-    short_help="Догрузить недостающие pip-пакеты в devpi.",
-    help=(
-        "Находит пакеты, которых ещё нет в индексе devpi (root/release), и докладывает "
-        "их туда вместе с транзитивными зависимостями — чтобы внутренняя сеть пережила "
-        "обрыв интернета.\n\n"
-        "PATH — файл требований (по умолчанию ищется requirements*.txt в текущем каталоге; "
-        "при нескольких предпочитается requirements.txt). Также можно передать имена пакетов "
-        "напрямую (например: allta python-pkg requests==2.31.0 flask).\n\n"
-        "Креды devpi берутся из config-сервиса (credential 'devpi_root'). "
-        "Адрес и индекс настраиваются через ALLTA_DEVPI_URL / ALLTA_DEVPI_INDEX."
-    ),
-)
-@click.argument("targets", nargs=-1, metavar="[PATH | PACKAGE...]")
-@click.option(
-    "--file",
-    "req_file",
-    type=click.Path(dir_okay=False),
-    default=None,
-    show_default=False,
-    help="Явный файл требований (requirements.txt).",
-)
-@with_section("PYTHON-PKG")
-def python_pkg_cli(targets: tuple[str, ...], req_file: str | None):
+@cli.group("devpi", short_help="Загрузка и удаление пакетов в devpi.", context_settings=CONTEXT_SETTINGS)
+def devpi_cli():
     _ensure_authenticated_or_exit()
-    path_arg: str | None = None
-    packages = targets
-    # единственный позиционный аргумент, похожий на файл требований, трактуем как PATH
-    if len(targets) == 1 and not req_file:
-        only = targets[0]
-        if only.endswith(".txt") or "/" in only or os.sep in only:
-            path_arg = only
-            packages = ()
-    rc = python_pkg(path=path_arg, file=req_file, packages=packages)
+
+
+@devpi_cli.command(
+    "repos",
+    short_help="Показать доступные devpi repo.",
+)
+@with_section("DEVPI REPOS")
+def devpi_repos_cli():
+    rc = devpi_api.list_repos()
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "debug",
+    short_help="Показать эффективные настройки devpi.",
+)
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@with_section("DEVPI DEBUG")
+def devpi_debug_cli(repo: str | None):
+    rc = devpi_api.debug_config(repo=repo)
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "load",
+    short_help="Загрузить PyPI-пакеты в root/pypi.",
+    context_settings=dict(ignore_unknown_options=True),
+)
+@click.argument("packages", nargs=-1, metavar="[PACKAGE_SPEC]...")
+@click.option(
+    "-r",
+    "--requirement",
+    "req_files",
+    multiple=True,
+    type=click.Path(dir_okay=False),
+    help="requirements-файл; строки обрабатываются по одной.",
+)
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@click.option("-n", "--no-deps", is_flag=True, help="Скачать только указанные пакеты без зависимостей.")
+@with_section("DEVPI LOAD")
+def devpi_load_cli(packages: tuple[str, ...], req_files: tuple[str, ...], repo: str | None, no_deps: bool):
+    rc = devpi_api.load_packages(packages, req_files, repo=repo, no_deps=no_deps)
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "remove",
+    short_help="Удалить PyPI-пакеты из root/pypi.",
+    context_settings=dict(ignore_unknown_options=True),
+)
+@click.argument("packages", nargs=-1, metavar="[PACKAGE | PACKAGE==VERSION]...")
+@click.option(
+    "-r",
+    "--requirement",
+    "req_files",
+    multiple=True,
+    type=click.Path(dir_okay=False),
+    help="requirements-файл; строки обрабатываются по одной.",
+)
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@click.option("-y", "--yes", is_flag=True, help="Не запрашивать подтверждение devpi-client.")
+@with_section("DEVPI REMOVE")
+def devpi_remove_cli(packages: tuple[str, ...], req_files: tuple[str, ...], repo: str | None, yes: bool):
+    rc = devpi_api.remove_packages(packages, req_files, repo=repo, yes=yes)
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "list",
+    short_help="Показать пакеты и версии в repo.",
+    context_settings=dict(ignore_unknown_options=True),
+)
+@click.argument("packages", nargs=-1, metavar="[PACKAGE_SPEC]...")
+@click.option(
+    "-r",
+    "--requirement",
+    "req_files",
+    multiple=True,
+    type=click.Path(dir_okay=False),
+    help="requirements-файл для проверки наличия пакетов.",
+)
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@with_section("DEVPI LIST")
+def devpi_list_cli(packages: tuple[str, ...], req_files: tuple[str, ...], repo: str | None):
+    rc = devpi_api.list_packages(packages, req_files, repo=repo)
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "check",
+    short_help="Показать файлы и версии пакета.",
+    context_settings=dict(ignore_unknown_options=True),
+)
+@click.argument("package", metavar="PACKAGE")
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@with_section("DEVPI CHECK")
+def devpi_check_cli(package: str, repo: str | None):
+    rc = devpi_api.check_package((package,), repo=repo)
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "download",
+    short_help="Скачать пакет из repo.",
+    context_settings=dict(ignore_unknown_options=True),
+)
+@click.argument("packages", nargs=-1, metavar="PACKAGE_SPEC...")
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@click.option("-d", "--dest", default=".", show_default=True, type=click.Path(file_okay=False), help="Каталог для скачивания.")
+@click.option("-n", "--no-deps", is_flag=True, help="Скачать только указанные пакеты без зависимостей.")
+@with_section("DEVPI DOWNLOAD")
+def devpi_download_cli(packages: tuple[str, ...], repo: str | None, dest: str, no_deps: bool):
+    rc = devpi_api.download_packages(packages, repo=repo, dest=dest, no_deps=no_deps)
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "install",
+    short_help="Установить пакет в заданный Python из repo.",
+    context_settings=dict(ignore_unknown_options=True),
+)
+@click.argument("packages", nargs=-1, metavar="[PACKAGE_SPEC]...")
+@click.option(
+    "-r",
+    "--requirement",
+    "req_files",
+    multiple=True,
+    type=click.Path(dir_okay=False),
+    help="requirements-файл для установки.",
+)
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@click.option("-p", "--python", "python_bin", required=True, help="Python-интерпретатор для установки.")
+@with_section("DEVPI INSTALL")
+def devpi_install_cli(packages: tuple[str, ...], req_files: tuple[str, ...], repo: str | None, python_bin: str):
+    rc = devpi_api.install_packages(packages, req_files, repo=repo, python=python_bin)
     sys.exit(rc)
 
 

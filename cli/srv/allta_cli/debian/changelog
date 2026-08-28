@@ -1,3 +1,9 @@
+allta (1.1.0) stable; urgency=medium
+
+  * Добавлен ф-ционал работы с пакетами devpi
+
+ -- Filippenko Maksim <mfilippenko@astralinux.ru>  Fri, 28 Aug 2026 13:24:56 +0300
+
 allta (1.0.11) stable; urgency=medium
 
   * Добавлена возможность изменять локальные ВМ

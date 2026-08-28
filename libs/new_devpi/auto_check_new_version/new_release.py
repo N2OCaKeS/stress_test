@@ -7,18 +7,41 @@ import configparser
 import json
 import base64
 import ssl
+import shlex
 import urllib.request
 import urllib.error
 
-DEVPI_INDEX_URL = os.getenv('DEVPI_INDEX_URL') or (
+DEVPI_RELEASE_INDEX_URL = os.getenv('DEVPI_INDEX_URL') or os.getenv('DEVPI_RELEASE_INDEX_URL') or (
     f"http://localhost:{os.getenv('DEVPI_PORT', '3141')}/root/"
     f"{os.getenv('DEVPI_RELEASE_INDEX', 'release')}"
 )
+DEVPI_TEST_INDEX_URL = os.getenv('DEVPI_TEST_INDEX_URL') or (
+    f"http://localhost:{os.getenv('DEVPI_PORT', '3141')}/root/"
+    f"{os.getenv('DEVPI_TEST_INDEX', 'test')}"
+)
+DEVPI_UPLOAD_USER = os.getenv('DEVPI_UPLOAD_USER') or os.getenv('DEVPI_LOCAL_UPLOAD_USER', 'allta')
+DEVPI_UPLOAD_PASSWORD = os.getenv('DEVPI_UPLOAD_PASSWORD') or os.getenv('DEVPI_LOCAL_UPLOAD_PASSWORD')
 PACKAGE_NAME = 'allta'
 BASE_VERSION = os.getenv('DEVPI_BASE_VERSION', '0.0.1')
+MONITOR_BRANCH = os.getenv('DEVPI_GIT_BRANCH', 'libs')
+CLONE_RETRY_INTERVAL = int(os.getenv('DEVPI_CLONE_RETRY_INTERVAL', '60'))
+RELEASE_VERSION_PATTERN = r'\d+\.\d+\.\d+'
+DEV_VERSION_PATTERN = r'\d+(?:\.\d+)*'
+DEV_FOUR_PART_VERSION_PATTERN = r'\d+\.\d+\.\d+\.\d+'
 
 def cmd(command, cwd=None, env=None):
     subprocess.run(command, shell=True, check=True, cwd=cwd, env=env)
+
+def run_checked(command, cwd=None, env=None, error_message=None):
+    result = subprocess.run(command, cwd=cwd, env=env, capture_output=True, text=True)
+    if result.returncode == 0:
+        return result
+    stderr = (result.stderr or '').strip()
+    stdout = (result.stdout or '').strip()
+    details = stderr or stdout or f'exit code {result.returncode}'
+    if len(details) > 1200:
+        details = details[-1200:]
+    raise RuntimeError(f"{error_message or 'Команда завершилась с ошибкой'}: {details}")
 
 def _verify_tls_enabled():
     flag = os.getenv('ALLTA_API_VERIFY_TLS', '0').strip().lower()
@@ -104,6 +127,41 @@ def get_version_hashes(state):
         return {str(latest_version): str(latest_commit)}
     return {}
 
+def state_key(version, channel):
+    if channel == 'dev':
+        return f'dev:{version}'
+    return version
+
+def target_index_url(channel):
+    if channel == 'dev':
+        return DEVPI_TEST_INDEX_URL
+    return DEVPI_RELEASE_INDEX_URL
+
+def parse_version_commit_message(commit_message):
+    """Return (version, channel) for supported allta_lib commit messages."""
+    release_pattern = re.compile(
+        rf'^{re.escape(PACKAGE_NAME)}_lib v(?P<version>{RELEASE_VERSION_PATTERN})$'
+    )
+    match = release_pattern.match(commit_message)
+    if match:
+        return match.group('version'), 'release'
+
+    dev_prefixed_pattern = re.compile(
+        rf'^dev\s+{re.escape(PACKAGE_NAME)}_lib v(?P<version>{DEV_VERSION_PATTERN})(?:\s+.*)?$'
+    )
+    match = dev_prefixed_pattern.match(commit_message)
+    if match:
+        return match.group('version'), 'dev'
+
+    dev_four_part_pattern = re.compile(
+        rf'^{re.escape(PACKAGE_NAME)}_lib v(?P<version>{DEV_FOUR_PART_VERSION_PATTERN})(?:\s+.*)?$'
+    )
+    match = dev_four_part_pattern.match(commit_message)
+    if match:
+        return match.group('version'), 'dev'
+
+    return None
+
 def save_state(state_path, data):
     if not state_path:
         return
@@ -113,11 +171,11 @@ def save_state(state_path, data):
     with open(state_path, 'w', encoding='utf-8') as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
 
-def clone_repo(repo_path):
+def clone_repo(repo_path, branch):
     if os.path.exists(repo_path):
         print(f"Удаляем старый репозиторий: {repo_path}")
         cmd(f'rm -rf {repo_path}')
-    print("Клонируем репозиторий...")
+    print(f"Клонируем ветку '{branch}' репозитория...")
 
     git_token, git_username = fetch_git_token()
 
@@ -146,24 +204,29 @@ def clone_repo(repo_path):
     env['GIT_TERMINAL_PROMPT'] = '0'
     env['GIT_ASKPASS'] = '/bin/false'
     env['SSH_ASKPASS'] = '/bin/false'
-    subprocess.run(
+    run_checked(
         [
             'git',
             '-c', f'http.extraHeader={extra_header}',
-            'clone', 'https://git.astralinux.ru/scm/qa/stress_test.git'
+            'clone',
+            '--branch', branch,
+            '--single-branch',
+            'https://git.astralinux.ru/scm/qa/stress_test.git',
+            repo_path,
         ],
-        check=True,
-        env=env
+        env=env,
+        error_message=f"Не удалось клонировать ветку '{branch}'"
     )
-    subprocess.run(
+    run_checked(
         ['git', '-C', repo_path, 'config', 'http.extraHeader', extra_header],
-        check=True,
-        env=env
+        env=env,
+        error_message='Не удалось сохранить git extraHeader'
     )
 
-def version_exists_on_devpi(version):
+def version_exists_on_devpi(version, index_url=None):
+    index_url = index_url or target_index_url('release')
     use_result = subprocess.run(
-        ['devpi', 'use', DEVPI_INDEX_URL],
+        ['devpi', 'use', index_url],
         capture_output=True,
         text=True
     )
@@ -195,7 +258,7 @@ def update_version_in_files(repo_path, version):
     with open(setup_py_path, 'w', encoding='utf-8') as f:
         for line in lines:
             if 'version=' in line:
-                line = re.sub(r"version\s*=\s*['\"]\d+\.\d+\.\d+['\"]", f"version='{version}'", line)
+                line = re.sub(r"version\s*=\s*['\"][^'\"]+['\"]", f"version='{version}'", line)
             f.write(line)
 
     if os.path.exists(setup_cfg_path):
@@ -230,22 +293,26 @@ def _set_setupcfg_docs(repo_path, enabled):
         config.write(f)
 
 
-def upload_version(repo_path):
-    password = os.getenv('DEVPI_ROOT_PASSWORD') or os.getenv('DEVPI_ADMIN_PASSWORD')
+def upload_version(repo_path, index_url=None):
+    index_url = index_url or DEVPI_RELEASE_INDEX_URL
+    user = DEVPI_UPLOAD_USER or 'root'
+    password = DEVPI_UPLOAD_PASSWORD
+    if not password and user == 'root':
+        password = os.getenv('DEVPI_ROOT_PASSWORD') or os.getenv('DEVPI_ADMIN_PASSWORD')
     if not password:
-        print("❌ Переменная окружения DEVPI_ROOT_PASSWORD не установлена!")
+        print(f"❌ Пароль для пользователя devpi '{user}' не установлен!")
         return
     upload_docs_env = os.getenv('DEVPI_UPLOAD_DOCS', '1').strip().lower()
     docs_enabled = upload_docs_env not in ('0', 'false', 'no', 'off')
     _set_setupcfg_docs(repo_path, docs_enabled)
     docs_flag = '--with-docs' if docs_enabled else ''
     command = (
-        f'devpi use {DEVPI_INDEX_URL} && '
-        f'devpi login root --password {password} && '
+        f'devpi use {shlex.quote(index_url)} && '
+        f'devpi login {shlex.quote(user)} --password {shlex.quote(password)} && '
         f'devpi upload {docs_flag} && '
-        f'rm -rf {repo_path}/libs/allta/allta.egg-info && '
-        f'rm -rf {repo_path}/libs/allta/dist && '
-        f'rm -rf {repo_path}/libs/allta/build'
+        f'rm -rf {shlex.quote(repo_path)}/libs/allta/allta.egg-info && '
+        f'rm -rf {shlex.quote(repo_path)}/libs/allta/dist && '
+        f'rm -rf {shlex.quote(repo_path)}/libs/allta/build'
     )
     cmd(command, cwd=f'{repo_path}/libs/allta')
 
@@ -262,20 +329,19 @@ def iter_version_commits(repo_path, branch):
         check=True, capture_output=True, text=True, cwd=repo_path
     )
 
-    pattern = re.compile(rf'^{re.escape(PACKAGE_NAME)}_lib v(\d+\.\d+\.\d+)$')
     commits = []
     for line in result.stdout.strip().split('\n'):
         if not line or '||' not in line:
             continue
         commit_hash, commit_message = line.strip().split('||', 1)
         commit_message = commit_message.strip()
-        match = pattern.match(commit_message)
-        if match:
-            commits.append((commit_hash, match.group(1)))
+        parsed = parse_version_commit_message(commit_message)
+        if parsed:
+            version, channel = parsed
+            commits.append((commit_hash, version, channel))
     return commits
 
 def find_version_commit(repo_path, branch, version):
-    pattern = re.compile(rf'^{re.escape(PACKAGE_NAME)}_lib v{re.escape(version)}$')
     result = subprocess.run(
         ['git', 'log', f'origin/{branch}', '--reverse', '--pretty=format:%H||%s'],
         check=True, capture_output=True, text=True, cwd=repo_path
@@ -284,7 +350,8 @@ def find_version_commit(repo_path, branch, version):
         if not line or '||' not in line:
             continue
         commit_hash, commit_message = line.strip().split('||', 1)
-        if pattern.match(commit_message.strip()):
+        parsed = parse_version_commit_message(commit_message.strip())
+        if parsed and parsed[0] == version and parsed[1] == 'release':
             return commit_hash
     return None
 
@@ -312,20 +379,22 @@ def initial_sync(repo_path, branch='libs', state_path=None):
 
     versions_handled = set()
     missing_found = False
-    for commit_hash, version in reversed(commits):
-        if version in versions_handled:
+    for commit_hash, version, channel in reversed(commits):
+        version_key = state_key(version, channel)
+        if version_key in versions_handled:
             continue
-        stored_hash = version_hashes.get(version)
+        index_url = target_index_url(channel)
+        stored_hash = version_hashes.get(version_key)
         needs_reupload = stored_hash is not None and stored_hash != commit_hash
-        exists = version_exists_on_devpi(version)
+        exists = version_exists_on_devpi(version, index_url=index_url)
         should_upload = needs_reupload or not exists
 
         if should_upload:
             missing_found = True
             if needs_reupload:
-                print(f"♻️ Версия {version} изменилась (хеш другой). Пере-загружаем...")
+                print(f"♻️ Версия {version} изменилась (хеш другой). Пере-загружаем в {index_url}...")
             else:
-                print(f"🔄 Новая версия {version} не найдена на devpi. Загружаем...")
+                print(f"🔄 Новая версия {version} не найдена на devpi. Загружаем в {index_url}...")
 
             try:
                 cmd('git checkout HEAD', cwd=repo_path)
@@ -338,14 +407,14 @@ def initial_sync(repo_path, branch='libs', state_path=None):
 
             update_version_in_files(repo_path, version)
             try:
-                upload_version(repo_path)
-                version_hashes[version] = commit_hash
+                upload_version(repo_path, index_url=index_url)
+                version_hashes[version_key] = commit_hash
             except subprocess.CalledProcessError as e:
                 print(f"❌ Ошибка загрузки версии {version}: {e}")
         else:
             print(f"✔️ Версия {version} уже есть на devpi. Пропускаем.")
-            version_hashes[version] = commit_hash
-        versions_handled.add(version)
+            version_hashes[version_key] = commit_hash
+        versions_handled.add(version_key)
 
     if not missing_found:
         print("✅ Нет новых подходящих коммитов.")
@@ -373,20 +442,22 @@ def monitor_branch(repo_path, branch='libs', check_interval=60, state_path=None)
 
             versions_handled = set()
             missing_found = False
-            for commit_hash, version in reversed(commits):
-                if version in versions_handled:
+            for commit_hash, version, channel in reversed(commits):
+                version_key = state_key(version, channel)
+                if version_key in versions_handled:
                     continue
-                stored_hash = version_hashes.get(version)
+                index_url = target_index_url(channel)
+                stored_hash = version_hashes.get(version_key)
                 needs_reupload = stored_hash is not None and stored_hash != commit_hash
-                exists = version_exists_on_devpi(version)
+                exists = version_exists_on_devpi(version, index_url=index_url)
                 should_upload = needs_reupload or not exists
 
                 if should_upload:
                     missing_found = True
                     if needs_reupload:
-                        print(f"♻️ Версия {version} изменилась (хеш другой). Пере-загружаем...")
+                        print(f"♻️ Версия {version} изменилась (хеш другой). Пере-загружаем в {index_url}...")
                     else:
-                        print(f"🆕 Обнаружена новая версия {version}. Загружаем...")
+                        print(f"🆕 Обнаружена новая версия {version}. Загружаем в {index_url}...")
 
                     try:
                         cmd('git checkout HEAD', cwd=repo_path)
@@ -399,14 +470,14 @@ def monitor_branch(repo_path, branch='libs', check_interval=60, state_path=None)
 
                     update_version_in_files(repo_path, version)
                     try:
-                        upload_version(repo_path)
-                        version_hashes[version] = commit_hash
+                        upload_version(repo_path, index_url=index_url)
+                        version_hashes[version_key] = commit_hash
                     except subprocess.CalledProcessError as e:
                         print(f"❌ Ошибка загрузки версии {version}: {e}")
                 else:
                     print(f"✔️ Версия {version} уже существует на devpi.")
-                    version_hashes[version] = commit_hash
-                versions_handled.add(version)
+                    version_hashes[version_key] = commit_hash
+                versions_handled.add(version_key)
 
             if not missing_found:
                 print("✅ Нет новых подходящих коммитов.")
@@ -423,10 +494,17 @@ def main():
     state_path = get_state_path(base_dir)
 
     repo_path = os.path.join(base_dir, 'stress_test')
-    clone_repo(repo_path)
+    while True:
+        try:
+            clone_repo(repo_path, MONITOR_BRANCH)
+            break
+        except Exception as exc:
+            print(f"❌ Ошибка клонирования репозитория: {exc}")
+            print(f"⏳ Повтор через {CLONE_RETRY_INTERVAL} секунд...")
+            time.sleep(CLONE_RETRY_INTERVAL)
 
-    initial_sync(repo_path, branch='libs', state_path=state_path)
-    monitor_branch(repo_path, branch='libs', check_interval=60, state_path=state_path)
+    initial_sync(repo_path, branch=MONITOR_BRANCH, state_path=state_path)
+    monitor_branch(repo_path, branch=MONITOR_BRANCH, check_interval=60, state_path=state_path)
 
 if __name__ == '__main__':
     try:

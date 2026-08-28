@@ -386,7 +386,7 @@ exports(){
     export PREVIOUS_COMMIT_FILE="$STATE_DIR/previous_commit.hash"
     export PREVIOUS_BRANCH_FILE="$STATE_DIR/previous_branch.txt"
     export CRED_BACKUP_DIR="$STATE_DIR/cred_backup"
-    export DEVPI_DATA_DIR="${DEVPI_DATA_DIR:-/home/partimag/devpi}"
+    export DEVPI_DATA_DIR="/home/partimag/devpi}"
     export DEVPI_ENV_FILE="$CRED_PATH/env.devpi"
 }
 

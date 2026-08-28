@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Массовая загрузка пакетов в devpi (root/release) для офлайн-выживания.
+"""Массовая загрузка пакетов в devpi root/pypi для офлайн-выживания.
 
 Скрипт делает две вещи:
   1. Скачивает указанные пакеты со всеми транзитивными зависимостями в
@@ -7,16 +7,17 @@
   2. Загружает каждый скачанный дистрибутив в индекс devpi через devpi-client.
 
 Источник пакетов — requirements-файлы (--req) и/или явные спеки (--package).
-Пароль root берётся из переменной окружения DEVPI_ROOT_PASSWORD (не хардкодим).
+Пароль upload-пользователя берётся из DEVPI_UPLOAD_PASSWORD,
+DEVPI_LOCAL_UPLOAD_PASSWORD или DEVPI_ROOT_PASSWORD (не хардкодим).
 """
 import argparse
 import os
 import subprocess
 import sys
 
-# Куда грузим по умолчанию: read-only ACS-хост с devpi.
+# Куда грузим по умолчанию: локальный PyPI-stage, от которого наследуются release/test.
 DEFAULT_DEVPI_URL = 'http://10.177.103.10:3141'
-DEFAULT_INDEX = 'root/release'
+DEFAULT_INDEX = 'root/pypi'
 
 # Расширения, которые devpi-client принимает как дистрибутивы.
 DIST_SUFFIXES = ('.whl', '.tar.gz', '.zip', '.tar.bz2')
@@ -24,7 +25,7 @@ DIST_SUFFIXES = ('.whl', '.tar.gz', '.zip', '.tar.bz2')
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Скачать пакеты с зависимостями и залить их в devpi root/release.'
+        description='Скачать пакеты с зависимостями и залить их в devpi root/pypi.'
     )
     parser.add_argument('--req', action='append', default=[], metavar='PATH',
                         help='requirements-файл (один проход pip download -r, можно несколько раз).')
@@ -40,8 +41,10 @@ def parse_args():
                         help=f'Базовый URL devpi (по умолчанию {DEFAULT_DEVPI_URL}).')
     parser.add_argument('--index', default=os.getenv('DEVPI_INDEX', DEFAULT_INDEX),
                         help=f'Индекс devpi (по умолчанию {DEFAULT_INDEX}).')
-    parser.add_argument('--root-user', default='root',
-                        help='Имя пользователя-владельца индекса (по умолчанию root).')
+    parser.add_argument('--user', default=os.getenv('DEVPI_UPLOAD_USER') or os.getenv('DEVPI_LOCAL_UPLOAD_USER') or 'allta',
+                        help='Пользователь devpi для upload (по умолчанию DEVPI_UPLOAD_USER/DEVPI_LOCAL_UPLOAD_USER/allta).')
+    parser.add_argument('--root-user', dest='user', default=argparse.SUPPRESS,
+                        help='Deprecated alias для --user.')
     # Платформенные флаги для pip download. Пустое значение -> флаг не передаётся.
     parser.add_argument('--python-version', default='',
                         help='--python-version для pip download (напр. 3.12). По умолчанию текущий интерпретатор.')
@@ -130,6 +133,8 @@ def download_all(args):
 
 
 def list_distfiles(dest):
+    if not os.path.isdir(dest):
+        return []
     files = []
     for name in sorted(os.listdir(dest)):
         path = os.path.join(dest, name)
@@ -147,7 +152,7 @@ def devpi_login(args, password):
     url = f"{args.devpi_url.rstrip('/')}/{args.index}"
     if not run(['devpi', 'use', url]):
         return False
-    return run(['devpi', 'login', args.root_user, '--password', password])
+    return run(['devpi', 'login', args.user, '--password', password])
 
 
 def upload_all(args, files):
@@ -187,9 +192,13 @@ def main():
     elif not files:
         print('Нечего загружать — wheelhouse пуст.')
     else:
-        password = os.getenv('DEVPI_ROOT_PASSWORD')
+        password = (
+            os.getenv('DEVPI_UPLOAD_PASSWORD')
+            or os.getenv('DEVPI_LOCAL_UPLOAD_PASSWORD')
+            or os.getenv('DEVPI_ROOT_PASSWORD')
+        )
         if not password:
-            print('❌ Не задана переменная окружения DEVPI_ROOT_PASSWORD.', file=sys.stderr)
+            print('❌ Не задана переменная окружения DEVPI_UPLOAD_PASSWORD/DEVPI_LOCAL_UPLOAD_PASSWORD/DEVPI_ROOT_PASSWORD.', file=sys.stderr)
             return 1
         if not devpi_login(args, password):
             print('❌ Не удалось настроить/авторизовать devpi-client.', file=sys.stderr)

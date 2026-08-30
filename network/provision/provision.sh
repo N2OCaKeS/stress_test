@@ -19,8 +19,8 @@ sudo apt-get update
 sudo apt-get install -i allta*.deb
 
 sudo apt-get install python3-pip -y
-python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
-sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
+sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
 
 cat /etc/astra/build_version > /home/u/av.txt
 uname -r > /home/u/kernel.txt

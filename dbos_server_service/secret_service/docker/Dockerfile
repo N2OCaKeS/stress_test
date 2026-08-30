@@ -1,5 +1,8 @@
 FROM python:3.12-slim
 
+# Allta devpi package index
+RUN pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release && pip config --global set global.trusted-host allta.devos.astralinux.ru
+
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app

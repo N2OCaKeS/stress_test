@@ -1,4 +1,7 @@
 FROM python:3.12-slim AS vendor
+
+# Allta devpi package index
+RUN pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release && pip config --global set global.trusted-host allta.devos.astralinux.ru
 # Отдельный слой тянет пинованную статику noVNC + spice-html5 в static/assets.
 # Всё self-hosted: в рантайме CSP='self' и ничего не грузится с CDN.
 RUN apt-get update \

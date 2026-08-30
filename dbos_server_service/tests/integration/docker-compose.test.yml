@@ -208,7 +208,9 @@ services:
       - ./seed_worker_pat.py:/seed_worker_pat.py:ro
       - bootstrap:/shared
     command: >
-      sh -c "pip install --quiet --no-cache-dir 'httpx==0.28.1' &&
+      sh -c "pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release &&
+             pip config --global set global.trusted-host allta.devos.astralinux.ru &&
+             pip install --quiet --no-cache-dir 'httpx==0.28.1' &&
              python /seed_worker_pat.py"
     depends_on:
       auth-service:

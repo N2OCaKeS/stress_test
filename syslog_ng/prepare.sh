@@ -63,8 +63,8 @@ sudo make altinstall
 python3.12 -m venv venv
 source venv/bin/activate
 
-python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
-sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
+sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
 
 pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10:3141 allta
 
@@ -110,5 +110,4 @@ if [[ $(egrep -c '(vmx|svm)' /proc/cpuinfo) -gt 0 ]]; then
 else 
     echo "system does not supports hardware virtualization" 
 fi
-
 

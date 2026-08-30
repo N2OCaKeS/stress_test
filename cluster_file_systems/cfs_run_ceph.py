@@ -58,6 +58,13 @@ class Ceph:
             self.vmc = 4
             install_need_packages = "sudo apt install libgfapi0 -y"
             install_pip_req = "sudo pip3 install -r /var/tmp/req.txt"
+
+        install_pip_config = (
+            "sudo python3 -m pip config --global set global.index-url "
+            "http://allta.devos.astralinux.ru:3141/root/release ; "
+            "sudo python3 -m pip config --global set global.trusted-host "
+            "allta.devos.astralinux.ru"
+        )
         
         print("**********TEST LOCK INFO START**********")
         print("sudo lsof /var/lib/dpkg/lock*")
@@ -124,7 +131,7 @@ class Ceph:
         make_need_dir = "sudo mkdir /var/tmp/report /var/tmp/log"
         change_script_dir = "sed -i \"s|SCRIPT_DIR = '/git'|SCRIPT_DIR = '/var/tmp'|g\" /var/tmp/cfs_conf.py"
 
-        send_remote_command(f"{make_need_dir} ; {install_need_packages} ; {install_pip_req} ; {change_script_dir}",
+        send_remote_command(f"{make_need_dir} ; {install_need_packages} ; {install_pip_config} ; {install_pip_req} ; {change_script_dir}",
                             ip=self.HOSTS["testvm1"]['ip'], 
                             user=self.HOSTS["testvm1"]['login'], 
                             password=self.HOSTS["testvm1"]['password'])

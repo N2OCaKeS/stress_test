@@ -28,11 +28,10 @@ def initialization_freeipa_server():
     """
         Обновление списка пакетов
     """    
+    cmd("sudo install -d -m 0755 /etc && printf '%s\\n' '[global]' 'index-url = http://allta.devos.astralinux.ru:3141/root/release' 'trusted-host = allta.devos.astralinux.ru' | sudo tee /etc/pip.conf >/dev/null && sudo chmod 0644 /etc/pip.conf")
     cmd("sudo apt update -y")
     cmd("sudo apt install python3-venv build-essential python3-dev python3-pip gcc -y")
     cmd("sudo apt install libkrb5-dev -y")
-    cmd("sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release")
-    cmd("sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru")
     """
         Установка пакетов astra-freeipa-server
     """    

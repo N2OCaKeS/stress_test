@@ -2,6 +2,14 @@
 
 set -vx
 
+sudo install -d -m 0755 /etc
+cat << 'EOF' | sudo tee /etc/pip.conf >/dev/null
+[global]
+index-url = http://allta.devos.astralinux.ru:3141/root/release
+trusted-host = allta.devos.astralinux.ru
+EOF
+sudo chmod 0644 /etc/pip.conf
+
 18repo() {
 cat << EOF > /etc/apt/sources.list
 deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/installation 1.8_x86-64 main contrib non-free
@@ -54,9 +62,6 @@ python3.12 -m venv venv
 source venv/bin/activate
 
 cd /home/u/git/stress_test/$1
-# Allta devpi package index
-sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
-sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
 python3.12 -m pip install --upgrade pip
 python3.12 -m pip install -r req.txt
 if [[ $? != 0 ]]; then

@@ -1,5 +1,13 @@
 #!/bin/bash
 
+sudo install -d -m 0755 /etc
+sudo tee /etc/pip.conf >/dev/null <<'EOF'
+[global]
+index-url = http://allta.devos.astralinux.ru:3141/root/release
+trusted-host = allta.devos.astralinux.ru
+EOF
+sudo chmod 0644 /etc/pip.conf
+
 #sudo echo deb ftp://10.177.5.111/astra/testing/1.8.0.2/devel 1.8_x86-64 main contrib non-free >> /etc/apt/sources.list
 #sudo apt update -y
 
@@ -13,9 +21,6 @@ sudo mkdir -p /home/iface
 
 # venv
 source /home/u/python/Python-3.12.1/venv/bin/activate
-sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
-sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
-
 
 #virtualbox
 wget -r -nH --cut-dirs=3 --no-parent ftp://qa111.devos.astralinux.ru/packages/vbox7

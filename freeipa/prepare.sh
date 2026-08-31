@@ -19,8 +19,6 @@ sudo apt install sshpass -y
 sudo apt --fix-broken install -y
 
 sudo apt install python3-pip -y
-python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
-sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
 
 # create venv in script_dir
 #sudo apt-get install -y python3-dev python3-venv python3-requests python3-pip libffi-dev
@@ -28,5 +26,8 @@ sudo python3 -m pip config set global.extra-index-url https://artifactory.astral
 
 # install python dependencies in venv
 #source venv/bin/activate
+# Allta devpi package index
+sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
+sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
 #pip install --upgrade pip
 #pip3 install -r req.txt

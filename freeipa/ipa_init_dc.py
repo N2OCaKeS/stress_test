@@ -31,8 +31,8 @@ def initialization_freeipa_server():
     cmd("sudo apt update -y")
     cmd("sudo apt install python3-venv build-essential python3-dev python3-pip gcc -y")
     cmd("sudo apt install libkrb5-dev -y")
-    cmd("python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple")
-    cmd("sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple")
+    cmd("sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release")
+    cmd("sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru")
     """
         Установка пакетов astra-freeipa-server
     """    

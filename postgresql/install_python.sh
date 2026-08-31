@@ -18,7 +18,10 @@ sudo make altinstall
 
 python3.12 -m venv venv
 source venv/bin/activate
+# Allta devpi package index
+sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
+sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
+
 pip install --upgrade pip
 pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10 allta==1.0.20
-
 

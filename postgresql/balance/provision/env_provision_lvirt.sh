@@ -46,6 +46,10 @@ dpkg -s ntpsec &> /dev/null || sudo apt-get install ntpsec -y
 sudo apt-get install -y python3-pip
 
 if test "$(grep -E '1.8.*' /etc/astra_version)"; then
+# Allta devpi package index
+sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
+sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
+
     python3 -m pip install --upgrade pip --break-system-packages
     if [[ $? != 0 ]]; then
         python3 -m pip install --upgrade pip --break-system-packages
@@ -245,4 +249,3 @@ fi
 sudo sed -i "s/GRUB_DEFAULT=.*/GRUB_DEFAULT=$kernel_conf/" /etc/default/grub
 sudo update-grub
 cat /etc/default/grub | grep GRUB_DEFAULT
-

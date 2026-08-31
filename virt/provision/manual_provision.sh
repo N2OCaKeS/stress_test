@@ -2,6 +2,13 @@
 
 set -vx
 
+sudo tee /etc/pip.conf >/dev/null <<'EOF'
+[global]
+index-url = http://allta.devos.astralinux.ru:3141/root/release
+trusted-host = allta.devos.astralinux.ru
+EOF
+sudo chmod 0644 /etc/pip.conf
+
 if [ "$1" == "debian" ] || [ "$1" == "astra" ] || [ "$1" == "alt" ]; then
     pm=apt-get
 elif [ "$1" == "rhel" ] || [ "$1" == "redos" ]; then
@@ -39,4 +46,3 @@ sudo $pm install -y sysstat
 sudo $pm install -y netcat
 sudo $pm install -y libffi-dev gcc make libpdp-dev
 sudo $pm install -y python3-numpy
-

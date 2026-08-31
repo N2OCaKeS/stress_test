@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 # Allta devpi package index
-RUN pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release && pip config --global set global.trusted-host allta.devos.astralinux.ru
+RUN printf '%s\n' '[global]' 'index-url = http://allta.devos.astralinux.ru:3141/root/release' 'trusted-host = allta.devos.astralinux.ru' > /etc/pip.conf && chmod 0644 /etc/pip.conf
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1

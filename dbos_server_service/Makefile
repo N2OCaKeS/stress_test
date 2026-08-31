@@ -431,8 +431,8 @@ test-secret: ## Тесты secret_service в Docker
 
 test-console: ## Тесты console_proxy (VNC/SPICE-прокси) в одноразовом python-контейнере
 	docker run --rm -v "$(CURDIR)/console_proxy:/app" -w /app python:3.12-slim bash -lc \
-		"pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release && \
-		 pip config --global set global.trusted-host allta.devos.astralinux.ru && \
+		"printf '%s\\n' '[global]' 'index-url = http://allta.devos.astralinux.ru:3141/root/release' 'trusted-host = allta.devos.astralinux.ru' > /etc/pip.conf && \
+			 chmod 0644 /etc/pip.conf && \
 		 pip install -q poetry==2.3.4 && poetry install --only main,dev --no-root && PYTHONPATH=. poetry run pytest -q"
 
 test-integration: ## Полный E2E-стек (4 сервиса + openssh-server + worker) и pytest tests/integration/

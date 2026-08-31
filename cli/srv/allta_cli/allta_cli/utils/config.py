@@ -11,6 +11,11 @@ SESSION_FILE =  Path(Path.home() / ".config" / "allta" / "session.json")
 TOKEN_TTL_HOURS_DEFAULT = 10 * 60 * 60
 
 CONFIG_API_BASE = "https://allta.devos.astralinux.ru:21500/api/config/v1".rstrip("/")
+ALLTA_API_VERIFY_TLS = (
+    os.environ.get("ALLTA_API_VERIFY_TLS")
+    or os.environ.get("ALLTA_VERIFY_TLS")
+    or "1"
+).strip().lower() not in {"0", "false", "no", "off"}
 
 JIRA_BASE_URL = os.environ.get("ALLTA_JIRA_BASE_URL") or os.environ.get("JIRA_BASE_URL") or "https://jira.astralinux.ru"
 JIRA_BASE_URL = JIRA_BASE_URL.rstrip("/")
@@ -26,8 +31,13 @@ JIRA_PRIORITY_ID = os.environ.get("ALLTA_JIRA_PRIORITY_ID") or os.environ.get("J
 _JIRA_SERVICE_USERS_RAW = os.environ.get("ALLTA_JIRA_SERVICE_USERS") or "allta,lib"
 JIRA_SERVICE_USERS = frozenset(s.strip() for s in _JIRA_SERVICE_USERS_RAW.split(",") if s.strip())
 
-DEVPI_URL = (os.environ.get("ALLTA_DEVPI_URL") or os.environ.get("DEVPI_URL") or "https://10.177.103.10:3141").rstrip("/")
+DEVPI_URL = (os.environ.get("ALLTA_DEVPI_URL") or os.environ.get("DEVPI_URL") or "http://allta.devos.astralinux.ru:3141").rstrip("/")
 DEVPI_INDEX = (os.environ.get("ALLTA_DEVPI_INDEX") or os.environ.get("DEVPI_INDEX") or "root/release").strip("/")
+DEVPI_SOURCE_INDEX_URL = (
+    os.environ.get("ALLTA_DEVPI_SOURCE_INDEX_URL")
+    or os.environ.get("DEVPI_SOURCE_INDEX_URL")
+    or "https://pypi.org/simple"
+).rstrip("/")
 
 GIT_REPO_URL = "https://git.astralinux.ru/scm/qa/stress_test.git"
 GIT_DEST_DIR = Path(os.path.expanduser("~/git"))

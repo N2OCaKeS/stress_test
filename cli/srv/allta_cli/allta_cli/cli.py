@@ -28,7 +28,7 @@ from allta_cli.commands.creds import (
 from allta_cli.commands.ilo import ilo_cmd as ilo_run
 from allta_cli.commands.git import git_clone
 from allta_cli.commands.python import install_python, create_venv
-from allta_cli.commands.python_pkg import python_pkg
+from allta_cli.commands import devpi as devpi_api
 from allta_cli.commands import mc as mc_cmd
 from allta_cli.commands import vm as vm_api
 from allta_cli.commands import vm_local as vm_local_api
@@ -62,7 +62,7 @@ COMMANDS_WITH_AUTH = (
     "server",
     "vm",
     "jira",
-    "python-pkg",
+    "devpi",
 )
 
 COMMAND_SHORTCUTS = {
@@ -82,7 +82,6 @@ COMMAND_SHORTCUTS = {
     "k": "kernel",
     "ms": "modeswitch",
     "up": "upgrade",
-    "pip": "python-pkg",
 }
 COMMAND_SHORTCUT_NAMES = tuple(COMMAND_SHORTCUTS.keys())
 
@@ -283,7 +282,7 @@ class VmGroup(SectionedGroup):
 class LocalVmGroup(SectionedGroup):
     command_sections = (
         ("Информация", ("list", "status", "snapshots")),
-        ("Действия с ВМ", ("build", "start", "stop", "astra-update")),
+        ("Действия с ВМ", ("build", "edit", "disk", "start", "stop", "delete", "clear", "astra-update")),
         ("Снимки", ("snapshot-create", "snapshot-delete", "snapshot-revert")),
     )
 
@@ -1130,41 +1129,144 @@ def venv_cmd(venv_path: str | None):
     sys.exit(rc)
 
 
-@cli.command(
-    "python-pkg",
-    short_help="Догрузить недостающие pip-пакеты в devpi.",
-    help=(
-        "Находит пакеты, которых ещё нет в индексе devpi (root/release), и докладывает "
-        "их туда вместе с транзитивными зависимостями — чтобы внутренняя сеть пережила "
-        "обрыв интернета.\n\n"
-        "PATH — файл требований (по умолчанию ищется requirements*.txt в текущем каталоге; "
-        "при нескольких предпочитается requirements.txt). Также можно передать имена пакетов "
-        "напрямую (например: allta python-pkg requests==2.31.0 flask).\n\n"
-        "Креды devpi берутся из config-сервиса (credential 'devpi_root'). "
-        "Адрес и индекс настраиваются через ALLTA_DEVPI_URL / ALLTA_DEVPI_INDEX."
-    ),
-)
-@click.argument("targets", nargs=-1, metavar="[PATH | PACKAGE...]")
-@click.option(
-    "--file",
-    "req_file",
-    type=click.Path(dir_okay=False),
-    default=None,
-    show_default=False,
-    help="Явный файл требований (requirements.txt).",
-)
-@with_section("PYTHON-PKG")
-def python_pkg_cli(targets: tuple[str, ...], req_file: str | None):
+@cli.group("devpi", short_help="Загрузка и удаление пакетов в devpi.", context_settings=CONTEXT_SETTINGS)
+def devpi_cli():
     _ensure_authenticated_or_exit()
-    path_arg: str | None = None
-    packages = targets
-    # единственный позиционный аргумент, похожий на файл требований, трактуем как PATH
-    if len(targets) == 1 and not req_file:
-        only = targets[0]
-        if only.endswith(".txt") or "/" in only or os.sep in only:
-            path_arg = only
-            packages = ()
-    rc = python_pkg(path=path_arg, file=req_file, packages=packages)
+
+
+@devpi_cli.command(
+    "repos",
+    short_help="Показать доступные devpi repo.",
+)
+@with_section("DEVPI REPOS")
+def devpi_repos_cli():
+    rc = devpi_api.list_repos()
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "debug",
+    short_help="Показать эффективные настройки devpi.",
+)
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@with_section("DEVPI DEBUG")
+def devpi_debug_cli(repo: str | None):
+    rc = devpi_api.debug_config(repo=repo)
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "load",
+    short_help="Загрузить PyPI-пакеты в root/pypi.",
+    context_settings=dict(ignore_unknown_options=True),
+)
+@click.argument("packages", nargs=-1, metavar="[PACKAGE_SPEC]...")
+@click.option(
+    "-r",
+    "--requirement",
+    "req_files",
+    multiple=True,
+    type=click.Path(dir_okay=False),
+    help="requirements-файл; строки обрабатываются по одной.",
+)
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@click.option("-n", "--no-deps", is_flag=True, help="Скачать только указанные пакеты без зависимостей.")
+@with_section("DEVPI LOAD")
+def devpi_load_cli(packages: tuple[str, ...], req_files: tuple[str, ...], repo: str | None, no_deps: bool):
+    rc = devpi_api.load_packages(packages, req_files, repo=repo, no_deps=no_deps)
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "remove",
+    short_help="Удалить PyPI-пакеты из root/pypi.",
+    context_settings=dict(ignore_unknown_options=True),
+)
+@click.argument("packages", nargs=-1, metavar="[PACKAGE | PACKAGE==VERSION]...")
+@click.option(
+    "-r",
+    "--requirement",
+    "req_files",
+    multiple=True,
+    type=click.Path(dir_okay=False),
+    help="requirements-файл; строки обрабатываются по одной.",
+)
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@click.option("-y", "--yes", is_flag=True, help="Не запрашивать подтверждение devpi-client.")
+@with_section("DEVPI REMOVE")
+def devpi_remove_cli(packages: tuple[str, ...], req_files: tuple[str, ...], repo: str | None, yes: bool):
+    rc = devpi_api.remove_packages(packages, req_files, repo=repo, yes=yes)
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "list",
+    short_help="Показать пакеты и версии в repo.",
+    context_settings=dict(ignore_unknown_options=True),
+)
+@click.argument("packages", nargs=-1, metavar="[PACKAGE_SPEC]...")
+@click.option(
+    "-r",
+    "--requirement",
+    "req_files",
+    multiple=True,
+    type=click.Path(dir_okay=False),
+    help="requirements-файл для проверки наличия пакетов.",
+)
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@with_section("DEVPI LIST")
+def devpi_list_cli(packages: tuple[str, ...], req_files: tuple[str, ...], repo: str | None):
+    rc = devpi_api.list_packages(packages, req_files, repo=repo)
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "check",
+    short_help="Показать файлы и версии пакета.",
+    context_settings=dict(ignore_unknown_options=True),
+)
+@click.argument("package", metavar="PACKAGE")
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@with_section("DEVPI CHECK")
+def devpi_check_cli(package: str, repo: str | None):
+    rc = devpi_api.check_package((package,), repo=repo)
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "download",
+    short_help="Скачать пакет из repo.",
+    context_settings=dict(ignore_unknown_options=True),
+)
+@click.argument("packages", nargs=-1, metavar="PACKAGE_SPEC...")
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@click.option("-d", "--dest", default=".", show_default=True, type=click.Path(file_okay=False), help="Каталог для скачивания.")
+@click.option("-n", "--no-deps", is_flag=True, help="Скачать только указанные пакеты без зависимостей.")
+@with_section("DEVPI DOWNLOAD")
+def devpi_download_cli(packages: tuple[str, ...], repo: str | None, dest: str, no_deps: bool):
+    rc = devpi_api.download_packages(packages, repo=repo, dest=dest, no_deps=no_deps)
+    sys.exit(rc)
+
+
+@devpi_cli.command(
+    "install",
+    short_help="Установить пакет в заданный Python из repo.",
+    context_settings=dict(ignore_unknown_options=True),
+)
+@click.argument("packages", nargs=-1, metavar="[PACKAGE_SPEC]...")
+@click.option(
+    "-r",
+    "--requirement",
+    "req_files",
+    multiple=True,
+    type=click.Path(dir_okay=False),
+    help="requirements-файл для установки.",
+)
+@click.option("-R", "--repo", default=None, show_default=False, help="Devpi repo, например root/pypi.")
+@click.option("-p", "--python", "python_bin", required=True, help="Python-интерпретатор для установки.")
+@with_section("DEVPI INSTALL")
+def devpi_install_cli(packages: tuple[str, ...], req_files: tuple[str, ...], repo: str | None, python_bin: str):
+    rc = devpi_api.install_packages(packages, req_files, repo=repo, python=python_bin)
     sys.exit(rc)
 
 
@@ -1257,6 +1359,7 @@ def local_group():
         "Состояние хранится в ~/.config/allta/local_vm/:\n"
         "- vms.json: inventory локальных ВМ\n"
         "- snapshots.json: inventory snapshot'ов\n"
+        "- snapshot_list.json / snapshots_list.json / all_snapshots.json / provider_snapshots.json: общий список snapshot'ов, если есть\n"
         "- prepare.json: состояние этапа prepare\n"
         "- provider_vms_dates.json: сырые данные провайдера\n\n"
         "ВМ поднимаются в системном libvirt пользователя root.\n"
@@ -2302,6 +2405,7 @@ def ssh_cli(target_query: str):
         "Локальный inventory читается из ~/.config/allta/local_vm/:\n"
         "- vms.json\n"
         "- snapshots.json\n"
+        "- snapshot_list.json / snapshots_list.json / all_snapshots.json / provider_snapshots.json, если есть\n"
         "- prepare.json\n"
         "- provider_vms_dates.json\n\n"
         "ВМ поднимаются в системном libvirt пользователя root.\n"
@@ -2732,6 +2836,174 @@ def local_vm_stop_cli(vm_names: tuple[str, ...], vms: tuple[str, ...]):
         names = _resolve_local_vm_names(positional=vm_names, option_values=vms)
         vm_local_api.stop_vms(names)
         ui.ok(f"Остановлены local VM: {', '.join(names)}")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@local_vm_group.command("edit", short_help="Изменить CPU/RAM/основной диск local VM.")
+@click.argument("vm_name", metavar="VM")
+@click.option("--cpu", default=None, show_default=False, type=click.IntRange(min=1), help="Новое количество CPU.")
+@click.option("--ram", default=None, show_default=False, type=click.IntRange(min=2), help="Новый размер RAM в GB.")
+@click.option("--disk", "disk_size", default=None, show_default=False, type=click.IntRange(min=1), help="Новый размер основного диска в GB.")
+@click.option("--yes", is_flag=True, help="Применить без подтверждения.")
+def local_vm_edit_cli(vm_name: str, cpu: int | None, ram: int | None, disk_size: int | None, yes: bool):
+    try:
+        changes = []
+        if cpu is not None:
+            changes.append(f"CPU: {cpu}")
+        if ram is not None:
+            changes.append(f"RAM: {ram}G")
+        if disk_size is not None:
+            changes.append(f"Основной диск: {disk_size}G")
+        if not changes:
+            raise click.UsageError("Укажите хотя бы один параметр: --cpu, --ram или --disk.")
+
+        ui.warn(f"Будет изменена local VM '{vm_name}': {', '.join(changes)}.")
+        ui.warn("Для применения будет выполнено: virsh destroy && virsh start.")
+        if not yes:
+            click.confirm("Продолжить?", abort=True)
+
+        result = vm_local_api.edit_vm(vm_name=vm_name, cpu=cpu, ram=ram, disk_size=disk_size)
+        ui.ok(f"Изменена local VM: {result.get('vm')}")
+        if result.get("changes"):
+            ui.echo(", ".join(result["changes"]))
+        if result.get("resized_disk"):
+            ui.echo(f"Диск: {result['resized_disk']}")
+    except click.UsageError:
+        raise
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@local_vm_group.group("disk", short_help="Создать или подключить дополнительный диск.")
+def local_vm_disk_group():
+    pass
+
+
+@local_vm_disk_group.command("create", short_help="Создать диск и подключить к local VM.")
+@click.argument("vm_name", metavar="VM")
+@click.option("--path", required=True, help="Абсолютный путь нового диска.")
+@click.option("--size", required=True, type=click.IntRange(min=1), help="Размер нового диска в GB.")
+@click.option("--target", default=None, show_default=False, help="Имя устройства в VM, например vdb. Если не задано: автоподбор.")
+@click.option("--format", "format_name", default="qcow2", show_default=True, help="Формат qemu-img.")
+@click.option("--yes", is_flag=True, help="Создать и подключить без подтверждения.")
+def local_vm_disk_create_cli(
+    vm_name: str,
+    path: str,
+    size: int,
+    target: str | None,
+    format_name: str,
+    yes: bool,
+):
+    try:
+        ui.warn(f"Будет создан диск {path} ({size}G, {format_name}) и подключен к local VM '{vm_name}'.")
+        ui.warn("Для применения будет выполнено: virsh destroy && virsh start.")
+        if not yes:
+            click.confirm("Продолжить?", abort=True)
+        result = vm_local_api.create_disk(
+            vm_name=vm_name,
+            path=path,
+            size=size,
+            target=target,
+            format_name=format_name,
+        )
+        ui.ok(f"Диск подключен к {result.get('vm')}: {result.get('disk')} -> {result.get('target')}")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@local_vm_disk_group.command("attach", short_help="Подключить существующий свободный диск.")
+@click.argument("vm_name", metavar="VM")
+@click.option("--path", required=True, help="Абсолютный путь существующего диска.")
+@click.option("--target", default=None, show_default=False, help="Имя устройства в VM, например vdb. Если не задано: автоподбор.")
+@click.option("--format", "format_name", default="qcow2", show_default=True, help="Формат диска для libvirt.")
+@click.option("--yes", is_flag=True, help="Подключить без подтверждения.")
+def local_vm_disk_attach_cli(
+    vm_name: str,
+    path: str,
+    target: str | None,
+    format_name: str,
+    yes: bool,
+):
+    try:
+        ui.warn(f"Будет подключен существующий диск {path} к local VM '{vm_name}'.")
+        ui.warn("Для применения будет выполнено: virsh destroy && virsh start.")
+        if not yes:
+            click.confirm("Продолжить?", abort=True)
+        result = vm_local_api.attach_disk(
+            vm_name=vm_name,
+            path=path,
+            target=target,
+            format_name=format_name,
+        )
+        ui.ok(f"Диск подключен к {result.get('vm')}: {result.get('disk')} -> {result.get('target')}")
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+def _print_local_vm_cleanup_result(result: dict[str, list[str]]) -> None:
+    deleted = result.get("deleted") or []
+    missing = result.get("missing") or []
+    cleaned = result.get("cleaned") or []
+    kept = result.get("kept") or []
+    failed = result.get("failed") or []
+    unknown = result.get("unknown") or []
+    errors = result.get("errors") or []
+
+    if deleted:
+        ui.ok(f"Удалены из libvirt: {', '.join(deleted)}")
+    if missing:
+        ui.warn(f"Не найдены в libvirt, очищены только файлы: {', '.join(missing)}")
+    if cleaned:
+        ui.ok(f"Очищены записи inventory: {', '.join(cleaned)}")
+    if kept:
+        ui.ok(f"Оставлены актуальные VM: {', '.join(kept)}")
+    if unknown:
+        ui.warn(f"Не удалось проверить через virsh, записи оставлены: {', '.join(unknown)}")
+    if failed:
+        ui.err(f"Не удалось удалить: {', '.join(failed)}")
+    for error in errors:
+        ui.err(error)
+    if not any((deleted, missing, cleaned, kept, failed, unknown)):
+        ui.echo("Локальные VM не найдены.")
+
+
+@local_vm_group.command("delete", short_help="Удалить local VM и очистить inventory.")
+@click.argument("vm_names", nargs=-1, metavar="[VM]...")
+@click.option("--all", "all_vms", is_flag=True, help="Удалить все local VM, которые есть и в virsh, и в inventory.")
+@click.option("--force", is_flag=True, help="Удалять VM из libvirt даже без записи в inventory. С --all требует подтверждения.")
+@click.option("--vms", multiple=True, metavar="VM[,VM2,...]", help="Имена ВМ. Можно через запятую и вместе с позиционными.")
+def local_vm_delete_cli(vm_names: tuple[str, ...], all_vms: bool, force: bool, vms: tuple[str, ...]):
+    try:
+        if all_vms and (vm_names or vms):
+            raise click.UsageError("Для delete используйте либо --all, либо список ВМ/--vms.")
+        names = [] if all_vms else _resolve_local_vm_names(positional=vm_names, option_values=vms)
+        if all_vms and force:
+            host_names = vm_local_api.list_host_vm_names()
+            if host_names:
+                ui.warn("Будут удалены все VM из virsh list --all, включая VM без записи в allta inventory:")
+                ui.echo(", ".join(host_names))
+                click.confirm("Продолжить удаление всех VM с хоста?", abort=True)
+        result = vm_local_api.delete_vms(names, all_vms=all_vms, force=force)
+        _print_local_vm_cleanup_result(result)
+        if result.get("failed"):
+            sys.exit(1)
+    except click.UsageError:
+        raise
+    except Exception as e:
+        ui.err(f"Ошибка: {e}")
+        sys.exit(1)
+
+
+@local_vm_group.command("clear", short_help="Очистить inventory от отсутствующих local VM.")
+def local_vm_clear_cli():
+    try:
+        result = vm_local_api.clear_vms()
+        _print_local_vm_cleanup_result(result)
     except Exception as e:
         ui.err(f"Ошибка: {e}")
         sys.exit(1)

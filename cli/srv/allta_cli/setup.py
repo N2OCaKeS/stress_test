@@ -17,7 +17,7 @@ setup(
     name="allta_cli",
     version=_read_version(),
     packages=find_packages(),
-    install_requires=["click", "requests"],
+    install_requires=["click", "requests", "devpi-client", "packaging", "pyproject_hooks"],
     entry_points={
         "console_scripts": [
             "allta = allta_cli.__main__:main",

@@ -41,6 +41,10 @@ prepare_embedded_runtime() {
     fi
 
     echo "🔧 Подготавливаю embedded runtime (allta + allta_cli)"
+# Allta devpi package index
+sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
+sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
+
     "$PYTHON_BIN" -m pip install --upgrade pip wheel setuptools
     "$PYTHON_BIN" -m pip uninstall -y numpy pandas scikit-learn matplotlib || true
     "$PYTHON_BIN" -m pip install --upgrade -r "$PROJECT_PATH/requirements.txt"

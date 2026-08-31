@@ -15,6 +15,7 @@ allta --help
 3. Получение releases.json
 4. Получение iLO-кредов (`allta ilo`)
 5. Работа с сервисными логинами и паролями (`allta creds`)
+6. Загрузка и удаление пакетов в devpi `root/pypi` (`allta devpi`)
 
 ## Команды без входа
 
@@ -35,6 +36,16 @@ allta creds
 allta creds -s nexus
 allta tokens git_token
 allta git
+allta devpi load requests==2.32.3
+allta devpi load -r /path/to/req.txt
+DEVPI_URL=http://localhost:3141 allta devpi debug -R root/pypi
+allta devpi repos
+allta devpi list -R root/pypi requests
+allta devpi check -R root/release allta
+allta devpi download -R root/test allta -d /tmp/wheelhouse
+allta devpi install -R root/test -p /usr/bin/python3 allta
+allta devpi remove requests==2.32.3 -y
+allta devpi remove -r /path/to/req.txt -y
 ```
 
 ## Шорткаты команд
@@ -68,6 +79,58 @@ allta login --token user
 ```
 
 Передача пароля в аргументах командной строки остаётся для совместимости, но небезопасна и будет удалена в будущих версиях. Предпочтительные варианты: `ALLTA_PASSWORD`, `ALLTA_API_TOKEN`/`ALLTA_TOKEN` или интерактивный скрытый ввод.
+
+## Devpi команды
+
+```bash
+allta devpi load 'requests==2.32.3'
+allta devpi load 'requests>=2.32,<3'
+allta devpi load -r /path/to/req.txt
+allta devpi debug -R root/pypi
+allta devpi repos
+allta devpi list
+allta devpi list -R root/pypi
+allta devpi list --repo root/pypi requests
+allta devpi list --repo root/pypi requests '>2.32.3' '<2.33.1'
+allta devpi list -R root/pypi -r /path/to/req.txt
+allta devpi check -R root/release allta
+allta devpi download -R root/test allta -d /tmp/wheelhouse
+allta devpi install -R root/test -p /usr/bin/python3 allta
+allta devpi install -R root/test -p /usr/bin/python3 -r /path/to/req.txt
+allta devpi remove requests -y
+allta devpi remove 'requests==2.32.3' -y
+allta devpi remove -r /path/to/req.txt -y
+```
+
+`load` скачивает указанные пакеты из внешнего PyPI вместе с транзитивными зависимостями
+и загружает дистрибутивы в `root/pypi`. `allta` намеренно не загружается в `root/pypi`,
+он публикуется в `root/release`.
+
+Repo передаётся через `--repo`/`-R`: `root/pypi`, `root/release`, `root/test`,
+`user/dev`. Если repo не указан, используется `root/pypi`. Файлы требований всегда
+передаются через `--requirement`/`-r`; Python для установки — через `--python`/`-p`.
+
+URL devpi задаётся через `ALLTA_DEVPI_URL` или `DEVPI_URL`. `ALLTA_DEVPI_URL`
+имеет приоритет. Если переменные не заданы, используется
+`http://allta.devos.astralinux.ru:3141`.
+Источник для `allta devpi load` задаётся через `ALLTA_DEVPI_SOURCE_INDEX_URL`
+или `DEVPI_SOURCE_INDEX_URL`; по умолчанию используется `https://pypi.org/simple`.
+Для локальной отладки allta API с self-signed сертификатом можно задать
+`ALLTA_API_VERIFY_TLS=0`.
+Проверить эффективные настройки можно так:
+
+```bash
+DEVPI_URL=http://localhost:3141 allta devpi debug -R root/pypi
+```
+
+Для `root/pypi` CLI сначала ищет config-service credential `devpi_allta`, потому что
+upload в этот repo закреплён за локальным пользователем `allta`. Затем пробует текущий
+`allta login` token и env fallback.
+
+Для остальных repo сначала используется текущий `allta login`: сохранённый login и token
+передаются в `devpi login`, а devpi-плагин проверяет token через Allta Auth API. Затем
+идёт fallback на config-service credential `devpi_allta`/`devpi_root` и env
+`ALLTA_DEVPI_USERNAME`/`ALLTA_DEVPI_PASSWORD`.
 
 ## Автодополнение
 
@@ -109,6 +172,34 @@ allta vm snapshot-create --name snap1 vm1 vm2
 allta vm snapshot-delete --name snap1 --vms vm1,vm2
 allta vm snapshot-revert --name snap1 vm1
 ```
+
+## Local VM команды
+
+Local VM хранят inventory в `~/.config/allta/local_vm/`. Команды удаления чистят VM,
+libvirt snapshot'ы, дисковые файлы VM и локальные файлы состояния (`vms.json`,
+`snapshots.json`, `provider_vms_dates.json` и общий список snapshot'ов, если он есть).
+
+```bash
+allta local vm delete --all
+allta local vm delete --vms vm1
+allta local vm delete --vms vm1,vm2
+allta local vm delete --vms vm1 --force
+allta local vm delete --all --force
+allta local vm clear
+```
+
+`delete --all` берёт список VM из `virsh list --all`, сверяет его с inventory и удаляет
+только те VM, которые есть в обоих местах. Чужие VM без записи в inventory не трогает.
+`delete --all --force` удаляет все VM из `virsh list --all`, включая VM без записи в
+inventory, и всегда требует интерактивного подтверждения.
+
+`delete --vms` удаляет только VM, которые есть в inventory. Если VM уже удалена с хоста
+вручную, команда не падает, удаляет найденные дисковые файлы по inventory/типовому имени
+и вычищает локальные записи. `--force` разрешает удалить указанную VM из libvirt даже без
+записи в inventory.
+
+`clear` сверяет inventory с libvirt и удаляет из файлов записи о VM, которых уже нет
+на хосте.
 
 ## SSH команды
 

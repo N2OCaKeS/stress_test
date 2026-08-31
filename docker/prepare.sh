@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# Configure every subsequently installed Python and virtualenv to use the
+# internal package index. This is safe to run repeatedly.
+sudo tee /etc/pip.conf >/dev/null <<'EOF'
+[global]
+index-url = http://allta.devos.astralinux.ru:3141/root/release
+trusted-host = allta.devos.astralinux.ru
+EOF
+sudo chmod 0644 /etc/pip.conf
 
 CPATH="/home/u/git/stress_test/docker/site/"
 SYS_VERSION=$(cat /etc/astra/build_version | tr -d '[:space:]')
@@ -79,11 +87,7 @@ sudo make altinstall
 
 python3.12 -m venv venv
 source venv/bin/activate
-# Allta devpi package index
-sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
-sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
-
-pip install -i http://10.177.103.10:3141/root/release --trust 10.177.103.10 allta
+pip install allta
 python3.12 -m pip install --upgrade pip
 python3.12 -m pip install -r ${CPATH}requirements.txt
 if [[ $? != 0 ]]; then
@@ -93,4 +97,3 @@ fi
 sudo mkdir -p /etc/docker
 #echo '{"debug": true, "astra-sec-level": 6}' | sudo tee /etc/docker/daemon.json
 #sudo systemctl restart docker
-

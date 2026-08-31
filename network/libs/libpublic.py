@@ -153,46 +153,95 @@ def build_dhcp_dataframe(results_path: str = DHCP_RESULTS) -> pd.DataFrame:
     return df
 
 
-DHCP_RATING_POWER = 0.9998061238066913
+DHCP_RATING_BASE = 10000
+DHCP_RATING_ZERO_FLOOR = 0.001
+DHCP_RATING_CRITERIA = {
+    "drops_ratio_avg_percent": 0.75,
+    "do_avg_delay_ms": 0.25,
+}
+DHCP_REFERENCE_METRICS = {
+    5000: {"drops_ratio_avg_percent": 0.01, "do_avg_delay_ms": 0.177},
+    10000: {"drops_ratio_avg_percent": 0.005, "do_avg_delay_ms": 0.172},
+    20000: {"drops_ratio_avg_percent": 0.0025, "do_avg_delay_ms": 0.196},
+    40000: {"drops_ratio_avg_percent": 0.00125, "do_avg_delay_ms": 0.177},
+    80000: {"drops_ratio_avg_percent": 0.000625, "do_avg_delay_ms": 0.175},
+}
 
-DHCP_RATING_SCALE = 100000000
+
+DHCP_RESULT_COLUMNS_DESCRIPTION = [
+    {
+        "parameter": "Клиенты",
+        "description": "Количество синтетических DHCP-клиентов, заданное для шага нагрузки perfdhcp.",
+    },
+    {
+        "parameter": "Rate achieved",
+        "description": "Фактически достигнутая perfdhcp скорость генерации DHCP-запросов, запросов/сек.",
+    },
+    {
+        "parameter": "Rate expected",
+        "description": "Целевая скорость генерации DHCP-запросов, заданная параметром DHCP_PERFDHCP_RATE.",
+    },
+    {
+        "parameter": "DISCOVER-OFFER drops %",
+        "description": "Доля потерянных ответов на этапе DHCPDISCOVER -> DHCPOFFER.",
+    },
+    {
+        "parameter": "REQUEST-ACK drops %",
+        "description": "Доля потерянных ответов на этапе DHCPREQUEST -> DHCPACK.",
+    },
+    {
+        "parameter": "Drops avg %",
+        "description": "Средняя доля потерь между DISCOVER-OFFER и REQUEST-ACK; основной критерий total_rating.",
+    },
+    {
+        "parameter": "Avg delay, мс",
+        "description": "Средняя задержка ответа DHCP-сервера на этапе DISCOVER-OFFER; дополнительный критерий total_rating.",
+    },
+    {
+        "parameter": "Kea CPU %",
+        "description": "Средняя загрузка CPU процесса kea-dhcp4 во время шага нагрузки.",
+    },
+    {
+        "parameter": "Kea RSS, KB",
+        "description": "Средний RSS процесса kea-dhcp4 во время шага нагрузки, КБ.",
+    },
+]
 
 
-def get_dhcp_total_rating(df: pd.DataFrame, power: float = DHCP_RATING_POWER) -> int:
+def get_dhcp_total_rating(df: pd.DataFrame) -> int:
     if df.empty or len(df) < 2:
         raise ValueError("Нужно минимум 2 шага (строки) в df для расчёта рейтинга")
 
+    df = df[df["clients_target"].isin(DHCP_REFERENCE_METRICS)].copy()
+    if df.empty or len(df) < 2:
+        raise ValueError("Нет данных для расчёта рейтинга по эталонным шагам DHCP")
+
     iterations = df["clients_target"].tolist()
-    model = MathModel()
+    model = MathModel(type="ratio")
 
-    model.add_criterion(
-        name="drops_ratio_avg_percent",
-        iterations=iterations,
-        values=df["drops_ratio_avg_percent"].tolist(),
-        weight=0.75,
-        negative=True,
-        bounds=(0.0, 100.0),
-    )
+    for metric_name, weight in DHCP_RATING_CRITERIA.items():
+        values = df[metric_name].fillna(0.0).tolist()
+        reference = [
+            DHCP_REFERENCE_METRICS[clients_target][metric_name]
+            for clients_target in iterations
+        ]
+        model.add_criterion(
+            name=metric_name,
+            iterations=iterations,
+            values=values,
+            weight=weight,
+            negative=True,
+            reference=reference,
+            zero_floor=DHCP_RATING_ZERO_FLOOR,
+        )
 
-    model.add_criterion(
-        name="do_avg_delay_ms",
-        iterations=iterations,
-        values=df["do_avg_delay_ms"].fillna(0.0).tolist(),
-        weight=0.25,
-        negative=True,
-        bounds=(0.0, 10.0),
-    )
-    ext_result = model.total_rating(power=power)
-    result = ext_result["total_rating"]
-    result = round(result / DHCP_RATING_SCALE)
-    return result
+    result = model.total_rating(scale=DHCP_RATING_BASE, cap=float("inf"))
+    return round(result.total)
 
 
-def update_dhcp_results_with_rating(
-    results_path: str = DHCP_RESULTS, power: float = DHCP_RATING_POWER
-) -> pd.DataFrame:
+def update_dhcp_results_with_rating(results_path: str = DHCP_RESULTS) -> pd.DataFrame:
     df = build_dhcp_dataframe(results_path)
-    rating = get_dhcp_total_rating(df, power=power)
+    rating = get_dhcp_total_rating(df)
 
     with open(results_path) as f:
         data = json.load(f)
@@ -231,8 +280,18 @@ def dhcp_publisher(
     ]
 
     criteria = [
-        {"label": "drops_ratio_avg_percent", "value": "weight: 0.75; negative; "},
-        {"label": "do_avg_delay_ms", "value": "weight: 0.25; negative; "},
+        {
+            "label": "drops_ratio_avg_percent",
+            "value": "Средняя доля потерь, вес 0.75, меньше - лучше",
+        },
+        {
+            "label": "do_avg_delay_ms",
+            "value": "Средняя задержка DISCOVER-OFFER, вес 0.25, меньше - лучше",
+        },
+        {
+            "label": "total_rating",
+            "value": f"Взвешенное геометрическое среднее относительно эталона, база {DHCP_RATING_BASE}, zero_floor {DHCP_RATING_ZERO_FLOOR}",
+        },
     ]
 
     header_table = [
@@ -276,8 +335,20 @@ def dhcp_publisher(
     with open(DHCP_RESULTS, "r") as f:
         dhcp_results_dict = json.load(f)
 
-    builder.add_heading(text=f"Total rating: {str(dhcp_results_dict["total_rating"])}", level=2)
+    total_rating = dhcp_results_dict["total_rating"]
+    builder.add_heading(text=f"Total rating: {total_rating}", level=2)
     # builder.add_paragraph(str(dhcp_results_dict["total_rating"]))
+
+    builder.add_table(
+        {
+            "title": "Описание параметров таблицы результатов",
+            "headers": ["Параметр", "Описание"],
+            "rows": [
+                [item["parameter"], item["description"]]
+                for item in DHCP_RESULT_COLUMNS_DESCRIPTION
+            ],
+        }
+    )
 
     builder.add_table(
         {

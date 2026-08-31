@@ -13,9 +13,14 @@ for pkg in "${PACKAGES[@]}"; do
   sudo apt-get install -y "$pkg" || echo "⚠ Предупреждение: не удалось установить ${pkg}"
 done
 
+sudo install -d -m 0755 /etc
+printf '%s\n' \
+  '[global]' \
+  'index-url = http://allta.devos.astralinux.ru:3141/root/release' \
+  'trusted-host = allta.devos.astralinux.ru' | sudo tee /etc/pip.conf >/dev/null
+sudo chmod 0644 /etc/pip.conf
+
 sudo apt install -y python3-pip
-sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
-sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
 
 wget ftp://10.177.103.10/allta_*_amd64.deb
 sudo dpkg -i allta_*_amd64.deb

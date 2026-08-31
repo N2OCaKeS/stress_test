@@ -4,6 +4,13 @@ set -euo pipefail
 SYS_KERNEL="${SYS_KERNEL:-$(uname -r)}"
 HOSTNAME="${HOSTNAME:-$(hostname)}"
 
+sudo install -d -m 0755 /etc
+printf '%s\n' \
+    '[global]' \
+    'index-url = http://allta.devos.astralinux.ru:3141/root/release' \
+    'trusted-host = allta.devos.astralinux.ru' | sudo tee /etc/pip.conf >/dev/null
+sudo chmod 0644 /etc/pip.conf
+
 sudo DEBIAN_FRONTEND=noninteractive apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libffi-dev cpp gcc make libpdp-dev liblzma-dev python3-requests rustc cargo libcurl4-gnutls-dev strace pkg-config
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libsqlite3-dev wget libbz2-dev
@@ -43,8 +50,5 @@ echo "10000 65000" > /proc/sys/net/ipv4/ip_local_port_range
 wget "ftp://10.177.103.10/allta_*.deb"
 sudo apt-get install ./allta_*.deb -y
 allta python
-# Allta devpi package index
-sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
-sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
 /home/u/python/Python-3.12.1/venv/bin/python3.12 -m pip install --upgrade pip
-/home/u/python/Python-3.12.1/venv/bin/python3.12 -m pip install "allta==1.1.1" -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10
+/home/u/python/Python-3.12.1/venv/bin/python3.12 -m pip install "allta==1.1.1"

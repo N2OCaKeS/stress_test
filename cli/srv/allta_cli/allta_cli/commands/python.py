@@ -12,11 +12,10 @@ from shutil import which, rmtree
 from allta_cli.utils import ui
 from allta_cli.utils.system_commands import SystemCommands
 from allta_cli.utils.config import PYTHON_PATH, PYTHON_GET_COMMAND
-from allta_cli.utils.http_fallback import http_fallback_url, prefer_https_url
 from allta_cli.utils.runtime_env import system_ld_library_path_scope
 
-_PRIVATE_INDEX = "https://10.177.103.10:3141/root/release"
-_PRIVATE_HOST = "10.177.103.10"
+_PIP_INDEX = "http://allta.devos.astralinux.ru:3141/root/release"
+_PIP_HOST = "allta.devos.astralinux.ru"
 
 
 def _system_commands():
@@ -42,24 +41,24 @@ def _run(cmd: str, fail: str) -> int:
     return rc
 
 
+def _configure_global_pip() -> int:
+    """Configure pip for system Python and subsequently created venvs."""
+    pip_conf = "\\n".join((
+        "[global]",
+        f"index-url = {_PIP_INDEX}",
+        f"trusted-host = {_PIP_HOST}",
+    )) + "\\n"
+    script = (
+        "install -d -m 0755 /etc && "
+        f"printf '%s' {shlex.quote(pip_conf)} > /etc/pip.conf && "
+        "chmod 0644 /etc/pip.conf"
+    )
+    return _run(f"{_sudo()}sh -c {shlex.quote(script)}", "настройка глобального pip")
+
+
 def _install_allta_package(pip_bin: Path) -> int:
-    https_index = prefer_https_url(_PRIVATE_INDEX)
-    http_index = http_fallback_url(https_index)
-
-    https_cmd = (
-        f"{shlex.quote(str(pip_bin))} install -i {shlex.quote(https_index)} "
-        f"--trusted-host {_PRIVATE_HOST} allta"
-    )
-    rc = _run(https_cmd, "установка пакета allta")
-    if rc == 0 or not http_index:
-        return rc
-
-    ui.warn("Установка allta по HTTPS не удалась, пробую HTTP.")
-    http_cmd = (
-        f"{shlex.quote(str(pip_bin))} install -i {shlex.quote(http_index)} "
-        f"--trusted-host {_PRIVATE_HOST} allta"
-    )
-    return _run(http_cmd, "установка пакета allta")
+    cmd = f"{shlex.quote(str(pip_bin))} install allta"
+    return _run(cmd, "установка пакета allta")
 
 
 def _find_archive(d: Path) -> Path | None:
@@ -103,6 +102,8 @@ def install_python(activate_shell: bool = False) -> int:
     7) (опционально) запускает интерактивный shell с активированным venv
     """
     with ui.section("PYTHON INSTALL (start)", "PYTHON INSTALL (end)"):
+        if _configure_global_pip() != 0:
+            return 1
         sudo = _sudo()
         root = PYTHON_PATH.expanduser()
         root.mkdir(parents=True, exist_ok=True)
@@ -240,6 +241,9 @@ def create_venv(path: str | None = None, enter_shell: bool = False) -> int:
     Использует системный /usr/local/bin/python3.X (если есть), иначе python3 из PATH.
     По умолчанию при успехе может запустить интерактивный bash с активированным venv.
     """
+    if _configure_global_pip() != 0:
+        return 1
+
     if path:
         target = Path(path).expanduser()
         if not target.exists():

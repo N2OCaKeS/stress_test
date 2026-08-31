@@ -17,6 +17,16 @@ PYTHON_PREFIX="$PYTHON_BOOTSTRAP/python"
 PYTHON_BIN="$PYTHON_PREFIX/bin/python3.12"
 PREBUILT_PYTHON_ROOT="${ALLTA_BUILDER_PYTHON:-/opt/allta-builder/python}"
 
+configure_pip() {
+    install -d -m 0755 /etc
+    printf '%s\n' \
+        '[global]' \
+        'index-url = http://allta.devos.astralinux.ru:3141/root/release' \
+        'trusted-host = allta.devos.astralinux.ru' \
+        > /etc/pip.conf
+    chmod 0644 /etc/pip.conf
+}
+
 prepare_python() {
     if [ -x "$PYTHON_BIN" ]; then
         echo "✅ Bootstrap Python уже подготовлен: $PYTHON_PREFIX"
@@ -41,14 +51,10 @@ prepare_embedded_runtime() {
     fi
 
     echo "🔧 Подготавливаю embedded runtime (allta + allta_cli)"
-# Allta devpi package index
-sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
-sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
-
     "$PYTHON_BIN" -m pip install --upgrade pip wheel setuptools
     "$PYTHON_BIN" -m pip uninstall -y numpy pandas scikit-learn matplotlib || true
     "$PYTHON_BIN" -m pip install --upgrade -r "$PROJECT_PATH/requirements.txt"
-    "$PYTHON_BIN" -m pip install --no-deps --upgrade allta -i http://10.177.103.10:3141/root/release --trust 10.177.103.10
+    "$PYTHON_BIN" -m pip install --no-deps --upgrade allta
     "$PYTHON_BIN" -m pip install --no-deps --upgrade --force-reinstall "$PROJECT_PATH"
 
     "$PYTHON_BIN" - <<'PY'
@@ -114,6 +120,7 @@ main() {
         exit 1
     fi
 
+    configure_pip
     prepare_python
     prepare_embedded_runtime
     build_package

@@ -26,6 +26,15 @@ RUN apt-get update \
 
 WORKDIR /tmp
 
+# Configure pip before installing any Python runtime or pip itself.
+RUN install -d -m 0755 /etc \
+    && printf '%s\n' \
+        '[global]' \
+        'index-url = http://allta.devos.astralinux.ru:3141/root/release' \
+        'trusted-host = allta.devos.astralinux.ru' \
+        > /etc/pip.conf \
+    && chmod 0644 /etc/pip.conf
+
 RUN wget -q "https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz" \
     && tar xf "Python-${PYTHON_VERSION}.tgz" \
     && cd "Python-${PYTHON_VERSION}" \

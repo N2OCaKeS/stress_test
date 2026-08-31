@@ -4,6 +4,14 @@ set -euo pipefail
 SYS_KERNEL="${SYS_KERNEL:-$(uname -r)}"
 HOSTNAME="${HOSTNAME:-$(hostname)}"
 
+sudo install -d -m 0755 /etc
+sudo tee /etc/pip.conf >/dev/null <<'EOF'
+[global]
+index-url = http://allta.devos.astralinux.ru:3141/root/release
+trusted-host = allta.devos.astralinux.ru
+EOF
+sudo chmod 0644 /etc/pip.conf
+
 sudo DEBIAN_FRONTEND=noninteractive apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libffi-dev cpp gcc make libpdp-dev liblzma-dev python3-requests rustc cargo libcurl4-gnutls-dev strace pkg-config
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libsqlite3-dev wget libbz2-dev

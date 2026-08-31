@@ -7,6 +7,14 @@ SYS_KERNEL=$(uname -r | tr -d '[:space:]')
 export DEBIAN_FRONTEND=noninteractive
 export DEBCONF_NONINTERACTIVE_SEEN=true
 
+sudo install -d -m 0755 /etc
+sudo tee /etc/pip.conf >/dev/null <<'EOF'
+[global]
+index-url = http://allta.devos.astralinux.ru:3141/root/release
+trusted-host = allta.devos.astralinux.ru
+EOF
+sudo chmod 0644 /etc/pip.conf
+
 mkdir -p results/raw/active
 mkdir -p results/raw/iperf
 mkdir -p results/raw/openvpn

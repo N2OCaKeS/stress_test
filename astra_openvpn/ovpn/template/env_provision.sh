@@ -43,5 +43,8 @@ echo "10000 65000" > /proc/sys/net/ipv4/ip_local_port_range
 wget "ftp://10.177.103.10/allta_*.deb"
 sudo apt-get install ./allta_*.deb -y
 allta python
+# Allta devpi package index
+sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
+sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
 /home/u/python/Python-3.12.1/venv/bin/python3.12 -m pip install --upgrade pip
 /home/u/python/Python-3.12.1/venv/bin/python3.12 -m pip install "allta==1.1.1" -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10

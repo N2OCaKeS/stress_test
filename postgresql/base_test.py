@@ -11,6 +11,8 @@ try:
     import numpy as np
 except (ImportError, ImportWarning):
     #cmd(f'{VENV_PATH} -m pip install numpy')
+    cmd('sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release')
+    cmd('sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru')
     cmd('python3 -m pip install numpy')
     import numpy as np
 
@@ -105,5 +107,4 @@ def test_run(clients, repeat):
 
 
 test_run(args.CLIENT, 20)
-
 

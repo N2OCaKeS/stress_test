@@ -1,5 +1,9 @@
 #!/bin/bash
 
+sudo install -d -m 0755 /etc
+printf '%s\n' '[global]' 'index-url = http://allta.devos.astralinux.ru:3141/root/release' 'trusted-host = allta.devos.astralinux.ru' | sudo tee /etc/pip.conf >/dev/null
+sudo chmod 0644 /etc/pip.conf
+
 dpkg -s jq &> /dev/null || sudo apt-get install jq -y
 wget http://allta.devos.astralinux.ru/rest/api/get-repo-path -O releases.json
 sudo jq -r ".\"$1\"[]" releases.json > /etc/apt/sources.list
@@ -26,8 +30,5 @@ sudo apt install python3-pip -y
 
 # install python dependencies in venv
 #source venv/bin/activate
-# Allta devpi package index
-sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
-sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
 #pip install --upgrade pip
 #pip3 install -r req.txt

@@ -14,6 +14,16 @@ Pin-Priority: 500
 EOF
 sudo apt update
 
+# Configure pip before installing Python so the setting applies to the
+# system interpreter, locally built interpreters, and their virtualenvs.
+sudo install -d -m 0755 /etc
+cat << 'EOF' | sudo tee /etc/pip.conf > /dev/null
+[global]
+index-url = http://allta.devos.astralinux.ru:3141/root/release
+trusted-host = allta.devos.astralinux.ru
+EOF
+sudo chmod 0644 /etc/pip.conf
+
 # create venv 
 sudo apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
 sudo apt-get install -y libffi-dev strace time
@@ -35,9 +45,6 @@ sudo make altinstall
 
 python3.12 -m venv venv
 source venv/bin/activate
-
-sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
-sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
 
 cd /home/u/git/stress_test/$1
 python3.12 -m pip install --upgrade pip

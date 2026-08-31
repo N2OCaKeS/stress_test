@@ -144,7 +144,7 @@ docker exec -it docker-registry /tmp/check-registry.sh
 
 ## Работа с registry (push/pull)
 
-1. Логин:
+1. Логин (в качестве данных для авторизации использовать данные как в auth_api):
 
    ```bash
    docker login <host>:21503

@@ -46,8 +46,9 @@ sudo apt-get install -y python3-numpy
 
 sudo apt-get install -y python3-pip
 
-python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
-sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
+# Allta devpi package index
+sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
+sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
 
 kernel="$2"
 kernel_conf=$(sudo cat /boot/grub/grub.cfg | grep menuentry_id | awk '{print $17}' | grep $kernel | tr -d "\'")
@@ -61,4 +62,3 @@ cat /etc/default/grub | grep GRUB_DEFAULT
 
 cat /etc/astra/build_version
 cat /etc/astra/build_version > /home/av.txt
-

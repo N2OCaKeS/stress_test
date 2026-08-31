@@ -2,6 +2,14 @@
 
 set -vx
 
+sudo install -d -m 0755 /etc
+cat <<'EOF' | sudo tee /etc/pip.conf >/dev/null
+[global]
+index-url = http://allta.devos.astralinux.ru:3141/root/release
+trusted-host = allta.devos.astralinux.ru
+EOF
+sudo chmod 0644 /etc/pip.conf
+
 18repo() {
 cat << EOF > /etc/apt/sources.list
 deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/installation 1.8_x86-64 main contrib non-free
@@ -62,9 +70,6 @@ sudo mkdir /git
 sudo apt install -y python3-pip
 
 sleep 10
-
-sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
-sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
 
 sudo pip3 install --upgrade pip
 

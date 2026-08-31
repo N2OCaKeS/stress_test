@@ -49,9 +49,10 @@ cd Python-3.12.1
 make -j
 sudo make altinstall
 
+# Allta devpi package index
+sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
+sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
 python3.12 -m pip install --upgrade pip
-python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
-sudo python3 -m pip config set global.extra-index-url https://artifactory.astralinux.ru/artifactory/api/pypi/gca-pypi-remote/simple
 python3.12 -m venv venv
 cd /home/u/git/stress_test/$1
 /home/u/python/Python-3.12.1/venv/bin/python -m pip install -r req.txt

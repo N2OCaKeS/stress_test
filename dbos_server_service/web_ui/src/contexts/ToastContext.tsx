@@ -25,7 +25,7 @@ interface ToastApi {
 
 const ToastContext = createContext<ToastApi | undefined>(undefined);
 
-const TOAST_TTL_MS = 3000;
+const TOAST_TTL_MS = 10_000;
 
 /**
  * Global toast provider. Mount once near the root and call `useToast()`

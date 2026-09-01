@@ -14,13 +14,23 @@
  * бронь поднимаются наверх через `onLocalUpdate`, чтобы шапка и соседние
  * вкладки обновились без перезагрузки.
  */
-import { useMemo, useState } from "react";
-import { Server as ServerIcon, MonitorPlay, Lock, Unlock, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Server as ServerIcon,
+  MonitorPlay,
+  Lock,
+  Unlock,
+  RefreshCw,
+  Power,
+  PowerOff,
+} from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
-import { setBusy, clearBusy } from "@/api/server/servers";
+import { clearBusy, inventorySync, setBusy } from "@/api/server/servers";
+import { osSync } from "@/api/server/osVersions";
+import { powerOff, powerOn, powerReboot } from "@/api/server/ipmi";
 import { reserveVm, releaseVm, vmBusyLabel } from "@/api/server/vms";
 import { useDeptLabel, useUserLabel, useServerLabel } from "@/lib/labels";
 import { isDepAdmin } from "@/lib/rbac";
@@ -38,6 +48,7 @@ import { PowerTab } from "@/pages/server/tabs/power";
 import { AccountsTab } from "@/pages/server/tabs/accounts";
 import { ConsoleTab } from "@/pages/server/tabs/console";
 import { PackagesTab } from "@/pages/server/tabs/packages";
+import { MetricsTab } from "@/pages/server/tabs/metrics";
 import { ManageTab } from "@/pages/server/tabs/manage";
 import { DisksTab } from "@/pages/server/tabs/disks";
 import { SnapshotsTab } from "@/pages/server/tabs/snapshots";
@@ -50,6 +61,7 @@ type TabId =
   | "accounts"
   | "console"
   | "packages"
+  | "metrics"
   | "manage"
   | "disks"
   | "snapshots";
@@ -62,6 +74,7 @@ const TAB_LABEL: Record<TabId, string> = {
   accounts: "Аккаунты",
   console: "Консоль",
   packages: "Пакеты",
+  metrics: "Графики",
   manage: "Управление",
   disks: "Диски",
   snapshots: "Снимки",
@@ -81,6 +94,7 @@ function tabsFor(kind: EntityRef["kind"]): TabId[] {
     "accounts",
     "console",
     "packages",
+    "metrics",
     "manage",
     ...tail,
   ];
@@ -124,6 +138,8 @@ interface EntityDetailProps {
   onDeleted?: () => void;
   /** Сервер: обновить индикатор брони в списке слева. ВМ дёргает entity.onChanged. */
   onBusyChanged?: () => void;
+  /** Перечитать родительские данные после async worker-мутаций. */
+  onChanged?: () => void;
   /** ВМ: возврат к списку хаба. */
   onBack?: () => void;
   backLabel?: string;
@@ -134,12 +150,29 @@ export function EntityDetail({
   onLocalUpdate,
   onDeleted,
   onBusyChanged,
+  onChanged,
   onBack,
   backLabel,
 }: EntityDetailProps) {
   const [tab, setTab] = useState<TabId>("overview");
   const tabList = useMemo(() => tabsFor(entity.kind), [entity.kind]);
   const activeTab = tabList.includes(tab) ? tab : "overview";
+  const serverId = entity.kind === "server" ? entity.server.id : null;
+  const serverOsVersionRef = useRef<string | null>(null);
+  serverOsVersionRef.current =
+    entity.kind === "server" ? entity.server.os_version_id ?? null : null;
+
+  // При входе в обзор/железо запускаем лёгкий refresh инвентаризации. Зависим
+  // только от id и вкладки, чтобы polling свежего server-объекта не создавал
+  // бесконечную очередь sync-задач.
+  useEffect(() => {
+    if (!serverId) return;
+    if (activeTab !== "overview" && activeTab !== "hardware") return;
+    Promise.resolve(inventorySync(serverId)).catch(() => {});
+    Promise.resolve(
+      osSync(serverId, { os_version_id: serverOsVersionRef.current }),
+    ).catch(() => {});
+  }, [serverId, activeTab]);
 
   return (
     <section className="flex-1 min-w-0 overflow-hidden flex flex-col">
@@ -147,6 +180,7 @@ export function EntityDetail({
         entity={entity}
         onLocalUpdate={onLocalUpdate}
         onBusyChanged={onBusyChanged}
+        onChanged={onChanged}
         onBack={onBack}
         backLabel={backLabel}
       />
@@ -166,6 +200,7 @@ export function EntityDetail({
           activeTab={activeTab}
           onLocalUpdate={onLocalUpdate}
           onDeleted={onDeleted}
+          onChanged={onChanged}
           onBack={onBack}
         />
       </div>
@@ -179,12 +214,14 @@ function EntityTab({
   activeTab,
   onLocalUpdate,
   onDeleted,
+  onChanged,
   onBack,
 }: {
   entity: EntityRef;
   activeTab: TabId;
   onLocalUpdate: (next: Server | Vm) => void;
   onDeleted?: () => void;
+  onChanged?: () => void;
   onBack?: () => void;
 }) {
   if (entity.kind === "server") {
@@ -223,6 +260,8 @@ function EntityTab({
             onServerUpdated={onLocalUpdate}
           />
         );
+      case "metrics":
+        return <MetricsTab entity={entity} />;
       case "manage":
         return (
           <ManageTab
@@ -231,6 +270,7 @@ function EntityTab({
             server={s}
             onServerUpdated={onLocalUpdate}
             onDeleted={onDeleted}
+            onChanged={onChanged}
           />
         );
       default:
@@ -251,6 +291,8 @@ function EntityTab({
       return <ConsoleTab entity={entity} />;
     case "packages":
       return <PackagesTab serverId="" entity={entity} />;
+    case "metrics":
+      return <MetricsTab entity={entity} />;
     case "manage":
       return (
         <ManageTab
@@ -274,12 +316,14 @@ function EntityDetailHeader({
   entity,
   onLocalUpdate,
   onBusyChanged,
+  onChanged,
   onBack,
   backLabel,
 }: {
   entity: EntityRef;
   onLocalUpdate: (next: Server | Vm) => void;
   onBusyChanged?: () => void;
+  onChanged?: () => void;
   onBack?: () => void;
   backLabel?: string;
 }) {
@@ -289,6 +333,7 @@ function EntityDetailHeader({
         server={entity.server}
         onServerUpdated={onLocalUpdate}
         onBusyChanged={onBusyChanged}
+        onChanged={onChanged}
       />
     );
   }
@@ -309,10 +354,12 @@ function ServerDetailHeader({
   server,
   onServerUpdated,
   onBusyChanged,
+  onChanged,
 }: {
   server: Server;
   onServerUpdated: (next: Server) => void;
   onBusyChanged?: () => void;
+  onChanged?: () => void;
 }) {
   const deptLabel = useDeptLabel(server.department_id);
   const statusKind = STATUS_KIND[server.status];
@@ -362,11 +409,14 @@ function ServerDetailHeader({
         </>
       }
     >
-      <ServerReserveControl
-        server={server}
-        onServerUpdated={onServerUpdated}
-        onBusyChanged={onBusyChanged}
-      />
+      <div className="mt-3 flex items-center gap-3 flex-wrap">
+        <ServerHeaderPowerControls server={server} onChanged={onChanged} />
+        <ServerReserveControl
+          server={server}
+          onServerUpdated={onServerUpdated}
+          onBusyChanged={onBusyChanged}
+        />
+      </div>
     </EntityHeader>
   );
 }
@@ -457,6 +507,104 @@ function VmDetailHeader({
  * свою — оператор; backend перепроверит, клиентский гейт лишь прячет заведомо
  * лишнюю кнопку.
  */
+function ServerHeaderPowerControls({
+  server,
+  onChanged,
+}: {
+  server: Server;
+  onChanged?: () => void;
+}) {
+  const { persona } = usePersona();
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const [pending, setPending] = useState<"toggle" | "reboot" | null>(null);
+
+  const serverRole = persona.service_roles.server;
+  const canPower =
+    serverRole === "admin" ||
+    serverRole === "operator" ||
+    (isDepAdmin(persona) && persona.dept_id === server.department_id);
+  const powerOnNow = server.power_state === "on";
+  const toggleTitle = powerOnNow ? "Выключить сервер" : "Включить сервер";
+  const denyReason = "Нет прав на управление питанием";
+
+  async function handleTogglePower() {
+    if (pending || !canPower) return;
+    if (
+      powerOnNow &&
+      !(await confirm({
+        title: "Выключить сервер",
+        message: `Hard power off для ${server.hostname}? Соединения SSH и тесты будут оборваны.`,
+        confirmLabel: "Выключить",
+        danger: true,
+      }))
+    )
+      return;
+    setPending("toggle");
+    try {
+      const res = await (powerOnNow ? powerOff(server.id) : powerOn(server.id));
+      toast.success(`${toggleTitle}: задача поставлена ${res.task_id}`);
+      onChanged?.();
+    } catch (e) {
+      toast.error(apiErrMsg(e, `${toggleTitle} не отправлено`));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function handleReboot() {
+    if (pending || !canPower) return;
+    if (
+      !(await confirm({
+        title: "Перезагрузить сервер",
+        message: `Перезагрузить ${server.hostname} через BMC power-cycle?`,
+        confirmLabel: "Перезагрузить",
+        danger: true,
+      }))
+    )
+      return;
+    setPending("reboot");
+    try {
+      const res = await powerReboot(server.id);
+      toast.success(`Перезагрузка: задача поставлена ${res.task_id}`);
+      onChanged?.();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Перезагрузка не отправлена"));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        className={`btn btn-sm ${powerOnNow ? "btn-danger" : "btn-primary"} w-8 px-0 flex items-center justify-center`}
+        onClick={handleTogglePower}
+        disabled={!canPower || pending !== null}
+        aria-label={toggleTitle}
+        title={canPower ? toggleTitle : denyReason}
+      >
+        {powerOnNow ? (
+          <PowerOff className="w-4 h-4" />
+        ) : (
+          <Power className="w-4 h-4" />
+        )}
+      </button>
+      <button
+        type="button"
+        className="btn btn-sm w-8 px-0 flex items-center justify-center"
+        onClick={handleReboot}
+        disabled={!canPower || pending !== null}
+        aria-label="Перезагрузить сервер"
+        title={canPower ? "Перезагрузить сервер" : denyReason}
+      >
+        <RefreshCw className={`w-4 h-4 ${pending === "reboot" ? "animate-spin" : ""}`} />
+      </button>
+    </div>
+  );
+}
+
 function ServerReserveControl({
   server,
   onServerUpdated,
@@ -531,7 +679,7 @@ function ServerReserveControl({
   }
 
   return (
-    <div className="mt-3 flex items-center gap-3 flex-wrap">
+    <>
       {reserved ? (
         <>
           <span className="badge badge-warn flex items-center gap-1">
@@ -569,7 +717,7 @@ function ServerReserveControl({
           </button>
         )
       )}
-    </div>
+    </>
   );
 }
 

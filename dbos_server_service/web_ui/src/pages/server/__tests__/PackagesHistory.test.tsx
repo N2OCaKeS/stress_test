@@ -91,6 +91,7 @@ vi.mock("@/api/server/misc", () => ({
 
 vi.mock("@/api/server/servers", () => ({
   getServer: vi.fn(),
+  installNodeExporter: vi.fn(),
   prepareServer: vi.fn(),
 }));
 

@@ -6,7 +6,7 @@
  * перезагрузки. Всё остальное — шапка, бронь, полоса вкладок, рендер вкладок —
  * живёт в `EntityDetail`.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@/api/auth/useQuery";
 import { getServer } from "@/api/server/servers";
 import { EntityDetail } from "@/components/entity/EntityDetail";
@@ -21,12 +21,17 @@ interface ServerDetailProps {
   onBusyChanged?: () => void;
 }
 
+const DETAIL_REFRESH_MS = 3_000;
+
 export function ServerDetail({
   serverId,
   onDeleted,
   onBusyChanged,
 }: ServerDetailProps) {
   const q = useQuery<Server>(() => getServer(serverId), [serverId]);
+  const refetch = q.refetch;
+  const refetchRef = useRef(refetch);
+  refetchRef.current = refetch;
 
   // Локальная копия карточки: переключение вкладок не перемонтирует обёртку,
   // поэтому мутации внутри вкладок (PATCH overview/hardware, бронь) поднимаются
@@ -35,6 +40,18 @@ export function ServerDetail({
   useEffect(() => {
     setServer(q.data);
   }, [q.data]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") refetchRef.current();
+    }, DETAIL_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [serverId]);
+
+  const handleChanged = useCallback(() => {
+    refetch();
+    onBusyChanged?.();
+  }, [refetch, onBusyChanged]);
 
   if (q.loading) {
     return (
@@ -68,6 +85,7 @@ export function ServerDetail({
       onLocalUpdate={(next) => setServer(next as Server)}
       onDeleted={onDeleted}
       onBusyChanged={onBusyChanged}
+      onChanged={handleChanged}
     />
   );
 }

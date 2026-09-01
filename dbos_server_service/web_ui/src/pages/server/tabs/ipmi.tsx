@@ -12,7 +12,7 @@
  * поллит исход задачи через `useTaskOutcome` до терминала. На succeeded
  * рефетчится реальный power_state (не оптимистичный), на failed показывается
  * причина (битые креды, недоступный BMC). PowerStatus также читается с
- * auto-refresh раз в 10 сек.
+ * auto-refresh раз в 3 сек.
  *
  * Rotate IPMI дёргает `POST /ipmi-controllers/{id}/rotate` (202 + task_id):
  * worker генерит новый пароль, применяет на BMC, verify'ит read-only вызовом
@@ -121,7 +121,7 @@ const KIND_LABEL: Record<IpmiKind, string> = {
   redfish: "Redfish",
 };
 
-const POWER_REFRESH_MS = 10_000;
+const POWER_REFRESH_MS = 3_000;
 
 // ---------------------------------------------------------------------------
 // Главный компонент
@@ -691,7 +691,7 @@ function PowerCard({
     };
   }, [serverId]);
 
-  // Initial fetch + 10-sec polling. Чтобы не флапать при размонтировании,
+  // Initial fetch + 3-sec polling. Чтобы не флапать при размонтировании,
   // храним cleanup из fetchStatus в ref-like closure.
   useEffect(() => {
     const stop = fetchStatus();
@@ -772,7 +772,9 @@ function PowerCard({
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-2">
           <Power className="w-5 h-5" />
-          <h3 className="text-base font-semibold">Питание</h3>
+          <h3 className="text-base font-semibold">
+            Управление питанием сервера
+          </h3>
         </div>
         <button
           className="btn btn-ghost flex items-center gap-1 text-xs"

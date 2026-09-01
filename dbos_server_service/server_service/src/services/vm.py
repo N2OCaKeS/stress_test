@@ -3489,6 +3489,77 @@ async def users_inventory(
     return vm, task_id
 
 
+async def install_node_exporter(
+    db: AsyncSession,
+    identity: IdentityContext,
+    request: Request,
+    vm_id: str,
+) -> tuple[Vm, str]:
+    """Диспатч `vm.install_node_exporter` — поставить exporter в госте ВМ.
+
+    Операция нужна для Grafana-панелей ВМ (`var-node=<guest_ip>:9100`). Идёт
+    через hub под управляющими кредами ВМ, поэтому требует prepared ВМ,
+    известный guest IP и живой hub. Право переиспользует prepare-поверхность:
+    `(vm, vm_prepare)`.
+    """
+    with emit_denied_on_authz_error(
+        "vm.node_exporter_installed", target_id=vm_id, target_type="vm",
+        extra_details={"vm_id": vm_id}, identity=identity,
+    ):
+        await permissions.require_resource_action(
+            db, identity, EntityType.VM, vm_id, Action.VM_PREPARE
+        )
+
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        audit_service.emit(
+            "vm.node_exporter_installed", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "not_found_or_cross_dept"},
+        )
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+    if not vm.is_managed:
+        raise ConflictError(
+            error_code="VM_PREPARE_REQUIRED",
+            message="VM is not prepared; run prepare before installing node_exporter",
+        )
+    if vm.ip_address is None:
+        raise ConflictError(
+            error_code="VM_GUEST_IP_UNKNOWN",
+            message="VM guest IP is unknown; cannot install node_exporter",
+        )
+    hub = await server_repo.get_by_id(db, vm.hub_server_id)
+    if hub is None or hub.status == ServerStatus.DECOMMISSIONED:
+        raise ConflictError(
+            error_code="HUB_UNAVAILABLE",
+            message="Hub server is unavailable (missing or decommissioned)",
+        )
+
+    payload = {
+        **_hub_payload(hub),
+        "vm_id": vm.id,
+        "vm_name": vm.name,
+        "guest_ip": str(vm.ip_address),
+    }
+    stash_key = await stash_existing_vm_mgmt_creds(vm, "vm.node_exporter_installed")
+    if stash_key:
+        payload["creds_stash_key"] = stash_key
+    task_id = await _dispatch_guest_task_with_stash(
+        db=db, identity=identity, request=request,
+        task_kind=VmTaskKind.VM_INSTALL_NODE_EXPORTER, hub=hub, vm=vm,
+        payload=payload, audit_action="vm.node_exporter_installed",
+        stash_key=stash_key,
+    )
+    await db.commit()
+    audit_service.emit(
+        "vm.node_exporter_installed", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"task_id": task_id, "department_id": vm.department_id},
+    )
+    return vm, task_id
+
+
 # ── teardown VMS-hub (rm-vms-hub) ────────────────────────────────────────────
 
 

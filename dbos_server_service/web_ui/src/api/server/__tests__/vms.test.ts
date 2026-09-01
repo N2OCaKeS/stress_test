@@ -26,6 +26,7 @@ import {
   getAvailableIps,
   getVmByNumber,
   getServerByNumber,
+  installNodeExporterVm,
   listVmAccounts,
   listVmDisks,
   listVmImages,
@@ -241,6 +242,14 @@ describe("vms api client", () => {
   it("prepareVm POST'ит /vms/{id}/prepare", async () => {
     const res = await prepareVm("vm-103");
     expect(apiPost).toHaveBeenCalledWith("/server/v1/vms/vm-103/prepare");
+    expect(res).toEqual({ task_id: "task-1", status: "queued" });
+  });
+
+  it("installNodeExporterVm POST'ит /vms/{id}/install-node-exporter", async () => {
+    const res = await installNodeExporterVm("vm-103");
+    expect(apiPost).toHaveBeenCalledWith(
+      "/server/v1/vms/vm-103/install-node-exporter",
+    );
     expect(res).toEqual({ task_id: "task-1", status: "queued" });
   });
 

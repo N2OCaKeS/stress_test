@@ -146,27 +146,31 @@ export function Server() {
   const [serverGroupOpen, setServerGroupOpen] = useState(true);
   const [vmGroupOpen, setVmGroupOpen] = useState(true);
 
-  // Бронь сервера (busy_state / busy_user_id) меняется и другими пользователями,
-  // а useQuery без авто-рефетча показывал бы устаревший индикатор до перезахода.
-  // Тихо переопрашиваем список на интервале и при возврате фокуса на вкладку,
-  // чтобы чужой захват/освобождение подхватывались быстро. refetch стабилен
-  // (useCallback в хуке), поэтому держим его в ref и не пересоздаём интервал.
-  const refetchRef = useRef(listQ.refetch);
-  refetchRef.current = listQ.refetch;
+  // Состояние серверов/ВМ меняется worker'ом и другими пользователями, а
+  // useQuery без авто-рефетча показывал бы устаревшие индикаторы до перезахода.
+  // Тихо переопрашиваем списки на интервале и при возврате фокуса.
+  const listRefetchRef = useRef(listQ.refetch);
+  const vmsRefetchRef = useRef(vmsQ.refetch);
+  listRefetchRef.current = listQ.refetch;
+  vmsRefetchRef.current = vmsQ.refetch;
   const lastRefetchRef = useRef(0);
   useEffect(() => {
     if (zoneBlocked) return;
-    const RESERVE_REFRESH_MS = 8_000;
+    const RESERVE_REFRESH_MS = 3_000;
+    const refetchLiveLists = () => {
+      listRefetchRef.current();
+      vmsRefetchRef.current();
+    };
     const id = window.setInterval(() => {
       // На скрытой вкладке не дёргаем сеть — фокус-хендлер ниже догонит при
       // возврате.
-      if (document.visibilityState === "visible") refetchRef.current();
+      if (document.visibilityState === "visible") refetchLiveLists();
     }, RESERVE_REFRESH_MS);
     const onFocus = () => {
       const now = Date.now();
       if (now - lastRefetchRef.current < FOCUS_REFETCH_THROTTLE_MS) return;
       lastRefetchRef.current = now;
-      refetchRef.current();
+      refetchLiveLists();
     };
     window.addEventListener("focus", onFocus);
     return () => {

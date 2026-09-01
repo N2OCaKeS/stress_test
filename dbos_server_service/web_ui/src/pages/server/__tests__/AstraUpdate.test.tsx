@@ -56,6 +56,7 @@ vi.mock("@/api/server/servers", () => ({
   deleteServer: vi.fn(),
   getServer: vi.fn(() => Promise.resolve({})),
   inventorySync: vi.fn(),
+  installNodeExporter: vi.fn(),
   prepareServer: vi.fn(),
   rotateManagementCredentials: vi.fn(),
   setBusy: vi.fn(),

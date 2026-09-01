@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   HardDrive,
   Camera,
+  BarChart3,
 } from "lucide-react";
 
 /**
@@ -24,6 +25,7 @@ export const TAB_ICON: Record<string, React.ReactNode> = {
   accounts: <Users className="w-4 h-4" />,
   console: <TerminalSquare className="w-4 h-4" />,
   packages: <Package className="w-4 h-4" />,
+  metrics: <BarChart3 className="w-4 h-4" />,
   manage: <ShieldCheck className="w-4 h-4" />,
   disks: <HardDrive className="w-4 h-4" />,
   snapshots: <Camera className="w-4 h-4" />,

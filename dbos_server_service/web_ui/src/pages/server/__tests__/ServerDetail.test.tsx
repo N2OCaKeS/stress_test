@@ -62,10 +62,17 @@ const MOCK_SERVER: Server = {
 };
 
 vi.mock("@/api/server/servers", () => ({
+  astraUpdate: vi.fn(),
+  clearBusy: vi.fn(),
   getServer: vi.fn(() => Promise.resolve(MOCK_SERVER)),
   listServers: vi.fn(() => new Promise(() => {})),
   createServer: vi.fn(),
   deleteServer: vi.fn(),
+  installNodeExporter: vi.fn(),
+  inventorySync: vi.fn(),
+  prepareServer: vi.fn(),
+  rotateManagementCredentials: vi.fn(),
+  setBusy: vi.fn(),
   updateServer: vi.fn(),
 }));
 
@@ -73,6 +80,7 @@ vi.mock("@/api/server/servers", () => ({
 // рендер табов сам не падал по сети.
 vi.mock("@/api/server/osVersions", () => ({
   listOsVersions: vi.fn(() => new Promise(() => {})),
+  osSync: vi.fn(() => Promise.resolve(MOCK_SERVER)),
 }));
 vi.mock("@/api/server/accounts", () => ({
   listAccounts: vi.fn(() => new Promise(() => {})),
@@ -81,6 +89,9 @@ vi.mock("@/api/server/ipmi", () => ({
   getIpmi: vi.fn(() => new Promise(() => {})),
   getPowerStatus: vi.fn(() => new Promise(() => {})),
   getIpmiCredentials: vi.fn(() => new Promise(() => {})),
+  powerOff: vi.fn(),
+  powerOn: vi.fn(),
+  powerReboot: vi.fn(),
 }));
 vi.mock("@/api/server/misc", () => ({
   usersInventory: vi.fn(() => new Promise(() => {})),

@@ -1013,6 +1013,19 @@ export function prepareVm(vmId: string): Promise<TaskDispatchResponse> {
 }
 
 /**
+ * `POST /api/server/v1/vms/{id}/install-node-exporter` — поставить
+ * node_exporter в госте ВМ через hub/worker. Результат установки лежит в
+ * `GET /tasks/{task_id}`.
+ */
+export function installNodeExporterVm(
+  vmId: string,
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(
+    `/server/v1/vms/${vmId}/install-node-exporter`,
+  );
+}
+
+/**
  * `POST /api/server/v1/vms/{id}/mgmt-creds/rotate` — ротация управляющих кред
  * ВМ (202). Генерирует новую пару/пароль, применяет через worker и отзывает
  * старый материал. ВМ обязана быть подготовлена (`is_managed`).

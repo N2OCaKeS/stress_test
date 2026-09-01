@@ -10,7 +10,7 @@
  * `@/api/server/vms`. Тонкая матрица прав `vm.*` (дизайн §2) ещё не приходит в
  * persona — гейтим серверной ролью через `@/lib/rbac`.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
@@ -146,6 +146,19 @@ export function Vm() {
 
   const hubs = useMemo(() => hubsAndVmsQ.data?.hubs ?? [], [hubsAndVmsQ.data]);
   const allVms = useMemo(() => hubsAndVmsQ.data?.vms ?? [], [hubsAndVmsQ.data]);
+  const hubsAndVmsRefetchRef = useRef(hubsAndVmsQ.refetch);
+  hubsAndVmsRefetchRef.current = hubsAndVmsQ.refetch;
+
+  useEffect(() => {
+    if (zoneBlocked) return;
+    const LIVE_REFRESH_MS = 8_000;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        hubsAndVmsRefetchRef.current();
+      }
+    }, LIVE_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [zoneBlocked]);
 
   const selectedHub = hubs.find((h) => h.id === selectedHubId) ?? null;
   const selectedVm = allVms.find((v) => v.id === selectedVmId) ?? null;
@@ -673,6 +686,9 @@ export function VmDetail({
   onChanged: () => void;
 }) {
   const [local, setLocal] = useState<Vm>(vm);
+  useEffect(() => {
+    setLocal(vm);
+  }, [vm]);
   const view = local.id === vm.id ? local : vm;
   const entity: EntityRef = { kind: "vm", vm: view, mock, canManage, onChanged };
 

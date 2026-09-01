@@ -148,6 +148,19 @@ export function prepareServer(
 }
 
 /**
+ * `POST /api/server/v1/servers/{id}/install-node-exporter` — поставить
+ * node_exporter на managed-сервер через worker. Результат установки лежит в
+ * `GET /tasks/{task_id}`.
+ */
+export function installNodeExporter(
+  id: string,
+): Promise<TaskDispatchResponse> {
+  return apiPost<TaskDispatchResponse>(
+    `/server/v1/servers/${id}/install-node-exporter`,
+  );
+}
+
+/**
  * `POST /api/server/v1/servers/{id}/astra-update` — обновить ОС Astra до
  * версии каталога.
  *

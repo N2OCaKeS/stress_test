@@ -24,6 +24,8 @@ SSH-apply). Дисптачи через `worker_client.dispatch_task`:
 * ``POST /servers/{id}/prepare``           → `server.prepare`
   (bootstrap управляющего юзера DBOS; bootstrap-креды кладутся в Redis
   под `bootstrap_creds_key` с TTL, в payload едет только ссылка).
+* ``POST /servers/{id}/install-node-exporter`` → `server.install_node_exporter`
+  (managed SSH: установить node_exporter для Grafana-метрик).
 * ``POST /ipmi-controllers/{id}/rotate``   → `ipmi.rotate_password`
   (worker сейчас raise'ит NotImplementedError до того, как тронет iDRAC —
   storage round-trip ещё не существует. Endpoint всё равно поднимает таску,
@@ -2031,6 +2033,99 @@ async def server_prepare_dispatch(
         resolve_creds=resolve_creds,
     )
     return ServerPrepareResponse(task_id=task_id, status="queued")
+
+
+@router_servers.post(
+    "/install-node-exporter",
+    response_model=ServerTaskDispatchResponse,
+    status_code=202,
+    summary="Установить node_exporter на сервере (202, dispatch server.install_node_exporter)",
+    description=(
+        "Ставит задачу `server.install_node_exporter` в server_worker. "
+        "Worker заходит на managed-сервер по DBOS управляющему ключу и выполняет "
+        "idempotent-установку node_exporter под sudo. Нужен для Grafana-панелей "
+        "`var-node=<ip>:9100`.\n\n"
+        "Доступ: тот же, что у prepare-dispatch — `(server, update)`. Сервер "
+        "обязан быть prepared (`is_managed=true`), иначе 409 PREPARE_REQUIRED."
+    ),
+    responses={
+        202: {"description": "Задача поставлена."},
+        403: {"description": "Нет `update`."},
+        404: {"description": "Сервер не найден / чужой dept."},
+        409: {"description": "SERVER_DECOMMISSIONED / PREPARE_REQUIRED / SERVER_UPDATING / TASK_IDEMPOTENT_CONFLICT."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def install_node_exporter_dispatch(
+    request: Request,
+    server_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> ServerTaskDispatchResponse:
+    """POST /servers/{id}/install-node-exporter — dispatch managed SSH task."""
+    audit_action = "server.node_exporter_installed"
+    task_kind = "server.install_node_exporter"
+
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+        identity=identity,
+    ):
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.UPDATE
+        )
+
+    try:
+        server = await server_svc.get_server(db, identity, server_id)
+    except (NotFoundError, AuthorizationError) as exc:
+        if isinstance(exc, NotFoundError):
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept"},
+            )
+        else:
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="denied", allowed=False,
+                details={"reason": "no_view_permission"},
+            )
+        raise
+
+    if server.status == ServerStatus.DECOMMISSIONED:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "decommissioned"},
+        )
+        raise ConflictError(
+            error_code="SERVER_DECOMMISSIONED",
+            message="Server is decommissioned and cannot accept worker operations",
+        )
+    if not server.is_managed:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "prepare_required", "department_id": server.department_id},
+        )
+        raise ConflictError(
+            error_code="PREPARE_REQUIRED",
+            message="Server is not prepared; run prepare before installing node_exporter",
+        )
+    reservation.ensure_not_updating(identity, server, action=audit_action)
+
+    task_id, _ = await dispatch_server_ssh_task(
+        db=db,
+        identity=identity,
+        request=request,
+        server=server,
+        task_kind=task_kind,
+        audit_action=audit_action,
+        resolved_account_id=None,
+    )
+    return ServerTaskDispatchResponse(task_id=task_id, status="queued")
 
 
 def _make_prepare_creds_resolver(

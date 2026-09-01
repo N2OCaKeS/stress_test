@@ -44,7 +44,9 @@ from src.services.redis_stash_crypto import (
     decrypt_stash,
     stash_id_from_key,
 )
+from src.tasks._node_exporter_helpers import install_node_exporter
 from src.tasks._runner import run_task
+from src.tasks._target_runner import DirectRunner
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,7 @@ logger = logging.getLogger(__name__)
 # и пароль наружу не уходят ни при каких обстоятельствах.
 AUDIT_SAFE_FIELDS: set[str] = {
     "server_id", "management_user", "management_mode", "prepared",
+    "node_exporter",
 }
 
 # Формат ключа задаёт server_service (`worker_client.prepare_creds_key` +
@@ -88,6 +91,7 @@ _PREPARED_MARKER_TTL_SECONDS = 3600
 # аккаунтов на бокс не доезжали. С маркером retry пропускает только то, что
 # реально сделано, и доводит provision до конца под управляющей key-сессией.
 _LINKED_PROVISIONED_MARKER_PREFIX = "dbos:linked_provisioned_marker:"
+_NODE_EXPORTER_MARKER_PREFIX = "dbos:node_exporter_marker:"
 
 
 async def _read_bootstrap_creds(creds_key: str) -> dict:
@@ -232,6 +236,37 @@ async def _delete_linked_provisioned(task_id: str) -> None:
         logger.debug("failed to delete linked provisioned marker", exc_info=True)
 
 
+async def _mark_node_exporter_installed(task_id: str) -> None:
+    """Записать marker успешной установки node_exporter внутри prepare."""
+    validate_task_id(task_id)
+    client = redis_pool.get_redis()
+    try:
+        await client.set(
+            _NODE_EXPORTER_MARKER_PREFIX + task_id, "1",
+            ex=_PREPARED_MARKER_TTL_SECONDS,
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("failed to set node_exporter marker", exc_info=True)
+
+
+async def _read_node_exporter_installed(task_id: str) -> bool:
+    """True, если node_exporter уже установлен на прошлой попытке prepare."""
+    validate_task_id(task_id)
+    client = redis_pool.get_redis()
+    raw = await client.get(_NODE_EXPORTER_MARKER_PREFIX + task_id)
+    return raw is not None
+
+
+async def _delete_node_exporter_installed(task_id: str) -> None:
+    """Снять marker node_exporter после успешного prepare."""
+    validate_task_id(task_id)
+    client = redis_pool.get_redis()
+    try:
+        await client.delete(_NODE_EXPORTER_MARKER_PREFIX + task_id)
+    except Exception:  # noqa: BLE001
+        logger.debug("failed to delete node_exporter marker", exc_info=True)
+
+
 async def _delete_bootstrap_creds(creds_key: str) -> None:
     """Удалить bootstrap-креды из Redis после успешного prepare (best-effort).
 
@@ -373,16 +408,21 @@ async def server_prepare(task_id: str) -> None:
         if marker_mode is not None:
             detected_mode = marker_mode
         linked_provisioned = await _read_linked_provisioned(task_id)
+        node_exporter_installed = await _read_node_exporter_installed(task_id)
 
         # Bootstrap-stash нужен, пока есть незавершённая SSH-работа: либо ещё не
-        # прошёл сам bootstrap, либо привязанные аккаунты не заведены. Когда оба
-        # шага отмечены маркерами, retry идёт прямо в submit_prepared, не трогая
-        # Redis-stash (его TTL к этому моменту может уже истечь — для этого
-        # маркеры и существуют).
+        # прошёл сам bootstrap, либо привязанные аккаунты не заведены, либо
+        # node_exporter не установлен. Когда все SSH-шаги отмечены маркерами,
+        # retry идёт прямо в submit_prepared, не трогая Redis-stash (его TTL к
+        # этому моменту может уже истечь — для этого маркеры и существуют).
         bootstrap: dict | None = None
         mgmt_install: dict = {}
         mgmt_private_key: str | None = None
-        if not already_bootstrapped or not linked_provisioned:
+        if (
+            not already_bootstrapped
+            or not linked_provisioned
+            or not node_exporter_installed
+        ):
             if not creds_key:
                 raise SshError(
                     error_code="SSH_BOOTSTRAP_CREDS_MISSING",
@@ -492,6 +532,31 @@ async def server_prepare(task_id: str) -> None:
             )
             await _mark_linked_provisioned(task_id)
 
+        if not node_exporter_installed:
+            if not mgmt_private_key:
+                raise SshError(
+                    error_code="SSH_MGMT_INSTALL_INCOMPLETE",
+                    host="",
+                    message=(
+                        "prepare stash has no management private key for "
+                        "node_exporter install; re-run prepare"
+                    ),
+                )
+            creds = {
+                "is_managed": True,
+                "management_user": management_user,
+                "management_private_key": mgmt_private_key,
+            }
+            ssh_client.apply_session_hints(creds, {
+                **payload,
+                "is_managed": True,
+                "management_user": management_user,
+            })
+            session = ssh_client.build_session(creds, server_id)
+            async with session as ssh:
+                await install_node_exporter(DirectRunner(ssh), ssh.host)
+            await _mark_node_exporter_installed(task_id)
+
         await server_service_client.submit_prepared(
             server_id, management_user, target_dept,
             management_mode=detected_mode,
@@ -512,6 +577,7 @@ async def server_prepare(task_id: str) -> None:
                 )
         await _delete_bootstrap_succeeded(task_id)
         await _delete_linked_provisioned(task_id)
+        await _delete_node_exporter_installed(task_id)
         # Defense-in-depth: `bootstrap_creds_key` сам по себе — это ссылка
         # в Redis-неймспейс с одноразовыми bootstrap-кредами. TTL и явный
         # DELETE уже закрыли значение в Redis, но ссылка в `tasks.payload`
@@ -545,6 +611,7 @@ async def server_prepare(task_id: str) -> None:
             "management_user": management_user,
             "management_mode": detected_mode,
             "prepared": True,
+            "node_exporter": True,
         }
 
     await run_task(

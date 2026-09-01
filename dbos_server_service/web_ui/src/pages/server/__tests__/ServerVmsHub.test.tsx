@@ -29,8 +29,20 @@ vi.mock("@/components/ui/ConfirmDialog", () => ({
 }));
 
 vi.mock("@/api/server/vms", () => ({
+  astraUpdateVm: vi.fn(),
+  deleteVm: vi.fn(),
+  getAvailableIps: vi.fn(() => new Promise(() => {})),
+  inventorySyncVm: vi.fn(),
+  installNodeExporterVm: vi.fn(),
+  listVmIpPools: vi.fn(() => new Promise(() => {})),
+  prepareVm: vi.fn(),
   prepareVmsHub: h.prepareVmsHub,
+  releaseVm: vi.fn(),
+  reserveVm: vi.fn(),
+  rotateVmMgmtCreds: vi.fn(),
+  setVmNetwork: vi.fn(),
   teardownVmsHub: h.teardownVmsHub,
+  usersInventoryVm: vi.fn(),
 }));
 vi.mock("@/api/server/servers", () => ({
   getServer: vi.fn(() => Promise.resolve(h.server)),
@@ -39,6 +51,7 @@ vi.mock("@/api/server/servers", () => ({
   astraUpdate: vi.fn(),
   deleteServer: vi.fn(),
   inventorySync: vi.fn(),
+  installNodeExporter: vi.fn(),
   prepareServer: vi.fn(),
   rotateManagementCredentials: vi.fn(),
   listServers: vi.fn(() => new Promise(() => {})),

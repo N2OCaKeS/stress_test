@@ -635,6 +635,36 @@ async def sync_vm_inventory(
 
 
 @router.post(
+    "/{vm_id}/install-node-exporter",
+    response_model=VmTaskDispatchResponse,
+    status_code=202,
+    summary="Установить node_exporter в госте ВМ (202, dispatch vm.install_node_exporter)",
+    description=(
+        "Ставит задачу `vm.install_node_exporter`: worker заходит в гостя ВМ "
+        "через hub под управляющими кредами и поднимает node_exporter на `:9100` "
+        "для Grafana-панелей. Право `(vm, vm_prepare)`. ВМ обязана "
+        "быть prepared и иметь guest IP."
+    ),
+    responses={
+        202: {"description": "Задача поставлена."},
+        403: {"description": "Нет `vm_prepare`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_PREPARE_REQUIRED / VM_GUEST_IP_UNKNOWN / HUB_UNAVAILABLE."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def install_node_exporter_vm(
+    vm_id: str,
+    identity: CurrentUserIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> VmTaskDispatchResponse:
+    """POST /vms/{id}/install-node-exporter."""
+    vm, task_id = await svc.install_node_exporter(db, identity, request, vm_id)
+    return VmTaskDispatchResponse(vm_id=vm.id, task_id=task_id, status="queued")
+
+
+@router.post(
     "/{vm_id}/users-inventory",
     response_model=VmTaskDispatchResponse,
     status_code=202,

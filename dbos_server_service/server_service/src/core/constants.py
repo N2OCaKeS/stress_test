@@ -577,6 +577,8 @@ class VmTaskKind(StrEnum):
     # установка per-VM управляющей SSH-пары + пароля, удаление базовой учётки.
     # Тот же kind обслуживает и ротацию mgmt-кред (payload несёт `operation`).
     VM_PREPARE = "vm.prepare"
+    # Развернуть node_exporter внутри гостя ВМ для Grafana-метрик.
+    VM_INSTALL_NODE_EXPORTER = "vm.install_node_exporter"
     # Live-инвентарь пакетов гостя: worker заходит на гостя по SSH через hub,
     # снимает dpkg/rpm-список и отдаёт его callback'ом record_vm_packages.
     VM_LIST_PACKAGES = "vm.list_packages"

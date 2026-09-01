@@ -44,6 +44,7 @@ import {
   ArrowUpCircle,
   MonitorPlay,
   Network,
+  Gauge,
   type LucideIcon,
 } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
@@ -59,6 +60,7 @@ import {
   clearBusy,
   deleteServer,
   getServer,
+  installNodeExporter,
   inventorySync,
   prepareServer,
   rotateManagementCredentials,
@@ -70,6 +72,7 @@ import {
   deleteVm,
   getAvailableIps,
   inventorySyncVm,
+  installNodeExporterVm,
   listVmIpPools,
   prepareVm,
   usersInventoryVm,
@@ -128,6 +131,8 @@ interface Props {
   entity?: EntityRef;
   /** Локальное обновление карточки после мутации (общий контракт вкладок). */
   onEntityUpdated?: (next: Server | Vm) => void;
+  /** Перечитать родителя после завершения async worker-задачи. */
+  onChanged?: () => void;
 }
 
 function isDepAdminOfServer(
@@ -158,7 +163,7 @@ interface AstraVersionOption {
 }
 
 export function ManageTab(props: Props) {
-  const { entity, onServerUpdated, onDeleted, onEntityUpdated } = props;
+  const { entity, onServerUpdated, onDeleted, onEntityUpdated, onChanged } = props;
   const vmEntity = entity?.kind === "vm" ? entity : null;
   const isVm = !!vmEntity;
   const vm = vmEntity?.vm;
@@ -177,6 +182,7 @@ export function ManageTab(props: Props) {
   const rotateHandledRef = useRef<string | null>(null);
   const astraHandledRef = useRef<string | null>(null);
   const vmsHubHandledRef = useRef<string | null>(null);
+  const taskHandledRef = useRef<string | null>(null);
 
   // Серверная ветка держит локальную копию Server: lifecycle/busy-мутации
   // возвращают свежий объект — правим копию и поднимаем наверх, чтобы header и
@@ -199,34 +205,53 @@ export function ManageTab(props: Props) {
     [onServerUpdated],
   );
 
-  // refetch карточки по succeeded — только для сервера: у ВМ обновление идёт
-  // через onChanged (родитель перечитывает список). Ref гасит повторный refetch.
+  const refreshServer = useCallback(() => {
+    if (!serverView) return;
+    getServer(serverView.id)
+      .then((next) => {
+        applyServer(next);
+        onChanged?.();
+      })
+      .catch(() => {});
+  }, [serverView, applyServer, onChanged]);
+
+  // Refetch по succeeded: сервер перечитывает карточку, ВМ перечитывает список
+  // родителя. Ref'ы гасят повторный refetch на re-render'ах.
   useEffect(() => {
-    if (isVm) return;
+    const t = taskOutcome.tracked;
+    if (!t || t.polling || t.status !== "succeeded") return;
+    if (taskHandledRef.current === t.taskId) return;
+    taskHandledRef.current = t.taskId;
+    if (isVm) vmEntity?.onChanged();
+    else refreshServer();
+  }, [isVm, taskOutcome.tracked, vmEntity, refreshServer]);
+
+  useEffect(() => {
     const t = rotateOutcome.tracked;
     if (!t || t.polling || t.status !== "succeeded") return;
     if (rotateHandledRef.current === t.taskId) return;
     rotateHandledRef.current = t.taskId;
-    if (serverView) getServer(serverView.id).then(applyServer).catch(() => {});
-  }, [isVm, rotateOutcome.tracked, serverView, applyServer]);
+    if (isVm) vmEntity?.onChanged();
+    else refreshServer();
+  }, [isVm, rotateOutcome.tracked, vmEntity, refreshServer]);
 
   useEffect(() => {
-    if (isVm) return;
     const t = astraOutcome.tracked;
     if (!t || t.polling || t.status !== "succeeded") return;
     if (astraHandledRef.current === t.taskId) return;
     astraHandledRef.current = t.taskId;
-    if (serverView) getServer(serverView.id).then(applyServer).catch(() => {});
-  }, [isVm, astraOutcome.tracked, serverView, applyServer]);
+    if (isVm) vmEntity?.onChanged();
+    else refreshServer();
+  }, [isVm, astraOutcome.tracked, vmEntity, refreshServer]);
 
   useEffect(() => {
-    if (isVm) return;
     const t = vmsHubOutcome.tracked;
     if (!t || t.polling || t.status !== "succeeded") return;
     if (vmsHubHandledRef.current === t.taskId) return;
     vmsHubHandledRef.current = t.taskId;
-    if (serverView) getServer(serverView.id).then(applyServer).catch(() => {});
-  }, [isVm, vmsHubOutcome.tracked, serverView, applyServer]);
+    if (isVm) vmEntity?.onChanged();
+    else refreshServer();
+  }, [isVm, vmsHubOutcome.tracked, vmEntity, refreshServer]);
 
   // Каталог версий ОС для карточки обновления — общий для сервера и ВМ. В
   // mock-режиме ВМ берём фикстуру, иначе — реальный каталог os_versions.
@@ -357,6 +382,25 @@ export function ManageTab(props: Props) {
       );
       if (res) {
         taskOutcome.track("users_inventory", res.task_id, res.status);
+        onChanged();
+      }
+    };
+
+    const handleVmNodeExporter = async () => {
+      if (
+        !(await confirm({
+          title: "Установить node_exporter",
+          message: `Установить node_exporter на ВМ ${vm.name}? Worker зайдёт в гостя через hub и выполнит установку под sudo.`,
+          confirmLabel: "Установить",
+        }))
+      )
+        return;
+      taskOutcome.reset();
+      const res = await run("node_exporter", () =>
+        mock ? Promise.resolve(fakeDispatch()) : installNodeExporterVm(vm.id),
+      );
+      if (res) {
+        taskOutcome.track("node_exporter", res.task_id, res.status);
         onChanged();
       }
     };
@@ -547,6 +591,16 @@ export function ManageTab(props: Props) {
                 : "Сначала подготовьте ВМ — инвентаризация ходит по управляющему ключу",
               onClick: handleVmUsers,
             },
+            {
+              key: "node_exporter",
+              label: "node_exporter",
+              Icon: Gauge,
+              requiresPrepared: true,
+              title: managed
+                ? "Установить node_exporter для Grafana-метрик"
+                : "Сначала подготовьте ВМ — установка идёт по управляющему ключу",
+              onClick: handleVmNodeExporter,
+            },
           ]}
           outcome={taskOutcome.tracked}
           onCancelled={taskOutcome.reset}
@@ -715,6 +769,32 @@ export function ManageTab(props: Props) {
               );
               if (res)
                 taskOutcome.track("users_inventory", res.task_id, res.status);
+            },
+          },
+          {
+            key: "node_exporter",
+            label: "node_exporter",
+            Icon: Gauge,
+            requiresPrepared: true,
+            title: prepared
+              ? "Установить node_exporter для Grafana-метрик"
+              : prepareHint,
+            onClick: async () => {
+              if (!view) return;
+              if (
+                !(await confirm({
+                  title: "Установить node_exporter",
+                  message: `Установить node_exporter на ${view.hostname}? Worker зайдёт на сервер по управляющему ключу и выполнит установку под sudo.`,
+                  confirmLabel: "Установить",
+                }))
+              )
+                return;
+              taskOutcome.reset();
+              const res = await run("node_exporter", () =>
+                installNodeExporter(view.id),
+              );
+              if (res)
+                taskOutcome.track("node_exporter", res.task_id, res.status);
             },
           },
         ]}

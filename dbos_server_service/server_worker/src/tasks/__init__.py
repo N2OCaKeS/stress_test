@@ -8,6 +8,7 @@ from src.tasks import (  # noqa: F401
     inventory,
     management_creds,
     management_user,
+    node_exporter,
     passwords,
     power,
     prepare,

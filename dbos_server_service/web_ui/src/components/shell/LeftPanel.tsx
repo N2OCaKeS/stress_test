@@ -55,7 +55,7 @@ const SERVICE_CATALOG: Record<ServiceName, ServiceChip> = {
     service: "server",
     to: "/server",
     icon: Server,
-    label: "Серверы",
+    label: "Машины",
     subItems: [
       { to: "/server?only=servers", icon: Server, label: "Серверы" },
       { to: "/server?only=vms", icon: MonitorPlay, label: "ВМ" },

@@ -38,7 +38,9 @@ from src.core.constants import (
 )
 from src.main import broker
 from src.services import redis_pool, server_service_client
+from src.tasks._node_exporter_helpers import install_node_exporter
 from src.tasks._runner import run_task
+from src.tasks._target_runner import GuestHopRunner
 from src.tasks._vm_prepare_helpers import (
     _delete_base_user,
     _delete_stash,
@@ -51,6 +53,7 @@ from src.tasks._vm_prepare_helpers import (
     _shred_temp_key,
     _verify_key_login,
     _write_temp_key,
+    choose_guest_connector,
     load_mgmt_material,
 )
 from src.tasks._vms_helpers import (
@@ -77,6 +80,7 @@ logger = logging.getLogger(__name__)
 
 AUDIT_SAFE_FIELDS_PREPARE: set[str] = {
     "vm_id", "vm_name", "management_user", "is_managed", "hardened",
+    "node_exporter",
 }
 AUDIT_SAFE_FIELDS_NETWORK: set[str] = {
     "vm_id", "vm_name", "network_mode", "ip_address", "power_state",
@@ -220,6 +224,12 @@ async def vm_prepare(task_id: str) -> None:
                     await _delete_base_user(
                         ssh, host, guest_ip, management_user, key_path,
                     )
+                    connect = choose_guest_connector(
+                        guest_ip, management_user, key_path,
+                    )
+                    await install_node_exporter(
+                        GuestHopRunner(ssh, connect, host=host), guest_ip,
+                    )
                 finally:
                     await _shred_temp_key(ssh, key_path)
         except Exception as exc:
@@ -247,6 +257,7 @@ async def vm_prepare(task_id: str) -> None:
             "management_user": management_user,
             "is_managed": True,
             "hardened": harden,
+            "node_exporter": True,
         }
 
     await run_task(

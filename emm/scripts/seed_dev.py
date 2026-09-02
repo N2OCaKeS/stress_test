@@ -43,12 +43,12 @@ PG_PASS = os.environ.get("PG_PASS", "app_password")
 SECRET_PG_HOST = os.environ.get("SECRET_PG_HOST", "localhost")
 SECRET_PG_PORT = int(os.environ.get("SECRET_PG_PORT", "5435"))
 
-AUTH_CONTAINER = os.environ.get("AUTH_CONTAINER", "dbos_server_service-auth_service-1")
+AUTH_CONTAINER = os.environ.get("AUTH_CONTAINER", "emm-auth_service-1")
 SECRET_CONTAINER = os.environ.get(
-    "SECRET_CONTAINER", "dbos_server_service-secret_service-1"
+    "SECRET_CONTAINER", "emm-secret_service-1"
 )
 SERVER_CONTAINER = os.environ.get(
-    "SERVER_CONTAINER", "dbos_server_service-server_service-1"
+    "SERVER_CONTAINER", "emm-server_service-1"
 )
 
 DEV_PASSWORD = "1"

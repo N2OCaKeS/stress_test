@@ -35,7 +35,7 @@ services:
       - GF_SECURITY_ALLOW_EMBEDDING=true
       - GF_LOG_LEVEL=warn
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
-      - GF_SERVER_ROOT_URL=http://allta.devos.astralinux.ru/grafana-proxy/
+      - GF_SERVER_ROOT_URL=http://allta.devos.astralinux.ru:3000/grafana-proxy/
 
   nginx:
     image: allta.devos.astralinux.ru:21503/nginx:latest

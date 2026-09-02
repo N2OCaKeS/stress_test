@@ -1,0 +1,483 @@
+# Dev-стек для ручной отладки В КОНТЕЙНЕРАХ (без devcontainer).
+#
+# Поднимает на хосте:
+#   postgres        :5432  (четыре БД: dev_auth, dev_logging, dev_server, dev_server_worker)
+#   secret_postgres :5435  (отдельный кластер для secret_service: dev_secret)
+#   redis           :6379  (брокер задач для server_worker, ratelimit storage)
+#   loging_service  :8001  (uvicorn --reload, src/ примонтирован)
+#   auth_service    :8000  (uvicorn --reload, src/ примонтирован)
+#   server_service  :8002  (uvicorn --reload, src/ примонтирован)
+#   server_worker          (taskiq worker, src/ примонтирован)
+#   secret_service  :8003  (uvicorn --reload, src/ примонтирован)
+#
+# Использование:
+#   make up           поднять стек (данные сохраняются)
+#   make seed         чистая БД + наполнить dev-данными
+#   make logs         tail логи обоих сервисов
+#   make down         остановить (данные сохраняются)
+#   make down-v       остановить + снести том postgres
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbos_dev_pg:/var/lib/postgresql/data
+      - ./scripts/init_dev_db.sql:/docker-entrypoint-initdb.d/init_dev_db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    # AUTH обязателен: без `--requirepass` любой контейнер в сети может RPUSH
+    # в taskiq queue и инициировать power-cycle / password rotation.
+    # `REDIS_PASSWORD` обязателен в проде; default используется только в dev-стеке.
+    command:
+      - "sh"
+      - "-c"
+      - "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-dev-redis-password}
+    volumes:
+      - dbos_dev_redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  loging_service:
+    build:
+      context: ./loging_service
+      dockerfile: docker/Dockerfile
+    init: true
+    environment:
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_logging
+      # Self-host Swagger UI: браузер тянет bundle/css с контейнера swagger_ui
+      # (:8088), а не с внешнего CDN jsdelivr (корп-сеть его не видит).
+      SWAGGER_UI_ASSETS_BASE: http://localhost:8088
+      SERVICE_API_KEYS: '{"auth_service":"audit_auth_service_dev_key","server_service":"audit_server_service_dev_key","config_service":"audit_config_service_dev_key","server_worker":"audit_server_worker_dev_key","secret_service":"audit_secret_service_dev_key"}'
+      # Outbound bearer для вызова auth_service /introspect — должен
+      # совпадать с auth_service.SERVICE_API_KEY (legacy single-shared
+      # key, ниже под auth_service'ом). Раньше тут стоял отдельный
+      # `dev-logging-introspect-key` и любой user-bearer ловил 401 при
+      # попытке loging'а резолвить identity caller'а.
+      INTROSPECT_SERVICE_API_KEY: dev-introspect-api-key
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_ADMIN_USERNAME: admin
+      LOGGING_ADMIN_PASSWORD: "1"
+      APP_LOG_LEVEL: INFO
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             exec uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload"
+    volumes:
+      - ./loging_service/src:/app/src
+      - ./loging_service/alembic.ini:/app/alembic.ini:ro
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 --connect-timeout 2 http://localhost:8001/api/logging/v1/health || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  auth_service:
+    build:
+      context: ./auth_service
+      dockerfile: docker/Dockerfile
+    init: true
+    environment:
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_auth
+      # Self-host Swagger UI: браузер тянет bundle/css с контейнера swagger_ui
+      # (:8088), а не с внешнего CDN jsdelivr (корп-сеть его не видит).
+      SWAGGER_UI_ASSETS_BASE: http://localhost:8088
+      SECRET_KEY: dev-secret-key-for-local-must-be-32-chars!
+      ACCESS_TOKEN_TTL_MINUTES: "60"
+      REFRESH_TOKEN_TTL_DAYS: "14"
+      LOGGING_SERVICE_URL: http://loging_service:8001
+      LOGGING_SERVICE_API_KEY: audit_auth_service_dev_key
+      # auth_service's own bearer for inbound /introspect (shared cross-service
+      # secret; per-service split — отдельная задача, не связанная с audit-ключами).
+      SERVICE_API_KEY: dev-introspect-api-key
+      # Outbound lifecycle-callback'и в secret_service: при delete user/dept и
+      # revoke secret_service-access auth шлёт POST /api/secret/v1/internal/
+      # lifecycle/*. Bearer должен совпадать с тем, что secret_service валидирует
+      # на входе (его legacy SERVICE_API_KEY). Без этих трёх env каскад в
+      # secret_service молча не срабатывает (URL пустой → no-op-with-warning).
+      SECRET_SERVICE_URL: http://secret_service:8003
+      SECRET_INTERNAL_API_KEY: dev-introspect-api-key
+      SECRET_SERVICE_TLS_VERIFY: "false"
+      INITIAL_ADMIN_USERNAME: admin
+      INITIAL_ADMIN_PASSWORD: "1"
+      INITIAL_ADMIN_EMAIL: admin@example.com
+      DBOS_BOOTSTRAP_NO_FORCE_CHANGE: "true"
+      # Токен бота воркера: auth на старте идемпотентно заводит под него бота
+      # server_worker в системном отделе `DBOS System` и bot-токен с хэшем
+      # этого значения. Должен совпадать байт-в-байт с WORKER_BOT_TOKEN у
+      # server_worker ниже — тот же путь, что и в prod (bootstrap из env).
+      WORKER_BOT_TOKEN: dbos_bot_dev_worker_local_token_do_not_use_in_prod
+      APP_LOG_LEVEL: INFO
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - ./auth_service/src:/app/src
+      - ./auth_service/alembic.ini:/app/alembic.ini:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      loging_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 --connect-timeout 2 http://localhost:8000/api/auth/v1/health || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  server_service:
+    build:
+      context: ./server_service
+      dockerfile: docker/Dockerfile
+    init: true
+    environment:
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server
+      # Self-host Swagger UI: браузер тянет bundle/css с контейнера swagger_ui
+      # (:8088), а не с внешнего CDN jsdelivr (корп-сеть его не видит).
+      SWAGGER_UI_ASSETS_BASE: http://localhost:8088
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_SERVICE_URL: http://loging_service:8001
+      LOGGING_SERVICE_API_KEY: audit_server_service_dev_key
+      # Bearer для вызовов auth_service /introspect; должен совпадать с
+      # auth_service.SERVICE_API_KEY.
+      SERVICE_API_KEY: dev-introspect-api-key
+      SERVER_ENCRYPTION_KEY: dev-server-encryption-key-do-not-use-in-prod
+      SERVER_ENCRYPTION_KEY_VERSION: "2"
+      # Общий с server_worker'ом ключ для envelope-шифрования Redis-stash'а
+      # кред (provision/prepare dispatch). Должен совпадать байт-в-байт с
+      # REDIS_STASH_ENCRYPTION_KEY у server_worker'а ниже.
+      REDIS_STASH_ENCRYPTION_KEY: dev-redis-stash-encryption-key-do-not-use-in-prod
+      REDIS_STASH_ENCRYPTION_KEY_VERSION: "1"
+      SERVER_WORKER_DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server_worker
+      SERVER_WORKER_REDIS_URL: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/0
+      APP_LOG_LEVEL: INFO
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             exec uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload"
+    volumes:
+      - ./server_service/src:/app/src
+      - ./server_service/alembic.ini:/app/alembic.ini:ro
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 --connect-timeout 2 http://localhost:8002/api/server/v1/health || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  server_worker:
+    build:
+      context: ./server_worker
+      dockerfile: docker/Dockerfile
+    init: true
+    environment:
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server_worker
+      # Worker сам читает dispatch_outbox у server_service'а и публикует
+      # его в redis taskiq-очередь (см. `src/tasks/dispatch_outbox.py`).
+      # Без этого env publisher_loop no-op'ит и все таски залипают
+      # в `tasks.status='queued'` без выезда на исполнителя.
+      SERVER_SERVICE_DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server
+      REDIS_URL: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/0
+      SERVER_SERVICE_URL: http://server_service:8002
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_SERVICE_URL: http://loging_service:8001
+      # bot-токен для аутентификации на internal-эндпоинтах server_service.
+      # Совпадает с WORKER_BOT_TOKEN у auth_service (тот его засеял в БД на
+      # старте) — единый механизм с prod: токен берётся из env, без PAT-файла.
+      WORKER_BOT_TOKEN: dbos_bot_dev_worker_local_token_do_not_use_in_prod
+      LOGGING_SERVICE_API_KEY: audit_server_worker_dev_key
+      # Bearer для вызовов auth_service /introspect (где worker ходит за
+      # introspect'ом своего bot-токена) — shared cross-service.
+      SERVICE_API_KEY: dev-introspect-api-key
+      # Симметричный с server_service'ом ключ для decrypt'а Redis-stash'а
+      # кред. Обязан совпадать со значением выше — иначе worker увидит
+      # STASH_DECRYPT_FAILED и все provision/prepare таски FAILED.
+      REDIS_STASH_ENCRYPTION_KEY: dev-redis-stash-encryption-key-do-not-use-in-prod
+      REDIS_STASH_ENCRYPTION_KEY_VERSION: "1"
+      # Имя управляющего пользователя, которого server.prepare заводит на боксе.
+      # Управляющая SSH-пара и пароль теперь свои на каждом сервере: их генерит
+      # server_service при prepare, шифрует в своей БД и отдаёт worker'у
+      # транзиентно (prepare-stash / internal fetch). Глобального ключа в env
+      # больше нет.
+      SSH_MANAGEMENT_USER: dbos
+      WORKER_LOG_LEVEL: INFO
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             exec taskiq worker src.main:broker --workers 2"
+    volumes:
+      - ./server_worker/src:/app/src
+      - ./server_worker/alembic.ini:/app/alembic.ini:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+      server_service:
+        condition: service_healthy
+
+  # Тестовый SSH-сервер для проверки server_service / server_worker: обычный
+  # Debian с привилегированным sshd (root). На нём реально отрабатывает
+  # `prepare` — worker заходит под bootstrap-юзером `tester`/`tester1234` по
+  # паролю, заводит управляющего пользователя `dbos` через useradd + sudoers,
+  # проверяет вход по ключу и хардит sshd (PasswordAuthentication no /
+  # PermitRootLogin no). dpkg-query на борту → installed_packages.list отдаёт
+  # реальный список. `make seed` сидит запись `servers` с hostname=test_server:
+  # worker резолвит контейнер по docker DNS внутри сети, с хоста SSH на 2222.
+  test_server:
+    build:
+      context: ./scripts/test_server
+    environment:
+      BOOTSTRAP_USER: tester
+      BOOTSTRAP_PASSWORD: tester1234
+    ports:
+      - "2222:2222"
+
+  monitoring_node_exporter:
+    image: allta.devos.astralinux.ru:21503/prom/node-exporter:latest
+    profiles: ["monitoring"]
+    command:
+      - "--path.rootfs=/host"
+    volumes:
+      - "/:/host:ro,rslave"
+    networks:
+      monitoring_dev:
+        ipv4_address: 10.210.91.10
+    ports:
+      - "9100:9100"
+
+  monitoring_prometheus:
+    image: allta.devos.astralinux.ru:21503/prom/prometheus:latest
+    profiles: ["monitoring"]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./monitoring_dev/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - dbos_dev_prometheus:/prometheus
+    networks:
+      - monitoring_dev
+    ports:
+      - "9090:9090"
+    depends_on:
+      - monitoring_node_exporter
+
+  monitoring_grafana:
+    image: allta.devos.astralinux.ru:21503/grafana/grafana-oss:latest
+    profiles: ["monitoring"]
+    environment:
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_LOG_LEVEL: warn
+    volumes:
+      - dbos_dev_grafana:/var/lib/grafana
+      - ./monitoring_dev/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring_dev/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./monitoring_dev/grafana/public/views/index.html:/usr/share/grafana/public/views/index.html:ro
+      - ./monitoring_dev/grafana/public/build/grafana.dark.d5a794927756549b8010.css:/usr/share/grafana/public/build/grafana.dark.d5a794927756549b8010.css:ro
+    networks:
+      - monitoring_dev
+    ports:
+      - "3000:3000"
+    depends_on:
+      - monitoring_prometheus
+
+  secret_postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+      POSTGRES_DB: dev_secret
+    ports:
+      - "5435:5432"
+    volumes:
+      - dbos_dev_secret_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  secret_service:
+    build:
+      context: ./secret_service
+      dockerfile: docker/Dockerfile
+    init: true
+    environment:
+      APP_ENV: local
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8003
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@secret_postgres:5432/dev_secret
+      # Self-host Swagger UI: браузер тянет bundle/css с контейнера swagger_ui
+      # (:8088), а не с внешнего CDN jsdelivr (корп-сеть его не видит).
+      SWAGGER_UI_ASSETS_BASE: http://localhost:8088
+      AUTH_SERVICE_URL: http://auth_service:8000
+      INTROSPECT_SERVICE_API_KEY: dev-introspect-api-key
+      LOGGING_SERVICE_URL: http://loging_service:8001
+      LOGGING_SERVICE_API_KEY: audit_secret_service_dev_key
+      SERVICE_API_KEY: dev-introspect-api-key
+      SECRET_ENCRYPTION_KEY: dev-secret-service-encryption-key-do-not-use!
+      SECRET_ENCRYPTION_KEY_VERSION: "2"
+      # Redis index 2 — отдельно от taskiq broker (0) и других потенциальных
+      # потребителей (1). Используется как опциональное хранилище slowapi-счётчиков.
+      RATE_LIMIT_STORAGE_URI: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/2
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-dev-redis-password}
+      SWEEP_ENABLED: "false"
+      APP_LOG_LEVEL: INFO
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             exec uvicorn src.main:app --host 0.0.0.0 --port 8003 --reload"
+    volumes:
+      - ./secret_service/src:/app/src
+      - ./secret_service/alembic.ini:/app/alembic.ini:ro
+    ports:
+      - "8003:8003"
+    depends_on:
+      secret_postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+      loging_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 --connect-timeout 2 http://localhost:8003/api/secret/v1/health || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  web_ui:
+    image: node:22-alpine
+    init: true
+    working_dir: /app
+    environment:
+      # vite dev-сервер проксирует /api/* на backend по compose-именам сервисов
+      # (см. proxy в vite.config.ts; дефолты там — localhost для запуска вне compose).
+      VITE_AUTH_PROXY_TARGET: http://auth_service:8000
+      VITE_LOGGING_PROXY_TARGET: http://loging_service:8001
+      VITE_SERVER_PROXY_TARGET: http://server_service:8002
+      VITE_SECRET_PROXY_TARGET: http://secret_service:8003
+    command: >
+      sh -c "npm ci && exec npm run dev -- --host 0.0.0.0 --port 5173"
+    volumes:
+      - ./web_ui:/app
+      # node_modules — в named volume: npm ci ставит linux/musl-бинарники
+      # (esbuild) в контейнере, не затирая host-овые и не утекая на host.
+      - web_ui_node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      auth_service:
+        condition: service_healthy
+      loging_service:
+        condition: service_healthy
+      server_service:
+        condition: service_healthy
+      secret_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:5173/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 120s
+
+  # Общий Swagger UI по всем сервисам (дропдаун в топбаре). CORS в dev выключен,
+  # поэтому спеки не тянем из браузера напрямую, а собираем серверно в общий том
+  # (openapi_dump) и отдаём их со своего origin как статику — модель как в проде
+  # (k8s/55-swagger-ui.yaml). Просмотр работает без CORS; «Try it out» — через
+  # per-service /docs (там same-origin).
+  openapi_dump:
+    image: curlimages/curl:8.10.1
+    # root: свежий named-том /specs принадлежит root, а образ бежит под curl_user
+    # (uid 100) — без этого запись спеков падает с curl exit 23.
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        curl -sf http://auth_service:8000/openapi.json   -o /specs/auth.json
+        curl -sf http://loging_service:8001/openapi.json  -o /specs/logging.json
+        curl -sf http://server_service:8002/openapi.json  -o /specs/server.json
+        curl -sf http://secret_service:8003/openapi.json  -o /specs/secret.json
+        echo "openapi specs dumped:"; ls -l /specs
+    volumes:
+      - openapi_specs:/specs
+    depends_on:
+      auth_service:
+        condition: service_healthy
+      loging_service:
+        condition: service_healthy
+      server_service:
+        condition: service_healthy
+      secret_service:
+        condition: service_healthy
+
+  swagger_ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    environment:
+      URLS: >-
+        [{"url":"/specs/auth.json","name":"auth_service"},
+         {"url":"/specs/logging.json","name":"loging_service"},
+         {"url":"/specs/server.json","name":"server_service"},
+         {"url":"/specs/secret.json","name":"secret_service"}]
+      URLS_PRIMARY_NAME: auth_service
+      DEEP_LINKING: "true"
+    volumes:
+      - openapi_specs:/usr/share/nginx/html/specs:ro
+    ports:
+      - "8088:8080"
+    depends_on:
+      openapi_dump:
+        condition: service_completed_successfully
+
+volumes:
+  dbos_dev_pg:
+  openapi_specs:
+  web_ui_node_modules:
+  dbos_dev_redis:
+  dbos_dev_secret_pg:
+  dbos_dev_prometheus:
+  dbos_dev_grafana:
+
+networks:
+  monitoring_dev:
+    ipam:
+      config:
+        - subnet: 10.210.91.0/24

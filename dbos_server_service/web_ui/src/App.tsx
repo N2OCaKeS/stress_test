@@ -91,6 +91,14 @@ const TaskResultPage = lazy(() =>
     default: m.TaskResultPage,
   }))
 );
+const Testing = lazy(() =>
+  import("@/pages/testing/Testing").then((m) => ({ default: m.Testing }))
+);
+const ServicesHealth = lazy(() =>
+  import("@/pages/health/ServicesHealth").then((m) => ({
+    default: m.ServicesHealth,
+  }))
+);
 
 // Редирект, сохраняющий query-строку (legacy /worker?server_id=… → новый
 // раздел задач под «Серверами»). Navigate сам по себе query не переносит.
@@ -223,6 +231,30 @@ export function App() {
               element={
                 <RouteGuard service="server">
                   <TaskResultPage />
+                </RouteGuard>
+              }
+            />
+            <Route
+              path="/testing"
+              element={
+                <RouteGuard service="server">
+                  <Testing />
+                </RouteGuard>
+              }
+            />
+            <Route
+              path="/testing/:section"
+              element={
+                <RouteGuard service="server">
+                  <Testing />
+                </RouteGuard>
+              }
+            />
+            <Route
+              path="/health/:scope"
+              element={
+                <RouteGuard>
+                  <ServicesHealth />
                 </RouteGuard>
               }
             />

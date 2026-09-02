@@ -26,6 +26,11 @@ export interface ServiceHealth {
   health: HealthState;
   /** readiness (`/ready`) — БД + фоновые задачи. */
   ready: HealthState;
+  checked_at: string;
+  health_error: string | null;
+  ready_error: string | null;
+  health_latency_ms: number | null;
+  ready_latency_ms: number | null;
 }
 
 interface ServiceDef {
@@ -46,23 +51,41 @@ const SERVICES: ServiceDef[] = [
 
 const PROBE_TIMEOUT_MS = 4000;
 
-async function probe(path: string): Promise<HealthState> {
+interface ProbeResult {
+  state: HealthState;
+  error: string | null;
+  latency_ms: number | null;
+}
+
+async function probe(path: string): Promise<ProbeResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+  const started = performance.now();
   try {
     const res = await fetch(`${API_BASE_URL}${path}`, {
       method: "GET",
       headers: { Accept: "application/json" },
       signal: controller.signal,
     });
+    const latency_ms = Math.round(performance.now() - started);
     // /ready отдаёт 503 на неготовности, /health — 200. Любой не-2xx считаем
     // признаком проблемы (down), а не unknown: ответ получен, просто плохой.
-    return res.ok ? "up" : "down";
+    return {
+      state: res.ok ? "up" : "down",
+      error: res.ok ? null : `HTTP ${res.status}`,
+      latency_ms,
+    };
   } catch (e) {
     // AbortError — превысили таймаут, реальное состояние неизвестно.
-    if (e instanceof DOMException && e.name === "AbortError") return "unknown";
+    if (e instanceof DOMException && e.name === "AbortError") {
+      return { state: "unknown", error: "timeout", latency_ms: null };
+    }
     // Сетевой сбой / refused / CORS — сервис недоступен.
-    return "down";
+    return {
+      state: "down",
+      error: e instanceof Error ? e.message : "network error",
+      latency_ms: null,
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -74,7 +97,17 @@ async function checkService(def: ServiceDef): Promise<ServiceHealth> {
     probe(`${def.prefix}/health`),
     probe(`${def.prefix}/ready`),
   ]);
-  return { id: def.id, label: def.label, health, ready };
+  return {
+    id: def.id,
+    label: def.label,
+    health: health.state,
+    ready: ready.state,
+    checked_at: new Date().toISOString(),
+    health_error: health.error,
+    ready_error: ready.error,
+    health_latency_ms: health.latency_ms,
+    ready_latency_ms: ready.latency_ms,
+  };
 }
 
 /**

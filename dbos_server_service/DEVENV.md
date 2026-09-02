@@ -5,15 +5,15 @@
 
 ## Учётные данные
 
-**Все пароли: `1234`** (у всех `must_change_password=false`).
+**Все пароли init-пользователей: `1`** (у всех `must_change_password=false`).
 
 | Логин            | Пароль | Роль             | Доступ                                            |
 | ---------------- | ------ | ---------------- | ------------------------------------------------- |
-| `admin`          | `1234` | account_admin    | Глобальный администратор платформы                |
-| `loging_admin1`  | `1234` | loging_admin     | Управление loging_service (правила, retention)    |
-| `dep_admin1`     | `1234` | department_admin | Администратор отдела НТ + `admin` на всех сервисах |
-| `loging_reader1` | `1234` | loging_reader    | Чтение аудит-событий по всем департаментам        |
-| `user1`          | `1234` | regular          | Отдел НТ                                           |
+| `admin`          | `1` | account_admin    | Глобальный администратор платформы                |
+| `loging_admin1`  | `1` | loging_admin     | Управление loging_service (правила, retention)    |
+| `dep_admin1`     | `1` | department_admin | Администратор отдела НТ + `admin` на всех сервисах |
+| `loging_reader1` | `1` | loging_reader    | Чтение аудит-событий по всем департаментам        |
+| `user1`          | `1` | regular          | Отдел НТ                                           |
 
 ## Сервисы
 
@@ -27,9 +27,9 @@
 
 ## Swagger UI — вход
 
-**auth_service** `/docs` → Authorize → OAuth2Password → `admin` / `1234`
+**auth_service** `/docs` → Authorize → OAuth2Password → `admin` / `1`
 
-**loging_service** `/docs` → Authorize → OAuth2Password → `loging_admin1` / `1234`
+**loging_service** `/docs` → Authorize → OAuth2Password → `loging_admin1` / `1`
 
 **server_service** / **secret_service** `/docs` → Authorize → Bearer JWT (получить через auth_service `/login`)
 

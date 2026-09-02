@@ -2,7 +2,7 @@
 """Dev seed: патчит postgres напрямую (без REST API).
 
 Стек должен быть уже поднят (`make up`). Скрипт:
-  - обновляет bootstrap-админа (must_change_password=false, пароль 1234),
+  - обновляет bootstrap-админа (must_change_password=false, пароль 1),
   - заводит 4 новых юзера: loging_admin1 / dep_admin1 / loging_reader1 / user1,
   - создаёт отдел «Нагрузочное тестирование»,
   - выдаёт отделу доступ ко всем платформенным сервисам,
@@ -51,7 +51,7 @@ SERVER_CONTAINER = os.environ.get(
     "SERVER_CONTAINER", "dbos_server_service-server_service-1"
 )
 
-DEV_PASSWORD = "1234"
+DEV_PASSWORD = "1"
 
 # Имя docker-сервиса с тестовым SSH-сервером (см. docker-compose.dev.yml).
 TEST_SERVER_HOSTNAME = "test_server"
@@ -524,7 +524,7 @@ def main() -> None:
     print("  DBOS dev seed (direct SQL)")
     print("=" * WIDTH)
 
-    section("argon2 hash для пароля 1234")
+    section("argon2 hash для пароля 1")
     pwd_hash = hash_password(DEV_PASSWORD)
     ok(f"hash: {pwd_hash[:48]}…")
 
@@ -540,7 +540,7 @@ def main() -> None:
 
     print()
     print("=" * WIDTH)
-    print("  Готово. Пользователи (пароль у всех: 1234):")
+    print("  Готово. Пользователи (пароль у всех: 1):")
     print("=" * WIDTH)
     print(f"""
     {'Логин':<16}  {'Роль':<22}  Отдел

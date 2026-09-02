@@ -91,7 +91,7 @@ _DEV_SECRET     = dev-secret-key-for-local-must-be-32-chars!
 _DEV_SERVER_KEY = dev-server-encryption-key-do-not-use-in-prod
 _DEV_SECRET_KEY = dev-secret-service-encryption-key-do-not-use!
 _DEV_ADMIN_USER = admin
-_DEV_ADMIN_PASS = 1234
+_DEV_ADMIN_PASS = 1
 _DEV_ADMIN_EMAIL = admin@example.com
 # Токен бота воркера: auth на старте заводит под него бота server_worker
 # в системном отделе. То же значение, что в docker-compose.dev.yml.
@@ -129,8 +129,8 @@ up: ## Поднять dev-стек С НУЛЯ: стереть тома + под
 	@echo "→ Наполнение dev-данными (seed)..."
 	@$(MAKE) --no-print-directory seed
 	@echo ""
-	@echo "  auth_service    →  http://localhost:8000/docs    (admin / 1234)"
-	@echo "  loging_service  →  http://localhost:8001/docs    (loging_admin1 / 1234)"
+	@echo "  auth_service    →  http://localhost:8000/docs    (admin / 1)"
+	@echo "  loging_service  →  http://localhost:8001/docs    (loging_admin1 / 1)"
 	@echo "  server_service  →  http://localhost:8002/docs"
 	@echo "  secret_service  →  http://localhost:8003/docs"
 	@echo "  server_worker   →  taskiq worker (no HTTP), redis://localhost:6379/0"
@@ -146,7 +146,7 @@ up-keep: ## Поднять dev-стек БЕЗ сброса (данные в т�
 up-build: ## Пересобрать образы и поднять dev-стек
 	$(DEV) up -d --wait --build postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server
 
-seed: ## Наполнить уже поднятый dev-стек данными напрямую через SQL (admin/loging_admin1/dep_admin1/loging_reader1/user1, пароль 1234)
+seed: ## Наполнить уже поднятый dev-стек данными напрямую через SQL (admin/loging_admin1/dep_admin1/loging_reader1/user1, пароль 1)
 	@cd scripts && python3 seed_dev.py
 
 down: ## Остановить dev-стек (данные в томе postgres сохраняются)

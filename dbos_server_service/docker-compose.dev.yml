@@ -73,7 +73,7 @@ services:
       INTROSPECT_SERVICE_API_KEY: dev-introspect-api-key
       AUTH_SERVICE_URL: http://auth_service:8000
       LOGGING_ADMIN_USERNAME: admin
-      LOGGING_ADMIN_PASSWORD: "1234"
+      LOGGING_ADMIN_PASSWORD: "1"
       APP_LOG_LEVEL: INFO
     command: >
       sh -c "python -m alembic upgrade head &&
@@ -119,7 +119,7 @@ services:
       SECRET_INTERNAL_API_KEY: dev-introspect-api-key
       SECRET_SERVICE_TLS_VERIFY: "false"
       INITIAL_ADMIN_USERNAME: admin
-      INITIAL_ADMIN_PASSWORD: "1234"
+      INITIAL_ADMIN_PASSWORD: "1"
       INITIAL_ADMIN_EMAIL: admin@example.com
       DBOS_BOOTSTRAP_NO_FORCE_CHANGE: "true"
       # Токен бота воркера: auth на старте идемпотентно заводит под него бота
@@ -262,6 +262,59 @@ services:
       BOOTSTRAP_PASSWORD: tester1234
     ports:
       - "2222:2222"
+
+  monitoring_node_exporter:
+    image: allta.devos.astralinux.ru:21503/prom/node-exporter:latest
+    profiles: ["monitoring"]
+    command:
+      - "--path.rootfs=/host"
+    volumes:
+      - "/:/host:ro,rslave"
+    networks:
+      monitoring_dev:
+        ipv4_address: 10.210.91.10
+    ports:
+      - "9100:9100"
+
+  monitoring_prometheus:
+    image: allta.devos.astralinux.ru:21503/prom/prometheus:latest
+    profiles: ["monitoring"]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./monitoring_dev/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - dbos_dev_prometheus:/prometheus
+    networks:
+      - monitoring_dev
+    ports:
+      - "9090:9090"
+    depends_on:
+      - monitoring_node_exporter
+
+  monitoring_grafana:
+    image: allta.devos.astralinux.ru:21503/grafana/grafana-oss:latest
+    profiles: ["monitoring"]
+    environment:
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_LOG_LEVEL: warn
+    volumes:
+      - dbos_dev_grafana:/var/lib/grafana
+      - ./monitoring_dev/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring_dev/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./monitoring_dev/grafana/public/views/index.html:/usr/share/grafana/public/views/index.html:ro
+      - ./monitoring_dev/grafana/public/build/grafana.dark.d5a794927756549b8010.css:/usr/share/grafana/public/build/grafana.dark.d5a794927756549b8010.css:ro
+    networks:
+      - monitoring_dev
+    ports:
+      - "3000:3000"
+    depends_on:
+      - monitoring_prometheus
 
   secret_postgres:
     image: postgres:16
@@ -420,3 +473,11 @@ volumes:
   web_ui_node_modules:
   dbos_dev_redis:
   dbos_dev_secret_pg:
+  dbos_dev_prometheus:
+  dbos_dev_grafana:
+
+networks:
+  monitoring_dev:
+    ipam:
+      config:
+        - subnet: 10.210.91.0/24

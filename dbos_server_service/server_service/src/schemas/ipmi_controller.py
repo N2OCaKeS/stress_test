@@ -12,7 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.core.b64 import decode_b64
 from src.core.constants import IpmiKind
-from src.core.password_policy import validate_password
 from src.utils.url_security import validate_safe_endpoint_url
 
 
@@ -32,8 +31,7 @@ class IpmiControllerCreate(BaseModel):
         ..., max_length=512,
         description=(
             "Пароль BMC в base64 (`base64.b64encode(plaintext)`). Декодируется "
-            "на приёме; к plaintext применяется политика (минимум 8 символов, "
-            "буквы и цифры), затем он шифруется через `secrets_service.encrypt()` "
+            "на приёме; затем он шифруется через `secrets_service.encrypt()` "
             "ДО записи в БД и в ответе не возвращается. Битый base64 → 422."
         ),
     )
@@ -41,8 +39,10 @@ class IpmiControllerCreate(BaseModel):
     @field_validator("password_b64")
     @classmethod
     def _check_password_b64(cls, value: str) -> str:
-        # Политика — по раскодированному plaintext, не по base64-строке.
-        validate_password(decode_b64(value, "password_b64"))
+        # BMC/IPMI пароль уже существует вне DBOS и может не соответствовать
+        # локальной password-policy пользователей. Здесь проверяем только
+        # транспортный контракт: валидный base64 с UTF-8 plaintext.
+        decode_b64(value, "password_b64")
         return value
 
     @field_validator("endpoint_url")
@@ -131,9 +131,8 @@ class IpmiCredentialsRotateRequest(BaseModel):
         default=None, max_length=512,
         description=(
             "Новый пароль в base64 (`base64.b64encode(plaintext)`). Если пуст "
-            "— сервер сгенерировал бы случайный. Декодируется на приёме; к "
-            "раскодированному plaintext применяется политика: минимум 8 "
-            "символов, буквы и цифры. Битый base64 → 422."
+            "— сервер сгенерировал бы случайный. Декодируется на приёме; "
+            "битый base64 → 422."
         ),
     )
 
@@ -142,8 +141,7 @@ class IpmiCredentialsRotateRequest(BaseModel):
     def _check_password_b64(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        # Политика — по раскодированному plaintext, не по base64-строке.
-        validate_password(decode_b64(value, "password_b64"))
+        decode_b64(value, "password_b64")
         return value
 
 

@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuthOptional } from "@/contexts/AuthContext";
 import {
@@ -22,6 +22,7 @@ import {
   ExternalLink,
   MonitorPlay,
   Box,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
@@ -39,9 +40,16 @@ import { formatFio } from "@/lib/fio";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { AdminOnlyPanel } from "./AdminOnlyPanel";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import {
+  checkAllServices,
+  type HealthState,
+  type ServiceHealth,
+} from "@/api/health";
+
+type ServiceChipService = ServiceName | "testing";
 
 interface ServiceChip {
-  service: ServiceName;
+  service: ServiceChipService;
   to: string;
   icon: LucideIcon;
   label: string;
@@ -87,6 +95,26 @@ const SERVICE_CATALOG: Record<ServiceName, ServiceChip> = {
   },
   config: { service: "config", to: "/admin", icon: Cog, label: "Config" },
 };
+
+const TESTING_CHIP: ServiceChip = {
+  service: "testing",
+  to: "/testing",
+  icon: ListChecks,
+  label: "Тестирование",
+  subItems: [
+    { to: "/testing/tests", icon: FileText, label: "Тесты" },
+    { to: "/testing/runs", icon: ListChecks, label: "Прогоны" },
+    { to: "/testing/stp", icon: Cog, label: "СТП" },
+    { to: "/testing/rc", icon: Package, label: "РЦ" },
+  ],
+};
+
+const SERVICE_ORDER: ServiceChipService[] = [
+  "secret",
+  "server",
+  "testing",
+  "logging",
+];
 
 interface LeftPanelProps {
   width: number;
@@ -142,7 +170,7 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
   if (hasAuditLogAccess(persona) && !serviceList.includes("logging")) {
     serviceList.push("logging");
   }
-  const chips: ServiceChip[] = serviceList
+  const serviceChips: ServiceChip[] = serviceList
     // worker — часть server-зоны; задачи под «Серверами» (/server/tasks),
     // отдельного чипа нет. auth/config тоже без чипа.
     .filter((s) => s !== "auth" && s !== "config" && s !== "worker")
@@ -174,12 +202,20 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
       }
       return chip;
     });
+  const chips: ServiceChip[] = [
+    ...serviceChips,
+    ...(hasServerZoneAccess(persona) ? [TESTING_CHIP] : []),
+  ].sort((a, b) => {
+    const ai = SERVICE_ORDER.indexOf(a.service);
+    const bi = SERVICE_ORDER.indexOf(b.service);
+    return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
+  });
 
   // Подсвечиваем ровно один пункт — самый специфичный. Иначе при выборе
   // подкатегории (/log/rules) загорается и родитель (/log), и соседи с общим
   // префиксом. Собираем все рендеримые ссылки, выбираем ту, чей `to` — самый
   // длинный матч к текущему пути (точное равенство или префикс `to + "/"`).
-  const navLinks = ["/home", "/wiki", "/os", "/me", "/admin"];
+  const navLinks = ["/home", "/wiki", "/os", "/me", "/admin", "/health/allta", "/health/astra"];
   for (const chip of chips) {
     navLinks.push(chip.to);
     for (const s of chip.subItems ?? []) navLinks.push(s.to);
@@ -276,35 +312,14 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
       )}
       <nav className="flex-1 min-h-0 overflow-y-auto px-2 flex flex-col gap-0.5">
         {chips.map((chip) => (
-          <div key={chip.service} className="flex flex-col">
-            <Link
-              to={chip.to}
-              title={collapsed ? chip.label : undefined}
-              className={`chip ${isActive(chip.to) ? "active" : ""} ${collapsed ? "justify-center" : ""}`}
-            >
-              <chip.icon className="w-5 h-5 shrink-0" />
-              {!collapsed && (
-                <div className="flex-1">
-                  <div className="text-sm">{chip.label}</div>
-                  {chip.hint && (
-                    <div className="text-[11px] text-dim">{chip.hint}</div>
-                  )}
-                </div>
-              )}
-            </Link>
-            {!collapsed &&
-              chip.subItems?.map((s) => (
-                <Link
-                  key={s.to}
-                  to={s.to}
-                  className={`subchip ${isActive(s.to) ? "active" : ""}`}
-                >
-                  <s.icon className="w-3.5 h-3.5" />
-                  <span>{s.label}</span>
-                </Link>
-              ))}
-          </div>
+          <ServiceChipBlock
+            key={chip.service}
+            chip={chip}
+            collapsed={collapsed}
+            isActive={isActive}
+          />
         ))}
+        <ServicesHealthPanel collapsed={collapsed} />
       </nav>
 
       <div className="mt-auto shrink-0 flex flex-col">
@@ -406,5 +421,136 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
         </div>
       </div>
     </aside>
+  );
+}
+
+const HEALTH_POLL_INTERVAL_MS = 20_000;
+
+function healthDotClass(state: HealthState): string {
+  if (state === "up") return "bg-ok";
+  if (state === "down") return "bg-danger";
+  return "bg-dim";
+}
+
+function aggregateAlltaHealth(services: ServiceHealth[] | null): "ok" | "fail" {
+  if (!services?.length) return "fail";
+  return services.every((s) => s.health === "up" && s.ready === "up") ? "ok" : "fail";
+}
+
+function ServicesHealthPanel({ collapsed }: { collapsed: boolean }) {
+  const [services, setServices] = useState<ServiceHealth[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function poll() {
+      const next = await checkAllServices();
+      if (!cancelled) setServices(next);
+    }
+
+    poll();
+    const timer = setInterval(poll, HEALTH_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const alltaStatus = aggregateAlltaHealth(services);
+  const astraStatus: "ok" | "fail" = "fail";
+
+  if (collapsed) {
+    return (
+      <div className="mt-3 border-t border-token pt-2 flex flex-col items-center gap-1">
+        <Link
+          to="/health/allta"
+          title={`ALLTA Services Health: ${alltaStatus}`}
+          className="chip justify-center"
+        >
+          <span className={`h-2.5 w-2.5 rounded-full ${alltaStatus === "ok" ? healthDotClass("up") : healthDotClass("down")}`} />
+        </Link>
+        <Link
+          to="/health/astra"
+          title={`Astra Services Health: ${astraStatus}`}
+          className="chip justify-center"
+        >
+          <span className={`h-2.5 w-2.5 rounded-full ${healthDotClass("down")}`} />
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 border-t border-token pt-3 flex flex-col gap-1">
+      <HealthNavRow
+        to="/health/allta"
+        title="ALLTA Services Health"
+        status={alltaStatus}
+      />
+      <HealthNavRow
+        to="/health/astra"
+        title="Astra Services Health"
+        status={astraStatus}
+      />
+    </div>
+  );
+}
+
+function HealthNavRow({
+  to,
+  title,
+  status,
+}: {
+  to: string;
+  title: string;
+  status: "ok" | "fail";
+}) {
+  return (
+    <Link to={to} className="chip">
+      <Activity className="w-4 h-4 shrink-0" />
+      <span className="text-xs flex-1 min-w-0 truncate">{title}</span>
+      <span className={`badge ${status === "ok" ? "badge-ok" : "badge-danger"} shrink-0`}>
+        {status}
+      </span>
+    </Link>
+  );
+}
+
+function ServiceChipBlock({
+  chip,
+  collapsed,
+  isActive,
+}: {
+  chip: ServiceChip;
+  collapsed: boolean;
+  isActive: (to: string) => boolean;
+}) {
+  return (
+    <div className="flex flex-col">
+      <Link
+        to={chip.to}
+        title={collapsed ? chip.label : undefined}
+        className={`chip ${isActive(chip.to) ? "active" : ""} ${collapsed ? "justify-center" : ""}`}
+      >
+        <chip.icon className="w-5 h-5 shrink-0" />
+        {!collapsed && (
+          <div className="flex-1">
+            <div className="text-sm">{chip.label}</div>
+            {chip.hint && <div className="text-[11px] text-dim">{chip.hint}</div>}
+          </div>
+        )}
+      </Link>
+      {!collapsed &&
+        chip.subItems?.map((s) => (
+          <Link
+            key={s.to}
+            to={s.to}
+            className={`subchip ${isActive(s.to) ? "active" : ""}`}
+          >
+            <s.icon className="w-3.5 h-3.5" />
+            <span>{s.label}</span>
+          </Link>
+        ))}
+    </div>
   );
 }

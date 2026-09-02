@@ -330,9 +330,9 @@ list_router_legacy.add_api_route(
     summary="Зарегистрировать IPMI-контроллер для сервера (1:1)",
     description=(
         "Создаёт запись BMC для сервера. Пароль принимается как `password_b64` "
-        "(`base64.b64encode(plaintext)`): декодируется, проходит политику по "
-        "plaintext и шифруется через `secrets_service.encrypt()`. Server "
-        "должен существовать и "
+        "(`base64.b64encode(plaintext)`): декодируется и шифруется через "
+        "`secrets_service.encrypt()`. Сложность BMC-пароля не проверяется: "
+        "это внешний уже существующий секрет. Server должен существовать и "
         "принадлежать своему department'у. UNIQUE(server_id) → "
         "повторная регистрация для того же сервера → 409 IPMI_DUPLICATE."
     ),

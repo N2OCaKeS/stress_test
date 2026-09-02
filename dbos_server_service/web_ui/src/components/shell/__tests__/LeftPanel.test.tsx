@@ -36,6 +36,10 @@ vi.mock("@/api/auth/navLinks", () => ({
   getNavLinks: () => Promise.resolve(currentNavLinks),
 }));
 
+vi.mock("@/api/health", () => ({
+  checkAllServices: () => new Promise(() => {}),
+}));
+
 // Тяжёлые дочерние блоки панели тянут API/провайдеры — для теста навигации
 // они не нужны, подменяем заглушками.
 vi.mock("@/components/notifications/NotificationBell", () => ({
@@ -160,7 +164,7 @@ describe("LeftPanel — имя текущего пользователя", () =>
 });
 
 describe("LeftPanel — аудит-чип", () => {
-  it("dep_admin без logging в accessible_services видит «Журнал аудита»", () => {
+  it("dep_admin без logging в accessible_services видит «Журнал аудита»", async () => {
     renderPanel(
       makePersona({
         username: "dep_admin1",
@@ -170,10 +174,10 @@ describe("LeftPanel — аудит-чип", () => {
         has_admin: true,
       }),
     );
-    expect(screen.getByText("Журнал аудита")).toBeInTheDocument();
+    expect(await screen.findByText("Журнал аудита")).toBeInTheDocument();
   });
 
-  it("обычный dept-пользователь без audit-доступа не видит «Журнал аудита»", () => {
+  it("обычный dept-пользователь без audit-доступа не видит «Журнал аудита»", async () => {
     renderPanel(
       makePersona({
         username: "regular",
@@ -182,10 +186,11 @@ describe("LeftPanel — аудит-чип", () => {
         accessible_services: ["server"] as ServiceName[],
       }),
     );
+    await screen.findByText("ОС");
     expect(screen.queryByText("Журнал аудита")).not.toBeInTheDocument();
   });
 
-  it("logging_admin с logging в accessible_services получает ровно один чип", () => {
+  it("logging_admin с logging в accessible_services получает ровно один чип", async () => {
     renderPanel(
       makePersona({
         username: "log_admin",
@@ -195,6 +200,7 @@ describe("LeftPanel — аудит-чип", () => {
         has_admin: true,
       }),
     );
+    expect(await screen.findByText("Журнал аудита")).toBeInTheDocument();
     expect(screen.getAllByText("Журнал аудита")).toHaveLength(1);
   });
 });

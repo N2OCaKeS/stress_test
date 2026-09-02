@@ -31,3 +31,23 @@ ad_chanks_0 = f'http://{server_ip}'
 ad_chanks_1 = ':3000/d/fecn0mamdcsg0f/node-exporter-by-allta?var-interval=$__auto&orgId=1&from=now-15m&to=now&timezone=browser&var'
 ad_chanks_2 = '-node={}:9100&var-maxmount=%2Fetc%2Fhostname&refresh=5s&kiosk'
 allta_dashboard = ad_chanks_0 + ad_chanks_1 + ad_chanks_2
+
+emm_vscode_dark_chanks_0 = f'http://{server_ip}'
+emm_vscode_dark_chanks_1 = ':3000/d/fecn0mamdcsg0f-vscode-dark/allta-dashboard-vscode-dark?var-interval=$__auto&orgId=1&from=now-15m&to=now&timezone=browser&var'
+emm_vscode_dark_chanks_2 = '-node={}:9100&refresh=5s&kiosk'
+emm_vscode_dark_dashboard = emm_vscode_dark_chanks_0 + emm_vscode_dark_chanks_1 + emm_vscode_dark_chanks_2
+
+emm_vscode_light_chanks_0 = f'http://{server_ip}'
+emm_vscode_light_chanks_1 = ':3000/d/fecn0mamdcsg0f-vscode-light/allta-dashboard-vscode-light?var-interval=$__auto&orgId=1&from=now-15m&to=now&timezone=browser&var'
+emm_vscode_light_chanks_2 = '-node={}:9100&theme=light&refresh=5s&kiosk'
+emm_vscode_light_dashboard = emm_vscode_light_chanks_0 + emm_vscode_light_chanks_1 + emm_vscode_light_chanks_2
+
+emm_dark_orange_chanks_0 = f'http://{server_ip}'
+emm_dark_orange_chanks_1 = ':3000/d/fecn0mamdcsg0f-dark-orange/allta-dashboard-dark-orange?var-interval=$__auto&orgId=1&from=now-15m&to=now&timezone=browser&var'
+emm_dark_orange_chanks_2 = '-node={}:9100&refresh=5s&kiosk'
+emm_dark_orange_dashboard = emm_dark_orange_chanks_0 + emm_dark_orange_chanks_1 + emm_dark_orange_chanks_2
+
+emm_blue_chanks_0 = f'http://{server_ip}'
+emm_blue_chanks_1 = ':3000/d/fecn0mamdcsg0f-blue/allta-dashboard-blue?var-interval=$__auto&orgId=1&from=now-15m&to=now&timezone=browser&var'
+emm_blue_chanks_2 = '-node={}:9100&refresh=5s&kiosk'
+emm_blue_dashboard = emm_blue_chanks_0 + emm_blue_chanks_1 + emm_blue_chanks_2

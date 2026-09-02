@@ -30,6 +30,5 @@ sudo systemctl status grafana_prometheus.service
 
 echo waiting...
 sleep 15
-sudo bash import_dashboard.sh
-
+sudo bash import_dashboard_full.sh
 

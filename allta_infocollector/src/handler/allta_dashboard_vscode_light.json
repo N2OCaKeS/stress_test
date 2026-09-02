@@ -151,7 +151,7 @@
       ],
       "title": "System runtime",
       "type": "stat",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -226,7 +226,7 @@
       ],
       "title": "CPU usage（30s）",
       "type": "gauge",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -1974,7 +1974,7 @@
       ],
       "title": "RAM information",
       "type": "gauge",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -3758,7 +3758,7 @@
       ],
       "title": "CPU usage（%）",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -3869,7 +3869,7 @@
       ],
       "title": "CPU iowait（30s）",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -3941,7 +3941,7 @@
       ],
       "title": "Total RAM",
       "type": "stat",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -4013,7 +4013,7 @@
       ],
       "title": "CPU Audit number",
       "type": "stat",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -4088,7 +4088,7 @@
       ],
       "title": "CPU iowait（30s）",
       "type": "gauge",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -4162,7 +4162,7 @@
       ],
       "title": "Total disk space",
       "type": "piechart",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -5954,7 +5954,7 @@
       ],
       "title": "RAM information",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -7677,7 +7677,7 @@
       ],
       "title": "Average system load",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -7749,7 +7749,7 @@
       ],
       "title": "Currently open file descriptor",
       "type": "stat",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -7824,7 +7824,7 @@
       ],
       "title": "Disk Utilization",
       "type": "gauge",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -9548,7 +9548,7 @@
       ],
       "title": "I/O Usage read / write (bytes)",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -11299,7 +11299,7 @@
       ],
       "title": "Disk IO read / write (time)",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -11405,7 +11405,7 @@
       ],
       "title": "Hardware temperature",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -11519,7 +11519,7 @@
       ],
       "title": "Disk Utilization",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -13271,7 +13271,7 @@
       ],
       "title": "Disk read / write rate（IOPS）",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -15105,7 +15105,7 @@
       ],
       "title": "TCP connections",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -16828,7 +16828,7 @@
       ],
       "title": "Network traffic",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -18551,7 +18551,7 @@
       ],
       "title": "Softnet Packets",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     }
   ],
   "refresh": "5s",

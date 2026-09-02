@@ -120,7 +120,8 @@
         }
       ],
       "title": "Quick CPU / Mem / Disk",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "datasource": {
@@ -1859,7 +1860,7 @@
       ],
       "title": "Pressure",
       "type": "bargauge",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -1949,7 +1950,7 @@
       ],
       "title": "CPU Busy",
       "type": "gauge",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -2039,7 +2040,7 @@
       ],
       "title": "Sys Load",
       "type": "gauge",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -3742,7 +3743,7 @@
       ],
       "title": "RAM Used",
       "type": "gauge",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -3830,7 +3831,7 @@
       ],
       "title": "SWAP Used",
       "type": "gauge",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -3919,7 +3920,7 @@
       ],
       "title": "Root FS Used",
       "type": "gauge",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -4002,7 +4003,7 @@
       ],
       "title": "CPU Cores",
       "type": "stat",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -4088,7 +4089,7 @@
       ],
       "title": "Uptime",
       "type": "stat",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -4179,7 +4180,7 @@
       ],
       "title": "RootFS Total",
       "type": "stat",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -4264,7 +4265,7 @@
       ],
       "title": "RAM Total",
       "type": "stat",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -4349,7 +4350,7 @@
       ],
       "title": "SWAP Total",
       "type": "stat",
-      "transparent": false
+      "transparent": true
     },
     {
       "collapsed": false,
@@ -4375,7 +4376,8 @@
         }
       ],
       "title": "Basic CPU / Mem / Net / Disk",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "datasource": {
@@ -6219,7 +6221,7 @@
       ],
       "title": "CPU Basic",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -8074,7 +8076,7 @@
       ],
       "title": "Memory Basic",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -9804,7 +9806,7 @@
       ],
       "title": "Network Traffic Basic",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "datasource": {
@@ -9906,7 +9908,7 @@
       ],
       "title": "Disk Space Used Basic",
       "type": "timeseries",
-      "transparent": false
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -20945,7 +20947,8 @@
         }
       ],
       "title": "CPU / Memory / Net / Disk",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -44395,7 +44398,8 @@
         }
       ],
       "title": "Memory Meminfo",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -50048,7 +50052,8 @@
         }
       ],
       "title": "Memory Vmstat",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -55383,7 +55388,8 @@
         }
       ],
       "title": "System Timesync",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -64358,7 +64364,8 @@
         }
       ],
       "title": "System Processes",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -73707,7 +73714,8 @@
         }
       ],
       "title": "System Misc",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -77431,7 +77439,8 @@
         }
       ],
       "title": "Hardware Misc",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -79370,7 +79379,8 @@
         }
       ],
       "title": "Systemd",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -90588,7 +90598,8 @@
         }
       ],
       "title": "Storage Disk",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -96029,7 +96040,8 @@
         }
       ],
       "title": "Storage Filesystem",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -110906,7 +110918,8 @@
         }
       ],
       "title": "Network Traffic",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -118078,7 +118091,8 @@
         }
       ],
       "title": "Network Sockstat",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -136019,7 +136033,8 @@
         }
       ],
       "title": "Network Netstat",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     },
     {
       "collapsed": true,
@@ -137900,7 +137915,8 @@
         }
       ],
       "title": "Node Exporter",
-      "type": "row"
+      "type": "row",
+      "transparent": true
     }
   ],
   "refresh": "1m",

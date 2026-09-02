@@ -33,6 +33,42 @@ curl -v -k -u "$GRAFANA_CRED" \
   -d @payload.json \
   "$GRAFANA_HOST/api/dashboards/import"; echo ""
 
+j=$(jq '.' ./grafana_dashboard_vscode_dark.json)
+echo "{\"dashboard\": ${j},\"overwrite\":${GRAFANA_OVERWRITE},\"inputs\": [{\"name\":\"DS_PROMETHEUS\",\"type\":\"datasource\", \"pluginId\":\"prometheus\",\"value\":\"${DS_NAME}\"}],\"folderUid\": \"\"}" > payload_vscode_dark.json
+
+curl -v -k -u "$GRAFANA_CRED" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d @payload_vscode_dark.json \
+  "$GRAFANA_HOST/api/dashboards/import"; echo ""
+
+j=$(jq '.' ./grafana_dashboard_vscode_light.json)
+echo "{\"dashboard\": ${j},\"overwrite\":${GRAFANA_OVERWRITE},\"inputs\": [{\"name\":\"DS_PROMETHEUS\",\"type\":\"datasource\", \"pluginId\":\"prometheus\",\"value\":\"${DS_NAME}\"}],\"folderUid\": \"\"}" > payload_vscode_light.json
+
+curl -v -k -u "$GRAFANA_CRED" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d @payload_vscode_light.json \
+  "$GRAFANA_HOST/api/dashboards/import"; echo ""
+
+j=$(jq '.' ./grafana_dashboard_dark_orange.json)
+echo "{\"dashboard\": ${j},\"overwrite\":${GRAFANA_OVERWRITE},\"inputs\": [{\"name\":\"DS_PROMETHEUS\",\"type\":\"datasource\", \"pluginId\":\"prometheus\",\"value\":\"${DS_NAME}\"}],\"folderUid\": \"\"}" > payload_dark_orange.json
+
+curl -v -k -u "$GRAFANA_CRED" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d @payload_dark_orange.json \
+  "$GRAFANA_HOST/api/dashboards/import"; echo ""
+
+j=$(jq '.' ./grafana_dashboard_blue.json)
+echo "{\"dashboard\": ${j},\"overwrite\":${GRAFANA_OVERWRITE},\"inputs\": [{\"name\":\"DS_PROMETHEUS\",\"type\":\"datasource\", \"pluginId\":\"prometheus\",\"value\":\"${DS_NAME}\"}],\"folderUid\": \"\"}" > payload_blue.json
+
+curl -v -k -u "$GRAFANA_CRED" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d @payload_blue.json \
+  "$GRAFANA_HOST/api/dashboards/import"; echo ""
+
 echo waiting...
 sleep 3
 
@@ -46,5 +82,40 @@ curl -v -k -u "$GRAFANA_CRED" \
   -H "Accept: application/json" \
   -H "Content-Type: application/json" \
   -d @payload2.json \
-  "$GRAFANA_HOST/api/dashboards/import"; echo "" 
+  "$GRAFANA_HOST/api/dashboards/import"; echo ""
 
+j2=$(jq '.' ./allta_dashboard_vscode_dark.json)
+echo "{\"dashboard\": ${j2},\"overwrite\":${GRAFANA_OVERWRITE},\"inputs\": [{\"name\":\"DS_PROMETHEUS\",\"type\":\"datasource\", \"pluginId\":\"prometheus\",\"value\":\"${DS_NAME}\"}],\"folderUid\": \"\"}" > payload2_vscode_dark.json
+
+curl -v -k -u "$GRAFANA_CRED" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d @payload2_vscode_dark.json \
+  "$GRAFANA_HOST/api/dashboards/import"; echo ""
+
+j2=$(jq '.' ./allta_dashboard_vscode_light.json)
+echo "{\"dashboard\": ${j2},\"overwrite\":${GRAFANA_OVERWRITE},\"inputs\": [{\"name\":\"DS_PROMETHEUS\",\"type\":\"datasource\", \"pluginId\":\"prometheus\",\"value\":\"${DS_NAME}\"}],\"folderUid\": \"\"}" > payload2_vscode_light.json
+
+curl -v -k -u "$GRAFANA_CRED" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d @payload2_vscode_light.json \
+  "$GRAFANA_HOST/api/dashboards/import"; echo ""
+
+j2=$(jq '.' ./allta_dashboard_dark_orange.json)
+echo "{\"dashboard\": ${j2},\"overwrite\":${GRAFANA_OVERWRITE},\"inputs\": [{\"name\":\"DS_PROMETHEUS\",\"type\":\"datasource\", \"pluginId\":\"prometheus\",\"value\":\"${DS_NAME}\"}],\"folderUid\": \"\"}" > payload2_dark_orange.json
+
+curl -v -k -u "$GRAFANA_CRED" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d @payload2_dark_orange.json \
+  "$GRAFANA_HOST/api/dashboards/import"; echo ""
+
+j2=$(jq '.' ./allta_dashboard_blue.json)
+echo "{\"dashboard\": ${j2},\"overwrite\":${GRAFANA_OVERWRITE},\"inputs\": [{\"name\":\"DS_PROMETHEUS\",\"type\":\"datasource\", \"pluginId\":\"prometheus\",\"value\":\"${DS_NAME}\"}],\"folderUid\": \"\"}" > payload2_blue.json
+
+curl -v -k -u "$GRAFANA_CRED" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d @payload2_blue.json \
+  "$GRAFANA_HOST/api/dashboards/import"; echo ""

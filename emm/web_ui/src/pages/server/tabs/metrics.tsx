@@ -143,12 +143,91 @@ const DETAIL_PANELS: GrafanaPanelKind[] = [
   "tcp",
   "softnet",
 ];
-const GAUGE_PANELS: GrafanaPanelKind[] = ["cpu", "ram", "disk", "iowait"];
+const ALL_PANEL_KINDS: GrafanaPanelKind[] = [
+  ...PRIMARY_PANELS,
+  ...SUMMARY_PANELS,
+  ...DETAIL_PANELS,
+];
+// По умолчанию спидометры — именно эти три метрики, без iowait.
+const GAUGE_PANELS: GrafanaPanelKind[] = ["cpu", "ram", "disk"];
+// Полный дашборд не должен заводить свой скролл внутри iframe (двойной скролл
+// раздражает) — высота с запасом под все ~21 панель, скроллится вместе со
+// страницей сама рабочая зона вкладки, а не Grafana внутри iframe.
+const FULL_DASHBOARD_HEIGHT = 2400;
 type GrafanaMode = "infocollector" | "direct";
 type GrafanaViewMode = "grid" | "single" | "gauges" | "full";
 
 const VIEW_MODE_STORAGE_KEY = "dbos:grafana:view-mode";
 const SELECTED_PANEL_STORAGE_KEY = "dbos:grafana:selected-panel";
+const GRID_SELECTION_STORAGE_KEY = "dbos:grafana:grid-selection";
+
+// infocollector (прод, allta.devos.astralinux.ru:18181) отдаёт через nginx
+// только redirect-эндпоинт /rest/api/dashboard/<ip>/<board> — саму Grafana
+// нужно звать напрямую на :3000 (см. allta_infocollector/src/aggregator/conf.py).
+// Идёт это не напрямую, а через собственный прокси emm (см. vite.config.ts /
+// nginx в проде): Grafana красит свой холст в фирменный цвет и игнорирует
+// ?transparent, прокси на лету дописывает прозрачный фон в HTML-ответ.
+const GRAFANA_EMBED_PROXY_PATH = "/grafana-proxy";
+
+const INFOCOLLECTOR_THEMED_DASHBOARDS: Record<
+  ThemeName,
+  { uid: string; slug: string; grafanaTheme: "dark" | "light"; dbosTheme: ThemeName }
+> = {
+  "vscode-dark": {
+    uid: "fecn0mamdcsg0f-vscode-dark",
+    slug: "allta-dashboard-vscode-dark",
+    grafanaTheme: "dark",
+    dbosTheme: "vscode-dark",
+  },
+  "vscode-light": {
+    uid: "fecn0mamdcsg0f-vscode-light",
+    slug: "allta-dashboard-vscode-light",
+    grafanaTheme: "light",
+    dbosTheme: "vscode-light",
+  },
+  "dark-orange": {
+    uid: "fecn0mamdcsg0f-dark-orange",
+    slug: "allta-dashboard-dark-orange",
+    grafanaTheme: "dark",
+    dbosTheme: "dark-orange",
+  },
+  blue: {
+    uid: "fecn0mamdcsg0f-blue",
+    slug: "allta-dashboard-blue",
+    grafanaTheme: "dark",
+    dbosTheme: "blue",
+  },
+};
+
+const INFOCOLLECTOR_THEMED_FULL_DASHBOARDS: Record<
+  ThemeName,
+  { uid: string; slug: string; grafanaTheme: "dark" | "light"; dbosTheme: ThemeName }
+> = {
+  "vscode-dark": {
+    uid: "rYdddlPWk-vscode-dark",
+    slug: "node-exporter-full-vscode-dark",
+    grafanaTheme: "dark",
+    dbosTheme: "vscode-dark",
+  },
+  "vscode-light": {
+    uid: "rYdddlPWk-vscode-light",
+    slug: "node-exporter-full-vscode-light",
+    grafanaTheme: "light",
+    dbosTheme: "vscode-light",
+  },
+  "dark-orange": {
+    uid: "rYdddlPWk-dark-orange",
+    slug: "node-exporter-full-dark-orange",
+    grafanaTheme: "dark",
+    dbosTheme: "dark-orange",
+  },
+  blue: {
+    uid: "rYdddlPWk-blue",
+    slug: "node-exporter-full-blue",
+    grafanaTheme: "dark",
+    dbosTheme: "blue",
+  },
+};
 
 interface MetricsTabProps {
   entity: EntityRef;
@@ -163,6 +242,9 @@ export function MetricsTab({ entity }: MetricsTabProps) {
   const [selected, setSelectedState] = useState<GrafanaPanelKind>(() =>
     readSelectedPanel(),
   );
+  const [gridSelection, setGridSelectionState] = useState<GrafanaPanelKind[]>(() =>
+    readGridSelection(),
+  );
   const [installing, setInstalling] = useState(false);
   const toast = useToast();
   const { confirm } = useConfirm();
@@ -172,8 +254,15 @@ export function MetricsTab({ entity }: MetricsTabProps) {
     () => resolveGrafanaMode(grafanaBase, targetIp),
     [grafanaBase, targetIp],
   );
-  const dashboard = resolveDashboard(grafanaBase, theme);
-  const fullDashboard = resolveFullDashboard(grafanaBase, theme);
+  // grafanaBase — адрес, по которому проверяем доступность (infocollector: nginx
+  // на :18181 с REST-редиректом); embedBase — адрес самой Grafana для iframe'ов
+  // (infocollector отдаёт панели только напрямую на :3000, nginx их не проксирует).
+  const embedBase = useMemo(
+    () => grafanaEmbedBaseUrl(grafanaMode, grafanaBase),
+    [grafanaMode, grafanaBase],
+  );
+  const dashboard = resolveDashboard(grafanaMode, grafanaBase, theme);
+  const fullDashboard = resolveFullDashboard(grafanaMode, grafanaBase, theme);
   const grafanaStatus = useGrafanaAvailability(grafanaBase, grafanaMode, targetIp);
 
   function setMode(next: GrafanaViewMode) {
@@ -184,6 +273,15 @@ export function MetricsTab({ entity }: MetricsTabProps) {
   function setSelected(next: GrafanaPanelKind) {
     setSelectedState(next);
     writeStorage(SELECTED_PANEL_STORAGE_KEY, next);
+  }
+
+  function setGridSlot(index: number, next: GrafanaPanelKind) {
+    setGridSelectionState((prev) => {
+      const updated = [...prev];
+      updated[index] = next;
+      writeStorage(GRID_SELECTION_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
   }
 
   if (!targetIp) {
@@ -232,46 +330,42 @@ export function MetricsTab({ entity }: MetricsTabProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {grafanaMode === "direct" && (
-              <>
-                <button
-                  type="button"
-                  className={`btn btn-sm flex items-center gap-1 ${mode === "grid" ? "btn-primary" : "btn-ghost"}`}
-                  onClick={() => setMode("grid")}
-                  title="Показать основные графики сеткой"
-                >
-                  <Grid2X2 className="w-4 h-4" />
-                  Сетка
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm flex items-center gap-1 ${mode === "single" ? "btn-primary" : "btn-ghost"}`}
-                  onClick={() => setMode("single")}
-                  title="Показать один выбранный график"
-                >
-                  <PanelTop className="w-4 h-4" />
-                  Одна панель
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm flex items-center gap-1 ${mode === "gauges" ? "btn-primary" : "btn-ghost"}`}
-                  onClick={() => setMode("gauges")}
-                  title="Показать основные показатели спидометрами"
-                >
-                  <Gauge className="w-4 h-4" />
-                  Спидометры
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm flex items-center gap-1 ${mode === "full" ? "btn-primary" : "btn-ghost"}`}
-                  onClick={() => setMode("full")}
-                  title="Показать полный Node Exporter dashboard из infocollector"
-                >
-                  <LayoutDashboard className="w-4 h-4" />
-                  Полный
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              className={`btn btn-sm flex items-center gap-1 ${mode === "gauges" ? "btn-primary" : "btn-ghost"}`}
+              onClick={() => setMode("gauges")}
+              title="Показать основные показатели спидометрами"
+            >
+              <Gauge className="w-4 h-4" />
+              Спидометры
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm flex items-center gap-1 ${mode === "single" ? "btn-primary" : "btn-ghost"}`}
+              onClick={() => setMode("single")}
+              title="Показать один выбранный график крупно"
+            >
+              <PanelTop className="w-4 h-4" />
+              Одна панель
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm flex items-center gap-1 ${mode === "grid" ? "btn-primary" : "btn-ghost"}`}
+              onClick={() => setMode("grid")}
+              title="Показать 4 графика с выбором метрики для каждого"
+            >
+              <Grid2X2 className="w-4 h-4" />
+              Сетка
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm flex items-center gap-1 ${mode === "full" ? "btn-primary" : "btn-ghost"}`}
+              onClick={() => setMode("full")}
+              title="Показать полный Node Exporter dashboard (со скроллом)"
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Полный
+            </button>
             <button
               type="button"
               className="btn btn-sm flex items-center gap-1"
@@ -302,31 +396,20 @@ export function MetricsTab({ entity }: MetricsTabProps) {
       )}
 
       {grafanaStatus === "available" &&
-        grafanaMode === "infocollector" && (
-          <InfocollectorDashboard
-            baseUrl={grafanaBase}
-            targetIp={targetIp}
-            targetLabel={target.label}
-            height={720}
-          />
-        )}
-
-      {grafanaStatus === "available" &&
-        grafanaMode === "direct" &&
         (mode === "full" ? (
           <GrafanaDashboard
-            baseUrl={grafanaBase}
+            baseUrl={embedBase}
             targetIp={targetIp}
             targetLabel={target.label}
             dashboard={fullDashboard}
-            height={920}
+            height={FULL_DASHBOARD_HEIGHT}
           />
         ) : mode === "gauges" ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {GAUGE_PANELS.map((panel) => (
               <GrafanaPanel
                 key={panel}
-                baseUrl={grafanaBase}
+                baseUrl={embedBase}
                 targetIp={targetIp}
                 panel={panel}
                 height={270}
@@ -354,7 +437,7 @@ export function MetricsTab({ entity }: MetricsTabProps) {
               ))}
             </div>
             <GrafanaPanel
-              baseUrl={grafanaBase}
+              baseUrl={embedBase}
               targetIp={targetIp}
               panel={selected}
               height={430}
@@ -363,15 +446,27 @@ export function MetricsTab({ entity }: MetricsTabProps) {
           </div>
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
-            {PRIMARY_PANELS.map((panel) => (
-              <GrafanaPanel
-                key={panel}
-                baseUrl={grafanaBase}
-                targetIp={targetIp}
-                panel={panel}
-                height={360}
-                dashboard={dashboard}
-              />
+            {gridSelection.map((panel, idx) => (
+              <div key={idx} className="flex flex-col gap-1">
+                <select
+                  className="input w-44 self-end"
+                  value={panel}
+                  onChange={(e) => setGridSlot(idx, e.target.value as GrafanaPanelKind)}
+                >
+                  {ALL_PANEL_KINDS.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {PANEL_MAP[kind].label}
+                    </option>
+                  ))}
+                </select>
+                <GrafanaPanel
+                  baseUrl={embedBase}
+                  targetIp={targetIp}
+                  panel={panel}
+                  height={330}
+                  dashboard={dashboard}
+                />
+              </div>
             ))}
           </div>
         ))}
@@ -440,7 +535,7 @@ function useGrafanaAvailability(
           window.clearTimeout(timeout);
         };
       }
-      fetch(infocollectorDashboardUrl(baseUrl, targetIp, "allta"), {
+      fetch(infocollectorProbeUrl(baseUrl, targetIp), {
         method: "GET",
         mode: "no-cors",
       })
@@ -475,34 +570,6 @@ function useGrafanaAvailability(
   }, [baseUrl, mode, targetIp]);
 
   return status;
-}
-
-function InfocollectorDashboard({
-  baseUrl,
-  targetIp,
-  targetLabel,
-  height,
-}: {
-  baseUrl: string;
-  targetIp: string;
-  targetLabel: string;
-  height: number;
-}) {
-  const src = infocollectorDashboardUrl(baseUrl, targetIp, "allta");
-  return (
-    <div className="panel relative overflow-hidden p-2 bg-[var(--bg)]">
-      <iframe
-        data-testid="grafana-infocollector-dashboard"
-        title={`ALLTA dashboard · ${targetLabel}`}
-        src={src}
-        width="100%"
-        height={height}
-        frameBorder="0"
-        className="rounded bg-[var(--bg)]"
-        style={{ backgroundColor: "var(--bg)" }}
-      />
-    </div>
-  );
 }
 
 function GrafanaPanel({
@@ -599,7 +666,7 @@ function GrafanaDashboard({
   const src = `${baseUrl}/d/${dashboard.uid}/${dashboard.slug}?${params.toString()}`;
 
   return (
-    <div className="panel relative overflow-hidden p-2 bg-[var(--bg)]">
+    <div className="panel relative p-2 bg-[var(--bg)]">
       <iframe
         data-testid="grafana-full-dashboard"
         title={`Node Exporter Full · ${targetLabel}`}
@@ -607,6 +674,7 @@ function GrafanaDashboard({
         width="100%"
         height={height}
         frameBorder="0"
+        scrolling="no"
         className="rounded bg-[var(--bg)]"
         style={{ backgroundColor: "var(--bg)" }}
       />
@@ -632,12 +700,23 @@ function resolveGrafanaMode(baseUrl: string, targetIp: string | null): GrafanaMo
   return baseUrl.includes(":18181") ? "infocollector" : "direct";
 }
 
-function resolveDashboard(baseUrl: string, theme: ThemeName): {
+// infocollector проксирует только REST-редирект (nginx :18181 -> app:5002),
+// сама Grafana там же поднята на :3000 и наружу через nginx не смотрит.
+// iframe для встраивания панелей ходит через собственный прокси emm
+// (GRAFANA_EMBED_PROXY_PATH), а не напрямую на :3000 — так прокси может
+// дописать прозрачный фон в HTML-ответ Grafana (см. vite.config.ts).
+function grafanaEmbedBaseUrl(mode: GrafanaMode, baseUrl: string): string {
+  if (mode !== "infocollector") return baseUrl;
+  return GRAFANA_EMBED_PROXY_PATH;
+}
+
+function resolveDashboard(mode: GrafanaMode, baseUrl: string, theme: ThemeName): {
   uid: string;
   slug: string;
   grafanaTheme: "dark" | "light";
   dbosTheme: ThemeName;
 } {
+  if (mode === "infocollector") return INFOCOLLECTOR_THEMED_DASHBOARDS[theme];
   if (baseUrl === LOCAL_GRAFANA_URL) return THEMED_DASHBOARDS[theme];
   return {
     uid: DASHBOARD_UID,
@@ -647,12 +726,13 @@ function resolveDashboard(baseUrl: string, theme: ThemeName): {
   };
 }
 
-function resolveFullDashboard(baseUrl: string, theme: ThemeName): {
+function resolveFullDashboard(mode: GrafanaMode, baseUrl: string, theme: ThemeName): {
   uid: string;
   slug: string;
   grafanaTheme: "dark" | "light";
   dbosTheme: ThemeName;
 } {
+  if (mode === "infocollector") return INFOCOLLECTOR_THEMED_FULL_DASHBOARDS[theme];
   if (baseUrl === LOCAL_GRAFANA_URL) return THEMED_FULL_DASHBOARDS[theme];
   return {
     uid: "rYdddlPWk",
@@ -662,12 +742,10 @@ function resolveFullDashboard(baseUrl: string, theme: ThemeName): {
   };
 }
 
-function infocollectorDashboardUrl(
-  baseUrl: string,
-  targetIp: string,
-  board: "allta" | "full",
-): string {
-  return `${baseUrl}/rest/api/dashboard/${targetIp}/${board}`;
+// Только для проверки доступности (check_collector на бэкенде infocollector);
+// сама Grafana для встраивания панелей вызывается напрямую, см. grafanaEmbedBaseUrl.
+function infocollectorProbeUrl(baseUrl: string, targetIp: string): string {
+  return `${baseUrl}/rest/api/dashboard/${targetIp}/allta`;
 }
 
 function metricsTarget(entity: EntityRef): {
@@ -700,12 +778,31 @@ function readGrafanaViewMode(): GrafanaViewMode {
   const raw = readStorage(VIEW_MODE_STORAGE_KEY);
   return raw === "single" || raw === "grid" || raw === "gauges" || raw === "full"
     ? raw
-    : "grid";
+    : "gauges";
 }
 
 function readSelectedPanel(): GrafanaPanelKind {
   const raw = readStorage(SELECTED_PANEL_STORAGE_KEY);
   return raw && raw in PANEL_MAP ? (raw as GrafanaPanelKind) : "cpu";
+}
+
+function readGridSelection(): GrafanaPanelKind[] {
+  const raw = readStorage(GRID_SELECTION_STORAGE_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (
+        Array.isArray(parsed) &&
+        parsed.length === PRIMARY_PANELS.length &&
+        parsed.every((p) => typeof p === "string" && p in PANEL_MAP)
+      ) {
+        return parsed as GrafanaPanelKind[];
+      }
+    } catch {
+      // Битые данные в localStorage — падаем на дефолт ниже.
+    }
+  }
+  return [...PRIMARY_PANELS];
 }
 
 function readStorage(key: string): string | null {

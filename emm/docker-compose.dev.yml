@@ -263,19 +263,6 @@ services:
     ports:
       - "2222:2222"
 
-  monitoring_node_exporter:
-    image: allta.devos.astralinux.ru:21503/prom/node-exporter:latest
-    profiles: ["monitoring"]
-    command:
-      - "--path.rootfs=/host"
-    volumes:
-      - "/:/host:ro,rslave"
-    networks:
-      monitoring_dev:
-        ipv4_address: 10.210.91.10
-    ports:
-      - "9100:9100"
-
   monitoring_prometheus:
     image: allta.devos.astralinux.ru:21503/prom/prometheus:latest
     profiles: ["monitoring"]
@@ -291,8 +278,6 @@ services:
       - monitoring_dev
     ports:
       - "9090:9090"
-    depends_on:
-      - monitoring_node_exporter
 
   monitoring_grafana:
     image: allta.devos.astralinux.ru:21503/grafana/grafana-oss:latest

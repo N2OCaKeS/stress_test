@@ -10,8 +10,12 @@ ACS — обёртка над Clonezilla/DRBL, которая сама рули�
      сразу, принимая задачу в свою асинхронную цепочку;
   3. подождать, пока сервер уйдёт в Clonezilla-окружение и вернётся обратно
      (`probe_reachability_signals` из `_reachability.py`), в пределах общего
-     дедлайна;
-  4. сообщить server_service исход через `submit_acs_snapshot_created`/
+     дедлайна — оба перехода обязательны, "не ушёл" не прощается (см.
+     `_wait_out_and_back`);
+  4. только для restore — дополнительно реально залогиниться bootstrap-кредой
+     версии ОС с несколькими ретраями (`_verify_bootstrap_login`): открытый
+     SSH-порт ещё не значит, что restore реально закончился;
+  5. сообщить server_service исход через `submit_acs_snapshot_created`/
      `submit_acs_snapshot_restore_done`.
 
 `stand_name` для ACS — это `payload["hostname"]` (в emm hostname уже хранит
@@ -34,6 +38,7 @@ import asyncio
 import logging
 import time
 
+from src.clients.ssh import SshClient, SshError
 from src.core.config import get_settings
 from src.core.constants import LAST_ERROR_MAX_LEN
 from src.core.exceptions import CredentialFetchError
@@ -101,12 +106,23 @@ async def _wait_out_and_back(host: str | None, ssh_port: int) -> bool:
 
     Без `host` в payload пробовать нечего — молча пропускаем ожидание
     (best-effort диагностика, не обязательный шаг) и считаем, что реachability
-    подтверждена. Уход в Clonezilla ждём best-effort (`acs_down_wait_seconds`):
-    если за это время сервер не «упал», не считаем это фатальным — реальный
-    ребут мог случиться между двумя тиками поллинга, идём сразу к ожиданию
-    возврата. Возврат в рабочую ОС ждём строго, с общим дедлайном
-    (`acs_reachability_timeout_seconds`) — не дождались, значит операция
-    ACS не завершилась штатно.
+    подтверждена.
+
+    Уход в Clonezilla ждём СТРОГО (`acs_down_wait_seconds`): не дождались —
+    возвращаем `False` сразу, не переходя к ожиданию возврата. Раньше здесь
+    было "не дождались — не фатально, идём ждать возврата всё равно" —
+    это гонка: ACS перед самим ребутом делает несколько SSH/IPMI-вызовов
+    настройки boot order (минута-две), и если наш опрос "ушёл ли" стартует
+    раньше реального ребута, сервер в этот момент ещё жив со старой ОС —
+    следующая же проверка "вернулся ли" видит его отвечающим НЕМЕДЛЕННО,
+    хотя реального restore ещё не было и в помине. Именно так `restore`
+    один раз уже отрапортовал success через 5 минут вместо реальных 30-40.
+
+    Возврат в рабочую ОС ждём с общим дедлайном (`acs_reachability_timeout_seconds`).
+    Оба этапа — необходимое, но не достаточное условие: сам факт "порт
+    открылся" ещё не значит "restore гарантированно закончился и bootstrap-
+    креды рабочие" — для restore это дополнительно проверяется реальным
+    SSH-логином (`_verify_bootstrap_login`), отдельно от этой функции.
     """
     if not host:
         logger.info("acs snapshot: no host in payload, skipping reachability wait")
@@ -123,9 +139,11 @@ async def _wait_out_and_back(host: str | None, ssh_port: int) -> bool:
     if not went_down:
         logger.warning(
             "acs snapshot: host=%s did not go unreachable within %.0fs "
-            "of ACS accepting the request; proceeding to wait for return anyway",
+            "of ACS accepting the request — treating as failure, not "
+            "proceeding to wait for return",
             host, settings.acs_down_wait_seconds,
         )
+        return False
 
     return await _await_reachability(
         host,
@@ -134,6 +152,50 @@ async def _wait_out_and_back(host: str | None, ssh_port: int) -> bool:
         deadline_seconds=settings.acs_reachability_timeout_seconds,
         poll_interval_seconds=settings.acs_reachability_poll_interval_seconds,
     )
+
+
+async def _verify_bootstrap_login(
+    host: str, ssh_port: int, os_version_id: str,
+) -> None:
+    """Реально залогиниться bootstrap-кредой версии ОС после restore.
+
+    Открытый SSH-порт (что уже подтвердила `_wait_out_and_back`) — необходимое,
+    но не достаточное условие готовности: сразу после reimage sshd/PAM/сеть
+    внутри гостя могут ещё не устаканиться, из-за чего конкретно первая
+    попытка логина имеет все шансы схватить транзиентный отказ. Несколько
+    попыток со sleep между ними (`acs_bootstrap_verify_retries`/
+    `_interval_seconds`) снимают этот флаппинг. Успешный логин здесь —
+    единственное, что действительно доказывает: restore реально закончился
+    и bootstrap-креды рабочие, поэтому можно смело ставить `server.prepare`.
+
+    Поднимает `CredentialFetchError`/`SshError` последней попытки, если все
+    ретраи исчерпаны — caller оборачивает это в `succeeded=False`.
+    """
+    creds = await server_service_client.get_os_version_bootstrap_password(os_version_id)
+    settings = get_settings()
+    last_exc: Exception | None = None
+    for attempt in range(1, settings.acs_bootstrap_verify_retries + 1):
+        try:
+            async with SshClient(
+                host=host,
+                username=creds["ssh_username"],
+                password=creds["password"],
+                port=ssh_port,
+            ) as ssh:
+                await ssh.run("true")
+            return
+        except SshError as exc:
+            last_exc = exc
+            logger.info(
+                "acs snapshot restore: bootstrap SSH verify attempt %s/%s "
+                "failed for host=%s: %s",
+                attempt, settings.acs_bootstrap_verify_retries, host,
+                type(exc).__name__,
+            )
+            if attempt < settings.acs_bootstrap_verify_retries:
+                await asyncio.sleep(settings.acs_bootstrap_verify_interval_seconds)
+    assert last_exc is not None
+    raise last_exc
 
 
 def _snapshot_name(stand_name: str, version_name: str) -> str:
@@ -298,10 +360,16 @@ async def acs_snapshot_restore(task_id: str) -> None:
             reachable_after = await _wait_out_and_back(host, ssh_port)
             if not reachable_after:
                 raise TimeoutError(
-                    f"server did not become reachable again within "
-                    f"{get_settings().acs_reachability_timeout_seconds:.0f}s "
-                    "after ACS accepted the restore request",
+                    f"server did not go offline and/or become reachable again "
+                    f"within the expected window after ACS accepted the "
+                    f"restore request",
                 )
+            # Открытый SSH-порт ещё не значит, что restore реально закончился
+            # и bootstrap-креды рабочие — единственное, что это доказывает,
+            # это реальный логин. Без host'а reachability-проверки уже были
+            # best-effort skip'нуты выше — тут по той же причине пропускаем.
+            if host:
+                await _verify_bootstrap_login(host, ssh_port, os_version_id)
         except Exception as exc:
             error_message = _truncate_error(f"{type(exc).__name__}: {exc}")
             try:

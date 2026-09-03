@@ -251,6 +251,57 @@ def _check_target_department_for_controller(
     )
 
 
+async def fetch_os_version_bootstrap_password(
+    db: AsyncSession,
+    identity: IdentityContext,
+    os_version_id: str,
+) -> dict:
+    """Расшифровать и вернуть bootstrap-креды версии ОС для worker'а.
+
+    Нужно `acs.snapshot_restore`, чтобы САМОМУ (не только server_service на
+    callback'е) проверить SSH бутстрап-кредой перед тем, как репортить
+    restore успешным — иначе `server.prepare` стартует раньше, чем сервер
+    реально поднимется после переустановки диска. Не department-scoped —
+    версия ОС общая на всю платформу, dept-check тут не нужен.
+
+    Право `(server, *, prepare_callback)` — тот же узкий грант worker_bot'а,
+    что у остальных internal-эндпоинтов подготовки.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "os_version.bootstrap_password_fetched",
+            target_id=os_version_id, target_type="os_version",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "caller_type": identity.subject_type},
+        )
+        raise
+    creds = await bootstrap_password_svc.get_bootstrap_password_for_os_version(
+        db, os_version_id,
+    )
+    if creds is None:
+        audit_service.emit(
+            "os_version.bootstrap_password_fetched",
+            target_id=os_version_id, target_type="os_version",
+            status="failure", allowed=True,
+            details={"reason": "not_found"},
+        )
+        raise NotFoundError(
+            error_code="OS_VERSION_BOOTSTRAP_PASSWORD_NOT_FOUND",
+            message="Bootstrap password not set for this OS version",
+        )
+    audit_service.emit(
+        "os_version.bootstrap_password_fetched",
+        target_id=os_version_id, target_type="os_version",
+        status="success", allowed=True,
+        details={"caller_type": identity.subject_type},
+    )
+    return creds
+
+
 async def fetch_ipmi_credentials(
     db: AsyncSession,
     identity: IdentityContext,

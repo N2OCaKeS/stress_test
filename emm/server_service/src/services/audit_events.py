@@ -177,6 +177,7 @@ SERVICE_EVENTS = [
     {"action": "os_version.update", "description": "OS version updated", "default_severity": "INFO"},
     {"action": "os_version.delete", "description": "OS version deleted", "default_severity": "WARNING"},
     {"action": "os_version.bootstrap_password_updated", "description": "Bootstrap password for an OS version catalog entry set/replaced (used for the automatic server.prepare after an ACS snapshot restore)", "default_severity": "WARNING"},
+    {"action": "os_version.bootstrap_password_fetched", "description": "worker_bot fetched the decrypted bootstrap password for an OS version to self-verify SSH before reporting an ACS restore as succeeded", "default_severity": "WARNING"},
     {"action": "os.unknown_observed", "description": "Inventory callback принёс os_version, не прошедший whitelist KNOWN_OS_PREFIXES. Запись в os_versions НЕ создаётся, server.os_version_id остаётся прежним", "default_severity": "WARNING"},
     # Макросы консоли (личные + системные в отделе). См. services/console_macro.py.
     {"action": "console_macro.create", "description": "Console macro created (personal or system/department-wide). details: is_system, name", "default_severity": "INFO"},

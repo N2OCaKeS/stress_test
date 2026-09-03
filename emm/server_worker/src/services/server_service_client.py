@@ -1089,6 +1089,30 @@ async def get_acs_settings() -> dict:
     )
 
 
+async def get_os_version_bootstrap_password(os_version_id: str) -> dict:
+    """Прочитать расшифрованный bootstrap-пароль версии ОС для само-проверки SSH.
+
+    `acs.snapshot_restore` использует это, чтобы реально залогиниться на
+    восстановленный сервер бутстрап-кредой перед тем, как репортить restore
+    успешным — reachability (открытый SSH-порт) сама по себе не доказывает,
+    что restore реально завершился (порт мог открыться раньше). Версия ОС
+    платформенная, не department-scoped — `X-Target-Department-Id` не шлём.
+
+    Возвращает: `{ssh_username, password}` от
+    `GET /api/server/v1/internal/os-versions/{id}/bootstrap-password`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `BOOTSTRAP_PASSWORD_UNAVAILABLE` — server_service вернул не 2xx
+        (в т.ч. 404, если пароль для версии не задан).
+    """
+    return await _request(
+        "get",
+        f"/api/server/v1/internal/os-versions/{os_version_id}/bootstrap-password",
+        reject_code="BOOTSTRAP_PASSWORD_UNAVAILABLE",
+    )
+
+
 async def submit_acs_snapshot_created(
     server_id: str,
     os_version_id: str,

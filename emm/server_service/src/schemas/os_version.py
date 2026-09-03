@@ -151,6 +151,19 @@ class OsVersionBootstrapPasswordStatus(BaseModel):
     has_password: bool = Field(description="Задан ли пароль для этой версии.")
 
 
+class OsVersionBootstrapPasswordInternalResponse(BaseModel):
+    """Ответ GET /internal/os-versions/{id}/bootstrap-password — только worker_bot.
+
+    В отличие от `OsVersionBootstrapPasswordStatus` (публичный статус, без
+    пароля), это internal-эндпоинт и ОТДАЁТ plaintext — worker'у нужно
+    реально залогиниться по SSH, чтобы подтвердить готовность сервера перед
+    тем, как репортить ACS restore успешным.
+    """
+
+    ssh_username: str = Field(description="Логин bootstrap-пользователя образа.")
+    password: str = Field(description="Расшифрованный пароль bootstrap-пользователя.")
+
+
 class OsVersionBootstrapPasswordUpdate(BaseModel):
     """Тело PUT /os-versions/{id}/bootstrap-password.
 

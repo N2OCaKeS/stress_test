@@ -285,8 +285,10 @@ make test-worker
 |---|---|---|
 | `ACS_REQUEST_TIMEOUT_SECONDS` | `30.0` | timeout самого HTTP-вызова `save-disk`/`restore-backup` на ACS. ACS отвечает сразу (задача асинхронная на её стороне) |
 | `ACS_REACHABILITY_POLL_INTERVAL_SECONDS` | `15.0` | пауза между пробами ping/ssh при ожидании ухода сервера в Clonezilla и возврата обратно |
-| `ACS_DOWN_WAIT_SECONDS` | `300.0` | best-effort окно ожидания, что сервер уйдёт в Clonezilla после того, как ACS приняла задачу. Не дождались — не фатально, идём к ожиданию возврата |
+| `ACS_DOWN_WAIT_SECONDS` | `300.0` | окно ожидания, что сервер уйдёт в Clonezilla после того, как ACS приняла задачу. Не дождались — задача завершается ошибкой (сервер не начал перезагрузку) |
 | `ACS_REACHABILITY_TIMEOUT_SECONDS` | `1800.0` | общий дедлайн ожидания, что сервер снова ответит на ping/ssh после snapshot/restore. Не дождались — задача завершается ошибкой |
+| `ACS_BOOTSTRAP_VERIFY_RETRIES` | `10` | сколько раз пробовать реальный SSH-логин bootstrap-кредой версии ОС после восстановления reachability (только restore) |
+| `ACS_BOOTSTRAP_VERIFY_INTERVAL_SECONDS` | `20.0` | пауза между попытками SSH-логина bootstrap-кредой (restore) |
 
 ### Pooled HTTP-clients (`audit_client`, `server_service_client`)
 

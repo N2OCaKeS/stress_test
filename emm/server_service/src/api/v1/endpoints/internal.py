@@ -66,6 +66,7 @@ from src.schemas.internal import (
     VmCreateReconcileResponse,
     VmStatusSweepResponse,
 )
+from src.schemas.os_version import OsVersionBootstrapPasswordInternalResponse
 from src.schemas.probe_targets import ProbeTargetsResponse
 from src.schemas.server import (
     AcsSnapshotCreatedCallbackRequest,
@@ -613,6 +614,37 @@ async def record_server_astra_updated(
         target_department_id=x_target_department_id,
     )
     return ServerAstraUpdateCallbackResponse(**data)
+
+
+@router.get(
+    "/os-versions/{os_version_id}/bootstrap-password",
+    response_model=OsVersionBootstrapPasswordInternalResponse,
+    responses={403: _INTERNAL_RESPONSES_BASE[403],
+               404: {"description": "OS_VERSION_BOOTSTRAP_PASSWORD_NOT_FOUND — пароль для версии не задан."}},
+)
+async def get_os_version_bootstrap_password(
+    os_version_id: str,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> OsVersionBootstrapPasswordInternalResponse:
+    """Отдать worker'у расшифрованный bootstrap-пароль версии ОС.
+
+    Нужен `acs.snapshot_restore`, чтобы САМОМУ проверить SSH бутстрап-кредой
+    перед тем, как репортить restore успешным (а не полагаться только на
+    reachability — ложное «порт открылся» до реального завершения restore
+    иначе запускает `server.prepare` слишком рано и он падает).
+
+    Не department-scoped — версия ОС общая на всю платформу, поэтому здесь
+    нет `X-Target-Department-Id`.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `os_version.bootstrap_password_fetched` (WARNING).
+    """
+    data = await internal_service.fetch_os_version_bootstrap_password(
+        db, identity, os_version_id,
+    )
+    return OsVersionBootstrapPasswordInternalResponse(**data)
 
 
 @router.post(

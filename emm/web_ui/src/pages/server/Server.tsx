@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { naturalCompare } from "@/lib/naturalSort";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -70,7 +71,7 @@ import { VmDetail, CreateVmPane } from "@/pages/vm/Vm";
 
 const FOCUS_REFETCH_THROTTLE_MS = 12_000;
 
-type SortMode = "name" | "dept" | "status";
+type SortMode = "name" | "number" | "dept" | "status";
 type GroupMode = "none" | "department";
 
 export function Server() {
@@ -213,9 +214,14 @@ export function Server() {
     });
     const sorted = [...matched].sort((a, b) => {
       if (sort === "name")
-        return (a.display_name ?? a.hostname).localeCompare(
-          b.display_name ?? b.hostname,
-        );
+        return naturalCompare(a.display_name ?? a.hostname, b.display_name ?? b.hostname);
+      if (sort === "number") {
+        // null (номер не задан) — в конец списка, вне зависимости от направления.
+        if (a.number == null && b.number == null) return 0;
+        if (a.number == null) return 1;
+        if (b.number == null) return -1;
+        return a.number - b.number;
+      }
       if (sort === "dept") return a.department_id.localeCompare(b.department_id);
       if (sort === "status") return a.status.localeCompare(b.status);
       return 0;
@@ -373,6 +379,7 @@ export function Server() {
             onChange={(e) => setSort(e.target.value as SortMode)}
           >
             <option value="name">по имени</option>
+            <option value="number">по номеру</option>
             <option value="dept">по отделу</option>
             <option value="status">по статусу</option>
           </select>

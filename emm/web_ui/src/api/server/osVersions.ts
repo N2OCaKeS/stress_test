@@ -16,6 +16,7 @@
  */
 
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
+import { naturalCompare } from "@/lib/naturalSort";
 import type {
   OffsetPaginatedResponse,
   OsVersion,
@@ -40,13 +41,24 @@ export interface ListOsVersionsQuery {
  * меняется envelope), но wrapper остаётся в offset-семантике как остальные
  * list-методы раздела. Запрос идёт с Bearer; доступ — у ролей server-зоны,
  * платформенным business-data-denied ролям backend вернёт 403.
+ *
+ * Backend сортирует по `discovered_at DESC` (когда добавили) — для человека
+ * это нечитаемо (РЦ вперемешку). Здесь пересортировываем `items` по `name`
+ * натуральным сравнением (`179` < `1710rc45` < `1711rc17`, не лексикографически)
+ * — единая точка, все вызывающие места (дропдауны/каталог) получают
+ * отсортированный список без собственной сортировки.
  */
-export function listOsVersions(
+export async function listOsVersions(
   query: ListOsVersionsQuery = {},
 ): Promise<OffsetPaginatedResponse<OsVersion>> {
-  return apiGet<OffsetPaginatedResponse<OsVersion>>("/server/v1/os-versions", {
-    query: { ...query },
-  });
+  const page = await apiGet<OffsetPaginatedResponse<OsVersion>>(
+    "/server/v1/os-versions",
+    { query: { ...query } },
+  );
+  return {
+    ...page,
+    items: [...page.items].sort((a, b) => naturalCompare(a.name, b.name)),
+  };
 }
 
 // ── catalog: create / update / delete ──────────────────────────────────────

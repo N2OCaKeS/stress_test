@@ -25,9 +25,15 @@ from src.tasks import acs_snapshots
 
 
 class _FakeSshClient:
-    """Подменяет `SshClient` — коннект либо падает `SshError`, либо успешен."""
+    """Подменяет `SshClient` — коннект либо падает `SshError`, либо успешен.
+
+    `_degraded_times` — сколько первых УСПЕШНЫХ логинов должны вернуть
+    `systemctl is-system-running` = `degraded` вместо `running` (симулирует
+    Clonezilla live-окружение или собственный незавершённый self-healing
+    ребут ACS, где SSH уже открыт, но система ещё не готова)."""
 
     _fail_times: int = 0
+    _degraded_times: int = 0
     _calls: int = 0
 
     def __init__(self, *args, **kwargs) -> None:
@@ -43,7 +49,9 @@ class _FakeSshClient:
         return None
 
     async def run(self, command: str, **kwargs):
-        return 0, "", ""
+        if type(self)._calls <= type(self)._fail_times + type(self)._degraded_times:
+            return 1, "degraded", ""
+        return 0, "running", ""
 
 
 @pytest.fixture(autouse=True)
@@ -107,6 +115,7 @@ class TestWaitOutAndBack:
 class TestVerifyBootstrapLogin:
     async def test_succeeds_on_first_attempt(self, monkeypatch):
         _FakeSshClient._fail_times = 0
+        _FakeSshClient._degraded_times = 0
         _FakeSshClient._calls = 0
         monkeypatch.setattr(acs_snapshots, "SshClient", _FakeSshClient)
 
@@ -125,6 +134,7 @@ class TestVerifyBootstrapLogin:
 
     async def test_retries_then_succeeds(self, monkeypatch):
         _FakeSshClient._fail_times = 2
+        _FakeSshClient._degraded_times = 0
         _FakeSshClient._calls = 0
         monkeypatch.setattr(acs_snapshots, "SshClient", _FakeSshClient)
         monkeypatch.setattr(
@@ -146,6 +156,7 @@ class TestVerifyBootstrapLogin:
 
     async def test_raises_after_exhausting_retries(self, monkeypatch):
         _FakeSshClient._fail_times = 999
+        _FakeSshClient._degraded_times = 0
         _FakeSshClient._calls = 0
         monkeypatch.setattr(acs_snapshots, "SshClient", _FakeSshClient)
         monkeypatch.setattr(
@@ -162,6 +173,59 @@ class TestVerifyBootstrapLogin:
         )
 
         with pytest.raises(SshError):
+            await acs_snapshots._verify_bootstrap_login("10.0.0.1", 22, "osv_x")
+
+        assert _FakeSshClient._calls == 3
+
+    async def test_logs_in_but_degraded_keeps_retrying_until_running(self, monkeypatch):
+        """Регрессия на живой инцидент: логин может пройти, пока система ещё
+        `degraded` (Clonezilla live-окружение или незавершённый self-healing
+        ребут самой ACS) — это НЕ должно считаться готовностью, иначе
+        `server.prepare` стартует на сервере, который вот-вот перезагрузится
+        у нас из-под ног ещё раз."""
+        _FakeSshClient._fail_times = 0
+        _FakeSshClient._degraded_times = 2
+        _FakeSshClient._calls = 0
+        monkeypatch.setattr(acs_snapshots, "SshClient", _FakeSshClient)
+        monkeypatch.setattr(
+            acs_snapshots.get_settings(), "acs_bootstrap_verify_retries", 5,
+        )
+
+        async def _fake_creds(os_version_id):
+            return {"ssh_username": "u", "password": "pw"}
+
+        monkeypatch.setattr(
+            acs_snapshots.server_service_client,
+            "get_os_version_bootstrap_password",
+            _fake_creds,
+        )
+
+        await acs_snapshots._verify_bootstrap_login("10.0.0.1", 22, "osv_x")
+
+        assert _FakeSshClient._calls == 3
+
+    async def test_raises_if_never_reports_running(self, monkeypatch):
+        """Логин всегда проходит, но `is-system-running` никогда не даёт
+        `running` — ретраи должны исчерпаться и поднять `SshError`, а не
+        молча вернуть успех."""
+        _FakeSshClient._fail_times = 0
+        _FakeSshClient._degraded_times = 999
+        _FakeSshClient._calls = 0
+        monkeypatch.setattr(acs_snapshots, "SshClient", _FakeSshClient)
+        monkeypatch.setattr(
+            acs_snapshots.get_settings(), "acs_bootstrap_verify_retries", 3,
+        )
+
+        async def _fake_creds(os_version_id):
+            return {"ssh_username": "u", "password": "pw"}
+
+        monkeypatch.setattr(
+            acs_snapshots.server_service_client,
+            "get_os_version_bootstrap_password",
+            _fake_creds,
+        )
+
+        with pytest.raises(SshError, match="SSH_SYSTEM_NOT_READY"):
             await acs_snapshots._verify_bootstrap_login("10.0.0.1", 22, "osv_x")
 
         assert _FakeSshClient._calls == 3

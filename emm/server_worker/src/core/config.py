@@ -840,21 +840,31 @@ class Settings(BaseSettings):
         ),
     )
     acs_bootstrap_verify_retries: int = Field(
-        default=10,
+        default=300,
         ge=1,
         description=(
-            "Сколько раз пробовать реальный SSH-логин bootstrap-кредой "
-            "версии ОС после того, как reachability подтвердила открытый "
-            "SSH-порт (только restore). Открытый порт ещё не значит, что "
-            "sshd/PAM/сеть внутри гостя полностью стабилизировались сразу "
-            "после reimage — несколько попыток со sleep между ними снимают "
-            "этот флаппинг."
+            "Сколько раз пробовать реальный SSH-логин bootstrap-кредой версии "
+            "ОС после restore, прежде чем сдаться. ACS сама гоняет клиента "
+            "через Clonezilla-окружение (SSH там открыт, но это чужой live-"
+            "образ — bootstrap-креда туда не подходит) на всё время реального "
+            "восстановления диска, затем делает свой собственный hard reset "
+            "и ждёт `systemctl is-system-running`, при 'degraded' повторяя "
+            "reboot ещё до 4 раз (см. ACS-ветку, `socket_available` в "
+            "`clonezilla_func.py`). Наш внешний retry должен пережить весь "
+            "этот процесс целиком — с дефолтным интервалом 300×30с=2.5 часа "
+            "запаса с лихвой хватает на самый капризный сценарий ACS."
         ),
     )
     acs_bootstrap_verify_interval_seconds: float = Field(
-        default=20.0,
+        default=30.0,
         gt=0.0,
-        description="Пауза между попытками SSH-логина bootstrap-кредой (restore).",
+        description=(
+            "Пауза между попытками SSH-логина bootstrap-кредой (restore). "
+            "Каждая попытка сама по себе прогоняет `systemctl is-system-"
+            "running` — 'running' считается готовностью, любой другой ответ "
+            "(включая 'degraded', которое ACS может сама зациклить через "
+            "дополнительные reboot'ы) — сигнал подождать ещё."
+        ),
     )
 
     # ── Interactive SSH console (WebSocket bridge) ───────────────────────

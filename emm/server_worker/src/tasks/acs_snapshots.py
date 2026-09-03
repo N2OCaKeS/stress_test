@@ -13,8 +13,13 @@ ACS — обёртка над Clonezilla/DRBL, которая сама рули�
      дедлайна — оба перехода обязательны, "не ушёл" не прощается (см.
      `_wait_out_and_back`);
   4. только для restore — дополнительно реально залогиниться bootstrap-кредой
-     версии ОС с несколькими ретраями (`_verify_bootstrap_login`): открытый
-     SSH-порт ещё не значит, что restore реально закончился;
+     версии ОС и дождаться `systemctl is-system-running == running`, с
+     ретраями на протяжении всего окна (`_verify_bootstrap_login`): открытый
+     SSH-порт ещё не значит, что restore реально закончился — Clonezilla сама
+     держит SSH открытым (под чужими live-кредами) весь процесс восстановления,
+     а после него ACS ещё и сама делает hard reset и может перезагрузить
+     сервер повторно, если тот придёт в `degraded`-состояние (см. `acs`-ветку,
+     `clonezilla_func.py::backup_image`/`socket_available`);
   5. сообщить server_service исход через `submit_acs_snapshot_created`/
      `submit_acs_snapshot_restore_done`.
 
@@ -159,21 +164,34 @@ async def _verify_bootstrap_login(
 ) -> None:
     """Реально залогиниться bootstrap-кредой версии ОС после restore.
 
-    Открытый SSH-порт (что уже подтвердила `_wait_out_and_back`) — необходимое,
-    но не достаточное условие готовности: сразу после reimage sshd/PAM/сеть
-    внутри гостя могут ещё не устаканиться, из-за чего конкретно первая
-    попытка логина имеет все шансы схватить транзиентный отказ. Несколько
-    попыток со sleep между ними (`acs_bootstrap_verify_retries`/
-    `_interval_seconds`) снимают этот флаппинг. Успешный логин здесь —
-    единственное, что действительно доказывает: restore реально закончился
-    и bootstrap-креды рабочие, поэтому можно смело ставить `server.prepare`.
+    Открытый SSH-порт (что уже подтвердила `_wait_out_and_back`) ничего не
+    доказывает: пока ACS реально гоняет восстановление, целевой сервер
+    висит в Clonezilla-окружении, которое ДЕРЖИТ SSH открытым весь процесс
+    (это может быть 30-40+ минут) — просто под чужими live-кредами, не
+    bootstrap. Поэтому обычный отказ логина (auth failed) здесь — НЕ признак
+    неготовности гостя, а признак "мы всё ещё смотрим на Clonezilla, а не на
+    восстановленную ОС".
 
-    Поднимает `CredentialFetchError`/`SshError` последней попытки, если все
-    ретраи исчерпаны — caller оборачивает это в `succeeded=False`.
+    Более того, сама ACS после того, как Clonezilla заканчивает и рапортует
+    успех, делает СВОЙ ЖЁСТКИЙ ребут контроллером (см. `change_boot_order.reset()`
+    в `clonezilla_func.py` ветки `acs`), а затем поллит `systemctl
+    is-system-running` — если тот вернул `degraded`, ACS САМА перезагружает
+    сервер ещё раз (до 4 доп. попыток). Значит даже успешный SSH-логин сразу
+    после restore ещё не гарантирует стабильности: гостя могут перезагрузить
+    у нас из-под ног. Проверяем не просто "залогинились", а тот же сигнал
+    готовности, которым руководствуется сама ACS — `systemctl is-system-
+    running == running`; любой другой ответ (`degraded`, `starting`, ошибка
+    команды) трактуем как "ещё не готово" и продолжаем ждать наравне с
+    обычным `SshError` (сеть недоступна / Clonezilla / идёт очередной ребут).
+
+    Поднимает `SshError` последней попытки, если все ретраи
+    (`acs_bootstrap_verify_retries`/`_interval_seconds`) исчерпаны — caller
+    оборачивает это в `succeeded=False`.
     """
     creds = await server_service_client.get_os_version_bootstrap_password(os_version_id)
     settings = get_settings()
     last_exc: Exception | None = None
+    last_status = ""
     for attempt in range(1, settings.acs_bootstrap_verify_retries + 1):
         try:
             async with SshClient(
@@ -182,8 +200,17 @@ async def _verify_bootstrap_login(
                 password=creds["password"],
                 port=ssh_port,
             ) as ssh:
-                await ssh.run("true")
-            return
+                _rc, stdout, _stderr = await ssh.run("systemctl is-system-running")
+            last_status = stdout.strip()
+            if last_status == "running":
+                return
+            last_exc = None
+            logger.info(
+                "acs snapshot restore: bootstrap SSH verify attempt %s/%s "
+                "for host=%s logged in but system not ready yet "
+                "(systemctl is-system-running=%r)",
+                attempt, settings.acs_bootstrap_verify_retries, host, last_status,
+            )
         except SshError as exc:
             last_exc = exc
             logger.info(
@@ -192,10 +219,18 @@ async def _verify_bootstrap_login(
                 attempt, settings.acs_bootstrap_verify_retries, host,
                 type(exc).__name__,
             )
-            if attempt < settings.acs_bootstrap_verify_retries:
-                await asyncio.sleep(settings.acs_bootstrap_verify_interval_seconds)
-    assert last_exc is not None
-    raise last_exc
+        if attempt < settings.acs_bootstrap_verify_retries:
+            await asyncio.sleep(settings.acs_bootstrap_verify_interval_seconds)
+    if last_exc is not None:
+        raise last_exc
+    raise SshError(
+        error_code="SSH_SYSTEM_NOT_READY",
+        host=host,
+        message=(
+            f"system never reported 'running' after restore "
+            f"(last systemctl is-system-running={last_status!r})"
+        ),
+    )
 
 
 def _snapshot_name(stand_name: str, version_name: str) -> str:

@@ -42,6 +42,7 @@ class TestFlagSets:
             "grant_sudo", "power_on", "power_off", "power_reboot",
             "console", "manage_packages",
             "view_management_credentials",
+            "acs_snapshot_create", "acs_snapshot_restore",
         }
         assert set(SENSITIVE_ACTIONS) == expected
 

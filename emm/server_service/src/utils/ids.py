@@ -168,3 +168,8 @@ def console_creds_id() -> str:
     task-payload'ах не светится.
     """
     return _new_id("ccd_")
+
+
+def acs_department_access_id() -> str:
+    """`ada_<uuid>` — для строк acs_department_access (per-department opt-in ACS)."""
+    return _new_id("ada_")

@@ -16,6 +16,10 @@ User-facing endpoints, требующие user identity, защищены гар
 
 from fastapi import APIRouter
 
+from src.api.v1.endpoints.acs_settings import (
+    internal_router as acs_settings_internal_router,
+    router as acs_settings_router,
+)
 from src.api.v1.endpoints.admin_encryption import router as admin_encryption_router
 from src.api.v1.endpoints.boxes import router as boxes_router
 from src.api.v1.endpoints.admin_password_policy import (
@@ -145,3 +149,8 @@ router.include_router(management_user_config_router)
 # business-блока. Плюс internal-read для воркера (скрыт из OpenAPI).
 router.include_router(system_settings_router)
 router.include_router(system_settings_internal_router)
+# Настройки доступа к ACS (снимки дисков физических серверов) — тот же
+# паттерн singleton-под-account_admin + internal-read для воркера, плюс
+# per-department opt-in (/settings/acs/departments).
+router.include_router(acs_settings_router)
+router.include_router(acs_settings_internal_router)

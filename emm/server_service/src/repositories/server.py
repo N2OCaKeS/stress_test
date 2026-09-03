@@ -349,3 +349,17 @@ async def delete(db: AsyncSession, obj: Server) -> None:
     """DELETE объекта. Каскад на child-таблицы — через ondelete=CASCADE."""
     await db.delete(obj)
     await db.flush()
+
+async def list_distinct_department_ids(db: AsyncSession) -> list[str]:
+    """Отделы, у которых есть хотя бы один сервер.
+
+    server_service не держит своей копии таблицы `departments` (та живёт в
+    auth_service, и наружу сервис её не проксирует) — единственный источник
+    "какие отделы вообще существуют" с точки зрения этого сервиса это отделы,
+    у которых заведены сервера. Используется для карточек admin-настроек
+    (например `/settings/acs/departments`), где нужен список кандидатов на
+    per-department toggle.
+    """
+    stmt = select(Server.department_id).distinct()
+    return [row[0] for row in (await db.execute(stmt)).all()]
+

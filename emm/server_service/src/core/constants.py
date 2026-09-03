@@ -36,12 +36,19 @@ class BusyState(StrEnum):
     её может только callback воркера (успех/ошибка). Пока сервер `updating`,
     любые управляющие операции над ним отбиваются 409 SERVER_UPDATING —
     включая владельца брони и админа (см. `services/reservation.py`).
+
+    `acs` — сервер занят откатом на снимок или созданием нового снимка через
+    ACS (Clonezilla-обёртка, полная перезапись диска). Ставится на dispatch
+    create/restore, снимается только после успешного `server.prepare`,
+    который автоматически запускается по завершении: диск переписан целиком,
+    старые management-креды не переживают reimage.
     """
 
     FREE = "free"
     BUSY = "busy"
     TESTING = "testing"
     UPDATING = "updating"
+    ACS = "acs"
 
 
 class PowerState(StrEnum):
@@ -201,6 +208,15 @@ class Action(StrEnum):
     # было выдать прицельно. Дефолтно admin (либо кастомная роль с грантом).
     MANAGE_PACKAGES = "manage_packages"
 
+    # Снимки сервера через ACS (Clonezilla-обёртка): список, создание,
+    # восстановление. Список тянется живьём из ACS, своей таблицы снимков нет.
+    ACS_SNAPSHOT_LIST = "acs_snapshot_list"
+    ACS_SNAPSHOT_CREATE = "acs_snapshot_create"
+    # Восстановление — полная перезапись диска сервера, необратимо. Слишком
+    # рискованно для точечных инстанс-грантов, поэтому только тип-wide admin
+    # (см. `_NON_INSTANCE_ACTIONS`).
+    ACS_SNAPSHOT_RESTORE = "acs_snapshot_restore"
+
     # Sensitive: показ расшифрованного секрета. Держатель `view_password` /
     # `view_credentials` получает plaintext (в base64) прямо в GET-карточке —
     # отдельной reveal-ручки нет. Тот же action использует worker через
@@ -287,6 +303,9 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         # worker_bot тянет per-server управляющие креды (privkey+пароль dbos)
         # через internal endpoint перед каждой managed-операцией.
         Action.VIEW_MANAGEMENT_CREDENTIALS,
+        # Снимки сервера через ACS: список / создание / восстановление
+        # (полная перезапись диска).
+        Action.ACS_SNAPSHOT_LIST, Action.ACS_SNAPSHOT_CREATE, Action.ACS_SNAPSHOT_RESTORE,
     }),
     EntityType.SERVER_ACCOUNT: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
@@ -374,7 +393,10 @@ RESOURCE_ACL_TYPES: frozenset[str] = frozenset({
 #     его сломал бы;
 #   * `view_management_credentials` — служебный pull воркера через internal
 #     endpoint, человеку не назначается;
-#   * `manage_ignored_logins` — скоуп отдела, а не отдельной учётки.
+#   * `manage_ignored_logins` — скоуп отдела, а не отдельной учётки;
+#   * `acs_snapshot_restore` — не структурная причина, а риск: полная
+#     перезапись диска необратима, точечный грант на один сервер слишком
+#     легко выдать по ошибке — только тип-wide admin.
 _NON_INSTANCE_ACTIONS: frozenset[str] = frozenset({
     Action.CREATE,
     # callback-действия воркера (дублируют permission_catalog.WORKER_CALLBACK_ACTIONS;
@@ -387,6 +409,10 @@ _NON_INSTANCE_ACTIONS: frozenset[str] = frozenset({
     # Подготовка сервера как VMS-hub таргетит сервер, а не инстанс ВМ —
     # инстанс-грант на конкретную ВМ тут смысла не имеет.
     Action.VMS_HUB_PREPARE,
+    # Восстановление снимка ACS — полная перезапись диска, слишком рискованно
+    # для точечных инстанс-грантов. list/create остаются инстанс-грантуемыми
+    # (по аналогии с manage_packages — риск сопоставимый, а не выделенный).
+    Action.ACS_SNAPSHOT_RESTORE,
 })
 
 # Инстанс-грантуемые действия на каждый resource_type — производное от

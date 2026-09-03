@@ -1,12 +1,15 @@
 """Долгоживущие httpx.AsyncClient'ы под исходящие каналы server_service.
 
-server_service исторически держал три pooled outbound-канала, и каждый —
+server_service держит несколько pooled outbound-каналов, и каждый —
 со своим module-level slot'ом в своём же модуле:
 
   * `dependencies/auth.py::_introspect_client` — POST в auth_service/introspect.
   * `services/audit_service.py::_audit_client` — POST в loging_service/events.
   * `core/http_clients.py::loging_read_client` — GET в loging_service для
     drift-summary / dashboard read'ов (отдельный пул от write-канала).
+  * `services/acs_client.py::_acs_client` — вызовы в ACS (снимки дисков
+    физических серверов). Без фиксированного `base_url` — адрес динамический,
+    полный URL идёт per-call.
 
 Здесь — единая точка для подъёма/закрытия и читалок (`get_*_client`).
 Сами module-level slot'ы оставлены как source of truth — callers в
@@ -42,7 +45,7 @@ import httpx
 
 from src.core import http_clients
 from src.dependencies import auth as auth_deps
-from src.services import audit_service
+from src.services import acs_client, audit_service
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +91,18 @@ def init_pools(settings) -> None:
                 ),
             )
 
+    if acs_client._acs_client is None:
+        # Без `base_url` — ACS-адрес динамический (хранится в `AcsSettings`,
+        # меняется через `/settings/acs` без рестарта), полный URL передаётся
+        # per-call. Пул нужен только ради connection reuse/лимитов.
+        acs_client._acs_client = httpx.AsyncClient(
+            timeout=settings.acs_request_timeout_seconds,
+            limits=httpx.Limits(
+                max_connections=settings.acs_pool_max_connections,
+                max_keepalive_connections=settings.acs_pool_max_keepalive,
+            ),
+        )
+
 
 def get_audit_client() -> httpx.AsyncClient | None:
     """Текущий pooled клиент под audit-emit в loging_service.
@@ -110,6 +125,11 @@ def get_introspect_client() -> httpx.AsyncClient | None:
 def get_loging_read_client() -> httpx.AsyncClient | None:
     """Текущий pooled клиент под read-канал в loging_service."""
     return http_clients.loging_read_client
+
+
+def get_acs_client() -> httpx.AsyncClient | None:
+    """Текущий pooled клиент под вызовы в ACS. Может вернуть None outside lifespan."""
+    return acs_client._acs_client
 
 
 async def aclose_all() -> None:
@@ -143,6 +163,14 @@ async def aclose_all() -> None:
         except Exception as exc:  # noqa: BLE001
             logger.warning("http_pool: failed to close loging-read pool: %s", exc)
 
+    acs_pool = acs_client._acs_client
+    acs_client._acs_client = None
+    if acs_pool is not None:
+        try:
+            await acs_pool.aclose()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("http_pool: failed to close ACS pool: %s", exc)
+
 
 def reset_for_tests() -> None:
     """Синхронный сброс slot'ов без `aclose`.
@@ -153,3 +181,4 @@ def reset_for_tests() -> None:
     auth_deps._introspect_client = None
     audit_service._audit_client = None
     http_clients.loging_read_client = None
+    acs_client._acs_client = None

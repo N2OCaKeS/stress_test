@@ -1,5 +1,7 @@
 """Пакет ORM-моделей — импортируем все модели, чтобы Alembic их видел."""
 
+from src.models.acs_department_access import AcsDepartmentAccess
+from src.models.acs_settings import AcsSettings
 from src.models.box import Box
 from src.models.console_macro import ConsoleMacro
 from src.models.dispatch_outbox import DispatchOutbox
@@ -29,6 +31,8 @@ from src.models.vm_preset import VmPreset
 from src.models.vm_snapshot import VmSnapshot
 
 __all__ = [
+    "AcsDepartmentAccess",
+    "AcsSettings",
     "Box",
     "ConsoleMacro",
     "DispatchOutbox",

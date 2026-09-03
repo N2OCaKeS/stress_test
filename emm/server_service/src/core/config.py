@@ -462,6 +462,33 @@ class Settings(BaseSettings):
             "может тянуть несколько секунд за окно событий."
         ),
     )
+    acs_pool_max_connections: int = Field(
+        default=10,
+        ge=1,
+        alias="ACS_POOL_MAX_CONNECTIONS",
+        description=(
+            "Лимит соединений pooled-клиента к ACS (снимки дисков физических "
+            "серверов через Clonezilla). `base_url` у ACS динамический (хранится "
+            "в `AcsSettings`, меняется через `/settings/acs`), поэтому клиент в "
+            "пуле не привязан к конкретному host'у — полный URL идёт per-call."
+        ),
+    )
+    acs_pool_max_keepalive: int = Field(
+        default=5,
+        ge=0,
+        alias="ACS_POOL_MAX_KEEPALIVE",
+        description="Idle keep-alive для ACS-пула.",
+    )
+    acs_request_timeout_seconds: float = Field(
+        default=15.0,
+        gt=0,
+        alias="ACS_REQUEST_TIMEOUT_SECONDS",
+        description=(
+            "Таймаут HTTP-вызовов в ACS. Сами save-disk/restore-backup — "
+            "асинхронные (ACS отвечает сразу и дальше сам гоняет celery-цепочку "
+            "с ребутом), но 15s с запасом на медленный ответ самого HTTP-приёма."
+        ),
+    )
     global_rate_limit: str = Field(
         default="120/second",
         description=(
@@ -961,6 +988,11 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"LOGING_READ_POOL_MAX_KEEPALIVE ({self.loging_read_pool_max_keepalive}) "
                 f"cannot exceed LOGING_READ_POOL_MAX_CONNECTIONS ({self.loging_read_pool_max_connections})"
+            )
+        if self.acs_pool_max_keepalive > self.acs_pool_max_connections:
+            raise ValueError(
+                f"ACS_POOL_MAX_KEEPALIVE ({self.acs_pool_max_keepalive}) "
+                f"cannot exceed ACS_POOL_MAX_CONNECTIONS ({self.acs_pool_max_connections})"
             )
         return self
 

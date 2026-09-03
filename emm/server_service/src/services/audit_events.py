@@ -99,6 +99,8 @@ SERVICE_EVENTS = [
     {"action": "password_policy.updated", "description": "account_admin изменил базовую парольную политику server-аккаунтов (min_length / require_letter / require_digit через PUT /admin/password-policy); применяется к ручному вводу пароля на create/rotate. Процессный кэш обновляется сразу, реплики — через рестарт", "default_severity": "WARNING"},
     # Настройки проб статуса — платформенный singleton под account_admin.
     {"action": "settings.probes_updated", "description": "account_admin изменил настройки проб статуса (частота/вкл-выкл reachability=ping+ssh и power=ipmi/domstate через PUT /settings/probes); server_worker читает их через internal-эндпоинт. denied-запись — worker без гранта (server, prepare_callback) попытался прочитать internal-настройки", "default_severity": "WARNING"},
+    {"action": "settings.acs_updated", "description": "account_admin изменил платформенные настройки ACS (вкл/выкл, URL, пароль clonezilla-сервера через PUT /settings/acs); server_worker читает их через internal-эндпоинт", "default_severity": "WARNING"},
+    {"action": "settings.acs_departments_updated", "description": "account_admin изменил список отделов с доступом к снимкам ACS (PUT /settings/acs/departments)", "default_severity": "INFO"},
     {"action": "server.probe_targets_listed", "description": "server_worker probe-loop прочитал список целей пробинга (GET /internal/probe-targets) — серверы + ВМ для фоновых reachability/power циклов. Эмитится только denied: worker без гранта (server, prepare_callback) попытался прочитать список", "default_severity": "WARNING"},
     {"action": "auto_inventory_sweep.truncated", "description": "Плановый авто-inventory прогон превысил AUTO_INVENTORY_FANOUT_MAX — хвост подготовленных серверов вырезан, выровняется на следующем прогоне", "default_severity": "WARNING"},
     {"action": "power_sweep.truncated", "description": "Частый power-sweep превысил AUTO_INVENTORY_FANOUT_MAX — хвост серверов вырезан, выровняется на следующем прогоне", "default_severity": "WARNING"},
@@ -161,6 +163,12 @@ SERVICE_EVENTS = [
     {"action": "server.packages_install", "description": "Packages installed on a server via worker (SSH apt-get/dnf/apk under sudo)", "default_severity": "WARNING"},
     {"action": "server.packages_remove", "description": "Packages removed from a server via worker (SSH apt-get/dnf/apk under sudo)", "default_severity": "WARNING"},
     {"action": "server.packages_update", "description": "Packages updated/upgraded on a server via worker (SSH apt-get/dnf/apk under sudo)", "default_severity": "WARNING"},
+    # ACS-снимки (Clonezilla-обёртка): список тянется живьём из ACS, create/
+    # restore — dispatch воркеру. restore — полная перезапись диска, поэтому
+    # CRITICAL, как server.prepare/server_account.rotate_password.
+    {"action": "server.acs_snapshot_list", "description": "ACS snapshot list read for a server (live directory listing from ACS, no local table)", "default_severity": "INFO"},
+    {"action": "server.acs_snapshot_create", "description": "ACS snapshot create dispatched to worker (Clonezilla save-disk); sets busy_state=acs", "default_severity": "CRITICAL"},
+    {"action": "server.acs_snapshot_restore", "description": "ACS snapshot restore dispatched to worker (Clonezilla restore-backup); sets busy_state=acs; full disk rewrite, followed by an automatic server.prepare on completion", "default_severity": "CRITICAL"},
     # OS versions — глобальный каталог. Чтение доступно любому
     # аутентифицированному актору, без аудита; пишутся только мутации.
     {"action": "os_version.create", "description": "OS version catalog entry created", "default_severity": "INFO"},

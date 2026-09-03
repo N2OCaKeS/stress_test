@@ -89,9 +89,10 @@ class TestListForEntity:
         # reinstall_status_submit (18), затем b8d4e3f9a712 удалил 5 (boot_order_view,
         # boot_order_set, pxe_boot, reinstall_start, reinstall_status_submit) → 13,
         # e3f8c4b21a07 добавил view_drift → 14, d6c1f8a3b9e4 добавил console → 15,
-        # d4f1a9c2e7b8 добавил manage_packages → 16.
+        # d4f1a9c2e7b8 добавил manage_packages → 16, 363a3e5f2444 добавил
+        # acs_snapshot_list/create/restore → 19.
         admin = [r for r in rows if r["role"] == "admin"]
-        assert len(admin) == 16
+        assert len(admin) == 19
 
     async def test_unknown_entity_type_422(self, client, admin_token):
         resp = await client.get(f"{BASE}/nonexistent_type", headers=_hdr(admin_token))

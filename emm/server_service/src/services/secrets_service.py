@@ -217,6 +217,17 @@ def aad_for_vm_mgmt_password(vm_id: str) -> bytes:
     return f"vm_mgmt_password|vms|{vm_id}".encode()
 
 
+def aad_for_acs_password(settings_id: str) -> bytes:
+    """AAD для `acs_settings.acs_password_encrypted` строки `settings_id`.
+
+    Формат — `"acs_password|acs_settings|<id>"`. Singleton-таблица (один ряд,
+    `settings_id == SINGLETON_ID`), но привязка к id всё равно держит формат
+    единообразным с остальными AAD-хелперами и защищает от swap, если singleton
+    когда-нибудь перестанет быть единственной строкой.
+    """
+    return f"acs_password|acs_settings|{settings_id}".encode()
+
+
 def aad_for_ipmi_credential(controller_id: str) -> bytes:
     """AAD для `ipmi_controllers.password_encrypted` строки `controller_id`.
 
@@ -375,6 +386,7 @@ _ALLOWED_LAZY_TARGETS: frozenset[tuple[str, str]] = frozenset({
     ("servers", "mgmt_password_encrypted"),
     ("vms", "mgmt_ssh_private_key_encrypted"),
     ("vms", "mgmt_password_encrypted"),
+    ("acs_settings", "acs_password_encrypted"),
 })
 
 

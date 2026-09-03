@@ -18,7 +18,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useQuery } from "@/api/auth/useQuery";
-import { apiErrMsg } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import { isPlatformWideAdmin } from "@/lib/rbac";
@@ -34,6 +34,22 @@ import type { AcsSnapshot, OsVersion, Server } from "@/api/server/types";
 interface Props {
   serverId: string;
   server?: Server;
+}
+
+/**
+ * Коды ошибок, означающие «функция недоступна здесь», а не транзиентный сбой:
+ * `ACS_DISABLED` — платформенно выключено в `/settings/acs`; `ACS_DEPARTMENT_
+ * NOT_ENABLED` — включено платформенно, но не для отдела этого сервера. В
+ * обоих случаях повторный запрос ничего не изменит — блок управления снимками
+ * прячем целиком, а не показываем неактивные кнопки с ошибкой. Реальные
+ * сетевые сбои ACS (`ACS_TIMEOUT`/`ACS_UNREACHABLE`/`ACS_ERROR`) сюда не
+ * попадают — для них retry имеет смысл.
+ */
+function isAcsUnavailableError(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    (err.errorCode === "ACS_DISABLED" || err.errorCode === "ACS_DEPARTMENT_NOT_ENABLED")
+  );
 }
 
 /** Кто может создавать снимки ACS: server.admin/operator своей зоны или dep_admin своего отдела. */
@@ -61,6 +77,7 @@ export function AcsSnapshotsTab({ serverId, server }: Props) {
     { keepPreviousDataOnError: true },
   );
   const snapshots = snapsQ.data ?? [];
+  const acsUnavailable = isAcsUnavailableError(snapsQ.error) && snapshots.length === 0;
 
   const versionsQ = useQuery<OsVersion[]>(
     async () => (await listOsVersions({ limit: 200 })).items,
@@ -110,6 +127,22 @@ export function AcsSnapshotsTab({ serverId, server }: Props) {
     } catch (e) {
       toast.error(apiErrMsg(e, "Восстановление не удалось"));
     }
+  }
+
+  if (acsUnavailable) {
+    // ACS выключен платформенно либо не включён для отдела этого сервера —
+    // повторный запрос ничего не изменит, показывать кнопки создания/
+    // восстановления и пустой список бессмысленно. Прячем блок управления
+    // целиком, оставляя только факт «снимки здесь недоступны».
+    return (
+      <div className="p-5">
+        <div className="card text-xs text-dim flex items-center gap-2">
+          <Camera className="w-4 h-4 shrink-0" />
+          Снимки ACS недоступны для этого сервера — функция не включена
+          платформенно или для отдела сервера.
+        </div>
+      </div>
+    );
   }
 
   return (

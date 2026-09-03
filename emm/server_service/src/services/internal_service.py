@@ -41,6 +41,7 @@ from src.core.exceptions import (
     BadRequestError,
     ConflictError,
     NotFoundError,
+    ServiceUnavailableError,
 )
 from src.core.known_os import is_known_os
 from src.repositories import ipmi_controller as ipmi_repo
@@ -62,6 +63,8 @@ from src.schemas.internal import (
 )
 from src.schemas.internal import PowerStateCallbackRequest
 from src.schemas.server import (
+    AcsSnapshotCreatedCallbackRequest,
+    AcsSnapshotRestoreDoneCallbackRequest,
     ServerAstraUpdateCallbackRequest,
     ServerPrepareCallbackRequest,
 )
@@ -76,13 +79,22 @@ from src.schemas.vm import (
 from src.services import (
     audit_service,
     auto_inventory,
+    management_creds as management_creds_svc,
+    management_user_config as management_user_config_svc,
     metrics,
+    os_version_bootstrap_password as bootstrap_password_svc,
     permissions,
     secrets_service,
+    worker_client,
 )
 from src.services import server as server_svc
 from src.services import vm as vm_svc
-from src.utils.ids import os_version_id, server_disk_id, vm_snapshot_id
+from src.utils.ids import (
+    os_version_id,
+    prepare_creds_id,
+    server_disk_id,
+    vm_snapshot_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1860,6 +1872,16 @@ async def record_server_prepared(
         # снимаем флаг. fetch с этого момента отдаёт текущий материал.
         "mgmt_creds_pending_apply": False,
     }
+    if server.busy_state == BusyState.ACS:
+        # Этот prepare — авто-диспатч после успешного restore снимка ACS
+        # (`record_acs_snapshot_restore_done`), который намеренно держал
+        # busy_state=acs до сих пор. Обычный (не-ACS) prepare сюда не
+        # заходит: busy_state уже free/что угодно другое, ветка не трогает
+        # остальной прежний путь функции.
+        updates["busy_state"] = BusyState.FREE
+        updates["busy_user_id"] = None
+        updates["busy_since"] = None
+        updates["busy_note"] = None
     # `management_mode` пишем только если воркер его прислал — None оставляет
     # прежнее значение (старый воркер без детекта не должен затирать режим).
     if payload.management_mode is not None:
@@ -2009,6 +2031,310 @@ async def record_server_astra_updated(
         "ok": True,
         "os_version_id": applied_os_version_id,
         "busy_state": BusyState.FREE.value,
+    }
+
+
+async def record_acs_snapshot_created(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+    payload: AcsSnapshotCreatedCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Зафиксировать исход создания снимка диска через ACS (callback воркера).
+
+    Право: `(server, *, prepare_callback)` — тот же узкий грант, что у
+    prepared/astra-updated.
+
+    Снимает `busy_state=acs → free` в любом исходе — create (Clonezilla
+    save-disk) не переписывает диск сервера, он остаётся тем же самым
+    независимо от результата снятия снимка. Аудит `server.acs_snapshot_created`,
+    status = success/failure по `succeeded`.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server.acs_snapshot_created",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+    server = await server_repo.get_by_id(db, server_id)
+    if server is None:
+        audit_service.emit(
+            "server.acs_snapshot_created",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found"},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND", message="Server not found",
+        )
+    _check_target_department_for_server(
+        audit_action="server.acs_snapshot_created",
+        target_id=server_id,
+        server_department_id=server.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+    )
+
+    await server_repo.update(db, server, {
+        "busy_state": BusyState.FREE,
+        "busy_user_id": None,
+        "busy_since": None,
+        "busy_note": None,
+    })
+    await db.commit()
+
+    audit_service.emit(
+        "server.acs_snapshot_created",
+        target_id=server_id, target_type="server",
+        status="success" if payload.succeeded else "failure",
+        allowed=True,
+        details={
+            "succeeded": payload.succeeded,
+            "os_version_id": payload.os_version_id,
+            "snapshot_name": payload.snapshot_name,
+            "error": payload.error,
+            "department_id": server.department_id,
+            "caller_type": identity.subject_type,
+        },
+    )
+    return {"ok": True, "busy_state": BusyState.FREE.value}
+
+
+async def record_acs_snapshot_restore_done(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+    payload: AcsSnapshotRestoreDoneCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Зафиксировать исход восстановления снимка диска через ACS (callback воркера).
+
+    Право: `(server, *, prepare_callback)`.
+
+    Ключевое отличие от `record_server_astra_updated`: при `succeeded=True`
+    `busy_state=acs` НЕ снимается. Restore (Clonezilla restore-backup)
+    переписывает диск сервера целиком — управляющий SSH-ключ DBOS не
+    переживает reimage, поэтому вместо снятия блокировки server_service
+    резолвит bootstrap-пароль версии и сам диспатчит `server.prepare` тем же
+    Redis-механизмом (`prepare_creds_key`/`store_prepare_creds`), что и
+    обычный ручной prepare. Снимает блокировку только последующий callback
+    `prepared` (см. расширение `record_server_prepared`).
+
+    Пароль резолвится ЗДЕСЬ, а не на dispatch'е restore: dispatch лишь
+    проверял факт его существования (`get_bootstrap_password_status`) —
+    реальная расшифровка и Redis-стэш идут прямо перед dispatch'ем prepare,
+    так авто-prepare не зависит от TTL стэша, пережившего всё окно
+    restore+reachability (10-30 минут по опыту).
+
+    При `succeeded=False` — restore не удался, сервер остался на прежнем
+    диске: блокировка снимается сразу, prepare не диспатчится.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server.acs_snapshot_restore_done",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+    server = await server_repo.get_by_id(db, server_id)
+    if server is None:
+        audit_service.emit(
+            "server.acs_snapshot_restore_done",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found"},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND", message="Server not found",
+        )
+    _check_target_department_for_server(
+        audit_action="server.acs_snapshot_restore_done",
+        target_id=server_id,
+        server_department_id=server.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+    )
+
+    if not payload.succeeded:
+        await server_repo.update(db, server, {
+            "busy_state": BusyState.FREE,
+            "busy_user_id": None,
+            "busy_since": None,
+            "busy_note": None,
+        })
+        await db.commit()
+        audit_service.emit(
+            "server.acs_snapshot_restore_done",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "succeeded": False,
+                "os_version_id": payload.os_version_id,
+                "snapshot_name": payload.snapshot_name,
+                "error": payload.error,
+                "department_id": server.department_id,
+                "caller_type": identity.subject_type,
+            },
+        )
+        return {"ok": True, "busy_state": BusyState.FREE.value, "prepare_task_id": None}
+
+    # succeeded=True — держим busy_state=acs, только освежаем заметку;
+    # снимает блокировку последующий callback `prepared`, не мы здесь.
+    await server_repo.update(db, server, {
+        "busy_note": "подготовка после восстановления снимка",
+    })
+    await db.commit()
+
+    bootstrap = await bootstrap_password_svc.get_bootstrap_password_for_os_version(
+        db, payload.os_version_id,
+    )
+    if bootstrap is None:
+        # Пароль стёрли между dispatch'ем restore и этим callback'ом — редкий
+        # race (кто-то поменял/стёр пароль версии посреди многочасового
+        # restore). Диск уже переписан, откатывать нечего: сервер остаётся в
+        # acs с явной пометкой, оператор донастраивает пароль и запускает
+        # prepare вручную.
+        await server_repo.update(db, server, {
+            "busy_note": (
+                "восстановление завершено, bootstrap-пароль версии не задан — "
+                "настройте его в каталоге ОС и запустите prepare вручную"
+            ),
+        })
+        await db.commit()
+        audit_service.emit(
+            "server.acs_snapshot_restore_done",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "succeeded": True,
+                "reason": "bootstrap_password_missing_at_callback",
+                "os_version_id": payload.os_version_id,
+                "snapshot_name": payload.snapshot_name,
+                "department_id": server.department_id,
+            },
+        )
+        return {"ok": True, "busy_state": BusyState.ACS.value, "prepare_task_id": None}
+
+    mgmt_cfg = await management_user_config_svc.get_config(db)
+    _, mgmt_creds, _ = await management_creds_svc.ensure_management_credentials(db, server)
+
+    bootstrap_creds: dict = {
+        "bootstrap_login": bootstrap["ssh_username"],
+        "bootstrap_password": bootstrap["password"],
+        "mgmt_install": {
+            "management_user": mgmt_cfg.login,
+            "public_key": mgmt_creds["public_key"],
+            "private_key": mgmt_creds["private_key"],
+            "password": mgmt_creds["password"],
+        },
+    }
+    creds_key = worker_client.prepare_creds_key(prepare_creds_id())
+    try:
+        await worker_client.store_prepare_creds(creds_key, bootstrap_creds)
+    except ServiceUnavailableError:
+        audit_service.emit(
+            "server.acs_snapshot_restore_done",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "succeeded": True,
+                "reason": "creds_store_unavailable",
+                "os_version_id": payload.os_version_id,
+                "department_id": server.department_id,
+            },
+        )
+        raise
+    except Exception as exc:  # noqa: BLE001 — любой runtime-фейл Redis
+        await worker_client.delete_prepare_creds(creds_key)
+        audit_service.emit(
+            "server.acs_snapshot_restore_done",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "succeeded": True,
+                "reason": "creds_store_failed",
+                "os_version_id": payload.os_version_id,
+                "department_id": server.department_id,
+                "error_class": type(exc).__name__,
+            },
+        )
+        raise ServiceUnavailableError(
+            error_code="WORKER_REDIS_UNAVAILABLE",
+            message="Failed to stash bootstrap credentials for auto-prepare after restore",
+        ) from exc
+
+    management_modes = {
+        mode.value: cfg.model_dump(mode="json")
+        for mode, cfg in mgmt_cfg.modes.items()
+    }
+    prepare_payload = {
+        "server_id": server.id,
+        "target_department_id": server.department_id,
+        "host": str(server.ip_address),
+        "ssh_port": server.ssh_port,
+        "is_managed": server.is_managed,
+        "management_user": server.management_user,
+        "management_login": mgmt_cfg.login,
+        "management_modes": management_modes,
+        "bootstrap_creds_key": creds_key,
+    }
+    try:
+        prepare_task_id = await worker_client.dispatch_task(
+            db=db,
+            task_kind="server.prepare",
+            target_server_id=server.id,
+            payload=prepare_payload,
+            created_by=identity.user_id,
+            request_id=None,
+        )
+        await db.commit()
+    except (ConflictError, ServiceUnavailableError) as exc:
+        await worker_client.delete_prepare_creds(creds_key)
+        reason = (
+            "idempotent_conflict" if isinstance(exc, ConflictError) else "worker_unreachable"
+        )
+        audit_service.emit(
+            "server.acs_snapshot_restore_done",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "succeeded": True,
+                "reason": reason,
+                "os_version_id": payload.os_version_id,
+                "department_id": server.department_id,
+            },
+        )
+        raise
+
+    audit_service.emit(
+        "server.acs_snapshot_restore_done",
+        target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "succeeded": True,
+            "os_version_id": payload.os_version_id,
+            "snapshot_name": payload.snapshot_name,
+            "prepare_task_id": prepare_task_id,
+            "department_id": server.department_id,
+            "caller_type": identity.subject_type,
+        },
+    )
+    return {
+        "ok": True,
+        "busy_state": BusyState.ACS.value,
+        "prepare_task_id": prepare_task_id,
     }
 
 

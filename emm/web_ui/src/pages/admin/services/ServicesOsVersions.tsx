@@ -28,6 +28,7 @@ import {
   createOsVersion,
   deleteOsVersion,
   listOsVersions,
+  resolveOsVersionRepositories,
   updateOsVersion,
 } from "@/api/server/osVersions";
 import type {
@@ -310,6 +311,7 @@ export function OsVersionForm({
   const [reposText, setReposText] = useState(
     (existing?.repositories ?? []).join("\n"),
   );
+  const [buildVersion, setBuildVersion] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -353,8 +355,19 @@ export function OsVersionForm({
           description: description.trim() || undefined,
           repositories: repos,
         };
-        await createOsVersion(body);
+        const created = await createOsVersion(body);
         toast.success("Версия зарегистрирована");
+        const build = buildVersion.trim();
+        if (build) {
+          try {
+            await resolveOsVersionRepositories(created.id, build);
+            toast.success("Репозитории подтянуты по build-версии");
+          } catch (resolveErr) {
+            // Версия уже создана — резолв репозиториев best-effort, фейл не
+            // откатывает создание. Оператор донаполнит репозитории вручную.
+            toast.error(apiErrMsg(resolveErr));
+          }
+        }
       }
       onDone();
     } catch (e) {
@@ -391,9 +404,22 @@ export function OsVersionForm({
             onChange={(e) => setDescription(e.target.value)}
           />
         </FormRow>
+        {!isEdit && (
+          <FormRow
+            label="build-версия"
+            hint="необязательно · подтянуть репозитории автоматически сразу после создания (не блокирует создание при неудаче)"
+          >
+            <input
+              className="input mono"
+              value={buildVersion}
+              onChange={(e) => setBuildVersion(e.target.value)}
+              placeholder="186rc30"
+            />
+          </FormRow>
+        )}
         <FormRow
           label="repositories"
-          hint="по одному http(s)-URL на строку · до 64 штук"
+          hint="по одному http(s)-URL на строку · до 64 штук · заполнится сама, если указана build-версия выше"
         >
           <textarea
             className="input mono text-xs"

@@ -1062,6 +1062,110 @@ async def submit_box_download_state(
     )
 
 
+async def get_acs_settings() -> dict:
+    """Прочитать конфиг доступа к ACS (url + расшифрованный пароль).
+
+    `acs.snapshot_create`/`acs.snapshot_restore` ходят в ACS напрямую (не через
+    server_service-прокси) — worker должен сам пережить многоминутное окно,
+    пока ACS рулит ребутом/PXE. Отсюда worker берёт только транспортные
+    данные; сам `stand_name`/`version_name` кладёт в task payload
+    server_service на dispatch'е. Прогон платформенный, `X-Target-Department-Id`
+    не шлём.
+
+    Возвращает: `{acs_url, acs_password}` от
+    `GET /api/server/v1/internal/settings/acs`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `ACS_SETTINGS_UNAVAILABLE` — server_service вернул не 2xx. В том
+        числе 503 `ACS_DISABLED`, когда снимки через ACS выключены/не
+        настроены — эндпоинт не отдаёт отдельное поле `enabled`, отказ
+        самого вызова и есть сигнал «ACS сейчас недоступна».
+    """
+    return await _request(
+        "get",
+        "/api/server/v1/internal/settings/acs",
+        reject_code="ACS_SETTINGS_UNAVAILABLE",
+    )
+
+
+async def submit_acs_snapshot_created(
+    server_id: str,
+    os_version_id: str,
+    snapshot_name: str,
+    succeeded: bool,
+    target_department_id: str | None = None,
+    *,
+    error_message: str | None = None,
+) -> dict:
+    """Сообщить server_service исход создания ACS-снимка (`acs.snapshot_create`).
+
+    ACS принимает `save-disk` асинхронно (сама рулит ребутом в Clonezilla и
+    обратно); worker считает операцию завершённой, когда сервер снова отвечает
+    по сети. `succeeded=True` — reachability вернулась в пределах окна ожидания.
+    `succeeded=False` — ACS отказала на приём задачи или сервер не вернулся
+    вовремя; `error_message` несёт причину для audit/оператора.
+
+    Возвращает: тело
+    `POST /api/server/v1/internal/servers/{id}/acs-snapshot-created`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `ACS_SNAPSHOT_CREATED_REJECTED` — server_service вернул не 2xx.
+    """
+    body: dict = {"os_version_id": os_version_id, "snapshot_name": snapshot_name, "succeeded": succeeded}
+    if error_message is not None:
+        body["error"] = error_message
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/acs-snapshot-created",
+        reject_code="ACS_SNAPSHOT_CREATED_REJECTED",
+        target_department_id=target_department_id,
+        json=body,
+        details={"server_id": server_id},
+        allow_empty_body=True,
+    )
+
+
+async def submit_acs_snapshot_restore_done(
+    server_id: str,
+    os_version_id: str,
+    snapshot_name: str,
+    succeeded: bool,
+    target_department_id: str | None = None,
+    *,
+    error_message: str | None = None,
+) -> dict:
+    """Сообщить server_service исход восстановления ACS-снимка (`acs.snapshot_restore`).
+
+    Restore переписывает диск целиком — управляющий SSH-ключ не переживает
+    reimage, поэтому worker здесь НЕ вызывает `server.prepare` сам и не снимает
+    `busy_state`. Он только честно докладывает факт: сервер снова отвечает по
+    сети (`succeeded=True`) либо ACS отказала/сервер не вернулся в срок
+    (`succeeded=False` + `error_message`). Дальнейшее (авто-prepare, снятие
+    busy_state) — ответственность server_service на этом callback'е.
+
+    Возвращает: тело
+    `POST /api/server/v1/internal/servers/{id}/acs-snapshot-restore-done`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `ACS_SNAPSHOT_RESTORE_DONE_REJECTED` — server_service вернул не 2xx.
+    """
+    body: dict = {"os_version_id": os_version_id, "snapshot_name": snapshot_name, "succeeded": succeeded}
+    if error_message is not None:
+        body["error"] = error_message
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/acs-snapshot-restore-done",
+        reject_code="ACS_SNAPSHOT_RESTORE_DONE_REJECTED",
+        target_department_id=target_department_id,
+        json=body,
+        details={"server_id": server_id},
+        allow_empty_body=True,
+    )
+
+
 async def submit_rotated_ipmi_password(
     ipmi_controller_id: str,
     new_password: str,

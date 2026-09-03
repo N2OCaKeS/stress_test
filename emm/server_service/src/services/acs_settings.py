@@ -149,6 +149,19 @@ async def get_acs_settings_for_worker(
             message="ACS snapshots are disabled or not configured",
         )
 
+    acs_url, acs_password = await _resolve_credentials(db, row)
+    return AcsInternalSettingsResponse(acs_url=acs_url, acs_password=acs_password)
+
+
+async def _resolve_credentials(db: AsyncSession, row: AcsSettings) -> tuple[str, str]:
+    """Расшифрованные (url, password) уже загруженной строки `AcsSettings`.
+
+    Общий хвост для worker-read (`get_acs_settings_for_worker`, гейт
+    `prepare_callback`) и прямого server_service-чтения (`get_acs_credentials`,
+    список снимков сервера) — оба гоняют свой permission/availability-check
+    выше по стеку, здесь только расшифровка + lazy-переширфровка протухшего
+    конверта.
+    """
     result = secrets_service.decrypt_with_meta(
         row.acs_password_encrypted, aad=secrets_service.aad_for_acs_password(SINGLETON_ID)
     )
@@ -162,11 +175,44 @@ async def get_acs_settings_for_worker(
             plaintext=result.plaintext,
             aad=secrets_service.aad_for_acs_password(SINGLETON_ID),
         )
+    return row.acs_url, result.plaintext
 
-    return AcsInternalSettingsResponse(acs_url=row.acs_url, acs_password=result.plaintext)
+
+async def get_acs_credentials(db: AsyncSession) -> tuple[str, str]:
+    """(url, password) ACS для синхронных вызовов из server_service, не через worker.
+
+    Caller — `GET /servers/{id}/acs-snapshots` (живой список снимков читается
+    прямо здесь, без dispatch в worker). Permission (`acs_snapshot_list`) и
+    доступность (platform+department, `_ensure_acs_available` в
+    `worker_dispatch.py`) уже проверены выше по стеку — здесь только чтение
+    строки настроек + расшифровка. 503 `ACS_DISABLED`, если строки нет /
+    выключено / не заполнено (тот же контракт, что у worker-read).
+    """
+    row = await _get_row(db)
+    if row is None or not row.enabled or not row.acs_url or not row.acs_password_encrypted:
+        raise ServiceUnavailableError(
+            error_code="ACS_DISABLED",
+            message="ACS snapshots are disabled or not configured",
+        )
+    return await _resolve_credentials(db, row)
 
 
 # ── AcsDepartmentAccess (per-department opt-in) ─────────────────────────────
+
+
+async def is_department_acs_enabled(db: AsyncSession, department_id: str) -> bool:
+    """True iff отделу явно включён доступ к снимкам ACS.
+
+    Узкая точечная проверка для dispatch create/restore — в отличие от
+    `list_acs_department_access`, не тянет полный список кандидатов, только
+    факт по одному department_id. Отсутствие строки — как и выключенный флаг —
+    трактуется как «доступа нет» (дефолт closed).
+    """
+    stmt = select(AcsDepartmentAccess).where(
+        AcsDepartmentAccess.department_id == department_id
+    )
+    row = (await db.execute(stmt)).scalar_one_or_none()
+    return bool(row is not None and row.is_enabled)
 
 
 async def list_acs_department_access(db: AsyncSession) -> AcsDepartmentAccessListResponse:

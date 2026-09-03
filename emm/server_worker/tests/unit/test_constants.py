@@ -34,6 +34,7 @@ class TestTaskKind:
             "vm.account_provision", "vm.account_update_on_host",
             "vm.account_deprovision",
             "box.download",
+            "acs.snapshot_create", "acs.snapshot_restore",
         }
 
     def test_dot_namespaced(self):

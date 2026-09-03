@@ -84,6 +84,27 @@ export function deleteOsVersion(id: string): Promise<void> {
   return apiDelete<void>(`/server/v1/os-versions/${id}`);
 }
 
+/**
+ * `POST /api/server/v1/os-versions/{id}/resolve-repositories` — перестроить
+ * `repositories` версии из индекса релизов по build-версии.
+ *
+ * Порт легаси `ReleaseToRepo`. Требует то же право, что и `update`. Версия
+ * каталога не найдена → 404 `OS_VERSION_NOT_FOUND`; build-версия
+ * отсутствует в индексе релизов → 404 `OS_RELEASE_NOT_FOUND`; индекс
+ * недоступен/битый → 503 `OS_RELEASES_INDEX_UNAVAILABLE` /
+ * `OS_RELEASES_INDEX_INVALID`. Отдаёт полную обновлённую карточку версии
+ * (не отдельный список репозиториев) — сам объект версии resolve не меняет,
+ * пишет только `repositories`.
+ */
+export function resolveOsVersionRepositories(
+  id: string,
+  buildVersion: string,
+): Promise<OsVersion> {
+  return apiPost<OsVersion>(`/server/v1/os-versions/${id}/resolve-repositories`, {
+    build_version: buildVersion,
+  });
+}
+
 // ── server-side os-sync ────────────────────────────────────────────────────
 
 /**

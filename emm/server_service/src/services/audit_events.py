@@ -169,11 +169,14 @@ SERVICE_EVENTS = [
     {"action": "server.acs_snapshot_list", "description": "ACS snapshot list read for a server (live directory listing from ACS, no local table)", "default_severity": "INFO"},
     {"action": "server.acs_snapshot_create", "description": "ACS snapshot create dispatched to worker (Clonezilla save-disk); sets busy_state=acs", "default_severity": "CRITICAL"},
     {"action": "server.acs_snapshot_restore", "description": "ACS snapshot restore dispatched to worker (Clonezilla restore-backup); sets busy_state=acs; full disk rewrite, followed by an automatic server.prepare on completion", "default_severity": "CRITICAL"},
+    {"action": "server.acs_snapshot_created", "description": "Worker reported ACS snapshot create outcome (callback clears busy_state=acs regardless of outcome)", "default_severity": "CRITICAL"},
+    {"action": "server.acs_snapshot_restore_done", "description": "Worker reported ACS snapshot restore outcome. On success busy_state=acs is kept and an automatic server.prepare is dispatched against the fresh image; on failure busy_state clears to free", "default_severity": "CRITICAL"},
     # OS versions — глобальный каталог. Чтение доступно любому
     # аутентифицированному актору, без аудита; пишутся только мутации.
     {"action": "os_version.create", "description": "OS version catalog entry created", "default_severity": "INFO"},
     {"action": "os_version.update", "description": "OS version updated", "default_severity": "INFO"},
     {"action": "os_version.delete", "description": "OS version deleted", "default_severity": "WARNING"},
+    {"action": "os_version.bootstrap_password_updated", "description": "Bootstrap password for an OS version catalog entry set/replaced (used for the automatic server.prepare after an ACS snapshot restore)", "default_severity": "WARNING"},
     {"action": "os.unknown_observed", "description": "Inventory callback принёс os_version, не прошедший whitelist KNOWN_OS_PREFIXES. Запись в os_versions НЕ создаётся, server.os_version_id остаётся прежним", "default_severity": "WARNING"},
     # Макросы консоли (личные + системные в отделе). См. services/console_macro.py.
     {"action": "console_macro.create", "description": "Console macro created (personal or system/department-wide). details: is_system, name", "default_severity": "INFO"},

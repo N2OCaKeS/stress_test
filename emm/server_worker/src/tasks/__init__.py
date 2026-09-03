@@ -1,6 +1,7 @@
 """Точки входа task'ов — импорт этого пакета регистрирует всё на broker'е."""
 
 from src.tasks import (  # noqa: F401
+    acs_snapshots,
     astra_update,
     box_download,
     dispatch_outbox,

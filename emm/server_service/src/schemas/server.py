@@ -527,6 +527,36 @@ class ServerAstraUpdateRequest(BaseModel):
     )
 
 
+class ServerAcsSnapshotCreateRequest(BaseModel):
+    """Тело POST /servers/{id}/acs-snapshots — создать снимок диска через ACS.
+
+    `os_version_id` — версия каталога, под которой создаётся снимок (для
+    именования/группировки снимков по РЦ; сам снимок делается не через apt,
+    репозитории версии тут не участвуют). Версия обязана существовать —
+    иначе 404 до постановки задачи.
+    """
+
+    os_version_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="Версия каталога ОС, под которой создаётся снимок (prefix osv_).",
+    )
+
+
+class ServerAcsSnapshotRestoreRequest(BaseModel):
+    """Тело POST /servers/{id}/acs-snapshots/restore — восстановить снимок через ACS.
+
+    `os_version_id` — версия каталога, к снимку которой откатываемся; тем же
+    полем резолвится bootstrap-пароль (`os_version_bootstrap_passwords`) для
+    авто-`server.prepare`, который стартует сразу после успешного restore.
+    Восстановление — полная перезапись диска, необратимо.
+    """
+
+    os_version_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="Версия каталога ОС, к снимку которой восстанавливаемся (prefix osv_).",
+    )
+
+
 class ServerPrepareRequest(BaseModel):
     """Тело POST /servers/{id}/prepare — bootstrap-креды для онбординга.
 
@@ -863,6 +893,67 @@ class ServerPrepareBatchResponse(BaseModel):
     )
 
 
+class ServerAcsSnapshotBatchRequest(BaseModel):
+    """Тело POST /servers/acs-snapshots/{create,restore}-batch.
+
+    В отличие от prepare-batch, кред тут нет — только список серверов и одна
+    версия каталога ОС на весь батч (снимок создаётся/восстанавливается под
+    одной и той же РЦ для всех выбранных серверов). Фронт сам исключает
+    VMS-hub серверы из `server_ids` чекбоксом "выбрать все, кроме VMS-hub" —
+    бэкенд всё равно отбивает затесавшийся hub per-server (`SERVER_IS_VMS_HUB`),
+    без доп. логики под сам чекбокс. Дубли `server_id` → 422.
+    """
+
+    server_ids: list[str] = Field(
+        ..., min_length=1,
+        description="Серверы, на которые ставится задача, по одному task на сервер.",
+    )
+    os_version_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="Версия каталога ОС, под которой создаётся/восстанавливается снимок (prefix osv_).",
+    )
+
+    @model_validator(mode="after")
+    def _check_unique_servers(self) -> "ServerAcsSnapshotBatchRequest":
+        if len(self.server_ids) != len(set(self.server_ids)):
+            raise ValueError("duplicate server_id in acs-snapshot batch")
+        return self
+
+
+class ServerAcsSnapshotBatchResponse(BaseModel):
+    """Ответ batch create/restore ACS — per-server dispatched/failed + batch_id.
+
+    Форма идентична `ServerPrepareBatchResponse` — переиспользуем те же
+    per-server элементы (`ServerBatchDispatched`/`ServerBatchFailed`).
+    """
+
+    batch_id: str = Field(description="ID батча (prefix bat_).")
+    dispatched: list[ServerBatchDispatched] = Field(
+        default_factory=list,
+        description="Успешно поставленные задачи (task_id / server_id / server_name).",
+    )
+    failed: list[ServerBatchFailed] = Field(
+        default_factory=list,
+        description="Серверы, на которые задача не поставлена, с причиной в `reason`.",
+    )
+
+
+class AcsSnapshotItem(BaseModel):
+    """Один снимок ACS, принадлежащий конкретному серверу (по префиксу имени)."""
+
+    name: str = Field(description="Полное имя снимка на ACS (`{hostname}-{version_name}`).")
+    version_name: str = Field(description="Хвост имени после `{hostname}-` — версия РЦ снимка.")
+
+
+class AcsSnapshotListResponse(BaseModel):
+    """Ответ GET /servers/{id}/acs-snapshots — снимки этого сервера на ACS."""
+
+    snapshots: list[AcsSnapshotItem] = Field(
+        default_factory=list,
+        description="Снимки этого сервера (по префиксу hostname), отсортированы по имени.",
+    )
+
+
 class ServerCleanRequest(BaseModel):
     """Тело POST /servers/{id}/clean — оркестрация очистки после переустановки ОС.
 
@@ -1030,3 +1121,73 @@ class ServerAstraUpdateCallbackResponse(BaseModel):
         description="Привязанная версия ОС (None, если обновление упало).",
     )
     busy_state: str = Field(description="Итоговое busy_state сервера (обычно free).")
+
+
+class AcsSnapshotCreatedCallbackRequest(BaseModel):
+    """Тело POST /internal/servers/{id}/acs-snapshot-created — callback воркера.
+
+    Воркер сообщает исход создания снимка (Clonezilla save-disk). В любом
+    исходе снимает `busy_state=acs → free` — create не переписывает диск,
+    сервер свободен независимо от результата.
+    """
+
+    os_version_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="Версия каталога ОС, под которой создавался снимок.",
+    )
+    snapshot_name: str | None = Field(
+        default=None, max_length=256,
+        description="Имя созданного снимка в ACS, если операция дошла до этой стадии.",
+    )
+    succeeded: bool = Field(description="True — снимок создан; False — ACS вернул ошибку.")
+    error: str | None = Field(
+        default=None, max_length=2048,
+        description="Текст ошибки ACS/reachability-таймаута, если succeeded=False.",
+    )
+
+
+class AcsSnapshotCreatedCallbackResponse(BaseModel):
+    """Подтверждение записи acs-snapshot-created callback'а."""
+
+    ok: bool = True
+    busy_state: str = Field(description="Итоговое busy_state сервера (всегда free).")
+
+
+class AcsSnapshotRestoreDoneCallbackRequest(BaseModel):
+    """Тело POST /internal/servers/{id}/acs-snapshot-restore-done — callback воркера.
+
+    Воркер сообщает исход восстановления снимка (Clonezilla restore-backup).
+    `succeeded=True` — сервер снова доступен по SSH под старым/дефолтным
+    образом: server_service резолвит bootstrap-пароль версии
+    (`os_version_bootstrap_passwords`) и сам диспатчит `server.prepare`,
+    `busy_state=acs` остаётся выставленным до его завершения. `succeeded=False`
+    — восстановление не состоялось, сервер остался на прежнем диске,
+    `busy_state` снимается сразу.
+    """
+
+    os_version_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="Версия каталога ОС, к снимку которой восстанавливались.",
+    )
+    snapshot_name: str | None = Field(
+        default=None, max_length=256,
+        description="Имя восстановленного снимка в ACS.",
+    )
+    succeeded: bool = Field(description="True — сервер восстановлен и снова по SSH; False — restore упал.")
+    error: str | None = Field(
+        default=None, max_length=2048,
+        description="Текст ошибки ACS/reachability-таймаута, если succeeded=False.",
+    )
+
+
+class AcsSnapshotRestoreDoneCallbackResponse(BaseModel):
+    """Подтверждение записи acs-snapshot-restore-done callback'а."""
+
+    ok: bool = True
+    busy_state: str = Field(
+        description="Итоговое busy_state сервера (acs — ждём auto-prepare, free — restore упал)."
+    )
+    prepare_task_id: str | None = Field(
+        default=None,
+        description="task_id авто-диспатченного server.prepare (только при succeeded=True).",
+    )

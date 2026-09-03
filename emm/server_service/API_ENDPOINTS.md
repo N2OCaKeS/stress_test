@@ -548,6 +548,48 @@ Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT
 
 ---
 
+## ACS snapshots (полные снимки диска физического сервера)
+
+Своей таблицы снимков нет — ACS (внешняя Clonezilla-обёртка) сам хранит директорию. Платформенный кил-свитч `AcsSettings.enabled` + per-department opt-in `AcsDepartmentAccess` (`/settings/acs`, account_admin) — оба гейта поверх обычной action-матрицы, проверяются `_ensure_acs_available`. `busy_state=acs` сериализует конкурентные операции над сервером.
+
+### `POST /servers/{server_id}/acs-snapshots` (worker dispatch)
+
+Auth: Bearer + `(server, *, acs_snapshot_create)` (инстанс-грантуемое). Ставит `acs.snapshot_create`: ACS снимает полный образ диска (`stand_name=hostname`). Сервер обязан быть prepared (`PREPARE_REQUIRED`, если нет). `busy_state=acs` снимается в любом исходе callback'а — create не переписывает диск.
+
+Errors: `PERMISSION_DENIED` (403, в т.ч. `ACS_DEPARTMENT_NOT_ENABLED`), `SERVER_NOT_FOUND` / `OS_VERSION_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `SERVER_IS_VMS_HUB` / `SERVER_RESERVED` / `SERVER_UPDATING` / `SERVER_ACS_BUSY` / `PREPARE_REQUIRED` / `TASK_IDEMPOTENT_CONFLICT` (409), `ACS_DISABLED` / `WORKER_UNREACHABLE` (503).
+
+### `POST /servers/{server_id}/acs-snapshots/restore` (worker dispatch)
+
+Auth: Bearer + тип-wide `(server, *, acs_snapshot_restore)` — из `_NON_INSTANCE_ACTIONS`, инстанс-грант невозможен, только системный `admin`. Ставит `acs.snapshot_restore`: ACS полностью переписывает диск снимком версии `os_version_id`. Необратимо. Требует заранее заведённый bootstrap-пароль версии (`PUT /os-versions/{id}/bootstrap-password`) — без него после reimage авто-`server.prepare` зайти будет нечем. Prepared-gate НЕ применяется (restore — это и есть recovery-путь для сломанного/не managed сервера). `busy_state=acs` при успехе держится до завершения авто-prepare (callback `record_acs_snapshot_restore_done`).
+
+Errors: `PERMISSION_DENIED` (403, тип-wide, в т.ч. `ACS_DEPARTMENT_NOT_ENABLED`), `SERVER_NOT_FOUND` / `OS_VERSION_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `SERVER_IS_VMS_HUB` / `SERVER_RESERVED` / `SERVER_UPDATING` / `SERVER_ACS_BUSY` / `ACS_BOOTSTRAP_PASSWORD_MISSING` / `TASK_IDEMPOTENT_CONFLICT` (409), `ACS_DISABLED` / `WORKER_UNREACHABLE` (503).
+
+### `GET /servers/{server_id}/acs-snapshots`
+
+Auth: Bearer + `(server, *, acs_snapshot_list)` (инстанс-грантуемое). Живой directory listing: читает `ACSClient.list_snapshots` (все снимки всех серверов на ACS) и фильтрует по префиксу `{hostname}-` этого сервера; `version_name` — хвост имени после префикса. Ничего не диспатчит воркеру, читает ACS синхронно. Ошибки ACS (timeout/unreachable/HTTP-ошибка) пробрасываются как есть.
+
+Response: `{snapshots: [{name, version_name}]}`, отсортировано по `name`.
+
+Audit: `server.acs_snapshot_list` (INFO) — на success и failure.
+
+Errors: `PERMISSION_DENIED` (403, в т.ч. `ACS_DEPARTMENT_NOT_ENABLED`), `SERVER_NOT_FOUND` (404), `ACS_DISABLED` / `ACS_TIMEOUT` / `ACS_UNREACHABLE` / `ACS_ERROR` (503).
+
+### `POST /servers/acs-snapshots/create-batch` (worker dispatch)
+
+Auth: Bearer. `ACS_SNAPSHOT_CREATE` инстанс-грантуем, поэтому право проверяется НА КАЖДЫЙ `server_id` отдельно (не один раз на весь батч, в отличие от prepare-batch с `update`). Body: `{server_ids:[...], os_version_id}` — одна версия каталога на весь батч (снимок создаётся под одной РЦ для всех выбранных серверов). Per-server гейты идентичны single-dispatch (decommissioned / vms-hub / acs-busy / reservation / prepared-gate / ACS-доступность / каталог-версия) и не валят батч — уходят в `failed`. Глобальная недоступность ACS/воркера помечает упавший сервер причиной, остаток — `not_attempted`. Фронт сам исключает VMS-hub сервера из `server_ids` чекбоксом «выбрать все, кроме VMS-hub» — бэкенд всё равно защищён (`SERVER_IS_VMS_HUB`), если хаб всё же попал в список.
+
+Response: `{batch_id, dispatched: [{server_id, server_name, task_id, status}], failed: [{server_id, server_name, reason}]}`. `reason`: `not_found_or_cross_dept` / `permission_denied` / `decommissioned` / `server_is_vms_hub` / `reserved` / `updating` / `acs_busy` / `prepare_required` / `acs_disabled` / `acs_department_not_enabled` / `os_version_not_found` / `idempotent_conflict` / `worker_unreachable` / `not_attempted`.
+
+Errors: `ACS_SNAPSHOT_BATCH_TOO_LARGE` (413, превышен `bulk_prepare_max_servers` — лимит переиспользован из prepare-batch), `422` (дубли server_id).
+
+### `POST /servers/acs-snapshots/restore-batch` (worker dispatch)
+
+Auth: Bearer + тип-wide `(server, *, acs_snapshot_restore)`, проверяется ОДИН раз на весь батч (симметрично prepare-batch с `update`) — в отличие от create-batch. Body/ответ/cap идентичны create-batch, `task_kind=acs.snapshot_restore`, `reason` дополнительно несёт `bootstrap_password_missing`. Необратимо для каждого сервера в списке.
+
+Errors: `PERMISSION_DENIED` (403, весь батч), `ACS_SNAPSHOT_BATCH_TOO_LARGE` (413), `422` (дубли server_id).
+
+---
+
 ## OS versions (`/os-versions`)
 
 Глобальный каталог без dept-привязки. Чтение доступно любому аутентифицированному актору (токен обязателен, без проверки доступа департамента к server_service), запись — под матрицей.

@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   AlertCircle,
   Play,
+  Camera,
   ListChecks,
   MonitorPlay,
   ChevronDown,
@@ -54,6 +55,7 @@ import { reservedErrorMessage } from "@/pages/server/_serverShared";
 import { EntityRow } from "@/components/entity/EntityRow";
 import { ReachRowBadge, PowerStateBadge } from "@/components/entity/signals";
 import { BulkPrepareModal } from "@/pages/server/_bulkPrepareModal";
+import { BulkAcsSnapshotModal } from "@/pages/server/_bulkAcsSnapshotModal";
 import { listDepartments } from "@/api/auth/departments";
 import { useDeptLabel } from "@/lib/labels";
 import {
@@ -112,6 +114,7 @@ export function Server() {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkPrepareOpen, setBulkPrepareOpen] = useState(false);
+  const [bulkAcsOpen, setBulkAcsOpen] = useState(false);
 
   // server_service возвращает серверы своего отдела (изоляция по identity) и
   // не принимает dept/status/busy как query-фильтры — поэтому тянем страницу
@@ -519,6 +522,16 @@ export function Server() {
               <Play className="w-4 h-4" /> Подготовить выбранные ({selected.size})
             </button>
           )}
+          {selectMode && (
+            <button
+              className="btn w-full flex items-center justify-center gap-2"
+              onClick={() => setBulkAcsOpen(true)}
+              disabled={selected.size === 0}
+              title="Массовое создание/восстановление снимков ACS выбранных серверов"
+            >
+              <Camera className="w-4 h-4" /> Снимки ACS выбранных ({selected.size})
+            </button>
+          )}
           <button
             className="btn btn-primary w-full flex items-center justify-center gap-2"
             onClick={startCreate}
@@ -584,6 +597,17 @@ export function Server() {
         <BulkPrepareModal
           servers={selectedServers}
           onClose={() => setBulkPrepareOpen(false)}
+          onDone={() => {
+            setSelected(new Set());
+            listQ.refetch();
+          }}
+        />
+      )}
+
+      {bulkAcsOpen && selectedServers.length > 0 && (
+        <BulkAcsSnapshotModal
+          servers={selectedServers}
+          onClose={() => setBulkAcsOpen(false)}
           onDone={() => {
             setSelected(new Set());
             listQ.refetch();
@@ -802,13 +826,20 @@ function ServerRow({
   onToggleChecked: () => void;
 }) {
   const deptLabel = useDeptLabel(server.department_id);
-  const busyChipKind: "ok" | "warn" = server.busy_state === "free" ? "ok" : "warn";
+  const busyChipKind: "ok" | "warn" | "accent" =
+    server.busy_state === "free"
+      ? "ok"
+      : server.busy_state === "acs"
+        ? "accent"
+        : "warn";
   const busyChipLabel =
     server.busy_state === "free"
       ? "free"
       : server.busy_state === "testing"
         ? "test"
-        : "busy";
+        : server.busy_state === "acs"
+          ? "ACS"
+          : "busy";
   const name = server.display_name ?? server.hostname;
   const { Icon: RowIcon, title: iconTitle } = serverRowIcon(server);
   // VMS-hub — не обычный сервер, а несущий ВМ узел: помечаем и подписью.

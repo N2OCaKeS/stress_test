@@ -795,6 +795,50 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── ACS snapshots (Clonezilla-обёртка) ────────────────────────────────
+    # `acs.snapshot_create`/`acs.snapshot_restore` зовут ACS напрямую (не
+    # через server_service-прокси) и дальше сами поллят reachability
+    # сервера — ACS ребутит бокс в Clonezilla-окружение и обратно, worker
+    # должен пережить это окно одной задачей.
+    acs_request_timeout_seconds: float = Field(
+        default=30.0,
+        gt=0.0,
+        description=(
+            "Timeout on the ACS save-disk/restore-backup HTTP call itself. "
+            "ACS отвечает сразу (задача асинхронная на её стороне), поэтому "
+            "долгий timeout тут не нужен — 30s с запасом на медленный TLS/DNS."
+        ),
+    )
+    acs_reachability_poll_interval_seconds: float = Field(
+        default=15.0,
+        gt=0.0,
+        description=(
+            "Пауза между пробами ping/ssh при ожидании ухода сервера в "
+            "Clonezilla и возврата обратно после ACS snapshot/restore."
+        ),
+    )
+    acs_down_wait_seconds: float = Field(
+        default=300.0,
+        gt=0.0,
+        description=(
+            "Сколько ждать, что сервер уйдёт в Clonezilla (перестанет отвечать "
+            "на ping/ssh) после того, как ACS приняла save-disk/restore-backup. "
+            "Best-effort: если не дождались — не валим задачу, а идём сразу к "
+            "ожиданию возврата (реальный ребут мог случиться между двумя "
+            "тиками поллинга)."
+        ),
+    )
+    acs_reachability_timeout_seconds: float = Field(
+        default=1800.0,
+        gt=0.0,
+        description=(
+            "Общий дедлайн ожидания, что сервер снова ответит на ping/ssh "
+            "после ACS snapshot/restore. По опыту снятие/восстановление "
+            "полного образа диска занимает 10-30 минут — дефолт 30 минут "
+            "с запасом. Не дождались — задача завершается ошибкой."
+        ),
+    )
+
     # ── Interactive SSH console (WebSocket bridge) ───────────────────────
     # Долгоживущая PTY-сессия: server_service публикует `start` на
     # `console:ctl:<sid>`, worker открывает SSH invoke_shell под управляющим

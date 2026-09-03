@@ -228,6 +228,19 @@ def aad_for_acs_password(settings_id: str) -> bytes:
     return f"acs_password|acs_settings|{settings_id}".encode()
 
 
+def aad_for_os_version_bootstrap_password(os_version_id: str) -> bytes:
+    """AAD для `os_version_bootstrap_passwords.password_encrypted` строки `os_version_id`.
+
+    Формат — `"os_version_bootstrap_password|os_version_bootstrap_passwords|<id>"`.
+    Привязывает ciphertext к конкретной версии каталога ОС: swap пароля между
+    версиями → InvalidTag.
+    """
+    return (
+        f"os_version_bootstrap_password|os_version_bootstrap_passwords|"
+        f"{os_version_id}"
+    ).encode()
+
+
 def aad_for_ipmi_credential(controller_id: str) -> bytes:
     """AAD для `ipmi_controllers.password_encrypted` строки `controller_id`.
 
@@ -387,6 +400,7 @@ _ALLOWED_LAZY_TARGETS: frozenset[tuple[str, str]] = frozenset({
     ("vms", "mgmt_ssh_private_key_encrypted"),
     ("vms", "mgmt_password_encrypted"),
     ("acs_settings", "acs_password_encrypted"),
+    ("os_version_bootstrap_passwords", "password_encrypted"),
 })
 
 

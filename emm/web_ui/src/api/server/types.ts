@@ -47,8 +47,8 @@ export type ServerStatus =
   | "maintenance"
   | "decommissioned";
 
-/** BusyState enum (`servers.busy_state`). */
-export type BusyState = "free" | "busy" | "testing" | "updating";
+/** BusyState enum (`servers.busy_state`). `acs` — идёт create/restore снимка ACS. */
+export type BusyState = "free" | "busy" | "testing" | "updating" | "acs";
 
 /** PowerState enum (`servers.power_state`). */
 export type PowerState = "on" | "off" | "unknown";
@@ -376,6 +376,80 @@ export interface ServerCleanResponse {
   update_os_version: ServerCleanActionResult;
   run_inventory_sync: ServerCleanActionResult;
   delete_vms: ServerCleanActionResult;
+}
+
+// ── acs-snapshots (полные снимки диска сервера через ACS) ─────────────────────
+
+/**
+ * Снимок диска сервера в ACS (не путать с `VmSnapshot` — тот про снимки ВМ).
+ * ACS группирует свои снимки по имени stand'а (= hostname) и версии каталога;
+ * `name` — полное имя снимка в ACS (`{hostname}-{version_name}`).
+ */
+export interface AcsSnapshot {
+  name: string;
+  version_name: string;
+}
+
+/** Ответ `GET /servers/{id}/acs-snapshots`. */
+export interface AcsSnapshotListResponse {
+  snapshots: AcsSnapshot[];
+}
+
+/**
+ * Тело `POST /servers/{id}/acs-snapshots` и `.../acs-snapshots/restore`.
+ *
+ * Соответствует `ServerAcsSnapshotCreateRequest`/`ServerAcsSnapshotRestoreRequest`
+ * (`server_service/src/schemas/server.py`).
+ */
+export interface AcsSnapshotActionRequest {
+  os_version_id: string;
+}
+
+/** Тело `POST /servers/acs-snapshots/create-batch` и `.../restore-batch`. */
+export interface AcsSnapshotBatchRequest {
+  server_ids: string[];
+  os_version_id: string;
+}
+
+/** Коды отказа per-server в batch-ответе ACS (`ServerBatchFailed.reason`). */
+export type AcsSnapshotBatchReason =
+  | "not_found_or_cross_dept"
+  | "decommissioned"
+  | "server_is_vms_hub"
+  | "reserved"
+  | "updating"
+  | "acs_busy"
+  | "prepare_required"
+  | "acs_disabled"
+  | "acs_department_not_enabled"
+  | "os_version_not_found"
+  | "bootstrap_password_missing"
+  | "permission_denied"
+  | "idempotent_conflict"
+  | "worker_unreachable"
+  | "not_attempted"
+  | (string & {});
+
+/** Успешно поставленная задача в batch-ответе (`ServerBatchDispatched`). */
+export interface AcsSnapshotBatchDispatched {
+  server_id: string;
+  server_name?: string | null;
+  task_id: string;
+  status: string;
+}
+
+/** Сервер, для которого dispatch не выполнен (`ServerBatchFailed`). */
+export interface AcsSnapshotBatchFailed {
+  server_id: string;
+  server_name?: string | null;
+  reason: AcsSnapshotBatchReason;
+}
+
+/** Ответ `POST /servers/acs-snapshots/create-batch` / `.../restore-batch` (202). */
+export interface AcsSnapshotBatchResponse {
+  batch_id: string;
+  dispatched: AcsSnapshotBatchDispatched[];
+  failed: AcsSnapshotBatchFailed[];
 }
 
 // ── ipmi ────────────────────────────────────────────────────────────────────

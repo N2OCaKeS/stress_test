@@ -137,6 +137,38 @@ class OsVersionResolveRequest(BaseModel):
         return _validate_build_version(value)
 
 
+class OsVersionBootstrapPasswordStatus(BaseModel):
+    """Ответ GET /os-versions/{id}/bootstrap-password.
+
+    Пароль никогда не отдаётся — только логин и факт "задан/не задан".
+    `None` (нет строки в БД) отдаётся как `has_password=False`, `ssh_username`
+    в этом случае тоже `None`.
+    """
+
+    ssh_username: str | None = Field(
+        default=None, description="Логин bootstrap-пользователя образа."
+    )
+    has_password: bool = Field(description="Задан ли пароль для этой версии.")
+
+
+class OsVersionBootstrapPasswordUpdate(BaseModel):
+    """Тело PUT /os-versions/{id}/bootstrap-password.
+
+    Plaintext на вход (симметрично остальным creds-полям server_service) —
+    шифруется на сервисном слое перед сохранением. Upsert: и логин, и пароль
+    обязательны, частичного обновления нет (пароль зашит вместе с логином).
+    """
+
+    ssh_username: str = Field(
+        ..., min_length=1, max_length=128,
+        description="Логин bootstrap-пользователя образа, которым восстанавливается сервер.",
+    )
+    password: str = Field(
+        ..., min_length=1,
+        description="Пароль bootstrap-пользователя (plaintext на вход).",
+    )
+
+
 class OsVersionResponse(BaseModel):
     """Карточка OS-версии в ответе."""
 

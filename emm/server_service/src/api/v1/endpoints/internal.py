@@ -68,6 +68,10 @@ from src.schemas.internal import (
 )
 from src.schemas.probe_targets import ProbeTargetsResponse
 from src.schemas.server import (
+    AcsSnapshotCreatedCallbackRequest,
+    AcsSnapshotCreatedCallbackResponse,
+    AcsSnapshotRestoreDoneCallbackRequest,
+    AcsSnapshotRestoreDoneCallbackResponse,
     ServerAstraUpdateCallbackRequest,
     ServerAstraUpdateCallbackResponse,
     ServerPrepareCallbackRequest,
@@ -609,6 +613,66 @@ async def record_server_astra_updated(
         target_department_id=x_target_department_id,
     )
     return ServerAstraUpdateCallbackResponse(**data)
+
+
+@router.post(
+    "/servers/{server_id}/acs-snapshot-created",
+    response_model=AcsSnapshotCreatedCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def record_acs_snapshot_created(
+    server_id: str,
+    body: AcsSnapshotCreatedCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> AcsSnapshotCreatedCallbackResponse:
+    """Worker сообщает исход создания снимка диска через ACS (save-disk).
+
+    Снимает `busy_state=acs → free` в любом исходе — create не переписывает
+    диск, сервер свободен независимо от результата.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `server.acs_snapshot_created` (CRITICAL).
+    """
+    data = await internal_service.record_acs_snapshot_created(
+        db, identity, server_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return AcsSnapshotCreatedCallbackResponse(**data)
+
+
+@router.post(
+    "/servers/{server_id}/acs-snapshot-restore-done",
+    response_model=AcsSnapshotRestoreDoneCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
+)
+async def record_acs_snapshot_restore_done(
+    server_id: str,
+    body: AcsSnapshotRestoreDoneCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> AcsSnapshotRestoreDoneCallbackResponse:
+    """Worker сообщает исход восстановления снимка диска через ACS (restore-backup).
+
+    При `succeeded=True` `busy_state=acs` НЕ снимается: диск переписан
+    целиком, старые управляющие креды не пережили reimage, поэтому
+    server_service резолвит bootstrap-пароль версии и сам диспатчит
+    `server.prepare` — блокировка снимается только по завершении prepare
+    (см. расширение `record_server_prepared`). При `succeeded=False`
+    восстановление не состоялось — блокировка снимается сразу.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `server.acs_snapshot_restore_done` (CRITICAL).
+    """
+    data = await internal_service.record_acs_snapshot_restore_done(
+        db, identity, server_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return AcsSnapshotRestoreDoneCallbackResponse(**data)
 
 
 @router.post(

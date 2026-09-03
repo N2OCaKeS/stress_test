@@ -29,4 +29,5 @@ export const TAB_ICON: Record<string, React.ReactNode> = {
   manage: <ShieldCheck className="w-4 h-4" />,
   disks: <HardDrive className="w-4 h-4" />,
   snapshots: <Camera className="w-4 h-4" />,
+  acsSnapshots: <Camera className="w-4 h-4" />,
 };

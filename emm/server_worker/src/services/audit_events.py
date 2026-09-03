@@ -47,6 +47,9 @@ SERVICE_EVENTS = [
     {"action": "server.prepare", "description": "Бутстрап управляющей учётки на сервере (useradd + authorized_keys)", "default_severity": "INFO"},
     # Обновление ОС — tasks/astra_update.py
     {"action": "server.astra_update", "description": "Обновление ОС Astra по SSH: перезапись sources.list + apt update && astra-update", "default_severity": "WARNING"},
+    # Снимки диска через ACS (Clonezilla-обёртка) — tasks/acs_snapshots.py
+    {"action": "server.acs_snapshot_create", "description": "Снятие полного образа диска сервера через ACS (Clonezilla save-disk), ребут в Clonezilla и обратно", "default_severity": "CRITICAL"},
+    {"action": "server.acs_snapshot_restore", "description": "Восстановление диска сервера из снимка ACS (Clonezilla restore-backup) — полная перезапись диска", "default_severity": "CRITICAL"},
     # Установленные пакеты — tasks/installed_packages.py
     {"action": "installed_packages.list", "description": "Список установленных пакетов снят по SSH (dpkg-query/rpm)", "default_severity": "INFO"},
     {"action": "server.packages_install", "description": "Пакеты установлены на сервере по SSH под sudo", "default_severity": "WARNING"},

@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Bot,
   Building2,
+  Camera,
   Clock,
   Container,
   ExternalLink,
@@ -44,6 +45,7 @@ import { ServicesOsVersions } from "./services/ServicesOsVersions";
 import { ServicesIgnoredLogins } from "./services/ServicesIgnoredLogins";
 import { ServicesManagementUser } from "./services/ServicesManagementUser";
 import { ServicesProbeSettings } from "./services/ServicesProbeSettings";
+import { ServicesAcsSettings } from "./services/ServicesAcsSettings";
 import { ServicesPasswordPolicy } from "./services/ServicesPasswordPolicy";
 import { ServicesNavLink } from "./services/ServicesNavLink";
 import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
@@ -287,6 +289,19 @@ const STATIC_ITEMS: AdminItem[] = [
     content: ServicesProbeSettings,
     // Настройки проб — платформенный singleton под account_admin; воркер читает
     // их через internal-эндпоинт. Остальным backend ответит 403.
+    visibleFor: (p) => isAccountAdmin(p),
+  },
+  {
+    id: "services.server.acs_settings",
+    label: "Снимки серверов (ACS)",
+    hint: "доступ к внешнему сервису снимков дисков · платформа + отделы",
+    icon: Camera,
+    block: "services",
+    group: "server",
+    content: ServicesAcsSettings,
+    // Платформенный singleton под account_admin; per-department opt-in
+    // сшивается на фронте с каталогом отделов auth_service. Остальным
+    // backend ответит 403.
     visibleFor: (p) => isAccountAdmin(p),
   },
   {

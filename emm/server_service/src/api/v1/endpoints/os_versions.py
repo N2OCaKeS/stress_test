@@ -14,11 +14,14 @@ from src.dependencies.auth import AuthenticatedIdentity, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
 from src.schemas.os_version import (
+    OsVersionBootstrapPasswordStatus,
+    OsVersionBootstrapPasswordUpdate,
     OsVersionCreate,
     OsVersionResolveRequest,
     OsVersionResponse,
     OsVersionUpdate,
 )
+from src.services import os_version_bootstrap_password as bootstrap_password_svc
 from src.services import os_version_service as svc
 
 router = APIRouter(prefix="/os-versions")
@@ -187,6 +190,58 @@ async def resolve_repositories(
     """Перерезолв repo-строк версии. Доступ: `(os_version, *, update)`."""
     obj = await svc.resolve_repositories(db, identity, os_version_id, body.build_version)
     return OsVersionResponse.model_validate(obj)
+
+
+@router.get(
+    "/{os_version_id}/bootstrap-password",
+    response_model=OsVersionBootstrapPasswordStatus,
+    summary="Статус bootstrap-пароля версии (для авто-prepare после restore ACS)",
+    description=(
+        "Не публично, в отличие от чтения самого каталога: требует то же "
+        "право `update`, что и остальные мутации версии. Отдаёт логин + факт "
+        "«пароль задан», сам пароль не возвращается."
+    ),
+    responses={
+        403: {"description": "Нет `update`."},
+        404: {"description": "Версия каталога не найдена."},
+    },
+)
+async def get_bootstrap_password(
+    os_version_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> OsVersionBootstrapPasswordStatus:
+    """GET статуса bootstrap-пароля. Доступ: `(os_version, *, update)`."""
+    data = await svc.get_os_version_bootstrap_password(db, identity, os_version_id)
+    return OsVersionBootstrapPasswordStatus(**data)
+
+
+@router.put(
+    "/{os_version_id}/bootstrap-password",
+    response_model=OsVersionBootstrapPasswordStatus,
+    summary="Задать bootstrap-пароль версии (для авто-prepare после restore ACS)",
+    description=(
+        "Upsert. Восстановление снимка ACS переписывает диск целиком — "
+        "управляющий SSH-ключ DBOS не переживает reimage, поэтому авто-"
+        "`server.prepare` после restore заходит на свежий образ под этими "
+        "кредами. Пароль — plaintext на вход, шифруется на сервисном слое."
+    ),
+    responses={
+        403: {"description": "Нет `update`."},
+        404: {"description": "Версия каталога не найдена."},
+    },
+)
+async def put_bootstrap_password(
+    os_version_id: str,
+    body: OsVersionBootstrapPasswordUpdate,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> OsVersionBootstrapPasswordStatus:
+    """PUT bootstrap-пароля. Доступ: `(os_version, *, update)`. Аудит WARNING."""
+    data = await svc.update_os_version_bootstrap_password(
+        db, identity, os_version_id, body.ssh_username, body.password,
+    )
+    return OsVersionBootstrapPasswordStatus(**data)
 
 
 @router.delete(

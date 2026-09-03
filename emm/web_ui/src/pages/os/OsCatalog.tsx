@@ -10,17 +10,25 @@
  * `ServicesOsVersions` под action-матрицей server.admin / dep_admin. Здесь же
  * носителю того же права доступна только регистрация новой версии — через ту
  * же форму `OsVersionForm`, чтобы не плодить дубль логики создания.
+ *
+ * Версия почти всегда создаётся с пустым `repositories` (оператору лень или
+ * незачем вручную набирать sources.list). Для карточек с пустым списком тут
+ * же, рядом со списком, доступна кнопка «Подтянуть по build-версии» —
+ * `POST /os-versions/{id}/resolve-repositories`, который резолвит repo-строки
+ * из индекса релизов (порт легаси `ReleaseToRepo`). Ручное редактирование
+ * репозиториев остаётся в `ServicesOsVersions` как есть.
  */
 
 import { useMemo, useState } from "react";
-import { HardDrive, Link2, Search, Plus } from "lucide-react";
+import { HardDrive, Link2, Search, Plus, Wand2 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { formatMsk } from "@/lib/datetime";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
-import { listOsVersions } from "@/api/server/osVersions";
+import { ApiError, apiErrMsg } from "@/api/client";
+import { listOsVersions, resolveOsVersionRepositories } from "@/api/server/osVersions";
 import type { OffsetPaginatedResponse, OsVersion } from "@/api/server/types";
 import { usePersona } from "@/contexts/PersonaContext";
+import { useToast } from "@/contexts/ToastContext";
 import {
   OsVersionForm,
   canManageOsVersions,
@@ -96,7 +104,94 @@ function RepoBadges({ repositories }: { repositories: string[] }) {
   );
 }
 
-function OsVersionCard({ version }: { version: OsVersion }) {
+/**
+ * Кнопка/мини-форма «Подтянуть по build-версии» для карточки с пустым
+ * `repositories`. Резолвит repo-строки через backend-индекс релизов и по
+ * успеху просит родителя перечитать список — сама карточку не подменяет,
+ * чтобы не разъезжаться с source-of-truth (`listQ.data`).
+ */
+function ResolveRepositoriesInline({
+  versionId,
+  onResolved,
+}: {
+  versionId: string;
+  onResolved: () => void;
+}) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [buildVersion, setBuildVersion] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    const bv = buildVersion.trim();
+    if (!bv) {
+      toast.warn("Укажите build-версию (X.Y.Z или X.Y.Z.W)");
+      return;
+    }
+    setBusy(true);
+    try {
+      await resolveOsVersionRepositories(versionId, bv);
+      toast.success("Репозитории подтянуты из индекса релизов");
+      setOpen(false);
+      setBuildVersion("");
+      onResolved();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось подтянуть репозитории"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        className="btn btn-sm flex items-center gap-1 self-start"
+        onClick={() => setOpen(true)}
+      >
+        <Wand2 className="w-3 h-3" /> Подтянуть по build-версии
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <input
+        className="input mono text-xs w-40"
+        placeholder="1.8.5.46"
+        value={buildVersion}
+        onChange={(e) => setBuildVersion(e.target.value)}
+        disabled={busy}
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+        }}
+      />
+      <button className="btn btn-sm btn-primary" disabled={busy} onClick={submit}>
+        {busy ? "…" : "Подтянуть"}
+      </button>
+      <button
+        className="btn btn-sm"
+        disabled={busy}
+        onClick={() => {
+          setOpen(false);
+          setBuildVersion("");
+        }}
+      >
+        Отмена
+      </button>
+    </div>
+  );
+}
+
+function OsVersionCard({
+  version,
+  canManage,
+  onResolved,
+}: {
+  version: OsVersion;
+  canManage: boolean;
+  onResolved: () => void;
+}) {
   return (
     <div className="card flex flex-col gap-2">
       <div className="flex items-start gap-2">
@@ -109,6 +204,9 @@ function OsVersionCard({ version }: { version: OsVersion }) {
         </div>
       </div>
       <RepoBadges repositories={version.repositories} />
+      {version.repositories.length === 0 && canManage && (
+        <ResolveRepositoriesInline versionId={version.id} onResolved={onResolved} />
+      )}
       <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-dim border-t border-token pt-2">
         <span>
           обнаружена: <span className="mono">{formatMsk(version.discovered_at)}</span>
@@ -224,7 +322,12 @@ function OsCatalogBody() {
       ) : (
         <div className="flex flex-col gap-3">
           {filtered.map((v) => (
-            <OsVersionCard key={v.id} version={v} />
+            <OsVersionCard
+              key={v.id}
+              version={v}
+              canManage={canCreate && !mockMode}
+              onResolved={() => listQ.refetch()}
+            />
           ))}
         </div>
       )}

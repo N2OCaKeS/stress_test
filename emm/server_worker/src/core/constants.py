@@ -194,6 +194,11 @@ class TaskKind(StrEnum):
     # storage-pool боксов hub'а (там же vm.create ищет `<box>.qcow2`), tar
     # распаковываем, qcow/raw кладём файлом. В гостя не заходим.
     BOX_DOWNLOAD = "box.download"
+    # Полный снимок/восстановление диска физического сервера через внешний
+    # ACS (обёртка над Clonezilla/DRBL). Worker зовёт ACS напрямую и сам
+    # поллит reachability, пока ACS рулит ребутом/PXE/boot order.
+    ACS_SNAPSHOT_CREATE = "acs.snapshot_create"
+    ACS_SNAPSHOT_RESTORE = "acs.snapshot_restore"
 
 
 class TaskStatus(StrEnum):

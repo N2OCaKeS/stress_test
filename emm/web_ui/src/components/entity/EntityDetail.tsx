@@ -52,6 +52,7 @@ import { MetricsTab } from "@/pages/server/tabs/metrics";
 import { ManageTab } from "@/pages/server/tabs/manage";
 import { DisksTab } from "@/pages/server/tabs/disks";
 import { SnapshotsTab } from "@/pages/server/tabs/snapshots";
+import { AcsSnapshotsTab } from "@/pages/server/tabs/acsSnapshots";
 
 type TabId =
   | "overview"
@@ -64,7 +65,8 @@ type TabId =
   | "metrics"
   | "manage"
   | "disks"
-  | "snapshots";
+  | "snapshots"
+  | "acsSnapshots";
 
 const TAB_LABEL: Record<TabId, string> = {
   overview: "Обзор",
@@ -78,6 +80,7 @@ const TAB_LABEL: Record<TabId, string> = {
   manage: "Управление",
   disks: "Диски",
   snapshots: "Снимки",
+  acsSnapshots: "Снимки",
 };
 
 /**
@@ -86,7 +89,8 @@ const TAB_LABEL: Record<TabId, string> = {
  */
 function tabsFor(kind: EntityRef["kind"]): TabId[] {
   const mid: TabId = kind === "server" ? "ipmi" : "power";
-  const tail: TabId[] = kind === "vm" ? ["disks", "snapshots"] : [];
+  const tail: TabId[] =
+    kind === "vm" ? ["disks", "snapshots"] : ["acsSnapshots"];
   return [
     "overview",
     "hardware",
@@ -121,6 +125,7 @@ const BUSY_LABEL: Record<BusyState, string> = {
   busy: "Занят",
   testing: "В тесте",
   updating: "Обновление ОС",
+  acs: "Снимок ACS",
 };
 
 const BUSY_KIND: Record<BusyState, "ok" | "warn" | "danger"> = {
@@ -128,6 +133,7 @@ const BUSY_KIND: Record<BusyState, "ok" | "warn" | "danger"> = {
   busy: "warn",
   testing: "warn",
   updating: "warn",
+  acs: "warn",
 };
 
 interface EntityDetailProps {
@@ -273,6 +279,8 @@ function EntityTab({
             onChanged={onChanged}
           />
         );
+      case "acsSnapshots":
+        return <AcsSnapshotsTab serverId={s.id} server={s} />;
       default:
         return null;
     }

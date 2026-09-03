@@ -173,3 +173,8 @@ def console_creds_id() -> str:
 def acs_department_access_id() -> str:
     """`ada_<uuid>` — для строк acs_department_access (per-department opt-in ACS)."""
     return _new_id("ada_")
+
+
+def os_version_bootstrap_password_id() -> str:
+    """`obp_<uuid>` — для строк os_version_bootstrap_passwords (1:1 c os_versions)."""
+    return _new_id("obp_")

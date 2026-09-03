@@ -25,6 +25,7 @@ from src.repositories import os_version as repo
 from src.schemas.identity import IdentityContext
 from src.schemas.os_version import OsVersionCreate, OsVersionUpdate
 from src.services import audit_service, os_version_repo_resolver, permissions
+from src.services import os_version_bootstrap_password as bootstrap_password_svc
 from src.utils.ids import os_version_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -353,3 +354,85 @@ async def delete_os_version(
         status="success", allowed=True,
         details={"name": name},
     )
+
+
+async def get_os_version_bootstrap_password(
+    db: AsyncSession,
+    identity: IdentityContext,
+    os_version_id: str,
+) -> dict:
+    """GET-статус bootstrap-пароля версии — логин + факт "задан/не задан".
+
+    В отличие от обычного чтения каталога, это НЕ публичный эндпоинт: пароль
+    хоть и не отдаётся в открытом виде, сам факт его наличия/логин — это
+    management-конфигурация, доступная только тем, кто может версию менять.
+    """
+    try:
+        await permissions.require_action(db, identity, EntityType.OS_VERSION, Action.UPDATE)
+    except AuthorizationError:
+        audit_service.emit(
+            "os_version.bootstrap_password_updated",
+            target_id=os_version_id, target_type="os_version",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "op": "read"},
+        )
+        raise
+    obj = await repo.get_by_id(db, os_version_id)
+    if obj is None:
+        raise NotFoundError(
+            error_code="OS_VERSION_NOT_FOUND",
+            message="OS version not found",
+        )
+    status = await bootstrap_password_svc.get_bootstrap_password_status(db, os_version_id)
+    if status is None:
+        return {"ssh_username": None, "has_password": False}
+    return status
+
+
+async def update_os_version_bootstrap_password(
+    db: AsyncSession,
+    identity: IdentityContext,
+    os_version_id: str,
+    ssh_username: str,
+    password: str,
+) -> dict:
+    """Upsert bootstrap-пароля версии. Право — то же `update`, что у остального CRUD.
+
+    Нужен для авто-`server.prepare` после restore снимка ACS: диск
+    переписывается целиком, старые управляющие креды не переживают reimage,
+    единственный вход на свежий образ — этот заранее заведённый пароль.
+    Аудит `os_version.bootstrap_password_updated` (WARNING) не несёт сам
+    пароль, только факт обновления и логин.
+    """
+    try:
+        await permissions.require_action(db, identity, EntityType.OS_VERSION, Action.UPDATE)
+    except AuthorizationError:
+        audit_service.emit(
+            "os_version.bootstrap_password_updated",
+            target_id=os_version_id, target_type="os_version",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "op": "write"},
+        )
+        raise
+    obj = await repo.get_by_id(db, os_version_id)
+    if obj is None:
+        audit_service.emit(
+            "os_version.bootstrap_password_updated",
+            target_id=os_version_id, target_type="os_version",
+            status="failure", allowed=True,
+            details={"reason": "not_found"},
+        )
+        raise NotFoundError(
+            error_code="OS_VERSION_NOT_FOUND",
+            message="OS version not found",
+        )
+    await bootstrap_password_svc.upsert_bootstrap_password(
+        db, os_version_id, ssh_username, password, updated_by=identity.user_id,
+    )
+    audit_service.emit(
+        "os_version.bootstrap_password_updated",
+        target_id=os_version_id, target_type="os_version",
+        status="success", allowed=True,
+        details={"ssh_username": ssh_username},
+    )
+    return await bootstrap_password_svc.get_bootstrap_password_status(db, os_version_id)

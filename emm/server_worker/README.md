@@ -279,6 +279,15 @@ make test-worker
 | `BMC_POOL_MAX_KEEPALIVE_CONNECTIONS` | `10` | сколько idle BMC-соединений держать открытыми для reuse; должно быть ≤ `BMC_POOL_MAX_CONNECTIONS` |
 | `BMC_PROBE_TIMEOUT_SECONDS` | `1.5` | per-step timeout для HEAD `/redfish/v1/` probe каскада (https-verify → https-noverify → http). Короткий — чтобы ipmitool-fallback не ждал долго на мёртвом BMC |
 
+### ACS snapshots (Clonezilla-обёртка)
+
+| ENV | Default | Назначение |
+|---|---|---|
+| `ACS_REQUEST_TIMEOUT_SECONDS` | `30.0` | timeout самого HTTP-вызова `save-disk`/`restore-backup` на ACS. ACS отвечает сразу (задача асинхронная на её стороне) |
+| `ACS_REACHABILITY_POLL_INTERVAL_SECONDS` | `15.0` | пауза между пробами ping/ssh при ожидании ухода сервера в Clonezilla и возврата обратно |
+| `ACS_DOWN_WAIT_SECONDS` | `300.0` | best-effort окно ожидания, что сервер уйдёт в Clonezilla после того, как ACS приняла задачу. Не дождались — не фатально, идём к ожиданию возврата |
+| `ACS_REACHABILITY_TIMEOUT_SECONDS` | `1800.0` | общий дедлайн ожидания, что сервер снова ответит на ping/ssh после snapshot/restore. Не дождались — задача завершается ошибкой |
+
 ### Pooled HTTP-clients (`audit_client`, `server_service_client`)
 
 | ENV | Default | Назначение |

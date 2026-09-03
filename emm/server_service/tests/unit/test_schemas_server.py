@@ -133,6 +133,18 @@ class TestServerUpdate:
         diff = m.model_dump(exclude_unset=True)
         assert diff == {"display_name": "renamed"}
 
+    def test_hostname_accepted_and_normalized(self):
+        m = ServerUpdate(hostname="LowServer3")
+        assert m.model_dump(exclude_unset=True) == {"hostname": "LowServer3"}
+
+    def test_hostname_over_max_length_rejected(self):
+        with pytest.raises(ValidationError):
+            ServerUpdate(hostname="h" * 256)
+
+    def test_hostname_not_set_omitted_from_diff(self):
+        m = ServerUpdate(display_name="renamed")
+        assert "hostname" not in m.model_dump(exclude_unset=True)
+
     def test_update_ssh_port_bounds_enforced(self):
         with pytest.raises(ValidationError):
             ServerUpdate(ssh_port=0)

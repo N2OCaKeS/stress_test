@@ -95,6 +95,8 @@ export interface Server {
   id: string;
   hostname: string;
   display_name: string | null;
+  /** Опциональный человекочитаемый номер стенда. UNIQUE в паре servers+vm. */
+  number: number | null;
   ip_address: string;
   mgmt_ip_address: string | null;
   ssh_port: number;
@@ -195,7 +197,9 @@ export interface ServerCreateRequest {
 
 /** Тело PATCH /servers/{id}. Все поля опциональны. */
 export interface ServerUpdateRequest {
+  hostname?: string;
   display_name?: string | null;
+  number?: number | null;
   ip_address?: string | null;
   mgmt_ip_address?: string | null;
   ssh_port?: number | null;
@@ -393,6 +397,11 @@ export interface AcsSnapshot {
 /** Ответ `GET /servers/{id}/acs-snapshots`. */
 export interface AcsSnapshotListResponse {
   snapshots: AcsSnapshot[];
+}
+
+/** Ответ `GET /servers/{id}/acs-availability` — показывать ли вкладку «Снимки ACS». */
+export interface AcsAvailabilityResponse {
+  available: boolean;
 }
 
 /**

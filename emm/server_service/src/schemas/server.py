@@ -87,6 +87,7 @@ class ServerCreate(BaseModel):
 class ServerUpdate(BaseModel):
     """Тело PATCH /servers/{id}. Все поля опциональны — `model_dump(exclude_unset=True)` даёт диф."""
 
+    hostname: str | None = Field(default=None, max_length=255, description="Сменить hostname (UNIQUE). Конфликт → 409 SERVER_DUPLICATE.")
     display_name: str | None = Field(default=None, description="Опциональное человекочитаемое имя.")
     number: int | None = Field(default=None, ge=0, description="Сменить номер стенда (UNIQUE в паре servers+vm).")
     virtualization: bool | None = Field(default=None, description="Отметить поддержку виртуализации (KVM). Гейт для prepare-vms-hub.")
@@ -111,6 +112,13 @@ class ServerUpdate(BaseModel):
             "трогаются; `[]` — все диски удаляются; список — синхронизация под него."
         ),
     )
+
+    @field_validator("hostname")
+    @classmethod
+    def _check_hostname(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_safe_hostname(value, field_name="hostname")
 
     @model_validator(mode="after")
     def _check_storage(self) -> "ServerUpdate":
@@ -951,6 +959,17 @@ class AcsSnapshotListResponse(BaseModel):
     snapshots: list[AcsSnapshotItem] = Field(
         default_factory=list,
         description="Снимки этого сервера (по префиксу hostname), отсортированы по имени.",
+    )
+
+
+class AcsAvailabilityResponse(BaseModel):
+    """Ответ GET /servers/{id}/acs-availability — можно ли показывать снимки ACS."""
+
+    available: bool = Field(
+        description=(
+            "true — есть право acs_snapshot_list, ACS включён платформенно и "
+            "для отдела сервера. false в любом из противоположных случаев."
+        ),
     )
 
 

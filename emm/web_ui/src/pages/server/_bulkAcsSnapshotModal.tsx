@@ -7,7 +7,12 @@
  * реально уйдёт в запрос — внешний выбор в `Server.tsx` не трогаем. Действие
  * (создать/восстановить) переключается табом внутри модалки: создание
  * доступно любому с правом на сервер, восстановление — необратимая перезапись
- * диска, только платформенному admin'у.
+ * диска, только `server.admin` отдела (`Action.ACS_SNAPSHOT_RESTORE` — обычное
+ * действие server_service, НЕ платформенный account_admin — см. коммент в
+ * `tabs/acsSnapshots.tsx::canRestoreAcs`). Выбор серверов может охватывать
+ * несколько отделов — точную per-server авторизацию всё равно проверяет
+ * backend в batch-цикле (см. `failed[].reason === "permission_denied"`);
+ * здесь гейт только грубо решает, показывать ли режим «Восстановить» вообще.
  */
 import { useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -22,7 +27,6 @@ import {
 import { apiErrMsg } from "@/api/client";
 import { useQuery } from "@/api/auth/useQuery";
 import { usePersona } from "@/contexts/PersonaContext";
-import { isPlatformWideAdmin } from "@/lib/rbac";
 import { listOsVersions } from "@/api/server/osVersions";
 import {
   createAcsSnapshotsBatch,
@@ -69,7 +73,9 @@ export function BulkAcsSnapshotModal({
   onDone: () => void;
 }) {
   const { persona } = usePersona();
-  const canRestore = isPlatformWideAdmin(persona);
+  // Грубая оценка «может ли вообще» — точная per-server проверка на backend'е.
+  const canRestore =
+    persona.service_roles.server === "admin" || persona.platform_role === "dep_admin";
 
   const [action, setAction] = useState<AcsAction>("create");
   const [excludeVmsHub, setExcludeVmsHub] = useState(true);
@@ -238,7 +244,7 @@ export function BulkAcsSnapshotModal({
                     onClick={() => canRestore && setAction("restore")}
                     disabled={!canRestore}
                     aria-pressed={action === "restore"}
-                    title={canRestore ? undefined : "Восстановление доступно только account_admin"}
+                    title={canRestore ? undefined : "Восстановление доступно только администратору server-сервиса отдела"}
                     className={`px-3 py-1.5 text-sm flex items-center gap-1.5 border-l border-token ${
                       action === "restore" ? "btn-danger" : "hover-bg text-dim"
                     } ${canRestore ? "" : "opacity-50 cursor-not-allowed"}`}

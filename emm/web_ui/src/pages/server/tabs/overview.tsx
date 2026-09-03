@@ -33,8 +33,8 @@ import type {
 } from "@/api/server/types";
 import { updateServer } from "@/api/server/servers";
 import { listOsVersions } from "@/api/server/osVersions";
-import { updateVm } from "@/api/server/vms";
-import type { Vm, VmUpdateRequest } from "@/api/server/vms";
+import { updateVm, updateVmIdentity } from "@/api/server/vms";
+import type { Vm, VmIdentityUpdateRequest, VmUpdateRequest } from "@/api/server/vms";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { useDeptLabel, useUserLabel } from "@/lib/labels";
@@ -198,6 +198,11 @@ function ServerOverviewView({
     { label: "hostname", value: <span className="mono">{server.hostname}</span> },
     { label: "id", value: <span className="mono">{server.id}</span> },
     { label: "department", value: deptLabel },
+    {
+      label: "number",
+      value: server.number != null ? String(server.number) : dash,
+    },
+    { label: "mgmt_ip_address", value: server.mgmt_ip_address ?? dash },
     { label: "serial_number", value: server.serial_number ?? dash },
     { label: "asset_tag", value: server.asset_tag ?? dash },
     { label: "location", value: server.location ?? dash },
@@ -457,10 +462,17 @@ function OverviewEditForm({
   onCancel: () => void;
   onSaved: (next: Server) => void;
 }) {
+  const [hostname, setHostname] = useState(initial.hostname);
   const [displayName, setDisplayName] = useState(initial.display_name ?? "");
+  const [number, setNumber] = useState(
+    initial.number != null ? String(initial.number) : "",
+  );
   const [location, setLocation] = useState(initial.location ?? "");
   const [ip, setIp] = useState(initial.ip_address);
+  const [mgmtIp, setMgmtIp] = useState(initial.mgmt_ip_address ?? "");
   const [sshPort, setSshPort] = useState(String(initial.ssh_port));
+  const [serialNumber, setSerialNumber] = useState(initial.serial_number ?? "");
+  const [assetTag, setAssetTag] = useState(initial.asset_tag ?? "");
   const [osVersionId, setOsVersionId] = useState(initial.os_version_id ?? "");
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -478,11 +490,28 @@ function OverviewEditForm({
       setErr("ssh_port должен быть целым числом 1..65535");
       return;
     }
+    let numberVal: number | null = null;
+    if (number.trim()) {
+      numberVal = Number(number);
+      if (!Number.isInteger(numberVal) || numberVal < 0) {
+        setErr("number должен быть целым числом ≥ 0");
+        return;
+      }
+    }
+    if (!hostname.trim()) {
+      setErr("hostname не может быть пустым");
+      return;
+    }
     const body: ServerUpdateRequest = {
+      hostname: hostname.trim(),
       display_name: displayName.trim() ? displayName.trim() : null,
+      number: numberVal,
       location: location.trim() ? location.trim() : null,
       ip_address: ip.trim(),
+      mgmt_ip_address: mgmtIp.trim() ? mgmtIp.trim() : null,
       ssh_port: portNum,
+      serial_number: serialNumber.trim() ? serialNumber.trim() : null,
+      asset_tag: assetTag.trim() ? assetTag.trim() : null,
       os_version_id: osVersionId ? osVersionId : null,
     };
     setPending(true);
@@ -505,12 +534,27 @@ function OverviewEditForm({
         </h3>
         {err && <div className="alert-danger mb-2">{err}</div>}
         <div className="flex flex-col gap-3">
+          <FormRow label="hostname" hint="UNIQUE. Конфликт с другим сервером → ошибка при сохранении">
+            <input
+              className="input mono"
+              value={hostname}
+              onChange={(e) => setHostname(e.target.value)}
+            />
+          </FormRow>
           <FormRow label="display_name" hint="Пусто = очистить поле">
             <input
               className="input"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder={initial.hostname}
+            />
+          </FormRow>
+          <FormRow label="number" hint="Номер стенда, UNIQUE в паре servers+vm. Пусто = снять номер">
+            <input
+              className="input mono"
+              value={number}
+              onChange={(e) => setNumber(e.target.value)}
+              inputMode="numeric"
             />
           </FormRow>
           <FormRow label="location" hint="Стойка / DC / комната">
@@ -527,12 +571,33 @@ function OverviewEditForm({
               onChange={(e) => setIp(e.target.value)}
             />
           </FormRow>
+          <FormRow label="mgmt_ip_address" hint="BMC/iDRAC-адрес, если отделён от основного. Пусто = очистить">
+            <input
+              className="input mono"
+              value={mgmtIp}
+              onChange={(e) => setMgmtIp(e.target.value)}
+            />
+          </FormRow>
           <FormRow label="ssh_port">
             <input
               className="input mono"
               value={sshPort}
               onChange={(e) => setSshPort(e.target.value)}
               inputMode="numeric"
+            />
+          </FormRow>
+          <FormRow label="serial_number" hint="UNIQUE, если задан. Пусто = очистить">
+            <input
+              className="input mono"
+              value={serialNumber}
+              onChange={(e) => setSerialNumber(e.target.value)}
+            />
+          </FormRow>
+          <FormRow label="asset_tag" hint="Инвентарный номер. Пусто = очистить">
+            <input
+              className="input mono"
+              value={assetTag}
+              onChange={(e) => setAssetTag(e.target.value)}
             />
           </FormRow>
           <FormRow
@@ -609,6 +674,7 @@ function VmOverview({
   const resourceOutcome = useTaskOutcome();
   const [local, setLocal] = useState<Vm>(vm);
   const [resourceModal, setResourceModal] = useState(false);
+  const [identityModal, setIdentityModal] = useState(false);
 
   // vm prop меняется при refetch — подхватываем свежую копию.
   const view = local.id === vm.id ? local : vm;
@@ -641,6 +707,19 @@ function VmOverview({
       onChanged();
     } catch (e) {
       toast.error(apiErrMsg(e, "Не удалось изменить ресурсы"));
+    }
+  }
+
+  async function handleUpdateIdentity(body: VmIdentityUpdateRequest) {
+    try {
+      const next = mock ? { ...view, ...body } : await updateVmIdentity(view.id, body);
+      toast.success(`Карточка ${next.name} обновлена`);
+      setIdentityModal(false);
+      setLocal(next);
+      onEntityUpdated?.(next);
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось изменить карточку ВМ"));
     }
   }
 
@@ -756,14 +835,23 @@ function VmOverview({
     },
   ];
 
-  const resourceAction = canManage ? (
-    <button
-      className="btn btn-sm flex items-center gap-1"
-      onClick={() => setResourceModal(true)}
-      title="Изменить vCPU и RAM"
-    >
-      <Cpu className="w-3.5 h-3.5" /> Изменить CPU/RAM
-    </button>
+  const identityActions = canManage ? (
+    <div className="flex items-center gap-2">
+      <button
+        className="btn btn-sm flex items-center gap-1"
+        onClick={() => setIdentityModal(true)}
+        title="Изменить name/number"
+      >
+        <Pencil className="w-3.5 h-3.5" /> Изменить
+      </button>
+      <button
+        className="btn btn-sm flex items-center gap-1"
+        onClick={() => setResourceModal(true)}
+        title="Изменить vCPU и RAM"
+      >
+        <Cpu className="w-3.5 h-3.5" /> Изменить CPU/RAM
+      </button>
+    </div>
   ) : undefined;
 
   return (
@@ -771,7 +859,7 @@ function VmOverview({
       <ParamCard
         title="Идентификация"
         subtitle="Базовые поля карточки ВМ. Ресурсы (vCPU/RAM) — во вкладке «Железо»."
-        action={resourceAction}
+        action={identityActions}
         rows={identity}
       >
         {resourceOutcome.tracked && (
@@ -794,7 +882,95 @@ function VmOverview({
           onSubmit={handleUpdateResources}
         />
       )}
+      {identityModal && (
+        <IdentityModal
+          vm={view}
+          onClose={() => setIdentityModal(false)}
+          onSubmit={handleUpdateIdentity}
+        />
+      )}
     </div>
+  );
+}
+
+function IdentityModal({
+  vm,
+  onClose,
+  onSubmit,
+}: {
+  vm: Vm;
+  onClose: () => void;
+  onSubmit: (body: VmIdentityUpdateRequest) => void | Promise<void>;
+}) {
+  const [name, setName] = useState(vm.name);
+  const [number, setNumber] = useState(vm.number != null ? String(vm.number) : "");
+  const [err, setErr] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    if (!name.trim()) {
+      setErr("name не может быть пустым");
+      return;
+    }
+    let numberVal: number | null = null;
+    if (number.trim()) {
+      numberVal = Number(number);
+      if (!Number.isInteger(numberVal) || numberVal < 0) {
+        setErr("number должен быть целым числом ≥ 0");
+        return;
+      }
+    }
+    setSubmitting(true);
+    try {
+      await Promise.resolve(
+        onSubmit({ name: name.trim(), number: numberVal }),
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal title={`Изменить · ${vm.name}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="modal-body flex flex-col gap-3">
+          {err && <div className="alert-danger text-xs">{err}</div>}
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">name * · UNIQUE в пределах hub'а</span>
+            <input
+              className="input mono"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">
+              number · UNIQUE в паре servers+vm, пусто = снять номер
+            </span>
+            <input
+              className="input mono"
+              inputMode="numeric"
+              value={number}
+              onChange={(e) => setNumber(e.target.value)}
+            />
+          </label>
+          <div className="text-[11px] text-dim">
+            hostname гостя (`hostnamectl`) здесь не меняется — это отдельная
+            операция внутри гостя, не карточечное поле.
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={submitting}>
+            {submitting ? "Сохраняем…" : "Сохранить"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

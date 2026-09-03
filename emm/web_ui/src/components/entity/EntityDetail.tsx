@@ -30,6 +30,8 @@ import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
 import { clearBusy, inventorySync, setBusy } from "@/api/server/servers";
 import { osSync } from "@/api/server/osVersions";
+import { getAcsAvailability } from "@/api/server/acsSnapshots";
+import { useQuery } from "@/api/auth/useQuery";
 import { powerOff, powerOn, powerReboot } from "@/api/server/ipmi";
 import { reserveVm, releaseVm, vmBusyLabel } from "@/api/server/vms";
 import { useDeptLabel, useUserLabel, useServerLabel } from "@/lib/labels";
@@ -86,11 +88,16 @@ const TAB_LABEL: Record<TabId, string> = {
 /**
  * Набор вкладок по типу сущности. База одинакова; сервер несёт IPMI, ВМ —
  * питание домена вместо IPMI и дополнительно диски/снимки.
+ *
+ * `acsAvailable` прячет вкладку «Снимки ACS» целиком (не просто показывает
+ * пустой блок внутри), когда функция недоступна серверу — платформенно
+ * выключена, не включена для отдела сервера, либо нет права
+ * `acs_snapshot_list`. Для ВМ параметр не участвует.
  */
-function tabsFor(kind: EntityRef["kind"]): TabId[] {
+function tabsFor(kind: EntityRef["kind"], acsAvailable: boolean): TabId[] {
   const mid: TabId = kind === "server" ? "ipmi" : "power";
   const tail: TabId[] =
-    kind === "vm" ? ["disks", "snapshots"] : ["acsSnapshots"];
+    kind === "vm" ? ["disks", "snapshots"] : acsAvailable ? ["acsSnapshots"] : [];
   return [
     "overview",
     "hardware",
@@ -161,9 +168,22 @@ export function EntityDetail({
   backLabel,
 }: EntityDetailProps) {
   const [tab, setTab] = useState<TabId>("overview");
-  const tabList = useMemo(() => tabsFor(entity.kind), [entity.kind]);
-  const activeTab = tabList.includes(tab) ? tab : "overview";
   const serverId = entity.kind === "server" ? entity.server.id : null;
+  // Видимость вкладки «Снимки ACS» решается ДО рендера таб-бара — фоновая
+  // проверка (без audit, всегда 200), см. `getAcsAvailability`. Пока грузится
+  // или запрос ещё не стартовал — вкладку не показываем (false), чтобы не
+  // мигать лишней вкладкой при входе на карточку.
+  const acsAvailabilityQ = useQuery(
+    async () => (serverId ? (await getAcsAvailability(serverId)).available : false),
+    [serverId],
+    { keepPreviousDataOnError: true },
+  );
+  const acsAvailable = acsAvailabilityQ.data ?? false;
+  const tabList = useMemo(
+    () => tabsFor(entity.kind, acsAvailable),
+    [entity.kind, acsAvailable],
+  );
+  const activeTab = tabList.includes(tab) ? tab : "overview";
   const serverOsVersionRef = useRef<string | null>(null);
   serverOsVersionRef.current =
     entity.kind === "server" ? entity.server.os_version_id ?? null : null;

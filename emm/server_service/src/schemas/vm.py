@@ -471,6 +471,18 @@ class VmCredStrategyRequest(BaseModel):
     cred_strategy: VmCredStrategy = Field(..., description="per_snapshot / reroll.")
 
 
+class VmIdentityUpdateRequest(BaseModel):
+    """Тело PATCH /vms/{id}/identity — изменить `name`/`number` (синхронно, без задачи).
+
+    Чисто карточечные поля — ничего не применяется на самом hub'е/госте.
+    `hostname` сюда намеренно не входит: это `hostnamectl` внутри гостя,
+    смена требует SSH-дозвона через worker, а не просто DB-update.
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=255, description="Голое имя ВМ. UNIQUE в пределах hub'а.")
+    number: int | None = Field(default=None, ge=0, description="Номер стенда. UNIQUE в паре servers+vm. null — снять номер.")
+
+
 class VmAstraUpdateRequest(BaseModel):
     """Тело POST /vms/{id}/astra-update — обновить ОС ВМ по RC (202 → VM_ASTRA_UPDATE)."""
 

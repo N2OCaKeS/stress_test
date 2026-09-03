@@ -35,6 +35,7 @@ from src.schemas.vm import (
     VmDiskDispatchResponse,
     VmDiskResizeRequest,
     VmDiskResponse,
+    VmIdentityUpdateRequest,
     VmImageRefreshResponse,
     VmImageResponse,
     VmIpPoolCreate,
@@ -241,6 +242,32 @@ async def set_vm_cred_strategy(
 ) -> VmResponse:
     """PATCH /vms/{id}/cred-strategy — режим mgmt-кред ВМ (синхронно, без задачи)."""
     vm = await svc.set_cred_strategy(db, identity, request, vm_id, body)
+    return VmResponse.model_validate(vm)
+
+
+@router.patch(
+    "/{vm_id}/identity",
+    response_model=VmResponse,
+    summary="Изменить name/number карточки ВМ (синхронно, без задачи)",
+    description=(
+        "Меняет `name`/`number` строки `vms` — никакого SSH/hub, чистая "
+        "карточка. `hostname` сюда не входит (это `hostnamectl` внутри гостя, "
+        "нужен worker — вне скоупа этого эндпоинта). Право `(vm, update)`."
+    ),
+    responses={
+        403: {"description": "Нет `update`."},
+        404: {"description": "VM_NOT_FOUND."},
+        409: {"description": "VM_DUPLICATE — конфликт name (в пределах hub'а) либо number."},
+    },
+)
+async def update_vm_identity(
+    vm_id: str,
+    body: VmIdentityUpdateRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> VmResponse:
+    """PATCH /vms/{id}/identity — изменить name/number (синхронно)."""
+    vm = await svc.update_vm_identity(db, identity, vm_id, body)
     return VmResponse.model_validate(vm)
 
 

@@ -325,6 +325,12 @@ export interface VmUpdateRequest {
   ram_mb?: number;
 }
 
+/** Тело PATCH /vms/{id}/identity — name/number карточки ВМ. Синхронно, 200. */
+export interface VmIdentityUpdateRequest {
+  name?: string;
+  number?: number | null;
+}
+
 /**
  * Жизненный цикл диска ВМ (`vm_disks.state`). `ready` — привязан и готов;
  * промежуточные — во время worker-операции; `error` — операция упала. Хвост
@@ -835,6 +841,18 @@ export function updateVm(
   body: VmUpdateRequest,
 ): Promise<TaskDispatchResponse> {
   return apiPatch<TaskDispatchResponse>(`/server/v1/vms/${id}`, body);
+}
+
+/**
+ * `PATCH /api/server/v1/vms/{id}/identity` — сменить `name`/`number` карточки
+ * ВМ. Синхронно (200, без dispatch) — чистый DB-update, `hostname` сюда не
+ * входит (это `hostnamectl` внутри гостя, требует worker).
+ */
+export function updateVmIdentity(
+  id: string,
+  body: VmIdentityUpdateRequest,
+): Promise<Vm> {
+  return apiPatch<Vm>(`/server/v1/vms/${id}/identity`, body);
 }
 
 // ── диски ─────────────────────────────────────────────────────────────────────

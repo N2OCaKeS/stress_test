@@ -60,6 +60,7 @@ from src.schemas.vm import (
     VmBulkCreateResult,
     VmCreate,
     VmDiskCreate,
+    VmIdentityUpdateRequest,
     VmNetworkRequest,
     VmPasswdRequest,
     VmSnapshotCreate,
@@ -777,6 +778,57 @@ def _capacity_check_update(hub, existing: dict[str, int], vm: Vm, new: dict) -> 
                 ),
                 details={"dimension": dim, "hub_capacity": capacity, "requested_total": total},
             )
+
+
+async def update_vm_identity(
+    db: AsyncSession,
+    identity: IdentityContext,
+    vm_id: str,
+    payload: VmIdentityUpdateRequest,
+) -> Vm:
+    """Синхронно сменить `name`/`number` карточки ВМ. Пустой диф → без UPDATE.
+
+    Право `(vm, update)`. Ничего не применяется на hub'е/госте — только
+    строка `vms`. UNIQUE-конфликт (`name` в пределах hub'а, `number` в паре
+    servers+vm) → 409 `VM_DUPLICATE`.
+    """
+    with emit_denied_on_authz_error(
+        "vm.updated", target_id=vm_id, target_type="vm",
+        extra_details={"vm_id": vm_id}, identity=identity,
+    ):
+        await permissions.require_resource_action(
+            db, identity, EntityType.VM, vm_id, Action.UPDATE
+        )
+    vm = await repo.get_by_id(db, vm_id)
+    if vm is None:
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
+    await _ensure_visible(db, identity, vm)
+
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        return vm
+    for key, value in changes.items():
+        setattr(vm, key, value)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        audit_service.emit(
+            "vm.updated", target_id=vm_id, target_type="vm",
+            status="failure", allowed=True,
+            details={"reason": "duplicate", "fields": list(changes.keys())},
+        )
+        raise ConflictError(
+            error_code="VM_DUPLICATE",
+            message="VM with this name (on the hub) or number already exists",
+        ) from exc
+    await db.refresh(vm)
+    audit_service.emit(
+        "vm.updated", target_id=vm.id, target_type="vm",
+        status="success", allowed=True,
+        details={"fields": list(changes.keys()), "department_id": vm.department_id},
+    )
+    return vm
 
 
 async def set_cred_strategy(

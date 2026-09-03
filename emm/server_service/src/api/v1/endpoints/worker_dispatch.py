@@ -90,6 +90,7 @@ from src.repositories import server as server_repo
 from src.repositories import server_account as account_repo
 from src.repositories import vm as vm_repo
 from src.schemas.server import (
+    AcsAvailabilityResponse,
     AcsSnapshotItem,
     AcsSnapshotListResponse,
     ServerAcsSnapshotBatchRequest,
@@ -2449,6 +2450,53 @@ async def server_acs_snapshot_list(
         },
     )
     return AcsSnapshotListResponse(snapshots=items)
+
+
+@router_servers.get(
+    "/acs-availability",
+    response_model=AcsAvailabilityResponse,
+    summary="Можно ли показывать снимки ACS для этого сервера (всегда 200)",
+    description=(
+        "Лёгкая read-only проверка для фронта — показывать ли вкладку "
+        "«Снимки ACS»: право `acs_snapshot_list` + платформенный "
+        "`AcsSettings.enabled` + `AcsDepartmentAccess` отдела сервера. Не "
+        "проверяет реальную сетевую доступность ACS (timeout/unreachable) — "
+        "это решается в момент настоящего `GET .../acs-snapshots`. Аудит не "
+        "пишет — это не действие, а фоновая проверка видимости UI."
+    ),
+    responses={
+        200: {"description": "{available: true|false}."},
+        404: {"description": "Сервер не найден / чужой dept."},
+    },
+)
+async def server_acs_availability(
+    server_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> AcsAvailabilityResponse:
+    """Возвращает `available=false` вместо 403/503 — это capability-check, не действие."""
+    try:
+        server = await server_svc.get_server(db, identity, server_id)
+    except (NotFoundError, AuthorizationError):
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND", message="Server not found",
+        )
+
+    try:
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.ACS_SNAPSHOT_LIST
+        )
+    except AuthorizationError:
+        return AcsAvailabilityResponse(available=False)
+
+    settings = await acs_settings_svc.get_acs_settings(db)
+    if not settings.enabled:
+        return AcsAvailabilityResponse(available=False)
+
+    dept_enabled = await acs_settings_svc.is_department_acs_enabled(
+        db, server.department_id
+    )
+    return AcsAvailabilityResponse(available=dept_enabled)
 
 
 # ── /servers/{id}/prepare — bootstrap управления (онбординг) ────────────────

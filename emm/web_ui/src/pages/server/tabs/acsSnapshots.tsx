@@ -21,7 +21,6 @@ import { useQuery } from "@/api/auth/useQuery";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
-import { isPlatformWideAdmin } from "@/lib/rbac";
 import type { Persona } from "@/types/persona";
 import {
   createAcsSnapshot,
@@ -61,6 +60,24 @@ function canCreateAcs(persona: Persona, serverDeptId: string | null): boolean {
   return svc === "admin" || svc === "operator";
 }
 
+/**
+ * Кто может восстанавливать снимки ACS: `Action.ACS_SNAPSHOT_RESTORE` в
+ * бэкенде — обычное действие server_service, засеянное системно только роли
+ * `admin` (`_NON_INSTANCE_ACTIONS` означает «нельзя выдать точечно на один
+ * сервер», а не «только платформенный account_admin» — это НЕ синоним
+ * `isPlatformWideAdmin`). Наоборот, `account_admin` эти endpoint'ы вообще не
+ * видит: `platform_admin_guard` режет его 403 на любом business-эндпоинте
+ * сервиса ещё до матрицы прав. Гейт зеркалит `canCreateAcs`, но без
+ * `operator` — restore необратим, только `admin`.
+ */
+function canRestoreAcs(persona: Persona, serverDeptId: string | null): boolean {
+  const svc = persona.service_roles.server;
+  if (persona.platform_role === "dep_admin" && serverDeptId && persona.dept_id === serverDeptId) {
+    return true;
+  }
+  return svc === "admin";
+}
+
 export function AcsSnapshotsTab({ serverId, server }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
@@ -69,7 +86,7 @@ export function AcsSnapshotsTab({ serverId, server }: Props) {
   const [createOpen, setCreateOpen] = useState(false);
 
   const canCreate = canCreateAcs(persona, server?.department_id ?? null);
-  const canRestore = isPlatformWideAdmin(persona);
+  const canRestore = canRestoreAcs(persona, server?.department_id ?? null);
 
   const snapsQ = useQuery(
     async () => (await listAcsSnapshots(serverId)).snapshots,
@@ -165,7 +182,7 @@ export function AcsSnapshotsTab({ serverId, server }: Props) {
         <p className="text-xs text-dim mb-3">
           Снимок — это полный образ диска сервера (не отдельные файлы), снятый
           через ACS. Восстановление полностью перезаписывает диск и доступно
-          только платформенному администратору.
+          только администратору server-сервиса отдела.
         </p>
 
         {snapsQ.loading ? (
@@ -206,8 +223,8 @@ export function AcsSnapshotsTab({ serverId, server }: Props) {
 
         {!canRestore && (
           <div className="text-[11px] text-dim mt-3">
-            Восстановление доступно только платформенному администратору
-            (account_admin).
+            Восстановление доступно только администратору server-сервиса
+            (роль `admin`) в отделе этого сервера.
           </div>
         )}
       </div>

@@ -14,6 +14,7 @@
 
 import { apiGet, apiPost } from "@/api/client";
 import type {
+  AcsAvailabilityResponse,
   AcsSnapshotBatchRequest,
   AcsSnapshotBatchResponse,
   AcsSnapshotListResponse,
@@ -24,6 +25,18 @@ import type {
 export function listAcsSnapshots(serverId: string): Promise<AcsSnapshotListResponse> {
   return apiGet<AcsSnapshotListResponse>(
     `/server/v1/servers/${serverId}/acs-snapshots`,
+  );
+}
+
+/**
+ * `GET /api/server/v1/servers/{id}/acs-availability` — можно ли показывать
+ * вкладку «Снимки ACS» для этого сервера. Всегда 200 (`{available: bool}`),
+ * кроме 404 если сервер не виден — используется, чтобы решить видимость
+ * вкладки ДО попытки реального листинга снимков.
+ */
+export function getAcsAvailability(serverId: string): Promise<AcsAvailabilityResponse> {
+  return apiGet<AcsAvailabilityResponse>(
+    `/server/v1/servers/${serverId}/acs-availability`,
   );
 }
 

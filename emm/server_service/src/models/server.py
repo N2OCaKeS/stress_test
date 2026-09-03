@@ -92,6 +92,14 @@ class Server(Base):
     busy_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     busy_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     busy_note: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Снимок busy_state/busy_user_id/busy_note/busy_since, снятый прямо перед
+    # переходом в busy_state=acs (`services/reservation.capture_pre_acs_state`).
+    # Нужен, чтобы по завершении ACS-операции вернуть сервер в то состояние,
+    # в котором он был до неё (свободен/забронирован под тест/что угодно ещё),
+    # а не сбрасывать бронь в free безусловно. `busy_since` кладётся как ISO
+    # строка (или null) — JSONB не хранит datetime нативно.
+    # `services/reservation.restore_pre_acs_state` читает и очищает поле.
+    pre_acs_busy_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # UNIQUE автоматически создаёт b-tree, поэтому отдельный `index=True`
     # не пишем — лишний дубль в DDL. `ip_address` оставлен с `index=True`
     # как косметика читаемости (alembic объединил физически в один индекс).

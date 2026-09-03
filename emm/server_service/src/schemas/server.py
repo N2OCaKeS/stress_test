@@ -1170,7 +1170,13 @@ class AcsSnapshotCreatedCallbackResponse(BaseModel):
     """Подтверждение записи acs-snapshot-created callback'а."""
 
     ok: bool = True
-    busy_state: str = Field(description="Итоговое busy_state сервера (всегда free).")
+    busy_state: str = Field(
+        description=(
+            "Итоговое busy_state сервера — восстановлено из "
+            "pre_acs_busy_snapshot (обычно free, но может быть busy/testing, "
+            "если сервер был забронирован до запуска ACS)."
+        )
+    )
 
 
 class AcsSnapshotRestoreDoneCallbackRequest(BaseModel):
@@ -1205,7 +1211,10 @@ class AcsSnapshotRestoreDoneCallbackResponse(BaseModel):
 
     ok: bool = True
     busy_state: str = Field(
-        description="Итоговое busy_state сервера (acs — ждём auto-prepare, free — restore упал)."
+        description=(
+            "Итоговое busy_state сервера (acs — ждём auto-prepare; при "
+            "succeeded=False восстановлено из pre_acs_busy_snapshot, обычно free)."
+        )
     )
     prepare_task_id: str | None = Field(
         default=None,

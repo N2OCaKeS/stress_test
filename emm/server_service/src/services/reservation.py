@@ -16,11 +16,16 @@ release брони гейт не трогает — владелец/админ 
 `account_admin` сюда не доходит — его режет `platform_admin_guard` middleware.
 """
 
+import logging
+from datetime import datetime
+
 from src.core.constants import BusyState, PlatformRole, SERVICE_NAME, ServiceRole
 from src.core.exceptions import ConflictError
 from src.models import Server
 from src.schemas.identity import IdentityContext
 from src.services import audit_service
+
+logger = logging.getLogger(__name__)
 
 
 def is_server_admin(identity: IdentityContext, server: Server) -> bool:
@@ -146,4 +151,103 @@ def ensure_not_reserved_for(
             "busy_user_id": server.busy_user_id,
             "busy_note": server.busy_note,
         },
+    )
+
+
+def capture_pre_acs_state(server: Server) -> dict:
+    """Снять снимок текущей брони перед переходом сервера в `busy_state=acs`.
+
+    Возвращает dict для записи в `server.pre_acs_busy_snapshot` — сохраняет
+    `busy_state`/`busy_user_id`/`busy_note`/`busy_since` в том виде, в каком
+    они были непосредственно перед ACS-dispatch'ем, чтобы по завершении
+    операции вернуть сервер туда же, а не безусловно в `free` (см.
+    `restore_pre_acs_state`). `busy_since` кладём ISO-строкой — JSONB не
+    хранит datetime нативно.
+    """
+    return {
+        "busy_state": server.busy_state,
+        "busy_user_id": server.busy_user_id,
+        "busy_note": server.busy_note,
+        "busy_since": server.busy_since.isoformat() if server.busy_since else None,
+    }
+
+
+def restore_pre_acs_state(server: Server) -> None:
+    """Вернуть бронь сервера к состоянию до ACS-операции.
+
+    Читает `server.pre_acs_busy_snapshot` и раскладывает его обратно в
+    `busy_state`/`busy_user_id`/`busy_note`/`busy_since`, затем очищает сам
+    снимок. Если снимка нет (старые данные до миграции) или он повреждён —
+    молча падаем на прежнее дефолтное поведение (`busy_state=free`), а не
+    бросаем исключение: снятие ACS-блокировки не должно зависать из-за
+    кривого JSON.
+
+    Мутирует переданный ORM-объект напрямую — flush/commit остаются на
+    caller'е, как и у остальных гейтов в этом модуле.
+    """
+    snapshot = server.pre_acs_busy_snapshot
+    if snapshot:
+        try:
+            busy_since_raw = snapshot.get("busy_since")
+            server.busy_state = snapshot.get("busy_state") or BusyState.FREE
+            server.busy_user_id = snapshot.get("busy_user_id")
+            server.busy_note = snapshot.get("busy_note")
+            server.busy_since = (
+                datetime.fromisoformat(busy_since_raw) if busy_since_raw else None
+            )
+            server.pre_acs_busy_snapshot = None
+            return
+        except (TypeError, ValueError, AttributeError):
+            logger.warning(
+                "malformed pre_acs_busy_snapshot on server_id=%s, falling back to free",
+                server.id,
+            )
+    server.busy_state = BusyState.FREE
+    server.busy_user_id = None
+    server.busy_since = None
+    server.busy_note = None
+    server.pre_acs_busy_snapshot = None
+
+
+def ensure_not_acs_locked(identity: IdentityContext, server: Server) -> None:
+    """Отбить операцию, пока сервер занят ACS-снимком/восстановлением.
+
+    Бронь `busy_state=acs` системная — обычного владельца у неё нет, поэтому
+    пока она держится, менять сервер вправе только администратор
+    (`is_server_admin`): department_admin своего отдела или носитель
+    service-роли `admin`. Остальным — 409 `SERVER_ACS_BUSY`, тот же код, что
+    уже используют гейты dispatch'а create/restore в
+    `worker_dispatch._acs_resolve_and_dispatch`.
+
+    Для не-ACS эндпоинтов (power/prepare/account/astra_update/ipmi/
+    node_exporter/mgmt-creds/vms_hub и т.п.) — вызывается отдельно каждым
+    из них, сюда сама функция никого не гейтит.
+    """
+    if server.busy_state != BusyState.ACS:
+        return
+    if is_server_admin(identity, server):
+        return
+    details = {
+        "server_id": server.id,
+        "department_id": server.department_id,
+        "busy_note": server.busy_note,
+    }
+    if identity.subject_type is not None:
+        details["subject_type"] = identity.subject_type
+    audit_service.emit(
+        "server.acs_locked",
+        target_id=server.id,
+        target_type="server",
+        status="denied",
+        allowed=False,
+        details=details,
+    )
+    raise ConflictError(
+        error_code="SERVER_ACS_BUSY",
+        message=(
+            "Server is locked by an ACS snapshot/restore operation in "
+            "progress; only a department/service admin can act on it "
+            "until the operation completes"
+        ),
+        details={"busy_note": server.busy_note},
     )

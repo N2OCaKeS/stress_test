@@ -43,7 +43,7 @@ from src.core.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
-from src.core.known_os import is_known_os
+from src.core.known_os import is_known_os, normalize_os_version_name
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import os_version as osv_repo
 from src.repositories import server as server_repo
@@ -84,6 +84,7 @@ from src.services import (
     metrics,
     os_version_bootstrap_password as bootstrap_password_svc,
     permissions,
+    reservation,
     secrets_service,
     worker_client,
 )
@@ -1092,6 +1093,7 @@ async def _resolve_or_create_os(
         старый воркер без поля либо сбой чтения sources.list не должны
         обнулять каталог.
     """
+    name = normalize_os_version_name(name)
     repositories = list(repositories or [])
     if not is_known_os(name):
         logger.warning(
@@ -1928,11 +1930,14 @@ async def record_server_prepared(
         # (`record_acs_snapshot_restore_done`), который намеренно держал
         # busy_state=acs до сих пор. Обычный (не-ACS) prepare сюда не
         # заходит: busy_state уже free/что угодно другое, ветка не трогает
-        # остальной прежний путь функции.
-        updates["busy_state"] = BusyState.FREE
-        updates["busy_user_id"] = None
-        updates["busy_since"] = None
-        updates["busy_note"] = None
+        # остальной прежний путь функции. Возвращаем бронь к тому, что было
+        # до всей цепочки restore→prepare, а не сбрасываем в free безусловно.
+        reservation.restore_pre_acs_state(server)
+        updates["busy_state"] = server.busy_state
+        updates["busy_user_id"] = server.busy_user_id
+        updates["busy_since"] = server.busy_since
+        updates["busy_note"] = server.busy_note
+        updates["pre_acs_busy_snapshot"] = server.pre_acs_busy_snapshot
     # `management_mode` пишем только если воркер его прислал — None оставляет
     # прежнее значение (старый воркер без детекта не должен затирать режим).
     if payload.management_mode is not None:
@@ -2097,10 +2102,12 @@ async def record_acs_snapshot_created(
     Право: `(server, *, prepare_callback)` — тот же узкий грант, что у
     prepared/astra-updated.
 
-    Снимает `busy_state=acs → free` в любом исходе — create (Clonezilla
-    save-disk) не переписывает диск сервера, он остаётся тем же самым
-    независимо от результата снятия снимка. Аудит `server.acs_snapshot_created`,
-    status = success/failure по `succeeded`.
+    Снимает `busy_state=acs` в любом исходе — create (Clonezilla save-disk)
+    не переписывает диск сервера, он остаётся тем же самым независимо от
+    результата снятия снимка. Бронь возвращается к тому, что было до
+    ACS-dispatch'а (`pre_acs_busy_snapshot`), а не сбрасывается в free
+    безусловно. Аудит `server.acs_snapshot_created`, status = success/failure
+    по `succeeded`.
     """
     try:
         await permissions.require_action(
@@ -2133,12 +2140,8 @@ async def record_acs_snapshot_created(
         actor_department_id=identity.department_id,
     )
 
-    await server_repo.update(db, server, {
-        "busy_state": BusyState.FREE,
-        "busy_user_id": None,
-        "busy_since": None,
-        "busy_note": None,
-    })
+    reservation.restore_pre_acs_state(server)
+    await db.flush()
     await db.commit()
 
     audit_service.emit(
@@ -2155,7 +2158,7 @@ async def record_acs_snapshot_created(
             "caller_type": identity.subject_type,
         },
     )
-    return {"ok": True, "busy_state": BusyState.FREE.value}
+    return {"ok": True, "busy_state": server.busy_state}
 
 
 async def record_acs_snapshot_restore_done(
@@ -2185,7 +2188,8 @@ async def record_acs_snapshot_restore_done(
     restore+reachability (10-30 минут по опыту).
 
     При `succeeded=False` — restore не удался, сервер остался на прежнем
-    диске: блокировка снимается сразу, prepare не диспатчится.
+    диске: бронь возвращается к тому, что было до ACS-dispatch'а
+    (`pre_acs_busy_snapshot`), prepare не диспатчится.
     """
     try:
         await permissions.require_action(
@@ -2218,13 +2222,12 @@ async def record_acs_snapshot_restore_done(
         actor_department_id=identity.department_id,
     )
 
+    os_version = await osv_repo.get_by_id(db, payload.os_version_id)
+    os_version_name = os_version.name if os_version is not None else payload.os_version_id
+
     if not payload.succeeded:
-        await server_repo.update(db, server, {
-            "busy_state": BusyState.FREE,
-            "busy_user_id": None,
-            "busy_since": None,
-            "busy_note": None,
-        })
+        reservation.restore_pre_acs_state(server)
+        await db.flush()
         await db.commit()
         audit_service.emit(
             "server.acs_snapshot_restore_done",
@@ -2239,12 +2242,12 @@ async def record_acs_snapshot_restore_done(
                 "caller_type": identity.subject_type,
             },
         )
-        return {"ok": True, "busy_state": BusyState.FREE.value, "prepare_task_id": None}
+        return {"ok": True, "busy_state": server.busy_state, "prepare_task_id": None}
 
-    # succeeded=True — держим busy_state=acs, только освежаем заметку;
+    # succeeded=True — держим busy_state=acs, только освежаем заметку под-этапа;
     # снимает блокировку последующий callback `prepared`, не мы здесь.
     await server_repo.update(db, server, {
-        "busy_note": "подготовка после восстановления снимка",
+        "busy_note": f"ACS_RESTORE_PREPARE_{os_version_name}",
     })
     await db.commit()
 
@@ -2258,10 +2261,7 @@ async def record_acs_snapshot_restore_done(
         # acs с явной пометкой, оператор донастраивает пароль и запускает
         # prepare вручную.
         await server_repo.update(db, server, {
-            "busy_note": (
-                "восстановление завершено, bootstrap-пароль версии не задан — "
-                "настройте его в каталоге ОС и запустите prepare вручную"
-            ),
+            "busy_note": f"ACS_RESTORE_BOOTSTRAP_MISSING_{os_version_name}",
         })
         await db.commit()
         audit_service.emit(
@@ -3707,5 +3707,4 @@ async def record_vm_prepared(
         },
     )
     return {"ok": True, "vm_id": vm.id, "is_managed": vm.is_managed}
-
 

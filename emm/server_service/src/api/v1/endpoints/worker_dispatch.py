@@ -2129,11 +2129,13 @@ async def _acs_resolve_and_dispatch(
             )
 
     now = datetime.now(timezone.utc)
+    pre_acs_snapshot = reservation.capture_pre_acs_state(server)
     await server_repo.update(db, server, {
         "busy_state": BusyState.ACS,
         "busy_user_id": identity.user_id,
         "busy_since": now,
-        "busy_note": f"{busy_note_prefix} {os_version.name}",
+        "busy_note": f"{busy_note_prefix}_{os_version.name}",
+        "pre_acs_busy_snapshot": pre_acs_snapshot,
     })
     await db.commit()
 
@@ -2155,12 +2157,8 @@ async def _acs_resolve_and_dispatch(
         await db.rollback()
         server = await server_repo.get_by_id(db, server_id)
         if server is not None and server.busy_state == BusyState.ACS:
-            await server_repo.update(db, server, {
-                "busy_state": BusyState.FREE,
-                "busy_user_id": None,
-                "busy_since": None,
-                "busy_note": None,
-            })
+            reservation.restore_pre_acs_state(server)
+            await db.flush()
             await db.commit()
         reason = (
             "idempotent_conflict"
@@ -2284,7 +2282,7 @@ async def server_acs_snapshot_create_dispatch(
         os_version_id=body.os_version_id,
         require_prepared=True,
         require_bootstrap_password=False,
-        busy_note_prefix="создание нового снимка rc",
+        busy_note_prefix="ACS_CREATE",
     )
     return ServerTaskDispatchResponse(task_id=task_id, status="queued")
 
@@ -2366,7 +2364,7 @@ async def server_acs_snapshot_restore_dispatch(
         os_version_id=body.os_version_id,
         require_prepared=False,
         require_bootstrap_password=True,
-        busy_note_prefix="восстановление к снимку rc",
+        busy_note_prefix="ACS_RESTORE",
     )
     return ServerTaskDispatchResponse(task_id=task_id, status="queued")
 
@@ -4093,7 +4091,7 @@ async def server_acs_snapshot_create_batch_dispatch(
         os_version_id=body.os_version_id,
         require_prepared=True,
         require_bootstrap_password=False,
-        busy_note_prefix="создание нового снимка rc",
+        busy_note_prefix="ACS_CREATE",
     )
 
     audit_service.emit(
@@ -4183,7 +4181,7 @@ async def server_acs_snapshot_restore_batch_dispatch(
         os_version_id=body.os_version_id,
         require_prepared=False,
         require_bootstrap_password=True,
-        busy_note_prefix="восстановление к снимку rc",
+        busy_note_prefix="ACS_RESTORE",
     )
 
     audit_service.emit(

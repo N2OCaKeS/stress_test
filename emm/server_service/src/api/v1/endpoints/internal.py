@@ -661,8 +661,10 @@ async def record_acs_snapshot_created(
 ) -> AcsSnapshotCreatedCallbackResponse:
     """Worker сообщает исход создания снимка диска через ACS (save-disk).
 
-    Снимает `busy_state=acs → free` в любом исходе — create не переписывает
-    диск, сервер свободен независимо от результата.
+    Снимает `busy_state=acs` в любом исходе — create не переписывает диск,
+    сервер свободен независимо от результата. Бронь возвращается к тому, что
+    было до ACS-dispatch'а (`pre_acs_busy_snapshot`), а не сбрасывается в
+    free безусловно.
 
     Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
 
@@ -694,7 +696,8 @@ async def record_acs_snapshot_restore_done(
     server_service резолвит bootstrap-пароль версии и сам диспатчит
     `server.prepare` — блокировка снимается только по завершении prepare
     (см. расширение `record_server_prepared`). При `succeeded=False`
-    восстановление не состоялось — блокировка снимается сразу.
+    восстановление не состоялось — бронь возвращается к тому, что было до
+    ACS-dispatch'а (`pre_acs_busy_snapshot`).
 
     Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
 

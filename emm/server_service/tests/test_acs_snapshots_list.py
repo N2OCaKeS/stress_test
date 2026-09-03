@@ -7,7 +7,7 @@
 * нет снимков этого сервера (только чужие) → пустой список, не ошибка;
 * ACS выключен платформенно → 503 ACS_DISABLED;
 * отдел без opt-in → 403 ACS_DEPARTMENT_NOT_ENABLED;
-* нет права `acs_snapshot_list` → 403 PERMISSION_DENIED;
+* нет права `acs_snapshot` → 403 PERMISSION_DENIED;
 * чужой департамент → 404;
 * ACS-клиент кидает ServiceUnavailableError (timeout/unreachable) →
   пробрасывается как есть, с failure-audit.

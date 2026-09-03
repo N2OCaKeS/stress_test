@@ -402,6 +402,8 @@ export interface AcsSnapshotListResponse {
 /** Ответ `GET /servers/{id}/acs-availability` — показывать ли вкладку «Снимки ACS». */
 export interface AcsAvailabilityResponse {
   available: boolean;
+  can_create: boolean;
+  can_restore: boolean;
 }
 
 /**

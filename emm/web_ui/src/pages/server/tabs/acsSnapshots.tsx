@@ -6,22 +6,22 @@
  * Снимок группируется каталожной версией ОС (`os_version_id` при создании);
  * список снимков (`GET /acs-snapshots`) отдаёт только `name`/`version_name` —
  * чтобы восстановить снимок, версию из каталога резолвим обратно по имени
- * (`version_name === OsVersion.name`). Создание доступно операторам/админам
- * server-зоны; восстановление — необратимая перезапись диска — только
- * платформенному admin'у (`Action.ACS_SNAPSHOT_RESTORE` не грантуется
- * per-instance, см. `server_service/src/api/v1/endpoints/worker_dispatch.py`).
+ * (`version_name === OsVersion.name`). Создание и восстановление доступны
+ * держателю ОДНОГО права `acs_snapshot` (list/create/restore разом,
+ * см. `server_service/src/core/constants.py::Action.ACS_SNAPSHOT`) —
+ * отдельных can_create/can_restore нет: раз вкладка вообще видна
+ * (`EntityDetail.tsx` гейтит её через `getAcsAvailability`), значит доступны
+ * обе кнопки.
  */
 import { useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { AlertCircle, Camera, Plus, RotateCcw } from "lucide-react";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { usePersona } from "@/contexts/PersonaContext";
 import { useQuery } from "@/api/auth/useQuery";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
-import type { Persona } from "@/types/persona";
 import {
   createAcsSnapshot,
   listAcsSnapshots,
@@ -51,42 +51,11 @@ function isAcsUnavailableError(err: unknown): boolean {
   );
 }
 
-/** Кто может создавать снимки ACS: server.admin/operator своей зоны или dep_admin своего отдела. */
-function canCreateAcs(persona: Persona, serverDeptId: string | null): boolean {
-  const svc = persona.service_roles.server;
-  if (persona.platform_role === "dep_admin" && serverDeptId && persona.dept_id === serverDeptId) {
-    return true;
-  }
-  return svc === "admin" || svc === "operator";
-}
-
-/**
- * Кто может восстанавливать снимки ACS: `Action.ACS_SNAPSHOT_RESTORE` в
- * бэкенде — обычное действие server_service, засеянное системно только роли
- * `admin` (`_NON_INSTANCE_ACTIONS` означает «нельзя выдать точечно на один
- * сервер», а не «только платформенный account_admin» — это НЕ синоним
- * `isPlatformWideAdmin`). Наоборот, `account_admin` эти endpoint'ы вообще не
- * видит: `platform_admin_guard` режет его 403 на любом business-эндпоинте
- * сервиса ещё до матрицы прав. Гейт зеркалит `canCreateAcs`, но без
- * `operator` — restore необратим, только `admin`.
- */
-function canRestoreAcs(persona: Persona, serverDeptId: string | null): boolean {
-  const svc = persona.service_roles.server;
-  if (persona.platform_role === "dep_admin" && serverDeptId && persona.dept_id === serverDeptId) {
-    return true;
-  }
-  return svc === "admin";
-}
-
 export function AcsSnapshotsTab({ serverId, server }: Props) {
-  const { persona } = usePersona();
   const toast = useToast();
   const { confirm } = useConfirm();
   const outcome = useTaskOutcome();
   const [createOpen, setCreateOpen] = useState(false);
-
-  const canCreate = canCreateAcs(persona, server?.department_id ?? null);
-  const canRestore = canRestoreAcs(persona, server?.department_id ?? null);
 
   const snapsQ = useQuery(
     async () => (await listAcsSnapshots(serverId)).snapshots,
@@ -169,20 +138,17 @@ export function AcsSnapshotsTab({ serverId, server }: Props) {
           <h3 className="font-semibold text-base flex items-center gap-2">
             <Camera className="w-4 h-4 text-accent" /> Снимки ACS
           </h3>
-          {canCreate && (
-            <button
-              className="btn btn-sm btn-primary flex items-center gap-1"
-              onClick={() => setCreateOpen(true)}
-            >
-              <Plus className="w-3.5 h-3.5" /> Создать снимок
-            </button>
-          )}
+          <button
+            className="btn btn-sm btn-primary flex items-center gap-1"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="w-3.5 h-3.5" /> Создать снимок
+          </button>
         </div>
 
         <p className="text-xs text-dim mb-3">
           Снимок — это полный образ диска сервера (не отдельные файлы), снятый
-          через ACS. Восстановление полностью перезаписывает диск и доступно
-          только администратору server-сервиса отдела.
+          через ACS. Восстановление полностью перезаписывает диск.
         </p>
 
         {snapsQ.loading ? (
@@ -205,7 +171,6 @@ export function AcsSnapshotsTab({ serverId, server }: Props) {
               <SnapshotRow
                 key={snap.name}
                 snap={snap}
-                canRestore={canRestore}
                 onRestore={handleRestore}
               />
             ))}
@@ -219,13 +184,6 @@ export function AcsSnapshotsTab({ serverId, server }: Props) {
             successText="Операция со снимком ACS завершилась успешно."
             onCancelled={outcome.reset}
           />
-        )}
-
-        {!canRestore && (
-          <div className="text-[11px] text-dim mt-3">
-            Восстановление доступно только администратору server-сервиса
-            (роль `admin`) в отделе этого сервера.
-          </div>
         )}
       </div>
 
@@ -243,11 +201,9 @@ export function AcsSnapshotsTab({ serverId, server }: Props) {
 
 function SnapshotRow({
   snap,
-  canRestore,
   onRestore,
 }: {
   snap: AcsSnapshot;
-  canRestore: boolean;
   onRestore: (s: AcsSnapshot) => void;
 }) {
   return (
@@ -258,15 +214,13 @@ function SnapshotRow({
           версия: {snap.version_name}
         </div>
       </div>
-      {canRestore && (
-        <button
-          className="btn btn-sm btn-danger flex items-center gap-1 shrink-0"
-          title="Восстановить сервер из этого снимка (полная перезапись диска)"
-          onClick={() => onRestore(snap)}
-        >
-          <RotateCcw className="w-3.5 h-3.5" /> Восстановить
-        </button>
-      )}
+      <button
+        className="btn btn-sm btn-danger flex items-center gap-1 shrink-0"
+        title="Восстановить сервер из этого снимка (полная перезапись диска)"
+        onClick={() => onRestore(snap)}
+      >
+        <RotateCcw className="w-3.5 h-3.5" /> Восстановить
+      </button>
     </div>
   );
 }

@@ -208,14 +208,12 @@ class Action(StrEnum):
     # было выдать прицельно. Дефолтно admin (либо кастомная роль с грантом).
     MANAGE_PACKAGES = "manage_packages"
 
-    # Снимки сервера через ACS (Clonezilla-обёртка): список, создание,
-    # восстановление. Список тянется живьём из ACS, своей таблицы снимков нет.
-    ACS_SNAPSHOT_LIST = "acs_snapshot_list"
-    ACS_SNAPSHOT_CREATE = "acs_snapshot_create"
-    # Восстановление — полная перезапись диска сервера, необратимо. Слишком
-    # рискованно для точечных инстанс-грантов, поэтому только тип-wide admin
-    # (см. `_NON_INSTANCE_ACTIONS`).
-    ACS_SNAPSHOT_RESTORE = "acs_snapshot_restore"
+    # Снимки сервера через ACS (Clonezilla-обёртка): один action на список +
+    # создание + восстановление — держателю права доступны все три сразу.
+    # Восстановление внутри — полная перезапись диска, необратимо, поэтому
+    # весь action целиком только тип-wide (см. `_NON_INSTANCE_ACTIONS`), без
+    # точечных инстанс-грантов.
+    ACS_SNAPSHOT = "acs_snapshot"
 
     # Sensitive: показ расшифрованного секрета. Держатель `view_password` /
     # `view_credentials` получает plaintext (в base64) прямо в GET-карточке —
@@ -304,8 +302,8 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         # через internal endpoint перед каждой managed-операцией.
         Action.VIEW_MANAGEMENT_CREDENTIALS,
         # Снимки сервера через ACS: список / создание / восстановление
-        # (полная перезапись диска).
-        Action.ACS_SNAPSHOT_LIST, Action.ACS_SNAPSHOT_CREATE, Action.ACS_SNAPSHOT_RESTORE,
+        # (полная перезапись диска) — один action на все три.
+        Action.ACS_SNAPSHOT,
     }),
     EntityType.SERVER_ACCOUNT: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
@@ -394,9 +392,9 @@ RESOURCE_ACL_TYPES: frozenset[str] = frozenset({
 #   * `view_management_credentials` — служебный pull воркера через internal
 #     endpoint, человеку не назначается;
 #   * `manage_ignored_logins` — скоуп отдела, а не отдельной учётки;
-#   * `acs_snapshot_restore` — не структурная причина, а риск: полная
-#     перезапись диска необратима, точечный грант на один сервер слишком
-#     легко выдать по ошибке — только тип-wide admin.
+#   * `acs_snapshot` — не структурная причина, а риск: включает восстановление
+#     (полная перезапись диска, необратимо), точечный грант на один сервер
+#     слишком легко выдать по ошибке — только тип-wide.
 _NON_INSTANCE_ACTIONS: frozenset[str] = frozenset({
     Action.CREATE,
     # callback-действия воркера (дублируют permission_catalog.WORKER_CALLBACK_ACTIONS;
@@ -409,10 +407,10 @@ _NON_INSTANCE_ACTIONS: frozenset[str] = frozenset({
     # Подготовка сервера как VMS-hub таргетит сервер, а не инстанс ВМ —
     # инстанс-грант на конкретную ВМ тут смысла не имеет.
     Action.VMS_HUB_PREPARE,
-    # Восстановление снимка ACS — полная перезапись диска, слишком рискованно
-    # для точечных инстанс-грантов. list/create остаются инстанс-грантуемыми
-    # (по аналогии с manage_packages — риск сопоставимый, а не выделенный).
-    Action.ACS_SNAPSHOT_RESTORE,
+    # Снимки ACS — один action на список/создание/восстановление; восстановление
+    # внутри необратимо перезаписывает диск, поэтому весь action целиком не
+    # грантуется точечно на один сервер, только тип-wide.
+    Action.ACS_SNAPSHOT,
 })
 
 # Инстанс-грантуемые действия на каждый resource_type — производное от

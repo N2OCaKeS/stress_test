@@ -182,7 +182,7 @@ async def get_acs_credentials(db: AsyncSession) -> tuple[str, str]:
     """(url, password) ACS для синхронных вызовов из server_service, не через worker.
 
     Caller — `GET /servers/{id}/acs-snapshots` (живой список снимков читается
-    прямо здесь, без dispatch в worker). Permission (`acs_snapshot_list`) и
+    прямо здесь, без dispatch в worker). Permission (`acs_snapshot`) и
     доступность (platform+department, `_ensure_acs_available` в
     `worker_dispatch.py`) уже проверены выше по стеку — здесь только чтение
     строки настроек + расшифровка. 503 `ACS_DISABLED`, если строки нет /

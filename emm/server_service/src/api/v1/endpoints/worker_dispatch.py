@@ -2270,8 +2270,8 @@ async def server_acs_snapshot_create_dispatch(
         extra_details={"server_id": server_id},
         identity=identity,
     ):
-        await permissions.require_resource_action(
-            db, identity, EntityType.SERVER, server_id, Action.ACS_SNAPSHOT_CREATE
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.ACS_SNAPSHOT
         )
 
     server = await _acs_visible_server_or_audit(
@@ -2322,11 +2322,12 @@ async def server_acs_snapshot_restore_dispatch(
 ) -> ServerTaskDispatchResponse:
     """Ставит `acs.snapshot_restore` в очередь worker'а.
 
-    `Action.ACS_SNAPSHOT_RESTORE` — из `_NON_INSTANCE_ACTIONS` (полная
-    перезапись диска, слишком рискованно для точечных инстанс-грантов):
-    проверяется `require_action` (тип-wide), не `require_resource_action` —
-    по аналогии с `Action.VMS_HUB_PREPARE` (`services/vm.py`), тоже
-    `_NON_INSTANCE_ACTIONS`, тоже таргетит конкретный сервер.
+    `Action.ACS_SNAPSHOT` — один action на list/create/restore, из
+    `_NON_INSTANCE_ACTIONS` (restore внутри — полная перезапись диска,
+    слишком рискованно для точечных инстанс-грантов): проверяется
+    `require_action` (тип-wide), не `require_resource_action` — по аналогии
+    с `Action.VMS_HUB_PREPARE` (`services/vm.py`), тоже `_NON_INSTANCE_ACTIONS`,
+    тоже таргетит конкретный сервер.
 
     Prepared-gate НЕ применяется (в отличие от create): restore — это как раз
     путь восстановления сервера, который может быть уже сломан/не managed;
@@ -2352,7 +2353,7 @@ async def server_acs_snapshot_restore_dispatch(
         identity=identity,
     ):
         await permissions.require_action(
-            db, identity, EntityType.SERVER, Action.ACS_SNAPSHOT_RESTORE
+            db, identity, EntityType.SERVER, Action.ACS_SNAPSHOT
         )
 
     server = await _acs_visible_server_or_audit(
@@ -2410,8 +2411,8 @@ async def server_acs_snapshot_list(
         extra_details={"server_id": server_id},
         identity=identity,
     ):
-        await permissions.require_resource_action(
-            db, identity, EntityType.SERVER, server_id, Action.ACS_SNAPSHOT_LIST
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.ACS_SNAPSHOT
         )
 
     server = await _acs_visible_server_or_audit(
@@ -2458,11 +2459,14 @@ async def server_acs_snapshot_list(
     summary="Можно ли показывать снимки ACS для этого сервера (всегда 200)",
     description=(
         "Лёгкая read-only проверка для фронта — показывать ли вкладку "
-        "«Снимки ACS»: право `acs_snapshot_list` + платформенный "
-        "`AcsSettings.enabled` + `AcsDepartmentAccess` отдела сервера. Не "
-        "проверяет реальную сетевую доступность ACS (timeout/unreachable) — "
-        "это решается в момент настоящего `GET .../acs-snapshots`. Аудит не "
-        "пишет — это не действие, а фоновая проверка видимости UI."
+        "«Снимки ACS»: право `acs_snapshot` (list/create/restore — один action, "
+        "любая роль с этим грантом, не хардкод `admin`) + платформенный "
+        "`AcsSettings.enabled` + `AcsDepartmentAccess` отдела сервера. Держатель "
+        "гранта получает все три возможности сразу — отдельных can_create/"
+        "can_restore не нужно. Не проверяет реальную сетевую доступность ACS "
+        "(timeout/unreachable) — это решается в момент настоящего "
+        "`GET .../acs-snapshots`. Аудит не пишет — это не действие, а фоновая "
+        "проверка видимости UI."
     ),
     responses={
         200: {"description": "{available: true|false}."},
@@ -2482,11 +2486,7 @@ async def server_acs_availability(
             error_code="SERVER_NOT_FOUND", message="Server not found",
         )
 
-    try:
-        await permissions.require_resource_action(
-            db, identity, EntityType.SERVER, server_id, Action.ACS_SNAPSHOT_LIST
-        )
-    except AuthorizationError:
+    if not await permissions.has_action(db, identity, EntityType.SERVER, Action.ACS_SNAPSHOT):
         return AcsAvailabilityResponse(available=False)
 
     settings = await acs_settings_svc.get_acs_settings(db)
@@ -3922,21 +3922,19 @@ async def _acs_batch_dispatch(
     require_prepared: bool,
     require_bootstrap_password: bool,
     busy_note_prefix: str,
-    per_server_action: str | None,
 ) -> tuple[list[dict], list[dict]]:
     """Общий цикл batch create/restore ACS по списку `server_id`.
 
     Переиспользует `_acs_resolve_and_dispatch` — тот же гейт-набор, что у
-    single-dispatch. `per_server_action` не-`None` для create
-    (`ACS_SNAPSHOT_CREATE` инстанс-грантуем — право проверяется на каждый
-    сервер отдельно); `None` для restore — тип-wide `require_action` уже
-    прошёл один раз до вызова этой функции.
+    single-dispatch. `Action.ACS_SNAPSHOT` — один тип-wide action на
+    list/create/restore, `require_action` уже прошёл один раз до вызова этой
+    функции (и для create, и для restore) — per-server permission-check тут
+    не нужен.
 
     Глобальные срывы (`ACS_DISABLED`, воркер недоступен) абортят остаток
     батча в `not_attempted` — следующий сервер упал бы идентично. Per-server
     гейты (decommissioned / vms-hub / acs-busy / reserved / updating /
-    prepared / bootstrap-пароль / permission) уходят в `failed`, не валя
-    остальной батч.
+    prepared / bootstrap-пароль) уходят в `failed`, не валя остальной батч.
     """
     servers_by_id = await server_svc.load_visible_servers(db, identity, server_ids)
     dispatched: list[dict] = []
@@ -3955,23 +3953,6 @@ async def _acs_batch_dispatch(
             )
             failed.append({"server_id": sid, "server_name": None, "reason": "not_found_or_cross_dept"})
             continue
-
-        if per_server_action is not None:
-            try:
-                with emit_denied_on_authz_error(
-                    audit_action, target_id=sid, target_type="server",
-                    extra_details={"server_id": sid, "task_kind": task_kind},
-                    identity=identity,
-                ):
-                    await permissions.require_resource_action(
-                        db, identity, EntityType.SERVER, sid, per_server_action
-                    )
-            except AuthorizationError:
-                failed.append({
-                    "server_id": sid, "server_name": _server_name(server),
-                    "reason": "permission_denied",
-                })
-                continue
 
         try:
             task_id = await _acs_resolve_and_dispatch(
@@ -4057,20 +4038,21 @@ def _check_acs_batch_cap(*, audit_action: str, operation: str, count: int) -> No
     summary="Массовое создание снимков ACS по списку серверов (202)",
     description=(
         "Ставит `acs.snapshot_create` на список серверов — по задаче на "
-        "сервер, одна версия каталога ОС на весь батч. `ACS_SNAPSHOT_CREATE` "
-        "инстанс-грантуем, поэтому право проверяется на КАЖДЫЙ server_id "
-        "отдельно (в отличие от prepare-batch, где право `update` "
-        "type-wide и проверяется один раз). Остальные гейты — те же, что у "
-        "single-dispatch (`POST /servers/{id}/acs-snapshots`): decommissioned, "
-        "VMS-hub, ACS-busy, reservation, prepared-gate, ACS-доступность "
-        "(platform+department), каталог-версия. Один битый сервер уходит в "
-        "`failed` и НЕ валит остальной батч; глобальная недоступность ACS/"
-        "воркера помечает упавший сервер причиной, остаток — "
-        "`not_attempted`. Дубли `server_id` → 422, размер батча > "
-        "`bulk_prepare_max_servers` → 413 `ACS_SNAPSHOT_BATCH_TOO_LARGE`."
+        "сервер, одна версия каталога ОС на весь батч. `Action.ACS_SNAPSHOT` — "
+        "тип-wide действие (`_NON_INSTANCE_ACTIONS`), право проверяется ОДИН "
+        "раз на весь батч, не per-server (симметрично prepare-batch с "
+        "`update`). Остальные гейты — те же, что у single-dispatch (`POST "
+        "/servers/{id}/acs-snapshots`): decommissioned, VMS-hub, ACS-busy, "
+        "reservation, prepared-gate, ACS-доступность (platform+department), "
+        "каталог-версия. Один битый сервер уходит в `failed` и НЕ валит "
+        "остальной батч; глобальная недоступность ACS/воркера помечает "
+        "упавший сервер причиной, остаток — `not_attempted`. Дубли "
+        "`server_id` → 422, размер батча > `bulk_prepare_max_servers` → 413 "
+        "`ACS_SNAPSHOT_BATCH_TOO_LARGE`."
     ),
     responses={
         202: {"description": "Батч принят; per-server dispatched/failed в теле."},
+        403: {"description": "Нет `acs_snapshot`."},
         413: {"description": "ACS_SNAPSHOT_BATCH_TOO_LARGE — батч превысил cap."},
         422: {"description": "Дубли server_id в теле."},
     },
@@ -4081,13 +4063,22 @@ async def server_acs_snapshot_create_batch_dispatch(
     identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerAcsSnapshotBatchResponse:
-    """Массовый `acs.snapshot_create` — per-server permission + dispatch.
+    """Массовый `acs.snapshot_create` — право на весь батч + dispatch.
 
     Связано: `_acs_batch_dispatch`, `_acs_resolve_and_dispatch`,
     `server_acs_snapshot_create_dispatch` (single).
     """
     audit_action = "server.acs_snapshot_create"
     task_kind = "acs.snapshot_create"
+
+    with emit_denied_on_authz_error(
+        audit_action, target_id=None, target_type="server",
+        extra_details={"operation": "acs_snapshot_create_batch"},
+        identity=identity,
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.ACS_SNAPSHOT
+        )
 
     _check_acs_batch_cap(
         audit_action=audit_action, operation="acs_snapshot_create_batch",
@@ -4103,7 +4094,6 @@ async def server_acs_snapshot_create_batch_dispatch(
         require_prepared=True,
         require_bootstrap_password=False,
         busy_note_prefix="создание нового снимка rc",
-        per_server_action=Action.ACS_SNAPSHOT_CREATE,
     )
 
     audit_service.emit(
@@ -4133,7 +4123,7 @@ async def server_acs_snapshot_create_batch_dispatch(
     description=(
         "Ставит `acs.snapshot_restore` на список серверов — по задаче на "
         "сервер, одна версия каталога ОС (снимка) на весь батч. Необратимо "
-        "для каждого сервера в списке. `ACS_SNAPSHOT_RESTORE` — тип-wide "
+        "для каждого сервера в списке. `Action.ACS_SNAPSHOT` — тип-wide "
         "действие (`_NON_INSTANCE_ACTIONS`), право проверяется ОДИН раз на "
         "весь батч, не per-server (симметрично prepare-batch с `update`). "
         "Остальные гейты — те же, что у single-dispatch (`POST "
@@ -4147,7 +4137,7 @@ async def server_acs_snapshot_create_batch_dispatch(
     ),
     responses={
         202: {"description": "Батч принят; per-server dispatched/failed в теле."},
-        403: {"description": "Нет тип-wide `acs_snapshot_restore` — весь батч отбит."},
+        403: {"description": "Нет тип-wide `acs_snapshot` — весь батч отбит."},
         413: {"description": "ACS_SNAPSHOT_BATCH_TOO_LARGE — батч превысил cap."},
         422: {"description": "Дубли server_id в теле."},
     },
@@ -4182,7 +4172,7 @@ async def server_acs_snapshot_restore_batch_dispatch(
         identity=identity,
     ):
         await permissions.require_action(
-            db, identity, EntityType.SERVER, Action.ACS_SNAPSHOT_RESTORE
+            db, identity, EntityType.SERVER, Action.ACS_SNAPSHOT
         )
 
     batch_id = rotation_batch_id()
@@ -4194,7 +4184,6 @@ async def server_acs_snapshot_restore_batch_dispatch(
         require_prepared=False,
         require_bootstrap_password=True,
         busy_note_prefix="восстановление к снимку rc",
-        per_server_action=None,
     )
 
     audit_service.emit(

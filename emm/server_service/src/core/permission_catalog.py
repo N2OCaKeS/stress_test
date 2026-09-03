@@ -137,17 +137,11 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
     Action.VM_PASSWD: "Сменить пароль пользователя ВМ (перекатка снимков).",
     Action.VM_NET_MANAGE: "Управлять сетью ВМ и IP-пулами (IPAM).",
     Action.VM_PRESET_MANAGE: "Управлять пресетами стандартных ВМ (vm_preset).",
-    Action.ACS_SNAPSHOT_LIST: (
-        "Посмотреть список снимков сервера через ACS (живой directory listing "
-        "Clonezilla, без своей таблицы)."
-    ),
-    Action.ACS_SNAPSHOT_CREATE: (
-        "Создать новый снимок диска сервера через ACS (Clonezilla save-disk). "
-        "Полная остановка сервера на время снятия образа."
-    ),
-    Action.ACS_SNAPSHOT_RESTORE: (
-        "Восстановить диск сервера из снимка ACS (Clonezilla restore-backup). "
-        "Полная перезапись диска, необратимо; тип-wide admin-only."
+    Action.ACS_SNAPSHOT: (
+        "Управлять снимками диска сервера через ACS (Clonezilla): смотреть "
+        "список, создавать новые (save-disk), восстанавливать (restore-backup — "
+        "полная перезапись диска, необратимо). Один action на все три; "
+        "тип-wide only."
     ),
 }
 
@@ -173,8 +167,7 @@ SENSITIVE_ACTIONS: frozenset[str] = frozenset({
     Action.VIEW_MANAGEMENT_CREDENTIALS,
     # Снятие снимка останавливает сервер, восстановление полностью
     # перезаписывает диск — оба необратимы для данных на боксе.
-    Action.ACS_SNAPSHOT_CREATE,
-    Action.ACS_SNAPSHOT_RESTORE,
+    Action.ACS_SNAPSHOT,
 })
 
 # Служебные гранты воркера: callback'и через internal endpoint'ы. Людям в норме

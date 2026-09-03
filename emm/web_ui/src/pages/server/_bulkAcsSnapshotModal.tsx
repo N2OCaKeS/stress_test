@@ -5,14 +5,14 @@
  * По образцу `_bulkPrepareModal.tsx`: список выбранных серверов задаётся
  * пропом `servers`, локальный чекбокс «кроме VMS-hub» лишь фильтрует, что
  * реально уйдёт в запрос — внешний выбор в `Server.tsx` не трогаем. Действие
- * (создать/восстановить) переключается табом внутри модалки: создание
- * доступно любому с правом на сервер, восстановление — необратимая перезапись
- * диска, только `server.admin` отдела (`Action.ACS_SNAPSHOT_RESTORE` — обычное
- * действие server_service, НЕ платформенный account_admin — см. коммент в
- * `tabs/acsSnapshots.tsx::canRestoreAcs`). Выбор серверов может охватывать
- * несколько отделов — точную per-server авторизацию всё равно проверяет
- * backend в batch-цикле (см. `failed[].reason === "permission_denied"`);
- * здесь гейт только грубо решает, показывать ли режим «Восстановить» вообще.
+ * (создать/восстановить) переключается табом внутри модалки — оба доступны
+ * держателю одного права `Action.ACS_SNAPSHOT` (list/create/restore разом,
+ * см. `server_service/src/core/constants.py`), поэтому фронт не гейтит режим
+ * «Восстановить» отдельно. Выбор серверов может охватывать несколько
+ * отделов — реальную авторизацию (и «есть ли грант вообще») проверяет
+ * backend один раз на весь батч перед циклом (403 на весь запрос, если права
+ * нет), per-server гейты (decommissioned/vms-hub/busy/prepared/bootstrap-
+ * пароль) — в `failed[]`.
  */
 import { useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -26,7 +26,6 @@ import {
 } from "lucide-react";
 import { apiErrMsg } from "@/api/client";
 import { useQuery } from "@/api/auth/useQuery";
-import { usePersona } from "@/contexts/PersonaContext";
 import { listOsVersions } from "@/api/server/osVersions";
 import {
   createAcsSnapshotsBatch,
@@ -72,11 +71,6 @@ export function BulkAcsSnapshotModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { persona } = usePersona();
-  // Грубая оценка «может ли вообще» — точная per-server проверка на backend'е.
-  const canRestore =
-    persona.service_roles.server === "admin" || persona.platform_role === "dep_admin";
-
   const [action, setAction] = useState<AcsAction>("create");
   const [excludeVmsHub, setExcludeVmsHub] = useState(true);
   const [osVersionId, setOsVersionId] = useState("");
@@ -103,7 +97,7 @@ export function BulkAcsSnapshotModal({
     return m;
   }, [servers]);
 
-  const valid = !!osVersionId && targetServers.length > 0 && (action === "create" || canRestore);
+  const valid = !!osVersionId && targetServers.length > 0;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -241,13 +235,11 @@ export function BulkAcsSnapshotModal({
                   </button>
                   <button
                     type="button"
-                    onClick={() => canRestore && setAction("restore")}
-                    disabled={!canRestore}
+                    onClick={() => setAction("restore")}
                     aria-pressed={action === "restore"}
-                    title={canRestore ? undefined : "Восстановление доступно только администратору server-сервиса отдела"}
                     className={`px-3 py-1.5 text-sm flex items-center gap-1.5 border-l border-token ${
                       action === "restore" ? "btn-danger" : "hover-bg text-dim"
-                    } ${canRestore ? "" : "opacity-50 cursor-not-allowed"}`}
+                    }`}
                   >
                     <RotateCcw className="w-4 h-4" /> Восстановить
                   </button>

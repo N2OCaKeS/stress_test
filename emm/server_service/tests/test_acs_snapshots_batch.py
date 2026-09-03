@@ -3,9 +3,9 @@
 Покрывает:
 * create-batch — admin ставит задачи на несколько managed-серверов: 202,
   batch_id, per-server dispatched;
-* create-batch — право `acs_snapshot_create` инстанс-грантуемое, поэтому
-  проверяется НА КАЖДЫЙ сервер отдельно: без гранта → per-server
-  `permission_denied`, батч не падает целиком;
+* create-batch — право `acs_snapshot` тип-wide (list/create/restore одним
+  action'ом): без гранта у оператора весь батч падает 403 до цикла, не
+  per-server;
 * create-batch — VMS-hub сервер в списке → per-server `server_is_vms_hub`,
   остальные dispatched;
 * create-batch — неподготовленный сервер → `prepare_required`;
@@ -13,7 +13,7 @@
   остаток `not_attempted` (глобальный абор);
 * create-batch — отдел без opt-in → per-server `acs_department_not_enabled`
   (не глобальный абор — это per-department, не platform-wide гейт);
-* restore-batch — `acs_snapshot_restore` тип-wide: без гранта у оператора
+* restore-batch — `acs_snapshot` тип-wide: без гранта у оператора
   весь батч падает 403 до цикла (не per-server);
 * restore-batch — admin с bootstrap-паролем на всех серверах → dispatched;
 * restore-batch — отсутствующий bootstrap-пароль версии → per-server
@@ -129,12 +129,12 @@ class TestAcsCreateBatch:
         for call in captured_dispatch:
             assert call["task_kind"] == "acs.snapshot_create"
 
-    async def test_permission_checked_per_server(
+    async def test_type_wide_permission_blocks_whole_batch(
         self, client, operator_token_a, make_server, db, captured_dispatch,
     ):
-        # operator не получает acs_snapshot_create системным сидом (только
-        # admin) — право проверяется на КАЖДЫЙ сервер отдельно, поэтому это
-        # per-server failed, а не общий 403 на весь запрос.
+        # operator не получает acs_snapshot системным сидом (только admin) —
+        # право проверяется ОДИН раз до цикла, весь батч падает 403, а не
+        # per-server failed (симметрично restore-batch).
         s1 = await _make_managed(make_server, db)
         osv = await _make_os_version(db, name="Astra 1.8 orel perm")
         await _enable_acs(db)
@@ -144,10 +144,7 @@ class TestAcsCreateBatch:
             headers=_hdr(operator_token_a),
             json={"server_ids": [s1.id], "os_version_id": osv.id},
         )
-        assert resp.status_code == 202, resp.text
-        body = resp.json()
-        assert body["dispatched"] == []
-        assert body["failed"][0]["reason"] == "permission_denied"
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
 
     async def test_vms_hub_fails_per_server(

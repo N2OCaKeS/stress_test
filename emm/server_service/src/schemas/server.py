@@ -967,8 +967,9 @@ class AcsAvailabilityResponse(BaseModel):
 
     available: bool = Field(
         description=(
-            "true — есть право acs_snapshot_list, ACS включён платформенно и "
-            "для отдела сервера. false в любом из противоположных случаев."
+            "true — есть право acs_snapshot (list/create/restore разом), ACS "
+            "включён платформенно и для отдела сервера. false в любом из "
+            "противоположных случаев."
         ),
     )
 

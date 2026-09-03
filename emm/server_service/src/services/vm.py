@@ -67,7 +67,7 @@ from src.schemas.vm import (
     VmCredStrategyRequest,
     VmUpdateRequest,
 )
-from src.services import audit_service, console_token, permissions, secrets_service, worker_client
+from src.services import audit_service, console_token, permissions, reservation, secrets_service, worker_client
 from src.services import box_service
 from src.services import management_user_config
 from src.services import vm_ip_pool as ip_pool_svc
@@ -2325,6 +2325,7 @@ async def prepare_vms_hub(
             status="failure", allowed=True, details={"reason": "not_found_or_cross_dept"},
         )
         raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
+    reservation.ensure_not_acs_locked(identity, hub)
     if not hub.is_managed:
         audit_service.emit(
             "vms_hub.prepared", target_id=server_id, target_type="server",

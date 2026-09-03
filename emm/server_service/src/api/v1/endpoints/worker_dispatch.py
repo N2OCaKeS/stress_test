@@ -332,6 +332,9 @@ async def _dispatch_for_server(
     # к нему не адресуем (даже power.status / inventory) — параллель посреди
     # astra-update опасна. Блокирует всех, включая владельца брони и админа.
     reservation.ensure_not_updating(identity, server, action=audit_action)
+    # Гейт ACS: сервер занят снимком/восстановлением — до его окончания
+    # worker-операции доступны только админу. Ставим рядом с гейтом updating.
+    reservation.ensure_not_acs_locked(identity, server)
 
     # 4. IPMI-row gate для тех task-kinds, которые ходят в BMC.
     if require_ipmi:
@@ -542,6 +545,7 @@ async def _dispatch_account_on_host(
     # Бронь: правка/снос OS-пользователя на хосте — деструктив. На занятом
     # чужим сервере разрешаем только владельцу брони или админу.
     reservation.ensure_not_reserved_for(identity, server, action=audit_action)
+    reservation.ensure_not_acs_locked(identity, server)
 
     idempotency_key = read_idempotency_key(request)
     payload = _build_account_task_payload(
@@ -648,6 +652,7 @@ async def _dispatch_account_provision(
     # Бронь: создание OS-пользователя на хосте — деструктив. На занятом
     # чужим сервере разрешаем только владельцу брони или админу.
     reservation.ensure_not_reserved_for(identity, server, action=audit_action)
+    reservation.ensure_not_acs_locked(identity, server)
 
     idempotency_key = read_idempotency_key(request)
     # Pre-check Idempotency-Key до любой generation creds. Если клиент
@@ -1828,6 +1833,7 @@ async def server_astra_update_dispatch(
     # SERVER_RESERVED. Оба через общий гейт (updating-check внутри блокирует
     # всех, reserved-check пропускает владельца/админа).
     reservation.ensure_not_reserved_for(identity, server, action=audit_action)
+    reservation.ensure_not_acs_locked(identity, server)
 
     # 4. Prepared-gate: обновление идёт по SSH под управляющим ключом, до
     # prepare заходить нечем.
@@ -2680,6 +2686,7 @@ async def install_node_exporter_dispatch(
             message="Server is not prepared; run prepare before installing node_exporter",
         )
     reservation.ensure_not_updating(identity, server, action=audit_action)
+    reservation.ensure_not_acs_locked(identity, server)
 
     task_id, _ = await dispatch_server_ssh_task(
         db=db,
@@ -2862,6 +2869,7 @@ async def _prepare_resolve_and_dispatch(
     # bootstrap посреди astra-update раскатал бы управляющую учётку на
     # полуобновлённый бокс. Блокирует всех, включая владельца брони и админа.
     reservation.ensure_not_updating(identity, server, action=audit_action)
+    reservation.ensure_not_acs_locked(identity, server)
 
     # Креды собирает caller-specific резолвер: single поддерживает account- и
     # ручной режимы, bulk — только ручной (у каждого бокса свои). Резолвер сам
@@ -3169,6 +3177,7 @@ async def server_rotate_management_credentials_dispatch(
     # управляющей сессии. Пока сервер `updating` (astra-update в полёте) или
     # занят под чужого — не ротируем: тот же гейт, что у prepare/astra_update.
     reservation.ensure_not_reserved_for(identity, server, action=audit_action)
+    reservation.ensure_not_acs_locked(identity, server)
 
     # Ротация имеет смысл только на подготовленном сервере: на неуправляемом
     # ещё нет ни ключа, ни управляющего пользователя — сначала prepare.

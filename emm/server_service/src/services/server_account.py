@@ -302,6 +302,8 @@ async def _ensure_no_linked_server_reserved(
     OS-fanout затрагивают их все. Если хоть один из привязанных серверов
     забронирован под чужого (и caller не админ) — бросаем 409 SERVER_RESERVED
     (на первом таком сервере) + WARNING-аудит. Владелец брони и админ проходят.
+    Отдельно проверяем ACS-лок — на сервере, занятом снимком/восстановлением,
+    проходит только админ, вне зависимости от того, кто держит бронь.
 
     Сервера грузим батчем с dept-visibility; невидимые/отсутствующие просто
     не участвуют (их и так нельзя трогать выше по стеку).
@@ -314,6 +316,7 @@ async def _ensure_no_linked_server_reserved(
         srv = servers.get(sid)
         if srv is not None:
             reservation.ensure_not_reserved_for(identity, srv, action=action)
+            reservation.ensure_not_acs_locked(identity, srv)
 
 
 async def _load_account_visible(

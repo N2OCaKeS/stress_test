@@ -665,6 +665,16 @@ async def bulk_packages_action(
             ))
             continue
 
+        # ACS-gate: сервер занят снимком/восстановлением — не-админу статус
+        # acs_busy, остальной батч продолжаем.
+        try:
+            reservation.ensure_not_acs_locked(identity, server)
+        except ConflictError:
+            results.append(BulkPackagesActionServerResult(
+                server_id=server.id, hostname=server.hostname, status="acs_busy",
+            ))
+            continue
+
         # Dispatch. На managed-сервере worker заходит по ключу — аккаунта нет.
         # `packages`/`action` едут доп-payload'ом; недоступность worker'а на
         # отдельном сервере уходит в статус queued-miss (не валит остальные).

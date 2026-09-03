@@ -439,6 +439,7 @@ class BulkPackagesActionServerResult(BaseModel):
       реальный результат UI добирает поллингом `GET /tasks/{task_id}`.
     * `prepare_required` — сервер не прошёл prepare, SSH-мутация невозможна.
     * `reserved` — сервер занят (busy) другим оператором, деструктив отбит.
+    * `acs_busy` — сервер занят ACS-снимком/восстановлением, звонящий не админ.
     * `decommissioned` — сервер списан, worker-операции не принимает.
     * `not_found` — сервер не виден (cross-dept / нет такого id).
     * `queued` — синоним ok для симметрии с другими bulk-ответами; не
@@ -449,7 +450,7 @@ class BulkPackagesActionServerResult(BaseModel):
 
     server_id: str = Field(description="ID сервера (prefix srv_).")
     hostname: str | None = Field(default=None, description="Hostname (None для невидимого).")
-    status: str = Field(description="ok / prepare_required / reserved / decommissioned / not_found / queued.")
+    status: str = Field(description="ok / prepare_required / reserved / acs_busy / decommissioned / not_found / queued.")
     task_id: str | None = Field(default=None, description="ID задачи воркера, если status=ok.")
 
 

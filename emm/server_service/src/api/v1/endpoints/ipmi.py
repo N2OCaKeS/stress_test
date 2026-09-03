@@ -147,6 +147,7 @@ async def _dispatch_power(
     # decommissioned/IPMI — чужому занятому сразу 409 SERVER_RESERVED, без
     # утечки наличия BMC. Эмит WARNING-аудита — внутри ensure_not_reserved_for.
     reservation.ensure_not_reserved_for(identity, server, action=audit_action)
+    reservation.ensure_not_acs_locked(identity, server)
     if server.status == ServerStatus.DECOMMISSIONED:
         audit_service.emit(
             audit_action, target_id=server_id, target_type="server",

@@ -26,8 +26,6 @@ import {
   Server,
   Square,
   Thermometer,
-  ToggleLeft,
-  ToggleRight,
   Trash2,
 } from "lucide-react";
 import { RC_IDS } from "./rc";
@@ -38,6 +36,7 @@ import {
   InfoBox,
   KnownIssueBadge,
   LoadMeter,
+  LogViewerModal,
   MetaRow,
   ModalHeader,
   Sparkline,
@@ -47,6 +46,7 @@ import {
   STATUS_META,
   QUEUE_TEXT,
   currentQueueItem,
+  demoQueueLog,
   queueBadge,
   queueStats,
   type QueueItem,
@@ -62,37 +62,6 @@ interface LogTarget {
   item?: QueueItem;
 }
 
-interface TestProfile {
-  id: string;
-  label: string;
-  tests: string[];
-}
-
-interface EnvGroup {
-  id: string;
-  label: string;
-  standsCount: number;
-  profileId: string;
-}
-
-const TEST_PROFILES: TestProfile[] = [
-  {
-    id: "main",
-    label: "Основной профиль",
-    tests: ["UnixBench 5.1.3", "sysbench 1.0.20 / cpu", "fio 3.38 / randrw", "OpenSSL speed"],
-  },
-  {
-    id: "extended",
-    label: "Расширенный профиль",
-    tests: ["PARSEC 3.0 / blackscholes", "PostgreSQL TPC-C", "Linpack Xtreme", "7-Zip 24.08", "iperf3 / network"],
-  },
-];
-
-const INITIAL_ENV_GROUPS: EnvGroup[] = [
-  { id: "core", label: "Основной пул", standsCount: 14, profileId: "main" },
-  { id: "lab", label: "Лабораторный пул", standsCount: 6, profileId: "extended" },
-];
-
 export function TestingOverview() {
   const [concept, setConcept] = useState<ConceptId>("cards");
   const [filter, setFilter] = useState<StandFilter>("all");
@@ -101,8 +70,6 @@ export function TestingOverview() {
   const [launchModal, setLaunchModal] = useState<LaunchModal>(null);
   const [logTarget, setLogTarget] = useState<LogTarget | null>(null);
   const [dashboardOpen, setDashboardOpen] = useState(true);
-  const [testenvEnabled, setTestenvEnabled] = useState(true);
-  const [envGroups, setEnvGroups] = useState(INITIAL_ENV_GROUPS);
 
   const filteredStands = useMemo(() => {
     return stands.filter((stand) => {
@@ -146,27 +113,24 @@ export function TestingOverview() {
       ),
     );
   };
-  const addTestsToQueue = (standId: number, tests: string[], mode: "prepare" | "run") => {
+  const addTestsToQueue = (standId: number, tests: string[], prepareEnv: boolean) => {
     setStands((current) =>
       current.map((stand) => {
         if (stand.id !== standId) return stand;
-        const added = tests.map<QueueItem>((title) => ({
-          title,
-          state: "pending",
-          meta: mode === "prepare" ? "подготовить окружение" : "запустить тест",
-        }));
+        const prepItem: QueueItem[] = prepareEnv
+          ? [{ title: "Подготовка окружения", state: "pending", meta: "testenv prepare перед запуском выбранных тестов" }]
+          : [];
+        const testItems = tests.map<QueueItem>((title) => ({ title, state: "pending", meta: "запустить тест" }));
+        const added = [...prepItem, ...testItems];
         return {
           ...stand,
           queue: [...stand.queue, ...added],
-          status: mode === "run" ? "testing" : stand.status,
-          currentTitle: mode === "run" && tests[0] ? tests[0] : stand.currentTitle,
-          currentMeta: mode === "run" ? "добавлено в очередь запуска · demo" : stand.currentMeta,
+          status: "testing",
+          currentTitle: added[0]?.title ?? stand.currentTitle,
+          currentMeta: "добавлено в очередь запуска · demo",
         };
       }),
     );
-  };
-  const setGroupProfile = (groupId: string, profileId: string) => {
-    setEnvGroups((current) => current.map((g) => (g.id === groupId ? { ...g, profileId } : g)));
   };
 
   return (
@@ -176,13 +140,6 @@ export function TestingOverview() {
         totalRuns={RUNS.length}
         open={dashboardOpen}
         onToggle={() => setDashboardOpen((v) => !v)}
-      />
-
-      <PrepareSettingsPanel
-        enabled={testenvEnabled}
-        onToggleEnabled={() => setTestenvEnabled((v) => !v)}
-        groups={envGroups}
-        onChangeGroupProfile={setGroupProfile}
       />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -272,8 +229,8 @@ export function TestingOverview() {
         <LaunchTestModal
           stands={stands}
           onClose={() => setLaunchModal(null)}
-          onSubmit={(standId, tests, mode) => {
-            addTestsToQueue(standId, tests, mode);
+          onSubmit={(standId, tests, prepareEnv) => {
+            addTestsToQueue(standId, tests, prepareEnv);
             setLaunchModal(null);
           }}
         />
@@ -400,69 +357,6 @@ function FleetDashboard({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ── prepare / testenv toggle ─────────────────────────────────────────────────
-
-function PrepareSettingsPanel({
-  enabled,
-  onToggleEnabled,
-  groups,
-  onChangeGroupProfile,
-}: {
-  enabled: boolean;
-  onToggleEnabled: () => void;
-  groups: EnvGroup[];
-  onChangeGroupProfile: (groupId: string, profileId: string) => void;
-}) {
-  return (
-    <div className="surface border border-token rounded p-3 grid gap-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="text-sm font-medium">Подготовка окружения (testenv)</div>
-        <button
-          type="button"
-          className={`btn btn-sm inline-flex items-center gap-2 ${enabled ? "btn-primary" : ""}`}
-          onClick={onToggleEnabled}
-        >
-          {enabled ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
-          {enabled ? "Включена" : "Выключена"}
-        </button>
-      </div>
-      {!enabled && (
-        <div className="text-xs text-warn">
-          Подготовка окружения выключена глобально — новые тесты будут запускаться на текущем состоянии стендов без prepare-этапа.
-        </div>
-      )}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        {groups.map((group) => {
-          const profile = TEST_PROFILES.find((p) => p.id === group.profileId) ?? TEST_PROFILES[0];
-          return (
-            <div key={group.id} className="surface-2 border border-token rounded p-3">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <div className="text-sm font-medium">{group.label}</div>
-                <span className="text-xs text-dim">{group.standsCount} стендов</span>
-              </div>
-              <select
-                className="input mb-2"
-                value={group.profileId}
-                onChange={(e) => onChangeGroupProfile(group.id, e.target.value)}
-                disabled={!enabled}
-              >
-                {TEST_PROFILES.map((p) => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                ))}
-              </select>
-              <div className="flex flex-wrap gap-1">
-                {profile.tests.map((t) => (
-                  <span key={t} className="badge">{t}</span>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -600,7 +494,7 @@ function StripsConcept({
               </div>
               <div className="surface-2 border border-token rounded overflow-hidden">
                 <div className="border-b border-token px-3 py-2 text-xs text-dim">Лог текущего теста</div>
-                <pre className="mono text-xs p-3 overflow-auto max-h-44 whitespace-pre-wrap">{testLog(stand, current)}</pre>
+                <pre className="mono text-xs p-3 overflow-auto max-h-44 whitespace-pre-wrap">{demoQueueLog(stand, current)}</pre>
                 <div className="border-t border-token p-2 flex justify-end">
                   <button
                     type="button"
@@ -648,13 +542,13 @@ function LaunchTestModal({
 }: {
   stands: Stand[];
   onClose: () => void;
-  onSubmit: (standId: number, tests: string[], mode: "prepare" | "run") => void;
+  onSubmit: (standId: number, tests: string[], prepareEnv: boolean) => void;
 }) {
   const [standId, setStandId] = useState(stands[0]?.id ?? 0);
   const stand = stands.find((item) => item.id === standId) ?? stands[0];
   const tests = stand ? testsForStand(stand) : [];
   const [selectedTests, setSelectedTests] = useState<string[]>(tests.slice(0, 2));
-  const [mode, setMode] = useState<"prepare" | "run">("run");
+  const [prepareEnv, setPrepareEnv] = useState(true);
 
   const switchStand = (nextStandId: number) => {
     const nextStand = stands.find((item) => item.id === nextStandId) ?? stands[0];
@@ -697,24 +591,20 @@ function LaunchTestModal({
             </label>
           </div>
 
-          <div className="surface-2 border border-token rounded p-3">
-            <div className="text-xs text-dim mb-2">Режим</div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {[
-                { id: "prepare" as const, label: "Подготовить окружение" },
-                { id: "run" as const, label: "Запустить тест" },
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`btn btn-sm ${mode === item.id ? "btn-primary" : ""}`}
-                  onClick={() => setMode(item.id)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={prepareEnv}
+              onChange={(event) => setPrepareEnv(event.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="text-sm font-medium block">Подготовить окружение перед запуском</span>
+              <span className="text-xs text-dim">
+                Стенд будет приведён к чистому состоянию (testenv prepare) непосредственно перед стартом выбранных тестов
+              </span>
+            </span>
+          </label>
 
           <div className="surface-2 border border-token rounded p-3">
             <div className="text-xs text-dim mb-2">Тесты стенда</div>
@@ -734,7 +624,7 @@ function LaunchTestModal({
               type="button"
               className="btn btn-primary"
               disabled={!selectedTests.length || !stand}
-              onClick={() => stand && onSubmit(stand.id, selectedTests, mode)}
+              onClick={() => stand && onSubmit(stand.id, selectedTests, prepareEnv)}
             >
               Добавить в очередь
             </button>
@@ -937,39 +827,36 @@ function StandCard({
 
         <QueueSummary stand={stand} />
 
-        <div className="grid grid-cols-2 gap-2 mt-3">
+        <div className="grid grid-cols-4 gap-1.5 mt-3">
           <button
             type="button"
-            className={`btn btn-sm inline-flex items-center justify-center gap-2 ${detailsOpen ? "btn-primary" : ""}`}
+            className={`btn btn-sm inline-flex items-center justify-center gap-1 px-1.5 ${detailsOpen ? "btn-primary" : ""}`}
             onClick={() => setDetailsOpen((open) => !open)}
           >
             Детали
           </button>
           <button
             type="button"
-            className="btn btn-sm inline-flex items-center justify-center gap-2"
+            className="btn btn-sm inline-flex items-center justify-center gap-1 px-1.5"
             onClick={() => onSetTesting(stand.id, true)}
           >
-            <Play className="w-4 h-4" />
+            <Play className="w-4 h-4 shrink-0" />
             Старт
           </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 mt-2">
           <button
             type="button"
-            className="btn btn-sm btn-danger inline-flex items-center justify-center gap-2"
+            className="btn btn-sm btn-danger inline-flex items-center justify-center gap-1 px-1.5"
             onClick={() => onSetTesting(stand.id, false)}
           >
-            <Square className="w-4 h-4" />
+            <Square className="w-4 h-4 shrink-0" />
             Стоп
           </button>
           <button
             type="button"
-            className="btn btn-sm inline-flex items-center justify-center gap-2"
+            className="btn btn-sm inline-flex items-center justify-center gap-1 px-1.5"
             onClick={() => onOpenQueue(stand.id)}
           >
-            <ListChecks className="w-4 h-4" />
+            <ListChecks className="w-4 h-4 shrink-0" />
             Очередь
           </button>
         </div>
@@ -980,7 +867,7 @@ function StandCard({
             <StandMetricsGrid stand={stand} />
             <div className="surface-2 border border-token rounded overflow-hidden">
               <div className="border-b border-token px-3 py-2 text-xs text-dim">Лог</div>
-              <pre className="mono text-xs p-3 overflow-auto max-h-36 whitespace-pre-wrap">{testLog(stand, current)}</pre>
+              <pre className="mono text-xs p-3 overflow-auto max-h-36 whitespace-pre-wrap">{demoQueueLog(stand, current)}</pre>
               <div className="border-t border-token p-2 flex justify-end">
                 <button
                   type="button"
@@ -1068,31 +955,6 @@ function QueueList({ queue }: { queue: QueueItem[] }) {
   );
 }
 
-function LogViewerModal({
-  stand,
-  item,
-  onClose,
-}: {
-  stand: Stand;
-  item?: QueueItem;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 bg-black/55 flex items-center justify-center p-5">
-      <div className="surface border border-token rounded w-full max-w-3xl max-h-[86vh] overflow-hidden shadow-2xl">
-        <ModalHeader
-          title={`Журнал · ${item?.title ?? stand.currentTitle}`}
-          subtitle={`${stand.name} · ${stand.ip}`}
-          onClose={onClose}
-        />
-        <div className="p-4">
-          <pre className="log-tail max-h-[60vh]">{testLog(stand, item)}</pre>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function testsForStand(stand: Stand) {
   const base = [
     "UnixBench 5.1.3",
@@ -1104,26 +966,4 @@ function testsForStand(stand: Stand) {
   const serverOnly = ["PostgreSQL TPC-C", "Linpack Xtreme", "PARSEC 3.0 / streamcluster"];
   const workstationOnly = ["7-Zip 24.08", "iperf3 / network", "GUI smoke"];
   return stand.os.includes("Workstation") ? [...base, ...workstationOnly] : [...base, ...serverOnly];
-}
-
-function testLog(stand: Stand, item: QueueItem | undefined) {
-  if (!item) {
-    return `[${stand.name}] очередь пуста\nожидание новой задачи`;
-  }
-  const status = QUEUE_TEXT[item.state];
-  return [
-    `[${stand.name}] ${item.title}`,
-    `status: ${status}`,
-    `kernel: ${stand.kernel}`,
-    `os: ${stand.os}`,
-    `meta: ${item.meta}`,
-    item.log ? `artifact: ${item.log}` : "artifact: будет создан после завершения",
-    item.knownIssue ? `known issue: ${item.knownIssue.ticket} (${item.knownIssue.url})` : null,
-    "",
-    "> prepare test environment",
-    "> run benchmark step",
-    item.state === "failed" ? "> error: тест завершился с ошибкой, очередь продолжила выполнение" : "> stream: сбор stdout/stderr",
-  ]
-    .filter((line): line is string => line !== null)
-    .join("\n");
 }

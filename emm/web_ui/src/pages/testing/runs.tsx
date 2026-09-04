@@ -9,9 +9,22 @@
  * "тест на стенде".
  */
 import { useMemo, useState } from "react";
-import { Activity, CheckCircle2, ListChecks, Play, Server, TimerReset, XCircle } from "lucide-react";
+import { Activity, CheckCircle2, ExternalLink, ListChecks, Play, Server, TimerReset, XCircle } from "lucide-react";
 import { RC_IDS } from "./rc";
-import { ModalHeader, Stat, STANDS, type Stand } from "./_shared";
+import { TEST_CATALOG } from "./tests";
+import {
+  LogViewerModal,
+  ModalHeader,
+  QUEUE_TEXT,
+  queueBadge,
+  SortableTh,
+  Stat,
+  STANDS,
+  useSortableRows,
+  type QueueItem,
+  type QueueState,
+  type Stand,
+} from "./_shared";
 
 export type RunStatus = "running" | "completed" | "failed";
 
@@ -102,8 +115,68 @@ const RUN_STATUS_META: Record<RunStatus, { label: string; badge: "ok" | "danger"
   failed: { label: "Провален", badge: "danger" },
 };
 
+// ── детальная таблица прогона: строка = один тест на одном стенде ──────────
+
+const RUN_MODES = ["orel", "smolensk"] as const;
+type RunMode = (typeof RUN_MODES)[number];
+
+interface RunTestRow {
+  id: string;
+  test: string;
+  os: string;
+  kernel: string;
+  mode: RunMode;
+  standName: string;
+  standId: number;
+  status: QueueState;
+  minutes: number;
+}
+
+type RunTestColumn = "test" | "os" | "kernel" | "mode" | "standName" | "status" | "minutes";
+
+/**
+ * Демо-разбивка fleet-кампании на отдельные тесты — по образцу того, как
+ * Zephyr Scale хранит результаты прогона: тест-кейс × комбинация
+ * ядро/режим/стенд. Точное совпадение чисел с агрегированными totals прогона
+ * не требуется, это витрина, не бухгалтерия.
+ */
+function buildRunTests(run: TestRun): RunTestRow[] {
+  const testNames = TEST_CATALOG.slice(0, 6).map((t) => t.fullName);
+  const stands = STANDS.filter((s) => s.status !== "offline").slice(0, Math.max(3, Math.min(run.standsTotal, 6)));
+  const rows: RunTestRow[] = [];
+  stands.forEach((stand, standIdx) => {
+    const mode: RunMode = RUN_MODES[standIdx % RUN_MODES.length];
+    testNames.forEach((test, testIdx) => {
+      const seed = (standIdx * 7 + testIdx * 3) % 10;
+      let status: QueueState;
+      if (run.status === "completed") status = seed === 0 ? "failed" : "done";
+      else if (run.status === "failed") status = seed < 6 ? "failed" : "done";
+      else status = seed < 2 ? "running" : seed < 3 ? "failed" : seed < 7 ? "done" : "pending";
+      rows.push({
+        id: `${run.id}-${stand.id}-${testIdx}`,
+        test,
+        os: stand.os,
+        kernel: stand.kernel,
+        mode,
+        standName: stand.name,
+        standId: stand.id,
+        status,
+        minutes: status === "pending" ? -1 : 4 + seed * 3,
+      });
+    });
+  });
+  return rows;
+}
+
+function runTestValue(row: RunTestRow, column: RunTestColumn): string | number {
+  if (column === "minutes") return row.minutes;
+  return row[column];
+}
+
 export function RunsWorkzone() {
   const [launchOpen, setLaunchOpen] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<string>(RUNS[0]?.id ?? "");
+  const selectedRun = RUNS.find((r) => r.id === selectedRunId) ?? RUNS[0] ?? null;
 
   const totals = useMemo(
     () => ({
@@ -139,22 +212,33 @@ export function RunsWorkzone() {
         <Stat title="Успешность по пулу" value={`${totals.passRate}%`} icon={CheckCircle2} kind={totals.passRate >= 90 ? "ok" : "warn"} />
       </div>
 
-      <div className="grid gap-2">
-        {RUNS.map((run) => (
-          <RunRow key={run.id} run={run} />
-        ))}
+      <div>
+        <div className="text-sm font-medium mb-2">Кампании ({RUNS.length})</div>
+        <div className="grid gap-2">
+          {RUNS.map((run) => (
+            <RunRow key={run.id} run={run} selected={run.id === selectedRunId} onSelect={() => setSelectedRunId(run.id)} />
+          ))}
+        </div>
       </div>
+
+      {selectedRun && <RunDetailPanel run={selectedRun} />}
 
       {launchOpen && <LaunchRunModal onClose={() => setLaunchOpen(false)} />}
     </div>
   );
 }
 
-function RunRow({ run }: { run: TestRun }) {
+function RunRow({ run, selected, onSelect }: { run: TestRun; selected: boolean; onSelect: () => void }) {
   const meta = RUN_STATUS_META[run.status];
   const total = run.totals.passed + run.totals.failed + run.totals.running + run.totals.pending || 1;
   return (
-    <div className="surface border border-token rounded p-4 grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_170px] gap-3 items-center">
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`surface border rounded p-4 grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_170px] gap-3 items-center text-left hover-bg ${
+        selected ? "border-accent" : "border-token"
+      }`}
+    >
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-semibold mono truncate">{run.id}</span>
@@ -184,6 +268,89 @@ function RunRow({ run }: { run: TestRun }) {
           {meta.label}
         </span>
       </div>
+    </button>
+  );
+}
+
+/**
+ * Детальная разбивка выбранного прогона на отдельные тесты — сортируемая
+ * таблица с переходом в лог прямо в строке, без ухода на другую страницу.
+ */
+function RunDetailPanel({ run }: { run: TestRun }) {
+  const rows = useMemo(() => buildRunTests(run), [run]);
+  const { sorted, sort, onSort } = useSortableRows<RunTestRow, RunTestColumn>(rows, runTestValue, {
+    column: "standName",
+    dir: "asc",
+  });
+  const [logTarget, setLogTarget] = useState<{ stand: Stand; item: QueueItem } | null>(null);
+
+  const openLog = (row: RunTestRow) => {
+    const stand = STANDS.find((s) => s.id === row.standId);
+    if (!stand) return;
+    setLogTarget({
+      stand,
+      item: {
+        title: row.test,
+        state: row.status,
+        meta: `${row.mode} · ${row.kernel}`,
+        log: row.status === "pending" ? undefined : `/logs/${stand.name}/${row.test.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase()}.txt`,
+      },
+    });
+  };
+
+  return (
+    <div className="surface border border-token rounded overflow-hidden">
+      <div className="border-b border-token p-3 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-sm font-medium">Тесты прогона {run.id}</div>
+          <div className="text-xs text-dim">{run.rcId} · {sorted.length} строк · сортировка по клику на заголовок</div>
+        </div>
+      </div>
+      <div className="overflow-auto max-h-[520px]">
+        <table className="mini">
+          <thead>
+            <tr>
+              <SortableTh label="Тест" column="test" sort={sort} onSort={onSort} />
+              <SortableTh label="ОС / релиз" column="os" sort={sort} onSort={onSort} />
+              <SortableTh label="Ядро" column="kernel" sort={sort} onSort={onSort} />
+              <SortableTh label="Режим" column="mode" sort={sort} onSort={onSort} />
+              <SortableTh label="Стенд" column="standName" sort={sort} onSort={onSort} />
+              <SortableTh label="Статус" column="status" sort={sort} onSort={onSort} />
+              <SortableTh label="Время" column="minutes" sort={sort} onSort={onSort} />
+              <th>Лог</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((row) => (
+              <tr key={row.id}>
+                <td>{row.test}</td>
+                <td className="text-xs text-dim">{row.os}</td>
+                <td className="mono text-xs">{row.kernel}</td>
+                <td className="mono text-xs">{row.mode}</td>
+                <td className="mono text-xs">{row.standName}</td>
+                <td>
+                  <span className={`badge badge-${queueBadge(row.status)}`}>{QUEUE_TEXT[row.status]}</span>
+                </td>
+                <td className="mono text-xs">{row.minutes < 0 ? "—" : `${row.minutes} мин`}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn btn-sm inline-flex items-center gap-1"
+                    disabled={row.status === "pending"}
+                    onClick={() => openLog(row)}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Лог
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {logTarget && (
+        <LogViewerModal stand={logTarget.stand} item={logTarget.item} onClose={() => setLogTarget(null)} />
+      )}
     </div>
   );
 }

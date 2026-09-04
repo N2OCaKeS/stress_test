@@ -9,8 +9,9 @@
  * подмножества стендов) — без этого пришлось бы тянуть overview.tsx из
  * runs.tsx и получить циклический импорт.
  */
+import { useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Activity, CheckCircle2, CircleDot, ShieldCheck, X } from "lucide-react";
+import { Activity, CheckCircle2, ChevronDown, ChevronUp, CircleDot, ShieldCheck, X } from "lucide-react";
 
 export type BadgeKind = "ok" | "warn" | "danger" | "accent";
 export type StandStatus = "testing" | "manual" | "idle" | "offline";
@@ -430,4 +431,114 @@ export function KnownIssueBadge({ issue }: { issue: KnownIssue }) {
       {issue.ticket}
     </a>
   );
+}
+
+/**
+ * Демо-лог для стенда/элемента очереди — используется везде, где нужно
+ * показать "перейти в лог" (рабочая зона, прогоны, СТП), без реального
+ * хранилища логов за спиной.
+ */
+export function demoQueueLog(stand: Stand, item: QueueItem | undefined): string {
+  if (!item) {
+    return `[${stand.name}] очередь пуста\nожидание новой задачи`;
+  }
+  const status = QUEUE_TEXT[item.state];
+  return [
+    `[${stand.name}] ${item.title}`,
+    `status: ${status}`,
+    `kernel: ${stand.kernel}`,
+    `os: ${stand.os}`,
+    `meta: ${item.meta}`,
+    item.log ? `artifact: ${item.log}` : "artifact: будет создан после завершения",
+    item.knownIssue ? `known issue: ${item.knownIssue.ticket} (${item.knownIssue.url})` : null,
+    "",
+    "> prepare test environment",
+    "> run benchmark step",
+    item.state === "failed" ? "> error: тест завершился с ошибкой, очередь продолжила выполнение" : "> stream: сбор stdout/stderr",
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+}
+
+/**
+ * Модалка просмотра лога — общая для рабочей зоны, прогонов и СТП, чтобы
+ * переход "в лог" везде открывался на месте, а не уводил на другую страницу.
+ */
+export function LogViewerModal({
+  stand,
+  item,
+  onClose,
+}: {
+  stand: Stand;
+  item?: QueueItem;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/55 flex items-center justify-center p-5">
+      <div className="surface border border-token rounded w-full max-w-3xl max-h-[86vh] overflow-hidden shadow-2xl">
+        <ModalHeader
+          title={`Журнал · ${item?.title ?? stand.currentTitle}`}
+          subtitle={`${stand.name} · ${stand.ip}`}
+          onClose={onClose}
+        />
+        <div className="p-4">
+          <pre className="log-tail max-h-[60vh]">{demoQueueLog(stand, item)}</pre>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── сортируемые таблицы ─────────────────────────────────────────────────────
+
+export type SortDir = "asc" | "desc";
+
+export interface SortState<K extends string> {
+  column: K;
+  dir: SortDir;
+}
+
+/** Клик по заголовку колонки — сортировать/переключить направление. */
+export function SortableTh<K extends string>({
+  label,
+  column,
+  sort,
+  onSort,
+}: {
+  label: string;
+  column: K;
+  sort: SortState<K>;
+  onSort: (column: K) => void;
+}) {
+  const active = sort.column === column;
+  return (
+    <th className="cursor-pointer select-none hover-bg" onClick={() => onSort(column)}>
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active && (sort.dir === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
+      </span>
+    </th>
+  );
+}
+
+/** Универсальная сортировка массива строк по значению колонки (строка или число). */
+export function useSortableRows<T, K extends string>(
+  rows: T[],
+  getValue: (row: T, column: K) => string | number,
+  initial: SortState<K>,
+) {
+  const [sort, setSort] = useState<SortState<K>>(initial);
+  const sorted = useMemo(() => {
+    const copy = [...rows];
+    copy.sort((a, b) => {
+      const av = getValue(a, sort.column);
+      const bv = getValue(b, sort.column);
+      const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv), "ru");
+      return sort.dir === "asc" ? cmp : -cmp;
+    });
+    return copy;
+  }, [rows, sort, getValue]);
+  const onSort = (column: K) =>
+    setSort((current) => (current.column === column ? { column, dir: current.dir === "asc" ? "desc" : "asc" } : { column, dir: "asc" }));
+  return { sorted, sort, onSort };
 }

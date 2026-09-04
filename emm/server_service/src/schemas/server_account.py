@@ -827,7 +827,8 @@ class AccountRotateSkipped(BaseModel):
     reason: str = Field(
         description=(
             "Причина пропуска: decommissioned | idempotent_conflict | "
-            "worker_unreachable | not_attempted | not_found_or_cross_dept."
+            "worker_unreachable | not_attempted | not_found_or_cross_dept | "
+            "server_reserved | server_updating | server_acs_busy."
         )
     )
 

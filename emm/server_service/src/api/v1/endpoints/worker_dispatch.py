@@ -4405,6 +4405,22 @@ async def account_rotate_password_dispatch(
                 "reason": "decommissioned",
             })
             continue
+
+        # Бронь и ACS-лок: apply идёт по SSH на живой хост, занятый чужим
+        # владельцем или ACS-снимком сервер трогать нельзя. Точечно — hard
+        # fail как decommissioned, массово — сервер уходит в skipped, а не
+        # валит остальной батч.
+        try:
+            reservation.ensure_not_reserved_for(identity, server, action=audit_action)
+            reservation.ensure_not_acs_locked(identity, server)
+        except ConflictError as exc:
+            if mode == "single":
+                raise
+            skipped.append({
+                "server_id": server.id, "server_name": _server_name(server),
+                "reason": exc.error_code.lower(),
+            })
+            continue
         dispatchable.append(server)
 
     # Все привязанные серверы списаны — ставить нечего, ведём себя как
@@ -5060,6 +5076,11 @@ async def ipmi_rotate_password_dispatch(
             error_code="SERVER_DECOMMISSIONED",
             message="Server is decommissioned, IPMI rotation not allowed",
         )
+
+    # BMC apply идёт на живом хосте — занятый чужим владельцем или ACS-
+    # снимком сервер трогать нельзя, тот же гейт, что у остальных dispatch'ей.
+    reservation.ensure_not_reserved_for(identity, server, action=audit_action)
+    reservation.ensure_not_acs_locked(identity, server)
 
     idempotency_key = read_idempotency_key(request)
     # Помечаем строку controller'а pending_apply=True до dispatch'а: worker

@@ -432,3 +432,237 @@ class TestNonDispatchOperationsNotGated:
         resp = await client.get(f"{SRV}/{srv.id}", headers=_hdr(operator_token_a))
         assert resp.status_code == 200
         assert resp.json()["busy_state"] == "acs"
+
+
+# ── 7. account_rotate_password_dispatch / ipmi_rotate_password_dispatch ─────
+# Оба раньше не звали вообще никакого гейта брони — ни обычного
+# `ensure_not_reserved_for`, ни ACS-лока. Ниже — обе плоскости на обеих
+# точках: обычная бронь (busy_state=busy, чужой/владелец/админ) и ACS-лок
+# (stranger/dept_admin/service_admin), тем же паттерном, что и остальной файл.
+
+IPMI = "/api/server/v1/ipmi-controllers"
+
+
+@pytest_asyncio.fixture
+def rotate_owner_user_id() -> str:
+    """Владелец брони для этой секции — отдельный id, чтобы не пересекаться
+    с `owner_user_id` из `test_server_reservation_gate.py` (разные файлы,
+    но на всякий случай не полагаемся на совпадение)."""
+    return "usr_rotate_owner"
+
+
+@pytest_asyncio.fixture
+async def rotate_owner_token(make_token, dept_a, rotate_owner_user_id) -> str:
+    return make_token(
+        user_id=rotate_owner_user_id,
+        department_id=dept_a,
+        service_roles={"server_service": ["operator"]},
+    )
+
+
+@pytest_asyncio.fixture
+async def rotate_stranger_token(make_token, dept_a) -> str:
+    return make_token(
+        user_id="usr_rotate_stranger",
+        department_id=dept_a,
+        service_roles={"server_service": ["operator"]},
+    )
+
+
+@pytest_asyncio.fixture
+async def make_busy_server_for_rotate(make_server, db, rotate_owner_user_id):
+    """Сервер dep_a, забронированный (не ACS) под `rotate_owner_user_id`."""
+    from datetime import datetime, timezone
+
+    async def _factory(*, with_ipmi: bool = False):
+        srv = await make_server(department_id="dep_a", with_ipmi=with_ipmi)
+        srv.busy_state = BusyState.BUSY
+        srv.busy_user_id = rotate_owner_user_id
+        srv.busy_since = datetime.now(timezone.utc)
+        srv.busy_note = "rotate-gate-test"
+        await db.flush()
+        return srv
+
+    return _factory
+
+
+class TestAccountRotateDispatchReservationGate:
+    """`POST /server-accounts/{id}/rotate` — обычная бронь (не ACS)."""
+
+    async def test_stranger_blocked_on_busy_server(
+        self, client, rotate_stranger_token, make_busy_server_for_rotate,
+        make_account, captured_dispatch,
+    ):
+        srv = await make_busy_server_for_rotate()
+        acc = await make_account(server_id=srv.id, login="deploy")
+        resp = await client.post(
+            f"{ACC}/{acc.id}/rotate?server_id={srv.id}",
+            headers=_hdr(rotate_stranger_token),
+        )
+        assert_error(resp, 409, "SERVER_RESERVED")
+        assert captured_dispatch == []
+
+    async def test_owner_passes_on_busy_server(
+        self, client, rotate_owner_token, make_busy_server_for_rotate,
+        make_account, captured_dispatch,
+    ):
+        srv = await make_busy_server_for_rotate()
+        acc = await make_account(server_id=srv.id, login="deploy")
+        resp = await client.post(
+            f"{ACC}/{acc.id}/rotate?server_id={srv.id}",
+            headers=_hdr(rotate_owner_token),
+        )
+        assert resp.status_code == 202, resp.text
+
+    async def test_dept_admin_passes_on_busy_server(
+        self, client, dept_admin_token_a, make_busy_server_for_rotate,
+        make_account, captured_dispatch,
+    ):
+        srv = await make_busy_server_for_rotate()
+        acc = await make_account(server_id=srv.id, login="deploy")
+        resp = await client.post(
+            f"{ACC}/{acc.id}/rotate?server_id={srv.id}",
+            headers=_hdr(dept_admin_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+
+    async def test_free_server_not_gated(
+        self, client, rotate_stranger_token, make_server, make_account,
+        captured_dispatch,
+    ):
+        """Регрессия: dispatch на свободном сервере не трогается новым гейтом."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="deploy")
+        resp = await client.post(
+            f"{ACC}/{acc.id}/rotate?server_id={srv.id}",
+            headers=_hdr(rotate_stranger_token),
+        )
+        assert resp.status_code == 202, resp.text
+
+
+class TestAccountRotateDispatchAcsGate:
+    """`POST /server-accounts/{id}/rotate` — ACS-лок."""
+
+    async def test_stranger_blocked(
+        self, client, operator_token_a, make_acs_server, make_account,
+        captured_dispatch,
+    ):
+        srv = await make_acs_server()
+        acc = await make_account(server_id=srv.id, login="deploy")
+        resp = await client.post(
+            f"{ACC}/{acc.id}/rotate?server_id={srv.id}",
+            headers=_hdr(operator_token_a),
+        )
+        assert_error(resp, 409, "SERVER_ACS_BUSY")
+        assert captured_dispatch == []
+
+    async def test_dept_admin_passes(
+        self, client, dept_admin_token_a, make_acs_server, make_account,
+        captured_dispatch,
+    ):
+        srv = await make_acs_server()
+        acc = await make_account(server_id=srv.id, login="deploy")
+        resp = await client.post(
+            f"{ACC}/{acc.id}/rotate?server_id={srv.id}",
+            headers=_hdr(dept_admin_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+
+    async def test_service_admin_passes(
+        self, client, admin_role_token_a, make_acs_server, make_account,
+        captured_dispatch,
+    ):
+        srv = await make_acs_server()
+        acc = await make_account(server_id=srv.id, login="deploy")
+        resp = await client.post(
+            f"{ACC}/{acc.id}/rotate?server_id={srv.id}",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+
+
+class TestIpmiRotateDispatchReservationGate:
+    """`POST /ipmi-controllers/{id}/rotate` — обычная бронь (не ACS)."""
+
+    async def test_stranger_blocked_on_busy_server(
+        self, client, rotate_stranger_token, make_busy_server_for_rotate,
+        make_ipmi, captured_dispatch,
+    ):
+        srv = await make_busy_server_for_rotate()
+        ctrl = await make_ipmi(server_id=srv.id)
+        resp = await client.post(
+            f"{IPMI}/{ctrl.id}/rotate", headers=_hdr(rotate_stranger_token),
+        )
+        assert_error(resp, 409, "SERVER_RESERVED")
+        assert captured_dispatch == []
+
+    async def test_owner_passes_on_busy_server(
+        self, client, rotate_owner_token, make_busy_server_for_rotate,
+        make_ipmi, captured_dispatch,
+    ):
+        srv = await make_busy_server_for_rotate()
+        ctrl = await make_ipmi(server_id=srv.id)
+        resp = await client.post(
+            f"{IPMI}/{ctrl.id}/rotate", headers=_hdr(rotate_owner_token),
+        )
+        assert resp.status_code == 202, resp.text
+
+    async def test_dept_admin_passes_on_busy_server(
+        self, client, dept_admin_token_a, make_busy_server_for_rotate,
+        make_ipmi, captured_dispatch,
+    ):
+        srv = await make_busy_server_for_rotate()
+        ctrl = await make_ipmi(server_id=srv.id)
+        resp = await client.post(
+            f"{IPMI}/{ctrl.id}/rotate", headers=_hdr(dept_admin_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+
+    async def test_free_server_not_gated(
+        self, client, rotate_stranger_token, make_server, make_ipmi,
+        captured_dispatch,
+    ):
+        srv = await make_server(department_id="dep_a")
+        ctrl = await make_ipmi(server_id=srv.id)
+        resp = await client.post(
+            f"{IPMI}/{ctrl.id}/rotate", headers=_hdr(rotate_stranger_token),
+        )
+        assert resp.status_code == 202, resp.text
+
+
+class TestIpmiRotateDispatchAcsGate:
+    """`POST /ipmi-controllers/{id}/rotate` — ACS-лок."""
+
+    async def test_stranger_blocked(
+        self, client, operator_token_a, make_acs_server, make_ipmi,
+        captured_dispatch,
+    ):
+        srv = await make_acs_server()
+        ctrl = await make_ipmi(server_id=srv.id)
+        resp = await client.post(
+            f"{IPMI}/{ctrl.id}/rotate", headers=_hdr(operator_token_a),
+        )
+        assert_error(resp, 409, "SERVER_ACS_BUSY")
+        assert captured_dispatch == []
+
+    async def test_dept_admin_passes(
+        self, client, dept_admin_token_a, make_acs_server, make_ipmi,
+        captured_dispatch,
+    ):
+        srv = await make_acs_server()
+        ctrl = await make_ipmi(server_id=srv.id)
+        resp = await client.post(
+            f"{IPMI}/{ctrl.id}/rotate", headers=_hdr(dept_admin_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+
+    async def test_service_admin_passes(
+        self, client, admin_role_token_a, make_acs_server, make_ipmi,
+        captured_dispatch,
+    ):
+        srv = await make_acs_server()
+        ctrl = await make_ipmi(server_id=srv.id)
+        resp = await client.post(
+            f"{IPMI}/{ctrl.id}/rotate", headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 202, resp.text

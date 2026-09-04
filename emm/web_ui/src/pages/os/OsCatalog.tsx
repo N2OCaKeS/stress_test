@@ -8,8 +8,8 @@
  *
  * Полное управление каталогом (update/delete) остаётся в админке
  * `ServicesOsVersions` под action-матрицей server.admin / dep_admin. Здесь же
- * носителю того же права доступна только регистрация новой версии — через ту
- * же форму `OsVersionForm`, чтобы не плодить дубль логики создания.
+ * носителю того же права доступна регистрация новой версии вместе с
+ * bootstrap-кредами для restore/prepare flow.
  *
  * Версия почти всегда создаётся с пустым `repositories` (оператору лень или
  * незачем вручную набирать sources.list). Для карточек с пустым списком тут
@@ -19,24 +19,55 @@
  * репозиториев остаётся в `ServicesOsVersions` как есть.
  */
 
-import { useMemo, useState } from "react";
-import { HardDrive, Link2, Search, Plus, Wand2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  ChevronDown,
+  Eye,
+  EyeOff,
+  HardDrive,
+  KeyRound,
+  LayoutGrid,
+  Link2,
+  ListTree,
+  Plus,
+  Search,
+  Wand2,
+} from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { formatMsk } from "@/lib/datetime";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { ApiError, apiErrMsg } from "@/api/client";
-import { listOsVersions, resolveOsVersionRepositories } from "@/api/server/osVersions";
-import type { OffsetPaginatedResponse, OsVersion } from "@/api/server/types";
+import {
+  createOsVersion,
+  getOsVersionBootstrapPassword,
+  listOsVersions,
+  resolveOsVersionRepositories,
+  updateOsVersionBootstrapPassword,
+} from "@/api/server/osVersions";
+import type {
+  OffsetPaginatedResponse,
+  OsVersion,
+  OsVersionBootstrapPasswordStatus,
+  OsVersionCreateRequest,
+} from "@/api/server/types";
+import { fromBase64 } from "@/lib/base64";
+import { naturalCompare } from "@/lib/naturalSort";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
-import {
-  OsVersionForm,
-  canManageOsVersions,
-} from "@/pages/admin/services/ServicesOsVersions";
+import { canManageOsVersions } from "@/pages/admin/services/ServicesOsVersions";
 
 // Сколько версий тянем за один запрос «Загрузить ещё». В проекте каталог
 // небольшой (десятки записей), поэтому шага в полсотни хватает с запасом.
 const PAGE_SIZE = 50;
+
+type OsViewMode = "cards" | "strips";
+type OsFamilyFilter = "all" | "other" | string;
+
+function osFamily(name: string): string {
+  const match = name.match(/^(\d+)\.(\d+)/);
+  return match ? `${match[1]}.${match[2]}` : "other";
+}
 
 const MOCK_ITEMS: OsVersion[] = [
   {
@@ -44,6 +75,8 @@ const MOCK_ITEMS: OsVersion[] = [
     name: "astra-1.7",
     description: "Astra Linux SE 1.7 (Орёл)",
     repositories: ["https://download.astralinux.ru/astra/stable/1.7"],
+    kernels: ["5.4.0-1", "5.10.0-2"],
+    is_urgent_update: false,
     discovered_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
   },
@@ -55,6 +88,8 @@ const MOCK_ITEMS: OsVersion[] = [
       "https://download.astralinux.ru/astra/stable/1.8/main",
       "https://download.astralinux.ru/astra/stable/1.8/extended",
     ],
+    kernels: [],
+    is_urgent_update: false,
     discovered_at: "2026-02-10T00:00:00Z",
     updated_at: "2026-03-01T00:00:00Z",
   },
@@ -63,10 +98,37 @@ const MOCK_ITEMS: OsVersion[] = [
     name: "ubuntu-22.04",
     description: null,
     repositories: [],
+    kernels: [],
+    is_urgent_update: true,
     discovered_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
   },
 ];
+
+/** Бейдж «UU»/hotfix — предупреждающий, не блокирующий стиль (как остальные warn-бейджи). */
+function UrgentUpdateBadge() {
+  return (
+    <span
+      className="badge badge-warn shrink-0 flex items-center gap-1"
+      title="Срочное обновление вне обычного цикла РЦ (hotfix, legacy UU)"
+    >
+      <AlertTriangle className="w-3 h-3" /> UU
+    </span>
+  );
+}
+
+/** Компактное отображение списка ядер: count-бейдж, полный список — в title. */
+function KernelsBadge({ kernels }: { kernels: string[] }) {
+  if (kernels.length === 0) return null;
+  return (
+    <span
+      className="badge shrink-0"
+      title={`Ядра: ${kernels.join(", ")}`}
+    >
+      {kernels.length} ядер
+    </span>
+  );
+}
 
 function RepoBadges({ repositories }: { repositories: string[] }) {
   if (repositories.length === 0) {
@@ -192,28 +254,484 @@ function OsVersionCard({
   canManage: boolean;
   onResolved: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
-    <div className="card flex flex-col gap-2">
-      <div className="flex items-start gap-2">
+    <div className="card flex flex-col gap-2 break-inside-avoid mb-3">
+      <button
+        type="button"
+        className="flex items-start gap-2 text-left w-full"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+      >
         <HardDrive className="w-4 h-4 text-accent shrink-0 mt-0.5" />
         <div className="min-w-0 flex-1">
-          <div className="font-semibold mono truncate">{version.name}</div>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="font-semibold mono truncate">{version.name}</div>
+            {version.is_urgent_update && <UrgentUpdateBadge />}
+          </div>
           {version.description && (
             <div className="text-xs text-dim">{version.description}</div>
           )}
         </div>
-      </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <KernelsBadge kernels={version.kernels} />
+          <span className="badge">{version.repositories.length} repo</span>
+        </div>
+        <ChevronDown
+          className={`w-4 h-4 text-dim shrink-0 transition-transform ${
+            expanded ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {expanded && (
+        <OsVersionDetails
+          version={version}
+          canManage={canManage}
+          onResolved={onResolved}
+        />
+      )}
+    </div>
+  );
+}
+
+function OsVersionStrip({
+  version,
+  canManage,
+  onResolved,
+}: {
+  version: OsVersion;
+  canManage: boolean;
+  onResolved: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="surface border border-token rounded flex flex-col">
+      <button
+        type="button"
+        className="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)_96px_120px_24px] gap-3 items-center text-left px-4 py-3 hover-bg"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <HardDrive className="w-4 h-4 text-accent shrink-0" />
+          <span className="font-semibold mono truncate">{version.name}</span>
+          {version.is_urgent_update && <UrgentUpdateBadge />}
+        </div>
+        <div className="text-xs text-dim truncate">{version.description ?? "—"}</div>
+        <div className="flex items-center gap-1 flex-wrap justify-self-start">
+          <KernelsBadge kernels={version.kernels} />
+          <span className="badge">{version.repositories.length} repo</span>
+        </div>
+        <span className="text-[11px] text-dim mono">{formatMsk(version.updated_at)}</span>
+        <ChevronDown
+          className={`w-4 h-4 text-dim transition-transform ${
+            expanded ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4">
+          <OsVersionDetails
+            version={version}
+            canManage={canManage}
+            onResolved={onResolved}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OsVersionDetails({
+  version,
+  canManage,
+  onResolved,
+}: {
+  version: OsVersion;
+  canManage: boolean;
+  onResolved: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-t border-token pt-3">
       <RepoBadges repositories={version.repositories} />
       {version.repositories.length === 0 && canManage && (
         <ResolveRepositoriesInline versionId={version.id} onResolved={onResolved} />
       )}
-      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-dim border-t border-token pt-2">
+      {version.kernels.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] text-dim">ядра</span>
+          <div className="flex flex-wrap gap-1">
+            {version.kernels.map((kernel) => (
+              <span key={kernel} className="badge mono text-[11px]">
+                {kernel}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {canManage && <BootstrapCredentials versionId={version.id} />}
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-dim">
         <span>
-          обнаружена: <span className="mono">{formatMsk(version.discovered_at)}</span>
+          обнаружена:{" "}
+          <span className="mono">{formatMsk(version.discovered_at)}</span>
         </span>
         <span>
           обновлена: <span className="mono">{formatMsk(version.updated_at)}</span>
         </span>
+      </div>
+    </div>
+  );
+}
+
+function BootstrapCredentials({ versionId }: { versionId: string }) {
+  const toast = useToast();
+  const [sshUsername, setSshUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [revealed, setRevealed] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const statusQ = useQuery<OsVersionBootstrapPasswordStatus>(
+    () => getOsVersionBootstrapPassword(versionId, false),
+    [versionId],
+    { keepPreviousDataOnError: true },
+  );
+
+  const status = statusQ.data;
+
+  async function reveal() {
+    try {
+      const data = await getOsVersionBootstrapPassword(versionId, true);
+      setSshUsername(data.ssh_username ?? "");
+      setPassword(data.password_b64 ? fromBase64(data.password_b64) : "");
+      setRevealed(true);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось показать bootstrap-пароль"));
+    }
+  }
+
+  async function save() {
+    const login = sshUsername.trim();
+    if (!login) {
+      toast.warn("Укажите bootstrap-пользователя");
+      return;
+    }
+    if (!password) {
+      toast.warn("Укажите bootstrap-пароль");
+      return;
+    }
+    setSaving(true);
+    try {
+      const data = await updateOsVersionBootstrapPassword(versionId, {
+        ssh_username: login,
+        password,
+      });
+      setSshUsername(data.ssh_username ?? login);
+      setPassword("");
+      setRevealed(false);
+      statusQ.refetch();
+      toast.success("Bootstrap-креды сохранены");
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось сохранить bootstrap-креды"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="surface-2 border border-token rounded p-3 flex flex-col gap-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <KeyRound className="w-4 h-4 text-accent" />
+        <div className="text-sm font-medium">Bootstrap-пользователь ОС</div>
+        <span className="badge ml-auto">
+          {statusQ.loading
+            ? "проверка..."
+            : status?.has_password
+              ? "пароль задан"
+              : "пароль не задан"}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto] gap-2">
+        <input
+          className="input mono text-sm"
+          placeholder="ssh username"
+          value={revealed ? sshUsername : status?.ssh_username ?? sshUsername}
+          onChange={(e) => {
+            setSshUsername(e.target.value);
+            setRevealed(true);
+          }}
+        />
+        <input
+          className="input mono text-sm"
+          type={revealed ? "text" : "password"}
+          placeholder={status?.has_password ? "пароль скрыт" : "password"}
+          value={revealed ? password : ""}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            setRevealed(true);
+          }}
+        />
+        <div className="flex gap-2">
+          <button
+            className="btn btn-sm flex items-center gap-1"
+            disabled={saving || !status?.has_password}
+            onClick={revealed ? () => setRevealed(false) : reveal}
+          >
+            {revealed ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+            {revealed ? "Скрыть" : "Показать"}
+          </button>
+          <button className="btn btn-primary btn-sm" disabled={saving} onClick={save}>
+            {saving ? "..." : "Сохранить"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function latestFamilyVersion(items: OsVersion[], family: string, excludeName: string) {
+  if (family === "other") return null;
+  return [...items]
+    .filter((item) => item.name !== excludeName && osFamily(item.name) === family)
+    .sort((a, b) => naturalCompare(b.name, a.name))[0] ?? null;
+}
+
+function AddOsVersionWorkspace({
+  items,
+  mockMode,
+  onDone,
+  onCancel,
+}: {
+  items: OsVersion[];
+  mockMode: boolean;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const toast = useToast();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [buildVersion, setBuildVersion] = useState("");
+  const [reposText, setReposText] = useState("");
+  const [kernelsText, setKernelsText] = useState("");
+  const [isUrgentUpdate, setIsUrgentUpdate] = useState(false);
+  const [sshUsername, setSshUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [credentialsTouched, setCredentialsTouched] = useState(false);
+  const [defaultsFrom, setDefaultsFrom] = useState<string | null>(null);
+  const [loadingDefaults, setLoadingDefaults] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const trimmedName = name.trim();
+  const family = osFamily(trimmedName);
+  const source = useMemo(
+    () => latestFamilyVersion(items, family, trimmedName),
+    [items, family, trimmedName],
+  );
+
+  useEffect(() => {
+    if (mockMode || credentialsTouched || !source) return;
+    let alive = true;
+    setLoadingDefaults(true);
+    getOsVersionBootstrapPassword(source.id, true)
+      .then((data) => {
+        if (!alive) return;
+        setSshUsername(data.ssh_username ?? "");
+        setPassword(data.password_b64 ? fromBase64(data.password_b64) : "");
+        setDefaultsFrom(source.name);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setSshUsername("");
+        setPassword("");
+        setDefaultsFrom(source.name);
+      })
+      .finally(() => {
+        if (alive) setLoadingDefaults(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [credentialsTouched, mockMode, source]);
+
+  function parseRepos(): string[] {
+    return reposText
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  function parseKernels(): string[] {
+    return kernelsText
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  async function submit() {
+    if (!trimmedName) {
+      toast.warn("Укажите имя ОС");
+      return;
+    }
+    if ((sshUsername.trim() && !password) || (!sshUsername.trim() && password)) {
+      toast.warn("Bootstrap user и password нужно заполнять вместе");
+      return;
+    }
+    if (mockMode) {
+      toast.warn("Mock-режим — изменения не отправляются на backend.");
+      onDone();
+      return;
+    }
+    setBusy(true);
+    try {
+      const repositories = parseRepos();
+      const body: OsVersionCreateRequest = {
+        name: trimmedName,
+        description: description.trim() || undefined,
+        repositories,
+        kernels: parseKernels(),
+        is_urgent_update: isUrgentUpdate,
+      };
+      const created = await createOsVersion(body);
+      const build = buildVersion.trim();
+      if (build && repositories.length === 0) {
+        await resolveOsVersionRepositories(created.id, build);
+      }
+      if (sshUsername.trim() && password) {
+        await updateOsVersionBootstrapPassword(created.id, {
+          ssh_username: sshUsername.trim(),
+          password,
+        });
+      }
+      toast.success("Версия ОС добавлена");
+      onDone();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось добавить ОС"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="p-4 flex flex-col gap-4 w-full">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="font-semibold text-lg">Добавить ОС</h2>
+          <div className="text-xs text-dim">
+            {source
+              ? `bootstrap-креды берутся из последней ${family}: ${source.name}`
+              : family === "other"
+                ? "для other заполните bootstrap-креды вручную"
+                : `в семействе ${family} пока нет источника bootstrap-кредов`}
+          </div>
+        </div>
+        <button className="btn btn-sm" onClick={onCancel} disabled={busy}>
+          К списку ОС
+        </button>
+      </div>
+
+      <div className="card grid gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="grid gap-1">
+            <span className="text-xs text-dim">Имя ОС</span>
+            <input
+              className="input mono"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setCredentialsTouched(false);
+                setDefaultsFrom(null);
+              }}
+              placeholder="1.8.6.40"
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs text-dim">Build-версия</span>
+            <input
+              className="input mono"
+              value={buildVersion}
+              onChange={(e) => setBuildVersion(e.target.value)}
+              placeholder="необязательно"
+            />
+          </label>
+        </div>
+        <label className="grid gap-1">
+          <span className="text-xs text-dim">Описание</span>
+          <input
+            className="input"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="build 1.8.6.40"
+          />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-xs text-dim">Репозитории</span>
+          <textarea
+            className="input mono text-xs"
+            rows={4}
+            value={reposText}
+            onChange={(e) => setReposText(e.target.value)}
+            placeholder="по одному URL или sources.list строке на строку"
+          />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-xs text-dim">Ядра</span>
+          <textarea
+            className="input mono text-xs"
+            rows={3}
+            value={kernelsText}
+            onChange={(e) => setKernelsText(e.target.value)}
+            placeholder="по одной версии ядра на строку, например 5.10.0-2"
+          />
+        </label>
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={isUrgentUpdate}
+            onChange={(e) => setIsUrgentUpdate(e.target.checked)}
+          />
+          <span>Срочное обновление (hotfix, вне обычного цикла РЦ)</span>
+        </label>
+        <div className="surface-2 border border-token rounded p-3 grid gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <KeyRound className="w-4 h-4 text-accent" />
+            <span className="text-sm font-medium">Bootstrap-креды</span>
+            {loadingDefaults && <span className="badge">загрузка...</span>}
+            {defaultsFrom && !credentialsTouched && (
+              <span className="badge">из {defaultsFrom}</span>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input
+              className="input mono"
+              value={sshUsername}
+              onChange={(e) => {
+                setSshUsername(e.target.value);
+                setCredentialsTouched(true);
+              }}
+              placeholder="bootstrap user"
+            />
+            <input
+              className="input mono"
+              type="password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setCredentialsTouched(true);
+              }}
+              placeholder="bootstrap password"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button className="btn" disabled={busy} onClick={onCancel}>
+            Отмена
+          </button>
+          <button className="btn btn-primary" disabled={busy} onClick={submit}>
+            {busy ? "Создание..." : "Добавить ОС"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -226,6 +744,8 @@ function OsCatalogBody() {
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
+  const [viewMode, setViewMode] = useState<OsViewMode>("cards");
+  const [familyFilter, setFamilyFilter] = useState<OsFamilyFilter>("all");
 
   const listQ = useQuery<OffsetPaginatedResponse<OsVersion>>(
     () => listOsVersions({ limit }),
@@ -236,7 +756,15 @@ function OsCatalogBody() {
   const all: OsVersion[] = mockMode ? MOCK_ITEMS : listQ.data?.items ?? [];
   const total = mockMode ? MOCK_ITEMS.length : listQ.data?.total ?? all.length;
 
-  const filtered = useMemo(() => {
+  const familyOptions = useMemo(() => {
+    const set = new Set(all.map((item) => osFamily(item.name)));
+    const numeric = [...set]
+      .filter((item) => item !== "other")
+      .sort(naturalCompare);
+    return set.has("other") ? [...numeric, "other"] : numeric;
+  }, [all]);
+
+  const searchFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return all;
     return all.filter(
@@ -246,6 +774,23 @@ function OsCatalogBody() {
         v.repositories.some((r) => r.toLowerCase().includes(q)),
     );
   }, [all, search]);
+
+  const filtered = useMemo(() => {
+    if (familyFilter === "all") return searchFiltered;
+    return searchFiltered.filter((v) => osFamily(v.name) === familyFilter);
+  }, [familyFilter, searchFiltered]);
+
+  const filterButtons = useMemo(
+    () => [
+      { id: "all" as const, label: "Все", count: searchFiltered.length },
+      ...familyOptions.map((id) => ({
+        id,
+        label: id === "other" ? "other" : id,
+        count: searchFiltered.filter((item) => osFamily(item.name) === id).length,
+      })),
+    ],
+    [familyOptions, searchFiltered],
+  );
 
   // «Загрузить ещё» имеет смысл, пока на руках меньше записей, чем total.
   const hasMore = !mockMode && all.length < total;
@@ -257,6 +802,20 @@ function OsCatalogBody() {
         ? `${listQ.error.errorCode}: ${listQ.error.message}`
         : listQ.error.message
       : null;
+
+  if (creating) {
+    return (
+      <AddOsVersionWorkspace
+        items={all}
+        mockMode={mockMode}
+        onDone={() => {
+          setCreating(false);
+          listQ.refetch();
+        }}
+        onCancel={() => setCreating(false)}
+      />
+    );
+  }
 
   return (
     <div className="p-4 flex flex-col gap-4 w-full">
@@ -279,25 +838,52 @@ function OsCatalogBody() {
         )}
       </div>
 
-      {creating && (
-        <OsVersionForm
-          mockMode={mockMode}
-          onDone={() => {
-            setCreating(false);
-            listQ.refetch();
-          }}
-          onCancel={() => setCreating(false)}
-        />
-      )}
-
-      <div className="relative max-w-sm">
-        <Search className="w-4 h-4 text-dim absolute left-2.5 top-1/2 -translate-y-1/2" />
-        <input
-          className="input pl-8 w-full"
-          placeholder="Поиск по имени, описанию, репозиторию…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="surface border border-token rounded p-3 flex items-center justify-between gap-3 flex-wrap">
+        <div className="relative min-w-[220px] flex-1 max-w-sm">
+          <Search className="w-4 h-4 text-dim absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <input
+            className="input pl-8 w-full"
+            placeholder="Поиск по имени, описанию, репозиторию…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {filterButtons.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setFamilyFilter(item.id)}
+              className={`btn btn-sm inline-flex items-center gap-2 ${
+                familyFilter === item.id ? "btn-primary" : ""
+              }`}
+            >
+              <span>{item.label}</span>
+              <span className="mono text-[11px] opacity-80">{item.count}</span>
+            </button>
+          ))}
+        </div>
+        <div className="surface-2 border border-token rounded p-1 flex items-center gap-1">
+          {[
+            { id: "cards" as const, label: "Квадраты", icon: LayoutGrid },
+            { id: "strips" as const, label: "Список", icon: ListTree },
+          ].map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setViewMode(item.id)}
+                className={`btn btn-sm inline-flex items-center gap-2 ${
+                  viewMode === item.id ? "btn-primary" : ""
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {errMsg && (
@@ -320,16 +906,32 @@ function OsCatalogBody() {
             : "Каталог ОС пуст."}
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {filtered.map((v) => (
-            <OsVersionCard
-              key={v.id}
-              version={v}
-              canManage={canCreate && !mockMode}
-              onResolved={() => listQ.refetch()}
-            />
-          ))}
-        </div>
+        <>
+          {viewMode === "cards" && (
+            <div className="columns-1 md:columns-2 xl:columns-3 2xl:columns-4 gap-3">
+              {filtered.map((v) => (
+                <OsVersionCard
+                  key={v.id}
+                  version={v}
+                  canManage={canCreate && !mockMode}
+                  onResolved={() => listQ.refetch()}
+                />
+              ))}
+            </div>
+          )}
+          {viewMode === "strips" && (
+            <div className="flex flex-col gap-2">
+              {filtered.map((v) => (
+                <OsVersionStrip
+                  key={v.id}
+                  version={v}
+                  canManage={canCreate && !mockMode}
+                  onResolved={() => listQ.refetch()}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {hasMore && (
@@ -350,7 +952,9 @@ function OsCatalogBody() {
 export function OsCatalog() {
   return (
     <Shell breadcrumb="Главная / ОС">
-      <OsCatalogBody />
+      <main className="flex-1 min-w-0 min-h-0 overflow-auto">
+        <OsCatalogBody />
+      </main>
     </Shell>
   );
 }

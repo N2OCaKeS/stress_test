@@ -14,7 +14,7 @@
  */
 
 import { useState } from "react";
-import { HardDrive, Trash2, Link2, Pencil } from "lucide-react";
+import { AlertTriangle, HardDrive, Trash2, Link2, Pencil } from "lucide-react";
 import {
   InlineEditor,
   FormRow,
@@ -73,6 +73,8 @@ export function ServicesOsVersions() {
           name: "astra-1.7",
           description: "Astra Linux SE 1.7 (Орёл)",
           repositories: ["https://download.astralinux.ru/astra/stable/1.7"],
+          kernels: ["5.4.0-1"],
+          is_urgent_update: false,
           discovered_at: "2026-01-01T00:00:00Z",
           updated_at: "2026-01-01T00:00:00Z",
         },
@@ -81,6 +83,8 @@ export function ServicesOsVersions() {
           name: "ubuntu-22.04",
           description: null,
           repositories: [],
+          kernels: [],
+          is_urgent_update: false,
           discovered_at: "2026-01-01T00:00:00Z",
           updated_at: "2026-01-01T00:00:00Z",
         },
@@ -125,6 +129,14 @@ export function ServicesOsVersions() {
                 </div>
               )}
             </div>
+            {item.is_urgent_update && (
+              <span
+                className="badge badge-warn flex items-center gap-1"
+                title="Срочное обновление вне обычного цикла РЦ (hotfix, legacy UU)"
+              >
+                <AlertTriangle className="w-3 h-3" /> UU
+              </span>
+            )}
             {item.repositories.length > 0 && (
               <span className="badge" title="репозиториев">
                 {item.repositories.length} repo
@@ -279,6 +291,34 @@ function OsVersionDetail({
         v={<RepositoriesList repositories={version.repositories} />}
       />
       <StatRow
+        k="kernels"
+        v={
+          version.kernels.length === 0 ? (
+            <span className="text-dim">—</span>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              {version.kernels.map((kernel) => (
+                <span key={kernel} className="badge mono text-[11px]">
+                  {kernel}
+                </span>
+              ))}
+            </div>
+          )
+        }
+      />
+      <StatRow
+        k="is_urgent_update"
+        v={
+          version.is_urgent_update ? (
+            <span className="badge badge-warn flex items-center gap-1 w-fit">
+              <AlertTriangle className="w-3 h-3" /> UU
+            </span>
+          ) : (
+            <span className="text-dim">нет</span>
+          )
+        }
+      />
+      <StatRow
         k="discovered_at"
         v={<span className="mono">{formatMsk(version.discovered_at)}</span>}
       />
@@ -311,12 +351,26 @@ export function OsVersionForm({
   const [reposText, setReposText] = useState(
     (existing?.repositories ?? []).join("\n"),
   );
+  // Ядра редактируются тем же textarea-паттерном, что и репозитории.
+  const [kernelsText, setKernelsText] = useState(
+    (existing?.kernels ?? []).join("\n"),
+  );
+  const [isUrgentUpdate, setIsUrgentUpdate] = useState(
+    existing?.is_urgent_update ?? false,
+  );
   const [buildVersion, setBuildVersion] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   function parseRepos(): string[] {
     return reposText
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
+
+  function parseKernels(): string[] {
+    return kernelsText
       .split("\n")
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
@@ -341,11 +395,14 @@ export function OsVersionForm({
     setErr(null);
     try {
       const repos = parseRepos();
+      const kernels = parseKernels();
       if (isEdit && existing) {
         const body: OsVersionUpdateRequest = {
           name: name.trim(),
           description: description.trim() || null,
           repositories: repos,
+          kernels,
+          is_urgent_update: isUrgentUpdate,
         };
         await updateOsVersion(existing.id, body);
         toast.success("Версия обновлена");
@@ -354,6 +411,8 @@ export function OsVersionForm({
           name: name.trim(),
           description: description.trim() || undefined,
           repositories: repos,
+          kernels,
+          is_urgent_update: isUrgentUpdate,
         };
         const created = await createOsVersion(body);
         toast.success("Версия зарегистрирована");
@@ -428,6 +487,31 @@ export function OsVersionForm({
             onChange={(e) => setReposText(e.target.value)}
             placeholder={"https://download.astralinux.ru/astra/stable/1.7\nhttps://..."}
           />
+        </FormRow>
+        <FormRow
+          label="kernels"
+          hint="версии ядер, доступные для этой РЦ · по одной на строку · список ведётся вручную"
+        >
+          <textarea
+            className="input mono text-xs"
+            rows={3}
+            value={kernelsText}
+            onChange={(e) => setKernelsText(e.target.value)}
+            placeholder={"5.10.0-2\n5.15.0-6"}
+          />
+        </FormRow>
+        <FormRow
+          label="is_urgent_update"
+          hint="срочный хотфикс вне обычного цикла РЦ (legacy UU), а не плановый релиз"
+        >
+          <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={isUrgentUpdate}
+              onChange={(e) => setIsUrgentUpdate(e.target.checked)}
+            />
+            <span>Срочное обновление (hotfix)</span>
+          </label>
         </FormRow>
       </div>
       {err && <div className="alert-danger mt-3 text-xs">{err}</div>}

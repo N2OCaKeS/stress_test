@@ -799,6 +799,20 @@ export interface ServerOsSyncRequest {
   os_version_id: string | null;
 }
 
+// ── OS version bootstrap credentials ───────────────────────────────────────
+
+export interface OsVersionBootstrapPasswordStatus {
+  ssh_username: string | null;
+  has_password: boolean;
+  /** base64(plaintext), приходит только при явном reveal=true и наличии права. */
+  password_b64?: string | null;
+}
+
+export interface OsVersionBootstrapPasswordUpdateRequest {
+  ssh_username: string;
+  password: string;
+}
+
 // ── permissions ─────────────────────────────────────────────────────────────
 
 /**

@@ -31,6 +31,8 @@ const OS_A: OsVersion = {
   name: "Astra 1.8 Orel",
   description: null,
   repositories: ["deb http://repo/orel stable main"],
+  kernels: [],
+  is_urgent_update: false,
   discovered_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };

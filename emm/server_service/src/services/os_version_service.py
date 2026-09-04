@@ -23,7 +23,11 @@ from src.core.exceptions import (
 from src.models import OsVersion
 from src.repositories import os_version as repo
 from src.schemas.identity import IdentityContext
-from src.schemas.os_version import OsVersionCreate, OsVersionUpdate
+from src.schemas.os_version import (
+    OsVersionCreate,
+    OsVersionUpdate,
+    encode_bootstrap_password_b64,
+)
 from src.services import audit_service, os_version_repo_resolver, permissions
 from src.services import os_version_bootstrap_password as bootstrap_password_svc
 from src.utils.ids import os_version_id as new_id
@@ -360,6 +364,7 @@ async def get_os_version_bootstrap_password(
     db: AsyncSession,
     identity: IdentityContext,
     os_version_id: str,
+    reveal: bool = False,
 ) -> dict:
     """GET-статус bootstrap-пароля версии — логин + факт "задан/не задан".
 
@@ -386,6 +391,30 @@ async def get_os_version_bootstrap_password(
     status = await bootstrap_password_svc.get_bootstrap_password_status(db, os_version_id)
     if status is None:
         return {"ssh_username": None, "has_password": False}
+    if reveal:
+        try:
+            await permissions.require_action(
+                db, identity, EntityType.OS_VERSION, Action.VIEW_PASSWORD
+            )
+        except AuthorizationError:
+            audit_service.emit(
+                "os_version.bootstrap_password_revealed",
+                target_id=os_version_id, target_type="os_version",
+                status="denied", allowed=False,
+                details={"reason": "permission_denied"},
+            )
+            raise
+        creds = await bootstrap_password_svc.get_bootstrap_password_for_os_version(
+            db, os_version_id
+        )
+        if creds is not None:
+            status["password_b64"] = encode_bootstrap_password_b64(creds["password"])
+        audit_service.emit(
+            "os_version.bootstrap_password_revealed",
+            target_id=os_version_id, target_type="os_version",
+            status="success", allowed=True,
+            details={"ssh_username": status.get("ssh_username")},
+        )
     return status
 
 

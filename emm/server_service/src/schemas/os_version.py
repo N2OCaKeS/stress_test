@@ -4,6 +4,7 @@ OS-версии — глобальный каталог. Read публичный
 """
 
 from datetime import datetime
+from base64 import b64encode
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -197,6 +198,13 @@ class OsVersionBootstrapPasswordStatus(BaseModel):
         default=None, description="Логин bootstrap-пользователя образа."
     )
     has_password: bool = Field(description="Задан ли пароль для этой версии.")
+    password_b64: str | None = Field(
+        default=None,
+        description=(
+            "base64(plaintext) текущего пароля. Заполняется только при "
+            "`reveal=true` и праве `view_password`."
+        ),
+    )
 
 
 class OsVersionBootstrapPasswordInternalResponse(BaseModel):
@@ -210,6 +218,11 @@ class OsVersionBootstrapPasswordInternalResponse(BaseModel):
 
     ssh_username: str = Field(description="Логин bootstrap-пользователя образа.")
     password: str = Field(description="Расшифрованный пароль bootstrap-пользователя.")
+
+
+def encode_bootstrap_password_b64(password: str) -> str:
+    """UTF-8-safe base64 для user-facing reveal-ответа."""
+    return b64encode(password.encode("utf-8")).decode("ascii")
 
 
 class OsVersionBootstrapPasswordUpdate(BaseModel):

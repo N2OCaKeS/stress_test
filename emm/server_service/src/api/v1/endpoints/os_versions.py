@@ -210,9 +210,12 @@ async def get_bootstrap_password(
     os_version_id: str,
     identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
+    reveal: bool = Query(default=False, description="Вернуть password_b64 при праве view_password."),
 ) -> OsVersionBootstrapPasswordStatus:
     """GET статуса bootstrap-пароля. Доступ: `(os_version, *, update)`."""
-    data = await svc.get_os_version_bootstrap_password(db, identity, os_version_id)
+    data = await svc.get_os_version_bootstrap_password(
+        db, identity, os_version_id, reveal=reveal,
+    )
     return OsVersionBootstrapPasswordStatus(**data)
 
 

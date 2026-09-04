@@ -15,11 +15,13 @@
  *   server_service/src/api/v1/endpoints/servers.py (POST /{id}/os-sync)
  */
 
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/api/client";
 import { naturalCompare } from "@/lib/naturalSort";
 import type {
   OffsetPaginatedResponse,
   OsVersion,
+  OsVersionBootstrapPasswordStatus,
+  OsVersionBootstrapPasswordUpdateRequest,
   OsVersionCreateRequest,
   OsVersionUpdateRequest,
   Server,
@@ -115,6 +117,28 @@ export function resolveOsVersionRepositories(
   return apiPost<OsVersion>(`/server/v1/os-versions/${id}/resolve-repositories`, {
     build_version: buildVersion,
   });
+}
+
+// ── catalog: bootstrap credentials ─────────────────────────────────────────
+
+export function getOsVersionBootstrapPassword(
+  id: string,
+  reveal = false,
+): Promise<OsVersionBootstrapPasswordStatus> {
+  return apiGet<OsVersionBootstrapPasswordStatus>(
+    `/server/v1/os-versions/${id}/bootstrap-password`,
+    { query: reveal ? { reveal: true } : undefined },
+  );
+}
+
+export function updateOsVersionBootstrapPassword(
+  id: string,
+  body: OsVersionBootstrapPasswordUpdateRequest,
+): Promise<OsVersionBootstrapPasswordStatus> {
+  return apiPut<OsVersionBootstrapPasswordStatus>(
+    `/server/v1/os-versions/${id}/bootstrap-password`,
+    body,
+  );
 }
 
 // ── server-side os-sync ────────────────────────────────────────────────────

@@ -51,7 +51,9 @@ class TestListOpenApiSchema:
 
         spec = app.openapi()
         props = spec["components"]["schemas"]["OsVersionResponse"]["properties"]
-        assert {"id", "name", "repositories", "discovered_at"} <= set(props)
+        assert {
+            "id", "name", "repositories", "kernels", "is_urgent_update", "discovered_at",
+        } <= set(props)
 
 
 # ── POST ────────────────────────────────────────────────────────────────────
@@ -96,6 +98,34 @@ class TestCreateOsVersion:
     async def test_no_token_returns_401(self, client):
         resp = await client.post(BASE, json=_payload())
         assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
+
+    async def test_admin_creates_with_kernels_and_urgent_update(
+        self, client, admin_role_token_a,
+    ):
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_role_token_a),
+            json=_payload(
+                name="astra-1.7-kernels",
+                kernels=["5.4.0-1", "5.10.0-2"],
+                is_urgent_update=True,
+            ),
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["kernels"] == ["5.4.0-1", "5.10.0-2"]
+        assert body["is_urgent_update"] is True
+
+    async def test_create_defaults_kernels_empty_and_not_urgent(
+        self, client, admin_role_token_a,
+    ):
+        resp = await client.post(
+            BASE, headers=_hdr(admin_role_token_a), json=_payload(name="astra-1.7-defaults"),
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["kernels"] == []
+        assert body["is_urgent_update"] is False
 
     async def test_duplicate_name_conflict(self, client, admin_role_token_a):
         resp = await client.post(
@@ -166,6 +196,39 @@ class TestRepositoriesValidation:
             f"{BASE}/{ov_id}",
             headers=_hdr(admin_role_token_a),
             json={"repositories": ["ftp://repo.example.org/x"]},
+        )
+        assert_error(resp, 422, "VALIDATION_ERROR")
+
+
+# ── Валидация kernels ─────────────────────────────────────────────────────────
+
+class TestKernelsValidation:
+    async def test_create_rejects_empty_kernel(self, client, admin_role_token_a):
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_role_token_a),
+            json=_payload(name="osv-bad-kernel", kernels=["  "]),
+        )
+        assert_error(resp, 422, "VALIDATION_ERROR")
+
+    async def test_create_rejects_too_many_kernels(self, client, admin_role_token_a):
+        kernels = [f"5.10.0-{i}" for i in range(129)]
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_role_token_a),
+            json=_payload(name="osv-too-many-kernels", kernels=kernels),
+        )
+        assert_error(resp, 422, "VALIDATION_ERROR")
+
+    async def test_update_rejects_empty_kernel(self, client, admin_role_token_a):
+        created = await client.post(
+            BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-upd-bad-kernel"),
+        )
+        ov_id = created.json()["id"]
+        resp = await client.patch(
+            f"{BASE}/{ov_id}",
+            headers=_hdr(admin_role_token_a),
+            json={"kernels": [""]},
         )
         assert_error(resp, 422, "VALIDATION_ERROR")
 
@@ -339,6 +402,23 @@ class TestUpdateOsVersion:
         )
         assert resp.status_code == 200
         assert resp.json()["repositories"] == new_repos
+
+    async def test_admin_updates_kernels_and_urgent_update(
+        self, client, admin_role_token_a,
+    ):
+        created = await client.post(
+            BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-upd-kernels"),
+        )
+        ov_id = created.json()["id"]
+        resp = await client.patch(
+            f"{BASE}/{ov_id}",
+            headers=_hdr(admin_role_token_a),
+            json={"kernels": ["6.1.0-9"], "is_urgent_update": True},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["kernels"] == ["6.1.0-9"]
+        assert body["is_urgent_update"] is True
 
     async def test_reader_cannot_update(self, client, reader_token_a, admin_role_token_a):
         created = await client.post(

@@ -20,6 +20,8 @@ const OS_VERSION: OsVersion = {
   name: "1.8.1.6",
   description: null,
   repositories: [],
+  kernels: [],
+  is_urgent_update: false,
   discovered_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };

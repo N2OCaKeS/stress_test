@@ -47,6 +47,28 @@ def _validate_repositories(value: list[str] | None) -> list[str] | None:
     return value
 
 
+# Список ядер ведётся вручную, тех же порядков, что и repositories.
+_MAX_KERNELS = 128
+_MAX_KERNEL_LEN = 64
+
+
+def _validate_kernels(value: list[str] | None) -> list[str] | None:
+    """Каждый элемент — непустая строка разумной длины (версия ядра)."""
+    if value is None:
+        return value
+    if len(value) > _MAX_KERNELS:
+        raise ValueError(f"too many kernels (max {_MAX_KERNELS})")
+    for item in value:
+        if not isinstance(item, str):
+            raise ValueError("kernel must be a string")
+        stripped = item.strip()
+        if not stripped:
+            raise ValueError("kernel must not be empty")
+        if len(stripped) > _MAX_KERNEL_LEN:
+            raise ValueError(f"kernel too long (max {_MAX_KERNEL_LEN})")
+    return value
+
+
 _MAX_BUILD_VERSION_LEN = 64
 
 
@@ -82,6 +104,14 @@ class OsVersionCreate(BaseModel):
         default_factory=list,
         description="URL-адреса репозиториев версии (apt/yum/...).",
     )
+    kernels: list[str] = Field(
+        default_factory=list,
+        description="Версии ядер, доступные для этой версии. Список редактируется вручную.",
+    )
+    is_urgent_update: bool = Field(
+        default=False,
+        description="Срочный хотфикс вне обычного цикла РЦ (legacy UU), а не плановый релиз.",
+    )
     build_version: str | None = Field(
         default=None,
         description=(
@@ -95,6 +125,11 @@ class OsVersionCreate(BaseModel):
     @classmethod
     def _check_repositories(cls, value: list[str]) -> list[str]:
         return _validate_repositories(value)
+
+    @field_validator("kernels")
+    @classmethod
+    def _check_kernels(cls, value: list[str]) -> list[str]:
+        return _validate_kernels(value)
 
     @field_validator("build_version")
     @classmethod
@@ -113,11 +148,24 @@ class OsVersionUpdate(BaseModel):
         default=None,
         description="Заменить список репозиториев целиком.",
     )
+    kernels: list[str] | None = Field(
+        default=None,
+        description="Заменить список ядер целиком.",
+    )
+    is_urgent_update: bool | None = Field(
+        default=None,
+        description="Сменить флаг срочного хотфикса (legacy UU).",
+    )
 
     @field_validator("repositories")
     @classmethod
     def _check_repositories(cls, value: list[str] | None) -> list[str] | None:
         return _validate_repositories(value)
+
+    @field_validator("kernels")
+    @classmethod
+    def _check_kernels(cls, value: list[str] | None) -> list[str] | None:
+        return _validate_kernels(value)
 
 
 class OsVersionResolveRequest(BaseModel):
@@ -192,6 +240,12 @@ class OsVersionResponse(BaseModel):
     description: str | None = Field(default=None, description="Описание.")
     repositories: list[str] = Field(
         default_factory=list, description="URL-адреса репозиториев версии.",
+    )
+    kernels: list[str] = Field(
+        default_factory=list, description="Версии ядер, доступные для этой версии.",
+    )
+    is_urgent_update: bool = Field(
+        default=False, description="Срочный хотфикс вне обычного цикла РЦ (legacy UU).",
     )
     discovered_at: datetime = Field(description="Когда версия добавлена в каталог.")
     updated_at: datetime = Field(description="Когда последний раз изменена.")

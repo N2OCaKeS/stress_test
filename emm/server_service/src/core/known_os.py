@@ -45,6 +45,10 @@ KNOWN_OS_PREFIXES = (
 # Чистая dotted-версия ("1.8.1.6", "1.7.5"): минимум один разделитель, чтобы
 # голое число из os-release не создавало запись в каталоге.
 _VERSION_RE = re.compile(r"^\d+(?:\.\d+){1,3}$")
+_COMPACT_VERSION_RE = re.compile(
+    r"^(?P<major>\d)(?P<minor>\d)(?P<patch>\d{1,2})"
+    r"(?:UU(?P<uu>\d+))?(?:rc(?P<rc>\d+))?$"
+)
 
 
 def is_known_os(name: str | None) -> bool:
@@ -59,3 +63,26 @@ def is_known_os(name: str | None) -> bool:
     if name.startswith(KNOWN_OS_PREFIXES):
         return True
     return bool(_VERSION_RE.match(name))
+
+
+def normalize_os_version_name(name: str) -> str:
+    """Normalize legacy compact Astra build names to dotted catalog names.
+
+    Examples:
+    `175` -> `1.7.5`, `1710rc52` -> `1.7.10.52`,
+    `175UU1rc7` -> `1.7.5.UU.1.7`.
+    """
+    stripped = name.strip()
+    match = _COMPACT_VERSION_RE.match(stripped)
+    if not match:
+        return stripped
+    parts = [
+        match.group("major"),
+        match.group("minor"),
+        match.group("patch"),
+    ]
+    if match.group("uu"):
+        parts.extend(["UU", match.group("uu")])
+    if match.group("rc"):
+        parts.append(match.group("rc"))
+    return ".".join(parts)

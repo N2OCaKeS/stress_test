@@ -765,6 +765,10 @@ export interface OsVersion {
   name: string;
   description: string | null;
   repositories: string[];
+  /** Версии ядер, доступные для этой версии. Список ведётся вручную. */
+  kernels: string[];
+  /** Срочный хотфикс вне обычного цикла РЦ (legacy UU), а не плановый релиз. */
+  is_urgent_update: boolean;
   discovered_at: Iso8601;
   updated_at: Iso8601;
 }
@@ -774,6 +778,8 @@ export interface OsVersionCreateRequest {
   name: string;
   description?: string | null;
   repositories?: string[];
+  kernels?: string[];
+  is_urgent_update?: boolean;
 }
 
 /** Тело PATCH /os-versions/{id}. Все поля опциональны. */
@@ -781,6 +787,8 @@ export interface OsVersionUpdateRequest {
   name?: string | null;
   description?: string | null;
   repositories?: string[] | null;
+  kernels?: string[] | null;
+  is_urgent_update?: boolean | null;
 }
 
 /**

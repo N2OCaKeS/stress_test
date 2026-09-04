@@ -1,71 +1,88 @@
+/**
+ * Раздел "Тестирование" — фронтенд-мокап для согласования с руководителем.
+ * Реального `testing_service` в репозитории ещё нет (breadcrumb размечен
+ * заранее); весь контент — hardcoded demo-данные, без backend-вызовов.
+ *
+ * Файл — тонкий роутер+shell по подразделам; сама функциональность разбита
+ * по файлам того же каталога (по образцу `pages/server/tabs/*`):
+ * `overview.tsx` (рабочая зона + дашборд пула), `tests.tsx` (каталог тестов),
+ * `runs.tsx` (fleet-wide прогоны), `stp.tsx` (зеркало Zephyr), `rc.tsx`
+ * (релиз-кандидаты). Общие типы/данные/мелкие компоненты — в `_shared.tsx`.
+ */
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
-import { FileText, ListChecks, Cog, Package } from "lucide-react";
+import { Cog, FileText, ListChecks, Package, type LucideIcon } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { TestingOverview } from "./overview";
+import { TestsWorkzone } from "./tests";
+import { RunsWorkzone } from "./runs";
+import { StpWorkzone } from "./stp";
+import { RcWorkzone } from "./rc";
 
-const SECTIONS = [
+const SUBSECTIONS = [
   { id: "tests", label: "Тесты", icon: FileText },
   { id: "runs", label: "Прогоны", icon: ListChecks },
   { id: "stp", label: "СТП", icon: Cog },
   { id: "rc", label: "РЦ", icon: Package },
 ] as const;
 
-type SectionId = (typeof SECTIONS)[number]["id"];
+type SubsectionId = (typeof SUBSECTIONS)[number]["id"];
+type PageId = "overview" | SubsectionId;
 
-function sectionId(value: string | undefined): SectionId {
-  if (value && SECTIONS.some((s) => s.id === value)) return value as SectionId;
-  return "tests";
+function pageId(value: string | undefined): PageId {
+  if (value && SUBSECTIONS.some((s) => s.id === value)) return value as SubsectionId;
+  return "overview";
 }
 
 export function Testing() {
   const params = useParams();
-  const activeId = sectionId(params.section);
-  const active = useMemo(
-    () => SECTIONS.find((s) => s.id === activeId) ?? SECTIONS[0],
-    [activeId],
-  );
+  const activeId = pageId(params.section);
+  const active = useMemo<{ label: string; icon: LucideIcon }>(() => {
+    if (activeId === "overview") return { label: "Тестирование", icon: ListChecks };
+    return SUBSECTIONS.find((s) => s.id === activeId) ?? SUBSECTIONS[0];
+  }, [activeId]);
   const ActiveIcon = active.icon;
 
-  const middle = (
-    <aside className="surface border-r border-token min-h-0 flex flex-col">
-      <div className="p-3 border-b border-token">
-        <div className="text-sm font-medium">Тестирование</div>
-      </div>
-      <div className="p-2 flex flex-col gap-1">
-        {SECTIONS.map((s) => {
-          const Icon = s.icon;
-          const to = s.id === "tests" ? "/testing/tests" : `/testing/${s.id}`;
-          const activeSection = s.id === activeId;
-          return (
-            <Link
-              key={s.id}
-              to={to}
-              className={`chip ${activeSection ? "active" : ""}`}
-            >
-              <Icon className="w-4 h-4 shrink-0" />
-              <span className="text-sm">{s.label}</span>
-            </Link>
-          );
-        })}
-      </div>
-    </aside>
-  );
-
   return (
-    <Shell breadcrumb={`testing_service / ${active.label}`} middle={middle}>
+    <Shell breadcrumb={`testing_service / ${active.label}`}>
       <main className="flex-1 min-w-0 overflow-auto">
-        <div className="p-5">
-          <div className="surface border border-token rounded p-5">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded bg-accent/10 border border-token flex items-center justify-center">
-                <ActiveIcon className="w-5 h-5 text-accent" />
-              </div>
-              <div>
-                <h1 className="text-lg font-semibold">{active.label}</h1>
-                <div className="text-xs text-dim">testing_service</div>
-              </div>
+        <div className="border-b border-token px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-10 w-10 rounded surface-2 border border-token flex items-center justify-center shrink-0">
+              <ActiveIcon className="w-5 h-5 text-accent" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold truncate">{active.label}</h1>
+              <div className="text-xs text-dim">testing_service</div>
             </div>
           </div>
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <Link to="/testing" className={`btn btn-sm inline-flex items-center gap-2 ${activeId === "overview" ? "btn-primary" : ""}`}>
+              <ListChecks className="w-4 h-4" />
+              <span>Рабочая зона</span>
+            </Link>
+            {SUBSECTIONS.map((s) => {
+              const Icon = s.icon;
+              return (
+                <Link
+                  key={s.id}
+                  to={`/testing/${s.id}`}
+                  className={`btn btn-sm inline-flex items-center gap-2 ${s.id === activeId ? "btn-primary" : ""}`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{s.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="p-5">
+          {activeId === "overview" && <TestingOverview />}
+          {activeId === "tests" && <TestsWorkzone />}
+          {activeId === "runs" && <RunsWorkzone />}
+          {activeId === "stp" && <StpWorkzone />}
+          {activeId === "rc" && <RcWorkzone />}
         </div>
       </main>
     </Shell>

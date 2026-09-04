@@ -21,6 +21,7 @@ const MOCK_SERVER: Server = {
   id: "srv_smoke_1",
   hostname: "smoke-host-01",
   display_name: "Smoke Box",
+  number: null,
   ip_address: "10.10.20.11",
   mgmt_ip_address: null,
   ssh_port: 22,

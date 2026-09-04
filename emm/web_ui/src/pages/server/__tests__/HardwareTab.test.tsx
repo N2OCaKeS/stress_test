@@ -28,6 +28,7 @@ function baseServer(): Server {
     id: "srv_1",
     hostname: "host-01",
     display_name: "Host 01",
+    number: null,
     ip_address: "10.0.0.10",
     mgmt_ip_address: null,
     ssh_port: 22,

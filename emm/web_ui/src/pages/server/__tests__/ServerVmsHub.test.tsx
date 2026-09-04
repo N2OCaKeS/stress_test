@@ -91,6 +91,7 @@ function baseServer(over: Partial<Server>): Server {
     id: "srv_hub_1",
     hostname: "kvm-host-01",
     display_name: "KVM Host",
+    number: null,
     ip_address: "10.10.30.11",
     mgmt_ip_address: null,
     ssh_port: 22,

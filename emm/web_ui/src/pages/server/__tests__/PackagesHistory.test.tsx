@@ -14,6 +14,7 @@ function mkServer(id: string): Server {
     id,
     hostname: "host-a",
     display_name: null,
+    number: null,
     ip_address: "10.10.20.11",
     mgmt_ip_address: null,
     ssh_port: 22,

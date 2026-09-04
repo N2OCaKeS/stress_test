@@ -6,24 +6,23 @@
  * Файл — тонкий роутер+shell по подразделам; сама функциональность разбита
  * по файлам того же каталога (по образцу `pages/server/tabs/*`):
  * `overview.tsx` (рабочая зона + дашборд пула), `tests.tsx` (каталог тестов),
- * `runs.tsx` (fleet-wide прогоны), `stp.tsx` (зеркало Zephyr), `rc.tsx`
- * (релиз-кандидаты). Общие типы/данные/мелкие компоненты — в `_shared.tsx`.
+ * `runs.tsx` (fleet-wide прогоны), `stp.tsx` (зеркало Zephyr, средняя панель
+ * которого сама показывает список всех версий ОС — отдельная вкладка «РЦ» не
+ * нужна). Общие типы/данные/мелкие компоненты — в `_shared.tsx`.
  */
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Cog, FileText, ListChecks, Package, type LucideIcon } from "lucide-react";
+import { Cog, FileText, ListChecks, type LucideIcon } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { TestingOverview } from "./overview";
 import { TestsWorkzone } from "./tests";
 import { RunsWorkzone } from "./runs";
 import { StpWorkzone } from "./stp";
-import { RcWorkzone } from "./rc";
 
 const SUBSECTIONS = [
   { id: "tests", label: "Тесты", icon: FileText },
   { id: "runs", label: "Прогоны", icon: ListChecks },
   { id: "stp", label: "СТП", icon: Cog },
-  { id: "rc", label: "РЦ", icon: Package },
 ] as const;
 
 type SubsectionId = (typeof SUBSECTIONS)[number]["id"];
@@ -82,7 +81,6 @@ export function Testing() {
           {activeId === "tests" && <TestsWorkzone />}
           {activeId === "runs" && <RunsWorkzone />}
           {activeId === "stp" && <StpWorkzone />}
-          {activeId === "rc" && <RcWorkzone />}
         </div>
       </main>
     </Shell>

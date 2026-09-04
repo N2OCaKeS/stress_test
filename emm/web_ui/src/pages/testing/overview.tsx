@@ -28,7 +28,6 @@ import {
   Thermometer,
   Trash2,
 } from "lucide-react";
-import { RC_IDS } from "./rc";
 import { LaunchRunModal, RUNS } from "./runs";
 import {
   Counter,
@@ -39,6 +38,7 @@ import {
   LogViewerModal,
   MetaRow,
   ModalHeader,
+  OS_VERSION_IDS as RC_IDS,
   Sparkline,
   Stat,
   StatusBadge,

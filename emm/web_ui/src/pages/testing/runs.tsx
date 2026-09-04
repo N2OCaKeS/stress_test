@@ -10,11 +10,11 @@
  */
 import { useMemo, useState } from "react";
 import { Activity, CheckCircle2, ExternalLink, ListChecks, Play, Server, TimerReset, XCircle } from "lucide-react";
-import { RC_IDS } from "./rc";
 import { TEST_CATALOG } from "./tests";
 import {
   LogViewerModal,
   ModalHeader,
+  OS_VERSION_IDS as RC_IDS,
   QUEUE_TEXT,
   queueBadge,
   SortableTh,

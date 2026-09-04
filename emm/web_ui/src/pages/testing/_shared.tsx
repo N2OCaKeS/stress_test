@@ -205,6 +205,36 @@ export const STANDS: Stand[] = [
   ]),
 ];
 
+// ── версии ОС / релиз-кандидаты ─────────────────────────────────────────────
+
+export type OsVersionKind = "regular" | "urgent";
+export type OsVersionStatus = "active" | "testing" | "released" | "archived";
+
+export interface OsVersion {
+  /** полная версия вида build.rc, как в заголовке страницы СТП на Confluence */
+  id: string;
+  build: string;
+  rc: string;
+  kind: OsVersionKind;
+  status: OsVersionStatus;
+  kernels: string[];
+  createdAt: string;
+}
+
+export const OS_VERSIONS: OsVersion[] = [
+  { id: "1.8.7.46", build: "1.8.7", rc: "46", kind: "regular", status: "active", kernels: ["6.12.24-1.el11", "6.12.18-std-def"], createdAt: "03.09.2026" },
+  { id: "1.8.7.45", build: "1.8.7", rc: "45", kind: "regular", status: "released", kernels: ["6.12.24-1.el11"], createdAt: "28.08.2026" },
+  { id: "1.8.7.44.1", build: "1.8.7", rc: "44.1", kind: "urgent", status: "released", kernels: ["6.12.24-1.el11-hotfix1"], createdAt: "20.08.2026" },
+  { id: "1.8.7.44", build: "1.8.7", rc: "44", kind: "regular", status: "released", kernels: ["6.12.24-1.el11"], createdAt: "15.08.2026" },
+  { id: "1.8.7.47", build: "1.8.7", rc: "47", kind: "regular", status: "testing", kernels: ["6.12.24-1.el11"], createdAt: "04.09.2026" },
+  { id: "1.8.6.58", build: "1.8.6", rc: "58", kind: "regular", status: "released", kernels: ["6.6.63-un-def"], createdAt: "10.07.2026" },
+  { id: "1.8.6.39", build: "1.8.6", rc: "39", kind: "regular", status: "archived", kernels: ["6.6.60-un-def"], createdAt: "25.06.2026" },
+  { id: "1.7.9.12", build: "1.7.9", rc: "12", kind: "regular", status: "archived", kernels: ["6.1.99-std-def"], createdAt: "12.03.2026" },
+  { id: "1.7.9.10", build: "1.7.9", rc: "10", kind: "regular", status: "archived", kernels: ["6.1.99-std-def"], createdAt: "20.02.2026" },
+];
+
+export const OS_VERSION_IDS = OS_VERSIONS.map((v) => v.id);
+
 export function queueStats(queue: QueueItem[]) {
   return queue.reduce(
     (acc, item) => {

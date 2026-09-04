@@ -105,7 +105,6 @@ const TESTING_CHIP: ServiceChip = {
     { to: "/testing/tests", icon: FileText, label: "Тесты" },
     { to: "/testing/runs", icon: ListChecks, label: "Прогоны" },
     { to: "/testing/stp", icon: Cog, label: "СТП" },
-    { to: "/testing/rc", icon: Package, label: "РЦ" },
   ],
 };
 

@@ -29,6 +29,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { cleanServer } from "@/api/server/servers";
 import { listOsVersions } from "@/api/server/osVersions";
 import { cleanReasonRu } from "@/pages/server/_serverShared";
+import { Dropdown } from "@/components/ui/Dropdown";
 import {
   BootstrapCredsFields,
   bootstrapFormToBody,
@@ -274,19 +275,17 @@ export function CleanModal({
                     {osQ.loading ? (
                       <div className="text-xs text-dim">Загрузка каталога…</div>
                     ) : (
-                      <select
-                        className="field-input"
-                        value={osVersionId}
-                        onChange={(e) => setOsVersionId(e.target.value)}
+                      <Dropdown
+                        mode="single"
+                        placeholder="— сбросить версию —"
                         disabled={pending}
-                      >
-                        <option value="">— сбросить версию —</option>
-                        {osVersions.map((v) => (
-                          <option key={v.id} value={v.id} title={v.id}>
-                            {v.name}
-                          </option>
-                        ))}
-                      </select>
+                        options={[
+                          { value: "", label: "— сбросить версию —" },
+                          ...osVersions.map((v) => ({ value: v.id, label: v.name })),
+                        ]}
+                        value={osVersionId}
+                        onChange={setOsVersionId}
+                      />
                     )}
                   </div>
                 )}

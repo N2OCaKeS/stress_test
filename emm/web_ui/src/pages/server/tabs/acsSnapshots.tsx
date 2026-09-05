@@ -18,6 +18,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { AlertCircle, Camera, Plus, RotateCcw } from "lucide-react";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { useQuery } from "@/api/auth/useQuery";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
@@ -274,19 +275,16 @@ function CreateSnapshotModal({
                 {versionsLoading ? (
                   <div className="text-xs text-dim">Загрузка каталога…</div>
                 ) : (
-                  <select
-                    className="input"
+                  <Dropdown
+                    mode="single"
+                    placeholder="— выберите версию —"
+                    options={[
+                      { value: "", label: "— выберите версию —" },
+                      ...versions.map((v) => ({ value: v.id, label: v.name })),
+                    ]}
                     value={selected}
-                    onChange={(e) => setSelected(e.target.value)}
-                    autoFocus
-                  >
-                    <option value="">— выберите версию —</option>
-                    {versions.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setSelected}
+                  />
                 )}
               </label>
             </div>

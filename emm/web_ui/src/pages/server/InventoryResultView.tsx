@@ -27,6 +27,7 @@ import {
   Link2,
 } from "lucide-react";
 import { useToast } from "@/contexts/ToastContext";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { ApiError, apiErrMsg } from "@/api/client";
 import {
   importUnknownUser,
@@ -482,19 +483,14 @@ function UnlinkedExistingRow({
         </div>
       </div>
       {!single && (
-        <select
-          className="surface-2 border border-token rounded px-2 py-1 text-xs min-w-[160px]"
-          value={picked}
+        <Dropdown
+          mode="single"
+          className="min-w-[160px]"
           disabled={disabled}
-          aria-label={`Аккаунт для ${user.login}`}
-          onChange={(e) => setPicked(e.target.value)}
-        >
-          {user.candidates.map((c) => (
-            <option key={c.account_id} value={c.account_id}>
-              {c.account_id} ({c.source})
-            </option>
-          ))}
-        </select>
+          options={user.candidates.map((c) => ({ value: c.account_id, label: `${c.account_id} (${c.source})` }))}
+          value={picked}
+          onChange={setPicked}
+        />
       )}
       <button
         type="button"

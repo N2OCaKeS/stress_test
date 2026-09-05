@@ -27,6 +27,7 @@ import {
 import { apiErrMsg } from "@/api/client";
 import { useQuery } from "@/api/auth/useQuery";
 import { listOsVersions } from "@/api/server/osVersions";
+import { Dropdown } from "@/components/ui/Dropdown";
 import {
   createAcsSnapshotsBatch,
   restoreAcsSnapshotsBatch,
@@ -260,18 +261,16 @@ export function BulkAcsSnapshotModal({
                   {versionsQ.loading ? (
                     <div className="text-xs text-dim">Загрузка каталога…</div>
                   ) : (
-                    <select
-                      className="input"
+                    <Dropdown
+                      mode="single"
+                      placeholder="— выберите версию —"
+                      options={[
+                        { value: "", label: "— выберите версию —" },
+                        ...versions.map((v) => ({ value: v.id, label: v.name })),
+                      ]}
                       value={osVersionId}
-                      onChange={(e) => setOsVersionId(e.target.value)}
-                    >
-                      <option value="">— выберите версию —</option>
-                      {versions.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setOsVersionId}
+                    />
                   )}
                 </label>
 

@@ -11,6 +11,7 @@ import { apiErrMsg } from "@/api/client";
 import { installNodeExporter } from "@/api/server/servers";
 import { installNodeExporterVm } from "@/api/server/vms";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/contexts/ToastContext";
 import type { ThemeName } from "@/types/persona";
@@ -448,17 +449,13 @@ export function MetricsTab({ entity }: MetricsTabProps) {
           <div className="grid gap-3 md:grid-cols-2">
             {gridSelection.map((panel, idx) => (
               <div key={idx} className="flex flex-col gap-1">
-                <select
-                  className="input w-44 self-end"
+                <Dropdown
+                  mode="single"
+                  className="w-44 self-end"
+                  options={ALL_PANEL_KINDS.map((kind) => ({ value: kind, label: PANEL_MAP[kind].label }))}
                   value={panel}
-                  onChange={(e) => setGridSlot(idx, e.target.value as GrafanaPanelKind)}
-                >
-                  {ALL_PANEL_KINDS.map((kind) => (
-                    <option key={kind} value={kind}>
-                      {PANEL_MAP[kind].label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setGridSlot(idx, v as GrafanaPanelKind)}
+                />
                 <GrafanaPanel
                   baseUrl={embedBase}
                   targetIp={targetIp}

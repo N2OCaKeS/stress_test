@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { PersonaProvider } from "@/contexts/PersonaContext";
@@ -153,6 +153,9 @@ describe("Server create — переключатель Сервер/ВМ", () =>
     ];
     renderServer();
     fireEvent.click(screen.getByRole("button", { name: "ВМ" }));
+    // Открываем дропдаун хаба — опции рендерятся только пока он раскрыт.
+    const hubLabel = (await screen.findByText("VMS-hub *")).closest("label")!;
+    fireEvent.click(within(hubLabel).getByRole("button"));
     // Селектор хаба: оба подготовленных хаба — как опции.
     expect(
       await screen.findByRole("option", { name: /kvm-hub-1/ }),

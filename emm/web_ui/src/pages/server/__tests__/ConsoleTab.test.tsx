@@ -142,9 +142,14 @@ function renderConsole() {
 }
 
 async function connect() {
-  fireEvent.change(await screen.findByRole("combobox"), {
-    target: { value: "acc1" },
+  // Кнопка-триггер дропдауна обёрнута в <label> — доступное имя берётся
+  // из подписи поля, а не из текста на самой кнопке.
+  const trigger = await screen.findByRole("button", {
+    name: /Аккаунт для подключения/i,
   });
+  fireEvent.click(trigger);
+  const option = await screen.findByRole("option", { name: /dbos-svc/ });
+  fireEvent.click(option);
   fireEvent.click(screen.getByRole("button", { name: /Подключить/ }));
   await waitFor(() => lastWs?.readyState === FakeWebSocket.OPEN);
 }

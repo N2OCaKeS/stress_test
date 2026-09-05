@@ -103,6 +103,7 @@ import {
 import { FormRow } from "@/pages/admin/services/_inline";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import {
   filterAccessibleAccounts,
@@ -1119,18 +1120,13 @@ function OsSyncModal({
             {q.loading ? (
               <div className="text-xs text-dim">Загрузка каталога…</div>
             ) : (
-              <select
-                className="input"
+              <Dropdown
+                mode="single"
+                placeholder="— не задана —"
+                options={[{ value: "", label: "— не задана —" }, ...items.map((v) => ({ value: v.id, label: v.name }))]}
                 value={selected}
-                onChange={(e) => setSelected(e.target.value)}
-              >
-                <option value="">— не задана —</option>
-                {items.map((v) => (
-                  <option key={v.id} value={v.id} title={v.id}>
-                    {v.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setSelected}
+              />
             )}
           </label>
           <div className="flex items-center gap-2 mt-1">
@@ -1610,20 +1606,17 @@ function AstraUpdateCard({
               {versionsLoading ? (
                 <div className="text-xs text-dim">Загрузка каталога…</div>
               ) : (
-                <select
-                  className="input"
-                  value={selected}
-                  onChange={(e) => setSelected(e.target.value)}
+                <Dropdown
+                  mode="single"
+                  placeholder="— выберите версию —"
                   disabled={disabled}
-                >
-                  <option value="">— выберите версию —</option>
-                  {versions.map((v) => (
-                    <option key={v.id} value={v.id} title={v.id}>
-                      {v.name}
-                      {v.hint ?? ""}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "", label: "— выберите версию —" },
+                    ...versions.map((v) => ({ value: v.id, label: `${v.name}${v.hint ?? ""}` })),
+                  ]}
+                  value={selected}
+                  onChange={setSelected}
+                />
               )}
             </label>
             {allowed && (
@@ -2114,38 +2107,39 @@ function VmNetworkCard({
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">Сетевой режим</span>
-          <select
-            className="input"
-            value={mode}
-            onChange={(e) => setMode(e.target.value as VmNetworkMode)}
+          <Dropdown
+            mode="single"
             disabled={pending}
-          >
-            <option value="bridge">bridge (мост, статика)</option>
-            <option value="nat">nat (libvirt NAT)</option>
-          </select>
+            options={[
+              { value: "bridge", label: "bridge (мост, статика)" },
+              { value: "nat", label: "nat (libvirt NAT)" },
+            ]}
+            value={mode}
+            onChange={(v) => setMode(v as VmNetworkMode)}
+          />
         </label>
 
         {mode === "bridge" && (
           <>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-dim text-xs">Пул IPAM</span>
-              <select
-                className="input"
+              <Dropdown
+                mode="single"
+                placeholder="— авто-выбор пула —"
+                disabled={pending}
+                options={[
+                  { value: "", label: "— авто-выбор пула —" },
+                  ...pools.map((p) => ({
+                    value: p.id,
+                    label: `${p.name} · ${p.cidr}${p.server_id ? " · хаб-override" : ""}`,
+                  })),
+                ]}
                 value={poolId}
-                onChange={(e) => {
-                  setPoolId(e.target.value);
+                onChange={(v) => {
+                  setPoolId(v);
                   setIp("");
                 }}
-                disabled={pending}
-              >
-                <option value="">— авто-выбор пула —</option>
-                {pools.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} · {p.cidr}
-                    {p.server_id ? " · хаб-override" : ""}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
 
             <fieldset className="flex flex-col gap-1 text-sm">
@@ -2185,18 +2179,14 @@ function VmNetworkCard({
                     В пуле нет свободных адресов.
                   </div>
                 ) : (
-                  <select
-                    className="input mt-1"
+                  <Dropdown
+                    mode="single"
+                    className="mt-1"
+                    placeholder="— выберите адрес —"
+                    options={availableIps.map((a) => ({ value: a, label: a }))}
                     value={ip}
-                    onChange={(e) => setIp(e.target.value)}
-                  >
-                    <option value="">— выберите адрес —</option>
-                    {availableIps.map((a) => (
-                      <option key={a} value={a}>
-                        {a}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setIp}
+                  />
                 ))}
               {ipMode === "manual" && (
                 <input

@@ -18,6 +18,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { KeyRound } from "lucide-react";
 import { toBase64 } from "@/lib/base64";
 import { PASSWORD_POLICY_HINT_STRONG } from "@/pages/server/_serverShared";
+import { Dropdown } from "@/components/ui/Dropdown";
 import type { ServerAccount, ServerPrepareRequest } from "@/api/server/types";
 
 /**
@@ -113,21 +114,17 @@ export function BootstrapCredsFields({
       {value.mode === "account" ? (
         <div>
           <label className="field-label">server_account</label>
-          <select
-            className="field-input"
-            value={value.accountId}
-            onChange={(e) => patch({ accountId: e.target.value })}
+          <Dropdown
+            mode="single"
+            placeholder="— нет доступных аккаунтов —"
             disabled={disabled || accountsLoading || noAccounts}
-          >
-            {noAccounts && <option value="">— нет доступных аккаунтов —</option>}
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.login}
-                {a.has_sudo ? " (sudo)" : ""}
-                {a.source === "discovered" ? " · discovered" : ""}
-              </option>
-            ))}
-          </select>
+            options={accounts.map((a) => ({
+              value: a.id,
+              label: `${a.login}${a.has_sudo ? " (sudo)" : ""}${a.source === "discovered" ? " · discovered" : ""}`,
+            }))}
+            value={value.accountId}
+            onChange={(v) => patch({ accountId: v })}
+          />
           <span className="text-[11px] text-dim block mt-1">
             {accountsLoading
               ? "загружаем привязанные аккаунты…"

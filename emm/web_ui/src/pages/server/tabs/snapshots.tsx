@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
@@ -635,17 +636,16 @@ function CredStrategyCard({
       <div className="flex items-end gap-2 flex-wrap">
         <label className="flex flex-col gap-1 text-sm flex-1 min-w-[220px]">
           <span className="text-dim text-xs">Режим</span>
-          <select
-            className="input"
-            value={strategy}
-            onChange={(e) => setStrategy(e.target.value as VmCredStrategy)}
+          <Dropdown
+            mode="single"
             disabled={pending}
-          >
-            <option value="per_snapshot">
-              per_snapshot — креды на снимок
-            </option>
-            <option value="reroll">reroll — единый пароль (паритет)</option>
-          </select>
+            options={[
+              { value: "per_snapshot", label: "per_snapshot — креды на снимок" },
+              { value: "reroll", label: "reroll — единый пароль (паритет)" },
+            ]}
+            value={strategy}
+            onChange={(v) => setStrategy(v as VmCredStrategy)}
+          />
         </label>
         <button
           className="btn btn-primary"
@@ -762,14 +762,15 @@ function SnapshotCreateModal({
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">Тип</span>
-            <select
-              className="input"
+            <Dropdown
+              mode="single"
+              options={[
+                { value: "disk_only", label: "disk-only (только диск)" },
+                { value: "full", label: "full (диск + память/состояние)" },
+              ]}
               value={snapshotType}
-              onChange={(e) => setSnapshotType(e.target.value as VmSnapshotType)}
-            >
-              <option value="disk_only">disk-only (только диск)</option>
-              <option value="full">full (диск + память/состояние)</option>
-            </select>
+              onChange={(v) => setSnapshotType(v as VmSnapshotType)}
+            />
           </label>
         </div>
         <div className="modal-footer">
@@ -843,19 +844,16 @@ function AstraUpdateModal({
             {versionsQ.loading ? (
               <div className="text-xs text-dim">Загрузка каталога…</div>
             ) : (
-              <select
-                className="input"
+              <Dropdown
+                mode="single"
+                placeholder="— выберите версию —"
+                options={[
+                  { value: "", label: "— выберите версию —" },
+                  ...versions.map((v) => ({ value: v.id, label: v.name })),
+                ]}
                 value={selected}
-                onChange={(e) => setSelected(e.target.value)}
-                autoFocus
-              >
-                <option value="">— выберите версию —</option>
-                {versions.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setSelected}
+              />
             )}
           </label>
         </div>

@@ -44,6 +44,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { isDepAdmin } from "@/lib/rbac";
 import { formatLatencyMs } from "@/pages/server/_serverShared";
 import { FormRow, StatRow } from "@/pages/admin/services/_inline";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import type { EntityRef } from "./_entity";
@@ -608,18 +609,13 @@ function OverviewEditForm({
                 : "Пусто = сбросить версию"
             }
           >
-            <select
-              className="input"
+            <Dropdown
+              mode="single"
+              placeholder="— не задано —"
+              options={[{ value: "", label: "— не задано —" }, ...osList.map((v) => ({ value: v.id, label: v.name }))]}
               value={osVersionId}
-              onChange={(e) => setOsVersionId(e.target.value)}
-            >
-              <option value="">— не задано —</option>
-              {osList.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
+              onChange={setOsVersionId}
+            />
           </FormRow>
         </div>
         <div className="mt-4 flex gap-2 justify-end">

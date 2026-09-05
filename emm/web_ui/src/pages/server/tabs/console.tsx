@@ -55,6 +55,7 @@ import { ConsoleMacrosPanel } from "@/pages/server/tabs/ConsoleMacros";
 import { HeightResizeHandle } from "@/components/shell/ResizeHandle";
 import { usePanelHeight } from "@/components/shell/usePanelWidth";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { mockVmAccounts, mockVmConsole } from "@/mocks/vm";
 import {
   alltaUpdateVm,
@@ -252,20 +253,19 @@ function AccountConsolePanel({
           <span className="text-dim text-xs">
             Аккаунт для подключения (обязательно)
           </span>
-          <select
-            className="surface-2 border border-token rounded px-2 py-1"
+          <Dropdown
+            mode="single"
+            placeholder="— выберите учётку —"
+            options={[
+              { value: "", label: "— выберите учётку —" },
+              ...accounts.map((a) => ({
+                value: a.id,
+                label: `${a.login}${a.has_sudo ? " (sudo)" : ""}${a.source === "discovered" ? " · discovered" : ""}`,
+              })),
+            ]}
             value={selectedAccountId}
-            onChange={(e) => setSelectedAccountId(e.target.value)}
-          >
-            <option value="">— выберите учётку —</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.login}
-                {a.has_sudo ? " (sudo)" : ""}
-                {a.source === "discovered" ? " · discovered" : ""}
-              </option>
-            ))}
-          </select>
+            onChange={setSelectedAccountId}
+          />
           <span className="text-dim text-xs">
             Сессия откроется под этим аккаунтом. Подготовка (Prepare) для
             консоли не требуется.

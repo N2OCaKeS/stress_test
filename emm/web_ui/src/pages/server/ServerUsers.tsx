@@ -54,6 +54,7 @@ import {
 import { Shell } from "@/components/shell/Shell";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { HelpTooltip } from "@/components/ui/HelpTooltip";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -460,28 +461,27 @@ export function ServerUsers() {
         </div>
         <div className="mt-2 flex items-center gap-2 text-xs text-dim flex-wrap">
           <span>Сервер:</span>
-          <select
-            className="surface-2 border border-token rounded px-2 py-0.5"
+          <Dropdown
+            mode="single"
+            searchable
+            options={[
+              { value: "all", label: "все серверы" },
+              ...servers.map((s) => ({ value: s.id, label: s.display_name || s.hostname })),
+            ]}
             value={serverFilter}
-            onChange={(e) => setServerFilter(e.target.value)}
-          >
-            <option value="all">все серверы</option>
-            {servers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.display_name || s.hostname}
-              </option>
-            ))}
-          </select>
+            onChange={setServerFilter}
+          />
           <span>Сорт:</span>
-          <select
-            className="surface-2 border border-token rounded px-2 py-0.5"
+          <Dropdown
+            mode="single"
+            options={[
+              { value: "login", label: "по login" },
+              { value: "server", label: "по серверу" },
+              { value: "rotated", label: "по ротации" },
+            ]}
             value={sort}
-            onChange={(e) => setSort(e.target.value as SortMode)}
-          >
-            <option value="login">по login</option>
-            <option value="server">по серверу</option>
-            <option value="rotated">по ротации</option>
-          </select>
+            onChange={(v) => setSort(v as SortMode)}
+          />
         </div>
         {inventory.tracked && (
           <InventoryStatusBar
@@ -1966,23 +1966,15 @@ function ServersSection({
 
       <div className="border-t border-token pt-3 flex items-center gap-2 flex-wrap">
         <span className="text-xs text-dim">Привязать сервер:</span>
-        <select
-          className="surface-2 border border-token rounded px-2 py-1 text-sm flex-1 min-w-[160px]"
-          value={bindTarget}
+        <Dropdown
+          mode="single"
+          className="flex-1 min-w-[160px]"
+          placeholder={bindCandidates.length === 0 ? "— нет доступных серверов —" : "— выберите сервер —"}
           disabled={!canOperate || binding || bindCandidates.length === 0}
-          onChange={(e) => setBindTarget(e.target.value)}
-        >
-          <option value="">
-            {bindCandidates.length === 0
-              ? "— нет доступных серверов —"
-              : "— выберите сервер —"}
-          </option>
-          {bindCandidates.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.display_name || s.hostname}
-            </option>
-          ))}
-        </select>
+          options={bindCandidates.map((s) => ({ value: s.id, label: s.display_name || s.hostname }))}
+          value={bindTarget}
+          onChange={setBindTarget}
+        />
         <button
           className="btn btn-sm btn-primary flex items-center gap-1"
           disabled={!canOperate || binding || !bindTarget}

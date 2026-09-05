@@ -160,9 +160,17 @@ describe("ManageTab — обновление ОС Astra", () => {
       await screen.findByText("Обновление ОС Astra"),
     ).toBeInTheDocument();
 
-    // Дропдаун подтянул версию из каталога.
-    const select = await screen.findByRole("combobox");
-    fireEvent.change(select, { target: { value: "osv_orel" } });
+    // Дропдаун подтянул версию из каталога. Кнопка-триггер обёрнута в
+    // <label>, поэтому её доступное имя — текст подписи поля, а не
+    // текущее значение на кнопке.
+    const trigger = await screen.findByRole("button", {
+      name: /Целевая версия ОС/i,
+    });
+    fireEvent.click(trigger);
+    const option = await screen.findByRole("option", {
+      name: "Astra 1.8 Orel",
+    });
+    fireEvent.click(option);
 
     const btn = screen.getByRole("button", { name: /Обновить ОС/i });
     fireEvent.click(btn);

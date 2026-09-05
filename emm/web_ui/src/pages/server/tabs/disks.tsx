@@ -15,6 +15,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { AlertCircle, HardDrive, Maximize2, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
@@ -380,12 +381,17 @@ function DiskCreateModal({
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">Файловая система</span>
-            <select className="input" value={fs} onChange={(e) => setFs(e.target.value)}>
-              <option value="ext4">ext4</option>
-              <option value="xfs">xfs</option>
-              <option value="btrfs">btrfs</option>
-              <option value="none">не форматировать</option>
-            </select>
+            <Dropdown
+              mode="single"
+              options={[
+                { value: "ext4", label: "ext4" },
+                { value: "xfs", label: "xfs" },
+                { value: "btrfs", label: "btrfs" },
+                { value: "none", label: "не форматировать" },
+              ]}
+              value={fs}
+              onChange={setFs}
+            />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">Точка монтирования</span>

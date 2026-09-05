@@ -26,6 +26,7 @@ import { apiErrMsg } from "@/api/client";
 import { usersInventory } from "@/api/server/misc";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { InventoryResultView } from "@/pages/server/InventoryResultView";
+import { Dropdown } from "@/components/ui/Dropdown";
 import type {
   Server,
   InventoryUser,
@@ -182,21 +183,15 @@ export function OsUsersDiscoveryModal({
               <span className="text-xs text-dim flex items-center gap-1">
                 <ServerIcon className="w-3.5 h-3.5" /> Сервер:
               </span>
-              <select
-                className="surface-2 border border-token rounded px-2 py-1 text-sm flex-1 min-w-[180px]"
-                value={serverId}
+              <Dropdown
+                mode="single"
+                className="flex-1 min-w-[180px]"
+                placeholder="— нет серверов —"
                 disabled={polling}
-                onChange={(e) => setServerId(e.target.value)}
-              >
-                {servers.length === 0 && (
-                  <option value="">— нет серверов —</option>
-                )}
-                {servers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.display_name || s.hostname}
-                  </option>
-                ))}
-              </select>
+                options={servers.map((s) => ({ value: s.id, label: s.display_name || s.hostname }))}
+                value={serverId}
+                onChange={setServerId}
+              />
               <button
                 type="button"
                 className="btn btn-sm btn-primary flex items-center gap-1"

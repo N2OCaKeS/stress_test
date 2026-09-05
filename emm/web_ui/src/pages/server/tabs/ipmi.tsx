@@ -66,6 +66,7 @@ import type {
   Server,
 } from "@/api/server/types";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { usePersona } from "@/contexts/PersonaContext";
 import type { Persona } from "@/types/persona";
 import { useToast } from "@/contexts/ToastContext";
@@ -345,17 +346,18 @@ function RegisterPane({
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">kind *</span>
-            <select
-              className="surface-2 border border-token rounded px-2 py-1"
-              value={kind}
-              onChange={(e) => setKind(e.target.value as IpmiKind)}
+            <Dropdown
+              mode="single"
               disabled={!canRegister}
-            >
-              <option value="redfish">Redfish (generic)</option>
-              <option value="idrac">iDRAC</option>
-              <option value="ilo">iLO</option>
-              <option value="ipmi">ipmitool (RMCP+)</option>
-            </select>
+              options={[
+                { value: "redfish", label: "Redfish (generic)" },
+                { value: "idrac", label: "iDRAC" },
+                { value: "ilo", label: "iLO" },
+                { value: "ipmi", label: "ipmitool (RMCP+)" },
+              ]}
+              value={kind}
+              onChange={(v) => setKind(v as IpmiKind)}
+            />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">username *</span>
@@ -604,16 +606,17 @@ function EditCard({
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">kind</span>
-          <select
-            className="surface-2 border border-token rounded px-2 py-1"
+          <Dropdown
+            mode="single"
+            options={[
+              { value: "redfish", label: "Redfish (generic)" },
+              { value: "idrac", label: "iDRAC" },
+              { value: "ilo", label: "iLO" },
+              { value: "ipmi", label: "ipmitool (RMCP+)" },
+            ]}
             value={kind}
-            onChange={(e) => setKind(e.target.value as IpmiKind)}
-          >
-            <option value="redfish">Redfish (generic)</option>
-            <option value="idrac">iDRAC</option>
-            <option value="ilo">iLO</option>
-            <option value="ipmi">ipmitool (RMCP+)</option>
-          </select>
+            onChange={(v) => setKind(v as IpmiKind)}
+          />
         </label>
         <div className="flex items-center gap-2 mt-2">
           <button

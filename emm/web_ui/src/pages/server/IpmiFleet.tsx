@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
@@ -125,18 +126,17 @@ export function IpmiFleet() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <label className="text-xs text-dim flex items-center gap-1.5">
-              Сорт:
-              <select
-                className="surface-2 border border-token rounded px-2 py-1"
-                value={sort}
-                onChange={(e) => setSort(e.target.value as SortMode)}
-              >
-                <option value="server">по серверу</option>
-                <option value="kind">по типу</option>
-                <option value="status">по статусу</option>
-              </select>
-            </label>
+            <Dropdown
+              mode="single"
+              label="Сорт"
+              options={[
+                { value: "server", label: "по серверу" },
+                { value: "kind", label: "по типу" },
+                { value: "status", label: "по статусу" },
+              ]}
+              value={sort}
+              onChange={(v) => setSort(v as SortMode)}
+            />
           </div>
         </div>
 

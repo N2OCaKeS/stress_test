@@ -31,6 +31,7 @@ import { Shell } from "@/components/shell/Shell";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { naturalCompare } from "@/lib/naturalSort";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery, useMockMode } from "@/api/auth/useQuery";
@@ -373,25 +374,27 @@ export function Server() {
         </div>
         <div className="mt-2 flex items-center gap-2 text-xs text-dim flex-wrap">
           <span>Сорт:</span>
-          <select
-            className="surface-2 border border-token rounded px-2 py-0.5"
+          <Dropdown
+            mode="single"
+            options={[
+              { value: "name", label: "по имени" },
+              { value: "number", label: "по номеру" },
+              { value: "dept", label: "по отделу" },
+              { value: "status", label: "по статусу" },
+            ]}
             value={sort}
-            onChange={(e) => setSort(e.target.value as SortMode)}
-          >
-            <option value="name">по имени</option>
-            <option value="number">по номеру</option>
-            <option value="dept">по отделу</option>
-            <option value="status">по статусу</option>
-          </select>
+            onChange={(v) => setSort(v as SortMode)}
+          />
           <span>Группа:</span>
-          <select
-            className="surface-2 border border-token rounded px-2 py-0.5"
+          <Dropdown
+            mode="single"
+            options={[
+              { value: "none", label: "—" },
+              { value: "department", label: "по отделу" },
+            ]}
             value={group}
-            onChange={(e) => setGroup(e.target.value as GroupMode)}
-          >
-            <option value="none">—</option>
-            <option value="department">по отделу</option>
-          </select>
+            onChange={(v) => setGroup(v as GroupMode)}
+          />
         </div>
         {sortScopeTruncated && (
           <div className="mt-2 alert-warn text-[11px]" role="status">
@@ -646,43 +649,39 @@ function FilterPane({
 }) {
   return (
     <div className="mt-2 grid grid-cols-3 gap-1 text-[11px] text-dim">
-      <select
-        className="surface-2 border border-token rounded px-1 py-0.5"
+      <Dropdown
+        mode="single"
+        placeholder="все отделы"
+        options={[{ value: "", label: "все отделы" }, ...depts.map((d) => ({ value: d.id, label: d.name }))]}
         value={dept}
-        onChange={(e) => onDept(e.target.value)}
-        title="Фильтр по департаменту"
-      >
-        <option value="">все отделы</option>
-        {depts.map((d) => (
-          <option key={d.id} value={d.id}>
-            {d.name}
-          </option>
-        ))}
-      </select>
-      <select
-        className="surface-2 border border-token rounded px-1 py-0.5"
+        onChange={onDept}
+      />
+      <Dropdown
+        mode="single"
+        placeholder="все статусы"
+        options={[
+          { value: "", label: "все статусы" },
+          { value: "online", label: "online" },
+          { value: "offline", label: "offline" },
+          { value: "maintenance", label: "maintenance" },
+          { value: "decommissioned", label: "decommissioned" },
+          { value: "unknown", label: "unknown" },
+        ]}
         value={status}
-        onChange={(e) => onStatus(e.target.value)}
-        title="Фильтр по статусу"
-      >
-        <option value="">все статусы</option>
-        <option value="online">online</option>
-        <option value="offline">offline</option>
-        <option value="maintenance">maintenance</option>
-        <option value="decommissioned">decommissioned</option>
-        <option value="unknown">unknown</option>
-      </select>
-      <select
-        className="surface-2 border border-token rounded px-1 py-0.5"
+        onChange={onStatus}
+      />
+      <Dropdown
+        mode="single"
+        placeholder="все"
+        options={[
+          { value: "", label: "все" },
+          { value: "free", label: "свободные" },
+          { value: "busy", label: "занятые" },
+          { value: "testing", label: "в тесте" },
+        ]}
         value={busy}
-        onChange={(e) => onBusy(e.target.value)}
-        title="Фильтр по занятости"
-      >
-        <option value="">все</option>
-        <option value="free">свободные</option>
-        <option value="busy">занятые</option>
-        <option value="testing">в тесте</option>
-      </select>
+        onChange={onBusy}
+      />
     </div>
   );
 }
@@ -1252,18 +1251,15 @@ function VmCreateFlow({
         <div className="px-5 pt-4 w-full max-w-2xl">
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">VMS-hub *</span>
-            <select
-              className="surface-2 border border-token rounded px-2 py-1"
+            <Dropdown
+              mode="single"
+              options={hubs.map((h) => ({
+                value: h.id,
+                label: `${h.display_name ?? h.hostname} · ${h.ip_address} · ${h.vm_count} ВМ`,
+              }))}
               value={selectedHub?.id ?? ""}
-              onChange={(e) => setHubId(e.target.value)}
-            >
-              {hubs.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.display_name ?? h.hostname} · {h.ip_address} · {h.vm_count}{" "}
-                  ВМ
-                </option>
-              ))}
-            </select>
+              onChange={setHubId}
+            />
           </label>
         </div>
       )}
@@ -1375,21 +1371,13 @@ function CreatePane({
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">Отдел *</span>
             {isAccountAdmin ? (
-              <select
-                className="surface-2 border border-token rounded px-2 py-1"
+              <Dropdown
+                mode="single"
+                placeholder="— нет отделов —"
+                options={depts.map((d) => ({ value: d.id, label: d.name }))}
                 value={departmentId}
-                onChange={(e) => setDepartmentId(e.target.value)}
-                required
-              >
-                {depts.length === 0 && (
-                  <option value="">— нет отделов —</option>
-                )}
-                {depts.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setDepartmentId}
+              />
             ) : (
               <>
                 <input

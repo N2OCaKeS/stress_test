@@ -46,6 +46,7 @@ import type {
 import { listVmAccounts, type Vm, type VmAccount } from "@/api/server/vms";
 import { mockVmAccounts, MOCK_VM_ACCOUNTS } from "@/mocks/vm";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { RotateDispatchResult } from "@/pages/server/_rotateResult";
 import {
@@ -1711,15 +1712,16 @@ function AccountCreateForm({
           />
         </FormRow>
         <FormRow label="scope" hint="визуальный признак (UI)">
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            options={[
+              { value: "service", label: "service" },
+              { value: "shared", label: "shared" },
+              { value: "personal", label: "personal" },
+            ]}
             value={scope}
-            onChange={(e) => setScope(e.target.value as Scope)}
-          >
-            <option value="service">service</option>
-            <option value="shared">shared</option>
-            <option value="personal">personal</option>
-          </select>
+            onChange={(v) => setScope(v as Scope)}
+          />
         </FormRow>
         <FormRow label="sudo">
           <label className="inline-flex items-center gap-2 text-sm">

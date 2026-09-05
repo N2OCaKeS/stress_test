@@ -6,9 +6,12 @@
  * Файл — тонкий роутер+shell по подразделам; сама функциональность разбита
  * по файлам того же каталога (по образцу `pages/server/tabs/*`):
  * `overview.tsx` (рабочая зона + дашборд пула), `tests.tsx` (каталог тестов),
- * `runs.tsx` (fleet-wide прогоны), `stp.tsx` (зеркало Zephyr, средняя панель
- * которого сама показывает список всех версий ОС — отдельная вкладка «РЦ» не
- * нужна). Общие типы/данные/мелкие компоненты — в `_shared.tsx`.
+ * `runs.tsx` (fleet-wide прогоны), `stp.tsx` (зеркало Zephyr). Для СТП
+ * средняя панель Shell — список версий ОС (по образцу `pages/server/Server.tsx`
+ * `aside`), поэтому её состояние держим здесь через `useStpVersionState` и
+ * пробрасываем в панель и в рабочую зону — обе стороны должны видеть один и
+ * тот же выбор версии. Отдельная вкладка «РЦ» не нужна, эту роль закрывает
+ * панель. Общие типы/данные/мелкие компоненты — в `_shared.tsx`.
  */
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -17,7 +20,7 @@ import { Shell } from "@/components/shell/Shell";
 import { TestingOverview } from "./overview";
 import { TestsWorkzone } from "./tests";
 import { RunsWorkzone } from "./runs";
-import { StpWorkzone } from "./stp";
+import { StpMiddlePanel, StpWorkzone, useStpVersionState } from "./stp";
 
 const SUBSECTIONS = [
   { id: "tests", label: "Тесты", icon: FileText },
@@ -41,9 +44,12 @@ export function Testing() {
     return SUBSECTIONS.find((s) => s.id === activeId) ?? SUBSECTIONS[0];
   }, [activeId]);
   const ActiveIcon = active.icon;
+  // Хук всегда вызывается, чтобы не нарушать порядок хуков при переключении
+  // подраздела — сам список версий нужен только СТП, но состояние дешёвое.
+  const stpState = useStpVersionState();
 
   return (
-    <Shell breadcrumb={`testing_service / ${active.label}`}>
+    <Shell breadcrumb={`testing_service / ${active.label}`} middle={activeId === "stp" ? <StpMiddlePanel state={stpState} /> : undefined}>
       <main className="flex-1 min-w-0 overflow-auto">
         <div className="border-b border-token px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
@@ -80,7 +86,7 @@ export function Testing() {
           {activeId === "overview" && <TestingOverview />}
           {activeId === "tests" && <TestsWorkzone />}
           {activeId === "runs" && <RunsWorkzone />}
-          {activeId === "stp" && <StpWorkzone />}
+          {activeId === "stp" && <StpWorkzone state={stpState} />}
         </div>
       </main>
     </Shell>

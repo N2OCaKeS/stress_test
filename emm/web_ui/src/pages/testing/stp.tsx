@@ -760,10 +760,21 @@ function StpStatusTable({
                   if (cell.status === "not_run") {
                     return <td key={combo.idx} className="stp-cell-not_run border-b border-token px-2 py-1 text-center">—</td>;
                   }
+                  if (statusFilter.size > 0 && !statusFilter.has(cell.status)) {
+                    return (
+                      <td
+                        key={combo.idx}
+                        className="stp-cell-filtered-out border-b border-token px-2 py-1 text-center"
+                        title="Скрыто фильтром по статусу"
+                      >
+                        ·
+                      </td>
+                    );
+                  }
                   return (
                     <td
                       key={combo.idx}
-                      className={`stp-cell-${cell.status} border-b border-token px-2 py-1 cursor-pointer whitespace-nowrap`}
+                      className={`stp-cell-${cell.status} ${cell.logAvailable ? "" : "stp-cell-log-rotated"} border-b border-token px-2 py-1 cursor-pointer whitespace-nowrap`}
                       onClick={() => setCellTarget({ test, combo, cell })}
                     >
                       <div className="flex items-center justify-between gap-2">

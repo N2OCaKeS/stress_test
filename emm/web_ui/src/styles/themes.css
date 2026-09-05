@@ -497,6 +497,16 @@ select {
   gap: 8px;
   align-items: center;
 }
+/* СТП — транспонированная матрица результатов (pages/testing/stp.tsx) */
+.stp-cell-done { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); font-weight: 500; }
+.stp-cell-in_progress { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); font-weight: 500; }
+.stp-cell-failed { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-weight: 600; }
+.stp-cell-not_run { color: var(--text-dim); }
+.stp-cell-filtered-out { color: var(--border); background: var(--bg-soft-2); }
+.stp-cell-log-rotated { box-shadow: inset 3px 0 0 0 var(--text-dim); }
+.stp-mode-orel { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-weight: 600; }
+.stp-mode-smolensk { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); font-weight: 600; }
+
 .brand-logo {
   width: 64px;
   height: 64px;

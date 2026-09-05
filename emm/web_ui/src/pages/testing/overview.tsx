@@ -29,6 +29,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { LaunchRunModal, RUNS } from "./runs";
+import { Dropdown } from "@/components/ui/Dropdown";
 import {
   Counter,
   EmptySearch,
@@ -549,6 +550,7 @@ function LaunchTestModal({
   const tests = stand ? testsForStand(stand) : [];
   const [selectedTests, setSelectedTests] = useState<string[]>(tests.slice(0, 2));
   const [prepareEnv, setPrepareEnv] = useState(true);
+  const [rcId, setRcId] = useState(RC_IDS[0] ?? "");
 
   const switchStand = (nextStandId: number) => {
     const nextStand = stands.find((item) => item.id === nextStandId) ?? stands[0];
@@ -571,23 +573,31 @@ function LaunchTestModal({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <label className="grid gap-1">
               <span className="text-xs text-dim">Стенд</span>
-              <select className="input" value={standId} onChange={(event) => switchStand(Number(event.target.value))}>
-                {stands.map((item) => (
-                  <option key={item.id} value={item.id}>{item.name}</option>
-                ))}
-              </select>
+              <Dropdown
+                mode="single"
+                options={stands.map((item) => ({ value: String(item.id), label: item.name }))}
+                value={String(standId)}
+                onChange={(v) => switchStand(Number(v))}
+              />
             </label>
             <label className="grid gap-1">
               <span className="text-xs text-dim">RC</span>
-              <select className="input">
-                {RC_IDS.map((rc) => <option key={rc}>{rc}</option>)}
-              </select>
+              <Dropdown
+                mode="single"
+                options={RC_IDS.map((rc) => ({ value: rc, label: rc }))}
+                value={rcId}
+                onChange={setRcId}
+              />
             </label>
             <label className="grid gap-1">
               <span className="text-xs text-dim">Ядро</span>
-              <select className="input" value={stand?.kernel ?? ""} disabled>
-                <option>{stand?.kernel ?? "-"}</option>
-              </select>
+              <Dropdown
+                mode="single"
+                options={[{ value: stand?.kernel ?? "", label: stand?.kernel ?? "-" }]}
+                value={stand?.kernel ?? ""}
+                onChange={() => {}}
+                disabled
+              />
             </label>
           </div>
 

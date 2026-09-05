@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { X, UserCog, ShieldCheck, Copy, AlertTriangle, RefreshCw } from "lucide-react";
 import { ApiError, apiErrMsg } from "@/api/client";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { formatMskDate } from "@/lib/datetime";
 import { useTimeoutRef } from "@/lib/useTimeoutRef";
 import { createUser, updateUser } from "@/api/auth/users";
@@ -79,6 +80,13 @@ export function Modal({
 }
 
 type DeptLite = Pick<Department, "id" | "name">;
+
+const EDIT_PLATFORM_ROLE_OPTIONS: DropdownOption[] = [
+  { value: "account_admin", label: "account_admin" },
+  { value: "department_admin", label: "department_admin" },
+  { value: "loging_admin", label: "loging_admin" },
+  { value: "loging_reader", label: "loging_reader" },
+];
 
 export function CreateUserForm({
   depts,
@@ -274,18 +282,13 @@ export function CreateUserForm({
       </Field>
       <Field label="dept">
         <div>
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            placeholder="— (платформенный)"
+            options={depts.map((d) => ({ value: d.id, label: d.name }))}
             value={dept}
-            onChange={(e) => setDept(e.target.value)}
-          >
-            <option value="">— (платформенный)</option>
-            {depts.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+            onChange={setDept}
+          />
           {deptError && (
             <div className="text-[11px] text-danger mt-1">
               {deptError} — без отдела можно создать только платформенную роль
@@ -295,18 +298,13 @@ export function CreateUserForm({
         </div>
       </Field>
       <Field label="platform_role">
-        <select
-          className="input"
+        <Dropdown
+          mode="single"
+          placeholder="— (обычный пользователь)"
+          options={availableRoles}
           value={platformRole}
-          onChange={(e) => setPlatformRole(e.target.value)}
-        >
-          <option value="">— (обычный пользователь)</option>
-          {availableRoles.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.label}
-            </option>
-          ))}
-        </select>
+          onChange={setPlatformRole}
+        />
         <div className="text-[11px] text-dim mt-1">
           {dept
             ? "Когда выбран отдел — доступна только dep-роль."
@@ -442,17 +440,13 @@ export function EditRolesForm({
         />
       </Field>
       <Field label="platform_role">
-        <select
-          className="input"
+        <Dropdown
+          mode="single"
+          placeholder="— (обычный пользователь)"
+          options={EDIT_PLATFORM_ROLE_OPTIONS}
           value={platformRole}
-          onChange={(e) => setPlatformRole(e.target.value)}
-        >
-          <option value="">— (обычный пользователь)</option>
-          <option value="account_admin">account_admin</option>
-          <option value="department_admin">department_admin</option>
-          <option value="loging_admin">loging_admin</option>
-          <option value="loging_reader">loging_reader</option>
-        </select>
+          onChange={setPlatformRole}
+        />
         <div className="text-[11px] text-dim mt-1">
           Платформенная роль определяет доступ к{" "}
           <span className="mono">loging_service</span>. Для чтения аудита —{" "}
@@ -462,18 +456,13 @@ export function EditRolesForm({
         </div>
       </Field>
       <Field label="dept">
-        <select
-          className="input"
+        <Dropdown
+          mode="single"
+          placeholder="— (платформенный)"
+          options={depts.map((d) => ({ value: d.id, label: d.name }))}
           value={dept}
-          onChange={(e) => setDept(e.target.value)}
-        >
-          <option value="">— (платформенный)</option>
-          {depts.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+          onChange={setDept}
+        />
       </Field>
       <div className="text-[11px] text-dim flex items-center gap-1">
         <ShieldCheck className="w-3 h-3" />
@@ -559,18 +548,13 @@ export function CreateGroupForm({
         />
       </Field>
       <Field label="dept">
-        <select
-          className="input"
+        <Dropdown
+          mode="single"
+          placeholder="— выберите dept —"
+          options={depts.map((d) => ({ value: d.id, label: d.name }))}
           value={deptId}
-          onChange={(e) => setDeptId(e.target.value)}
-        >
-          <option value="">— выберите dept —</option>
-          {depts.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+          onChange={setDeptId}
+        />
       </Field>
       <Field label="description">
         <input
@@ -730,18 +714,13 @@ export function CreateBotForm({
         />
       </Field>
       <Field label="owner_dept">
-        <select
-          className="input"
+        <Dropdown
+          mode="single"
+          placeholder="— выберите dept —"
+          options={depts.map((d) => ({ value: d.id, label: d.name }))}
           value={deptId}
-          onChange={(e) => setDeptId(e.target.value)}
-        >
-          <option value="">— выберите dept —</option>
-          {depts.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+          onChange={setDeptId}
+        />
       </Field>
       <Field label="description">
         <input

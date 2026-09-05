@@ -62,6 +62,7 @@ import {
 } from "@/api/auth/groups";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { listServices } from "@/api/auth/services";
 import { listServiceRoles } from "@/api/auth/service_roles";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
@@ -810,15 +811,12 @@ export function UserDetail() {
             <div className="flex items-center gap-2 mb-3 text-xs">
               <Filter className="w-3 h-3 text-dim" />
               <span className="text-dim">Сервис:</span>
-              <select
-                className="surface-2 border border-token rounded px-2 py-0.5"
+              <Dropdown
+                mode="single"
+                options={services.map((s) => ({ value: s, label: s }))}
                 value={filterSvc}
-                onChange={(e) => setFilterSvc(e.target.value)}
-              >
-                {services.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+                onChange={setFilterSvc}
+              />
               <span className="text-dim ml-auto">{filteredEff.length} / {effective.length}</span>
             </div>
             <div className="border border-token rounded overflow-hidden">

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 // Формы create/edit пользователя должны иметь поля Фамилия/Имя/Отчество и
 // отправлять их в last_name/first_name/middle_name.
@@ -63,11 +63,11 @@ describe("CreateUserForm — поля ФИО", () => {
     fireEvent.change(screen.getByLabelText("Отчество"), {
       target: { value: "Иванович" },
     });
-    // dept-select обёрнут в div с ошибкой-подсказкой, поэтому берём по роли:
-    // он первый combobox в форме (перед platform_role).
-    fireEvent.change(screen.getAllByRole("combobox")[0], {
-      target: { value: "dep_1" },
-    });
+    // dept — Dropdown внутри Field-обёртки <label>: implicit-label включает в
+    // accessible name весь текст лейбла, поэтому находим триггер по label'у.
+    const deptLabel = screen.getByText("dept").closest("label")!;
+    fireEvent.click(within(deptLabel).getByRole("button"));
+    fireEvent.click(screen.getByRole("option", { name: "Ядро DBOS" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Создать" }));
 

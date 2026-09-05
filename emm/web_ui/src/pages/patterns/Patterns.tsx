@@ -26,6 +26,27 @@ import {
   Check,
 } from "lucide-react";
 import { ThemeSwitcher } from "@/components/shell/ThemeSwitcher";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+
+const CREDENTIAL_TYPE_OPTIONS: DropdownOption[] = [
+  { value: "ipmi", label: "ipmi" },
+  { value: "ssh-password", label: "ssh-password" },
+  { value: "ssh-key", label: "ssh-key" },
+  { value: "db-postgres", label: "db-postgres" },
+];
+
+const ROTATION_PERIOD_OPTIONS: DropdownOption[] = [
+  { value: "30d", label: "30 дней" },
+  { value: "90d", label: "90 дней" },
+  { value: "180d", label: "180 дней" },
+  { value: "never", label: "не ротировать" },
+];
+
+const ROTATION_GENERATION_OPTIONS: DropdownOption[] = [
+  { value: "random32", label: "случайные 32 символа" },
+  { value: "random24", label: "случайные 24 символа" },
+  { value: "manual", label: "задать вручную" },
+];
 
 /**
  * Port of patterns.html — UI primitives reference page.
@@ -362,6 +383,8 @@ function ToastDemo({ kind, icon, title, meta }: ToastDemoProps) {
 }
 
 function CreateCredentialModal() {
+  const [type, setType] = useState(CREDENTIAL_TYPE_OPTIONS[0].value);
+  const [rotation, setRotation] = useState(ROTATION_PERIOD_OPTIONS[0].value);
   return (
     <Dialog.Root>
       <Dialog.Trigger asChild>
@@ -394,12 +417,7 @@ function CreateCredentialModal() {
               </div>
               <div>
                 <label className="field-label">Тип</label>
-                <select className="field-input">
-                  <option>ipmi</option>
-                  <option>ssh-password</option>
-                  <option>ssh-key</option>
-                  <option>db-postgres</option>
-                </select>
+                <Dropdown mode="single" options={CREDENTIAL_TYPE_OPTIONS} value={type} onChange={setType} />
               </div>
               <div>
                 <label className="field-label">Сервер</label>
@@ -415,12 +433,7 @@ function CreateCredentialModal() {
               </div>
               <div>
                 <label className="field-label">Срок ротации</label>
-                <select className="field-input">
-                  <option>30 дней</option>
-                  <option>90 дней</option>
-                  <option>180 дней</option>
-                  <option>не ротировать</option>
-                </select>
+                <Dropdown mode="single" options={ROTATION_PERIOD_OPTIONS} value={rotation} onChange={setRotation} />
               </div>
             </div>
           </div>
@@ -497,6 +510,7 @@ function DeleteUserModal() {
 }
 
 function RotateCredentialModal() {
+  const [generation, setGeneration] = useState(ROTATION_GENERATION_OPTIONS[0].value);
   return (
     <Dialog.Root>
       <Dialog.Trigger asChild>
@@ -529,11 +543,7 @@ function RotateCredentialModal() {
             <div className="grid gap-3">
               <div>
                 <label className="field-label">Генерация</label>
-                <select className="field-input">
-                  <option>случайные 32 символа</option>
-                  <option>случайные 24 символа</option>
-                  <option>задать вручную</option>
-                </select>
+                <Dropdown mode="single" options={ROTATION_GENERATION_OPTIONS} value={generation} onChange={setGeneration} />
               </div>
               <div>
                 <label className="field-label">Применить на BMC</label>

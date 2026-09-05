@@ -70,18 +70,21 @@ function Harness({
   );
 }
 
-function serviceSelect() {
-  return screen
-    .getByText("match_service")
-    .closest("label")!
-    .querySelector("select")! as HTMLSelectElement;
+// Dropdown-триггер живёт в той же метке, что и HelpTooltip-кнопка справки —
+// у последней всегда есть aria-label, у триггера Dropdown его нет.
+function dropdownTrigger(labelText: string) {
+  const label = screen.getByText(labelText).closest("label")!;
+  return within(label)
+    .getAllByRole("button")
+    .find((btn) => !btn.hasAttribute("aria-label"))!;
 }
 
-function actionSelect() {
-  return screen
-    .getByText("match_action")
-    .closest("label")!
-    .querySelector("select")! as HTMLSelectElement;
+function serviceTrigger() {
+  return dropdownTrigger("match_service");
+}
+
+function actionTrigger() {
+  return dropdownTrigger("match_action");
 }
 
 describe("ServiceActionSelect", () => {
@@ -95,13 +98,13 @@ describe("ServiceActionSelect", () => {
 
     render(<Harness />);
 
-    await waitFor(() =>
-      expect(
-        within(serviceSelect()).getByRole("option", { name: "auth_service" }),
-      ).toBeInTheDocument(),
-    );
-    expect(serviceSelect()).toHaveDisplayValue("(любой сервис)");
-    expect(actionSelect()).toBeDisabled();
+    expect(serviceTrigger()).toHaveTextContent("(любой сервис)");
+    await waitFor(() => expect(serviceTrigger()).not.toBeDisabled());
+    fireEvent.click(serviceTrigger());
+    expect(
+      await screen.findByRole("option", { name: "auth_service" }),
+    ).toBeInTheDocument();
+    expect(actionTrigger()).toBeDisabled();
     // Каталог действий лениво: пока сервис не выбран — не дёргается.
     expect(mockListServiceEvents).not.toHaveBeenCalled();
   });
@@ -113,22 +116,22 @@ describe("ServiceActionSelect", () => {
     );
 
     render(<Harness />);
-    await waitFor(() =>
-      expect(
-        within(serviceSelect()).getByRole("option", { name: "auth_service" }),
-      ).toBeInTheDocument(),
-    );
 
-    fireEvent.change(serviceSelect(), { target: { value: "auth_service" } });
+    await waitFor(() => expect(serviceTrigger()).not.toBeDisabled());
+    fireEvent.click(serviceTrigger());
+    const serviceOption = await screen.findByRole("option", { name: "auth_service" });
+    fireEvent.click(serviceOption);
 
     await waitFor(() =>
       expect(mockListServiceEvents).toHaveBeenCalledWith("auth_service", {
         limit: 200,
       }),
     );
-    await waitFor(() => expect(actionSelect()).not.toBeDisabled());
+    await waitFor(() => expect(actionTrigger()).not.toBeDisabled());
+
+    fireEvent.click(actionTrigger());
     expect(
-      within(actionSelect()).getByRole("option", { name: /user\.login/ }),
+      await screen.findByRole("option", { name: /user\.login/ }),
     ).toBeInTheDocument();
   });
 
@@ -142,11 +145,14 @@ describe("ServiceActionSelect", () => {
 
     render(<Harness initialService="auth_service" initialAction="user.login" />);
 
-    await waitFor(() => expect(actionSelect()).toHaveValue("user.login"));
+    await waitFor(() => expect(actionTrigger()).toHaveTextContent("user.login"));
 
-    fireEvent.change(serviceSelect(), { target: { value: "server_service" } });
+    await waitFor(() => expect(serviceTrigger()).not.toBeDisabled());
+    fireEvent.click(serviceTrigger());
+    const serviceOption = await screen.findByRole("option", { name: "server_service" });
+    fireEvent.click(serviceOption);
 
-    await waitFor(() => expect(actionSelect()).toHaveValue(""));
+    await waitFor(() => expect(actionTrigger()).toHaveTextContent("(любое действие)"));
   });
 
   it("показывает «(нет зарегистрированных действий)» для пустого каталога", async () => {
@@ -161,8 +167,9 @@ describe("ServiceActionSelect", () => {
       ).toBeInTheDocument(),
     );
     // «(любое действие)» остаётся доступной опцией.
+    fireEvent.click(actionTrigger());
     expect(
-      within(actionSelect()).getByRole("option", { name: "(любое действие)" }),
+      await screen.findByRole("option", { name: "(любое действие)" }),
     ).toBeInTheDocument();
   });
 

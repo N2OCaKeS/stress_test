@@ -4,6 +4,7 @@ import { useQuery } from "@/api/auth/useQuery";
 import { listServiceRoles } from "@/api/auth/service_roles";
 import { useServiceLabel } from "@/lib/labels";
 import { ApiError } from "@/api/client";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import type { ServiceName, ServiceRole } from "@/api/auth/types";
 
 /**
@@ -60,6 +61,8 @@ export function BotRoleAssign({
     setSelected(new Set(currentRoles?.[service] ?? []));
   }, [service, currentRoles]);
 
+  const serviceOptions: DropdownOption[] = allowedServices.map((s) => ({ value: s, label: s }));
+
   const roles = catalogQ.data ?? [];
   const isReplace = service && alreadyAssigned.has(service);
   const current = currentRoles?.[service] ?? [];
@@ -93,18 +96,13 @@ export function BotRoleAssign({
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <label className="text-xs text-dim">service</label>
-        <select
-          className="input"
+        <Dropdown
+          mode="single"
+          options={serviceOptions}
           value={service}
-          onChange={(e) => setService(e.target.value)}
+          onChange={setService}
           disabled={disabled}
-        >
-          {allowedServices.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+        />
         {isReplace && (
           <span className="badge badge-warn text-[10px]" title="Уже есть назначения по этому сервису — будут заменены">
             replace

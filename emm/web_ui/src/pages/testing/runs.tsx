@@ -11,6 +11,7 @@
 import { useMemo, useState } from "react";
 import { Activity, CheckCircle2, ExternalLink, ListChecks, Play, Server, TimerReset, XCircle } from "lucide-react";
 import { TEST_CATALOG } from "./tests";
+import { Dropdown } from "@/components/ui/Dropdown";
 import {
   LogViewerModal,
   ModalHeader,
@@ -381,9 +382,12 @@ export function LaunchRunModal({ onClose }: { onClose: () => void }) {
         <div className="p-4 grid gap-4 overflow-auto max-h-[calc(86vh-64px)]">
           <label className="grid gap-1">
             <span className="text-xs text-dim">РЦ</span>
-            <select className="input" value={rc} onChange={(e) => setRc(e.target.value)}>
-              {RC_IDS.map((id) => <option key={id}>{id}</option>)}
-            </select>
+            <Dropdown
+              mode="single"
+              options={RC_IDS.map((id) => ({ value: id, label: id }))}
+              value={rc}
+              onChange={setRc}
+            />
           </label>
 
           <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">

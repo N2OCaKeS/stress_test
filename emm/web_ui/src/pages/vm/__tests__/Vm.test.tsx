@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { PersonaProvider } from "@/contexts/PersonaContext";
@@ -54,6 +54,12 @@ function renderVm(initialEntry: string) {
  */
 async function openVmTab(label: string) {
   fireEvent.click(await screen.findByRole("button", { name: label }));
+}
+
+/** Dropdown-триггер, живущий в той же метке `<label>`, что и её подпись-текст. */
+function dropdownTriggerNear(text: string | RegExp) {
+  const label = screen.getByText(text).closest("label")!;
+  return within(label).getByRole("button");
 }
 
 describe("Vm zone (mock mode)", () => {
@@ -172,7 +178,15 @@ describe("Vm zone (mock mode)", () => {
 
   it("модалка создания ВМ показывает каталог образов", async () => {
     renderVm("/vm?hub=srv-07&action=new");
-    // Универсальный образ из каталога и его описание.
+    // Заголовок «Образ (каталог) *» делит <label> с кнопкой «Обновить
+    // каталог» и Dropdown-триггером — оба implicit-labeled этим заголовком,
+    // поэтому различаем их по title (у кнопки обновления он есть).
+    const imageLabelText = await screen.findByText("Образ (каталог) *");
+    const imageLabel = imageLabelText.closest("label")!;
+    const trigger = within(imageLabel)
+      .getAllByRole("button")
+      .find((b) => !b.hasAttribute("title"))!;
+    fireEvent.click(trigger);
     expect(
       await screen.findByRole("option", { name: /vm_station · universal/ }),
     ).toBeInTheDocument();
@@ -270,6 +284,10 @@ describe("Vm zone (mock mode)", () => {
     // astra-update модалка с выбором версии.
     fireEvent.click(screen.getByRole("button", { name: /Обновить ОС \(astra-update\)/ }));
     expect(await screen.findByText(/Обновление ОС ·/)).toBeInTheDocument();
+    // Пока каталог версий грузится, вместо Dropdown — текст «Загрузка…»;
+    // ждём, пока он не сменится на Dropdown-триггер.
+    await waitFor(() => expect(dropdownTriggerNear("Версия ОС *")).toBeInTheDocument());
+    fireEvent.click(dropdownTriggerNear("Версия ОС *"));
     expect(
       await screen.findByRole("option", { name: "1.8.1.6" }),
     ).toBeInTheDocument();
@@ -281,6 +299,7 @@ describe("Vm zone (mock mode)", () => {
     expect(
       await screen.findByRole("heading", { name: /Режим управляющих кред/ }),
     ).toBeInTheDocument();
+    fireEvent.click(dropdownTriggerNear("Режим"));
     expect(
       await screen.findByRole("option", { name: /per_snapshot/ }),
     ).toBeInTheDocument();
@@ -413,9 +432,8 @@ describe("Vm zone (mock mode)", () => {
     await openVmTab("Консоль");
     // SSH по умолчанию: тот же account-picker + терминал (кнопка «Подключить»),
     // что и у серверной консоли, а не отдельная data-вёрстка.
-    expect(
-      await screen.findByRole("combobox", { name: /Аккаунт для подключения/ }),
-    ).toBeInTheDocument();
+    await screen.findByText(/Аккаунт для подключения/);
+    expect(dropdownTriggerNear(/Аккаунт для подключения/)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Подключить/ }),
     ).toBeInTheDocument();

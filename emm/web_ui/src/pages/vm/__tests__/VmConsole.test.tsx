@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
@@ -81,6 +81,12 @@ function renderConsole() {
   );
 }
 
+/** Dropdown-триггер, живущий в той же метке `<label>`, что и её подпись-текст. */
+function dropdownTriggerNear(text: string | RegExp) {
+  const label = screen.getByText(text).closest("label")!;
+  return within(label).getByRole("button");
+}
+
 describe("Консоль ВМ — селектор вида + переиспользуемая серверная консоль", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -101,9 +107,8 @@ describe("Консоль ВМ — селектор вида + переиспол
   it("SSH-вид рендерит тот же account-picker + терминал, что у сервера", async () => {
     renderConsole();
     // Выбор учётки (общий с серверной консолью) и кнопка «Подключить» терминала.
-    expect(
-      await screen.findByRole("combobox", { name: /Аккаунт для подключения/ }),
-    ).toBeInTheDocument();
+    await screen.findByText(/Аккаунт для подключения/);
+    expect(dropdownTriggerNear(/Аккаунт для подключения/)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Подключить/ }),
     ).toBeInTheDocument();
@@ -112,9 +117,8 @@ describe("Консоль ВМ — селектор вида + переиспол
   it("Serial-вид — тоже account-picker + терминал (как ssh)", async () => {
     renderConsole();
     fireEvent.click(screen.getByRole("button", { name: "Serial" }));
-    expect(
-      await screen.findByRole("combobox", { name: /Аккаунт для подключения/ }),
-    ).toBeInTheDocument();
+    await screen.findByText(/Аккаунт для подключения/);
+    expect(dropdownTriggerNear(/Аккаунт для подключения/)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Подключить/ }),
     ).toBeInTheDocument();

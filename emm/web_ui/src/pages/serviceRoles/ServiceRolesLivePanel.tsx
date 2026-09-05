@@ -19,6 +19,7 @@ import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as srApi from "@/api/auth/service_roles";
 import { ApiError } from "@/api/client";
 import { useDeptLabel } from "@/lib/labels";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import type { ServiceName } from "@/api/auth/types";
 
 const DEFAULT_SERVICES: ServiceName[] = [
@@ -27,6 +28,8 @@ const DEFAULT_SERVICES: ServiceName[] = [
   "loging_service",
   "config_service",
 ];
+
+const SERVICE_OPTIONS: DropdownOption[] = DEFAULT_SERVICES.map((s) => ({ value: s, label: s }));
 
 // Зеркало `auth_service/src/schemas/service_roles.py::ServiceRoleCreate.role_name`:
 // lower-snake_case, начинается с буквы, 2..64 символа.
@@ -119,17 +122,12 @@ export function ServiceRolesLivePanel({
             <span className="mono normal-case">({departmentId})</span>
           )}
         </div>
-        <select
-          className="input"
+        <Dropdown
+          mode="single"
+          options={SERVICE_OPTIONS}
           value={serviceName}
-          onChange={(e) => setServiceName(e.target.value as ServiceName)}
-        >
-          {DEFAULT_SERVICES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => setServiceName(v as ServiceName)}
+        />
       </div>
 
       {scopeNote && (

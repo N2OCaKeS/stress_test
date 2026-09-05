@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -221,6 +221,12 @@ function renderTab(node: ReactNode) {
   );
 }
 
+/** Dropdown-триггер, живущий в той же метке `<label>`, что и её подпись-текст. */
+function dropdownTriggerNear(text: string | RegExp) {
+  const label = screen.getByText(text).closest("label")!;
+  return within(label).getByRole("button");
+}
+
 describe("Паритет вкладок ВМ с серверными (live-режим)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -281,11 +287,11 @@ describe("Паритет вкладок ВМ с серверными (live-ре�
     // Жизненный цикл показывает mgmt-учётку.
     expect(screen.getByText("dbosmgr")).toBeInTheDocument();
 
-    // astra-update: выбрать версию → «Обновить ОС».
-    const select = await screen.findByRole("combobox", {
-      name: /Целевая версия ОС/,
-    });
-    fireEvent.change(select, { target: { value: "osv1" } });
+    // astra-update: выбрать версию → «Обновить ОС». Пока каталог версий
+    // грузится, вместо Dropdown — текст «Загрузка…».
+    await waitFor(() => expect(dropdownTriggerNear("Целевая версия ОС")).toBeInTheDocument());
+    fireEvent.click(dropdownTriggerNear("Целевая версия ОС"));
+    fireEvent.click(await screen.findByRole("option", { name: /^1\.8\.1\.6/ }));
     fireEvent.click(screen.getByRole("button", { name: /Обновить ОС/ }));
     await waitFor(() =>
       expect(astraUpdateVm).toHaveBeenCalledWith("vm-x1", { rc: "1.8.1.6" }),
@@ -302,10 +308,9 @@ describe("Паритет вкладок ВМ с серверными (live-ре�
 
   it("Управление ВМ: смена сети на nat уходит в setVmNetwork", async () => {
     renderTab(<ManageTab serverId="" entity={vmEntity()} />);
-    const modeSelect = await screen.findByRole("combobox", {
-      name: /Сетевой режим/,
-    });
-    fireEvent.change(modeSelect, { target: { value: "nat" } });
+    await screen.findByText("Сетевой режим");
+    fireEvent.click(dropdownTriggerNear("Сетевой режим"));
+    fireEvent.click(await screen.findByRole("option", { name: /^nat/ }));
     fireEvent.click(screen.getByRole("button", { name: /Сменить сеть/ }));
     await waitFor(() =>
       expect(setVmNetwork).toHaveBeenCalledWith("vm-x1", {

@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { useDeptLabel, useServerLabel } from "@/lib/labels";
 import { formatMsk } from "@/lib/datetime";
 import { apiErrMsg } from "@/api/client";
@@ -118,29 +119,27 @@ export interface TaskListProps {
   loadingMore?: boolean;
 }
 
-const STATUS_OPTIONS = [
-  ["", "status: all"],
-  ["queued", "queued"],
-  ["running", "running"],
-  ["succeeded", "succeeded"],
-  ["failed", "failed"],
-  ["cancelled", "cancelled"],
-] as const;
+const STATUS_OPTIONS: DropdownOption[] = [
+  { value: "queued", label: "queued" },
+  { value: "running", label: "running" },
+  { value: "succeeded", label: "succeeded" },
+  { value: "failed", label: "failed" },
+  { value: "cancelled", label: "cancelled" },
+];
 
-const KIND_OPTIONS = [
-  ["", "kind: all"],
-  ["power.on", "power.on"],
-  ["power.off", "power.off"],
-  ["power.reboot", "power.reboot"],
-  ["power.status", "power.status"],
-  ["installed_packages.list", "installed_packages.list"],
-  ["inventory.sync", "inventory.sync"],
-  ["users.inventory", "users.inventory"],
-  ["server.prepare", "server.prepare"],
-  ["account.provision", "account.provision"],
-  ["account.rotate_password", "account.rotate_password"],
-  ["ipmi.rotate_password", "ipmi.rotate_password"],
-] as const;
+const KIND_OPTIONS: DropdownOption[] = [
+  { value: "power.on", label: "power.on" },
+  { value: "power.off", label: "power.off" },
+  { value: "power.reboot", label: "power.reboot" },
+  { value: "power.status", label: "power.status" },
+  { value: "installed_packages.list", label: "installed_packages.list" },
+  { value: "inventory.sync", label: "inventory.sync" },
+  { value: "users.inventory", label: "users.inventory" },
+  { value: "server.prepare", label: "server.prepare" },
+  { value: "account.provision", label: "account.provision" },
+  { value: "account.rotate_password", label: "account.rotate_password" },
+  { value: "ipmi.rotate_password", label: "ipmi.rotate_password" },
+];
 
 export function TaskListAside({
   tasks,
@@ -188,31 +187,21 @@ export function TaskListAside({
         </div>
         <div className="mt-2 flex items-center gap-1.5 text-xs flex-wrap">
           {!hideStatusFilter && (
-            <select
-              className="surface-2 border border-token rounded px-2 py-0.5 text-dim"
+            <Dropdown
+              mode="single"
+              placeholder="status: all"
+              options={STATUS_OPTIONS}
               value={statusFilter}
-              onChange={(e) => onStatusFilter(e.target.value)}
-              title="Фильтр по статусу"
-            >
-              {STATUS_OPTIONS.map(([v, l]) => (
-                <option key={v} value={v}>
-                  {l}
-                </option>
-              ))}
-            </select>
+              onChange={onStatusFilter}
+            />
           )}
-          <select
-            className="surface-2 border border-token rounded px-2 py-0.5 text-dim"
+          <Dropdown
+            mode="single"
+            placeholder="kind: all"
+            options={KIND_OPTIONS}
             value={kindFilter}
-            onChange={(e) => onKindFilter(e.target.value)}
-            title="Фильтр по типу"
-          >
-            {KIND_OPTIONS.map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
+            onChange={onKindFilter}
+          />
         </div>
         {serverScopeId && (
           <ServerScopeChip

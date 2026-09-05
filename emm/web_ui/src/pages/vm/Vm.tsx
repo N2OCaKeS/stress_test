@@ -100,6 +100,22 @@ import {
   MOCK_VMS,
 } from "@/mocks/vm";
 import type { EntityRef } from "@/pages/server/tabs/_entity";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+
+const NETWORK_MODE_OPTIONS: DropdownOption[] = [
+  { value: "bridge", label: "bridge (static IP из пула)" },
+  { value: "nat", label: "nat (libvirt)" },
+];
+
+const NETWORK_MODE_OPTIONS_SHORT: DropdownOption[] = [
+  { value: "bridge", label: "bridge (static IP)" },
+  { value: "nat", label: "nat (libvirt)" },
+];
+
+const CRED_STRATEGY_OPTIONS: DropdownOption[] = [
+  { value: "per_snapshot", label: "per_snapshot (креды на снимок)" },
+  { value: "reroll", label: "reroll (единый пароль)" },
+];
 
 // ── data helpers (mock ↔ live) ──────────────────────────────────────────────
 
@@ -1220,18 +1236,16 @@ function VmBlockForm({
               <RefreshCw className="w-3 h-3" /> Обновить каталог
             </button>
           </span>
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            searchable
+            options={images.map((im) => ({
+              value: im.name,
+              label: im.kind === "universal" ? `${im.name} · universal` : im.name,
+            }))}
             value={block.box}
-            onChange={(e) => onPatch({ box: e.target.value })}
-          >
-            {images.map((im) => (
-              <option key={im.name} value={im.name}>
-                {im.name}
-                {im.kind === "universal" ? " · universal" : ""}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => onPatch({ box: v })}
+          />
           {selectedImage && (
             <span className="text-[11px] text-dim">
               {selectedImage.description ?? selectedImage.name}
@@ -1248,19 +1262,16 @@ function VmBlockForm({
         {boxes.length > 0 && (
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">Бокс (реестр)</span>
-            <select
-              className="input"
+            <Dropdown
+              mode="single"
+              placeholder="— не выбран —"
+              options={boxes.map((bx) => ({
+                value: bx.id,
+                label: bx.format ? `${bx.name} · ${bx.format}` : bx.name,
+              }))}
               value={block.boxId}
-              onChange={(e) => onPatch({ boxId: e.target.value })}
-            >
-              <option value="">— не выбран —</option>
-              {boxes.map((bx) => (
-                <option key={bx.id} value={bx.id}>
-                  {bx.name}
-                  {bx.format ? ` · ${bx.format}` : ""}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => onPatch({ boxId: v })}
+            />
             <span className="text-[11px] text-dim">
               Необязательно: привязать ВМ к записи реестра боксов отдела.
             </span>
@@ -1269,16 +1280,12 @@ function VmBlockForm({
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">Сеть *</span>
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            options={NETWORK_MODE_OPTIONS}
             value={block.networkMode}
-            onChange={(e) =>
-              onPatch({ networkMode: e.target.value as VmNetworkMode })
-            }
-          >
-            <option value="bridge">bridge (static IP из пула)</option>
-            <option value="nat">nat (libvirt)</option>
-          </select>
+            onChange={(v) => onPatch({ networkMode: v as VmNetworkMode })}
+          />
         </label>
 
         {block.networkMode === "bridge" ? (
@@ -1310,16 +1317,12 @@ function VmBlockForm({
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">Режим управляющих кред</span>
-            <select
-              className="input"
+            <Dropdown
+              mode="single"
+              options={CRED_STRATEGY_OPTIONS}
               value={block.credStrategy}
-              onChange={(e) =>
-                onPatch({ credStrategy: e.target.value as VmCredStrategy })
-              }
-            >
-              <option value="per_snapshot">per_snapshot (креды на снимок)</option>
-              <option value="reroll">reroll (единый пароль)</option>
-            </select>
+              onChange={(v) => onPatch({ credStrategy: v as VmCredStrategy })}
+            />
           </label>
         </div>
 
@@ -1469,22 +1472,19 @@ function PoolIpPicker({
     <div className="flex flex-col gap-2">
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-dim text-xs">Пул IPAM</span>
-        <select
-          className="input"
+        <Dropdown
+          mode="single"
+          placeholder="— авто-выбор пула —"
+          options={pools.map((p) => ({
+            value: p.id,
+            label: p.server_id ? `${p.name} · ${p.cidr} · хаб-override` : `${p.name} · ${p.cidr}`,
+          }))}
           value={poolId}
-          onChange={(e) => {
-            onPoolChange(e.target.value);
+          onChange={(v) => {
+            onPoolChange(v);
             onIpChange("");
           }}
-        >
-          <option value="">— авто-выбор пула —</option>
-          {pools.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} · {p.cidr}
-              {p.server_id ? " · хаб-override" : ""}
-            </option>
-          ))}
-        </select>
+        />
       </label>
 
       <fieldset className="flex flex-col gap-1 text-sm">
@@ -1525,18 +1525,13 @@ function PoolIpPicker({
               В пуле нет свободных адресов.
             </div>
           ) : (
-            <select
-              className="input mt-1"
+            <Dropdown
+              mode="single"
+              placeholder="— выберите адрес —"
+              options={availableIps.map((a) => ({ value: a, label: a }))}
               value={ip}
-              onChange={(e) => onIpChange(e.target.value)}
-            >
-              <option value="">— выберите адрес —</option>
-              {availableIps.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
-            </select>
+              onChange={onIpChange}
+            />
           ))}
 
         {ipMode === "manual" && (
@@ -2287,14 +2282,12 @@ function PresetModal({
           </div>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">Сеть *</span>
-            <select
-              className="input"
+            <Dropdown
+              mode="single"
+              options={NETWORK_MODE_OPTIONS_SHORT}
               value={networkMode}
-              onChange={(e) => setNetworkMode(e.target.value as VmNetworkMode)}
-            >
-              <option value="bridge">bridge (static IP)</option>
-              <option value="nat">nat (libvirt)</option>
-            </select>
+              onChange={(v) => setNetworkMode(v as VmNetworkMode)}
+            />
           </label>
           {networkMode === "bridge" && (
             <label className="flex flex-col gap-1 text-sm">

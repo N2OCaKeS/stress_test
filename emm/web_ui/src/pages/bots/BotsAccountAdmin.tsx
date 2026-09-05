@@ -13,12 +13,18 @@ import { useQuery, useMockMode } from "@/api/auth/useQuery";
 import { useLabelMaps } from "@/lib/labels";
 import { relativeTime } from "@/lib/datetime";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import type { Bot as BotItem, Department } from "@/api/auth/types";
 import { BotDetailFullPanel } from "./_botDetailPanel";
 
 // auth_service режет страницу до 200 (MAX_LIMIT). Тянем ровно столько и честно
 // сигналим баннером, если ботов больше.
 const BOTS_PAGE = 200;
+
+const STATUS_FILTER_OPTIONS: DropdownOption[] = [
+  { value: "active", label: "active" },
+  { value: "disabled", label: "disabled" },
+];
 
 /**
  * Cluster-wide bots view for account_admin: фактический список ботов из
@@ -142,27 +148,20 @@ export function BotsAccountAdmin() {
           </div>
           <div className="mt-2 flex items-center gap-2 text-xs text-dim flex-wrap">
             <Filter className="w-3 h-3" />
-            <select
-              className="surface-2 border border-token rounded px-2 py-0.5"
+            <Dropdown
+              mode="single"
+              placeholder="все депы"
+              options={(deptsQ.data ?? []).map((d) => ({ value: d.id, label: d.name }))}
               value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
-            >
-              <option value="">все депы</option>
-              {(deptsQ.data ?? []).map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-            <select
-              className="surface-2 border border-token rounded px-2 py-0.5"
+              onChange={setDeptFilter}
+            />
+            <Dropdown
+              mode="single"
+              placeholder="все статусы"
+              options={STATUS_FILTER_OPTIONS}
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              <option value="">все статусы</option>
-              <option value="active">active</option>
-              <option value="disabled">disabled</option>
-            </select>
+              onChange={setStatusFilter}
+            />
             <span className="ml-auto">
               {totalBots > loadedBots ? `${shownBots} из ${totalBots}` : shownBots} шт
             </span>

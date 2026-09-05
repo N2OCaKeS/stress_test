@@ -1,5 +1,6 @@
 import { Search } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
+import { Dropdown } from "@/components/ui/Dropdown";
 
 export interface MiddleItem {
   id: string;
@@ -58,17 +59,13 @@ export function MiddlePanel({
           />
         </div>
         {groups && (
-          <select
-            value={selectedGroup}
-            onChange={(e) => onGroupChange?.(e.target.value)}
-            className="mt-2 w-full surface-2 border border-token rounded px-2 py-1 text-xs"
-          >
-            {groups.map((g) => (
-              <option key={g.value} value={g.value}>
-                {g.label}
-              </option>
-            ))}
-          </select>
+          <Dropdown
+            mode="single"
+            className="mt-2 w-full"
+            options={groups.map((g) => ({ value: g.value, label: g.label }))}
+            value={selectedGroup ?? ""}
+            onChange={(v) => onGroupChange?.(v)}
+          />
         )}
       </div>
 

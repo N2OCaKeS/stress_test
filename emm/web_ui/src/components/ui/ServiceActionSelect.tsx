@@ -18,6 +18,7 @@ import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { listServiceEvents, listServices } from "@/api/loging/services";
 import { HelpTooltip } from "@/components/ui/HelpTooltip";
+import { Dropdown } from "@/components/ui/Dropdown";
 
 export function ServiceActionSelect({
   service,
@@ -30,7 +31,7 @@ export function ServiceActionSelect({
   action: string;
   onServiceChange: (value: string) => void;
   onActionChange: (value: string) => void;
-  /** CSS-класс <select> — у двух форм он отличается. */
+  /** CSS-класс на обёртке Dropdown — у двух форм он отличается. */
   selectClassName?: string;
 }) {
   const servicesQ = useQuery(() => listServices(), []);
@@ -66,6 +67,21 @@ export function ServiceActionSelect({
 
   const actionDisabled = !svc;
 
+  // Сервис из правила мог исчезнуть из реестра — добавляем его отдельной
+  // опцией, чтобы не потерять выбор при редактировании.
+  const serviceOptions = [
+    { value: "", label: "(любой сервис)" },
+    ...(svc && !services.some((s) => s.service === svc) ? [{ value: svc, label: svc }] : []),
+    ...services.map((s) => ({ value: s.service, label: s.service })),
+  ];
+
+  // Сохранённое действие, которого нет в каталоге, держим в списке.
+  const actionSelectOptions = [
+    { value: "", label: "(любое действие)" },
+    ...(action && !actionOptions.some((a) => a.action === action) ? [{ value: action, label: action }] : []),
+    ...actionOptions.map((a) => ({ value: a.action, label: a.action })),
+  ];
+
   return (
     <>
       <label className="flex flex-col gap-1 text-sm">
@@ -76,24 +92,14 @@ export function ServiceActionSelect({
             label="Справка: match_service"
           />
         </span>
-        <select
+        <Dropdown
+          mode="single"
           className={selectClassName}
+          options={serviceOptions}
           value={service}
-          onChange={(e) => onServiceChange(e.target.value)}
+          onChange={onServiceChange}
           disabled={servicesQ.loading}
-        >
-          <option value="">(любой сервис)</option>
-          {/* Сервис из правила мог исчезнуть из реестра — добавляем его
-              отдельной опцией, чтобы не потерять выбор при редактировании. */}
-          {svc && !services.some((s) => s.service === svc) && (
-            <option value={svc}>{svc}</option>
-          )}
-          {services.map((s) => (
-            <option key={s.service} value={s.service}>
-              {s.service}
-            </option>
-          ))}
-        </select>
+        />
         {servicesQ.error && (
           <span className="text-[11px] text-danger">
             {apiErrMsg(servicesQ.error, "Список сервисов не загрузился")}
@@ -109,23 +115,14 @@ export function ServiceActionSelect({
             label="Справка: match_action"
           />
         </span>
-        <select
+        <Dropdown
+          mode="single"
           className={selectClassName}
+          options={actionSelectOptions}
           value={action}
-          onChange={(e) => onActionChange(e.target.value)}
+          onChange={onActionChange}
           disabled={actionDisabled || actionsQ.loading}
-        >
-          <option value="">(любое действие)</option>
-          {/* Сохранённое действие, которого нет в каталоге, держим в списке. */}
-          {action && !actionOptions.some((a) => a.action === action) && (
-            <option value={action}>{action}</option>
-          )}
-          {actionOptions.map((a) => (
-            <option key={a.action} value={a.action}>
-              {a.action}
-            </option>
-          ))}
-        </select>
+        />
         {catalogLoaded && actionOptions.length === 0 && (
           <span className="text-[11px] text-dim">(нет зарегистрированных действий)</span>
         )}

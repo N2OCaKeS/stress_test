@@ -197,8 +197,11 @@ describe("ServicesServerPermissions — батч-модель", () => {
     );
     // Режим «Управление ролью».
     fireEvent.click(screen.getByText("Управление ролью"));
-    const select = await screen.findByRole("combobox");
-    fireEvent.change(select, { target: { value: "operator" } });
+    // Триггер обёрнут в <label>«роль отдела»</label> — это и есть его
+    // accessible name (label перекрывает текст самой кнопки).
+    const trigger = await screen.findByRole("button", { name: "роль отдела" });
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole("option", { name: "operator" }));
     // Глобальный сброс роли по всем таблицам + применение.
     fireEvent.click(
       await screen.findByRole("button", { name: /Очистить во всех таблицах/ }),

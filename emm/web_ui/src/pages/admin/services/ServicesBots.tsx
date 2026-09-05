@@ -14,6 +14,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { BOTS } from "@/mocks/permissions";
 import { DEPTS } from "@/mocks/auth";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { InlineEditor, FormRow, StatRow, useInlineState } from "./_inline";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
@@ -844,22 +845,14 @@ function BotCreateForm({ onDone }: { onDone: () => void }) {
             />
           </FormRow>
           <FormRow label="department_id">
-            <select
-              className="input"
+            <Dropdown
+              mode="single"
+              placeholder={deptsQ.loading ? "загрузка…" : "нет отделов"}
+              options={depts.map((d): DropdownOption => ({ value: d.id, label: d.name }))}
               value={dept}
-              onChange={(e) => setDept(e.target.value)}
+              onChange={setDept}
               disabled={deptsQ.loading || depts.length === 0 || !platformAdmin}
-            >
-              {deptsQ.loading && <option>загрузка…</option>}
-              {!deptsQ.loading && depts.length === 0 && (
-                <option value="">нет отделов</option>
-              )}
-              {depts.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+            />
           </FormRow>
           <FormRow
             label="allowed_services"
@@ -1157,17 +1150,12 @@ function MockBotForm({
           />
         </FormRow>
         <FormRow label="owner_dept">
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            options={DEPTS.map((d): DropdownOption => ({ value: d.id, label: d.name }))}
             value={dept}
-            onChange={(e) => setDept(e.target.value)}
-          >
-            {DEPTS.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+            onChange={setDept}
+          />
         </FormRow>
         <FormRow
           label="initial_spec"

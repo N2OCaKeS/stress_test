@@ -13,6 +13,7 @@ import {
 } from "@/api/loging/rules";
 import { HelpTooltip } from "@/components/ui/HelpTooltip";
 import { ServiceActionSelect } from "@/components/ui/ServiceActionSelect";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import type {
   Rule,
   RuleCreateRequest,
@@ -326,49 +327,40 @@ function RuleForm({
           label="match_status"
           help="Исход события (success / failure / denied / warning). Пусто — любой исход."
         >
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            placeholder="любой"
+            options={STATUSES.map((s): DropdownOption => ({ value: s, label: s }))}
             value={matchStatus}
-            onChange={(e) => setMatchStatus(e.target.value)}
-          >
-            <option value="">любой</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            onChange={setMatchStatus}
+          />
         </FormRow>
         <FormRow
           label="match_severity"
           help="Уровень важности события (TRACE…CRITICAL). Пусто — любой уровень."
         >
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            placeholder="любая"
+            options={SEVERITIES.map((s): DropdownOption => ({ value: s, label: s }))}
             value={matchSeverity}
-            onChange={(e) => setMatchSeverity(e.target.value)}
-          >
-            <option value="">любая</option>
-            {SEVERITIES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            onChange={setMatchSeverity}
+          />
         </FormRow>
         <FormRow
           label="match_allowed"
           help="Фильтр по флагу доступа: только разрешённые (allowed) или только отклонённые (denied) события. Пусто — оба."
         >
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            placeholder="любой"
+            options={[
+              { value: "true", label: "только allowed" },
+              { value: "false", label: "только denied" },
+            ]}
             value={matchAllowed}
-            onChange={(e) => setMatchAllowed(e.target.value)}
-          >
-            <option value="">любой</option>
-            <option value="true">только allowed</option>
-            <option value="false">только denied</option>
-          </select>
+            onChange={setMatchAllowed}
+          />
         </FormRow>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -376,36 +368,25 @@ function RuleForm({
           label="effect *"
           help="Что сделать с совпавшим событием: SUPPRESS — отбросить, ALLOW — пропустить как есть, OVERRIDE_SEVERITY — переписать уровень важности."
         >
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            options={EFFECTS.map((eff): DropdownOption => ({ value: eff, label: eff }))}
             value={effect}
-            onChange={(e) => setEffect(e.target.value as RuleEffect)}
-          >
-            {EFFECTS.map((eff) => (
-              <option key={eff} value={eff}>
-                {eff}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setEffect(v as RuleEffect)}
+          />
         </FormRow>
         <FormRow
           label={`effect_severity${needsEffectSeverity ? " *" : ""}`}
           help="Новый уровень важности для эффекта OVERRIDE_SEVERITY. Для остальных эффектов не используется."
         >
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            placeholder="—"
+            options={SEVERITIES.map((s): DropdownOption => ({ value: s, label: s }))}
             value={effectSeverity}
-            onChange={(e) => setEffectSeverity(e.target.value)}
+            onChange={setEffectSeverity}
             disabled={!needsEffectSeverity}
-            required={needsEffectSeverity}
-          >
-            <option value="">—</option>
-            {SEVERITIES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          />
         </FormRow>
         <FormRow
           label="priority"
@@ -544,11 +525,16 @@ function MockRuleForm({
           <textarea className="input" value={expr} onChange={(e) => setExpr(e.target.value)} />
         </FormRow>
         <FormRow label="severity">
-          <select className="input" value={severity} onChange={(e) => setSeverity(e.target.value as AlertRule["severity"])}>
-            <option value="WARNING">WARNING</option>
-            <option value="ERROR">ERROR</option>
-            <option value="CRITICAL">CRITICAL</option>
-          </select>
+          <Dropdown
+            mode="single"
+            options={[
+              { value: "WARNING", label: "WARNING" },
+              { value: "ERROR", label: "ERROR" },
+              { value: "CRITICAL", label: "CRITICAL" },
+            ]}
+            value={severity}
+            onChange={(v) => setSeverity(v as AlertRule["severity"])}
+          />
         </FormRow>
         <FormRow label="enabled">
           <label className="checkbox-row">

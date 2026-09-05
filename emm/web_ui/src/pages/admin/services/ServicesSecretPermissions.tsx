@@ -17,6 +17,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Tabs } from "@/components/ui/Tabs";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { useQuery } from "@/api/auth/useQuery";
 import {
   getSecretPermissionCatalog,
@@ -577,19 +578,16 @@ function RoleEditor({
         </div>
         <label className="flex flex-col gap-1 text-xs max-w-sm">
           <span className="text-dim">роль отдела</span>
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            placeholder="— выберите роль —"
+            options={allRoleNames.map((r): DropdownOption => ({
+              value: r,
+              label: `${r}${SYSTEM_ROLES.includes(r as SecretRoleName) ? " · system" : ""}`,
+            }))}
             value={selected}
-            onChange={(e) => setSelected(e.target.value)}
-          >
-            <option value="">— выберите роль —</option>
-            {allRoleNames.map((r) => (
-              <option key={r} value={r}>
-                {r}
-                {SYSTEM_ROLES.includes(r as SecretRoleName) ? " · system" : ""}
-              </option>
-            ))}
-          </select>
+            onChange={setSelected}
+          />
         </label>
         <p className="text-[11px] text-dim mt-2 leading-relaxed">
           Выберите роль, чтобы видеть и редактировать её права. Системные{" "}
@@ -1035,19 +1033,14 @@ function NewRoleForm({
           </label>
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-dim">на основе (опционально)</span>
-            <select
-              className="input"
+            <Dropdown
+              mode="single"
+              placeholder="— с нуля —"
+              options={baseRoles.map((r): DropdownOption => ({ value: r, label: r }))}
               value={base}
-              onChange={(e) => setBase(e.target.value)}
+              onChange={setBase}
               disabled={busy}
-            >
-              <option value="">— с нуля —</option>
-              {baseRoles.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           <button
             className="btn btn-primary flex items-center gap-1"
@@ -1212,19 +1205,13 @@ function EntityMatrix({
               Отмена
             </button>
             <span className="mx-1 h-5 w-px bg-token" aria-hidden="true" />
-            <select
-              className="input input-sm"
-              aria-label="Роль для очистки"
+            <Dropdown
+              mode="single"
+              options={clearableRoles.map((r): DropdownOption => ({ value: r, label: r }))}
               value={activeRole}
-              onChange={(e) => setSelectedRole(e.target.value as SecretRoleName)}
+              onChange={(v) => setSelectedRole(v as SecretRoleName)}
               disabled={saving || clearableRoles.length === 0}
-            >
-              {clearableRoles.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
+            />
             <button
               className="btn btn-sm flex items-center gap-1"
               onClick={() => activeRole && onClearRole(activeRole)}

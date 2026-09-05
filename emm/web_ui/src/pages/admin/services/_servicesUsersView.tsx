@@ -59,6 +59,7 @@ import {
   listGroupsWithTotal,
 } from "@/api/auth/groups";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { listServiceRoles } from "@/api/auth/service_roles";
 import { listServices } from "@/api/auth/services";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
@@ -728,18 +729,14 @@ function AssignRolesModal({
               {servicesQ.error.message}
             </div>
           )}
-          <select
-            className="input w-full"
+          <Dropdown
+            mode="single"
+            className="w-full"
+            placeholder="— выбрать сервис —"
+            options={serviceOptions.map((name): DropdownOption => ({ value: name, label: name }))}
             value={service}
-            onChange={(e) => pickService(e.target.value)}
-          >
-            <option value="">— выбрать сервис —</option>
-            {serviceOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+            onChange={pickService}
+          />
           {!mockMode &&
             !servicesQ.loading &&
             !servicesQ.error &&
@@ -1040,22 +1037,21 @@ function AddToGroupModal({
           Нет доступных групп для добавления.
         </div>
       ) : (
-        <select
-          className="input w-full"
-          value={pickId}
-          onChange={(e) => setPickId(e.target.value)}
-        >
-          <option value="">— выбрать группу —</option>
-          {sorted.map((g) => {
+        <Dropdown
+          mode="single"
+          className="w-full"
+          searchable
+          placeholder="— выбрать группу —"
+          options={sorted.map((g): DropdownOption => {
             const deptLabel = deptMap.get(g.department_id) ?? g.department_id;
-            return (
-              <option key={g.id} value={g.id}>
-                {g.name} ({deptLabel})
-                {g.department_id === deptId ? " · свой отдел" : ""}
-              </option>
-            );
+            return {
+              value: g.id,
+              label: `${g.name} (${deptLabel})${g.department_id === deptId ? " · свой отдел" : ""}`,
+            };
           })}
-        </select>
+          value={pickId}
+          onChange={setPickId}
+        />
       )}
       <TruncationNotice
         className="mt-2"

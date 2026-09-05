@@ -11,6 +11,7 @@
 import { useEffect, useState } from "react";
 import { Layers, ShieldCheck, Trash2, ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import {
   InlineEditor,
   FormRow,
@@ -301,30 +302,24 @@ function ServiceRolesByDept({
       </div>
       <label className="flex items-center gap-2 text-xs mb-2">
         <span className="text-dim">dept</span>
-        <select
-          className="input flex-1"
+        <Dropdown
+          mode="single"
+          className="flex-1"
+          placeholder="— нет отделов —"
+          options={(deptsQ.data ?? [])
+            .filter((d) =>
+              platformAdmin || !depAdmin ? true : d.id === myDept,
+            )
+            .map((d): DropdownOption => ({ value: d.id, label: `${d.name} (${d.id})` }))}
           value={deptId ?? ""}
-          onChange={(e) => setDeptId(e.target.value || null)}
+          onChange={(v) => setDeptId(v || null)}
           disabled={
             deptsQ.loading ||
             (deptsQ.data?.length ?? 0) === 0 ||
             // dep_admin зафиксирован на собственном отделе
             (depAdmin && !platformAdmin)
           }
-        >
-          {(deptsQ.data ?? [])
-            .filter((d) =>
-              platformAdmin || !depAdmin ? true : d.id === myDept,
-            )
-            .map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name} ({d.id})
-              </option>
-            ))}
-          {(deptsQ.data ?? []).length === 0 && (
-            <option value="">— нет отделов —</option>
-          )}
-        </select>
+        />
       </label>
       {deptId && (
         <ServiceRolesInline

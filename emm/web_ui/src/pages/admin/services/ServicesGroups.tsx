@@ -33,6 +33,7 @@ import type {
 } from "@/api/auth/types";
 import { useServiceLabel } from "@/lib/labels";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 /**
@@ -348,28 +349,30 @@ function ServicesGroupsLive() {
           <div className="flex flex-wrap items-center gap-2 text-[11px]">
             <label className="flex items-center gap-1">
               <span className="text-dim">сорт.</span>
-              <select
-                className="input input-sm"
+              <Dropdown
+                mode="single"
+                options={[
+                  { value: "name_asc", label: "название ↑" },
+                  { value: "name_desc", label: "название ↓" },
+                  { value: "dept", label: "по отделу" },
+                  { value: "created_desc", label: "создан ↓" },
+                  { value: "created_asc", label: "создан ↑" },
+                ]}
                 value={sortKey}
-                onChange={(e) => setSortKey(e.target.value as GroupsSortKey)}
-              >
-                <option value="name_asc">название ↑</option>
-                <option value="name_desc">название ↓</option>
-                <option value="dept">по отделу</option>
-                <option value="created_desc">создан ↓</option>
-                <option value="created_asc">создан ↑</option>
-              </select>
+                onChange={(v) => setSortKey(v as GroupsSortKey)}
+              />
             </label>
             <label className="flex items-center gap-1">
               <span className="text-dim">группа</span>
-              <select
-                className="input input-sm"
+              <Dropdown
+                mode="single"
+                options={[
+                  { value: "none", label: "—" },
+                  { value: "department", label: "по отделу" },
+                ]}
                 value={groupBy}
-                onChange={(e) => setGroupBy(e.target.value as GroupsGroupKey)}
-              >
-                <option value="none">—</option>
-                <option value="department">по отделу</option>
-              </select>
+                onChange={(v) => setGroupBy(v as GroupsGroupKey)}
+              />
             </label>
           </div>
           {hasMore && (
@@ -805,37 +808,31 @@ function MembersCard({
 
       {canEdit && (
         <div className="mt-3 flex flex-wrap gap-2 items-center">
-          <select
-            className="input input-sm"
+          <Dropdown
+            mode="single"
+            options={[
+              { value: "user", label: "пользователь" },
+              { value: "bot", label: "бот" },
+            ]}
             value={addKind}
-            onChange={(e) => {
-              setAddKind(e.target.value as "user" | "bot");
+            onChange={(v) => {
+              setAddKind(v as "user" | "bot");
               setPickerId("");
             }}
-          >
-            <option value="user">пользователь</option>
-            <option value="bot">бот</option>
-          </select>
-          <select
-            className="input flex-1 mono"
+          />
+          <Dropdown
+            mode="single"
+            className="flex-1 mono"
+            searchable
+            placeholder={`— выберите ${addKind === "user" ? "юзера" : "бота"} —`}
+            options={
+              addKind === "user"
+                ? candidateUsers.map((u): DropdownOption => ({ value: u.id, label: `${u.username} (${u.id})` }))
+                : candidateBots.map((b): DropdownOption => ({ value: b.id, label: `${b.name} (${b.id})` }))
+            }
             value={pickerId}
-            onChange={(e) => setPickerId(e.target.value)}
-          >
-            <option value="">
-              — выберите {addKind === "user" ? "юзера" : "бота"} —
-            </option>
-            {addKind === "user"
-              ? candidateUsers.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.username} ({u.id})
-                  </option>
-                ))
-              : candidateBots.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} ({b.id})
-                  </option>
-                ))}
-          </select>
+            onChange={setPickerId}
+          />
           <button
             className="btn btn-primary flex items-center gap-1"
             disabled={pending || !pickerId}
@@ -974,18 +971,14 @@ function ServicesCard({
 
       {canEdit && (
         <div className="mt-3 flex gap-2 flex-wrap items-center">
-          <select
-            className="input flex-1 mono"
+          <Dropdown
+            mode="single"
+            className="flex-1 mono"
+            placeholder="— сервис —"
+            options={candidates.map((s): DropdownOption => ({ value: s.service_name, label: s.service_name }))}
             value={picker}
-            onChange={(e) => setPicker(e.target.value as ServiceName | "")}
-          >
-            <option value="">— сервис —</option>
-            {candidates.map((s) => (
-              <option key={s.service_name} value={s.service_name}>
-                {s.service_name}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setPicker(v as ServiceName | "")}
+          />
           <button
             className="btn btn-primary flex items-center gap-1"
             disabled={pending || !picker}
@@ -1164,20 +1157,16 @@ function RoleAssigner({
     <div className="border-t border-token pt-3 flex flex-col gap-2">
       <div className="text-xs text-dim uppercase">Назначить роли (replace)</div>
       <div className="flex flex-wrap gap-2 items-center">
-        <select
-          className="input input-sm mono"
+        <Dropdown
+          mode="single"
+          className="mono"
+          options={grantedServices.map((s): DropdownOption => ({ value: s, label: s }))}
           value={serviceName}
-          onChange={(e) => {
-            setServiceName(e.target.value as ServiceName);
+          onChange={(v) => {
+            setServiceName(v as ServiceName);
             setSelectedRoles([]);
           }}
-        >
-          {grantedServices.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+        />
         {rolesQ.loading && <span className="text-xs text-dim">…</span>}
         {rolesQ.error && (
           <span className="text-xs text-danger">
@@ -1311,18 +1300,13 @@ function GroupCreateForm({
           />
         </FormRow>
         <FormRow label="department_id">
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            options={depts.map((d): DropdownOption => ({ value: d.id, label: d.name }))}
             value={deptId}
             disabled={lockDept}
-            onChange={(e) => setDeptId(e.target.value)}
-          >
-            {depts.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+            onChange={setDeptId}
+          />
         </FormRow>
         <FormRow label="description">
           <textarea

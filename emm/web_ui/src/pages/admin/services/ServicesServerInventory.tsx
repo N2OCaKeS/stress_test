@@ -6,6 +6,7 @@ import { DEPTS } from "@/mocks/auth";
 import { InlineEditor, FormRow, NotWiredInline, StatRow, useInlineState } from "./_inline";
 import { useMockMode } from "@/api/auth/useQuery";
 import { formatMsk } from "@/lib/datetime";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 
 export function ServicesServerInventory() {
   const mockMode = useMockMode();
@@ -145,11 +146,12 @@ function ServerForm({
           <input className="input mono" value={hostname} onChange={(e) => setHostname(e.target.value)} />
         </FormRow>
         <FormRow label="dept">
-          <select className="input" value={dept} onChange={(e) => setDept(e.target.value)}>
-            {DEPTS.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
+          <Dropdown
+            mode="single"
+            options={DEPTS.map((d): DropdownOption => ({ value: d.id, label: d.name }))}
+            value={dept}
+            onChange={setDept}
+          />
         </FormRow>
         <FormRow label="ip">
           <input className="input mono" value={ip} onChange={(e) => setIp(e.target.value)} />

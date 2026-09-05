@@ -23,6 +23,7 @@ import {
   listCredentials,
 } from "@/api/secret/credentials";
 import { listRoleAcls, upsertRoleAcl } from "@/api/secret/roleAcls";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { addUserAcl, listUserAcls, revokeUserAcl } from "@/api/secret/userAcls";
 import { listServiceRoles } from "@/api/auth/service_roles";
 import { listUsersByDepartment } from "@/api/auth/users";
@@ -186,27 +187,27 @@ function ServicesSecretAccessLive() {
             />
           </div>
           <div className="grid grid-cols-2 gap-1 text-[11px] text-dim">
-            <select
-              className="surface-2 border border-token rounded px-1 py-0.5"
+            <Dropdown
+              mode="single"
+              placeholder="все scope"
+              options={[
+                { value: "personal", label: "personal" },
+                { value: "department", label: "department" },
+                { value: "cross_department", label: "cross_department" },
+              ]}
               value={filterScope}
-              onChange={(e) => setFilterScope(e.target.value)}
-              title="Фильтр по scope"
-            >
-              <option value="">все scope</option>
-              <option value="personal">personal</option>
-              <option value="department">department</option>
-              <option value="cross_department">cross_department</option>
-            </select>
-            <select
-              className="surface-2 border border-token rounded px-1 py-0.5"
+              onChange={setFilterScope}
+            />
+            <Dropdown
+              mode="single"
+              placeholder="все статусы"
+              options={[
+                { value: "active", label: "active" },
+                { value: "blocked", label: "blocked" },
+              ]}
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              title="Фильтр по статусу"
-            >
-              <option value="">все статусы</option>
-              <option value="active">active</option>
-              <option value="blocked">blocked</option>
-            </select>
+              onChange={setFilterStatus}
+            />
           </div>
 
           <div className="flex flex-col gap-0.5 max-h-[60vh] overflow-y-auto">

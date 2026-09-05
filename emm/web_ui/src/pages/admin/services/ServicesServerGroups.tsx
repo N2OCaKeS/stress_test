@@ -6,6 +6,7 @@ import { SERVER_GROUPS } from "@/mocks/cluster";
 import { DEPTS } from "@/mocks/auth";
 import { InlineEditor, FormRow, NotWiredInline, StatRow, useInlineState } from "./_inline";
 import { useMockMode } from "@/api/auth/useQuery";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 
 // server_service ещё не подключён к UI. Ожидаемые endpoint'ы для групп:
 //   GET    /server/v1/groups
@@ -133,11 +134,12 @@ function GroupForm({
           <input className="input mono" value={name} onChange={(e) => setName(e.target.value)} />
         </FormRow>
         <FormRow label="dept">
-          <select className="input" value={dept} onChange={(e) => setDept(e.target.value)}>
-            {DEPTS.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
+          <Dropdown
+            mode="single"
+            options={DEPTS.map((d): DropdownOption => ({ value: d.id, label: d.name }))}
+            value={dept}
+            onChange={setDept}
+          />
         </FormRow>
         <FormRow label="note">
           <textarea className="input" value={note} onChange={(e) => setNote(e.target.value)} />

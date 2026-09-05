@@ -25,6 +25,7 @@ import { useDeptLabel } from "@/lib/labels";
 import { DEPTS as MOCK_DEPTS, USERS as MOCK_USERS, type MockUser } from "@/mocks/auth";
 import { FormRow, useInlineState } from "./_inline";
 import { UserBackendView } from "./_servicesUsersView";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import {
   createUser,
   isUserBanned,
@@ -377,46 +378,49 @@ export function ServicesUsers() {
             <div className="flex flex-wrap items-center gap-2 text-[11px]">
               <label className="flex items-center gap-1">
                 <span className="text-dim">сорт.</span>
-                <select
-                  className="input input-sm"
+                <Dropdown
+                  mode="single"
+                  options={[
+                    { value: "username_asc", label: "username ↑" },
+                    { value: "username_desc", label: "username ↓" },
+                    { value: "status", label: "статус" },
+                    { value: "created_desc", label: "создан ↓" },
+                    { value: "created_asc", label: "создан ↑" },
+                  ]}
                   value={sortKey}
-                  onChange={(e) => setSortKey(e.target.value as SortKey)}
-                >
-                  <option value="username_asc">username ↑</option>
-                  <option value="username_desc">username ↓</option>
-                  <option value="status">статус</option>
-                  <option value="created_desc">создан ↓</option>
-                  <option value="created_asc">создан ↑</option>
-                </select>
+                  onChange={(v) => setSortKey(v as SortKey)}
+                />
               </label>
               <label className="flex items-center gap-1">
                 <span className="text-dim">группа</span>
-                <select
-                  className="input input-sm"
+                <Dropdown
+                  mode="single"
+                  options={[
+                    { value: "none", label: "—" },
+                    { value: "department", label: "по отделу" },
+                    { value: "platform_role", label: "по platform_role" },
+                    { value: "status", label: "по статусу" },
+                  ]}
                   value={groupBy}
-                  onChange={(e) => setGroupBy(e.target.value as GroupKey)}
-                >
-                  <option value="none">—</option>
-                  <option value="department">по отделу</option>
-                  <option value="platform_role">по platform_role</option>
-                  <option value="status">по статусу</option>
-                </select>
+                  onChange={(v) => setGroupBy(v as GroupKey)}
+                />
               </label>
               <label className="flex items-center gap-1">
                 <span className="text-dim">статус</span>
-                <select
-                  className="input input-sm"
+                <Dropdown
+                  mode="single"
+                  placeholder="все"
+                  options={[
+                    { value: "active", label: "только active" },
+                    { value: "blocked", label: "только blocked" },
+                    { value: "banned", label: "только banned" },
+                  ]}
                   value={statusFilter}
-                  onChange={(e) => {
-                    setStatusFilter(e.target.value as StatusFilter);
+                  onChange={(v) => {
+                    setStatusFilter(v as StatusFilter);
                     setOffset(0);
                   }}
-                >
-                  <option value="">все</option>
-                  <option value="active">только active</option>
-                  <option value="blocked">только blocked</option>
-                  <option value="banned">только banned</option>
-                </select>
+                />
               </label>
             </div>
             <div className="text-[11px] text-dim">
@@ -889,18 +893,13 @@ function UserForm({
           {lockedDeptId ? (
             <input className="input" value={lockedDeptName} disabled readOnly />
           ) : (
-            <select
-              className="input"
+            <Dropdown
+              mode="single"
+              placeholder="— (платформенный)"
+              options={depts.map((d): DropdownOption => ({ value: d.id, label: d.name }))}
               value={dept ?? ""}
-              onChange={(e) => setDept(e.target.value)}
-            >
-              <option value="">— (платформенный)</option>
-              {depts.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+              onChange={setDept}
+            />
           )}
         </FormRow>
         <FormRow
@@ -913,30 +912,26 @@ function UserForm({
               : "Платформенные роли — без отдела"
           }
         >
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            placeholder="— (обычный user)"
+            options={availableRoles}
             value={platformRole}
-            onChange={(e) => setPlatformRole(e.target.value)}
-          >
-            <option value="">— (обычный user)</option>
-            {availableRoles.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
-            ))}
-          </select>
+            onChange={setPlatformRole}
+          />
         </FormRow>
         {mode === "edit" && (
           <FormRow label="status">
-            <select
-              className="input"
+            <Dropdown
+              mode="single"
+              options={[
+                { value: "active", label: "active" },
+                { value: "blocked", label: "blocked" },
+                { value: "banned", label: "banned" },
+              ]}
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              <option value="active">active</option>
-              <option value="blocked">blocked</option>
-              <option value="banned">banned</option>
-            </select>
+              onChange={setStatus}
+            />
           </FormRow>
         )}
       </div>

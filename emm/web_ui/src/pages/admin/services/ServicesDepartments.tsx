@@ -17,6 +17,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { isPlatformWideAdmin, isDepAdmin, personaDeptId } from "@/lib/rbac";
 import { useLabelsInvalidate } from "@/lib/labels";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { DEPTS as MOCK_DEPTS, USERS as MOCK_USERS } from "@/mocks/auth";
 import {
   InlineEditor,
@@ -491,18 +492,14 @@ function DeptServicesSection({
       <div className="flex items-end gap-2">
         <label className="flex flex-col gap-1 text-sm flex-1">
           <span className="text-dim text-xs">service_name</span>
-          <select
-            className="input mono"
+          <Dropdown
+            mode="single"
+            className="mono"
+            placeholder="— выбрать сервис —"
+            options={available.map((s): DropdownOption => ({ value: s.service_name, label: s.service_name }))}
             value={picker}
-            onChange={(e) => setPicker(e.target.value)}
-          >
-            <option value="">— выбрать сервис —</option>
-            {available.map((s) => (
-              <option key={s.service_name} value={s.service_name}>
-                {s.service_name}
-              </option>
-            ))}
-          </select>
+            onChange={setPicker}
+          />
         </label>
         <button
           className="btn flex items-center gap-1"

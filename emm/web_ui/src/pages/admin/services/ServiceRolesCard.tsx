@@ -22,6 +22,7 @@ import {
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import type { PersonaId } from "@/types/persona";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import {
   InlineEditor,
   FormRow,
@@ -269,21 +270,15 @@ function LiveServiceRolesCard({
       {platformAdmin ? (
         <label className="flex items-center gap-2 text-xs">
           <span className="text-dim">dept</span>
-          <select
-            className="input flex-1"
+          <Dropdown
+            mode="single"
+            className="flex-1"
+            placeholder="— нет отделов —"
+            options={(deptsQ.data ?? []).map((d): DropdownOption => ({ value: d.id, label: `${d.name} (${d.id})` }))}
             value={deptId ?? ""}
-            onChange={(e) => setDeptId(e.target.value || null)}
+            onChange={(v) => setDeptId(v || null)}
             disabled={deptsQ.loading || (deptsQ.data?.length ?? 0) === 0}
-          >
-            {(deptsQ.data ?? []).map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name} ({d.id})
-              </option>
-            ))}
-            {(deptsQ.data ?? []).length === 0 && (
-              <option value="">— нет отделов —</option>
-            )}
-          </select>
+          />
         </label>
       ) : (
         <div className="flex items-center gap-2 text-xs">
@@ -1146,10 +1141,15 @@ function MockRoleForm({
           <input className="input mono" value={name} onChange={(e) => setName(e.target.value)} />
         </FormRow>
         <FormRow label="level">
-          <select className="input" value={level} onChange={(e) => setLevel(e.target.value as ServiceRoleDef["level"])}>
-            <option value="admin">admin</option>
-            <option value="rotator">rotator</option>
-          </select>
+          <Dropdown
+            mode="single"
+            options={[
+              { value: "admin", label: "admin" },
+              { value: "rotator", label: "rotator" },
+            ]}
+            value={level}
+            onChange={(v) => setLevel(v as ServiceRoleDef["level"])}
+          />
         </FormRow>
         <FormRow label="description">
           <textarea className="input" value={description} onChange={(e) => setDescription(e.target.value)} />

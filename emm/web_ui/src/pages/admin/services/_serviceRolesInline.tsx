@@ -31,6 +31,8 @@ import {
 import type { ServiceName, ServiceRole } from "@/api/auth/types";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 type Mode = "list" | "create" | { kind: "edit"; role: ServiceRole };
 
@@ -107,12 +109,12 @@ export function ServiceRolesInline({
             </div>
           )}
           {canEdit && (
-            <button
-              className="btn btn-ghost text-xs flex items-center gap-1"
+            <Button variant="ghost"
+              className="text-xs flex items-center gap-1"
               onClick={() => setMode("create")}
             >
               <Plus className="w-3 h-3" /> Создать роль
-            </button>
+            </Button>
           )}
         </>
       )}
@@ -193,22 +195,22 @@ function RoleRow({
         </span>
       )}
       {role.is_system ? (
-        <span className="badge">system</span>
+        <Badge>system</Badge>
       ) : (
-        <span className="badge badge-accent">custom</span>
+        <Badge kind="accent">custom</Badge>
       )}
       {canEdit && (
         <div className="flex items-center gap-1">
-          <button
-            className="btn btn-ghost text-xs flex items-center gap-1"
+          <Button variant="ghost"
+            className="text-xs flex items-center gap-1"
             disabled={busy || locked}
             title={locked ? "Системную роль править нельзя" : undefined}
             onClick={onEdit}
           >
             <Pencil className="w-3 h-3" />
-          </button>
-          <button
-            className="btn btn-ghost text-xs flex items-center gap-1"
+          </Button>
+          <Button variant="ghost"
+            className="text-xs flex items-center gap-1"
             disabled={busy || locked}
             title={locked ? "Системную роль удалить нельзя" : undefined}
             onClick={onDelete}
@@ -218,7 +220,7 @@ function RoleRow({
             ) : (
               <Trash2 className="w-3 h-3" />
             )}
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -293,13 +295,13 @@ function RoleForm({
             ? `Новая роль · ${serviceName}`
             : `Изменить · ${initial?.role_name}`}
         </span>
-        <button
-          className="btn btn-ghost text-xs flex items-center gap-1"
+        <Button variant="ghost"
+          className="text-xs flex items-center gap-1"
           onClick={onCancel}
           disabled={busy}
         >
           <X className="w-3 h-3" /> закрыть
-        </button>
+        </Button>
       </div>
       <div className="flex flex-col gap-2">
         <label className="flex flex-col gap-1 text-xs">
@@ -328,11 +330,11 @@ function RoleForm({
       </div>
       {err && <div className="alert-danger mt-2 text-[11px]">{err}</div>}
       <div className="mt-3 flex gap-2 justify-end">
-        <button className="btn" onClick={onCancel} disabled={busy}>
+        <Button onClick={onCancel} disabled={busy}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary flex items-center gap-1"
+        </Button>
+        <Button variant="primary"
+          className="flex items-center gap-1"
           onClick={submit}
           disabled={
             busy ||
@@ -341,7 +343,7 @@ function RoleForm({
         >
           {busy && <Loader2 className="w-3 h-3 animate-spin" />}
           {mode === "new" ? "Создать" : "Сохранить"}
-        </button>
+        </Button>
       </div>
     </div>
   );

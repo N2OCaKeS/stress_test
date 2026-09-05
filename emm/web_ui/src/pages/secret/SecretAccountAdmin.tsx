@@ -19,6 +19,8 @@ import {
 import { Shell } from "@/components/shell/Shell";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { SecretDetailPanel } from "./SecretDepAdmin";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 interface Row {
   id: string;
@@ -82,11 +84,9 @@ export function SecretAccountAdmin() {
                 <span>{row.tail}</span>
               </div>
             </div>
-            <span
-              className={`badge${row.badgeKind ? ` badge-${row.badgeKind}` : ""}`}
-            >
+            <Badge kind={row.badgeKind || "neutral"}>
               {row.badge}
-            </span>
+            </Badge>
           </div>
         </button>
       );
@@ -102,9 +102,9 @@ export function SecretAccountAdmin() {
               className="bg-transparent outline-none flex-1 text-sm"
               placeholder="Поиск учётных данных..."
             />
-            <button className="btn" title="Фильтр">
+            <Button title="Фильтр">
               <Filter className="w-3 h-3 inline-block" />
-            </button>
+            </Button>
           </div>
           <div className="mt-2 flex items-center gap-2 text-xs text-dim">
             <span>Группировка:</span>
@@ -155,16 +155,16 @@ export function SecretAccountAdmin() {
         </div>
 
         <div className="border-t border-token p-3">
-          <button className="btn btn-primary w-full flex items-center justify-center gap-2">
+          <Button variant="primary" className="w-full flex items-center justify-center gap-2">
             <Plus className="w-4 h-4" /> Создать учётные данные
-          </button>
+          </Button>
         </div>
       </section>
 
       <SecretDetailPanel
         title="prod-postgres-master"
         statusBadge={
-          <span className="badge badge-warn">истекает через 3д</span>
+          <Badge kind="warn">истекает через 3д</Badge>
         }
         scope="Разработка"
         scopePrefix="отдел: "
@@ -205,15 +205,15 @@ export function SecretAccountAdmin() {
         ]}
         actions={
           <>
-            <button className="btn">
+            <Button>
               <Edit3 className="w-4 h-4 inline-block" /> Изменить
-            </button>
-            <button className="btn">
+            </Button>
+            <Button>
               <RotateCw className="w-4 h-4 inline-block" /> Ротация
-            </button>
-            <button className="btn btn-danger">
+            </Button>
+            <Button variant="danger">
               <Trash2 className="w-4 h-4 inline-block" /> Удалить
-            </button>
+            </Button>
           </>
         }
       />

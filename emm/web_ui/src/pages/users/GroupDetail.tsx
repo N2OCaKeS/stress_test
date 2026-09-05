@@ -48,6 +48,9 @@ import { ApiError } from "@/api/client";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import type { Group, User } from "@/api/auth/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 export function GroupDetail() {
   const { id } = useParams<{ id: string }>();
@@ -164,24 +167,24 @@ export function GroupDetail() {
               <h1 className="text-xl font-semibold truncate">{headerName}</h1>
               {mockMode ? (
                 group!.cross_dept ? (
-                  <span className="badge badge-warn">cross-dept</span>
+                  <Badge kind="warn">cross-dept</Badge>
                 ) : (
-                  <span className="badge">dept · {group!.owner_dept}</span>
+                  <Badge>dept · {group!.owner_dept}</Badge>
                 )
               ) : liveGroupQ.data ? (
                 <GroupHeaderDept deptId={liveGroupQ.data.department_id} />
               ) : null}
               {mockMode && (
-                <span className="badge">{members.length} участников</span>
+                <Badge>{members.length} участников</Badge>
               )}
             </div>
             <div className="text-sm text-dim mt-1">{headerDescription}</div>
           </div>
           <div className="flex items-center gap-2">
             {!caps.edit && !caps.delete && !caps.manageMembers && (
-              <span className="badge badge-warn" title={caps.reason}>
+              <Badge kind="warn" title={caps.reason}>
                 Только чтение
-              </span>
+              </Badge>
             )}
           </div>
         </div>
@@ -253,13 +256,13 @@ export function GroupDetail() {
                   return (
                     <div key={ra.role_id} className="row-line">
                       <div className="flex items-center gap-2">
-                        <span className="badge badge-accent">{r.name}</span>
+                        <Badge kind="accent">{r.name}</Badge>
                         <span className="text-xs text-dim">{r.service}</span>
                       </div>
                       <span className="text-xs">
-                        {ra.scope_kind === "platform" && <span className="badge">платформа</span>}
-                        {ra.scope_kind === "dept" && <span className="badge">отдел · {ra.scope_ref}</span>}
-                        {ra.scope_kind === "resource" && <span className="badge">{ra.scope_ref}</span>}
+                        {ra.scope_kind === "platform" && <Badge>платформа</Badge>}
+                        {ra.scope_kind === "dept" && <Badge>отдел · {ra.scope_ref}</Badge>}
+                        {ra.scope_kind === "resource" && <Badge>{ra.scope_ref}</Badge>}
                       </span>
                     </div>
                   );
@@ -346,13 +349,13 @@ export function GroupDetail() {
                     <td className="px-3 py-2 mono text-xs">{e.permission}</td>
                     <td className="px-3 py-2 text-xs">{e.service}</td>
                     <td className="px-3 py-2 text-xs">
-                      {e.scope_kind === "platform" && <span className="badge">платформа</span>}
-                      {e.scope_kind === "dept" && <span className="badge">отдел · {e.scope_ref}</span>}
-                      {e.scope_kind === "resource" && <span className="badge">{e.scope_ref}</span>}
+                      {e.scope_kind === "platform" && <Badge>платформа</Badge>}
+                      {e.scope_kind === "dept" && <Badge>отдел · {e.scope_ref}</Badge>}
+                      {e.scope_kind === "resource" && <Badge>{e.scope_ref}</Badge>}
                     </td>
                     <td className="px-3 py-2">
                       {e.sources.map((s) => (
-                        <span key={s.id} className="badge badge-accent">{s.label}</span>
+                        <Badge kind="accent" key={s.id}>{s.label}</Badge>
                       ))}
                     </td>
                   </tr>
@@ -387,7 +390,7 @@ export function GroupDetail() {
                       <td className="text-xs">{total}</td>
                       <td className="text-xs">
                         {lostByThisGroup > 0 ? (
-                          <span className="badge badge-warn">+{lostByThisGroup}</span>
+                          <Badge kind="warn">+{lostByThisGroup}</Badge>
                         ) : (
                           <span className="text-dim">0</span>
                         )}
@@ -405,12 +408,13 @@ export function GroupDetail() {
           {/* Delete-group diff */}
           <Section icon={<GitCompareArrows className="w-4 h-4" />} title="Diff: что потеряют члены если удалить группу" className="col-span-2">
             <div className="flex items-center gap-2 mb-3">
-              <button
-                className={`btn btn-sm ${diffOn ? "btn-primary" : ""}`}
+              <Button
+                size="sm"
+                variant={diffOn ? "primary" : "default"}
                 onClick={() => setDiffOn(!diffOn)}
               >
                 {diffOn ? "скрыть" : "посчитать"}
-              </button>
+              </Button>
               <span className="text-xs text-dim">simulate: remove_group({group.name})</span>
             </div>
             {diffOn && groupDeleteDiff && (
@@ -558,17 +562,17 @@ function GroupLiveData({
       {!loading && firstErr instanceof ApiError && (
         <div className="alert-danger">
           {firstErr.errorCode}: {firstErr.message}
-          <button className="btn btn-sm ml-2" onClick={refetchAll}>
+          <Button size="sm" className="ml-2" onClick={refetchAll}>
             Повторить
-          </button>
+          </Button>
         </div>
       )}
       {!loading && firstErr && !(firstErr instanceof ApiError) && (
         <div className="alert-danger">
           {firstErr.message}
-          <button className="btn btn-sm ml-2" onClick={refetchAll}>
+          <Button size="sm" className="ml-2" onClick={refetchAll}>
             Повторить
-          </button>
+          </Button>
         </div>
       )}
 
@@ -592,16 +596,16 @@ function GroupLiveData({
                 <div>{detail.data.description ?? "—"}</div>
               </div>
               <div className="col-span-2 flex gap-2">
-                <button
-                  className="btn flex items-center gap-1"
+                <Button
+                  className="flex items-center gap-1"
                   disabled={!caps.edit || pending}
                   title={caps.edit ? "Изменить name / description" : caps.reason}
                   onClick={() => setEditingMeta(true)}
                 >
                   <Edit3 className="w-4 h-4" /> Изменить
-                </button>
-                <button
-                  className="btn btn-danger flex items-center gap-1"
+                </Button>
+                <Button variant="danger"
+                  className="flex items-center gap-1"
                   disabled={!caps.delete || pending}
                   title={
                     caps.delete
@@ -623,7 +627,7 @@ function GroupLiveData({
                   }}
                 >
                   <Trash2 className="w-4 h-4" /> Удалить
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -660,8 +664,7 @@ function GroupLiveData({
                         ({m.user_id})
                       </span>
                     </span>
-                    <button
-                      className="btn btn-sm btn-danger"
+                    <Button variant="danger" size="sm"
                       disabled={!caps.manageMembers || pending}
                       onClick={() =>
                         run(() =>
@@ -670,7 +673,7 @@ function GroupLiveData({
                       }
                     >
                       убрать
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -746,15 +749,14 @@ function GroupLiveData({
                       <BotIcon className="w-3 h-3 inline mr-1" />
                       <span className="mono">{b.name}</span>
                     </span>
-                    <button
-                      className="btn btn-sm btn-danger"
+                    <Button variant="danger" size="sm"
                       disabled={!caps.manageMembers || pending}
                       onClick={() =>
                         run(() => groupsApi.removeGroupBot(groupId, b.bot_id))
                       }
                     >
                       убрать
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -766,8 +768,8 @@ function GroupLiveData({
                 value={addBotId}
                 onChange={(e) => setAddBotId(e.target.value)}
               />
-              <button
-                className="btn btn-primary flex items-center gap-1"
+              <Button variant="primary"
+                className="flex items-center gap-1"
                 disabled={!caps.manageMembers || pending || !addBotId.trim()}
                 onClick={() =>
                   run(async () => {
@@ -777,7 +779,7 @@ function GroupLiveData({
                 }
               >
                 <BotIcon className="w-4 h-4" /> Добавить бота
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -798,8 +800,7 @@ function GroupLiveData({
                     <span>
                       <ServiceInline name={s.service_name} />
                     </span>
-                    <button
-                      className="btn btn-sm btn-danger"
+                    <Button variant="danger" size="sm"
                       disabled={!caps.edit || pending}
                       onClick={() =>
                         run(() =>
@@ -811,7 +812,7 @@ function GroupLiveData({
                       }
                     >
                       отозвать
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -823,8 +824,8 @@ function GroupLiveData({
                 value={addService}
                 onChange={(e) => setAddService(e.target.value)}
               />
-              <button
-                className="btn btn-primary flex items-center gap-1"
+              <Button variant="primary"
+                className="flex items-center gap-1"
                 disabled={!caps.edit || pending || !addService.trim()}
                 onClick={() =>
                   run(async () => {
@@ -834,7 +835,7 @@ function GroupLiveData({
                 }
               >
                 <Plug className="w-4 h-4" /> Выдать доступ
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -862,8 +863,7 @@ function GroupLiveData({
                       </td>
                       <td className="text-xs">{r.roles.join(", ")}</td>
                       <td>
-                        <button
-                          className="btn btn-sm btn-danger"
+                        <Button variant="danger" size="sm"
                           disabled={!caps.edit || pending}
                           onClick={() =>
                             run(() =>
@@ -875,7 +875,7 @@ function GroupLiveData({
                           }
                         >
                           отозвать
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -923,8 +923,8 @@ function RoleAssignRow({
         value={rolesCsv}
         onChange={(e) => setRolesCsv(e.target.value)}
       />
-      <button
-        className="btn btn-primary flex items-center gap-1"
+      <Button variant="primary"
+        className="flex items-center gap-1"
         disabled={disabled || !service.trim()}
         onClick={() => {
           const list = rolesCsv
@@ -937,7 +937,7 @@ function RoleAssignRow({
         }}
       >
         <ShieldCheck className="w-4 h-4" /> Назначить (заменить)
-      </button>
+      </Button>
     </div>
   );
 }
@@ -960,7 +960,7 @@ function GroupDeptLine({ deptId }: { deptId: string | null | undefined }) {
 
 function GroupHeaderDept({ deptId }: { deptId: string | null | undefined }) {
   const label = useDeptLabel(deptId);
-  return <span className="badge">dept · {label}</span>;
+  return <Badge>dept · {label}</Badge>;
 }
 
 function ServiceInline({ name }: { name: string }) {
@@ -1010,8 +1010,8 @@ function GroupMetaEditForm({
         department_id не редактируется.
       </div>
       <div className="flex gap-2">
-        <button
-          className="btn btn-primary flex items-center gap-1"
+        <Button variant="primary"
+          className="flex items-center gap-1"
           disabled={disabled}
           onClick={() => {
             const desc = description.trim();
@@ -1024,10 +1024,10 @@ function GroupMetaEditForm({
           }}
         >
           <Save className="w-4 h-4" /> Сохранить
-        </button>
-        <button className="btn" disabled={disabled} onClick={onCancel}>
+        </Button>
+        <Button disabled={disabled} onClick={onCancel}>
           Отмена
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -1183,8 +1183,7 @@ function MemberPicker({
                     }}
                   >
                     <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         readOnly
                         checked={isSelected}
                         className="pointer-events-none"
@@ -1210,13 +1209,13 @@ function MemberPicker({
       />
 
       <div>
-        <button
-          className="btn btn-primary flex items-center gap-1"
+        <Button variant="primary"
+          className="flex items-center gap-1"
           disabled={disabled || selected.size === 0}
           onClick={() => void onAdd()}
         >
           <UserPlus className="w-4 h-4" /> Добавить выделенных ({selected.size})
-        </button>
+        </Button>
       </div>
     </div>
   );

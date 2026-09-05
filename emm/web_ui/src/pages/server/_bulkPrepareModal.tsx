@@ -15,7 +15,6 @@
  * (`dispatched` со ссылкой на задачу / `failed` с RU-причиной).
  */
 import { useEffect, useMemo, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { Link } from "react-router-dom";
 import {
   Play,
@@ -49,6 +48,9 @@ import type {
   ServerPrepareBatchItem,
   ServerPrepareBatchResponse,
 } from "@/api/server/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 
 export function BulkPrepareModal({
   servers,
@@ -136,29 +138,21 @@ export function BulkPrepareModal({
   }
 
   return (
-    <Dialog.Root open modal onOpenChange={(o) => !o && !pending && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content
-          className="modal-content"
-          style={{ maxWidth: 680 }}
-          onInteractOutside={(e) => pending && e.preventDefault()}
-          onEscapeKeyDown={(e) => pending && e.preventDefault()}
-        >
-          <div className="modal-header">
-            <Play className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold">
-              Подготовить выбранные ({servers.length})
-            </Dialog.Title>
-          </div>
-
+    <Modal
+      open
+      width="lg"
+      onOpenChange={(o) => !o && !pending && onClose()}
+      title={`Подготовить выбранные (${servers.length})`}
+      icon={<Play className="w-5 h-5 text-accent" />}
+      hideCloseButton
+    >
           {result ? (
             <>
               <div className="modal-body flex flex-col gap-3">
                 <div className="flex items-center gap-3 text-sm flex-wrap">
-                  <span className="badge badge-accent mono">
+                  <Badge kind="accent" className="mono">
                     batch {result.batch_id}
-                  </span>
+                  </Badge>
                   <span className="flex items-center gap-1 text-ok">
                     <CheckCircle2 className="w-4 h-4" /> поставлено:{" "}
                     {result.dispatched.length}
@@ -185,9 +179,9 @@ export function BulkPrepareModal({
                               serverName(byId.get(d.server_id)!)) ??
                             d.server_id}
                         </span>
-                        <span className="badge badge-ok text-[10px]">
+                        <Badge kind="ok" className="text-[10px]">
                           {d.status}
-                        </span>
+                        </Badge>
                         <Link
                           to={`/tasks/${d.task_id}`}
                           className="btn btn-sm flex items-center gap-1"
@@ -229,26 +223,26 @@ export function BulkPrepareModal({
                 </div>
               </div>
               <div className="modal-footer">
-                <button
+                <Button variant="primary"
                   type="button"
-                  className="btn btn-primary flex items-center gap-1"
+                  className="flex items-center gap-1"
                   onClick={() => {
                     onDone();
                     onClose();
                   }}
                 >
                   <X className="w-4 h-4" /> Готово
-                </button>
+                </Button>
               </div>
             </>
           ) : (
             <form onSubmit={submit}>
               <div className="modal-body flex flex-col gap-3">
-                <Dialog.Description className="text-sm text-dim">
+                <p className="text-sm text-dim">
                   На каждый сервер — свой режим bootstrap-кред: привязанная
                   учётка (server_service сам расшифрует её пароль) либо ручной
                   ввод логина и пароля.
-                </Dialog.Description>
+                </p>
 
                 {err && <div className="alert-danger text-sm">{err}</div>}
 
@@ -273,12 +267,12 @@ export function BulkPrepareModal({
                               {serverName(s)}
                             </span>
                             {linked.length === 0 && (
-                              <span
-                                className="badge badge-warn text-[10px]"
+                              <Badge kind="warn"
+                                className="text-[10px]"
                                 title="Нет привязанных доступных учёток — заполните креды вручную"
                               >
                                 нет привязанных учёток
-                              </span>
+                              </Badge>
                             )}
                             {incomplete && (
                               <span className="text-danger text-[11px]">
@@ -303,22 +297,22 @@ export function BulkPrepareModal({
               </div>
 
               <div className="modal-footer">
-                <button
+                <Button
                   type="button"
-                  className="btn flex items-center gap-1"
+                  className="flex items-center gap-1"
                   onClick={onClose}
                   disabled={pending}
                 >
                   <X className="w-4 h-4" /> Отмена
-                </button>
-                <button
+                </Button>
+                <Button variant="primary"
                   type="submit"
-                  className="btn btn-primary flex items-center gap-1"
+                  className="flex items-center gap-1"
                   disabled={pending || !valid}
                 >
                   <Play className="w-4 h-4" />
                   {pending ? "Запускаем…" : "Подготовить"}
-                </button>
+                </Button>
               </div>
               {ready && !valid && (
                 <div className="px-4 pb-3 text-[11px] text-dim flex items-center gap-1">
@@ -329,8 +323,6 @@ export function BulkPrepareModal({
               )}
             </form>
           )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </Modal>
   );
 }

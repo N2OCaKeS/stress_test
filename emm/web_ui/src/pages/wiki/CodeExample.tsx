@@ -6,6 +6,7 @@ import {
   useWikiSettings,
 } from "./snippet";
 import type { ApiExample, CodeLang } from "./examples/types";
+import { Button } from "@/components/ui/Button";
 
 interface CodeExampleProps {
   // Полный пример endpoint'а — рендерится через composeSnippet (auth-преамбула,
@@ -68,14 +69,15 @@ export function CodeExample({
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1">
         {TABS.map((t) => (
-          <button
+          <Button
             key={t.key}
             type="button"
             onClick={() => setOverride(t.key)}
-            className={`btn ${lang === t.key ? "btn-primary" : "btn-ghost"} text-xs`}
+            variant={lang === t.key ? "primary" : "ghost"}
+            className="text-xs"
           >
             {t.label}
-          </button>
+          </Button>
         ))}
       </div>
       <CodeBlock code={code} lang={blockLang(lang)} />

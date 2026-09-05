@@ -17,6 +17,7 @@ import { formatMsk } from "@/lib/datetime";
 import { useTimeoutRef } from "@/lib/useTimeoutRef";
 import { exportEvents, getEventStats } from "@/api/loging/events";
 import type { EventStatsResponse, Severity } from "@/api/loging/types";
+import { Button } from "@/components/ui/Button";
 
 const SEV_ORDER: Severity[] = [
   "CRITICAL",
@@ -97,13 +98,13 @@ export function ClusterAuditOverview() {
               <Link to="/log" className="btn btn-sm flex items-center gap-1">
                 <FileText className="w-3.5 h-3.5" /> Открыть полную выборку
               </Link>
-              <button
+              <Button size="sm"
                 type="button"
-                className="btn btn-sm flex items-center gap-1"
+                className="flex items-center gap-1"
                 onClick={triggerMockExport}
               >
                 <Download className="w-3.5 h-3.5" /> Экспорт за 24ч
-              </button>
+              </Button>
               {canConfigureRules && (
                 <Link
                   to="/admin/services.loging.rules"
@@ -227,9 +228,9 @@ function LiveAudit({ canConfigureRules }: { canConfigureRules: boolean }) {
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <div className="flex-1">
             <div>{apiErrMsg(statsQ.error, "Статистика не загрузилась")}</div>
-            <button className="btn btn-ghost mt-2" onClick={() => statsQ.refetch()}>
+            <Button variant="ghost" className="mt-2" onClick={() => statsQ.refetch()}>
               Повторить
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -257,14 +258,14 @@ function LiveAudit({ canConfigureRules }: { canConfigureRules: boolean }) {
         <Link to="/log" className="btn btn-sm flex items-center gap-1">
           <FileText className="w-3.5 h-3.5" /> Открыть полную выборку
         </Link>
-        <button
+        <Button size="sm"
           type="button"
-          className="btn btn-sm flex items-center gap-1"
+          className="flex items-center gap-1"
           onClick={onExport}
           disabled={exporting}
         >
           <Download className="w-3.5 h-3.5" /> {exporting ? "Экспорт…" : "Экспорт за 24ч"}
-        </button>
+        </Button>
         {canConfigureRules && (
           <Link
             to="/admin/services.loging.rules"

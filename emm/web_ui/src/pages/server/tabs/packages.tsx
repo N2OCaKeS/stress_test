@@ -60,6 +60,8 @@ import type { PaginatedList } from "@/api/auth/users";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import type { EntityRef } from "./_entity";
+import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
 
 const HISTORY_PAGE_SIZE = 20;
 
@@ -211,8 +213,9 @@ function PackagesPanel({
             )}
           </div>
           {action && !action.hidden && (
-            <button
-              className={`btn ${action.primary ? "btn-primary " : ""}flex items-center gap-2`}
+            <Button
+              variant={action.primary ? "primary" : "default"}
+              className="flex items-center gap-2"
               onClick={action.onClick}
               disabled={action.disabled}
               title={action.title}
@@ -221,7 +224,7 @@ function PackagesPanel({
                 className={`w-4 h-4 ${action.busy ? "animate-spin" : ""}`}
               />
               {action.label}
-            </button>
+            </Button>
           )}
         </div>
         {controls}
@@ -551,15 +554,15 @@ function ServerPackagesTab({ serverId, server, onServerUpdated }: Props) {
               <div className="flex-1 text-xs">
                 <div>{err}</div>
                 {offerReprepare && allowed && (
-                  <button
-                    className="btn btn-ghost mt-2 flex items-center gap-1 text-xs"
+                  <Button variant="ghost"
+                    className="mt-2 flex items-center gap-1 text-xs"
                     onClick={() => handleProbe(true)}
                     disabled={busy}
                     title="Повторно подготовить сервер и получить пакеты"
                   >
                     <RefreshCw className="w-3.5 h-3.5" /> Повторить prepare и
                     пакеты
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
@@ -573,17 +576,17 @@ function ServerPackagesTab({ serverId, server, onServerUpdated }: Props) {
                 {lastStatus && (
                   <>
                     {" · "}статус{" "}
-                    <span
-                      className={`badge ${
+                    <Badge
+                      kind={
                         lastStatus === "succeeded"
-                          ? "badge-ok"
+                          ? "ok"
                           : lastStatus === "failed"
-                            ? "badge-danger"
-                            : "badge-warn"
-                      }`}
+                            ? "danger"
+                            : "warn"
+                      }
                     >
                       {lastStatus}
-                    </span>
+                    </Badge>
                   </>
                 )}
                 {polling && (
@@ -708,8 +711,8 @@ function PackageHistorySection({
       <div className="flex items-center gap-2 mb-1">
         <History className="w-4 h-4 text-accent" />
         <div className="text-sm font-medium">История запросов</div>
-        <button
-          className="btn btn-ghost btn-sm ml-auto flex items-center gap-1"
+        <Button variant="ghost" size="sm"
+          className="ml-auto flex items-center gap-1"
           onClick={() => historyQ.refetch()}
           disabled={historyQ.loading}
           title="Обновить историю"
@@ -718,7 +721,7 @@ function PackageHistorySection({
             className={`w-3.5 h-3.5 ${historyQ.loading ? "animate-spin" : ""}`}
           />
           Обновить
-        </button>
+        </Button>
       </div>
       <div className="text-xs text-dim mb-3">{hint}</div>
 
@@ -727,12 +730,12 @@ function PackageHistorySection({
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <div className="flex-1 text-xs">
             <div>{apiErrMsg(historyQ.error, "Историю не загрузить")}</div>
-            <button
-              className="btn btn-ghost mt-2"
+            <Button variant="ghost"
+              className="mt-2"
               onClick={() => historyQ.refetch()}
             >
               Повторить
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -766,20 +769,18 @@ function PackageHistorySection({
             )}
           </span>
           <div className="flex items-center gap-1">
-            <button
-              className="btn btn-ghost btn-sm"
+            <Button variant="ghost" size="sm"
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={page === 0 || historyQ.loading}
             >
               Назад
-            </button>
-            <button
-              className="btn btn-ghost btn-sm"
+            </Button>
+            <Button variant="ghost" size="sm"
               onClick={() => setPage((p) => p + 1)}
               disabled={!hasNext || historyQ.loading}
             >
               Вперёд
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -814,9 +815,9 @@ function HistoryRow({
         <span className="mono text-xs truncate flex-1" title="запрошенный шаблон">
           {historyPatternLabel(entry)}
         </span>
-        <span className={`badge${kind ? ` badge-${kind}` : ""} shrink-0`}>
+        <Badge kind={kind || "neutral"} className="shrink-0">
           {HISTORY_STATUS_LABEL[entry.status] ?? entry.status}
-        </span>
+        </Badge>
         {pending ? (
           <RefreshCw className="w-3 h-3 animate-spin text-dim shrink-0" />
         ) : (

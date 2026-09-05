@@ -47,6 +47,8 @@ import { useDeptLabel } from "@/lib/labels";
 import { hasServerZoneAccess } from "@/lib/rbac";
 import type { Persona } from "@/types/persona";
 import { formatMsk } from "@/lib/datetime";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 // Управление реестром несёт admin-плоскость server-зоны: server.admin /
 // server.operator либо dep_admin своего отдела. Backend перепроверит.
@@ -123,13 +125,13 @@ function BoxAside({
           <BoxIcon className="w-5 h-5 text-accent" />
           <h2 className="font-semibold text-sm flex-1">Боксы</h2>
           {canCreate && (
-            <button
-              className="btn btn-primary btn-sm flex items-center gap-1"
+            <Button variant="primary" size="sm"
+              className="flex items-center gap-1"
               onClick={onCreate}
               title="Зарегистрировать новый бокс"
             >
               <Plus className="w-4 h-4" /> Новый
-            </button>
+            </Button>
           )}
         </div>
         <div className="relative">
@@ -147,9 +149,9 @@ function BoxAside({
         {error && (
           <div className="alert-danger text-xs flex items-center justify-between gap-2">
             <span className="truncate">{error}</span>
-            <button className="btn btn-sm" onClick={onRetry}>
+            <Button size="sm" onClick={onRetry}>
               Повторить
-            </button>
+            </Button>
           </div>
         )}
         {loading && boxes.length === 0 ? (
@@ -193,9 +195,9 @@ function ChipList({ values, empty }: { values: string[]; empty: string }) {
   return (
     <div className="flex flex-wrap gap-1">
       {values.map((v) => (
-        <span key={v} className="badge mono text-[11px]">
+        <Badge key={v} className="mono text-[11px]">
           {v}
-        </span>
+        </Badge>
       ))}
     </div>
   );
@@ -256,20 +258,20 @@ function BoxDetail({
           <h2 className="font-semibold text-lg mono truncate flex-1">{box.name}</h2>
           {canManage && (
             <>
-              <button
-                className="btn btn-sm flex items-center gap-1"
+              <Button size="sm"
+                className="flex items-center gap-1"
                 onClick={onEdit}
                 title="Редактировать бокс"
               >
                 <Pencil className="w-4 h-4" /> Изменить
-              </button>
-              <button
-                className="btn btn-sm text-danger flex items-center gap-1"
+              </Button>
+              <Button size="sm"
+                className="text-danger flex items-center gap-1"
                 onClick={onDelete}
                 title="Удалить бокс"
               >
                 <Trash2 className="w-4 h-4" /> Удалить
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -304,8 +306,8 @@ function BoxDetail({
                 {revealed !== null ? revealed : "••••••••"}
               </span>
               {canReveal && (
-                <button
-                  className="btn btn-ghost btn-sm flex items-center gap-1"
+                <Button variant="ghost" size="sm"
+                  className="flex items-center gap-1"
                   onClick={reveal}
                   disabled={revealing}
                   title={revealed !== null ? "Скрыть" : "Показать пароль"}
@@ -316,7 +318,7 @@ function BoxDetail({
                     <Eye className="w-3.5 h-3.5" />
                   )}
                   {revealing ? "…" : revealed !== null ? "Скрыть" : "Показать"}
-                </button>
+                </Button>
               )}
             </span>
 
@@ -437,13 +439,13 @@ function BoxForm({
     <section className="flex-1 min-w-0 overflow-y-auto">
       <form onSubmit={submit} className="p-5 w-full max-w-2xl flex flex-col gap-4">
         <div className="flex items-center gap-2">
-          <button
+          <Button variant="ghost"
             type="button"
-            className="btn btn-ghost flex items-center gap-1"
+            className="flex items-center gap-1"
             onClick={onCancel}
           >
             <ArrowLeft className="w-4 h-4" /> Назад
-          </button>
+          </Button>
           <h2 className="font-semibold text-lg">
             {editing ? `Бокс ${box!.name}` : "Новый бокс"}
           </h2>
@@ -538,13 +540,12 @@ function BoxForm({
         </label>
 
         <div className="flex items-center gap-2">
-          <button type="button" className="btn" onClick={onCancel}>
+          <Button type="button" onClick={onCancel}>
             Отмена
-          </button>
+          </Button>
           <div className="flex-1" />
-          <button
+          <Button variant="primary"
             type="submit"
-            className="btn btn-primary"
             disabled={!valid || submitting}
           >
             {submitting
@@ -552,7 +553,7 @@ function BoxForm({
               : editing
                 ? "Сохранить"
                 : "Зарегистрировать"}
-          </button>
+          </Button>
         </div>
       </form>
     </section>

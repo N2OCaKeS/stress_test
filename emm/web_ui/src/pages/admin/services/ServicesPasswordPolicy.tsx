@@ -25,6 +25,8 @@ import {
   type PasswordPolicy,
 } from "@/api/auth/passwordPolicy";
 import { setActivePasswordPolicy } from "@/lib/passwordPolicy";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 interface FormState {
   minLength: string;
@@ -128,13 +130,13 @@ export function ServicesPasswordPolicy() {
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <div className="flex-1">
               <div>{apiErrMsg(cfgQ.error, "Политика не загрузилась")}</div>
-              <button
-                className="btn btn-ghost mt-2"
+              <Button variant="ghost"
+                className="mt-2"
                 onClick={() => cfgQ.refetch()}
                 type="button"
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -159,8 +161,7 @@ export function ServicesPasswordPolicy() {
               </label>
 
               <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={form.requireLetter}
                   onChange={(e) => patch({ requireLetter: e.target.checked })}
                   disabled={pending}
@@ -169,8 +170,7 @@ export function ServicesPasswordPolicy() {
               </label>
 
               <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={form.requireDigit}
                   onChange={(e) => patch({ requireDigit: e.target.checked })}
                   disabled={pending}
@@ -193,14 +193,13 @@ export function ServicesPasswordPolicy() {
             )}
 
             <div className="flex items-center gap-3">
-              <button
+              <Button variant="primary"
                 type="button"
-                className="btn btn-primary"
                 onClick={handleSave}
                 disabled={pending || !dirty || error != null}
               >
                 {pending ? "Сохраняем…" : "Сохранить"}
-              </button>
+              </Button>
               {dirty && !pending && (
                 <span className="text-xs text-dim">
                   есть несохранённые изменения

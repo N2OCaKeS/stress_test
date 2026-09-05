@@ -59,6 +59,9 @@ import type {
 import { personaDeptId, isPlatformWideAdmin, isDepAdmin } from "@/lib/rbac";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
 import { useTimeoutRef } from "@/lib/useTimeoutRef";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 /**
  * Mock-режим: какие фиктивные ролевые наборы и какие persona-id'шники имеют
@@ -189,22 +192,6 @@ function LiveServiceRolesCard({
   const depAdmin = isDepAdmin(persona);
   const canEdit = platformAdmin || depAdmin;
 
-  // No platform/dep-admin role → нет прав на CRUD ролей в `(dept, svc)`.
-  // Backend ответит 403, поэтому даже листинг скрываем.
-  if (!canEdit) {
-    return (
-      <NotWiredInline
-        service={title}
-        endpoints={[
-          `GET   /auth/v1/departments/{department_id}/services/${backendServiceName}/roles`,
-          `POST  /auth/v1/departments/{department_id}/services/${backendServiceName}/roles`,
-          `PATCH .../roles/{role_name}`,
-          `POST  .../roles/{role_name}/assign | /revoke`,
-        ]}
-      />
-    );
-  }
-
   // department_id selector — `account_admin` picks from list, `dep_admin`
   // is pinned to own dept. Если в URL пришёл `?dept_id=<id>` (из навигации
   // со страницы /admin/services.departments) — берём его как hint для
@@ -239,8 +226,24 @@ function LiveServiceRolesCard({
   const rolesQ = useQuery<ServiceRole[]>(
     () => listServiceRoles(deptId!, backendServiceName),
     [deptId, backendServiceName, refreshTick],
-    { enabled: !!deptId },
+    { enabled: canEdit && !!deptId },
   );
+
+  // No platform/dep-admin role → нет прав на CRUD ролей в `(dept, svc)`.
+  // Backend ответит 403, поэтому даже листинг скрываем.
+  if (!canEdit) {
+    return (
+      <NotWiredInline
+        service={title}
+        endpoints={[
+          `GET   /auth/v1/departments/{department_id}/services/${backendServiceName}/roles`,
+          `POST  /auth/v1/departments/{department_id}/services/${backendServiceName}/roles`,
+          `PATCH .../roles/{role_name}`,
+          `POST  .../roles/{role_name}/assign | /revoke`,
+        ]}
+      />
+    );
+  }
 
   const refetch = () => setRefreshTick((t) => t + 1);
   const run = async (fn: () => Promise<unknown>, successMsg?: string) => {
@@ -462,29 +465,29 @@ function LiveRoleView({
         <h3 className="font-semibold flex items-center gap-2 mono">
           <ShieldCheck className="w-4 h-4 text-accent" /> {role.role_name}
           {role.is_system ? (
-            <span className="badge">system</span>
+            <Badge>system</Badge>
           ) : (
-            <span className="badge badge-accent">custom</span>
+            <Badge kind="accent">custom</Badge>
           )}
         </h3>
         {canEdit && (
           <div className="flex items-center gap-2">
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               disabled={role.is_system || pending}
               title={lockedReason}
               onClick={() => startEdit(role.role_name)}
             >
               <Edit3 className="w-4 h-4" /> Изменить
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={role.is_system || pending}
               title={lockedReason}
               onClick={onDelete}
             >
               <Trash2 className="w-4 h-4" /> Удалить
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -721,23 +724,23 @@ function BulkAssignSection({
       </div>
 
       <div className="flex gap-2">
-        <button
-          className="btn btn-primary flex items-center gap-1"
+        <Button variant="primary"
+          className="flex items-center gap-1"
           disabled={busy || !hasSelection}
           onClick={() => void submit("assign")}
         >
           <UserPlus className="w-4 h-4" /> назначить
-        </button>
-        <button
-          className="btn btn-danger flex items-center gap-1"
+        </Button>
+        <Button variant="danger"
+          className="flex items-center gap-1"
           disabled={busy || !hasSelection}
           onClick={() => void submit("revoke")}
         >
           <UserMinus className="w-4 h-4" /> отозвать
-        </button>
+        </Button>
         {hasSelection && (
-          <button
-            className="btn flex items-center gap-1"
+          <Button
+            className="flex items-center gap-1"
             disabled={busy}
             onClick={() => {
               setSelectedUserIds(new Set());
@@ -745,7 +748,7 @@ function BulkAssignSection({
             }}
           >
             <X className="w-4 h-4" /> очистить выбор
-          </button>
+          </Button>
         )}
       </div>
 
@@ -918,8 +921,7 @@ function SearchableMultiSelect<T>({
                     }}
                   >
                     <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         readOnly
                         checked={isSelected}
                         className="pointer-events-none"
@@ -1014,12 +1016,12 @@ function LiveRoleForm({
         </FormRow>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onCancel} disabled={pending}>
+        <Button onClick={onCancel} disabled={pending}>
           Отмена
-        </button>
-        <button className="btn btn-primary" onClick={submit} disabled={submitDisabled}>
+        </Button>
+        <Button variant="primary" onClick={submit} disabled={submitDisabled}>
           {mode === "new" ? "Создать" : "Сохранить"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -1087,19 +1089,19 @@ function MockRoleView({ role, canEdit }: { role: ServiceRoleDef; canEdit: boolea
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold flex items-center gap-2 mono">
           <ShieldCheck className="w-4 h-4 text-accent" /> {role.name}
-          <span className="badge">{role.level}</span>
+          <Badge>{role.level}</Badge>
         </h3>
         {canEdit && (
           <div className="flex items-center gap-2">
-            <button className="btn flex items-center gap-1" onClick={() => startEdit(role.id)}>
+            <Button className="flex items-center gap-1" onClick={() => startEdit(role.id)}>
               <Edit3 className="w-4 h-4" /> Изменить
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               onClick={() => toast.warn(SERVICE_ROLES_SCOPE_MISSING)}
             >
               <Trash2 className="w-4 h-4" /> Удалить
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -1156,10 +1158,10 @@ function MockRoleForm({
         </FormRow>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onDone}>Отмена</button>
-        <button className="btn btn-primary" onClick={submit}>
+        <Button onClick={onDone}>Отмена</Button>
+        <Button variant="primary" onClick={submit}>
           {mode === "new" ? "Создать" : "Сохранить"}
-        </button>
+        </Button>
       </div>
     </div>
   );

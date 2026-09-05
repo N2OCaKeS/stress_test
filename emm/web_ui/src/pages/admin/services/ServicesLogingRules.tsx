@@ -27,6 +27,9 @@ import {
   StatRow,
   useInlineState,
 } from "./_inline";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Badge } from "@/components/ui/Badge";
 
 const EFFECTS: RuleEffect[] = ["SUPPRESS", "ALLOW", "OVERRIDE_SEVERITY"];
 const SEVERITIES: Severity[] = [
@@ -134,9 +137,9 @@ function LiveRules() {
                 <span className="mono">{item.effect}</span>
               </div>
             </div>
-            <span className={`badge ${item.is_active ? "badge-ok" : "badge-warn"}`}>
+            <Badge kind={item.is_active ? "ok" : "warn"}>
               {item.is_active ? "active" : "muted"}
-            </span>
+            </Badge>
           </div>
         </button>
       )}
@@ -174,17 +177,17 @@ function RuleView({ rule, onDelete }: { rule: Rule; onDelete: () => void }) {
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold flex items-center gap-2">
           <Filter className="w-4 h-4 text-accent" /> {rule.name}
-          <span className={`badge ${rule.is_active ? "badge-ok" : "badge-warn"}`}>
+          <Badge kind={rule.is_active ? "ok" : "warn"}>
             {rule.is_active ? "active" : "muted"}
-          </span>
+          </Badge>
         </h3>
         <div className="flex items-center gap-2">
-          <button className="btn flex items-center gap-1" onClick={() => startEdit(rule.id)}>
+          <Button className="flex items-center gap-1" onClick={() => startEdit(rule.id)}>
             <Edit3 className="w-4 h-4" /> Изменить
-          </button>
-          <button className="btn btn-danger flex items-center gap-1" onClick={onDelete}>
+          </Button>
+          <Button variant="danger" className="flex items-center gap-1" onClick={onDelete}>
             <Trash2 className="w-4 h-4" /> Удалить
-          </button>
+          </Button>
         </div>
       </div>
       {rule.description && (
@@ -402,8 +405,7 @@ function RuleForm({
           />
         </FormRow>
         <label className="checkbox-row mt-5">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={isActive}
             onChange={(e) => setIsActive(e.target.checked)}
           />
@@ -415,18 +417,17 @@ function RuleForm({
         </label>
       </div>
       <div className="mt-2 flex gap-2 justify-end">
-        <button type="button" className="btn" onClick={onCancel}>
+        <Button type="button" onClick={onCancel}>
           Отмена
-        </button>
-        <button
+        </Button>
+        <Button variant="primary"
           type="submit"
-          className="btn btn-primary"
           disabled={
             submitting || !name.trim() || (needsEffectSeverity && !effectSeverity)
           }
         >
           {submitting ? "Сохраняем…" : initial ? "Сохранить" : "Создать"}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -460,9 +461,9 @@ function MockRules() {
               <div className="text-sm truncate mono">{item.expr}</div>
               <div className="text-[11px] text-dim truncate">{item.severity} · {item.updated}</div>
             </div>
-            <span className={`badge badge-${item.enabled ? "ok" : ""}`}>
+            <Badge kind={item.enabled ? "ok" : "neutral"}>
               {item.enabled ? "on" : "off"}
-            </span>
+            </Badge>
           </div>
         </button>
       )}
@@ -486,9 +487,9 @@ function MockRuleView({ rule, canEdit }: { rule: AlertRule; canEdit: boolean }) 
         </h3>
         {canEdit && (
           <div className="flex items-center gap-2">
-            <button className="btn flex items-center gap-1" onClick={() => startEdit(rule.id)}>
+            <Button className="flex items-center gap-1" onClick={() => startEdit(rule.id)}>
               <Edit3 className="w-4 h-4" /> Изменить
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -538,16 +539,16 @@ function MockRuleForm({
         </FormRow>
         <FormRow label="enabled">
           <label className="checkbox-row">
-            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+            <Checkbox checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
             <span>выполнять</span>
           </label>
         </FormRow>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onDone}>Отмена</button>
-        <button className="btn btn-primary" onClick={onDone}>
+        <Button onClick={onDone}>Отмена</Button>
+        <Button variant="primary" onClick={onDone}>
           {mode === "new" ? "Создать" : "Сохранить"}
-        </button>
+        </Button>
       </div>
     </div>
   );

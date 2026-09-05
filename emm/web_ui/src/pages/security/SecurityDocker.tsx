@@ -18,6 +18,8 @@ import type {
 } from "@/api/auth/types";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 function errToMessage(e: unknown): string {
   return apiErrMsg(e, String(e));
@@ -159,8 +161,8 @@ function RegistryConfig() {
             placeholder="dep_xyz"
           />
         </label>
-        <button
-          className="btn flex items-center gap-1"
+        <Button
+          className="flex items-center gap-1"
           onClick={() => deptInput && void load(deptInput)}
           disabled={pending}
         >
@@ -170,20 +172,20 @@ function RegistryConfig() {
             <RefreshCcw className="w-4 h-4" />
           )}{" "}
           Обновить
-        </button>
+        </Button>
       </div>
       {cfg && !editing && (
         <div className="flex flex-col gap-2">
           <div className="text-sm">
             <span className="text-dim">is_enabled:</span>{" "}
             <span className="mono">{String(cfg.is_enabled)}</span>{" "}
-            <button
-              className="btn btn-ghost text-xs"
+            <Button variant="ghost"
+              className="text-xs"
               onClick={toggle}
               disabled={busyToggle}
             >
               {busyToggle ? <Loader2 className="w-3 h-3 animate-spin inline" /> : "переключить"}
-            </button>
+            </Button>
           </div>
           <div className="text-sm">
             <span className="text-dim">pull_policy:</span>{" "}
@@ -198,21 +200,20 @@ function RegistryConfig() {
             <span className="mono">{cfg.push_user_ids.join(", ") || "—"}</span>
           </div>
           <div className="flex gap-2 mt-2">
-            <button
-              className="btn"
+            <Button
               onClick={() => setEditing(true)}
               disabled={busyDelete || busyToggle}
             >
               Изменить
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               onClick={remove}
               disabled={busyDelete}
             >
               {busyDelete && <Loader2 className="w-4 h-4 animate-spin" />}
               Удалить конфиг
-            </button>
+            </Button>
           </div>
           <div className="text-[11px] text-dim mt-2">
             «Изменить» отправляет `PATCH /docker/registry/{"{dept}"}` с
@@ -234,14 +235,14 @@ function RegistryConfig() {
       {missing && (
         <div className="text-sm text-dim flex items-center gap-2">
           Конфига нет для этого отдела.
-          <button
-            className="btn btn-primary flex items-center gap-1"
+          <Button variant="primary"
+            className="flex items-center gap-1"
             onClick={create}
             disabled={busyCreate || !deptInput}
           >
             {busyCreate && <Loader2 className="w-4 h-4 animate-spin" />}
             Создать (pull_policy=all)
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -293,8 +294,7 @@ function RegistryEditor({
   return (
     <div className="flex flex-col gap-3">
       <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={isEnabled}
           onChange={(e) => setIsEnabled(e.target.checked)}
         />
@@ -334,16 +334,16 @@ function RegistryEditor({
         />
       </label>
       <div className="flex gap-2 justify-end">
-        <button className="btn" onClick={onCancel} disabled={busy}>
+        <Button onClick={onCancel} disabled={busy}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary flex items-center gap-1"
+        </Button>
+        <Button variant="primary"
+          className="flex items-center gap-1"
           onClick={save}
           disabled={busy}
         >
           {busy && <Loader2 className="w-4 h-4 animate-spin" />} Сохранить
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -423,13 +423,12 @@ function TokenIssuer() {
         </label>
       </div>
       <div className="mt-3">
-        <button
-          className="btn btn-primary"
+        <Button variant="primary"
           onClick={submit}
           disabled={pending || !username || !password}
         >
           Получить
-        </button>
+        </Button>
       </div>
       {result && (
         <div className="mt-3">
@@ -477,20 +476,20 @@ function CertsAndJwks() {
         <FileText className="w-4 h-4 text-accent" /> Сертификаты и JWKS
       </h3>
       <div className="flex gap-2 mb-3">
-        <button
-          className="btn flex items-center gap-1"
+        <Button
+          className="flex items-center gap-1"
           onClick={loadCerts}
           disabled={pendingPem}
         >
           GET /docker/certs
-        </button>
-        <button
-          className="btn flex items-center gap-1"
+        </Button>
+        <Button
+          className="flex items-center gap-1"
           onClick={loadJwks}
           disabled={pendingJwks}
         >
           GET /docker/jwks
-        </button>
+        </Button>
       </div>
       {pem && (
         <div className="mb-3">

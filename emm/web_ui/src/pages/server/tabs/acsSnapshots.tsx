@@ -14,7 +14,6 @@
  * обе кнопки.
  */
 import { useMemo, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { AlertCircle, Camera, Plus, RotateCcw } from "lucide-react";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -30,6 +29,8 @@ import {
 } from "@/api/server/acsSnapshots";
 import { listOsVersions } from "@/api/server/osVersions";
 import type { AcsSnapshot, OsVersion, Server } from "@/api/server/types";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 
 interface Props {
   serverId: string;
@@ -139,12 +140,12 @@ export function AcsSnapshotsTab({ serverId, server }: Props) {
           <h3 className="font-semibold text-base flex items-center gap-2">
             <Camera className="w-4 h-4 text-accent" /> Снимки ACS
           </h3>
-          <button
-            className="btn btn-sm btn-primary flex items-center gap-1"
+          <Button variant="primary" size="sm"
+            className="flex items-center gap-1"
             onClick={() => setCreateOpen(true)}
           >
             <Plus className="w-3.5 h-3.5" /> Создать снимок
-          </button>
+          </Button>
         </div>
 
         <p className="text-xs text-dim mb-3">
@@ -159,9 +160,9 @@ export function AcsSnapshotsTab({ serverId, server }: Props) {
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1 text-xs">
               <div>{apiErrMsg(snapsQ.error, "Список снимков не загрузился")}</div>
-              <button className="btn btn-ghost mt-2" onClick={() => snapsQ.refetch()}>
+              <Button variant="ghost" className="mt-2" onClick={() => snapsQ.refetch()}>
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         ) : snapshots.length === 0 ? (
@@ -215,13 +216,13 @@ function SnapshotRow({
           версия: {snap.version_name}
         </div>
       </div>
-      <button
-        className="btn btn-sm btn-danger flex items-center gap-1 shrink-0"
+      <Button variant="danger" size="sm"
+        className="flex items-center gap-1 shrink-0"
         title="Восстановить сервер из этого снимка (полная перезапись диска)"
         onClick={() => onRestore(snap)}
       >
         <RotateCcw className="w-3.5 h-3.5" /> Восстановить
-      </button>
+      </Button>
     </div>
   );
 }
@@ -254,55 +255,45 @@ function CreateSnapshotModal({
   }
 
   return (
-    <Dialog.Root open onOpenChange={(next) => !next && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal-content" aria-describedby={undefined}>
-          <div className="modal-header">
-            <Camera className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold">
-              Новый снимок ACS
-            </Dialog.Title>
+    <Modal
+      open
+      onOpenChange={(next) => !next && onClose()}
+      title="Новый снимок ACS"
+      icon={<Camera className="w-5 h-5 text-accent" />}
+    >
+      <form onSubmit={submit}>
+        <div className="flex flex-col gap-3">
+          <div className="text-xs text-dim">
+            Снимок именуется по версии каталога ОС — она же используется при
+            восстановлении, чтобы найти нужный образ.
           </div>
-          <form onSubmit={submit}>
-            <div className="modal-body flex flex-col gap-3">
-              <div className="text-xs text-dim">
-                Снимок именуется по версии каталога ОС — она же используется
-                при восстановлении, чтобы найти нужный образ.
-              </div>
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-dim text-xs">Версия ОС *</span>
-                {versionsLoading ? (
-                  <div className="text-xs text-dim">Загрузка каталога…</div>
-                ) : (
-                  <Dropdown
-                    mode="single"
-                    placeholder="— выберите версию —"
-                    options={[
-                      { value: "", label: "— выберите версию —" },
-                      ...versions.map((v) => ({ value: v.id, label: v.name })),
-                    ]}
-                    value={selected}
-                    onChange={setSelected}
-                  />
-                )}
-              </label>
-            </div>
-            <div className="modal-footer">
-              <button type="button" className="btn" onClick={onClose}>
-                Отмена
-              </button>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={!valid || submitting}
-              >
-                {submitting ? "Запускаем…" : "Создать снимок"}
-              </button>
-            </div>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Версия ОС *</span>
+            {versionsLoading ? (
+              <div className="text-xs text-dim">Загрузка каталога…</div>
+            ) : (
+              <Dropdown
+                mode="single"
+                placeholder="— выберите версию —"
+                options={[
+                  { value: "", label: "— выберите версию —" },
+                  ...versions.map((v) => ({ value: v.id, label: v.name })),
+                ]}
+                value={selected}
+                onChange={setSelected}
+              />
+            )}
+          </label>
+        </div>
+        <div className="modal-footer -mx-5 -mb-5 mt-4">
+          <Button type="button" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button variant="primary" type="submit" disabled={!valid || submitting}>
+            {submitting ? "Запускаем…" : "Создать снимок"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

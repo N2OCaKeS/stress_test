@@ -23,6 +23,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Stat, TextStatusBadge, type BadgeKind } from "./_shared";
+import { Button } from "@/components/ui/Button";
 
 export type TestCategory = "filesystem" | "database" | "network" | "security" | "stress" | "other";
 export type TestReadiness = "ready" | "draft" | "blocked";
@@ -126,26 +127,29 @@ export function TestsWorkzone() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button
+        <Button
           type="button"
-          className={`btn btn-sm ${category === "all" ? "btn-primary" : ""}`}
+          size="sm"
+          variant={category === "all" ? "primary" : "default"}
           onClick={() => setCategory("all")}
         >
           Все · {TEST_CATALOG.length}
-        </button>
+        </Button>
         {(Object.keys(CATEGORY_META) as TestCategory[]).map((cat) => {
           const meta = CATEGORY_META[cat];
           const Icon = meta.icon;
           return (
-            <button
+            <Button
               key={cat}
               type="button"
-              className={`btn btn-sm inline-flex items-center gap-1.5 ${category === cat ? "btn-primary" : ""}`}
+              size="sm"
+              variant={category === cat ? "primary" : "default"}
+              className="inline-flex items-center gap-1.5"
               onClick={() => setCategory(cat)}
             >
               <Icon className="w-3.5 h-3.5" />
               {meta.label} · {categoryCounts.get(cat) ?? 0}
-            </button>
+            </Button>
           );
         })}
       </div>

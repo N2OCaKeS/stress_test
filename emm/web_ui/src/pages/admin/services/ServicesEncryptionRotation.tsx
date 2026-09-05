@@ -48,6 +48,8 @@ import * as secretEnc from "@/api/secret/encryptionAdmin";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 // Интервал поллинга прогресса во время активной миграции.
 const POLL_MS = 4000;
@@ -214,14 +216,14 @@ export function ServicesEncryptionRotation() {
             <KeyRound className="w-4 h-4 text-accent" /> Ротация ключей шифрования
           </h3>
           {isAccountAdmin && (
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               disabled={bulkBusy || mockMode}
               onClick={rotateAll}
               title="Последовательно перевыпустить ключ server и secret"
             >
               <RotateCw className="w-4 h-4" /> Перевыпустить всё
-            </button>
+            </Button>
           )}
         </div>
         <div className="mt-2 text-xs text-dim">
@@ -511,25 +513,25 @@ function ServiceRotationCard({
         </h3>
         <div className="flex items-center gap-2">
           {status && (
-            <span className="badge" title="активная версия ключа">
+            <Badge title="активная версия ключа">
               активна v{status.activeVersion}
-            </span>
+            </Badge>
           )}
           {status?.forceActive && (
-            <span className="badge badge-warn" title="сервис заблокирован на время перешифровки">
+            <Badge kind="warn" title="сервис заблокирован на время перешифровки">
               force
-            </span>
+            </Badge>
           )}
           {migrating ? (
             stale ? (
-              <span className="badge" title="прогресс не двигается — дошифровка идёт в фоне">
+              <Badge title="прогресс не двигается — дошифровка идёт в фоне">
                 в фоне
-              </span>
+              </Badge>
             ) : (
-              <span className="badge badge-warn">миграция</span>
+              <Badge kind="warn">миграция</Badge>
             )
           ) : (
-            status && <span className="badge badge-ok">в норме</span>
+            status && <Badge kind="ok">в норме</Badge>
           )}
         </div>
       </div>
@@ -607,14 +609,14 @@ function ServiceRotationCard({
                 ({status.migratedPct}%, осталось legacy {status.remainingLegacy}).
                 Это нормально: оставшиеся строки дошифруются фоновой задачей, после
                 чего старые версии выведутся автоматически.
-                <button
-                  className="btn btn-ghost flex items-center gap-1 mt-2"
+                <Button variant="ghost"
+                  className="flex items-center gap-1 mt-2"
                   disabled={busy}
                   onClick={manualRefresh}
                   title="Проверить прогресс заново"
                 >
                   <RefreshCw className="w-3.5 h-3.5" /> Обновить
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -638,14 +640,14 @@ function ServiceRotationCard({
                     <div className="flex items-center gap-2">
                       <span className="mono">v{v}</span>
                       {isActive && (
-                        <span className="badge badge-ok">активна</span>
+                        <Badge kind="ok">активна</Badge>
                       )}
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-dim">{count} строк</span>
                       {!isActive && (
-                        <button
-                          className="btn btn-danger flex items-center gap-1"
+                        <Button variant="danger"
+                          className="flex items-center gap-1"
                           disabled={busy || !canRetire}
                           title={
                             canRetire
@@ -656,7 +658,7 @@ function ServiceRotationCard({
                         >
                           <Archive className="w-3.5 h-3.5" />
                           {retiringVersion === v ? "…" : "Вывести"}
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </div>
@@ -704,10 +706,9 @@ function ServiceRotationCard({
               : "Сервис блокируется (503) до конца полной перешифровки. Только при подозрении на утечку ключа."}
           </div>
         </div>
-        <button
-          className={`btn flex items-center gap-1 ${
-            mode === "force" ? "btn-danger" : "btn-primary"
-          }`}
+        <Button
+          variant={mode === "force" ? "danger" : "primary"}
+          className="flex items-center gap-1"
           disabled={busy || mockMode}
           onClick={() => void doRotate()}
         >
@@ -717,7 +718,7 @@ function ServiceRotationCard({
             : mode === "force"
               ? "Перевыпустить (force)"
               : "Перевыпустить ключ"}
-        </button>
+        </Button>
       </div>
     </div>
   );

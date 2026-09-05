@@ -58,6 +58,8 @@ import {
   EditRolesForm,
   Modal,
 } from "./_userActions";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Dept-scoped Users screen for department_admin (и любой не-account_admin).
@@ -472,14 +474,14 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                     };
             return (
               <>
-                <button
-                  className="btn btn-primary w-full flex items-center justify-center gap-2"
+                <Button variant="primary"
+                  className="w-full flex items-center justify-center gap-2"
                   disabled={!cfg.allowed}
                   title={cfg.allowed ? undefined : cfg.reason}
                   onClick={() => setCreateOpen(true)}
                 >
                   {cfg.icon} {cfg.label}
-                </button>
+                </Button>
                 <div className="text-[10px] text-dim mt-1 text-center">
                   {cfg.hint}
                 </div>
@@ -500,12 +502,12 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                 {targetUser ? formatFio(targetUser) : "—"}
               </h1>
               {targetUser && (
-                <span className={`badge badge-${userStatusBadgeKind(targetUser.status)}`}>
+                <Badge kind={userStatusBadgeKind(targetUser.status)}>
                   {normalizeUserStatus(targetUser.status)}
-                </span>
+                </Badge>
               )}
               {targetUser?.platform_role && (
-                <span className="badge badge-accent">{targetUser.platform_role}</span>
+                <Badge kind="accent">{targetUser.platform_role}</Badge>
               )}
             </div>
             <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
@@ -535,16 +537,16 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               disabled={!caps.edit || busy !== null || !targetUser}
               title={caps.edit ? undefined : caps.reason}
               onClick={handleResetPassword}
             >
               <KeyRound className="w-4 h-4" /> Сбросить пароль
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={!caps.disable || busy !== null || !targetUser || isSelfTarget}
               title={
                 isSelfTarget
@@ -556,15 +558,15 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
               onClick={handleBlock}
             >
               <Pause className="w-4 h-4" /> Заблокировать
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={!caps.disable || busy !== null || !targetUser}
               title={caps.disable ? undefined : caps.reason}
               onClick={handleRevokeSessions}
             >
               <LogOut className="w-4 h-4" /> Завершить сессии
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -607,9 +609,9 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                     <StatRow
                       k="status"
                       v={
-                        <span className={`badge badge-${userStatusBadgeKind(targetUser.status)}`}>
+                        <Badge kind={userStatusBadgeKind(targetUser.status)}>
                           {normalizeUserStatus(targetUser.status)}
-                        </span>
+                        </Badge>
                       }
                     />
                     <StatRow
@@ -633,11 +635,11 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                 <div className="text-sm">
                   {targetUser?.platform_role ? (
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="badge badge-accent">{targetUser.platform_role}</span>
+                      <Badge kind="accent">{targetUser.platform_role}</Badge>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="badge">user</span>
+                      <Badge>user</Badge>
                       <span className="text-xs text-dim">
                         — обычный пользователь без платформенных прав
                       </span>
@@ -656,14 +658,14 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                 <div className="text-sm text-dim italic">
                   Сервис-роли подтянутся из API (endpoint ещё не подключён к этому экрану).
                 </div>
-                <button
-                  className="btn mt-3 w-full flex items-center justify-center gap-2"
+                <Button
+                  className="mt-3 w-full flex items-center justify-center gap-2"
                   disabled={!caps.manageRoles || !targetUser}
                   title={caps.manageRoles ? undefined : caps.reason}
                   onClick={() => setEditRolesOpen(true)}
                 >
                   <UserPlus className="w-4 h-4" /> Добавить роль
-                </button>
+                </Button>
               </div>
             </>
           )}
@@ -702,14 +704,14 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                           {formatMskShort(s.last_used_at)}
                         </td>
                         <td>
-                          <button
-                            className="btn btn-danger text-xs"
+                          <Button variant="danger"
+                            className="text-xs"
                             disabled={!caps.disable || !targetUser}
                             title={caps.disable ? undefined : caps.reason}
                             onClick={() => handleSessionRevoke(s.session_id)}
                           >
                             отозвать
-                          </button>
+                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -765,9 +767,9 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                           <BotDeptCell deptId={b.department_id} />
                         </td>
                         <td>
-                          <span className={`badge badge-${b.status === "active" ? "ok" : "warn"}`}>
+                          <Badge kind={b.status === "active" ? "ok" : "warn"}>
                             {b.status}
-                          </span>
+                          </Badge>
                         </td>
                         <td className="text-dim text-xs">{formatMskDate(b.created_at)}</td>
                       </tr>
@@ -901,14 +903,14 @@ function UserRowItem({
         <div className="flex-1 min-w-0">
           <div className="text-sm truncate flex items-center gap-2">
             <span>{formatFio(user)}</span>
-            {user.platform_role && <span className="badge">{user.platform_role}</span>}
-            {isSelf && <span className="badge badge-accent">вы</span>}
+            {user.platform_role && <Badge>{user.platform_role}</Badge>}
+            {isSelf && <Badge kind="accent">вы</Badge>}
           </div>
           <div className="text-[11px] text-dim flex items-center gap-2">
             <span className="mono truncate max-w-[160px]">{user.username}</span>
           </div>
         </div>
-        <span className={`badge badge-${userStatusBadgeKind(status)}`}>{status}</span>
+        <Badge kind={userStatusBadgeKind(status)}>{status}</Badge>
       </div>
     </button>
   );
@@ -960,7 +962,7 @@ function GroupAsideRow({ group }: { group: ApiGroup }) {
       <div className="flex-1 min-w-0">
         <div className="text-sm truncate flex items-center gap-2">
           <span>{group.name}</span>
-          <span className="badge">{dept}</span>
+          <Badge>{dept}</Badge>
         </div>
         <div className="text-[11px] text-dim truncate">
           {group.description ?? group.name}
@@ -981,9 +983,9 @@ function BotAsideRow({ bot }: { bot: ApiBot }) {
           {dept} · {formatMskDate(bot.created_at)}
         </div>
       </div>
-      <span className={`badge badge-${bot.status === "active" ? "ok" : "warn"}`}>
+      <Badge kind={bot.status === "active" ? "ok" : "warn"}>
         {bot.status}
-      </span>
+      </Badge>
     </div>
   );
 }
@@ -1089,9 +1091,9 @@ function UsersDepAdminMock() {
                       <div className="text-sm truncate flex items-center gap-2">
                         <span>{g.name}</span>
                         {g.cross_dept ? (
-                          <span className="badge badge-warn">cross</span>
+                          <Badge kind="warn">cross</Badge>
                         ) : (
-                          <span className="badge">{g.owner_dept}</span>
+                          <Badge>{g.owner_dept}</Badge>
                         )}
                       </div>
                       <div className="text-[11px] text-dim truncate">{g.description}</div>
@@ -1115,9 +1117,9 @@ function UsersDepAdminMock() {
                       <div className="text-sm truncate mono">{b.name}</div>
                       <div className="text-[11px] text-dim">{formatMskDate(b.last_used)}</div>
                     </div>
-                    <span className={`badge badge-${b.token_status === "active" ? "ok" : b.token_status === "rotated" ? "warn" : "danger"}`}>
+                    <Badge kind={b.token_status === "active" ? "ok" : b.token_status === "rotated" ? "warn" : "danger"}>
                       {b.token_status}
-                    </span>
+                    </Badge>
                   </div>
                 </Link>
               ))}
@@ -1153,14 +1155,14 @@ function UsersDepAdminMock() {
                     };
             return (
               <>
-                <button
-                  className="btn btn-primary w-full flex items-center justify-center gap-2"
+                <Button variant="primary"
+                  className="w-full flex items-center justify-center gap-2"
                   disabled={!cfg.allowed}
                   title={cfg.allowed ? undefined : cfg.reason}
                   onClick={() => setCreateOpen(true)}
                 >
                   {cfg.icon} {cfg.label}
-                </button>
+                </Button>
                 <div className="text-[10px] text-dim mt-1 text-center">
                   {cfg.hint}
                 </div>
@@ -1178,8 +1180,8 @@ function UsersDepAdminMock() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-semibold truncate">dave</h1>
-              <span className="badge badge-ok">active</span>
-              <span className="badge">user</span>
+              <Badge kind="ok">active</Badge>
+              <Badge>user</Badge>
             </div>
             <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
               <span className="flex items-center gap-1">
@@ -1198,30 +1200,30 @@ function UsersDepAdminMock() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               disabled={!caps.edit || !targetUser}
               title={caps.edit ? undefined : caps.reason}
               onClick={() => toast.info("mock: reset-password")}
             >
               <KeyRound className="w-4 h-4" /> Сбросить пароль
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={!caps.disable || !targetUser}
               title={caps.disable ? undefined : caps.reason}
               onClick={() => toast.info("mock: disable")}
             >
               <Pause className="w-4 h-4" /> Заблокировать
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={!caps.disable || !targetUser}
               title={caps.disable ? undefined : caps.reason}
               onClick={() => toast.info("mock: revoke-sessions")}
             >
               <LogOut className="w-4 h-4" /> Завершить сессии
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -1257,7 +1259,7 @@ function UsersDepAdminMock() {
                 <div>
                   <StatRow k="created_at" v="2026-01-22 14:48" />
                   <StatRow k="created_by" v={<span className="mono">alice</span>} />
-                  <StatRow k="status" v={<span className="badge badge-ok">active</span>} />
+                  <StatRow k="status" v={<Badge kind="ok">active</Badge>} />
                   <StatRow k="must_change_password" v={<span className="text-dim">нет</span>} />
                 </div>
               </div>
@@ -1272,7 +1274,7 @@ function UsersDepAdminMock() {
                 </div>
                 <div className="text-sm">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="badge">user</span>
+                    <Badge>user</Badge>
                     <span className="text-xs text-dim">
                       — обычный пользователь без платформенных прав
                     </span>
@@ -1295,17 +1297,17 @@ function UsersDepAdminMock() {
                       <span className="text-xs text-dim">·</span>
                       <span className="text-xs">Ядро DBOS</span>
                     </div>
-                    <span className="badge badge-accent">logging-reader</span>
+                    <Badge kind="accent">logging-reader</Badge>
                   </div>
                 </div>
-                <button
-                  className="btn mt-3 w-full flex items-center justify-center gap-2"
+                <Button
+                  className="mt-3 w-full flex items-center justify-center gap-2"
                   disabled={!caps.manageRoles || !targetUser}
                   title={caps.manageRoles ? undefined : caps.reason}
                   onClick={() => setEditRolesOpen(true)}
                 >
                   <UserPlus className="w-4 h-4" /> Добавить роль
-                </button>
+                </Button>
               </div>
             </>
           )}
@@ -1336,14 +1338,14 @@ function UsersDepAdminMock() {
                       <span className="text-ok">активна</span>
                     </td>
                     <td>
-                      <button
-                        className="btn btn-danger text-xs"
+                      <Button variant="danger"
+                        className="text-xs"
                         disabled={!caps.disable || !targetUser}
                         title={caps.disable ? undefined : caps.reason}
                         onClick={() => toast.info("mock: revoke-session")}
                       >
                         отозвать
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 </tbody>
@@ -1490,7 +1492,7 @@ function RowItem({ row }: { row: Row }) {
         <div className="flex-1 min-w-0">
           <div className="text-sm truncate flex items-center gap-2">
             <span className={row.isBot ? "mono" : ""}>{row.name}</span>
-            {row.role && <span className="badge">{row.role.label}</span>}
+            {row.role && <Badge>{row.role.label}</Badge>}
           </div>
           <div className="text-[11px] text-dim flex items-center gap-2">
             <span>{row.dept}</span>
@@ -1498,7 +1500,7 @@ function RowItem({ row }: { row: Row }) {
             <span>{row.lastSeen}</span>
           </div>
         </div>
-        <span className={`badge badge-${row.status.kind}`}>{row.status.label}</span>
+        <Badge kind={row.status.kind}>{row.status.label}</Badge>
       </div>
     </Link>
   );

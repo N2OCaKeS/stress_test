@@ -23,6 +23,7 @@ import { USERS } from "@/mocks/auth";
 import { SERVERS } from "@/mocks/server";
 import { CREDENTIALS } from "@/mocks/secret";
 import { TASKS } from "@/mocks/worker";
+import { Badge } from "@/components/ui/Badge";
 import { AUDIT_EVENTS } from "@/mocks/log";
 import { listUsers, listUsersByDepartment } from "@/api/auth/users";
 import { listGroups, listGroupsByDepartment } from "@/api/auth/groups";
@@ -407,9 +408,9 @@ export function HomeDepAdmin() {
                       {row.req}
                     </div>
                   </div>
-                  <span className={`badge badge-${row.badgeKind}`}>
+                  <Badge kind={row.badgeKind}>
                     {row.badge}
-                  </span>
+                  </Badge>
                 </div>
               ))}
             </div>

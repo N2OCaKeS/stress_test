@@ -15,6 +15,7 @@ import { AUDIT_EVENTS } from "@/mocks/log";
 import { useMockMode } from "@/api/auth/useQuery";
 import { RecentAuditEvents } from "./widgets/RecentAuditEvents";
 import { ServicesHealth } from "./widgets/ServicesHealth";
+import { Badge } from "@/components/ui/Badge";
 
 /**
  * Logging-admin Home.
@@ -218,7 +219,7 @@ export function HomeLoggingAdmin() {
             <div className="card">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold">Live audit-фид</h3>
-                <span className="badge badge-ok">streaming</span>
+                <Badge kind="ok">streaming</Badge>
               </div>
               <div className="text-sm">
                 {LIVE_FEED.map((row) => (
@@ -234,9 +235,9 @@ export function HomeLoggingAdmin() {
                         {row.req}
                       </div>
                     </div>
-                    <span className={`badge badge-${row.badgeKind}`}>
+                    <Badge kind={row.badgeKind}>
                       {row.badge}
-                    </span>
+                    </Badge>
                   </div>
                 ))}
               </div>

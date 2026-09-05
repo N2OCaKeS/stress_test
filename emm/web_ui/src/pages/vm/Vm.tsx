@@ -12,7 +12,6 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import * as Dialog from "@radix-ui/react-dialog";
 import {
   AlertCircle,
   AlertTriangle,
@@ -101,6 +100,10 @@ import {
 } from "@/mocks/vm";
 import type { EntityRef } from "@/pages/server/tabs/_entity";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Modal as UIModal } from "@/components/ui/Modal";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 const NETWORK_MODE_OPTIONS: DropdownOption[] = [
   { value: "bridge", label: "bridge (static IP из пула)" },
@@ -319,9 +322,9 @@ export function Vm() {
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1 text-xs">
               <div>{apiErrMsg(hubsAndVmsQ.error, "Список хабов не загрузился")}</div>
-              <button className="btn btn-ghost mt-2" onClick={() => hubsAndVmsQ.refetch()}>
+              <Button variant="ghost" className="mt-2" onClick={() => hubsAndVmsQ.refetch()}>
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -447,9 +450,9 @@ function ByNumberLookup({ onResolve }: { onResolve: (n: number) => void }) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
       />
-      <button type="submit" className="btn btn-sm" title="Перейти по номеру">
+      <Button size="sm" type="submit" title="Перейти по номеру">
         →
-      </button>
+      </Button>
     </form>
   );
 }
@@ -480,9 +483,9 @@ function HubRow({
           <span className="mono">{hub.ip_address}</span>
         </div>
       </div>
-      <span className="badge" title="ВМ на хабе">
+      <Badge title="ВМ на хабе">
         {hub.vm_count} ВМ
-      </span>
+      </Badge>
     </button>
   );
 }
@@ -577,7 +580,7 @@ function HubDetail({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl font-semibold truncate">{name}</h1>
-            <span className="badge badge-ok">VMS-hub</span>
+            <Badge kind="ok">VMS-hub</Badge>
           </div>
           <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
             <span className="mono">{hub.ip_address}</span>
@@ -591,20 +594,20 @@ function HubDetail({
         </div>
         {canManage && (
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               onClick={handleCreateDefaults}
               disabled={pending}
               title="Развернуть стандартные ВМ из пресетов отдела"
             >
               <Rocket className="w-4 h-4" /> Развернуть стандартные ВМ
-            </button>
-            <button
-              className="btn btn-primary flex items-center gap-1"
+            </Button>
+            <Button variant="primary"
+              className="flex items-center gap-1"
               onClick={onCreate}
             >
               <Plus className="w-4 h-4" /> Создать ВМ
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -650,7 +653,7 @@ function HubDetail({
                       {v.os_version ?? "—"} · <span className="text-dim">{v.box}</span>
                     </td>
                     <td className="px-3 py-1.5 text-xs">
-                      <span className="badge">{v.network_mode}</span>{" "}
+                      <Badge>{v.network_mode}</Badge>{" "}
                       <span className="mono">{v.ip_address ?? "—"}</span>
                     </td>
                     <td className="px-3 py-1.5 text-xs mono text-dim">
@@ -674,9 +677,9 @@ function HubDetail({
 }
 
 function PowerBadge({ state }: { state: Vm["power_state"] }) {
-  if (state === "on") return <span className="badge badge-ok">on</span>;
-  if (state === "off") return <span className="badge badge-danger">off</span>;
-  return <span className="badge">unknown</span>;
+  if (state === "on") return <Badge kind="ok">on</Badge>;
+  if (state === "off") return <Badge kind="danger">off</Badge>;
+  return <Badge>unknown</Badge>;
 }
 
 // ── VM detail (вкладки) ──────────────────────────────────────────────────────
@@ -943,13 +946,13 @@ export function CreateVmPane({
       <section className="flex-1 min-w-0 overflow-y-auto">
         <div className="p-5 w-full max-w-2xl">
           <div className="flex items-center gap-2 mb-4">
-            <button
-              className="btn btn-ghost flex items-center gap-1"
+            <Button variant="ghost"
+              className="flex items-center gap-1"
               onClick={onCancel}
               type="button"
             >
               <ArrowLeft className="w-4 h-4" /> К хабу
-            </button>
+            </Button>
             <div className="text-sm text-dim">
               Результат создания {results.length} ВМ
             </div>
@@ -975,26 +978,25 @@ export function CreateVmPane({
                       ? (r.error ?? "не удалось")
                       : `задача ${r.task_id ?? "поставлена"}`}
                   </span>
-                  <span className={`badge ${failed ? "badge-danger" : "badge-ok"}`}>
+                  <Badge kind={failed ? "danger" : "ok"}>
                     {failed ? "ошибка" : "создана"}
-                  </span>
+                  </Badge>
                 </div>
               );
             })}
           </div>
           <div className="flex items-center gap-2 mt-4">
-            <button className="btn btn-primary" onClick={onCancel}>
+            <Button variant="primary" onClick={onCancel}>
               Готово
-            </button>
-            <button
-              className="btn"
+            </Button>
+            <Button
               onClick={() => {
                 setResults(null);
                 setBlocks([newVmBlock(defaultBox)]);
               }}
             >
               Создать ещё
-            </button>
+            </Button>
           </div>
         </div>
       </section>
@@ -1005,13 +1007,13 @@ export function CreateVmPane({
     <section className="flex-1 min-w-0 overflow-y-auto">
       <div className="p-5 w-full max-w-2xl">
         <div className="flex items-center gap-2 mb-4">
-          <button
-            className="btn btn-ghost flex items-center gap-1"
+          <Button variant="ghost"
+            className="flex items-center gap-1"
             onClick={onCancel}
             type="button"
           >
             <ArrowLeft className="w-4 h-4" /> Назад
-          </button>
+          </Button>
           <div className="text-sm text-dim">
             Создание ВМ на хабе <b>{hub.display_name ?? hub.hostname}</b> ·
             блоков: {blocks.length}
@@ -1039,20 +1041,19 @@ export function CreateVmPane({
         </div>
 
         <div className="flex items-center gap-2 mt-4 flex-wrap">
-          <button
+          <Button
             type="button"
-            className="btn flex items-center gap-1"
+            className="flex items-center gap-1"
             onClick={addBlock}
           >
             <Plus className="w-4 h-4" /> Добавить ВМ
-          </button>
+          </Button>
           <div className="flex-1" />
-          <button type="button" className="btn" onClick={onCancel}>
+          <Button type="button" onClick={onCancel}>
             Отмена
-          </button>
-          <button
+          </Button>
+          <Button variant="primary"
             type="button"
-            className="btn btn-primary"
             disabled={!allValid || submitting}
             onClick={submitAll}
           >
@@ -1061,7 +1062,7 @@ export function CreateVmPane({
               : blocks.length > 1
                 ? `Создать все (${blocks.length})`
                 : "Создать все"}
-          </button>
+          </Button>
         </div>
       </div>
     </section>
@@ -1109,7 +1110,7 @@ function VmBlockForm({
           className="w-full text-left px-3 py-2 flex items-center gap-2 hover-bg"
         >
           <ChevronRight className="w-4 h-4 text-dim shrink-0" />
-          <span className="badge shrink-0">ВМ {index + 1}</span>
+          <Badge className="shrink-0">ВМ {index + 1}</Badge>
           <span className="text-sm font-medium truncate">
             {block.name.trim() || "(без имени)"}
           </span>
@@ -1127,15 +1128,15 @@ function VmBlockForm({
   return (
     <div className="surface-2 border border-token rounded">
       <div className="px-3 py-2 flex items-center gap-2 border-b border-token">
-        <button
+        <Button variant="ghost" size="sm"
           type="button"
           onClick={onToggle}
-          className="btn btn-ghost btn-sm flex items-center"
+          className="flex items-center"
           title="Свернуть блок"
         >
           <ChevronDown className="w-4 h-4" />
-        </button>
-        <span className="badge shrink-0">ВМ {index + 1}</span>
+        </Button>
+        <Badge className="shrink-0">ВМ {index + 1}</Badge>
         <span className="text-sm font-medium truncate flex-1">
           {block.name.trim() || "Новая ВМ"}
         </span>
@@ -1145,14 +1146,14 @@ function VmBlockForm({
           <AlertTriangle className="w-4 h-4 text-warn shrink-0" />
         )}
         {canRemove && (
-          <button
+          <Button variant="ghost" size="sm"
             type="button"
-            className="btn btn-ghost btn-sm text-danger flex items-center"
+            className="text-danger flex items-center"
             onClick={onRemove}
             title="Убрать блок"
           >
             <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          </Button>
         )}
       </div>
 
@@ -1227,14 +1228,14 @@ function VmBlockForm({
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs flex items-center justify-between">
             <span>Образ (каталог) *</span>
-            <button
+            <Button variant="ghost" size="sm"
               type="button"
-              className="btn btn-ghost btn-sm flex items-center gap-1"
+              className="flex items-center gap-1"
               onClick={() => onRefreshImages()}
               title="Перечитать каталог образов с FTP"
             >
               <RefreshCw className="w-3 h-3" /> Обновить каталог
-            </button>
+            </Button>
           </span>
           <Dropdown
             mode="single"
@@ -1308,8 +1309,7 @@ function VmBlockForm({
 
         <div className="grid grid-cols-2 gap-3">
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={block.autostart}
               onChange={(e) => onPatch({ autostart: e.target.checked })}
             />
@@ -1388,14 +1388,13 @@ function AccountMultiSelect({
               key={a.id}
               className="flex items-center gap-2 px-2 py-1 text-sm hover-bg cursor-pointer"
             >
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={selected.includes(a.id)}
                 onChange={() => toggle(a.id)}
               />
               <span className="font-medium">{a.login}</span>
               {a.has_sudo && (
-                <span className="badge text-[11px]">sudo</span>
+                <Badge className="text-[11px]">sudo</Badge>
               )}
               <span className="text-[11px] text-dim truncate">
                 {a.unix_groups.join(", ")}
@@ -1644,12 +1643,12 @@ function IpPoolsPane({ mock }: { mock: boolean }) {
             override на конкретный хаб.
           </div>
         </div>
-        <button
-          className="btn btn-primary flex items-center gap-1"
+        <Button variant="primary"
+          className="flex items-center gap-1"
           onClick={() => setCreateOpen(true)}
         >
           <Plus className="w-4 h-4" /> Создать пул
-        </button>
+        </Button>
       </div>
 
       <div className="p-5">
@@ -1660,9 +1659,9 @@ function IpPoolsPane({ mock }: { mock: boolean }) {
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1 text-xs">
               <div>{apiErrMsg(poolsQ.error, "Список пулов не загрузился")}</div>
-              <button className="btn btn-ghost mt-2" onClick={() => poolsQ.refetch()}>
+              <Button variant="ghost" className="mt-2" onClick={() => poolsQ.refetch()}>
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         ) : pools.length === 0 ? (
@@ -1698,25 +1697,25 @@ function IpPoolsPane({ mock }: { mock: boolean }) {
                     <td className="px-3 py-1.5 text-xs">
                       {p.department_id}
                       {p.server_id ? (
-                        <span className="badge ml-1 text-[11px]">хаб {p.server_id}</span>
+                        <Badge className="ml-1 text-[11px]">хаб {p.server_id}</Badge>
                       ) : null}
                     </td>
                     <td className="px-3 py-1.5">
                       <div className="flex items-center gap-1 justify-end">
-                        <button
-                          className="btn btn-sm flex items-center gap-1"
+                        <Button size="sm"
+                          className="flex items-center gap-1"
                           title="Изменить пул"
                           onClick={() => setEditTarget(p)}
                         >
                           <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          className="btn btn-sm btn-danger flex items-center gap-1"
+                        </Button>
+                        <Button variant="danger" size="sm"
+                          className="flex items-center gap-1"
                           title="Удалить пул"
                           onClick={() => handleDelete(p)}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -1916,12 +1915,12 @@ function IpPoolModal({
           </div>
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
+          <Button type="button" onClick={onClose}>
             Отмена
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={!valid || submitting}>
+          </Button>
+          <Button variant="primary" type="submit" disabled={!valid || submitting}>
             {submitting ? "Сохраняем…" : editing ? "Сохранить" : "Создать пул"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -2034,12 +2033,12 @@ function PresetsPane({ mock }: { mock: boolean }) {
             со статикой — один раз глобально, NAT-пресет — один раз на хаб.
           </div>
         </div>
-        <button
-          className="btn btn-primary flex items-center gap-1"
+        <Button variant="primary"
+          className="flex items-center gap-1"
           onClick={() => setCreateOpen(true)}
         >
           <Plus className="w-4 h-4" /> Создать пресет
-        </button>
+        </Button>
       </div>
 
       <div className="p-5">
@@ -2050,9 +2049,9 @@ function PresetsPane({ mock }: { mock: boolean }) {
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1 text-xs">
               <div>{apiErrMsg(presetsQ.error, "Список пресетов не загрузился")}</div>
-              <button className="btn btn-ghost mt-2" onClick={() => presetsQ.refetch()}>
+              <Button variant="ghost" className="mt-2" onClick={() => presetsQ.refetch()}>
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         ) : presets.length === 0 ? (
@@ -2083,7 +2082,7 @@ function PresetsPane({ mock }: { mock: boolean }) {
                       {p.cpu} vCPU · {Math.round(p.ram_mb / 1024)} ГБ · {p.disk_gb} ГБ
                     </td>
                     <td className="px-3 py-1.5 text-xs">
-                      <span className="badge">{p.network_mode}</span>{" "}
+                      <Badge>{p.network_mode}</Badge>{" "}
                       {p.network_mode === "bridge" && (
                         <span className="mono">{p.fixed_ip ?? "авто"}</span>
                       )}
@@ -2094,20 +2093,20 @@ function PresetsPane({ mock }: { mock: boolean }) {
                     <td className="px-3 py-1.5 text-xs">{p.department_id}</td>
                     <td className="px-3 py-1.5">
                       <div className="flex items-center gap-1 justify-end">
-                        <button
-                          className="btn btn-sm flex items-center gap-1"
+                        <Button size="sm"
+                          className="flex items-center gap-1"
                           title="Изменить пресет"
                           onClick={() => setEditTarget(p)}
                         >
                           <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          className="btn btn-sm btn-danger flex items-center gap-1"
+                        </Button>
+                        <Button variant="danger" size="sm"
+                          className="flex items-center gap-1"
                           title="Удалить пресет"
                           onClick={() => handleDelete(p)}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -2325,12 +2324,12 @@ function PresetModal({
           </div>
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
+          <Button type="button" onClick={onClose}>
             Отмена
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={!valid || submitting}>
+          </Button>
+          <Button variant="primary" type="submit" disabled={!valid || submitting}>
             {submitting ? "Сохраняем…" : editing ? "Сохранить" : "Создать пресет"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -2349,22 +2348,9 @@ function Modal({
   children: React.ReactNode;
 }) {
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal-content" aria-describedby={undefined}>
-          <div className="modal-header">
-            <Dialog.Title className="text-base font-semibold">{title}</Dialog.Title>
-          </div>
-          {children}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <UIModal open onOpenChange={(next) => !next && onClose()} title={title}>
+      {children}
+    </UIModal>
   );
 }
 

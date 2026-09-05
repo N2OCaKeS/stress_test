@@ -16,6 +16,7 @@ import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import type { Bot as BotItem, Department } from "@/api/auth/types";
 import { BotDetailFullPanel } from "./_botDetailPanel";
+import { Badge } from "@/components/ui/Badge";
 
 // auth_service режет страницу до 200 (MAX_LIMIT). Тянем ровно столько и честно
 // сигналим баннером, если ботов больше.
@@ -217,18 +218,16 @@ export function BotsAccountAdmin() {
                           <div className="flex-1 min-w-0">
                             <div className="text-sm truncate mono">{row.name}</div>
                             <div className="text-[11px] text-dim flex items-center gap-2">
-                              <span className="badge">
+                              <Badge>
                                 {row.allowed_services.length} svc
-                              </span>
+                              </Badge>
                               <span>·</span>
                               <span>{relativeTime(row.updated_at ?? row.created_at)}</span>
                             </div>
                           </div>
-                          <span
-                            className={`badge ${row.status === "active" ? "badge-ok" : "badge-warn"}`}
-                          >
+                          <Badge kind={row.status === "active" ? "ok" : "warn"}>
                             {row.status}
-                          </span>
+                          </Badge>
                         </div>
                       </button>
                     );

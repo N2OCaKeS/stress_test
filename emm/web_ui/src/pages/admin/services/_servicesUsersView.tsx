@@ -75,6 +75,10 @@ import type {
 } from "@/api/auth/types";
 import { StatRow } from "./_inline";
 import { useDeptLabel, useLabelMaps, useServiceLabel } from "@/lib/labels";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Modal } from "@/components/ui/Modal";
 
 interface Props {
   userId: string;
@@ -190,17 +194,17 @@ export function UserBackendView({
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-semibold truncate">{u.username}</h3>
-                <span className={`badge badge-${userStatusBadgeKind(u.status)}`}>
+                <Badge kind={userStatusBadgeKind(u.status)}>
                   {normalizeUserStatus(u.status)}
-                </span>
-                {u.is_banned && <span className="badge badge-danger">banned</span>}
+                </Badge>
+                {u.is_banned && <Badge kind="danger">banned</Badge>}
                 {u.platform_role && (
-                  <span className="badge badge-accent">{u.platform_role}</span>
+                  <Badge kind="accent">{u.platform_role}</Badge>
                 )}
                 {u.must_change_password && (
-                  <span className="badge badge-warn" title="must_change_password">
+                  <Badge kind="warn" title="must_change_password">
                     pwd!
-                  </span>
+                  </Badge>
                 )}
               </div>
               <div className="text-xs text-dim truncate">
@@ -209,16 +213,16 @@ export function UserBackendView({
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap shrink-0">
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               disabled={!caps.edit || busy !== null}
               title={caps.edit ? undefined : caps.reason}
               onClick={() => onStartEdit?.()}
             >
               <Edit3 className="w-4 h-4" /> Изменить
-            </button>
-            <button
-              className="btn flex items-center gap-1"
+            </Button>
+            <Button
+              className="flex items-center gap-1"
               disabled={!caps.edit || busy !== null}
               title={caps.edit ? undefined : caps.reason}
               onClick={async () => {
@@ -237,28 +241,28 @@ export function UserBackendView({
               }}
             >
               <KeyRound className="w-4 h-4" /> Сброс пароля
-            </button>
+            </Button>
             {normalizeUserStatus(u.status) === "active" ? (
-              <button
-                className="btn btn-danger flex items-center gap-1"
+              <Button variant="danger"
+                className="flex items-center gap-1"
                 disabled={!caps.disable || busy !== null}
                 title={caps.disable ? undefined : caps.reason}
                 onClick={() => run("disable", () => disableUser(u.id))}
               >
                 <Pause className="w-4 h-4" /> Заблокировать
-              </button>
+              </Button>
             ) : (
-              <button
-                className="btn flex items-center gap-1"
+              <Button
+                className="flex items-center gap-1"
                 disabled={!caps.disable || busy !== null}
                 title={caps.disable ? undefined : caps.reason}
                 onClick={() => run("enable", () => enableUser(u.id))}
               >
                 <Play className="w-4 h-4" /> Разблокировать
-              </button>
+              </Button>
             )}
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               disabled={!caps.disable || busy !== null}
               title={
                 caps.disable
@@ -268,11 +272,11 @@ export function UserBackendView({
               onClick={() => run("unlock", () => unlockUser(u.id))}
             >
               <Unlock className="w-4 h-4" /> Сброс lockout
-            </button>
+            </Button>
             {!caps.edit && !caps.disable && !caps.delete && (
-              <span className="badge badge-warn" title={caps.reason}>
+              <Badge kind="warn" title={caps.reason}>
                 Только чтение
-              </span>
+              </Badge>
             )}
           </div>
         </div>
@@ -409,9 +413,9 @@ function ProfileTab({
           <StatRow
             k="status"
             v={
-              <span className={`badge badge-${userStatusBadgeKind(user.status)}`}>
+              <Badge kind={userStatusBadgeKind(user.status)}>
                 {normalizeUserStatus(user.status)}
-              </span>
+              </Badge>
             }
           />
           <StatRow
@@ -457,9 +461,9 @@ function ProfileTab({
         ) : (
           <div className="flex flex-wrap gap-1">
             {perms.allowed_services.map((s) => (
-              <span key={s} className="badge">
+              <Badge key={s}>
                 {s}
-              </span>
+              </Badge>
             ))}
           </div>
         )}
@@ -554,9 +558,9 @@ function RolesTab({
                         <span className="text-dim italic text-xs">—</span>
                       ) : (
                         eff.map((r) => (
-                          <span key={r} className="badge badge-accent">
+                          <Badge kind="accent" key={r}>
                             {r}
-                          </span>
+                          </Badge>
                         ))
                       )}
                     </div>
@@ -567,9 +571,9 @@ function RolesTab({
                     ) : (
                       <div className="flex flex-wrap gap-1">
                         {direct.map((r) => (
-                          <span key={r} className="badge">
+                          <Badge key={r}>
                             {r}
-                          </span>
+                          </Badge>
                         ))}
                       </div>
                     )}
@@ -578,14 +582,13 @@ function RolesTab({
                     {groupOnly.length === 0 ? "—" : groupOnly.join(", ")}
                   </td>
                   <td className="py-2 text-right">
-                    <button
-                      className="btn btn-sm"
+                    <Button size="sm"
                       disabled={!canManage}
                       title={canManage ? "Изменить набор ролей" : capsReason}
                       onClick={() => setEditService(svc)}
                     >
                       <Edit3 className="w-3 h-3 inline" /> Изменить
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               );
@@ -595,14 +598,14 @@ function RolesTab({
       )}
 
       <div className="border-t border-token pt-3">
-        <button
-          className="btn btn-sm flex items-center gap-1"
+        <Button size="sm"
+          className="flex items-center gap-1"
           disabled={!canManage}
           title={canManage ? "Добавить роль в другом сервисе" : capsReason}
           onClick={() => setAssigning(true)}
         >
           <Plus className="w-3 h-3" /> Назначить в другом сервисе
-        </button>
+        </Button>
         {!canManage && (
           <span className="text-xs text-dim italic ml-2">{capsReason}</span>
         )}
@@ -715,7 +718,21 @@ function AssignRolesModal({
     : "Назначить роль в другом сервисе";
 
   return (
-    <ModalShell title={title} onClose={onClose}>
+    <Modal
+      open
+      onOpenChange={(next) => !next && onClose()}
+      title={title}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={busy !== null}>
+            Отмена
+          </Button>
+          <Button variant="primary" onClick={save} disabled={!service || busy !== null}>
+            {busy ? "..." : "Сохранить"}
+          </Button>
+        </>
+      }
+    >
       <div className="text-xs text-dim mb-1">Сервис:</div>
       {lockService ? (
         <input className="input w-full mono" value={String(service)} disabled />
@@ -774,14 +791,13 @@ function AssignRolesModal({
                   key={r.role_name}
                   className="flex items-center gap-2 text-sm"
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={selected.includes(r.role_name)}
                     onChange={() => toggle(r.role_name)}
                   />
                   <span className="mono">{r.role_name}</span>
                   {r.is_system && (
-                    <span className="badge badge-warn">system</span>
+                    <Badge kind="warn">system</Badge>
                   )}
                   {r.description && (
                     <span className="text-xs text-dim truncate">
@@ -801,8 +817,7 @@ function AssignRolesModal({
                 onChange={(e) => setManual(e.target.value)}
                 placeholder="role_name"
               />
-              <button
-                className="btn btn-sm"
+              <Button size="sm"
                 disabled={!manual || selected.includes(manual)}
                 onClick={() => {
                   setSelected((cur) => [...cur, manual]);
@@ -810,7 +825,7 @@ function AssignRolesModal({
                 }}
               >
                 <Plus className="w-3 h-3" /> добавить
-              </button>
+              </Button>
             </div>
           </div>
           {selected.length > 0 && (
@@ -818,9 +833,9 @@ function AssignRolesModal({
               <div className="text-xs text-dim mb-1">Будет назначено:</div>
               <div className="flex flex-wrap gap-1">
                 {selected.map((r) => (
-                  <span
+                  <Badge kind="accent"
                     key={r}
-                    className="badge badge-accent flex items-center gap-1"
+                    className="flex items-center gap-1"
                   >
                     {r}
                     <button
@@ -831,7 +846,7 @@ function AssignRolesModal({
                     >
                       <XCircle className="w-3 h-3" />
                     </button>
-                  </span>
+                  </Badge>
                 ))}
               </div>
             </div>
@@ -842,19 +857,7 @@ function AssignRolesModal({
           </div>
         </>
       )}
-      <div className="mt-4 flex justify-end gap-2">
-        <button className="btn" onClick={onClose} disabled={busy !== null}>
-          Отмена
-        </button>
-        <button
-          className="btn btn-primary"
-          onClick={save}
-          disabled={!service || busy !== null}
-        >
-          {busy ? "..." : "Сохранить"}
-        </button>
-      </div>
-    </ModalShell>
+    </Modal>
   );
 }
 
@@ -911,14 +914,14 @@ function GroupsTab({
         <div className="text-sm font-semibold flex items-center gap-2">
           <UsersRound className="w-4 h-4 text-accent" /> Группы · {groups.length}
         </div>
-        <button
-          className="btn btn-sm flex items-center gap-1"
+        <Button size="sm"
+          className="flex items-center gap-1"
           disabled={!canManage}
           title={canManage ? "Добавить в группу" : capsReason}
           onClick={() => setAdding(true)}
         >
           <Plus className="w-3 h-3" /> Добавить в группу
-        </button>
+        </Button>
       </div>
       {groups.length === 0 ? (
         <div className="text-sm text-dim italic">
@@ -943,8 +946,7 @@ function GroupsTab({
                   <DeptInline deptId={g.department_id} />
                 </td>
                 <td className="py-2 text-right">
-                  <button
-                    className="btn btn-sm btn-danger"
+                  <Button variant="danger" size="sm"
                     disabled={!canManage || busy !== null}
                     title={canManage ? "Убрать из группы" : capsReason}
                     onClick={async () => {
@@ -962,7 +964,7 @@ function GroupsTab({
                     }}
                   >
                     <XCircle className="w-3 h-3" />
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ))}
@@ -1029,7 +1031,21 @@ function AddToGroupModal({
   }
 
   return (
-    <ModalShell title="Добавить в группу" onClose={onClose}>
+    <Modal
+      open
+      onOpenChange={(next) => !next && onClose()}
+      title="Добавить в группу"
+      footer={
+        <>
+          <Button onClick={onClose} disabled={busy !== null}>
+            Отмена
+          </Button>
+          <Button variant="primary" onClick={add} disabled={!pickId || busy !== null}>
+            {busy ? "..." : "Добавить"}
+          </Button>
+        </>
+      }
+    >
       {allQ.loading && <div className="spinner" aria-label="Загрузка" />}
       {allQ.error && <div className="alert-danger text-xs">{allQ.error.message}</div>}
       {sorted.length === 0 && !allQ.loading ? (
@@ -1058,19 +1074,7 @@ function AddToGroupModal({
         shown={allQ.data?.items.length ?? 0}
         total={allQ.data?.total ?? null}
       />
-      <div className="mt-4 flex justify-end gap-2">
-        <button className="btn" onClick={onClose} disabled={busy !== null}>
-          Отмена
-        </button>
-        <button
-          className="btn btn-primary"
-          onClick={add}
-          disabled={!pickId || busy !== null}
-        >
-          {busy ? "..." : "Добавить"}
-        </button>
-      </div>
-    </ModalShell>
+    </Modal>
   );
 }
 
@@ -1150,14 +1154,14 @@ function SessionsTab({
           <Monitor className="w-4 h-4 text-accent" /> Активные сессии ·{" "}
           {sessions.length}
         </div>
-        <button
-          className="btn btn-danger flex items-center gap-1"
+        <Button variant="danger"
+          className="flex items-center gap-1"
           onClick={revokeAll}
           disabled={!canRevoke || busy !== null || sessions.length === 0}
           title={canRevoke ? undefined : capsReason}
         >
           <LogOut className="w-4 h-4" /> Завершить все
-        </button>
+        </Button>
       </div>
       {mockMode && (
         <div className="text-xs text-dim italic">
@@ -1212,14 +1216,13 @@ function SessionsTab({
                     {fmtTs(s.expires_at)}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <button
-                      className="btn btn-sm btn-danger"
+                    <Button variant="danger" size="sm"
                       disabled={!canRevoke || busy !== null}
                       title={canRevoke ? "Завершить сессию" : capsReason}
                       onClick={() => revokeOne(s.session_id)}
                     >
                       <XCircle className="w-3 h-3" />
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -1257,8 +1260,8 @@ function DangerTab({
       </div>
       <div className="flex gap-2 flex-wrap items-center">
         {!user.is_banned ? (
-          <button
-            className="btn btn-danger flex items-center gap-1"
+          <Button variant="danger"
+            className="flex items-center gap-1"
             disabled={!caps.disable || busy !== null}
             title={caps.disable ? undefined : caps.reason}
             onClick={async () => {
@@ -1278,10 +1281,10 @@ function DangerTab({
             }}
           >
             <ShieldOff className="w-4 h-4" /> Забанить
-          </button>
+          </Button>
         ) : (
-          <button
-            className="btn flex items-center gap-1"
+          <Button
+            className="flex items-center gap-1"
             disabled={!caps.disable || busy !== null}
             title={caps.disable ? undefined : caps.reason}
             onClick={async () => {
@@ -1296,10 +1299,10 @@ function DangerTab({
             }}
           >
             <ShieldCheck className="w-4 h-4" /> Разбанить
-          </button>
+          </Button>
         )}
-        <button
-          className="btn btn-danger-solid flex items-center gap-1"
+        <Button variant="danger-solid"
+          className="flex items-center gap-1"
           disabled={!caps.delete || busy !== null}
           title={caps.delete ? undefined : caps.reason}
           onClick={async () => {
@@ -1317,7 +1320,7 @@ function DangerTab({
           }}
         >
           <Trash2 className="w-4 h-4" /> Удалить пользователя
-        </button>
+        </Button>
         <span className="text-xs text-dim flex items-center gap-1 ml-auto">
           <AlertTriangle className="w-3 h-3 text-warn" />
           необратимые операции, попадают в audit как CRITICAL
@@ -1335,37 +1338,6 @@ function DangerTab({
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
-
-function ModalShell({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.4)" }}
-      onClick={onClose}
-    >
-      <div
-        className="surface border border-token rounded-lg p-5 max-w-lg w-full mx-4 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="font-semibold">{title}</h4>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>
-            <XCircle className="w-4 h-4" />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 const fmtTs = formatMskShort;
 

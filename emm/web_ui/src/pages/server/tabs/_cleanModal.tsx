@@ -12,7 +12,6 @@
  * показывается пер-действие (`done | dispatched | skipped | failed` + RU).
  */
 import { useMemo, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { Link } from "react-router-dom";
 import {
   Eraser,
@@ -44,6 +43,10 @@ import type {
   ServerCleanActionResult,
   ServerCleanResponse,
 } from "@/api/server/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Modal } from "@/components/ui/Modal";
 
 const ACTION_ORDER: {
   key: keyof Omit<ServerCleanResponse, "server_id">;
@@ -59,26 +62,26 @@ const ACTION_ORDER: {
 function statusBadge(status: string) {
   if (status === "done")
     return (
-      <span className="badge badge-ok text-[10px] flex items-center gap-1">
+      <Badge kind="ok" className="text-[10px] flex items-center gap-1">
         <CheckCircle2 className="w-3 h-3" /> выполнено
-      </span>
+      </Badge>
     );
   if (status === "dispatched")
     return (
-      <span className="badge badge-accent text-[10px] flex items-center gap-1">
+      <Badge kind="accent" className="text-[10px] flex items-center gap-1">
         <ArrowRight className="w-3 h-3" /> задача поставлена
-      </span>
+      </Badge>
     );
   if (status === "skipped")
     return (
-      <span className="badge text-[10px] flex items-center gap-1 text-dim">
+      <Badge className="text-[10px] flex items-center gap-1 text-dim">
         <MinusCircle className="w-3 h-3" /> пропущено
-      </span>
+      </Badge>
     );
   return (
-    <span className="badge badge-warn text-[10px] flex items-center gap-1">
+    <Badge kind="warn" className="text-[10px] flex items-center gap-1">
       <XCircle className="w-3 h-3" /> ошибка
-    </span>
+    </Badge>
   );
 }
 
@@ -196,21 +199,18 @@ export function CleanModal({
   }
 
   return (
-    <Dialog.Root open modal onOpenChange={(o) => !o && !pending && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content
-          className="modal-content"
-          style={{ maxWidth: 600 }}
-          onInteractOutside={(e) => pending && e.preventDefault()}
-          onEscapeKeyDown={(e) => pending && e.preventDefault()}
-        >
-          <div className="modal-header">
-            <Eraser className="w-5 h-5 text-danger" />
-            <Dialog.Title className="text-base font-semibold">
-              Очистка сервера <span className="mono">{hostname}</span>
-            </Dialog.Title>
-          </div>
+    <Modal
+      open
+      width="md"
+      onOpenChange={(o) => !o && !pending && onClose()}
+      title={
+        <>
+          Очистка сервера <span className="mono">{hostname}</span>
+        </>
+      }
+      icon={<Eraser className="w-5 h-5 text-danger" />}
+      hideCloseButton
+    >
 
           {result ? (
             <>
@@ -227,32 +227,31 @@ export function CleanModal({
                 </div>
               </div>
               <div className="modal-footer">
-                <button
+                <Button variant="primary"
                   type="button"
-                  className="btn btn-primary flex items-center gap-1"
+                  className="flex items-center gap-1"
                   onClick={() => {
                     onDone();
                     onClose();
                   }}
                 >
                   <X className="w-4 h-4" /> Готово
-                </button>
+                </Button>
               </div>
             </>
           ) : (
             <form onSubmit={submit}>
               <div className="modal-body flex flex-col gap-3">
-                <Dialog.Description className="text-sm text-dim">
+                <p className="text-sm text-dim">
                   Оркестрация очистки после переустановки ОС. Выберите действия —
                   они выполнятся в порядке: отвязка → prepare → версия ОС →
                   inventory → удаление ВМ.
-                </Dialog.Description>
+                </p>
 
                 {err && <div className="alert-danger text-sm">{err}</div>}
 
                 <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={unbind}
                     onChange={(e) => setUnbind(e.target.checked)}
                     disabled={pending}
@@ -261,8 +260,7 @@ export function CleanModal({
                 </label>
 
                 <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={updateOs}
                     onChange={(e) => setUpdateOs(e.target.checked)}
                     disabled={pending}
@@ -291,8 +289,7 @@ export function CleanModal({
                 )}
 
                 <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={rerun}
                     onChange={(e) => setRerun(e.target.checked)}
                     disabled={pending}
@@ -312,8 +309,7 @@ export function CleanModal({
                 )}
 
                 <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={inventory}
                     onChange={(e) => setInventory(e.target.checked)}
                     disabled={pending}
@@ -322,8 +318,7 @@ export function CleanModal({
                 </label>
 
                 <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={delVms}
                     onChange={(e) => setDelVms(e.target.checked)}
                     disabled={pending}
@@ -333,22 +328,22 @@ export function CleanModal({
               </div>
 
               <div className="modal-footer">
-                <button
+                <Button
                   type="button"
-                  className="btn flex items-center gap-1"
+                  className="flex items-center gap-1"
                   onClick={onClose}
                   disabled={pending}
                 >
                   <X className="w-4 h-4" /> Отмена
-                </button>
-                <button
+                </Button>
+                <Button variant="danger"
                   type="submit"
-                  className="btn btn-danger flex items-center gap-1"
+                  className="flex items-center gap-1"
                   disabled={pending || !canSubmit}
                 >
                   <Eraser className="w-4 h-4" />
                   {pending ? "Выполняем…" : "Очистить"}
-                </button>
+                </Button>
               </div>
               {!anyFlag && (
                 <div className="px-4 pb-3 text-[11px] text-dim flex items-center gap-1">
@@ -358,8 +353,6 @@ export function CleanModal({
               )}
             </form>
           )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </Modal>
   );
 }

@@ -71,6 +71,8 @@ import { usePersona } from "@/contexts/PersonaContext";
 import type { Persona } from "@/types/persona";
 import { useToast } from "@/contexts/ToastContext";
 import { formatMskShort } from "@/lib/datetime";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 interface Props {
   serverId: string;
@@ -188,9 +190,9 @@ export function IpmiTab({ serverId, server }: Props) {
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <div className="flex-1 text-sm">
             <div>{apiErrMsg(loadError, "Не удалось получить IPMI")}</div>
-            <button className="btn btn-ghost mt-2" onClick={refetch}>
+            <Button variant="ghost" className="mt-2" onClick={refetch}>
               Повторить
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -390,9 +392,8 @@ function RegisterPane({
           </p>
 
           <div className="flex items-center gap-2 mt-2">
-            <button
+            <Button variant="primary"
               type="submit"
-              className="btn btn-primary"
               disabled={
                 !canRegister ||
                 submitting ||
@@ -402,7 +403,7 @@ function RegisterPane({
               }
             >
               {submitting ? "Регистрируем…" : "Зарегистрировать"}
-            </button>
+            </Button>
           </div>
         </form>
       </div>
@@ -458,26 +459,26 @@ function ControllerPane({
           <div className="flex items-center gap-2">
             <KeyRound className="w-5 h-5" />
             <h3 className="text-base font-semibold">IPMI-контроллер</h3>
-            <span className="badge">{KIND_LABEL[controller.kind] ?? controller.kind}</span>
+            <Badge>{KIND_LABEL[controller.kind] ?? controller.kind}</Badge>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               onClick={() => setEditing(true)}
               disabled={!caps.admin || editing}
               title={caps.admin ? "" : caps.reason}
             >
               <Edit3 className="w-4 h-4" /> Изменить
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               onClick={handleDelete}
               disabled={!caps.admin || deleting}
               title={caps.admin ? "" : caps.reason}
             >
               <Trash2 className="w-4 h-4" />
               {deleting ? "Удаляем…" : "Delete"}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -619,16 +620,15 @@ function EditCard({
           />
         </label>
         <div className="flex items-center gap-2 mt-2">
-          <button
+          <Button variant="primary"
             type="submit"
-            className="btn btn-primary"
             disabled={submitting}
           >
             {submitting ? "Сохраняем…" : "Сохранить"}
-          </button>
-          <button type="button" className="btn" onClick={onCancel}>
+          </Button>
+          <Button type="button" onClick={onCancel}>
             Отмена
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -779,13 +779,13 @@ function PowerCard({
             Управление питанием сервера
           </h3>
         </div>
-        <button
-          className="btn btn-ghost flex items-center gap-1 text-xs"
+        <Button variant="ghost"
+          className="flex items-center gap-1 text-xs"
           onClick={fetchStatus}
           title="Перечитать кэшированный power_state"
         >
           <RefreshCw className="w-3 h-3" /> обновить
-        </button>
+        </Button>
       </div>
 
       <div className="flex items-baseline gap-3 mb-3 text-sm">
@@ -814,17 +814,17 @@ function PowerCard({
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
-        <button
-          className="btn btn-primary flex items-center gap-1"
+        <Button variant="primary"
+          className="flex items-center gap-1"
           disabled={!canPower || pending !== null}
           onClick={() => runPower("on", powerOn)}
           title={canPower ? "" : caps.reason}
         >
           <Power className="w-4 h-4" />
           {pending === "on" ? "Отправляем…" : "Power On"}
-        </button>
-        <button
-          className="btn btn-danger flex items-center gap-1"
+        </Button>
+        <Button variant="danger"
+          className="flex items-center gap-1"
           disabled={!canPower || pending !== null}
           onClick={() =>
             runPower(
@@ -837,9 +837,9 @@ function PowerCard({
         >
           <Power className="w-4 h-4" />
           {pending === "off" ? "Отправляем…" : "Power Off"}
-        </button>
-        <button
-          className="btn flex items-center gap-1"
+        </Button>
+        <Button
+          className="flex items-center gap-1"
           disabled={!canPower || pending !== null}
           onClick={() =>
             runPower(
@@ -852,9 +852,9 @@ function PowerCard({
         >
           <RefreshCw className="w-4 h-4" />
           {pending === "reboot" ? "Отправляем…" : "Reboot"}
-        </button>
-        <button
-          className="btn flex items-center gap-1"
+        </Button>
+        <Button
+          className="flex items-center gap-1"
           disabled={!canPower || pending !== null}
           onClick={runDispatchStatus}
           title={
@@ -865,7 +865,7 @@ function PowerCard({
         >
           <Zap className="w-4 h-4" />
           {pending === "status" ? "Отправляем…" : "Dispatch power-status"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -1059,24 +1059,24 @@ function CredentialsCard({
             </span>
             {passwordShown ? (
               <>
-                <button
-                  className="btn btn-sm flex items-center gap-1"
+                <Button size="sm"
+                  className="flex items-center gap-1"
                   onClick={handleCopy}
                   type="button"
                 >
                   <Copy className="w-4 h-4" /> Копировать
-                </button>
-                <button
-                  className="btn btn-sm flex items-center gap-1"
+                </Button>
+                <Button size="sm"
+                  className="flex items-center gap-1"
                   onClick={() => setPlain(null)}
                   type="button"
                 >
                   <EyeOff className="w-4 h-4" /> Скрыть
-                </button>
+                </Button>
               </>
             ) : (
-              <button
-                className="btn btn-sm flex items-center gap-1"
+              <Button size="sm"
+                className="flex items-center gap-1"
                 onClick={handleReveal}
                 disabled={!canReveal || revealing || throttleLeft > 0}
                 title={
@@ -1092,7 +1092,7 @@ function CredentialsCard({
                   : throttleLeft > 0
                     ? `Подождите ${throttleLeft}с`
                     : "Показать"}
-              </button>
+              </Button>
             )}
           </div>
           {revealReason && (
@@ -1125,15 +1125,15 @@ function CredentialsCard({
       )}
 
       <div className="mt-3">
-        <button
-          className="btn btn-danger flex items-center gap-1"
+        <Button variant="danger"
+          className="flex items-center gap-1"
           onClick={handleRotate}
           disabled={!canRotate || rotating}
           title={canRotate ? "" : denyReason}
         >
           <KeyRound className="w-4 h-4" />
           {rotating ? "Запускаем…" : "Rotate IPMI"}
-        </button>
+        </Button>
       </div>
     </div>
   );

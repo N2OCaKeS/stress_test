@@ -11,6 +11,8 @@ import {
 import { Shell } from "@/components/shell/Shell";
 import { useMockMode } from "@/api/auth/useQuery";
 import { LogRetentionLive } from "./LogRetentionLive";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 interface AuditRow {
   time: string;
@@ -63,31 +65,31 @@ export function LogRetention() {
               <div className="text-sm flex flex-col gap-2">
                 <div className="surface-2 border border-token rounded px-3 py-2 flex items-center justify-between">
                   <span>
-                    <span className="badge badge-danger">CRITICAL</span> любого
+                    <Badge kind="danger">CRITICAL</Badge> любого
                     сервиса
                   </span>
                   <span className="mono">→ 365 дней</span>
                 </div>
                 <div className="surface-2 border border-token rounded px-3 py-2 flex items-center justify-between">
                   <span>
-                    <span className="badge">INFO</span> в worker / healthcheck
+                    <Badge>INFO</Badge> в worker / healthcheck
                   </span>
                   <span className="mono">→ 30 дней</span>
                 </div>
                 <div className="surface-2 border border-token rounded px-3 py-2 flex items-center justify-between">
                   <span>
-                    <span className="badge">DEBUG</span> любого сервиса
+                    <Badge>DEBUG</Badge> любого сервиса
                   </span>
                   <span className="mono">→ 7 дней</span>
                 </div>
               </div>
               <div className="mt-4 flex gap-2">
-                <button className="btn flex items-center gap-1">
+                <Button className="flex items-center gap-1">
                   <Edit3 className="w-4 h-4" /> Изменить политику
-                </button>
-                <button className="btn flex items-center gap-1">
+                </Button>
+                <Button className="flex items-center gap-1">
                   <Filter className="w-4 h-4" /> Добавить правило
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -178,19 +180,19 @@ export function LogRetention() {
               </div>
               <div className="text-sm mt-1">
                 помесячные партиции{" "}
-                <span className="badge badge-warn">отложено</span>
+                <Badge kind="warn">отложено</Badge>
               </div>
               <div className="text-xs text-dim mt-2">
                 При росте &gt;10 GB / месяц планируется разбить таблицу events на
                 helpers по месяцу для ускорения sweep. Сейчас sweep укладывается
                 в 2 минуты — переключение не нужно.
               </div>
-              <a
-                href="https://confluence.local/dbos/runbook/log-partition"
-                className="btn mt-3 inline-flex items-center gap-2 text-xs"
+              <Button
+                className="mt-3 inline-flex items-center gap-2 text-xs"
+                onClick={() => window.open("https://confluence.local/dbos/runbook/log-partition", "_blank", "noreferrer")}
               >
                 <ExternalLink className="w-3 h-3" /> runbook: log-partition
-              </a>
+              </Button>
             </div>
 
             <div className="card">
@@ -208,9 +210,9 @@ export function LogRetention() {
                   className="surface-2 border border-token rounded px-3 py-2 text-sm"
                   placeholder="причина для аудита: 'before quarterly export'"
                 />
-                <button className="btn btn-primary flex items-center justify-center gap-2">
+                <Button variant="primary" className="flex items-center justify-center gap-2">
                   <Play className="w-4 h-4" /> Запустить очистку сейчас
-                </button>
+                </Button>
               </div>
             </div>
           </section>

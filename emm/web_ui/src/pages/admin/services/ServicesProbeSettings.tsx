@@ -24,6 +24,8 @@ import {
   MIN_POWER_INTERVAL_SECONDS,
   type ProbeSettings,
 } from "@/api/server/probeSettings";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 interface FormState {
   reachability: string;
@@ -137,13 +139,13 @@ export function ServicesProbeSettings() {
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <div className="flex-1">
               <div>{apiErrMsg(cfgQ.error, "Настройки не загрузились")}</div>
-              <button
-                className="btn btn-ghost mt-2"
+              <Button variant="ghost"
+                className="mt-2"
                 onClick={() => cfgQ.refetch()}
                 type="button"
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -178,14 +180,13 @@ export function ServicesProbeSettings() {
             )}
 
             <div className="flex items-center gap-3">
-              <button
+              <Button variant="primary"
                 type="button"
-                className="btn btn-primary"
                 onClick={handleSave}
                 disabled={pending || !dirty || error != null}
               >
                 {pending ? "Сохраняем…" : "Сохранить"}
-              </button>
+              </Button>
               {dirty && !pending && (
                 <span className="text-xs text-dim">
                   есть несохранённые изменения
@@ -219,8 +220,7 @@ function ProbeGroup({
   return (
     <div className="border border-token rounded p-4 flex flex-col gap-3 max-w-md">
       <label className="flex items-center gap-2 text-sm font-semibold">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={enabled}
           onChange={(e) => onToggle(e.target.checked)}
         />

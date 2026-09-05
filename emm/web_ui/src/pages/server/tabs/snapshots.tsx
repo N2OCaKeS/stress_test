@@ -8,7 +8,6 @@
  * кред. Системные `_build`-снимки в UI скрыты.
  */
 import { useEffect, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import {
   AlertCircle,
   ArrowUpCircle,
@@ -47,6 +46,9 @@ import {
 } from "@/api/server/vms";
 import { MOCK_VM_OS_VERSIONS, MOCK_VM_SNAPSHOTS } from "@/mocks/vm";
 import type { EntityTabProps } from "./_entity";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Modal as UIModal } from "@/components/ui/Modal";
 
 // ── data helpers (mock ↔ live) ──────────────────────────────────────────────
 
@@ -217,12 +219,12 @@ function SnapshotsSection({
           <Camera className="w-4 h-4 text-accent" /> Снимки
         </h3>
         {canManage && (
-          <button
-            className="btn btn-sm btn-primary flex items-center gap-1"
+          <Button variant="primary" size="sm"
+            className="flex items-center gap-1"
             onClick={() => setCreateOpen(true)}
           >
             <Plus className="w-3.5 h-3.5" /> Создать снимок
-          </button>
+          </Button>
         )}
       </div>
 
@@ -233,9 +235,9 @@ function SnapshotsSection({
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <div className="flex-1 text-xs">
             <div>{apiErrMsg(snapsQ.error, "Список снимков не загрузился")}</div>
-            <button className="btn btn-ghost mt-2" onClick={() => snapsQ.refetch()}>
+            <Button variant="ghost" className="mt-2" onClick={() => snapsQ.refetch()}>
               Повторить
-            </button>
+            </Button>
           </div>
         </div>
       ) : snapshots.length === 0 ? (
@@ -313,12 +315,12 @@ function SnapshotRow({
       <div className="flex-1 min-w-0">
         <div className="text-sm flex items-center gap-2 flex-wrap">
           <span className="truncate">{snap.name}</span>
-          {mode && <span className="badge text-[11px]">{mode}</span>}
+          {mode && <Badge className="text-[11px]">{mode}</Badge>}
           {snap.is_current && (
-            <span className="badge badge-ok text-[11px]">текущий</span>
+            <Badge kind="ok" className="text-[11px]">текущий</Badge>
           )}
           {snap.state !== "ready" && (
-            <span className="badge text-[11px]">{snap.state}</span>
+            <Badge className="text-[11px]">{snap.state}</Badge>
           )}
         </div>
         <div className="text-[11px] text-dim truncate">
@@ -327,22 +329,22 @@ function SnapshotRow({
       </div>
       {canManage && (
         <div className="flex items-center gap-1 shrink-0">
-          <button
-            className="btn btn-sm flex items-center gap-1"
+          <Button size="sm"
+            className="flex items-center gap-1"
             title="Откатить ВМ на этот снимок"
             disabled={snap.is_current}
             onClick={() => onRevert(snap)}
           >
             <Undo2 className="w-3.5 h-3.5" /> Откат
-          </button>
+          </Button>
           {allowDelete && (
-            <button
-              className="btn btn-sm btn-danger flex items-center gap-1"
+            <Button variant="danger" size="sm"
+              className="flex items-center gap-1"
               title="Удалить снимок"
               onClick={() => onDelete(snap)}
             >
               <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -549,15 +551,15 @@ function VmOsUpdateCard({
         allta идёт по всем не-«_build» снимкам согласно режиму кред ВМ.
       </div>
       <div className="flex gap-2 flex-wrap">
-        <button
-          className="btn flex items-center gap-1"
+        <Button
+          className="flex items-center gap-1"
           onClick={() => setAstraOpen(true)}
         >
           <ArrowUpCircle className="w-4 h-4" /> Обновить ОС (astra-update)
-        </button>
-        <button className="btn flex items-center gap-1" onClick={handleAllta}>
+        </Button>
+        <Button className="flex items-center gap-1" onClick={handleAllta}>
           <Boxes className="w-4 h-4" /> Обновить allta
-        </button>
+        </Button>
       </div>
 
       {opsOutcome.tracked && (
@@ -647,13 +649,12 @@ function CredStrategyCard({
             onChange={(v) => setStrategy(v as VmCredStrategy)}
           />
         </label>
-        <button
-          className="btn btn-primary"
+        <Button variant="primary"
           onClick={apply}
           disabled={!changed || pending}
         >
           {pending ? "Применяем…" : "Применить"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -675,22 +676,9 @@ function Modal({
   children: React.ReactNode;
 }) {
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal-content" aria-describedby={undefined}>
-          <div className="modal-header">
-            <Dialog.Title className="text-base font-semibold">{title}</Dialog.Title>
-          </div>
-          {children}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <UIModal open onOpenChange={(next) => !next && onClose()} title={title}>
+      {children}
+    </UIModal>
   );
 }
 
@@ -774,16 +762,15 @@ function SnapshotCreateModal({
           </label>
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
+          <Button type="button" onClick={onClose}>
             Отмена
-          </button>
-          <button
+          </Button>
+          <Button variant="primary"
             type="submit"
-            className="btn btn-primary"
             disabled={!valid || submitting}
           >
             {submitting ? "Создаём…" : "Создать снимок"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -858,16 +845,15 @@ function AstraUpdateModal({
           </label>
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
+          <Button type="button" onClick={onClose}>
             Отмена
-          </button>
-          <button
+          </Button>
+          <Button variant="primary"
             type="submit"
-            className="btn btn-primary"
             disabled={!valid || submitting}
           >
             {submitting ? "Запускаем…" : "Обновить ОС"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

@@ -122,6 +122,8 @@ import type {
   TaskDispatchResponse,
 } from "@/api/server/types";
 import type { EntityRef } from "./_entity";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 interface Props {
   serverId: string;
@@ -1103,13 +1105,13 @@ function OsSyncModal({
       >
         <div className="modal-header flex items-center justify-between">
           <div className="text-sm font-semibold">OS sync</div>
-          <button
-            className="btn btn-ghost p-1"
+          <Button variant="ghost"
+            className="p-1"
             onClick={onClose}
             aria-label="Закрыть"
           >
             <X className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
         <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
           <div className="text-xs text-dim">
@@ -1130,16 +1132,15 @@ function OsSyncModal({
             )}
           </label>
           <div className="flex items-center gap-2 mt-1">
-            <button
+            <Button variant="primary"
               type="submit"
-              className="btn btn-primary"
               disabled={submitting}
             >
               {submitting ? "Сохраняем…" : "Сохранить"}
-            </button>
-            <button type="button" className="btn" onClick={onClose}>
+            </Button>
+            <Button type="button" onClick={onClose}>
               Отмена
-            </button>
+            </Button>
           </div>
         </form>
       </div>
@@ -1257,9 +1258,10 @@ function LifecycleCard({
         {actions.map((a) => {
           const disabled = base || (!!a.requiresPrepared && !prepared);
           return (
-            <button
+            <Button
               key={a.key}
-              className={`btn ${a.primary ? "btn-primary " : ""}flex items-center gap-1`}
+              variant={a.primary ? "primary" : "default"}
+              className="flex items-center gap-1"
               disabled={disabled}
               onClick={a.onClick}
               title={a.title}
@@ -1268,7 +1270,7 @@ function LifecycleCard({
                 className={`w-4 h-4 ${a.spin && busyLabel === a.key ? "animate-spin" : ""}`}
               />
               {busyLabel === a.key ? a.runningLabel ?? a.label : a.label}
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -1335,7 +1337,7 @@ function VmsHubCard({
     <div className="card">
       <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
         <MonitorPlay className="w-4 h-4 text-accent" /> Виртуализация
-        {isHub && <span className="badge badge-ok text-[11px]">VMS-hub</span>}
+        {isHub && <Badge kind="ok" className="text-[11px]">VMS-hub</Badge>}
       </h3>
 
       {isHub ? (
@@ -1353,8 +1355,8 @@ function VmsHubCard({
             <MonitorPlay className="w-4 h-4" /> ВМ этого hub'а
           </Link>
           {allowed && (
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={disabled}
               onClick={onTeardown}
               title="Разобрать VMS-hub — снести libvirt/мост/pool"
@@ -1363,7 +1365,7 @@ function VmsHubCard({
               {busyLabel === "teardown_vms_hub"
                 ? "Запускаем…"
                 : "Разобрать VMS-hub"}
-            </button>
+            </Button>
           )}
         </div>
       ) : (
@@ -1373,8 +1375,8 @@ function VmsHubCard({
               "Сервер поддерживает виртуализацию (KVM). Подготовка развернёт libvirt/kvm, мост br0 и storage-pool и скачает образы каталога — после этого на нём можно создавать ВМ."}
           </div>
           {allowed && (
-            <button
-              className="btn btn-primary flex items-center gap-1"
+            <Button variant="primary"
+              className="flex items-center gap-1"
               disabled={prepareDisabled}
               onClick={onPrepare}
               title={prepareBlockReason ?? "Подготовить сервер как VMS-hub"}
@@ -1383,7 +1385,7 @@ function VmsHubCard({
               {busyLabel === "prepare_vms_hub"
                 ? "Запускаем…"
                 : "Подготовить как VMS-hub"}
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -1471,9 +1473,9 @@ function ManagementCredsCard({
       <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
         <KeyRound className="w-4 h-4 text-accent" /> Управляющие креды
         {pending && (
-          <span className="badge badge-warn text-[11px]">
+          <Badge kind="warn" className="text-[11px]">
             ротация применяется…
-          </span>
+          </Badge>
         )}
       </h3>
 
@@ -1505,8 +1507,8 @@ function ManagementCredsCard({
               worker и отзывает старый материал.
             </div>
             {allowed && (
-              <button
-                className="btn btn-danger flex items-center gap-1"
+              <Button variant="danger"
+                className="flex items-center gap-1"
                 disabled={disabled}
                 onClick={onRotate}
                 title="Ротировать управляющую пару и пароль"
@@ -1517,7 +1519,7 @@ function ManagementCredsCard({
                   : rotateBusy
                     ? "Запускаем…"
                     : "Ротировать управляющие креды"}
-              </button>
+              </Button>
             )}
           </div>
         </>
@@ -1591,7 +1593,7 @@ function AstraUpdateCard({
       <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
         <ArrowUpCircle className="w-4 h-4 text-accent" /> Обновление ОС Astra
         {locked && (
-          <span className="badge badge-warn text-[11px]">идёт обновление…</span>
+          <Badge kind="warn" className="text-[11px]">идёт обновление…</Badge>
         )}
       </h3>
 
@@ -1620,8 +1622,8 @@ function AstraUpdateCard({
               )}
             </label>
             {allowed && (
-              <button
-                className="btn btn-danger flex items-center gap-1"
+              <Button variant="danger"
+                className="flex items-center gap-1"
                 disabled={disabled || !selected}
                 onClick={() => onUpdate(selected)}
                 title={
@@ -1636,7 +1638,7 @@ function AstraUpdateCard({
                   : submitting
                     ? "Запускаем…"
                     : "Обновить ОС"}
-              </button>
+              </Button>
             )}
           </div>
         </>
@@ -1734,13 +1736,13 @@ function OsCatalogBody() {
           Глобальный каталог OS-версий. Используется в `servers.os_version_id`,
           delete с FK-ссылками блокируется на бэке.
         </div>
-        <button
-          className="btn btn-primary flex items-center gap-1"
+        <Button variant="primary"
+          className="flex items-center gap-1"
           disabled={creating || editingId !== null}
           onClick={() => setCreating(true)}
         >
           <Plus className="w-4 h-4" /> Создать
-        </button>
+        </Button>
       </div>
 
       {q.loading && <div className="text-xs text-dim">Загружаем каталог…</div>}
@@ -1817,22 +1819,22 @@ function OsCatalogBody() {
                     </td>
                     <td className="px-3 py-1.5 text-right">
                       <div className="inline-flex gap-1">
-                        <button
-                          className="btn btn-ghost flex items-center gap-1"
+                        <Button variant="ghost"
+                          className="flex items-center gap-1"
                           disabled={pendingId !== null || editingId !== null}
                           onClick={() => setEditingId(v.id)}
                           title="Изменить"
                         >
                           <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button
-                          className="btn btn-danger flex items-center gap-1"
+                        </Button>
+                        <Button variant="danger"
+                          className="flex items-center gap-1"
                           disabled={pendingId !== null}
                           onClick={() => handleDelete(v)}
                           title="Удалить"
                         >
                           <Trash2 className="w-4 h-4" />
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -1930,21 +1932,21 @@ function OsVersionForm({
         />
       </FormRow>
       <div className="flex gap-2 justify-end">
-        <button
-          className="btn flex items-center gap-1"
+        <Button
+          className="flex items-center gap-1"
           onClick={onCancel}
           disabled={pending}
         >
           <XCircle className="w-4 h-4" /> Отмена
-        </button>
-        <button
-          className="btn btn-primary flex items-center gap-1"
+        </Button>
+        <Button variant="primary"
+          className="flex items-center gap-1"
           onClick={submit}
           disabled={pending}
         >
           <Save className="w-4 h-4" />
           {mode === "new" ? "Создать" : "Сохранить"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -1978,14 +1980,14 @@ function CleanCard({
           запустить inventory. Действия выбираются в модалке.
         </div>
         {allowed && (
-          <button
-            className="btn btn-danger flex items-center gap-1"
+          <Button variant="danger"
+            className="flex items-center gap-1"
             disabled={locked || busyLabel !== null}
             onClick={onClean}
             title="Очистка сервера после переустановки ОС"
           >
             <Eraser className="w-4 h-4" /> Очистить
-          </button>
+          </Button>
         )}
       </div>
       {!allowed && (
@@ -2201,14 +2203,14 @@ function VmNetworkCard({
         )}
 
         <div className="flex justify-end">
-          <button
-            className="btn btn-primary flex items-center gap-1"
+          <Button variant="primary"
+            className="flex items-center gap-1"
             disabled={pending || !changed}
             onClick={handleApply}
           >
             <Network className="w-4 h-4" />
             {pending ? "Запускаем…" : "Сменить сеть"}
-          </button>
+          </Button>
         </div>
       </div>
       {outcome.tracked && (

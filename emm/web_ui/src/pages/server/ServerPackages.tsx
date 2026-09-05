@@ -62,6 +62,9 @@ import type {
   Server,
   TaskRead,
 } from "@/api/server/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 const SERVER_LIMIT = 200;
 const POLL_MS = 3_000;
@@ -597,9 +600,8 @@ export function ServerPackages() {
         </div>
         <div className="mt-2 flex items-center justify-between text-[11px] text-dim">
           <span>Выбрано: {selected.size}</span>
-          <button
+          <Button variant="ghost" size="sm"
             type="button"
-            className="btn btn-ghost btn-sm"
             onClick={toggleAllVisible}
             disabled={filteredEntities.length === 0}
           >
@@ -607,7 +609,7 @@ export function ServerPackages() {
             filteredEntities.length > 0
               ? "Снять все"
               : "Выбрать все"}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -620,12 +622,12 @@ export function ServerPackages() {
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1 text-xs">
               <div>{apiErrMsg(serversQ.error, "Список серверов не загрузился")}</div>
-              <button
-                className="btn btn-ghost mt-2"
+              <Button variant="ghost"
+                className="mt-2"
                 onClick={() => serversQ.refetch()}
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -690,8 +692,8 @@ export function ServerPackages() {
           </span>
         </label>
         {allowed ? (
-          <button
-            className="btn btn-primary w-full flex items-center justify-center gap-2"
+          <Button variant="primary"
+            className="w-full flex items-center justify-center gap-2"
             onClick={handleRun}
             disabled={dispatching || selected.size === 0}
           >
@@ -699,7 +701,7 @@ export function ServerPackages() {
               className={`w-4 h-4 ${dispatching ? "animate-spin" : ""}`}
             />
             {dispatching ? "Запускаем…" : `Запросить (${selected.size})`}
-          </button>
+          </Button>
         ) : (
           <div className="text-[11px] text-dim italic">
             Нет прав на запуск probe (нужна роль server.operator+ или dep_admin
@@ -750,14 +752,14 @@ function EntityPickRow({
     <label
       className={`cred-row text-left flex items-center gap-2 cursor-pointer ${checked ? "active" : ""}`}
     >
-      <input type="checkbox" checked={checked} onChange={onToggle} />
+      <Checkbox checked={checked} onChange={onToggle} />
       <div className="flex-1 min-w-0">
         <div
           className="text-sm truncate flex items-center gap-1.5"
           title={entity.ip ?? undefined}
         >
           {entity.kind === "vm" && (
-            <span className="badge badge-accent text-[9px]">ВМ</span>
+            <Badge kind="accent" className="text-[9px]">ВМ</Badge>
           )}
           <span className="truncate">{entity.name}</span>
         </div>
@@ -766,9 +768,9 @@ function EntityPickRow({
         </div>
       </div>
       {!entity.ready && (
-        <span className="badge badge-warn" title={notReadyTitle}>
+        <Badge kind="warn" title={notReadyTitle}>
           не готов
-        </span>
+        </Badge>
       )}
     </label>
   );
@@ -1023,33 +1025,33 @@ function PackageActionPanel({
         </span>
       </label>
       <div className="grid grid-cols-3 gap-1.5">
-        <button
+        <Button size="sm"
           type="button"
-          className="btn btn-sm flex items-center justify-center gap-1"
+          className="flex items-center justify-center gap-1"
           onClick={() => dispatch("install")}
           disabled={busy || targetCount === 0}
           title="Установить пакеты"
         >
           <Download className="w-3.5 h-3.5" /> Установить
-        </button>
-        <button
+        </Button>
+        <Button variant="danger" size="sm"
           type="button"
-          className="btn btn-sm btn-danger flex items-center justify-center gap-1"
+          className="flex items-center justify-center gap-1"
           onClick={() => dispatch("remove")}
           disabled={busy || targetCount === 0}
           title="Удалить пакеты"
         >
           <Trash2 className="w-3.5 h-3.5" /> Удалить
-        </button>
-        <button
+        </Button>
+        <Button size="sm"
           type="button"
-          className="btn btn-sm flex items-center justify-center gap-1"
+          className="flex items-center justify-center gap-1"
           onClick={() => dispatch("update")}
           disabled={busy || targetCount === 0}
           title="Обновить пакеты (пусто = upgrade всех)"
         >
           <ArrowUpCircle className="w-3.5 h-3.5" /> Обновить
-        </button>
+        </Button>
       </div>
 
       {err && (
@@ -1087,13 +1089,13 @@ function ActionStatusRow({ state }: { state: ActionServerState }) {
         title={`${state.hostname} · ${state.serverId}`}
       >
         {state.kind === "vm" && (
-          <span className="badge badge-accent text-[9px]">ВМ</span>
+          <Badge kind="accent" className="text-[9px]">ВМ</Badge>
         )}
         <span className="truncate">{state.displayName ?? state.hostname}</span>
       </span>
-      <span className={`badge${kind ? ` badge-${kind}` : ""}`}>
+      <Badge kind={kind || "neutral"}>
         {ACTION_STATUS_LABEL[state.status] ?? state.status}
-      </span>
+      </Badge>
       {state.polling && (
         <RefreshCw className="w-3 h-3 animate-spin text-dim" />
       )}
@@ -1254,39 +1256,43 @@ function PackagesWorkzone({
         {hasData && (
           <>
             <div className="flex items-center gap-1 surface-2 border border-token rounded p-0.5">
-              <button
+              <Button
                 type="button"
-                className={`btn btn-sm flex items-center gap-1 ${orientation === "packages-rows" ? "btn-primary" : "btn-ghost"}`}
+                size="sm"
+                variant={orientation === "packages-rows" ? "primary" : "ghost"}
+                className="flex items-center gap-1"
                 onClick={() => onOrientation("packages-rows")}
                 title="Строки = пакеты, столбцы = серверы"
               >
                 <Rows3 className="w-3.5 h-3.5" /> пакеты × серверы
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className={`btn btn-sm flex items-center gap-1 ${orientation === "servers-rows" ? "btn-primary" : "btn-ghost"}`}
+                size="sm"
+                variant={orientation === "servers-rows" ? "primary" : "ghost"}
+                className="flex items-center gap-1"
                 onClick={() => onOrientation("servers-rows")}
                 title="Строки = серверы, столбцы = пакеты"
               >
                 <Columns3 className="w-3.5 h-3.5" /> серверы × пакеты
-              </button>
+              </Button>
             </div>
-            <button
+            <Button size="sm"
               type="button"
-              className="btn btn-sm flex items-center gap-1"
+              className="flex items-center gap-1"
               onClick={exportJson}
               title="Экспорт текущей таблицы в JSON"
             >
               <Download className="w-3.5 h-3.5" /> JSON
-            </button>
-            <button
+            </Button>
+            <Button size="sm"
               type="button"
-              className="btn btn-sm flex items-center gap-1"
+              className="flex items-center gap-1"
               onClick={exportCsv}
               title="Экспорт текущей таблицы в CSV"
             >
               <Download className="w-3.5 h-3.5" /> CSV
-            </button>
+            </Button>
           </>
         )}
       </div>
@@ -1375,7 +1381,7 @@ function StatusLegend({
             <span className="flex flex-col leading-tight min-w-0">
               <span className="truncate max-w-[160px] flex items-center gap-1">
                 {s.kind === "vm" && (
-                  <span className="badge badge-accent text-[9px]">ВМ</span>
+                  <Badge kind="accent" className="text-[9px]">ВМ</Badge>
                 )}
                 {s.displayName ?? s.hostname}
               </span>
@@ -1385,9 +1391,9 @@ function StatusLegend({
                 </span>
               )}
             </span>
-            <span className={`badge${kind ? ` badge-${kind}` : ""}`}>
-              {STATUS_LABEL[s.status] ?? s.status}
-            </span>
+              <Badge kind={kind || "neutral"}>
+                {STATUS_LABEL[s.status] ?? s.status}
+              </Badge>
             {s.polling && (
               <RefreshCw className="w-3 h-3 animate-spin text-dim" />
             )}
@@ -1487,7 +1493,7 @@ function PackagesByRows({
               >
                 <div className="flex items-center gap-1">
                   {s.kind === "vm" && (
-                    <span className="badge badge-accent text-[9px]">ВМ</span>
+                    <Badge kind="accent" className="text-[9px]">ВМ</Badge>
                   )}
                   {s.displayName ?? s.hostname}
                 </div>
@@ -1560,7 +1566,7 @@ function ServersByRows({
               <td className="px-3 py-1.5 sticky left-0 surface-2 whitespace-nowrap">
                 <div className="text-xs font-medium flex items-center gap-1">
                   {s.kind === "vm" && (
-                    <span className="badge badge-accent text-[9px]">ВМ</span>
+                    <Badge kind="accent" className="text-[9px]">ВМ</Badge>
                   )}
                   {s.displayName ?? s.hostname}
                 </div>

@@ -29,6 +29,7 @@ import {
 import { Shell } from "@/components/shell/Shell";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Dropdown } from "@/components/ui/Dropdown";
+import { Badge } from "@/components/ui/Badge";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { fromBase64 } from "@/lib/base64";
@@ -62,6 +63,8 @@ import type {
   CredentialUpdateRequest,
   TransferRequest,
 } from "@/api/secret/types";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 const SCOPE_LABEL: Record<CredentialScope, string> = {
   personal: "personal",
@@ -300,12 +303,12 @@ export function SecretLive() {
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1 text-xs">
               <div>{apiErrMsg(listQ.error, "Список не загрузился")}</div>
-              <button
-                className="btn btn-ghost mt-2"
+              <Button variant="ghost"
+                className="mt-2"
                 onClick={() => listQ.refetch()}
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -326,25 +329,25 @@ export function SecretLive() {
         </div>
         {!listQ.loading && !listQ.error && cursor && !search.trim() && (
           <div className="px-3 pt-2">
-            <button
-              className="btn btn-ghost w-full text-xs"
+            <Button variant="ghost"
+              className="w-full text-xs"
               onClick={handleLoadMore}
               disabled={loadingMore}
             >
               {loadingMore ? "Загрузка…" : "Загрузить ещё"}
-            </button>
+            </Button>
           </div>
         )}
       </div>
 
       {canCreate && (
         <div className="border-t border-token p-3 shrink-0">
-          <button
-            className="btn btn-primary w-full flex items-center justify-center gap-2"
+          <Button variant="primary"
+            className="w-full flex items-center justify-center gap-2"
             onClick={startCreate}
           >
             <Plus className="w-4 h-4" /> Создать учётные данные
-          </button>
+          </Button>
         </div>
       )}
     </aside>
@@ -436,9 +439,9 @@ function CredRow({
           </div>
         </div>
         {cred.status && (
-          <span className={`badge${statusKind ? ` badge-${statusKind}` : ""}`}>
+          <Badge kind={statusKind ?? "neutral"}>
             {cred.status}
-          </span>
+          </Badge>
         )}
       </div>
     </button>
@@ -460,12 +463,12 @@ function EmptyPane({
           Выберите учётные данные слева для просмотра деталей.
         </div>
         {canCreate && (
-          <button
-            className="btn btn-primary inline-flex items-center gap-1"
+          <Button variant="primary"
+            className="inline-flex items-center gap-1"
             onClick={onCreate}
           >
             <Plus className="w-4 h-4" /> Создать учётные данные
-          </button>
+          </Button>
         )}
       </div>
     </section>
@@ -717,12 +720,12 @@ function DetailPane({
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <div className="flex-1 text-xs">
             <div>{apiErrMsg(credQ.error, "Карточка не загрузилась")}</div>
-            <button
-              className="btn btn-ghost mt-2"
+            <Button variant="ghost"
+              className="mt-2"
               onClick={() => credQ.refetch()}
             >
               Повторить
-            </button>
+            </Button>
           </div>
         </div>
       </section>
@@ -740,9 +743,9 @@ function DetailPane({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl font-semibold truncate">{cred.name}</h1>
-            <span className={`badge badge-${blocked ? "danger" : "ok"}`}>
+            <Badge kind={blocked ? "danger" : "ok"}>
               {cred.status}
-            </span>
+            </Badge>
             <span className="text-xs text-dim">
               область: <b>{SCOPE_LABEL[cred.scope] ?? cred.scope}</b>
             </span>
@@ -758,43 +761,39 @@ function DetailPane({
         {canManage && (
           <div className="flex items-center gap-2 shrink-0">
             {!blocked && (
-              <button
-                className="btn"
+              <Button
                 onClick={() => setEditing(true)}
                 disabled={acting}
                 title="Изменить"
               >
                 <Pencil className="w-4 h-4 inline-block" /> Изменить
-              </button>
+              </Button>
             )}
             {blocked && (
               <>
-                <button
-                  className="btn"
+                <Button
                   onClick={handleRecover}
                   disabled={acting}
                   title="Разблокировать"
                 >
                   <RotateCcw className="w-4 h-4 inline-block" /> Разблокировать
-                </button>
-                <button
-                  className="btn"
+                </Button>
+                <Button
                   onClick={() => setTransferring(true)}
                   disabled={acting}
                   title="Передать владение"
                 >
                   <ArrowRightLeft className="w-4 h-4 inline-block" /> Передать
-                </button>
+                </Button>
               </>
             )}
-            <button
-              className="btn btn-danger"
+            <Button variant="danger"
               onClick={() => onDelete(cred)}
               disabled={acting}
               title="Удалить"
             >
               <Trash2 className="w-4 h-4 inline-block" /> Удалить
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -807,13 +806,12 @@ function DetailPane({
               <div className="text-xs uppercase tracking-wider text-dim">
                 Логин
               </div>
-              <button
-                className="btn"
+              <Button
                 onClick={() => navigator.clipboard?.writeText(cred.login ?? "")}
                 title="Скопировать логин"
               >
                 <Copy className="w-4 h-4 inline-block" />
-              </button>
+              </Button>
             </div>
             <div className="mono text-lg p-3 surface-2 rounded border border-token">
               {cred.login}
@@ -839,17 +837,15 @@ function DetailPane({
                   </span>
                 )}
                 {revealed !== null ? (
-                  <button
-                    className="btn"
+                  <Button
                     onClick={() => setRevealed(null)}
                     title="Скрыть значение"
                   >
                     <EyeOff className="w-4 h-4 inline-block" />{" "}
                     <span>Скрыть</span>
-                  </button>
+                  </Button>
                 ) : (
-                  <button
-                    className="btn"
+                  <Button
                     onClick={handleReveal}
                     disabled={revealing || blocked || throttleLeft > 0}
                   >
@@ -861,15 +857,14 @@ function DetailPane({
                         ? `${throttleLeft}с`
                         : "Показать"}
                     </span>
-                  </button>
+                  </Button>
                 )}
-                <button
-                  className="btn"
+                <Button
                   onClick={handleCopy}
                   disabled={!revealed}
                 >
                   <Copy className="w-4 h-4 inline-block" />
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -936,12 +931,12 @@ function DetailPane({
                 RoleACL ({aclQ.data?.items.length ?? 0})
               </div>
               {canManageAcl && (
-                <button
-                  className="btn btn-ghost text-xs flex items-center gap-1"
+                <Button variant="ghost"
+                  className="text-xs flex items-center gap-1"
                   onClick={() => setAddingAcl(true)}
                 >
                   <ShieldPlus className="w-3.5 h-3.5" /> Выдать
-                </button>
+                </Button>
               )}
             </div>
             {aclQ.loading && <div className="text-xs text-dim">Загрузка…</div>}
@@ -966,14 +961,14 @@ function DetailPane({
                         {a.can_write ? "w" : "-"}
                       </span>
                       {canManageAcl && (
-                        <button
-                          className="btn btn-ghost p-1"
+                        <Button variant="ghost"
+                          className="p-1"
                           title="Снять ACL"
                           disabled={acting}
                           onClick={() => handleAclRevoke(a.id)}
                         >
                           <X className="w-3.5 h-3.5" />
-                        </button>
+                        </Button>
                       )}
                     </span>
                   </div>
@@ -990,12 +985,12 @@ function DetailPane({
               <div className="text-xs uppercase tracking-wider text-dim">
                 Доступ пользователям ({userAclQ.data?.items.length ?? 0})
               </div>
-              <button
-                className="btn btn-ghost text-xs flex items-center gap-1"
+              <Button variant="ghost"
+                className="text-xs flex items-center gap-1"
                 onClick={() => setAddingUserAcl(true)}
               >
                 <ShieldPlus className="w-3.5 h-3.5" /> Выдать
-              </button>
+              </Button>
             </div>
             {userAclQ.loading && (
               <div className="text-xs text-dim">Загрузка…</div>
@@ -1175,13 +1170,13 @@ function CreatePane({
     <section className="flex-1 min-w-0 overflow-y-auto">
       <div className="p-5 w-full">
         <div className="flex items-center gap-2 mb-4">
-          <button
-            className="btn btn-ghost flex items-center gap-1"
+          <Button variant="ghost"
+            className="flex items-center gap-1"
             onClick={onCancel}
             type="button"
           >
             <ArrowLeft className="w-4 h-4" /> Назад
-          </button>
+          </Button>
           <div className="text-sm text-dim">Создание учётных данных</div>
         </div>
 
@@ -1270,8 +1265,7 @@ function CreatePane({
           </label>
           {needsDept && (
             <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={visibleToDept}
                 onChange={(e) => setVisibleToDept(e.target.checked)}
               />
@@ -1307,16 +1301,15 @@ function CreatePane({
           )}
 
           <div className="flex items-center gap-2 mt-2">
-            <button
+            <Button variant="primary"
               type="submit"
-              className="btn btn-primary"
               disabled={submitting || !valid}
             >
               {submitting ? "Создаём…" : "Создать"}
-            </button>
-            <button type="button" className="btn" onClick={onCancel}>
+            </Button>
+            <Button type="button" onClick={onCancel}>
               Отмена
-            </button>
+            </Button>
           </div>
         </form>
       </div>
@@ -1393,9 +1386,9 @@ function ModalShell({
       >
         <div className="modal-header flex items-center justify-between">
           <div className="text-sm font-semibold">{title}</div>
-          <button className="btn btn-ghost p-1" onClick={onClose} aria-label="Закрыть">
+          <Button variant="ghost" className="p-1" onClick={onClose} aria-label="Закрыть">
             <X className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
         {children}
       </div>
@@ -1507,16 +1500,15 @@ function EditModal({
           </div>
         )}
         <div className="flex items-center gap-2 mt-1">
-          <button
+          <Button variant="primary"
             type="submit"
-            className="btn btn-primary"
             disabled={submitting || windowInvalid}
           >
             {submitting ? "Сохраняем…" : "Сохранить"}
-          </button>
-          <button type="button" className="btn" onClick={onClose}>
+          </Button>
+          <Button type="button" onClick={onClose}>
             Отмена
-          </button>
+          </Button>
         </div>
       </form>
     </ModalShell>
@@ -1589,16 +1581,15 @@ function TransferModal({
           />
         </label>
         <div className="flex items-center gap-2 mt-1">
-          <button
+          <Button variant="primary"
             type="submit"
-            className="btn btn-primary"
             disabled={submitting || !valid}
           >
             {submitting ? "Передаём…" : "Передать"}
-          </button>
-          <button type="button" className="btn" onClick={onClose}>
+          </Button>
+          <Button type="button" onClick={onClose}>
             Отмена
-          </button>
+          </Button>
         </div>
       </form>
     </ModalShell>
@@ -1733,16 +1724,14 @@ export function AclModal({
         </label>
         <div className="flex items-center gap-4 text-sm">
           <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={canRead}
               onChange={(e) => setCanRead(e.target.checked)}
             />
             <span className="text-dim text-xs">can_read</span>
           </label>
           <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={canWrite}
               onChange={(e) => setCanWrite(e.target.checked)}
             />
@@ -1750,16 +1739,15 @@ export function AclModal({
           </label>
         </div>
         <div className="flex items-center gap-2 mt-1">
-          <button
+          <Button variant="primary"
             type="submit"
-            className="btn btn-primary"
             disabled={submitting || !valid}
           >
             {submitting ? "Выдаём…" : "Выдать"}
-          </button>
-          <button type="button" className="btn" onClick={onClose}>
+          </Button>
+          <Button type="button" onClick={onClose}>
             Отмена
-          </button>
+          </Button>
         </div>
       </form>
     </ModalShell>
@@ -1791,14 +1779,14 @@ function UserAclRow({
           {canRead ? "r" : "-"}
           {canWrite ? "w" : "-"}
         </span>
-        <button
-          className="btn btn-ghost p-1"
+        <Button variant="ghost"
+          className="p-1"
           title="Снять доступ"
           disabled={acting}
           onClick={onRevoke}
         >
           <X className="w-3.5 h-3.5" />
-        </button>
+        </Button>
       </span>
     </div>
   );
@@ -1941,16 +1929,14 @@ export function UserAclModal({
         )}
         <div className="flex items-center gap-4 text-sm">
           <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={canRead}
               onChange={(e) => setCanRead(e.target.checked)}
             />
             <span className="text-dim text-xs">can_read</span>
           </label>
           <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={canWrite}
               onChange={(e) => setCanWrite(e.target.checked)}
             />
@@ -1958,16 +1944,15 @@ export function UserAclModal({
           </label>
         </div>
         <div className="flex items-center gap-2 mt-1">
-          <button
+          <Button variant="primary"
             type="submit"
-            className="btn btn-primary"
             disabled={submitting || !valid}
           >
             {submitting ? "Выдаём…" : "Выдать"}
-          </button>
-          <button type="button" className="btn" onClick={onClose}>
+          </Button>
+          <Button type="button" onClick={onClose}>
             Отмена
-          </button>
+          </Button>
         </div>
       </form>
     </ModalShell>

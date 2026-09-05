@@ -89,11 +89,7 @@ describe("ServicesNavLink", () => {
     fireEvent.click(screen.getByLabelText("Кнопка включена"));
 
     // Отдел Beta из списка listDepartments.
-    const betaRow = await screen.findByText("Beta");
-    const betaCheckbox = betaRow.parentElement!.querySelector(
-      "input[type=checkbox]",
-    ) as HTMLInputElement;
-    fireEvent.click(betaCheckbox);
+    fireEvent.click(await screen.findByLabelText("Beta"));
 
     fireEvent.click(screen.getByRole("button", { name: /Сохранить/ }));
 

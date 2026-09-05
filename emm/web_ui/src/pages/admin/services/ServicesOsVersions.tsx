@@ -40,6 +40,9 @@ import type {
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 // Управление каталогом несёт server.admin (и dep_admin в своём отделе).
 // Зеркалит гейт ServicesServerPermissions — backend режет platform-роли.
@@ -130,17 +133,17 @@ export function ServicesOsVersions() {
               )}
             </div>
             {item.is_urgent_update && (
-              <span
-                className="badge badge-warn flex items-center gap-1"
+              <Badge kind="warn"
+                className="flex items-center gap-1"
                 title="Срочное обновление вне обычного цикла РЦ (hotfix, legacy UU)"
               >
                 <AlertTriangle className="w-3 h-3" /> UU
-              </span>
+              </Badge>
             )}
             {item.repositories.length > 0 && (
-              <span className="badge" title="репозиториев">
+              <Badge title="репозиториев">
                 {item.repositories.length} repo
-              </span>
+              </Badge>
             )}
           </div>
         </button>
@@ -266,20 +269,20 @@ function OsVersionDetail({
         </h3>
         {canEdit && (
           <div className="flex gap-2">
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               disabled={busy}
               onClick={() => setEditing(true)}
             >
               <Pencil className="w-4 h-4" /> Изменить
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={busy}
               onClick={onDelete}
             >
               <Trash2 className="w-4 h-4" /> Удалить
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -298,9 +301,9 @@ function OsVersionDetail({
           ) : (
             <div className="flex flex-wrap gap-1">
               {version.kernels.map((kernel) => (
-                <span key={kernel} className="badge mono text-[11px]">
+                <Badge key={kernel} className="mono text-[11px]">
                   {kernel}
-                </span>
+                </Badge>
               ))}
             </div>
           )
@@ -310,9 +313,9 @@ function OsVersionDetail({
         k="is_urgent_update"
         v={
           version.is_urgent_update ? (
-            <span className="badge badge-warn flex items-center gap-1 w-fit">
+            <Badge kind="warn" className="flex items-center gap-1 w-fit">
               <AlertTriangle className="w-3 h-3" /> UU
-            </span>
+            </Badge>
           ) : (
             <span className="text-dim">нет</span>
           )
@@ -505,8 +508,7 @@ export function OsVersionForm({
           hint="срочный хотфикс вне обычного цикла РЦ (legacy UU), а не плановый релиз"
         >
           <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={isUrgentUpdate}
               onChange={(e) => setIsUrgentUpdate(e.target.checked)}
             />
@@ -516,16 +518,15 @@ export function OsVersionForm({
       </div>
       {err && <div className="alert-danger mt-3 text-xs">{err}</div>}
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={cancel} disabled={busy}>
+        <Button onClick={cancel} disabled={busy}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary"
+        </Button>
+        <Button variant="primary"
           onClick={submit}
           disabled={busy || !name.trim()}
         >
           {busy ? "..." : isEdit ? "Сохранить" : "Создать"}
-        </button>
+        </Button>
       </div>
     </div>
   );

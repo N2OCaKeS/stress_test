@@ -12,6 +12,9 @@
 import { useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Activity, CheckCircle2, ChevronDown, ChevronUp, CircleDot, ShieldCheck, X } from "lucide-react";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 
 export type BadgeKind = "ok" | "warn" | "danger" | "accent";
 export type StandStatus = "testing" | "manual" | "idle" | "offline";
@@ -334,10 +337,10 @@ export function StatusBadge({ status }: { status: StandStatus }) {
   const meta = STATUS_META[status];
   const Icon = meta.icon;
   return (
-    <span className={`badge badge-${meta.badge} inline-flex items-center gap-1`}>
+    <Badge kind={meta.badge} className="inline-flex items-center gap-1">
       <Icon className="w-3 h-3" />
       {meta.label}
-    </span>
+    </Badge>
   );
 }
 
@@ -350,7 +353,7 @@ export function TextStatusBadge({ value }: { value: string }) {
         : value === "running" || value === "testing"
           ? "accent"
           : "warn";
-  return <span className={`badge badge-${kind}`}>{value}</span>;
+  return <Badge kind={kind}>{value}</Badge>;
 }
 
 export function Counter({ label, value, className }: { label: string; value: number; className: string }) {
@@ -426,9 +429,9 @@ export function ModalHeader({
         <div className="font-semibold truncate">{title}</div>
         <div className="text-xs text-dim truncate">{subtitle}</div>
       </div>
-      <button type="button" className="btn btn-sm" onClick={onClose} aria-label="Закрыть">
+      <Button size="sm" type="button" onClick={onClose} aria-label="Закрыть">
         <X className="w-4 h-4" />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -504,18 +507,17 @@ export function LogViewerModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 bg-black/55 flex items-center justify-center p-5">
-      <div className="surface border border-token rounded w-full max-w-3xl max-h-[86vh] overflow-hidden shadow-2xl">
-        <ModalHeader
-          title={`Журнал · ${item?.title ?? stand.currentTitle}`}
-          subtitle={`${stand.name} · ${stand.ip}`}
-          onClose={onClose}
-        />
-        <div className="p-4">
-          <pre className="log-tail max-h-[60vh]">{demoQueueLog(stand, item)}</pre>
-        </div>
-      </div>
-    </div>
+    <Modal
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={`Журнал · ${item?.title ?? stand.currentTitle}`}
+      subtitle={`${stand.name} · ${stand.ip}`}
+      width="md"
+    >
+      <pre className="log-tail max-h-[60vh]">{demoQueueLog(stand, item)}</pre>
+    </Modal>
   );
 }
 

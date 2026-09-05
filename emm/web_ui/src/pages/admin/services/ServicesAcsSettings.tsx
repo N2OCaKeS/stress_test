@@ -22,6 +22,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Camera, AlertCircle, AlertTriangle } from "lucide-react";
 
+import { Checkbox } from "@/components/ui/Checkbox";
 import { useToast } from "@/contexts/ToastContext";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { useQuery } from "@/api/auth/useQuery";
@@ -35,6 +36,7 @@ import {
 } from "@/api/server/acsSettings";
 import { listDepartments } from "@/api/auth/departments";
 import type { Department } from "@/api/auth/types";
+import { Button } from "@/components/ui/Button";
 
 function settingsSaveError(e: unknown): string {
   if (e instanceof ApiError) {
@@ -154,27 +156,25 @@ function AcsSettingsForm() {
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
           <div className="flex-1">
             <div>{apiErrMsg(cfgQ.error, "Настройки не загрузились")}</div>
-            <button
-              className="btn btn-ghost mt-2"
+            <Button variant="ghost"
+              className="mt-2"
               onClick={() => cfgQ.refetch()}
               type="button"
             >
               Повторить
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {loaded != null && (
         <>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-            />
-            <span>Снимки ACS включены</span>
-          </label>
+          <Checkbox
+            label="Снимки ACS включены"
+            rowClassName="text-sm"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+          />
 
           <label className="flex flex-col gap-1 text-sm">
             <span className="field-label">URL ACS</span>
@@ -205,15 +205,13 @@ function AcsSettingsForm() {
                 }
               />
             </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={clearPassword}
-                disabled={!!password}
-                onChange={(e) => setClearPassword(e.target.checked)}
-              />
-              <span>Стереть сохранённый пароль</span>
-            </label>
+            <Checkbox
+              label="Стереть сохранённый пароль"
+              rowClassName="text-sm"
+              checked={clearPassword}
+              disabled={!!password}
+              onChange={(e) => setClearPassword(e.target.checked)}
+            />
           </div>
 
           {wouldDisableOnEnable && (
@@ -224,14 +222,13 @@ function AcsSettingsForm() {
           )}
 
           <div className="flex items-center gap-3">
-            <button
+            <Button variant="primary"
               type="button"
-              className="btn btn-primary"
               onClick={handleSave}
               disabled={pending || !dirty}
             >
               {pending ? "Сохраняем…" : "Сохранить"}
-            </button>
+            </Button>
             {dirty && !pending && (
               <span className="text-xs text-dim">
                 есть несохранённые изменения
@@ -319,13 +316,13 @@ function AcsDepartmentTable() {
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
           <div className="flex-1">
             <div>{apiErrMsg(accessQ.error, "Список не загрузился")}</div>
-            <button
-              className="btn btn-ghost mt-2"
+            <Button variant="ghost"
+              className="mt-2"
               onClick={() => accessQ.refetch()}
               type="button"
             >
               Повторить
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -340,30 +337,25 @@ function AcsDepartmentTable() {
           ) : (
             <div className="flex flex-col gap-1">
               {departments.map((d) => (
-                <label
+                <Checkbox
                   key={d.id}
-                  className="flex items-center gap-2 text-sm border border-token rounded px-3 py-1.5"
-                >
-                  <input
-                    type="checkbox"
-                    checked={flags[d.id] ?? false}
-                    onChange={() => toggle(d.id)}
-                  />
-                  <span className="flex-1">{d.name}</span>
-                </label>
+                  rowClassName="border border-token rounded px-3 py-1.5"
+                  checked={flags[d.id] ?? false}
+                  onChange={() => toggle(d.id)}
+                  label={<span className="flex-1">{d.name}</span>}
+                />
               ))}
             </div>
           )}
 
           <div className="flex items-center gap-3">
-            <button
+            <Button variant="primary"
               type="button"
-              className="btn btn-primary"
               onClick={handleSave}
               disabled={pending || !dirty}
             >
               {pending ? "Сохраняем…" : "Сохранить"}
-            </button>
+            </Button>
             {dirty && !pending && (
               <span className="text-xs text-dim">
                 есть несохранённые изменения

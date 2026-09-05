@@ -23,6 +23,7 @@ import {
 } from "@/pages/worker/workerLive";
 import type { PaginatedList } from "@/api/auth/users";
 import type { TaskRead } from "@/api/server/types";
+import { Button } from "@/components/ui/Button";
 
 const PREVIEW_COUNT = 15;
 
@@ -71,9 +72,9 @@ export function AllTasksWidget() {
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <div className="flex-1">
             <div>{apiErrMsg(tasksQ.error, "Задачи не загрузились")}</div>
-            <button className="btn btn-ghost mt-2" onClick={() => refetch()}>
+            <Button variant="ghost" className="mt-2" onClick={() => refetch()}>
               Повторить
-            </button>
+            </Button>
           </div>
         </div>
       ) : items.length === 0 ? (

@@ -7,6 +7,7 @@ import { DEPTS } from "@/mocks/auth";
 import { InlineEditor, FormRow, NotWiredInline, StatRow, useInlineState } from "./_inline";
 import { useMockMode } from "@/api/auth/useQuery";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+import { Button } from "@/components/ui/Button";
 
 // server_service ещё не подключён к UI. Ожидаемые endpoint'ы для групп:
 //   GET    /server/v1/groups
@@ -87,12 +88,12 @@ function GroupView({
         </h3>
         {canEdit && (
           <div className="flex items-center gap-2">
-            <button className="btn flex items-center gap-1" onClick={() => startEdit(group.id)}>
+            <Button className="flex items-center gap-1" onClick={() => startEdit(group.id)}>
               <Edit3 className="w-4 h-4" /> Изменить
-            </button>
-            <button className="btn btn-danger flex items-center gap-1" onClick={notWired}>
+            </Button>
+            <Button variant="danger" className="flex items-center gap-1" onClick={notWired}>
               <Trash2 className="w-4 h-4" /> Удалить
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -146,10 +147,10 @@ function GroupForm({
         </FormRow>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onDone}>Отмена</button>
-        <button className="btn btn-primary" onClick={submit}>
+        <Button onClick={onDone}>Отмена</Button>
+        <Button variant="primary" onClick={submit}>
           {mode === "new" ? "Создать" : "Сохранить"}
-        </button>
+        </Button>
       </div>
     </div>
   );

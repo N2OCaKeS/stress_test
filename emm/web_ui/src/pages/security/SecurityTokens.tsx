@@ -14,6 +14,7 @@ import type {
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { formatMskDate, mskDateOffset } from "@/lib/datetime";
+import { Button } from "@/components/ui/Button";
 
 const KNOWN_SERVICES: ServiceName[] = [
   "auth_service",
@@ -94,12 +95,12 @@ export function SecurityTokens() {
           подходят для CLI и автоматизации. Сам токен показывается только один
           раз при создании — сохраните его сразу.
         </p>
-        <button
-          className="btn btn-primary btn-sm flex items-center gap-1 shrink-0"
+        <Button variant="primary" size="sm"
+          className="flex items-center gap-1 shrink-0"
           onClick={() => setCreating(true)}
         >
           <Plus className="w-4 h-4" /> Создать PAT
-        </button>
+        </Button>
       </div>
 
       {oneShot && <OneShotPanel resp={oneShot} onClose={() => setOneShot(null)} />}
@@ -123,9 +124,9 @@ export function SecurityTokens() {
         ) : loadErr ? (
           <div className="alert-danger text-xs flex items-center justify-between gap-2">
             <span>{loadErr}</span>
-            <button className="btn btn-ghost btn-sm" onClick={() => void reload()}>
+            <Button variant="ghost" size="sm" onClick={() => void reload()}>
               Повторить
-            </button>
+            </Button>
           </div>
         ) : items.length === 0 ? (
           <div className="text-xs text-dim py-4 text-center">Токенов нет.</div>
@@ -174,13 +175,13 @@ function TokenRow({
           {t.expires_at && ` · истекает ${formatMskDate(t.expires_at)}`}
         </div>
       </div>
-      <button
-        className="btn btn-danger flex items-center gap-1"
+      <Button variant="danger"
+        className="flex items-center gap-1"
         onClick={onClick}
         disabled={pending}
       >
         <Trash2 className="w-4 h-4" /> Отозвать
-      </button>
+      </Button>
     </div>
   );
 }
@@ -300,17 +301,16 @@ function CreateForm({
         </div>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onCancel} disabled={pending}>
+        <Button onClick={onCancel} disabled={pending}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary"
+        </Button>
+        <Button variant="primary"
           onClick={submit}
           disabled={submitDisabled}
           title={submitTooltip}
         >
           Создать
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -338,17 +338,17 @@ function OneShotPanel({
         <h3 className="font-semibold text-warn">
           Токен показан один раз — сохраните его сейчас
         </h3>
-        <button className="btn btn-ghost" onClick={onClose}>
+        <Button variant="ghost" onClick={onClose}>
           Скрыть
-        </button>
+        </Button>
       </div>
       <div className="mono text-xs break-all border border-token p-2 rounded">
         {resp.token}
       </div>
       <div className="mt-2 flex items-center gap-2">
-        <button className="btn btn-primary flex items-center gap-1" onClick={copy}>
+        <Button variant="primary" className="flex items-center gap-1" onClick={copy}>
           <Copy className="w-4 h-4" /> Скопировать
-        </button>
+        </Button>
         <div className="text-[11px] text-dim">
           {resp.name} · {resp.token_id}
         </div>

@@ -13,22 +13,23 @@ import { useNavigate } from "react-router-dom";
 import { formatMskShort } from "@/lib/datetime";
 import type { TaskNotification } from "@/api/server/useMyTaskNotifications";
 import type { TaskStatus } from "@/api/server/types";
+import { Badge, type BadgeKind } from "@/components/ui/Badge";
 
 const PANEL_WIDTH = 360;
 const GAP = 6;
 
 type Pos = { top?: number; bottom?: number; left: number; maxHeight: number };
 
-const STATUS_BADGE: Record<string, string> = {
-  queued: "badge",
-  running: "badge badge-warn",
-  succeeded: "badge badge-ok",
-  failed: "badge badge-danger",
-  cancelled: "badge",
+const STATUS_BADGE: Record<string, BadgeKind> = {
+  queued: "neutral",
+  running: "warn",
+  succeeded: "ok",
+  failed: "danger",
+  cancelled: "neutral",
 };
 
-function statusBadgeClass(status: TaskStatus): string {
-  return STATUS_BADGE[status] ?? "badge";
+function statusBadgeKind(status: TaskStatus): BadgeKind {
+  return STATUS_BADGE[status] ?? "neutral";
 }
 
 /** Короткий итог: ошибка при failed, иначе пусто. */
@@ -169,9 +170,9 @@ export function NotificationCenter({
                       />
                     )}
                     <span className="truncate flex-1">{n.task.kind}</span>
-                    <span className={statusBadgeClass(n.task.status)}>
+                    <Badge kind={statusBadgeKind(n.task.status)}>
                       {n.task.status}
-                    </span>
+                    </Badge>
                   </span>
                   {note && (
                     <span className="text-xs text-danger truncate">{note}</span>

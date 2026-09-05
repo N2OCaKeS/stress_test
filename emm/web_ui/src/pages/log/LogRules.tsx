@@ -17,6 +17,8 @@ import { Shell } from "@/components/shell/Shell";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { useMockMode } from "@/api/auth/useQuery";
 import { LogRulesLive } from "./LogRulesLive";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 interface Rule {
   id: string;
@@ -178,9 +180,9 @@ export function LogRules() {
         </div>
 
         <div className="border-t border-token p-3">
-          <button className="btn btn-primary w-full flex items-center justify-center gap-2">
+          <Button variant="primary" className="w-full flex items-center justify-center gap-2">
             <Filter className="w-4 h-4" /> Создать правило
-          </button>
+          </Button>
         </div>
       </section>
 
@@ -194,8 +196,8 @@ export function LogRules() {
               <h1 className="text-xl font-semibold truncate">
                 severity-override · secret.master_key_rotated
               </h1>
-              <span className="badge badge-ok">active</span>
-              <span className="badge badge-danger">→ CRITICAL</span>
+              <Badge kind="ok">active</Badge>
+              <Badge kind="danger">→ CRITICAL</Badge>
             </div>
             <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
               <span>pattern:</span>
@@ -215,18 +217,18 @@ export function LogRules() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-            <button className="btn flex items-center gap-1">
+            <Button className="flex items-center gap-1">
               <Play className="w-4 h-4" /> Проверить
-            </button>
-            <button className="btn flex items-center gap-1">
+            </Button>
+            <Button className="flex items-center gap-1">
               <Edit3 className="w-4 h-4" /> Изменить
-            </button>
-            <button className="btn flex items-center gap-1">
+            </Button>
+            <Button className="flex items-center gap-1">
               <EyeOff className="w-4 h-4" /> Заглушить
-            </button>
-            <button className="btn btn-danger flex items-center gap-1">
+            </Button>
+            <Button variant="danger" className="flex items-center gap-1">
               <Trash2 className="w-4 h-4" /> Удалить
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -274,7 +276,7 @@ export function LogRules() {
               <div className="stat-row">
                 <span className="text-dim">value</span>
                 <span>
-                  <span className="badge badge-danger">CRITICAL</span>
+                  <Badge kind="danger">CRITICAL</Badge>
                 </span>
               </div>
               <div className="stat-row">
@@ -348,7 +350,7 @@ export function LogRules() {
                     <td>{m.dept}</td>
                     <td className="mono text-xs">{m.target}</td>
                     <td>
-                      <span className="badge badge-danger">CRITICAL</span>
+                      <Badge kind="danger">CRITICAL</Badge>
                     </td>
                   </tr>
                 ))}

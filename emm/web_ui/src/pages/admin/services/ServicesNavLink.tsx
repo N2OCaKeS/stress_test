@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, AlertCircle } from "lucide-react";
 
+import { Checkbox } from "@/components/ui/Checkbox";
 import { useToast } from "@/contexts/ToastContext";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { useQuery } from "@/api/auth/useQuery";
@@ -21,6 +22,7 @@ import {
 } from "@/api/auth/navLinks";
 import { listDepartments } from "@/api/auth/departments";
 import type { Department } from "@/api/auth/types";
+import { Button } from "@/components/ui/Button";
 
 function saveError(e: unknown): string {
   if (e instanceof ApiError) {
@@ -124,27 +126,24 @@ export function ServicesNavLink() {
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <div className="flex-1">
               <div>{apiErrMsg(cfgQ.error, "Конфиг не загрузился")}</div>
-              <button
-                className="btn btn-ghost mt-2"
+              <Button variant="ghost"
+                className="mt-2"
                 onClick={() => cfgQ.refetch()}
                 type="button"
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
 
         {cfgQ.data != null && (
           <>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={enabled}
-                onChange={(e) => setEnabled(e.target.checked)}
-              />
-              <span>Кнопка включена</span>
-            </label>
+            <Checkbox
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+              label="Кнопка включена"
+            />
 
             <label className="flex flex-col gap-1 text-sm max-w-md">
               <span className="field-label">Подпись</span>
@@ -169,14 +168,11 @@ export function ServicesNavLink() {
               </span>
             </label>
 
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={allDepartments}
-                onChange={(e) => setAllDepartments(e.target.checked)}
-              />
-              <span>Показывать всем отделам</span>
-            </label>
+            <Checkbox
+              checked={allDepartments}
+              onChange={(e) => setAllDepartments(e.target.checked)}
+              label="Показывать всем отделам"
+            />
 
             {!allDepartments && (
               <div className="flex flex-col gap-2 max-w-md">
@@ -189,17 +185,13 @@ export function ServicesNavLink() {
                 ) : (
                   <div className="flex flex-col gap-1">
                     {departments.map((d) => (
-                      <label
+                      <Checkbox
                         key={d.id}
-                        className="flex items-center gap-2 text-sm border border-token rounded px-3 py-1.5"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={departmentIds.includes(d.id)}
-                          onChange={() => toggleDept(d.id)}
-                        />
-                        <span className="flex-1">{d.name}</span>
-                      </label>
+                        rowClassName="border border-token rounded px-3 py-1.5"
+                        checked={departmentIds.includes(d.id)}
+                        onChange={() => toggleDept(d.id)}
+                        label={<span className="flex-1">{d.name}</span>}
+                      />
                     ))}
                   </div>
                 )}
@@ -207,14 +199,13 @@ export function ServicesNavLink() {
             )}
 
             <div className="flex items-center gap-3">
-              <button
+              <Button variant="primary"
                 type="button"
-                className="btn btn-primary"
                 onClick={handleSave}
                 disabled={pending || !dirty}
               >
                 {pending ? "Сохраняем…" : "Сохранить"}
-              </button>
+              </Button>
               {dirty && !pending && (
                 <span className="text-xs text-dim">есть несохранённые изменения</span>
               )}

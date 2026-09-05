@@ -18,6 +18,8 @@ import type {
   AccountRotateDispatchResponse,
   AccountRotateSkipped,
 } from "@/api/server/accounts";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 /** Человекочитаемая причина пропуска по `reason`-коду backend'а. */
 const SKIP_REASON_LABELS: Record<string, string> = {
@@ -66,9 +68,9 @@ export function RotateDispatchResult({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-3 text-sm flex-wrap">
-        <span className="badge badge-accent mono">
+        <Badge kind="accent" className="mono">
           {result.mode === "all" ? "массовая" : "точечная"}
-        </span>
+        </Badge>
         <span className="flex items-center gap-1 text-ok">
           <CheckCircle2 className="w-4 h-4" /> поставлено: {tasks.length}
         </span>
@@ -101,17 +103,17 @@ export function RotateDispatchResult({
               <span className="flex-1 min-w-0 truncate">
                 {nameOf(t.server_id, t.server_name)}
               </span>
-              <span className="badge badge-ok text-[10px]">{t.status}</span>
+              <Badge kind="ok" className="text-[10px]">{t.status}</Badge>
               {onOpenTask ? (
-                <button
+                <Button size="sm"
                   type="button"
-                  className="btn btn-sm flex items-center gap-1"
+                  className="flex items-center gap-1"
                   onClick={() => onOpenTask(t.task_id)}
                   title="Открыть страницу задачи"
                 >
                   <span className="mono text-[11px]">{t.task_id}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+                </Button>
               ) : (
                 <span className="mono text-[11px] text-dim">{t.task_id}</span>
               )}

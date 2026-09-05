@@ -14,12 +14,13 @@
  * остаётся тонкой обёрткой поверх него для одиночного prepare.
  */
 import { useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { KeyRound } from "lucide-react";
 import { toBase64 } from "@/lib/base64";
 import { PASSWORD_POLICY_HINT_STRONG } from "@/pages/server/_serverShared";
 import { Dropdown } from "@/components/ui/Dropdown";
 import type { ServerAccount, ServerPrepareRequest } from "@/api/server/types";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 
 /**
  * Редактируемое состояние bootstrap-кред. В отличие от wire-формы держит оба
@@ -88,9 +89,10 @@ export function BootstrapCredsFields({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex gap-2">
-        <button
+        <Button
           type="button"
-          className={`btn btn-sm ${value.mode === "account" ? "btn-primary" : ""}`}
+          size="sm"
+          variant={value.mode === "account" ? "primary" : "default"}
           onClick={() => patch({ mode: "account" })}
           disabled={disabled || noAccounts}
           title={
@@ -100,15 +102,16 @@ export function BootstrapCredsFields({
           }
         >
           Привязанная учётка
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className={`btn btn-sm ${value.mode === "manual" ? "btn-primary" : ""}`}
+          size="sm"
+          variant={value.mode === "manual" ? "primary" : "default"}
           onClick={() => patch({ mode: "manual" })}
           disabled={disabled}
         >
           Ручной ввод
-        </button>
+        </Button>
       </div>
 
       {value.mode === "account" ? (
@@ -241,28 +244,21 @@ export function BootstrapCredsModal({
   }
 
   return (
-    <Dialog.Root open modal onOpenChange={(o) => !o && !pending && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content
-          className="modal-content"
-          onInteractOutside={(e) => pending && e.preventDefault()}
-          onEscapeKeyDown={(e) => pending && e.preventDefault()}
-        >
-          <div className="modal-header">
-            <KeyRound className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold">
-              Bootstrap-креды для prepare
-            </Dialog.Title>
-          </div>
+    <Modal
+      open
+      onOpenChange={(o) => !o && !pending && onClose()}
+      title="Bootstrap-креды для prepare"
+      icon={<KeyRound className="w-5 h-5 text-accent" />}
+      hideCloseButton
+    >
 
           <form onSubmit={submit}>
             <div className="modal-body">
-              <Dialog.Description className="text-sm text-dim mb-3">
+              <p className="text-sm text-dim mb-3">
                 Креды, под которыми worker зайдёт на{" "}
                 <span className="mono">{hostname}</span> для запуска
                 management-цикла. Передаются один раз, на сервере не хранятся.
-              </Dialog.Description>
+              </p>
 
               <BootstrapCredsFields
                 value={form}
@@ -274,25 +270,21 @@ export function BootstrapCredsModal({
             </div>
 
             <div className="modal-footer">
-              <button
+              <Button
                 type="button"
-                className="btn"
                 onClick={onClose}
                 disabled={pending}
               >
                 Отмена
-              </button>
-              <button
+              </Button>
+              <Button variant="primary"
                 type="submit"
-                className="btn btn-primary"
                 disabled={pending || !valid}
               >
                 {pending ? "Запускаем…" : "Запустить prepare"}
-              </button>
+              </Button>
             </div>
           </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </Modal>
   );
 }

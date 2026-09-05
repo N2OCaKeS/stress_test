@@ -16,6 +16,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/contexts/ToastContext";
 import type { ThemeName } from "@/types/persona";
 import type { EntityRef } from "./_entity";
+import { Button } from "@/components/ui/Button";
 
 type GrafanaPanelKind =
   | "runtime"
@@ -331,52 +332,60 @@ export function MetricsTab({ entity }: MetricsTabProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
+            <Button
               type="button"
-              className={`btn btn-sm flex items-center gap-1 ${mode === "gauges" ? "btn-primary" : "btn-ghost"}`}
+              size="sm"
+              variant={mode === "gauges" ? "primary" : "ghost"}
+              className="flex items-center gap-1"
               onClick={() => setMode("gauges")}
               title="Показать основные показатели спидометрами"
             >
               <Gauge className="w-4 h-4" />
               Спидометры
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={`btn btn-sm flex items-center gap-1 ${mode === "single" ? "btn-primary" : "btn-ghost"}`}
+              size="sm"
+              variant={mode === "single" ? "primary" : "ghost"}
+              className="flex items-center gap-1"
               onClick={() => setMode("single")}
               title="Показать один выбранный график крупно"
             >
               <PanelTop className="w-4 h-4" />
               Одна панель
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={`btn btn-sm flex items-center gap-1 ${mode === "grid" ? "btn-primary" : "btn-ghost"}`}
+              size="sm"
+              variant={mode === "grid" ? "primary" : "ghost"}
+              className="flex items-center gap-1"
               onClick={() => setMode("grid")}
               title="Показать 4 графика с выбором метрики для каждого"
             >
               <Grid2X2 className="w-4 h-4" />
               Сетка
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={`btn btn-sm flex items-center gap-1 ${mode === "full" ? "btn-primary" : "btn-ghost"}`}
+              size="sm"
+              variant={mode === "full" ? "primary" : "ghost"}
+              className="flex items-center gap-1"
               onClick={() => setMode("full")}
               title="Показать полный Node Exporter dashboard (со скроллом)"
             >
               <LayoutDashboard className="w-4 h-4" />
               Полный
-            </button>
-            <button
+            </Button>
+            <Button size="sm"
               type="button"
-              className="btn btn-sm flex items-center gap-1"
+              className="flex items-center gap-1"
               onClick={handleInstallNodeExporter}
               disabled={installing}
               title="Установить node_exporter на целевую машину"
             >
               <Gauge className="w-4 h-4" />
               {installing ? "Запускаем..." : "node_exporter"}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -425,14 +434,15 @@ export function MetricsTab({ entity }: MetricsTabProps) {
               {[PRIMARY_PANELS, SUMMARY_PANELS, DETAIL_PANELS].map((group, idx) => (
                 <div key={idx} className="flex flex-col gap-1">
                   {group.map((panel) => (
-                    <button
+                    <Button
                       key={panel}
                       type="button"
-                      className={`btn justify-start ${selected === panel ? "btn-primary" : ""}`}
+                      variant={selected === panel ? "primary" : "default"}
+                      className="justify-start"
                       onClick={() => setSelected(panel)}
                     >
                       {PANEL_MAP[panel].label}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               ))}
@@ -493,15 +503,15 @@ function GrafanaUnavailable({
             <span className="mono">{baseUrl}</span>. Для метрик этой машины
             также нужен node_exporter на <span className="mono">{targetIp}:9100</span>.
           </div>
-          <button
+          <Button variant="primary"
             type="button"
-            className="btn btn-primary mt-3 flex items-center gap-1"
+            className="mt-3 flex items-center gap-1"
             onClick={onInstallNodeExporter}
             disabled={installing}
           >
             <Gauge className="w-4 h-4" />
             {installing ? "Запускаем..." : "Установить node_exporter"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -617,15 +627,15 @@ function GrafanaPanel({
         className="rounded bg-[var(--bg)]"
         style={{ backgroundColor: "var(--bg)" }}
       />
-      <button
+      <Button variant="ghost"
         type="button"
-        className="btn btn-ghost absolute right-3 top-3 h-8 px-2"
+        className="absolute right-3 top-3 h-8 px-2"
         aria-label="Сбросить приближение"
         title="Сбросить приближение графика"
         onClick={() => setResetTick((n) => n + 1)}
       >
         <RotateCcw className="w-4 h-4" />
-      </button>
+      </Button>
     </div>
   );
 }

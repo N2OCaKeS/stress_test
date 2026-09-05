@@ -31,6 +31,7 @@ import {
   TASK_POLL_MS,
 } from "@/pages/worker/workerLive";
 import { InventoryResultView } from "@/pages/server/InventoryResultView";
+import { Button } from "@/components/ui/Button";
 
 /** Kind'ы, чей результат показываем через InventoryResultView. */
 function isInventoryKind(kind: string): boolean {
@@ -176,9 +177,9 @@ function CenteredNote({
         {danger && <AlertCircle className="w-10 h-10 mx-auto text-danger mb-3" />}
         <div className="text-sm text-dim mb-3">{note}</div>
         {onRetry && (
-          <button className="btn" onClick={onRetry}>
+          <Button onClick={onRetry}>
             Повторить
-          </button>
+          </Button>
         )}
       </div>
     </section>

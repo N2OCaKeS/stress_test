@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { X, UserCog, ShieldCheck, Copy, AlertTriangle, RefreshCw } from "lucide-react";
+import { UserCog, ShieldCheck, Copy, AlertTriangle, RefreshCw } from "lucide-react";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { formatMskDate } from "@/lib/datetime";
@@ -18,6 +18,8 @@ import type {
   PlatformRole,
   BotTokenCreateResponse,
 } from "@/api/auth/types";
+import { Button } from "@/components/ui/Button";
+import { Modal as UIModal } from "@/components/ui/Modal";
 
 /**
  * Lightweight modal + create/edit forms for users-account_admin workzone.
@@ -59,23 +61,16 @@ export function Modal({
   children: ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div
-        className="surface border border-token rounded-lg shadow-xl w-full max-w-xl mx-4 max-h-[90vh] overflow-y-auto"
-        role="dialog"
-        aria-modal="true"
-      >
-        <div className="flex items-center justify-between border-b border-token px-4 py-3">
-          <h3 className="font-semibold text-sm flex items-center gap-2">
-            {title}
-          </h3>
-          <button className="btn btn-ghost p-1" onClick={onClose} aria-label="Закрыть">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="p-4">{children}</div>
-      </div>
-    </div>
+    <UIModal
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={title}
+      width="md"
+    >
+      {children}
+    </UIModal>
   );
 }
 
@@ -239,24 +234,22 @@ export function CreateUserForm({
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          <button
+          <Button
             type="button"
-            className="btn"
             onClick={() => setPassword(generateInitialPassword())}
             title="Сгенерировать новый"
             disabled={busy}
           >
             <RefreshCw className="w-4 h-4" />
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="btn"
             onClick={copyPassword}
             title="Скопировать"
             disabled={busy}
           >
             <Copy className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
         {passwordError ? (
           <div className="text-[11px] text-danger mt-1">{passwordError}</div>
@@ -325,16 +318,15 @@ export function CreateUserForm({
         </div>
       )}
       <div className="flex gap-2 justify-end mt-2">
-        <button className="btn" onClick={onCancel} disabled={busy}>
+        <Button onClick={onCancel} disabled={busy}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary"
+        </Button>
+        <Button variant="primary"
           onClick={submit}
           disabled={busy || (!mockMode && formInvalid)}
         >
           {busy ? "..." : "Создать"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -475,12 +467,12 @@ export function EditRolesForm({
         </div>
       )}
       <div className="flex gap-2 justify-end mt-2">
-        <button className="btn" onClick={onCancel} disabled={busy}>
+        <Button onClick={onCancel} disabled={busy}>
           Отмена
-        </button>
-        <button className="btn btn-primary" onClick={submit} disabled={busy}>
+        </Button>
+        <Button variant="primary" onClick={submit} disabled={busy}>
           {busy ? "..." : "Сохранить"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -570,16 +562,15 @@ export function CreateGroupForm({
         </div>
       )}
       <div className="flex gap-2 justify-end mt-2">
-        <button className="btn" onClick={onCancel} disabled={busy}>
+        <Button onClick={onCancel} disabled={busy}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary"
+        </Button>
+        <Button variant="primary"
           onClick={submit}
           disabled={busy || (!mockMode && (!name || !deptId))}
         >
           {busy ? "..." : "Создать"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -678,13 +669,13 @@ export function CreateBotForm({
             <code className="mono text-xs break-all flex-1 px-2 py-1 surface-2 rounded border border-token">
               {token.token}
             </code>
-            <button
-              className="btn flex items-center gap-1 shrink-0"
+            <Button
+              className="flex items-center gap-1 shrink-0"
               onClick={copyToken}
             >
               <Copy className="w-3 h-3" />
               {copied ? "скопировано" : "копировать"}
-            </button>
+            </Button>
           </div>
         </Field>
         {token.expires_at && (
@@ -693,9 +684,9 @@ export function CreateBotForm({
           </Field>
         )}
         <div className="flex justify-end mt-2">
-          <button className="btn btn-primary" onClick={onSuccess}>
+          <Button variant="primary" onClick={onSuccess}>
             Готово
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -739,16 +730,15 @@ export function CreateBotForm({
         </div>
       )}
       <div className="flex gap-2 justify-end mt-2">
-        <button className="btn" onClick={onCancel} disabled={busy}>
+        <Button onClick={onCancel} disabled={busy}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary"
+        </Button>
+        <Button variant="primary"
           onClick={submit}
           disabled={busy || (!mockMode && (!name || !deptId))}
         >
           {busy ? "..." : "Создать"}
-        </button>
+        </Button>
       </div>
     </div>
   );

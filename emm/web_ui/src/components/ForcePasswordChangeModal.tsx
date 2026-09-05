@@ -8,6 +8,7 @@ import {
   passwordPolicyMessage,
   getActivePasswordPolicy,
 } from "@/lib/passwordPolicy";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Blocking modal shown when `IdentityContext.must_change_password === true`.
@@ -156,14 +157,14 @@ export function ForcePasswordChangeModal() {
               </div>
             </div>
             <div className="modal-footer">
-              <button
+              <Button variant="primary"
                 type="submit"
-                className="btn btn-primary flex items-center gap-1"
+                className="flex items-center gap-1"
                 disabled={!canSubmit}
               >
                 <Check className="w-4 h-4" />
                 {busy ? "..." : "Сменить пароль"}
-              </button>
+              </Button>
             </div>
           </form>
         </Dialog.Content>

@@ -56,6 +56,9 @@ import { naturalCompare } from "@/lib/naturalSort";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { canManageOsVersions } from "@/pages/admin/services/ServicesOsVersions";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 // Сколько версий тянем за один запрос «Загрузить ещё». В проекте каталог
 // небольшой (десятки записей), поэтому шага в полсотни хватает с запасом.
@@ -108,12 +111,12 @@ const MOCK_ITEMS: OsVersion[] = [
 /** Бейдж «UU»/hotfix — предупреждающий, не блокирующий стиль (как остальные warn-бейджи). */
 function UrgentUpdateBadge() {
   return (
-    <span
-      className="badge badge-warn shrink-0 flex items-center gap-1"
+    <Badge kind="warn"
+      className="shrink-0 flex items-center gap-1"
       title="Срочное обновление вне обычного цикла РЦ (hotfix, legacy UU)"
     >
       <AlertTriangle className="w-3 h-3" /> UU
-    </span>
+    </Badge>
   );
 }
 
@@ -121,12 +124,12 @@ function UrgentUpdateBadge() {
 function KernelsBadge({ kernels }: { kernels: string[] }) {
   if (kernels.length === 0) return null;
   return (
-    <span
-      className="badge shrink-0"
+    <Badge
+      className="shrink-0"
       title={`Ядра: ${kernels.join(", ")}`}
     >
       {kernels.length} ядер
-    </span>
+    </Badge>
   );
 }
 
@@ -142,10 +145,10 @@ function RepoBadges({ repositories }: { repositories: string[] }) {
         // саму строку показываем как текст.
         const url = repo.match(/https?:\/\/[^\s]+/)?.[0];
         return (
-          <div
+          <Badge
             key={`${repo}-${i}`}
             title={repo}
-            className="badge flex items-center gap-1 max-w-full"
+            className="flex items-center gap-1 max-w-full"
           >
             <span className="truncate mono text-[11px] flex-1">{repo}</span>
             {url && (
@@ -159,7 +162,7 @@ function RepoBadges({ repositories }: { repositories: string[] }) {
                 <Link2 className="w-3 h-3" />
               </a>
             )}
-          </div>
+          </Badge>
         );
       })}
     </div>
@@ -206,12 +209,12 @@ function ResolveRepositoriesInline({
 
   if (!open) {
     return (
-      <button
-        className="btn btn-sm flex items-center gap-1 self-start"
+      <Button size="sm"
+        className="flex items-center gap-1 self-start"
         onClick={() => setOpen(true)}
       >
         <Wand2 className="w-3 h-3" /> Подтянуть по build-версии
-      </button>
+      </Button>
     );
   }
 
@@ -228,11 +231,10 @@ function ResolveRepositoriesInline({
           if (e.key === "Enter") submit();
         }}
       />
-      <button className="btn btn-sm btn-primary" disabled={busy} onClick={submit}>
+      <Button variant="primary" size="sm" disabled={busy} onClick={submit}>
         {busy ? "…" : "Подтянуть"}
-      </button>
-      <button
-        className="btn btn-sm"
+      </Button>
+      <Button size="sm"
         disabled={busy}
         onClick={() => {
           setOpen(false);
@@ -240,7 +242,7 @@ function ResolveRepositoriesInline({
         }}
       >
         Отмена
-      </button>
+      </Button>
     </div>
   );
 }
@@ -276,7 +278,7 @@ function OsVersionCard({
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <KernelsBadge kernels={version.kernels} />
-          <span className="badge">{version.repositories.length} repo</span>
+          <Badge>{version.repositories.length} repo</Badge>
         </div>
         <ChevronDown
           className={`w-4 h-4 text-dim shrink-0 transition-transform ${
@@ -323,7 +325,7 @@ function OsVersionStrip({
         <div className="text-xs text-dim truncate">{version.description ?? "—"}</div>
         <div className="flex items-center gap-1 flex-wrap justify-self-start">
           <KernelsBadge kernels={version.kernels} />
-          <span className="badge">{version.repositories.length} repo</span>
+          <Badge>{version.repositories.length} repo</Badge>
         </div>
         <span className="text-[11px] text-dim mono">{formatMsk(version.updated_at)}</span>
         <ChevronDown
@@ -365,9 +367,9 @@ function OsVersionDetails({
           <span className="text-[11px] text-dim">ядра</span>
           <div className="flex flex-wrap gap-1">
             {version.kernels.map((kernel) => (
-              <span key={kernel} className="badge mono text-[11px]">
+              <Badge key={kernel} className="mono text-[11px]">
                 {kernel}
-              </span>
+              </Badge>
             ))}
           </div>
         </div>
@@ -445,13 +447,13 @@ function BootstrapCredentials({ versionId }: { versionId: string }) {
       <div className="flex items-center gap-2 flex-wrap">
         <KeyRound className="w-4 h-4 text-accent" />
         <div className="text-sm font-medium">Bootstrap-пользователь ОС</div>
-        <span className="badge ml-auto">
+        <Badge className="ml-auto">
           {statusQ.loading
             ? "проверка..."
             : status?.has_password
               ? "пароль задан"
               : "пароль не задан"}
-        </span>
+        </Badge>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto] gap-2">
         <input
@@ -474,17 +476,17 @@ function BootstrapCredentials({ versionId }: { versionId: string }) {
           }}
         />
         <div className="flex gap-2">
-          <button
-            className="btn btn-sm flex items-center gap-1"
+          <Button size="sm"
+            className="flex items-center gap-1"
             disabled={saving || !status?.has_password}
             onClick={revealed ? () => setRevealed(false) : reveal}
           >
             {revealed ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
             {revealed ? "Скрыть" : "Показать"}
-          </button>
-          <button className="btn btn-primary btn-sm" disabled={saving} onClick={save}>
+          </Button>
+          <Button variant="primary" size="sm" disabled={saving} onClick={save}>
             {saving ? "..." : "Сохранить"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -626,9 +628,9 @@ function AddOsVersionWorkspace({
                 : `в семействе ${family} пока нет источника bootstrap-кредов`}
           </div>
         </div>
-        <button className="btn btn-sm" onClick={onCancel} disabled={busy}>
+        <Button size="sm" onClick={onCancel} disabled={busy}>
           К списку ОС
-        </button>
+        </Button>
       </div>
 
       <div className="card grid gap-4">
@@ -686,8 +688,7 @@ function AddOsVersionWorkspace({
           />
         </label>
         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={isUrgentUpdate}
             onChange={(e) => setIsUrgentUpdate(e.target.checked)}
           />
@@ -697,9 +698,9 @@ function AddOsVersionWorkspace({
           <div className="flex items-center gap-2 flex-wrap">
             <KeyRound className="w-4 h-4 text-accent" />
             <span className="text-sm font-medium">Bootstrap-креды</span>
-            {loadingDefaults && <span className="badge">загрузка...</span>}
+            {loadingDefaults && <Badge>загрузка...</Badge>}
             {defaultsFrom && !credentialsTouched && (
-              <span className="badge">из {defaultsFrom}</span>
+              <Badge>из {defaultsFrom}</Badge>
             )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -725,12 +726,12 @@ function AddOsVersionWorkspace({
           </div>
         </div>
         <div className="flex justify-end gap-2">
-          <button className="btn" disabled={busy} onClick={onCancel}>
+          <Button disabled={busy} onClick={onCancel}>
             Отмена
-          </button>
-          <button className="btn btn-primary" disabled={busy} onClick={submit}>
+          </Button>
+          <Button variant="primary" disabled={busy} onClick={submit}>
             {busy ? "Создание..." : "Добавить ОС"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -828,13 +829,13 @@ function OsCatalogBody() {
           {canCreate ? "" : " · только просмотр"}
         </span>
         {canCreate && (
-          <button
-            className="btn btn-primary btn-sm flex items-center gap-1 ml-auto"
+          <Button variant="primary" size="sm"
+            className="flex items-center gap-1 ml-auto"
             onClick={() => setCreating(true)}
             disabled={creating}
           >
             <Plus className="w-4 h-4" /> Добавить версию ОС
-          </button>
+          </Button>
         )}
       </div>
 
@@ -850,17 +851,17 @@ function OsCatalogBody() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {filterButtons.map((item) => (
-            <button
+            <Button
               key={item.id}
               type="button"
               onClick={() => setFamilyFilter(item.id)}
-              className={`btn btn-sm inline-flex items-center gap-2 ${
-                familyFilter === item.id ? "btn-primary" : ""
-              }`}
+              size="sm"
+              variant={familyFilter === item.id ? "primary" : "default"}
+              className="inline-flex items-center gap-2"
             >
               <span>{item.label}</span>
               <span className="mono text-[11px] opacity-80">{item.count}</span>
-            </button>
+            </Button>
           ))}
         </div>
         <div className="surface-2 border border-token rounded p-1 flex items-center gap-1">
@@ -870,17 +871,17 @@ function OsCatalogBody() {
           ].map((item) => {
             const Icon = item.icon;
             return (
-              <button
+              <Button
                 key={item.id}
                 type="button"
                 onClick={() => setViewMode(item.id)}
-                className={`btn btn-sm inline-flex items-center gap-2 ${
-                  viewMode === item.id ? "btn-primary" : ""
-                }`}
+                size="sm"
+                variant={viewMode === item.id ? "primary" : "default"}
+                className="inline-flex items-center gap-2"
               >
                 <Icon className="w-4 h-4" />
                 <span>{item.label}</span>
-              </button>
+              </Button>
             );
           })}
         </div>
@@ -889,9 +890,9 @@ function OsCatalogBody() {
       {errMsg && (
         <div className="alert-danger text-xs flex items-center justify-between gap-3">
           <span>{errMsg}</span>
-          <button className="btn" onClick={() => listQ.refetch()}>
+          <Button onClick={() => listQ.refetch()}>
             Повторить
-          </button>
+          </Button>
         </div>
       )}
 
@@ -936,13 +937,12 @@ function OsCatalogBody() {
 
       {hasMore && (
         <div className="flex justify-center pt-1">
-          <button
-            className="btn"
+          <Button
             disabled={loadingMore}
             onClick={() => setLimit((n) => n + PAGE_SIZE)}
           >
             {loadingMore ? "Загрузка…" : "Загрузить ещё"}
-          </button>
+          </Button>
         </div>
       )}
     </div>

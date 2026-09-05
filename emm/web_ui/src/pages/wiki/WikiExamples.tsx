@@ -20,6 +20,7 @@ import {
 } from "./examples";
 import type { ApiSection, ApiFlow } from "./examples";
 import type { CodeLang } from "./examples/types";
+import { Button } from "@/components/ui/Button";
 
 type ServiceKey = "auth" | "server" | "secret" | "loging";
 
@@ -117,16 +118,15 @@ function SettingsPanel() {
             <span className="text-xs text-dim">Аутентификация</span>
             <div className="flex gap-1">
               {(["login", "pat"] as AuthMode[]).map((m) => (
-                <button
+                <Button
                   key={m}
                   type="button"
                   onClick={() => s.setAuthMode(m)}
-                  className={`btn text-xs ${
-                    s.authMode === m ? "btn-primary" : "btn-ghost"
-                  }`}
+                  variant={s.authMode === m ? "primary" : "ghost"}
+                  className="text-xs"
                 >
                   {m === "login" ? "login (username/password)" : "PAT"}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -265,16 +265,15 @@ function GlobalLangToggle() {
       <span className="text-xs text-dim">Язык по умолчанию:</span>
       <div className="flex gap-1">
         {LANG_TABS.map((t) => (
-          <button
+          <Button
             key={t.key}
             type="button"
             onClick={() => s.setLang(t.key)}
-            className={`btn text-xs ${
-              s.lang === t.key ? "btn-primary" : "btn-ghost"
-            }`}
+            variant={s.lang === t.key ? "primary" : "ghost"}
+            className="text-xs"
           >
             {t.label}
-          </button>
+          </Button>
         ))}
       </div>
     </div>

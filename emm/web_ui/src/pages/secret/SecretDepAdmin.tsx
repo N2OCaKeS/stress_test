@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { Dropdown } from "@/components/ui/Dropdown";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 interface CredRow {
   id: string;
@@ -150,9 +152,9 @@ export function SecretDepAdmin() {
                         <span className={row.noteClass}>{row.note}</span>
                       </div>
                     </div>
-                    <span className={`badge badge-${row.badgeKind}`}>
+                    <Badge kind={row.badgeKind}>
                       {row.badge}
-                    </span>
+                    </Badge>
                   </div>
                 </button>
               );
@@ -161,15 +163,15 @@ export function SecretDepAdmin() {
         </div>
 
         <div className="border-t border-token p-3">
-          <button className="btn btn-primary w-full flex items-center justify-center gap-2">
+          <Button variant="primary" className="w-full flex items-center justify-center gap-2">
             <Plus className="w-4 h-4" /> Создать учётные данные
-          </button>
+          </Button>
         </div>
       </section>
 
       <SecretDetailPanel
         title="alice-personal-vault"
-        statusBadge={<span className="badge badge-ok">active</span>}
+        statusBadge={<Badge kind="ok">active</Badge>}
         scope="my"
         scopePrefix=""
         idStr="cred_e8f2c901a3b54c7e"
@@ -206,15 +208,15 @@ export function SecretDepAdmin() {
         ]}
         actions={
           <>
-            <button className="btn">
+            <Button>
               <Edit3 className="w-4 h-4 inline-block" /> Изменить
-            </button>
-            <button className="btn">
+            </Button>
+            <Button>
               <RotateCw className="w-4 h-4 inline-block" /> Ротация
-            </button>
-            <button className="btn btn-danger">
+            </Button>
+            <Button variant="danger">
               <Trash2 className="w-4 h-4 inline-block" /> Удалить
-            </button>
+            </Button>
           </>
         }
       />
@@ -248,11 +250,9 @@ function CredRowButton({
             <span>{row.tail}</span>
           </div>
         </div>
-        <span
-          className={`badge${row.badgeKind ? ` badge-${row.badgeKind}` : ""}`}
-        >
+        <Badge kind={row.badgeKind || "neutral"}>
           {row.badge}
-        </span>
+        </Badge>
       </div>
     </button>
   );
@@ -374,16 +374,15 @@ export function SecretDetailPanel({
               Значение
             </div>
             <div className="flex items-center gap-2">
-              <button
+              <Button
                 onClick={() => setRevealed((v) => !v)}
-                className="btn"
               >
                 <Eye className="w-4 h-4 inline-block" />{" "}
                 <span>{revealed ? "Скрыть" : "Показать"}</span>
-              </button>
-              <button className="btn">
+              </Button>
+              <Button>
                 <Copy className="w-4 h-4 inline-block" />
-              </button>
+              </Button>
             </div>
           </div>
           <div
@@ -443,7 +442,7 @@ export function SecretDetailPanel({
           <div className="text-sm">
             <div className="stat-row">
               <span className="text-dim">Область</span>
-              <span className="badge">{accessMatrix.scopeBadge}</span>
+              <Badge>{accessMatrix.scopeBadge}</Badge>
             </div>
             {accessMatrix.ownerRole && (
               <div className="stat-row">
@@ -489,9 +488,9 @@ export function SecretDetailPanel({
             )}
           </div>
           {accessMatrix.primaryButton ?? (
-            <button className="btn mt-3 w-full">
+            <Button className="mt-3 w-full">
               Открыть вкладку «Матрица доступа»
-            </button>
+            </Button>
           )}
         </div>
 

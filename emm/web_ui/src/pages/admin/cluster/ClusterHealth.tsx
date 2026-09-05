@@ -10,6 +10,8 @@ import {
 import { CLUSTER_PODS } from "@/mocks/cluster";
 import { pingCluster, type ServicePing } from "@/api/cluster/health";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 const ICONS = {
   lock: LockKeyhole,
@@ -28,7 +30,7 @@ function PingRow({ p }: { p: ServicePing }) {
       </div>
       <div className="flex items-center gap-3 text-xs">
         {!p.probeable ? (
-          <span className="badge">{p.error ?? "нет HTTP-проба"}</span>
+          <Badge>{p.error ?? "нет HTTP-проба"}</Badge>
         ) : (
           <>
             {p.latency_ms != null && (
@@ -71,8 +73,8 @@ export function ClusterHealth() {
               <Activity className="w-4 h-4 text-dim" /> Состояние кластера · прямой
               пинг
             </h3>
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               onClick={refetch}
               disabled={loading}
             >
@@ -80,7 +82,7 @@ export function ClusterHealth() {
                 className={`w-3.5 h-3.5${loading ? " animate-spin" : ""}`}
               />{" "}
               Обновить
-            </button>
+            </Button>
           </div>
           {loading && !data ? (
             <div className="empty-card text-xs">Пинг сервисов…</div>
@@ -104,7 +106,7 @@ export function ClusterHealth() {
             <h3 className="font-semibold flex items-center gap-2">
               <Activity className="w-4 h-4 text-ok" /> Состояние кластера
             </h3>
-            <span className="badge badge-ok">в норме</span>
+            <Badge kind="ok">в норме</Badge>
           </div>
           <div className="flex items-center gap-3 mb-3">
             <span className="health-led led-ok" />

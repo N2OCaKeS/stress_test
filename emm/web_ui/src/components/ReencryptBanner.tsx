@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ShieldAlert, X } from "lucide-react";
 import { registerReencryptHandler, type ReencryptNotice } from "@/api/client";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Глобальный баннер обслуживания на время force-перешифровки ключа.
@@ -92,13 +93,13 @@ export function ReencryptBanner() {
               ` Осталось строк: ${state.remaining}.`}
           </div>
         </div>
-        <button
-          className="btn btn-ghost flex items-center"
+        <Button variant="ghost"
+          className="flex items-center"
           onClick={() => setState(null)}
           title="Скрыть"
         >
           <X className="w-3.5 h-3.5" />
-        </button>
+        </Button>
       </div>
     </div>
   );

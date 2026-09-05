@@ -15,7 +15,6 @@
  * пароль) — в `failed[]`.
  */
 import { useMemo, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import {
   AlertCircle,
   Camera,
@@ -38,6 +37,9 @@ import type {
   OsVersion,
   Server,
 } from "@/api/server/types";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Modal } from "@/components/ui/Modal";
 
 const ACS_BATCH_REASON_RU: Record<string, string> = {
   not_found_or_cross_dept: "сервер не найден или принадлежит другому отделу",
@@ -130,22 +132,14 @@ export function BulkAcsSnapshotModal({
   const failed = result?.failed ?? [];
 
   return (
-    <Dialog.Root open modal onOpenChange={(o) => !o && !pending && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content
-          className="modal-content"
-          style={{ maxWidth: 640 }}
-          onInteractOutside={(e) => pending && e.preventDefault()}
-          onEscapeKeyDown={(e) => pending && e.preventDefault()}
-        >
-          <div className="modal-header">
-            <Camera className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold">
-              Снимки ACS выбранных ({servers.length})
-            </Dialog.Title>
-          </div>
-
+    <Modal
+      open
+      width="md"
+      onOpenChange={(o) => !o && !pending && onClose()}
+      title={`Снимки ACS выбранных (${servers.length})`}
+      icon={<Camera className="w-5 h-5 text-accent" />}
+      hideCloseButton
+    >
           {result ? (
             <>
               <div className="modal-body flex flex-col gap-3">
@@ -208,16 +202,16 @@ export function BulkAcsSnapshotModal({
                 )}
               </div>
               <div className="modal-footer">
-                <button
+                <Button variant="primary"
                   type="button"
-                  className="btn btn-primary flex items-center gap-1"
+                  className="flex items-center gap-1"
                   onClick={() => {
                     onDone();
                     onClose();
                   }}
                 >
                   <X className="w-4 h-4" /> Готово
-                </button>
+                </Button>
               </div>
             </>
           ) : (
@@ -275,8 +269,7 @@ export function BulkAcsSnapshotModal({
                 </label>
 
                 <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={excludeVmsHub}
                     onChange={(e) => setExcludeVmsHub(e.target.checked)}
                   />
@@ -303,17 +296,18 @@ export function BulkAcsSnapshotModal({
               </div>
 
               <div className="modal-footer">
-                <button
+                <Button
                   type="button"
-                  className="btn flex items-center gap-1"
+                  className="flex items-center gap-1"
                   onClick={onClose}
                   disabled={pending}
                 >
                   <X className="w-4 h-4" /> Отмена
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
-                  className={`btn flex items-center gap-1 ${action === "restore" ? "btn-danger" : "btn-primary"}`}
+                  variant={action === "restore" ? "danger" : "primary"}
+                  className="flex items-center gap-1"
                   disabled={pending || !valid}
                 >
                   {action === "create" ? (
@@ -326,12 +320,10 @@ export function BulkAcsSnapshotModal({
                     : action === "create"
                       ? "Создать снимки"
                       : "Восстановить"}
-                </button>
+                </Button>
               </div>
             </form>
           )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </Modal>
   );
 }

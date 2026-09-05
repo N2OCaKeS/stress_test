@@ -13,6 +13,7 @@ import { ThemeSwitcher } from "@/components/shell/ThemeSwitcher";
 import { CertHelpModal } from "@/components/CertHelpModal";
 import { useAuth, USE_MOCK_AUTH } from "@/contexts/AuthContext";
 import { ApiError } from "@/api/client";
+import { Button } from "@/components/ui/Button";
 
 const SERVICE_NAME = "EMM";
 const SERVICE_VERSION = "1.0.0";
@@ -183,10 +184,10 @@ export function Login() {
                 </div>
               </div>
 
-              <button
+              <Button variant="primary"
                 type="submit"
                 disabled={submitting || !username || !password}
-                className="btn btn-primary w-full py-2.5 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                className="w-full py-2.5 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
               >
                 {submitting ? (
                   <>
@@ -199,7 +200,7 @@ export function Login() {
                     <span>Войти</span>
                   </>
                 )}
-              </button>
+              </Button>
             </form>
 
             <div className="mt-5 text-center text-xs text-dim">

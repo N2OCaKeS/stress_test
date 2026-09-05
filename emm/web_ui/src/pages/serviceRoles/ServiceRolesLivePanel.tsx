@@ -21,6 +21,8 @@ import { ApiError } from "@/api/client";
 import { useDeptLabel } from "@/lib/labels";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import type { ServiceName } from "@/api/auth/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 const DEFAULT_SERVICES: ServiceName[] = [
   "server_service",
@@ -140,9 +142,9 @@ export function ServiceRolesLivePanel({
       {rolesQ.error && rolesQ.error instanceof ApiError && (
         <div className="alert-danger">
           {rolesQ.error.errorCode}: {rolesQ.error.message}
-          <button className="btn btn-sm ml-2" onClick={refetch}>
+          <Button size="sm" className="ml-2" onClick={refetch}>
             Повторить
-          </button>
+          </Button>
         </div>
       )}
       {rolesQ.error && !(rolesQ.error instanceof ApiError) && (
@@ -172,14 +174,13 @@ export function ServiceRolesLivePanel({
                     <td className="text-xs text-dim">{r.description ?? "—"}</td>
                     <td className="text-xs">
                       {r.is_system ? (
-                        <span className="badge">system</span>
+                        <Badge>system</Badge>
                       ) : (
-                        <span className="badge badge-accent">custom</span>
+                        <Badge kind="accent">custom</Badge>
                       )}
                     </td>
                     <td className="text-xs flex gap-1">
-                      <button
-                        className="btn btn-sm"
+                      <Button size="sm"
                         disabled={r.is_system || pending}
                         title={
                           r.is_system
@@ -203,9 +204,8 @@ export function ServiceRolesLivePanel({
                         }}
                       >
                         изменить
-                      </button>
-                      <button
-                        className="btn btn-sm btn-danger"
+                      </Button>
+                      <Button variant="danger" size="sm"
                         disabled={r.is_system || pending}
                         title={
                           r.is_system ? "Системную роль нельзя удалить" : undefined
@@ -224,7 +224,7 @@ export function ServiceRolesLivePanel({
                         }}
                       >
                         <Trash2 className="w-3 h-3" />
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -251,8 +251,8 @@ export function ServiceRolesLivePanel({
                   onChange={(e) => setNewRoleDesc(e.target.value)}
                 />
               </div>
-              <button
-                className="btn btn-primary mt-2 flex items-center gap-1"
+              <Button variant="primary"
+                className="mt-2 flex items-center gap-1"
                 disabled={pending || !newRoleName.trim()}
                 onClick={() => {
                   const roleName = newRoleName.trim();
@@ -272,7 +272,7 @@ export function ServiceRolesLivePanel({
                 }}
               >
                 <Plus className="w-4 h-4" /> Создать
-              </button>
+              </Button>
             </div>
           )}
 
@@ -295,8 +295,8 @@ export function ServiceRolesLivePanel({
               />
             </div>
             <div className="flex gap-2 mt-2">
-              <button
-                className="btn btn-primary flex items-center gap-1"
+              <Button variant="primary"
+                className="flex items-center gap-1"
                 disabled={pending || !bulkRole.trim() || !bulkUserIds.trim()}
                 onClick={() => {
                   const ids = bulkUserIds
@@ -314,9 +314,9 @@ export function ServiceRolesLivePanel({
                 }}
               >
                 <UserPlus className="w-4 h-4" /> назначить
-              </button>
-              <button
-                className="btn btn-danger flex items-center gap-1"
+              </Button>
+              <Button variant="danger"
+                className="flex items-center gap-1"
                 disabled={pending || !bulkRole.trim() || !bulkUserIds.trim()}
                 onClick={() => {
                   const ids = bulkUserIds
@@ -334,7 +334,7 @@ export function ServiceRolesLivePanel({
                 }}
               >
                 <UserMinus className="w-4 h-4" /> отозвать
-              </button>
+              </Button>
             </div>
           </div>
         </>

@@ -27,6 +27,9 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useDeptLabelOpt } from "@/lib/labels";
 import { formatMsk } from "@/lib/datetime";
 import { isPlatformWideAdmin } from "@/lib/rbac";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 const MOCK_LOCKED: LockedUser[] = [
   {
@@ -171,15 +174,14 @@ function LockedList() {
         </h3>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1.5 text-xs text-dim cursor-pointer">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={includeFailing}
               onChange={(e) => setIncludeFailing(e.target.checked)}
             />
             показывать копящие неудачные попытки
           </label>
-          <button
-            className="btn btn-sm flex items-center gap-1"
+          <Button size="sm"
+            className="flex items-center gap-1"
             onClick={() => listQ.refetch()}
             disabled={listQ.loading}
           >
@@ -189,7 +191,7 @@ function LockedList() {
               <RefreshCcw className="w-3.5 h-3.5" />
             )}
             Обновить
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -198,9 +200,9 @@ function LockedList() {
       ) : listQ.error ? (
         <div className="alert-danger text-xs flex items-center justify-between gap-2">
           <span>{apiErrMsg(listQ.error)}</span>
-          <button className="btn btn-ghost btn-sm" onClick={() => listQ.refetch()}>
+          <Button variant="ghost" size="sm" onClick={() => listQ.refetch()}>
             Повторить
-          </button>
+          </Button>
         </div>
       ) : rows.length === 0 ? (
         <div className="text-xs text-dim py-4 text-center">
@@ -246,11 +248,11 @@ function LockedRow({
         <div className="text-sm font-medium truncate flex items-center gap-2">
           {u.username}
           {u.is_banned ? (
-            <span className="badge danger">забанен</span>
+            <Badge className="danger">забанен</Badge>
           ) : locked ? (
-            <span className="badge badge-warn">залочен</span>
+            <Badge kind="warn">залочен</Badge>
           ) : (
-            <span className="badge">копит попытки</span>
+            <Badge>копит попытки</Badge>
           )}
         </div>
         <div className="text-[11px] text-dim truncate">
@@ -261,8 +263,8 @@ function LockedRow({
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        <button
-          className="btn btn-sm flex items-center gap-1"
+        <Button size="sm"
+          className="flex items-center gap-1"
           onClick={onUnlock}
           disabled={busy}
           title="Сбросить failed-attempts и locked_until"
@@ -273,23 +275,23 @@ function LockedRow({
             <LockOpen className="w-3.5 h-3.5" />
           )}
           Разблокировать
-        </button>
+        </Button>
         {u.is_banned ? (
-          <button
-            className="btn btn-sm flex items-center gap-1"
+          <Button size="sm"
+            className="flex items-center gap-1"
             onClick={onUnban}
             disabled={busy}
           >
             <ShieldCheck className="w-3.5 h-3.5" /> Снять бан
-          </button>
+          </Button>
         ) : (
-          <button
-            className="btn btn-sm btn-danger flex items-center gap-1"
+          <Button variant="danger" size="sm"
+            className="flex items-center gap-1"
             onClick={onBan}
             disabled={busy}
           >
             <Ban className="w-3.5 h-3.5" /> Заблокировать
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -426,8 +428,8 @@ function ManualUnlock() {
             ))}
           </datalist>
         </label>
-        <button
-          className="btn btn-primary flex items-center gap-1"
+        <Button variant="primary"
+          className="flex items-center gap-1"
           onClick={onUnlock}
           disabled={busy !== null || !username.trim()}
         >
@@ -437,9 +439,9 @@ function ManualUnlock() {
             <LockOpen className="w-4 h-4" />
           )}
           Разблокировать
-        </button>
-        <button
-          className="btn btn-danger flex items-center gap-1"
+        </Button>
+        <Button variant="danger"
+          className="flex items-center gap-1"
           onClick={onBan}
           disabled={busy !== null || !username.trim()}
         >
@@ -449,7 +451,7 @@ function ManualUnlock() {
             <Ban className="w-4 h-4" />
           )}
           Заблокировать
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -522,9 +524,9 @@ function PolicyForm() {
       ) : policyQ.error ? (
         <div className="alert-danger text-xs flex items-center justify-between gap-2">
           <span>{apiErrMsg(policyQ.error)}</span>
-          <button className="btn btn-ghost btn-sm" onClick={() => policyQ.refetch()}>
+          <Button variant="ghost" size="sm" onClick={() => policyQ.refetch()}>
             Повторить
-          </button>
+          </Button>
         </div>
       ) : policy ? (
         <>
@@ -557,13 +559,13 @@ function PolicyForm() {
             </label>
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <button
-              className="btn btn-primary flex items-center gap-1"
+            <Button variant="primary"
+              className="flex items-center gap-1"
               onClick={save}
               disabled={busy}
             >
               {busy && <Loader2 className="w-4 h-4 animate-spin" />} Сохранить
-            </button>
+            </Button>
             <span className="text-[11px] text-dim">
               PUT /admin/lockout-policy — применяется ко всем учёткам.
             </span>

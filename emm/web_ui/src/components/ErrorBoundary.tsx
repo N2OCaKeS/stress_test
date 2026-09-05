@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Button } from "@/components/ui/Button";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -77,22 +78,20 @@ export class ErrorBoundary extends Component<
             {showStack ? `\n\n${error.stack}` : ""}
           </pre>
           <div className="flex items-center gap-2">
-            <button
+            <Button variant="primary"
               type="button"
-              className="btn btn-primary"
               onClick={this.handleReload}
             >
               Перезагрузить
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="btn"
               onClick={() => {
                 void this.handleCopy();
               }}
             >
               {copied ? "Скопировано" : "Скопировать ошибку"}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

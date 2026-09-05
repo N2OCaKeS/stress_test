@@ -40,6 +40,8 @@ import { listServices } from "@/api/auth/services";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import type { Department, Service } from "@/api/auth/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 type UiDept = {
   id: string;
@@ -110,9 +112,9 @@ export function ServicesDepartments() {
                 {item.description ?? <span className="mono">{item.id}</span>}
               </div>
             </div>
-            <span className="badge" title="юзеров в отделе">
+            <Badge title="юзеров в отделе">
               {item.user_count ?? 0} юзеров
-            </span>
+            </Badge>
           </div>
         </button>
       )}
@@ -274,14 +276,14 @@ function DeptView({
         </h3>
         {canEdit && (
           <div className="flex items-center gap-2">
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               onClick={() => startEdit(dept.id)}
             >
               <Edit3 className="w-4 h-4" /> Изменить
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={deleteDisabled}
               title={
                 hasUsers
@@ -291,7 +293,7 @@ function DeptView({
               onClick={onDelete}
             >
               <Trash2 className="w-4 h-4" /> Удалить
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -449,11 +451,11 @@ function DeptServicesSection({
                 <div className="flex items-center justify-between gap-2 text-sm">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="mono truncate">{s.service_name}</span>
-                    <span className="badge">выдан</span>
+                    <Badge>выдан</Badge>
                   </div>
                   <div className="flex gap-1">
-                    <button
-                      className="btn btn-ghost text-xs flex items-center gap-1"
+                    <Button variant="ghost"
+                      className="text-xs flex items-center gap-1"
                       onClick={() => revoke(s.service_name)}
                       disabled={busy[s.service_name]}
                     >
@@ -463,7 +465,7 @@ function DeptServicesSection({
                         <X className="w-3 h-3" />
                       )}
                       отозвать
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 {isLoging && (
@@ -501,8 +503,8 @@ function DeptServicesSection({
             onChange={setPicker}
           />
         </label>
-        <button
-          className="btn flex items-center gap-1"
+        <Button
+          className="flex items-center gap-1"
           onClick={() => picker && grant(picker)}
           disabled={!picker || !!busy[picker]}
         >
@@ -512,7 +514,7 @@ function DeptServicesSection({
             <Plus className="w-4 h-4" />
           )}
           Выдать
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -596,16 +598,15 @@ function DeptForm({
       </div>
       {err && <div className="alert-danger mt-3">{err}</div>}
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onDone} disabled={busy}>
+        <Button onClick={onDone} disabled={busy}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary"
+        </Button>
+        <Button variant="primary"
           onClick={submit}
           disabled={busy || !name || !dirty}
         >
           {busy ? "..." : mode === "new" ? "Создать" : "Сохранить"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -698,8 +699,8 @@ function DeptRolesNav({
             >
               <div className="flex items-center gap-2 text-sm py-1">
                 {expandable ? (
-                  <button
-                    className="btn btn-ghost text-xs flex items-center gap-1 px-1"
+                  <Button variant="ghost"
+                    className="text-xs flex items-center gap-1 px-1"
                     onClick={() => toggle(s.service_name)}
                     aria-expanded={isOpen}
                     aria-label={isOpen ? "свернуть" : "раскрыть"}
@@ -709,7 +710,7 @@ function DeptRolesNav({
                     ) : (
                       <ChevronRight className="w-3 h-3" />
                     )}
-                  </button>
+                  </Button>
                 ) : (
                   <span className="w-5" />
                 )}

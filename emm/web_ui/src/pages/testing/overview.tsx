@@ -38,7 +38,6 @@ import {
   LoadMeter,
   LogViewerModal,
   MetaRow,
-  ModalHeader,
   OS_VERSION_IDS as RC_IDS,
   Sparkline,
   Stat,
@@ -53,6 +52,10 @@ import {
   type QueueItem,
   type Stand,
 } from "./_shared";
+import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Modal } from "@/components/ui/Modal";
 
 type ConceptId = "cards" | "strips" | "queue";
 type LaunchModal = "test" | "run" | null;
@@ -149,14 +152,14 @@ export function TestingOverview() {
           <div className="text-sm text-dim mt-1">{stands.length} стендов, отдельная очередь у каждого стенда</div>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <button type="button" className="btn btn-sm btn-primary inline-flex items-center gap-2" onClick={() => setLaunchModal("test")}>
+          <Button variant="primary" size="sm" type="button" className="inline-flex items-center gap-2" onClick={() => setLaunchModal("test")}>
             <Play className="w-4 h-4" />
             Запустить тест
-          </button>
-          <button type="button" className="btn btn-sm inline-flex items-center gap-2" onClick={() => setLaunchModal("run")}>
+          </Button>
+          <Button size="sm" type="button" className="inline-flex items-center gap-2" onClick={() => setLaunchModal("run")}>
             <ListChecks className="w-4 h-4" />
             Запустить прогон
-          </button>
+          </Button>
           <div className="surface border border-token rounded p-1 flex items-center gap-1 flex-wrap">
             {[
               { id: "cards" as const, label: "Карточки", icon: LayoutGrid },
@@ -165,15 +168,17 @@ export function TestingOverview() {
             ].map((item) => {
               const Icon = item.icon;
               return (
-                <button
+                <Button
                   key={item.id}
                   type="button"
                   onClick={() => setConcept(item.id)}
-                  className={`btn btn-sm inline-flex items-center gap-2 ${concept === item.id ? "btn-primary" : ""}`}
+                  size="sm"
+                  variant={concept === item.id ? "primary" : "default"}
+                  className="inline-flex items-center gap-2"
                 >
                   <Icon className="w-4 h-4" />
                   <span>{item.label}</span>
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -187,15 +192,17 @@ export function TestingOverview() {
             { id: "testing" as const, label: "Идет тестирование", count: totals.testing },
             { id: "busy" as const, label: "Занятые", count: totals.busy },
           ].map((item) => (
-            <button
+            <Button
               key={item.id}
               type="button"
               onClick={() => setFilter(item.id)}
-              className={`btn btn-sm inline-flex items-center gap-2 ${filter === item.id ? "btn-primary" : ""}`}
+              size="sm"
+              variant={filter === item.id ? "primary" : "default"}
+              className="inline-flex items-center gap-2"
             >
               <span>{item.label}</span>
               <span className="mono text-[11px] opacity-80">{item.count}</span>
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -415,10 +422,10 @@ function StripsConcept({
           <details key={stand.id} className="surface border border-token rounded overflow-hidden group">
             <summary className="grid grid-cols-1 xl:grid-cols-[230px_minmax(190px,1fr)_190px_170px_240px_250px_34px] gap-3 items-center px-4 py-3 cursor-pointer hover-bg list-none">
               <div className="flex items-center gap-3 min-w-0">
-                <span className={`badge badge-${meta.badge} inline-flex items-center gap-1 shrink-0`}>
+                <Badge kind={meta.badge} className="inline-flex items-center gap-1 shrink-0">
                   <Icon className="w-3 h-3" />
                   {meta.label}
-                </span>
+                </Badge>
                 <div className="min-w-0">
                   <div className="font-semibold truncate">{stand.name}</div>
                   <div className="mono text-xs text-dim truncate">{stand.ip}</div>
@@ -443,9 +450,9 @@ function StripsConcept({
                 <QueueBar queue={stand.queue} />
               </div>
               <div className="flex items-center gap-1 flex-wrap">
-                <button
+                <Button size="sm"
                   type="button"
-                  className="btn btn-sm inline-flex items-center gap-1"
+                  className="inline-flex items-center gap-1"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -454,10 +461,10 @@ function StripsConcept({
                 >
                   <Play className="w-3.5 h-3.5" />
                   Старт
-                </button>
-                <button
+                </Button>
+                <Button variant="danger" size="sm"
                   type="button"
-                  className="btn btn-sm btn-danger inline-flex items-center gap-1"
+                  className="inline-flex items-center gap-1"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -466,10 +473,10 @@ function StripsConcept({
                 >
                   <Square className="w-3.5 h-3.5" />
                   Стоп
-                </button>
-                <button
+                </Button>
+                <Button size="sm"
                   type="button"
-                  className="btn btn-sm inline-flex items-center gap-1"
+                  className="inline-flex items-center gap-1"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -478,7 +485,7 @@ function StripsConcept({
                 >
                   <ListChecks className="w-3.5 h-3.5" />
                   Очередь
-                </button>
+                </Button>
               </div>
               <span className="text-dim group-open:rotate-180 transition-transform">⌄</span>
             </summary>
@@ -497,14 +504,14 @@ function StripsConcept({
                 <div className="border-b border-token px-3 py-2 text-xs text-dim">Лог текущего теста</div>
                 <pre className="mono text-xs p-3 overflow-auto max-h-44 whitespace-pre-wrap">{demoQueueLog(stand, current)}</pre>
                 <div className="border-t border-token p-2 flex justify-end">
-                  <button
+                  <Button size="sm"
                     type="button"
-                    className="btn btn-sm inline-flex items-center gap-1"
+                    className="inline-flex items-center gap-1"
                     onClick={() => onOpenLog(stand, current)}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     Открыть журнал целиком
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -566,10 +573,29 @@ function LaunchTestModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/55 flex items-center justify-center p-5">
-      <div className="surface border border-token rounded w-full max-w-3xl max-h-[86vh] overflow-hidden shadow-2xl">
-        <ModalHeader title="Запустить тест" subtitle="Добавление выбранных тестов в очередь стенда" onClose={onClose} />
-        <div className="p-4 grid gap-4 overflow-auto max-h-[calc(86vh-64px)]">
+    <Modal
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title="Запустить тест"
+      subtitle="Добавление выбранных тестов в очередь стенда"
+      width="md"
+      footer={
+        <>
+          <Button type="button" onClick={onClose}>Отмена</Button>
+          <Button
+            variant="primary"
+            type="button"
+            disabled={!selectedTests.length || !stand}
+            onClick={() => stand && onSubmit(stand.id, selectedTests, prepareEnv)}
+          >
+            Добавить в очередь
+          </Button>
+        </>
+      }
+    >
+        <div className="grid gap-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <label className="grid gap-1">
               <span className="text-xs text-dim">Стенд</span>
@@ -602,8 +628,7 @@ function LaunchTestModal({
           </div>
 
           <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={prepareEnv}
               onChange={(event) => setPrepareEnv(event.target.checked)}
               className="mt-0.5"
@@ -621,27 +646,15 @@ function LaunchTestModal({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {tests.map((test) => (
                 <label key={test} className="surface border border-token rounded p-2 flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={selectedTests.includes(test)} onChange={() => toggleTest(test)} />
+                  <Checkbox checked={selectedTests.includes(test)} onChange={() => toggleTest(test)} />
                   <span>{test}</span>
                 </label>
               ))}
             </div>
           </div>
 
-          <div className="flex justify-end gap-2">
-            <button type="button" className="btn" onClick={onClose}>Отмена</button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!selectedTests.length || !stand}
-              onClick={() => stand && onSubmit(stand.id, selectedTests, prepareEnv)}
-            >
-              Добавить в очередь
-            </button>
-          </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -685,10 +698,16 @@ function QueueModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/55 flex items-center justify-center p-5">
-      <div className="surface border border-token rounded w-full max-w-4xl max-h-[86vh] overflow-hidden shadow-2xl">
-        <ModalHeader title={`Очередь ${stand.name}`} subtitle={stand.ip} onClose={onClose} />
-        <div className="p-4 overflow-auto max-h-[calc(86vh-64px)]">
+    <Modal
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={`Очередь ${stand.name}`}
+      subtitle={stand.ip}
+      width="lg"
+    >
+        <div>
           {stand.queue.length ? (
             <div className="grid gap-2">
               {stand.queue.map((item, index) => (
@@ -718,7 +737,7 @@ function QueueModal({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <div className="text-sm font-medium truncate">{item.title}</div>
-                      <span className={`badge badge-${queueBadge(item.state)}`}>{QUEUE_TEXT[item.state]}</span>
+                      <Badge kind={queueBadge(item.state)}>{QUEUE_TEXT[item.state]}</Badge>
                       {item.knownIssue && <KnownIssueBadge issue={item.knownIssue} />}
                     </div>
                     <div className="text-xs text-dim mt-1">{item.meta}</div>
@@ -726,27 +745,27 @@ function QueueModal({
                   </div>
                   <div className="flex items-center gap-1 flex-wrap justify-start lg:justify-end">
                     {item.log && (
-                      <button type="button" className="btn btn-sm inline-flex items-center gap-1" onClick={() => onOpenLog(item)}>
+                      <Button size="sm" type="button" className="inline-flex items-center gap-1" onClick={() => onOpenLog(item)}>
                         <ExternalLink className="w-4 h-4" />
                         Лог
-                      </button>
+                      </Button>
                     )}
                     {item.state === "running" && (
-                      <button type="button" className="btn btn-sm btn-danger inline-flex items-center gap-1" onClick={() => stop(index)}>
+                      <Button variant="danger" size="sm" type="button" className="inline-flex items-center gap-1" onClick={() => stop(index)}>
                         <Square className="w-4 h-4" />
                         Остановить
-                      </button>
+                      </Button>
                     )}
                     {item.state === "failed" && (
-                      <button type="button" className="btn btn-sm inline-flex items-center gap-1" onClick={() => retry(index)}>
+                      <Button size="sm" type="button" className="inline-flex items-center gap-1" onClick={() => retry(index)}>
                         <RefreshCcw className="w-4 h-4" />
                         Ретрай
-                      </button>
+                      </Button>
                     )}
-                    <button type="button" className="btn btn-sm btn-danger inline-flex items-center gap-1" onClick={() => remove(index)}>
+                    <Button variant="danger" size="sm" type="button" className="inline-flex items-center gap-1" onClick={() => remove(index)}>
                       <Trash2 className="w-4 h-4" />
                       Удалить
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -755,8 +774,7 @@ function QueueModal({
             <EmptySearch text="Очередь пуста" />
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -838,37 +856,39 @@ function StandCard({
         <QueueSummary stand={stand} />
 
         <div className="grid grid-cols-4 gap-1.5 mt-3">
-          <button
+          <Button
             type="button"
-            className={`btn btn-sm inline-flex items-center justify-center gap-1 px-1.5 ${detailsOpen ? "btn-primary" : ""}`}
+            size="sm"
+            variant={detailsOpen ? "primary" : "default"}
+            className="inline-flex items-center justify-center gap-1 px-1.5"
             onClick={() => setDetailsOpen((open) => !open)}
           >
             Детали
-          </button>
-          <button
+          </Button>
+          <Button size="sm"
             type="button"
-            className="btn btn-sm inline-flex items-center justify-center gap-1 px-1.5"
+            className="inline-flex items-center justify-center gap-1 px-1.5"
             onClick={() => onSetTesting(stand.id, true)}
           >
             <Play className="w-4 h-4 shrink-0" />
             Старт
-          </button>
-          <button
+          </Button>
+          <Button variant="danger" size="sm"
             type="button"
-            className="btn btn-sm btn-danger inline-flex items-center justify-center gap-1 px-1.5"
+            className="inline-flex items-center justify-center gap-1 px-1.5"
             onClick={() => onSetTesting(stand.id, false)}
           >
             <Square className="w-4 h-4 shrink-0" />
             Стоп
-          </button>
-          <button
+          </Button>
+          <Button size="sm"
             type="button"
-            className="btn btn-sm inline-flex items-center justify-center gap-1 px-1.5"
+            className="inline-flex items-center justify-center gap-1 px-1.5"
             onClick={() => onOpenQueue(stand.id)}
           >
             <ListChecks className="w-4 h-4 shrink-0" />
             Очередь
-          </button>
+          </Button>
         </div>
 
         {detailsOpen && (
@@ -879,14 +899,14 @@ function StandCard({
               <div className="border-b border-token px-3 py-2 text-xs text-dim">Лог</div>
               <pre className="mono text-xs p-3 overflow-auto max-h-36 whitespace-pre-wrap">{demoQueueLog(stand, current)}</pre>
               <div className="border-t border-token p-2 flex justify-end">
-                <button
+                <Button size="sm"
                   type="button"
-                  className="btn btn-sm inline-flex items-center gap-1"
+                  className="inline-flex items-center gap-1"
                   onClick={() => onOpenLog(stand, current)}
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   Открыть журнал целиком
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -958,7 +978,7 @@ function QueueList({ queue }: { queue: QueueItem[] }) {
             <div className="text-xs text-dim mt-1">{item.meta}</div>
             {item.log && <div className="mono text-[11px] text-accent mt-1 truncate">{item.log}</div>}
           </div>
-          <span className={`badge badge-${queueBadge(item.state)} shrink-0`}>{QUEUE_TEXT[item.state]}</span>
+          <Badge kind={queueBadge(item.state)} className="shrink-0">{QUEUE_TEXT[item.state]}</Badge>
         </div>
       ))}
     </div>

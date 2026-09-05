@@ -22,7 +22,6 @@
  */
 import { useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { Cpu, Pencil } from "lucide-react";
 import type {
   OsVersion,
@@ -48,6 +47,9 @@ import { Dropdown } from "@/components/ui/Dropdown";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import type { EntityRef } from "./_entity";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Modal as UIModal } from "@/components/ui/Modal";
 
 interface Props {
   serverId?: string;
@@ -346,12 +348,12 @@ function ServerOverviewView({
   ];
 
   const editAction = canEdit ? (
-    <button
-      className="btn btn-ghost flex items-center gap-1"
+    <Button variant="ghost"
+      className="flex items-center gap-1"
       onClick={onEdit}
     >
       <Pencil className="w-4 h-4" /> Изменить
-    </button>
+    </Button>
   ) : undefined;
 
   return (
@@ -619,16 +621,15 @@ function OverviewEditForm({
           </FormRow>
         </div>
         <div className="mt-4 flex gap-2 justify-end">
-          <button className="btn" onClick={onCancel} disabled={pending}>
+          <Button onClick={onCancel} disabled={pending}>
             Отмена
-          </button>
-          <button
-            className="btn btn-primary"
+          </Button>
+          <Button variant="primary"
             disabled={pending}
             onClick={submit}
           >
             Сохранить
-          </button>
+          </Button>
         </div>
         <div className="mt-3 text-[11px] text-dim">
           Смена департамента и hardware-поля редактируются отдельно (вкладка
@@ -800,10 +801,10 @@ function VmOverview({
         view.nics && view.nics.length > 0 ? (
           <span className="flex flex-wrap gap-1">
             {view.nics.map((nic) => (
-              <span key={nic.name} className="badge mono">
+              <Badge key={nic.name} className="mono">
                 {nic.name}/{nic.model}
                 {nic.bridge ? `@${nic.bridge}` : ""}
-              </span>
+              </Badge>
             ))}
           </span>
         ) : (
@@ -833,20 +834,20 @@ function VmOverview({
 
   const identityActions = canManage ? (
     <div className="flex items-center gap-2">
-      <button
-        className="btn btn-sm flex items-center gap-1"
+      <Button size="sm"
+        className="flex items-center gap-1"
         onClick={() => setIdentityModal(true)}
         title="Изменить name/number"
       >
         <Pencil className="w-3.5 h-3.5" /> Изменить
-      </button>
-      <button
-        className="btn btn-sm flex items-center gap-1"
+      </Button>
+      <Button size="sm"
+        className="flex items-center gap-1"
         onClick={() => setResourceModal(true)}
         title="Изменить vCPU и RAM"
       >
         <Cpu className="w-3.5 h-3.5" /> Изменить CPU/RAM
-      </button>
+      </Button>
     </div>
   ) : undefined;
 
@@ -958,12 +959,12 @@ function IdentityModal({
           </div>
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
+          <Button type="button" onClick={onClose}>
             Отмена
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={submitting}>
+          </Button>
+          <Button variant="primary" type="submit" disabled={submitting}>
             {submitting ? "Сохраняем…" : "Сохранить"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -1035,16 +1036,15 @@ function ResourcesModal({
           </div>
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
+          <Button type="button" onClick={onClose}>
             Отмена
-          </button>
-          <button
+          </Button>
+          <Button variant="primary"
             type="submit"
-            className="btn btn-primary"
             disabled={!valid || !changed || submitting}
           >
             {submitting ? "Применяем…" : "Применить"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -1061,23 +1061,8 @@ function Modal({
   children: ReactNode;
 }) {
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal-content" aria-describedby={undefined}>
-          <div className="modal-header">
-            <Dialog.Title className="text-base font-semibold">
-              {title}
-            </Dialog.Title>
-          </div>
-          {children}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <UIModal open onOpenChange={(next) => !next && onClose()} title={title}>
+      {children}
+    </UIModal>
   );
 }

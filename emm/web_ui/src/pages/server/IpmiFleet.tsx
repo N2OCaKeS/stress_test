@@ -34,6 +34,8 @@ import { useServerLabel } from "@/lib/labels";
 import { formatMsk } from "@/lib/datetime";
 import { isServerZoneBlocked } from "@/lib/rbac";
 import type { IpmiController, IpmiKind } from "@/api/server/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 // Контроллеров на отдел немного — одной страницы с запасом хватает, клиентский
 // поиск/сорт идут по загруженному набору. Если упрётся в кап — TruncationNotice
@@ -150,9 +152,9 @@ export function IpmiFleet() {
               <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
               <div className="flex-1 text-sm">
                 <div>{apiErrMsg(listQ.error, "Список контроллеров не загрузился")}</div>
-                <button className="btn btn-ghost mt-2" onClick={() => listQ.refetch()}>
+                <Button variant="ghost" className="mt-2" onClick={() => listQ.refetch()}>
                   Повторить
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -187,19 +189,19 @@ export function IpmiFleet() {
 function StatusBadge({ status }: { status: string | null }) {
   if (status == null) {
     return (
-      <span className="badge" title="Контроллер ещё не опрашивался">
+      <Badge title="Контроллер ещё не опрашивался">
         <CircleHelp className="w-3.5 h-3.5" /> не опрошен
-      </span>
+      </Badge>
     );
   }
   const meta = STATUS_BADGE[status];
   const Icon =
     meta?.kind === "ok" ? CircleCheck : meta?.kind === "danger" ? CircleX : CircleHelp;
   return (
-    <span className={`badge${meta ? ` badge-${meta.kind}` : ""}`}>
+    <Badge kind={meta?.kind ?? "neutral"}>
       <Icon className="w-3.5 h-3.5" />
       {meta?.label ?? status}
-    </span>
+    </Badge>
   );
 }
 
@@ -217,7 +219,7 @@ function ControllerRow({ controller }: { controller: IpmiController }) {
         <div className="flex-1 min-w-0">
           <div className="text-sm truncate">
             <span className="font-medium">{serverLabel}</span>
-            <span className="badge ml-2">{kindLabel}</span>
+            <Badge className="ml-2">{kindLabel}</Badge>
           </div>
           <div className="text-[11px] text-dim flex items-center gap-2 flex-wrap mono">
             <span className="truncate">{controller.endpoint_url}</span>

@@ -1,4 +1,5 @@
 import { AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 
 interface TruncationNoticeProps {
   /** Сколько элементов реально показано в списке. */
@@ -56,14 +57,14 @@ export function TruncationNotice({
         {onLoadMore ? "." : " — уточните фильтр, чтобы увидеть остальные."}
       </span>
       {onLoadMore && (
-        <button
+        <Button variant="ghost"
           type="button"
-          className="btn btn-ghost shrink-0"
+          className="shrink-0"
           onClick={onLoadMore}
           disabled={loadingMore}
         >
           {loadingMore ? "Загрузка…" : "Загрузить ещё"}
-        </button>
+        </Button>
       )}
     </div>
   );

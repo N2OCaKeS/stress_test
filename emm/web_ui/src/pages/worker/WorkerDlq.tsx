@@ -22,6 +22,7 @@ import {
   canCancelTask,
   useTaskList,
 } from "./workerLive";
+import { Button } from "@/components/ui/Button";
 
 export function WorkerDlq() {
   const { persona } = usePersona();
@@ -79,13 +80,13 @@ export function WorkerDlq() {
       {selectedId ? (
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative">
           <div className="absolute top-5 right-5 z-10">
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               disabled
               title="retry-from-DLQ не реализован (нет backend-поддержки)"
             >
               <RotateCcw className="w-4 h-4" /> Retry
-            </button>
+            </Button>
           </div>
           <TaskDetail
             key={selectedId}

@@ -56,6 +56,9 @@ import {
 } from "@/pages/server/_serverShared";
 import { LinkAccountModal } from "./_linkAccountModal";
 import type { EntityRef } from "./_entity";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 interface Props {
   serverId: string;
@@ -218,12 +221,12 @@ function ServerAccountsTab({ serverId, server }: Props) {
           {listQ.error && (
             <div className="alert-danger m-2 text-xs">
               {apiErrMsg(listQ.error, "Список не загрузился")}
-              <button
-                className="btn btn-sm ml-2"
+              <Button size="sm"
+                className="ml-2"
                 onClick={() => listQ.refetch()}
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           )}
           {!listQ.loading && !listQ.error && items.length === 0 && (
@@ -249,18 +252,18 @@ function ServerAccountsTab({ serverId, server }: Props) {
 
         {canManage && (
           <div className="border-t border-token p-3 shrink-0 flex flex-col gap-2">
-            <button
-              className="btn btn-primary w-full flex items-center justify-center gap-2"
+            <Button variant="primary"
+              className="w-full flex items-center justify-center gap-2"
               onClick={handleStartCreate}
             >
               <Plus className="w-4 h-4" /> Создать аккаунт
-            </button>
-            <button
-              className="btn w-full flex items-center justify-center gap-2"
+            </Button>
+            <Button
+              className="w-full flex items-center justify-center gap-2"
               onClick={() => setLinking(true)}
             >
               <Link2 className="w-4 h-4" /> Привязать существующий
-            </button>
+            </Button>
           </div>
         )}
       </section>
@@ -373,8 +376,8 @@ function VmAccountsTab({
           <div className="text-xs uppercase text-dim">
             Учётки · {accounts.length}
           </div>
-          <button
-            className="btn btn-ghost btn-sm flex items-center gap-1"
+          <Button variant="ghost" size="sm"
+            className="flex items-center gap-1"
             onClick={() => accountsQ.refetch()}
             disabled={accountsQ.loading}
             title="Обновить список учёток"
@@ -382,19 +385,19 @@ function VmAccountsTab({
             <RefreshCw
               className={`w-3.5 h-3.5 ${accountsQ.loading ? "animate-spin" : ""}`}
             />
-          </button>
+          </Button>
         </div>
 
         <div className="flex-1 overflow-y-auto py-2 px-2 flex flex-col gap-0.5">
           {accountsQ.error && accounts.length === 0 && (
             <div className="alert-danger m-2 text-xs">
               {apiErrMsg(accountsQ.error, "Список не загрузился")}
-              <button
-                className="btn btn-sm ml-2"
+              <Button size="sm"
+                className="ml-2"
                 onClick={() => accountsQ.refetch()}
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           )}
           {!accountsQ.loading && !accountsQ.error && accounts.length === 0 && (
@@ -414,12 +417,12 @@ function VmAccountsTab({
 
         {canManage && (
           <div className="border-t border-token p-3 shrink-0">
-            <button
-              className="btn w-full flex items-center justify-center gap-2"
+            <Button
+              className="w-full flex items-center justify-center gap-2"
               onClick={() => setLinking(true)}
             >
               <Link2 className="w-4 h-4" /> Привязать существующую
-            </button>
+            </Button>
           </div>
         )}
       </section>
@@ -536,16 +539,16 @@ function VmAccountDetail({
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h3 className="font-semibold flex items-center gap-2 mono">
             <User className="w-4 h-4 text-accent" /> {vmAccount.login}
-            {vmAccount.has_sudo && <span className="badge badge-warn">sudo</span>}
+            {vmAccount.has_sudo && <Badge kind="warn">sudo</Badge>}
             {vmAccount.present_on_vm ? (
-              <span className="badge badge-ok">заведена</span>
+              <Badge kind="ok">заведена</Badge>
             ) : (
-              <span className="badge badge-warn">дрейф</span>
+              <Badge kind="warn">дрейф</Badge>
             )}
           </h3>
-          <button className="btn" onClick={onClosed} type="button" title="Закрыть">
+          <Button onClick={onClosed} type="button" title="Закрыть">
             ×
-          </button>
+          </Button>
         </div>
 
         {err && <div className="alert-danger mb-2 text-sm">{err}</div>}
@@ -562,9 +565,9 @@ function VmAccountDetail({
             ) : (
               <div className="flex flex-wrap gap-1">
                 {groups.map((g) => (
-                  <span key={g} className="badge mono">
+                  <Badge key={g} className="mono">
                     {g}
-                  </span>
+                  </Badge>
                 ))}
               </div>
             )
@@ -613,8 +616,8 @@ function VmAccountDetail({
           ВМ. Полная отвязка — через кнопку ниже.
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            className="btn flex items-center gap-1"
+          <Button
+            className="flex items-center gap-1"
             disabled={pending || !canManage}
             title={canManage ? "useradd в госте" : "Нет прав"}
             onClick={() =>
@@ -625,9 +628,9 @@ function VmAccountDetail({
             }
           >
             <Power className="w-4 h-4" /> Provision
-          </button>
-          <button
-            className="btn flex items-center gap-1"
+          </Button>
+          <Button
+            className="flex items-center gap-1"
             disabled={pending || !canManage}
             title={canManage ? "usermod синхронизирует атрибуты" : "Нет прав"}
             onClick={() =>
@@ -638,9 +641,9 @@ function VmAccountDetail({
             }
           >
             <RotateCw className="w-4 h-4" /> Update on host
-          </button>
-          <button
-            className="btn btn-danger flex items-center gap-1"
+          </Button>
+          <Button variant="danger"
+            className="flex items-center gap-1"
             disabled={pending || !canManage}
             title={canManage ? "userdel в госте — снимет и привязку" : "Нет прав"}
             onClick={async () => {
@@ -662,7 +665,7 @@ function VmAccountDetail({
             }}
           >
             <Trash2 className="w-4 h-4" /> Deprovision
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -675,8 +678,8 @@ function VmAccountDetail({
           Генерирует новый пароль учётки в БД (общий пул). Plaintext клиенту не
           возвращается; раскатка в гости — через Update on host / Provision.
         </div>
-        <button
-          className="btn flex items-center gap-1"
+        <Button
+          className="flex items-center gap-1"
           disabled={pending || !canManage}
           title={canManage ? "Только БД" : "Нет прав"}
           onClick={() =>
@@ -687,7 +690,7 @@ function VmAccountDetail({
           }
         >
           <KeyRound className="w-4 h-4" /> Rotate (sync, БД)
-        </button>
+        </Button>
       </div>
 
       {/* ── Danger zone: отвязка ── */}
@@ -703,8 +706,8 @@ function VmAccountDetail({
               если он там стоял. Карточка учётки остаётся в БД.
             </div>
           </div>
-          <button
-            className="btn btn-danger flex items-center gap-1"
+          <Button variant="danger"
+            className="flex items-center gap-1"
             disabled={pending || !canManage}
             title={canManage ? undefined : "Нет прав"}
             onClick={async () => {
@@ -725,7 +728,7 @@ function VmAccountDetail({
             }}
           >
             <Unlink className="w-4 h-4" /> Unbind
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -817,8 +820,7 @@ function VmLinkAccountModal({
           {err && <div className="alert-danger mb-3 text-sm">{err}</div>}
 
           <label className="inline-flex items-center gap-2 text-sm mb-3">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={provision}
               onChange={(e) => setProvision(e.target.checked)}
             />
@@ -839,12 +841,12 @@ function VmLinkAccountModal({
           {accountsQ.error && (
             <div className="alert-danger text-xs">
               {apiErrMsg(accountsQ.error, "Учётки не загрузились")}
-              <button
-                className="btn btn-sm ml-2"
+              <Button size="sm"
+                className="ml-2"
                 onClick={() => accountsQ.refetch()}
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           )}
           {!accountsQ.loading && !accountsQ.error && candidates.length === 0 && (
@@ -866,22 +868,22 @@ function VmLinkAccountModal({
                       {a.has_sudo ? " · sudo" : ""}
                     </div>
                   </div>
-                  <button
-                    className="btn btn-sm btn-primary flex items-center gap-1 shrink-0"
+                  <Button variant="primary" size="sm"
+                    className="flex items-center gap-1 shrink-0"
                     disabled={pending}
                     onClick={() => bind(a)}
                   >
                     <Link2 className="w-3.5 h-3.5" /> Привязать
-                  </button>
+                  </Button>
                 </div>
               ))}
             </div>
           )}
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose} disabled={pending}>
+          <Button type="button" onClick={onClose} disabled={pending}>
             Закрыть
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -964,9 +966,9 @@ function AccountRow({
         )}
       </div>
       {model.badges.map((b, i) => (
-        <span key={i} className={`badge${b.kind ? ` badge-${b.kind}` : ""}`}>
+        <Badge key={i} kind={b.kind || "neutral"}>
           {b.label}
-        </span>
+        </Badge>
       ))}
     </div>
   );
@@ -1111,34 +1113,31 @@ function AccountDetail({
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h3 className="font-semibold flex items-center gap-2 mono">
             <User className="w-4 h-4 text-accent" /> {account.login}
-            <span
-              className={`badge${scopeBadgeKind(scope) ? ` badge-${scopeBadgeKind(scope)}` : ""}`}
-            >
+            <Badge kind={scopeBadgeKind(scope) || "neutral"}>
               {scope}
-            </span>
-            <span className={`badge${prov.kind ? ` badge-${prov.kind}` : ""}`}>
+            </Badge>
+            <Badge kind={prov.kind || "neutral"}>
               {prov.label}
-            </span>
-            {!account.is_active && <span className="badge badge-warn">неактивен</span>}
+            </Badge>
+            {!account.is_active && <Badge kind="warn">неактивен</Badge>}
           </h3>
           <div className="flex items-center gap-2 flex-wrap">
             {canManage && (
-              <button
-                className="btn flex items-center gap-1"
+              <Button
+                className="flex items-center gap-1"
                 onClick={() => setEditing(true)}
                 disabled={pending}
               >
                 <Edit3 className="w-4 h-4" /> Изменить
-              </button>
+              </Button>
             )}
-            <button
-              className="btn"
+            <Button
               onClick={onClosed}
               type="button"
               title="Закрыть"
             >
               ×
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -1158,9 +1157,9 @@ function AccountDetail({
             ) : (
               <div className="flex flex-wrap gap-1">
                 {account.unix_groups.map((g) => (
-                  <span key={g} className="badge mono">
+                  <Badge key={g} className="mono">
                     {g}
-                  </span>
+                  </Badge>
                 ))}
               </div>
             )
@@ -1236,8 +1235,8 @@ function AccountDetail({
           текущем сервере. Полная отвязка делается через Unbind ниже.
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            className="btn flex items-center gap-1"
+          <Button
+            className="flex items-center gap-1"
             disabled={pending || !!provisionDisabledReason}
             title={provisionDisabledReason ?? "useradd на боксе"}
             onClick={() =>
@@ -1248,9 +1247,9 @@ function AccountDetail({
             }
           >
             <Power className="w-4 h-4" /> Provision
-          </button>
-          <button
-            className="btn flex items-center gap-1"
+          </Button>
+          <Button
+            className="flex items-center gap-1"
             disabled={pending || !canOperate || !linked}
             title={
               !canOperate
@@ -1267,9 +1266,9 @@ function AccountDetail({
             }
           >
             <RotateCw className="w-4 h-4" /> Update on host
-          </button>
-          <button
-            className="btn btn-danger flex items-center gap-1"
+          </Button>
+          <Button variant="danger"
+            className="flex items-center gap-1"
             disabled={pending || !canOperate || !linked}
             title={
               !canOperate
@@ -1294,7 +1293,7 @@ function AccountDetail({
             }}
           >
             <Trash2 className="w-4 h-4" /> Deprovision
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -1309,8 +1308,8 @@ function AccountDetail({
           не возвращается.
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            className="btn flex items-center gap-1"
+          <Button
+            className="flex items-center gap-1"
             disabled={pending || !canOperate}
             title={canOperate ? "Только БД" : "Нет прав"}
             onClick={() =>
@@ -1321,9 +1320,9 @@ function AccountDetail({
             }
           >
             <KeyRound className="w-4 h-4" /> Rotate (sync, БД)
-          </button>
-          <button
-            className="btn flex items-center gap-1"
+          </Button>
+          <Button
+            className="flex items-center gap-1"
             disabled={pending || !canOperate || !linked}
             title={
               !canOperate
@@ -1335,9 +1334,9 @@ function AccountDetail({
             onClick={() => runRotate({ server_id: serverId })}
           >
             <RotateCw className="w-4 h-4" /> Worker: этот сервер
-          </button>
-          <button
-            className="btn flex items-center gap-1"
+          </Button>
+          <Button
+            className="flex items-center gap-1"
             disabled={pending || !canOperate}
             title={canOperate ? "Worker: на все привязанные серверы" : "Нет прав"}
             onClick={async () => {
@@ -1352,7 +1351,7 @@ function AccountDetail({
             }}
           >
             <RotateCw className="w-4 h-4" /> Worker: все
-          </button>
+          </Button>
         </div>
         {rotateResult && (
           <div className="border-t border-token mt-3 pt-3">
@@ -1382,8 +1381,8 @@ function AccountDetail({
                 карточка аккаунта останется в БД без серверов.
               </div>
             </div>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={pending || !canOperate || !linked}
               title={
                 !canOperate
@@ -1408,7 +1407,7 @@ function AccountDetail({
               }}
             >
               <Unlink className="w-4 h-4" /> Unbind
-            </button>
+            </Button>
           </div>
 
           <div className="flex items-center justify-between gap-3 flex-wrap border-t border-token pt-3">
@@ -1419,8 +1418,8 @@ function AccountDetail({
                 для этого сначала Deprovision на каждом.
               </div>
             </div>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={pending || !canManage}
               title={canManage ? undefined : "Нет прав на удаление"}
               onClick={async () => {
@@ -1441,7 +1440,7 @@ function AccountDetail({
               }}
             >
               <Trash2 className="w-4 h-4" /> Удалить
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -1567,24 +1566,24 @@ function PasswordRevealCard({
         </div>
         {shown ? (
           <>
-            <button
-              className="btn btn-sm flex items-center gap-1"
+            <Button size="sm"
+              className="flex items-center gap-1"
               onClick={handleCopy}
               type="button"
             >
               <Copy className="w-4 h-4" /> Копировать
-            </button>
-            <button
-              className="btn btn-sm flex items-center gap-1"
+            </Button>
+            <Button size="sm"
+              className="flex items-center gap-1"
               onClick={handleHide}
               type="button"
             >
               <EyeOff className="w-4 h-4" /> Скрыть
-            </button>
+            </Button>
           </>
         ) : (
-          <button
-            className="btn btn-sm flex items-center gap-1"
+          <Button size="sm"
+            className="flex items-center gap-1"
             onClick={handleReveal}
             disabled={!canReveal || revealing || throttleLeft > 0}
             title={
@@ -1600,7 +1599,7 @@ function PasswordRevealCard({
               : throttleLeft > 0
                 ? `Подождите ${throttleLeft}с`
                 : "Показать"}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -1725,8 +1724,7 @@ function AccountCreateForm({
         </FormRow>
         <FormRow label="sudo">
           <label className="inline-flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={hasSudo}
               onChange={(e) => setHasSudo(e.target.checked)}
             />
@@ -1758,16 +1756,15 @@ function AccountCreateForm({
           />
         </FormRow>
         <div className="mt-3 flex gap-2 justify-end">
-          <button type="button" className="btn" onClick={onCancel}>
+          <Button type="button" onClick={onCancel}>
             Отмена
-          </button>
-          <button
+          </Button>
+          <Button variant="primary"
             type="submit"
-            className="btn btn-primary"
             disabled={pending || !login.trim()}
           >
             {pending ? "Создаём…" : "Создать"}
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -1835,8 +1832,7 @@ function AccountEditForm({
       <form onSubmit={submit} className="flex flex-col gap-3">
         <FormRow label="sudo">
           <label className="inline-flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={hasSudo}
               onChange={(e) => setHasSudo(e.target.checked)}
             />
@@ -1872,12 +1868,12 @@ function AccountEditForm({
           />
         </FormRow>
         <div className="mt-3 flex gap-2 justify-end">
-          <button type="button" className="btn" onClick={onCancel}>
+          <Button type="button" onClick={onCancel}>
             Отмена
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={pending}>
+          </Button>
+          <Button variant="primary" type="submit" disabled={pending}>
             {pending ? "Сохраняем…" : "Сохранить"}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

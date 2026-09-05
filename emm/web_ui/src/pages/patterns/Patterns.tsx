@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { Link } from "react-router-dom";
 import {
   Grid3x3,
@@ -27,6 +26,9 @@ import {
 } from "lucide-react";
 import { ThemeSwitcher } from "@/components/shell/ThemeSwitcher";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Modal } from "@/components/ui/Modal";
 
 const CREDENTIAL_TYPE_OPTIONS: DropdownOption[] = [
   { value: "ipmi", label: "ipmi" },
@@ -50,7 +52,7 @@ const ROTATION_GENERATION_OPTIONS: DropdownOption[] = [
 
 /**
  * Port of patterns.html — UI primitives reference page.
- * Modals use Radix Dialog. Toasts/loaders are visual only.
+ * Toasts/loaders are visual only.
  */
 export function Patterns() {
   const [confirmText, setConfirmText] = useState("");
@@ -156,9 +158,9 @@ export function Patterns() {
               <div className="text-xs text-dim mb-4">
                 В этом депе пока ничего не создано.
               </div>
-              <button className="btn btn-primary inline-flex items-center gap-1">
+              <Button variant="primary" className="inline-flex items-center gap-1">
                 <Plus className="w-4 h-4" /> Создать
-              </button>
+              </Button>
             </div>
 
             <div className="empty-card">
@@ -180,9 +182,9 @@ export function Patterns() {
                 server_service не отвечает уже 42 секунды. Скорее всего,
                 рестарт.
               </div>
-              <button className="btn btn-danger inline-flex items-center gap-1">
+              <Button variant="danger" className="inline-flex items-center gap-1">
                 <RotateCw className="w-4 h-4" /> Повторить
-              </button>
+              </Button>
             </div>
           </div>
         </section>
@@ -253,8 +255,8 @@ export function Patterns() {
               <div className="text-xs text-dim uppercase tracking-wider">
                 Спиннер в кнопке
               </div>
-              <button
-                className="btn btn-primary flex items-center gap-2"
+              <Button variant="primary"
+                className="flex items-center gap-2"
                 disabled
                 style={{ opacity: 0.85 }}
               >
@@ -263,9 +265,9 @@ export function Patterns() {
                   style={{ width: 14, height: 14, borderWidth: 2 }}
                 />
                 Сохранение...
-              </button>
-              <button
-                className="btn flex items-center gap-2"
+              </Button>
+              <Button
+                className="flex items-center gap-2"
                 disabled
                 style={{ opacity: 0.85 }}
               >
@@ -274,9 +276,9 @@ export function Patterns() {
                   style={{ width: 14, height: 14, borderWidth: 2 }}
                 />
                 Проверяю BMC...
-              </button>
-              <button
-                className="btn btn-danger flex items-center gap-2"
+              </Button>
+              <Button variant="danger"
+                className="flex items-center gap-2"
                 disabled
                 style={{ opacity: 0.85 }}
               >
@@ -285,7 +287,7 @@ export function Patterns() {
                   style={{ width: 14, height: 14, borderWidth: 2 }}
                 />
                 Сброс...
-              </button>
+              </Button>
             </div>
           </div>
         </section>
@@ -340,14 +342,14 @@ export function Patterns() {
             />
 
             <div className="flex items-center gap-2 justify-end">
-              <button className="btn">Отмена</button>
-              <button
-                className="btn btn-danger-solid flex items-center gap-1"
+              <Button>Отмена</Button>
+              <Button variant="danger-solid"
+                className="flex items-center gap-1"
                 disabled={confirmText !== "Разработка"}
                 style={{ opacity: confirmText === "Разработка" ? 1 : 0.5 }}
               >
                 <Trash2 className="w-4 h-4" /> Удалить депaртамент
-              </button>
+              </Button>
             </div>
           </div>
         </section>
@@ -383,196 +385,148 @@ function ToastDemo({ kind, icon, title, meta }: ToastDemoProps) {
 }
 
 function CreateCredentialModal() {
+  const [open, setOpen] = useState(false);
   const [type, setType] = useState(CREDENTIAL_TYPE_OPTIONS[0].value);
   const [rotation, setRotation] = useState(ROTATION_PERIOD_OPTIONS[0].value);
   return (
-    <Dialog.Root>
-      <Dialog.Trigger asChild>
-        <button className="btn btn-primary flex items-center gap-1">
-          <Plus className="w-4 h-4" /> Создать credential
-        </button>
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal-content">
-          <div className="modal-header">
-            <PlusCircle className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold">
-              Создать credential
-            </Dialog.Title>
-            <Dialog.Close asChild>
-              <button
-                className="ml-auto text-dim hover-bg rounded p-1"
-                aria-label="закрыть"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </Dialog.Close>
-          </div>
-          <div className="modal-body">
-            <div className="grid gap-3">
-              <div>
-                <label className="field-label">Имя credential'а</label>
-                <input className="field-input mono" placeholder="ipmi-srv-node-17" />
-              </div>
-              <div>
-                <label className="field-label">Тип</label>
-                <Dropdown mode="single" options={CREDENTIAL_TYPE_OPTIONS} value={type} onChange={setType} />
-              </div>
-              <div>
-                <label className="field-label">Сервер</label>
-                <input className="field-input mono" placeholder="srv-node-17" />
-              </div>
-              <div>
-                <label className="field-label">Пароль / ключ</label>
-                <input
-                  className="field-input mono"
-                  type="password"
-                  defaultValue="********"
-                />
-              </div>
-              <div>
-                <label className="field-label">Срок ротации</label>
-                <Dropdown mode="single" options={ROTATION_PERIOD_OPTIONS} value={rotation} onChange={setRotation} />
-              </div>
+    <>
+      <Button variant="primary" className="flex items-center gap-1" onClick={() => setOpen(true)}>
+        <Plus className="w-4 h-4" /> Создать credential
+      </Button>
+      <Modal
+        open={open}
+        onOpenChange={setOpen}
+        title="Создать credential"
+        icon={<PlusCircle className="w-5 h-5 text-accent" />}
+        footer={
+          <>
+            <Button onClick={() => setOpen(false)}>Отмена</Button>
+            <Button variant="primary" className="flex items-center gap-1">
+              <Check className="w-4 h-4" /> Создать
+            </Button>
+          </>
+        }
+      >
+          <div className="grid gap-3">
+            <div>
+              <label className="field-label">Имя credential'а</label>
+              <input className="field-input mono" placeholder="ipmi-srv-node-17" />
+            </div>
+            <div>
+              <label className="field-label">Тип</label>
+              <Dropdown mode="single" options={CREDENTIAL_TYPE_OPTIONS} value={type} onChange={setType} />
+            </div>
+            <div>
+              <label className="field-label">Сервер</label>
+              <input className="field-input mono" placeholder="srv-node-17" />
+            </div>
+            <div>
+              <label className="field-label">Пароль / ключ</label>
+              <input
+                className="field-input mono"
+                type="password"
+                defaultValue="********"
+              />
+            </div>
+            <div>
+              <label className="field-label">Срок ротации</label>
+              <Dropdown mode="single" options={ROTATION_PERIOD_OPTIONS} value={rotation} onChange={setRotation} />
             </div>
           </div>
-          <div className="modal-footer">
-            <Dialog.Close asChild>
-              <button className="btn">Отмена</button>
-            </Dialog.Close>
-            <button className="btn btn-primary flex items-center gap-1">
-              <Check className="w-4 h-4" /> Создать
-            </button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      </Modal>
+    </>
   );
 }
 
 function DeleteUserModal() {
+  const [open, setOpen] = useState(false);
   return (
-    <Dialog.Root>
-      <Dialog.Trigger asChild>
-        <button className="btn btn-danger flex items-center gap-1">
-          <UserMinus className="w-4 h-4" /> Удалить пользователя (подтверждение)
-        </button>
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal-content">
-          <div className="modal-header">
-            <AlertTriangle className="w-5 h-5 text-danger" />
-            <Dialog.Title className="text-base font-semibold">
-              Удалить пользователя alice?
-            </Dialog.Title>
-            <Dialog.Close asChild>
-              <button
-                className="ml-auto text-dim hover-bg rounded p-1"
-                aria-label="закрыть"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </Dialog.Close>
-          </div>
-          <div className="modal-body">
-            <p className="text-sm mb-3">
-              Пользователь <b className="mono">alice@dbos.local</b> будет
-              деактивирован. Это:
-            </p>
-            <ul className="list-disc list-inside text-sm text-dim space-y-1 mb-4">
-              <li>отзовёт все активные сессии (3 шт)</li>
-              <li>
-                не удалит credentials, созданные ей (она была{" "}
-                <span className="mono">created_by</span>)
-              </li>
-              <li>не отзовёт ботов, выпущенных от её имени</li>
-              <li>запись в audit будет сохранена 90 дней по retention-политике</li>
-            </ul>
-            <div className="alert-block text-xs">
-              Восстановить можно в течение 30 дней через{" "}
-              <span className="mono">cli users restore alice</span>.
-            </div>
-          </div>
-          <div className="modal-footer">
-            <Dialog.Close asChild>
-              <button className="btn">Отмена</button>
-            </Dialog.Close>
-            <button className="btn btn-danger-solid flex items-center gap-1">
+    <>
+      <Button variant="danger" className="flex items-center gap-1" onClick={() => setOpen(true)}>
+        <UserMinus className="w-4 h-4" /> Удалить пользователя (подтверждение)
+      </Button>
+      <Modal
+        open={open}
+        onOpenChange={setOpen}
+        title="Удалить пользователя alice?"
+        icon={<AlertTriangle className="w-5 h-5 text-danger" />}
+        footer={
+          <>
+            <Button onClick={() => setOpen(false)}>Отмена</Button>
+            <Button variant="danger-solid" className="flex items-center gap-1">
               <UserMinus className="w-4 h-4" /> Деактивировать
-            </button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm mb-3">
+          Пользователь <b className="mono">alice@dbos.local</b> будет
+          деактивирован. Это:
+        </p>
+        <ul className="list-disc list-inside text-sm text-dim space-y-1 mb-4">
+          <li>отзовёт все активные сессии (3 шт)</li>
+          <li>
+            не удалит credentials, созданные ей (она была{" "}
+            <span className="mono">created_by</span>)
+          </li>
+          <li>не отзовёт ботов, выпущенных от её имени</li>
+          <li>запись в audit будет сохранена 90 дней по retention-политике</li>
+        </ul>
+        <div className="alert-block text-xs">
+          Восстановить можно в течение 30 дней через{" "}
+          <span className="mono">cli users restore alice</span>.
+        </div>
+      </Modal>
+    </>
   );
 }
 
 function RotateCredentialModal() {
+  const [open, setOpen] = useState(false);
   const [generation, setGeneration] = useState(ROTATION_GENERATION_OPTIONS[0].value);
   return (
-    <Dialog.Root>
-      <Dialog.Trigger asChild>
-        <button className="btn flex items-center gap-1">
-          <RefreshCw className="w-4 h-4" /> Ротировать сейчас
-        </button>
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal-content">
-          <div className="modal-header">
-            <RefreshCw className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold">
-              Ротация credential cred_8f2a
-            </Dialog.Title>
-            <Dialog.Close asChild>
-              <button
-                className="ml-auto text-dim hover-bg rounded p-1"
-                aria-label="закрыть"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </Dialog.Close>
-          </div>
-          <div className="modal-body">
-            <p className="text-sm mb-3">
-              Будет сгенерирован <b>новый пароль</b> и применён на сервере{" "}
-              <b className="mono">srv-node-17</b>.
-            </p>
-            <div className="grid gap-3">
-              <div>
-                <label className="field-label">Генерация</label>
-                <Dropdown mode="single" options={ROTATION_GENERATION_OPTIONS} value={generation} onChange={setGeneration} />
-              </div>
-              <div>
-                <label className="field-label">Применить на BMC</label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" defaultChecked /> сразу применить и
-                  проверить через login probe
-                </label>
-              </div>
-              <div>
-                <label className="field-label">
-                  Сохранить старый как «previous»
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" defaultChecked /> на 24 часа, для
-                  rollback
-                </label>
-              </div>
-            </div>
-          </div>
-          <div className="modal-footer">
-            <Dialog.Close asChild>
-              <button className="btn">Отмена</button>
-            </Dialog.Close>
-            <button className="btn btn-primary flex items-center gap-1">
+    <>
+      <Button className="flex items-center gap-1" onClick={() => setOpen(true)}>
+        <RefreshCw className="w-4 h-4" /> Ротировать сейчас
+      </Button>
+      <Modal
+        open={open}
+        onOpenChange={setOpen}
+        title="Ротация credential cred_8f2a"
+        icon={<RefreshCw className="w-5 h-5 text-accent" />}
+        footer={
+          <>
+            <Button onClick={() => setOpen(false)}>Отмена</Button>
+            <Button variant="primary" className="flex items-center gap-1">
               <RefreshCw className="w-4 h-4" /> Ротировать сейчас
-            </button>
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm mb-3">
+          Будет сгенерирован <b>новый пароль</b> и применён на сервере{" "}
+          <b className="mono">srv-node-17</b>.
+        </p>
+        <div className="grid gap-3">
+          <div>
+            <label className="field-label">Генерация</label>
+            <Dropdown mode="single" options={ROTATION_GENERATION_OPTIONS} value={generation} onChange={setGeneration} />
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          <div>
+            <label className="field-label">Применить на BMC</label>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox defaultChecked /> сразу применить и проверить через login
+              probe
+            </label>
+          </div>
+          <div>
+            <label className="field-label">Сохранить старый как «previous»</label>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox defaultChecked /> на 24 часа, для rollback
+            </label>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }

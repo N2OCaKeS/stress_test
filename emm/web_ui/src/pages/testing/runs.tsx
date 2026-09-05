@@ -14,7 +14,6 @@ import { TEST_CATALOG } from "./tests";
 import { Dropdown } from "@/components/ui/Dropdown";
 import {
   LogViewerModal,
-  ModalHeader,
   OS_VERSION_IDS as RC_IDS,
   QUEUE_TEXT,
   queueBadge,
@@ -26,6 +25,10 @@ import {
   type QueueState,
   type Stand,
 } from "./_shared";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Modal } from "@/components/ui/Modal";
 
 export type RunStatus = "running" | "completed" | "failed";
 
@@ -200,10 +203,10 @@ export function RunsWorkzone() {
           <h2 className="text-lg font-semibold">Прогоны — fleet-wide кампании</h2>
           <div className="text-sm text-dim mt-1">Каждый прогон — весь набор тестов на всех стендах пула для одного РЦ</div>
         </div>
-        <button type="button" className="btn btn-primary inline-flex items-center gap-2" onClick={() => setLaunchOpen(true)}>
+        <Button variant="primary" type="button" className="inline-flex items-center gap-2" onClick={() => setLaunchOpen(true)}>
           <Play className="w-4 h-4" />
           Запустить прогон
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -243,7 +246,7 @@ function RunRow({ run, selected, onSelect }: { run: TestRun; selected: boolean; 
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-semibold mono truncate">{run.id}</span>
-          {run.final && <span className="badge badge-warn">финальный</span>}
+          {run.final && <Badge kind="warn">финальный</Badge>}
         </div>
         <div className="mono text-xs text-dim mt-1 truncate">{run.rcId}</div>
         <div className="text-xs text-dim mt-1">{run.startedAt}</div>
@@ -264,10 +267,10 @@ function RunRow({ run, selected, onSelect }: { run: TestRun; selected: boolean; 
         </div>
       </div>
       <div className="flex justify-start lg:justify-end">
-        <span className={`badge badge-${meta.badge} inline-flex items-center gap-1`}>
+        <Badge kind={meta.badge} className="inline-flex items-center gap-1">
           {run.status === "failed" ? <XCircle className="w-3 h-3" /> : <TimerReset className="w-3 h-3" />}
           {meta.label}
-        </span>
+        </Badge>
       </div>
     </button>
   );
@@ -334,15 +337,15 @@ function RunDetailPanel({ run }: { run: TestRun }) {
                 </td>
                 <td className="mono text-xs">{row.minutes < 0 ? "—" : `${row.minutes} мин`}</td>
                 <td>
-                  <button
+                  <Button size="sm"
                     type="button"
-                    className="btn btn-sm inline-flex items-center gap-1"
+                    className="inline-flex items-center gap-1"
                     disabled={row.status === "pending"}
                     onClick={() => openLog(row)}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     Лог
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ))}
@@ -372,14 +375,24 @@ export function LaunchRunModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/55 flex items-center justify-center p-5">
-      <div className="surface border border-token rounded w-full max-w-2xl max-h-[86vh] overflow-hidden shadow-2xl">
-        <ModalHeader
-          title="Запустить прогон"
-          subtitle="Весь набор тестов на выбранных стендах пула для одного РЦ"
-          onClose={onClose}
-        />
-        <div className="p-4 grid gap-4 overflow-auto max-h-[calc(86vh-64px)]">
+    <Modal
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title="Запустить прогон"
+      subtitle="Весь набор тестов на выбранных стендах пула для одного РЦ"
+      width="md"
+      footer={
+        <>
+          <Button type="button" onClick={onClose}>Отмена</Button>
+          <Button variant="primary" type="button" onClick={onClose}>
+            Запустить прогон{final ? " (финальный)" : ""}
+          </Button>
+        </>
+      }
+    >
+        <div className="grid gap-4">
           <label className="grid gap-1">
             <span className="text-xs text-dim">РЦ</span>
             <Dropdown
@@ -391,7 +404,7 @@ export function LaunchRunModal({ onClose }: { onClose: () => void }) {
           </label>
 
           <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">
-            <input type="checkbox" checked={final} onChange={(e) => setFinal(e.target.checked)} className="mt-0.5" />
+            <Checkbox checked={final} onChange={(e) => setFinal(e.target.checked)} className="mt-0.5" />
             <span>
               <span className="text-sm font-medium block">Финальный прогон</span>
               <span className="text-xs text-dim">Блокирует релиз РЦ до получения результата; отображается отдельным флагом в кампаниях</span>
@@ -400,8 +413,7 @@ export function LaunchRunModal({ onClose }: { onClose: () => void }) {
 
           <div className="surface-2 border border-token rounded p-3">
             <label className="flex items-center gap-2 cursor-pointer mb-2">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={allStands}
                 onChange={(e) => {
                   setAllStands(e.target.checked);
@@ -414,7 +426,7 @@ export function LaunchRunModal({ onClose }: { onClose: () => void }) {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5 max-h-52 overflow-auto">
                 {STANDS.map((stand) => (
                   <label key={stand.id} className="flex items-center gap-2 text-xs surface border border-token rounded px-2 py-1.5">
-                    <input type="checkbox" checked={selected.has(stand.id)} onChange={() => toggleStand(stand)} />
+                    <Checkbox checked={selected.has(stand.id)} onChange={() => toggleStand(stand)} />
                     <span className="truncate">{stand.name}</span>
                   </label>
                 ))}
@@ -423,14 +435,7 @@ export function LaunchRunModal({ onClose }: { onClose: () => void }) {
             {!allStands && <div className="text-xs text-dim mt-2">Выбрано стендов: {selected.size}</div>}
           </div>
 
-          <div className="flex justify-end gap-2">
-            <button type="button" className="btn" onClick={onClose}>Отмена</button>
-            <button type="button" className="btn btn-primary" onClick={onClose}>
-              Запустить прогон{final ? " (финальный)" : ""}
-            </button>
-          </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

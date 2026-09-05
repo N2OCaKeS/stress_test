@@ -28,6 +28,7 @@ import {
   type ManagementUserMode,
   type ManagementUserModeConfig,
 } from "@/api/server/managementUserConfig";
+import { Button } from "@/components/ui/Button";
 
 // Порядок и русские подписи режимов. Идентификаторы совпадают с backend'ом.
 const MODE_ORDER: { id: ManagementUserMode; label: string }[] = [
@@ -150,13 +151,13 @@ export function ServicesManagementUser() {
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <div className="flex-1">
               <div>{apiErrMsg(cfgQ.error, "Конфиг не загрузился")}</div>
-              <button
-                className="btn btn-ghost mt-2"
+              <Button variant="ghost"
+                className="mt-2"
                 onClick={() => cfgQ.refetch()}
                 type="button"
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -199,14 +200,13 @@ export function ServicesManagementUser() {
             </div>
 
             <div className="flex items-center gap-3">
-              <button
+              <Button variant="primary"
                 type="button"
-                className="btn btn-primary"
                 onClick={handleSave}
                 disabled={pending || !dirty || !login.trim()}
               >
                 {pending ? "Сохраняем…" : "Сохранить"}
-              </button>
+              </Button>
               {dirty && !pending && (
                 <span className="text-xs text-dim">есть несохранённые изменения</span>
               )}
@@ -299,14 +299,14 @@ function StringListEditor({
               <span className={`flex-1 text-sm break-all${mono ? " mono" : ""}`}>
                 {v}
               </span>
-              <button
+              <Button variant="danger" size="sm"
                 type="button"
-                className="btn btn-sm btn-danger flex items-center gap-1"
+                className="flex items-center gap-1"
                 onClick={() => removeAt(i)}
                 title="Удалить"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-              </button>
+              </Button>
             </div>
           ))}
         </div>
@@ -327,15 +327,15 @@ function StringListEditor({
             }
           }}
         />
-        <button
+        <Button
           type="button"
-          className="btn flex items-center gap-1"
+          className="flex items-center gap-1"
           onClick={add}
           disabled={!draft.trim()}
         >
           <Plus className="w-4 h-4" />
           Добавить
-        </button>
+        </Button>
       </div>
     </div>
   );

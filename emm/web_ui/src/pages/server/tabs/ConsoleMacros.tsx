@@ -14,7 +14,6 @@
  * переключатель «системный» недоступен, а кнопки правки/удаления скрыты.
  */
 import { useMemo, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import {
   ChevronDown,
   Pencil,
@@ -35,6 +34,9 @@ import {
   updateConsoleMacro,
   type ConsoleMacro,
 } from "@/api/server/consoleMacros";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Modal } from "@/components/ui/Modal";
 
 type Mode = "use" | "edit";
 
@@ -141,34 +143,33 @@ export function ConsoleMacrosPanel({
   function macroButton(m: ConsoleMacro, editable: boolean) {
     return (
       <div key={m.id} className="flex items-center">
-        <button
+        <Button size="sm"
           type="button"
-          className="btn btn-sm"
           title={m.command_text}
           onClick={() => onRun(m.command_text)}
         >
           {m.name}
-        </button>
+        </Button>
         {editMode && editable && (
           <span className="flex items-center ml-0.5">
-            <button
+            <Button variant="ghost" size="sm"
               type="button"
-              className="btn btn-ghost btn-sm px-1"
+              className="px-1"
               title="Изменить макрос"
               aria-label={`Изменить ${m.name}`}
               onClick={() => setEditing(m)}
             >
               <Pencil className="w-3 h-3" />
-            </button>
-            <button
+            </Button>
+            <Button variant="ghost" size="sm"
               type="button"
-              className="btn btn-ghost btn-sm px-1"
+              className="px-1"
               title="Удалить макрос"
               aria-label={`Удалить ${m.name}`}
               onClick={() => remove(m)}
             >
               <Trash2 className="w-3 h-3" />
-            </button>
+            </Button>
           </span>
         )}
       </div>
@@ -244,36 +245,40 @@ export function ConsoleMacrosPanel({
         </div>
         <div className="flex items-center gap-1">
           <div className="flex items-center rounded border border-token overflow-hidden">
-            <button
+            <Button
               type="button"
-              className={`btn btn-sm px-2 ${editMode ? "btn-ghost" : "btn-primary"}`}
+              size="sm"
+              variant={editMode ? "ghost" : "primary"}
+              className="px-2"
               aria-pressed={!editMode}
               onClick={() => setMode("use")}
               title="Только запуск макросов"
             >
               <Play className="w-3 h-3" />
               Использование
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={`btn btn-sm px-2 ${editMode ? "btn-primary" : "btn-ghost"}`}
+              size="sm"
+              variant={editMode ? "primary" : "ghost"}
+              className="px-2"
               aria-pressed={editMode}
               onClick={() => setMode("edit")}
               title="Создание и правка макросов"
             >
               <Pencil className="w-3 h-3" />
               Редактирование
-            </button>
+            </Button>
           </div>
           {editMode && (
-            <button
+            <Button variant="ghost" size="sm"
               type="button"
-              className="btn btn-ghost btn-sm flex items-center gap-1"
+              className="flex items-center gap-1"
               onClick={() => setCreating(true)}
             >
               <Plus className="w-3.5 h-3.5" />
               Новый
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -284,9 +289,9 @@ export function ConsoleMacrosPanel({
       {macrosQ.error && (
         <div className="alert-danger text-xs">
           {apiErrMsg(macrosQ.error, "Макросы не загрузились")}
-          <button className="btn btn-sm ml-2" onClick={() => macrosQ.refetch()}>
+          <Button size="sm" className="ml-2" onClick={() => macrosQ.refetch()}>
             Повторить
-          </button>
+          </Button>
         </div>
       )}
 
@@ -401,26 +406,18 @@ function MacroEditorModal({
   }
 
   return (
-    <Dialog.Root open modal onOpenChange={(o) => !o && !pending && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content
-          className="modal-content"
-          onInteractOutside={(e) => pending && e.preventDefault()}
-          onEscapeKeyDown={(e) => pending && e.preventDefault()}
-        >
-          <div className="modal-header">
-            <Terminal className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold">
-              {isEdit ? "Изменить макрос" : "Новый макрос"}
-            </Dialog.Title>
-          </div>
+    <Modal
+      open
+      onOpenChange={(o) => !o && !pending && onClose()}
+      title={isEdit ? "Изменить макрос" : "Новый макрос"}
+      icon={<Terminal className="w-5 h-5 text-accent" />}
+    >
 
           <div className="modal-body flex flex-col gap-3">
-            <Dialog.Description className="text-sm text-dim">
+            <p className="text-sm text-dim">
               Клик по кнопке макроса выполняет команду в открытой консольной
               сессии.
-            </Dialog.Description>
+            </p>
 
             {err && <div className="alert-danger text-sm">{err}</div>}
 
@@ -481,8 +478,7 @@ function MacroEditorModal({
 
             {canManageSystem && (
               <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={isSystem}
                   disabled={pending}
                   onChange={(e) => setIsSystem(e.target.checked)}
@@ -496,25 +492,21 @@ function MacroEditorModal({
           </div>
 
           <div className="modal-footer">
-            <button
+            <Button
               type="button"
-              className="btn"
               onClick={onClose}
               disabled={pending}
             >
               Отмена
-            </button>
-            <button
+            </Button>
+            <Button variant="primary"
               type="button"
-              className="btn btn-primary"
               onClick={submit}
               disabled={pending || !canSubmit}
             >
               {isEdit ? "Сохранить" : "Создать"}
-            </button>
+            </Button>
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </Modal>
   );
 }

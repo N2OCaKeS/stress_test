@@ -11,6 +11,8 @@ import { useToast } from "@/contexts/ToastContext";
 import { useDeptLabel } from "@/lib/labels";
 import { ServiceKeyFields } from "./ServiceKeyFields";
 import { useServiceKey } from "./useServiceKey";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 const KNOWN_SERVICES: ServiceName[] = [
   "auth_service",
@@ -95,9 +97,9 @@ export function SecurityServiceAccess() {
           </label>
         </div>
         <div className="mt-3">
-          <button className="btn btn-primary" onClick={submit} disabled={pending}>
+          <Button variant="primary" onClick={submit} disabled={pending}>
             Проверить
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -105,11 +107,9 @@ export function SecurityServiceAccess() {
         <div className="card">
           <h3 className="font-semibold mb-3">Результат</h3>
           <div className="flex items-center gap-2 mb-3">
-            <span
-              className={`badge ${result.allowed ? "active" : "danger"}`}
-            >
+            <Badge kind={result.allowed ? "ok" : "danger"}>
               allowed: {String(result.allowed)}
-            </span>
+            </Badge>
             {result.department_id && (
               <ResultDeptBadge deptId={result.department_id} />
             )}
@@ -133,5 +133,5 @@ export function SecurityServiceAccess() {
 
 function ResultDeptBadge({ deptId }: { deptId: string }) {
   const label = useDeptLabel(deptId);
-  return <span className="badge">отдел: {label}</span>;
+  return <Badge>отдел: {label}</Badge>;
 }

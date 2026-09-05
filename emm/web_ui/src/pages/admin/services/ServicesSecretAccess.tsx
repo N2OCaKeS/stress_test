@@ -32,6 +32,9 @@ import type {
   CredentialScope,
   RoleACL,
 } from "@/api/secret/types";
+import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 // Системные роли каталога secret_service в порядке отображения; кастомные роли
 // отдела идут после по алфавиту.
@@ -219,12 +222,12 @@ function ServicesSecretAccessLive() {
             {listQ.error && (
               <div className="alert alert-danger text-xs flex flex-col gap-2">
                 <span>{apiErrMsg(listQ.error, "Список не загрузился")}</span>
-                <button
-                  className="btn btn-ghost btn-sm self-start"
+                <Button variant="ghost" size="sm"
+                  className="self-start"
                   onClick={() => listQ.refetch()}
                 >
                   Повторить
-                </button>
+                </Button>
               </div>
             )}
             {!listQ.loading && !listQ.error && filtered.length === 0 && (
@@ -243,13 +246,13 @@ function ServicesSecretAccessLive() {
           </div>
 
           {!listQ.loading && !listQ.error && cursor && !search.trim() && (
-            <button
-              className="btn btn-ghost w-full text-xs"
+            <Button variant="ghost"
+              className="w-full text-xs"
               onClick={handleLoadMore}
               disabled={loadingMore}
             >
               {loadingMore ? "Загрузка…" : "Загрузить ещё"}
-            </button>
+            </Button>
           )}
         </div>
 
@@ -303,9 +306,9 @@ function CredRow({
             <span>{SCOPE_LABEL[cred.scope] ?? cred.scope}</span>
           </div>
         </div>
-        <span className={`badge badge-${blocked ? "danger" : "ok"}`}>
+        <Badge kind={blocked ? "danger" : "ok"}>
           {cred.status}
-        </span>
+        </Badge>
       </div>
     </button>
   );
@@ -388,12 +391,12 @@ function AccessPanel({
       <div className="card">
         <div className="alert alert-danger flex flex-col gap-2 text-xs">
           <span>{apiErrMsg(credQ.error, "Карточка не загрузилась")}</span>
-          <button
-            className="btn btn-ghost btn-sm self-start"
+          <Button variant="ghost" size="sm"
+            className="self-start"
             onClick={() => credQ.refetch()}
           >
             Повторить
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -405,9 +408,9 @@ function AccessPanel({
         <div className="flex items-center gap-3 flex-wrap">
           <Key className="w-5 h-5 text-accent" />
           <h3 className="font-semibold truncate">{cred.name}</h3>
-          <span className={`badge badge-${cred.status === "blocked" ? "danger" : "ok"}`}>
+          <Badge kind={cred.status === "blocked" ? "danger" : "ok"}>
             {cred.status}
-          </span>
+          </Badge>
           <span className="text-xs text-dim">
             scope: <b>{SCOPE_LABEL[cred.scope] ?? cred.scope}</b>
           </span>
@@ -558,9 +561,9 @@ function RoleAccessMatrix({
       {error && (
         <div className="text-xs text-danger flex items-center gap-2">
           <span>{error}</span>
-          <button className="btn btn-ghost btn-sm" onClick={onRetry}>
+          <Button variant="ghost" size="sm" onClick={onRetry}>
             Повторить
-          </button>
+          </Button>
         </div>
       )}
 
@@ -752,8 +755,7 @@ function AclToggle({
     );
   }
   return (
-    <input
-      type="checkbox"
+    <Checkbox
       className="w-4 h-4 align-middle accent-[var(--accent)] cursor-pointer"
       checked={allowed}
       title={title}
@@ -787,12 +789,12 @@ function AccessCard({
     <div className="card">
       <div className="flex items-center justify-between mb-3">
         <div className="text-xs uppercase tracking-wider text-dim">{title}</div>
-        <button
-          className="btn btn-ghost text-xs flex items-center gap-1"
+        <Button variant="ghost"
+          className="text-xs flex items-center gap-1"
           onClick={onAdd}
         >
           {icon} {addLabel}
-        </button>
+        </Button>
       </div>
       {loading && <div className="text-xs text-dim">Загрузка…</div>}
       {error && <div className="text-xs text-danger">{error}</div>}
@@ -844,14 +846,14 @@ function UserAclRow({
           {canRead ? "r" : "-"}
           {canWrite ? "w" : "-"}
         </span>
-        <button
-          className="btn btn-ghost p-1"
+        <Button variant="ghost"
+          className="p-1"
           title="Снять UserACL"
           disabled={acting}
           onClick={onRevoke}
         >
           <X className="w-3.5 h-3.5" />
-        </button>
+        </Button>
       </span>
     </div>
   );
@@ -879,13 +881,13 @@ function ModalShell({
       >
         <div className="modal-header flex items-center justify-between">
           <div className="text-sm font-semibold">{title}</div>
-          <button
-            className="btn btn-ghost p-1"
+          <Button variant="ghost"
+            className="p-1"
             onClick={onClose}
             aria-label="Закрыть"
           >
             <X className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
         {children}
       </div>
@@ -989,16 +991,14 @@ function UserAclModal({
         </label>
         <div className="flex items-center gap-4 text-sm">
           <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={canRead}
               onChange={(e) => setCanRead(e.target.checked)}
             />
             <span className="text-dim text-xs">can_read</span>
           </label>
           <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={canWrite}
               onChange={(e) => setCanWrite(e.target.checked)}
             />
@@ -1006,16 +1006,15 @@ function UserAclModal({
           </label>
         </div>
         <div className="flex items-center gap-2 mt-1">
-          <button
+          <Button variant="primary"
             type="submit"
-            className="btn btn-primary"
             disabled={submitting || !valid}
           >
             {submitting ? "Выдаём…" : "Выдать"}
-          </button>
-          <button type="button" className="btn" onClick={onClose}>
+          </Button>
+          <Button type="button" onClick={onClose}>
             Отмена
-          </button>
+          </Button>
         </div>
       </form>
     </ModalShell>

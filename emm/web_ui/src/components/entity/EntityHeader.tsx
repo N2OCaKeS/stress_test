@@ -6,6 +6,7 @@
  */
 import type { ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 
 export interface EntityHeaderProps {
   /** Содержимое акцентного квадрата слева (иконка сущности). */
@@ -34,13 +35,13 @@ export function EntityHeader({
   return (
     <div className="border-b border-token p-5 flex items-start gap-4 shrink-0">
       {onBack && (
-        <button
+        <Button variant="ghost"
           type="button"
-          className="btn btn-ghost flex items-center gap-1"
+          className="flex items-center gap-1"
           onClick={onBack}
         >
           <ArrowLeft className="w-4 h-4" /> {backLabel}
-        </button>
+        </Button>
       )}
       <div className="w-12 h-12 rounded bg-accent flex items-center justify-center shrink-0">
         {icon}

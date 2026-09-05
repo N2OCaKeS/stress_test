@@ -31,7 +31,6 @@ import { useToast } from "@/contexts/ToastContext";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import {
   LogViewerModal,
-  ModalHeader,
   OS_VERSIONS,
   STANDS,
   type BadgeKind,
@@ -40,6 +39,10 @@ import {
   type QueueItem,
   type Stand,
 } from "./_shared";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Modal } from "@/components/ui/Modal";
 
 export type StpStatus = "not_run" | "in_progress" | "done" | "failed";
 export type StpMode = "orel" | "smolensk";
@@ -319,14 +322,14 @@ export function StpMiddlePanel({ state }: { state: StpVersionState }) {
             onChange={(e) => state.setSearch(e.target.value)}
           />
         </div>
-        <button
+        <Button size="sm"
           type="button"
-          className="btn btn-sm w-full mt-2 flex items-center justify-center gap-2"
+          className="w-full mt-2 flex items-center justify-center gap-2"
           onClick={state.toggleSort}
         >
           {state.sortDir === "desc" ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
           {state.sortDir === "desc" ? "Новые сверху" : "Старые сверху"}
-        </button>
+        </Button>
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">
@@ -362,9 +365,9 @@ export function StpMiddlePanel({ state }: { state: StpVersionState }) {
       </div>
 
       <div className="border-t border-token p-3 shrink-0">
-        <button
+        <Button size="sm"
           type="button"
-          className="btn btn-sm w-full flex items-center justify-center gap-2"
+          className="w-full flex items-center justify-center gap-2"
           onClick={() =>
             toast.info(
               "Демо: запущено бы обновление СТП для всех РЦ разом (в отличие от legacy allta_app, где обновление всегда только по одному РЦ)",
@@ -373,7 +376,7 @@ export function StpMiddlePanel({ state }: { state: StpVersionState }) {
         >
           <RefreshCcw className="w-3.5 h-3.5" />
           Обновить СТП всех РЦ
-        </button>
+        </Button>
       </div>
     </aside>
   );
@@ -391,11 +394,11 @@ function VersionRow({ version, active, onSelect }: { version: OsVersion; active:
       }`}
     >
       <span className="font-semibold mono text-sm truncate">{version.id}</span>
-      {version.kind === "urgent" && <span className="badge badge-warn shrink-0">хотфикс</span>}
+      {version.kind === "urgent" && <Badge kind="warn" className="shrink-0">хотфикс</Badge>}
       <span className={`text-[11px] mono ml-auto shrink-0 ${failed > 0 ? "text-danger" : "text-dim"}`}>
         {failed > 0 ? `${failed} ✕` : "—"}
       </span>
-      <span className={meta.badge ? `badge badge-${meta.badge} shrink-0` : "badge shrink-0"}>{meta.label}</span>
+      <Badge kind={meta.badge ?? "neutral"} className="shrink-0">{meta.label}</Badge>
     </button>
   );
 }
@@ -472,14 +475,14 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-xs text-dim">{updatedLabel}</span>
-          <button
+          <Button size="sm"
             type="button"
-            className="btn btn-sm inline-flex items-center gap-2"
+            className="inline-flex items-center gap-2"
             onClick={() => setRefreshedIds((current) => new Set(current).add(version.id))}
           >
             <RefreshCcw className="w-3.5 h-3.5" />
             Обновить СТП
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -540,30 +543,27 @@ function matchesCombo(filters: StpSharedFilters, c: StpCombo): boolean {
 }
 
 export type StpDimension = "stand" | "kernel" | "mode";
-/** Три уровня приоритета группировки столбцов, по одному измерению на
- * уровень (`"none"` — уровень не задействован). Один и то же измерение
- * нельзя выбрать дважды — это обеспечивают опции конкретного уровня
- * (`columnGroupingOptionsForLevel`), а не отдельная проверка при смене. */
-export type StpColumnGrouping = [StpDimension | "none", StpDimension | "none", StpDimension | "none"];
+/** Какие измерения участвуют в группировке столбцов — включаются чекбоксом,
+ * без ручного управления порядком: приоритет между ними всегда фиксирован
+ * (`COLUMN_GROUPING_PRIORITY`), включённые просто идут в этом порядке. */
+export type StpColumnGrouping = Set<StpDimension>;
 
 const DIMENSION_LABEL: Record<StpDimension, string> = { stand: "Стенд", kernel: "Ядро", mode: "Режим" };
 
-// Порядок по умолчанию — как в реальной таблице СТП на life.astralinux.ru:
-// сначала режим защищённости, внутри него стенд, внутри стенда — ядро.
-const DEFAULT_COLUMN_GROUPING: StpColumnGrouping = ["mode", "stand", "kernel"];
+// Порядок приоритета фиксирован — как в реальной таблице СТП на
+// life.astralinux.ru: сначала режим защищённости, потом стенд, потом ядро.
+const COLUMN_GROUPING_PRIORITY: StpDimension[] = ["mode", "stand", "kernel"];
 
-function columnGroupingOptionsForLevel(grouping: StpColumnGrouping, level: number): DropdownOption[] {
-  const usedElsewhere = new Set(grouping.filter((_, i) => i !== level && grouping[i] !== "none"));
-  const available = (["mode", "stand", "kernel"] as StpDimension[]).filter((d) => !usedElsewhere.has(d));
-  return [{ value: "none", label: "—" }, ...available.map((d) => ({ value: d, label: DIMENSION_LABEL[d] }))];
-}
+// По умолчанию включены все три — таблица открывается уже сгруппированной,
+// как в реальном отчёте.
+const DEFAULT_COLUMN_GROUPING: StpColumnGrouping = new Set(COLUMN_GROUPING_PRIORITY);
 
-/** Переупорядочивает столбцы так, чтобы выбранные измерения шли сплошными
- * блоками в заданном порядке приоритета (сначала все значения первого
- * измерения, внутри них — второго, и т.д.), сохраняя стабильный порядок
- * внутри самого мелкого блока. */
+/** Переупорядочивает столбцы так, чтобы включённые измерения шли сплошными
+ * блоками в фиксированном порядке приоритета (сначала все значения первого
+ * по приоритету измерения, внутри них — следующего и т.д.), сохраняя
+ * стабильный порядок внутри самого мелкого блока. */
 function sortCombosForGrouping(combos: StpCombo[], grouping: StpColumnGrouping): StpCombo[] {
-  const active = grouping.filter((d): d is StpDimension => d !== "none");
+  const active = COLUMN_GROUPING_PRIORITY.filter((d) => grouping.has(d));
   if (active.length === 0) return combos;
   const keyOf = (c: StpCombo, dim: StpDimension) => (dim === "stand" ? c.standName : dim === "kernel" ? c.kernel : c.mode);
   return [...combos].sort((a, b) => {
@@ -649,29 +649,28 @@ function StpFilterBar({
       />
       <span className="self-stretch border-l border-token" />
       <span className="text-xs text-dim font-medium">Группировка столбцов:</span>
-      {([0, 1, 2] as const).map((level) => (
-        <Dropdown
-          key={level}
-          mode="single"
-          label={level === 0 ? "Сначала по" : level === 1 ? "затем по" : "и по"}
-          options={columnGroupingOptionsForLevel(columnGrouping, level)}
-          value={columnGrouping[level]}
-          onChange={(v) => {
-            const next = [...columnGrouping] as StpColumnGrouping;
-            next[level] = v as StpDimension | "none";
+      {COLUMN_GROUPING_PRIORITY.map((dim) => (
+        <Checkbox
+          key={dim}
+          checked={columnGrouping.has(dim)}
+          label={DIMENSION_LABEL[dim]}
+          onChange={(e) => {
+            const next = new Set(columnGrouping);
+            if (e.target.checked) next.add(dim);
+            else next.delete(dim);
             onColumnGroupingChange(next);
           }}
         />
       ))}
-      <button
+      <Button size="sm"
         type="button"
-        className="btn btn-sm ml-auto inline-flex items-center gap-1.5"
+        className="ml-auto inline-flex items-center gap-1.5"
         disabled={!hasAny}
         onClick={reset}
       >
         <FilterX className="w-3.5 h-3.5" />
         Сбросить фильтры
-      </button>
+      </Button>
     </div>
   );
 }
@@ -931,17 +930,22 @@ function StpCellActionModal({
   const comboLabel = `${combo.standName} / ${combo.mode} / ${combo.kernel}`;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/55 flex items-center justify-center p-5">
-      <div className="surface border border-token rounded w-full max-w-md overflow-hidden shadow-2xl">
-        <ModalHeader title={`${test.code} · ${STATUS_META[cell.status].label}`} subtitle={comboLabel} onClose={onClose} />
-        <div className="p-4 grid gap-3">
+    <Modal
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={`${test.code} · ${STATUS_META[cell.status].label}`}
+      subtitle={comboLabel}
+    >
+        <div className="grid gap-3">
           <div className="text-sm">{test.title}</div>
 
           <div className="grid gap-2">
             {cell.logAvailable ? (
-              <button
+              <Button
                 type="button"
-                className="btn w-full flex items-center justify-center gap-2"
+                className="w-full flex items-center justify-center gap-2"
                 onClick={() => {
                   onClose();
                   onOpenLog();
@@ -949,27 +953,27 @@ function StpCellActionModal({
               >
                 <ExternalLink className="w-4 h-4" />
                 Лог
-              </button>
+              </Button>
             ) : (
               <div className="text-xs text-dim italic text-center py-2 surface-2 border border-token rounded">
                 Слишком старая РЦ, лог ротирован
               </div>
             )}
 
-            <a
-              href={reportUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="btn w-full flex items-center justify-center gap-2"
-              onClick={onClose}
+            <Button
+              className="w-full flex items-center justify-center gap-2"
+              onClick={() => {
+                onClose();
+                window.open(reportUrl, "_blank", "noreferrer");
+              }}
             >
               <ExternalLink className="w-4 h-4" />
               Отчёт в Confluence
-            </a>
+            </Button>
 
-            <button
+            <Button
               type="button"
-              className="btn w-full flex items-center justify-center gap-2"
+              className="w-full flex items-center justify-center gap-2"
               onClick={() => {
                 toast.info(`Тест ${test.code} для ${comboLabel} поставлен в очередь на перезапуск`);
                 onClose();
@@ -977,11 +981,10 @@ function StpCellActionModal({
             >
               <RefreshCcw className="w-4 h-4" />
               Перезапустить
-            </button>
+            </Button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1045,12 +1048,12 @@ function StpTimingTable({
       <div className="border-b border-token p-3 flex items-center justify-between gap-3 flex-wrap">
         <div className="text-sm font-medium">Тайминг выполнения · {version.id}</div>
         <div className="surface-2 border border-token rounded p-1 flex items-center gap-1">
-          <button type="button" className={`btn btn-sm ${scope === "run" ? "btn-primary" : ""}`} onClick={() => setScope("run")}>
+          <Button type="button" size="sm" variant={scope === "run" ? "primary" : "default"} onClick={() => setScope("run")}>
             Только тесты этого РЦ
-          </button>
-          <button type="button" className={`btn btn-sm ${scope === "full" ? "btn-primary" : ""}`} onClick={() => setScope("full")}>
+          </Button>
+          <Button type="button" size="sm" variant={scope === "full" ? "primary" : "default"} onClick={() => setScope("full")}>
             Полная таблица
-          </button>
+          </Button>
         </div>
       </div>
 

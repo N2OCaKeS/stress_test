@@ -5,6 +5,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { AUDIT_EVENTS } from "@/mocks/log";
 import { useMockMode } from "@/api/auth/useQuery";
 import { RecentAuditEvents } from "./widgets/RecentAuditEvents";
+import { Badge } from "@/components/ui/Badge";
 
 /**
  * Logging-reader Home.
@@ -65,7 +66,7 @@ export function HomeLoggingReader() {
           <div className="card">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold">Что доступно</h3>
-              <span className="badge">только чтение</span>
+              <Badge>только чтение</Badge>
             </div>
             <div className="space-y-2 text-sm">
               <div className="flex items-start gap-3 p-2 surface-2 rounded">
@@ -180,7 +181,7 @@ export function HomeLoggingReader() {
             <div className="card">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold">Что доступно</h3>
-                <span className="badge">только чтение</span>
+                <Badge>только чтение</Badge>
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex items-start gap-3 p-2 surface-2 rounded">
@@ -240,9 +241,9 @@ export function HomeLoggingReader() {
                         {row.req}
                       </div>
                     </div>
-                    <span className={`badge badge-${row.badgeKind}`}>
+                    <Badge kind={row.badgeKind}>
                       {row.badge}
-                    </span>
+                    </Badge>
                   </div>
                 ))}
               </div>

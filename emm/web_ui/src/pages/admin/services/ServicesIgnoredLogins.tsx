@@ -27,6 +27,7 @@ import {
   removeIgnoredLogin,
 } from "@/api/server/accounts";
 import type { IgnoredLogin } from "@/api/server/types";
+import { Button } from "@/components/ui/Button";
 
 // `manage_ignored_logins` — dep_admin своего отдела или server.admin. Зеркалит
 // гейт canManage на странице Server.Пользователи; финальный отказ (403)
@@ -151,14 +152,14 @@ export function ServicesIgnoredLogins() {
                 placeholder="служебный, заводится вендором"
               />
             </label>
-            <button
+            <Button variant="primary"
               type="submit"
-              className="btn btn-primary flex items-center gap-1"
+              className="flex items-center gap-1"
               disabled={pending || !login.trim()}
             >
               <Plus className="w-4 h-4" />
               {pending ? "Добавляем…" : "Добавить"}
-            </button>
+            </Button>
           </form>
         )}
 
@@ -170,13 +171,13 @@ export function ServicesIgnoredLogins() {
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <div className="flex-1">
               <div>{apiErrMsg(listQ.error, "Ignore-лист не загрузился")}</div>
-              <button
-                className="btn btn-ghost mt-2"
+              <Button variant="ghost"
+                className="mt-2"
                 onClick={() => listQ.refetch()}
                 type="button"
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -223,14 +224,14 @@ function IgnoredRow({
         </div>
       </div>
       {canEdit && (
-        <button
+        <Button variant="danger" size="sm"
           type="button"
-          className="btn btn-sm btn-danger flex items-center gap-1"
+          className="flex items-center gap-1"
           onClick={onRemove}
           title="Снять с ignore-list"
         >
           <Trash2 className="w-3.5 h-3.5" /> Снять игнор
-        </button>
+        </Button>
       )}
     </div>
   );

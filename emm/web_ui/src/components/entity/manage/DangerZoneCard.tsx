@@ -5,6 +5,7 @@
  */
 import type { ReactNode } from "react";
 import { AlertTriangle, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 
 export function DangerZoneCard({
   description,
@@ -24,13 +25,13 @@ export function DangerZoneCard({
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex-1 text-xs text-dim">{description}</div>
-        <button
-          className="btn btn-danger flex items-center gap-1"
+        <Button variant="danger"
+          className="flex items-center gap-1"
           disabled={busy}
           onClick={onDelete}
         >
           <Trash2 className="w-4 h-4" /> {buttonLabel}
-        </button>
+        </Button>
       </div>
     </div>
   );

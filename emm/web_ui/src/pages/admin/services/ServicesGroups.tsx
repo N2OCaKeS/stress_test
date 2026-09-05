@@ -35,6 +35,9 @@ import { useServiceLabel } from "@/lib/labels";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 /**
  * Управление группами `auth_service`: профиль, участники (юзеры + боты),
@@ -301,9 +304,9 @@ function ServicesGroupsLive() {
       <div className="flex-1 p-8">
         <div className="alert-danger">
           {msg}
-          <button className="btn btn-sm ml-2" onClick={bump}>
+          <Button size="sm" className="ml-2" onClick={bump}>
             Повторить
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -327,8 +330,8 @@ function ServicesGroupsLive() {
             <div className="alert-danger text-[11px]">{loadMoreErr}</div>
           )}
           {hasMore ? (
-            <button
-              className="btn btn-sm w-full"
+            <Button size="sm"
+              className="w-full"
               disabled={loadingMore}
               onClick={() => void loadMore()}
               title={`показано ${rawItems.length}, грузить следующие ${GROUPS_PAGE_SIZE}`}
@@ -336,7 +339,7 @@ function ServicesGroupsLive() {
               {loadingMore
                 ? "Загрузка…"
                 : `Загрузить ещё (${GROUPS_PAGE_SIZE})`}
-            </button>
+            </Button>
           ) : (
             rawItems.length > 0 && (
               <div className="text-dim text-center">все · {rawItems.length}</div>
@@ -546,21 +549,20 @@ function GroupDetailView({
             <UsersRound className="w-4 h-4 text-accent" />
             <span>{group.name}</span>
             {!canEdit && (
-              <span
-                className="badge badge-warn"
+              <Badge kind="warn"
                 title="Группа не в вашем отделе"
               >
                 Только чтение
-              </span>
+              </Badge>
             )}
           </h3>
           {canEdit && (
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               onClick={() => startEdit(group.id)}
             >
               <Edit3 className="w-4 h-4" /> Изменить
-            </button>
+            </Button>
           )}
         </div>
 
@@ -749,9 +751,9 @@ function MembersCard({
             {users.map((u) => (
               <tr key={`u:${u.user_id}`} className="border-t border-token">
                 <td className="py-2">
-                  <span className="badge badge-accent flex items-center gap-1 w-fit">
+                  <Badge kind="accent" className="flex items-center gap-1 w-fit">
                     <UserIcon className="w-3 h-3" /> пользователь
-                  </span>
+                  </Badge>
                 </td>
                 <td>
                   <div className="text-sm">{u.username}</div>
@@ -761,8 +763,7 @@ function MembersCard({
                   {formatMskDate(u.added_at)}
                 </td>
                 <td className="text-right">
-                  <button
-                    className="btn btn-sm btn-danger"
+                  <Button variant="danger" size="sm"
                     disabled={!canEdit || pending}
                     onClick={() =>
                       run(() =>
@@ -771,16 +772,16 @@ function MembersCard({
                     }
                   >
                     убрать
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ))}
             {bots.map((b) => (
               <tr key={`b:${b.bot_id}`} className="border-t border-token">
                 <td className="py-2">
-                  <span className="badge flex items-center gap-1 w-fit">
+                  <Badge className="flex items-center gap-1 w-fit">
                     <Bot className="w-3 h-3" /> бот
-                  </span>
+                  </Badge>
                 </td>
                 <td>
                   <div className="text-sm mono">{b.name}</div>
@@ -790,15 +791,14 @@ function MembersCard({
                   {formatMskDate(b.added_at)}
                 </td>
                 <td className="text-right">
-                  <button
-                    className="btn btn-sm btn-danger"
+                  <Button variant="danger" size="sm"
                     disabled={!canEdit || pending}
                     onClick={() =>
                       run(() => groupsApi.removeGroupBot(group.id, b.bot_id))
                     }
                   >
                     убрать
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ))}
@@ -833,8 +833,8 @@ function MembersCard({
             value={pickerId}
             onChange={setPickerId}
           />
-          <button
-            className="btn btn-primary flex items-center gap-1"
+          <Button variant="primary"
+            className="flex items-center gap-1"
             disabled={pending || !pickerId}
             onClick={() =>
               run(async () => {
@@ -848,7 +848,7 @@ function MembersCard({
             }
           >
             <Plus className="w-4 h-4" /> Добавить
-          </button>
+          </Button>
           <TruncationNotice
             className="w-full"
             shown={
@@ -943,8 +943,7 @@ function ServicesCard({
                   {formatMskDate(s.granted_at)}
                 </td>
                 <td className="text-right">
-                  <button
-                    className="btn btn-sm btn-danger"
+                  <Button variant="danger" size="sm"
                     disabled={!canEdit || pending}
                     onClick={async () => {
                       if (
@@ -961,7 +960,7 @@ function ServicesCard({
                     }}
                   >
                     отозвать
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ))}
@@ -979,8 +978,8 @@ function ServicesCard({
             value={picker}
             onChange={(v) => setPicker(v as ServiceName | "")}
           />
-          <button
-            className="btn btn-primary flex items-center gap-1"
+          <Button variant="primary"
+            className="flex items-center gap-1"
             disabled={pending || !picker}
             onClick={() =>
               run(async () => {
@@ -991,7 +990,7 @@ function ServicesCard({
             }
           >
             <Plus className="w-4 h-4" /> Выдать
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -1067,16 +1066,15 @@ function RolesCard({
                       <span className="text-dim italic">—</span>
                     ) : (
                       r.roles.map((role) => (
-                        <span key={role} className="badge badge-accent">
+                        <Badge kind="accent" key={role}>
                           {role}
-                        </span>
+                        </Badge>
                       ))
                     )}
                   </div>
                 </td>
                 <td className="text-right">
-                  <button
-                    className="btn btn-sm btn-danger"
+                  <Button variant="danger" size="sm"
                     disabled={!canEdit || pending}
                     onClick={() =>
                       run(() =>
@@ -1085,7 +1083,7 @@ function RolesCard({
                     }
                   >
                     отозвать все
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ))}
@@ -1187,8 +1185,7 @@ function RoleAssigner({
                 className={`badge cursor-pointer ${checked ? "badge-accent" : ""}`}
                 title={isExisting ? "уже назначена" : undefined}
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   className="mr-1"
                   checked={checked}
                   onChange={() => toggleRole(r.role_name)}
@@ -1206,16 +1203,15 @@ function RoleAssigner({
         </div>
       )}
       <div className="flex gap-2 flex-wrap">
-        <button
-          className="btn btn-sm"
+        <Button size="sm"
           disabled={disabled || !serviceName}
           onClick={() => setSelectedRoles(existing)}
           title="Заполнить чекбоксы текущим набором"
         >
           текущие
-        </button>
-        <button
-          className="btn btn-primary btn-sm flex items-center gap-1"
+        </Button>
+        <Button variant="primary" size="sm"
+          className="flex items-center gap-1"
           disabled={disabled || !serviceName}
           onClick={() => {
             if (!serviceName) return;
@@ -1223,7 +1219,7 @@ function RoleAssigner({
           }}
         >
           <ShieldCheck className="w-3 h-3" /> Применить (replace)
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -1317,16 +1313,15 @@ function GroupCreateForm({
         </FormRow>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onDone}>
+        <Button onClick={onDone}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary"
+        </Button>
+        <Button variant="primary"
           disabled={pending || !name.trim() || !deptId}
           onClick={submit}
         >
           Создать
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -1387,16 +1382,15 @@ function GroupEditForm({
         </div>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onDone}>
+        <Button onClick={onDone}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary"
+        </Button>
+        <Button variant="primary"
           disabled={pending}
           onClick={submit}
         >
           Сохранить
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -1443,13 +1437,13 @@ function DeleteGroupButton({
   return (
     <div className="flex flex-col items-end gap-1">
       {err && <div className="alert-danger text-xs">{err}</div>}
-      <button
-        className="btn btn-danger flex items-center gap-1"
+      <Button variant="danger"
+        className="flex items-center gap-1"
         disabled={disabled || pending}
         onClick={submit}
       >
         <Trash2 className="w-4 h-4" /> Удалить
-      </button>
+      </Button>
     </div>
   );
 }

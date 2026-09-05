@@ -13,7 +13,6 @@
  * не найден). Отдельного backend-роута нет — фильтруем результат скана.
  */
 import { useEffect, useMemo, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import {
   ScanSearch,
   Server as ServerIcon,
@@ -34,6 +33,8 @@ import type {
   UnlinkedExistingUser,
   RevisionAccountDiff,
 } from "@/api/server/types";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 
 export function OsUsersDiscoveryModal({
   servers,
@@ -155,28 +156,21 @@ export function OsUsersDiscoveryModal({
   }, [checkLogin, scanDone, unknownUsers, diffs]);
 
   return (
-    <Dialog.Root open modal onOpenChange={(o) => !o && !applying && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content
-          className="modal-content"
-          style={{ maxWidth: 720 }}
-          onInteractOutside={(e) => applying && e.preventDefault()}
-          onEscapeKeyDown={(e) => applying && e.preventDefault()}
-        >
-          <div className="modal-header">
-            <ScanSearch className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold">
-              Поиск пользователей на ОС
-            </Dialog.Title>
-          </div>
+    <Modal
+      open
+      width="lg"
+      onOpenChange={(o) => !o && !applying && onClose()}
+      title="Поиск пользователей на ОС"
+      icon={<ScanSearch className="w-5 h-5 text-accent" />}
+      hideCloseButton
+    >
 
           <div className="modal-body flex flex-col gap-4">
-            <Dialog.Description className="text-xs text-dim">
+            <p className="text-xs text-dim">
               Сканирует OS-юзеров сервера (users/inventory) и показывает тех, кто
               не привязан к аккаунту и не в ignore-list. Каждого можно завести в
               БД (discovered) или отправить в ignore-list.
-            </Dialog.Description>
+            </p>
 
             {/* Выбор сервера + скан */}
             <div className="flex items-center gap-2 flex-wrap">
@@ -192,9 +186,9 @@ export function OsUsersDiscoveryModal({
                 value={serverId}
                 onChange={setServerId}
               />
-              <button
+              <Button variant="primary" size="sm"
                 type="button"
-                className="btn btn-sm btn-primary flex items-center gap-1"
+                className="flex items-center gap-1"
                 disabled={!serverId || polling}
                 onClick={handleScan}
               >
@@ -202,7 +196,7 @@ export function OsUsersDiscoveryModal({
                   className={`w-3.5 h-3.5 ${polling ? "animate-spin" : ""}`}
                 />
                 {polling ? "Сканируем…" : "Сканировать"}
-              </button>
+              </Button>
             </div>
 
             {polling && (
@@ -273,12 +267,10 @@ export function OsUsersDiscoveryModal({
           </div>
 
           <div className="modal-footer">
-            <button type="button" className="btn" onClick={onClose} disabled={applying}>
+            <Button type="button" onClick={onClose} disabled={applying}>
               Закрыть
-            </button>
+            </Button>
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </Modal>
   );
 }

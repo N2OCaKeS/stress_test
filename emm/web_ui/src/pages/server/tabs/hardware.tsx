@@ -30,6 +30,8 @@ import { isDepAdmin } from "@/lib/rbac";
 import { MOCK_VM_DISKS } from "@/mocks/vm";
 import { FormRow, StatRow } from "@/pages/admin/services/_inline";
 import type { EntityRef } from "./_entity";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 interface Props {
   entity?: EntityRef;
@@ -207,9 +209,9 @@ function serverModel(
               server.network_interfaces && server.network_interfaces.length > 0 ? (
                 <span className="flex flex-wrap gap-1">
                   {server.network_interfaces.map((iface) => (
-                    <span key={iface} className="badge mono">
+                    <Badge key={iface} className="mono">
                       {iface}
-                    </span>
+                    </Badge>
                   ))}
                 </span>
               ) : (
@@ -290,9 +292,9 @@ function vmModel(vm: Vm, vmDisks: HwVmDiskTable): HardwareModel {
               vm.network_interfaces && vm.network_interfaces.length > 0 ? (
                 <span className="flex flex-wrap gap-1">
                   {vm.network_interfaces.map((iface) => (
-                    <span key={iface} className="badge mono">
+                    <Badge key={iface} className="mono">
                       {iface}
-                    </span>
+                    </Badge>
                   ))}
                 </span>
               ) : (
@@ -333,12 +335,12 @@ function HardwareView({ model }: { model: HardwareModel }) {
       {model.edit && (
         <div className="flex justify-end">
           {model.edit.canEdit && (
-            <button
-              className="btn btn-ghost flex items-center gap-1"
+            <Button variant="ghost"
+              className="flex items-center gap-1"
               onClick={model.edit.onEdit}
             >
               <Pencil className="w-4 h-4" /> Изменить
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -436,9 +438,9 @@ function VmDiskTableCard({ table }: { table: HwVmDiskTable }) {
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <div className="flex-1 text-xs">
             <div>{table.error}</div>
-            <button className="btn btn-ghost mt-2 flex items-center gap-1" onClick={table.onRetry}>
+            <Button variant="ghost" className="mt-2 flex items-center gap-1" onClick={table.onRetry}>
               <RefreshCw className="w-3.5 h-3.5" /> Повторить
-            </button>
+            </Button>
           </div>
         </div>
       ) : table.disks.length === 0 ? (
@@ -477,7 +479,7 @@ function VmDiskTableCard({ table }: { table: HwVmDiskTable }) {
                   <td className="py-1.5 pr-3 mono">{d.state}</td>
                   <td className="py-1.5 pr-3">
                     {d.is_system ? (
-                      <span className="badge badge-ok">system</span>
+                      <Badge kind="ok">system</Badge>
                     ) : (
                       <span className="text-dim">data</span>
                     )}
@@ -539,7 +541,7 @@ function DiskTableCard({ table }: { table: HwDiskTable }) {
                   </td>
                   <td className="py-1.5 pr-3">
                     {d.is_system ? (
-                      <span className="badge badge-ok">system</span>
+                      <Badge kind="ok">system</Badge>
                     ) : (
                       <span className="text-dim">data</span>
                     )}
@@ -718,16 +720,15 @@ function HardwareEditForm({
           </FormRow>
         </div>
         <div className="mt-4 flex gap-2 justify-end">
-          <button className="btn" onClick={onCancel} disabled={pending}>
+          <Button onClick={onCancel} disabled={pending}>
             Отмена
-          </button>
-          <button
-            className="btn btn-primary"
+          </Button>
+          <Button variant="primary"
             disabled={pending}
             onClick={submit}
           >
             Сохранить
-          </button>
+          </Button>
         </div>
         <div className="mt-3 text-[11px] text-dim">
           Диски не редактируются вручную — backend заменяет весь массив

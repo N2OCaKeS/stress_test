@@ -23,6 +23,7 @@ import {
 } from "@/pages/admin/adminCatalog";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { Button } from "@/components/ui/Button";
 
 interface AdminOnlyPanelProps {
   width: number;
@@ -253,35 +254,35 @@ export function AdminOnlyPanel({ width, collapsed, onToggleCollapsed }: AdminOnl
           )}
 
           <div className={`flex items-center gap-2 ${collapsed ? "flex-col" : ""}`}>
-            <button
+            <Button
               type="button"
               onClick={onToggleCollapsed}
               title={collapsed ? "Развернуть панель" : "Свернуть панель"}
               aria-label={collapsed ? "Развернуть панель" : "Свернуть панель"}
-              className="btn flex items-center justify-center gap-1.5 shrink-0"
+              className="flex items-center justify-center gap-1.5 shrink-0"
             >
               <ToggleIcon className="w-4 h-4" />
-            </button>
+            </Button>
             {!collapsed && (
-              <button
+              <Button
                 type="button"
                 onClick={onLogout}
-                className="btn flex-1 flex items-center justify-center gap-1.5"
+                className="flex-1 flex items-center justify-center gap-1.5"
               >
                 <LogOut className="w-4 h-4" />
                 Выйти
-              </button>
+              </Button>
             )}
             {collapsed && (
-              <button
+              <Button
                 type="button"
                 onClick={onLogout}
                 title="Выйти"
                 aria-label="Выйти"
-                className="btn flex items-center justify-center gap-1.5"
+                className="flex items-center justify-center gap-1.5"
               >
                 <LogOut className="w-4 h-4" />
-              </button>
+              </Button>
             )}
           </div>
         </div>

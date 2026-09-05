@@ -30,6 +30,7 @@ import {
   setRetention,
 } from "@/api/loging/retention";
 import type { RetentionPolicyPutRequest, Severity } from "@/api/loging/types";
+import { Button } from "@/components/ui/Button";
 
 const SEVERITIES: Severity[] = [
   "TRACE",
@@ -168,12 +169,12 @@ export function LogRetentionLive() {
               <AlertCircle className="w-4 h-4 mt-0.5" />
               <div className="flex-1 text-sm">
                 <div>{apiErrMsg(policyQ.error, "Политика не загрузилась")}</div>
-                <button
-                  className="btn btn-ghost mt-2"
+                <Button variant="ghost"
+                  className="mt-2"
                   onClick={() => policyQ.refetch()}
                 >
                   Повторить
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -272,22 +273,22 @@ export function LogRetentionLive() {
                       />
                     </label>
                     <div className="flex items-center gap-2 mt-1">
-                      <button
-                        className="btn btn-primary flex items-center gap-1"
+                      <Button variant="primary"
+                        className="flex items-center gap-1"
                         onClick={handleSave}
                         disabled={busy}
                       >
                         <Save className="w-4 h-4" />{" "}
                         {busy ? "Сохраняем…" : "Сохранить"}
-                      </button>
+                      </Button>
                       {policy && (
-                        <button
-                          className="btn btn-danger flex items-center gap-1"
+                        <Button variant="danger"
+                          className="flex items-center gap-1"
                           onClick={handleDisable}
                           disabled={busy}
                         >
                           <Trash2 className="w-4 h-4" /> Отключить
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </div>

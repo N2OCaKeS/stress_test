@@ -2,6 +2,7 @@ import { Copy, Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useToast } from "@/contexts/ToastContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { Button } from "@/components/ui/Button";
 
 export type CodeBlockLang = "bash" | "python" | "json";
 
@@ -91,15 +92,15 @@ export function CodeBlock({ code, lang = "bash" }: CodeBlockProps) {
 
   return (
     <div className="relative group">
-      <button
+      <Button variant="ghost"
         type="button"
         onClick={copy}
         title="Скопировать"
         aria-label="Скопировать код"
-        className="btn btn-ghost absolute top-2 right-2 z-10 flex items-center gap-1 text-xs"
+        className="absolute top-2 right-2 z-10 flex items-center gap-1 text-xs"
       >
         {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-      </button>
+      </Button>
       {html ? (
         <div
           className="wiki-shiki mono text-xs border border-token rounded"

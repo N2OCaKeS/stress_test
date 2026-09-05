@@ -16,6 +16,9 @@ import type {
 import { Dropdown } from "@/components/ui/Dropdown";
 import { useToast } from "@/contexts/ToastContext";
 import { useDeptLabel } from "@/lib/labels";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 const KNOWN_GRANTS = ["authorization_code", "client_credentials"];
 
@@ -84,12 +87,12 @@ export function SecurityOAuth2() {
               `POST /oauth2/clients` создаёт клиента, секрет показывается один раз.
               `DELETE` — soft-delete (`is_active=false`).
             </div>
-            <button
-              className="btn btn-primary flex items-center gap-1"
+            <Button variant="primary"
+              className="flex items-center gap-1"
               onClick={() => setCreating(true)}
             >
               <Plus className="w-4 h-4" /> Создать клиента
-            </button>
+            </Button>
           </div>
 
           {secret && (
@@ -115,9 +118,9 @@ export function SecurityOAuth2() {
             ) : loadErr ? (
               <div className="alert-danger text-xs flex items-center justify-between gap-2">
                 <span>{loadErr}</span>
-                <button className="btn btn-ghost btn-sm" onClick={() => void reload()}>
+                <Button variant="ghost" size="sm" onClick={() => void reload()}>
                   Повторить
-                </button>
+                </Button>
               </div>
             ) : items.length === 0 ? (
               <div className="text-xs text-dim py-4 text-center">
@@ -168,7 +171,7 @@ function ClientRow({
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium truncate">
           {c.name}{" "}
-          {!c.is_active && <span className="badge">неактивен</span>}
+          {!c.is_active && <Badge>неактивен</Badge>}
         </div>
         <div className="text-[11px] text-dim mono truncate">{c.client_id}</div>
         <div className="text-[11px] text-dim truncate">
@@ -176,13 +179,13 @@ function ClientRow({
           {c.grant_types.join(", ")} · uris: {c.redirect_uris.length}
         </div>
       </div>
-      <button
-        className="btn btn-danger flex items-center gap-1"
+      <Button variant="danger"
+        className="flex items-center gap-1"
         onClick={onDelete}
         disabled={pending}
       >
         <Trash2 className="w-4 h-4" /> Удалить
-      </button>
+      </Button>
     </div>
   );
 }
@@ -328,8 +331,7 @@ function ClientForm({
           )}
         </div>
         <label className="flex items-start gap-2 text-sm md:col-span-2">
-          <input
-            type="checkbox"
+          <Checkbox
             className="mt-1"
             checked={isPublic}
             onChange={(e) => setIsPublic(e.target.checked)}
@@ -341,16 +343,15 @@ function ClientForm({
         </label>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onCancel} disabled={pending}>
+        <Button onClick={onCancel} disabled={pending}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary"
+        </Button>
+        <Button variant="primary"
           onClick={submit}
           disabled={pending || noGrants || codeGrantWithoutRedirect}
         >
           Создать
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -383,9 +384,9 @@ function SecretPanel({
             ? "Public-клиент создан"
             : "client_secret показывается один раз"}
         </h3>
-        <button className="btn btn-ghost" onClick={onClose}>
+        <Button variant="ghost" onClick={onClose}>
           Скрыть
-        </button>
+        </Button>
       </div>
       <div className="text-xs text-dim mb-2">
         client_id: <span className="mono">{resp.client_id}</span>
@@ -401,12 +402,12 @@ function SecretPanel({
             {resp.client_secret}
           </div>
           <div className="mt-2">
-            <button
-              className="btn btn-primary flex items-center gap-1"
+            <Button variant="primary"
+              className="flex items-center gap-1"
               onClick={copy}
             >
               <Copy className="w-4 h-4" /> Скопировать
-            </button>
+            </Button>
           </div>
         </>
       )}
@@ -603,13 +604,12 @@ function TokenTester() {
         )}
       </div>
       <div className="mt-3 flex gap-2">
-        <button
-          className="btn btn-primary"
+        <Button variant="primary"
           onClick={submit}
           disabled={pending || !clientId}
         >
           Запросить токен
-        </button>
+        </Button>
       </div>
       {result && (
         <div className="mt-3">

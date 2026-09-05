@@ -26,6 +26,8 @@ import type {
   Bot as BotItem,
   BotTokenCreateResponse,
 } from "@/api/auth/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Полная карточка бота для разделов /bots (account_admin / dep_admin).
@@ -117,16 +119,14 @@ export function BotDetailFullPanel({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl font-semibold truncate mono">{bot.name}</h1>
-            <span
-              className={`badge ${bot.status === "active" ? "badge-ok" : "badge-warn"}`}
-            >
+            <Badge kind={bot.status === "active" ? "ok" : "warn"}>
               {bot.status}
-            </span>
-            <span className="badge">bot</span>
+            </Badge>
+            <Badge>bot</Badge>
             {!canEdit && (
-              <span className="badge badge-warn" title={caps.reason}>
+              <Badge kind="warn" title={caps.reason}>
                 Только чтение
-              </span>
+              </Badge>
             )}
           </div>
           <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
@@ -154,8 +154,8 @@ export function BotDetailFullPanel({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-          <button
-            className="btn flex items-center gap-1"
+          <Button
+            className="flex items-center gap-1"
             disabled={!caps.manageRoles || pending}
             title={caps.manageRoles ? undefined : caps.reason}
             onClick={() => {
@@ -168,9 +168,9 @@ export function BotDetailFullPanel({
             }}
           >
             <Edit3 className="w-4 h-4" /> Изменить
-          </button>
-          <button
-            className="btn flex items-center gap-1"
+          </Button>
+          <Button
+            className="flex items-center gap-1"
             disabled={!caps.manageRoles || pending}
             title={caps.manageRoles ? undefined : caps.reason}
             onClick={() =>
@@ -187,9 +187,9 @@ export function BotDetailFullPanel({
               <Power className="w-4 h-4" />
             )}
             {bot.status === "active" ? "Отключить" : "Включить"}
-          </button>
-          <button
-            className="btn btn-danger flex items-center gap-1"
+          </Button>
+          <Button variant="danger"
+            className="flex items-center gap-1"
             disabled={!caps.delete || pending}
             title={caps.delete ? undefined : caps.reason}
             onClick={() =>
@@ -201,7 +201,7 @@ export function BotDetailFullPanel({
             }
           >
             <Trash2 className="w-4 h-4" /> Удалить
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -211,9 +211,9 @@ export function BotDetailFullPanel({
           <div className="col-span-2 alert-block">
             <div className="flex items-start gap-2">
               <span className="text-sm flex-1">{info}</span>
-              <button className="btn btn-sm" onClick={() => setInfo(null)}>
+              <Button size="sm" onClick={() => setInfo(null)}>
                 закрыть
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -226,15 +226,15 @@ export function BotDetailFullPanel({
               <span className="mono text-xs break-all flex-1">
                 {issued.token}
               </span>
-              <button
-                className="btn btn-sm flex items-center gap-1"
+              <Button size="sm"
+                className="flex items-center gap-1"
                 onClick={() => copy(issued.token)}
               >
                 <Copy className="w-3 h-3" /> Копировать
-              </button>
-              <button className="btn btn-sm" onClick={() => setIssued(null)}>
+              </Button>
+              <Button size="sm" onClick={() => setIssued(null)}>
                 закрыть
-              </button>
+              </Button>
             </div>
             <div className="text-[11px] text-dim mt-1">
               В БД хранится только хэш, чистый токен — только сейчас. Повторно
@@ -259,11 +259,9 @@ export function BotDetailFullPanel({
               <StatRow
                 k="status"
                 v={
-                  <span
-                    className={`badge ${bot.status === "active" ? "badge-ok" : "badge-warn"}`}
-                  >
+                  <Badge kind={bot.status === "active" ? "ok" : "warn"}>
                     {bot.status}
-                  </span>
+                  </Badge>
                 }
               />
               <StatRow
@@ -286,8 +284,8 @@ export function BotDetailFullPanel({
             <span className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4" /> Allowed services
             </span>
-            <button
-              className="btn btn-sm flex items-center gap-1"
+            <Button size="sm"
+              className="flex items-center gap-1"
               disabled={!caps.manageRoles || pending}
               title={caps.manageRoles ? undefined : caps.reason}
               onClick={() => {
@@ -306,16 +304,16 @@ export function BotDetailFullPanel({
               }}
             >
               <Edit3 className="w-3 h-3" /> Изменить
-            </button>
+            </Button>
           </div>
           <div className="flex flex-wrap gap-1">
             {bot.allowed_services.length === 0 ? (
               <span className="text-xs text-dim italic">нет</span>
             ) : (
               bot.allowed_services.map((s) => (
-                <span key={s} className="badge badge-accent mono">
+                <Badge kind="accent" key={s} className="mono">
                   {s}
-                </span>
+                </Badge>
               ))
             )}
           </div>
@@ -378,14 +376,13 @@ export function BotDetailFullPanel({
                       </td>
                       <td>
                         {revoked ? (
-                          <span className="badge badge-warn">revoked</span>
+                          <Badge kind="warn">revoked</Badge>
                         ) : (
-                          <span className="badge badge-ok">active</span>
+                          <Badge kind="ok">active</Badge>
                         )}
                       </td>
                       <td>
-                        <button
-                          className="btn btn-sm btn-danger"
+                        <Button variant="danger" size="sm"
                           disabled={!caps.revokeToken || pending || revoked}
                           title={caps.revokeToken ? undefined : caps.reason}
                           onClick={async () => {
@@ -407,7 +404,7 @@ export function BotDetailFullPanel({
                           }}
                         >
                           отозвать
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -448,8 +445,8 @@ export function BotDetailFullPanel({
                 max={expBounds.max}
                 onChange={(e) => setTokenExpires(e.target.value)}
               />
-              <button
-                className="btn btn-primary flex items-center gap-1"
+              <Button variant="primary"
+                className="flex items-center gap-1"
                 disabled={
                   !caps.rotateToken ||
                   pending ||
@@ -512,7 +509,7 @@ export function BotDetailFullPanel({
                     <RotateCw className="w-4 h-4" /> Ротировать
                   </>
                 )}
-              </button>
+              </Button>
             </div>
           )}
         </div>

@@ -38,6 +38,8 @@ import type { BotTokenCreateResponse } from "@/api/auth/types";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
 import { formatMskDate, formatMskShort, mskDateOffset } from "@/lib/datetime";
 import { BotRoleAssign } from "./_botRoleAssign";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 export function BotDetail() {
   const { id } = useParams<{ id: string }>();
@@ -147,16 +149,16 @@ export function BotDetail() {
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-semibold truncate mono">{headerName}</h1>
               {mockMode ? (
-                <span className={`badge badge-${bot!.token_status === "active" ? "ok" : bot!.token_status === "rotated" ? "warn" : "danger"}`}>
+                <Badge kind={bot!.token_status === "active" ? "ok" : bot!.token_status === "rotated" ? "warn" : "danger"}>
                   token: {bot!.token_status}
-                </span>
+                </Badge>
               ) : liveBot ? (
-                <span className={`badge badge-${liveBot.status === "active" ? "ok" : "warn"}`}>
+                <Badge kind={liveBot.status === "active" ? "ok" : "warn"}>
                   {liveBot.status}
-                </span>
+                </Badge>
               ) : null}
               {mockMode ? (
-                <span className="badge">dept · {dept?.name ?? bot!.owner_dept}</span>
+                <Badge>dept · {dept?.name ?? bot!.owner_dept}</Badge>
               ) : liveBot ? (
                 <BotHeaderDept deptId={liveBot.department_id} />
               ) : null}
@@ -184,9 +186,9 @@ export function BotDetail() {
           </div>
           <div className="flex items-center gap-2">
             {!caps.rotateToken && !caps.revokeToken && !caps.delete && (
-              <span className="badge badge-warn" title={caps.reason}>
+              <Badge kind="warn" title={caps.reason}>
                 Только чтение
-              </span>
+              </Badge>
             )}
           </div>
         </div>
@@ -215,9 +217,9 @@ export function BotDetail() {
               </div>
               <div>
                 <StatRow k="token_status" v={
-                  <span className={`badge badge-${bot.token_status === "active" ? "ok" : bot.token_status === "rotated" ? "warn" : "danger"}`}>
+                  <Badge kind={bot.token_status === "active" ? "ok" : bot.token_status === "rotated" ? "warn" : "danger"}>
                     {bot.token_status}
-                  </span>
+                  </Badge>
                 } />
                 <StatRow k="created_by" v={createdByUser ? (
                   <Link to={`/users/${createdByUser.id}`} className="mono hover-bg">{createdByLabel}</Link>
@@ -250,21 +252,20 @@ export function BotDetail() {
                     return (
                       <tr key={ra.role_id} className="border-t border-token">
                         <td className="py-2 mono text-xs">{r.service}</td>
-                        <td><span className="badge badge-accent">{r.name}</span></td>
+                        <td><Badge kind="accent">{r.name}</Badge></td>
                         <td className="text-xs">
-                          {ra.scope_kind === "platform" && <span className="badge">платформа</span>}
-                          {ra.scope_kind === "dept" && <span className="badge">отдел · {ra.scope_ref}</span>}
-                          {ra.scope_kind === "resource" && <span className="badge">{ra.scope_ref}</span>}
+                          {ra.scope_kind === "platform" && <Badge>платформа</Badge>}
+                          {ra.scope_kind === "dept" && <Badge>отдел · {ra.scope_ref}</Badge>}
+                          {ra.scope_kind === "resource" && <Badge>{ra.scope_ref}</Badge>}
                         </td>
                         <td className="text-xs text-dim"><BotGrantedBy id={ra.granted_by} /></td>
                         <td>
-                          <button
-                            className="btn btn-sm btn-ghost"
+                          <Button variant="ghost" size="sm"
                             onClick={() => setDiffMutation({ kind: "remove_role", subject: "bot", user_id: bot.id, role_id: ra.role_id })}
                             title="Прикинуть diff"
                           >
                             <GitCompareArrows className="w-3 h-3" />
-                          </button>
+                          </Button>
                         </td>
                       </tr>
                     );
@@ -335,7 +336,7 @@ export function BotDetail() {
           <Section icon={<AlertTriangle className="w-4 h-4" />} title="Drift vs. spec на момент выдачи" className="col-span-2">
             <div className="text-xs text-dim mb-3">
               Initial spec (на момент выпуска токена): {bot.initial_spec.map((p) => (
-                <span key={p} className="mono badge mr-1">{p}</span>
+                <Badge key={p} className="mono mr-1">{p}</Badge>
               ))}
             </div>
             {drift.added.length === 0 && drift.removed.length === 0 ? (
@@ -413,16 +414,16 @@ function PermRow({ entry, open, onToggle }: { entry: EffectiveEntry; open: boole
         <td className="px-3 py-2 mono text-xs">{entry.permission}</td>
         <td className="px-3 py-2 text-xs">{entry.service}</td>
         <td className="px-3 py-2 text-xs">
-          {entry.scope_kind === "platform" && <span className="badge">платформа</span>}
-          {entry.scope_kind === "dept" && <span className="badge">отдел · {entry.scope_ref}</span>}
-          {entry.scope_kind === "resource" && <span className="badge">{entry.scope_ref}</span>}
+          {entry.scope_kind === "platform" && <Badge>платформа</Badge>}
+          {entry.scope_kind === "dept" && <Badge>отдел · {entry.scope_ref}</Badge>}
+          {entry.scope_kind === "resource" && <Badge>{entry.scope_ref}</Badge>}
         </td>
         <td className="px-3 py-2">
           <div className="flex flex-wrap gap-1">
             {entry.sources.map((s) => (
-              <span key={`${s.kind}-${s.id}`} className={`badge badge-${s.kind === "direct" ? "warn" : "accent"}`}>
+              <Badge key={`${s.kind}-${s.id}`} kind={s.kind === "direct" ? "warn" : "accent"}>
                 {s.label}
-              </span>
+              </Badge>
             ))}
           </div>
         </td>
@@ -549,9 +550,9 @@ function BotLiveData({
       {!loading && firstErr instanceof ApiError && (
         <div className="alert-danger">
           {firstErr.errorCode}: {firstErr.message}
-          <button className="btn btn-sm ml-2" onClick={refetchAll}>
+          <Button size="sm" className="ml-2" onClick={refetchAll}>
             Повторить
-          </button>
+          </Button>
         </div>
       )}
       {!loading && firstErr && !(firstErr instanceof ApiError) && (
@@ -568,13 +569,12 @@ function BotLiveData({
             >
               <div className="flex items-start gap-2">
                 <span className="text-warn text-sm flex-1">{actionInfo}</span>
-                <button
-                  className="btn btn-sm"
+                <Button size="sm"
                   onClick={() => setActionInfo(null)}
                   title="Скрыть"
                 >
                   закрыть
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -591,19 +591,18 @@ function BotLiveData({
                 <span className="mono text-xs break-all flex-1">
                   {issued.token}
                 </span>
-                <button
-                  className="btn btn-sm flex items-center gap-1"
+                <Button size="sm"
+                  className="flex items-center gap-1"
                   onClick={() => copyToken(issued.token)}
                 >
                   <Copy className="w-3 h-3" /> Копировать
-                </button>
-                <button
-                  className="btn btn-sm"
+                </Button>
+                <Button size="sm"
                   onClick={() => setIssued(null)}
                   title="Скрыть"
                 >
                   закрыть
-                </button>
+                </Button>
               </div>
               <div className="text-xs text-dim mt-1">
                 Сохраните токен сейчас — он показывается один раз, в БД хранится
@@ -621,11 +620,9 @@ function BotLiveData({
               </div>
               <div>
                 <div className="text-xs text-dim">status</div>
-                <span
-                  className={`badge badge-${live.status === "active" ? "ok" : "warn"}`}
-                >
+                <Badge kind={live.status === "active" ? "ok" : "warn"}>
                   {live.status}
-                </span>
+                </Badge>
               </div>
               <div>
                 <div className="text-xs text-dim">department</div>
@@ -635,15 +632,15 @@ function BotLiveData({
                 <div className="text-xs text-dim">allowed_services</div>
                 <div className="flex flex-wrap gap-1">
                   {live.allowed_services.map((s) => (
-                    <span key={s} className="badge mono text-xs">
+                    <Badge key={s} className="mono text-xs">
                       {s}
-                    </span>
+                    </Badge>
                   ))}
                 </div>
               </div>
               <div className="col-span-2 flex gap-2 flex-wrap">
-                <button
-                  className="btn flex items-center gap-1"
+                <Button
+                  className="flex items-center gap-1"
                   disabled={!caps.manageRoles || pending}
                   title={caps.manageRoles ? undefined : caps.reason}
                   onClick={async () => {
@@ -661,9 +658,9 @@ function BotLiveData({
                   }}
                 >
                   <Edit3 className="w-4 h-4" /> Изменить описание
-                </button>
-                <button
-                  className="btn flex items-center gap-1"
+                </Button>
+                <Button
+                  className="flex items-center gap-1"
                   disabled={!caps.manageRoles || pending}
                   title={caps.manageRoles ? undefined : caps.reason}
                   onClick={async () => {
@@ -685,9 +682,9 @@ function BotLiveData({
                   }}
                 >
                   <Edit3 className="w-4 h-4" /> Изменить allowed_services
-                </button>
-                <button
-                  className="btn flex items-center gap-1"
+                </Button>
+                <Button
+                  className="flex items-center gap-1"
                   disabled={!caps.manageRoles || pending}
                   title={caps.manageRoles ? undefined : caps.reason}
                   onClick={() =>
@@ -700,15 +697,15 @@ function BotLiveData({
                 >
                   <Power className="w-4 h-4" />
                   {live.status === "active" ? "Отключить" : "Включить"}
-                </button>
+                </Button>
               </div>
               {canHardDelete && (
                 <div className="col-span-2 mt-2 pt-3 border-t border-dashed border-token">
                   <div className="text-[11px] uppercase tracking-wider text-danger mb-2 flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3" /> Опасная зона
                   </div>
-                  <button
-                    className="btn btn-danger-solid flex items-center gap-1"
+                  <Button variant="danger-solid"
+                    className="flex items-center gap-1"
                     disabled={pending}
                     title="Физически удалить бота вместе с токенами и ролями"
                     onClick={async () => {
@@ -746,7 +743,7 @@ function BotLiveData({
                     }}
                   >
                     <Trash2 className="w-4 h-4" /> Удалить навсегда
-                  </button>
+                  </Button>
                   <span className="text-[11px] text-dim ml-2">
                     Каскадом уносит токены, роли и членства бота.
                   </span>
@@ -794,8 +791,8 @@ function BotLiveData({
                         max={tokenExpBounds.max}
                         onChange={(e) => setNewExpires(e.target.value)}
                       />
-                      <button
-                        className="btn btn-primary flex items-center gap-1"
+                      <Button variant="primary"
+                        className="flex items-center gap-1"
                         disabled={
                           !caps.rotateToken ||
                           pending ||
@@ -819,7 +816,7 @@ function BotLiveData({
                         }
                       >
                         <KeyRound className="w-4 h-4" /> Выпустить токен
-                      </button>
+                      </Button>
                     </div>
                   </>
                 )}
@@ -872,8 +869,8 @@ function BotLiveData({
                         max={tokenExpBounds.max}
                         onChange={(e) => setNewExpires(e.target.value)}
                       />
-                      <button
-                        className="btn flex items-center gap-1"
+                      <Button
+                        className="flex items-center gap-1"
                         disabled={!caps.rotateToken || pending || newExpInvalid}
                         title={
                           newExpInvalid
@@ -912,9 +909,9 @@ function BotLiveData({
                         }}
                       >
                         <KeyRound className="w-4 h-4" /> Ротировать
-                      </button>
-                      <button
-                        className="btn btn-danger flex items-center gap-1"
+                      </Button>
+                      <Button variant="danger"
+                        className="flex items-center gap-1"
                         disabled={!caps.revokeToken || pending}
                         title="Отозвать токен без замены"
                         onClick={async () => {
@@ -942,7 +939,7 @@ function BotLiveData({
                         }}
                       >
                         <Trash2 className="w-4 h-4" /> Отозвать
-                      </button>
+                      </Button>
                     </div>
                   </>
                 )}
@@ -981,8 +978,7 @@ function BotLiveData({
                               {formatMskDate(t.last_used_at)}
                             </td>
                             <td>
-                              <button
-                                className="btn btn-sm btn-danger"
+                              <Button variant="danger" size="sm"
                                 disabled={!caps.revokeToken || pending}
                                 onClick={async () => {
                                   const ok = await confirm.confirm({
@@ -1003,7 +999,7 @@ function BotLiveData({
                                 }}
                               >
                                 отозвать
-                              </button>
+                              </Button>
                             </td>
                           </tr>
                         ))}
@@ -1058,15 +1054,14 @@ function BotLiveData({
                       <td className="py-2 text-xs">
                         <ServiceInline name={r.service_name} />
                         {!allowed.has(r.service_name) && (
-                          <span className="badge badge-warn ml-1 text-[10px]">
+                          <Badge kind="warn" className="ml-1 text-[10px]">
                             вне scope
-                          </span>
+                          </Badge>
                         )}
                       </td>
                       <td className="text-xs">{r.roles.join(", ")}</td>
                       <td>
-                        <button
-                          className="btn btn-sm btn-danger"
+                        <Button variant="danger" size="sm"
                           disabled={!caps.manageRoles || pending}
                           onClick={async () => {
                             const ok = await confirm.confirm({
@@ -1087,7 +1082,7 @@ function BotLiveData({
                           }}
                         >
                           отозвать
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -1183,7 +1178,7 @@ function BotLiveDept({ deptId }: { deptId: string | null | undefined }) {
 
 function BotHeaderDept({ deptId }: { deptId: string | null | undefined }) {
   const label = useDeptLabel(deptId);
-  return <span className="badge">dept · {label}</span>;
+  return <Badge>dept · {label}</Badge>;
 }
 
 function ServiceInline({ name }: { name: string }) {

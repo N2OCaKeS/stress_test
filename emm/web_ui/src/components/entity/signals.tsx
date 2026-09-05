@@ -4,6 +4,7 @@
  * источнике данных: у сервера сигнал питания снимается по IPMI, у ВМ — из virsh.
  */
 import { formatLatencyMs } from "@/pages/server/_serverShared";
+import { Badge } from "@/components/ui/Badge";
 
 /**
  * Сигнал доступности (ping/ssh) в шапке карточки: «доступен» + latency либо
@@ -47,22 +48,14 @@ export function PowerStateBadge({
 }: {
   state: "on" | "off" | "unknown" | null | undefined;
 }) {
-  const kind: "ok" | "danger" | "" =
-    state === "on" ? "ok" : state === "off" ? "danger" : "";
+  const kind = state === "on" ? "ok" : state === "off" ? "danger" : "neutral";
   const label =
     state === "on"
       ? "питание: вкл"
       : state === "off"
         ? "питание: выкл"
         : "питание: —";
-  return (
-    <span
-      className={`badge${kind ? ` badge-${kind}` : ""}`}
-      title="состояние питания"
-    >
-      {label}
-    </span>
-  );
+  return <Badge kind={kind} title="состояние питания">{label}</Badge>;
 }
 
 /**
@@ -78,22 +71,22 @@ export function ReachRowBadge({
 }) {
   if (reachable == null) {
     return (
-      <span className="badge" title="ping: не проверялось">
+      <Badge title="ping: не проверялось">
         —
-      </span>
+      </Badge>
     );
   }
   if (reachable) {
     const lat = formatLatencyMs(latencyMs);
     return (
-      <span className="badge badge-ok" title="ping: доступен">
+      <Badge kind="ok" title="ping: доступен">
         {lat ?? "доступен"}
-      </span>
+      </Badge>
     );
   }
   return (
-    <span className="badge badge-danger" title="ping: недоступен">
+    <Badge kind="danger" title="ping: недоступен">
       недоступен
-    </span>
+    </Badge>
   );
 }

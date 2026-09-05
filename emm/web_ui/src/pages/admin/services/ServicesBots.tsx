@@ -36,6 +36,8 @@ import {
 import { useDeptLabel, useUserLabel } from "@/lib/labels";
 import { formatMskDate, formatMskShort, mskDateOffset } from "@/lib/datetime";
 import { BotRolesPanel } from "@/components/bot/BotRolesPanel";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 export function ServicesBots() {
   const mock = useMockMode();
@@ -85,12 +87,12 @@ function ServicesBotsLive() {
       <div className="flex-1 p-8">
         <div className="alert-danger">
           {msg}
-          <button
-            className="btn btn-sm ml-2"
+          <Button size="sm"
+            className="ml-2"
             onClick={() => setRefreshTick((t) => t + 1)}
           >
             Повторить
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -121,11 +123,9 @@ function ServicesBotsLive() {
                 <RowDeptLabel deptId={item.department_id} />
               </div>
             </div>
-            <span
-              className={`badge badge-${item.status === "active" ? "ok" : "warn"}`}
-            >
+            <Badge kind={item.status === "active" ? "ok" : "warn"}>
               {item.status}
-            </span>
+            </Badge>
           </div>
         </button>
       )}
@@ -266,27 +266,25 @@ function BotLiveView({
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h3 className="font-semibold flex items-center gap-2 mono">
             <Bot className="w-4 h-4 text-accent" /> {bot.name}
-            <span
-              className={`badge badge-${bot.status === "active" ? "ok" : "warn"}`}
-            >
+            <Badge kind={bot.status === "active" ? "ok" : "warn"}>
               {bot.status}
-            </span>
+            </Badge>
             {!canEdit && (
-              <span className="badge badge-warn" title={caps.reason}>
+              <Badge kind="warn" title={caps.reason}>
                 Только чтение
-              </span>
+              </Badge>
             )}
           </h3>
           {canEdit && (
             <div className="flex items-center gap-2 flex-wrap">
-              <button
-                className="btn flex items-center gap-1"
+              <Button
+                className="flex items-center gap-1"
                 onClick={() => startEdit(bot.id)}
               >
                 <Edit3 className="w-4 h-4" /> Изменить
-              </button>
-              <button
-                className="btn flex items-center gap-1"
+              </Button>
+              <Button
+                className="flex items-center gap-1"
                 disabled={pending}
                 onClick={() =>
                   run(() =>
@@ -298,7 +296,7 @@ function BotLiveView({
               >
                 <Power className="w-4 h-4" />
                 {bot.status === "active" ? "Отключить" : "Включить"}
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -308,9 +306,9 @@ function BotLiveView({
           <div className="alert-block mb-2">
             <div className="flex items-start gap-2">
               <span className="text-sm flex-1">{info}</span>
-              <button className="btn btn-sm" onClick={() => setInfo(null)}>
+              <Button size="sm" onClick={() => setInfo(null)}>
                 закрыть
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -324,15 +322,15 @@ function BotLiveView({
               <span className="mono text-xs break-all flex-1">
                 {issued.token}
               </span>
-              <button
-                className="btn btn-sm flex items-center gap-1"
+              <Button size="sm"
+                className="flex items-center gap-1"
                 onClick={() => copy(issued.token)}
               >
                 <Copy className="w-3 h-3" /> Копировать
-              </button>
-              <button className="btn btn-sm" onClick={() => setIssued(null)}>
+              </Button>
+              <Button size="sm" onClick={() => setIssued(null)}>
                 закрыть
-              </button>
+              </Button>
             </div>
             <div className="text-[11px] text-dim mt-1">
               Hash хранится в БД, чистый токен — только сейчас. Скопируйте до закрытия.
@@ -352,11 +350,9 @@ function BotLiveView({
         <StatRow
           k="status"
           v={
-            <span
-              className={`badge badge-${bot.status === "active" ? "ok" : "warn"}`}
-            >
+            <Badge kind={bot.status === "active" ? "ok" : "warn"}>
               {bot.status}
-            </span>
+            </Badge>
           }
         />
         <StatRow
@@ -367,9 +363,9 @@ function BotLiveView({
             ) : (
               <div className="flex flex-wrap gap-1">
                 {bot.allowed_services.map((s) => (
-                  <span key={s} className="badge mono">
+                  <Badge key={s} className="mono">
                     {s}
-                  </span>
+                  </Badge>
                 ))}
               </div>
             )
@@ -463,8 +459,8 @@ function BotLiveView({
                   max={tokenExpBounds.max}
                   onChange={(e) => setTokenExpires(e.target.value)}
                 />
-                <button
-                  className="btn btn-primary flex items-center gap-1"
+                <Button variant="primary"
+                  className="flex items-center gap-1"
                   disabled={pending || !tokenName.trim() || tokenExpInvalid}
                   title={
                     tokenExpInvalid
@@ -483,7 +479,7 @@ function BotLiveView({
                   }
                 >
                   <KeyRound className="w-4 h-4" /> Выпустить токен
-                </button>
+                </Button>
               </div>
             )}
           </>
@@ -540,8 +536,8 @@ function BotLiveView({
                   max={tokenExpBounds.max}
                   onChange={(e) => setTokenExpires(e.target.value)}
                 />
-                <button
-                  className="btn flex items-center gap-1"
+                <Button
+                  className="flex items-center gap-1"
                   disabled={pending || tokenExpInvalid}
                   title={
                     tokenExpInvalid
@@ -561,9 +557,9 @@ function BotLiveView({
                   }
                 >
                   <RotateCw className="w-4 h-4" /> Перевыпустить
-                </button>
-                <button
-                  className="btn btn-danger flex items-center gap-1"
+                </Button>
+                <Button variant="danger"
+                  className="flex items-center gap-1"
                   disabled={!caps.revokeToken || pending}
                   title={caps.revokeToken ? "Отозвать токен без замены" : caps.reason}
                   onClick={() =>
@@ -576,7 +572,7 @@ function BotLiveView({
                   }
                 >
                   <Trash2 className="w-4 h-4" /> Отозвать
-                </button>
+                </Button>
               </div>
             )}
           </>
@@ -616,8 +612,7 @@ function BotLiveView({
                       {formatMskDate(t.last_used_at)}
                     </td>
                     <td className="text-right">
-                      <button
-                        className="btn btn-sm btn-danger"
+                      <Button variant="danger" size="sm"
                         disabled={!caps.revokeToken || pending}
                         title={caps.revokeToken ? undefined : caps.reason}
                         onClick={() =>
@@ -627,7 +622,7 @@ function BotLiveView({
                         }
                       >
                         отозвать
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -686,8 +681,8 @@ function BotLiveView({
                   Disable выключает все аутентификации этого бота, не трогая токены и роли.
                 </div>
               </div>
-              <button
-                className="btn flex items-center gap-1"
+              <Button
+                className="flex items-center gap-1"
                 disabled={pending}
                 onClick={() =>
                   run(() =>
@@ -699,7 +694,7 @@ function BotLiveView({
               >
                 <Power className="w-4 h-4" />
                 {bot.status === "active" ? "Отключить" : "Включить"}
-              </button>
+              </Button>
             </div>
             <div className="flex items-center justify-between gap-3 flex-wrap border-t border-token pt-2">
               <div className="text-sm">
@@ -709,8 +704,8 @@ function BotLiveView({
                   используйте Disable + revoke токенов / ролей.
                 </div>
               </div>
-              <button
-                className="btn btn-danger flex items-center gap-1"
+              <Button variant="danger"
+                className="flex items-center gap-1"
                 disabled={!caps.delete || pending}
                 title={caps.delete ? undefined : caps.reason}
                 onClick={() =>
@@ -722,7 +717,7 @@ function BotLiveView({
                 }
               >
                 <Trash2 className="w-4 h-4" /> Удалить
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -823,17 +818,17 @@ function BotCreateForm({ onDone }: { onDone: () => void }) {
               <span className="mono text-xs break-all flex-1">
                 {issued.token}
               </span>
-              <button
-                className="btn btn-sm flex items-center gap-1"
+              <Button size="sm"
+                className="flex items-center gap-1"
                 onClick={() => copy(issued.token)}
               >
                 <Copy className="w-3 h-3" /> Копировать
-              </button>
+              </Button>
             </div>
           </div>
-          <button className="btn btn-primary" onClick={onDone}>
+          <Button variant="primary" onClick={onDone}>
             Готово
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="flex flex-col gap-3">
@@ -888,11 +883,10 @@ function BotCreateForm({ onDone }: { onDone: () => void }) {
             После создания будет автоматически выпущен initial-токен — он показывается один раз.
           </div>
           <div className="mt-4 flex gap-2 justify-end">
-            <button className="btn" onClick={onDone}>
+            <Button onClick={onDone}>
               Отмена
-            </button>
-            <button
-              className="btn btn-primary"
+            </Button>
+            <Button variant="primary"
               disabled={pending || !name.trim() || !dept || tokenExpInvalid}
               title={
                 tokenExpInvalid
@@ -902,7 +896,7 @@ function BotCreateForm({ onDone }: { onDone: () => void }) {
               onClick={submit}
             >
               Создать и показать токен
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -975,16 +969,15 @@ function BotEditForm({
         </FormRow>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onDone}>
+        <Button onClick={onDone}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary"
+        </Button>
+        <Button variant="primary"
           disabled={pending}
           onClick={submit}
         >
           Сохранить
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -1032,11 +1025,9 @@ function ServicesBotsMock() {
                 {item.owner_dept} · посл. {formatMskDate(item.last_used)}
               </div>
             </div>
-            <span
-              className={`badge badge-${item.token_status === "active" ? "ok" : item.token_status === "rotated" ? "warn" : "danger"}`}
-            >
+            <Badge kind={item.token_status === "active" ? "ok" : item.token_status === "rotated" ? "warn" : "danger"}>
               {item.token_status}
-            </span>
+            </Badge>
           </div>
         </button>
       )}
@@ -1067,32 +1058,30 @@ function MockBotView({
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold flex items-center gap-2 mono">
           <Bot className="w-4 h-4 text-accent" /> {bot.name}
-          <span
-            className={`badge badge-${bot.token_status === "active" ? "ok" : bot.token_status === "rotated" ? "warn" : "danger"}`}
-          >
+          <Badge kind={bot.token_status === "active" ? "ok" : bot.token_status === "rotated" ? "warn" : "danger"}>
             {bot.token_status}
-          </span>
+          </Badge>
         </h3>
         {canEdit && (
           <div className="flex items-center gap-2">
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               onClick={() => startEdit(bot.id)}
             >
               <Edit3 className="w-4 h-4" /> Изменить
-            </button>
-            <button
-              className="btn flex items-center gap-1"
+            </Button>
+            <Button
+              className="flex items-center gap-1"
               onClick={() => toast.info("mock: rotate token")}
             >
               <RotateCw className="w-4 h-4" /> Перевыпустить токен
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               onClick={() => toast.info("mock: revoke")}
             >
               <Trash2 className="w-4 h-4" /> Отозвать
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -1106,9 +1095,9 @@ function MockBotView({
         v={
           <div className="flex flex-wrap gap-1">
             {bot.initial_spec.map((p) => (
-              <span key={p} className="badge mono">
+              <Badge key={p} className="mono">
                 {p}
-              </span>
+              </Badge>
             ))}
           </div>
         }
@@ -1172,12 +1161,12 @@ function MockBotForm({
         После создания токен показывается один раз — скопируйте его до закрытия формы.
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onDone}>
+        <Button onClick={onDone}>
           Отмена
-        </button>
-        <button className="btn btn-primary" onClick={submit}>
+        </Button>
+        <Button variant="primary" onClick={submit}>
           {mode === "new" ? "Создать и показать токен" : "Сохранить"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -1212,4 +1201,3 @@ function BotDeptLabel({
   if (mockDeptName) return <span>{mockDeptName}</span>;
   return <span>{apiLabel}</span>;
 }
-

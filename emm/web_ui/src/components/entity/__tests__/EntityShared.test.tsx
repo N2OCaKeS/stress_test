@@ -11,6 +11,7 @@ import {
 import { PackagesTable } from "@/components/entity/PackagesTable";
 import { BookingCard } from "@/components/entity/manage/BookingCard";
 import { DangerZoneCard } from "@/components/entity/manage/DangerZoneCard";
+import { Badge } from "@/components/ui/Badge";
 
 // ── Общая строка списка: сервер и ВМ рендерятся одной раскладкой ─────────────
 
@@ -30,7 +31,7 @@ describe("EntityRow — общая строка сервера и ВМ", () => {
         badges={
           <>
             <ReachRowBadge reachable latencyMs={12} />
-            <span className="badge badge-ok">free</span>
+            <Badge kind="ok">free</Badge>
           </>
         }
       />,
@@ -84,7 +85,7 @@ describe("EntityRow — общая строка сервера и ВМ", () => {
         deptLabel="Core"
         subtitle="10.0.0.2"
         icon={<ServerIcon />}
-        badges={<span className="badge">free</span>}
+        badges={<Badge>free</Badge>}
       />,
     );
     fireEvent.click(screen.getByRole("checkbox"));
@@ -131,7 +132,7 @@ describe("EntityHeader — общая шапка сервера и ВМ", () => 
         name="detail-vm"
         badges={
           <>
-            <span className="badge">ВМ</span>
+            <Badge>ВМ</Badge>
             <ReachSignal label="ping" reachable latencyMs={3} />
             <PowerStateBadge state="off" />
           </>

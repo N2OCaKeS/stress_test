@@ -26,6 +26,8 @@ import {
 } from "@/api/server/vms";
 import type { TaskDispatchResponse } from "@/api/server/types";
 import type { EntityTabProps } from "./_entity";
+import { Button } from "@/components/ui/Button";
+import { Toggle } from "@/components/ui/Toggle";
 
 function fakeDispatch(): TaskDispatchResponse {
   return { task_id: `task-mock-${Date.now()}`, status: "queued" };
@@ -107,43 +109,43 @@ export function PowerTab({
         )}
 
         <div className="flex gap-2 flex-wrap">
-          <button
-            className="btn btn-primary flex items-center gap-1"
+          <Button variant="primary"
+            className="flex items-center gap-1"
             onClick={() => power("start")}
             disabled={!canManage || on}
           >
             <Play className="w-4 h-4" /> Start
-          </button>
-          <button
-            className="btn flex items-center gap-1"
+          </Button>
+          <Button
+            className="flex items-center gap-1"
             onClick={() => power("shutdown")}
             disabled={!canManage || off}
           >
             <Square className="w-4 h-4" /> Shutdown
-          </button>
-          <button
-            className="btn flex items-center gap-1"
+          </Button>
+          <Button
+            className="flex items-center gap-1"
             onClick={() => power("reboot")}
             disabled={!canManage || off}
           >
             <RotateCcw className="w-4 h-4" /> Reboot
-          </button>
-          <button
-            className="btn flex items-center gap-1"
+          </Button>
+          <Button
+            className="flex items-center gap-1"
             onClick={() => power("reset", true)}
             disabled={!canManage || off}
             title="Hard reset (power-cycle)"
           >
             <RotateCcw className="w-4 h-4" /> Reset
-          </button>
-          <button
-            className="btn btn-danger flex items-center gap-1"
+          </Button>
+          <Button variant="danger"
+            className="flex items-center gap-1"
             onClick={() => power("destroy", true)}
             disabled={!canManage || off}
             title="Hard power-off"
           >
             <Power className="w-4 h-4" /> Destroy
-          </button>
+          </Button>
         </div>
 
         <div className="flex items-center gap-3 mt-3 pt-3 border-t border-token flex-wrap">
@@ -154,18 +156,14 @@ export function PowerTab({
             Автозапуск при старте хаба (<span className="mono">virsh autostart</span>):{" "}
             <b>{vm.autostart ? "включён" : "выключен"}</b>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={vm.autostart}
+          <Toggle
+            checked={vm.autostart}
             aria-label="Автозапуск"
-            onClick={handleToggleAutostart}
+            onChange={handleToggleAutostart}
             disabled={!canManage || pending}
-            className={`btn btn-sm ${vm.autostart ? "btn-primary" : ""}`}
             title="Включить/выключить автозапуск ВМ"
-          >
-            {vm.autostart ? "Автозапуск: вкл" : "Автозапуск: выкл"}
-          </button>
+            label={vm.autostart ? "Автозапуск: вкл" : "Автозапуск: выкл"}
+          />
         </div>
 
         {powerOutcome.tracked && (

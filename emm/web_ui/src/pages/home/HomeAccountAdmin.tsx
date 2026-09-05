@@ -23,6 +23,7 @@ import { listGroups } from "@/api/auth/groups";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { RecentAuditEvents } from "./widgets/RecentAuditEvents";
 import { ServicesHealth } from "./widgets/ServicesHealth";
+import { Badge } from "@/components/ui/Badge";
 
 /**
  * Account-admin Home.
@@ -295,9 +296,9 @@ export function HomeAccountAdmin() {
                     {row.req}
                   </div>
                 </div>
-                <span className={`badge badge-${row.badgeKind}`}>
+                <Badge kind={row.badgeKind}>
                   {row.badge}
-                </span>
+                </Badge>
               </div>
             ))}
           </div>

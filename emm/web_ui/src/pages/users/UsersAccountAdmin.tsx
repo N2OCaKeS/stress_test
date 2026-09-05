@@ -65,6 +65,8 @@ import {
   EditRolesForm,
   Modal,
 } from "./_userActions";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Account-admin Users screen.
@@ -183,12 +185,6 @@ function apiToRow(u: ApiUser): UserRow {
     status: { label: normalizeUserStatus(u.status), kind: statusKind },
     isCog: !!u.platform_role,
   };
-}
-
-function badgeClass(kind?: "warn" | "accent" | "plain"): string {
-  if (kind === "warn") return "badge badge-warn";
-  if (kind === "accent") return "badge badge-accent";
-  return "badge";
 }
 
 type Tab = "users" | "groups" | "bots";
@@ -558,9 +554,9 @@ export function UsersAccountAdmin() {
                           <div className="text-sm truncate flex items-center gap-2">
                             <span className={row.isBot ? "mono" : ""}>{row.name}</span>
                             {row.role && (
-                              <span className={badgeClass(row.role.kind)}>
+                              <Badge kind={row.role.kind === "plain" ? "neutral" : row.role.kind}>
                                 {row.role.label}
-                              </span>
+                              </Badge>
                             )}
                           </div>
                           <div className="text-[11px] text-dim flex items-center gap-2">
@@ -575,9 +571,9 @@ export function UsersAccountAdmin() {
                             <span>{row.lastSeen}</span>
                           </div>
                         </div>
-                        <span className={`badge badge-${row.status.kind}`}>
+                        <Badge kind={row.status.kind}>
                           {row.status.label}
-                        </span>
+                        </Badge>
                       </div>
                     </Link>
                   );
@@ -607,9 +603,9 @@ export function UsersAccountAdmin() {
                           <div className="text-sm truncate flex items-center gap-2">
                             <span>{g.name}</span>
                             {g.cross_dept ? (
-                              <span className="badge badge-warn">cross</span>
+                              <Badge kind="warn">cross</Badge>
                             ) : (
-                              <span className="badge">{g.owner_dept}</span>
+                              <Badge>{g.owner_dept}</Badge>
                             )}
                           </div>
                           <div className="text-[11px] text-dim truncate">{g.description}</div>
@@ -652,9 +648,9 @@ export function UsersAccountAdmin() {
                           <div className="text-sm truncate mono">{b.name}</div>
                           <div className="text-[11px] text-dim">{b.owner_dept} · {formatMskDate(b.last_used)}</div>
                         </div>
-                        <span className={`badge badge-${b.token_status === "active" ? "ok" : b.token_status === "rotated" ? "warn" : "danger"}`}>
+                        <Badge kind={b.token_status === "active" ? "ok" : b.token_status === "rotated" ? "warn" : "danger"}>
                           {b.token_status}
-                        </span>
+                        </Badge>
                       </div>
                     </Link>
                   ))
@@ -708,15 +704,15 @@ export function UsersAccountAdmin() {
                     };
             return (
               <>
-                <button
-                  className="btn btn-primary w-full flex items-center justify-center gap-2"
+                <Button variant="primary"
+                  className="w-full flex items-center justify-center gap-2"
                   disabled={!cfg.allowed}
                   title={cfg.allowed ? undefined : cfg.reason}
                   onClick={() => setCreateOpen(true)}
                 >
                   {cfg.icon}
                   {cfg.label}
-                </button>
+                </Button>
                 <div className="text-[10px] text-dim mt-1 text-center">
                   {cfg.hint}
                 </div>
@@ -737,12 +733,12 @@ export function UsersAccountAdmin() {
                 {targetUser ? formatFio(targetUser) : "—"}
               </h1>
               {targetUser && (
-                <span className={`badge badge-${userStatusBadgeKind(targetUser.status)}`}>
+                <Badge kind={userStatusBadgeKind(targetUser.status)}>
                   {normalizeUserStatus(targetUser.status)}
-                </span>
+                </Badge>
               )}
               {targetUser?.platform_role && (
-                <span className="badge badge-accent">{targetUser.platform_role}</span>
+                <Badge kind="accent">{targetUser.platform_role}</Badge>
               )}
             </div>
             <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
@@ -775,46 +771,46 @@ export function UsersAccountAdmin() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               disabled={!caps.edit || busy !== null || !targetUser}
               title={caps.edit ? undefined : caps.reason}
               onClick={handleResetPassword}
             >
               <KeyRound className="w-4 h-4" /> Сбросить пароль
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={!caps.disable || busy !== null || !targetUser}
               title={caps.disable ? undefined : caps.reason}
               onClick={handleBlock}
             >
               <Pause className="w-4 h-4" /> Заблокировать
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={!caps.disable || busy !== null || !targetUser}
               title={caps.disable ? undefined : caps.reason}
               onClick={handleRevokeSessions}
             >
               <LogOut className="w-4 h-4" /> Завершить сессии
-            </button>
-            <button
-              className="btn flex items-center gap-1"
+            </Button>
+            <Button
+              className="flex items-center gap-1"
               disabled={!caps.manageRoles || busy !== null || !targetUser}
               title={caps.manageRoles ? undefined : caps.reason}
               onClick={() => setEditRolesOpen(true)}
             >
               <Edit3 className="w-4 h-4" /> Изменить роли
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={!caps.delete || busy !== null || !targetUser}
               title={caps.delete ? undefined : caps.reason}
               onClick={handleDelete}
             >
               <Trash2 className="w-4 h-4" /> Удалить
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -858,9 +854,9 @@ export function UsersAccountAdmin() {
                     <StatRow
                       k="status"
                       v={
-                        <span className={`badge badge-${userStatusBadgeKind(targetUser.status)}`}>
+                        <Badge kind={userStatusBadgeKind(targetUser.status)}>
                           {normalizeUserStatus(targetUser.status)}
-                        </span>
+                        </Badge>
                       }
                     />
                     <StatRow
@@ -888,7 +884,7 @@ export function UsersAccountAdmin() {
                 <div className="text-sm">
                   {targetUser?.platform_role ? (
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="badge badge-accent">{targetUser.platform_role}</span>
+                      <Badge kind="accent">{targetUser.platform_role}</Badge>
                     </div>
                   ) : (
                     <div className="text-xs text-dim italic">
@@ -905,14 +901,14 @@ export function UsersAccountAdmin() {
                 <div className="text-sm text-dim italic">
                   Сервис-роли подтянутся из API (endpoint ещё не подключён к этому экрану).
                 </div>
-                <button
-                  className="btn mt-3 w-full flex items-center justify-center gap-2"
+                <Button
+                  className="mt-3 w-full flex items-center justify-center gap-2"
                   disabled={!caps.manageRoles || !targetUser}
                   title={caps.manageRoles ? undefined : caps.reason}
                   onClick={() => setEditRolesOpen(true)}
                 >
                   <UserPlus className="w-4 h-4" /> Добавить роль
-                </button>
+                </Button>
               </div>
             </>
           )}
@@ -944,14 +940,14 @@ export function UsersAccountAdmin() {
                         <span className="text-ok">активна</span>
                       </td>
                       <td>
-                        <button
-                          className="btn btn-danger text-xs"
+                        <Button variant="danger"
+                          className="text-xs"
                           disabled={!caps.disable || !targetUser}
                           title={caps.disable ? undefined : caps.reason}
                           onClick={() => handleSessionRevoke("ses_demo_active")}
                         >
                           отозвать
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                     <tr className="border-t border-token">
@@ -962,9 +958,9 @@ export function UsersAccountAdmin() {
                       <td className="text-dim text-xs">3 дн назад</td>
                       <td className="text-dim text-xs">2 дн назад</td>
                       <td>
-                        <button className="btn text-xs" disabled>
+                        <Button className="text-xs" disabled>
                           закрыта
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   </tbody>
@@ -998,14 +994,14 @@ export function UsersAccountAdmin() {
                           {formatMskShort(s.last_used_at)}
                         </td>
                         <td>
-                          <button
-                            className="btn btn-danger text-xs"
+                          <Button variant="danger"
+                            className="text-xs"
                             disabled={!caps.disable || !targetUser}
                             title={caps.disable ? undefined : caps.reason}
                             onClick={() => handleSessionRevoke(s.session_id)}
                           >
                             отозвать
-                          </button>
+                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -1037,18 +1033,18 @@ export function UsersAccountAdmin() {
                       <td className="text-dim text-xs">2026-04-12</td>
                       <td className="text-dim text-xs">5 мин</td>
                       <td>
-                        <span className="badge badge-accent">logs:read</span>{" "}
-                        <span className="badge">logs:export</span>
+                        <Badge kind="accent">logs:read</Badge>{" "}
+                        <Badge>logs:export</Badge>
                       </td>
                       <td>
-                        <button
-                          className="btn btn-danger text-xs"
+                        <Button variant="danger"
+                          className="text-xs"
                           disabled={!caps.delete || !targetUser}
                           title={caps.delete ? undefined : caps.reason}
                           onClick={() => handlePatRevoke("pat_grafana_loki")}
                         >
                           отозвать
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   </tbody>
@@ -1289,7 +1285,7 @@ function GroupAsideRow({ group }: { group: ApiGroup }) {
       <div className="flex-1 min-w-0">
         <div className="text-sm truncate flex items-center gap-2">
           <span>{group.name}</span>
-          <span className="badge">{dept}</span>
+          <Badge>{dept}</Badge>
         </div>
         <div className="text-[11px] text-dim truncate">
           {group.description ?? group.name}
@@ -1310,11 +1306,9 @@ function BotAsideRow({ bot }: { bot: ApiBot }) {
           {dept} · {formatMskDate(bot.created_at)}
         </div>
       </div>
-      <span
-        className={`badge badge-${bot.status === "active" ? "ok" : "warn"}`}
-      >
+      <Badge kind={bot.status === "active" ? "ok" : "warn"}>
         {bot.status}
-      </span>
+      </Badge>
     </div>
   );
 }

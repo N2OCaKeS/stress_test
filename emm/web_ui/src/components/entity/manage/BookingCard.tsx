@@ -6,6 +6,7 @@
  */
 import { useState, type ReactNode } from "react";
 import { Lock, Unlock } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 
 export function BookingCard({
   entityWord,
@@ -66,8 +67,8 @@ export function BookingCard({
             )}
           </div>
           {canManage && (
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               disabled={busy}
               onClick={onRelease}
               title={
@@ -76,7 +77,7 @@ export function BookingCard({
             >
               <Unlock className="w-4 h-4" />
               {foreign ? "Освободить принудительно" : "Снять бронь"}
-            </button>
+            </Button>
           )}
         </div>
       ) : showForm ? (
@@ -91,8 +92,7 @@ export function BookingCard({
             />
           </label>
           <div className="flex gap-2 justify-end">
-            <button
-              className="btn"
+            <Button
               onClick={() => {
                 setShowForm(false);
                 setReason("");
@@ -100,9 +100,8 @@ export function BookingCard({
               disabled={busy}
             >
               Отмена
-            </button>
-            <button
-              className="btn btn-primary"
+            </Button>
+            <Button variant="primary"
               disabled={busy || !reason.trim()}
               onClick={async () => {
                 await onReserve(reason.trim());
@@ -111,7 +110,7 @@ export function BookingCard({
               }}
             >
               Забронировать
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
@@ -122,13 +121,13 @@ export function BookingCard({
             админ не снимете lease.
           </div>
           {canManage && (
-            <button
-              className="btn btn-primary flex items-center gap-1"
+            <Button variant="primary"
+              className="flex items-center gap-1"
               disabled={busy}
               onClick={() => setShowForm(true)}
             >
               <Lock className="w-4 h-4" /> Забронировать
-            </button>
+            </Button>
           )}
         </div>
       )}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Activity, Server, ShieldCheck } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { Badge } from "@/components/ui/Badge";
 import {
   checkAllServices,
   type HealthState,
@@ -40,9 +41,9 @@ function statusFromStates(...states: HealthState[]): "ok" | "fail" {
 
 function statusBadge(status: "ok" | "fail") {
   return (
-    <span className={`badge ${status === "ok" ? "badge-ok" : "badge-danger"}`}>
+    <Badge kind={status === "ok" ? "ok" : "danger"}>
       {status}
-    </span>
+    </Badge>
   );
 }
 

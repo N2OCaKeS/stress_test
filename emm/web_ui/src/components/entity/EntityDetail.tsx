@@ -55,6 +55,8 @@ import { ManageTab } from "@/pages/server/tabs/manage";
 import { DisksTab } from "@/pages/server/tabs/disks";
 import { SnapshotsTab } from "@/pages/server/tabs/snapshots";
 import { AcsSnapshotsTab } from "@/pages/server/tabs/acsSnapshots";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 type TabId =
   | "overview"
@@ -399,12 +401,12 @@ function ServerDetailHeader({
       name={name}
       badges={
         <>
-          <span className={`badge${statusKind ? ` badge-${statusKind}` : ""}`}>
+          <Badge kind={statusKind || "neutral"}>
             {STATUS_LABEL[server.status] ?? server.status}
-          </span>
-          <span className={`badge${busyKind ? ` badge-${busyKind}` : ""}`}>
+          </Badge>
+          <Badge kind={busyKind ?? "neutral"}>
             {BUSY_LABEL[server.busy_state] ?? server.busy_state}
-          </span>
+          </Badge>
           <ReachSignal
             label="ping"
             reachable={server.ping_reachable}
@@ -483,7 +485,7 @@ function VmDetailHeader({
       name={vm.name}
       badges={
         <>
-          <span className="badge">ВМ</span>
+          <Badge>ВМ</Badge>
           {/* Состояние питания домена снимается из virsh на hub'е. */}
           <PowerStateBadge state={vm.power_state} />
           <ReachSignal
@@ -493,9 +495,9 @@ function VmDetailHeader({
           />
           <ReachSignal label="ssh" reachable={vm.ssh_reachable} />
           {unreachable && (
-            <span className="badge badge-danger" title="домен включён, но гость не отвечает ни по ping, ни по ssh">
+            <Badge kind="danger" title="домен включён, но гость не отвечает ни по ping, ни по ssh">
               недоступна
-            </span>
+            </Badge>
           )}
         </>
       }
@@ -605,9 +607,11 @@ function ServerHeaderPowerControls({
 
   return (
     <div className="flex items-center gap-1">
-      <button
+      <Button
         type="button"
-        className={`btn btn-sm ${powerOnNow ? "btn-danger" : "btn-primary"} w-8 px-0 flex items-center justify-center`}
+        size="sm"
+        variant={powerOnNow ? "danger" : "primary"}
+        className="w-8 px-0 flex items-center justify-center"
         onClick={handleTogglePower}
         disabled={!canPower || pending !== null}
         aria-label={toggleTitle}
@@ -618,17 +622,17 @@ function ServerHeaderPowerControls({
         ) : (
           <Power className="w-4 h-4" />
         )}
-      </button>
-      <button
+      </Button>
+      <Button size="sm"
         type="button"
-        className="btn btn-sm w-8 px-0 flex items-center justify-center"
+        className="w-8 px-0 flex items-center justify-center"
         onClick={handleReboot}
         disabled={!canPower || pending !== null}
         aria-label="Перезагрузить сервер"
         title={canPower ? "Перезагрузить сервер" : denyReason}
       >
         <RefreshCw className={`w-4 h-4 ${pending === "reboot" ? "animate-spin" : ""}`} />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -710,39 +714,39 @@ function ServerReserveControl({
     <>
       {reserved ? (
         <>
-          <span className="badge badge-warn flex items-center gap-1">
+          <Badge kind="warn" className="flex items-center gap-1">
             <Lock className="w-3.5 h-3.5" />
             Забронировано
             {server.busy_user_id && <>: {reserverLabel}</>}
-          </span>
+          </Badge>
           {server.busy_note && (
             <span className="text-xs text-dim truncate max-w-[320px]">
               {server.busy_note}
             </span>
           )}
           {canRelease && (
-            <button
+            <Button size="sm"
               type="button"
-              className="btn btn-sm flex items-center gap-1"
+              className="flex items-center gap-1"
               onClick={handleRelease}
               disabled={pending}
               title="Снять бронь"
             >
               <Unlock className="w-3.5 h-3.5" /> Снять бронь
-            </button>
+            </Button>
           )}
         </>
       ) : (
         canOperate && (
-          <button
+          <Button variant="primary" size="sm"
             type="button"
-            className="btn btn-sm btn-primary flex items-center gap-1"
+            className="flex items-center gap-1"
             onClick={handleReserve}
             disabled={pending}
             title="Забронировать сервер"
           >
             <Lock className="w-3.5 h-3.5" /> Забронировать
-          </button>
+          </Button>
         )
       )}
     </>
@@ -834,42 +838,42 @@ function VmReserveControl({
   return (
     <div className="mt-3 flex items-center gap-3 flex-wrap">
       {busyLabel ? (
-        <span className="badge badge-warn flex items-center gap-1">
+        <Badge kind="warn" className="flex items-center gap-1">
           <RefreshCw className="w-3.5 h-3.5 animate-spin" /> {busyLabel}…
-        </span>
+        </Badge>
       ) : reserved ? (
         <>
-          <span className="badge badge-warn flex items-center gap-1">
+          <Badge kind="warn" className="flex items-center gap-1">
             <Lock className="w-3.5 h-3.5" /> Забронировано
-          </span>
+          </Badge>
           {vm.busy_note && (
             <span className="text-xs text-dim truncate max-w-[320px]">
               {vm.busy_note}
             </span>
           )}
           {canManage && (
-            <button
+            <Button size="sm"
               type="button"
-              className="btn btn-sm flex items-center gap-1"
+              className="flex items-center gap-1"
               onClick={handleRelease}
               disabled={pending}
               title="Снять бронь"
             >
               <Unlock className="w-3.5 h-3.5" /> Снять бронь
-            </button>
+            </Button>
           )}
         </>
       ) : (
         canManage && (
-          <button
+          <Button variant="primary" size="sm"
             type="button"
-            className="btn btn-sm btn-primary flex items-center gap-1"
+            className="flex items-center gap-1"
             onClick={handleReserve}
             disabled={pending}
             title="Забронировать ВМ"
           >
             <Lock className="w-3.5 h-3.5" /> Забронировать
-          </button>
+          </Button>
         )
       )}
     </div>

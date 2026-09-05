@@ -69,6 +69,8 @@ import type { Server, ServerCreateRequest } from "@/api/server/types";
 import type { Department } from "@/api/auth/types";
 import { ServerDetail } from "./ServerDetail";
 import { VmDetail, CreateVmPane } from "@/pages/vm/Vm";
+import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
 
 const FOCUS_REFETCH_THROTTLE_MS = 12_000;
 
@@ -417,28 +419,27 @@ export function Server() {
         />
         {canManage && (
           <div className="mt-2 flex flex-col gap-2">
-            <button
+            <Button
               type="button"
-              className={`btn btn-sm w-full flex items-center justify-center gap-2 ${
-                selectMode ? "btn-primary" : ""
-              }`}
+              size="sm"
+              variant={selectMode ? "primary" : "default"}
+              className="w-full flex items-center justify-center gap-2"
               onClick={toggleSelectMode}
               title="Выбрать несколько серверов и подготовить их разом"
             >
               <ListChecks className="w-4 h-4" />
               {selectMode ? "Выйти из режима выбора" : "Массовая подготовка"}
-            </button>
+            </Button>
             {selectMode && (
               <div className="flex items-center justify-between text-[11px] text-dim">
                 <span>Выбрано: {selected.size}</span>
-                <button
+                <Button variant="ghost" size="sm"
                   type="button"
-                  className="btn btn-ghost btn-sm"
                   onClick={toggleAllFiltered}
                   disabled={filtered.length === 0}
                 >
                   {allFilteredSelected ? "Снять все" : "Выбрать все"}
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -454,12 +455,12 @@ export function Server() {
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1 text-xs">
               <div>{apiErrMsg(listQ.error, "Список не загрузился")}</div>
-              <button
-                className="btn btn-ghost mt-2"
+              <Button variant="ghost"
+                className="mt-2"
                 onClick={() => listQ.refetch()}
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -523,31 +524,31 @@ export function Server() {
       {canManage && (
         <div className="border-t border-token p-3 shrink-0 flex flex-col gap-2">
           {selectMode && (
-            <button
-              className="btn w-full flex items-center justify-center gap-2"
+            <Button
+              className="w-full flex items-center justify-center gap-2"
               onClick={() => setBulkPrepareOpen(true)}
               disabled={selected.size === 0}
               title="Массовый prepare выбранных серверов"
             >
               <Play className="w-4 h-4" /> Подготовить выбранные ({selected.size})
-            </button>
+            </Button>
           )}
           {selectMode && (
-            <button
-              className="btn w-full flex items-center justify-center gap-2"
+            <Button
+              className="w-full flex items-center justify-center gap-2"
               onClick={() => setBulkAcsOpen(true)}
               disabled={selected.size === 0}
               title="Массовое создание/восстановление снимков ACS выбранных серверов"
             >
               <Camera className="w-4 h-4" /> Снимки ACS выбранных ({selected.size})
-            </button>
+            </Button>
           )}
-          <button
-            className="btn btn-primary w-full flex items-center justify-center gap-2"
+          <Button variant="primary"
+            className="w-full flex items-center justify-center gap-2"
             onClick={startCreate}
           >
             <Plus className="w-4 h-4" /> Создать сервер
-          </button>
+          </Button>
         </div>
       )}
     </aside>
@@ -874,7 +875,7 @@ function ServerRow({
             reachable={server.ping_reachable}
             latencyMs={server.ping_latency_ms}
           />
-          <span className={`badge badge-${busyChipKind}`}>{busyChipLabel}</span>
+          <Badge kind={busyChipKind}>{busyChipLabel}</Badge>
         </>
       }
     />
@@ -995,12 +996,12 @@ function EmptyPane({
           Выберите сервер слева для просмотра деталей.
         </div>
         {canCreate && (
-          <button
-            className="btn btn-primary inline-flex items-center gap-1"
+          <Button variant="primary"
+            className="inline-flex items-center gap-1"
             onClick={onCreate}
           >
             <Plus className="w-4 h-4" /> Создать сервер
-          </button>
+          </Button>
         )}
       </div>
     </section>
@@ -1027,13 +1028,12 @@ function WorkzoneWithActions({
     <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative">
       {canManage && local && (
         <div className="absolute top-3 right-5 z-10">
-          <button
-            className="btn btn-danger"
+          <Button variant="danger"
             onClick={() => onDelete(local)}
             title="Удалить сервер"
           >
             Удалить
-          </button>
+          </Button>
         </div>
       )}
       <ServerDetail
@@ -1236,9 +1236,9 @@ function VmCreateFlow({
               Чтобы создавать ВМ, подготовьте сервер как VMS-hub — в карточке
               сервера, вкладка «Управление».
             </div>
-            <button type="button" className="btn" onClick={onCancel}>
+            <Button type="button" onClick={onCancel}>
               Назад
-            </button>
+            </Button>
           </div>
         </div>
       </section>
@@ -1337,13 +1337,13 @@ function CreatePane({
     <section className="flex-1 min-w-0 overflow-y-auto">
       <div className="p-5 w-full">
         <div className="flex items-center gap-2 mb-4">
-          <button
-            className="btn btn-ghost flex items-center gap-1"
+          <Button variant="ghost"
+            className="flex items-center gap-1"
             onClick={onCancel}
             type="button"
           >
             <ArrowLeft className="w-4 h-4" /> Назад
-          </button>
+          </Button>
           <div className="text-sm text-dim">Создание сервера</div>
         </div>
 
@@ -1418,9 +1418,8 @@ function CreatePane({
           </label>
 
           <div className="flex items-center gap-2 mt-2">
-            <button
+            <Button variant="primary"
               type="submit"
-              className="btn btn-primary"
               disabled={
                 submitting ||
                 !hostname.trim() ||
@@ -1430,10 +1429,10 @@ function CreatePane({
               }
             >
               {submitting ? "Создаём…" : "Создать"}
-            </button>
-            <button type="button" className="btn" onClick={onCancel}>
+            </Button>
+            <Button type="button" onClick={onCancel}>
               Отмена
-            </button>
+            </Button>
           </div>
         </form>
       </div>

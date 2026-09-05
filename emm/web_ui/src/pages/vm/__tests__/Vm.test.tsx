@@ -410,12 +410,10 @@ describe("Vm zone (mock mode)", () => {
     await openVmTab("Питание");
     // vm-101 в фикстуре autostart=true.
     const toggle = await screen.findByRole("switch", { name: /Автозапуск/ });
-    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(toggle).toBeChecked();
     fireEvent.click(toggle);
     // После клика (mock) — выключен.
-    expect(
-      await screen.findByRole("switch", { name: /Автозапуск/ }),
-    ).toHaveAttribute("aria-checked", "false");
+    expect(await screen.findByRole("switch", { name: /Автозапуск/ })).not.toBeChecked();
   });
 
   it("вкладка «Консоль» несёт панель консоли с выбором SSH/VNC/serial/SPICE", async () => {

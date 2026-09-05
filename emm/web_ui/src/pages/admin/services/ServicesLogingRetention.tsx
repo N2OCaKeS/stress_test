@@ -26,6 +26,8 @@ import {
   StatRow,
   useInlineState,
 } from "./_inline";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 const SEVERITIES: Severity[] = [
   "TRACE",
@@ -172,9 +174,9 @@ function LiveRetention() {
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1 text-sm">
               <div>{apiErrMsg(policyQ.error, "Политика не загрузилась")}</div>
-              <button className="btn btn-ghost mt-2" onClick={() => policyQ.refetch()}>
+              <Button variant="ghost" className="mt-2" onClick={() => policyQ.refetch()}>
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -252,21 +254,21 @@ function LiveRetention() {
                   />
                 </FormRow>
                 <div className="flex items-center gap-2 mt-1">
-                  <button
-                    className="btn btn-primary flex items-center gap-1"
+                  <Button variant="primary"
+                    className="flex items-center gap-1"
                     onClick={handleSave}
                     disabled={busy}
                   >
                     <Save className="w-4 h-4" /> {busy ? "Сохраняем…" : "Сохранить"}
-                  </button>
+                  </Button>
                   {policy && (
-                    <button
-                      className="btn btn-danger flex items-center gap-1"
+                    <Button variant="danger"
+                      className="flex items-center gap-1"
                       onClick={handleDisable}
                       disabled={busy}
                     >
                       <Trash2 className="w-4 h-4" /> Отключить
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -315,7 +317,7 @@ function MockRetention_() {
               <div className="text-sm truncate mono">{item.id}</div>
               <div className="text-[11px] text-dim truncate">{item.scope}</div>
             </div>
-            <span className="badge">{item.days}d</span>
+            <Badge>{item.days}d</Badge>
           </div>
         </button>
       )}
@@ -338,10 +340,10 @@ function MockRetentionView({ policy, canEdit }: { policy: RetentionPolicyMock; c
         </h3>
         {canEdit && (
           <div className="flex items-center gap-2">
-            <button className="btn flex items-center gap-1" onClick={() => startEdit(policy.id)}>
+            <Button className="flex items-center gap-1" onClick={() => startEdit(policy.id)}>
               <Edit3 className="w-4 h-4" /> Изменить
-            </button>
-            <button className="btn">Принудительная очистка</button>
+            </Button>
+            <Button>Принудительная очистка</Button>
           </div>
         )}
       </div>
@@ -386,10 +388,10 @@ function MockRetentionForm({
         </FormRow>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onDone}>Отмена</button>
-        <button className="btn btn-primary" onClick={onDone}>
+        <Button onClick={onDone}>Отмена</Button>
+        <Button variant="primary" onClick={onDone}>
           {mode === "new" ? "Создать" : "Сохранить"}
-        </button>
+        </Button>
       </div>
     </div>
   );

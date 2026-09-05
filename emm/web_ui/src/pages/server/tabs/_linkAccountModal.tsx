@@ -8,12 +8,13 @@
  * ({server_ids}). Заводить на боксе — отдельным Provision после привязки.
  */
 import { useMemo, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { Link2, Search, User } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import * as accountsApi from "@/api/server/accounts";
 import type { ServerAccount } from "@/api/server/types";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 
 export function LinkAccountModal({
   serverId,
@@ -61,27 +62,19 @@ export function LinkAccountModal({
   }
 
   return (
-    <Dialog.Root open modal onOpenChange={(o) => !o && !pending && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content
-          className="modal-content"
-          onInteractOutside={(e) => pending && e.preventDefault()}
-          onEscapeKeyDown={(e) => pending && e.preventDefault()}
-        >
-          <div className="modal-header">
-            <Link2 className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold">
-              Привязать существующий аккаунт
-            </Dialog.Title>
-          </div>
-
+    <Modal
+      open
+      onOpenChange={(o) => !o && !pending && onClose()}
+      title="Привязать существующий аккаунт"
+      icon={<Link2 className="w-5 h-5 text-accent" />}
+      hideCloseButton
+    >
           <div className="modal-body">
-            <Dialog.Description className="text-sm text-dim mb-3">
+            <p className="text-sm text-dim mb-3">
               Учётка отдела будет привязана к{" "}
               <span className="mono">{currentLabel}</span>. На боксе он сам не
               заводится — после привязки запустите Provision на вкладке.
-            </Dialog.Description>
+            </p>
 
             {err && <div className="alert-danger mb-3 text-sm">{err}</div>}
 
@@ -106,12 +99,12 @@ export function LinkAccountModal({
             {accountsQ.error && (
               <div className="alert-danger text-xs">
                 {apiErrMsg(accountsQ.error, "Аккаунты не загрузились")}
-                <button
-                  className="btn btn-sm ml-2"
+                <Button size="sm"
+                  className="ml-2"
                   onClick={() => accountsQ.refetch()}
                 >
                   Повторить
-                </button>
+                </Button>
               </div>
             )}
             {!accountsQ.loading &&
@@ -137,13 +130,13 @@ export function LinkAccountModal({
                         {a.server_ids.length} сервер(ов) · {a.source}
                       </div>
                     </div>
-                    <button
-                      className="btn btn-sm btn-primary flex items-center gap-1 shrink-0"
+                    <Button variant="primary" size="sm"
+                      className="flex items-center gap-1 shrink-0"
                       disabled={pending}
                       onClick={() => bind(a)}
                     >
                       <Link2 className="w-3.5 h-3.5" /> Привязать
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -151,17 +144,14 @@ export function LinkAccountModal({
           </div>
 
           <div className="modal-footer">
-            <button
+            <Button
               type="button"
-              className="btn"
               onClick={onClose}
               disabled={pending}
             >
               Закрыть
-            </button>
+            </Button>
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </Modal>
   );
 }

@@ -13,6 +13,7 @@ import { EntityDetail } from "@/components/entity/EntityDetail";
 import { ApiError } from "@/api/client";
 import type { Server } from "@/api/server/types";
 import type { EntityRef } from "@/pages/server/tabs/_entity";
+import { Button } from "@/components/ui/Button";
 
 interface ServerDetailProps {
   serverId: string;
@@ -69,9 +70,9 @@ export function ServerDetail({
       <section className="flex-1 min-w-0 overflow-hidden flex flex-col">
         <div className="m-5 alert alert-danger flex items-center gap-3">
           <span className="text-sm">{msg}</span>
-          <button className="btn btn-ghost" onClick={() => q.refetch()}>
+          <Button variant="ghost" onClick={() => q.refetch()}>
             Повторить
-          </button>
+          </Button>
         </div>
       </section>
     );

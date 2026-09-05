@@ -20,7 +20,6 @@
  * Backend: server_service/src/api/v1/endpoints/resource_permissions.py.
  */
 import { useCallback, useMemo, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import {
   Loader2,
   Lock,
@@ -60,6 +59,10 @@ import type {
   RoleName,
 } from "@/api/server/types";
 import type { ServiceRole } from "@/api/auth/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Modal } from "@/components/ui/Modal";
 
 // Системные роли в фиксированном порядке; кастомные идут после по алфавиту.
 const SYSTEM_ROLE_ORDER: RoleName[] = ["guest", "admin"];
@@ -422,8 +425,7 @@ export function ResourceInstancePermissions({
       <div className="card">
         <div className="alert-danger flex items-center gap-2">
           <span>{apiErrMsg(err)}</span>
-          <button
-            className="btn btn-sm"
+          <Button size="sm"
             onClick={() => {
               catalogQ.refetch();
               grantsQ.refetch();
@@ -431,7 +433,7 @@ export function ResourceInstancePermissions({
             }}
           >
             Повторить
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -444,21 +446,21 @@ export function ResourceInstancePermissions({
           <ShieldCheck className="w-4 h-4 text-accent" />
           Инстанс-гранты {resourceType === "server" ? "сервера" : "учётки"}
           {hasOverrides && (
-            <span
-              className="badge badge-warn text-[10px]"
+            <Badge kind="warn"
+              className="text-[10px]"
               title="на ресурсе есть точечные права поверх базовой матрицы"
             >
               кастомные права
-            </span>
+            </Badge>
           )}
         </h3>
         {canEdit && (
-          <button
-            className="btn btn-sm flex items-center gap-1"
+          <Button size="sm"
+            className="flex items-center gap-1"
             onClick={() => setPropagateOpen(true)}
           >
             <Share2 className="w-3.5 h-3.5" /> Распространить права
-          </button>
+          </Button>
         )}
       </div>
 
@@ -520,16 +522,16 @@ export function ResourceInstancePermissions({
                           {locked && <Lock className="w-3 h-3 text-dim" />}
                           {role}
                           {!locked && canEdit && (
-                            <button
+                            <Button variant="ghost"
                               type="button"
-                              className="btn btn-ghost p-0.5 disabled:opacity-30"
+                              className="p-0.5 disabled:opacity-30"
                               title="Очистить права роли в таблице — вернуть к базе"
                               aria-label={`Очистить роль ${role}`}
                               disabled={saving || !roleDirty}
                               onClick={() => clearRole(role)}
                             >
                               <RotateCcw className="w-3 h-3 text-dim" />
-                            </button>
+                            </Button>
                           )}
                         </span>
                       </td>
@@ -573,8 +575,8 @@ export function ResourceInstancePermissions({
 
           {canEdit && (
             <div className="sticky bottom-0 z-30 mt-3 -mb-1 flex items-center gap-2 flex-wrap border-t border-token bg-[var(--bg-soft)] pt-3 pb-2">
-              <button
-                className="btn btn-sm btn-primary flex items-center gap-1"
+              <Button variant="primary" size="sm"
+                className="flex items-center gap-1"
                 onClick={save}
                 disabled={!dirty || saving}
               >
@@ -585,22 +587,21 @@ export function ResourceInstancePermissions({
                 )}
                 Сохранить
                 {dirty && ` (${diffKeys.length})`}
-              </button>
-              <button
-                className="btn btn-sm"
+              </Button>
+              <Button size="sm"
                 onClick={resetEdits}
                 disabled={!dirty || saving}
               >
                 Отмена
-              </button>
-              <button
-                className="btn btn-sm flex items-center gap-1"
+              </Button>
+              <Button size="sm"
+                className="flex items-center gap-1"
                 onClick={clearAll}
                 disabled={saving || !hasOverrides}
                 title="Снять все инстанс-override на этом ресурсе"
               >
                 <RotateCcw className="w-3.5 h-3.5" /> Очистить все роли
-              </button>
+              </Button>
               <span className="text-[11px] text-dim ml-auto">
                 {dirty
                   ? `Несохранённых изменений: ${diffKeys.length}`
@@ -712,27 +713,19 @@ function PropagateModal({
   }, [targets]);
 
   return (
-    <Dialog.Root open modal onOpenChange={(o) => !o && !pending && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content
-          className="modal-content"
-          onInteractOutside={(e) => pending && e.preventDefault()}
-          onEscapeKeyDown={(e) => pending && e.preventDefault()}
-        >
-          <div className="modal-header">
-            <Share2 className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold">
-              Распространить инстанс-права
-            </Dialog.Title>
-          </div>
-
+    <Modal
+      open
+      onOpenChange={(o) => !o && !pending && onClose()}
+      title="Распространить инстанс-права"
+      icon={<Share2 className="w-5 h-5 text-accent" />}
+      hideCloseButton
+    >
           <div className="modal-body">
-            <Dialog.Description className="text-sm text-dim mb-3">
+            <p className="text-sm text-dim mb-3">
               Скопировать {grantCount} инстанс-грант(ов) с{" "}
               <span className="mono">{sourceLabel}</span> на выбранные
               {resourceType === "server" ? " серверы" : " учётки"} того же типа.
-            </Dialog.Description>
+            </p>
 
             {/* ── Режим ── */}
             <div className="mb-4">
@@ -779,8 +772,7 @@ function PropagateModal({
               <label className="field-label flex items-center justify-between">
                 <span>Цели · выбрано {selected.size}</span>
                 {targets.length > 0 && (
-                  <button
-                    className="btn btn-sm"
+                  <Button size="sm"
                     type="button"
                     disabled={pending}
                     onClick={() =>
@@ -794,7 +786,7 @@ function PropagateModal({
                     {selected.size === targets.length
                       ? "Снять все"
                       : "Выбрать все"}
-                  </button>
+                  </Button>
                 )}
               </label>
               {targetsQ.loading && (
@@ -803,12 +795,12 @@ function PropagateModal({
               {targetsQ.error && (
                 <div className="alert-danger text-xs">
                   {apiErrMsg(targetsQ.error, "Цели не загрузились")}
-                  <button
-                    className="btn btn-sm ml-2"
+                  <Button size="sm"
+                    className="ml-2"
                     onClick={() => targetsQ.refetch()}
                   >
                     Повторить
-                  </button>
+                  </Button>
                 </div>
               )}
               {!targetsQ.loading && !targetsQ.error && targets.length === 0 && (
@@ -823,8 +815,7 @@ function PropagateModal({
                       key={t.id}
                       className="cred-row flex items-center gap-2 cursor-pointer"
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={selected.has(t.id)}
                         disabled={pending}
                         onChange={() => toggleTarget(t.id)}
@@ -853,9 +844,9 @@ function PropagateModal({
                       <span className="mono flex-1 min-w-0 truncate">
                         {labelById.get(t.resource_id) ?? t.resource_id}
                       </span>
-                      <span className="badge badge-ok">+{t.added}</span>
+                      <Badge kind="ok">+{t.added}</Badge>
                       {result.mode === "mirror" && (
-                        <span className="badge badge-danger">−{t.removed}</span>
+                        <Badge kind="danger">−{t.removed}</Badge>
                       )}
                     </div>
                   ))}
@@ -865,21 +856,19 @@ function PropagateModal({
           </div>
 
           <div className="modal-footer flex justify-end gap-2">
-            <button className="btn" onClick={onClose} disabled={pending}>
+            <Button onClick={onClose} disabled={pending}>
               {result ? "Закрыть" : "Отмена"}
-            </button>
-            <button
-              className="btn btn-primary flex items-center gap-1"
+            </Button>
+            <Button variant="primary"
+              className="flex items-center gap-1"
               onClick={run}
               disabled={pending || selected.size === 0}
             >
               {pending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Распространить
-            </button>
+            </Button>
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </Modal>
   );
 }
 
@@ -899,8 +888,7 @@ function PermCheckbox({
   onChange: () => void;
 }) {
   return (
-    <input
-      type="checkbox"
+    <Checkbox
       className={[
         "w-4 h-4 align-middle accent-[var(--accent)]",
         disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",

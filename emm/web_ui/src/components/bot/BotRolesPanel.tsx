@@ -4,6 +4,8 @@ import { ApiError } from "@/api/client";
 import { useServiceLabel } from "@/lib/labels";
 import { BotRoleAssign } from "@/pages/users/_botRoleAssign";
 import type { BotRoleResponse } from "@/api/auth/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Тело карточки service-ролей бота: предупреждение про orphan-роли вне
@@ -94,29 +96,28 @@ export function BotRolesPanel({
                   <td className="py-2 text-xs">
                     <ServiceInline name={r.service_name} />
                     {orphan && (
-                      <span className="badge badge-warn ml-1 text-[10px]">
+                      <Badge kind="warn" className="ml-1 text-[10px]">
                         вне scope
-                      </span>
+                      </Badge>
                     )}
                   </td>
                   <td className="text-xs">
                     <div className="flex flex-wrap gap-1">
                       {r.roles.map((role) => (
-                        <span key={role} className="badge badge-accent">
+                        <Badge kind="accent" key={role}>
                           {role}
-                        </span>
+                        </Badge>
                       ))}
                     </div>
                   </td>
                   <td className="text-right">
-                    <button
-                      className="btn btn-sm btn-danger"
+                    <Button variant="danger" size="sm"
                       disabled={!canManage || pending}
                       title={canManage ? undefined : reason}
                       onClick={() => onRevoke(r.service_name)}
                     >
                       отозвать
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               );

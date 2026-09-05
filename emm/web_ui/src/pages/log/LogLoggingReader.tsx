@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { LogMiddle } from "./LogLoggingAdmin";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Logging-reader log view.
@@ -56,9 +58,9 @@ export function LogLoggingReader() {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <button className="btn btn-primary flex items-center gap-1">
+                <Button variant="primary" className="flex items-center gap-1">
                   <Download className="w-4 h-4" /> Экспорт JSON
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -92,7 +94,7 @@ export function LogLoggingReader() {
                   <div className="stat-row">
                     <span className="text-dim">Тип субъекта</span>
                     <span>
-                      <span className="badge">anonymous</span>
+                      <Badge>anonymous</Badge>
                     </span>
                   </div>
                 </div>
@@ -109,7 +111,7 @@ export function LogLoggingReader() {
                   <div className="stat-row">
                     <span className="text-dim">Тип</span>
                     <span>
-                      <span className="badge">user</span>
+                      <Badge>user</Badge>
                     </span>
                   </div>
                   <div className="stat-row">
@@ -127,7 +129,7 @@ export function LogLoggingReader() {
                   <div className="stat-row">
                     <span className="text-dim">Статус</span>
                     <span>
-                      <span className="badge badge-danger">blocked</span>
+                      <Badge kind="danger">blocked</Badge>
                     </span>
                   </div>
                 </div>
@@ -165,7 +167,7 @@ export function LogLoggingReader() {
                   <div className="stat-row">
                     <span className="text-dim">Источник</span>
                     <span>
-                      <span className="badge badge-warn">auth_service</span>
+                      <Badge kind="warn">auth_service</Badge>
                     </span>
                   </div>
                   <div className="stat-row">

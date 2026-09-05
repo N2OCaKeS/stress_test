@@ -33,6 +33,7 @@ import { apiErrMsg } from "@/api/client";
 import { getTask, cancelTask, listTasks } from "@/api/server/misc";
 import type { Persona } from "@/types/persona";
 import type { ListTasksQuery, TaskRead, TaskStatus } from "@/api/server/types";
+import { Button } from "@/components/ui/Button";
 
 export const TASK_POLL_MS = 10_000;
 
@@ -220,9 +221,9 @@ export function TaskListAside({
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1 text-xs">
               <div>{apiErrMsg(error, "Список задач не загрузился")}</div>
-              <button className="btn btn-ghost mt-2" onClick={onRetry}>
+              <Button variant="ghost" className="mt-2" onClick={onRetry}>
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -270,14 +271,14 @@ function ServerScopeChip({
         только задачи <b className="mono">{label}</b>
       </span>
       {onClear && (
-        <button
+        <Button variant="ghost"
           type="button"
-          className="btn btn-ghost flex items-center gap-1 shrink-0"
+          className="flex items-center gap-1 shrink-0"
           onClick={onClear}
           title="Показать задачи всего отдела"
         >
           <XCircle className="w-3.5 h-3.5" /> все
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -445,9 +446,9 @@ export function TaskDetail({
           <div className="text-xs text-dim mb-3">
             {apiErrMsg(err, "GET /tasks/{id} вернул ошибку")}
           </div>
-          <button className="btn" onClick={() => load(true)}>
+          <Button onClick={() => load(true)}>
             Повторить
-          </button>
+          </Button>
         </div>
       </section>
     );
@@ -487,15 +488,15 @@ export function TaskDetail({
         </div>
         {canCancel && cancelable && (
           <div className="shrink-0">
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            <Button variant="danger"
+              className="flex items-center gap-1"
               onClick={handleCancel}
               disabled={cancelling}
               title="Отменить pending/running задачу"
             >
               <XCircle className="w-4 h-4" />
               {cancelling ? "Отменяем…" : "Cancel"}
-            </button>
+            </Button>
           </div>
         )}
       </div>

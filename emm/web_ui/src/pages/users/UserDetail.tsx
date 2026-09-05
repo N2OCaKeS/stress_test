@@ -96,6 +96,9 @@ import {
   type Mutation,
   type TraceNode,
 } from "./permissionGraph";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 interface SectionProps {
   icon: React.ReactNode;
@@ -254,9 +257,9 @@ export function UserDetail() {
               <Link to="/users" className="btn">
                 <ArrowLeft className="w-4 h-4 inline mr-1" /> Вернуться к списку
               </Link>
-              <button className="btn btn-ghost" onClick={() => apiUserQ.refetch()}>
+              <Button variant="ghost" onClick={() => apiUserQ.refetch()}>
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         </section>
@@ -322,11 +325,11 @@ export function UserDetail() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-semibold truncate">{formatFio(user)}</h1>
-              <span className={`badge badge-${userStatusBadgeKind(user.status)}`}>
+              <Badge kind={userStatusBadgeKind(user.status)}>
                 {user.status}
-              </span>
+              </Badge>
               {user.platform_role && (
-                <span className="badge badge-accent">{user.platform_role}</span>
+                <Badge kind="accent">{user.platform_role}</Badge>
               )}
             </div>
             <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
@@ -346,8 +349,8 @@ export function UserDetail() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               disabled={!caps.edit || busy !== null}
               title={caps.edit ? undefined : caps.reason}
               onClick={async () => {
@@ -366,9 +369,9 @@ export function UserDetail() {
               }}
             >
               <KeyRound className="w-4 h-4" /> Сбросить пароль
-            </button>
-            <button
-              className="btn flex items-center gap-1"
+            </Button>
+            <Button
+              className="flex items-center gap-1"
               disabled={!caps.edit || busy !== null}
               title={
                 caps.edit
@@ -395,28 +398,28 @@ export function UserDetail() {
               }}
             >
               <KeyRound className="w-4 h-4" /> Требовать смену пароля
-            </button>
+            </Button>
             {user.status === "active" ? (
-              <button
-                className="btn btn-danger flex items-center gap-1"
+              <Button variant="danger"
+                className="flex items-center gap-1"
                 disabled={!caps.disable || busy !== null}
                 title={caps.disable ? undefined : caps.reason}
                 onClick={() => runAction("disable", () => disableUser(user.id))}
               >
                 <Pause className="w-4 h-4" /> Заблокировать
-              </button>
+              </Button>
             ) : (
-              <button
-                className="btn flex items-center gap-1"
+              <Button
+                className="flex items-center gap-1"
                 disabled={!caps.disable || busy !== null}
                 title={caps.disable ? undefined : caps.reason}
                 onClick={() => runAction("enable", () => enableUser(user.id))}
               >
                 <Play className="w-4 h-4" /> Разблокировать
-              </button>
+              </Button>
             )}
-            <button
-              className="btn flex items-center gap-1"
+            <Button
+              className="flex items-center gap-1"
               disabled={!caps.disable || busy !== null}
               title={
                 caps.disable
@@ -426,9 +429,9 @@ export function UserDetail() {
               onClick={() => runAction("unlock", () => unlockUser(user.id))}
             >
               <Unlock className="w-4 h-4" /> Снять lockout
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               disabled={!caps.disable || busy !== null}
               title={caps.disable ? undefined : caps.reason}
               onClick={() =>
@@ -436,11 +439,11 @@ export function UserDetail() {
               }
             >
               <LogOut className="w-4 h-4" /> Завершить сессии
-            </button>
+            </Button>
             {!caps.edit && !caps.disable && !caps.delete && (
-              <span className="badge badge-warn" title={caps.reason}>
+              <Badge kind="warn" title={caps.reason}>
                 Только чтение
-              </span>
+              </Badge>
             )}
           </div>
         </div>
@@ -494,7 +497,7 @@ export function UserDetail() {
                 <StatRow k="dept" v={mockMode ? <span>{dept?.name ?? "— (платформенный)"}</span> : (user.dept_id ? <HeaderDeptName deptId={user.dept_id} /> : <span>— (платформенный)</span>)} />
               </div>
               <div>
-                <StatRow k="status" v={<span className={`badge badge-${userStatusBadgeKind(user.status)}`}>{user.status}</span>} />
+                <StatRow k="status" v={<Badge kind={userStatusBadgeKind(user.status)}>{user.status}</Badge>} />
                 <StatRow k="created_by" v={(() => {
                   if (!user.created_by) return <span className="mono">system</span>;
                   const cb = userById(user.created_by);
@@ -522,9 +525,9 @@ export function UserDetail() {
                     >
                       <span className="font-medium text-sm">{g.name}</span>
                       {g.cross_dept ? (
-                        <span className="badge badge-warn">cross-dept</span>
+                        <Badge kind="warn">cross-dept</Badge>
                       ) : (
-                        <span className="badge">dept · {g.owner_dept}</span>
+                        <Badge>dept · {g.owner_dept}</Badge>
                       )}
                       <span className="text-xs text-dim ml-auto truncate max-w-[180px]" title={g.description}>
                         {g.description}
@@ -573,7 +576,7 @@ export function UserDetail() {
                       return (
                         <div key={ra.role_id} className="row-line">
                           <div className="flex flex-col">
-                            <span className="badge badge-accent w-fit">{role.name}</span>
+                            <Badge kind="accent" className="w-fit">{role.name}</Badge>
                             <span className="text-xs text-dim mt-1">{role.description}</span>
                           </div>
                           <div className="text-xs text-dim text-right">
@@ -588,7 +591,7 @@ export function UserDetail() {
               })()
             ) : user.platform_role ? (
               <div className="flex flex-col gap-1">
-                <span className="badge badge-accent w-fit">{user.platform_role}</span>
+                <Badge kind="accent" className="w-fit">{user.platform_role}</Badge>
                 <span className="text-xs text-dim">
                   Платформенная роль из /me/permissions. Подробной истории grant'а
                   пока нет (нужен endpoint в auth_service).
@@ -606,8 +609,8 @@ export function UserDetail() {
               <span className="flex items-center gap-2 w-full">
                 <span>Service-роли</span>
                 {!mockMode && (
-                  <button
-                    className="btn btn-sm flex items-center gap-1 ml-auto"
+                  <Button size="sm"
+                    className="flex items-center gap-1 ml-auto"
                     disabled={!caps.manageRoles || (!showEditRoles && !permsQ.data)}
                     title={
                       !caps.manageRoles
@@ -620,7 +623,7 @@ export function UserDetail() {
                   >
                     <Pencil className="w-3 h-3" />{" "}
                     {showEditRoles ? "Скрыть форму" : "Изменить роли"}
-                  </button>
+                  </Button>
                 )}
               </span>
             }
@@ -676,21 +679,20 @@ export function UserDetail() {
                       return (
                         <tr key={ra.role_id} className="border-t border-token">
                           <td className="py-2"><span className="mono">{role.service}</span></td>
-                          <td><span className="badge badge-accent">{role.name}</span></td>
+                          <td><Badge kind="accent">{role.name}</Badge></td>
                           <td className="text-xs">
-                            {ra.scope_kind === "platform" && <span className="badge">платформа</span>}
-                            {ra.scope_kind === "dept" && <span className="badge">отдел · {ra.scope_ref}</span>}
-                            {ra.scope_kind === "resource" && <span className="badge">{ra.scope_ref}</span>}
+                            {ra.scope_kind === "platform" && <Badge>платформа</Badge>}
+                            {ra.scope_kind === "dept" && <Badge>отдел · {ra.scope_ref}</Badge>}
+                            {ra.scope_kind === "resource" && <Badge>{ra.scope_ref}</Badge>}
                           </td>
                           <td className="text-xs text-dim"><GrantedBy id={ra.granted_by} /></td>
                           <td>
-                            <button
-                              className="btn btn-sm btn-ghost"
+                            <Button variant="ghost" size="sm"
                               onClick={() => setDiffMutation({ kind: "remove_role", user_id: user.id, role_id: ra.role_id })}
                               title="Прикинуть: что изменится без этой роли"
                             >
                               <GitCompareArrows className="w-3 h-3" />
-                            </button>
+                            </Button>
                           </td>
                         </tr>
                       );
@@ -742,8 +744,7 @@ export function UserDetail() {
                           <td className="text-xs text-dim"><GrantedBy id={g.granted_by} /></td>
                           <td className="text-xs text-dim">{formatMskDate(g.granted_at)}</td>
                           <td className="text-right">
-                            <button
-                              className="btn btn-sm btn-ghost"
+                            <Button variant="ghost" size="sm"
                               disabled={!caps.manageRoles}
                               title={
                                 caps.manageRoles
@@ -758,9 +759,11 @@ export function UserDetail() {
                               }
                             >
                               <GitCompareArrows className="w-3 h-3" /> diff
-                            </button>
-                            <button
-                              className={`btn btn-sm ${isPreviewed ? "btn-danger" : "btn-ghost"} ml-1`}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={isPreviewed ? "danger" : "ghost"}
+                              className="ml-1"
                               disabled={!caps.manageRoles}
                               title={
                                 caps.manageRoles
@@ -794,7 +797,7 @@ export function UserDetail() {
                             >
                               <XCircle className="w-3 h-3" />{" "}
                               {isPreviewed ? "Подтвердить отзыв" : "Отозвать"}
-                            </button>
+                            </Button>
                           </td>
                         </tr>
                       );
@@ -858,41 +861,38 @@ export function UserDetail() {
               {assignments?.roles.map((ra) => {
                 const role = ROLES.find((r) => r.id === ra.role_id)!;
                 return (
-                  <button
+                  <Button size="sm"
                     key={`rm-r-${ra.role_id}`}
-                    className="btn btn-sm"
                     onClick={() => setDiffMutation({ kind: "remove_role", user_id: user.id, role_id: ra.role_id })}
                   >
                     − убрать роль {role.name}
-                  </button>
+                  </Button>
                 );
               })}
               {(assignments?.groups ?? []).map((gid) => {
                 const g = GROUPS.find((x) => x.id === gid);
                 if (!g) return null;
                 return (
-                  <button
+                  <Button size="sm"
                     key={`rm-g-${gid}`}
-                    className="btn btn-sm"
                     onClick={() => setDiffMutation({ kind: "remove_from_group", user_id: user.id, group_id: gid })}
                   >
                     − убрать из {g.name}
-                  </button>
+                  </Button>
                 );
               })}
               {GROUPS.filter((g) => !(assignments?.groups ?? []).includes(g.id)).slice(0, 3).map((g) => (
-                <button
+                <Button size="sm"
                   key={`add-g-${g.id}`}
-                  className="btn btn-sm"
                   onClick={() => setDiffMutation({ kind: "add_to_group", user_id: user.id, group_id: g.id })}
                 >
                   + добавить в {g.name}
-                </button>
+                </Button>
               ))}
               {diffMutation && (
-                <button className="btn btn-sm btn-ghost ml-auto" onClick={() => setDiffMutation(null)}>
+                <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setDiffMutation(null)}>
                   сбросить
-                </button>
+                </Button>
               )}
             </div>
             {!diff ? (
@@ -970,7 +970,7 @@ export function UserDetail() {
                     <div className="text-dim mb-1">Разрешённые сервисы</div>
                     <div className="flex flex-wrap gap-1">
                       {permsQ.data.allowed_services.map((s) => (
-                        <span key={s} className="badge">{s}</span>
+                        <Badge key={s}>{s}</Badge>
                       ))}
                       {permsQ.data.allowed_services.length === 0 && (
                         <span className="text-dim italic">пусто</span>
@@ -981,7 +981,7 @@ export function UserDetail() {
                     <div className="text-dim mb-1">Группы (API)</div>
                     <div className="flex flex-wrap gap-1">
                       {(groupsApiQ.data ?? []).map((g) => (
-                        <span key={g.id} className="badge">{g.name}</span>
+                        <Badge key={g.id}>{g.name}</Badge>
                       ))}
                       {(!groupsApiQ.data || groupsApiQ.data.length === 0) && (
                         <span className="text-dim italic">не состоит</span>
@@ -1018,8 +1018,8 @@ export function UserDetail() {
           {/* 7. Danger zone (smaller, footer) */}
           <Section icon={<Trash2 className="w-4 h-4" />} title="Опасная зона" className="col-span-2">
             <div className="flex gap-2 flex-wrap">
-              <button
-                className="btn btn-danger flex items-center gap-1"
+              <Button variant="danger"
+                className="flex items-center gap-1"
                 disabled={!caps.disable || busy !== null}
                 title={caps.disable ? undefined : caps.reason}
                 onClick={async () => {
@@ -1039,17 +1039,15 @@ export function UserDetail() {
                 }}
               >
                 <ShieldOff className="w-4 h-4" /> Бан (навсегда)
-              </button>
-              <button
-                className="btn"
+              </Button>
+              <Button
                 disabled={!caps.disable || busy !== null}
                 title={caps.disable ? undefined : caps.reason}
                 onClick={() => runAction("unban", () => unbanUser(user.id))}
               >
                 <ShieldCheck className="w-4 h-4 inline" /> Снять бан
-              </button>
-              <button
-                className="btn btn-danger-solid"
+              </Button>
+              <Button variant="danger-solid"
                 disabled={!caps.delete || busy !== null}
                 title={caps.delete ? undefined : caps.reason}
                 onClick={async () => {
@@ -1079,7 +1077,7 @@ export function UserDetail() {
                 }}
               >
                 Удалить пользователя
-              </button>
+              </Button>
               <span className="text-xs text-dim ml-auto">
                 {caps.delete
                   ? "Действия требуют подтверждения."
@@ -1132,16 +1130,16 @@ function PermissionRow({
         <td className="px-3 py-2 mono text-xs">{entry.permission}</td>
         <td className="px-3 py-2 text-xs">{entry.service}</td>
         <td className="px-3 py-2 text-xs">
-          {entry.scope_kind === "platform" && <span className="badge">платформа</span>}
-          {entry.scope_kind === "dept" && <span className="badge">отдел · {entry.scope_ref}</span>}
-          {entry.scope_kind === "resource" && <span className="badge">{entry.scope_ref}</span>}
+          {entry.scope_kind === "platform" && <Badge>платформа</Badge>}
+          {entry.scope_kind === "dept" && <Badge>отдел · {entry.scope_ref}</Badge>}
+          {entry.scope_kind === "resource" && <Badge>{entry.scope_ref}</Badge>}
         </td>
         <td className="px-3 py-2">
           <div className="flex flex-wrap gap-1">
             {entry.sources.map((s) => (
-              <span key={`${s.kind}-${s.id}`} className={`badge badge-${s.kind === "direct" ? "warn" : s.kind === "role" ? "accent" : ""}`}>
+              <Badge key={`${s.kind}-${s.id}`} kind={s.kind === "direct" ? "warn" : s.kind === "role" ? "accent" : "neutral"}>
                 {s.label}
-              </span>
+              </Badge>
             ))}
           </div>
         </td>
@@ -1245,7 +1243,7 @@ function StatRow({ k, v }: { k: string; v: React.ReactNode }) {
 
 function DeptBadge({ deptId }: { deptId: string | null | undefined }) {
   const label = useDeptLabel(deptId);
-  return <span className="badge">dept · {label}</span>;
+  return <Badge>dept · {label}</Badge>;
 }
 
 function HeaderDeptName({ deptId }: { deptId: string | null | undefined }) {
@@ -1382,14 +1380,14 @@ function UserSessionsTab({
           <div className="text-xs uppercase tracking-wider text-dim flex items-center gap-2">
             <Monitor className="w-4 h-4" /> Активные сессии · {sessions.length}
           </div>
-          <button
-            className="btn btn-danger flex items-center gap-1"
+          <Button variant="danger"
+            className="flex items-center gap-1"
             onClick={revokeAll}
             disabled={!canRevoke || busy !== null || sessions.length === 0}
             title={canRevoke ? undefined : canRevokeReason}
           >
             <LogOut className="w-4 h-4" /> Завершить все сессии
-          </button>
+          </Button>
         </div>
 
         {!mockMode && sessQ.loading && (
@@ -1446,14 +1444,14 @@ function UserSessionsTab({
                       {fmtSessTs(s.expires_at)}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <button
-                        className="btn btn-sm btn-danger flex items-center gap-1 ml-auto"
+                      <Button variant="danger" size="sm"
+                        className="flex items-center gap-1 ml-auto"
                         disabled={!canRevoke || busy !== null}
                         title={canRevoke ? "Завершить сессию" : canRevokeReason}
                         onClick={() => revokeOne(s.session_id)}
                       >
                         <XCircle className="w-3 h-3" />
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -1544,14 +1542,14 @@ function UserGroupsLiveSection({
       title={
         <span className="flex items-center gap-2 w-full">
           <span>Членство в группах · {list.length}</span>
-          <button
-            className="btn btn-sm flex items-center gap-1 ml-auto"
+          <Button size="sm"
+            className="flex items-center gap-1 ml-auto"
             disabled={!canManage}
             title={canManage ? "Добавить в группу" : capsReason}
             onClick={onOpenAdd}
           >
             <Plus className="w-3 h-3" /> Добавить
-          </button>
+          </Button>
         </span>
       }
     >
@@ -1584,14 +1582,14 @@ function UserGroupsLiveSection({
               >
                 {g.description ?? ""}
               </span>
-              <button
-                className="btn btn-sm btn-danger ml-auto flex items-center gap-1"
+              <Button variant="danger" size="sm"
+                className="ml-auto flex items-center gap-1"
                 disabled={!canManage || busy === g.id}
                 title={canManage ? "Убрать из группы" : capsReason}
                 onClick={() => handleRemove(g.id, g.name)}
               >
                 <X className="w-3 h-3" /> Убрать
-              </button>
+              </Button>
             </div>
           ))}
         </div>
@@ -1667,9 +1665,9 @@ function AddUserToGroupModal({
       >
         <div className="flex items-center mb-3">
           <h3 className="font-semibold text-base">Добавить в группу</h3>
-          <button className="btn btn-sm btn-ghost ml-auto" onClick={onClose}>
+          <Button variant="ghost" size="sm" className="ml-auto" onClick={onClose}>
             <X className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
         <input
           className="surface-2 border border-token rounded px-2 py-1 w-full text-sm mb-3"
@@ -1721,16 +1719,16 @@ function AddUserToGroupModal({
           total={groupsQ.data?.total ?? null}
         />
         <div className="flex items-center gap-2 mt-4">
-          <button className="btn ml-auto" onClick={onClose}>
+          <Button className="ml-auto" onClick={onClose}>
             Отмена
-          </button>
-          <button
-            className="btn btn-accent"
+          </Button>
+          <Button
+            className="btn-accent"
             disabled={!selected || submitting}
             onClick={submit}
           >
             {submitting ? "Добавляю…" : "Добавить"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -1783,9 +1781,9 @@ function UserServiceRolesLiveTable({
             <td>
               <div className="flex flex-wrap gap-1">
                 {list.map((r) => (
-                  <span key={r} className="badge badge-accent">
+                  <Badge kind="accent" key={r}>
                     {r}
-                  </span>
+                  </Badge>
                 ))}
               </div>
             </td>
@@ -1952,16 +1950,16 @@ function UserServiceRolesEditor({
         </div>
       )}
       <div className="flex items-center gap-2 mt-4">
-        <button className="btn ml-auto" onClick={onClose} disabled={submitting}>
+        <Button className="ml-auto" onClick={onClose} disabled={submitting}>
           Отмена
-        </button>
-        <button
-          className="btn btn-accent"
+        </Button>
+        <Button
+          className="btn-accent"
           disabled={submitting || servicesQ.loading}
           onClick={save}
         >
           {submitting ? "Сохраняю…" : "Сохранить"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -2011,8 +2009,7 @@ function ServiceRolesPickerRow({
                 className={`badge ${on ? "badge-accent" : ""} cursor-pointer`}
                 title={r.description ?? ""}
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   className="mr-1"
                   checked={on}
                   onChange={() => onToggle(r.role_name)}

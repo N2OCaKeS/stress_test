@@ -7,6 +7,7 @@
  * серверов тестируется по классам (усечение IP, неусыхаемый блок бейджей).
  */
 import type { ReactNode } from "react";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 export interface EntityRowProps {
   /** Иконка строки (у сервера несёт data-testid/aria-label по типу/статусу). */
@@ -47,8 +48,7 @@ export function EntityRow({
       className={`cred-row text-left flex items-center gap-2 ${active ? "active" : ""}`}
     >
       {selectable && (
-        <input
-          type="checkbox"
+        <Checkbox
           checked={checked}
           onChange={onToggleChecked}
           onClick={(e) => e.stopPropagation()}

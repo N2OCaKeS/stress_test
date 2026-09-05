@@ -5,6 +5,8 @@ import { introspect, type IntrospectResponse } from "@/api/auth/authorization";
 import { useToast } from "@/contexts/ToastContext";
 import { ServiceKeyFields } from "./ServiceKeyFields";
 import { useServiceKey } from "./useServiceKey";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 export function SecurityIntrospect() {
   const [token, setToken] = useState("");
@@ -64,9 +66,9 @@ export function SecurityIntrospect() {
           />
         </label>
         <div className="mt-3">
-          <button className="btn btn-primary" onClick={submit} disabled={pending}>
+          <Button variant="primary" onClick={submit} disabled={pending}>
             Introspect
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -74,20 +76,15 @@ export function SecurityIntrospect() {
         <div className="card">
           <h3 className="font-semibold mb-3">Результат</h3>
           <div className="flex items-center gap-2 mb-3">
-            <span
-              className={`badge ${result.active ? "active" : ""}`}
-              style={{
-                background: result.active ? "var(--ok-bg)" : "var(--err-bg)",
-              }}
-            >
+            <Badge kind={result.active ? "ok" : "danger"}>
               active: {String(result.active)}
-            </span>
+            </Badge>
             {result.subject_type && (
-              <span className="badge">{result.subject_type}</span>
+              <Badge>{result.subject_type}</Badge>
             )}
-            {result.is_banned && <span className="badge danger">забанен</span>}
+            {result.is_banned && <Badge kind="danger">забанен</Badge>}
             {result.must_change_password && (
-              <span className="badge warn">must_change_password</span>
+              <Badge className="warn">must_change_password</Badge>
             )}
           </div>
           <pre className="mono text-xs whitespace-pre-wrap break-all border border-token p-2 rounded">

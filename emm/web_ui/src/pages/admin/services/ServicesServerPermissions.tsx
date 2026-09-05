@@ -52,6 +52,9 @@ import type {
   ResourceAclType,
   RoleName,
 } from "@/api/server/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 /**
  * Матрица разрешений `server_service`. Группируется по сущности
@@ -416,15 +419,14 @@ function ServicesServerPermissionsLive() {
       <div className="flex-1 p-8">
         <div className="alert-danger flex items-center gap-2">
           <span>{apiErrMsg(err)}</span>
-          <button
-            className="btn btn-sm"
+          <Button size="sm"
             onClick={() => {
               catalogQ.refetch();
               grantsQ.refetch();
             }}
           >
             Повторить
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -641,9 +643,9 @@ function RoleEditor({
       <div className="card">
         <div className="alert-danger flex items-center gap-2">
           <span>{apiErrMsg(rolesError)}</span>
-          <button className="btn btn-sm" onClick={onRolesRefetch}>
+          <Button size="sm" onClick={onRolesRefetch}>
             Повторить
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -715,8 +717,8 @@ function RoleEditor({
 
           {!isLocked && (
             <div className="sticky top-0 z-30 flex items-center gap-2 flex-wrap border border-token rounded bg-[var(--bg-soft)] px-3 py-2">
-              <button
-                className="btn btn-sm btn-primary flex items-center gap-1"
+              <Button variant="primary" size="sm"
+                className="flex items-center gap-1"
                 onClick={() => onSaveRole(selected)}
                 disabled={saving || roleDirtyCount(selected) === 0}
               >
@@ -727,22 +729,21 @@ function RoleEditor({
                 )}
                 Сохранить роль
                 {roleDirtyCount(selected) > 0 && ` (${roleDirtyCount(selected)})`}
-              </button>
-              <button
-                className="btn btn-sm"
+              </Button>
+              <Button size="sm"
                 onClick={() => onCancelRole(selected)}
                 disabled={saving || roleDirtyCount(selected) === 0}
               >
                 Отмена
-              </button>
-              <button
-                className="btn btn-sm btn-danger flex items-center gap-1"
+              </Button>
+              <Button variant="danger" size="sm"
+                className="flex items-center gap-1"
                 onClick={() => onClearRoleEverywhere(selected)}
                 disabled={saving}
                 title="Снять все права этой роли во всех таблицах (применится по «Сохранить роль»)"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Очистить во всех таблицах
-              </button>
+              </Button>
               <span className="text-[11px] text-dim ml-auto">
                 {roleDirtyCount(selected) > 0
                   ? `Несохранённых изменений: ${roleDirtyCount(selected)}`
@@ -854,9 +855,9 @@ function RoleMeta({
             <ShieldCheck className="w-4 h-4 text-accent" />
             {roleName}
             {isSystem && (
-              <span className="badge text-[10px] flex items-center gap-1">
+              <Badge className="text-[10px] flex items-center gap-1">
                 <Lock className="w-3 h-3" /> system
-              </span>
+              </Badge>
             )}
           </div>
           {!editing && (
@@ -869,17 +870,17 @@ function RoleMeta({
         </div>
         <div className="flex items-center gap-2">
           {canEditDesc && !editing && (
-            <button
-              className="btn btn-sm btn-ghost flex items-center gap-1"
+            <Button variant="ghost" size="sm"
+              className="flex items-center gap-1"
               onClick={startEdit}
               disabled={busy}
             >
               <Pencil className="w-3 h-3" /> описание
-            </button>
+            </Button>
           )}
           {canDelete && (
-            <button
-              className="btn btn-sm btn-danger flex items-center gap-1"
+            <Button variant="danger" size="sm"
+              className="flex items-center gap-1"
               onClick={onDelete}
               disabled={busy}
             >
@@ -889,7 +890,7 @@ function RoleMeta({
                 <Trash2 className="w-3 h-3" />
               )}
               удалить
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -910,8 +911,8 @@ function RoleMeta({
               }}
             />
           </label>
-          <button
-            className="btn btn-sm btn-primary flex items-center gap-1"
+          <Button variant="primary" size="sm"
+            className="flex items-center gap-1"
             onClick={saveDesc}
             disabled={busy}
           >
@@ -921,14 +922,14 @@ function RoleMeta({
               <Check className="w-3 h-3" />
             )}
             сохранить
-          </button>
-          <button
-            className="btn btn-sm btn-ghost flex items-center gap-1"
+          </Button>
+          <Button variant="ghost" size="sm"
+            className="flex items-center gap-1"
             onClick={() => setEditing(false)}
             disabled={busy}
           >
             <X className="w-3 h-3" /> отмена
-          </button>
+          </Button>
         </div>
       )}
 
@@ -1075,12 +1076,12 @@ function NewRoleForm({
   if (!open) {
     return (
       <div className="mt-3 pt-3 border-t border-token">
-        <button
-          className="btn btn-ghost text-xs flex items-center gap-1"
+        <Button variant="ghost"
+          className="text-xs flex items-center gap-1"
           onClick={() => setOpen(true)}
         >
           <Plus className="w-3 h-3" /> Новая роль
-        </button>
+        </Button>
       </div>
     );
   }
@@ -1093,13 +1094,13 @@ function NewRoleForm({
             <ShieldCheck className="w-4 h-4 text-accent" />
             Новая роль · server_service
           </span>
-          <button
-            className="btn btn-ghost text-xs flex items-center gap-1"
+          <Button variant="ghost"
+            className="text-xs flex items-center gap-1"
             onClick={reset}
             disabled={busy}
           >
             <X className="w-3 h-3" /> закрыть
-          </button>
+          </Button>
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-xs">
@@ -1126,14 +1127,14 @@ function NewRoleForm({
               disabled={busy}
             />
           </label>
-          <button
-            className="btn btn-primary flex items-center gap-1"
+          <Button variant="primary"
+            className="flex items-center gap-1"
             onClick={submit}
             disabled={busy || !name.trim()}
           >
             {busy && <Loader2 className="w-3 h-3 animate-spin" />}
             Создать
-          </button>
+          </Button>
         </div>
         <p className="text-[10px] text-dim mt-2 leading-relaxed">
           Роль создаётся в каталоге <span className="mono">(отдел, server_service)</span>.
@@ -1423,8 +1424,8 @@ function EntityMatrix({
           </div>
 
           <div className="sticky bottom-0 z-30 mt-3 -mb-1 flex items-center gap-2 flex-wrap border-t border-token bg-[var(--bg-soft)] pt-3 pb-2">
-            <button
-              className="btn btn-sm btn-primary flex items-center gap-1"
+            <Button variant="primary" size="sm"
+              className="flex items-center gap-1"
               onClick={onSave}
               disabled={saving || dirtyCount === 0}
             >
@@ -1435,14 +1436,13 @@ function EntityMatrix({
               )}
               Сохранить
               {dirtyCount > 0 && ` (${dirtyCount})`}
-            </button>
-            <button
-              className="btn btn-sm"
+            </Button>
+            <Button size="sm"
               onClick={onCancel}
               disabled={saving || dirtyCount === 0}
             >
               Отмена
-            </button>
+            </Button>
             <span className="mx-1 h-5 w-px bg-token" aria-hidden="true" />
             <Dropdown
               mode="single"
@@ -1451,22 +1451,22 @@ function EntityMatrix({
               onChange={(v) => setSelectedRole(v as RoleName)}
               disabled={saving || clearableRoles.length === 0}
             />
-            <button
-              className="btn btn-sm flex items-center gap-1"
+            <Button size="sm"
+              className="flex items-center gap-1"
               onClick={() => activeRole && onClearRole(activeRole)}
               disabled={saving || !activeRole || !hasOverride(activeRole)}
               title="Снять все права выбранной роли в этой таблице (применится по «Сохранить»)"
             >
               <RotateCcw className="w-3.5 h-3.5" /> Очистить роль
-            </button>
-            <button
-              className="btn btn-sm flex items-center gap-1"
+            </Button>
+            <Button size="sm"
+              className="flex items-center gap-1"
               onClick={onClearAllRoles}
               disabled={saving || clearableRoles.every((r) => !hasOverride(r))}
               title="Снять все права всех ролей в этой таблице (применится по «Сохранить»)"
             >
               <Trash2 className="w-3.5 h-3.5" /> Очистить все роли
-            </button>
+            </Button>
             <span className="text-[11px] text-dim ml-auto">
               {dirtyCount > 0
                 ? `Несохранённых изменений: ${dirtyCount}`
@@ -1507,8 +1507,7 @@ function PermCheckbox({
     );
   }
   return (
-    <input
-      type="checkbox"
+    <Checkbox
       className={[
         "w-4 h-4 align-middle accent-[var(--accent)]",
         disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",

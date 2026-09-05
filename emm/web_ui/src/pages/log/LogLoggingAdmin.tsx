@@ -25,6 +25,8 @@ import {
   TARGET_FACETS,
   STATUS_FACETS,
 } from "./logShared";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Logging-admin log view.
@@ -67,15 +69,15 @@ export function LogLoggingAdmin() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button className="btn flex items-center gap-1">
+            <Button className="flex items-center gap-1">
               <Bell className="w-4 h-4" /> Добавить в правила
-            </button>
-            <button className="btn flex items-center gap-1">
+            </Button>
+            <Button className="flex items-center gap-1">
               <ShieldCheck className="w-4 h-4" /> Отметить как известное
-            </button>
-            <button className="btn btn-primary flex items-center gap-1">
+            </Button>
+            <Button variant="primary" className="flex items-center gap-1">
               <Download className="w-4 h-4" /> Экспорт JSON
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -127,13 +129,13 @@ export function LogMiddle({
             onChange={setTimeRange}
           />
           {showLive ? (
-            <button
+            <Button
               onClick={onLiveToggle}
-              className="btn ml-auto flex items-center gap-1.5 text-xs py-0.5 px-2"
+              className="ml-auto flex items-center gap-1.5 text-xs py-0.5 px-2"
             >
               {live && <span className="live-dot" />}
               <span>{live ? "Онлайн" : "Пауза"}</span>
-            </button>
+            </Button>
           ) : (
             <span className="ml-auto text-[10px] text-dim flex items-center gap-1">
               статично
@@ -200,7 +202,7 @@ function EventDetail() {
           <div className="stat-row">
             <span className="text-dim">Тип субъекта</span>
             <span>
-              <span className="badge">user</span>
+              <Badge>user</Badge>
             </span>
           </div>
         </div>
@@ -217,7 +219,7 @@ function EventDetail() {
           <div className="stat-row">
             <span className="text-dim">Тип</span>
             <span>
-              <span className="badge">master_key</span>
+              <Badge>master_key</Badge>
             </span>
           </div>
           <div className="stat-row">
@@ -271,7 +273,7 @@ function EventDetail() {
           <div className="stat-row">
             <span className="text-dim">Источник</span>
             <span>
-              <span className="badge badge-warn">secret_service</span>
+              <Badge kind="warn">secret_service</Badge>
             </span>
           </div>
           <div className="stat-row">

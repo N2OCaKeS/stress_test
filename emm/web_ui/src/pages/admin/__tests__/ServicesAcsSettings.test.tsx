@@ -109,7 +109,7 @@ describe("ServicesAcsSettings", () => {
     renderPage();
 
     const betaRow = await screen.findByText("Beta");
-    const betaCheckbox = betaRow.parentElement!.querySelector(
+    const betaCheckbox = betaRow.closest("label")!.querySelector(
       "input[type=checkbox]",
     ) as HTMLInputElement;
     fireEvent.click(betaCheckbox);

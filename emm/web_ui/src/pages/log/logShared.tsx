@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, Filter, User } from "lucide-react";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 export type Sev = "CRITICAL" | "ERROR" | "WARNING" | "INFO";
 
@@ -128,8 +129,7 @@ export function Facets({
         <div className="facet-body">
           {items.map((it) => (
             <label key={it.label} className="facet-item">
-              <input
-                type="checkbox"
+              <Checkbox
                 defaultChecked={severityFacets}
               />
               {severityFacets && it.sevTag ? (

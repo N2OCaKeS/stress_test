@@ -6,6 +6,9 @@ import { useServiceLabel } from "@/lib/labels";
 import { ApiError } from "@/api/client";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import type { ServiceName, ServiceRole } from "@/api/auth/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 /**
  * Assign service-roles to a bot — service picker driven by bot.allowed_services,
@@ -104,9 +107,9 @@ export function BotRoleAssign({
           disabled={disabled}
         />
         {isReplace && (
-          <span className="badge badge-warn text-[10px]" title="Уже есть назначения по этому сервису — будут заменены">
+          <Badge kind="warn" className="text-[10px]" title="Уже есть назначения по этому сервису — будут заменены">
             replace
-          </span>
+          </Badge>
         )}
       </div>
 
@@ -147,18 +150,17 @@ export function BotRoleAssign({
                     : (r.description ?? r.role_name)
                 }
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={on}
                   disabled={disabled}
                   onChange={() => toggle(r.role_name)}
                 />
                 <span className="mono">{r.role_name}</span>
                 {isCurrent && (
-                  <span className="badge badge-accent text-[10px]">сейчас</span>
+                  <Badge kind="accent" className="text-[10px]">сейчас</Badge>
                 )}
                 {r.is_system && (
-                  <span className="badge text-[10px]">system</span>
+                  <Badge className="text-[10px]">system</Badge>
                 )}
               </label>
             );
@@ -175,8 +177,8 @@ export function BotRoleAssign({
       )}
 
       <div className="flex justify-end">
-        <button
-          className="btn btn-primary flex items-center gap-1"
+        <Button variant="primary"
+          className="flex items-center gap-1"
           disabled={disabled || !service || (isReplace ? !dirty : selected.size === 0)}
           title={
             isReplace && !dirty
@@ -189,7 +191,7 @@ export function BotRoleAssign({
         >
           <ShieldCheck className="w-4 h-4" />
           {isReplace ? "Сохранить роли" : "Назначить роли"}
-        </button>
+        </Button>
       </div>
     </div>
   );

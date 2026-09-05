@@ -12,12 +12,15 @@
  * присылает, это отдельный сценарий.
  */
 import { useEffect, useMemo, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { ScanSearch, Check, ShieldCheck, User } from "lucide-react";
 import { useToast } from "@/contexts/ToastContext";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { adoptFromHost } from "@/api/server/accounts";
 import type { RevisionAccountDiff } from "@/api/server/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Modal } from "@/components/ui/Modal";
 
 type FieldKey = "has_sudo" | "unix_groups" | "shell";
 
@@ -140,21 +143,19 @@ export function RevisionDiffModal({
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal-content" style={{ maxWidth: 640 }}>
-          <div className="modal-header">
-            <ScanSearch className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold">
-              Ревизия атрибутов — {serverName}
-            </Dialog.Title>
-          </div>
+    <Modal
+      open={open}
+      width="md"
+      onOpenChange={(o) => !o && onClose()}
+      title={`Ревизия атрибутов — ${serverName}`}
+      icon={<ScanSearch className="w-5 h-5 text-accent" />}
+      hideCloseButton
+    >
           <div className="modal-body flex flex-col gap-4">
-            <Dialog.Description className="text-xs text-dim">
+            <p className="text-xs text-dim">
               Расхождения по привязанным аккаунтам: было (БД) → стало (сервер).
               Отметьте поля и примените значения с сервера в БД.
-            </Dialog.Description>
+            </p>
 
             {visible.length === 0 ? (
               <div className="text-sm text-dim text-center py-6">
@@ -177,15 +178,11 @@ export function RevisionDiffModal({
             )}
           </div>
           <div className="modal-footer">
-            <Dialog.Close asChild>
-              <button type="button" className="btn">
-                Закрыть
-              </button>
-            </Dialog.Close>
+            <Button type="button" onClick={onClose}>
+              Закрыть
+            </Button>
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </Modal>
   );
 }
 
@@ -213,7 +210,7 @@ function DiffCard({
         <span className="text-sm mono flex-1 min-w-0 truncate">
           {diff.login}
         </span>
-        <span className="badge mono">{diff.account_id}</span>
+        <Badge className="mono">{diff.account_id}</Badge>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -262,15 +259,15 @@ function DiffCard({
       </div>
 
       <div className="flex justify-end">
-        <button
+        <Button variant="primary" size="sm"
           type="button"
-          className="btn btn-sm btn-primary flex items-center gap-1"
+          className="flex items-center gap-1"
           disabled={busy || disabledAll || !anyChecked}
           onClick={onApply}
         >
           <Check className="w-3.5 h-3.5" />
           {busy ? "Применяем…" : "Применить к БД"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -293,8 +290,7 @@ function FieldRow({
 }) {
   return (
     <label className="flex items-start gap-2 text-sm border border-token rounded px-3 py-2">
-      <input
-        type="checkbox"
+      <Checkbox
         className="mt-0.5"
         aria-label={`Применить ${label}`}
         data-field={field}
@@ -370,24 +366,25 @@ function GroupsDiff({
       {found.map((g) => {
         const added = !expSet.has(g);
         return (
-          <span
+          <Badge
             key={`f-${g}`}
-            className={`badge mono${added ? " badge-ok" : ""}`}
+            kind={added ? "ok" : "neutral"}
+            className="mono"
             title={added ? "добавлена" : "без изменений"}
           >
             {added ? "+" : ""}
             {g}
-          </span>
+          </Badge>
         );
       })}
       {removed.map((g) => (
-        <span
+        <Badge kind="danger"
           key={`r-${g}`}
-          className="badge mono badge-danger line-through"
+          className="mono line-through"
           title="убрана"
         >
           −{g}
-        </span>
+        </Badge>
       ))}
     </div>
   );

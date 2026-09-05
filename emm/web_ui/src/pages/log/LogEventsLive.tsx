@@ -40,6 +40,8 @@ import type {
   ListEventsQuery,
   Severity,
 } from "@/api/loging/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 const PAGE_SIZE = 100;
 
@@ -242,19 +244,19 @@ export function LogEventsLive() {
             value={filters.action}
             onChange={(e) => setFilter("action", e.target.value)}
           />
-          <button
+          <Button
             type="button"
-            className={`btn btn-ghost btn-sm flex items-center gap-1 ${
-              showFilters ? "text-accent" : ""
-            }`}
+            variant="ghost"
+            size="sm"
+            className={`flex items-center gap-1 ${showFilters ? "text-accent" : ""}`}
             onClick={() => setShowFilters((v) => !v)}
             title="Фильтры"
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
             {activeExtra > 0 && (
-              <span className="badge text-[10px]">{activeExtra}</span>
+              <Badge className="text-[10px]">{activeExtra}</Badge>
             )}
-          </button>
+          </Button>
         </div>
 
         {showFilters && (
@@ -346,15 +348,15 @@ export function LogEventsLive() {
               />
             </div>
 
-            <button
+            <Button variant="ghost" size="sm"
               type="button"
-              className="btn btn-ghost btn-sm flex items-center justify-center gap-1 mt-0.5"
+              className="flex items-center justify-center gap-1 mt-0.5"
               onClick={resetFilters}
               disabled={!anyActive}
             >
               <X className="w-3.5 h-3.5" />
               Сбросить фильтры
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -368,12 +370,12 @@ export function LogEventsLive() {
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1 text-xs">
               <div>{apiErrMsg(eventsQ.error, "Журнал не загрузился")}</div>
-              <button
-                className="btn btn-ghost mt-2"
+              <Button variant="ghost"
+                className="mt-2"
                 onClick={() => eventsQ.refetch()}
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -415,21 +417,19 @@ export function LogEventsLive() {
       </div>
 
       <div className="border-t border-token px-3 py-2 shrink-0 flex items-center justify-between text-xs text-dim">
-        <button
-          className="btn btn-ghost"
+        <Button variant="ghost"
           disabled={page === 0 || eventsQ.loading}
           onClick={() => setPage((p) => Math.max(0, p - 1))}
         >
           ←
-        </button>
+        </Button>
         <span>стр. {page + 1}</span>
-        <button
-          className="btn btn-ghost"
+        <Button variant="ghost"
           disabled={!hasMore || eventsQ.loading}
           onClick={() => setPage((p) => p + 1)}
         >
           →
-        </button>
+        </Button>
       </div>
     </aside>
   );
@@ -522,15 +522,15 @@ function StatsPane({
               </div>
             )}
           </div>
-          <button
+          <Button size="sm"
             type="button"
-            className="btn btn-sm flex items-center gap-1"
+            className="flex items-center gap-1"
             onClick={onExport}
             disabled={exporting}
           >
             <Download className="w-3.5 h-3.5" />
             {exporting ? "Экспорт…" : hasRange ? "Экспорт за период" : "Экспорт за 24ч"}
-          </button>
+          </Button>
         </div>
 
         {notice && (
@@ -557,9 +557,9 @@ function StatsPane({
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1">
               <div>{apiErrMsg(statsQ.error, "Статистика не загрузилась")}</div>
-              <button className="btn btn-ghost mt-2" onClick={() => statsQ.refetch()}>
+              <Button variant="ghost" className="mt-2" onClick={() => statsQ.refetch()}>
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -685,7 +685,7 @@ function EventDetailPane({ event }: { event: EventDetail }) {
             <span className={`sev ${sevClass(event.severity)}`}>
               {event.severity}
             </span>
-            <span className="badge">{event.status}</span>
+            <Badge>{event.status}</Badge>
           </div>
           <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
             {event.request_id && (

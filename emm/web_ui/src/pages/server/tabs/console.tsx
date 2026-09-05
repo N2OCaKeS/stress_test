@@ -75,6 +75,7 @@ import type {
   TaskDispatchResponse,
 } from "@/api/server/types";
 import type { EntityRef } from "./_entity";
+import { Button } from "@/components/ui/Button";
 
 interface Props {
   serverId?: string;
@@ -234,9 +235,9 @@ function AccountConsolePanel({
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <div className="flex-1 text-xs">
             <div>{apiErrMsg(error, "Аккаунты не загрузились")}</div>
-            <button className="btn btn-ghost mt-2" onClick={onRetry}>
+            <Button variant="ghost" className="mt-2" onClick={onRetry}>
               Повторить
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -522,24 +523,22 @@ function ConsoleSession({
     <div className="flex flex-col gap-3 flex-1 min-h-0">
       <div className="flex items-center gap-3">
         {connected ? (
-          <button className="btn btn-ghost" onClick={disconnect}>
+          <Button variant="ghost" onClick={disconnect}>
             <PlugZap className="w-4 h-4" />
             Отключить
-          </button>
+          </Button>
         ) : (
-          <button
-            className="btn btn-primary"
+          <Button variant="primary"
             onClick={connect}
             disabled={!account}
             title={account ? "Открыть консольную сессию" : "Выберите аккаунт"}
           >
             <Plug className="w-4 h-4" />
             Подключить
-          </button>
+          </Button>
         )}
         {sessionOpen && (
-          <button
-            className="btn btn-ghost"
+          <Button variant="ghost"
             onClick={injectPassword}
             disabled={!canReveal || injecting}
             title={
@@ -550,7 +549,7 @@ function ConsoleSession({
           >
             <KeyRound className="w-4 h-4" />
             Пароль
-          </button>
+          </Button>
         )}
         <StatusBadge state={state} />
         {account && (
@@ -704,29 +703,30 @@ function VmConsoleTab({
           </div>
         </div>
         {canManage && (
-          <button
+          <Button size="sm"
             type="button"
-            className="btn btn-sm flex items-center gap-1"
+            className="flex items-center gap-1"
             onClick={handleAllta}
             disabled={alltaPending}
             title="Переустановить guest-allta по не-«_build» снимкам"
           >
             <Boxes className="w-3.5 h-3.5" />
             {alltaPending ? "Ставим задачу…" : "Обновить allta"}
-          </button>
+          </Button>
         )}
       </div>
 
       <div className="flex items-center gap-1 flex-wrap">
         {kinds.map((k) => (
-          <button
+          <Button
             key={k.value}
             type="button"
-            className={`btn btn-sm ${kind === k.value ? "btn-primary" : ""}`}
+            size="sm"
+            variant={kind === k.value ? "primary" : "default"}
             onClick={() => setKind(k.value)}
           >
             {k.label}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -797,9 +797,9 @@ function VmGraphicalConsole({
 
   return (
     <div className="flex flex-col gap-3">
-      <button
+      <Button variant="primary" size="sm"
         type="button"
-        className="btn btn-primary btn-sm flex items-center gap-1 self-start"
+        className="flex items-center gap-1 self-start"
         onClick={connect}
         disabled={pending}
       >
@@ -809,7 +809,7 @@ function VmGraphicalConsole({
           : session
             ? `Переподключить ${proto}`
             : `Подключиться (${proto})`}
-      </button>
+      </Button>
 
       {!session && (
         <div className="text-xs text-dim">

@@ -49,6 +49,8 @@ import type {
   SessionListResponse,
   UserPermissionsResponse,
 } from "@/api/auth/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Self-service `/me` console.
@@ -91,13 +93,13 @@ export function MyAccount() {
               />
             </div>
           </div>
-          <button
+          <Button
             type="button"
-            className="btn flex items-center gap-1.5 shrink-0"
+            className="flex items-center gap-1.5 shrink-0"
             onClick={() => setCertHelpOpen(true)}
           >
             <ShieldCheck className="w-4 h-4" /> Установить сертификат
-          </button>
+          </Button>
         </div>
 
         <div className="w-full px-8">
@@ -249,13 +251,12 @@ function ProfileCard({
         </label>
       </div>
       <div className="flex justify-end mb-4">
-        <button
-          className="btn btn-primary"
+        <Button variant="primary"
           onClick={saveProfile}
           disabled={!dirty || saving}
         >
           {saving ? "..." : "Сохранить профиль"}
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
@@ -278,9 +279,9 @@ function ProfileCard({
           v={
             // `/me` отдаёт только is_banned — поля status/is_active в
             // IdentityContext нет, поэтому состояние выводим из бан-флага.
-            <span className={`badge badge-${user?.is_banned ? "danger" : "ok"}`}>
+            <Badge kind={user?.is_banned ? "danger" : "ok"}>
               {user?.is_banned ? "banned" : "active"}
-            </span>
+            </Badge>
           }
         />
         <StatRow
@@ -296,9 +297,9 @@ function ProfileCard({
         ) : (
           <div className="flex flex-wrap gap-1">
             {services.map((s) => (
-              <span key={s} className="badge">
+              <Badge key={s}>
                 {s}
-              </span>
+              </Badge>
             ))}
           </div>
         )}
@@ -331,13 +332,13 @@ function ProfileCard({
       </div>
 
       <div className="mt-5 flex gap-2">
-        <button
-          className="btn btn-danger flex items-center gap-1"
+        <Button variant="danger"
+          className="flex items-center gap-1"
           onClick={revokeOthers}
           disabled={busy}
         >
           <LogOut className="w-4 h-4" /> Выйти из всех сессий, кроме текущей
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -435,13 +436,13 @@ function PasswordCard({ mockMode }: { mockMode: boolean }) {
       {!tooShort && noLetter && <div className="text-xs text-warn mb-2">Нужна минимум одна буква</div>}
       {!tooShort && !noLetter && noDigit && <div className="text-xs text-warn mb-2">Нужна минимум одна цифра</div>}
       {mismatch && <div className="text-xs text-warn mb-2">Пароли не совпадают</div>}
-      <button
-        className="btn btn-primary w-full"
+      <Button variant="primary"
+        className="w-full"
         onClick={submit}
         disabled={busy || !oldPwd || !newPwd || mismatch || policyBad}
       >
         {busy ? "..." : "Применить"}
-      </button>
+      </Button>
       <div className="text-[11px] text-dim mt-2">
         После смены все активные сессии будут отозваны. Текущая сессия будет
         автоматически переподнята с новым паролем — выходить и заходить заново
@@ -517,13 +518,13 @@ function TokensCard({ mockMode }: { mockMode: boolean }) {
           <div className="font-semibold flex items-center gap-2">
             <Lock className="w-4 h-4 text-accent" /> Personal Access Tokens
           </div>
-          <button
-            className="btn btn-primary flex items-center gap-1"
+          <Button variant="primary"
+            className="flex items-center gap-1"
             onClick={() => setCreating(true)}
             disabled={creating}
           >
             <Plus className="w-4 h-4" /> Создать PAT
-          </button>
+          </Button>
         </div>
         <div className="text-xs text-dim mb-3">
           PAT привязаны к вашему пользователю. Plaintext-токен показывается один
@@ -585,12 +586,12 @@ function TokensCard({ mockMode }: { mockMode: boolean }) {
                   <td className="text-xs text-dim mono">{fmtTs(t.expires_at)}</td>
                   <td className="text-xs text-dim mono">{fmtTs(t.last_used_at ?? null)}</td>
                   <td className="text-right">
-                    <button
-                      className="btn btn-danger btn-sm flex items-center gap-1"
+                    <Button variant="danger" size="sm"
+                      className="flex items-center gap-1"
                       onClick={() => onRevoke(t)}
                     >
                       <Trash2 className="w-3 h-3" /> отозвать
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -734,17 +735,16 @@ function CreatePatForm({
         </div>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onCancel} disabled={pending}>
+        <Button onClick={onCancel} disabled={pending}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary"
+        </Button>
+        <Button variant="primary"
           onClick={submit}
           disabled={submitDisabled}
           title={submitTooltip}
         >
           Создать
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -806,17 +806,17 @@ function OneShotPanel({
         <div className="font-semibold text-warn">
           Токен показан один раз — сохраните его сейчас
         </div>
-        <button className="btn btn-ghost" onClick={onClose}>
+        <Button variant="ghost" onClick={onClose}>
           Скрыть
-        </button>
+        </Button>
       </div>
       <div className="mono text-xs break-all border border-token p-2 rounded">
         {resp.token}
       </div>
       <div className="mt-2 flex items-center gap-2">
-        <button className="btn btn-primary flex items-center gap-1" onClick={copy}>
+        <Button variant="primary" className="flex items-center gap-1" onClick={copy}>
           <Copy className="w-4 h-4" /> Скопировать
-        </button>
+        </Button>
         <div className="text-[11px] text-dim">
           {resp.name} · {resp.token_id}
         </div>
@@ -880,13 +880,13 @@ function SessionsCard({ mockMode }: { mockMode: boolean }) {
         <div className="font-semibold flex items-center gap-2">
           <Monitor className="w-4 h-4 text-accent" /> Активные сессии
         </div>
-        <button
-          className="btn btn-danger flex items-center gap-1"
+        <Button variant="danger"
+          className="flex items-center gap-1"
           onClick={revokeAll}
           disabled={busy !== null}
         >
           <ShieldCheck className="w-4 h-4" /> Завершить все, кроме текущей
-        </button>
+        </Button>
       </div>
 
       {!mockMode && sessQ.loading && (
@@ -927,15 +927,15 @@ function SessionsCard({ mockMode }: { mockMode: boolean }) {
                 <td className="text-xs text-dim mono">{fmtTs(s.expires_at)}</td>
                 <td className="text-right">
                   {s.is_current ? (
-                    <span className="badge badge-ok">текущая</span>
+                    <Badge kind="ok">текущая</Badge>
                   ) : (
-                    <button
-                      className="btn btn-danger btn-sm flex items-center gap-1"
+                    <Button variant="danger" size="sm"
+                      className="flex items-center gap-1"
                       disabled={busy !== null}
                       onClick={() => revokeOne(s.session_id)}
                     >
                       <LogOut className="w-3 h-3" /> отозвать
-                    </button>
+                    </Button>
                   )}
                 </td>
               </tr>
@@ -1103,9 +1103,9 @@ function PermissionsView({ data }: { data: UserPermissionsResponse }) {
         ) : (
           <div className="flex flex-wrap gap-1">
             {data.allowed_services.map((s) => (
-              <span key={s} className="badge">
+              <Badge key={s}>
                 {s}
-              </span>
+              </Badge>
             ))}
           </div>
         )}

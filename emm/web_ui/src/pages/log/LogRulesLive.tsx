@@ -43,6 +43,9 @@ import type {
   RuleEffect,
   Severity,
 } from "@/api/loging/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 const EFFECTS: RuleEffect[] = ["SUPPRESS", "ALLOW", "OVERRIDE_SEVERITY"];
 const SEVERITIES: Severity[] = [
@@ -130,12 +133,12 @@ export function LogRulesLive() {
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="flex-1 text-xs">
               <div>{apiErrMsg(rulesQ.error, "Список не загрузился")}</div>
-              <button
-                className="btn btn-ghost mt-2"
+              <Button variant="ghost"
+                className="mt-2"
                 onClick={() => rulesQ.refetch()}
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -170,11 +173,9 @@ export function LogRulesLive() {
                     <span className="mono">{r.effect}</span>
                   </div>
                 </div>
-                <span
-                  className={`badge ${r.is_active ? "badge-ok" : "badge-warn"}`}
-                >
+                <Badge kind={r.is_active ? "ok" : "warn"}>
                   {r.is_active ? "active" : "muted"}
-                </span>
+                </Badge>
               </div>
             </button>
           ))}
@@ -182,15 +183,15 @@ export function LogRulesLive() {
       </div>
       {canWrite && (
         <div className="border-t border-token p-3 shrink-0">
-          <button
-            className="btn btn-primary w-full flex items-center justify-center gap-2"
+          <Button variant="primary"
+            className="w-full flex items-center justify-center gap-2"
             onClick={() => {
               setMode("new");
               setSelectedId(null);
             }}
           >
             <Plus className="w-4 h-4" /> Создать правило
-          </button>
+          </Button>
         </div>
       )}
     </aside>
@@ -271,10 +272,10 @@ function RuleView({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl font-semibold truncate">{rule.name}</h1>
-            <span className={`badge ${rule.is_active ? "badge-ok" : "badge-warn"}`}>
+            <Badge kind={rule.is_active ? "ok" : "warn"}>
               {rule.is_active ? "active" : "muted"}
-            </span>
-            <span className="badge">{rule.effect}</span>
+            </Badge>
+            <Badge>{rule.effect}</Badge>
           </div>
           {rule.description && (
             <div className="text-sm text-dim mt-1">{rule.description}</div>
@@ -282,15 +283,15 @@ function RuleView({
         </div>
         {canWrite && (
           <div className="flex items-center gap-2 shrink-0">
-            <button className="btn flex items-center gap-1" onClick={onEdit}>
+            <Button className="flex items-center gap-1" onClick={onEdit}>
               <Edit3 className="w-4 h-4" /> Изменить
-            </button>
-            <button
-              className="btn btn-danger flex items-center gap-1"
+            </Button>
+            <Button variant="danger"
+              className="flex items-center gap-1"
               onClick={onDelete}
             >
               <Trash2 className="w-4 h-4" /> Удалить
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -407,13 +408,13 @@ function RuleForm({
     <section className="flex-1 min-w-0 overflow-y-auto">
       <div className="p-5 w-full">
         <div className="flex items-center gap-2 mb-4">
-          <button
-            className="btn btn-ghost flex items-center gap-1"
+          <Button variant="ghost"
+            className="flex items-center gap-1"
             onClick={onCancel}
             type="button"
           >
             <ArrowLeft className="w-4 h-4" /> Назад
-          </button>
+          </Button>
           <div className="text-sm text-dim">
             {rule ? "Редактирование правила" : "Создание правила"}
           </div>
@@ -534,8 +535,7 @@ function RuleForm({
               />
             </Field>
             <label className="flex items-center gap-2 text-sm mt-5">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={isActive}
                 onChange={(e) => setIsActive(e.target.checked)}
               />
@@ -548,9 +548,8 @@ function RuleForm({
           </div>
 
           <div className="flex items-center gap-2 mt-2">
-            <button
+            <Button variant="primary"
               type="submit"
-              className="btn btn-primary"
               disabled={
                 submitting ||
                 !name.trim() ||
@@ -558,10 +557,10 @@ function RuleForm({
               }
             >
               {submitting ? "Сохраняем…" : "Сохранить"}
-            </button>
-            <button type="button" className="btn" onClick={onCancel}>
+            </Button>
+            <Button type="button" onClick={onCancel}>
               Отмена
-            </button>
+            </Button>
           </div>
         </form>
       </div>

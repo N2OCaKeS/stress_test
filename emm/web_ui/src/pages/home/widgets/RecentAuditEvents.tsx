@@ -16,6 +16,7 @@ import { hasAuditLogAccess } from "@/lib/rbac";
 import { formatMskTime } from "@/lib/datetime";
 import { listEvents } from "@/api/loging/events";
 import type { EventListResponse } from "@/api/loging/types";
+import { Button } from "@/components/ui/Button";
 
 const PREVIEW_COUNT = 8;
 
@@ -63,9 +64,9 @@ export function RecentAuditEvents() {
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <div className="flex-1">
             <div>{apiErrMsg(eventsQ.error, "Журнал не загрузился")}</div>
-            <button className="btn btn-ghost mt-2" onClick={() => eventsQ.refetch()}>
+            <Button variant="ghost" className="mt-2" onClick={() => eventsQ.refetch()}>
               Повторить
-            </button>
+            </Button>
           </div>
         </div>
       ) : items.length === 0 ? (

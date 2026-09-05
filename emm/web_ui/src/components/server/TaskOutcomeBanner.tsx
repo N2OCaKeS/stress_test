@@ -19,6 +19,8 @@ import {
   isTerminalTaskStatus,
   type TrackedTask,
 } from "@/api/server/useTaskOutcome";
+import { Button } from "@/components/ui/Button";
+import { Badge, type BadgeKind } from "@/components/ui/Badge";
 
 interface Props {
   outcome: TrackedTask;
@@ -48,12 +50,12 @@ export function TaskOutcomeBanner({
 }: Props) {
   const [cancelling, setCancelling] = useState(false);
   const [cancelErr, setCancelErr] = useState<string | null>(null);
-  const tone =
+  const tone: BadgeKind =
     outcome.status === "succeeded"
-      ? "badge-ok"
+      ? "ok"
       : outcome.status === "failed"
-        ? "badge-danger"
-        : "badge-warn";
+        ? "danger"
+        : "warn";
   const cancelable = onCancelled != null && !isTerminalTaskStatus(outcome.status);
 
   async function handleCancel() {
@@ -82,23 +84,23 @@ export function TaskOutcomeBanner({
       <div className="flex items-center gap-2 flex-wrap">
         <span className="font-medium">{label ?? outcome.label}</span>
         <span className="mono text-dim">{outcome.taskId}</span>
-        <span className={`badge ${tone}`}>{outcome.status}</span>
+        <Badge kind={tone}>{outcome.status}</Badge>
         {outcome.polling && (
           <span className="flex items-center gap-1 text-dim">
             <RefreshCw className="w-3 h-3 animate-spin" /> ждём worker…
           </span>
         )}
         {cancelable && (
-          <button
+          <Button size="sm"
             type="button"
-            className="btn btn-sm flex items-center gap-1 ml-auto"
+            className="flex items-center gap-1 ml-auto"
             onClick={handleCancel}
             disabled={cancelling}
             title="Отменить pending/running задачу"
           >
             <XCircle className="w-3.5 h-3.5" />
             {cancelling ? "Отменяем…" : "Отменить"}
-          </button>
+          </Button>
         )}
       </div>
       {!outcome.polling && outcome.status === "succeeded" && (

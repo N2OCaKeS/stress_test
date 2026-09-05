@@ -44,6 +44,8 @@ import type {
   User as ApiUser,
   UserStatus,
 } from "@/api/auth/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Persona view used inside the inline editor. We render both real API users
@@ -333,12 +335,12 @@ export function ServicesUsers() {
             : `${items.length} записей`}
         </div>
         {canEdit && (
-          <button
-            className="btn btn-primary flex items-center gap-1"
+          <Button variant="primary"
+            className="flex items-center gap-1"
             onClick={startCreate}
           >
             <Plus className="w-4 h-4" /> Создать
-          </button>
+          </Button>
         )}
       </div>
 
@@ -451,12 +453,11 @@ export function ServicesUsers() {
             ) : !mockMode && usersQ.error ? (
               <div className="alert-danger text-xs m-1 flex items-center justify-between gap-2">
                 <span>{usersQ.error.message}</span>
-                <button
-                  className="btn btn-ghost btn-sm"
+                <Button variant="ghost" size="sm"
                   onClick={() => usersQ.refetch()}
                 >
                   Повторить
-                </button>
+                </Button>
               </div>
             ) : items.length === 0 ? (
               <div className="text-xs text-dim px-3 py-6 text-center">
@@ -511,17 +512,16 @@ export function ServicesUsers() {
                           <div className="text-sm truncate flex items-center gap-2">
                             <span>{item.username}</span>
                             {item.platform_role && (
-                              <span className="badge badge-accent">
+                              <Badge kind="accent">
                                 {item.platform_role}
-                              </span>
+                              </Badge>
                             )}
                             {item.must_change_password && (
-                              <span
-                                className="badge badge-warn"
+                              <Badge kind="warn"
                                 title="must_change_password"
                               >
                                 pwd!
-                              </span>
+                              </Badge>
                             )}
                           </div>
                           <div className="text-[11px] text-dim truncate">
@@ -529,11 +529,9 @@ export function ServicesUsers() {
                             {item.email ?? "—"}
                           </div>
                         </div>
-                        <span
-                          className={`badge badge-${item.status === "active" ? "ok" : item.status === "blocked" ? "warn" : "danger"}`}
-                        >
+                        <Badge kind={item.status === "active" ? "ok" : item.status === "blocked" ? "warn" : "danger"}>
                           {item.status}
-                        </span>
+                        </Badge>
                         {/* per-row Ban/Unban нет — деструктив только из правой
                             панели после двойного подтверждения, чтобы не
                             отстреливать юзеров случайным кликом по списку. */}
@@ -552,20 +550,18 @@ export function ServicesUsers() {
                 {offset}-{offset + allItems.length} из {total}
               </span>
               <div className="ml-auto flex items-center gap-1">
-                <button
-                  className="btn btn-sm"
+                <Button size="sm"
                   disabled={offset === 0}
                   onClick={() => setOffset(Math.max(0, offset - limit))}
                 >
                   ←
-                </button>
-                <button
-                  className="btn btn-sm"
+                </Button>
+                <Button size="sm"
                   disabled={offset + allItems.length >= total}
                   onClick={() => setOffset(offset + limit)}
                 >
                   →
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -576,12 +572,12 @@ export function ServicesUsers() {
           {mode === "new" && canEdit ? (
             <div className="p-5 flex flex-col gap-4 min-h-full">
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  className="btn btn-ghost flex items-center gap-1"
+                <Button variant="ghost"
+                  className="flex items-center gap-1"
                   onClick={close}
                 >
                   <ArrowLeft className="w-4 h-4" /> Назад
-                </button>
+                </Button>
                 <div className="text-sm text-dim">Новый пользователь</div>
               </div>
               <UserForm
@@ -599,12 +595,12 @@ export function ServicesUsers() {
           ) : selected && mode === "edit" && canEdit ? (
             <div className="p-5 flex flex-col gap-4 min-h-full">
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  className="btn btn-ghost flex items-center gap-1"
+                <Button variant="ghost"
+                  className="flex items-center gap-1"
                   onClick={() => select(selected.id)}
                 >
                   <ArrowLeft className="w-4 h-4" /> К пользователю
-                </button>
+                </Button>
                 <div className="text-sm text-dim truncate">
                   Редактирование · {selected.username}
                 </div>
@@ -642,12 +638,12 @@ export function ServicesUsers() {
                   сессии и действия.
                 </div>
                 {canEdit && (
-                  <button
-                    className="btn btn-primary mt-4 inline-flex items-center gap-1"
+                  <Button variant="primary"
+                    className="mt-4 inline-flex items-center gap-1"
                     onClick={startCreate}
                   >
                     <Plus className="w-4 h-4" /> Создать
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
@@ -856,24 +852,22 @@ function UserForm({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
-              <button
+              <Button
                 type="button"
-                className="btn"
                 title="Сгенерировать новый"
                 onClick={() => setPassword(generateInitialPassword())}
                 disabled={busy}
               >
                 <RefreshCw className="w-4 h-4" />
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="btn"
                 title="Скопировать"
                 onClick={copyPassword}
                 disabled={busy}
               >
                 <Copy className="w-4 h-4" />
-              </button>
+              </Button>
             </div>
             <div className="text-[11px] mt-1">
               {copyHint ? (
@@ -937,12 +931,11 @@ function UserForm({
       </div>
       {err && <div className="alert-danger mt-3">{err}</div>}
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onDone} disabled={busy}>
+        <Button onClick={onDone} disabled={busy}>
           Отмена
-        </button>
+        </Button>
         {canEdit && (
-          <button
-            className="btn btn-primary"
+          <Button variant="primary"
             onClick={submit}
             disabled={
               busy ||
@@ -952,7 +945,7 @@ function UserForm({
             }
           >
             {busy ? "..." : mode === "new" ? "Создать" : "Сохранить"}
-          </button>
+          </Button>
         )}
       </div>
       {mockMode && (

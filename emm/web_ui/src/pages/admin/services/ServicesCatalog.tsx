@@ -39,6 +39,8 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { isDepAdmin, isPlatformWideAdmin, personaDeptId } from "@/lib/rbac";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 // Backend service_name → admin item route segment. Идентификатор
 // динамического пункта в `buildAdminItems` строится по шаблону
@@ -116,7 +118,7 @@ export function ServicesCatalog() {
               )}
             </div>
             {item.is_active === false && (
-              <span className="badge">disabled</span>
+              <Badge>disabled</Badge>
             )}
           </div>
         </button>
@@ -205,13 +207,13 @@ function ServiceDetail({
           <Layers className="w-4 h-4 text-accent" /> {svc.service_name}
         </h3>
         {canEdit && (
-          <button
-            className="btn btn-danger flex items-center gap-1"
+          <Button variant="danger"
+            className="flex items-center gap-1"
             disabled={busy}
             onClick={onDelete}
           >
             <Trash2 className="w-4 h-4" /> Удалить
-          </button>
+          </Button>
         )}
       </div>
       <StatRow k="service_name" v={<span className="mono">{svc.service_name}</span>} />
@@ -405,16 +407,15 @@ function ServiceForm({
       </div>
       {err && <div className="alert-danger mt-3 text-xs">{err}</div>}
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={close} disabled={busy}>
+        <Button onClick={close} disabled={busy}>
           Отмена
-        </button>
-        <button
-          className="btn btn-primary"
+        </Button>
+        <Button variant="primary"
           onClick={submit}
           disabled={busy || !serviceName.trim()}
         >
           {busy ? "..." : "Создать"}
-        </button>
+        </Button>
       </div>
     </div>
   );

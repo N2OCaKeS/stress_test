@@ -2,6 +2,7 @@ import { useMemo, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, Lock, Plug, Plus, type LucideIcon } from "lucide-react";
 import { HelpTooltip } from "@/components/ui/HelpTooltip";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Inline "service not wired to UI" card — used by admin tabs whose backing
@@ -233,12 +234,12 @@ export function InlineEditor<T>({
           {loading && items.length === 0 ? "…" : `${items.length} записей`}
         </div>
         {canEdit && renderCreate && (
-          <button
-            className="btn btn-primary flex items-center gap-1"
+          <Button variant="primary"
+            className="flex items-center gap-1"
             onClick={startCreate}
           >
             <Plus className="w-4 h-4" /> Создать
-          </button>
+          </Button>
         )}
       </div>
 
@@ -265,9 +266,9 @@ export function InlineEditor<T>({
               <div className="alert-danger text-xs m-1 flex items-center justify-between gap-2">
                 <span>{error}</span>
                 {onRetry && (
-                  <button className="btn btn-ghost btn-sm" onClick={onRetry}>
+                  <Button variant="ghost" size="sm" onClick={onRetry}>
                     Повторить
-                  </button>
+                  </Button>
                 )}
               </div>
             ) : items.length === 0 ? (
@@ -323,12 +324,12 @@ export function InlineEditor<T>({
                   {emptyHint ?? "Выберите запись слева для просмотра."}
                 </div>
                 {canEdit && renderCreate && (
-                  <button
-                    className="btn btn-primary mt-4 inline-flex items-center gap-1"
+                  <Button variant="primary"
+                    className="mt-4 inline-flex items-center gap-1"
                     onClick={startCreate}
                   >
                     <Plus className="w-4 h-4" /> Создать
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
@@ -376,9 +377,9 @@ function DetailWrap({
   return (
     <div className="p-5 flex flex-col gap-4 min-h-full">
       <div className="flex items-center gap-2 shrink-0">
-        <button className="btn btn-ghost flex items-center gap-1" onClick={onBack}>
+        <Button variant="ghost" className="flex items-center gap-1" onClick={onBack}>
           <ArrowLeft className="w-4 h-4" /> Назад
-        </button>
+        </Button>
         <div className="text-sm text-dim truncate mono">{title}</div>
       </div>
       <div>{children}</div>

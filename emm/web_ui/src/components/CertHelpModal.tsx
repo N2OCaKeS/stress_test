@@ -1,7 +1,8 @@
 import { useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { ShieldCheck, Download, Check, Copy } from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 
 /**
  * Помощник по установке корневого сертификата платформы.
@@ -183,62 +184,55 @@ function MacosHelp() {
 
 export function CertHelpModal({ open, onClose }: CertHelpModalProps) {
   const [tab, setTab] = useState<OsTab>(detectOsTab);
+  const downloadCa = () => {
+    const link = document.createElement("a");
+    link.href = CA_URL;
+    link.download = "emm-ca.crt";
+    link.click();
+  };
 
   return (
-    <Dialog.Root
+    <Modal
       open={open}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
+      title="Установка сертификата"
+      icon={<ShieldCheck className="w-5 h-5 text-accent" />}
+      footer={
+        <Button type="button" onClick={onClose}>
+          Закрыть
+        </Button>
+      }
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal-content" onOpenAutoFocus={(e) => e.preventDefault()}>
-          <div className="modal-header">
-            <ShieldCheck className="w-5 h-5 text-accent" />
-            <Dialog.Title className="text-base font-semibold">
-              Установка сертификата
-            </Dialog.Title>
-          </div>
+      <p className="text-sm text-dim mb-4">
+        Чтобы интерфейс работал без ошибок подключения, установите корневой
+        сертификат в доверенные — один раз на устройство. После этого браузер
+        начнёт доверять адресу платформы и вход пройдёт штатно.
+      </p>
 
-          <div className="modal-body">
-            <Dialog.Description className="text-sm text-dim mb-4">
-              Чтобы интерфейс работал без ошибок подключения, установите
-              корневой сертификат в доверенные — один раз на устройство. После
-              этого браузер начнёт доверять адресу платформы и вход пройдёт
-              штатно.
-            </Dialog.Description>
+      <Button
+        type="button"
+        variant="primary"
+        className="inline-flex items-center gap-2 mb-4"
+        onClick={downloadCa}
+      >
+        <Download className="w-4 h-4" />
+        Скачать сертификат (CA)
+      </Button>
 
-            <a
-              href={CA_URL}
-              download="emm-ca.crt"
-              className="btn btn-primary inline-flex items-center gap-2 mb-4"
-            >
-              <Download className="w-4 h-4" />
-              Скачать сертификат (CA)
-            </a>
+      <Tabs
+        tabs={OS_TABS}
+        active={tab}
+        onChange={(id) => setTab(id as OsTab)}
+        className="border-b border-token flex gap-1 mb-3"
+      />
 
-            <Tabs
-              tabs={OS_TABS}
-              active={tab}
-              onChange={(id) => setTab(id as OsTab)}
-              className="border-b border-token flex gap-1 mb-3"
-            />
-
-            <div className="min-h-[9rem]">
-              {tab === "windows" && <WindowsHelp />}
-              {tab === "linux" && <LinuxHelp />}
-              {tab === "macos" && <MacosHelp />}
-            </div>
-          </div>
-
-          <div className="modal-footer">
-            <button type="button" className="btn" onClick={onClose}>
-              Закрыть
-            </button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      <div className="min-h-[9rem]">
+        {tab === "windows" && <WindowsHelp />}
+        {tab === "linux" && <LinuxHelp />}
+        {tab === "macos" && <MacosHelp />}
+      </div>
+    </Modal>
   );
 }

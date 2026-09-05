@@ -7,6 +7,8 @@ import { InlineEditor, FormRow, NotWiredInline, StatRow, useInlineState } from "
 import { useMockMode } from "@/api/auth/useQuery";
 import { formatMsk } from "@/lib/datetime";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
 
 export function ServicesServerInventory() {
   const mockMode = useMockMode();
@@ -54,9 +56,9 @@ export function ServicesServerInventory() {
                 {item.dept_id} · {item.ip}
               </div>
             </div>
-            <span className={`badge badge-${item.status === "up" ? "ok" : item.status === "maintenance" ? "warn" : "danger"}`}>
+            <Badge kind={item.status === "up" ? "ok" : item.status === "maintenance" ? "warn" : "danger"}>
               {item.status}
-            </span>
+            </Badge>
           </div>
         </button>
       )}
@@ -82,21 +84,21 @@ function ServerView({
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold flex items-center gap-2 mono">
           <ServerIcon className="w-4 h-4 text-accent" /> {server.hostname}
-          <span className={`badge badge-${server.status === "up" ? "ok" : server.status === "maintenance" ? "warn" : "danger"}`}>
+          <Badge kind={server.status === "up" ? "ok" : server.status === "maintenance" ? "warn" : "danger"}>
             {server.status}
-          </span>
+          </Badge>
         </h3>
         {canEdit && (
           <div className="flex items-center gap-2">
-            <button className="btn flex items-center gap-1" onClick={() => startEdit(server.id)}>
+            <Button className="flex items-center gap-1" onClick={() => startEdit(server.id)}>
               <Edit3 className="w-4 h-4" /> Изменить
-            </button>
-            <button className="btn flex items-center gap-1">
+            </Button>
+            <Button className="flex items-center gap-1">
               <Power className="w-4 h-4" /> Перезагрузить питание
-            </button>
-            <button className="btn btn-danger flex items-center gap-1">
+            </Button>
+            <Button variant="danger" className="flex items-center gap-1">
               <Trash2 className="w-4 h-4" /> Вывести из эксплуатации
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -167,10 +169,10 @@ function ServerForm({
         </FormRow>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onDone}>Отмена</button>
-        <button className="btn btn-primary" onClick={onDone}>
+        <Button onClick={onDone}>Отмена</Button>
+        <Button variant="primary" onClick={onDone}>
           {mode === "new" ? "Создать" : "Сохранить"}
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -11,6 +11,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useDeptLabel, useLabelsInvalidate } from "@/lib/labels";
 import { isDepAdmin } from "@/lib/rbac";
+import { Button } from "@/components/ui/Button";
 
 // dep_admin не управляет платформенным каталогом сервисов — он видит лишь то,
 // что подключено его отделу. Источник — persona.accessible_services (их же
@@ -120,12 +121,12 @@ function PlatformServicesCatalog() {
           системная роль `admin`.
         </div>
         {canEdit && (
-          <button
-            className="btn btn-primary flex items-center gap-1"
+          <Button variant="primary"
+            className="flex items-center gap-1"
             onClick={() => setCreating(true)}
           >
             <Plus className="w-4 h-4" /> Зарегистрировать сервис
-          </button>
+          </Button>
         )}
       </div>
 
@@ -148,9 +149,9 @@ function PlatformServicesCatalog() {
         ) : loadErr ? (
           <div className="alert-danger text-xs flex items-center justify-between gap-2">
             <span>{loadErr}</span>
-            <button className="btn btn-ghost btn-sm" onClick={() => void reload()}>
+            <Button variant="ghost" size="sm" onClick={() => void reload()}>
               Повторить
-            </button>
+            </Button>
           </div>
         ) : items.length === 0 ? (
           <div className="text-xs text-dim py-4 text-center">Сервисов нет.</div>
@@ -214,13 +215,13 @@ function ServiceRow({
         )}
       </div>
       {canEdit && (
-        <button
-          className="btn btn-danger flex items-center gap-1"
+        <Button variant="danger"
+          className="flex items-center gap-1"
           onClick={onDelete}
           disabled={pending}
         >
           <Trash2 className="w-4 h-4" /> Удалить
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -283,12 +284,12 @@ function CreateForm({
         </label>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
-        <button className="btn" onClick={onCancel} disabled={pending}>
+        <Button onClick={onCancel} disabled={pending}>
           Отмена
-        </button>
-        <button className="btn btn-primary" onClick={submit} disabled={pending}>
+        </Button>
+        <Button variant="primary" onClick={submit} disabled={pending}>
           Создать
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -11,7 +11,6 @@
  * одним флагом сверху.
  */
 import { useEffect, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
 import { AlertCircle, HardDrive, Maximize2, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -33,6 +32,9 @@ import {
 } from "@/api/server/vms";
 import type { TaskDispatchResponse } from "@/api/server/types";
 import type { EntityTabProps } from "./_entity";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Modal as UIModal } from "@/components/ui/Modal";
 
 // В mock-режиме операции никуда не уходят — подсовываем правдоподобный ответ
 // диспетчера, чтобы UI отработал постановку задачи.
@@ -179,12 +181,12 @@ function DisksSection({
           <HardDrive className="w-4 h-4 text-accent" /> Диски
         </h3>
         {canManage && (
-          <button
-            className="btn btn-sm btn-primary flex items-center gap-1"
+          <Button variant="primary" size="sm"
+            className="flex items-center gap-1"
             onClick={() => setCreateOpen(true)}
           >
             <Plus className="w-3.5 h-3.5" /> Создать диск
-          </button>
+          </Button>
         )}
       </div>
 
@@ -195,9 +197,9 @@ function DisksSection({
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <div className="flex-1 text-xs">
             <div>{apiErrMsg(disksQ.error, "Список дисков не загрузился")}</div>
-            <button className="btn btn-ghost mt-2" onClick={() => disksQ.refetch()}>
+            <Button variant="ghost" className="mt-2" onClick={() => disksQ.refetch()}>
               Повторить
-            </button>
+            </Button>
           </div>
         </div>
       ) : disks.length === 0 ? (
@@ -229,29 +231,29 @@ function DisksSection({
                   <td className="px-3 py-1.5 mono text-dim text-xs">{d.serial ?? "—"}</td>
                   <td className="px-3 py-1.5">
                     {d.is_system ? (
-                      <span className="badge">системный</span>
+                      <Badge>системный</Badge>
                     ) : (
-                      <span className="badge badge-ok">доп.</span>
+                      <Badge kind="ok">доп.</Badge>
                     )}
                   </td>
                   {canManage && (
                     <td className="px-3 py-1.5">
                       <div className="flex items-center gap-1 justify-end">
-                        <button
-                          className="btn btn-sm flex items-center gap-1"
+                        <Button size="sm"
+                          className="flex items-center gap-1"
                           title="Изменить размер (только рост)"
                           onClick={() => setResizeTarget(d)}
                         >
                           <Maximize2 className="w-3.5 h-3.5" /> Resize
-                        </button>
+                        </Button>
                         {!d.is_system && (
-                          <button
-                            className="btn btn-sm btn-danger flex items-center gap-1"
+                          <Button variant="danger" size="sm"
+                            className="flex items-center gap-1"
                             title="Удалить диск"
                             onClick={() => handleDelete(d)}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          </Button>
                         )}
                       </div>
                     </td>
@@ -298,22 +300,9 @@ function Modal({
   children: React.ReactNode;
 }) {
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal-content" aria-describedby={undefined}>
-          <div className="modal-header">
-            <Dialog.Title className="text-base font-semibold">{title}</Dialog.Title>
-          </div>
-          {children}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <UIModal open onOpenChange={(next) => !next && onClose()} title={title}>
+      {children}
+    </UIModal>
   );
 }
 
@@ -404,16 +393,15 @@ function DiskCreateModal({
           </label>
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
+          <Button type="button" onClick={onClose}>
             Отмена
-          </button>
-          <button
+          </Button>
+          <Button variant="primary"
             type="submit"
-            className="btn btn-primary"
             disabled={!valid || submitting}
           >
             {submitting ? "Создаём…" : "Создать диск"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -472,16 +460,15 @@ function DiskResizeModal({
           </label>
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn" onClick={onClose}>
+          <Button type="button" onClick={onClose}>
             Отмена
-          </button>
-          <button
+          </Button>
+          <Button variant="primary"
             type="submit"
-            className="btn btn-primary"
             disabled={!valid || submitting}
           >
             {submitting ? "Применяем…" : "Увеличить"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

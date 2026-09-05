@@ -39,6 +39,8 @@ import type {
   UnknownUser,
   UnlinkedExistingUser,
 } from "@/api/server/types";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 type RowMode = "skip" | "add" | "ignore";
 
@@ -334,15 +336,15 @@ export function InventoryResultView({
       {/* Применить отмеченные unknown_users */}
       {unknownUsers.length > 0 && (
         <div className="flex justify-end">
-          <button
+          <Button variant="primary"
             type="button"
-            className="btn btn-primary flex items-center gap-1"
+            className="flex items-center gap-1"
             disabled={applying || selectedCount === 0 || !serverId}
             onClick={handleApply}
           >
             <Check className="w-4 h-4" />
             {applying ? "Применяем…" : `Применить (${selectedCount})`}
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -363,9 +365,9 @@ function DiscoveredUserRow({
         <div className="text-sm mono flex items-center gap-2">
           {user.login}
           {user.has_sudo && (
-            <span className="badge badge-warn flex items-center gap-1">
+            <Badge kind="warn" className="flex items-center gap-1">
               <ShieldCheck className="w-3 h-3" /> sudo
-            </span>
+            </Badge>
           )}
         </div>
         <div className="text-[11px] text-dim">
@@ -376,9 +378,9 @@ function DiscoveredUserRow({
             : ""}
         </div>
       </div>
-      <span className="badge">
+      <Badge>
         {status === "system" ? "Системная" : "Уже в системе"}
-      </span>
+      </Badge>
     </div>
   );
 }
@@ -399,11 +401,11 @@ function UnknownUserRow({
       <div className="flex-1 min-w-[160px]">
         <div className="text-sm mono flex items-center gap-2">
           {user.login}
-          <span className="badge badge-warn">Не в системе</span>
+          <Badge kind="warn">Не в системе</Badge>
           {user.has_sudo && (
-            <span className="badge badge-warn flex items-center gap-1">
+            <Badge kind="warn" className="flex items-center gap-1">
               <ShieldCheck className="w-3 h-3" /> sudo
-            </span>
+            </Badge>
           )}
         </div>
         <div className="text-[11px] text-dim">
@@ -473,7 +475,7 @@ function UnlinkedExistingRow({
       <div className="flex-1 min-w-[160px]">
         <div className="text-sm mono flex items-center gap-2">
           {user.login}
-          <span className="badge">Есть аккаунт, не привязан</span>
+          <Badge>Есть аккаунт, не привязан</Badge>
         </div>
         <div className="text-[11px] text-dim">
           uid {user.uid}
@@ -492,16 +494,16 @@ function UnlinkedExistingRow({
           onChange={setPicked}
         />
       )}
-      <button
+      <Button variant="primary" size="sm"
         type="button"
-        className="btn btn-sm btn-primary flex items-center gap-1"
+        className="flex items-center gap-1"
         disabled={disabled || !target}
         aria-label={`Связать ${user.login}`}
         onClick={() => target && onLink(target)}
       >
         <Link2 className={`w-3.5 h-3.5 ${busy ? "animate-spin" : ""}`} />
         {busy ? "Связываем…" : "Связать"}
-      </button>
+      </Button>
     </div>
   );
 }

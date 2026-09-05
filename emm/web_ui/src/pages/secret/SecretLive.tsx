@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { fromBase64 } from "@/lib/base64";
@@ -266,27 +267,27 @@ export function SecretLive() {
           />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-dim">
-          <select
-            className="surface-2 border border-token rounded px-1 py-0.5"
+          <Dropdown
+            mode="single"
+            options={[
+              { value: "personal", label: "personal" },
+              { value: "department", label: "department" },
+              { value: "cross_department", label: "cross_department" },
+            ]}
             value={filterScope}
-            onChange={(e) => setFilterScope(e.target.value)}
-            title="Фильтр по области"
-          >
-            <option value="">все области</option>
-            <option value="personal">personal</option>
-            <option value="department">department</option>
-            <option value="cross_department">cross_department</option>
-          </select>
-          <select
-            className="surface-2 border border-token rounded px-1 py-0.5"
+            onChange={setFilterScope}
+            placeholder="все области"
+          />
+          <Dropdown
+            mode="single"
+            options={[
+              { value: "active", label: "active" },
+              { value: "blocked", label: "blocked" },
+            ]}
             value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            title="Фильтр по статусу"
-          >
-            <option value="">все статусы</option>
-            <option value="active">active</option>
-            <option value="blocked">blocked</option>
-          </select>
+            onChange={setFilterStatus}
+            placeholder="все статусы"
+          />
         </div>
       </div>
 
@@ -1209,17 +1210,20 @@ function CreatePane({
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">scope *</span>
-            <select
-              className="surface-2 border border-token rounded px-2 py-1"
+            <Dropdown
+              mode="single"
+              options={[
+                { value: "personal", label: "personal" },
+                ...(canManage
+                  ? [
+                      { value: "department", label: "department" },
+                      { value: "cross_department", label: "cross_department" },
+                    ]
+                  : []),
+              ]}
               value={scope}
-              onChange={(e) => setScope(e.target.value as CredentialScope)}
-            >
-              <option value="personal">personal</option>
-              {canManage && <option value="department">department</option>}
-              {canManage && (
-                <option value="cross_department">cross_department</option>
-              )}
-            </select>
+              onChange={(v) => setScope(v as CredentialScope)}
+            />
             {!canManage && (
               <span className="text-[11px] text-dim">
                 department / cross_department доступны dep_admin и
@@ -1359,22 +1363,14 @@ function DeptPicker({
   }
 
   return (
-    <select
-      className="surface-2 border border-token rounded px-2 py-1"
+    <Dropdown
+      mode="single"
+      searchable
+      options={options.map(([id, name]) => ({ value: id, label: name }))}
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      required
-      title={value || undefined}
-    >
-      <option value="" disabled>
-        — выберите отдел —
-      </option>
-      {options.map(([id, name]) => (
-        <option key={id} value={id} title={id}>
-          {name}
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      placeholder="— выберите отдел —"
+    />
   );
 }
 
@@ -1710,20 +1706,15 @@ export function AclModal({
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">role_name *</span>
           {useRoleSelect ? (
-            <select
-              className="surface-2 border border-token rounded px-2 py-1"
+            <Dropdown
+              mode="single"
+              options={roleOptions.map((r) => ({
+                value: r.role_name,
+                label: r.description ? `${r.role_name} — ${r.description}` : r.role_name,
+              }))}
               value={roleName}
-              onChange={(e) => setRoleName(e.target.value)}
-              aria-label="role_name"
-              required
-            >
-              {roleOptions.map((r) => (
-                <option key={r.role_name} value={r.role_name}>
-                  {r.role_name}
-                  {r.description ? ` — ${r.description}` : ""}
-                </option>
-              ))}
-            </select>
+              onChange={setRoleName}
+            />
           ) : (
             <input
               className="surface-2 border border-token rounded px-2 py-1"
@@ -1851,18 +1842,11 @@ export function UserAclModal({
   const usePicker = pickEnabled && !usersQ.loading && !usersQ.error && userItems.length > 0;
 
   const [input, setInput] = useState("");
-  const [filter, setFilter] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [canRead, setCanRead] = useState(true);
   const [canWrite, setCanWrite] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [resolveErr, setResolveErr] = useState<string | null>(null);
-
-  const filteredUsers = filter.trim()
-    ? userItems.filter((u) =>
-        u.username.toLowerCase().includes(filter.trim().toLowerCase()),
-      )
-    : userItems;
 
   const valid = usePicker
     ? !!selectedId && (canRead || canWrite)
@@ -1921,30 +1905,17 @@ export function UserAclModal({
         {usePicker ? (
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">пользователь *</span>
-            <input
-              className="surface-2 border border-token rounded px-2 py-1"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="поиск по username…"
-              aria-label="поиск пользователя"
-            />
-            <select
-              className="surface-2 border border-token rounded px-2 py-1 mt-1"
+            <Dropdown
+              mode="single"
+              searchable
+              options={userItems.map((u) => ({ value: u.id, label: u.username }))}
               value={selectedId}
-              onChange={(e) => {
-                setSelectedId(e.target.value);
+              onChange={(v) => {
+                setSelectedId(v);
                 setResolveErr(null);
               }}
-              aria-label="пользователь"
-              required
-              size={Math.min(8, Math.max(3, filteredUsers.length))}
-            >
-              {filteredUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.username}
-                </option>
-              ))}
-            </select>
+              placeholder="выберите пользователя…"
+            />
             {resolveErr && (
               <span className="text-[11px] text-danger">{resolveErr}</span>
             )}

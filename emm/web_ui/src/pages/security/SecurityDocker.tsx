@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Container, FileText, KeyRound, Loader2, RefreshCcw } from "lucide-react";
 import { ApiError, apiErrMsg } from "@/api/client";
+import { Dropdown } from "@/components/ui/Dropdown";
 import {
   deleteRegistry,
   getDockerCerts,
@@ -301,14 +302,16 @@ function RegistryEditor({
       </label>
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-dim text-xs">pull_policy</span>
-        <select
-          className="input mono"
+        <Dropdown
+          mode="single"
+          className="mono"
+          options={[
+            { value: "all", label: "all" },
+            { value: "restricted", label: "restricted" },
+          ]}
           value={pullPolicy}
-          onChange={(e) => setPullPolicy(e.target.value as "all" | "restricted")}
-        >
-          <option value="all">all</option>
-          <option value="restricted">restricted</option>
-        </select>
+          onChange={(v) => setPullPolicy(v as "all" | "restricted")}
+        />
       </label>
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-dim text-xs">

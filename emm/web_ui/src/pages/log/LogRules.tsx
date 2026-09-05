@@ -14,6 +14,7 @@ import {
   User,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { useMockMode } from "@/api/auth/useQuery";
 import { LogRulesLive } from "./LogRulesLive";
 
@@ -68,6 +69,8 @@ const GROUP_META: Record<string, { count: number; icon: typeof Filter }> = {
 export function LogRules() {
   const mockMode = useMockMode();
   const [selected, setSelected] = useState<string>("r1");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const groups = Array.from(new Set(RULES.map((r) => r.group)));
 
   if (!mockMode) {
@@ -87,17 +90,28 @@ export function LogRules() {
           </div>
           <div className="mt-2 flex items-center gap-2 text-xs text-dim flex-wrap">
             <Filter className="w-3 h-3" />
-            <select className="surface-2 border border-token rounded px-2 py-0.5">
-              <option>все типы</option>
-              <option>severity-override</option>
-              <option>suppression</option>
-              <option>mark-as-known</option>
-              <option>forward</option>
-            </select>
-            <select className="surface-2 border border-token rounded px-2 py-0.5">
-              <option>active</option>
-              <option>muted</option>
-            </select>
+            <Dropdown
+              mode="single"
+              options={[
+                { value: "severity-override", label: "severity-override" },
+                { value: "suppression", label: "suppression" },
+                { value: "mark-as-known", label: "mark-as-known" },
+                { value: "forward", label: "forward" },
+              ]}
+              value={typeFilter}
+              onChange={setTypeFilter}
+              placeholder="все типы"
+            />
+            <Dropdown
+              mode="single"
+              options={[
+                { value: "active", label: "active" },
+                { value: "muted", label: "muted" },
+              ]}
+              value={statusFilter}
+              onChange={setStatusFilter}
+              placeholder="active"
+            />
             <span className="ml-auto">24 шт</span>
           </div>
         </div>

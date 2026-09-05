@@ -14,6 +14,7 @@ import {
   Flame,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { Dropdown } from "@/components/ui/Dropdown";
 import {
   EVENT_ROWS,
   Facets,
@@ -92,6 +93,13 @@ interface LogMiddleProps {
   showLive: boolean;
 }
 
+const TIME_RANGE_OPTIONS = [
+  { value: "1h", label: "за 1ч" },
+  { value: "24h", label: "за 24ч" },
+  { value: "7d", label: "за 7д" },
+  { value: "custom", label: "произвольно…" },
+];
+
 export function LogMiddle({
   selected,
   onSelect,
@@ -99,6 +107,7 @@ export function LogMiddle({
   onLiveToggle,
   showLive,
 }: LogMiddleProps) {
+  const [timeRange, setTimeRange] = useState("24h");
   return (
     <section className="w-[400px] shrink-0 border-r border-token surface flex flex-col min-h-0">
       <div className="border-b border-token px-3 py-2 flex flex-col gap-2">
@@ -111,15 +120,12 @@ export function LogMiddle({
         </div>
         <div className="flex items-center gap-2 text-xs">
           <Clock className="w-3.5 h-3.5 text-dim" />
-          <select
-            defaultValue="24h"
-            className="surface-2 border border-token rounded px-2 py-0.5 text-xs"
-          >
-            <option value="1h">за 1ч</option>
-            <option value="24h">за 24ч</option>
-            <option value="7d">за 7д</option>
-            <option value="custom">произвольно…</option>
-          </select>
+          <Dropdown
+            mode="single"
+            options={TIME_RANGE_OPTIONS}
+            value={timeRange}
+            onChange={setTimeRange}
+          />
           {showLive ? (
             <button
               onClick={onLiveToggle}

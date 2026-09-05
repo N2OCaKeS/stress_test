@@ -97,9 +97,12 @@ describe("AclModal — выбор роли", () => {
       );
     });
 
-    const select = await screen.findByLabelText("role_name");
-    expect(select.tagName).toBe("SELECT");
-    expect(screen.getByRole("option", { name: /reader/ })).toBeTruthy();
+    const trigger = await screen.findByLabelText(/role_name/);
+    expect(trigger.tagName).toBe("BUTTON");
+    expect(trigger).toHaveAttribute("aria-haspopup", "listbox");
+
+    fireEvent.click(trigger);
+    expect(await screen.findByRole("option", { name: /reader/ })).toBeTruthy();
     expect(screen.getByRole("option", { name: /operator/ })).toBeTruthy();
   });
 
@@ -159,14 +162,28 @@ describe("AclModal — выбор роли", () => {
       />,
     );
 
-    const select = (await screen.findByLabelText("role_name")) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "reader" } });
+    await waitFor(() => {
+      expect(listServiceRolesMock).toHaveBeenCalledWith(
+        "dep_core",
+        "secret_service",
+      );
+    });
+
+    // Дефолт роли — "reader", выбираем другую опцию, чтобы реально
+    // проверить прохождение выбора через Dropdown в submit-контракт.
+    const trigger = await waitFor(() => {
+      const el = screen.getByLabelText(/role_name/);
+      expect(el.tagName).toBe("BUTTON");
+      return el;
+    });
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole("option", { name: /^operator$/ }));
     fireEvent.click(screen.getByRole("button", { name: /Выдать/ }));
 
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledWith({
         dept_id: "dep_core",
-        role_name: "reader",
+        role_name: "operator",
         can_read: true,
         can_write: false,
       });
@@ -188,8 +205,9 @@ describe("AclModal — выбор роли", () => {
     // Пока dept не выбран — запроса ролей нет.
     expect(listServiceRolesMock).not.toHaveBeenCalled();
 
-    const deptSelect = screen.getByRole("combobox");
-    fireEvent.change(deptSelect, { target: { value: "dep_dev" } });
+    const deptTrigger = screen.getByLabelText(/отдел/);
+    fireEvent.click(deptTrigger);
+    fireEvent.click(await screen.findByRole("option", { name: "Разработка" }));
 
     await waitFor(() => {
       expect(listServiceRolesMock).toHaveBeenCalledWith(
@@ -225,9 +243,10 @@ describe("UserAclModal — выбор пользователя", () => {
       });
     });
 
-    const select = (await screen.findByLabelText("пользователь")) as HTMLSelectElement;
-    expect(select.tagName).toBe("SELECT");
-    fireEvent.change(select, { target: { value: "usr_2" } });
+    const trigger = await screen.findByLabelText(/пользователь/);
+    expect(trigger.tagName).toBe("BUTTON");
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole("option", { name: "bob" }));
     fireEvent.click(screen.getByRole("button", { name: /Выдать/ }));
 
     await waitFor(() => {

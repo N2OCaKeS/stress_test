@@ -20,6 +20,7 @@ import {
   Copy,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { Dropdown } from "@/components/ui/Dropdown";
 
 interface CredRow {
   id: string;
@@ -66,6 +67,7 @@ const CROSS: CrossRow[] = [
 
 export function SecretDepAdmin() {
   const [selected, setSelected] = useState<string>("alice-personal-vault");
+  const [grouping, setGrouping] = useState("scope");
 
   return (
     <Shell breadcrumb="secret_service / credentials">
@@ -80,11 +82,16 @@ export function SecretDepAdmin() {
           </div>
           <div className="mt-2 flex items-center gap-2 text-xs text-dim">
             <span>Группировка:</span>
-            <select className="surface-2 border border-token rounded px-2 py-0.5">
-              <option>область (my / my_dep / cross_dep)</option>
-              <option>тип</option>
-              <option>владелец</option>
-            </select>
+            <Dropdown
+              mode="single"
+              options={[
+                { value: "scope", label: "область (my / my_dep / cross_dep)" },
+                { value: "kind", label: "тип" },
+                { value: "owner", label: "владелец" },
+              ]}
+              value={grouping}
+              onChange={setGrouping}
+            />
             <span className="ml-auto">12 шт</span>
           </div>
         </div>

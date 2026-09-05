@@ -17,6 +17,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { SecretDetailPanel } from "./SecretDepAdmin";
 
 interface Row {
@@ -57,6 +58,7 @@ const GUEST: Row[] = [
 
 export function SecretAccountAdmin() {
   const [selected, setSelected] = useState<string>("prod-postgres-master");
+  const [grouping, setGrouping] = useState("by_dept");
 
   const renderGroup = (rows: Row[]) =>
     rows.map((row) => {
@@ -106,12 +108,17 @@ export function SecretAccountAdmin() {
           </div>
           <div className="mt-2 flex items-center gap-2 text-xs text-dim">
             <span>Группировка:</span>
-            <select className="surface-2 border border-token rounded px-2 py-0.5">
-              <option>по отделам</option>
-              <option>область (my / my_dep / cross_dep)</option>
-              <option>тип</option>
-              <option>владелец</option>
-            </select>
+            <Dropdown
+              mode="single"
+              options={[
+                { value: "by_dept", label: "по отделам" },
+                { value: "scope", label: "область (my / my_dep / cross_dep)" },
+                { value: "kind", label: "тип" },
+                { value: "owner", label: "владелец" },
+              ]}
+              value={grouping}
+              onChange={setGrouping}
+            />
             <span className="ml-auto">70 шт</span>
           </div>
         </div>

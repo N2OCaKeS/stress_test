@@ -6,6 +6,7 @@ import {
   type ServiceAccessResponse,
 } from "@/api/auth/authorization";
 import type { ServiceName } from "@/api/auth/types";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { useToast } from "@/contexts/ToastContext";
 import { useDeptLabel } from "@/lib/labels";
 import { ServiceKeyFields } from "./ServiceKeyFields";
@@ -84,17 +85,13 @@ export function SecurityServiceAccess() {
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">service_name</span>
-            <select
-              className="input mono"
+            <Dropdown
+              mode="single"
+              className="mono"
+              options={KNOWN_SERVICES.map((s) => ({ value: s, label: s }))}
               value={service}
-              onChange={(e) => setService(e.target.value as ServiceName)}
-            >
-              {KNOWN_SERVICES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setService(v as ServiceName)}
+            />
           </label>
         </div>
         <div className="mt-3">

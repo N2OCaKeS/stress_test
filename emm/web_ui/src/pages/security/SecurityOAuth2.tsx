@@ -13,6 +13,7 @@ import type {
   OAuth2Client,
   OAuth2ClientCreatedResponse,
 } from "@/api/auth/types";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { useToast } from "@/contexts/ToastContext";
 import { useDeptLabel } from "@/lib/labels";
 
@@ -481,14 +482,15 @@ function AuthorizeTester() {
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">code_challenge_method</span>
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            options={[
+              { value: "S256", label: "S256" },
+              { value: "plain", label: "plain" },
+            ]}
             value={method}
-            onChange={(e) => setMethod(e.target.value as "S256" | "plain")}
-          >
-            <option value="S256">S256</option>
-            <option value="plain">plain</option>
-          </select>
+            onChange={(v) => setMethod(v as "S256" | "plain")}
+          />
         </label>
       </div>
       <div className="mt-3">
@@ -541,18 +543,17 @@ function TokenTester() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">grant_type</span>
-          <select
-            className="input"
+          <Dropdown
+            mode="single"
+            options={[
+              { value: "client_credentials", label: "client_credentials" },
+              { value: "authorization_code", label: "authorization_code" },
+            ]}
             value={grant}
-            onChange={(e) =>
-              setGrant(
-                e.target.value as "client_credentials" | "authorization_code",
-              )
+            onChange={(v) =>
+              setGrant(v as "client_credentials" | "authorization_code")
             }
-          >
-            <option value="client_credentials">client_credentials</option>
-            <option value="authorization_code">authorization_code</option>
-          </select>
+          />
         </label>
         <div />
         <label className="flex flex-col gap-1 text-sm">

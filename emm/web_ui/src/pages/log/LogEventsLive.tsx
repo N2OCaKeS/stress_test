@@ -23,6 +23,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
@@ -259,61 +260,38 @@ export function LogEventsLive() {
         {showFilters && (
           <div className="flex flex-col gap-1.5 text-[11px] text-dim pt-1">
             <div className="grid grid-cols-3 gap-1">
-              <select
-                className="surface-2 border border-token rounded px-1 py-0.5"
+              <Dropdown
+                mode="single"
+                options={SEVERITIES.map((s) => ({ value: s, label: s }))}
                 value={filters.severity}
-                onChange={(e) => setFilter("severity", e.target.value)}
-                title="Важность"
-              >
-                <option value="">важность</option>
-                {SEVERITIES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="surface-2 border border-token rounded px-1 py-0.5"
+                onChange={(v) => setFilter("severity", v)}
+                placeholder="важность"
+              />
+              <Dropdown
+                mode="single"
+                options={serviceOptions.map((s) => ({ value: s, label: s }))}
                 value={filters.service}
-                onChange={(e) => setFilter("service", e.target.value)}
-                title="Сервис-источник"
-              >
-                <option value="">сервис</option>
-                {serviceOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="surface-2 border border-token rounded px-1 py-0.5"
+                onChange={(v) => setFilter("service", v)}
+                placeholder="сервис"
+              />
+              <Dropdown
+                mode="single"
+                options={STATUSES.map((s) => ({ value: s, label: s }))}
                 value={filters.status}
-                onChange={(e) => setFilter("status", e.target.value)}
-                title="Статус"
-              >
-                <option value="">статус</option>
-                {STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setFilter("status", v)}
+                placeholder="статус"
+              />
             </div>
 
             {deptOptions.length > 0 ? (
-              <select
-                className="surface-2 border border-token rounded px-1 py-0.5 w-full"
+              <Dropdown
+                mode="single"
+                searchable
+                options={deptOptions.map(([id, name]) => ({ value: id, label: name }))}
                 value={filters.departmentId}
-                onChange={(e) => setFilter("departmentId", e.target.value)}
-                title="Отдел (department_id)"
-              >
-                <option value="">отдел (любой)</option>
-                {deptOptions.map(([id, name]) => (
-                  <option key={id} value={id}>
-                    {name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setFilter("departmentId", v)}
+                placeholder="отдел (любой)"
+              />
             ) : (
               // У loging_admin / loging_reader нет доступа к списку отделов
               // (он account_admin-only), поэтому карта имён пустая — даём

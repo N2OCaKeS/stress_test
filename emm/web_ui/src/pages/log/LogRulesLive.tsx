@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery } from "@/api/auth/useQuery";
@@ -457,49 +458,40 @@ function RuleForm({
               label="match_status"
               help="Исход события (success / failure / denied / warning). Пусто — любой исход."
             >
-              <select
-                className="surface-2 border border-token rounded px-2 py-1 w-full"
+              <Dropdown
+                mode="single"
+                options={STATUSES.map((s) => ({ value: s, label: s }))}
                 value={matchStatus}
-                onChange={(e) => setMatchStatus(e.target.value)}
-              >
-                <option value="">любой</option>
-                {STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+                onChange={setMatchStatus}
+                placeholder="любой"
+              />
             </Field>
             <Field
               label="match_severity"
               help="Уровень важности события (TRACE…CRITICAL). Пусто — любой уровень."
             >
-              <select
-                className="surface-2 border border-token rounded px-2 py-1 w-full"
+              <Dropdown
+                mode="single"
+                options={SEVERITIES.map((s) => ({ value: s, label: s }))}
                 value={matchSeverity}
-                onChange={(e) => setMatchSeverity(e.target.value)}
-              >
-                <option value="">любая</option>
-                {SEVERITIES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+                onChange={setMatchSeverity}
+                placeholder="любая"
+              />
             </Field>
             <Field
               label="match_allowed"
               help="Фильтр по флагу доступа: только разрешённые (allowed) или только отклонённые (denied) события. Пусто — оба."
             >
-              <select
-                className="surface-2 border border-token rounded px-2 py-1 w-full"
+              <Dropdown
+                mode="single"
+                options={[
+                  { value: "true", label: "только allowed" },
+                  { value: "false", label: "только denied" },
+                ]}
                 value={matchAllowed}
-                onChange={(e) => setMatchAllowed(e.target.value)}
-              >
-                <option value="">любой</option>
-                <option value="true">только allowed</option>
-                <option value="false">только denied</option>
-              </select>
+                onChange={setMatchAllowed}
+                placeholder="любой"
+              />
             </Field>
           </div>
 
@@ -508,36 +500,25 @@ function RuleForm({
               label="effect *"
               help="Что сделать с совпавшим событием: SUPPRESS — отбросить, ALLOW — пропустить как есть, OVERRIDE_SEVERITY — переписать уровень важности."
             >
-              <select
-                className="surface-2 border border-token rounded px-2 py-1 w-full"
+              <Dropdown
+                mode="single"
+                options={EFFECTS.map((eff) => ({ value: eff, label: eff }))}
                 value={effect}
-                onChange={(e) => setEffect(e.target.value as RuleEffect)}
-              >
-                {EFFECTS.map((eff) => (
-                  <option key={eff} value={eff}>
-                    {eff}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setEffect(v as RuleEffect)}
+              />
             </Field>
             <Field
               label={`effect_severity${needsEffectSeverity ? " *" : ""}`}
               help="Новый уровень важности для эффекта OVERRIDE_SEVERITY. Для остальных эффектов не используется."
             >
-              <select
-                className="surface-2 border border-token rounded px-2 py-1 w-full"
+              <Dropdown
+                mode="single"
+                options={SEVERITIES.map((s) => ({ value: s, label: s }))}
                 value={effectSeverity}
-                onChange={(e) => setEffectSeverity(e.target.value)}
+                onChange={setEffectSeverity}
+                placeholder="—"
                 disabled={!needsEffectSeverity}
-                required={needsEffectSeverity}
-              >
-                <option value="">—</option>
-                {SEVERITIES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              />
             </Field>
             <Field
               label="priority"

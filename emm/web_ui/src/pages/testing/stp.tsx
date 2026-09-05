@@ -764,10 +764,10 @@ function StpStatusTable({
                     return (
                       <td
                         key={combo.idx}
-                        className="stp-cell-filtered-out border-b border-token px-2 py-1 text-center"
+                        className="stp-cell-not_run border-b border-token px-2 py-1 text-center"
                         title="Скрыто фильтром по статусу"
                       >
-                        ·
+                        —
                       </td>
                     );
                   }

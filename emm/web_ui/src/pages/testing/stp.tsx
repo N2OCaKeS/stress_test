@@ -157,11 +157,19 @@ function buildStpDataset(version: OsVersion, versionIndex: number): StpDataset {
     }
   }
 
+  // Каждый тест-кейс закреплён ровно за ОДНИМ стендом (как в реальном
+  // allta_app — тест привязан к конкретному топику/окружению), а не гоняется
+  // сразу на всех: на «чужих» стендах для него всегда not_run.
   const cells = new Map<string, StpCell>();
   let i = 0;
-  for (const test of testCases) {
+  testCases.forEach((test, testIndex) => {
+    const assignedStandId = stands[testIndex % stands.length].id;
     for (const combo of combos) {
       i += 1;
+      if (combo.standId !== assignedStandId) {
+        cells.set(`${test.code}|${combo.idx}`, { status: "not_run", logAvailable: false, seconds: null });
+        continue;
+      }
       const seed = i % 10;
       let status: StpStatus;
       if (pattern === "mostly_done") status = seed === 0 ? "failed" : seed === 1 ? "in_progress" : "done";
@@ -175,7 +183,7 @@ function buildStpDataset(version: OsVersion, versionIndex: number): StpDataset {
         seconds: finished ? durationSeconds(i * 7 + versionIndex * 13) : null,
       });
     }
-  }
+  });
   return { testCases, combos, cells };
 }
 

@@ -448,6 +448,44 @@ input[type="radio"],
 select {
   accent-color: var(--accent);
 }
+
+/* Toggle — свитч-слайдер поверх настоящего чекбокса (components/ui/Toggle.tsx).
+   Инпут растянут прозрачным поверх дорожки (клик/клавиатура/AT работают как
+   обычно), видимый бегунок — отдельный span, сдвигается классом на треке. */
+.toggle-track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--bg-soft-2);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+.toggle-track-on { background: var(--accent); border-color: var(--accent); }
+.toggle-input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.toggle-input:disabled { cursor: not-allowed; }
+.toggle-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 0.15s;
+}
+.toggle-track-on .toggle-thumb { transform: translateX(14px); background: var(--accent-fg); }
+.toggle-input:disabled ~ .toggle-thumb { opacity: 0.6; }
+.toggle-input:focus-visible ~ .toggle-thumb { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pat-row {
   display: grid;
   grid-template-columns: 1fr 130px 90px;
@@ -916,6 +954,9 @@ html[data-theme="blue"] .gradient-bg {
   flex-direction: column;
   max-height: 90vh;
 }
+/* Варианты ширины поверх дефолтного `.modal-content` (520px) — components/ui/Modal.tsx. */
+.modal-content--md { max-width: 720px; }
+.modal-content--lg { max-width: 1100px; }
 .modal-header {
   padding: 14px 18px;
   border-bottom: 1px solid var(--border);

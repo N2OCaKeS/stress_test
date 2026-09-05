@@ -618,7 +618,10 @@ function StpStatusTable({
   const [cellTarget, setCellTarget] = useState<CellTarget | null>(null);
   const [logTarget, setLogTarget] = useState<{ stand: Stand; item: QueueItem } | null>(null);
 
-  const visibleCombos = useMemo(
+  // Комбинации, прошедшие фильтры измерений (стенд/режим/ядро) — но ещё без
+  // учёта статуса: сначала по ним считаем видимые строки, а уже видимые
+  // строки определяют, какие из этих комбинаций реально остаются столбцами.
+  const baseCombos = useMemo(
     () => dataset.combos.filter((c) => matchesCombo(filters, c)),
     [dataset, filters],
   );
@@ -627,19 +630,28 @@ function StpStatusTable({
     let list = dataset.testCases.filter((test) => {
       if (filters.test.size > 0 && !filters.test.has(test.code)) return false;
       if (statusFilter.size === 0) return true;
-      return visibleCombos.some((c) => statusFilter.has(dataset.cells.get(`${test.code}|${c.idx}`)!.status));
+      return baseCombos.some((c) => statusFilter.has(dataset.cells.get(`${test.code}|${c.idx}`)!.status));
     });
     if (sort.column === "name") {
       list = [...list].sort((a, b) => naturalCompare(a.code, b.code) * sort.dir);
     } else if (sort.column === "failcount") {
       list = [...list].sort((a, b) => {
-        const fa = visibleCombos.filter((c) => dataset.cells.get(`${a.code}|${c.idx}`)?.status === "failed").length;
-        const fb = visibleCombos.filter((c) => dataset.cells.get(`${b.code}|${c.idx}`)?.status === "failed").length;
+        const fa = baseCombos.filter((c) => dataset.cells.get(`${a.code}|${c.idx}`)?.status === "failed").length;
+        const fb = baseCombos.filter((c) => dataset.cells.get(`${b.code}|${c.idx}`)?.status === "failed").length;
         return (fa - fb) * sort.dir;
       });
     }
     return list;
-  }, [dataset, visibleCombos, filters.test, statusFilter, sort]);
+  }, [dataset, baseCombos, filters.test, statusFilter, sort]);
+
+  // Столбец без единого совпадения статуса среди уже отфильтрованных строк
+  // тоже скрывается — симметрично тому, как скрываются строки.
+  const visibleCombos = useMemo(() => {
+    if (statusFilter.size === 0) return baseCombos;
+    return baseCombos.filter((c) =>
+      rows.some((test) => statusFilter.has(dataset.cells.get(`${test.code}|${c.idx}`)!.status)),
+    );
+  }, [baseCombos, rows, statusFilter, dataset]);
 
   const setSortColumn = (column: "name" | "failcount") => {
     setSort((current) => (current.column === column ? { column, dir: current.dir === 1 ? -1 : 1 } : { column, dir: 1 }));

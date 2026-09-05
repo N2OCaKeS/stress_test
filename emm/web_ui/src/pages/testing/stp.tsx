@@ -412,7 +412,7 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   // Группировка столбцов — предпочтение отображения, не завязанное на
   // конкретную версию, поэтому при смене РЦ не сбрасывается.
-  const [columnGroupBy, setColumnGroupBy] = useState<StpColumnGroupBy>("none");
+  const [columnGrouping, setColumnGrouping] = useState<StpColumnGrouping>(DEFAULT_COLUMN_GROUPING);
   // Смена РЦ в средней панели даёт другой набор стендов/ядер — старый выбор
   // фильтров может не иметь смысла для новой версии, поэтому сбрасываем.
   useEffect(() => {
@@ -490,8 +490,8 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
         onStatusFilterChange={setStatusFilter}
         standOptions={standOptions}
         kernelOptions={kernelOptions}
-        columnGroupBy={columnGroupBy}
-        onColumnGroupByChange={setColumnGroupBy}
+        columnGrouping={columnGrouping}
+        onColumnGroupingChange={setColumnGrouping}
       />
 
       <StpStatusTable
@@ -499,14 +499,14 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
         dataset={dataset}
         filters={filters}
         statusFilter={statusFilter}
-        columnGroupBy={columnGroupBy}
+        columnGrouping={columnGrouping}
       />
       <StpTimingTable
         version={version}
         dataset={dataset}
         filters={filters}
         fullCombos={fullCombos}
-        columnGroupBy={columnGroupBy}
+        columnGrouping={columnGrouping}
       />
     </div>
   );
@@ -539,30 +539,36 @@ function matchesCombo(filters: StpSharedFilters, c: StpCombo): boolean {
   );
 }
 
-export type StpColumnGroupBy = "none" | "stand" | "kernel" | "mode";
+export type StpDimension = "stand" | "kernel" | "mode";
+/** Три уровня приоритета группировки столбцов, по одному измерению на
+ * уровень (`"none"` — уровень не задействован). Один и то же измерение
+ * нельзя выбрать дважды — это обеспечивают опции конкретного уровня
+ * (`columnGroupingOptionsForLevel`), а не отдельная проверка при смене. */
+export type StpColumnGrouping = [StpDimension | "none", StpDimension | "none", StpDimension | "none"];
 
-const COLUMN_GROUP_OPTIONS: DropdownOption[] = [
-  { value: "none", label: "Без группировки" },
-  { value: "stand", label: "По стенду" },
-  { value: "kernel", label: "По ядру" },
-  { value: "mode", label: "По режиму" },
-];
+const DIMENSION_LABEL: Record<StpDimension, string> = { stand: "Стенд", kernel: "Ядро", mode: "Режим" };
 
-/** Переупорядочивает столбцы так, чтобы выбранное измерение шло сплошными
- * блоками (сначала все ядра/стенды/режимы с одним значением, потом со
- * следующим), сохраняя внутри блока естественный порядок остальных осей. */
-function sortCombosForGrouping(combos: StpCombo[], groupBy: StpColumnGroupBy): StpCombo[] {
-  if (groupBy === "none") return combos;
-  const key = (c: StpCombo): [string, string, string] => {
-    if (groupBy === "stand") return [c.standName, c.kernel, c.mode];
-    if (groupBy === "kernel") return [c.kernel, c.mode, c.standName];
-    return [c.mode, c.kernel, c.standName];
-  };
+// Порядок по умолчанию — как в реальной таблице СТП на life.astralinux.ru:
+// сначала режим защищённости, внутри него стенд, внутри стенда — ядро.
+const DEFAULT_COLUMN_GROUPING: StpColumnGrouping = ["mode", "stand", "kernel"];
+
+function columnGroupingOptionsForLevel(grouping: StpColumnGrouping, level: number): DropdownOption[] {
+  const usedElsewhere = new Set(grouping.filter((_, i) => i !== level && grouping[i] !== "none"));
+  const available = (["mode", "stand", "kernel"] as StpDimension[]).filter((d) => !usedElsewhere.has(d));
+  return [{ value: "none", label: "—" }, ...available.map((d) => ({ value: d, label: DIMENSION_LABEL[d] }))];
+}
+
+/** Переупорядочивает столбцы так, чтобы выбранные измерения шли сплошными
+ * блоками в заданном порядке приоритета (сначала все значения первого
+ * измерения, внутри них — второго, и т.д.), сохраняя стабильный порядок
+ * внутри самого мелкого блока. */
+function sortCombosForGrouping(combos: StpCombo[], grouping: StpColumnGrouping): StpCombo[] {
+  const active = grouping.filter((d): d is StpDimension => d !== "none");
+  if (active.length === 0) return combos;
+  const keyOf = (c: StpCombo, dim: StpDimension) => (dim === "stand" ? c.standName : dim === "kernel" ? c.kernel : c.mode);
   return [...combos].sort((a, b) => {
-    const ka = key(a);
-    const kb = key(b);
-    for (let i = 0; i < ka.length; i += 1) {
-      const cmp = naturalCompare(ka[i], kb[i]);
+    for (const dim of active) {
+      const cmp = naturalCompare(keyOf(a, dim), keyOf(b, dim));
       if (cmp !== 0) return cmp;
     }
     return a.idx - b.idx;
@@ -576,8 +582,8 @@ function StpFilterBar({
   onStatusFilterChange,
   standOptions,
   kernelOptions,
-  columnGroupBy,
-  onColumnGroupByChange,
+  columnGrouping,
+  onColumnGroupingChange,
 }: {
   filters: StpSharedFilters;
   onFiltersChange: (next: StpSharedFilters) => void;
@@ -585,8 +591,8 @@ function StpFilterBar({
   onStatusFilterChange: (next: Set<string>) => void;
   standOptions: DropdownOption[];
   kernelOptions: DropdownOption[];
-  columnGroupBy: StpColumnGroupBy;
-  onColumnGroupByChange: (next: StpColumnGroupBy) => void;
+  columnGrouping: StpColumnGrouping;
+  onColumnGroupingChange: (next: StpColumnGrouping) => void;
 }) {
   const modeOptions: DropdownOption[] = STP_MODES.map((m) => ({ value: m, label: m }));
   const testOptions: DropdownOption[] = FULL_TEST_CATALOG.map((t) => ({ value: t.code, label: `${t.code} · ${t.title}` }));
@@ -642,13 +648,21 @@ function StpFilterBar({
         onChange={onStatusFilterChange}
       />
       <span className="self-stretch border-l border-token" />
-      <Dropdown
-        mode="single"
-        label="Группировка столбцов"
-        options={COLUMN_GROUP_OPTIONS}
-        value={columnGroupBy}
-        onChange={(v) => onColumnGroupByChange(v as StpColumnGroupBy)}
-      />
+      <span className="text-xs text-dim font-medium">Группировка столбцов:</span>
+      {([0, 1, 2] as const).map((level) => (
+        <Dropdown
+          key={level}
+          mode="single"
+          label={level === 0 ? "Сначала по" : level === 1 ? "затем по" : "и по"}
+          options={columnGroupingOptionsForLevel(columnGrouping, level)}
+          value={columnGrouping[level]}
+          onChange={(v) => {
+            const next = [...columnGrouping] as StpColumnGrouping;
+            next[level] = v as StpDimension | "none";
+            onColumnGroupingChange(next);
+          }}
+        />
+      ))}
       <button
         type="button"
         className="btn btn-sm ml-auto inline-flex items-center gap-1.5"
@@ -675,13 +689,13 @@ function StpStatusTable({
   dataset,
   filters,
   statusFilter,
-  columnGroupBy,
+  columnGrouping,
 }: {
   version: OsVersion;
   dataset: StpDataset;
   filters: StpSharedFilters;
   statusFilter: Set<string>;
-  columnGroupBy: StpColumnGroupBy;
+  columnGrouping: StpColumnGrouping;
 }) {
   const [sort, setSort] = useState<{ column: "name" | "failcount" | null; dir: 1 | -1 }>({ column: null, dir: 1 });
   const [cellTarget, setCellTarget] = useState<CellTarget | null>(null);
@@ -691,8 +705,8 @@ function StpStatusTable({
   // учёта статуса: сначала по ним считаем видимые строки, а уже видимые
   // строки определяют, какие из этих комбинаций реально остаются столбцами.
   const baseCombos = useMemo(
-    () => sortCombosForGrouping(dataset.combos.filter((c) => matchesCombo(filters, c)), columnGroupBy),
-    [dataset, filters, columnGroupBy],
+    () => sortCombosForGrouping(dataset.combos.filter((c) => matchesCombo(filters, c)), columnGrouping),
+    [dataset, filters, columnGrouping],
   );
 
   const rows = useMemo(() => {
@@ -980,13 +994,13 @@ function StpTimingTable({
   dataset,
   filters,
   fullCombos,
-  columnGroupBy,
+  columnGrouping,
 }: {
   version: OsVersion;
   dataset: StpDataset;
   filters: StpSharedFilters;
   fullCombos: StpCombo[];
-  columnGroupBy: StpColumnGroupBy;
+  columnGrouping: StpColumnGrouping;
 }) {
   const [scope, setScope] = useState<TimingScope>("run");
 
@@ -998,8 +1012,8 @@ function StpTimingTable({
   );
 
   const visibleCombos = useMemo(
-    () => sortCombosForGrouping(combos.filter((c) => matchesCombo(filters, c)), columnGroupBy),
-    [combos, filters, columnGroupBy],
+    () => sortCombosForGrouping(combos.filter((c) => matchesCombo(filters, c)), columnGrouping),
+    [combos, filters, columnGrouping],
   );
 
   const lookupSeconds = useCallback(

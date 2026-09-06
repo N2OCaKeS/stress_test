@@ -73,6 +73,8 @@ export interface DiskResponse {
   used_gb: number | null;
   /** Процент занятости диска. `null` — неизвестно. */
   used_percent: number | null;
+  /** Точки монтирования с последней инвентаризации. */
+  mountpoints?: string[];
   model: string | null;
   is_system: boolean;
   created_at: Iso8601;
@@ -1411,4 +1413,25 @@ export interface TaskCancelResult {
   cancelled_at: Iso8601;
   cancelled_by: string | null;
   cancel_reason: string | null;
+}
+
+// ── host/diskspace ───────────────────────────────────────────────────────────
+
+/**
+ * Одна отслеживаемая точка на хосте самого server_service (не managed
+ * test-сервера). `available: false` — путь не существует / нет прав / другая
+ * OSError на хосте; `error` даёт машинный код причины.
+ */
+export interface HostDiskPathUsage {
+  path: string;
+  total_gb: number | null;
+  used_gb: number | null;
+  used_percent: number | null;
+  available: boolean;
+  error: "not_mounted" | "permission_denied" | "unavailable" | null;
+}
+
+/** Ответ `GET /host/diskspace`. */
+export interface HostDiskUsageResponse {
+  paths: HostDiskPathUsage[];
 }

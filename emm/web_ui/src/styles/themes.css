@@ -23,6 +23,9 @@ html[data-theme="vscode-dark"] {
   --warn-fg: #ffffff;
   --info-bg: #1d4ed8;
   --info-fg: #ffffff;
+  --status-testing: var(--accent);
+  --status-acs: var(--warn);
+  --status-idle: var(--ok);
   --readonly-bg: #422006;
   --readonly-fg: #fde68a;
 }
@@ -50,6 +53,9 @@ html[data-theme="vscode-light"] {
   --warn-fg: #ffffff;
   --info-bg: #1d4ed8;
   --info-fg: #ffffff;
+  --status-testing: var(--accent);
+  --status-acs: var(--warn);
+  --status-idle: var(--ok);
   --readonly-bg: #fef3c7;
   --readonly-fg: #78350f;
 }
@@ -77,6 +83,9 @@ html[data-theme="dark-orange"] {
   --warn-fg: #ffffff;
   --info-bg: #0ea5ff;
   --info-fg: #1e1e1e;
+  --status-testing: #0ea5ff;
+  --status-acs: #ffaa00;
+  --status-idle: #22c55e;
   --readonly-bg: #422006;
   --readonly-fg: #fde68a;
 }
@@ -104,6 +113,9 @@ html[data-theme="blue"] {
   --warn-fg: #ffffff;
   --info-bg: #1d4ed8;
   --info-fg: #ffffff;
+  --status-testing: var(--accent);
+  --status-acs: var(--warn);
+  --status-idle: var(--ok);
   --readonly-bg: #1e3a5f;
   --readonly-fg: #fde68a;
 }
@@ -116,6 +128,7 @@ html[data-theme="blue"] {
 .text-danger { color: var(--danger); }
 .text-warn { color: var(--warn); }
 .text-ok { color: var(--ok); }
+.text-info { color: var(--info-bg); }
 .bg-accent { background: var(--accent); color: var(--accent-fg); }
 .border-token { border-color: var(--border); }
 .mono { font-family: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace; }
@@ -191,6 +204,9 @@ html[data-theme="blue"] {
 .badge-ok { color: var(--ok); border-color: var(--ok); }
 .badge-warn { color: var(--warn); border-color: var(--warn); }
 .badge-danger { color: var(--danger); border-color: var(--danger); }
+.badge-info { color: var(--info-bg); border-color: var(--info-bg); }
+.badge-idle { color: var(--status-idle); border-color: var(--status-idle); }
+.badge-acs { color: var(--status-acs); border-color: var(--status-acs); }
 
 .btn-danger { color: var(--danger); border-color: var(--danger); }
 
@@ -850,6 +866,17 @@ html[data-theme="blue"] .gradient-bg {
   border-color: var(--danger);
 }
 .btn-danger-solid:hover { filter: brightness(1.1); }
+
+/* Grey out disabled buttons regardless of variant color; listed together so this wins over the per-variant rules above no matter the source order. */
+.btn:disabled,
+.btn-primary:disabled,
+.btn-danger:disabled,
+.btn-danger-solid:disabled,
+.btn-ghost:disabled {
+  opacity: 0.45;
+  filter: grayscale(0.4);
+  cursor: not-allowed;
+}
 
 /* Toast */
 .toast {

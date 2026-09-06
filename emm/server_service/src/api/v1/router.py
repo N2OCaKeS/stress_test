@@ -29,6 +29,7 @@ from src.api.v1.endpoints.console import router as console_router
 from src.api.v1.endpoints.console import vm_router as vm_console_router
 from src.api.v1.endpoints.console_macros import router as console_macros_router
 from src.api.v1.endpoints.health import router as health_router
+from src.api.v1.endpoints.host_disk import router as host_disk_router
 from src.api.v1.endpoints.ipmi import list_router as ipmi_list_router
 from src.api.v1.endpoints.ipmi import list_router_legacy as ipmi_list_router_legacy
 from src.api.v1.endpoints.ipmi import router as ipmi_router
@@ -72,6 +73,10 @@ from src.api.v1.endpoints.worker_dispatch import (
 
 router = APIRouter()
 router.include_router(health_router, tags=["health"])
+# Локальная заполняемость диска на хосте самого server_service (не managed
+# test-серверов) — GET /host/diskspace, для карточки на главной. Любой
+# аутентифицированный актор, без DB.
+router.include_router(host_disk_router, tags=["host"])
 router.include_router(servers_router, tags=["servers"])
 router.include_router(server_accounts_router, tags=["server-accounts"])
 # VM-домен: /vms (CRUD + питание + бронь + by-number) и prepare-vms-hub под

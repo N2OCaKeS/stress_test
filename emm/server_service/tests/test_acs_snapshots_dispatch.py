@@ -423,6 +423,10 @@ class TestAcsSnapshotRestoreDoneCallback:
         row = (await db.execute(select(Server).where(Server.id == srv.id))).scalar_one()
         assert row.busy_state == BusyState.ACS
         assert row.busy_note == f"ACS_RESTORE_PREPARE_{osv.name}"
+        # os_version_id известен точно из payload'а восстановленного снимка —
+        # проставляется сразу, не дожидаясь следующего inventory.sync.
+        assert row.os_version_id == osv.id
+        assert row.os_last_synced_at is not None
         # Снимок прежней брони ЖИВ — снимет только последующий callback `prepared`.
         assert row.pre_acs_busy_snapshot == {
             "busy_state": "busy", "busy_user_id": "usr_prior_owner",

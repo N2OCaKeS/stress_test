@@ -1,13 +1,15 @@
 /**
  * Thin wrappers для разрозненных endpoint'ов `server_service`:
- * `installed-packages` (live SSH-проба), `users/inventory` (snapshot OS-юзеров)
- * и `tasks/{id}/cancel` (отмена worker-task'и).
+ * `installed-packages` (live SSH-проба), `users/inventory` (snapshot OS-юзеров),
+ * `tasks/{id}/cancel` (отмена worker-task'и) и `host/diskspace` (заполняемость
+ * диска на хосте самого server_service).
  *
- * Все три — независимые мелкие маршруты, под отдельный файл (servers/ipmi/
+ * Все независимые мелкие маршруты, под отдельный файл (servers/ipmi/
  * accounts/osVersions/permissions) не подходят. Источник истины:
  *   server_service/src/api/v1/endpoints/installed_packages.py
  *   server_service/src/api/v1/endpoints/inventory.py
  *   server_service/src/api/v1/endpoints/tasks.py
+ *   server_service/src/api/v1/endpoints/host_disk.py
  */
 
 import { apiGet, apiPost } from "@/api/client";
@@ -15,6 +17,7 @@ import { listWithTotal, type PaginatedList } from "@/api/auth/users";
 import type {
   BulkInstalledPackagesRequest,
   BulkInstalledPackagesResponse,
+  HostDiskUsageResponse,
   InstalledPackagesRequest,
   InstalledPackagesResult,
   ListTasksQuery,
@@ -224,4 +227,17 @@ export function cancelTask(
     `/server/v1/tasks/${taskId}/cancel`,
     body ?? {},
   );
+}
+
+// ── host/diskspace ───────────────────────────────────────────────────────────
+
+/**
+ * `GET /api/server/v1/host/diskspace` — заполняемость диска на хосте, где
+ * крутится сам server_service (`/`, `/srv/ftp`, `/home/partimag`), не по
+ * managed test-серверам. Локальный `shutil.disk_usage` на бэкенде, без БД.
+ * Каждый путь деградирует независимо (`available: false` + `error`) вместо
+ * 5xx — доступен любому аутентифицированному актору.
+ */
+export function getHostDiskUsage(): Promise<HostDiskUsageResponse> {
+  return apiGet<HostDiskUsageResponse>("/server/v1/host/diskspace");
 }

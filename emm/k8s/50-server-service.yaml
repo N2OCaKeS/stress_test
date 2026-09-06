@@ -38,6 +38,16 @@ data:
   KEYSTORE_BACKEND: k8s
   KEYSTORE_K8S_SECRET: dbos-server-encryption-keys
   KEYSTORE_K8S_NAMESPACE: dbos
+  # Заполняемость диска для карточки на главной (GET /host/diskspace) читает
+  # эти пути локальным `shutil.disk_usage`, а не по managed-серверу из
+  # инвентаря — emm и ACS/DRBL/Clonezilla-хост это один и тот же физический
+  # бокс (owner-confirmed). Контейнер видит хостовые `/`, `/srv/ftp`,
+  # `/home/partimag` только через hostPath-mount'ы ниже под своими путями
+  # (host `/` в container `/` смонтировать нельзя — раздавит собственный
+  # rootfs), поэтому эндпоинту нужно явно сказать, где их искать.
+  HOST_DISK_STAT_PATH_ROOT: /host-root
+  HOST_DISK_STAT_PATH_FTP: /host-srv-ftp
+  HOST_DISK_STAT_PATH_PARTIMAG: /host-home-partimag
 
 ---
 apiVersion: apps/v1
@@ -203,6 +213,23 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            # Read-only view хостовой файловой системы для /host/diskspace
+            # (см. HOST_DISK_STAT_PATH_* выше). Безопасно только потому, что
+            # это single-node деплой — replicas=2 всё равно шедулятся на один
+            # и тот же k3s-узел, так что hostPath не расходится между подами.
+            # Если платформа когда-нибудь переедет на несколько нод, это
+            # молча начнёт отражать диск случайного узла, а не эталонного
+            # ACS/DRBL-хоста — тогда нужен будет node-affinity/DaemonSet или
+            # выделенный sidecar-агент вместо hostPath.
+            - name: host-root
+              mountPath: /host-root
+              readOnly: true
+            - name: host-srv-ftp
+              mountPath: /host-srv-ftp
+              readOnly: true
+            - name: host-home-partimag
+              mountPath: /host-home-partimag
+              readOnly: true
           resources:
             requests: { cpu: "100m", memory: "128Mi" }
             limits:   { cpu: "500m", memory: "512Mi" }
@@ -210,6 +237,25 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
+        # hostPath'ы под /host/diskspace. `type: Directory` требует, чтобы
+        # путь уже существовал на узле на момент старта пода — иначе kubelet
+        # держит под в ContainerCreating вместо деградации. Это НЕ проверено
+        # в CI/песочнице (нет реального multi-fs хоста под рукой) — после
+        # деплоя на прод обязательно свериться:
+        #   kubectl exec -n dbos deploy/server-service -- \
+        #     sh -c 'df -h /host-root /host-srv-ftp /host-home-partimag'
+        - name: host-root
+          hostPath:
+            path: /
+            type: Directory
+        - name: host-srv-ftp
+          hostPath:
+            path: /srv/ftp
+            type: Directory
+        - name: host-home-partimag
+          hostPath:
+            path: /home/partimag
+            type: Directory
 
 ---
 apiVersion: v1

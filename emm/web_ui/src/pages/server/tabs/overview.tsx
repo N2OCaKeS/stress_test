@@ -20,9 +20,9 @@
  * задача `PATCH /vms/{id}`). Право управления и mock-режим приходят из `entity`,
  * свежую копию ВМ поднимаем наверх через `onEntityUpdated`.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { Cpu, Pencil } from "lucide-react";
+import { Cpu, Pencil, RefreshCw } from "lucide-react";
 import type {
   OsVersion,
   PowerState,
@@ -30,7 +30,7 @@ import type {
   ServerUpdateRequest,
   TaskDispatchResponse,
 } from "@/api/server/types";
-import { updateServer } from "@/api/server/servers";
+import { inventorySync, updateServer } from "@/api/server/servers";
 import { listOsVersions } from "@/api/server/osVersions";
 import { updateVm, updateVmIdentity } from "@/api/server/vms";
 import type { Vm, VmIdentityUpdateRequest, VmUpdateRequest } from "@/api/server/vms";
@@ -44,7 +44,7 @@ import { isDepAdmin } from "@/lib/rbac";
 import { formatLatencyMs } from "@/pages/server/_serverShared";
 import { FormRow, StatRow } from "@/pages/admin/services/_inline";
 import { Dropdown } from "@/components/ui/Dropdown";
-import { useTaskOutcome } from "@/api/server/useTaskOutcome";
+import { isTerminalTaskStatus, useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import type { EntityRef } from "./_entity";
 import { Badge } from "@/components/ui/Badge";
@@ -57,6 +57,7 @@ interface Props {
   /** Поднимает свежий объект в ServerDetail, чтобы header и соседние
    * вкладки обновились после PATCH без перезагрузки страницы. */
   onServerUpdated?: (next: Server) => void;
+  onChanged?: () => void;
   /** Дискриминатор сущности: сервер или ВМ. Без него вкладка работает в
    * прежнем серверном режиме по `server`. */
   entity?: EntityRef;
@@ -72,13 +73,20 @@ interface Props {
 export function OverviewTab({
   server,
   onServerUpdated,
+  onChanged,
   entity,
   onEntityUpdated,
 }: Props) {
   if (entity?.kind === "vm") {
     return <VmOverview entity={entity} onEntityUpdated={onEntityUpdated} />;
   }
-  return <ServerOverview server={server} onServerUpdated={onServerUpdated} />;
+  return (
+    <ServerOverview
+      server={server}
+      onServerUpdated={onServerUpdated}
+      onChanged={onChanged}
+    />
+  );
 }
 
 // ── Общий презентационный под-компонент ─────────────────────────────────────
@@ -139,9 +147,11 @@ function ParamCard({
 function ServerOverview({
   server,
   onServerUpdated,
+  onChanged,
 }: {
   server?: Server;
   onServerUpdated?: (next: Server) => void;
+  onChanged?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const { persona } = usePersona();
@@ -177,6 +187,7 @@ function ServerOverview({
       server={view}
       canEdit={canEdit}
       onEdit={() => setEditing(true)}
+      onChanged={onChanged}
     />
   );
 }
@@ -185,16 +196,49 @@ function ServerOverviewView({
   server,
   canEdit,
   onEdit,
+  onChanged,
 }: {
   server: Server;
   canEdit: boolean;
   onEdit: () => void;
+  onChanged?: () => void;
 }) {
   const deptLabel = useDeptLabel(server.department_id);
   const createdByLabel = useUserLabel(server.created_by);
   const busyUserLabel = useUserLabel(server.busy_user_id);
   const name = server.display_name ?? server.hostname;
   const dash = <span className="text-dim">—</span>;
+  const toast = useToast();
+  const [syncing, setSyncing] = useState(false);
+  const syncOutcome = useTaskOutcome();
+  const autoSyncedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (syncOutcome.tracked?.status === "succeeded") onChanged?.();
+  }, [syncOutcome.tracked?.status, onChanged]);
+
+  async function handleInventorySync(silent = false) {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const res = await inventorySync(server.id);
+      if (!silent) toast.success(`inventory_sync поставлен в очередь: ${res.task_id}`);
+      syncOutcome.track("inventory_sync", res.task_id, res.status);
+      onChanged?.();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "inventory_sync не запущен"));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  // Автозапуск inventory_sync при открытии вкладки — раз на сервер, без тоста.
+  useEffect(() => {
+    if (autoSyncedRef.current === server.id) return;
+    autoSyncedRef.current = server.id;
+    handleInventorySync(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [server.id]);
 
   const identity: ParamRow[] = [
     { label: "display_name", value: <span className="mono">{name}</span> },
@@ -347,14 +391,24 @@ function ServerOverviewView({
     },
   ];
 
-  const editAction = canEdit ? (
-    <Button variant="ghost"
-      className="flex items-center gap-1"
-      onClick={onEdit}
-    >
-      <Pencil className="w-4 h-4" /> Изменить
-    </Button>
-  ) : undefined;
+  const editAction = (
+    <div className="flex items-center gap-2 flex-wrap justify-end">
+      <Button
+        variant="ghost"
+        className="flex items-center gap-1"
+        onClick={() => handleInventorySync()}
+        disabled={syncing}
+      >
+        <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
+        Inventory sync
+      </Button>
+      {canEdit && (
+        <Button variant="ghost" className="flex items-center gap-1" onClick={onEdit}>
+          <Pencil className="w-4 h-4" /> Изменить
+        </Button>
+      )}
+    </div>
+  );
 
   return (
     <div className="p-5 flex flex-col gap-4">
@@ -363,7 +417,16 @@ function ServerOverviewView({
         subtitle="Базовые поля карточки сервера."
         action={editAction}
         rows={identity}
-      />
+      >
+        {syncOutcome.tracked && (
+          <div className="mt-3 text-xs text-dim">
+            inventory_sync: <span className="mono">{syncOutcome.tracked.status}</span>
+            {isTerminalTaskStatus(syncOutcome.tracked.status) && syncOutcome.tracked.error && (
+              <span className="text-danger"> · {syncOutcome.tracked.error}</span>
+            )}
+          </div>
+        )}
+      </ParamCard>
       <ParamCard title="Состояние" rows={state} />
       <ParamCard title="Сеть и OS" rows={network} />
       <ParamCard title="Метки времени" rows={timestamps} />

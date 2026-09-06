@@ -94,10 +94,11 @@ describe("Vm zone (mock mode)", () => {
   it("вкладка «Питание» несёт кнопки питания; бронь живёт в шапке карточки", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
     // Бронь вынесена в шапку карточки (как ReserveControl у сервера) — кнопка
-    // видна независимо от активной вкладки.
+    // видна независимо от активной вкладки. «Управление» теперь дефолт и
+    // несёт свою же секцию брони, поэтому кнопок может быть больше одной.
     expect(
-      await screen.findByRole("button", { name: /Забронировать/ }),
-    ).toBeInTheDocument();
+      (await screen.findAllByRole("button", { name: /Забронировать/ })).length,
+    ).toBeGreaterThanOrEqual(1);
     await openVmTab("Питание");
     expect(await screen.findByRole("button", { name: /Start/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Shutdown/ })).toBeInTheDocument();
@@ -106,7 +107,7 @@ describe("Vm zone (mock mode)", () => {
 
   it("карточка ВМ рендерит таб-бар без вкладок «Сеть»/«Обслуживание»", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
-    for (const label of ["Обзор", "Питание", "Снимки", "Диски"]) {
+    for (const label of ["Обзор", "Питание", "Снимки", "Диски", "Управление"]) {
       expect(
         await screen.findByRole("button", { name: label }),
       ).toBeInTheDocument();
@@ -115,7 +116,9 @@ describe("Vm zone (mock mode)", () => {
     expect(
       screen.queryByRole("button", { name: "Обслуживание" }),
     ).not.toBeInTheDocument();
-    // По умолчанию активна вкладка «Обзор» — видна секция «Идентификация».
+    // По умолчанию активна вкладка «Управление» — переключаемся на «Обзор»,
+    // чтобы проверить его секцию «Идентификация».
+    await openVmTab("Обзор");
     expect(
       await screen.findByRole("heading", { name: /Идентификация/ }),
     ).toBeInTheDocument();
@@ -172,6 +175,7 @@ describe("Vm zone (mock mode)", () => {
 
   it("вкладка «Обзор» открывает модалку изменения CPU/RAM", async () => {
     renderVm("/vm?hub=srv-07&id=vm-101");
+    await openVmTab("Обзор");
     fireEvent.click(await screen.findByRole("button", { name: /Изменить CPU\/RAM/ }));
     expect(await screen.findByText(/Ресурсы ВМ/)).toBeInTheDocument();
   });

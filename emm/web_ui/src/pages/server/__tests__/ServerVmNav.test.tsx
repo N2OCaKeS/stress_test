@@ -79,6 +79,9 @@ describe("Server list → открытие ВМ сохраняет средни�
 
     fireEvent.click(vmListRow("alse-1.8-rc"));
 
+    // Карточка ВМ открывается на вкладке «Управление» (дефолт); «Идентификация» — в «Обзор».
+    fireEvent.click(await screen.findByRole("button", { name: "Обзор" }));
+
     // Справа появилась карточка ВМ (VmDetail): шапка «К хабу» + блок «Идентификация».
     expect(
       await screen.findByRole("heading", { name: /Идентификация/ }),
@@ -100,6 +103,8 @@ describe("Server list → открытие ВМ сохраняет средни�
     await screen.findByText("alse-1.8-rc");
 
     fireEvent.click(vmListRow("alse-1.8-rc"));
+    // Карточка ВМ открывается на вкладке «Управление» (дефолт); «Идентификация» — в «Обзор».
+    fireEvent.click(await screen.findByRole("button", { name: "Обзор" }));
     await screen.findByRole("heading", { name: /Идентификация/ });
 
     // Активная строка получает класс active (на обёртке .cred-row).

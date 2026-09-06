@@ -96,6 +96,10 @@ class InventoryDiskItem(BaseModel):
     model: str | None = Field(default=None, max_length=256, description="Модель диска.")
     serial: str | None = Field(default=None, max_length=128, description="Serial number.")
     device_path: str | None = Field(default=None, max_length=128, description="Полный путь устройства (/dev/sda).")
+    mountpoints: list[str] = Field(
+        default_factory=list,
+        description="Точки монтирования поддерева диска, например /, /srv/ftp.",
+    )
     is_system: bool = Field(default=False, description="Системный (с root /).")
 
 
@@ -651,5 +655,4 @@ class IpmiCredentialsRotatedResponse(BaseModel):
 
     ok: bool = True
     rotated_at: str = Field(description="Сохранённый timestamp ротации (ISO-8601 UTC).")
-
 

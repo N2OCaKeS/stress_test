@@ -1042,6 +1042,7 @@ def _extract_disks(disks_block: dict, df_block: Any = None) -> list[dict]:
 
     * `size_gb` — из lsblk (байты → ГБ);
     * `is_system` — True, если в поддереве диска есть раздел с mountpoint `/`;
+    * `mountpoints` — все точки монтирования поддерева диска;
     * `used_gb` / `used_percent` — из df: сумма занятых байт всех ФС диска,
       процент — относительно полного объёма. df нет / диск не смонтирован →
       обе величины None (частичный inventory лучше полного фейла).
@@ -1064,7 +1065,8 @@ def _extract_disks(disks_block: dict, df_block: Any = None) -> list[dict]:
         name = (dev.get("name") or "").strip()
         size_bytes = _disk_size_bytes(dev.get("size"))
         size_gb = _parse_size_to_gb(str(dev.get("size") or ""))
-        is_system = "/" in _collect_mountpoints(dev)
+        mountpoints = sorted(set(_collect_mountpoints(dev)))
+        is_system = "/" in mountpoints
         used_bytes = used_by_disk.get(name)
         used_gb: int | None = None
         used_percent: float | None = None
@@ -1080,6 +1082,7 @@ def _extract_disks(disks_block: dict, df_block: Any = None) -> list[dict]:
             "model": (dev.get("model") or None) or None,
             "serial": (dev.get("serial") or None) or None,
             "device_path": f"/dev/{name}",
+            "mountpoints": mountpoints,
             "is_system": is_system,
         })
     return out

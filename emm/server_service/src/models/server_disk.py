@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, String, UniqueConstraint, func
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db.base import Base
@@ -30,6 +31,7 @@ class ServerDisk(Base):
     # Обе NULL, пока диск не смонтирован либо df недоступен / до первого probe'а.
     used_gb: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     used_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mountpoints: Mapped[list[str] | None] = mapped_column(postgresql.JSONB, nullable=True)
     model: Mapped[str | None] = mapped_column(String(256), nullable=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

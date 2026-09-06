@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 
-export type BadgeKind = "ok" | "warn" | "danger" | "accent";
+export type BadgeKind = "ok" | "warn" | "danger" | "accent" | "info";
 export type StandStatus = "testing" | "manual" | "idle" | "offline";
 export type QueueState = "running" | "pending" | "done" | "failed";
 
@@ -55,10 +55,12 @@ export interface Stand {
   currentMeta: string;
   metrics: StandMetrics;
   queue: QueueItem[];
+  /** физический стенд по умолчанию (undefined); "virtual" — ВМ на vms_hub, доступна только в dev-режиме запуска теста */
+  kind?: "physical" | "virtual";
 }
 
 export const STATUS_META: Record<StandStatus, { label: string; icon: LucideIcon; badge: BadgeKind }> = {
-  testing: { label: "Тест", icon: Activity, badge: "accent" },
+  testing: { label: "Тест", icon: Activity, badge: "info" },
   manual: { label: "Ручная работа", icon: ShieldCheck, badge: "warn" },
   idle: { label: "Свободен", icon: CheckCircle2, badge: "ok" },
   offline: { label: "Недоступен", icon: CircleDot, badge: "danger" },
@@ -206,6 +208,8 @@ export const STANDS: Stand[] = [
     ["sysbench / oltp-read-only", "pending", "готов к старту"],
     ["fio / randread", "pending", "в очереди"],
   ]),
+  { ...makeStand(21, "vm-stand1", "10.177.120.11", "idle", "ALT Server 11.0", "6.12.24-1.el11", "Нет активной работы", "виртуальный стенд свободен", []), kind: "virtual" },
+  { ...makeStand(22, "vm-stand2", "10.177.120.12", "idle", "ALT Workstation 11", "6.12.18-std-def", "Нет активной работы", "виртуальный стенд свободен", []), kind: "virtual" },
 ];
 
 // ── версии ОС / релиз-кандидаты ─────────────────────────────────────────────
@@ -319,7 +323,7 @@ export function Stat({
   icon: LucideIcon;
   kind?: "ok" | "warn" | "danger";
 }) {
-  const color = kind === "ok" ? "text-ok" : kind === "warn" ? "text-warn" : kind === "danger" ? "text-danger" : "text-accent";
+  const color = kind === "ok" ? "text-ok" : kind === "warn" ? "text-warn" : kind === "danger" ? "text-danger" : kind === "info" ? "text-info" : "text-accent";
   return (
     <div className="surface border border-token rounded p-4">
       <div className="flex items-center justify-between gap-3">

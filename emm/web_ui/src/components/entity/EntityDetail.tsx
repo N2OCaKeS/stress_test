@@ -101,6 +101,7 @@ function tabsFor(kind: EntityRef["kind"], acsAvailable: boolean): TabId[] {
   const tail: TabId[] =
     kind === "vm" ? ["disks", "snapshots"] : acsAvailable ? ["acsSnapshots"] : [];
   return [
+    "manage",
     "overview",
     "hardware",
     mid,
@@ -108,7 +109,6 @@ function tabsFor(kind: EntityRef["kind"], acsAvailable: boolean): TabId[] {
     "console",
     "packages",
     "metrics",
-    "manage",
     ...tail,
   ];
 }
@@ -169,7 +169,7 @@ export function EntityDetail({
   onBack,
   backLabel,
 }: EntityDetailProps) {
-  const [tab, setTab] = useState<TabId>("overview");
+  const [tab, setTab] = useState<TabId>("manage");
   const serverId = entity.kind === "server" ? entity.server.id : null;
   // Видимость вкладки «Снимки ACS» решается ДО рендера таб-бара — фоновая
   // проверка (без audit, всегда 200), см. `getAcsAvailability`. Пока грузится
@@ -185,7 +185,7 @@ export function EntityDetail({
     () => tabsFor(entity.kind, acsAvailable),
     [entity.kind, acsAvailable],
   );
-  const activeTab = tabList.includes(tab) ? tab : "overview";
+  const activeTab = tabList.includes(tab) ? tab : "manage";
   const serverOsVersionRef = useRef<string | null>(null);
   serverOsVersionRef.current =
     entity.kind === "server" ? entity.server.os_version_id ?? null : null;
@@ -262,6 +262,7 @@ function EntityTab({
             serverId={s.id}
             server={s}
             onServerUpdated={onLocalUpdate}
+            onChanged={onChanged}
           />
         );
       case "hardware":
@@ -271,6 +272,7 @@ function EntityTab({
             serverId={s.id}
             server={s}
             onServerUpdated={onLocalUpdate}
+            onChanged={onChanged}
           />
         );
       case "ipmi":

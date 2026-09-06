@@ -5,7 +5,7 @@
  */
 import type { HTMLAttributes } from "react";
 
-export type BadgeKind = "neutral" | "ok" | "warn" | "danger" | "accent";
+export type BadgeKind = "neutral" | "ok" | "warn" | "danger" | "accent" | "info" | "idle" | "acs";
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   kind?: BadgeKind;
@@ -17,6 +17,9 @@ const KIND_CLASS: Record<BadgeKind, string> = {
   warn: "badge-warn",
   danger: "badge-danger",
   accent: "badge-accent",
+  info: "badge-info",
+  idle: "badge-idle",
+  acs: "badge-acs",
 };
 
 export function Badge({ kind = "neutral", className = "", ...rest }: BadgeProps) {

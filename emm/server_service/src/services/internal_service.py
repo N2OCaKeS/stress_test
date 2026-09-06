@@ -1166,6 +1166,7 @@ async def _upsert_disks(
             "size_gb": item.size_gb,
             "used_gb": item.used_gb,
             "used_percent": item.used_percent,
+            "mountpoints": item.mountpoints,
             "model": item.model,
             "is_system": item.is_system,
         })
@@ -2244,10 +2245,16 @@ async def record_acs_snapshot_restore_done(
         )
         return {"ok": True, "busy_state": server.busy_state, "prepare_task_id": None}
 
-    # succeeded=True — держим busy_state=acs, только освежаем заметку под-этапа;
-    # снимает блокировку последующий callback `prepared`, не мы здесь.
+    # succeeded=True — держим busy_state=acs, только освежаем заметку под-этапа.
+    # os_version_id известен точно (это версия восстановленного снимка) — не
+    # ждём следующего inventory.sync, проставляем сразу, иначе карточка сервера
+    # показывает старую версию до первого ручного/периодического sync'а после
+    # restore. Снимает busy-блокировку последующий callback `prepared`, не мы
+    # здесь.
     await server_repo.update(db, server, {
         "busy_note": f"ACS_RESTORE_PREPARE_{os_version_name}",
+        "os_version_id": payload.os_version_id,
+        "os_last_synced_at": datetime.now(timezone.utc),
     })
     await db.commit()
 
@@ -3707,4 +3714,3 @@ async def record_vm_prepared(
         },
     )
     return {"ok": True, "vm_id": vm.id, "is_managed": vm.is_managed}
-

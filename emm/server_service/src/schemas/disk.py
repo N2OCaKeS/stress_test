@@ -60,6 +60,7 @@ class DiskResponse(BaseModel):
     size_gb: int = Field(description="Размер в гигабайтах.")
     used_gb: int | None = Field(default=None, description="Занято в гигабайтах (с инвентаризации). None — неизвестно.")
     used_percent: float | None = Field(default=None, description="Процент занятости диска. None — неизвестно.")
+    mountpoints: list[str] = Field(default_factory=list, description="Точки монтирования поддерева диска.")
     model: str | None = Field(default=None, description="Модель диска.")
     is_system: bool = Field(description="Системный диск.")
     created_at: datetime = Field(description="Когда запись создана.")
@@ -74,6 +75,7 @@ class DiskResponse(BaseModel):
             size_gb=disk.size_gb,
             used_gb=disk.used_gb,
             used_percent=disk.used_percent,
+            mountpoints=disk.mountpoints or [],
             model=disk.model,
             is_system=disk.is_system,
             created_at=disk.created_at,

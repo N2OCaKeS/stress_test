@@ -436,6 +436,8 @@ class TestExtractDisksSystemAndUsage:
         sdb = next(d for d in disks if d["name"] == "sdb")
         assert sda["is_system"] is True
         assert sdb["is_system"] is False
+        assert sda["mountpoints"] == ["/", "/boot"]
+        assert sdb["mountpoints"] == ["/data"]
 
     def test_used_summed_per_disk(self):
         disks = _extract_disks(self._LSBLK, self._DF)

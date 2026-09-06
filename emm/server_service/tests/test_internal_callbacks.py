@@ -517,9 +517,11 @@ class TestInventoryCallback:
             "network_interfaces": ["ens192", "ens224"],
             "disks": [
                 {"name": "sda", "size_gb": 500, "used_gb": 225,
-                 "used_percent": 48.4, "model": "SSD", "is_system": True},
+                 "used_percent": 48.4, "mountpoints": ["/", "/boot"],
+                 "model": "SSD", "is_system": True},
                 {"name": "sdb", "size_gb": 1000, "used_gb": 465,
-                 "used_percent": 50.0, "is_system": False},
+                 "used_percent": 50.0, "mountpoints": ["/srv/ftp"],
+                 "is_system": False},
             ],
         }
         resp = await client.post(
@@ -545,6 +547,7 @@ class TestInventoryCallback:
         assert sda.is_system is True
         assert sda.used_gb == 225
         assert sda.used_percent == 48.4
+        assert sda.mountpoints == ["/", "/boot"]
 
         # Read-схема сервера отдаёт новые поля.
         read = await client.get(
@@ -560,6 +563,7 @@ class TestInventoryCallback:
         assert sda_resp["is_system"] is True
         assert sda_resp["used_gb"] == 225
         assert sda_resp["used_percent"] == 48.4
+        assert sda_resp["mountpoints"] == ["/", "/boot"]
 
     async def test_inventory_without_network_memory_backcompat(
         self, client, admin_role_token_a, make_server, db, dept_a,

@@ -1,10 +1,15 @@
 import {
+  useEffect,
+  useRef,
+} from "react";
+import {
   UserPlus,
   ServerCog,
   KeyRound,
   Activity,
   AlertTriangle,
   AlertCircle,
+  HardDrive,
   ShieldAlert,
   Clock,
   Lightbulb,
@@ -26,8 +31,10 @@ import { TASKS } from "@/mocks/worker";
 import { Badge } from "@/components/ui/Badge";
 import { AUDIT_EVENTS } from "@/mocks/log";
 import { listUsers, listUsersByDepartment } from "@/api/auth/users";
-import { listGroups, listGroupsByDepartment } from "@/api/auth/groups";
+import { listGroups } from "@/api/auth/groups";
 import { listBots } from "@/api/auth/bots";
+import { getHostDiskUsage } from "@/api/server/misc";
+import type { HostDiskPathUsage, HostDiskUsageResponse } from "@/api/server/types";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { RecentAuditEvents } from "./widgets/RecentAuditEvents";
 import { AllTasksWidget } from "./widgets/AllTasksWidget";
@@ -69,16 +76,21 @@ export function HomeDepAdmin() {
     [],
     { enabled: !mockMode },
   );
-  // Группы моего отдела — короткий list для dashboard-карточки.
-  // Если у persona нет dept_id (например, account_admin без депа), пропускаем.
-  const deptGroupsQ = useQuery(
-    () =>
-      myDeptId
-        ? listGroupsByDepartment(myDeptId, { limit: 10 })
-        : Promise.resolve([]),
-    [myDeptId],
-    { enabled: !mockMode && !!myDeptId && canManageGroups },
+  const hostDiskQ = useQuery(
+    () => getHostDiskUsage(),
+    [],
+    { enabled: !mockMode },
   );
+  const hostDiskRefetchRef = useRef(hostDiskQ.refetch);
+  hostDiskRefetchRef.current = hostDiskQ.refetch;
+
+  useEffect(() => {
+    if (mockMode) return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") hostDiskRefetchRef.current();
+    }, 5_000);
+    return () => window.clearInterval(id);
+  }, [mockMode]);
 
   if (!mockMode) {
     const liveUsers = usersQ.data?.total ?? usersQ.data?.items?.length ?? 0;
@@ -154,49 +166,7 @@ export function HomeDepAdmin() {
         {(canManageGroups || canAudit) && (
           <section className="grid gap-4 md:grid-cols-2">
             {canManageGroups && (
-              <div className="card">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold">Группы моего отдела</h3>
-                  <Link to="/users" className="text-xs text-accent">
-                    Все →
-                  </Link>
-                </div>
-                {!myDeptId ? (
-                  <div className="empty-card text-xs">
-                    Persona без dept_id — фильтр по отделу неприменим.
-                  </div>
-                ) : deptGroupsQ.loading ? (
-                  <div className="text-xs text-dim">Загрузка…</div>
-                ) : deptGroupsQ.error ? (
-                  <div className="alert-danger">{deptGroupsQ.error.message}</div>
-                ) : (deptGroupsQ.data ?? []).length === 0 ? (
-                  <div className="empty-card text-xs">
-                    В отделе пока нет групп.
-                  </div>
-                ) : (
-                  <ul className="text-sm divide-y divide-token">
-                    {(deptGroupsQ.data ?? []).slice(0, 8).map((g) => (
-                      <li
-                        key={g.id}
-                        className="py-1.5 flex items-center gap-2 min-w-0"
-                      >
-                        <Link
-                          to={`/users/group/${g.id}`}
-                          className="font-medium truncate hover-bg"
-                        >
-                          {g.name}
-                        </Link>
-                        <span
-                          className="text-xs text-dim ml-auto truncate max-w-[160px]"
-                          title={g.description ?? ""}
-                        >
-                          {g.description ?? ""}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              <EmmDiskUsageCard data={hostDiskQ.data ?? null} loading={hostDiskQ.loading} />
             )}
             {canAudit && <RecentAuditEvents />}
           </section>
@@ -328,6 +298,8 @@ export function HomeDepAdmin() {
 
       {/* Bottom two columns */}
       <section className="grid gap-4 md:grid-cols-2">
+        <EmmDiskUsageCard data={MOCK_HOST_DISK_USAGE} loading={false} />
+
         {/* Pending actions */}
         <div className="card">
           <div className="flex items-center justify-between mb-3">
@@ -450,3 +422,83 @@ const SAMPLE_ACTIVITY: ActivityRow[] = [
   { ts: "10:01", actor: "cron", action: "запустил pg-backup", target: "", req: "job_aut...", badge: "done", badgeKind: "ok" },
   { ts: "09:12", actor: "alice", action: "обновил ACL роли", target: "", req: "req_001f...", badge: "success", badgeKind: "ok" },
 ];
+
+const MOCK_HOST_DISK_USAGE: HostDiskUsageResponse = {
+  paths: [
+    { path: "/", total_gb: 62, used_gb: 56, used_percent: 90.3, available: true, error: null },
+    { path: "/srv/ftp", total_gb: 126, used_gb: 112, used_percent: 88.9, available: true, error: null },
+    { path: "/home/partimag", total_gb: 3022, used_gb: 878, used_percent: 29.1, available: true, error: null },
+  ],
+};
+
+function EmmDiskUsageCard({
+  data,
+  loading,
+}: {
+  data: HostDiskUsageResponse | null;
+  loading: boolean;
+}) {
+  const paths = data?.paths ?? [];
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h3 className="font-semibold flex items-center gap-2">
+          <HardDrive className="w-4 h-4 text-accent" />
+          Диски EMM
+        </h3>
+        <span className="text-xs text-dim">хост платформы</span>
+      </div>
+      <div className="text-xs text-dim mb-3">
+        {loading && paths.length === 0
+          ? "Загрузка…"
+          : "Заполняемость диска на хосте самого server_service."}
+      </div>
+      <div className="grid gap-2">
+        {paths.map((path) => (
+          <DiskUsageRow key={path.path} path={path} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const ERROR_LABELS: Record<string, string> = {
+  not_mounted: "не смонтирован",
+  permission_denied: "нет доступа",
+  unavailable: "недоступен",
+};
+
+function DiskUsageRow({ path }: { path: HostDiskPathUsage }) {
+  const { used_percent: percent, used_gb: used, total_gb: size } = path;
+  const tone =
+    percent == null ? "bg-[var(--border)]" : percent >= 90 ? "bg-[var(--danger)]" : percent >= 75 ? "bg-[var(--warn)]" : "bg-[var(--ok)]";
+  return (
+    <div className="surface-2 border border-token rounded p-3">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="mono">{path.path}</span>
+        <span className="mono text-xs text-dim">
+          {path.available && used != null && size != null
+            ? `${used.toFixed(1)} / ${size.toFixed(1)} GB`
+            : "нет данных"}
+        </span>
+      </div>
+      {path.available ? (
+        <>
+          <div className="mt-2 h-2 rounded-full surface border border-token overflow-hidden">
+            <span
+              className={`block h-full ${tone}`}
+              style={{ width: `${Math.max(0, Math.min(100, percent ?? 0))}%` }}
+            />
+          </div>
+          <div className="mt-1 text-xs text-dim flex justify-end">
+            <span>{percent != null ? `${percent}%` : "—"}</span>
+          </div>
+        </>
+      ) : (
+        <div className="mt-1 text-xs text-dim">
+          {ERROR_LABELS[path.error ?? ""] ?? "нет данных"}
+        </div>
+      )}
+    </div>
+  );
+}

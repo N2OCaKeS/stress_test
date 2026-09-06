@@ -8,7 +8,7 @@
  * `ServerUpdateRequest.storage` снапшотит весь массив и легко стирает данные;
  * вынесено в TODO бэка).
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   AlertCircle,
@@ -22,16 +22,18 @@ import {
 } from "lucide-react";
 import type { DiskResponse, Server, ServerUpdateRequest } from "@/api/server/types";
 import { listVmDisks, type Vm, type VmDisk, type VmNic } from "@/api/server/vms";
-import { updateServer } from "@/api/server/servers";
+import { inventorySync, updateServer } from "@/api/server/servers";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { usePersona } from "@/contexts/PersonaContext";
+import { useToast } from "@/contexts/ToastContext";
 import { isDepAdmin } from "@/lib/rbac";
 import { MOCK_VM_DISKS } from "@/mocks/vm";
 import { FormRow, StatRow } from "@/pages/admin/services/_inline";
 import type { EntityRef } from "./_entity";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { isTerminalTaskStatus, useTaskOutcome } from "@/api/server/useTaskOutcome";
 
 interface Props {
   entity?: EntityRef;
@@ -40,6 +42,7 @@ interface Props {
   /** Поднимает свежий объект в ServerDetail, чтобы header и соседние
    * вкладки обновились после PATCH без перезагрузки страницы. */
   onServerUpdated?: (next: Server) => void;
+  onChanged?: () => void;
 }
 
 /** Одна карточка-сводка (CPU / RAM / Сеть / Диск) в двухколоночной сетке. */
@@ -72,6 +75,7 @@ interface HwVmDiskTable {
 interface HardwareModel {
   /** Кнопка правки сверху; у read-only сущностей (ВМ) — undefined. */
   edit?: { canEdit: boolean; onEdit: () => void };
+  sync?: { syncing: boolean; onSync: () => void };
   cards: HwCard[];
   diskTable?: HwDiskTable;
   nicTable?: HwNicTable;
@@ -116,15 +120,33 @@ function VmHardwareTab({ vm, mock }: { vm: Vm; mock: boolean }) {
   );
 }
 
-function ServerHardwareTab({ server, onServerUpdated }: Props) {
+function ServerHardwareTab({ server, onServerUpdated, onChanged }: Props) {
   const [editing, setEditing] = useState(false);
 
   const view = server;
   const { persona } = usePersona();
+  const toast = useToast();
+  const [syncing, setSyncing] = useState(false);
+  const syncOutcome = useTaskOutcome();
+  const autoSyncedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (syncOutcome.tracked?.status === "succeeded") onChanged?.();
+  }, [syncOutcome.tracked?.status, onChanged]);
+
+  // Автозапуск inventory_sync при открытии вкладки — раз на сервер, без тоста.
+  useEffect(() => {
+    if (!view) return;
+    if (autoSyncedRef.current === view.id) return;
+    autoSyncedRef.current = view.id;
+    handleInventorySync(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   if (!view) {
     return <div className="p-5 text-sm text-dim">Нет данных по серверу.</div>;
   }
+  const viewId = view.id;
 
   // PATCH hardware-полей = server:update; есть у dep_admin своего dept,
   // server.admin и server.operator. account_admin отрезан в Server.tsx.
@@ -146,9 +168,28 @@ function ServerHardwareTab({ server, onServerUpdated }: Props) {
     );
   }
 
+  async function handleInventorySync(silent = false) {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const res = await inventorySync(viewId);
+      if (!silent) toast.success(`inventory_sync поставлен в очередь: ${res.task_id}`);
+      syncOutcome.track("inventory_sync", res.task_id, res.status);
+      onChanged?.();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "inventory_sync не запущен"));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   return (
     <HardwareView
-      model={serverModel(view, canEdit, () => setEditing(true))}
+      model={serverModel(view, canEdit, () => setEditing(true), {
+        syncing,
+        onSync: () => handleInventorySync(),
+      })}
+      trackedSync={syncOutcome.tracked}
     />
   );
 }
@@ -161,6 +202,7 @@ function serverModel(
   server: Server,
   canEdit: boolean,
   onEdit: () => void,
+  sync?: HardwareModel["sync"],
 ): HardwareModel {
   const ramGb =
     server.ram_total_mb != null
@@ -169,6 +211,7 @@ function serverModel(
 
   return {
     edit: { canEdit, onEdit },
+    sync,
     cards: [
       {
         icon: Cpu,
@@ -329,12 +372,29 @@ function vmModel(vm: Vm, vmDisks: HwVmDiskTable): HardwareModel {
  * нормализованную модель: карточки-сводки в сетке, опциональную таблицу
  * физдисков и опциональную кнопку правки.
  */
-function HardwareView({ model }: { model: HardwareModel }) {
+function HardwareView({
+  model,
+  trackedSync,
+}: {
+  model: HardwareModel;
+  trackedSync?: ReturnType<typeof useTaskOutcome>["tracked"];
+}) {
   return (
     <div className="p-5 flex flex-col gap-4">
-      {model.edit && (
-        <div className="flex justify-end">
-          {model.edit.canEdit && (
+      {(model.edit || model.sync) && (
+        <div className="flex justify-end gap-2 flex-wrap">
+          {model.sync && (
+            <Button
+              variant="ghost"
+              className="flex items-center gap-1"
+              onClick={model.sync.onSync}
+              disabled={model.sync.syncing}
+            >
+              <RefreshCw className={`w-4 h-4 ${model.sync.syncing ? "animate-spin" : ""}`} />
+              Inventory sync
+            </Button>
+          )}
+          {model.edit?.canEdit && (
             <Button variant="ghost"
               className="flex items-center gap-1"
               onClick={model.edit.onEdit}
@@ -364,6 +424,15 @@ function HardwareView({ model }: { model: HardwareModel }) {
       {model.nicTable && <NicTableCard table={model.nicTable} />}
 
       {model.diskTable && <DiskTableCard table={model.diskTable} />}
+
+      {trackedSync && (
+        <div className="card text-xs text-dim">
+          inventory_sync: <span className="mono">{trackedSync.status}</span>
+          {isTerminalTaskStatus(trackedSync.status) && trackedSync.error && (
+            <span className="text-danger"> · {trackedSync.error}</span>
+          )}
+        </div>
+      )}
 
       {model.vmDiskTable && <VmDiskTableCard table={model.vmDiskTable} />}
 
@@ -516,6 +585,7 @@ function DiskTableCard({ table }: { table: HwDiskTable }) {
                 <th className="text-left py-2 pr-3">Размер, ГБ</th>
                 <th className="text-left py-2 pr-3">Занято, ГБ</th>
                 <th className="text-left py-2 pr-3">Занято, %</th>
+                <th className="text-left py-2 pr-3">Mountpoints</th>
                 <th className="text-left py-2 pr-3">Модель</th>
                 <th className="text-left py-2 pr-3">Тип</th>
                 <th className="text-left py-2 pr-3">id</th>
@@ -532,6 +602,19 @@ function DiskTableCard({ table }: { table: HwDiskTable }) {
                   <td className="py-1.5 pr-3 mono">
                     {d.used_percent != null ? (
                       `${d.used_percent}%`
+                    ) : (
+                      <span className="text-dim">—</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3">
+                    {d.mountpoints && d.mountpoints.length > 0 ? (
+                      <span className="flex flex-wrap gap-1">
+                        {d.mountpoints.map((mount) => (
+                          <Badge key={mount} className="mono">
+                            {mount}
+                          </Badge>
+                        ))}
+                      </span>
                     ) : (
                       <span className="text-dim">—</span>
                     )}

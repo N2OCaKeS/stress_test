@@ -32,6 +32,7 @@ import {
   Edit3,
   Eye,
   EyeOff,
+  ExternalLink,
   KeyRound,
   Power,
   RefreshCw,
@@ -482,7 +483,17 @@ function ControllerPane({
           </div>
         </div>
 
-        <Meta label="endpoint" value={controller.endpoint_url} mono />
+        <div className="flex items-center gap-2 flex-wrap">
+          <Meta label="endpoint" value={controller.endpoint_url} mono />
+          <Button
+            size="sm"
+            className="inline-flex items-center gap-1"
+            onClick={() => window.open(controller.endpoint_url, "_blank", "noopener,noreferrer")}
+          >
+            <ExternalLink className="w-4 h-4" />
+            Открыть IPMI
+          </Button>
+        </div>
         <Meta label="username" value={controller.username} mono />
         <Meta
           label="last probed"

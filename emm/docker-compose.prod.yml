@@ -323,8 +323,25 @@ services:
       # пересоздание контейнера (в k8s ту же роль играет KEYSTORE_BACKEND=k8s).
       KEYSTORE_BACKEND: file
       KEYSTORE_PATH: /data/keystore.json
+      # emm рассчитан на тот же физический хост, что и ACS/DRBL/Clonezilla
+      # (owner-confirmed) — `/host/diskspace` стат'ит хостовые `/`, `/srv/ftp`,
+      # `/home/partimag` через bind-mount'ы ниже под своими путями (см. те же
+      # три volume-строки). Зеркалит k8s/50-server-service.yaml 1:1.
+      HOST_DISK_STAT_PATH_ROOT: /host-root
+      HOST_DISK_STAT_PATH_FTP: /host-srv-ftp
+      HOST_DISK_STAT_PATH_PARTIMAG: /host-home-partimag
     volumes:
       - server_keystore:/data
+      # Read-only bind-mount'ы хоста для /host/diskspace. Внимание: обычный
+      # docker bind molчa создаёт source-каталог на ХОСТЕ, если его там нет —
+      # если этот compose когда-нибудь запустят не на реальном ACS/DRBL-хосте,
+      # `/srv/ftp`/`/home/partimag` тихо появятся пустыми на том хосте. На
+      # целевом проде они гарантированно уже существуют (это тот же бокс, что
+      # держит DRBL), так что риск актуален только при запуске этого compose
+      # на постороннем хосте для отладки — учитывать при таком сценарии.
+      - /:/host-root:ro
+      - /srv/ftp:/host-srv-ftp:ro
+      - /home/partimag:/host-home-partimag:ro
     depends_on:
       server-postgres:
         condition: service_healthy

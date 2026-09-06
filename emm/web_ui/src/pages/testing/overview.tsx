@@ -117,14 +117,18 @@ export function TestingOverview() {
       ),
     );
   };
-  const addTestsToQueue = (standId: number, tests: string[], prepareEnv: boolean) => {
+  const addTestsToQueue = (standId: number, tests: string[], prepareEnv: boolean, devMode: boolean) => {
     setStands((current) =>
       current.map((stand) => {
         if (stand.id !== standId) return stand;
         const prepItem: QueueItem[] = prepareEnv
           ? [{ title: "Подготовка окружения", state: "pending", meta: "testenv prepare перед запуском выбранных тестов" }]
           : [];
-        const testItems = tests.map<QueueItem>((title) => ({ title, state: "pending", meta: "запустить тест" }));
+        const testItems = tests.map<QueueItem>((title) => ({
+          title,
+          state: "pending",
+          meta: devMode ? "запустить тест · dev mode" : "запустить тест",
+        }));
         const added = [...prepItem, ...testItems];
         return {
           ...stand,
@@ -237,8 +241,8 @@ export function TestingOverview() {
         <LaunchTestModal
           stands={stands}
           onClose={() => setLaunchModal(null)}
-          onSubmit={(standId, tests, prepareEnv) => {
-            addTestsToQueue(standId, tests, prepareEnv);
+          onSubmit={(standId, tests, prepareEnv, devMode) => {
+            addTestsToQueue(standId, tests, prepareEnv, devMode);
             setLaunchModal(null);
           }}
         />
@@ -550,19 +554,34 @@ function LaunchTestModal({
 }: {
   stands: Stand[];
   onClose: () => void;
-  onSubmit: (standId: number, tests: string[], prepareEnv: boolean) => void;
+  onSubmit: (standId: number, tests: string[], prepareEnv: boolean, devMode: boolean) => void;
 }) {
-  const [standId, setStandId] = useState(stands[0]?.id ?? 0);
-  const stand = stands.find((item) => item.id === standId) ?? stands[0];
-  const tests = stand ? testsForStand(stand) : [];
+  const [devMode, setDevMode] = useState(false);
+  // Штатно доступны только физические стенды — виртуальные существуют
+  // исключительно как цель для dev-режима (отладочный запуск теста на ВМ).
+  const pickableStands = devMode ? stands : stands.filter((item) => item.kind !== "virtual");
+  const [standId, setStandId] = useState(pickableStands[0]?.id ?? 0);
+  const stand = pickableStands.find((item) => item.id === standId) ?? pickableStands[0];
+  const tests = stand ? testsForStand(stand, devMode) : [];
   const [selectedTests, setSelectedTests] = useState<string[]>(tests.slice(0, 2));
   const [prepareEnv, setPrepareEnv] = useState(true);
   const [rcId, setRcId] = useState(RC_IDS[0] ?? "");
 
   const switchStand = (nextStandId: number) => {
-    const nextStand = stands.find((item) => item.id === nextStandId) ?? stands[0];
+    const nextStand = pickableStands.find((item) => item.id === nextStandId) ?? pickableStands[0];
     setStandId(nextStandId);
-    setSelectedTests(testsForStand(nextStand).slice(0, 2));
+    setSelectedTests(testsForStand(nextStand, devMode).slice(0, 2));
+  };
+  const toggleDevMode = (enabled: boolean) => {
+    setDevMode(enabled);
+    // выключение dev-режима могло сделать выбранный (виртуальный) стенд
+    // недоступным — падаем на первый штатный стенд
+    const nextStands = enabled ? stands : stands.filter((item) => item.kind !== "virtual");
+    const nextStand = nextStands.find((item) => item.id === standId) ?? nextStands[0];
+    if (nextStand) {
+      setStandId(nextStand.id);
+      setSelectedTests(testsForStand(nextStand, enabled).slice(0, 2));
+    }
   };
   const toggleTest = (test: string) => {
     setSelectedTests((current) =>
@@ -588,7 +607,8 @@ function LaunchTestModal({
             variant="primary"
             type="button"
             disabled={!selectedTests.length || !stand}
-            onClick={() => stand && onSubmit(stand.id, selectedTests, prepareEnv)}
+            onClick={() => stand && onSubmit(stand.id, selectedTests, prepareEnv, devMode)}
+            title={!selectedTests.length ? "Выберите хотя бы один тест" : undefined}
           >
             Добавить в очередь
           </Button>
@@ -601,7 +621,10 @@ function LaunchTestModal({
               <span className="text-xs text-dim">Стенд</span>
               <Dropdown
                 mode="single"
-                options={stands.map((item) => ({ value: String(item.id), label: item.name }))}
+                options={pickableStands.map((item) => ({
+                  value: String(item.id),
+                  label: item.kind === "virtual" ? `${item.name} (ВМ)` : item.name,
+                }))}
                 value={String(standId)}
                 onChange={(v) => switchStand(Number(v))}
               />
@@ -641,16 +664,40 @@ function LaunchTestModal({
             </span>
           </label>
 
+          <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">
+            <Checkbox
+              checked={devMode}
+              onChange={(event) => toggleDevMode(event.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="text-sm font-medium block">Dev режим</span>
+              <span className="text-xs text-dim">
+                Снимает привязку теста к своему стенду — можно запустить любой тест на любом стенде,
+                включая виртуальные (ВМ). Только для разового отладочного запуска — в прогоне привязка
+                тест → стенд всегда соблюдается
+              </span>
+            </span>
+          </label>
+
           <div className="surface-2 border border-token rounded p-3">
-            <div className="text-xs text-dim mb-2">Тесты стенда</div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {tests.map((test) => (
-                <label key={test} className="surface border border-token rounded p-2 flex items-center gap-2 text-sm">
-                  <Checkbox checked={selectedTests.includes(test)} onChange={() => toggleTest(test)} />
-                  <span>{test}</span>
-                </label>
-              ))}
+            <div className="text-xs text-dim mb-2">
+              {devMode ? "Все тесты (dev режим)" : "Тесты, закреплённые за стендом"}
             </div>
+            {tests.length ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {tests.map((test) => (
+                  <label key={test} className="surface border border-token rounded p-2 flex items-center gap-2 text-sm">
+                    <Checkbox checked={selectedTests.includes(test)} onChange={() => toggleTest(test)} />
+                    <span>{test}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-dim">
+                За этим стендом не закреплён ни один тест. Включите dev режим, чтобы выбрать тест из общего каталога.
+              </div>
+            )}
           </div>
 
         </div>
@@ -671,6 +718,17 @@ function QueueModal({
 }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
+  const [extraTest, setExtraTest] = useState("");
+  // Очередь стенда несёт признак dev-режима в meta уже поставленных задач
+  // (см. addTestsToQueue) — отдельное поле на Stand заводить не стали,
+  // это дешевле и не расходится с тем, что реально видно в очереди.
+  const standDevMode = stand.queue.some((item) => item.meta.includes("dev mode"));
+  const candidateTests = standDevMode
+    ? TEST_CATALOG.map((entry) => entry.name)
+    : testsForStand(stand, false);
+  const availableExtraTests = candidateTests.filter(
+    (test) => !stand.queue.some((item) => item.title === test),
+  );
 
   const reorder = (from: number, to: number) => {
     if (from === to) return;
@@ -696,6 +754,18 @@ function QueueModal({
       ),
     );
   };
+  const addExtraTest = () => {
+    if (!extraTest) return;
+    onChange([
+      ...stand.queue,
+      {
+        title: extraTest,
+        state: "pending",
+        meta: standDevMode ? "доп. тест · dev mode" : "доп. тест только для этого стенда",
+      },
+    ]);
+    setExtraTest("");
+  };
 
   return (
     <Modal
@@ -707,6 +777,31 @@ function QueueModal({
       subtitle={stand.ip}
       width="lg"
     >
+        {availableExtraTests.length > 0 && (
+          <div className="surface-2 border border-token rounded p-3 mb-3">
+            <div className="text-xs text-dim mb-2">Добавить доп. тест стенда</div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Dropdown
+                mode="single"
+                options={[
+                  { value: "", label: "Выбрать тест" },
+                  ...availableExtraTests.map((test) => ({ value: test, label: test })),
+                ]}
+                value={extraTest}
+                onChange={setExtraTest}
+              />
+              <Button
+                type="button"
+                size="sm"
+                onClick={addExtraTest}
+                disabled={!extraTest}
+                title={!extraTest ? "Выберите тест, доступный этому стенду" : undefined}
+              >
+                Добавить
+              </Button>
+            </div>
+          </div>
+        )}
         <div>
           {stand.queue.length ? (
             <div className="grid gap-2">
@@ -815,11 +910,11 @@ function StandCard({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const topColor =
     stand.status === "testing"
-      ? "bg-[var(--accent)]"
+      ? "bg-[var(--status-testing)]"
       : stand.status === "idle"
-        ? "bg-[var(--ok)]"
+        ? "bg-[var(--status-idle)]"
         : stand.status === "manual"
-          ? "bg-[var(--warn)]"
+          ? "bg-[var(--status-acs)]"
           : "bg-[var(--danger)]";
   const current = currentQueueItem(stand);
   const cpuTotal = stand.metrics.cpuUser + stand.metrics.cpuSystem;
@@ -855,7 +950,7 @@ function StandCard({
 
         <QueueSummary stand={stand} />
 
-        <div className="grid grid-cols-4 gap-1.5 mt-3">
+        <div className="grid grid-cols-2 gap-1.5 mt-3">
           <Button
             type="button"
             size="sm"
@@ -868,7 +963,17 @@ function StandCard({
           <Button size="sm"
             type="button"
             className="inline-flex items-center justify-center gap-1 px-1.5"
+            onClick={() => onOpenQueue(stand.id)}
+          >
+            <ListChecks className="w-4 h-4 shrink-0" />
+            Очередь
+          </Button>
+          <Button size="sm"
+            type="button"
+            className="inline-flex items-center justify-center gap-1 px-1.5"
             onClick={() => onSetTesting(stand.id, true)}
+            disabled={stand.status === "testing"}
+            title={stand.status === "testing" ? "Стенд уже выполняет тест" : undefined}
           >
             <Play className="w-4 h-4 shrink-0" />
             Старт
@@ -877,17 +982,11 @@ function StandCard({
             type="button"
             className="inline-flex items-center justify-center gap-1 px-1.5"
             onClick={() => onSetTesting(stand.id, false)}
+            disabled={stand.status !== "testing"}
+            title={stand.status !== "testing" ? "Остановить можно только запущенный тест" : undefined}
           >
             <Square className="w-4 h-4 shrink-0" />
             Стоп
-          </Button>
-          <Button size="sm"
-            type="button"
-            className="inline-flex items-center justify-center gap-1 px-1.5"
-            onClick={() => onOpenQueue(stand.id)}
-          >
-            <ListChecks className="w-4 h-4 shrink-0" />
-            Очередь
           </Button>
         </div>
 
@@ -985,15 +1084,39 @@ function QueueList({ queue }: { queue: QueueItem[] }) {
   );
 }
 
-function testsForStand(stand: Stand) {
-  const base = [
-    "UnixBench 5.1.3",
-    "sysbench 1.0.20 / cpu",
-    "sysbench 1.0.20 / memory",
-    "fio 3.38 / randrw",
-    "OpenSSL speed",
-  ];
-  const serverOnly = ["PostgreSQL TPC-C", "Linpack Xtreme", "PARSEC 3.0 / streamcluster"];
-  const workstationOnly = ["7-Zip 24.08", "iperf3 / network", "GUI smoke"];
-  return stand.os.includes("Workstation") ? [...base, ...workstationOnly] : [...base, ...serverOnly];
+/**
+ * Каждый тест закреплён за одним конкретным стендом (`homeStandId`) — в
+ * штатном режиме запустить его можно только там. Dev режим (см.
+ * `LaunchTestModal`) снимает это ограничение для разового отладочного
+ * запуска, но никогда не используется в прогоне (см. `runs.tsx`).
+ */
+interface TestCatalogEntry {
+  name: string;
+  homeStandId: number;
+}
+
+const TEST_CATALOG: TestCatalogEntry[] = [
+  { name: "UnixBench 5.1.3", homeStandId: 1 },
+  { name: "sysbench 1.0.20 / cpu", homeStandId: 9 },
+  { name: "sysbench 1.0.20 / memory", homeStandId: 9 },
+  { name: "fio 3.38 / randrw", homeStandId: 11 },
+  { name: "OpenSSL speed", homeStandId: 15 },
+  { name: "PostgreSQL TPC-C", homeStandId: 5 },
+  { name: "Linpack Xtreme", homeStandId: 5 },
+  { name: "PARSEC 3.0 / streamcluster", homeStandId: 3 },
+  { name: "7-Zip 24.08", homeStandId: 13 },
+  { name: "iperf3 / network", homeStandId: 6 },
+  { name: "GUI smoke", homeStandId: 2 },
+];
+
+/**
+ * Список тестов, доступных для запуска на стенде. В штатном режиме —
+ * только тесты, привязанные к этому стенду (`homeStandId === stand.id`).
+ * В dev режиме ограничение по стенду снимается целиком — доступен весь
+ * каталог, независимо от того, чей это тест и какой стенд выбран
+ * (включая виртуальные стенды, см. `LaunchTestModal`).
+ */
+function testsForStand(stand: Stand, devMode = false): string[] {
+  if (devMode) return TEST_CATALOG.map((entry) => entry.name);
+  return TEST_CATALOG.filter((entry) => entry.homeStandId === stand.id).map((entry) => entry.name);
 }

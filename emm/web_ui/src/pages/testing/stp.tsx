@@ -144,7 +144,9 @@ function buildStpDataset(version: OsVersion, versionIndex: number): StpDataset {
   const pattern: StpPattern =
     version.kind === "urgent" ? "hotfix" : version.status === "testing" ? "in_progress" : "mostly_done";
   const testCases = version.kind === "urgent" ? STP_TEST_CASES_HOTFIX : STP_TEST_CASES;
-  const online = STANDS.filter((s) => s.status !== "offline");
+  // Виртуальные стенды — только для dev-режима запуска отдельных тестов
+  // (testing/overview.tsx); СТП отражает реальный прогон на физическом парке.
+  const online = STANDS.filter((s) => s.status !== "offline" && s.kind !== "virtual");
   const offset = (versionIndex * 2) % online.length;
   const stands = Array.from({ length: 3 }, (_, k) => online[(offset + k) % online.length]);
   const kernels = version.kernels.length ? version.kernels : ["6.12.24-1.el11"];
@@ -423,7 +425,10 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
     setStatusFilter(new Set());
   }, [version.id]);
 
-  const fullStands = useMemo(() => STANDS.filter((s) => s.status !== "offline").slice(0, 5), []);
+  const fullStands = useMemo(
+    () => STANDS.filter((s) => s.status !== "offline" && s.kind !== "virtual").slice(0, 5),
+    [],
+  );
   const fullKernels = useMemo(() => (version.kernels.length ? version.kernels : ["6.12.24-1.el11"]), [version.kernels]);
   const fullCombos: StpCombo[] = useMemo(() => {
     const combos: StpCombo[] = [];

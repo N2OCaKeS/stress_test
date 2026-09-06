@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { PersonaProvider } from "@/contexts/PersonaContext";
@@ -157,6 +157,8 @@ describe("ServerDetail smoke", () => {
   it("карточка «Состояние» показывает три поля доступности: ping / ssh / ipmi", async () => {
     renderDetail();
     await screen.findAllByText(/Smoke Box/);
+    // «Управление» теперь активна по умолчанию — переключаемся на «Обзор».
+    fireEvent.click(screen.getByRole("button", { name: "Обзор" }));
     // StatRow-подписи трёх независимых сигналов.
     expect(screen.getByText("ping")).toBeInTheDocument();
     expect(screen.getByText("ssh")).toBeInTheDocument();

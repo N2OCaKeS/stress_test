@@ -65,7 +65,8 @@ import {
   isPlatformWideAdmin,
   isServerZoneBlocked,
 } from "@/lib/rbac";
-import type { Server, ServerCreateRequest } from "@/api/server/types";
+import type { Server, ServerCreateRequest, BusyState } from "@/api/server/types";
+import type { BadgeKind } from "@/components/ui/Badge";
 import type { Department } from "@/api/auth/types";
 import { ServerDetail } from "./ServerDetail";
 import { VmDetail, CreateVmPane } from "@/pages/vm/Vm";
@@ -817,6 +818,14 @@ function serverIconTint(server: Server): string {
   return "text-dim";
 }
 
+const BUSY_CHIP_KIND: Record<BusyState, BadgeKind> = {
+  free: "idle",
+  testing: "info",
+  acs: "acs",
+  busy: "warn",
+  updating: "warn",
+};
+
 function ServerRow({
   server,
   active,
@@ -833,12 +842,7 @@ function ServerRow({
   onToggleChecked: () => void;
 }) {
   const deptLabel = useDeptLabel(server.department_id);
-  const busyChipKind: "ok" | "warn" | "accent" =
-    server.busy_state === "free"
-      ? "ok"
-      : server.busy_state === "acs"
-        ? "accent"
-        : "warn";
+  const busyChipKind: BadgeKind = BUSY_CHIP_KIND[server.busy_state];
   const busyChipLabel =
     server.busy_state === "free"
       ? "free"

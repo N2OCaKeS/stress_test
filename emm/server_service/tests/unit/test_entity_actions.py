@@ -81,7 +81,7 @@ class TestConstantsMigrationSync:
         проверяем по обе стороны со списком известных исключений.
         """
         # Entity-типы, добавленные follow-on миграциями ПОСЛЕ baseline 831ba55543e9.
-        added_after_baseline = {"task", "vm", "box"}
+        added_after_baseline = {"task", "vm", "box", "host_service"}
         assert (
             set(ENTITY_ACTIONS) - added_after_baseline
         ).issubset(set(seed._ALL_ACTIONS))

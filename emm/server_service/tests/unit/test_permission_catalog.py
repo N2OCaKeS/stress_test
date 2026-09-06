@@ -43,6 +43,7 @@ class TestFlagSets:
             "console", "manage_packages",
             "view_management_credentials",
             "acs_snapshot",
+            "host_service_control",
         }
         assert set(SENSITIVE_ACTIONS) == expected
 

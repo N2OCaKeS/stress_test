@@ -178,3 +178,8 @@ def acs_department_access_id() -> str:
 def os_version_bootstrap_password_id() -> str:
     """`obp_<uuid>` — для строк os_version_bootstrap_passwords (1:1 c os_versions)."""
     return _new_id("obp_")
+
+
+def host_service_unit_id() -> str:
+    """`hsu_<uuid>` — для строк host_service_units (per-department список юнитов)."""
+    return _new_id("hsu_")

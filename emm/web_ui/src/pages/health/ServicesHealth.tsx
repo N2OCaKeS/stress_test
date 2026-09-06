@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
+import { canManageHostServices } from "@/lib/rbac";
 import { ApiError, apiErrMsg } from "@/api/client";
 import {
   checkAllServices,
@@ -23,10 +24,10 @@ import type {
 
 const POLL_INTERVAL_MS = 60_000;
 
-/** `/admin/${id}` каталога — гейтится account_admin, см. adminCatalog.ts. */
+/** `/admin/${id}` каталога — гейтится `canManageHostServices`, см. adminCatalog.ts. */
 const HOST_CONTROL_SETTINGS_PATH = "/admin/services.server.host_control";
 
-type RowStatus = "ok" | "fail" | "unknown" | "not_configured";
+type RowStatus = "ok" | "fail" | "unknown";
 
 interface HealthRow {
   id: string;
@@ -45,7 +46,6 @@ function statusFromStates(...states: HealthState[]): "ok" | "fail" {
 
 function statusBadge(status: RowStatus) {
   if (status === "ok") return <Badge kind="ok">up</Badge>;
-  if (status === "not_configured") return <Badge kind="idle">не настроено</Badge>;
   if (status === "unknown") return <Badge kind="warn">unknown</Badge>;
   return <Badge kind="danger">down</Badge>;
 }
@@ -77,12 +77,11 @@ function alltaInternalRows(services: ServiceHealth[] | null): HealthRow[] {
 
 function unitRowStatus(status: AlltaHostServiceItem["status"]): RowStatus {
   if (status === "up") return "ok";
-  if (status === "not_configured") return "not_configured";
   if (status === "unknown") return "unknown";
   return "fail";
 }
 
-/** 12 systemd-юнитов ALLTA на хосте, проверяемых backend'ом по SSH. */
+/** Systemd-юниты, заведённые СВОИМ отделом caller'а, проверяются backend'ом по SSH. */
 function alltaUnitRows(items: AlltaHostServiceItem[] | null): HealthRow[] {
   return (items ?? []).map((item) => ({
     id: `unit-${item.id}`,
@@ -112,25 +111,33 @@ function astraRows(items: AstraHostServiceItem[] | null): HealthRow[] {
   }));
 }
 
-function controlErrorMessage(e: unknown): { message: string; notConfigured: boolean } {
-  if (e instanceof ApiError && e.errorCode === "HOST_SERVICES_NOT_CONFIGURED") {
-    return {
-      message:
-        "SSH-доступ к хосту не настроен — настройте его в «Управление сервисами хоста».",
-      notConfigured: true,
-    };
+function controlErrorMessage(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (
+      e.errorCode === "HOST_SERVICES_NOT_CONFIGURED" ||
+      e.errorCode === "HOST_SERVICE_SSH_UNAVAILABLE"
+    ) {
+      return "SSH-доступ к хосту не настроен или недоступен — проверьте настройки в «Управление сервисами хоста».";
+    }
+    if (e.errorCode === "HOST_UNIT_UNKNOWN") {
+      return "Юнит не найден — обновите страницу и попробуйте снова.";
+    }
+    if (e.errorCode === "HOST_SERVICE_CONTROL_FAILED") {
+      return "Команда SSH/systemctl не выполнилась на хосте.";
+    }
+    if (e.status === 403) {
+      return "Недостаточно прав для управления сервисами хоста своего отдела.";
+    }
   }
-  return {
-    message: apiErrMsg(e, "Не удалось выполнить действие"),
-    notConfigured: false,
-  };
+  return apiErrMsg(e, "Не удалось выполнить действие");
 }
 
 export function ServicesHealth() {
   const { persona } = usePersona();
   const toast = useToast();
   const confirm = useConfirm();
-  const isAccountAdmin = persona.platform_role === "account_admin";
+  const canManage = canManageHostServices(persona);
+  const hasDept = persona.dept_id != null;
 
   const [services, setServices] = useState<ServiceHealth[] | null>(null);
   const [hostServices, setHostServices] = useState<HostServicesResponse | null>(null);
@@ -169,12 +176,13 @@ export function ServicesHealth() {
     () => astraRows(hostServices?.astra ?? null),
     [hostServices],
   );
-  const hasNotConfigured = (hostServices?.allta ?? []).some(
-    (item) => item.status === "not_configured",
-  );
+  // Юниты пришли (не первичная загрузка) и список пуст: либо у отдела ещё
+  // нет настроек/юнитов, либо SSH недоступен — backend в обоих случаях
+  // отдаёт пустой `allta`, различать на UI нечем и незачем.
+  const unitsEmpty = hasDept && hostServices != null && hostServices.allta.length === 0;
 
   async function handleControl(
-    unit: string,
+    unitId: string,
     label: string,
     action: HostServiceControlAction,
   ) {
@@ -187,14 +195,13 @@ export function ServicesHealth() {
       });
       if (!ok) return;
     }
-    setPendingUnit(unit);
+    setPendingUnit(unitId);
     try {
-      await controlHostService(unit, action);
+      await controlHostService(unitId, action);
       toast.success(`${label}: команда «${action}» выполнена`);
       await fetchHostServices();
     } catch (err) {
-      const { message } = controlErrorMessage(err);
-      toast.error(message);
+      toast.error(controlErrorMessage(err));
     } finally {
       setPendingUnit(null);
     }
@@ -216,22 +223,30 @@ export function ServicesHealth() {
           <HealthSection
             icon={Activity}
             title="ALLTA"
-            subtitle="собственные сервисы платформы и инфраструктура хоста"
+            subtitle="собственные сервисы платформы и инфраструктура хоста своего отдела"
             rows={alltaTableRows}
             showActions
-            isAccountAdmin={isAccountAdmin}
+            canManage={canManage}
             pendingUnit={pendingUnit}
             onControl={handleControl}
             banner={
-              isAccountAdmin && hasNotConfigured ? (
+              !hasDept ? (
+                <div className="alert-warn text-xs flex items-center gap-2 px-4 py-2 border-b border-token">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>Вы не привязаны к отделу — юниты хоста ALLTA недоступны.</span>
+                </div>
+              ) : unitsEmpty ? (
                 <div className="alert-warn text-xs flex items-center gap-2 px-4 py-2 border-b border-token">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
                   <span>
-                    SSH-доступ к хосту не настроен — управление systemd-юнитами
-                    недоступно.{" "}
-                    <Link to={HOST_CONTROL_SETTINGS_PATH} className="underline">
-                      Настроить SSH
-                    </Link>
+                    Сервисы хоста ещё не настроены для вашего отдела.{" "}
+                    {canManage ? (
+                      <Link to={HOST_CONTROL_SETTINGS_PATH} className="underline">
+                        Настроить
+                      </Link>
+                    ) : (
+                      "Обратитесь к администратору отдела."
+                    )}
                   </span>
                 </div>
               ) : null
@@ -249,7 +264,7 @@ function HealthSection({
   subtitle,
   rows,
   showActions = false,
-  isAccountAdmin = false,
+  canManage = false,
   pendingUnit = null,
   onControl,
   banner,
@@ -259,10 +274,10 @@ function HealthSection({
   subtitle: string;
   rows: HealthRow[];
   showActions?: boolean;
-  isAccountAdmin?: boolean;
+  canManage?: boolean;
   pendingUnit?: string | null;
   onControl?: (
-    unit: string,
+    unitId: string,
     label: string,
     action: HostServiceControlAction,
   ) => void;
@@ -329,9 +344,9 @@ function HealthSection({
                     <td className="px-4 py-3">
                       {row.unit ? (
                         <ServiceControls
-                          unit={row.unit}
+                          unitId={row.unit}
                           label={row.service}
-                          isAccountAdmin={isAccountAdmin}
+                          canManage={canManage}
                           busy={pendingUnit === row.unit}
                           onControl={onControl!}
                         />
@@ -351,31 +366,33 @@ function HealthSection({
 }
 
 function ServiceControls({
-  unit,
+  unitId,
   label,
-  isAccountAdmin,
+  canManage,
   busy,
   onControl,
 }: {
-  unit: string;
+  unitId: string;
   label: string;
-  isAccountAdmin: boolean;
+  canManage: boolean;
   busy: boolean;
   onControl: (
-    unit: string,
+    unitId: string,
     label: string,
     action: HostServiceControlAction,
   ) => void;
 }) {
-  const disabled = !isAccountAdmin || busy;
-  const title = isAccountAdmin ? undefined : "Доступно только account_admin";
+  const disabled = !canManage || busy;
+  const title = canManage
+    ? undefined
+    : "Доступно только department_admin или server_service.admin своего отдела";
   return (
     <div className="flex items-center gap-1.5">
       <Button
         size="sm"
         disabled={disabled}
         title={title}
-        onClick={() => onControl(unit, label, "start")}
+        onClick={() => onControl(unitId, label, "start")}
       >
         Start
       </Button>
@@ -384,7 +401,7 @@ function ServiceControls({
         size="sm"
         disabled={disabled}
         title={title}
-        onClick={() => onControl(unit, label, "stop")}
+        onClick={() => onControl(unitId, label, "stop")}
       >
         Stop
       </Button>
@@ -393,7 +410,7 @@ function ServiceControls({
         size="sm"
         disabled={disabled}
         title={title}
-        onClick={() => onControl(unit, label, "restart")}
+        onClick={() => onControl(unitId, label, "restart")}
       >
         Restart
       </Button>

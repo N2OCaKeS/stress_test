@@ -354,6 +354,51 @@ async def require_account_action(
     )
 
 
+async def require_host_service_action(
+    db: AsyncSession,
+    identity: IdentityContext,
+    department_id: str,
+    action: str,
+) -> None:
+    """Бросает AuthorizationError, если caller не может `action` на host-service
+    конфиге/control департамента `department_id`.
+
+    Тот же bypass-паттерн, что и `has_account_action`: department_admin
+    своего отдела проходит без матрицы, иначе — обычная проверка
+    `has_action(EntityType.HOST_SERVICE)` (её и покрывает system-wide
+    seed-строка `admin`-роли из миграции `66ba803ba321`, так что носитель
+    `admin` service-роли в своём отделе проходит тоже).
+
+    `account_admin`/`loging_admin`/`loging_reader` без service-роли в
+    server_service не проходят ни одну ветку: у `account_admin` нет
+    `department_id` вообще (первое условие сразу ложно), а `has_action`
+    смотрит `identity.roles_for_service(SERVICE_NAME)` — у платформенных
+    ролей он пуст, значит `has_action` вернёт False независимо от
+    `department_id`.
+
+    `identity.department_id == department_id` в обеих ветках — защита от
+    вызова с чужим `department_id` (эндпоинты этого сервиса всегда передают
+    сюда `identity.department_id`, никогда не caller-supplied параметр, но
+    функция всё равно не должна молча разрешить cross-department доступ,
+    если это когда-нибудь изменится).
+    """
+    if (
+        identity.platform_role == PlatformRole.DEPARTMENT_ADMIN
+        and identity.department_id is not None
+        and identity.department_id == department_id
+    ):
+        return
+    if identity.department_id == department_id and await has_action(
+        db, identity, EntityType.HOST_SERVICE, action
+    ):
+        return
+    raise AuthorizationError(
+        error_code="PERMISSION_DENIED",
+        message=f"No access to action '{action}' on host_service for this department",
+        details={"entity_type": EntityType.HOST_SERVICE, "action": action},
+    )
+
+
 async def effective_actions(
     db: AsyncSession,
     identity: IdentityContext,

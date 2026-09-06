@@ -49,6 +49,11 @@ ENTITY_DESCRIPTIONS: dict[str, str] = {
         "предустановленный пользователь и список ОС/снимков на диске. Пер-"
         "департамент каталог."
     ),
+    EntityType.HOST_SERVICE: (
+        "SSH-доступ к отдельскому хосту и список systemd-юнитов, которые "
+        "отдел решил выставить на нём (host-service control). Пер-департамент, "
+        "без платформенного дефолта."
+    ),
 }
 
 ACTION_DESCRIPTIONS: dict[str, str] = {
@@ -143,6 +148,13 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
         "полная перезапись диска, необратимо). Один action на все три; "
         "тип-wide only."
     ),
+    Action.HOST_SERVICE_MANAGE: (
+        "Настраивать host-service control своего отдела: SSH-подключение к "
+        "хосту (host/port/user/приватный ключ) и список systemd-юнитов."
+    ),
+    Action.HOST_SERVICE_CONTROL: (
+        "Старт/стоп/рестарт одного systemd-юнита своего отдела на хосте по SSH."
+    ),
 }
 
 # Чувствительные действия — раскрытие/ротация секретов, управление питанием,
@@ -168,6 +180,11 @@ SENSITIVE_ACTIONS: frozenset[str] = frozenset({
     # Снятие снимка останавливает сервер, восстановление полностью
     # перезаписывает диск — оба необратимы для данных на боксе.
     Action.ACS_SNAPSHOT,
+    # Старт/стоп/рестарт живого сервиса на отдельском хосте по SSH — тот же
+    # тир, что POWER_*/CONSOLE. host_service_manage (CRUD SSH-конфига/списка
+    # юнитов) sensitive не помечен — это department-internal настройка,
+    # аудируется INFO, не действие над живой инфраструктурой.
+    Action.HOST_SERVICE_CONTROL,
 })
 
 # Служебные гранты воркера: callback'и через internal endpoint'ы. Людям в норме

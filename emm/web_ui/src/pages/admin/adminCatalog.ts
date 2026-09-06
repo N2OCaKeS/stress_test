@@ -30,6 +30,7 @@ import {
 
 import type { Persona } from "@/types/persona";
 import type { Service } from "@/api/auth/types";
+import { canManageHostServices } from "@/lib/rbac";
 
 import { ClusterHealth } from "./cluster/ClusterHealth";
 import { ClusterAuditOverview } from "./cluster/ClusterAuditOverview";
@@ -309,15 +310,16 @@ const STATIC_ITEMS: AdminItem[] = [
   {
     id: "services.server.host_control",
     label: "Управление сервисами хоста",
-    hint: "SSH-доступ для старта/стопа/рестарта ALLTA-сервисов",
+    hint: "SSH-доступ и systemd-юниты хоста своего отдела",
     icon: Terminal,
     block: "services",
     group: "server",
     content: ServicesHostControl,
-    // Платформенный singleton под account_admin; управляет SSH-креды, которые
-    // страница «Здоровье служб» использует для старта/стопа/рестарта systemd-
-    // юнитов на хосте. Остальным backend ответит 403.
-    visibleFor: (p) => isAccountAdmin(p),
+    // Per-department: свой хост/ключ/список юнитов на отдел. Гейтится
+    // `canManageHostServices` — department_admin или server_service.admin
+    // своего отдела; account_admin (нет отдела) не видит раздел вовсе — это
+    // и есть privacy-барьер, backend всё равно ответит 403.
+    visibleFor: (p) => canManageHostServices(p),
   },
   {
     id: "services.auth.password_policy",

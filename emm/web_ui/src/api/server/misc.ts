@@ -251,26 +251,29 @@ export function getHostDiskUsage(): Promise<HostDiskUsageResponse> {
 
 /**
  * `GET /api/server/v1/host/services` — статус ASTRA-сервисов (jira/life/git/
- * releases/dns) и ALLTA systemd-юнитов на хосте (по SSH). Доступен любому
- * аутентифицированному актору; `not_configured` у ALLTA-юнита означает, что
- * SSH-доступ ещё не настроен (см. `getHostServicesSettings`), а не что сервис
- * реально лежит.
+ * releases/dns) и ALLTA systemd-юнитов СВОЕГО отдела (по SSH). Доступен любому
+ * аутентифицированному актору; `allta` — юниты отдела caller'а (резолвится
+ * backend'ом по identity), пуст, если у caller'а нет department_id либо у
+ * отдела ещё нет настроек/юнитов.
  */
 export function getHostServices(): Promise<HostServicesResponse> {
   return apiGet<HostServicesResponse>("/server/v1/host/services");
 }
 
 /**
- * `POST /api/server/v1/host/services/{unit}/{action}` — start/stop/restart
- * одного ALLTA systemd-юнита на хосте через SSH. Только account_admin — 403
- * остальным. 400 `HOST_SERVICES_NOT_CONFIGURED` — SSH не настроен; 502
- * `HOST_SERVICE_CONTROL_FAILED` — сама SSH/systemctl команда не отработала.
+ * `POST /api/server/v1/host/services/{unit_id}/{action}` — start/stop/restart
+ * одного ALLTA systemd-юнита СВОЕГО отдела через SSH. Требует department_admin
+ * или роль `server_service.admin` своего отдела (`canManageHostServices`) —
+ * 403 остальным. 503 `HOST_SERVICES_NOT_CONFIGURED`/`HOST_SERVICE_SSH_UNAVAILABLE`
+ * — SSH не настроен/недоступен; 404 `HOST_UNIT_UNKNOWN` — юнит не существует
+ * или принадлежит другому отделу; 502 `HOST_SERVICE_CONTROL_FAILED` — сама
+ * SSH/systemctl команда не отработала.
  */
 export function controlHostService(
-  unit: string,
+  unitId: string,
   action: HostServiceControlAction,
 ): Promise<HostServiceControlResult> {
   return apiPost<HostServiceControlResult>(
-    `/server/v1/host/services/${unit}/${action}`,
+    `/server/v1/host/services/${unitId}/${action}`,
   );
 }

@@ -1442,11 +1442,11 @@ export interface HostDiskUsageResponse {
 export type AstraServiceStatus = "up" | "down" | "unknown";
 
 /**
- * Статус ALLTA systemd-юнита. `not_configured` — SSH-доступ к хосту ещё не
- * настроен (см. `HostServicesSettings`), поэтому статус не проверялся вовсе;
- * отличается от `down` (проверили — реально не работает).
+ * Статус ALLTA systemd-юнита своего отдела. Пустого статуса-заглушки
+ * «not_configured» больше нет — если у отдела нет настроек/юнитов, `allta`
+ * в ответе просто пустой массив (см. `HostServicesResponse`).
  */
-export type AlltaServiceStatus = "up" | "down" | "unknown" | "not_configured";
+export type AlltaServiceStatus = "up" | "down" | "unknown";
 
 /** Один внешний ASTRA-сервис (jira/life/git/releases/dns). */
 export interface AstraHostServiceItem {
@@ -1458,7 +1458,7 @@ export interface AstraHostServiceItem {
   error: string | null;
 }
 
-/** Один ALLTA systemd-юнит на хосте. */
+/** Один ALLTA systemd-юнит своего отдела, `id` — `hsu_<uuid>`. */
 export interface AlltaHostServiceItem {
   id: string;
   label: string;
@@ -1467,19 +1467,23 @@ export interface AlltaHostServiceItem {
   error: string | null;
 }
 
-/** Ответ `GET /host/services`. */
+/**
+ * Ответ `GET /host/services`. `allta` — юниты СВОЕГО отдела caller'а
+ * (резолвится на backend по identity); пуст, если у caller'а нет department_id
+ * либо у отдела ещё нет настроек/юнитов.
+ */
 export interface HostServicesResponse {
   astra: AstraHostServiceItem[];
   allta: AlltaHostServiceItem[];
 }
 
-/** Действие `POST /host/services/{unit}/{action}`. */
+/** Действие `POST /host/services/{unit_id}/{action}`. */
 export type HostServiceControlAction = "start" | "stop" | "restart";
 
-/** Ответ `POST /host/services/{unit}/{action}`. */
+/** Ответ `POST /host/services/{unit_id}/{action}`. */
 export interface HostServiceControlResult {
   ok: boolean;
-  unit: string;
+  unit_id: string;
   action: string;
   output: string;
 }
@@ -1487,8 +1491,8 @@ export interface HostServiceControlResult {
 // ── settings/host-services ──────────────────────────────────────────────────
 
 /**
- * Настройки SSH-доступа к хосту для управления ALLTA systemd-юнитами.
- * `private_key_is_set` — задан ли ключ; само значение write-only, не отдаётся.
+ * Настройки SSH-доступа к хосту ALLTA своего отдела. `private_key_is_set` —
+ * задан ли ключ; само значение write-only, не отдаётся.
  */
 export interface HostServicesSettings {
   configured: boolean;
@@ -1507,4 +1511,33 @@ export interface HostServicesSettingsUpdate {
   ssh_private_key?: string;
   /** Явно стереть сохранённый ключ (игнорируется вместе с ssh_private_key). */
   clear_private_key?: boolean;
+}
+
+/**
+ * Один systemd-юнит, заведённый отделом (`hsu_<uuid>`). `unit_name` —
+ * реальное имя systemd-юнита (не редактируется после создания — удалить и
+ * добавить заново); `label` — человекочитаемое имя, редактируется PATCH'ем.
+ */
+export interface HostServiceUnit {
+  id: string;
+  unit_name: string;
+  label: string;
+  created_at: Iso8601;
+  created_by: string | null;
+}
+
+/** Ответ `GET /settings/host-services/units`. */
+export interface HostServiceUnitListResponse {
+  items: HostServiceUnit[];
+}
+
+/** Тело `POST /settings/host-services/units`. */
+export interface HostServiceUnitCreate {
+  unit_name: string;
+  label?: string;
+}
+
+/** Тело `PATCH /settings/host-services/units/{unit_id}` — только label. */
+export interface HostServiceUnitUpdate {
+  label: string;
 }

@@ -217,3 +217,56 @@ class TestServiceRoleScoping:
         )
         repo_stub.grant("server", "admin", "delete")
         assert await permissions.has_action(None, identity, "server", "delete") is False
+
+
+# ── require_host_service_action ──────────────────────────────────────────────
+
+class TestRequireHostServiceAction:
+    """`require_host_service_action` — department_admin bypass OR matrix,
+    оба условия дополнительно требуют совпадения `identity.department_id`
+    с целевым `department_id` (см. docstring функции)."""
+
+    async def test_department_admin_bypasses_matrix(self, repo_stub):
+        identity = _identity(platform_role="department_admin", roles=[], department_id="dep_a")
+        await permissions.require_host_service_action(None, identity, "dep_a", "host_service_manage")
+
+    async def test_department_admin_of_other_department_denied(self, repo_stub):
+        identity = _identity(platform_role="department_admin", roles=[], department_id="dep_b")
+        with pytest.raises(AuthorizationError) as exc:
+            await permissions.require_host_service_action(None, identity, "dep_a", "host_service_manage")
+        assert exc.value.error_code == "PERMISSION_DENIED"
+
+    async def test_matrix_admin_role_grants(self, repo_stub):
+        identity = _identity(roles=["admin"], department_id="dep_a")
+        repo_stub.grant("host_service", "admin", "host_service_manage")
+        await permissions.require_host_service_action(None, identity, "dep_a", "host_service_manage")
+
+    async def test_matrix_role_without_grant_denied(self, repo_stub):
+        identity = _identity(roles=["reader"], department_id="dep_a")
+        with pytest.raises(AuthorizationError):
+            await permissions.require_host_service_action(None, identity, "dep_a", "host_service_manage")
+
+    async def test_department_mismatch_denied_even_with_matching_grant(self, repo_stub):
+        """Матрица разрешает identity's own department, но вызов с чужим
+        `department_id` не должен пройти — `identity.department_id ==
+        department_id` защищает от cross-department использования функции,
+        даже если бы `has_action` сама по себе не заметила подмену."""
+        identity = _identity(roles=["admin"], department_id="dep_a")
+        repo_stub.grant("host_service", "admin", "host_service_manage")
+        with pytest.raises(AuthorizationError):
+            await permissions.require_host_service_action(None, identity, "dep_b", "host_service_manage")
+
+    async def test_account_admin_denied(self, repo_stub):
+        """account_admin: нет department_id (bypass ветка ложна) и нет
+        service_roles в server_service (`has_action` возвращает False)."""
+        identity = _identity(platform_role="account_admin", roles=[], department_id=None)
+        with pytest.raises(AuthorizationError):
+            await permissions.require_host_service_action(None, identity, "dep_a", "host_service_manage")
+
+    async def test_control_action_is_independent_of_manage(self, repo_stub):
+        """Грант на `host_service_manage` не даёт `host_service_control` — два
+        разных action'а в матрице, как и задумано (см. `constants.py`)."""
+        identity = _identity(roles=["admin"], department_id="dep_a")
+        repo_stub.grant("host_service", "admin", "host_service_manage")
+        with pytest.raises(AuthorizationError):
+            await permissions.require_host_service_action(None, identity, "dep_a", "host_service_control")

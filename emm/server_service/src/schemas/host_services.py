@@ -1,12 +1,13 @@
-"""Схемы для `/host/services` (статус) и `/host/services/{unit}/{action}` (control).
+"""Схемы для `/host/services` (статус) и `/host/services/{unit_id}/{action}` (control).
 
 Две независимые категории, объединённые в один ответ:
 
 * `astra` — внешние HTTP-сервисы (Jira/Life/Git/Releases) + DNS-reachability,
-  проверяются живьём (`services/astra_health.py`).
-* `allta` — systemd-юниты ALLTA на том же хосте, что и сам emm, статус через
-  SSH (`services/host_control.py`); `not_configured`, если SSH ещё не настроен
-  (`/settings/host-services`).
+  проверяются живьём (`services/astra_health.py`), платформенные, не меняется.
+* `allta` — systemd-юниты, которые КАЖДЫЙ отдел сам добавил себе в список
+  (`HostServiceUnit`), статус через SSH на СВОЙ хост
+  (`services/host_control.py`); пусто (`[]`), если у отдела ещё нет ни
+  SSH-конфига, ни единого юнита в списке — это не ошибка.
 """
 
 from datetime import datetime
@@ -15,7 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 AstraHealthStatus = Literal["up", "down", "unknown"]
-AlltaHealthStatus = Literal["up", "down", "unknown", "not_configured"]
+AlltaHealthStatus = Literal["up", "down", "unknown"]
 
 
 class AstraServiceStatus(BaseModel):
@@ -30,12 +31,12 @@ class AstraServiceStatus(BaseModel):
 
 
 class AlltaServiceStatus(BaseModel):
-    """Статус одного ALLTA systemd-юнита на хосте."""
+    """Статус одного systemd-юнита из списка отдела."""
 
-    id: str = Field(description="Машинный id юнита (см. `ALLTA_HOST_UNITS`), напр. `acs`.")
-    label: str = Field(description="Человекочитаемая метка.")
+    id: str = Field(description="`hsu_<uuid>` — id строки `HostServiceUnit`, используется и как path-параметр control.")
+    label: str = Field(description="Display-имя юнита (см. `HostServiceUnit.label`).")
     status: AlltaHealthStatus = Field(
-        description="up / down (active/inactive по systemctl is-active) / unknown (SSH недоступен) / not_configured (SSH не настроен)."
+        description="up / down (active/inactive по systemctl is-active) / unknown (SSH недоступен)."
     )
     checked_at: datetime = Field(description="Момент проверки, UTC.")
     error: str | None = Field(default=None, description="Причина unknown-статуса (SSH-ошибка). null иначе.")
@@ -45,13 +46,15 @@ class HostServicesStatusResponse(BaseModel):
     """Ответ `GET /host/services` — обе категории разом."""
 
     astra: list[AstraServiceStatus] = Field(description="4 внешних HTTP-сервиса + агрегированная строка DNS.")
-    allta: list[AlltaServiceStatus] = Field(description="12 systemd-юнитов ALLTA на хосте.")
+    allta: list[AlltaServiceStatus] = Field(
+        description="Юниты своего отдела. Пусто для платформенных ролей (нет department_id) и для отдела без конфига/юнитов."
+    )
 
 
 class HostServiceControlResult(BaseModel):
-    """Ответ успешного `POST /host/services/{unit}/{action}`."""
+    """Ответ успешного `POST /host/services/{unit_id}/{action}`."""
 
     ok: bool = Field(description="Всегда true при 200 — ошибки идут через error envelope.")
-    unit: str = Field(description="Машинный id юнита.")
+    unit_id: str = Field(description="`hsu_<uuid>` юнита, который был затронут.")
     action: Literal["start", "stop", "restart"] = Field(description="Выполненное действие.")
     output: str = Field(description="stdout guard-скрипта/systemctl (обычно пусто на успехе).")

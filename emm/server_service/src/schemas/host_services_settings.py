@@ -1,15 +1,18 @@
-"""Pydantic-схемы настроек SSH-доступа к хосту для host-service control (`/settings/host-services`).
+"""Pydantic-схемы настроек SSH-доступа к хосту (host-service control) и списка юнитов.
 
-Платформенный singleton под `account_admin`. Приватный ключ никогда не
-возвращается в открытом виде — только факт "задан/не задан"
-(`private_key_is_set`); обновление идёт write-only полем в PUT.
+Per-department: `department_id` нигде не принимается от caller'а — эндпоинт
+всегда резолвит его из identity (см. `api/v1/endpoints/host_services_settings.py`).
+Приватный ключ никогда не возвращается в открытом виде — только факт
+"задан/не задан" (`private_key_is_set`); обновление идёт write-only полем в PUT.
 """
+
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
 
 class HostServicesSettingsResponse(BaseModel):
-    """Текущие настройки SSH-доступа к хосту."""
+    """Текущие настройки SSH-доступа к хосту своего отдела."""
 
     configured: bool = Field(
         description="True, если host+user+приватный ключ все заданы — статус/control могут пытаться подключаться."
@@ -21,7 +24,7 @@ class HostServicesSettingsResponse(BaseModel):
 
 
 class HostServicesSettingsUpdate(BaseModel):
-    """Тело PUT — частичное обновление настроек SSH-доступа к хосту.
+    """Тело PUT — частичное обновление настроек SSH-доступа к хосту своего отдела.
 
     Любое поле можно опустить — тогда текущее значение сохраняется. Пустая
     строка в `ssh_host`/`ssh_user` трактуется как явная очистка (администратор
@@ -42,3 +45,45 @@ class HostServicesSettingsUpdate(BaseModel):
         default=False,
         description="Явно стереть сохранённый приватный ключ (игнорируется, если одновременно передан `ssh_private_key`).",
     )
+
+
+class HostServiceUnitResponse(BaseModel):
+    """Один systemd-юнит из списка отдела."""
+
+    id: str = Field(description="`hsu_<uuid>`.")
+    unit_name: str = Field(description="Базовое имя юнита без `.service`, например `acs`.")
+    label: str = Field(description="Display-имя (по умолчанию равно `unit_name`).")
+    created_at: datetime = Field(description="Момент добавления, UTC.")
+    created_by: str | None = Field(default=None, description="user_id добавившего.")
+
+
+class HostServiceUnitListResponse(BaseModel):
+    """Ответ `GET /settings/host-services/units` — весь список юнитов отдела."""
+
+    items: list[HostServiceUnitResponse] = Field(default_factory=list)
+
+
+class HostServiceUnitCreate(BaseModel):
+    """Тело `POST /settings/host-services/units`."""
+
+    unit_name: str = Field(
+        min_length=1,
+        max_length=128,
+        description="Базовое имя юнита (без `.service` — оно отбрасывается, если передано). Разрешён charset `[a-zA-Z0-9_.@-]+`.",
+    )
+    label: str | None = Field(
+        default=None, max_length=128, description="Display-имя. Пусто — берётся равным `unit_name`."
+    )
+
+
+class HostServiceUnitUpdate(BaseModel):
+    """Тело `PATCH /settings/host-services/units/{unit_id}` — переименование label.
+
+    `unit_name` не редактируется post-creation осознанно: смена имени юнита —
+    это фактически другой юнит на хосте (и другая строка в sudoers), проще и
+    безопаснее удалить и добавить заново, чем разбираться с частично
+    рассинхронизированным состоянием "переименовали в БД, а sudoers/guard на
+    хосте всё ещё под старым именем".
+    """
+
+    label: str = Field(min_length=1, max_length=128, description="Новое display-имя.")

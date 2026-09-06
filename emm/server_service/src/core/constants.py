@@ -164,6 +164,10 @@ class EntityType(StrEnum):
     # Бокс-заготовка (образ) для создания ВМ: пер-департамент каталог с
     # предустановленным пользователем и списком ОС/снимков на диске.
     BOX = "box"
+    # Per-department host-service control: SSH-конфиг к своему хосту + список
+    # systemd-юнитов, которые отдел решил выставить (см. `host_control.py`).
+    # Нет платформенного дефолта — каждый отдел настраивает своё.
+    HOST_SERVICE = "host_service"
 
 
 class Action(StrEnum):
@@ -280,6 +284,14 @@ class Action(StrEnum):
     VM_NET_MANAGE = "vm_net_manage"
     VM_PRESET_MANAGE = "vm_preset_manage"
 
+    # ── host_service-зона (per-department) ────────────────────────────────
+    # Настройки: SSH-конфиг к отдельскому хосту + CRUD списка юнитов. Отдельно
+    # от control, чтобы кастомная роль могла держать одно без другого (та же
+    # логика, что развела CONSOLE от общего UPDATE).
+    HOST_SERVICE_MANAGE = "host_service_manage"
+    # Старт/стоп/рестарт юнита по SSH — опасное действие, отдельный action.
+    HOST_SERVICE_CONTROL = "host_service_control"
+
 
 # Whitelist валидных пар (entity_type, action). Несовпадение → 422
 # INVALID_ACTION_FOR_ENTITY в permission_service.grant_action.
@@ -362,6 +374,12 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     EntityType.BOX: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
         Action.VIEW_PASSWORD,
+    }),
+    # Per-department host-service control: manage (SSH-конфиг + unit-CRUD) и
+    # control (start/stop/restart) — раздельные actions, см. `Action` выше.
+    EntityType.HOST_SERVICE: frozenset({
+        Action.HOST_SERVICE_MANAGE,
+        Action.HOST_SERVICE_CONTROL,
     }),
 }
 

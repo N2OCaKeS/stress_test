@@ -228,15 +228,15 @@ def aad_for_acs_password(settings_id: str) -> bytes:
     return f"acs_password|acs_settings|{settings_id}".encode()
 
 
-def aad_for_host_control_ssh_key(settings_id: str) -> bytes:
-    """AAD для `host_services_settings.ssh_private_key_encrypted` строки `settings_id`.
+def aad_for_host_control_ssh_key(department_id: str) -> bytes:
+    """AAD для `host_services_settings.ssh_private_key_encrypted` строки `department_id`.
 
-    Формат — `"host_control_ssh_key|host_services_settings|<id>"`. Singleton-таблица
-    (один ряд, `settings_id == SINGLETON_ID`), привязка к id держит формат
-    единообразным с остальными AAD-хелперами и защищает от swap, если singleton
-    когда-нибудь перестанет быть единственной строкой.
+    Формат — `"host_control_ssh_key|host_services_settings|<department_id>"`.
+    Одна строка на отдел (PK — `department_id`); привязка ciphertext'а к
+    department_id защищает от swap между отделами так же, как остальные
+    AAD-хелперы защищают от swap между строками.
     """
-    return f"host_control_ssh_key|host_services_settings|{settings_id}".encode()
+    return f"host_control_ssh_key|host_services_settings|{department_id}".encode()
 
 
 def aad_for_os_version_bootstrap_password(os_version_id: str) -> bytes:

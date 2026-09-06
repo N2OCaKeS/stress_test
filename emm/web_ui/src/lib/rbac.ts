@@ -156,6 +156,24 @@ export function canManageVmPresets(persona: Persona): boolean {
   return canManageVms(persona);
 }
 
+/**
+ * True если персона может настраивать и управлять (start/stop/restart)
+ * systemd-юнитами ALLTA на хосте своего отдела (`/health` ALLTA-секция,
+ * `/admin/services.server.host_control`). В отличие от `canManageVms`, здесь
+ * годится только `server.admin`, не `operator` — рестарт хостовых сервисов
+ * (в т.ч. чужих для отдела процессов на том же хосте) опаснее операций над
+ * управляемыми тестовыми ВМ, и владелец явно попросил более узкий гейт.
+ * account_admin (нет department_id) сюда не попадает никогда — это и есть
+ * механизм privacy-барьера: платформенный админ не должен видеть состав и
+ * статус юнитов чужого отдела. Backend перепроверит.
+ */
+export function canManageHostServices(persona: Persona): boolean {
+  if (isServerZoneBlocked(persona)) return false;
+  if (persona.platform_role === "dep_admin") return true;
+  const role = persona.service_roles?.server;
+  return role === "admin";
+}
+
 /** True if persona has any logging-only role (view-only on aux services). */
 export function isLoggingOnly(persona: Persona): boolean {
   return (

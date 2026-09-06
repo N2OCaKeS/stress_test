@@ -48,11 +48,14 @@ global bypass матрицы — это нарушало модель: platform-
   чтение публичное. Исключение только для GET — запись остаётся под
   матрицей прав. Платформенные роли теперь могут читать каталог, но не
   трогать прочие server-эндпоинты.
-* ``/api/server/v1/host/services*`` — статус ASTRA/ALLTA-сервисов хоста
-  (GET) и control ALLTA systemd-юнитов (POST). Не бизнес-данные отдела:
-  GET — самоинтроспекция платформы, POST — управление инфраструктурой
-  хоста под `account_admin`. Оба метода исключены, чтобы account_admin мог
-  и видеть статус, и жать start/stop/restart на своей admin-странице.
+* ``GET /api/server/v1/host/services`` (точный путь, без хвоста) — статус
+  ASTRA-сервисов (платформенные, видны всем) + ALLTA-юнитов СВОЕГО отдела
+  caller'а. Для account_admin это безвредно (нет department_id → `allta`
+  всегда пустой), поэтому остаётся исключением. ``POST
+  /api/server/v1/host/services/{unit_id}/{action}`` (control) и
+  ``/api/server/v1/settings/host-services*`` (SSH-конфиг + список юнитов) —
+  НЕ исключены: per-department бизнес-данные/действие, account_admin сюда
+  не должен попадать вовсе (дефолтный блок — то, что нужно).
 * Запросы без Authorization-header'а — проходят дальше (Bearer-валидация
   на уровне ``Depends(get_current_identity)`` отобьёт их 401, либо
   endpoint анонимный).
@@ -179,16 +182,37 @@ _MANAGEMENT_USER_CONFIG_PREFIX = "/api/server/v1/management-user-config"
 # endpoint-уровне; guard лишь не отбивает запрос. Префикс точный. Internal-read
 # воркера живёт под `/internal/settings/*` и сюда по префиксу не попадает — его
 # каллер (worker_bot) не платформенная роль, guard его и так пропускает.
+#
+# `/settings/host-services*` — ИСКЛЮЧЕНИЕ из этого исключения (см.
+# `_HOST_SERVICES_SETTINGS_PREFIX` ниже и вычитание в `_is_settings_path`):
+# после тенант-фикса это per-department SSH-конфиг + список юнитов, самые что
+# ни на есть бизнес-данные отдела (какой хост, какие сервисы отдел у себя
+# крутит) — account_admin читать/писать их не должен вовсе, дефолтное
+# поведение guard'а (блок) здесь и есть то, что нужно.
 _SETTINGS_PREFIX = "/api/server/v1/settings"
 
-# Статус ASTRA/ALLTA-сервисов хоста + control (start/stop/restart) ALLTA
-# systemd-юнитов. GET открыт любому аутентифицированному актору (как
-# `/host/diskspace`), POST control — только `account_admin` (управление
-# инфраструктурой хоста, не бизнес-данные отдела). Оба метода — исключение из
-# business-блока: account_admin должен и видеть статус на своей admin-странице,
-# и жать start/stop/restart. Позитивная проверка роли для control — в
-# `require_account_admin` на endpoint-уровне; guard путь просто не блокирует.
-_HOST_SERVICES_PREFIX = "/api/server/v1/host/services"
+# Per-department SSH-конфиг + список юнитов host-service control. Раньше был
+# частью общего `/settings*`-исключения (platform-singleton дизайн); после
+# тенант-фикса это бизнес-данные конкретного отдела — вычитается из
+# `_is_settings_path` ниже, никакого отдельного allow для него нет.
+_HOST_SERVICES_SETTINGS_PREFIX = "/api/server/v1/settings/host-services"
+
+# Статус ASTRA-сервисов + статус/control per-department systemd-юнитов на
+# хосте. Разделено по методу+пути, а не одним префиксом, как раньше:
+#
+# * `GET /host/services` (точное совпадение, без хвоста) остаётся исключением
+#   из business-блока. Обоснование: account_admin получает `astra` (платформенные
+#   данные, как и было) плюс всегда пустой `allta: []` — у него нет
+#   department_id, резолвить нечьи юниты не из чего, утечки бизнес-данных
+#   отдела здесь структурно нет. Продуктовой необходимости в этом тоже нет
+#   (admin-страница отдела ему не показывается), но и вреда нет — оставляем
+#   самый простой вариант, не заводя новый allow только ради запрета того,
+#   что и так безопасно.
+# * `POST /host/services/{unit_id}/{action}` (путь с хвостом) — из
+#   исключения УБРАН. Это управление конкретным юнитом конкретного отдела
+#   (control), полноценные бизнес-данные/действие отдела — account_admin
+#   сюда попадать не должен, дефолтное поведение guard'а (блок) корректно.
+_HOST_SERVICES_STATUS_PREFIX = "/api/server/v1/host/services"
 
 # Каталог OS-версий — глобальный справочник (имена версий, репозитории), а не
 # бизнес-данные отдела. Чтение каталога публичное (см. endpoints/os_versions.py),
@@ -271,25 +295,39 @@ def _is_management_user_config_path(path: str) -> bool:
     )
 
 
+def _is_host_services_settings_path(path: str) -> bool:
+    """True для per-department host-service конфига (`/settings/host-services*`).
+
+    Вычитается из `_is_settings_path` — эти пути НЕ исключение из
+    business-data-блока (см. комментарий у `_HOST_SERVICES_SETTINGS_PREFIX`).
+    """
+    return path == _HOST_SERVICES_SETTINGS_PREFIX or path.startswith(_HOST_SERVICES_SETTINGS_PREFIX + "/")
+
+
 def _is_settings_path(path: str) -> bool:
     """True для платформенных настроек проб статуса (`/settings*`).
 
     Сервисная настройка под `account_admin` — исключение из business-data-блока.
     Точная проверка роли — в `require_account_admin`; middleware путь просто не
-    блокирует. Матч по префиксу + границе сегмента.
+    блокирует. Матч по префиксу + границе сегмента. `/settings/host-services*`
+    вычитается явно — это per-department бизнес-данные, не платформенная
+    настройка (см. `_is_host_services_settings_path`).
     """
+    if _is_host_services_settings_path(path):
+        return False
     return path == _SETTINGS_PREFIX or path.startswith(_SETTINGS_PREFIX + "/")
 
 
-def _is_host_services_path(path: str) -> bool:
-    """True для статуса/control хостовых сервисов (`/host/services*`).
+def _is_host_services_status_path(path: str, method: str) -> bool:
+    """True только для `GET /host/services` — единственный host-services путь,
+    который остаётся исключением из business-data-блока.
 
-    GET — открыт любому аутентифицированному актору; POST control — под
-    `account_admin`. Оба исключены из business-data-блока: точная проверка
-    роли для control — в `require_account_admin` на endpoint-уровне, guard
-    путь просто не блокирует. Матч по префиксу + границе сегмента.
+    Точное совпадение пути (без хвоста `/{unit_id}/{action}`) И метод GET —
+    `POST /host/services/{unit_id}/{action}` (control) под этот матч не
+    попадает и блокируется дефолтным поведением guard'а. См. развёрнутое
+    обоснование у `_HOST_SERVICES_STATUS_PREFIX` выше.
     """
-    return path == _HOST_SERVICES_PREFIX or path.startswith(_HOST_SERVICES_PREFIX + "/")
+    return method == "GET" and path == _HOST_SERVICES_STATUS_PREFIX
 
 
 def _is_public_path(path: str) -> bool:
@@ -313,7 +351,6 @@ def _is_public_path(path: str) -> bool:
         or _is_admin_password_policy_path(path)
         or _is_management_user_config_path(path)
         or _is_settings_path(path)
-        or _is_host_services_path(path)
     )
 
 
@@ -390,7 +427,11 @@ async def platform_admin_guard(request: Request, call_next):
     по generic ``http.access_denied``.
     """
     path = request.url.path
-    if _is_public_path(path) or _is_os_versions_read(path, request.method):
+    if (
+        _is_public_path(path)
+        or _is_os_versions_read(path, request.method)
+        or _is_host_services_status_path(path, request.method)
+    ):
         return await call_next(request)
 
     token = auth_deps._extract_bearer(request)

@@ -1,19 +1,21 @@
-"""Настройки SSH-доступа к хосту для управления ALLTA-сервисами — платформенный singleton.
+"""Настройки SSH-доступа к хосту для управления ALLTA-сервисами — per-department.
 
-emm крутится на том же физическом хосте, что и ACS/DRBL/Clonezilla-сервер
-(owner-confirmed). Этот singleton хранит, как достучаться до хоста по SSH,
-чтобы читать статус и стартовать/стопать/рестартовать systemd-юниты ALLTA
-(см. `services/host_control.py`, `ALLTA_HOST_UNITS`). На хосте под это заведён
-отдельный непривилегированный аккаунт с forced-command SSH
-(`scripts/host-control/emm-host-service-guard.sh`) — сам guard-скрипт и
-allowlist юнитов это единственная линия защиты от произвольных команд,
-app-side allowlist в `host_control.py` — вторая, независимая.
+Каждый отдел, у которого есть свой ALLTA-хост, настраивает здесь, как до
+него достучаться по SSH — одна строка на отдел (`department_id` — PK, не
+платформенный singleton). Управление этой строкой скопировано на само это
+отдел: `department_admin` своего отдела или носитель `admin` service-роли
+`server_service` в этом же отделе (см.
+`services/permissions.require_host_service_action`). `account_admin` сюда
+доступа не имеет вовсе — какие сервисы отдел у себя крутит и крутит ли
+что-то вообще, не должно быть видно ни платформенному админу, ни другим
+отделам.
 
-Одна строка на всю платформу (PK зафиксирован `SINGLETON_ID`), по образцу
-`AcsSettings`. Приватный ключ хранится зашифрованным тем же AES-256-GCM
-конвертом, что и остальные секреты server_service (`services/secrets_service.py`),
-под собственным AAD (`aad_for_host_control_ssh_key`), привязанным к
-singleton-строке.
+Guard-скрипт на хосте (`scripts/host-control/emm-host-service-guard.sh`) и
+сгенерированный под него sudoers-файл — тоже per-department: свой аккаунт,
+свой ключ, свой allowlist на своём боксе. Приватный ключ хранится
+зашифрованным тем же AES-256-GCM конвертом, что и остальные секреты
+server_service (`services/secrets_service.py`), под AAD, привязанным теперь
+к `department_id` (`aad_for_host_control_ssh_key`).
 """
 
 from datetime import datetime
@@ -23,16 +25,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
 
-# Единственная допустимая строка таблицы. Все чтения/записи идут по этому PK.
-SINGLETON_ID = "default"
-
 
 class HostServicesSettings(Base):
-    """Платформенный singleton-конфиг SSH-доступа к хосту для host-service control."""
+    """Per-department конфиг SSH-доступа к хосту для host-service control."""
 
     __tablename__ = "host_services_settings"
 
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=SINGLETON_ID)
+    department_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     ssh_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ssh_port: Mapped[int] = mapped_column(Integer, nullable=False, default=22, server_default="22")
     ssh_user: Mapped[str | None] = mapped_column(String(64), nullable=True)

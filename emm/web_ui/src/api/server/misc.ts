@@ -1,8 +1,9 @@
 /**
  * Thin wrappers для разрозненных endpoint'ов `server_service`:
  * `installed-packages` (live SSH-проба), `users/inventory` (snapshot OS-юзеров),
- * `tasks/{id}/cancel` (отмена worker-task'и) и `host/diskspace` (заполняемость
- * диска на хосте самого server_service).
+ * `tasks/{id}/cancel` (отмена worker-task'и), `host/diskspace` (заполняемость
+ * диска на хосте самого server_service) и `host/services` (статус + управление
+ * ALLTA/ASTRA сервисами на хосте по SSH).
  *
  * Все независимые мелкие маршруты, под отдельный файл (servers/ipmi/
  * accounts/osVersions/permissions) не подходят. Источник истины:
@@ -10,6 +11,7 @@
  *   server_service/src/api/v1/endpoints/inventory.py
  *   server_service/src/api/v1/endpoints/tasks.py
  *   server_service/src/api/v1/endpoints/host_disk.py
+ *   server_service/src/api/v1/endpoints/host_services.py
  */
 
 import { apiGet, apiPost } from "@/api/client";
@@ -18,6 +20,9 @@ import type {
   BulkInstalledPackagesRequest,
   BulkInstalledPackagesResponse,
   HostDiskUsageResponse,
+  HostServiceControlAction,
+  HostServiceControlResult,
+  HostServicesResponse,
   InstalledPackagesRequest,
   InstalledPackagesResult,
   ListTasksQuery,
@@ -240,4 +245,32 @@ export function cancelTask(
  */
 export function getHostDiskUsage(): Promise<HostDiskUsageResponse> {
   return apiGet<HostDiskUsageResponse>("/server/v1/host/diskspace");
+}
+
+// ── host/services ────────────────────────────────────────────────────────────
+
+/**
+ * `GET /api/server/v1/host/services` — статус ASTRA-сервисов (jira/life/git/
+ * releases/dns) и ALLTA systemd-юнитов на хосте (по SSH). Доступен любому
+ * аутентифицированному актору; `not_configured` у ALLTA-юнита означает, что
+ * SSH-доступ ещё не настроен (см. `getHostServicesSettings`), а не что сервис
+ * реально лежит.
+ */
+export function getHostServices(): Promise<HostServicesResponse> {
+  return apiGet<HostServicesResponse>("/server/v1/host/services");
+}
+
+/**
+ * `POST /api/server/v1/host/services/{unit}/{action}` — start/stop/restart
+ * одного ALLTA systemd-юнита на хосте через SSH. Только account_admin — 403
+ * остальным. 400 `HOST_SERVICES_NOT_CONFIGURED` — SSH не настроен; 502
+ * `HOST_SERVICE_CONTROL_FAILED` — сама SSH/systemctl команда не отработала.
+ */
+export function controlHostService(
+  unit: string,
+  action: HostServiceControlAction,
+): Promise<HostServiceControlResult> {
+  return apiPost<HostServiceControlResult>(
+    `/server/v1/host/services/${unit}/${action}`,
+  );
 }

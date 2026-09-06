@@ -52,6 +52,31 @@ typing_extensions = {version = ">=4.5", markers = "python_version < \"3.13\""}
 trio = ["trio (>=0.32.0)"]
 
 [[package]]
+name = "asyncssh"
+version = "2.23.0"
+description = "AsyncSSH: Asynchronous SSHv2 client and server library"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "asyncssh-2.23.0-py3-none-any.whl", hash = "sha256:14108bfdaae17457f0c1841e883ad934271bbfdd46458aa4c4d0973451940ad0"},
+    {file = "asyncssh-2.23.0.tar.gz", hash = "sha256:8c54760953c1f2cf282591bcba5c8c70efc48d645bbf26bd2307a9c66a0ed1a7"},
+]
+
+[package.dependencies]
+cryptography = ">=39.0"
+typing_extensions = ">=4.0.0"
+
+[package.extras]
+bcrypt = ["bcrypt (>=3.1.3)"]
+fido2 = ["fido2 (>=2)"]
+gssapi = ["gssapi (>=1.2.0)"]
+ifaddr = ["ifaddr (>=0.2.0)"]
+pkcs11 = ["python-pkcs11 (>=0.7.0)"]
+pyopenssl = ["pyOpenSSL (>=23.0.0)"]
+pywin32 = ["pywin32 (>=227)"]
+
+[[package]]
 name = "certifi"
 version = "2026.4.22"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -2240,4 +2265,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "43c24f57750fad9bde6002eab115ecf99ec57e36246d9997f018f13b85083792"
+content-hash = "08f50c71e00d1deb685e9d5dcd7167aca89bea23cad0460aea7f3c86d1184678"

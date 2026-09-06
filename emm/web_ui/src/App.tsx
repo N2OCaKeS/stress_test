@@ -251,7 +251,7 @@ export function App() {
               }
             />
             <Route
-              path="/health/:scope"
+              path="/health"
               element={
                 <RouteGuard>
                   <ServicesHealth />

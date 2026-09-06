@@ -48,6 +48,11 @@ global bypass матрицы — это нарушало модель: platform-
   чтение публичное. Исключение только для GET — запись остаётся под
   матрицей прав. Платформенные роли теперь могут читать каталог, но не
   трогать прочие server-эндпоинты.
+* ``/api/server/v1/host/services*`` — статус ASTRA/ALLTA-сервисов хоста
+  (GET) и control ALLTA systemd-юнитов (POST). Не бизнес-данные отдела:
+  GET — самоинтроспекция платформы, POST — управление инфраструктурой
+  хоста под `account_admin`. Оба метода исключены, чтобы account_admin мог
+  и видеть статус, и жать start/stop/restart на своей admin-странице.
 * Запросы без Authorization-header'а — проходят дальше (Bearer-валидация
   на уровне ``Depends(get_current_identity)`` отобьёт их 401, либо
   endpoint анонимный).
@@ -176,6 +181,15 @@ _MANAGEMENT_USER_CONFIG_PREFIX = "/api/server/v1/management-user-config"
 # каллер (worker_bot) не платформенная роль, guard его и так пропускает.
 _SETTINGS_PREFIX = "/api/server/v1/settings"
 
+# Статус ASTRA/ALLTA-сервисов хоста + control (start/stop/restart) ALLTA
+# systemd-юнитов. GET открыт любому аутентифицированному актору (как
+# `/host/diskspace`), POST control — только `account_admin` (управление
+# инфраструктурой хоста, не бизнес-данные отдела). Оба метода — исключение из
+# business-блока: account_admin должен и видеть статус на своей admin-странице,
+# и жать start/stop/restart. Позитивная проверка роли для control — в
+# `require_account_admin` на endpoint-уровне; guard путь просто не блокирует.
+_HOST_SERVICES_PREFIX = "/api/server/v1/host/services"
+
 # Каталог OS-версий — глобальный справочник (имена версий, репозитории), а не
 # бизнес-данные отдела. Чтение каталога публичное (см. endpoints/os_versions.py),
 # поэтому платформенным ролям его тоже не за что отбивать. Исключение строго для
@@ -267,6 +281,17 @@ def _is_settings_path(path: str) -> bool:
     return path == _SETTINGS_PREFIX or path.startswith(_SETTINGS_PREFIX + "/")
 
 
+def _is_host_services_path(path: str) -> bool:
+    """True для статуса/control хостовых сервисов (`/host/services*`).
+
+    GET — открыт любому аутентифицированному актору; POST control — под
+    `account_admin`. Оба исключены из business-data-блока: точная проверка
+    роли для control — в `require_account_admin` на endpoint-уровне, guard
+    путь просто не блокирует. Матч по префиксу + границе сегмента.
+    """
+    return path == _HOST_SERVICES_PREFIX or path.startswith(_HOST_SERVICES_PREFIX + "/")
+
+
 def _is_public_path(path: str) -> bool:
     """True для путей, которые middleware пропускает без проверки токена.
 
@@ -288,6 +313,7 @@ def _is_public_path(path: str) -> bool:
         or _is_admin_password_policy_path(path)
         or _is_management_user_config_path(path)
         or _is_settings_path(path)
+        or _is_host_services_path(path)
     )
 
 

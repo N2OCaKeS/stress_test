@@ -6,6 +6,7 @@ from src.models.box import Box
 from src.models.console_macro import ConsoleMacro
 from src.models.dispatch_outbox import DispatchOutbox
 from src.models.entity_permission import EntityPermission
+from src.models.host_services_settings import HostServicesSettings
 from src.models.ipmi_controller import IpmiController
 from src.models.management_user_config import ManagementUserConfig
 from src.models.os_version import OsVersion
@@ -38,6 +39,7 @@ __all__ = [
     "ConsoleMacro",
     "DispatchOutbox",
     "EntityPermission",
+    "HostServicesSettings",
     "IpmiController",
     "ManagementUserConfig",
     "OsVersion",

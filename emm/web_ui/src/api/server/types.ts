@@ -1435,3 +1435,76 @@ export interface HostDiskPathUsage {
 export interface HostDiskUsageResponse {
   paths: HostDiskPathUsage[];
 }
+
+// ── host/services ────────────────────────────────────────────────────────────
+
+/** Статус внешнего ASTRA-сервиса из `GET /host/services`. */
+export type AstraServiceStatus = "up" | "down" | "unknown";
+
+/**
+ * Статус ALLTA systemd-юнита. `not_configured` — SSH-доступ к хосту ещё не
+ * настроен (см. `HostServicesSettings`), поэтому статус не проверялся вовсе;
+ * отличается от `down` (проверили — реально не работает).
+ */
+export type AlltaServiceStatus = "up" | "down" | "unknown" | "not_configured";
+
+/** Один внешний ASTRA-сервис (jira/life/git/releases/dns). */
+export interface AstraHostServiceItem {
+  id: string;
+  label: string;
+  status: AstraServiceStatus;
+  checked_at: string;
+  latency_ms: number | null;
+  error: string | null;
+}
+
+/** Один ALLTA systemd-юнит на хосте. */
+export interface AlltaHostServiceItem {
+  id: string;
+  label: string;
+  status: AlltaServiceStatus;
+  checked_at: string | null;
+  error: string | null;
+}
+
+/** Ответ `GET /host/services`. */
+export interface HostServicesResponse {
+  astra: AstraHostServiceItem[];
+  allta: AlltaHostServiceItem[];
+}
+
+/** Действие `POST /host/services/{unit}/{action}`. */
+export type HostServiceControlAction = "start" | "stop" | "restart";
+
+/** Ответ `POST /host/services/{unit}/{action}`. */
+export interface HostServiceControlResult {
+  ok: boolean;
+  unit: string;
+  action: string;
+  output: string;
+}
+
+// ── settings/host-services ──────────────────────────────────────────────────
+
+/**
+ * Настройки SSH-доступа к хосту для управления ALLTA systemd-юнитами.
+ * `private_key_is_set` — задан ли ключ; само значение write-only, не отдаётся.
+ */
+export interface HostServicesSettings {
+  configured: boolean;
+  ssh_host: string | null;
+  ssh_port: number;
+  ssh_user: string | null;
+  private_key_is_set: boolean;
+}
+
+/** Тело PUT /settings/host-services — частичное обновление. */
+export interface HostServicesSettingsUpdate {
+  ssh_host?: string;
+  ssh_port?: number;
+  ssh_user?: string;
+  /** Новый приватный ключ, plaintext PEM/OpenSSH. Не передано — не менять. */
+  ssh_private_key?: string;
+  /** Явно стереть сохранённый ключ (игнорируется вместе с ssh_private_key). */
+  clear_private_key?: boolean;
+}

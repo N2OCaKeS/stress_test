@@ -228,6 +228,17 @@ def aad_for_acs_password(settings_id: str) -> bytes:
     return f"acs_password|acs_settings|{settings_id}".encode()
 
 
+def aad_for_host_control_ssh_key(settings_id: str) -> bytes:
+    """AAD для `host_services_settings.ssh_private_key_encrypted` строки `settings_id`.
+
+    Формат — `"host_control_ssh_key|host_services_settings|<id>"`. Singleton-таблица
+    (один ряд, `settings_id == SINGLETON_ID`), привязка к id держит формат
+    единообразным с остальными AAD-хелперами и защищает от swap, если singleton
+    когда-нибудь перестанет быть единственной строкой.
+    """
+    return f"host_control_ssh_key|host_services_settings|{settings_id}".encode()
+
+
 def aad_for_os_version_bootstrap_password(os_version_id: str) -> bytes:
     """AAD для `os_version_bootstrap_passwords.password_encrypted` строки `os_version_id`.
 
@@ -401,6 +412,7 @@ _ALLOWED_LAZY_TARGETS: frozenset[tuple[str, str]] = frozenset({
     ("vms", "mgmt_password_encrypted"),
     ("acs_settings", "acs_password_encrypted"),
     ("os_version_bootstrap_passwords", "password_encrypted"),
+    ("host_services_settings", "ssh_private_key_encrypted"),
 })
 
 

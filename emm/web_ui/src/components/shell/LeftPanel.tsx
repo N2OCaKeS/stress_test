@@ -216,7 +216,7 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
   // подкатегории (/log/rules) загорается и родитель (/log), и соседи с общим
   // префиксом. Собираем все рендеримые ссылки, выбираем ту, чей `to` — самый
   // длинный матч к текущему пути (точное равенство или префикс `to + "/"`).
-  const navLinks = ["/home", "/wiki", "/os", "/me", "/admin", "/health/allta", "/health/astra"];
+  const navLinks = ["/home", "/wiki", "/os", "/me", "/admin", "/health"];
   for (const chip of chips) {
     navLinks.push(chip.to);
     for (const s of chip.subItems ?? []) navLinks.push(s.to);
@@ -458,24 +458,16 @@ function ServicesHealthPanel({ collapsed }: { collapsed: boolean }) {
   }, []);
 
   const alltaStatus = aggregateAlltaHealth(services);
-  const astraStatus: "ok" | "fail" = "fail";
 
   if (collapsed) {
     return (
       <div className="mt-3 border-t border-token pt-2 flex flex-col items-center gap-1">
         <Link
-          to="/health/allta"
-          title={`ALLTA Services Health: ${alltaStatus}`}
+          to="/health"
+          title={`Здоровье служб: ${alltaStatus}`}
           className="chip justify-center"
         >
           <span className={`h-2.5 w-2.5 rounded-full ${alltaStatus === "ok" ? healthDotClass("up") : healthDotClass("down")}`} />
-        </Link>
-        <Link
-          to="/health/astra"
-          title={`Astra Services Health: ${astraStatus}`}
-          className="chip justify-center"
-        >
-          <span className={`h-2.5 w-2.5 rounded-full ${healthDotClass("down")}`} />
         </Link>
       </div>
     );
@@ -483,16 +475,7 @@ function ServicesHealthPanel({ collapsed }: { collapsed: boolean }) {
 
   return (
     <div className="mt-3 border-t border-token pt-3 flex flex-col gap-1">
-      <HealthNavRow
-        to="/health/allta"
-        title="ALLTA Services Health"
-        status={alltaStatus}
-      />
-      <HealthNavRow
-        to="/health/astra"
-        title="Astra Services Health"
-        status={astraStatus}
-      />
+      <HealthNavRow to="/health" title="Здоровье служб" status={alltaStatus} />
     </div>
   );
 }

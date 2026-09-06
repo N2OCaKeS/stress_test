@@ -19,6 +19,7 @@ import {
   ScanSearch,
   ServerIcon,
   ShieldCheck,
+  Terminal,
   Unplug,
   UserCog,
   Users,
@@ -46,6 +47,7 @@ import { ServicesIgnoredLogins } from "./services/ServicesIgnoredLogins";
 import { ServicesManagementUser } from "./services/ServicesManagementUser";
 import { ServicesProbeSettings } from "./services/ServicesProbeSettings";
 import { ServicesAcsSettings } from "./services/ServicesAcsSettings";
+import { ServicesHostControl } from "./services/ServicesHostControl";
 import { ServicesPasswordPolicy } from "./services/ServicesPasswordPolicy";
 import { ServicesNavLink } from "./services/ServicesNavLink";
 import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
@@ -302,6 +304,19 @@ const STATIC_ITEMS: AdminItem[] = [
     // Платформенный singleton под account_admin; per-department opt-in
     // сшивается на фронте с каталогом отделов auth_service. Остальным
     // backend ответит 403.
+    visibleFor: (p) => isAccountAdmin(p),
+  },
+  {
+    id: "services.server.host_control",
+    label: "Управление сервисами хоста",
+    hint: "SSH-доступ для старта/стопа/рестарта ALLTA-сервисов",
+    icon: Terminal,
+    block: "services",
+    group: "server",
+    content: ServicesHostControl,
+    // Платформенный singleton под account_admin; управляет SSH-креды, которые
+    // страница «Здоровье служб» использует для старта/стопа/рестарта systemd-
+    // юнитов на хосте. Остальным backend ответит 403.
     visibleFor: (p) => isAccountAdmin(p),
   },
   {

@@ -30,6 +30,10 @@ from src.api.v1.endpoints.console import vm_router as vm_console_router
 from src.api.v1.endpoints.console_macros import router as console_macros_router
 from src.api.v1.endpoints.health import router as health_router
 from src.api.v1.endpoints.host_disk import router as host_disk_router
+from src.api.v1.endpoints.host_services import router as host_services_router
+from src.api.v1.endpoints.host_services_settings import (
+    router as host_services_settings_router,
+)
 from src.api.v1.endpoints.ipmi import list_router as ipmi_list_router
 from src.api.v1.endpoints.ipmi import list_router_legacy as ipmi_list_router_legacy
 from src.api.v1.endpoints.ipmi import router as ipmi_router
@@ -77,6 +81,10 @@ router.include_router(health_router, tags=["health"])
 # test-серверов) — GET /host/diskspace, для карточки на главной. Любой
 # аутентифицированный актор, без DB.
 router.include_router(host_disk_router, tags=["host"])
+# Статус ASTRA-сервисов (внешний HTTP+DNS) и ALLTA systemd-юнитов (по SSH на
+# хост) + control (start/stop/restart) под account_admin. GET открыт любому
+# аутентифицированному актору, control — только account_admin.
+router.include_router(host_services_router, tags=["host"])
 router.include_router(servers_router, tags=["servers"])
 router.include_router(server_accounts_router, tags=["server-accounts"])
 # VM-домен: /vms (CRUD + питание + бронь + by-number) и prepare-vms-hub под
@@ -159,3 +167,6 @@ router.include_router(system_settings_internal_router)
 # per-department opt-in (/settings/acs/departments).
 router.include_router(acs_settings_router)
 router.include_router(acs_settings_internal_router)
+# Настройки SSH-доступа к хосту для host-service control (ALLTA-юниты) —
+# платформенный singleton под account_admin, тот же паттерн, что у ACS.
+router.include_router(host_services_settings_router)

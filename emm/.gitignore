@@ -49,5 +49,4 @@ k8s/backups/
 
 # Внутренняя документация и рабочие заметки (не в VCS)
 obsidian/
-CLAUDE.md
-.claude/
+

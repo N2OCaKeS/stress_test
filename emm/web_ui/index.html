@@ -26,10 +26,27 @@
       В dev Vite инжектит HMR-клиент и ws://127.0.0.1:5173 — там meta-CSP бы
       мешал, но vite-dev отдаёт index.html минуя prod-сборку и сам управляет
       заголовками, поэтому этот тег на dev не влияет на HMR.
+
+      frame-src 'self' — Grafana инфоколлектора встраивается через собственный
+      прокси (/grafana-proxy, см. vite.config.ts в dev и nginx в проде), не
+      напрямую с её origin: прокси на лету чинит прозрачный фон в её HTML,
+      а Grafana теперь и сама умеет отдаваться из-под этого пути
+      (GF_SERVER_SERVE_FROM_SUB_PATH в infocollector). Локальный dev-Grafana
+      (localhost:3000) пока встраивается напрямую, без прокси.
+
+      connect-src http://10.177.103.10:18181 — сюда ходит JS-проверка
+      доступности инфоколлектора перед показом панелей (useGrafanaAvailability
+      в metrics.tsx). Дальше цепочка редиректов у fetch с mode:no-cors тоже
+      проверяется по connect-src на каждом хопе, иначе редирект падает как
+      обычная сетевая ошибка: /rest/api/dashboard/<ip>/allta отвечает
+      302 на http://10.177.103.10:3000/d/..., а Grafana (сама, не мы —
+      GF_SERVER_SERVE_FROM_SUB_PATH в infocollector) отвечает на это ещё
+      одним 301 на канонический http://allta.devos.astralinux.ru:3000/
+      grafana-proxy/... — оба хоста нужны в connect-src.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://localhost:3000 http://10.177.103.10:3000; font-src 'self'; connect-src 'self' http://localhost:3000 http://10.177.103.10:18181 http://10.177.103.10:3000; frame-src 'self' http://localhost:3000 http://10.177.103.10:18181 http://10.177.103.10:3000; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://localhost:3000; font-src 'self'; connect-src 'self' http://localhost:3000 http://10.177.103.10:18181 http://10.177.103.10:3000 http://allta.devos.astralinux.ru:3000; frame-src 'self' http://localhost:3000; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
     />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />

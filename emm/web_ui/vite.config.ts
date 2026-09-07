@@ -7,6 +7,13 @@ const AUTH_TARGET = process.env.VITE_AUTH_PROXY_TARGET ?? "http://localhost:8000
 const LOGGING_TARGET = process.env.VITE_LOGGING_PROXY_TARGET ?? "http://localhost:8001";
 const SERVER_TARGET = process.env.VITE_SERVER_PROXY_TARGET ?? "http://localhost:8002";
 const SECRET_TARGET = process.env.VITE_SECRET_PROXY_TARGET ?? "http://localhost:8003";
+// Grafana инфоколлектора теперь поднимается с GF_SERVER_SERVE_FROM_SUB_PATH +
+// GF_SERVER_ROOT_URL=.../grafana-proxy/ (allta_infocollector/src/handler/
+// docker-compose.yml) — поэтому её можно проксировать под тем же путём и
+// она сама корректно резолвит статику/API. Её собственный <body> при этом
+// всё равно красится в фирменный холст и игнорирует ?transparent в URL —
+// это чинится тут же, CSS-инъекцией в HTML-ответ на лету.
+const GRAFANA_TARGET = process.env.VITE_GRAFANA_PROXY_TARGET ?? "http://10.177.103.10:3000";
 const GRAFANA_TRANSPARENT_STYLE =
   "<style>html,body,.app-grafana{background:transparent!important}</style>";
 
@@ -27,7 +34,7 @@ export default defineConfig({
       "/api/server": { target: SERVER_TARGET, changeOrigin: true, ws: true },
       "/api/secret": { target: SECRET_TARGET, changeOrigin: true },
       "/grafana-proxy": {
-        target: "http://local_infocollector-grafana-1:3000",
+        target: GRAFANA_TARGET,
         changeOrigin: true,
         ws: true,
         selfHandleResponse: true,

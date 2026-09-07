@@ -32,6 +32,7 @@ class CreateVM:
         vm_count: int = 0,
         vcpu: int = 0,
         ram: int = 0,
+        disk: int = 30
     ):
 
         self.provider = Libvirt()
@@ -42,6 +43,7 @@ class CreateVM:
         self.vm_count = vm_count
         self.vcpu = vcpu
         self.ram = ram
+        self.disk = disk
 
         self.vms_date_save_path = f"{BASE_PATH}/vms_dates.json"
         self.vms_data = {}
@@ -75,7 +77,7 @@ class CreateVM:
             print("\n\n\nВМ не найдены, создаем\n\n\n")
             self.vms = [f"testvm{i}" for i in range(1, int(self.vm_count) + 1)]
             VMS_DATES = {
-                testvm: {"host-port": "22", "cpu": str(self.vcpu), "ram": str(self.ram)}
+                testvm: {"host-port": "22", "cpu": str(self.vcpu), "ram": str(self.ram), "disk": str(self.disk)}
                 for testvm in self.vms
             }
             if isinstance(self.provider, Libvirt):

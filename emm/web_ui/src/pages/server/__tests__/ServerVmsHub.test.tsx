@@ -55,6 +55,7 @@ vi.mock("@/api/server/servers", () => ({
   prepareServer: vi.fn(),
   rotateManagementCredentials: vi.fn(),
   listServers: vi.fn(() => new Promise(() => {})),
+  getServerTestCredentials: vi.fn(() => new Promise(() => {})),
 }));
 vi.mock("@/api/server/osVersions", () => ({
   listOsVersions: vi.fn(() => new Promise(() => {})),

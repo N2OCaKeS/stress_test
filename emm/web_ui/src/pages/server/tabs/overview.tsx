@@ -297,6 +297,14 @@ function ServerOverviewView({
       ),
     },
     {
+      label: "busy_service_name",
+      value: server.busy_actor_type === "service" && server.busy_service_name ? (
+        <span className="mono">{server.busy_service_name}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
       label: "busy_since",
       value: server.busy_since ? (
         <span className="mono">{formatMsk(server.busy_since)}</span>

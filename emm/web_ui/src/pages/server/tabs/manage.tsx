@@ -45,12 +45,18 @@ import {
   MonitorPlay,
   Network,
   Gauge,
+  Eye,
+  EyeOff,
+  Copy,
+  AlertCircle,
+  FlaskConical,
   type LucideIcon,
 } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
-import { apiErrMsg } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
+import { fromBase64 } from "@/lib/base64";
 import { formatMskShort } from "@/lib/datetime";
 import { isDepAdmin, canPrepareVmsHub } from "@/lib/rbac";
 import { useUserLabel } from "@/lib/labels";
@@ -60,6 +66,7 @@ import {
   clearBusy,
   deleteServer,
   getServer,
+  getServerTestCredentials,
   installNodeExporter,
   inventorySync,
   prepareServer,
@@ -119,6 +126,7 @@ import type {
   OsVersion,
   Server,
   ServerAccount,
+  ServerTestCredentials,
   TaskDispatchResponse,
 } from "@/api/server/types";
 import type { EntityRef } from "./_entity";
@@ -690,6 +698,12 @@ export function ManageTab(props: Props) {
   const allowDelete =
     isDepAdminOfServer(persona, view) ||
     persona.service_roles.server === "admin";
+  // Гейт зеркалит backend-право view_test_credentials — засеяно только роли
+  // admin (миграция c4e91a7f3d68), dep_admin своего департамента приравнен,
+  // как и у остальных admin-only блоков этой вкладки.
+  const canRevealTestCreds =
+    isDepAdminOfServer(persona, view) ||
+    persona.service_roles.server === "admin";
   const prepared = !!view && view.is_managed;
   const prepareHint = prepared
     ? undefined
@@ -938,19 +952,29 @@ export function ManageTab(props: Props) {
         }}
       />
 
+      {canRevealTestCreds && view && (
+        <TestCredentialsCard serverId={view.id} />
+      )}
+
       <BookingCard
         entityWord="сервер"
         reserved={!!view && (view.busy_state !== "free" || !!view.busy_note)}
         stateLabel={view?.busy_state ?? "—"}
         note={view?.busy_note}
         reserverLabel={
-          view?.busy_user_id ? (
+          view?.busy_actor_type === "service" && view.busy_service_name ? (
+            <span title={view.busy_service_name}>сервис «{view.busy_service_name}»</span>
+          ) : view?.busy_user_id ? (
             <span title={view.busy_user_id}>юзер {reserverLabel}</span>
           ) : undefined
         }
         since={view?.busy_since ? formatMskShort(view.busy_since) : undefined}
         canManage={allowBasic}
-        foreign={!!view?.busy_user_id && view.busy_user_id !== persona.id}
+        foreign={
+          view?.busy_actor_type === "service"
+            ? !!view.busy_service_name
+            : !!view?.busy_user_id && view.busy_user_id !== persona.id
+        }
         busy={busy !== null}
         onReserve={async (reason) => {
           if (!view) return;
@@ -1538,6 +1562,216 @@ function ManagementCredsCard({
           className="mt-3"
           onCancelled={onCancelled}
         />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Учётка теста (test-credentials, план ALLTA MIGRATION §5.3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Карточка учётки исполнения теста стенда. Рендерится только держателю права
+ * `view_test_credentials` (гейт — на вызывающей стороне, `canRevealTestCreds`
+ * в `ManageTab`) — при отсутствии права блока нет вообще, не серой кнопки.
+ *
+ * Метаданные (`exists`/`username`/`ssh_public_key`/`rotated_at`) грузятся
+ * сразу; пароль и приватный ключ — только по клику «Показать», отдельным
+ * запросом с `?reveal=true` (это отдельное CRITICAL-audit действие на
+ * backend и отдельный rate-limit, поэтому не тянем их заранее). Раскрытые
+ * значения живут только в state этого компонента и обнуляются кнопкой
+ * «Скрыть» либо unmount'ом карточки.
+ */
+function TestCredentialsCard({ serverId }: { serverId: string }) {
+  const toast = useToast();
+  const [meta, setMeta] = useState<ServerTestCredentials | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  const [plain, setPlain] = useState<{
+    password: string | null;
+    privateKey: string | null;
+  } | null>(null);
+  const [revealing, setRevealing] = useState(false);
+  const [throttleUntil, setThrottleUntil] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (throttleUntil <= 0) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [throttleUntil]);
+  const throttleLeft = Math.max(0, Math.ceil((throttleUntil - now) / 1000));
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    getServerTestCredentials(serverId)
+      .then((c) => {
+        if (!cancelled) setMeta(c);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled)
+          setErr(apiErrMsg(e, "Не удалось получить учётку теста"));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [serverId]);
+
+  async function handleReveal() {
+    if (revealing || throttleLeft > 0) return;
+    setRevealing(true);
+    try {
+      const c = await getServerTestCredentials(serverId, { reveal: true });
+      setMeta(c);
+      setPlain({
+        password: c.password_b64 !== null ? fromBase64(c.password_b64) : null,
+        privateKey:
+          c.ssh_private_key_b64 !== null
+            ? fromBase64(c.ssh_private_key_b64)
+            : null,
+      });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        const secs = e.retryAfter ?? 60;
+        setThrottleUntil(Date.now() + secs * 1000);
+        setNow(Date.now());
+        toast.error(`Reveal-лимит: повторите через ${secs} сек`);
+      } else {
+        toast.error(apiErrMsg(e, "Не удалось раскрыть учётку теста"));
+      }
+    } finally {
+      setRevealing(false);
+    }
+  }
+
+  async function handleCopy(value: string, label: string) {
+    if (typeof navigator === "undefined" || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} скопирован`);
+    } catch {
+      toast.error("Буфер обмена недоступен");
+    }
+  }
+
+  const revealed = plain !== null;
+
+  return (
+    <div className="card">
+      <div className="flex items-center gap-2 mb-3">
+        <FlaskConical className="w-5 h-5" />
+        <h3 className="text-base font-semibold">Учётка теста</h3>
+      </div>
+
+      {loading && <div className="text-sm text-dim">загружаем…</div>}
+      {err && (
+        <div className="alert alert-danger flex items-start gap-2 mb-3">
+          <AlertCircle className="w-4 h-4 mt-0.5" />
+          <div className="text-sm">{err}</div>
+        </div>
+      )}
+
+      {meta && !meta.exists && (
+        <div className="text-[11px] text-dim italic">
+          Учётка ещё не выпускалась — пайплайн prepare-for-test ни разу не
+          проходил для этого сервера.
+        </div>
+      )}
+
+      {meta && meta.exists && (
+        <>
+          <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-xs mb-3">
+            <dt className="text-dim">username</dt>
+            <dd className="mono break-all">{meta.username ?? "—"}</dd>
+            <dt className="text-dim">rotated_at</dt>
+            <dd className="mono">
+              {meta.rotated_at ? (
+                formatMskShort(meta.rotated_at)
+              ) : (
+                <span className="text-dim">—</span>
+              )}
+            </dd>
+            <dt className="text-dim">public key</dt>
+            <dd className="mono break-all">
+              {meta.ssh_public_key ?? "—"}
+            </dd>
+          </dl>
+
+          {revealed ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3 flex-wrap text-sm">
+                <span className="text-dim text-xs w-28 shrink-0">password</span>
+                <span className="mono flex-1 min-w-[180px] break-all">
+                  {plain.password ?? "—"}
+                </span>
+                {plain.password !== null && (
+                  <Button
+                    size="sm"
+                    className="flex items-center gap-1"
+                    onClick={() => handleCopy(plain.password as string, "Пароль")}
+                    type="button"
+                  >
+                    <Copy className="w-4 h-4" /> Копировать
+                  </Button>
+                )}
+              </div>
+
+              {plain.privateKey !== null && (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2 text-xs text-dim">
+                    <span>private key</span>
+                    <Button
+                      size="sm"
+                      className="flex items-center gap-1"
+                      onClick={() =>
+                        handleCopy(plain.privateKey as string, "Ключ")
+                      }
+                      type="button"
+                    >
+                      <Copy className="w-4 h-4" /> Копировать
+                    </Button>
+                  </div>
+                  <pre className="mono text-xs whitespace-pre-wrap break-all bg-panel/60 border border-subtle rounded p-2 max-h-64 overflow-auto">
+                    {plain.privateKey}
+                  </pre>
+                </div>
+              )}
+
+              <div>
+                <Button
+                  size="sm"
+                  className="flex items-center gap-1"
+                  onClick={() => setPlain(null)}
+                  type="button"
+                >
+                  <EyeOff className="w-4 h-4" /> Скрыть
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              className="flex items-center gap-1"
+              onClick={handleReveal}
+              disabled={revealing || throttleLeft > 0}
+              type="button"
+            >
+              <Eye className="w-4 h-4" />
+              {revealing
+                ? "Запрашиваем…"
+                : throttleLeft > 0
+                  ? `Подождите ${throttleLeft}с`
+                  : "Показать пароль и ключ"}
+            </Button>
+          )}
+        </>
       )}
     </div>
   );

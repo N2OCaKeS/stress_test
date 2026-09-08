@@ -719,7 +719,11 @@ function ServerReserveControl({
           <Badge kind="warn" className="flex items-center gap-1">
             <Lock className="w-3.5 h-3.5" />
             Забронировано
-            {server.busy_user_id && <>: {reserverLabel}</>}
+            {server.busy_actor_type === "service" && server.busy_service_name ? (
+              <>: сервис «{server.busy_service_name}»</>
+            ) : (
+              server.busy_user_id && <>: {reserverLabel}</>
+            )}
           </Badge>
           {server.busy_note && (
             <span className="text-xs text-dim truncate max-w-[320px]">

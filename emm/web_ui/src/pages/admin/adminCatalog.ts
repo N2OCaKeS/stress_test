@@ -44,6 +44,7 @@ import { ServicesPlatformRoles } from "./services/ServicesPlatformRoles";
 import { ServicesServerGroups } from "./services/ServicesServerGroups";
 import { ServicesServerPermissions } from "./services/ServicesServerPermissions";
 import { ServicesOsVersions } from "./services/ServicesOsVersions";
+import { ServicesServerCategories } from "./services/ServicesServerCategories";
 import { ServicesIgnoredLogins } from "./services/ServicesIgnoredLogins";
 import { ServicesManagementUser } from "./services/ServicesManagementUser";
 import { ServicesProbeSettings } from "./services/ServicesProbeSettings";
@@ -251,6 +252,20 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "server",
     content: ServicesOsVersions,
+    // Каталог глобальный, но CRUD идёт под action-матрицей server_service —
+    // create/update/delete несёт server.admin (и dep_admin в своём отделе).
+    // Platform-роли (account_admin / loging_admin) backend режет на 403, им
+    // пункт не показываем; кнопки управления гейтятся внутри страницы.
+    visibleFor: (p) => isDepAdmin(p) || hasServerServiceAdmin(p),
+  },
+  {
+    id: "services.server.categories",
+    label: "Категории серверов",
+    hint: "каталог по мощности",
+    icon: Gauge,
+    block: "services",
+    group: "server",
+    content: ServicesServerCategories,
     // Каталог глобальный, но CRUD идёт под action-матрицей server_service —
     // create/update/delete несёт server.admin (и dep_admin в своём отделе).
     // Platform-роли (account_admin / loging_admin) backend режет на 403, им

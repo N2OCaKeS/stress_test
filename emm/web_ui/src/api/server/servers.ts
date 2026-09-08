@@ -26,6 +26,7 @@ import type {
   ServerPrepareBatchResponse,
   ServerPrepareRequest,
   ServerPrepareResponse,
+  ServerTestCredentials,
   ServerUpdateRequest,
   TaskDispatchResponse,
 } from "@/api/server/types";
@@ -242,5 +243,24 @@ export function rotateManagementCredentials(
 ): Promise<TaskDispatchResponse> {
   return apiPost<TaskDispatchResponse>(
     `/server/v1/servers/${id}/management-credentials/rotate`,
+  );
+}
+
+/**
+ * `GET /api/server/v1/servers/{id}/test-credentials` — учётка исполнения
+ * теста стенда (план ALLTA MIGRATION §5.3).
+ *
+ * Без `reveal` отдаёт только метаданные (`password_b64`/`ssh_private_key_b64`
+ * всегда `null`). С `reveal: true` backend доотдаёт plaintext в base64 —
+ * держателю `view_test_credentials` (по умолчанию только роль `admin`) — и
+ * фиксирует отдельное CRITICAL-audit действие; частые повторы отбиваются 429.
+ */
+export function getServerTestCredentials(
+  serverId: string,
+  opts?: { reveal?: boolean },
+): Promise<ServerTestCredentials> {
+  return apiGet<ServerTestCredentials>(
+    `/server/v1/servers/${serverId}/test-credentials`,
+    { query: opts?.reveal ? { reveal: true } : undefined },
   );
 }

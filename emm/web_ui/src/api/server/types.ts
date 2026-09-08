@@ -128,8 +128,19 @@ export interface Server {
   ipmi_checked_at?: Iso8601 | null;
   busy_state: BusyState;
   busy_user_id: string | null;
+  /**
+   * Кто держит бронь: `user` (обычная бронь, см. `busy_user_id`) или
+   * `service` (взята internal-эндпоинтом от имени сервиса — ACS-снимки уже
+   * так работают, `busy_user_id` при этом всегда `null`, имя сервиса — в
+   * `busy_service_name`). Оба поля взаимоисключающие на бэкенде.
+   */
+  busy_actor_type?: "user" | "service";
+  /** Имя сервиса-держателя брони (`"acs"`, позже `"testing_service"`) — заполнено только при `busy_actor_type=service`. */
+  busy_service_name?: string | null;
   busy_since: Iso8601 | null;
   busy_note: string | null;
+  /** Категория по мощности (каталог `/server-categories`). `null` — не назначена. */
+  category_id?: string | null;
   serial_number: string | null;
   asset_tag: string | null;
   location: string | null;
@@ -799,6 +810,57 @@ export interface OsVersionUpdateRequest {
  */
 export interface ServerOsSyncRequest {
   os_version_id: string | null;
+}
+
+// ── server-categories (каталог категорий серверов по мощности) ────────────────
+
+/**
+ * Карточка категории по мощности в каталоге (ответ GET/POST/PATCH
+ * /server-categories). Глобальный платформенный справочник, без dept-привязки —
+ * тот же паттерн, что `OsVersion`. Сидированные категории:
+ * `low_server`/`middle_server`/`high_server`/`workstation`, но каталог
+ * управляемый — можно заводить новые.
+ */
+export interface ServerCategory {
+  id: string;
+  code: string;
+  label: string;
+  description: string | null;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+  created_by: string | null;
+}
+
+/** Тело POST /server-categories. `code` уникален. */
+export interface ServerCategoryCreateRequest {
+  code: string;
+  label: string;
+  description?: string | null;
+}
+
+/** Тело PATCH /server-categories/{id}. Все поля опциональны. */
+export interface ServerCategoryUpdateRequest {
+  code?: string;
+  label?: string;
+  description?: string | null;
+}
+
+// ── test-credentials (учётка исполнения теста стенда, план ALLTA MIGRATION §5.3) ──
+
+/**
+ * Ответ GET /servers/{id}/test-credentials. Без `?reveal=true` секретные поля
+ * всегда `null` — карточка отдаёт только метаданные. Живая отладка стенда
+ * для держателя `view_test_credentials` (по умолчанию — только роль `admin`).
+ */
+export interface ServerTestCredentials {
+  exists: boolean;
+  username: string | null;
+  ssh_public_key: string | null;
+  rotated_at: Iso8601 | null;
+  /** base64(plaintext) — только при `?reveal=true` и наличии права. */
+  password_b64: string | null;
+  /** base64(plaintext PEM) — только при `?reveal=true` и наличии права. */
+  ssh_private_key_b64: string | null;
 }
 
 // ── OS version bootstrap credentials ───────────────────────────────────────

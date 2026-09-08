@@ -32,6 +32,8 @@ import {
   Boxes,
   KeyRound,
   Lock,
+  Maximize2,
+  Minimize2,
   Plug,
   PlugZap,
   Terminal as TerminalIcon,
@@ -326,6 +328,18 @@ function ConsoleSession({
     CONSOLE_MIN_HEIGHT,
     CONSOLE_MAX_HEIGHT,
   );
+  // Разворот на весь экран — чисто CSS-переключение того же дерева (терминал
+  // не пересоздаётся): ResizeObserver внутри xterm-эффекта сам подхватывает
+  // смену размера обёртки и пересчитывает fit, отдельно дёргать fit не нужно.
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    if (!fullscreen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setFullscreen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
 
   // Монтируем терминал один раз и держим до unmount. fit и на ресайз окна, и
   // на ресайз самого контейнера (смена вкладок/раскрытие панелей меняют высоту
@@ -520,7 +534,13 @@ function ConsoleSession({
   const sessionOpen = state === "open";
 
   return (
-    <div className="flex flex-col gap-3 flex-1 min-h-0">
+    <div
+      className={
+        fullscreen
+          ? "fixed inset-0 z-[1000] flex flex-col gap-3 p-4 surface"
+          : "flex flex-col gap-3 flex-1 min-h-0"
+      }
+    >
       <div className="flex items-center gap-3">
         {connected ? (
           <Button variant="ghost" onClick={disconnect}>
@@ -558,6 +578,18 @@ function ConsoleSession({
             {account.has_sudo ? " (sudo)" : ""}
           </span>
         )}
+        <Button
+          variant="ghost"
+          className="ml-auto"
+          onClick={() => setFullscreen((v) => !v)}
+          title={fullscreen ? "Свернуть консоль (Esc)" : "Развернуть консоль на весь экран"}
+        >
+          {fullscreen ? (
+            <Minimize2 className="w-4 h-4" />
+          ) : (
+            <Maximize2 className="w-4 h-4" />
+          )}
+        </Button>
       </div>
 
       {closeInfo && !closeInfo.normal && (
@@ -583,28 +615,33 @@ function ConsoleSession({
       <div
         ref={wrapRef}
         className={`border border-token rounded overflow-hidden ${
-          termHeight == null ? "flex-1 min-h-0" : ""
+          fullscreen || termHeight == null ? "flex-1 min-h-0" : ""
         }`}
         style={{
-          height: termHeight ?? undefined,
+          // В fullscreen игнорируем запомненную высоту — терминал должен
+          // занимать весь развёрнутый экран, а не сохранённые из обычного
+          // режима пиксели.
+          height: fullscreen ? undefined : termHeight ?? undefined,
           background: "#1e1e1e",
           padding: 8,
         }}
       >
         <div ref={mountRef} style={{ height: "100%", width: "100%" }} />
       </div>
-      <HeightResizeHandle
-        min={CONSOLE_MIN_HEIGHT}
-        max={CONSOLE_MAX_HEIGHT}
-        measure={() =>
-          wrapRef.current?.getBoundingClientRect().height ??
-          termHeight ??
-          CONSOLE_MIN_HEIGHT
-        }
-        onChange={setTermHeight}
-        onReset={() => setTermHeight(null)}
-        ariaLabel="Изменить высоту консоли (двойной клик — сброс)"
-      />
+      {!fullscreen && (
+        <HeightResizeHandle
+          min={CONSOLE_MIN_HEIGHT}
+          max={CONSOLE_MAX_HEIGHT}
+          measure={() =>
+            wrapRef.current?.getBoundingClientRect().height ??
+            termHeight ??
+            CONSOLE_MIN_HEIGHT
+          }
+          onChange={setTermHeight}
+          onReset={() => setTermHeight(null)}
+          ariaLabel="Изменить высоту консоли (двойной клик — сброс)"
+        />
+      )}
     </div>
   );
 }

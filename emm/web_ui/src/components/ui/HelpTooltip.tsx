@@ -118,6 +118,7 @@ export function HelpTooltip({
             ref={popRef}
             id={popId}
             role="tooltip"
+            data-app-portal
             style={{ position: "fixed", top: pos.top, left: pos.left, width: POPOVER_WIDTH }}
             className="z-[1000] surface border border-token rounded shadow-lg px-2.5 py-2 text-xs text-text font-normal normal-case leading-snug"
             onMouseEnter={() => setOpen(true)}

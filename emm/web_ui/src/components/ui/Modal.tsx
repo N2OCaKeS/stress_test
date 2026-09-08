@@ -4,6 +4,15 @@
  * крестиком закрытия, тело, опциональный футер с кнопками. Даёт готовый
  * портал/фокус-трап/Escape/клик-вне вместо ручной вёрстки `fixed inset-0`
  * под каждую модалку в проекте.
+ *
+ * `onPointerDownOutside` ниже — обязательный guard, не косметика: наши
+ * собственные попапы (`Dropdown`/`HelpTooltip`) рендерятся порталом в
+ * `document.body`, то есть формально вне DOM-поддерева `Dialog.Content`.
+ * Без этого guard'а Radix считал бы клик по опции дропдауна снаружи модалки
+ * и закрывал её раньше, чем срабатывал `onClick` опции — выглядело как
+ * «клик по варианту в списке просто закрывает список/модалку, ничего не
+ * выбирая». Помечаем такие попапы атрибутом `data-app-portal` и здесь же
+ * это уважаем.
  */
 import type { ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -44,7 +53,14 @@ export function Modal({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className={`modal-content ${WIDTH_CLASS[width]}`.trim()}>
+        <Dialog.Content
+          className={`modal-content ${WIDTH_CLASS[width]}`.trim()}
+          onPointerDownOutside={(e) => {
+            if ((e.target as Element | null)?.closest("[data-app-portal]")) {
+              e.preventDefault();
+            }
+          }}
+        >
           <div className="modal-header">
             {icon}
             <div className="min-w-0 flex-1">

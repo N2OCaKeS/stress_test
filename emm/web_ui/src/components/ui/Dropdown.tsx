@@ -9,6 +9,12 @@
  * `value`/`onChange` типизированы по `mode`: single отдаёт строку (пустая —
  * ничего не выбрано), multi — `Set<string>` (пустой набор трактуется вызывающим
  * кодом как "все значения проходят", здесь это только про отображение и выбор).
+ *
+ * `data-app-portal` на корне попапа — маркер для `Modal.tsx`: Radix Dialog
+ * закрывается на любой pointerdown вне своего DOM-поддерева, а портал рендерится
+ * в `document.body`, то есть формально «снаружи» модалки — без этого маркера
+ * клик по опции внутри модалки не выбирал бы значение, а просто закрывал
+ * (или ломал) модалку раньше, чем успевал сработать `onClick` опции.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -174,6 +180,7 @@ export function Dropdown(props: DropdownProps) {
           <div
             ref={popRef}
             role="listbox"
+            data-app-portal
             style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width }}
             className="z-[1000] surface border border-token rounded shadow-lg p-2 flex flex-col gap-1.5"
           >

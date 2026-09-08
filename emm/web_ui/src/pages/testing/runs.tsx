@@ -7,9 +7,16 @@
  * `final` отличает релиз-блокирующий прогон от обычного/промежуточного.
  * Поэтому здесь прогон — это агрегированный прогресс по пулу, а не строчка
  * "тест на стенде".
+ *
+ * Средняя панель Shell — список кампаний с поиском/фильтром/сортировкой,
+ * рабочая зона — сводная статистика + детальная таблица выбранного прогона.
+ * Тот же паттерн, что и в `stp.tsx` (`useStpVersionState` / `StpMiddlePanel`
+ * / `StpWorkzone`): состояние выбора живёт в одном хуке, вызываемом один раз
+ * в `Testing.tsx` и общем для обеих половин.
  */
 import { useMemo, useState } from "react";
-import { Activity, CheckCircle2, ExternalLink, ListChecks, Play, Server, TimerReset, XCircle } from "lucide-react";
+import { Activity, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, ListChecks, Play, Search, Server } from "lucide-react";
+import { naturalCompare } from "@/lib/naturalSort";
 import { TEST_CATALOG } from "./tests";
 import { Dropdown } from "@/components/ui/Dropdown";
 import {
@@ -119,6 +126,154 @@ const RUN_STATUS_META: Record<RunStatus, { label: string; badge: "ok" | "danger"
   failed: { label: "Провален", badge: "danger" },
 };
 
+// ── состояние средней панели, общее для RunsMiddlePanel и RunsWorkzone ─────
+
+export interface RunsState {
+  runs: TestRun[];
+  total: number;
+  search: string;
+  setSearch: (v: string) => void;
+  statusFilter: RunStatus | "all";
+  setStatusFilter: (v: RunStatus | "all") => void;
+  sortDir: "asc" | "desc";
+  toggleSort: () => void;
+  selectedId: string;
+  setSelectedId: (id: string) => void;
+  selectedRun: TestRun | null;
+}
+
+export function useRunsState(): RunsState {
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<RunStatus | "all">("all");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [selectedId, setSelectedId] = useState<string>(RUNS[0]?.id ?? "");
+
+  const runs = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const filtered = RUNS.filter((run) => {
+      if (statusFilter !== "all" && run.status !== statusFilter) return false;
+      if (!term) return true;
+      return run.id.toLowerCase().includes(term) || run.rcId.toLowerCase().includes(term);
+    });
+    // id несёт дату прогона (run-YYYYMMDDNN), поэтому натуральная сортировка
+    // по id совпадает с хронологической — отдельный парсер даты не нужен.
+    return [...filtered].sort((a, b) =>
+      sortDir === "asc" ? naturalCompare(a.id, b.id) : naturalCompare(b.id, a.id),
+    );
+  }, [search, statusFilter, sortDir]);
+
+  const selectedRun = RUNS.find((r) => r.id === selectedId) ?? RUNS[0] ?? null;
+
+  return {
+    runs,
+    total: RUNS.length,
+    search,
+    setSearch,
+    statusFilter,
+    setStatusFilter,
+    sortDir,
+    toggleSort: () => setSortDir((d) => (d === "asc" ? "desc" : "asc")),
+    selectedId,
+    setSelectedId,
+    selectedRun,
+  };
+}
+
+// ── средняя панель Shell: список кампаний ───────────────────────────────────
+
+const STATUS_FILTER_OPTIONS: (RunStatus | "all")[] = ["all", "running", "completed", "failed"];
+
+export function RunsMiddlePanel({ state }: { state: RunsState }) {
+  const [launchOpen, setLaunchOpen] = useState(false);
+  return (
+    <aside className="border-r border-token surface flex flex-col min-h-0">
+      <div className="border-b border-token px-3 py-2 shrink-0">
+        <div className="flex items-center gap-2 surface-2 border border-token rounded px-2 py-1">
+          <Search className="w-4 h-4 text-dim" />
+          <input
+            className="bg-transparent outline-none flex-1 text-sm"
+            placeholder={`Поиск по ${state.total} прогонам…`}
+            value={state.search}
+            onChange={(e) => state.setSearch(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-1 mt-2 flex-wrap">
+          {STATUS_FILTER_OPTIONS.map((s) => (
+            <Button
+              key={s}
+              size="sm"
+              type="button"
+              variant={state.statusFilter === s ? "primary" : "default"}
+              onClick={() => state.setStatusFilter(s)}
+            >
+              {s === "all" ? "Все" : RUN_STATUS_META[s].label}
+            </Button>
+          ))}
+        </div>
+        <Button
+          size="sm"
+          type="button"
+          className="w-full mt-2 flex items-center justify-center gap-2"
+          onClick={state.toggleSort}
+        >
+          {state.sortDir === "desc" ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+          {state.sortDir === "desc" ? "Новые сверху" : "Старые сверху"}
+        </Button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto py-1">
+        {state.runs.length === 0 && <div className="px-3 py-6 text-xs text-dim text-center">Нет прогонов по фильтру</div>}
+        {state.runs.map((run) => (
+          <RunListRow key={run.id} run={run} active={run.id === state.selectedId} onSelect={() => state.setSelectedId(run.id)} />
+        ))}
+      </div>
+
+      <div className="border-t border-token p-3 shrink-0">
+        <Button
+          variant="primary"
+          size="sm"
+          type="button"
+          className="w-full flex items-center justify-center gap-2"
+          onClick={() => setLaunchOpen(true)}
+        >
+          <Play className="w-3.5 h-3.5" />
+          Запустить прогон
+        </Button>
+      </div>
+
+      {launchOpen && <LaunchRunModal onClose={() => setLaunchOpen(false)} />}
+    </aside>
+  );
+}
+
+function RunListRow({ run, active, onSelect }: { run: TestRun; active: boolean; onSelect: () => void }) {
+  const meta = RUN_STATUS_META[run.status];
+  const total = run.totals.passed + run.totals.failed + run.totals.running + run.totals.pending || 1;
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`w-full text-left px-3 py-2 hover-bg flex flex-col gap-1 border-l-2 ${
+        active ? "surface-2 border-accent" : "border-transparent"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span className="font-semibold mono text-sm truncate">{run.id}</span>
+        {run.final && <Badge kind="warn" className="shrink-0">финальный</Badge>}
+        <Badge kind={meta.badge} className="shrink-0 ml-auto">{meta.label}</Badge>
+      </div>
+      <div className="mono text-[11px] text-dim truncate">{run.rcId} · {run.startedAt}</div>
+      <div className="h-1 rounded-full overflow-hidden surface-2 border border-token flex">
+        <span className="bg-[var(--ok)]" style={{ width: `${(run.totals.passed / total) * 100}%` }} />
+        <span className="bg-[var(--danger)]" style={{ width: `${(run.totals.failed / total) * 100}%` }} />
+        <span className="bg-[var(--accent)]" style={{ width: `${(run.totals.running / total) * 100}%` }} />
+        <span className="bg-[var(--warn)]" style={{ width: `${(run.totals.pending / total) * 100}%` }} />
+      </div>
+      <div className="text-[11px] text-dim">стенды {run.standsDone}/{run.standsTotal}</div>
+    </button>
+  );
+}
+
 // ── детальная таблица прогона: строка = один тест на одном стенде ──────────
 
 const RUN_MODES = ["orel", "smolensk"] as const;
@@ -177,11 +332,7 @@ function runTestValue(row: RunTestRow, column: RunTestColumn): string | number {
   return row[column];
 }
 
-export function RunsWorkzone() {
-  const [launchOpen, setLaunchOpen] = useState(false);
-  const [selectedRunId, setSelectedRunId] = useState<string>(RUNS[0]?.id ?? "");
-  const selectedRun = RUNS.find((r) => r.id === selectedRunId) ?? RUNS[0] ?? null;
-
+export function RunsWorkzone({ state }: { state: RunsState }) {
   const totals = useMemo(
     () => ({
       active: RUNS.filter((r) => r.status === "running").length,
@@ -198,15 +349,9 @@ export function RunsWorkzone() {
 
   return (
     <div className="grid gap-4">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h2 className="text-lg font-semibold">Прогоны — fleet-wide кампании</h2>
-          <div className="text-sm text-dim mt-1">Каждый прогон — весь набор тестов на всех стендах пула для одного РЦ</div>
-        </div>
-        <Button variant="primary" type="button" className="inline-flex items-center gap-2" onClick={() => setLaunchOpen(true)}>
-          <Play className="w-4 h-4" />
-          Запустить прогон
-        </Button>
+      <div>
+        <h2 className="text-lg font-semibold">Прогоны — fleet-wide кампании</h2>
+        <div className="text-sm text-dim mt-1">Каждый прогон — весь набор тестов на всех стендах пула для одного РЦ</div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -216,63 +361,12 @@ export function RunsWorkzone() {
         <Stat title="Успешность по пулу" value={`${totals.passRate}%`} icon={CheckCircle2} kind={totals.passRate >= 90 ? "ok" : "warn"} />
       </div>
 
-      <div>
-        <div className="text-sm font-medium mb-2">Кампании ({RUNS.length})</div>
-        <div className="grid gap-2">
-          {RUNS.map((run) => (
-            <RunRow key={run.id} run={run} selected={run.id === selectedRunId} onSelect={() => setSelectedRunId(run.id)} />
-          ))}
-        </div>
-      </div>
-
-      {selectedRun && <RunDetailPanel run={selectedRun} />}
-
-      {launchOpen && <LaunchRunModal onClose={() => setLaunchOpen(false)} />}
+      {state.selectedRun ? (
+        <RunDetailPanel run={state.selectedRun} />
+      ) : (
+        <div className="surface border border-token rounded p-8 text-center text-dim">Нет выбранного прогона</div>
+      )}
     </div>
-  );
-}
-
-function RunRow({ run, selected, onSelect }: { run: TestRun; selected: boolean; onSelect: () => void }) {
-  const meta = RUN_STATUS_META[run.status];
-  const total = run.totals.passed + run.totals.failed + run.totals.running + run.totals.pending || 1;
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`surface border rounded p-4 grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_170px] gap-3 items-center text-left hover-bg ${
-        selected ? "border-accent" : "border-token"
-      }`}
-    >
-      <div className="min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-semibold mono truncate">{run.id}</span>
-          {run.final && <Badge kind="warn">финальный</Badge>}
-        </div>
-        <div className="mono text-xs text-dim mt-1 truncate">{run.rcId}</div>
-        <div className="text-xs text-dim mt-1">{run.startedAt}</div>
-      </div>
-      <div>
-        <div className="text-xs text-dim mb-1 flex gap-3 flex-wrap">
-          <span>стенды {run.standsDone}/{run.standsTotal}</span>
-          <span className="text-ok">passed {run.totals.passed}</span>
-          <span className="text-danger">failed {run.totals.failed}</span>
-          <span className="text-accent">running {run.totals.running}</span>
-          <span className="text-warn">pending {run.totals.pending}</span>
-        </div>
-        <div className="h-1.5 rounded-full overflow-hidden surface-2 border border-token flex">
-          <span className="bg-[var(--ok)]" style={{ width: `${(run.totals.passed / total) * 100}%` }} />
-          <span className="bg-[var(--danger)]" style={{ width: `${(run.totals.failed / total) * 100}%` }} />
-          <span className="bg-[var(--accent)]" style={{ width: `${(run.totals.running / total) * 100}%` }} />
-          <span className="bg-[var(--warn)]" style={{ width: `${(run.totals.pending / total) * 100}%` }} />
-        </div>
-      </div>
-      <div className="flex justify-start lg:justify-end">
-        <Badge kind={meta.badge} className="inline-flex items-center gap-1">
-          {run.status === "failed" ? <XCircle className="w-3 h-3" /> : <TimerReset className="w-3 h-3" />}
-          {meta.label}
-        </Badge>
-      </div>
-    </button>
   );
 }
 

@@ -6,25 +6,29 @@
  * Файл — тонкий роутер+shell по подразделам; сама функциональность разбита
  * по файлам того же каталога (по образцу `pages/server/tabs/*`):
  * `overview.tsx` (рабочая зона + дашборд пула), `tests.tsx` (каталог тестов),
- * `runs.tsx` (fleet-wide прогоны), `stp.tsx` (зеркало Zephyr). Для СТП
- * средняя панель Shell — список версий ОС (по образцу `pages/server/Server.tsx`
- * `aside`), поэтому её состояние держим здесь через `useStpVersionState` и
+ * `runs.tsx` (fleet-wide прогоны), `debug.tsx` (разовые запуски вне
+ * прогона — debug-режим, `ALLTA MIGRATION.md` §5.5), `stp.tsx` (зеркало
+ * Zephyr). Для «Прогонов», «Отладки» и СТП средняя панель Shell — список
+ * (по образцу `pages/server/Server.tsx` `aside`), поэтому их состояние
+ * держим здесь через `useRunsState`/`useAdhocState`/`useStpVersionState` и
  * пробрасываем в панель и в рабочую зону — обе стороны должны видеть один и
- * тот же выбор версии. Отдельная вкладка «РЦ» не нужна, эту роль закрывает
- * панель. Общие типы/данные/мелкие компоненты — в `_shared.tsx`.
+ * тот же выбор. Отдельная вкладка «РЦ» не нужна, эту роль закрывает панель
+ * СТП. Общие типы/данные/мелкие компоненты — в `_shared.tsx`.
  */
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Cog, FileText, ListChecks, type LucideIcon } from "lucide-react";
+import { Bug, Cog, FileText, ListChecks, type LucideIcon } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { TestingOverview } from "./overview";
 import { TestsWorkzone } from "./tests";
-import { RunsWorkzone } from "./runs";
+import { RunsMiddlePanel, RunsWorkzone, useRunsState } from "./runs";
+import { AdhocMiddlePanel, AdhocWorkzone, useAdhocState } from "./debug";
 import { StpMiddlePanel, StpWorkzone, useStpVersionState } from "./stp";
 
 const SUBSECTIONS = [
   { id: "tests", label: "Тесты", icon: FileText },
   { id: "runs", label: "Прогоны", icon: ListChecks },
+  { id: "debug", label: "Отладка", icon: Bug },
   { id: "stp", label: "СТП", icon: Cog },
 ] as const;
 
@@ -44,12 +48,24 @@ export function Testing() {
     return SUBSECTIONS.find((s) => s.id === activeId) ?? SUBSECTIONS[0];
   }, [activeId]);
   const ActiveIcon = active.icon;
-  // Хук всегда вызывается, чтобы не нарушать порядок хуков при переключении
-  // подраздела — сам список версий нужен только СТП, но состояние дешёвое.
+  // Хуки всегда вызываются, чтобы не нарушать порядок хуков при переключении
+  // подраздела — конкретное состояние нужно только своей вкладке, но само
+  // по себе оно дешёвое.
+  const runsState = useRunsState();
+  const adhocState = useAdhocState();
   const stpState = useStpVersionState();
 
+  const middle =
+    activeId === "runs" ? (
+      <RunsMiddlePanel state={runsState} />
+    ) : activeId === "debug" ? (
+      <AdhocMiddlePanel state={adhocState} />
+    ) : activeId === "stp" ? (
+      <StpMiddlePanel state={stpState} />
+    ) : undefined;
+
   return (
-    <Shell breadcrumb={`testing_service / ${active.label}`} middle={activeId === "stp" ? <StpMiddlePanel state={stpState} /> : undefined}>
+    <Shell breadcrumb={`testing_service / ${active.label}`} middle={middle}>
       <main className="flex-1 min-w-0 overflow-auto">
         <div className="border-b border-token px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
@@ -85,7 +101,8 @@ export function Testing() {
         <div className="p-5">
           {activeId === "overview" && <TestingOverview />}
           {activeId === "tests" && <TestsWorkzone />}
-          {activeId === "runs" && <RunsWorkzone />}
+          {activeId === "runs" && <RunsWorkzone state={runsState} />}
+          {activeId === "debug" && <AdhocWorkzone state={adhocState} />}
           {activeId === "stp" && <StpWorkzone state={stpState} />}
         </div>
       </main>

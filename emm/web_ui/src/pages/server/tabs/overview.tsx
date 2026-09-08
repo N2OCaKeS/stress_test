@@ -684,6 +684,7 @@ function OverviewEditForm({
           >
             <Dropdown
               mode="single"
+              searchable
               placeholder="— не задано —"
               options={[{ value: "", label: "— не задано —" }, ...osList.map((v) => ({ value: v.id, label: v.name }))]}
               value={osVersionId}

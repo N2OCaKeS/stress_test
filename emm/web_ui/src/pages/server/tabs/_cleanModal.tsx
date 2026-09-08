@@ -275,6 +275,7 @@ export function CleanModal({
                     ) : (
                       <Dropdown
                         mode="single"
+                        searchable
                         placeholder="— сбросить версию —"
                         disabled={pending}
                         options={[

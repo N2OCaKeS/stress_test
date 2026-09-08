@@ -119,7 +119,15 @@ export function HelpTooltip({
             id={popId}
             role="tooltip"
             data-app-portal
-            style={{ position: "fixed", top: pos.top, left: pos.left, width: POPOVER_WIDTH }}
+            style={{
+              position: "fixed",
+              top: pos.top,
+              left: pos.left,
+              width: POPOVER_WIDTH,
+              // См. Dropdown.tsx — Radix Dialog (modal) ставит `pointer-events:
+              // none` на весь body, наш body-портал иначе унаследует его.
+              pointerEvents: "auto",
+            }}
             className="z-[1000] surface border border-token rounded shadow-lg px-2.5 py-2 text-xs text-text font-normal normal-case leading-snug"
             onMouseEnter={() => setOpen(true)}
             onMouseLeave={() => setOpen(false)}

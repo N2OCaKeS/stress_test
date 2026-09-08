@@ -181,7 +181,22 @@ export function Dropdown(props: DropdownProps) {
             ref={popRef}
             role="listbox"
             data-app-portal
-            style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width }}
+            style={{
+              position: "fixed",
+              top: pos.top,
+              left: pos.left,
+              width: pos.width,
+              // Radix Dialog (modal) ставит `pointer-events: none` на весь
+              // <body> пока открыт, восстанавливая `auto` только на своём
+              // собственном DOM-поддереве `Dialog.Content` — наш попап,
+              // будучи порталом в body (DOM-сиблинг, а не потомок), без этого
+              // наследовал бы `none` и стал бы некликабельным: клик проходил
+              // бы «сквозь» опцию на то, что визуально позади (оверлей/сама
+              // модалка), это читалось бы как «внешний» клик для
+              // собственного outside-click хендлера попапа и просто закрывало
+              // список без выбора.
+              pointerEvents: "auto",
+            }}
             className="z-[1000] surface border border-token rounded shadow-lg p-2 flex flex-col gap-1.5"
           >
             {searchable && (

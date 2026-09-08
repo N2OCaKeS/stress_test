@@ -8,7 +8,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
-from src.core.constants import Action, BusyState, EntityType, ServerStatus
+from src.core.constants import (
+    Action,
+    BusyActorType,
+    BusyState,
+    EntityType,
+    ServerStatus,
+)
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
@@ -20,6 +26,7 @@ from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import resource_role_permission as resource_perm_repo
 from src.repositories import server as repo
 from src.repositories import server_account as account_repo
+from src.repositories import server_category as category_repo
 from src.repositories import server_disk as disk_repo
 from src.schemas.disk import DiskSpec
 from src.schemas.identity import IdentityContext
@@ -37,6 +44,23 @@ from src.utils.ids import ipmi_controller_id, server_disk_id, server_id as new_i
 logger = logging.getLogger(__name__)
 
 _DUPLICATE_HINT = "hostname, ip_address или serial_number уже используется"
+
+
+async def _ensure_category_exists(db: AsyncSession, category_id: str | None) -> None:
+    """Проверить FK на `server_categories` до записи.
+
+    Без явной проверки битый `category_id` дошёл бы до INSERT/UPDATE и вернулся
+    бы как SERVER_DUPLICATE — общий обработчик IntegrityError не различает, куда
+    именно прилетело нарушение.
+    """
+    if category_id is None:
+        return
+    if await category_repo.get_by_id(db, category_id) is None:
+        raise DomainValidationError(
+            error_code="INVALID_SERVER_CATEGORY",
+            message="category_id does not reference an existing server category",
+            details={"category_id": category_id},
+        )
 
 
 async def _ensure_visible(
@@ -496,6 +520,7 @@ async def create_server(
             error_code="DEPARTMENT_ISOLATION",
             message="Cannot create a server in a different department",
         )
+    await _ensure_category_exists(db, payload.category_id)
     data = payload.model_dump(mode="json", exclude={"storage", "ipmi"})
     data["id"] = new_id()
     data["created_by"] = identity.user_id
@@ -623,6 +648,9 @@ async def update_server(
     changes.pop("storage", None)
     if not changes and not sync_storage:
         return obj
+    if "category_id" in changes:
+        await _ensure_category_exists(db, changes["category_id"])
+    previous_category_id = obj.category_id
     audit_fields = list(changes.keys())
     if sync_storage:
         audit_fields.append("storage")
@@ -670,6 +698,21 @@ async def update_server(
             "department_id": obj.department_id,
         },
     )
+    if "category_id" in changes:
+        # Отдельное событие поверх общего server.update: категория по мощности —
+        # это роль стенда, по которой testing_service подбирает, куда класть тест.
+        audit_service.emit(
+            "server.category_assigned",
+            target_id=obj.id,
+            target_type="server",
+            status="success",
+            allowed=True,
+            details={
+                "department_id": obj.department_id,
+                "previous_category_id": previous_category_id,
+                "new_category_id": obj.category_id,
+            },
+        )
     return obj
 
 
@@ -846,6 +889,8 @@ async def acquire_server(
         .values(
             busy_state=BusyState.BUSY,
             busy_user_id=identity.user_id,
+            busy_actor_type=BusyActorType.USER,
+            busy_service_name=None,
             busy_since=now,
             busy_note=busy_note,
         )
@@ -1013,6 +1058,8 @@ async def release_server(
         .values(
             busy_state=BusyState.FREE,
             busy_user_id=None,
+            busy_actor_type=BusyActorType.USER,
+            busy_service_name=None,
             busy_since=None,
             busy_note=None,
         )
@@ -1037,6 +1084,335 @@ async def release_server(
         details={
             "department_id": obj.department_id,
             "previous_user_id": previous_user_id,
+        },
+    )
+    return obj
+
+
+# ── Бронь от имени сервиса (internal s2s-канал) ─────────────────────────────
+#
+# Отличия от пользовательских acquire/release выше: caller — не человек, а
+# уже провалидированная service-identity, поэтому здесь нет ни матрицы
+# `entity_permissions`, ни department-видимости (у сервисного каллера отдела
+# нет). Взамен действует более узкое правило: снять или переключить бронь
+# может только тот сервис, который её взял.
+
+
+def _service_holds(server: Server, service_name: str) -> bool:
+    """True, если текущая бронь сервера принадлежит именно этому сервису."""
+    return (
+        server.busy_actor_type == BusyActorType.SERVICE
+        and server.busy_service_name == service_name
+    )
+
+
+def _ensure_service_holds(server: Server, service_name: str, *, action: str) -> None:
+    """Отбить 409, если бронь держит кто-то другой (человек или другой сервис).
+
+    Сервис не может ни освободить, ни переключить чужую бронь — иначе
+    testing_service мог бы снять ACS-лок посреди перезаписи диска.
+    """
+    if _service_holds(server, service_name):
+        return
+    audit_service.emit(
+        action,
+        target_id=server.id, target_type="server",
+        status="denied", allowed=False,
+        details={
+            "reason": "reservation_held_by_other",
+            "service_name": service_name,
+            "department_id": server.department_id,
+            "busy_state": server.busy_state,
+            "busy_actor_type": server.busy_actor_type,
+            "busy_service_name": server.busy_service_name,
+        },
+    )
+    raise ConflictError(
+        error_code="SERVER_RESERVED_BY_OTHER",
+        message=(
+            "Server reservation is held by another actor; a service can only "
+            "release or update the reservation it acquired itself"
+        ),
+        details={
+            "busy_actor_type": server.busy_actor_type,
+            "busy_service_name": server.busy_service_name,
+        },
+    )
+
+
+async def acquire_server_for_service(
+    db: AsyncSession,
+    *,
+    server_id: str,
+    service_name: str,
+    busy_state: str,
+    busy_note: str | None,
+    requested_by_department_id: str | None = None,
+) -> Server:
+    """Захват сервера от имени сервиса — аналог `acquire_server` без человека.
+
+    Держатель — `busy_service_name`, `busy_user_id` остаётся пустым (иначе
+    `ck_servers_busy_actor` отобьёт запись). Гонка решается тем же атомарным
+    CAS `UPDATE ... WHERE busy_state='free' AND status<>decommissioned`, что
+    и у пользовательского acquire: rowcount==0 значит «уже занят кем-то»,
+    точную причину достаём re-fetch'ем.
+
+    `requested_by_department_id` — необязательная страховка: сервисный каллер
+    своего отдела не имеет, привязку стенда к отделу он ведёт у себя, но если
+    прислал — сверяем с отделом сервера. Несовпадение маскируем под 404, как
+    `_check_target_department_for_server` у worker-callback'ов: разница
+    403/404 работала бы enumeration-oracle'ом по чужим отделам.
+    """
+    obj = await repo.get_by_id(db, server_id)
+    if obj is None:
+        audit_service.emit(
+            "server.acquired_for_service",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "not_found", "service_name": service_name},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND",
+            message="Server not found",
+        )
+    if (
+        requested_by_department_id is not None
+        and requested_by_department_id != obj.department_id
+    ):
+        audit_service.emit(
+            "server.acquired_for_service",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={
+                "reason": "target_department_mismatch",
+                "service_name": service_name,
+                "server_department_id": obj.department_id,
+                "requested_by_department_id": requested_by_department_id,
+            },
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND",
+            message="Server not found",
+        )
+    if obj.status == ServerStatus.DECOMMISSIONED:
+        audit_service.emit(
+            "server.acquired_for_service",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "decommissioned",
+                "service_name": service_name,
+                "department_id": obj.department_id,
+            },
+        )
+        raise ConflictError(
+            error_code="SERVER_DECOMMISSIONED",
+            message="Server is decommissioned and cannot be acquired",
+        )
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        sa_update(Server)
+        .where(
+            Server.id == server_id,
+            Server.busy_state == BusyState.FREE,
+            Server.status != ServerStatus.DECOMMISSIONED,
+        )
+        .values(
+            busy_state=busy_state,
+            busy_user_id=None,
+            busy_actor_type=BusyActorType.SERVICE,
+            busy_service_name=service_name,
+            busy_since=now,
+            busy_note=busy_note,
+        )
+    )
+    if result.rowcount == 0:
+        db.expire(obj)
+        current = await repo.get_by_id(db, server_id)
+        if current is None:
+            audit_service.emit(
+                "server.acquired_for_service",
+                target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "vanished_during_acquire", "service_name": service_name},
+            )
+            raise NotFoundError(
+                error_code="SERVER_NOT_FOUND",
+                message="Server not found",
+            )
+        if current.status == ServerStatus.DECOMMISSIONED:
+            audit_service.emit(
+                "server.acquired_for_service",
+                target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={
+                    "reason": "decommissioned_race",
+                    "service_name": service_name,
+                    "department_id": current.department_id,
+                },
+            )
+            raise ConflictError(
+                error_code="SERVER_DECOMMISSIONED",
+                message="Server is decommissioned and cannot be acquired",
+            )
+        audit_service.emit(
+            "server.acquired_for_service",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "already_busy",
+                "service_name": service_name,
+                "department_id": current.department_id,
+                "current_state": current.busy_state,
+                "busy_actor_type": current.busy_actor_type,
+                "busy_service_name": current.busy_service_name,
+            },
+        )
+        raise ConflictError(
+            error_code="SERVER_ALREADY_BUSY",
+            message="Server is already busy or being tested",
+            details={"current_state": current.busy_state},
+        )
+    await db.commit()
+    await db.refresh(obj)
+    audit_service.emit(
+        "server.acquired_for_service",
+        target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "service_name": service_name,
+            "department_id": obj.department_id,
+            "busy_state": obj.busy_state,
+            "busy_note": busy_note,
+        },
+    )
+    return obj
+
+
+async def release_server_for_service(
+    db: AsyncSession,
+    *,
+    server_id: str,
+    service_name: str,
+) -> Server:
+    """Снять бронь, взятую этим же сервисом. Чужую бронь не трогает.
+
+    Row-lock перед проверкой держателя — как в `release_server`: без него
+    решение принималось бы по stale-снимку, а параллельный release/acquire
+    успел бы перевесить бронь на другого актора.
+    """
+    obj = await repo.get_for_update(db, server_id)
+    if obj is None:
+        audit_service.emit(
+            "server.released_for_service",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "not_found", "service_name": service_name},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND",
+            message="Server not found",
+        )
+    if obj.busy_state == BusyState.FREE:
+        audit_service.emit(
+            "server.released_for_service",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "not_busy",
+                "service_name": service_name,
+                "department_id": obj.department_id,
+            },
+        )
+        raise ConflictError(
+            error_code="SERVER_NOT_BUSY",
+            message="Server is already free",
+        )
+    _ensure_service_holds(obj, service_name, action="server.released_for_service")
+    previous_state = obj.busy_state
+    await repo.update(db, obj, {
+        "busy_state": BusyState.FREE,
+        "busy_user_id": None,
+        "busy_actor_type": BusyActorType.USER,
+        "busy_service_name": None,
+        "busy_since": None,
+        "busy_note": None,
+    })
+    await db.commit()
+    await db.refresh(obj)
+    audit_service.emit(
+        "server.released_for_service",
+        target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "service_name": service_name,
+            "department_id": obj.department_id,
+            "previous_state": previous_state,
+        },
+    )
+    return obj
+
+
+async def set_service_busy_status(
+    db: AsyncSession,
+    *,
+    server_id: str,
+    service_name: str,
+    busy_state: str,
+    busy_note: str | None,
+) -> Server:
+    """Переключить стадию внутри уже взятой этим сервисом брони.
+
+    Этим `testing_service` переводит стенд `acs` → `testing`, получив креды от
+    `prepare-for-test`. `busy_since` не трогаем: он отмеряет время всей брони,
+    а не отдельной стадии. `busy_note=None` оставляет прежнюю заметку — снять
+    её без снятия брони поводов нет.
+    """
+    obj = await repo.get_for_update(db, server_id)
+    if obj is None:
+        audit_service.emit(
+            "server.service_status_changed",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "not_found", "service_name": service_name},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND",
+            message="Server not found",
+        )
+    if obj.busy_state == BusyState.FREE:
+        audit_service.emit(
+            "server.service_status_changed",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "not_busy",
+                "service_name": service_name,
+                "department_id": obj.department_id,
+            },
+        )
+        raise ConflictError(
+            error_code="SERVER_NOT_BUSY",
+            message="Server is free; acquire it before changing its busy state",
+        )
+    _ensure_service_holds(obj, service_name, action="server.service_status_changed")
+    previous_state = obj.busy_state
+    updates: dict = {"busy_state": busy_state}
+    if busy_note is not None:
+        updates["busy_note"] = busy_note
+    await repo.update(db, obj, updates)
+    await db.commit()
+    await db.refresh(obj)
+    audit_service.emit(
+        "server.service_status_changed",
+        target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "service_name": service_name,
+            "department_id": obj.department_id,
+            "previous_state": previous_state,
+            "busy_state": obj.busy_state,
+            "busy_note": obj.busy_note,
         },
     )
     return obj
@@ -1076,6 +1452,8 @@ async def recover_stuck_updating(db: AsyncSession, *, limit: int = 500) -> dict:
             .values(
                 busy_state=BusyState.FREE,
                 busy_user_id=None,
+                busy_actor_type=BusyActorType.USER,
+                busy_service_name=None,
                 busy_since=None,
                 busy_note=None,
             )

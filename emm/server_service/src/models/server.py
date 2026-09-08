@@ -7,7 +7,7 @@ from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, Str
 from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.core.constants import BusyState, PowerState, ServerStatus
+from src.core.constants import BusyActorType, BusyState, PowerState, ServerStatus
 from src.db.base import Base
 
 
@@ -48,6 +48,15 @@ class Server(Base):
     # Per-server факт из inventory-callback'а — версия ОС в каталоге общая, а
     # режим у каждого сервера свой. UI склеивает "<os_version.name> <mode>".
     os_security_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Категория по мощности из платформенного каталога `server_categories`
+    # (low/middle/high/workstation и что заведут дальше). Nullable: уже
+    # заведённые серверы категории не имеют, простановка — ручная.
+    category_id: Mapped[str | None] = mapped_column(
+        String(64),
+        ForeignKey("server_categories.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     department_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     status: Mapped[str] = mapped_column(
         String(32), default=ServerStatus.UNKNOWN, nullable=False
@@ -90,9 +99,21 @@ class Server(Base):
     # `usr_<hex>` либо `bot_<hex>` (FK через DB-границу не натянуть).
     # CHECK на БД — ck_servers_busy_user_id_format.
     busy_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Кто держит бронь: человек (`user`, держатель в busy_user_id) или сервис
+    # (`service`, держатель в busy_service_name). Дефолт `user` — все брони до
+    # появления сервисных акторов такие. busy_user_id и busy_service_name
+    # взаимоисключающи, CHECK на БД — ck_servers_busy_actor.
+    busy_actor_type: Mapped[str] = mapped_column(
+        String(16), default=BusyActorType.USER, server_default="user", nullable=False
+    )
+    # Имя сервиса-держателя (`acs`, `testing_service`). Резолвится на стороне
+    # server_service из провалидированного X-Service-Identity, а не из тела
+    # запроса — вызывающий не может представиться чужим сервисом.
+    busy_service_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     busy_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     busy_note: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    # Снимок busy_state/busy_user_id/busy_note/busy_since, снятый прямо перед
+    # Снимок busy_state/busy_user_id/busy_actor_type/busy_service_name/
+    # busy_note/busy_since, снятый прямо перед
     # переходом в busy_state=acs (`services/reservation.capture_pre_acs_state`).
     # Нужен, чтобы по завершении ACS-операции вернуть сервер в то состояние,
     # в котором он был до неё (свободен/забронирован под тест/что угодно ещё),
@@ -190,6 +211,9 @@ class Server(Base):
 
     os_version: Mapped["OsVersion | None"] = relationship(  # noqa: F821
         "OsVersion", back_populates="servers"
+    )
+    category: Mapped["ServerCategory | None"] = relationship(  # noqa: F821
+        "ServerCategory", back_populates="servers"
     )
     account_links: Mapped[list["ServerAccountServer"]] = relationship(  # noqa: F821
         "ServerAccountServer", back_populates="server", cascade="all, delete-orphan"

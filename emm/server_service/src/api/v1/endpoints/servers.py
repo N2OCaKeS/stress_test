@@ -2,9 +2,11 @@
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
+from src.core.limiter import endpoint_limiter, per_account_key
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
@@ -14,8 +16,10 @@ from src.schemas.server import (
     ServerCreate,
     ServerOsVersionUpdate,
     ServerResponse,
+    ServerTestCredentialsResponse,
     ServerUpdate,
 )
+from src.services import prepare_for_test as pft_svc
 from src.services import server as svc
 
 router = APIRouter(prefix="/servers")
@@ -217,6 +221,40 @@ async def get_server(
     """
     obj = await svc.get_server(db, identity, server_id)
     return ServerResponse.from_server(obj, await svc.load_storage(db, obj.id))
+
+
+@router.get(
+    "/{server_id}/test-credentials",
+    response_model=ServerTestCredentialsResponse,
+    summary="Учётка исполнения теста стенда (живая отладка, план ALLTA MIGRATION §5.3)",
+    description=(
+        "Без `?reveal=true` — только метаданные (`exists`/`username`/"
+        "`ssh_public_key`/`rotated_at`). С `?reveal=true` добавляет "
+        "`password_b64`/`ssh_private_key_b64` (`base64.b64encode(plaintext)`) — "
+        "CRITICAL audit `server.test_credentials_revealed`, отдельный от "
+        "просто-просмотра карточки.\n\n"
+        "Per-IP+server rate-limit `PASSWORD_REVEAL_RATE_LIMIT` поверх "
+        "глобального — тот же принцип, что и у раскрытия пароля server_account."
+    ),
+    responses={
+        403: {"description": "Нет `view_test_credentials`."},
+        404: {"description": "Сервер не найден или чужой department (скрыто за 404)."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP+server reveal-rate-limit пробит (только при reveal=true)."},
+    },
+)
+@endpoint_limiter.limit(
+    get_settings().password_reveal_rate_limit, key_func=per_account_key,
+)
+async def get_test_credentials(
+    request: Request,
+    server_id: str,
+    identity: CurrentUserIdentity,
+    reveal: bool = Query(default=False, description="Раскрыть пароль и приватный ключ."),
+    db: AsyncSession = Depends(get_db),
+) -> ServerTestCredentialsResponse:
+    """Доступ: `(server, *, view_test_credentials)` — единый гейт на метаданные и на секрет."""
+    data = await pft_svc.reveal_test_credentials(db, identity, server_id, reveal=reveal)
+    return ServerTestCredentialsResponse(**data)
 
 
 @router.get(

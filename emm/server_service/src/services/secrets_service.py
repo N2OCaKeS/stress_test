@@ -252,6 +252,27 @@ def aad_for_os_version_bootstrap_password(os_version_id: str) -> bytes:
     ).encode()
 
 
+def aad_for_server_test_password(credentials_id: str) -> bytes:
+    """AAD для `server_test_credentials.password_encrypted` строки `credentials_id`.
+
+    Формат — `"server_test_password|server_test_credentials|<id>"`. Отдельный
+    kind от mgmt-пароля сервера: учётка исполнения теста и платформенная
+    `dbos` — разные слои доступа, swap ciphertext'а между ними должен
+    отбиваться InvalidTag.
+    """
+    return f"server_test_password|server_test_credentials|{credentials_id}".encode()
+
+
+def aad_for_server_test_ssh_key(credentials_id: str) -> bytes:
+    """AAD для `server_test_credentials.ssh_private_key_encrypted` строки `credentials_id`.
+
+    Формат — `"server_test_ssh_key|server_test_credentials|<id>"`. Отдельный
+    kind от пароля, чтобы swap password↔private_key внутри одной строки тоже
+    отбивался.
+    """
+    return f"server_test_ssh_key|server_test_credentials|{credentials_id}".encode()
+
+
 def aad_for_ipmi_credential(controller_id: str) -> bytes:
     """AAD для `ipmi_controllers.password_encrypted` строки `controller_id`.
 
@@ -413,6 +434,8 @@ _ALLOWED_LAZY_TARGETS: frozenset[tuple[str, str]] = frozenset({
     ("acs_settings", "acs_password_encrypted"),
     ("os_version_bootstrap_passwords", "password_encrypted"),
     ("host_services_settings", "ssh_private_key_encrypted"),
+    ("server_test_credentials", "password_encrypted"),
+    ("server_test_credentials", "ssh_private_key_encrypted"),
 })
 
 

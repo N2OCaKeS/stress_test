@@ -91,9 +91,9 @@ class TestListForEntity:
         # e3f8c4b21a07 добавил view_drift → 14, d6c1f8a3b9e4 добавил console → 15,
         # d4f1a9c2e7b8 добавил manage_packages → 16, 363a3e5f2444 добавил
         # acs_snapshot_list/create/restore → 19, 68c541e6a518 свёл три в один
-        # acs_snapshot → 17.
+        # acs_snapshot → 17, c4e91a7f3d68 добавил view_test_credentials → 18.
         admin = [r for r in rows if r["role"] == "admin"]
-        assert len(admin) == 17
+        assert len(admin) == 18
 
     async def test_unknown_entity_type_422(self, client, admin_token):
         resp = await client.get(f"{BASE}/nonexistent_type", headers=_hdr(admin_token))

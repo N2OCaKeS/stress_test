@@ -42,6 +42,11 @@ class BusyState(StrEnum):
     create/restore, снимается только после успешного `server.prepare`,
     который автоматически запускается по завершении: диск переписан целиком,
     старые management-креды не переживают reimage.
+
+    `testing` — сервер занят исполнением теста (`testing_service`). В отличие
+    от `acs`, эту стадию ставит сам `testing_service` через internal-эндпоинт
+    после получения кред от `prepare-for-test`; снимается она через
+    `release-for-service`.
     """
 
     FREE = "free"
@@ -49,6 +54,28 @@ class BusyState(StrEnum):
     TESTING = "testing"
     UPDATING = "updating"
     ACS = "acs"
+
+
+class BusyActorType(StrEnum):
+    """Кто держит бронь сервера — человек или сервис.
+
+    `user` — обычная бронь оператора, держатель в `busy_user_id`
+    (дефолт: все брони до появления сервисных акторов такие).
+    `service` — бронь взял сам сервис по internal-каналу (`acs`,
+    `testing_service`); держатель в `busy_service_name`, `busy_user_id` пуст.
+    Оба поля одновременно непусты быть не могут — на БД это стережёт
+    `ck_servers_busy_actor`.
+    """
+
+    USER = "user"
+    SERVICE = "service"
+
+
+# Имена сервисов, которым разрешено брать бронь через internal-канал
+# `acquire-for-service`. `acs` — сам server_service при снимках Clonezilla
+# (внутренний вызов, без HTTP), `testing_service` — внешний потребитель.
+SERVICE_RESERVATION_ACS = "acs"
+SERVICE_RESERVATION_TESTING = "testing_service"
 
 
 class PowerState(StrEnum):
@@ -147,6 +174,10 @@ class EntityType(StrEnum):
     SERVER = "server"
     SERVER_ACCOUNT = "server_account"
     OS_VERSION = "os_version"
+    # Платформенный каталог категорий серверов по мощности (low/middle/high/
+    # workstation и далее). Чтение открыто любому аутентифицированному актору,
+    # как у os_version — под матрицей остаётся только запись.
+    SERVER_CATEGORY = "server_category"
     IPMI_CONTROLLER = "ipmi_controller"
     # Самоуправление матрицей прав: view списка / grant / revoke. Управление
     # service-ролями (создание/удаление имён ролей) живёт только в auth_service —
@@ -231,6 +262,12 @@ class Action(StrEnum):
     # воркеру через internal endpoint. Узкий least-privilege грант worker_bot'а:
     # воркер тянет рабочий на боксе ключ перед каждой managed-операцией.
     VIEW_MANAGEMENT_CREDENTIALS = "view_management_credentials"
+    # Раскрытие учётки исполнения теста (`server_test_credentials`, план
+    # ALLTA MIGRATION §5.3) — человеку, не воркеру: живая отладка стенда во
+    # время/после прогона. В отличие от VIEW_MANAGEMENT_CREDENTIALS это не
+    # _NON_INSTANCE_ACTIONS — обычный грантуемый action, по умолчанию
+    # засеян только роли admin.
+    VIEW_TEST_CREDENTIALS = "view_test_credentials"
 
     # Server-account specific
     GRANT_SUDO = "grant_sudo"
@@ -316,6 +353,9 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         # Снимки сервера через ACS: список / создание / восстановление
         # (полная перезапись диска) — один action на все три.
         Action.ACS_SNAPSHOT,
+        # Раскрытие учётки исполнения теста (§5.3 плана ALLTA MIGRATION) —
+        # `GET /servers/{id}/test-credentials?reveal=true`, засеяно только admin'у.
+        Action.VIEW_TEST_CREDENTIALS,
     }),
     EntityType.SERVER_ACCOUNT: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
@@ -343,6 +383,11 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     # миграцией c1a9f2b7e4d8; под матрицей остаётся только запись.
     EntityType.OS_VERSION: frozenset({
         Action.CREATE, Action.UPDATE, Action.DELETE, Action.VIEW_PASSWORD,
+    }),
+    # Каталог категорий по мощности: чтение открыто аутентифицированным,
+    # под матрицей — только запись (как у os_version).
+    EntityType.SERVER_CATEGORY: frozenset({
+        Action.CREATE, Action.UPDATE, Action.DELETE,
     }),
     EntityType.IPMI_CONTROLLER: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,

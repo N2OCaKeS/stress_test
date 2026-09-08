@@ -144,6 +144,7 @@ class TaskKind(StrEnum):
     ACCOUNT_UPDATE_ON_HOST = "account.update_on_host"
     ACCOUNT_DEPROVISION = "account.deprovision"
     SERVER_PREPARE = "server.prepare"
+    SERVER_PREPARE_FOR_TEST = "server.prepare_for_test"
     SERVER_ROTATE_MANAGEMENT_CREDS = "server.rotate_management_creds"
     SERVER_ASTRA_UPDATE = "server.astra_update"
     SERVER_INSTALL_NODE_EXPORTER = "server.install_node_exporter"

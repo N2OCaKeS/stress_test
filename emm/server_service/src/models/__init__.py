@@ -24,7 +24,12 @@ from src.models.server_account import (
     ServerAccountVm,
 )
 from src.models.server_account_ignored_login import ServerAccountIgnoredLogin
+from src.models.server_category import ServerCategory
 from src.models.server_disk import ServerDisk
+from src.models.server_prepare_for_test import (
+    ServerPrepareForTestRequest,
+    ServerTestCredentials,
+)
 from src.models.vm import Vm
 from src.models.vm_disk import VmDisk
 from src.models.vm_image import VmImage
@@ -56,7 +61,10 @@ __all__ = [
     "ServerAccountIgnoredLogin",
     "ServerAccountServer",
     "ServerAccountVm",
+    "ServerCategory",
     "ServerDisk",
+    "ServerPrepareForTestRequest",
+    "ServerTestCredentials",
     "Vm",
     "VmDisk",
     "VmImage",

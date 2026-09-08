@@ -50,6 +50,7 @@ class ServerCreate(BaseModel):
     ssh_port: int = Field(default=22, ge=1, le=65535, description="SSH-порт для worker-операций (default 22).")
     department_id: str = Field(description="Department-владелец сервера. Должен совпадать с department'ом caller'а, иначе 403 DEPARTMENT_ISOLATION.")
     os_version_id: str | None = Field(default=None, description="FK на os_versions. Может быть пустым до первой инвентаризации.")
+    category_id: str | None = Field(default=None, description="FK на server_categories — категория стенда по мощности. Необязательна.")
     cpu_brand: str | None = Field(default=None, max_length=64, description='Производитель CPU ("Intel", "AMD", "MCST"...). Свободная строка.')
     cpu_model: str | None = Field(default=None, max_length=256, description='Модель CPU ("Xeon Silver 4314"). Свободная строка, обычно из lscpu Model name.')
     cpu_cores: int | None = Field(default=None, ge=0, description="Количество физических ядер CPU.")
@@ -95,6 +96,7 @@ class ServerUpdate(BaseModel):
     mgmt_ip_address: IPv4Address | IPv6Address | None = Field(default=None, description="Сменить management IP.")
     ssh_port: int | None = Field(default=None, ge=1, le=65535, description="Сменить SSH-порт.")
     os_version_id: str | None = Field(default=None, description="Сменить FK на os_versions.")
+    category_id: str | None = Field(default=None, description="Сменить категорию по мощности (FK на server_categories). `null` снимает категорию.")
     cpu_brand: str | None = Field(default=None, max_length=64, description="Обновить производителя CPU.")
     cpu_model: str | None = Field(default=None, max_length=256, description="Обновить модель CPU.")
     cpu_cores: int | None = Field(default=None, ge=0, description="Обновить количество ядер CPU.")
@@ -166,6 +168,7 @@ class ServerResponse(BaseModel):
     os_version_id: str | None = Field(default=None, description="FK на os_versions.")
     os_last_synced_at: datetime | None = Field(default=None, description="Последняя синхронизация OS-инвентарником.")
     os_security_mode: str | None = Field(default=None, description="Режим безопасности Astra с бокса (Smolensk/Orel/Voronezh). UI склеивает с именем версии.")
+    category_id: str | None = Field(default=None, description="FK на server_categories — категория стенда по мощности (None, если не проставлена).")
     department_id: str = Field(description="Department-владелец.")
     status: str = Field(description="Статус сервера: unknown/online/offline/maintenance/decommissioned.")
     power_state: str = Field(description="Состояние питания: on/off/unknown (из кэша).")
@@ -180,7 +183,9 @@ class ServerResponse(BaseModel):
     ipmi_power_state: str | None = Field(default=None, description="Питание по BMC/IPMI: on/off/unknown (None — пробы ещё не было).")
     ipmi_checked_at: datetime | None = Field(default=None, description="Когда последний раз опрашивали питание по BMC (UTC; None — пробы ещё не было).")
     busy_state: str = Field(description="Состояние занятости: free/busy/testing.")
-    busy_user_id: str | None = Field(default=None, description="user_id того, кто взял сервер (если busy/testing).")
+    busy_user_id: str | None = Field(default=None, description="user_id того, кто взял сервер (если busy/testing и бронь пользовательская).")
+    busy_actor_type: str = Field(default="user", description="Кто держит бронь: user (держатель в busy_user_id) или service (держатель в busy_service_name).")
+    busy_service_name: str | None = Field(default=None, description="Имя сервиса-держателя брони (acs / testing_service). Непусто только при busy_actor_type=service.")
     busy_since: datetime | None = Field(default=None, description="С какого момента сервер занят.")
     busy_note: str | None = Field(default=None, description="Произвольная метка о причине занятости.")
     serial_number: str | None = Field(default=None, description="Серийный номер железа.")
@@ -1220,4 +1225,28 @@ class AcsSnapshotRestoreDoneCallbackResponse(BaseModel):
     prepare_task_id: str | None = Field(
         default=None,
         description="task_id авто-диспатченного server.prepare (только при succeeded=True).",
+    )
+
+
+class ServerTestCredentialsResponse(BaseModel):
+    """Учётка исполнения теста сервера (§5.3 плана ALLTA MIGRATION).
+
+    Живая отладка стенда для админа: `reveal=false` (или отсутствует) отдаёт
+    только метаданные (`username`/`rotated_at`/`exists`); `reveal=true`
+    добавляет `password_b64`/`ssh_private_key_b64` (`base64.b64encode(plaintext)`)
+    — и это уже CRITICAL-audit действие с отдельным rate-limit'ом, тот же
+    принцип, что у `server_account`.
+    """
+
+    exists: bool = Field(description="Есть ли вообще выпущенная учётка (пайплайн prepare-for-test хоть раз прошёл).")
+    username: str | None = Field(default=None, description="OS-логин учётки исполнения теста.")
+    ssh_public_key: str | None = Field(default=None, description="Публичный ключ (не секрет, отдаётся всегда при exists=true).")
+    rotated_at: datetime | None = Field(default=None, description="Когда учётка была выписана/перевыпущена последний раз.")
+    password_b64: str | None = Field(
+        default=None,
+        description="base64(plaintext) пароля — только при `?reveal=true` и наличии `view_test_credentials`.",
+    )
+    ssh_private_key_b64: str | None = Field(
+        default=None,
+        description="base64(plaintext PEM) приватного ключа — только при `?reveal=true` и наличии `view_test_credentials`.",
     )

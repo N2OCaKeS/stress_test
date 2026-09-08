@@ -44,6 +44,7 @@ class TestFlagSets:
             "view_management_credentials",
             "acs_snapshot",
             "host_service_control",
+            "view_test_credentials",
         }
         assert set(SENSITIVE_ACTIONS) == expected
 

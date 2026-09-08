@@ -64,8 +64,10 @@ from src.core.config import get_settings
 from src.core.constants import (
     AccountSource,
     Action,
+    BusyActorType,
     BusyState,
     EntityType,
+    SERVICE_RESERVATION_ACS,
     ServerStatus,
 )
 from src.core.limiter import endpoint_limiter, per_account_key
@@ -1877,6 +1879,8 @@ async def server_astra_update_dispatch(
     await server_repo.update(db, server, {
         "busy_state": BusyState.UPDATING,
         "busy_user_id": identity.user_id,
+        "busy_actor_type": BusyActorType.USER,
+        "busy_service_name": None,
         "busy_since": now,
         "busy_note": f"Обновление ОС Astra до {os_version.name}",
     })
@@ -1912,6 +1916,8 @@ async def server_astra_update_dispatch(
             await server_repo.update(db, server, {
                 "busy_state": BusyState.FREE,
                 "busy_user_id": None,
+                "busy_actor_type": BusyActorType.USER,
+                "busy_service_name": None,
                 "busy_since": None,
                 "busy_note": None,
             })
@@ -2021,7 +2027,7 @@ async def _acs_resolve_and_dispatch(
     os_version_id: str,
     require_prepared: bool,
     require_bootstrap_password: bool,
-    busy_note_prefix: str,
+    busy_note_action: str,
 ) -> str:
     """Общий хвост create/restore ACS-dispatch'а для уже видимого сервера.
 
@@ -2136,11 +2142,17 @@ async def _acs_resolve_and_dispatch(
 
     now = datetime.now(timezone.utc)
     pre_acs_snapshot = reservation.capture_pre_acs_state(server)
+    # Держатель ACS-брони — сам сервис, не человек, нажавший кнопку: снимок
+    # идёт часами и переживает сессию инициатора, а прежняя пользовательская
+    # бронь лежит в pre_acs_busy_snapshot и вернётся по завершении. Инициатор
+    # остаётся в аудите (`server.acs_snapshot_create` / `..._restore`).
     await server_repo.update(db, server, {
         "busy_state": BusyState.ACS,
-        "busy_user_id": identity.user_id,
+        "busy_user_id": None,
+        "busy_actor_type": BusyActorType.SERVICE,
+        "busy_service_name": SERVICE_RESERVATION_ACS,
         "busy_since": now,
-        "busy_note": f"{busy_note_prefix}_{os_version.name}",
+        "busy_note": f"{busy_note_action}|{os_version.name}",
         "pre_acs_busy_snapshot": pre_acs_snapshot,
     })
     await db.commit()
@@ -2288,7 +2300,7 @@ async def server_acs_snapshot_create_dispatch(
         os_version_id=body.os_version_id,
         require_prepared=True,
         require_bootstrap_password=False,
-        busy_note_prefix="ACS_CREATE",
+        busy_note_action="save",
     )
     return ServerTaskDispatchResponse(task_id=task_id, status="queued")
 
@@ -2370,7 +2382,7 @@ async def server_acs_snapshot_restore_dispatch(
         os_version_id=body.os_version_id,
         require_prepared=False,
         require_bootstrap_password=True,
-        busy_note_prefix="ACS_RESTORE",
+        busy_note_action="restore",
     )
     return ServerTaskDispatchResponse(task_id=task_id, status="queued")
 
@@ -3928,7 +3940,7 @@ async def _acs_batch_dispatch(
     os_version_id: str,
     require_prepared: bool,
     require_bootstrap_password: bool,
-    busy_note_prefix: str,
+    busy_note_action: str,
 ) -> tuple[list[dict], list[dict]]:
     """Общий цикл batch create/restore ACS по списку `server_id`.
 
@@ -3968,7 +3980,7 @@ async def _acs_batch_dispatch(
                 os_version_id=os_version_id,
                 require_prepared=require_prepared,
                 require_bootstrap_password=require_bootstrap_password,
-                busy_note_prefix=busy_note_prefix,
+                busy_note_action=busy_note_action,
             )
         except ConflictError as exc:
             reason = _ACS_BATCH_CONFLICT_REASONS.get(exc.error_code, "idempotent_conflict")
@@ -4100,7 +4112,7 @@ async def server_acs_snapshot_create_batch_dispatch(
         os_version_id=body.os_version_id,
         require_prepared=True,
         require_bootstrap_password=False,
-        busy_note_prefix="ACS_CREATE",
+        busy_note_action="save",
     )
 
     audit_service.emit(
@@ -4190,7 +4202,7 @@ async def server_acs_snapshot_restore_batch_dispatch(
         os_version_id=body.os_version_id,
         require_prepared=False,
         require_bootstrap_password=True,
-        busy_note_prefix="ACS_RESTORE",
+        busy_note_action="restore",
     )
 
     audit_service.emit(

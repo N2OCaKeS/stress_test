@@ -1,6 +1,6 @@
 """Интеграционные тесты гейта брони сервера (задача #9).
 
-Когда сервер забронирован (`busy_state='busy'`), деструктивные операции
+Когда сервер забронирован (`busy_state` в `busy`/`testing`), деструктивные операции
 (power on/off/reboot, мутации server_account, delete/update/os-sync сервера)
 доступны только владельцу брони (`busy_user_id`) ИЛИ админу (platform
 `department_admin` отдела сервера / service-роль `admin`). Остальным — 409
@@ -13,7 +13,9 @@
 * server: update/delete/os-sync чужим на занятом → 409;
 * read (GET карточки, list) занятого сервера доступен любому с `view`;
 * release занятого чужим оператором/админом — не гейтится (можно снять бронь);
-* free-сервер гейт не трогает (регрессия — обычный happy path).
+* free-сервер гейт не трогает (регрессия — обычный happy path);
+* сервисная бронь (`busy_state='testing'`, держатель — сервис): чужой и
+  бывший владелец → 409, админ проходит, read не гейтится.
 
 Реальный PostgreSQL через сервисный docker-compose.test.yml (см. conftest).
 """
@@ -100,6 +102,30 @@ async def make_busy_server(make_server, db, owner_user_id):
         srv.busy_user_id = owner_user_id
         srv.busy_since = datetime.now(timezone.utc)
         srv.busy_note = "stress-run-42"
+        await db.flush()
+        return srv
+
+    return _factory
+
+
+@pytest_asyncio.fixture
+async def make_testing_server(make_server, db):
+    """Сервер dep_a под сервисной бронью исполнения теста.
+
+    `busy_state='testing'`, держатель — сервис (`busy_actor_type='service'`,
+    `busy_service_name='testing_service'`), человека-владельца нет вовсе.
+    """
+    from datetime import datetime, timezone
+
+    from src.core.constants import BusyState
+
+    async def _factory(*, with_ipmi: bool = False):
+        srv = await make_server(department_id="dep_a", with_ipmi=with_ipmi)
+        srv.busy_state = BusyState.TESTING
+        srv.busy_actor_type = "service"
+        srv.busy_service_name = "testing_service"
+        srv.busy_since = datetime.now(timezone.utc)
+        srv.busy_note = "smoke|1711rc42|6.6"
         await db.flush()
         return srv
 
@@ -384,6 +410,66 @@ class TestReadAndReleaseNotGated:
         )
         assert resp.status_code == 200
         assert resp.json()["busy_state"] == "free"
+
+
+# ── Сервисная бронь (busy_state=testing) гейтит так же, как человеческая ──────
+
+
+class TestServiceReservationGate:
+    """Симметрия с человеческой бронью: держателя-человека нет, проходит админ.
+
+    Сам держащий сервис поверх этой брони ходит своим internal-каналом
+    (`/internal/servers/{id}/{release-for-service,service-status}`), а не
+    пользовательскими эндпоинтами, поэтому в этот гейт он не упирается.
+    """
+
+    async def test_stranger_power_on_blocked(
+        self, client, stranger_token, make_testing_server,
+    ):
+        srv = await make_testing_server(with_ipmi=True)
+        resp = await client.post(
+            f"{SRV}/{srv.id}/ipmi/power/on", headers=_hdr(stranger_token),
+        )
+        body = assert_error(resp, 409, "SERVER_RESERVED")
+        # Держателя-человека нет — клиенту показываем имя сервиса.
+        assert body["details"]["busy_user_id"] is None
+        assert body["details"]["busy_service_name"] == "testing_service"
+        assert body["details"]["busy_note"] == "smoke|1711rc42|6.6"
+
+    async def test_operator_power_on_blocked_too(
+        self, client, owner_token, make_testing_server,
+    ):
+        """Даже держатель прошлой человеческой брони не «владелец» этой."""
+        srv = await make_testing_server(with_ipmi=True)
+        resp = await client.post(
+            f"{SRV}/{srv.id}/ipmi/power/on", headers=_hdr(owner_token),
+        )
+        assert_error(resp, 409, "SERVER_RESERVED")
+
+    async def test_admin_power_off_allowed(
+        self, client, admin_token, make_testing_server, captured_dispatch,
+    ):
+        srv = await make_testing_server(with_ipmi=True)
+        resp = await client.post(
+            f"{SRV}/{srv.id}/ipmi/power/off", headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 202, resp.text
+
+    async def test_stranger_delete_blocked(
+        self, client, stranger_token, make_testing_server, stranger_can_delete,
+    ):
+        srv = await make_testing_server()
+        resp = await client.delete(f"{SRV}/{srv.id}", headers=_hdr(stranger_token))
+        assert_error(resp, 409, "SERVER_RESERVED")
+
+    async def test_read_not_gated(
+        self, client, stranger_token, make_testing_server,
+    ):
+        srv = await make_testing_server()
+        resp = await client.get(f"{SRV}/{srv.id}", headers=_hdr(stranger_token))
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["busy_state"] == "testing"
+        assert resp.json()["busy_service_name"] == "testing_service"
 
 
 # ── Audit capture фикстура ────────────────────────────────────────────────────

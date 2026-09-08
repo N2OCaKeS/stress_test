@@ -43,6 +43,13 @@ from src.api.v1.endpoints.installed_packages import (
     router as installed_packages_router,
 )
 from src.api.v1.endpoints.internal import router as internal_router
+from src.api.v1.endpoints.internal_prepare_for_test import (
+    router as internal_prepare_for_test_router,
+    worker_router as internal_prepare_for_test_worker_router,
+)
+from src.api.v1.endpoints.internal_service_reservation import (
+    router as internal_service_reservation_router,
+)
 from src.api.v1.endpoints.inventory import users_router as users_inventory_router
 from src.api.v1.endpoints.management_user_config import (
     router as management_user_config_router,
@@ -55,6 +62,7 @@ from src.api.v1.endpoints.resource_permissions import (
 )
 from src.api.v1.endpoints.secrets_migration import router as secrets_migration_router
 from src.api.v1.endpoints.server_accounts import router as server_accounts_router
+from src.api.v1.endpoints.server_categories import router as server_categories_router
 from src.api.v1.endpoints.servers import router as servers_router
 from src.api.v1.endpoints.system_settings import (
     internal_router as system_settings_internal_router,
@@ -117,6 +125,7 @@ router.include_router(installed_packages_bulk_router, tags=["installed-packages"
 router.include_router(installed_packages_action_router, tags=["installed-packages"])
 router.include_router(users_inventory_router, tags=["server-accounts"])
 router.include_router(os_versions_router, tags=["os-versions"])
+router.include_router(server_categories_router, tags=["server-categories"])
 router.include_router(permissions_router, tags=["permissions"])
 router.include_router(resource_permissions_router, tags=["resource-permissions"])
 # Cancel worker-task'и. Один endpoint — POST /tasks/{id}/cancel. Сами
@@ -147,6 +156,13 @@ router.include_router(secrets_migration_router)
 # Ops — отдельный s2s-канал под shared-secret (X-Service-Identity), для
 # rotation_runner и подобных. Тоже скрыт из OpenAPI.
 router.include_router(ops_router)
+# Бронь сервера от имени сервиса (testing_service/acs) — тот же shared-secret
+# канал, что и ops, но по серверам: acquire/release/смена стадии.
+router.include_router(internal_service_reservation_router)
+# Асинхронный контракт `prepare-for-test`: вход от testing_service (тот же
+# shared-secret канал) + callback воркера о новых шагах пайплайна.
+router.include_router(internal_prepare_for_test_router)
+router.include_router(internal_prepare_for_test_worker_router)
 # Admin-эндпоинты ротации ключей шифрования для account_admin. Инфраструктура,
 # не бизнес-данные — явное исключение из platform_admin_guard business-блока.
 router.include_router(admin_encryption_router)

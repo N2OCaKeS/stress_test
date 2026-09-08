@@ -119,7 +119,10 @@ class Settings(BaseSettings):
         ),
         description=(
             "Inbound s2s bearer-ключи: `{identity: shared_secret}`. Используются "
-            "ops-эндпоинтами (`/internal/migration_status` для rotate-runner'а), "
+            "ops-эндпоинтами (`/internal/migration_status` для rotate-runner'а) и "
+            "бронью серверов от имени сервиса "
+            "(`/internal/servers/{id}/acquire-for-service` и соседи — identity "
+            "`testing_service` / `acs`), "
             "которые не ходят через auth_service introspect — вместо JWT/PAT/bot "
             "там простой shared-secret под `X-Service-Identity: <identity>`. Каждый "
             "caller получает свой ключ; sender выбирается по identity, ключ "
@@ -389,6 +392,39 @@ class Settings(BaseSettings):
             "LOGING_SERVICE_API_KEY env у loging_service. Пусто отключает удалённый аудит."
         ),
     )
+    # ── Исходящий канал в testing_service (callback prepare-for-test) ──────
+    testing_service_url: str = Field(
+        default="",
+        alias="TESTING_SERVICE_URL",
+        description=(
+            "Base URL testing_service, куда уходит callback завершения "
+            "`prepare-for-test` (POST <base>/internal/prepare-for-test/"
+            "{prepare_request_id}/completed). Пусто — callback не шлётся, "
+            "результат пайплайна остаётся только в "
+            "`server_prepare_for_test_requests` (потребителя ещё нет)."
+        ),
+    )
+    testing_service_api_key: str = Field(
+        default="",
+        alias="TESTING_SERVICE_API_KEY",
+        description=(
+            "Shared service-to-service secret для callback'а в "
+            "testing_service. Уходит как 'Authorization: Bearer <key>' "
+            "вместе с 'X-Service-Identity: server_service'. Пусто — callback "
+            "не шлётся."
+        ),
+    )
+    testing_callback_timeout_seconds: float = Field(
+        default=5.0,
+        gt=0,
+        alias="TESTING_CALLBACK_TIMEOUT_SECONDS",
+        description=(
+            "Таймаут одного POST'а callback'а в testing_service. Callback "
+            "уходит уже после того, как пайплайн завершился, и не блокирует "
+            "worker-callback: на исчерпании ретраев результат остаётся в БД."
+        ),
+    )
+
     # ── Pool'ы под исходящие каналы в loging_service ───────────────────────
     # Audit-emit (write) и dashboard-read держим в раздельных пулах: drift-burst
     # на read-эндпоинт не должен выедать FD у audit-канала и наоборот. Размеры
@@ -1163,6 +1199,32 @@ class Settings(BaseSettings):
                 "LOGGING_SERVICE_URL must use https:// in "
                 f"{self.app_env} (got scheme={scheme!r}, host={host!r}); "
                 "audit events carry actor PII and security-sensitive data"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_https_testing_url_in_prod(self) -> "Settings":
+        """В production/staging `TESTING_SERVICE_URL` должен быть https://.
+
+        Тот же фильтр, что у auth/logging. Callback несёт пароль и приватный
+        SSH-ключ тестового пользователя стенда — на plain http через внешний
+        FQDN это выдача рабочего доступа к стенду любому, кто слушает канал.
+        Localhost и внутрикластерные имена — исключение, как у соседей.
+        Пустой URL (callback отключён) проверку пропускает.
+        """
+        if self.app_env.lower() not in {"production", "staging"}:
+            return self
+        if not self.testing_service_url:
+            return self
+        parsed = urlparse(self.testing_service_url)
+        scheme = (parsed.scheme or "").lower()
+        host = (parsed.hostname or "").lower()
+        if scheme == "http" and not _is_intracluster_host(host):
+            raise ValueError(
+                "TESTING_SERVICE_URL must use https:// in "
+                f"{self.app_env} (got scheme={scheme!r}, host={host!r}); "
+                "the prepare-for-test callback carries the test user's "
+                "password and private SSH key"
             )
         return self
 

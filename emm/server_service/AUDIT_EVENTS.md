@@ -69,7 +69,12 @@ Source-of-truth — `src/services/audit_events.py::SERVICE_EVENTS`.
 | `server.probe_targets_listed` | WARNING | GET `/internal/probe-targets` — worker probe-loop прочитал список целей пробинга (серверы + ВМ для фоновых reachability/power циклов). Грант `(server, prepare_callback)`, worker_bot-only. Эмитится ТОЛЬКО denied (при отказе гранта) | `server` | denied: `reason=permission_denied` |
 | `server.acquire` | INFO | POST `/servers/{id}/busy` — успех захвата (busy_state → busy) | `server` | `department_id`, `purpose`, `lease_until`. denied/failure: `reason in {not_found_or_cross_dept, permission_denied, decommissioned, already_busy}` |
 | `server.release` | INFO | DELETE `/servers/{id}/busy` — успех освобождения (busy_state → free) | `server` | `department_id`, `previous_user_id`. denied/failure: `reason in {not_found_or_cross_dept, permission_denied, not_busy, race_already_free}` |
+| `server.acquired_for_service` | INFO | POST `/internal/servers/{id}/acquire-for-service` — бронь от имени сервиса (`busy_actor_type=service`, `busy_service_name` из провалидированной `X-Service-Identity`) | `server` | `service_name`, `department_id`, `busy_state`, `busy_note`. failure: `reason in {not_found, decommissioned, decommissioned_race, vanished_during_acquire, already_busy}` |
+| `server.released_for_service` | INFO | POST `/internal/servers/{id}/release-for-service` — сервис снял собственную бронь (busy_state → free) | `server` | `service_name`, `department_id`, `previous_state`. denied/failure: `reason in {not_found, not_busy, reservation_held_by_other}` |
+| `server.service_status_changed` | INFO | POST `/internal/servers/{id}/service-status` — смена стадии внутри собственной брони (обычно `acs` → `testing`), `busy_since` не двигается | `server` | `service_name`, `department_id`, `previous_state`, `busy_state`, `busy_note`. denied/failure: `reason in {not_found, not_busy, reservation_held_by_other}` |
 | `server.update_os_version` | INFO | POST `/servers/{id}/os-sync` — ручной апдейт `os_version_id` без inventory sync | `server` | `department_id`, `previous_os_version_id`, `new_os_version_id`. denied/failure: `reason in {not_found_or_cross_dept, permission_denied, invalid_os_version}` |
+| `server.prepare_for_test_requested` | WARNING | POST `/internal/servers/{id}/prepare-for-test` — testing_service запросил подготовку стенда под тест (ACS restore + auto-prepare + провижн тестового пользователя + смена ядра + смена режима безопасности + ребут) | `server` | `prepare_request_id`, `correlation_id`, `os_version_id`, `kernel`, `mode`, `test_username`, `service_name`, `department_id` |
+| `server.prepare_for_test_completed` | WARNING | Пайплайн `prepare-for-test` дошёл до терминального состояния (входная валидация, либо worker-callback `POST .../prepare-for-test-done`) | `server` | `prepare_request_id`, `correlation_id`, `succeeded`, `failed_step in {restore, prepare, user_provision, kernel_change, mode_switch, reboot_verify}`, `kernel`, `os_version_id` |
 
 ---
 
@@ -318,6 +323,22 @@ caller; системный (department-wide) — только department_admin �
 | `os_version.update` | INFO | PATCH | `os_version` | поля diff'а |
 | `os_version.delete` | WARNING | DELETE | `os_version` | `name` |
 | `os.unknown_observed` | WARNING | inventory-callback от worker'а принёс `os_version`, не прошедший whitelist `KNOWN_OS_PREFIXES` (`core/known_os.py`); запись в `os_versions` НЕ создаётся, `server.os_version_id` остаётся прежним, остальные hardware-поля апдейтятся | `server` | `os_name`, `server_id`, `server_department_id`, `actor_subject_type`, `reason=os_not_in_whitelist` |
+
+---
+
+## Server categories — платформенный каталог категорий по мощности
+
+Чтение каталога (`list` / `get` по id / по коду) доступно любому
+аутентифицированному актору и не аудитится — как у `os_versions`. Анонимный
+запрос без bearer'а отбивается 401 на endpoint-уровне. Пишутся только мутации
+каталога плюс простановка категории серверу.
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `server_category.create` | INFO | INSERT в `server_categories` | `server_category` | `code`, `label`. denied: `reason=permission_denied`. failure: `reason=duplicate` |
+| `server_category.update` | INFO | PATCH | `server_category` | `fields` (диф), `code`. denied: `reason=permission_denied`. failure: `reason in {not_found, duplicate}` |
+| `server_category.delete` | WARNING | DELETE | `server_category` | `code`. denied: `reason=permission_denied`. failure: `reason in {not_found, in_use}` (+ `referencing_servers` при `in_use`) |
+| `server.category_assigned` | INFO | PATCH `/servers/{id}` с `category_id` в дифе — категория проставлена, сменена или снята (`null`). Эмитится в дополнение к общему `server.update` | `server` | `department_id`, `previous_category_id`, `new_category_id` |
 
 ---
 

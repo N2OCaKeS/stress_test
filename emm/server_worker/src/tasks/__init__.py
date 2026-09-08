@@ -13,6 +13,7 @@ from src.tasks import (  # noqa: F401
     passwords,
     power,
     prepare,
+    prepare_for_test,
     users,
     vms,
     vms_accounts,

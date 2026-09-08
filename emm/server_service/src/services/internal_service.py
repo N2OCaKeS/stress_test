@@ -34,7 +34,13 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
-from src.core.constants import AccountSource, Action, BusyState, EntityType
+from src.core.constants import (
+    AccountSource,
+    Action,
+    BusyActorType,
+    BusyState,
+    EntityType,
+)
 from src.core.exceptions import (
     AppException,
     AuthorizationError,
@@ -62,6 +68,7 @@ from src.schemas.internal import (
     UsersInventoryCallbackRequest,
 )
 from src.schemas.internal import PowerStateCallbackRequest
+from src.schemas.prepare_for_test import PrepareForTestCallbackRequest
 from src.schemas.server import (
     AcsSnapshotCreatedCallbackRequest,
     AcsSnapshotRestoreDoneCallbackRequest,
@@ -84,6 +91,7 @@ from src.services import (
     metrics,
     os_version_bootstrap_password as bootstrap_password_svc,
     permissions,
+    prepare_for_test as prepare_for_test_svc,
     reservation,
     secrets_service,
     worker_client,
@@ -1926,7 +1934,13 @@ async def record_server_prepared(
         # снимаем флаг. fetch с этого момента отдаёт текущий материал.
         "mgmt_creds_pending_apply": False,
     }
-    if server.busy_state == BusyState.ACS:
+    # Подготовка под тест (`prepare-for-test`) на этом prepare'е не
+    # заканчивается: дальше идут провижн пользователя теста, смена ядра и
+    # ребут, и всё это время стенд обязан оставаться занятым. Поэтому при
+    # активном запросе ACS-бронь здесь НЕ снимаем — её снимет провал
+    # пайплайна либо сам testing_service после прогона.
+    pending_for_test = await prepare_for_test_svc.get_active_request(db, server_id)
+    if server.busy_state == BusyState.ACS and pending_for_test is None:
         # Этот prepare — авто-диспатч после успешного restore снимка ACS
         # (`record_acs_snapshot_restore_done`), который намеренно держал
         # busy_state=acs до сих пор. Обычный (не-ACS) prepare сюда не
@@ -1936,6 +1950,8 @@ async def record_server_prepared(
         reservation.restore_pre_acs_state(server)
         updates["busy_state"] = server.busy_state
         updates["busy_user_id"] = server.busy_user_id
+        updates["busy_actor_type"] = server.busy_actor_type
+        updates["busy_service_name"] = server.busy_service_name
         updates["busy_since"] = server.busy_since
         updates["busy_note"] = server.busy_note
         updates["pre_acs_busy_snapshot"] = server.pre_acs_busy_snapshot
@@ -1961,6 +1977,20 @@ async def record_server_prepared(
             "caller_type": identity.subject_type,
         },
     )
+    if pending_for_test is not None:
+        # Следующий шаг пайплайна: выписать учётку исполнения теста и
+        # диспатчить `server.prepare_for_test` (пользователь + ядро + ребут).
+        # Best-effort — сам prepare уже состоялся, ронять его callback нельзя;
+        # внутри провал фиксируется на строке запроса и уезжает callback'ом в
+        # testing_service.
+        try:
+            await prepare_for_test_svc.on_server_prepared(db, server)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "prepare-for-test continuation after prepare failed server_id=%s",
+                server_id, exc_info=True,
+            )
+
     # Авто-обновление inventory + power сразу после prepare: оператору не надо
     # жать вручную. Best-effort — фейл диспатчей не откатывает уже завершённый
     # prepare-callback (сервер managed). Свои audit'ы эмитятся внутри
@@ -2039,6 +2069,8 @@ async def record_server_astra_updated(
     updates: dict = {
         "busy_state": BusyState.FREE,
         "busy_user_id": None,
+        "busy_actor_type": BusyActorType.USER,
+        "busy_service_name": None,
         "busy_since": None,
         "busy_note": None,
     }
@@ -2243,16 +2275,21 @@ async def record_acs_snapshot_restore_done(
                 "caller_type": identity.subject_type,
             },
         )
+        # Restore — первая стадия пайплайна `prepare-for-test`, если он идёт.
+        # Без этого хука testing_service ждал бы callback'а вечно.
+        await prepare_for_test_svc.on_restore_failed(db, server_id, payload.error)
         return {"ok": True, "busy_state": server.busy_state, "prepare_task_id": None}
 
-    # succeeded=True — держим busy_state=acs, только освежаем заметку под-этапа.
+    # succeeded=True — держим busy_state=acs и заметку `restore|<rc>`; хвостовые
+    # сегменты через `|` добавляются только там, где оператору нужен видимый
+    # сигнал (ниже — bootstrap_missing).
     # os_version_id известен точно (это версия восстановленного снимка) — не
     # ждём следующего inventory.sync, проставляем сразу, иначе карточка сервера
     # показывает старую версию до первого ручного/периодического sync'а после
     # restore. Снимает busy-блокировку последующий callback `prepared`, не мы
     # здесь.
     await server_repo.update(db, server, {
-        "busy_note": f"ACS_RESTORE_PREPARE_{os_version_name}",
+        "busy_note": f"restore|{os_version_name}",
         "os_version_id": payload.os_version_id,
         "os_last_synced_at": datetime.now(timezone.utc),
     })
@@ -2265,10 +2302,10 @@ async def record_acs_snapshot_restore_done(
         # Пароль стёрли между dispatch'ем restore и этим callback'ом — редкий
         # race (кто-то поменял/стёр пароль версии посреди многочасового
         # restore). Диск уже переписан, откатывать нечего: сервер остаётся в
-        # acs с явной пометкой, оператор донастраивает пароль и запускает
-        # prepare вручную.
+        # acs с третьим сегментом в заметке — оператор видит на карточке, что
+        # нужен ручной шаг (донастроить пароль версии и запустить prepare).
         await server_repo.update(db, server, {
-            "busy_note": f"ACS_RESTORE_BOOTSTRAP_MISSING_{os_version_name}",
+            "busy_note": f"restore|{os_version_name}|bootstrap_missing",
         })
         await db.commit()
         audit_service.emit(
@@ -2282,6 +2319,11 @@ async def record_acs_snapshot_restore_done(
                 "snapshot_name": payload.snapshot_name,
                 "department_id": server.department_id,
             },
+        )
+        await prepare_for_test_svc.on_restore_stalled(
+            db, server_id,
+            "bootstrap password for the OS version disappeared during restore; "
+            "auto-prepare could not start",
         )
         return {"ok": True, "busy_state": BusyState.ACS.value, "prepare_task_id": None}
 
@@ -2394,6 +2436,83 @@ async def record_acs_snapshot_restore_done(
         "busy_state": BusyState.ACS.value,
         "prepare_task_id": prepare_task_id,
     }
+
+
+async def record_prepare_for_test_done(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+    payload: PrepareForTestCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Зафиксировать исход новых шагов пайплайна `prepare-for-test` (callback воркера).
+
+    Право: `(server, *, prepare_callback)` — тот же грант, что у остальных
+    worker-callback'ов.
+
+    Воркер сюда докладывает результат провижна пользователя исполнения теста,
+    смены ядра и ребута с верификацией подъёма. server_service записывает
+    исход на строку запроса и отправляет собственный callback в
+    testing_service — с учёткой на успехе, с `failed_step` на провале.
+
+    Аудит — внутри `prepare_for_test` (`server.prepare_for_test_completed`),
+    чтобы одинаково эмититься и на этом пути, и на входных валидациях, куда
+    воркер вообще не доходит.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            prepare_for_test_svc.AUDIT_ACTION_COMPLETED,
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+    server = await server_repo.get_by_id(db, server_id)
+    if server is None:
+        audit_service.emit(
+            prepare_for_test_svc.AUDIT_ACTION_COMPLETED,
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found"},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND", message="Server not found",
+        )
+    _check_target_department_for_server(
+        audit_action=prepare_for_test_svc.AUDIT_ACTION_COMPLETED,
+        target_id=server_id,
+        server_department_id=server.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+    )
+
+    request = await prepare_for_test_svc.get_by_id(db, payload.prepare_request_id)
+    if request is None or request.server_id != server_id:
+        audit_service.emit(
+            prepare_for_test_svc.AUDIT_ACTION_COMPLETED,
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "prepare_request_not_found",
+                "prepare_request_id": payload.prepare_request_id,
+            },
+        )
+        raise NotFoundError(
+            error_code="PREPARE_REQUEST_NOT_FOUND",
+            message="Prepare-for-test request not found for this server",
+        )
+
+    status, delivered = await prepare_for_test_svc.complete_from_worker(
+        db, request,
+        succeeded=payload.succeeded,
+        failed_step=payload.failed_step,
+        error=payload.error,
+    )
+    return {"ok": True, "status": status, "callback_delivered": delivered}
 
 
 async def run_auto_inventory_sweep(

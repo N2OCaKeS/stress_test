@@ -28,6 +28,11 @@ ENTITY_DESCRIPTIONS: dict[str, str] = {
         "Каталог версий ОС вместе со списком репозиториев и bootstrap-кредами. "
         "Чтение публичное, под матрицей остаются запись и раскрытие пароля."
     ),
+    EntityType.SERVER_CATEGORY: (
+        "Каталог категорий серверов по мощности (LowServer / MiddleServer / "
+        "HighServer / WorkStation и далее). Платформенный, без привязки к "
+        "отделу. Чтение открыто аутентифицированным, под матрицей — запись."
+    ),
     EntityType.IPMI_CONTROLLER: (
         "BMC/IPMI-контроллер сервера: управление питанием железа и креды "
         "доступа к BMC."
@@ -155,6 +160,12 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
     Action.HOST_SERVICE_CONTROL: (
         "Старт/стоп/рестарт одного systemd-юнита своего отдела на хосте по SSH."
     ),
+    Action.VIEW_TEST_CREDENTIALS: (
+        "Получить учётку исполнения теста стенда (`GET /servers/{id}/"
+        "test-credentials`) — метаданные всегда, пароль и приватный SSH-ключ "
+        "при `?reveal=true`. Живая отладка стенда во время/после прогона теста, "
+        "человеку, не воркеру."
+    ),
 }
 
 # Чувствительные действия — раскрытие/ротация секретов, управление питанием,
@@ -185,6 +196,9 @@ SENSITIVE_ACTIONS: frozenset[str] = frozenset({
     # юнитов) sensitive не помечен — это department-internal настройка,
     # аудируется INFO, не действие над живой инфраструктурой.
     Action.HOST_SERVICE_CONTROL,
+    # Раскрытие пароля/приватного ключа учётки исполнения теста — тот же
+    # тир, что VIEW_PASSWORD/VIEW_MANAGEMENT_CREDENTIALS.
+    Action.VIEW_TEST_CREDENTIALS,
 })
 
 # Служебные гранты воркера: callback'и через internal endpoint'ы. Людям в норме

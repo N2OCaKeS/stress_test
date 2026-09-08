@@ -220,11 +220,16 @@ function SettingsPanel() {
   );
 }
 
-const SWAGGER_LINKS: { label: string; url: string; hint: string }[] = [
-  { label: "auth_service", url: "http://localhost:8000/docs", hint: ":8000" },
-  { label: "loging_service", url: "http://localhost:8001/docs", hint: ":8001" },
-  { label: "server_service", url: "http://localhost:8002/docs", hint: ":8002" },
-  { label: "secret_service", url: "http://localhost:8003/docs", hint: ":8003" },
+// Один общий Swagger UI на весь стек (BASE_URL=/docs, тот же контейнер
+// раздаёт спеки всех сервисов) — эти ссылки не бьют мимо nginx/vite-proxy на
+// прямые порты контейнеров, а идут на текущий origin с query-параметром
+// urls.primaryName (штатный механизм swagger-ui для выбора спеки из URLS,
+// см. docker-compose.prod.yml/k8s/55-swagger-ui.yaml/docker-compose.dev.yml).
+const SWAGGER_LINKS: { label: string; name: string }[] = [
+  { label: "auth_service", name: "auth_service" },
+  { label: "loging_service", name: "loging_service" },
+  { label: "server_service", name: "server_service" },
+  { label: "secret_service", name: "secret_service" },
 ];
 
 function SwaggerPanel() {
@@ -233,22 +238,23 @@ function SwaggerPanel() {
       <div>
         <h2 className="text-lg font-semibold">Swagger / OpenAPI</h2>
         <p className="text-sm text-dim">
-          Интерактивная спецификация каждого сервиса. Порты — для локального
-          dev-стека (<span className="mono">make up</span>).
+          Один общий Swagger UI на весь стек, за тем же reverse-proxy
+          (<span className="mono">/docs</span>) — переключение между сервисами
+          через выпадающий список сверху или прямой ссылкой ниже.
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
         {SWAGGER_LINKS.map((s) => (
           <a
-            key={s.url}
-            href={s.url}
+            key={s.name}
+            href={`/docs?urls.primaryName=${encodeURIComponent(s.name)}`}
             target="_blank"
             rel="noreferrer"
             className="surface-2 border border-token rounded px-3 py-2 flex items-center justify-between gap-2 text-sm hover-bg transition-colors"
           >
             <div className="min-w-0">
               <div className="truncate">{s.label}</div>
-              <div className="text-[11px] text-dim mono">{s.hint}/docs</div>
+              <div className="text-[11px] text-dim mono">/docs</div>
             </div>
             <ExternalLink className="w-4 h-4 text-dim shrink-0" aria-hidden="true" />
           </a>

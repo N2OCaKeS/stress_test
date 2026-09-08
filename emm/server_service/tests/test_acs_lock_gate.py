@@ -86,7 +86,7 @@ async def make_acs_server(make_server, db):
             srv.is_managed = True
             srv.management_user = "dbos"
         srv.busy_state = BusyState.ACS
-        srv.busy_note = "ACS_CREATE_osv_test"
+        srv.busy_note = "save|osv_test"
         await db.flush()
         return srv
 
@@ -115,7 +115,7 @@ class TestPowerAcsGate:
             f"{SRV}/{srv.id}/ipmi/power/on", headers=_hdr(operator_token_a),
         )
         body = assert_error(resp, 409, "SERVER_ACS_BUSY")
-        assert body["details"]["busy_note"] == "ACS_CREATE_osv_test"
+        assert body["details"]["busy_note"] == "save|osv_test"
         assert captured_dispatch == []
 
     async def test_dept_admin_of_same_dept_passes(

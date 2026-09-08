@@ -1190,6 +1190,58 @@ async def submit_acs_snapshot_restore_done(
     )
 
 
+async def submit_prepare_for_test_result(
+    server_id: str,
+    prepare_request_id: str,
+    succeeded: bool,
+    target_department_id: str | None = None,
+    *,
+    failed_step: str | None = None,
+    error_message: str | None = None,
+) -> dict:
+    """Сообщить server_service исход `server.prepare_for_test`.
+
+    Воркер здесь отвечает только за новые шаги пайплайна (провижн учётки
+    исполнения теста, смена ядра, смена режима безопасности, ребут с
+    верификацией подъёма). Что делать с исходом — отдать креды
+    testing_service, снять бронь, записать `failed_step` — решает
+    server_service на этом callback'е.
+
+    `failed_step` — один из `user_provision` / `kernel_change` /
+    `mode_switch` / `reboot_verify`; стадии `restore` и `prepare` до этого
+    таска не доходят, их закрывают callback'и существующей ACS-цепочки.
+
+    `error_message` при `succeeded=True` — не провал, а non-fatal
+    предупреждение (например, режим безопасности перед сменой не совпадал
+    с ожидаемым); server_service прокидывает его testing_service отдельным
+    полем `warning`.
+
+    Возвращает: тело
+    `POST /api/server/v1/internal/servers/{id}/prepare-for-test-done`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `PREPARE_FOR_TEST_DONE_REJECTED` — server_service вернул не 2xx.
+    """
+    body: dict = {
+        "prepare_request_id": prepare_request_id,
+        "succeeded": succeeded,
+    }
+    if failed_step is not None:
+        body["failed_step"] = failed_step
+    if error_message is not None:
+        body["error"] = error_message
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/prepare-for-test-done",
+        reject_code="PREPARE_FOR_TEST_DONE_REJECTED",
+        target_department_id=target_department_id,
+        json=body,
+        details={"server_id": server_id},
+        allow_empty_body=True,
+    )
+
+
 async def submit_rotated_ipmi_password(
     ipmi_controller_id: str,
     new_password: str,

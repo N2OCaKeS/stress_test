@@ -656,3 +656,69 @@ class IpmiCredentialsRotatedResponse(BaseModel):
     ok: bool = True
     rotated_at: str = Field(description="Сохранённый timestamp ротации (ISO-8601 UTC).")
 
+
+
+# ── Бронь сервера от имени сервиса (s2s, X-Service-Identity) ────────────────
+
+# Состояния, в которые сервис вправе перевести взятый им сервер. `free` сюда
+# не входит (снятие брони — отдельный release-эндпоинт), `updating` тоже:
+# это системная блокировка astra-update со своим владельцем-callback'ом.
+ServiceBusyState = Literal["busy", "testing", "acs"]
+
+
+class ServiceAcquireRequest(BaseModel):
+    """Тело POST /internal/servers/{id}/acquire-for-service."""
+
+    busy_state: ServiceBusyState = Field(
+        default="acs",
+        description=(
+            "Стадия, в которую переводится сервер при захвате. Дефолт `acs` — "
+            "цикл testing_service начинается с подготовки стенда."
+        ),
+    )
+    busy_note: str | None = Field(
+        default=None,
+        max_length=512,
+        description="Человекочитаемая метка причины занятости (формат — на стороне вызывающего сервиса).",
+    )
+    requested_by_department_id: str | None = Field(
+        default=None,
+        max_length=64,
+        description=(
+            "Отдел, от имени которого сервис берёт стенд. Необязателен: у "
+            "сервисного каллера своего отдела нет, привязку стенда к отделу "
+            "он ведёт у себя. Если прислан — сверяется с `server.department_id`, "
+            "несовпадение маскируется под 404 SERVER_NOT_FOUND (как "
+            "`X-Target-Department-Id` у worker-callback'ов)."
+        ),
+    )
+
+
+class ServiceBusyStatusRequest(BaseModel):
+    """Тело POST /internal/servers/{id}/service-status — смена стадии внутри брони."""
+
+    busy_state: ServiceBusyState = Field(
+        description="Новая стадия уже существующей брони (например `acs` → `testing`).",
+    )
+    busy_note: str | None = Field(
+        default=None,
+        max_length=512,
+        description="Новая метка. None оставляет прежнюю — заметка не сбрасывается вместе со сменой стадии.",
+    )
+
+
+class ServiceReservationResponse(BaseModel):
+    """Состояние брони после acquire / release / смены стадии."""
+
+    server_id: str = Field(description="ID сервера.")
+    busy_state: str = Field(description="Итоговое состояние занятости.")
+    busy_actor_type: str = Field(description="user / service — кто держит бронь.")
+    busy_service_name: str | None = Field(
+        default=None,
+        description="Имя сервиса-держателя (None после release).",
+    )
+    busy_note: str | None = Field(default=None, description="Метка причины занятости.")
+    busy_since: datetime | None = Field(
+        default=None,
+        description="С какого момента держится бронь (UTC). Смена стадии его не двигает.",
+    )

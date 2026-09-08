@@ -184,6 +184,10 @@ SERVICE_EVENTS = [
     {"action": "os_version.bootstrap_password_updated", "description": "Bootstrap password for an OS version catalog entry set/replaced (used for the automatic server.prepare after an ACS snapshot restore)", "default_severity": "WARNING"},
     {"action": "os_version.bootstrap_password_revealed", "description": "Decrypted bootstrap password of an OS version revealed to user (base64) via GET bootstrap-password?reveal=true", "default_severity": "CRITICAL"},
     {"action": "os_version.bootstrap_password_fetched", "description": "worker_bot fetched the decrypted bootstrap password for an OS version to self-verify SSH before reporting an ACS restore as succeeded", "default_severity": "WARNING"},
+    {"action": "server_category.create", "description": "Server category (power tier) catalog entry created", "default_severity": "INFO"},
+    {"action": "server_category.update", "description": "Server category updated", "default_severity": "INFO"},
+    {"action": "server_category.delete", "description": "Server category deleted", "default_severity": "WARNING"},
+    {"action": "server.category_assigned", "description": "Server power-tier category set/changed/cleared via PATCH /servers/{id} (servers.category_id)", "default_severity": "INFO"},
     {"action": "os.unknown_observed", "description": "Inventory callback принёс os_version, не прошедший whitelist KNOWN_OS_PREFIXES. Запись в os_versions НЕ создаётся, server.os_version_id остаётся прежним", "default_severity": "WARNING"},
     # Макросы консоли (личные + системные в отделе). См. services/console_macro.py.
     {"action": "console_macro.create", "description": "Console macro created (personal or system/department-wide). details: is_system, name", "default_severity": "INFO"},
@@ -207,6 +211,13 @@ SERVICE_EVENTS = [
     # Busy-lease, OS-sync — пользовательский CRUD над servers.busy_state / os_version_id
     {"action": "server.acquire", "description": "Server acquired (busy_state set to busy) for a test/lease", "default_severity": "INFO"},
     {"action": "server.release", "description": "Server released (busy_state back to free)", "default_severity": "INFO"},
+    {"action": "server.acquired_for_service", "description": "Server reserved on behalf of a calling service (busy_actor_type=service, busy_service_name from the validated X-Service-Identity) via POST /internal/servers/{id}/acquire-for-service", "default_severity": "INFO"},
+    {"action": "server.released_for_service", "description": "Service released its own reservation (busy_state back to free) via POST /internal/servers/{id}/release-for-service; releasing someone else's reservation is denied", "default_severity": "INFO"},
+    {"action": "server.service_status_changed", "description": "Service switched the busy_state stage inside its own reservation (typically acs -> testing) via POST /internal/servers/{id}/service-status; busy_since is left untouched", "default_severity": "INFO"},
+    {"action": "server.prepare_for_test_requested", "description": "testing_service asked server_service to prepare a stand for a test run (POST /internal/servers/{id}/prepare-for-test): ACS restore + auto-prepare + test user provisioning + kernel switch + security mode switch + reboot", "default_severity": "WARNING"},
+    {"action": "server.prepare_for_test_completed", "description": "prepare-for-test pipeline reached a terminal state; failure details carry failed_step (restore/prepare/user_provision/kernel_change/mode_switch/reboot_verify)", "default_severity": "WARNING"},
+    {"action": "server.test_credentials_viewed", "description": "Admin viewed the test-execution account card for a server (GET /servers/{id}/test-credentials without reveal) — metadata only (username/ssh_public_key/rotated_at), no secret in the response", "default_severity": "INFO"},
+    {"action": "server.test_credentials_revealed", "description": "Decrypted test-execution account credentials (password + SSH private key) revealed to an admin (base64) via GET /servers/{id}/test-credentials?reveal=true", "default_severity": "CRITICAL"},
     {"action": "server.update_os_version", "description": "Server os_version_id updated manually (without inventory sync)", "default_severity": "INFO"},
     # Read-only IPMI views (user-facing)
     {"action": "ipmi_controller.view_credentials_meta", "description": "IPMI credentials metadata viewed (no plaintext password)", "default_severity": "INFO"},
@@ -236,6 +247,7 @@ SERVICE_EVENTS = [
     {"action": "server_account.password_rotate", "description": "Worker завершил ротацию пароля сервисной учётки (apply через SSH + callback `submit_rotated_password`); финальная action-name стороны worker'а, dispatch — `server_account.rotate_password_dispatch`", "default_severity": "CRITICAL"},
     {"action": "ipmi_controller.password_rotate", "description": "Worker завершил ротацию IPMI/BMC-пароля (apply + verify + callback `submit_rotated_ipmi_password`); финальная action-name стороны worker'а, dispatch — `ipmi_controller.rotate_dispatch`", "default_severity": "CRITICAL"},
     {"action": "server_account.users_inventory", "description": "Worker завершил OS-user inventory через SSH `getent` и отдал список через callback `submit_users_inventory`; target_type=server (срез хоста, не конкретной учётки)", "default_severity": "INFO"},
+    {"action": "server.prepare_for_test", "description": "Worker выполнил новые шаги подготовки стенда под прогон: провижн учётки исполнения теста, смена GRUB_DEFAULT на запрошенное ядро, ребут и ожидание `systemctl is-system-running`; исход уходит callback'ом `submit_prepare_for_test_result`", "default_severity": "WARNING"},
     # Интерактивная SSH-консоль (WebSocket-мост). `session_open`/`session_close`
     # эмитит server_service на connect/disconnect WS; `command` — worker на
     # каждую введённую строку (Enter) в PTY. Категория `ssh_console` отдельная

@@ -2,8 +2,8 @@
 
 Покрывает фундамент задачи «отдельный ACS-статус занятости»:
 
-* формат busy_note при dispatch — `ACS_CREATE_<rc>` / `ACS_RESTORE_<rc>`
-  (без старого человекочитаемого текста и без пробелов);
+* формат busy_note при dispatch — `save|<rc>` / `restore|<rc>`
+  (глагол действия + версия RC, без ядра и без пробелов);
 * `pre_acs_busy_snapshot` — capture текущей брони перед выставлением
   `busy_state=acs` (single create/restore dispatch);
 * dispatch упал (idempotent conflict / worker недоступен) — бронь
@@ -11,9 +11,9 @@
 * callback `acs-snapshot-created` (create) — восстанавливает прежнюю бронь
   в любом исходе (succeeded True/False);
 * callback `acs-snapshot-restore-done` — `succeeded=False` восстанавливает
-  прежнюю бронь; `succeeded=True` держит `busy_state=acs`, но переводит
-  `busy_note` на `ACS_RESTORE_PREPARE_<rc>` (или
-  `ACS_RESTORE_BOOTSTRAP_MISSING_<rc>`, если пароль версии пропал);
+  прежнюю бронь; `succeeded=True` держит `busy_state=acs` и заметку
+  `restore|<rc>`, а если bootstrap-пароль версии пропал — дописывает
+  третий сегмент `|bootstrap_missing`;
 * callback `prepared` — если сервер всё ещё `acs` (авто-prepare после
   restore), восстанавливает бронь, снятую в начале всей цепочки
   create/restore, вместо жёсткого `free`;
@@ -201,9 +201,14 @@ class TestAcsCreateDispatchBusyNoteAndCapture:
 
         row = (await db.execute(select(Server).where(Server.id == srv.id))).scalar_one()
         assert row.busy_state == BusyState.ACS
-        assert row.busy_note == "ACS_CREATE_1711rc42"
+        assert row.busy_note == "save|1711rc42"
+        # Держатель ACS-брони — сервис, а не нажавший кнопку человек.
+        assert row.busy_actor_type == "service"
+        assert row.busy_service_name == "acs"
+        assert row.busy_user_id is None
         assert row.pre_acs_busy_snapshot == {
             "busy_state": "free", "busy_user_id": None,
+            "busy_actor_type": "user", "busy_service_name": None,
             "busy_note": None, "busy_since": None,
         }
 
@@ -229,9 +234,10 @@ class TestAcsCreateDispatchBusyNoteAndCapture:
 
         row = (await db.execute(select(Server).where(Server.id == srv.id))).scalar_one()
         assert row.busy_state == BusyState.ACS
-        assert row.busy_note == "ACS_CREATE_1711rc43"
+        assert row.busy_note == "save|1711rc43"
         assert row.pre_acs_busy_snapshot == {
             "busy_state": "busy", "busy_user_id": "usr_prior_owner",
+            "busy_actor_type": "user", "busy_service_name": None,
             "busy_note": "занят под тест X",
             "busy_since": "2026-01-01T00:00:00+00:00",
         }
@@ -280,9 +286,10 @@ class TestAcsRestoreDispatchBusyNoteFormat:
         assert resp.status_code == 202, resp.text
 
         row = (await db.execute(select(Server).where(Server.id == srv.id))).scalar_one()
-        assert row.busy_note == "ACS_RESTORE_1711rc45"
+        assert row.busy_note == "restore|1711rc45"
         assert row.pre_acs_busy_snapshot == {
             "busy_state": "free", "busy_user_id": None,
+            "busy_actor_type": "user", "busy_service_name": None,
             "busy_note": None, "busy_since": None,
         }
 
@@ -295,8 +302,9 @@ class TestAcsSnapshotCreatedCallbackRestore:
     async def _seed_in_progress(self, make_server, db, *, dept):
         srv = await _make_managed(make_server, db, dept=dept)
         srv.busy_state = BusyState.ACS
-        srv.busy_user_id = "usr_bot"
-        srv.busy_note = "ACS_CREATE_1711rc50"
+        srv.busy_actor_type = "service"
+        srv.busy_service_name = "acs"
+        srv.busy_note = "save|1711rc50"
         srv.busy_since = datetime.now(timezone.utc)
         srv.pre_acs_busy_snapshot = {
             "busy_state": "busy", "busy_user_id": "usr_prior_owner",
@@ -348,7 +356,7 @@ class TestAcsSnapshotCreatedCallbackRestore:
     ):
         srv = await _make_managed(make_server, db, dept=dept_a)
         srv.busy_state = BusyState.ACS
-        srv.busy_note = "ACS_CREATE_1711rc51"
+        srv.busy_note = "save|1711rc51"
         # pre_acs_busy_snapshot остаётся NULL — данные до миграции / race.
         await db.flush()
 
@@ -374,8 +382,9 @@ class TestAcsSnapshotRestoreDoneCallback:
     async def _seed_in_progress(self, make_server, db, *, dept, osv_id):
         srv = await _make_managed(make_server, db, dept=dept)
         srv.busy_state = BusyState.ACS
-        srv.busy_user_id = "usr_bot"
-        srv.busy_note = f"ACS_RESTORE_{osv_id}"
+        srv.busy_actor_type = "service"
+        srv.busy_service_name = "acs"
+        srv.busy_note = f"restore|{osv_id}"
         srv.pre_acs_busy_snapshot = {
             "busy_state": "busy", "busy_user_id": "usr_prior_owner",
             "busy_note": "занят под тест W", "busy_since": None,
@@ -422,7 +431,7 @@ class TestAcsSnapshotRestoreDoneCallback:
 
         row = (await db.execute(select(Server).where(Server.id == srv.id))).scalar_one()
         assert row.busy_state == BusyState.ACS
-        assert row.busy_note == f"ACS_RESTORE_PREPARE_{osv.name}"
+        assert row.busy_note == f"restore|{osv.name}"
         # os_version_id известен точно из payload'а восстановленного снимка —
         # проставляется сразу, не дожидаясь следующего inventory.sync.
         assert row.os_version_id == osv.id
@@ -451,7 +460,8 @@ class TestAcsSnapshotRestoreDoneCallback:
 
         row = (await db.execute(select(Server).where(Server.id == srv.id))).scalar_one()
         assert row.busy_state == BusyState.ACS
-        assert row.busy_note == f"ACS_RESTORE_BOOTSTRAP_MISSING_{osv.name}"
+        # Третий сегмент — видимый оператору сигнал «нужен ручной шаг».
+        assert row.busy_note == f"restore|{osv.name}|bootstrap_missing"
         # Бронь ждёт ручного вмешательства оператора — снимок НЕ снят.
         assert row.pre_acs_busy_snapshot is not None
 
@@ -466,7 +476,9 @@ class TestRecordServerPreparedRestoresAcsState:
     ):
         srv = await _make_managed(make_server, db, dept=dept_a)
         srv.busy_state = BusyState.ACS
-        srv.busy_note = "ACS_RESTORE_PREPARE_1711rc70"
+        srv.busy_actor_type = "service"
+        srv.busy_service_name = "acs"
+        srv.busy_note = "restore|1711rc70"
         srv.pre_acs_busy_snapshot = {
             "busy_state": "testing", "busy_user_id": "usr_prior_owner",
             "busy_note": "прогон теста T", "busy_since": None,
@@ -516,6 +528,8 @@ def _local_server(**overrides) -> Server:
         department_id="dep_a",
         busy_state=BusyState.FREE,
         busy_user_id=None,
+        busy_actor_type="user",
+        busy_service_name=None,
         busy_note=None,
         busy_since=None,
         pre_acs_busy_snapshot=None,
@@ -542,6 +556,7 @@ class TestCapturePreAcsStateUnit:
         snap = reservation.capture_pre_acs_state(srv)
         assert snap == {
             "busy_state": "busy", "busy_user_id": "usr_x",
+            "busy_actor_type": "user", "busy_service_name": None,
             "busy_note": "note", "busy_since": "2026-01-01T00:00:00+00:00",
         }
 
@@ -549,14 +564,25 @@ class TestCapturePreAcsStateUnit:
         snap = reservation.capture_pre_acs_state(_local_server())
         assert snap == {
             "busy_state": "free", "busy_user_id": None,
+            "busy_actor_type": "user", "busy_service_name": None,
             "busy_note": None, "busy_since": None,
         }
+
+    def test_captures_service_actor(self):
+        srv = _local_server(
+            busy_state=BusyState.TESTING, busy_user_id=None,
+            busy_actor_type="service", busy_service_name="testing_service",
+        )
+        snap = reservation.capture_pre_acs_state(srv)
+        assert snap["busy_actor_type"] == "service"
+        assert snap["busy_service_name"] == "testing_service"
+        assert snap["busy_user_id"] is None
 
 
 class TestRestorePreAcsStateUnit:
     def test_restores_from_snapshot_and_clears_it(self):
         srv = _local_server(
-            busy_state=BusyState.ACS, busy_note="ACS_CREATE_x",
+            busy_state=BusyState.ACS, busy_note="save|x",
             pre_acs_busy_snapshot={
                 "busy_state": "busy", "busy_user_id": "usr_owner",
                 "busy_note": "prior note", "busy_since": "2026-01-01T00:00:00+00:00",
@@ -569,18 +595,51 @@ class TestRestorePreAcsStateUnit:
         assert srv.busy_since == datetime(2026, 1, 1, tzinfo=timezone.utc)
         assert srv.pre_acs_busy_snapshot is None
 
+    def test_restores_service_actor(self):
+        srv = _local_server(
+            busy_state=BusyState.ACS, busy_actor_type="service",
+            busy_service_name="acs", busy_note="restore|x",
+            pre_acs_busy_snapshot={
+                "busy_state": "testing", "busy_user_id": None,
+                "busy_actor_type": "service", "busy_service_name": "testing_service",
+                "busy_note": "prior note", "busy_since": None,
+            },
+        )
+        reservation.restore_pre_acs_state(srv)
+        assert srv.busy_actor_type == "service"
+        assert srv.busy_service_name == "testing_service"
+        assert srv.busy_user_id is None
+
+    def test_legacy_snapshot_without_actor_keys_restores_user_actor(self):
+        # Снимки, снятые до появления актор-полей: ключей нет, разворачиваем
+        # их в пользовательскую бронь — иначе busy_service_name от ACS завис бы.
+        srv = _local_server(
+            busy_state=BusyState.ACS, busy_actor_type="service",
+            busy_service_name="acs", busy_note="restore|x",
+            pre_acs_busy_snapshot={
+                "busy_state": "busy", "busy_user_id": "usr_owner",
+                "busy_note": "prior note", "busy_since": None,
+            },
+        )
+        reservation.restore_pre_acs_state(srv)
+        assert srv.busy_actor_type == "user"
+        assert srv.busy_service_name is None
+        assert srv.busy_user_id == "usr_owner"
+
     def test_falls_back_to_free_when_snapshot_missing(self):
-        srv = _local_server(busy_state=BusyState.ACS, busy_user_id="usr_x", busy_note="ACS_CREATE_x")
+        srv = _local_server(busy_state=BusyState.ACS, busy_user_id="usr_x", busy_note="save|x")
         reservation.restore_pre_acs_state(srv)
         assert srv.busy_state == BusyState.FREE
         assert srv.busy_user_id is None
+        assert srv.busy_actor_type == "user"
+        assert srv.busy_service_name is None
         assert srv.busy_note is None
         assert srv.busy_since is None
         assert srv.pre_acs_busy_snapshot is None
 
     def test_falls_back_to_free_when_snapshot_malformed(self):
         srv = _local_server(
-            busy_state=BusyState.ACS, busy_note="ACS_CREATE_x",
+            busy_state=BusyState.ACS, busy_note="save|x",
             pre_acs_busy_snapshot={"busy_since": "not-a-date"},
         )
         reservation.restore_pre_acs_state(srv)

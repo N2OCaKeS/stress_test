@@ -1,10 +1,18 @@
 """Гейт деструктивных операций по брони сервера (busy_state).
 
-Бронь (`servers.busy_state='busy'`) сама по себе не запрещает деструктивные
-операции — её снимает только этот гейт. Логика: когда сервер занят, менять его
-состояние (power, provision/deprovision, rotate, delete и т.п.) вправе только
-владелец брони (`busy_user_id`) либо администратор отдела сервера. Остальным
-прилетает 409 `SERVER_RESERVED`.
+Бронь (`servers.busy_state` в `busy`/`testing`) сама по себе не запрещает
+деструктивные операции — её снимает только этот гейт. Логика: когда сервер
+занят, менять его состояние (power, provision/deprovision, rotate, delete и
+т.п.) вправе только владелец брони (`busy_user_id`) либо администратор отдела
+сервера. Остальным прилетает 409 `SERVER_RESERVED`.
+
+`testing` — бронь исполнения теста, её держит сервис
+(`busy_actor_type='service'`), а не человек, поэтому владельца-пользователя у
+неё нет и проверка `busy_user_id` никого не пропускает: остаются админ (тот же
+override, что и для человеческой брони) и сам держащий сервис — он ходит
+своим internal-каналом (`release-for-service`/`service-status`), не через этот
+гейт. `acs` в гейт не входит: у него отдельный, более строгий
+`ensure_not_acs_locked` — там даже владелец прежней брони не проходит.
 
 Read-операции (view/list/get, чтение пакетов, console-read, inventory) и сам
 release брони гейт не трогает — владелец/админ должны мочь освободить занятый
@@ -19,7 +27,13 @@ release брони гейт не трогает — владелец/админ 
 import logging
 from datetime import datetime
 
-from src.core.constants import BusyState, PlatformRole, SERVICE_NAME, ServiceRole
+from src.core.constants import (
+    BusyActorType,
+    BusyState,
+    PlatformRole,
+    SERVICE_NAME,
+    ServiceRole,
+)
 from src.core.exceptions import ConflictError
 from src.models import Server
 from src.schemas.identity import IdentityContext
@@ -44,13 +58,23 @@ def is_server_admin(identity: IdentityContext, server: Server) -> bool:
     return ServiceRole.ADMIN in identity.roles_for_service(SERVICE_NAME)
 
 
+# Состояния, которые гейт трактует как «сервер занят под кого-то». `acs` сюда
+# не входит — у него свой, более строгий `ensure_not_acs_locked`; `updating` —
+# тоже свой, `ensure_not_updating`, где не проходит вообще никто.
+_RESERVED_STATES: frozenset[str] = frozenset({BusyState.BUSY, BusyState.TESTING})
+
+
 def is_reserved_for_other(identity: IdentityContext, server: Server) -> bool:
     """True, если сервер забронирован НЕ под caller'а и caller не админ.
 
     Чистый предикат без сайд-эффектов — удобен там, где нужно решить, гейтить
     операцию или нет, без эмита аудита (например, при выборе ветки fan-out'а).
+
+    Сервисная бронь (`busy_actor_type='service'`) сюда попадает наравне с
+    человеческой: `busy_user_id` у неё пуст (CHECK `ck_servers_busy_actor`),
+    поэтому владельцем не окажется никто и пройдёт только админ.
     """
-    if server.busy_state != BusyState.BUSY:
+    if server.busy_state not in _RESERVED_STATES:
         return False
     if server.busy_user_id == identity.user_id:
         return False
@@ -113,10 +137,11 @@ def ensure_not_reserved_for(
 
     Сначала — жёсткий гейт обновления ОС (`ensure_not_updating`): пока сервер
     `updating`, операция отбивается 409 `SERVER_UPDATING` для всех без
-    исключения. Затем — обычная бронь: если `busy_state='busy'` и caller не
-    владелец брони и не админ — пишет WARNING-аудит `server.reservation_denied`
-    и бросает 409 `SERVER_RESERVED` с указанием, кто держит бронь
-    (`busy_user_id`, `busy_note`). В остальных случаях возвращается молча.
+    исключения. Затем — обычная бронь: если `busy_state` в `busy`/`testing` и
+    caller не владелец брони и не админ — пишет WARNING-аудит
+    `server.reservation_denied` и бросает 409 `SERVER_RESERVED` с указанием,
+    кто держит бронь (`busy_user_id`/`busy_service_name`, `busy_note`).
+    В остальных случаях возвращается молча.
 
     `action` — машинный ключ операции (например `server.power_on`,
     `server_account.delete`), попадает в детали аудита для трассировки.
@@ -128,7 +153,10 @@ def ensure_not_reserved_for(
         "blocked_action": action,
         "server_id": server.id,
         "department_id": server.department_id,
+        "busy_state": server.busy_state,
         "busy_user_id": server.busy_user_id,
+        "busy_actor_type": server.busy_actor_type,
+        "busy_service_name": server.busy_service_name,
         "busy_note": server.busy_note,
     }
     if identity.subject_type is not None:
@@ -144,11 +172,12 @@ def ensure_not_reserved_for(
     raise ConflictError(
         error_code="SERVER_RESERVED",
         message=(
-            "Server is reserved by another user; destructive operations are "
+            "Server is reserved by another actor; destructive operations are "
             "limited to the reservation owner or a department/service admin"
         ),
         details={
             "busy_user_id": server.busy_user_id,
+            "busy_service_name": server.busy_service_name,
             "busy_note": server.busy_note,
         },
     )
@@ -158,15 +187,22 @@ def capture_pre_acs_state(server: Server) -> dict:
     """Снять снимок текущей брони перед переходом сервера в `busy_state=acs`.
 
     Возвращает dict для записи в `server.pre_acs_busy_snapshot` — сохраняет
-    `busy_state`/`busy_user_id`/`busy_note`/`busy_since` в том виде, в каком
-    они были непосредственно перед ACS-dispatch'ем, чтобы по завершении
-    операции вернуть сервер туда же, а не безусловно в `free` (см.
-    `restore_pre_acs_state`). `busy_since` кладём ISO-строкой — JSONB не
-    хранит datetime нативно.
+    `busy_state`/`busy_user_id`/`busy_actor_type`/`busy_service_name`/
+    `busy_note`/`busy_since` в том виде, в каком они были непосредственно
+    перед ACS-dispatch'ем, чтобы по завершении операции вернуть сервер туда
+    же, а не безусловно в `free` (см. `restore_pre_acs_state`). `busy_since`
+    кладём ISO-строкой — JSONB не хранит datetime нативно.
+
+    Актор снимается вместе с остальным: сам ACS-dispatch перевешивает бронь
+    на сервисного актора (`service`/`acs`), и без этих двух ключей restore
+    вернул бы `busy_user_id` прежнего владельца, оставив `busy_service_name`
+    от ACS — комбинация, которую отбивает `ck_servers_busy_actor`.
     """
     return {
         "busy_state": server.busy_state,
         "busy_user_id": server.busy_user_id,
+        "busy_actor_type": server.busy_actor_type,
+        "busy_service_name": server.busy_service_name,
         "busy_note": server.busy_note,
         "busy_since": server.busy_since.isoformat() if server.busy_since else None,
     }
@@ -176,7 +212,8 @@ def restore_pre_acs_state(server: Server) -> None:
     """Вернуть бронь сервера к состоянию до ACS-операции.
 
     Читает `server.pre_acs_busy_snapshot` и раскладывает его обратно в
-    `busy_state`/`busy_user_id`/`busy_note`/`busy_since`, затем очищает сам
+    `busy_state`/`busy_user_id`/`busy_actor_type`/`busy_service_name`/
+    `busy_note`/`busy_since`, затем очищает сам
     снимок. Если снимка нет (старые данные до миграции) или он повреждён —
     молча падаем на прежнее дефолтное поведение (`busy_state=free`), а не
     бросаем исключение: снятие ACS-блокировки не должно зависать из-за
@@ -191,6 +228,12 @@ def restore_pre_acs_state(server: Server) -> None:
             busy_since_raw = snapshot.get("busy_since")
             server.busy_state = snapshot.get("busy_state") or BusyState.FREE
             server.busy_user_id = snapshot.get("busy_user_id")
+            # Снимки, снятые до появления актор-полей, ключей не несут —
+            # разворачиваем их в пользовательскую бронь, как было раньше.
+            server.busy_actor_type = (
+                snapshot.get("busy_actor_type") or BusyActorType.USER
+            )
+            server.busy_service_name = snapshot.get("busy_service_name")
             server.busy_note = snapshot.get("busy_note")
             server.busy_since = (
                 datetime.fromisoformat(busy_since_raw) if busy_since_raw else None
@@ -204,6 +247,8 @@ def restore_pre_acs_state(server: Server) -> None:
             )
     server.busy_state = BusyState.FREE
     server.busy_user_id = None
+    server.busy_actor_type = BusyActorType.USER
+    server.busy_service_name = None
     server.busy_since = None
     server.busy_note = None
     server.pre_acs_busy_snapshot = None

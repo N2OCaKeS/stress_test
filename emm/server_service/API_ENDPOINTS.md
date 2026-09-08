@@ -112,6 +112,7 @@ POST-CREATE эндпоинты (`POST /servers`, `POST /server-accounts`, `POST 
 | `NO_IPMI_CONTROLLER` | 404 | BMC не зарегистрирован у сервера |
 | `TASK_NOT_FOUND` | 404 | cancel неизвестной/cross-dept task'и |
 | `OS_VERSION_NOT_FOUND` | 404 | get/update/delete неизвестной os-версии |
+| `SERVER_CATEGORY_NOT_FOUND` | 404 | get/update/delete неизвестной категории по мощности |
 | `RESOURCE_NOT_FOUND` | 404 | инстанс-ACL: ресурс (server/server_account) не найден / чужой отдел |
 | `RESOURCE_PERMISSION_NOT_FOUND` | 404 | инстанс-ACL: revoke грантa, которого нет |
 | `SERVER_DUPLICATE` / `IPMI_DUPLICATE` | 409 | UNIQUE на create |
@@ -119,6 +120,8 @@ POST-CREATE эндпоинты (`POST /servers`, `POST /server-accounts`, `POST 
 | `RESOURCE_PERMISSION_ALREADY_EXISTS` | 409 | инстанс-ACL: гонка на UNIQUE при grant |
 | `SYSTEM_ROLE_IMMUTABLE` | 409 | grant/revoke прав на системную роль `admin`/`guest` (тип-wide или инстанс) |
 | `OS_VERSION_IN_USE` | 409 | delete os-версии, на которую ссылается сервер (FK RESTRICT) |
+| `SERVER_CATEGORY_DUPLICATE` | 409 | UNIQUE(code) на create/update категории |
+| `SERVER_CATEGORY_IN_USE` | 409 | delete категории, на которую ссылается сервер (FK RESTRICT) |
 | `SERVER_DECOMMISSIONED` | 409 | dispatch-операция на списанный сервер |
 | `TASK_IDEMPOTENT_CONFLICT` | 409 | гонка двух POST с одним Idempotency-Key |
 | `IDEMPOTENCY_KEY_REUSE_CONFLICT` | 409 | один Idempotency-Key на разные target_resource_id |
@@ -131,6 +134,7 @@ POST-CREATE эндпоинты (`POST /servers`, `POST /server-accounts`, `POST 
 | `VALIDATION_ERROR` | 422 | pydantic-ошибки валидации тела |
 | `DOMAIN_CONSTRAINT_VIOLATION` | 422 | CHECK/FK/NOT NULL fallthrough |
 | `INVALID_OS_VERSION` | 422 | FK violation на os_version_id |
+| `INVALID_SERVER_CATEGORY` | 422 | `category_id` в create/update сервера не ссылается на существующую категорию |
 | `INVALID_ACTION_FOR_ENTITY` | 422 | grant на неподходящую (entity, action) пару |
 | `UNKNOWN_ENTITY_TYPE` | 422 | неизвестный entity_type в `/permissions/{type}` |
 | `UNKNOWN_RESOURCE_TYPE` | 422 | resource_type вне `{server, server_account}` в `/resource-permissions/*` |
@@ -180,11 +184,11 @@ Errors: `INVALID_CURSOR` (400), `PERMISSION_DENIED` (403), `SERVICE_ACCESS_DENIE
 
 ### `POST /servers`
 
-Auth: Bearer + `(server, *, create)`. Body: `ServerCreate` (hostname, ip_address, serial_number, department_id, optional storage / ipmi). `status` в теле нет — стартует `unknown`.
+Auth: Bearer + `(server, *, create)`. Body: `ServerCreate` (hostname, ip_address, serial_number, department_id, optional storage / ipmi / category_id). `status` в теле нет — стартует `unknown`.
 
 `Idempotency-Key` НЕ читается — owner-decision (повтор → `409 SERVER_DUPLICATE`).
 
-Errors: `DEPARTMENT_ISOLATION` (403), `PERMISSION_DENIED` (403), `SERVER_DUPLICATE` (409), `IPMI_DUPLICATE` (409), `INVALID_OS_VERSION` (422).
+Errors: `DEPARTMENT_ISOLATION` (403), `PERMISSION_DENIED` (403), `SERVER_DUPLICATE` (409), `IPMI_DUPLICATE` (409), `INVALID_OS_VERSION` (422), `INVALID_SERVER_CATEGORY` (422).
 
 ### `GET /servers/{server_id}`
 
@@ -200,9 +204,9 @@ Errors: `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `LOGING_SERVICE_UNA
 
 ### `PATCH /servers/{server_id}`
 
-Auth: Bearer + `(server, *, update)`. PATCH-диф через `model_dump(exclude_unset=True)`.
+Auth: Bearer + `(server, *, update)`. PATCH-диф через `model_dump(exclude_unset=True)`. Тем же путём проставляется категория по мощности — `category_id` (FK на `/server-categories`, `null` снимает категорию); отдельного эндпоинта под это нет.
 
-Errors: `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DUPLICATE` (409).
+Errors: `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DUPLICATE` (409), `INVALID_SERVER_CATEGORY` (422).
 
 ### `DELETE /servers/{server_id}`
 
@@ -632,6 +636,48 @@ Errors: `PERMISSION_DENIED` (403), `OS_VERSION_NOT_FOUND` (404), `OS_VERSION_IN_
 
 ---
 
+## Server categories (`/server-categories`)
+
+Платформенный каталог категорий стендов по мощности (`low_server`, `middle_server`, `high_server`, `workstation` — сидятся миграцией; новые заводятся через API). Без dept-привязки. Чтение доступно любому аутентифицированному актору, запись — под матрицей `(server_category, *)`. Категория проставляется серверу обычным `PATCH /servers/{id}` полем `category_id`.
+
+### `GET /server-categories`
+
+Auth: Bearer (любой аутентифицированный актор). Offset-пагинация, envelope `{items, total, limit, offset}`, порядок — по `code`.
+
+Errors: `ACCESS_TOKEN_MISSING` (401).
+
+### `GET /server-categories/by-code/{code}`
+
+Auth: Bearer (любой аутентифицированный актор). Карточка по UNIQUE-коду.
+
+Errors: `ACCESS_TOKEN_MISSING` (401), `SERVER_CATEGORY_NOT_FOUND` (404).
+
+### `POST /server-categories`
+
+Auth: Bearer + `(server_category, *, create)`. Body: `ServerCategoryCreate` (`code` — слаг `[a-z][a-z0-9_]*`, `label`, опц. `description`).
+
+Errors: `PERMISSION_DENIED` (403), `VALIDATION_ERROR` (422), `SERVER_CATEGORY_DUPLICATE` (409).
+
+### `GET /server-categories/{category_id}`
+
+Auth: Bearer (любой аутентифицированный актор). Карточка по id.
+
+Errors: `ACCESS_TOKEN_MISSING` (401), `SERVER_CATEGORY_NOT_FOUND` (404).
+
+### `PATCH /server-categories/{category_id}`
+
+Auth: Bearer + `(server_category, *, update)`.
+
+Errors: `PERMISSION_DENIED` (403), `SERVER_CATEGORY_NOT_FOUND` (404), `SERVER_CATEGORY_DUPLICATE` (409), `VALIDATION_ERROR` (422).
+
+### `DELETE /server-categories/{category_id}`
+
+Auth: Bearer + `(server_category, *, delete)`. FK `servers.category_id` ondelete=RESTRICT — на использование сервером `409 SERVER_CATEGORY_IN_USE`.
+
+Errors: `PERMISSION_DENIED` (403), `SERVER_CATEGORY_NOT_FOUND` (404), `SERVER_CATEGORY_IN_USE` (409).
+
+---
+
 ## Permissions (`/permissions`)
 
 Матрица `entity_permissions` (role × entity_type × action × department).
@@ -917,6 +963,54 @@ Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_ID
 Auth: shared-secret + `X-Service-Identity: rotation_runner`. Убирает старую версию мастер-ключа из keystore — только когда на версии 0 строк (полная ре-шифрация завершена) и она не активна. После retire материал недоступен, расшифровать данные этой версии станет нельзя. Дублирует автоматический авто-вывод: не-активную осушённую версию система выводит сама (см. `encryption.auto_retire`), ручной вызов — резерв. CRITICAL audit `ops.encryption_retire`.
 
 Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_IDENTITY_NOT_ALLOWED` (403), `KEYSTORE_CANNOT_RETIRE_ACTIVE` / `KEYSTORE_VERSION_IN_USE` (409).
+
+---
+
+## Internal — бронь от имени сервиса (`/internal/servers/{id}/*-for-service`, hidden)
+
+Тот же shared-secret канал, что и ops, но по серверам: сервис-потребитель бронирует стенд на всё время своей работы. Whitelist identity — `testing_service`, `acs`. Имя держателя берётся ТОЛЬКО из провалидированной `X-Service-Identity` — тело запроса своё имя заявить не может. Держатель пишется в `servers.busy_service_name` при `busy_actor_type=service`; `busy_user_id` при этом пуст (CHECK `ck_servers_busy_actor`). Bot-пользователь в auth_service под это не заводится. Реализация — `src/api/v1/endpoints/internal_service_reservation.py`.
+
+### `POST /internal/servers/{id}/acquire-for-service`
+
+Auth: shared-secret + `X-Service-Identity: testing_service|acs`. Тело: `busy_state` (`busy`/`testing`/`acs`, default `acs`), `busy_note` (опционально, ≤512). Атомарный CAS по `busy_state='free'` — сервер, занятый кем угодно (человеком или другим сервисом), отдаёт 409. INFO audit `server.acquired_for_service`.
+
+Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_IDENTITY_NOT_ALLOWED` (403), `SERVER_NOT_FOUND` (404), `SERVER_ALREADY_BUSY` / `SERVER_DECOMMISSIONED` (409).
+
+### `POST /internal/servers/{id}/release-for-service`
+
+Auth: та же. Снимает бронь и возвращает сервер в `free`, только если её держит именно этот caller (`busy_service_name == identity`); чужая бронь — 409 `SERVER_RESERVED_BY_OTHER`. Чистит `busy_user_id`/`busy_service_name`/`busy_actor_type`/`busy_note`/`busy_since`. INFO audit `server.released_for_service`.
+
+Errors: 401/403 как выше, `SERVER_NOT_FOUND` (404), `SERVER_NOT_BUSY` / `SERVER_RESERVED_BY_OTHER` (409).
+
+### `POST /internal/servers/{id}/service-status`
+
+Auth: та же. Тело: `busy_state` (обязательно), `busy_note` (опционально; `null` оставляет прежнюю заметку). Переключает стадию внутри уже взятой этим же caller'ом брони — целевой сценарий `acs` → `testing` после получения кред от `prepare-for-test`. `busy_since` не двигается: он отмеряет всю бронь. INFO audit `server.service_status_changed`.
+
+Errors: 401/403 как выше, `SERVER_NOT_FOUND` (404), `SERVER_NOT_BUSY` / `SERVER_RESERVED_BY_OTHER` (409).
+
+---
+
+## Internal — `prepare-for-test` (асинхронный контракт, hidden)
+
+Пайплайн restore→prepare→провижн тестового пользователя→смена ядра→смена режима безопасности→ребут (часы, не секунды) — асинхронный контракт с 202+callback, не запрос-ответ. Реализация — `src/api/v1/endpoints/internal_prepare_for_test.py`, оркестрация — `src/services/prepare_for_test.py`. План — `emm/obsidian/ALLTA MIGRATION.md`, §5.1.
+
+### `POST /internal/servers/{id}/prepare-for-test`
+
+Auth: shared-secret + `X-Service-Identity: testing_service|acs` (тот же канал, что у брони от имени сервиса). Тело: `os_version_id`, `kernel` (обязан быть в `os_versions.kernels`), `mode` (`orel`/`smolensk`), `test_username` (default `u`), `requested_by_department_id` (опционально), `correlation_id` (ключ идемпотентности). Отвечает сразу 202 `{prepare_request_id, status}` — реальный исход приходит callback'ом в `TESTING_SERVICE_URL`. Повтор с тем же `correlation_id` возвращает уже существующий запрос, второй пайплайн не стартует. Ядро вне каталога РЦ — терминальный `failed` сразу (`failed_step=kernel_change`), без единого похода к стенду. INFO audit `server.prepare_for_test_requested`.
+
+Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_IDENTITY_NOT_ALLOWED` (403), `SERVER_NOT_FOUND` (404), `SERVER_ALREADY_BUSY` / `SERVER_DECOMMISSIONED` / `SERVER_IS_VMS_HUB` / `PREPARE_FOR_TEST_ALREADY_RUNNING` (409), `WORKER_*` (503).
+
+### `GET /internal/servers/{id}/prepare-for-test/{prepare_request_id}`
+
+Auth: та же. Полное состояние запроса (`status`, `stage`, `failed_step`, `error`, счётчик и результат доставки callback'а) — для добора результата, если исходящий callback не доехал. Секретов (пароль/ключ учётки исполнения теста) не отдаёт — они уходят только в callback.
+
+Errors: 401/403 как выше, `PREPARE_REQUEST_NOT_FOUND` / `SERVER_NOT_FOUND` (404).
+
+### `POST /internal/servers/{id}/prepare-for-test-done`
+
+Auth: обычный internal-канал воркера (bearer worker_bot + матрица `entity_permissions`, право `(server, prepare_callback)` — существующий грант, без нового). Тело: `prepare_request_id`, `succeeded`, `failed_step` (на провале), `error` (на провале — причина; на успехе — необязательное non-fatal предупреждение, например расхождение режима безопасности перед сменой). На успехе отправляет исходящий callback с учёткой исполнения теста в `TESTING_SERVICE_URL`; на провале — с `failed_step`+`error`. WARNING audit `server.prepare_for_test_completed`.
+
+Errors: `PERMISSION_DENIED` / `TARGET_DEPARTMENT_HEADER_REQUIRED` (403), `SERVER_NOT_FOUND` / `PREPARE_REQUEST_NOT_FOUND` (404).
 
 ---
 

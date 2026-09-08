@@ -18,6 +18,11 @@ def os_version_id() -> str:
     return _new_id("osv_")
 
 
+def server_category_id() -> str:
+    """`scat_<uuid>` — для server_categories (каталог категорий по мощности)."""
+    return _new_id("scat_")
+
+
 def server_account_id() -> str:
     """`acc_<uuid>` — для server_accounts."""
     return _new_id("acc_")
@@ -183,3 +188,17 @@ def os_version_bootstrap_password_id() -> str:
 def host_service_unit_id() -> str:
     """`hsu_<uuid>` — для строк host_service_units (per-department список юнитов)."""
     return _new_id("hsu_")
+
+
+def prepare_for_test_request_id() -> str:
+    """`prep_<uuid>` — id асинхронного запроса `prepare-for-test`.
+
+    Уезжает наружу: testing_service получает его в 202-ответе и видит в пути
+    callback'а (`/internal/prepare-for-test/{prepare_request_id}/completed`).
+    """
+    return _new_id("prep_")
+
+
+def server_test_credentials_id() -> str:
+    """`stc_<uuid>` — для строк server_test_credentials (учётка исполнения теста)."""
+    return _new_id("stc_")

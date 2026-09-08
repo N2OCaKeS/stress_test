@@ -377,6 +377,7 @@ services:
       VITE_LOGGING_PROXY_TARGET: http://loging_service:8001
       VITE_SERVER_PROXY_TARGET: http://server_service:8002
       VITE_SECRET_PROXY_TARGET: http://secret_service:8003
+      VITE_SWAGGER_PROXY_TARGET: http://swagger_ui:8080
     command: >
       sh -c "npm ci && exec npm run dev -- --host 0.0.0.0 --port 5173"
     volumes:
@@ -437,17 +438,22 @@ services:
   swagger_ui:
     image: swaggerapi/swagger-ui:v5.17.14
     environment:
+      # BASE_URL=/docs — тот же субпуть, что и в проде/k8s (см.
+      # docker-compose.prod.yml/k8s/55-swagger-ui.yaml), чтобы web_ui мог
+      # проксировать /docs на этот контейнер тем же самым запросом (vite.config.ts).
+      # Прямой доступ по порту ниже — тоже через /docs, не через корень.
+      BASE_URL: /docs
       URLS: >-
-        [{"url":"/specs/auth.json","name":"auth_service"},
-         {"url":"/specs/logging.json","name":"loging_service"},
-         {"url":"/specs/server.json","name":"server_service"},
-         {"url":"/specs/secret.json","name":"secret_service"}]
+        [{"url":"/docs/specs/auth.json","name":"auth_service"},
+         {"url":"/docs/specs/logging.json","name":"loging_service"},
+         {"url":"/docs/specs/server.json","name":"server_service"},
+         {"url":"/docs/specs/secret.json","name":"secret_service"}]
       URLS_PRIMARY_NAME: auth_service
       DEEP_LINKING: "true"
     volumes:
       - openapi_specs:/usr/share/nginx/html/specs:ro
     ports:
-      - "8088:8080"
+      - "8088:8080"   # прямой доступ (в обход web_ui) — http://localhost:8088/docs
     depends_on:
       openapi_dump:
         condition: service_completed_successfully

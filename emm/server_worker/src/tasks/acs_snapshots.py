@@ -159,6 +159,62 @@ async def _wait_out_and_back(host: str | None, ssh_port: int) -> bool:
     )
 
 
+async def verify_system_running(
+    host: str, session_factory, *, label: str,
+) -> None:
+    """Поллить `systemctl is-system-running == running` до готовности хоста.
+
+    Общая механика для всех «сервер должен вернуться сам собой» ожиданий:
+    ретраим и на отказ SSH (сеть/чужие live-креды/идёт очередной ребут), и на
+    любой ответ кроме `running` (`degraded`, `starting`). Бюджет —
+    `acs_bootstrap_verify_retries` × `acs_bootstrap_verify_interval_seconds`,
+    один на все ожидания подъёма: заводить второй такой же рядом смысла нет.
+
+    `session_factory` — callable без аргументов, возвращающий готовый
+    `SshClient` (bootstrap-креда после restore, управляющая сессия после
+    ребута смены ядра). `label` уходит в логи, чтобы две разные ветки
+    ожидания различались.
+
+    Поднимает `SshError` последней попытки, если бюджет исчерпан.
+    """
+    settings = get_settings()
+    last_exc: Exception | None = None
+    last_status = ""
+    for attempt in range(1, settings.acs_bootstrap_verify_retries + 1):
+        try:
+            async with session_factory() as ssh:
+                _rc, stdout, _stderr = await ssh.run("systemctl is-system-running")
+            last_status = stdout.strip()
+            if last_status == "running":
+                return
+            last_exc = None
+            logger.info(
+                "%s: verify attempt %s/%s for host=%s logged in but system not "
+                "ready yet (systemctl is-system-running=%r)",
+                label, attempt, settings.acs_bootstrap_verify_retries, host,
+                last_status,
+            )
+        except SshError as exc:
+            last_exc = exc
+            logger.info(
+                "%s: verify attempt %s/%s failed for host=%s: %s",
+                label, attempt, settings.acs_bootstrap_verify_retries, host,
+                type(exc).__name__,
+            )
+        if attempt < settings.acs_bootstrap_verify_retries:
+            await asyncio.sleep(settings.acs_bootstrap_verify_interval_seconds)
+    if last_exc is not None:
+        raise last_exc
+    raise SshError(
+        error_code="SSH_SYSTEM_NOT_READY",
+        host=host,
+        message=(
+            f"system never reported 'running' "
+            f"(last systemctl is-system-running={last_status!r})"
+        ),
+    )
+
+
 async def _verify_bootstrap_login(
     host: str, ssh_port: int, os_version_id: str,
 ) -> None:
@@ -189,47 +245,17 @@ async def _verify_bootstrap_login(
     оборачивает это в `succeeded=False`.
     """
     creds = await server_service_client.get_os_version_bootstrap_password(os_version_id)
-    settings = get_settings()
-    last_exc: Exception | None = None
-    last_status = ""
-    for attempt in range(1, settings.acs_bootstrap_verify_retries + 1):
-        try:
-            async with SshClient(
-                host=host,
-                username=creds["ssh_username"],
-                password=creds["password"],
-                port=ssh_port,
-            ) as ssh:
-                _rc, stdout, _stderr = await ssh.run("systemctl is-system-running")
-            last_status = stdout.strip()
-            if last_status == "running":
-                return
-            last_exc = None
-            logger.info(
-                "acs snapshot restore: bootstrap SSH verify attempt %s/%s "
-                "for host=%s logged in but system not ready yet "
-                "(systemctl is-system-running=%r)",
-                attempt, settings.acs_bootstrap_verify_retries, host, last_status,
-            )
-        except SshError as exc:
-            last_exc = exc
-            logger.info(
-                "acs snapshot restore: bootstrap SSH verify attempt %s/%s "
-                "failed for host=%s: %s",
-                attempt, settings.acs_bootstrap_verify_retries, host,
-                type(exc).__name__,
-            )
-        if attempt < settings.acs_bootstrap_verify_retries:
-            await asyncio.sleep(settings.acs_bootstrap_verify_interval_seconds)
-    if last_exc is not None:
-        raise last_exc
-    raise SshError(
-        error_code="SSH_SYSTEM_NOT_READY",
-        host=host,
-        message=(
-            f"system never reported 'running' after restore "
-            f"(last systemctl is-system-running={last_status!r})"
-        ),
+
+    def _session() -> SshClient:
+        return SshClient(
+            host=host,
+            username=creds["ssh_username"],
+            password=creds["password"],
+            port=ssh_port,
+        )
+
+    await verify_system_running(
+        host, _session, label="acs snapshot restore: bootstrap SSH",
     )
 
 

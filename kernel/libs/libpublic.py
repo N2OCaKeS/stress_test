@@ -74,7 +74,7 @@ def kernel_publisher(
                           которая создает нагрузку на подсистему памяти, \
                           путем запрашивания в цикле у системы память порциями по одному килобайту. \
                           При воспроизведении проблемы основная программа считывает с какой-то из страниц памяти некорректное значение.")
-    
+
     builder.add_paragraph("Тест 2: Для воспроизведения проблемы с segmentation fault используется ещё одна тестовая программа, \
                           которая осуществляет вызов функций, \
                           расположенных на разных страницах памяти. \
@@ -181,3 +181,79 @@ def xfs_memory_leak_publisher(username,
     return builder, preview_path, publish_result
 
 
+def usage_os_publisher(username,
+                              token,
+                              space,
+                              parent_title,
+                              title,
+                              stand_number,
+                              lead_time="",
+                              test_cycle_version: str | None = None,
+):
+    preview_path = "report/confluence_report.html"
+    reporter = ConfluencePublisher(
+        base_url="https://life.astralinux.ru", username=username, token=token
+    )
+    builder = PageBuilder(title=title)
+
+    with open(VM_INFONAME) as vm_info_av_file:
+        vm_info_av = vm_info_av_file.read()
+    with open(VM_KERNEL) as vm_info_kernel_file:
+        vm_info_kernel = vm_info_kernel_file.read()
+
+
+    header_table = [
+        {
+            "label": "VM Astra Version",
+            "value": vm_info_av
+        },
+        {
+            "lavel": "VM Kernel",
+            "value": vm_info_kernel
+        },
+        {
+            "label": "ARM",
+            "value": {
+                "stand_number": f"{stand_number}",
+            },
+        },
+        {
+            "label": "Lead time",
+            "value": {
+                "text": lead_time,
+            },
+        },
+    ]
+
+    builder.add_header_table(rows=header_table)
+    builder.add_heading(text="Описание", level=2)
+    builder.add_paragraph(text="")
+
+
+    with open(RESULTS_FILE, 'r') as f:
+        results_dict = json.load(f)
+
+    builder.add_heading(text="Результаты тестирования", level=2)
+    builder.add_heading(text=f"Total Rating: {results_dict['rating']}", level=2)
+
+    # TODO строить график по результатам теста
+    # builder.add_chart(chart_type=, c)
+
+    # TODO прикреплять файлы csv с данными
+    builder.add_attachment(file_path = "")
+    builder.add_attachment(file_path = "")
+    builder.add_attachment(file_path = "")
+    builder.add_attachment(file_path = "")
+
+
+    # TODO прикреплять итоговый json с результатами теста
+    builder.add_attachment(file_path = "")
+
+    publish_result = reporter.publish_results_from_params(
+        conf_space=space,
+        conf_parent_page=parent_title,
+        conf_new_page_name=title,
+        test_cycle_version=test_cycle_version,
+        body=builder,
+        attachments=[*builder.attachments],
+    )

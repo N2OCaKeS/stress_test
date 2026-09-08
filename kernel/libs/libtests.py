@@ -245,13 +245,13 @@ class Sigmentation_fault(CreateVM):
             "testvm1": [
                 {
                     "mode": "push",
-                    "path_host": f'{BASE_PATH}/fill.c', 
-                    "path_vm": '/home/u/fill.c', 
+                    "path_host": f'{BASE_PATH}/fill.c',
+                    "path_vm": '/home/u/fill.c',
                 },
                 {
                     "mode": "push",
-                    "path_host": f'{BASE_PATH}/test1.c', 
-                    "path_vm": '/home/u/test1.c', 
+                    "path_host": f'{BASE_PATH}/test1.c',
+                    "path_vm": '/home/u/test1.c',
                 },
                 {
                     "mode": "push",
@@ -340,7 +340,7 @@ class Sigmentation_fault(CreateVM):
 
 
         print("Перенос тестовых файлов")
-        self.provider.scp(scp_settings=scp_test_files, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)         
+        self.provider.scp(scp_settings=scp_test_files, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
         print("\n\n\nПодготовка завершена\n\n\n")
         print("\n\n\nЗапускаем тест\n\n\n")
 
@@ -387,7 +387,7 @@ class Sigmentation_fault(CreateVM):
         print("\n\n\nДанные о ОС с ВМ собраны\n\n\n")
         print("\n\n\nОбработка результатов\n\n\n")
         # Обработка результатов
-        
+
         status_test1_bug = False
         with open(VM_TEST1_OUTPUT, 'r') as test1_file:
             test1_output = test1_file.readlines()
@@ -403,7 +403,7 @@ class Sigmentation_fault(CreateVM):
                 if "Ошибка сегментирования" in line:
                     status_test2_bug = True
                     break
-        
+
         result = {
             'status_test1': status_test1_bug,
             'status_test2': status_test2_bug
@@ -414,7 +414,7 @@ class Sigmentation_fault(CreateVM):
         print("\n\n\n Результаты обработаны\n\n\n")
 
         return status_test1_bug and status_test2_bug
-            
+
 
 class XFSMemoryLeak(CreateVM):
     def start_test(self):
@@ -422,18 +422,18 @@ class XFSMemoryLeak(CreateVM):
             "testvm1": [
                 {
                     "mode": "push",
-                    "path_host": f'{BASE_PATH}/provision/copy_files.sh', 
-                    "path_vm": '/home/u/copy_files.sh', 
+                    "path_host": f'{BASE_PATH}/provision/copy_files.sh',
+                    "path_vm": '/home/u/copy_files.sh',
                 },
                 {
                     "mode": "push",
-                    "path_host": f'{BASE_PATH}/get_info.py', 
-                    "path_vm": '/home/u/get_info.py', 
+                    "path_host": f'{BASE_PATH}/get_info.py',
+                    "path_vm": '/home/u/get_info.py',
                 },
                 {
                     "mode": "push",
-                    "path_host": f'{BASE_PATH}/start_xfs_test.py', 
-                    "path_vm": '/home/u/start_xfs_test.py', 
+                    "path_host": f'{BASE_PATH}/start_xfs_test.py',
+                    "path_vm": '/home/u/start_xfs_test.py',
                 },
             ]
         }
@@ -498,9 +498,37 @@ class XFSMemoryLeak(CreateVM):
         )
         print("\n\n\nДанные о ОС с ВМ собраны\n\n\n")
         print("\n\n\nОбработка результатов\n\n\n")
-        
+
         status = analyze_ram_usage(f"{BASE_PATH}/ram_usage_log.txt")
         if status == "Отсутствует":
             return False
         else:
             return True
+
+class UsageOSResources:
+    def __init__(self, rc_name: str = "", testdir: str = ""):
+        self.rc = rc_name
+        self.testdir = testdir
+
+    def prepare(self):
+        print("\n\n\nПодготовка к тесту\n\n\n")
+        SystemCommands.check_output_command("sudo apt-get update && sudo apt-get install -y netcat-openbsd")
+        SystemCommands.check_output_command("sudo chmod +x /home/u/git/stress_test/kernel/provision/usage_os_resources.sh")
+        print("\n\n\nПодготовка завершена\n\n\n")
+
+
+
+    def start_test(self):
+        print("\n\n\nНачинаем выполнение теста\n\n\n")
+        print("\n\n\nСбор метрик без нагрузки\n\n\n")
+        SystemCommands.check_output_command(f"cd /home/u/git/stress_test/kernel/provision/ && sudo bash ./usage_os_resources.sh idle {self.testdir}/results")
+        print("\n\n\nСбор метрик с нагрузкой\n\n\n")
+        SystemCommands.check_output_command(f"cd /home/u/git/stress_test/kernel/provision/ && sudo bash ./usage_os_resources.sh load {self.testdir}/results")
+        print("\n\n\nТест завершен\n\n\n")
+
+
+    def results_processing(self):
+        print("\n\n\nОбработка результатов\n\n\n")
+
+        print("\n\n\n Результаты обработаны\n\n\n")
+

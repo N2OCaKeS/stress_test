@@ -6,6 +6,9 @@
 
 from __future__ import annotations
 
+import json as _json
+from datetime import datetime, timezone
+
 import httpx
 import pytest
 
@@ -100,8 +103,6 @@ class TestReportCompleted:
 
         assert recorded["path"] == "/internal/queue/qi_1/completed"
         assert recorded["identity"] == "testing_worker"
-        import json as _json
-
         body = _json.loads(recorded["body"])
         assert body == {"succeeded": True, "exit_code": 0, "error": None}
 
@@ -124,4 +125,135 @@ class TestReportCompleted:
 
         await testing_client.report_completed(
             "qi_missing", succeeded=True, exit_code=0, error=None,
+        )
+
+
+class TestLogChunk:
+    async def test_posts_expected_body(self, monkeypatch):
+        recorded = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            recorded["path"] = request.url.path
+            recorded["body"] = request.content
+            recorded["identity"] = request.headers.get("X-Service-Identity")
+            return httpx.Response(200, json={"ok": True, "log_id": "tlog_1"})
+
+        _install_transport(monkeypatch, handler)
+
+        await testing_client.log_chunk("qi_1", "some incremental output")
+
+        assert recorded["path"] == "/internal/queue/qi_1/log-chunk"
+        assert recorded["identity"] == "testing_worker"
+        body = _json.loads(recorded["body"])
+        assert body == {"text": "some incremental output"}
+
+    async def test_empty_text_does_not_call_out(self, monkeypatch):
+        called = {"count": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            called["count"] += 1
+            return httpx.Response(200, json={"ok": True, "log_id": "tlog_1"})
+
+        _install_transport(monkeypatch, handler)
+
+        await testing_client.log_chunk("qi_1", "")
+
+        assert called["count"] == 0
+
+    async def test_does_not_raise_on_network_failure(self, monkeypatch):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("refused", request=request)
+
+        _install_transport(monkeypatch, handler)
+
+        await testing_client.log_chunk("qi_1", "text")
+
+    async def test_does_not_raise_on_non_200(self, monkeypatch):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(500, json={"error": "boom"})
+
+        _install_transport(monkeypatch, handler)
+
+        await testing_client.log_chunk("qi_1", "text")
+
+    async def test_does_not_raise_when_not_configured(self, monkeypatch):
+        monkeypatch.delenv("TESTING_SERVICE_INTERNAL_API_KEY", raising=False)
+        get_settings.cache_clear()  # type: ignore[attr-defined]
+
+        await testing_client.log_chunk("qi_1", "text")
+
+
+class TestLogSegment:
+    _STARTED = datetime(2026, 9, 9, 12, 0, 0, tzinfo=timezone.utc)
+    _FINISHED = datetime(2026, 9, 9, 12, 0, 5, tzinfo=timezone.utc)
+
+    async def test_posts_expected_body(self, monkeypatch):
+        recorded = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            recorded["path"] = request.url.path
+            recorded["body"] = request.content
+            recorded["identity"] = request.headers.get("X-Service-Identity")
+            return httpx.Response(200, json={"ok": True, "log_id": "tlog_1"})
+
+        _install_transport(monkeypatch, handler)
+
+        await testing_client.log_segment(
+            "qi_1",
+            kind="command",
+            label="Выполнение теста",
+            status="OK",
+            command_text_masked="run.py --password ***",
+            output="all good",
+            host="10.0.0.1",
+            started_at=self._STARTED,
+            finished_at=self._FINISHED,
+        )
+
+        assert recorded["path"] == "/internal/queue/qi_1/log-segment"
+        assert recorded["identity"] == "testing_worker"
+        body = _json.loads(recorded["body"])
+        assert body == {
+            "kind": "command",
+            "label": "Выполнение теста",
+            "status": "OK",
+            "command_text_masked": "run.py --password ***",
+            "output": "all good",
+            "host": "10.0.0.1",
+            "started_at": self._STARTED.isoformat(),
+            "finished_at": self._FINISHED.isoformat(),
+        }
+
+    async def test_does_not_raise_on_network_failure(self, monkeypatch):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("refused", request=request)
+
+        _install_transport(monkeypatch, handler)
+
+        await testing_client.log_segment(
+            "qi_1", kind="command", label="l", status="FATAL",
+            command_text_masked=None, output="", host="10.0.0.1",
+            started_at=self._STARTED, finished_at=self._FINISHED,
+        )
+
+    async def test_does_not_raise_on_non_200(self, monkeypatch):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(404, json={})
+
+        _install_transport(monkeypatch, handler)
+
+        await testing_client.log_segment(
+            "qi_1", kind="command", label="l", status="OK",
+            command_text_masked=None, output="", host="10.0.0.1",
+            started_at=self._STARTED, finished_at=self._FINISHED,
+        )
+
+    async def test_does_not_raise_when_not_configured(self, monkeypatch):
+        monkeypatch.delenv("TESTING_SERVICE_INTERNAL_API_KEY", raising=False)
+        get_settings.cache_clear()  # type: ignore[attr-defined]
+
+        await testing_client.log_segment(
+            "qi_1", kind="command", label="l", status="OK",
+            command_text_masked=None, output="", host="10.0.0.1",
+            started_at=self._STARTED, finished_at=self._FINISHED,
         )

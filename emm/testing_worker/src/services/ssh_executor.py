@@ -1,4 +1,4 @@
-"""Исполнение резолвленной команды теста на стенде по SSH (§5, §5.5 плана миграции).
+"""Исполнение резолвленной команды теста на стенде по SSH (§5, §5.5, §8 плана миграции).
 
 `command`, приходящий от `testing_service` (`POST /internal/queue/claim`),
 уже полностью резолвлен конструктором команд (`resolve_command` на стороне
@@ -6,14 +6,25 @@
 конкатенацией.
 
 SSH exec-канал, в отличие от `subprocess`, не умеет запустить "argv без
-интерпретации shell'ом" — `SSHClientConnection.run()` несёт одну
-command-строку, которую удалённый sshd передаёт login-шеллу пользователя
-(`sh -c '<строка>'`). Эквивалент требования "без `shell=True`" здесь — не
-пропустить сборку строки, а собрать её безопасно: `shlex.join(command)`
-экранирует каждый аргумент по отдельности, поэтому пробел/`;`/`&&`/`$(...)`
-внутри значения одного слота не может развалиться в отдельную shell-команду
-или изменить границы аргументов. Это осознанная замена, не пропущенный шаг —
-naive `" ".join(command)` был бы инъекцией, `shlex.join` — нет.
+интерпретации shell'ом" — `SSHClientConnection`, что для однократного `run()`,
+что для потокового `create_process()`, несёт одну command-строку, которую
+удалённый sshd передаёт login-шеллу пользователя (`sh -c '<строка>'`).
+Эквивалент требования "без `shell=True`" здесь — не пропустить сборку
+строки, а собрать её безопасно: `shlex.join(command)` экранирует каждый
+аргумент по отдельности, поэтому пробел/`;`/`&&`/`$(...)` внутри значения
+одного слота не может развалиться в отдельную shell-команду или изменить
+границы аргументов. Это осознанная замена, не пропущенный шаг — naive
+`" ".join(command)` был бы инъекцией, `shlex.join` — нет.
+
+Исполнение — потоковое (§8.6 плана: живой лог в консоли сервера строится
+поверх того же накопленного текста): `conn.create_process()` вместо
+блокирующего `conn.run()`, stdout и stderr сведены в один канал
+(`stderr=asyncssh.STDOUT`) — тот же принцип, что у легаси `CONCLUSION:`,
+единый связный вывод, а не раздельные потоки. Вывод копится целиком в
+памяти (нужен полностью для итогового `log-segment`) и одновременно
+отдаётся наружу нарастающими кусками через `on_output_chunk` — не чаще
+`chunk_interval_seconds` и не крупнее `chunk_max_bytes` за раз, что раньше
+сработает.
 """
 
 from __future__ import annotations
@@ -21,23 +32,127 @@ from __future__ import annotations
 import asyncio
 import logging
 import shlex
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import asyncssh
 
 logger = logging.getLogger("testing_worker.ssh_executor")
 
-# Сколько последних символов stderr класть в error при провале команды.
+# Сколько последних символов вывода класть в error при провале команды.
 # Лимит поля `error` на стороне testing_service — 2048 символов (весь JSON,
 # не только это поле), оставляем запас под остальные ключи тела.
 _ERROR_TAIL_MAX_LEN = 1800
 
+# Размер одного read() с удалённого канала — гранулярность, которой ждём
+# данные от asyncssh. Не путать с `chunk_max_bytes` ниже: это про то, как
+# часто мы вообще просыпаемся, а не про размер отправляемого наружу куска.
+_READ_SIZE = 8192
+
+DEFAULT_CHUNK_MAX_BYTES = 4096
+DEFAULT_CHUNK_INTERVAL_SECONDS = 2.5
+
+OnOutputChunk = Callable[[str], Awaitable[None]]
+
 
 def _tail(text: str, max_len: int) -> str:
-    """Хвост строки длиной не больше `max_len` — самая свежая часть stderr обычно
-    несёт причину провала (traceback/assertion в конце вывода)."""
+    """Хвост строки длиной не больше `max_len` — самая свежая часть вывода обычно
+    несёт причину провала (traceback/assertion в конце)."""
     if len(text) <= max_len:
         return text
     return text[-max_len:]
+
+
+@dataclass
+class ExecutionResult:
+    """Итог одной попытки исполнения — от коннекта до завершения процесса.
+
+    `connected=False` значит до запуска команды дело не дошло (SSH-уровня
+    провал: ключ/аутентификация/таймаут коннекта) — `output`/`started_at`/
+    `finished_at` в этом случае пустые, вызывающий не заводит `log-segment`
+    на этот случай, только `completed(succeeded=False)`.
+
+    `connected=True` значит команда реально стартовала — независимо от того,
+    как она в итоге завершилась (успех, ненулевой код, таймаут исполнения,
+    обрыв соединения на середине). `output` несёт всё, что успело
+    накопиться, даже при провале.
+    """
+
+    connected: bool
+    succeeded: bool
+    exit_code: int | None
+    error: str | None
+    output: str = ""
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class _ChunkAccumulator:
+    """Копит полный вывод и параллельно отдаёт наружу нарастающие куски.
+
+    Наружу (`on_chunk`) уходит только то, что накопилось с прошлого
+    `flush()` — либо когда пришедший кусок сам разово переваливает за
+    `max_bytes` (пуш из `add()`), либо когда `flush()` вызывает тикер
+    снаружи по таймеру. Полный текст остаётся в памяти отдельно — он нужен
+    целиком для финального `log-segment`, log-chunk'и его не заменяют.
+    """
+
+    def __init__(self, on_chunk: OnOutputChunk | None, max_bytes: int) -> None:
+        self._on_chunk = on_chunk
+        self._max_bytes = max_bytes
+        self._parts: list[str] = []
+        self._pending: list[str] = []
+        self._pending_len = 0
+        self._lock = asyncio.Lock()
+
+    @property
+    def full_output(self) -> str:
+        return "".join(self._parts)
+
+    async def add(self, text: str) -> None:
+        if not text:
+            return
+        self._parts.append(text)
+        if self._on_chunk is None:
+            return
+        async with self._lock:
+            self._pending.append(text)
+            self._pending_len += len(text)
+            if self._pending_len >= self._max_bytes:
+                await self._flush_locked()
+
+    async def flush(self) -> None:
+        if self._on_chunk is None:
+            return
+        async with self._lock:
+            await self._flush_locked()
+
+    async def _flush_locked(self) -> None:
+        if not self._pending:
+            return
+        text = "".join(self._pending)
+        self._pending = []
+        self._pending_len = 0
+        await self._on_chunk(text)
+
+
+async def _ticker(accumulator: _ChunkAccumulator, interval: float, stop: asyncio.Event) -> None:
+    """Форсит `flush()` раз в `interval` секунд, пока не выставлен `stop`."""
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            await accumulator.flush()
+
+
+async def _stream_process_output(process, accumulator: _ChunkAccumulator) -> None:
+    """Читает merged stdout+stderr до EOF, кусками, скармливая аккумулятору."""
+    while True:
+        chunk = await process.stdout.read(_READ_SIZE)
+        if chunk == "":
+            break
+        await accumulator.add(chunk)
 
 
 async def execute(
@@ -48,26 +163,25 @@ async def execute(
     *,
     connect_timeout: float = 30.0,
     command_timeout: float = 3600.0,
-) -> tuple[bool, int | None, str | None]:
-    """Подключиться к `host` по ключу и исполнить `command`.
+    on_output_chunk: OnOutputChunk | None = None,
+    chunk_max_bytes: int = DEFAULT_CHUNK_MAX_BYTES,
+    chunk_interval_seconds: float = DEFAULT_CHUNK_INTERVAL_SECONDS,
+) -> ExecutionResult:
+    """Подключиться к `host` по ключу и потоково исполнить `command`.
 
-    Возвращает `(succeeded, exit_code, error)`:
-
-    * `succeeded=True` — `exit_code == 0`, `error=None`.
-    * `succeeded=False` с заполненным `exit_code` — команда реально
-      выполнилась, но вернула ненулевой код; `error` — хвост stderr.
-    * `succeeded=False` с `exit_code=None` — SSH-уровня провал (не удалось
-      подключиться/аутентифицироваться/уложиться в таймаут); `error` —
-      короткое описание причины. Никакого fallback на `test_password` при
-      провале ключа — по контракту `testing_service` ключ приходит
-      заполненным всегда, а протокольный провал ключа фиксируется как
-      обычный провал, не повод менять способ аутентификации на лету.
+    Никакого fallback на `test_password` при провале ключа — по контракту
+    `testing_service` ключ приходит заполненным всегда, а протокольный
+    провал ключа фиксируется как обычный провал, не повод менять способ
+    аутентификации на лету.
     """
     try:
         client_key = asyncssh.import_private_key(test_ssh_private_key)
     except (asyncssh.KeyImportError, ValueError, TypeError) as exc:
         logger.warning("ssh_executor: invalid private key for host=%s: %s", host, type(exc).__name__)
-        return False, None, f"invalid SSH private key: {type(exc).__name__}"
+        return ExecutionResult(
+            connected=False, succeeded=False, exit_code=None,
+            error=f"invalid SSH private key: {type(exc).__name__}",
+        )
 
     cmd_str = shlex.join(command)
 
@@ -85,33 +199,78 @@ async def execute(
         )
     except asyncssh.PermissionDenied as exc:
         logger.warning("ssh_executor: auth failed for host=%s: %s", host, type(exc).__name__)
-        return False, None, f"SSH authentication failed: {type(exc).__name__}"
+        return ExecutionResult(
+            connected=False, succeeded=False, exit_code=None,
+            error=f"SSH authentication failed: {type(exc).__name__}",
+        )
     except (asyncio.TimeoutError, TimeoutError) as exc:
         logger.warning("ssh_executor: connect timed out for host=%s: %s", host, type(exc).__name__)
-        return False, None, f"SSH connect timed out: {type(exc).__name__}"
+        return ExecutionResult(
+            connected=False, succeeded=False, exit_code=None,
+            error=f"SSH connect timed out: {type(exc).__name__}",
+        )
     except asyncssh.Error as exc:
         logger.warning("ssh_executor: asyncssh error connecting to host=%s: %s", host, type(exc).__name__)
-        return False, None, f"SSH connect error: {type(exc).__name__}: {exc}"[:_ERROR_TAIL_MAX_LEN]
+        return ExecutionResult(
+            connected=False, succeeded=False, exit_code=None,
+            error=f"SSH connect error: {type(exc).__name__}: {exc}"[:_ERROR_TAIL_MAX_LEN],
+        )
     except OSError as exc:
         logger.warning("ssh_executor: connect failed for host=%s: %s", host, type(exc).__name__)
-        return False, None, f"connection failed: {type(exc).__name__}: {exc}"[:_ERROR_TAIL_MAX_LEN]
+        return ExecutionResult(
+            connected=False, succeeded=False, exit_code=None,
+            error=f"connection failed: {type(exc).__name__}: {exc}"[:_ERROR_TAIL_MAX_LEN],
+        )
 
-    try:
-        async with conn:
-            result = await conn.run(cmd_str, check=False, timeout=command_timeout)
-    except (asyncio.TimeoutError, TimeoutError) as exc:
-        logger.warning("ssh_executor: command timed out for host=%s: %s", host, type(exc).__name__)
-        return False, None, f"SSH command timed out: {type(exc).__name__}"
-    except asyncssh.Error as exc:
-        logger.warning("ssh_executor: asyncssh error running command on host=%s: %s", host, type(exc).__name__)
-        return False, None, f"SSH run error: {type(exc).__name__}: {exc}"[:_ERROR_TAIL_MAX_LEN]
+    accumulator = _ChunkAccumulator(on_output_chunk, chunk_max_bytes)
 
-    exit_status = result.exit_status
+    async with conn:
+        try:
+            process = await conn.create_process(cmd_str, stdin=asyncssh.DEVNULL, stderr=asyncssh.STDOUT)
+        except asyncssh.Error as exc:
+            logger.warning("ssh_executor: failed to start process on host=%s: %s", host, type(exc).__name__)
+            return ExecutionResult(
+                connected=False, succeeded=False, exit_code=None,
+                error=f"SSH process start error: {type(exc).__name__}: {exc}"[:_ERROR_TAIL_MAX_LEN],
+            )
+
+        started_at = datetime.now(timezone.utc)
+        stop_ticker = asyncio.Event()
+        ticker_task = asyncio.ensure_future(_ticker(accumulator, chunk_interval_seconds, stop_ticker))
+        exit_status: int | None = None
+        run_error: str | None = None
+        try:
+            await asyncio.wait_for(_stream_process_output(process, accumulator), timeout=command_timeout)
+            result = await process.wait()
+            exit_status = result.exit_status
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            logger.warning("ssh_executor: command timed out for host=%s: %s", host, type(exc).__name__)
+            run_error = f"SSH command timed out: {type(exc).__name__}"
+        except asyncssh.Error as exc:
+            logger.warning("ssh_executor: asyncssh error running command on host=%s: %s", host, type(exc).__name__)
+            run_error = f"SSH run error: {type(exc).__name__}: {exc}"[:_ERROR_TAIL_MAX_LEN]
+        finally:
+            stop_ticker.set()
+            await ticker_task
+            await accumulator.flush()
+
+    finished_at = datetime.now(timezone.utc)
+    output = accumulator.full_output
+
+    if run_error is not None:
+        return ExecutionResult(
+            connected=True, succeeded=False, exit_code=None, error=run_error,
+            output=output, started_at=started_at, finished_at=finished_at,
+        )
+
     if exit_status == 0:
-        return True, 0, None
+        return ExecutionResult(
+            connected=True, succeeded=True, exit_code=0, error=None,
+            output=output, started_at=started_at, finished_at=finished_at,
+        )
 
-    stderr = result.stderr if isinstance(result.stderr, str) else (result.stderr or b"").decode(
-        "utf-8", errors="replace"
+    error = _tail(output.strip(), _ERROR_TAIL_MAX_LEN) or f"command exited with status {exit_status}"
+    return ExecutionResult(
+        connected=True, succeeded=False, exit_code=exit_status, error=error,
+        output=output, started_at=started_at, finished_at=finished_at,
     )
-    error = _tail(stderr.strip(), _ERROR_TAIL_MAX_LEN) or f"command exited with status {exit_status}"
-    return False, exit_status, error

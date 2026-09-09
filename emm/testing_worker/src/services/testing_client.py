@@ -1,32 +1,40 @@
-"""Исходящие вызовы в testing_service — очередь заданий (§5.5 плана миграции).
+"""Исходящие вызовы в testing_service — очередь заданий и логи (§5.5, §8 плана
+миграции).
 
-Два эндпоинта, зафиксированные `testing_service` (см. `testing_service/src/
-api/v1/endpoints/internal_queue.py` + `src/schemas/queue.py`, отчёт
-`emm/obsidian/reports/2026-09-09-204902-testing-service-queue-prepare.md`):
+Четыре эндпоинта, зафиксированные `testing_service` (см. `testing_service/
+src/api/v1/endpoints/internal_queue.py` + `internal_log.py`,
+`src/schemas/queue.py` + `src/schemas/test_log.py`):
 
 * `POST /internal/queue/claim` — без тела, отдаёт готовое задание либо
   `item: null`, если очередь пуста.
 * `POST /internal/queue/{queue_item_id}/completed` — сообщает исход
-  SSH-исполнения (успех/провал + exit_code + короткая причина), без
-  полного лога — потоковое сохранение вывода появится отдельной волной.
+  SSH-исполнения (успех/провал + exit_code + короткая причина).
+* `POST /internal/queue/{queue_item_id}/log-chunk` — сырой инкрементальный
+  вывод ещё выполняющейся команды (живое наблюдение, §8.6).
+* `POST /internal/queue/{queue_item_id}/log-segment` — один уже завершённый
+  шаг целиком (formatted-блок собирает сам `testing_service`).
 
-Оба вызова идут через shared-secret канал: `Authorization: Bearer
-<TESTING_SERVICE_INTERNAL_API_KEY>` + `X-Service-Identity: testing_worker`.
+Все четыре идут через один и тот же shared-secret канал: `Authorization:
+Bearer <TESTING_SERVICE_INTERNAL_API_KEY>` + `X-Service-Identity:
+testing_worker`.
 
 Сетевые сбои (testing_service временно недоступен) не поднимаются как
-исключения наружу — `claim()`/`report_completed()` их логируют и
-возвращают безопасный результат (`None` / просто ничего не делают), чтобы
-одна недоступность внешнего сервиса не роняла весь polling-loop воркера.
-Это отличает данный клиент от `server_client.py` в `testing_service`,
-который вызывающий код (сервисный слой с транзакциями) сам решает как
-обрабатывать — здесь единственный caller — сам polling-loop, и его
-контракт («не падать на транзиентных сбоях») удобнее держать внутри
-клиента.
+исключения наружу ни для одного из четырёх вызовов — они логируются и
+проглатываются, чтобы одна недоступность внешнего сервиса не роняла весь
+polling-loop воркера. Для `claim()`/`report_completed()` это уже было так;
+`log_chunk()`/`log_segment()` следуют тому же принципу тем более строго —
+живой лог это best-effort наблюдаемость, не источник истины об исходе
+теста, и его недоставка не должна мешать `completed` уйти. Это отличает
+данный клиент от `server_client.py` в `testing_service`, который вызывающий
+код (сервисный слой с транзакциями) сам решает как обрабатывать — здесь
+единственный caller — сам polling-loop, и его контракт («не падать на
+транзиентных сбоях») удобнее держать внутри клиента.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 import httpx
 
@@ -38,6 +46,8 @@ logger = logging.getLogger("testing_worker.testing_client")
 
 _CLAIM_PATH = "/internal/queue/claim"
 _COMPLETED_PATH_TEMPLATE = "/internal/queue/{queue_item_id}/completed"
+_LOG_CHUNK_PATH_TEMPLATE = "/internal/queue/{queue_item_id}/log-chunk"
+_LOG_SEGMENT_PATH_TEMPLATE = "/internal/queue/{queue_item_id}/log-segment"
 
 # Таймаут HTTP-вызовов к testing_service. Небольшой — это s2s-канал внутри
 # кластера, долгий ответ означает проблему, а не медленную сеть до стенда
@@ -147,6 +157,99 @@ async def report_completed(
     if response.status_code != 200:
         logger.warning(
             "testing_client.report_completed: testing_service returned %s for queue_item_id=%s",
+            response.status_code,
+            queue_item_id,
+        )
+
+
+async def log_chunk(queue_item_id: str, text: str) -> None:
+    """POST /internal/queue/{queue_item_id}/log-chunk.
+
+    Best-effort — см. module docstring. Пустой `text` не отправляется, нечего
+    накапливать.
+    """
+    if not text:
+        return
+
+    base = _base_url()
+    headers = _headers()
+    if base is None or headers is None:
+        logger.warning(
+            "testing_client.log_chunk: TESTING_SERVICE_URL/TESTING_SERVICE_INTERNAL_API_KEY "
+            "not configured, skipping (queue_item_id=%s)",
+            queue_item_id,
+        )
+        return
+
+    path = _LOG_CHUNK_PATH_TEMPLATE.format(queue_item_id=queue_item_id)
+    try:
+        async with build_client(_REQUEST_TIMEOUT_SECONDS) as client:
+            response = await client.post(f"{base}{path}", headers=headers, json={"text": text})
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "testing_client.log_chunk: unreachable (%s), queue_item_id=%s",
+            type(exc).__name__,
+            queue_item_id,
+        )
+        return
+
+    if response.status_code != 200:
+        logger.warning(
+            "testing_client.log_chunk: testing_service returned %s for queue_item_id=%s",
+            response.status_code,
+            queue_item_id,
+        )
+
+
+async def log_segment(
+    queue_item_id: str,
+    *,
+    kind: str,
+    label: str,
+    status: str,
+    command_text_masked: str | None,
+    output: str,
+    host: str,
+    started_at: datetime,
+    finished_at: datetime,
+) -> None:
+    """POST /internal/queue/{queue_item_id}/log-segment. Best-effort — см. module docstring."""
+    base = _base_url()
+    headers = _headers()
+    if base is None or headers is None:
+        logger.warning(
+            "testing_client.log_segment: TESTING_SERVICE_URL/TESTING_SERVICE_INTERNAL_API_KEY "
+            "not configured, skipping (queue_item_id=%s)",
+            queue_item_id,
+        )
+        return
+
+    path = _LOG_SEGMENT_PATH_TEMPLATE.format(queue_item_id=queue_item_id)
+    body = {
+        "kind": kind,
+        "label": label,
+        "status": status,
+        "command_text_masked": command_text_masked,
+        "output": output,
+        "host": host,
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+    }
+
+    try:
+        async with build_client(_REQUEST_TIMEOUT_SECONDS) as client:
+            response = await client.post(f"{base}{path}", headers=headers, json=body)
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "testing_client.log_segment: unreachable (%s), queue_item_id=%s",
+            type(exc).__name__,
+            queue_item_id,
+        )
+        return
+
+    if response.status_code != 200:
+        logger.warning(
+            "testing_client.log_segment: testing_service returned %s for queue_item_id=%s",
             response.status_code,
             queue_item_id,
         )

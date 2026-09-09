@@ -8,10 +8,13 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
+from datetime import datetime, timezone
 
 import pytest
 
 from src.services import queue_loop
+from src.services.ssh_executor import ExecutionResult
 
 # Захвачен ДО любого monkeypatch — фейковый `sleep` ниже подменяет
 # `queue_loop.asyncio.sleep` (тот же объект модуля `asyncio`, что и здесь), но
@@ -35,18 +38,34 @@ async def _run_briefly(coro, timeout: float = 0.3) -> None:
             pass
 
 
+_STARTED = datetime(2026, 9, 9, 12, 0, 0, tzinfo=timezone.utc)
+_FINISHED = datetime(2026, 9, 9, 12, 0, 5, tzinfo=timezone.utc)
+
+
 class TestRunOneItem:
     async def test_executes_and_reports_completed(self, monkeypatch):
-        recorded = {}
+        recorded = {"calls": []}
 
         async def fake_execute(host, username, key, command, **kwargs):
             recorded["execute_args"] = (host, username, key, command)
-            return True, 0, None
+            recorded["on_output_chunk"] = kwargs.get("on_output_chunk")
+            return ExecutionResult(
+                connected=True, succeeded=True, exit_code=0, error=None,
+                output="all good", started_at=_STARTED, finished_at=_FINISHED,
+            )
+
+        async def fake_log_chunk(queue_item_id, text):
+            recorded["calls"].append(("log_chunk", queue_item_id, text))
+
+        async def fake_log_segment(queue_item_id, **fields):
+            recorded["calls"].append(("log_segment", queue_item_id, fields))
 
         async def fake_report(queue_item_id, *, succeeded, exit_code, error):
-            recorded["report"] = (queue_item_id, succeeded, exit_code, error)
+            recorded["calls"].append(("report_completed", queue_item_id, succeeded, exit_code, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+        monkeypatch.setattr(queue_loop.testing_client, "log_chunk", fake_log_chunk)
+        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
         monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
 
         item = {
@@ -55,6 +74,7 @@ class TestRunOneItem:
             "test_username": "u",
             "test_ssh_private_key": "keydata",
             "command": ["--flag", "value"],
+            "command_masked": ["--flag", "***"],
             "debug_mode": False,
             "is_retry": False,
         }
@@ -62,18 +82,45 @@ class TestRunOneItem:
         await queue_loop._run_one_item(item)
 
         assert recorded["execute_args"] == ("10.0.0.1", "u", "keydata", ["--flag", "value"])
-        assert recorded["report"] == ("qi_1", True, 0, None)
+
+        # log-segment уходит до report_completed, ровно один раз, с
+        # замаскированной командой и полным выводом от execute().
+        kinds = [call[0] for call in recorded["calls"]]
+        assert kinds == ["log_segment", "report_completed"]
+
+        _, queue_item_id, fields = recorded["calls"][0]
+        assert queue_item_id == "qi_1"
+        assert fields["kind"] == "command"
+        assert fields["status"] == "OK"
+        assert fields["command_text_masked"] == shlex.join(["--flag", "***"])
+        assert fields["output"] == "all good"
+        assert fields["host"] == "10.0.0.1"
+        assert fields["started_at"] == _STARTED
+        assert fields["finished_at"] == _FINISHED
+
+        assert recorded["calls"][1] == ("report_completed", "qi_1", True, 0, None)
+
+        # `on_output_chunk`, переданный в execute(), реально проксирует в log_chunk.
+        await recorded["on_output_chunk"]("live piece")
+        assert ("log_chunk", "qi_1", "live piece") in recorded["calls"]
 
     async def test_reports_failure_from_execute(self, monkeypatch):
-        recorded = {}
+        recorded = {"calls": []}
 
         async def fake_execute(host, username, key, command, **kwargs):
-            return False, 1, "boom"
+            return ExecutionResult(
+                connected=True, succeeded=False, exit_code=1, error="boom",
+                output="partial output", started_at=_STARTED, finished_at=_FINISHED,
+            )
+
+        async def fake_log_segment(queue_item_id, **fields):
+            recorded["calls"].append(("log_segment", fields))
 
         async def fake_report(queue_item_id, *, succeeded, exit_code, error):
-            recorded["report"] = (queue_item_id, succeeded, exit_code, error)
+            recorded["calls"].append(("report_completed", queue_item_id, succeeded, exit_code, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
         monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
 
         item = {
@@ -82,13 +129,55 @@ class TestRunOneItem:
             "test_username": "u",
             "test_ssh_private_key": "keydata",
             "command": ["cmd"],
+            "command_masked": ["cmd"],
             "debug_mode": True,
             "is_retry": True,
         }
 
         await queue_loop._run_one_item(item)
 
-        assert recorded["report"] == ("qi_2", False, 1, "boom")
+        assert recorded["calls"][0] == ("log_segment", {
+            "kind": "command", "label": "Выполнение теста", "status": "FATAL",
+            "command_text_masked": "cmd", "output": "partial output",
+            "host": "10.0.0.2", "started_at": _STARTED, "finished_at": _FINISHED,
+        })
+        assert recorded["calls"][1] == ("report_completed", "qi_2", False, 1, "boom")
+
+    async def test_connect_failure_skips_log_segment(self, monkeypatch):
+        recorded = {"calls": []}
+
+        async def fake_execute(host, username, key, command, **kwargs):
+            return ExecutionResult(
+                connected=False, succeeded=False, exit_code=None,
+                error="SSH authentication failed",
+            )
+
+        async def fake_log_segment(queue_item_id, **fields):
+            recorded["calls"].append(("log_segment", fields))
+
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+            recorded["calls"].append(("report_completed", queue_item_id, succeeded, exit_code, error))
+
+        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
+
+        item = {
+            "queue_item_id": "qi_3",
+            "host": "10.0.0.3",
+            "test_username": "u",
+            "test_ssh_private_key": "keydata",
+            "command": ["cmd"],
+            "command_masked": ["cmd"],
+            "debug_mode": False,
+            "is_retry": False,
+        }
+
+        await queue_loop._run_one_item(item)
+
+        assert recorded["calls"] == [
+            ("report_completed", "qi_3", False, None, "SSH authentication failed"),
+        ]
 
 
 class TestRunPollingLoop:

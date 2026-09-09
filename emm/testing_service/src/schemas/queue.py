@@ -13,6 +13,8 @@
   `testing_worker`, факт исхода без полного лога (потоковые логи — волна 6).
 """
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -68,3 +70,17 @@ class QueueCompletedRequest(BaseModel):
     succeeded: bool
     exit_code: int | None = Field(default=None)
     error: str | None = Field(default=None, max_length=2048)
+
+
+class QueueItemSummaryResponse(BaseModel):
+    """Ответ GET /test-stands/{id}/current-queue-item (§8.6 плана миграции).
+
+    Минимум, которого фронтенду достаточно, чтобы показать кнопку «Живой лог
+    теста» в консоли сервера и открыть `WS /queue-items/{id}/log/stream` —
+    полную карточку item'а этот эндпоинт не отдаёт.
+    """
+
+    queue_item_id: str
+    state: str
+    test_id: str
+    started_at: datetime | None = None

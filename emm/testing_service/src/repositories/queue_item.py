@@ -48,6 +48,24 @@ async def next_position_for_stand(db: AsyncSession, stand_id: str) -> int:
     return 0 if current_max is None else current_max + 1
 
 
+async def get_active_for_stand(db: AsyncSession, stand_id: str) -> QueueItem | None:
+    """Активный (не терминальный) item этого стенда, если есть.
+
+    Один активный item на стенд — инвариант, который держит `services/queue.py`
+    на этапе постановки в очередь, поэтому `limit(1)` здесь не выбирает между
+    несколькими кандидатами, а просто закрывает контракт функции. Используется
+    консолью сервера (§8.6 плана миграции) — сигнал показать кнопку
+    «Живой лог теста».
+    """
+    stmt = (
+        select(QueueItem)
+        .where(QueueItem.stand_id == stand_id, QueueItem.state.in_(ACTIVE_QUEUE_STATES))
+        .order_by(QueueItem.created_at.desc())
+        .limit(1)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def get_next_queued_for_stand(db: AsyncSession, stand_id: str) -> QueueItem | None:
     """Следующий `queued`-item этого стенда (наименьший `position`) — для продолжения очереди."""
     stmt = (

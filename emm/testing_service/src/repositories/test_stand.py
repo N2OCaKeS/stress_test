@@ -24,6 +24,7 @@ def _apply_filters(
     department_id: str | None,
     is_active: bool | None,
     queue_enabled: bool | None,
+    server_id: str | None = None,
 ):
     if department_id is not None:
         stmt = stmt.where(TestStand.department_id == department_id)
@@ -31,6 +32,8 @@ def _apply_filters(
         stmt = stmt.where(TestStand.is_active == is_active)
     if queue_enabled is not None:
         stmt = stmt.where(TestStand.queue_enabled == queue_enabled)
+    if server_id is not None:
+        stmt = stmt.where(TestStand.server_id == server_id)
     return stmt
 
 
@@ -42,11 +45,13 @@ async def list_all(
     department_id: str | None = None,
     is_active: bool | None = None,
     queue_enabled: bool | None = None,
+    server_id: str | None = None,
 ) -> list[TestStand]:
     """Страница стендов с опциональными фильтрами, order by created_at."""
     stmt = _apply_filters(
         select(TestStand),
         department_id=department_id, is_active=is_active, queue_enabled=queue_enabled,
+        server_id=server_id,
     )
     stmt = stmt.order_by(TestStand.created_at.asc()).limit(limit).offset(offset)
     return list((await db.execute(stmt)).scalars())
@@ -58,11 +63,13 @@ async def count_all(
     department_id: str | None = None,
     is_active: bool | None = None,
     queue_enabled: bool | None = None,
+    server_id: str | None = None,
 ) -> int:
     """COUNT под теми же фильтрами, что и `list_all` — для total в pagination."""
     stmt = _apply_filters(
         select(func.count(TestStand.id)),
         department_id=department_id, is_active=is_active, queue_enabled=queue_enabled,
+        server_id=server_id,
     )
     return int((await db.execute(stmt)).scalar_one())
 

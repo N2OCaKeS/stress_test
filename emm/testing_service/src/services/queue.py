@@ -378,6 +378,11 @@ async def handle_prepare_completed(
     return item
 
 
+async def get_active_queue_item(db: AsyncSession, stand_id: str) -> QueueItem | None:
+    """Активный item очереди стенда, если есть (§8.6 — кнопка live-лога в консоли сервера)."""
+    return await repo.get_active_for_stand(db, stand_id)
+
+
 async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
     """Атомарно забрать один `ready`-item (по любому стенду) для `testing_worker`."""
     item = await repo.claim_next_ready(db)

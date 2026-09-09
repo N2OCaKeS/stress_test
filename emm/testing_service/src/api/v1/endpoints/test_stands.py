@@ -15,12 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.dependencies.auth import AuthenticatedIdentity, BearerToken, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse, PaginatedResponse
+from src.schemas.queue import QueueItemSummaryResponse
 from src.schemas.test_stand import (
     TestStandCreate,
     TestStandResponse,
     TestStandTestCredentialsResponse,
     TestStandUpdate,
 )
+from src.services import queue as queue_svc
 from src.services import test_stand as svc
 
 router = APIRouter(prefix="/test-stands")
@@ -46,11 +48,16 @@ async def list_test_stands(
     department_id: str | None = Query(default=None, description="Фильтр по отделу-владельцу."),
     is_active: bool | None = Query(default=None, description="Фильтр по активности."),
     queue_enabled: bool | None = Query(default=None, description="Фильтр по участию в очереди."),
+    server_id: str | None = Query(
+        default=None,
+        description="Фильтр по привязанному Server/Vm.id — UNIQUE, значит 0 либо 1 элемент в ответе.",
+    ),
 ) -> PaginatedResponse[TestStandResponse]:
     """List стендов. Любой аутентифицированный актор."""
     items, total = await svc.list_test_stands(
         db, limit=limit, offset=offset,
         department_id=department_id, is_active=is_active, queue_enabled=queue_enabled,
+        server_id=server_id,
     )
     return PaginatedResponse[TestStandResponse](
         items=[TestStandResponse.model_validate(i) for i in items],
@@ -118,6 +125,36 @@ async def get_test_stand(
     response.server = server
     response.server_unavailable = server_unavailable
     return response
+
+
+@router.get(
+    "/{stand_id}/current-queue-item",
+    response_model=QueueItemSummaryResponse | None,
+    summary="Активный элемент очереди этого стенда, если он сейчас есть",
+    description=(
+        "Не терминальный (`queued`/`preparing`/`ready`/`running`) queue_item "
+        "этого стенда (§8.6 плана миграции) — сигнал консоли сервера показать "
+        "кнопку «Живой лог теста» и открыть `WS /queue-items/{id}/log/stream`. "
+        "`null`, если сейчас у стенда нет активной работы testing_service."
+    ),
+    responses={
+        401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        404: {"description": "Стенд не найден."},
+    },
+)
+async def get_current_queue_item(
+    stand_id: str,
+    identity: AuthenticatedIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> QueueItemSummaryResponse | None:
+    """Get активного item'а очереди стенда. Любой аутентифицированный актор."""
+    await svc.get_stand_or_404(db, stand_id)
+    item = await queue_svc.get_active_queue_item(db, stand_id)
+    if item is None:
+        return None
+    return QueueItemSummaryResponse(
+        queue_item_id=item.id, state=item.state, test_id=item.test_id, started_at=item.started_at,
+    )
 
 
 @router.patch(

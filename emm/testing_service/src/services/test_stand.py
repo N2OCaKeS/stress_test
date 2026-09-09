@@ -167,16 +167,41 @@ async def list_test_stands(
     department_id: str | None = None,
     is_active: bool | None = None,
     queue_enabled: bool | None = None,
+    server_id: str | None = None,
 ) -> tuple[list[TestStand], int]:
-    """List + count стендов под фильтрами. Только хранимые поля, без live-обогащения."""
+    """List + count стендов под фильтрами. Только хранимые поля, без live-обогащения.
+
+    `server_id` — точечный lookup «какой стенд стоит за этим Server/Vm.id»
+    (UNIQUE(server_id), значит 0 либо 1 элемент); нужен консоли сервера
+    (§8.6 плана миграции), чтобы по `serverId` карточки найти `stand_id`
+    и дальше опросить `current-queue-item`.
+    """
     items = await repo.list_all(
         db, limit=limit, offset=offset,
         department_id=department_id, is_active=is_active, queue_enabled=queue_enabled,
+        server_id=server_id,
     )
     total = await repo.count_all(
         db, department_id=department_id, is_active=is_active, queue_enabled=queue_enabled,
+        server_id=server_id,
     )
     return items, total
+
+
+async def get_stand_or_404(db: AsyncSession, stand_id: str) -> TestStand:
+    """SELECT стенда по PK без live-обогащения сервером — чистый existence-check.
+
+    Соседние read-эндпоинты, которым нужен только факт «стенд существует»
+    (например `current-queue-item`, §8.6), не обязаны платить за N+1 к
+    server_service ради этого — тот вызов делает `get_test_stand`.
+    """
+    obj = await repo.get_by_id(db, stand_id)
+    if obj is None:
+        raise NotFoundError(
+            error_code="TEST_STAND_NOT_FOUND",
+            message="Test stand not found",
+        )
+    return obj
 
 
 async def update_test_stand(

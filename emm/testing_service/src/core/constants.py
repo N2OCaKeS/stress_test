@@ -19,6 +19,12 @@ class EntityType(StrEnum):
     # server_category в server_service), под матрицей — запись.
     GLOBAL_VARIABLE = "global_variable"
 
+    # Каталог тестов + слоты конструктора команд теста. Слоты (`test_command_
+    # args`) не заводят отдельную защищаемую сущность — редактирование команды
+    # это часть редактирования самого теста, поэтому у них тот же entity_type
+    # и action=update.
+    TEST_DEFINITION = "test_definition"
+
 
 class Action(StrEnum):
     """Fine-grained actions матрицы entity_permissions.
@@ -36,6 +42,9 @@ class Action(StrEnum):
 # ошибка данных: матрица наполняется миграциями и (позже) grant-эндпоинтом.
 ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     EntityType.GLOBAL_VARIABLE: frozenset({
+        Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
+    }),
+    EntityType.TEST_DEFINITION: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
     }),
 }
@@ -72,3 +81,15 @@ class GlobalVariableValueType(StrEnum):
     STRING = "string"
     INTEGER = "integer"
     BOOLEAN = "boolean"
+
+
+class CommandArgKind(StrEnum):
+    """Тип слота конструктора команд.
+
+    `literal` — фиксированная строка, задаётся прямо в слоте (`literal_value`).
+    `variable` — ссылка на глобальную переменную (`variable_id`), с
+    опциональным per-test `override_value` поверх её обычного резолва.
+    """
+
+    LITERAL = "literal"
+    VARIABLE = "variable"

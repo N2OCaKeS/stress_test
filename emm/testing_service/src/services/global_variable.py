@@ -232,8 +232,26 @@ async def delete_global_variable(
             message="Global variable not found",
         )
     code = obj.code
-    await repo.delete(db, obj)
-    await db.commit()
+    try:
+        await repo.delete(db, obj)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        logger.warning(
+            "IntegrityError на удалении global_variable %s: %s",
+            variable_id, type(exc.orig).__name__,
+        )
+        audit_service.emit(
+            "global_variable.delete",
+            target_id=variable_id, target_type="global_variable",
+            status="failure", allowed=True,
+            details={"reason": "in_use", "code": code},
+        )
+        raise ConflictError(
+            error_code="GLOBAL_VARIABLE_IN_USE",
+            message="Global variable is referenced by test command args and cannot be deleted",
+            details={"hint": "удалите или переключите ссылающиеся слоты теста"},
+        ) from exc
     audit_service.emit(
         "global_variable.delete",
         target_id=variable_id, target_type="global_variable",

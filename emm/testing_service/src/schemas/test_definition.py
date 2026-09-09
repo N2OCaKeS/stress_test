@@ -1,0 +1,98 @@
+"""Pydantic-схемы для эндпоинтов /test-definitions.
+
+Каталог тестов — per-department бизнес-данные (§2.2 плана миграции), в
+отличие от платформенных `global_variables`. Чтение доступно любому
+аутентифицированному актору, запись — под матрицей прав
+`(test_definition, *, create|update|delete)`.
+"""
+
+import re
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# Код теста: латиница/цифры, `_`/`-`/`.` как разделители, не начинается с
+# разделителя. Формат достаточно свободный, чтобы вместить легаси-имена вида
+# `postgresql.balance` или `kernel_fill`, но защищает от пустых/пробельных строк.
+_CODE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]*$")
+
+
+def _validate_code(value: str) -> str:
+    stripped = value.strip()
+    if not _CODE_RE.match(stripped):
+        raise ValueError(
+            "code must start with an alphanumeric and contain only letters, "
+            "digits, '_', '-' or '.'"
+        )
+    return stripped
+
+
+class TestDefinitionCreate(BaseModel):
+    """Тело POST /test-definitions. `code` уникален."""
+
+    code: str = Field(
+        ..., min_length=1, max_length=64,
+        description="Машинный код теста (например, postgresql.balance). UNIQUE.",
+    )
+    full_name: str = Field(
+        ..., min_length=1, max_length=256,
+        description="Человекочитаемое название теста.",
+    )
+    category: str | None = Field(default=None, max_length=64, description="Категория теста.")
+    owner: str | None = Field(default=None, max_length=128, description="Ответственный за тест.")
+    readiness: str | None = Field(
+        default=None, max_length=32,
+        description="Статус готовности теста (например, draft/ready/deprecated).",
+    )
+    department_id: str | None = Field(
+        default=None, description="Отдел-владелец теста. Пусто — платформенный тест.",
+    )
+    pinned_stand_id: str | None = Field(
+        default=None,
+        description=(
+            "Стенд, к которому привязан тест. Ссылка без FK — стенды "
+            "появятся отдельным доменом; снимается debug-режимом при запуске."
+        ),
+    )
+
+    @field_validator("code")
+    @classmethod
+    def _check_code(cls, value: str) -> str:
+        return _validate_code(value)
+
+
+class TestDefinitionUpdate(BaseModel):
+    """Тело PATCH /test-definitions/{test_id}. Все поля опциональны."""
+
+    code: str | None = Field(default=None, min_length=1, max_length=64, description="Сменить код (UNIQUE).")
+    full_name: str | None = Field(default=None, min_length=1, max_length=256, description="Сменить название.")
+    category: str | None = Field(default=None, max_length=64, description="Сменить категорию.")
+    owner: str | None = Field(default=None, max_length=128, description="Сменить ответственного.")
+    readiness: str | None = Field(default=None, max_length=32, description="Сменить статус готовности.")
+    department_id: str | None = Field(default=None, description="Сменить отдел-владелец.")
+    pinned_stand_id: str | None = Field(default=None, description="Сменить привязанный стенд.")
+
+    @field_validator("code")
+    @classmethod
+    def _check_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_code(value)
+
+
+class TestDefinitionResponse(BaseModel):
+    """Карточка теста в ответе."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(description="Test definition ID (prefix tdef_).")
+    code: str = Field(description="Машинный код теста.")
+    full_name: str = Field(description="Отображаемое название.")
+    category: str | None = Field(default=None, description="Категория теста.")
+    owner: str | None = Field(default=None, description="Ответственный за тест.")
+    readiness: str | None = Field(default=None, description="Статус готовности.")
+    department_id: str | None = Field(default=None, description="Отдел-владелец.")
+    pinned_stand_id: str | None = Field(default=None, description="Привязанный стенд.")
+    created_at: datetime = Field(description="Когда тест заведён.")
+    updated_at: datetime = Field(description="Когда последний раз изменён.")
+    created_by: str | None = Field(default=None, description="Кто завёл.")

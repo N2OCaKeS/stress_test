@@ -88,16 +88,19 @@ def _create_schema():
 
 @pytest.fixture(autouse=True)
 def _cleanup_created_variables():
-    """Снести переменные, созданные тестом.
+    """Снести переменные и тесты, созданные тестом.
 
     У сидированных миграцией `created_by` пуст, у заведённых через API — всегда
     заполнен id актора, так что этого признака достаточно, чтобы отличить одни
-    от других.
+    от других. `test_definitions` удаляются первыми — ON DELETE CASCADE сносит
+    их `test_command_args` заодно, тогда `global_variables` со ссылающимися
+    слотами гарантированно уже свободны от FK.
     """
     yield
     engine = create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT", pool_pre_ping=True)
     try:
         with engine.connect() as conn:
+            conn.execute(text("DELETE FROM test_definitions WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM global_variables WHERE created_by IS NOT NULL"))
     finally:
         engine.dispose()

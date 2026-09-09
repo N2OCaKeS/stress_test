@@ -16,3 +16,13 @@ def global_variable_id() -> str:
 def entity_permission_id() -> str:
     """`prm_<uuid>` — для entity_permissions."""
     return _new_id("prm_")
+
+
+def test_definition_id() -> str:
+    """`tdef_<uuid>` — для test_definitions."""
+    return _new_id("tdef_")
+
+
+def test_command_arg_id() -> str:
+    """`targ_<uuid>` — для test_command_args."""
+    return _new_id("targ_")

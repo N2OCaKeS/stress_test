@@ -1,0 +1,49 @@
+"""Каталог тестов — карточка одного теста, конструируемого через слоты команд.
+
+`test_definitions` сама по себе не хранит команду — команда собирается из
+упорядоченного списка `test_command_args` (см. `models/test_command_arg.py`).
+Карточка держит только паспортные данные теста: чем он называется, к какому
+отделу и стенду привязан, готов ли к использованию.
+
+`pinned_stand_id` — сырой id без FK: стенды (`test_stands`) появятся отдельным
+доменом позже, а привязка теста к стенду нужна уже сейчас (§2.2 плана
+миграции). Тот же приём уже используется в server_service для межсервисных
+ссылок — целостность такого поля держит application code, не БД.
+"""
+
+from datetime import datetime
+
+from sqlalchemy import DateTime, String, func
+from sqlalchemy.orm import Mapped, mapped_column
+
+from src.db.base import Base
+
+
+class TestDefinition(Base):
+    """Одна карточка каталога тестов."""
+
+    __tablename__ = "test_definitions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    full_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    readiness: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Per-department скоуп теста. Nullable — платформенные/демонстрационные
+    # тесты без владельца-отдела допустимы, как и у part прочих каталогов.
+    department_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Soft-ref на test_stands.id (появится волной 4). Без FK — своей таблицы
+    # стендов ещё нет, но привязка тест↔стенд нужна уже в этой волне.
+    pinned_stand_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Soft-FK на auth_service identity (`usr_<hex>`/`bot_<hex>`).
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

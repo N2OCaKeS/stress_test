@@ -196,12 +196,13 @@ async def update_global_variable(
     response_model=OkResponse,
     summary="Удалить переменную",
     description=(
-        "Hard-delete. Слоты команд, ссылающиеся на переменную, живут в другом "
-        "домене — связность проверяется там, когда каталог тестов появится."
+        "Hard-delete. Если на переменную ссылается хотя бы один слот команды "
+        "теста (`test_command_args.variable_id`) — 409."
     ),
     responses={
         403: {"description": "Нет `delete`."},
         404: {"description": "Переменная не найдена."},
+        409: {"description": "GLOBAL_VARIABLE_IN_USE — переменную использует слот команды теста."},
     },
 )
 async def delete_global_variable(

@@ -29,6 +29,12 @@ SERVICE_EVENTS = [
     {"action": "global_variable.create", "description": "Global variable created", "default_severity": "INFO"},
     {"action": "global_variable.update", "description": "Global variable updated", "default_severity": "INFO"},
     {"action": "global_variable.delete", "description": "Global variable deleted", "default_severity": "WARNING"},
+    {"action": "test_definition.create", "description": "Test definition created", "default_severity": "INFO"},
+    {"action": "test_definition.update", "description": "Test definition updated", "default_severity": "INFO"},
+    {"action": "test_definition.delete", "description": "Test definition deleted", "default_severity": "WARNING"},
+    {"action": "test_command_arg.create", "description": "Test command arg slot added", "default_severity": "INFO"},
+    {"action": "test_command_arg.update", "description": "Test command arg slot updated", "default_severity": "INFO"},
+    {"action": "test_command_arg.delete", "description": "Test command arg slot removed", "default_severity": "INFO"},
 ]
 
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
@@ -45,6 +51,24 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("global_variable.delete", "success"): "WARNING",
     ("global_variable.delete", "failure"): "WARNING",
     ("global_variable.delete", "denied"): "WARNING",
+    ("test_definition.create", "success"): "INFO",
+    ("test_definition.create", "failure"): "WARNING",
+    ("test_definition.create", "denied"): "WARNING",
+    ("test_definition.update", "success"): "INFO",
+    ("test_definition.update", "failure"): "WARNING",
+    ("test_definition.update", "denied"): "WARNING",
+    ("test_definition.delete", "success"): "WARNING",
+    ("test_definition.delete", "failure"): "WARNING",
+    ("test_definition.delete", "denied"): "WARNING",
+    ("test_command_arg.create", "success"): "INFO",
+    ("test_command_arg.create", "failure"): "WARNING",
+    ("test_command_arg.create", "denied"): "WARNING",
+    ("test_command_arg.update", "success"): "INFO",
+    ("test_command_arg.update", "failure"): "WARNING",
+    ("test_command_arg.update", "denied"): "WARNING",
+    ("test_command_arg.delete", "success"): "INFO",
+    ("test_command_arg.delete", "failure"): "WARNING",
+    ("test_command_arg.delete", "denied"): "WARNING",
 }
 
 

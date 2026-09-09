@@ -39,6 +39,25 @@ class EntityType(StrEnum):
     # матрицей только создание.
     TEST_RUN = "test_run"
 
+    # Каталог СТП — тест-кейсы Zephyr Scale (§2.5/§6 плана миграции). Чтение
+    # открыто любому аутентифицированному актору, под матрицей — запись.
+    STP_TEST_CASE = "stp_test_case"
+
+    # СТП-прогон (Zephyr test-run/execution, НЕ то же самое, что `test_run`
+    # выше — см. §6.1). Заводится только через `/stp/generate`, чтение —
+    # открыто любому аутентифицированному актору, под матрицей — только create.
+    STP_TEST_RUN = "stp_test_run"
+
+    # Ячейка СТП — статус (stp_test_case × stp_test_run). Чтение открыто,
+    # под матрицей — только ручной override статуса (`update`); событийное
+    # обновление из очереди не проходит через матрицу (система, не человек).
+    STP_CELL = "stp_cell"
+
+    # Настройки интеграции отдела с Jira/Zephyr/Confluence (§2.4/§3.5 плана
+    # миграции: credential_id + base URL'ы). Тот же паттерн, что
+    # `department_test_settings` — чтение открыто, запись под матрицей.
+    DEPARTMENT_INTEGRATION_SETTINGS = "department_integration_settings"
+
 
 class Action(StrEnum):
     """Fine-grained actions матрицы entity_permissions.
@@ -74,6 +93,18 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     }),
     EntityType.TEST_RUN: frozenset({
         Action.CREATE,
+    }),
+    EntityType.STP_TEST_CASE: frozenset({
+        Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
+    }),
+    EntityType.STP_TEST_RUN: frozenset({
+        Action.CREATE,
+    }),
+    EntityType.STP_CELL: frozenset({
+        Action.UPDATE,
+    }),
+    EntityType.DEPARTMENT_INTEGRATION_SETTINGS: frozenset({
+        Action.VIEW, Action.UPDATE,
     }),
 }
 
@@ -122,6 +153,21 @@ class TestRunStatus(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     PARTIALLY_FAILED = "partially_failed"
+
+
+class StpCellStatus(StrEnum):
+    """Статус ячейки СТП `(stp_test_case × stp_test_run)` (§2.5, §6.2 плана миграции).
+
+    `not_run` — дефолт при создании ячейки (тест-ран заведён в Zephyr, тест
+    ещё не запускался). `in_progress`/`pass`/`fail` — зеркало терминальных и
+    промежуточных состояний `queue_items.state` (см. `services/stp_status.py`
+    за точным маппингом `QueueItemState` → `StpCellStatus`).
+    """
+
+    NOT_RUN = "not_run"
+    IN_PROGRESS = "in_progress"
+    PASSED = "pass"
+    FAIL = "fail"
 
 
 class ServiceRole(StrEnum):

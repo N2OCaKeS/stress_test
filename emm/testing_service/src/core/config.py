@@ -167,6 +167,54 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Secret service (reveal Jira/Zephyr/Confluence-кред department_integration_settings, §6) ─
+
+    secret_service_url: str = Field(
+        default="",
+        alias="SECRET_SERVICE_URL",
+        description="Base URL secret_service для POST /credentials/{id}/reveal.",
+    )
+    secret_service_api_key: str = Field(
+        default="",
+        alias="SECRET_SERVICE_API_KEY",
+        description=(
+            "Bearer для исходящих вызовов в secret_service — бот-токен "
+            "testing_service (`dbos_bot_…`), валидный для auth_service introspect. "
+            "Тот же принцип, что `SERVER_SERVICE_API_KEY`: reveal гейтится обычной "
+            "identity-based авторизацией secret_service, не shared s2s-секретом."
+        ),
+    )
+    secret_request_timeout_seconds: float = Field(
+        default=5.0,
+        alias="SECRET_REQUEST_TIMEOUT_SECONDS",
+        description="Таймаут одного исходящего вызова в secret_service.",
+    )
+
+    # ── Changelog service (фильтрация СТП по изменившимся компонентам, §7) ───
+
+    changelog_service_url: str = Field(
+        default="",
+        alias="CHANGELOG_SERVICE_URL",
+        description=(
+            "Base URL сервиса changelog (легаси — http://10.177.103.10:8989). "
+            "Пусто — фильтрация по компонентам отключена, `/stp/generate` берёт "
+            "полный набор тестов независимо от RC/final."
+        ),
+    )
+    changelog_request_timeout_seconds: float = Field(
+        default=5.0,
+        alias="CHANGELOG_REQUEST_TIMEOUT_SECONDS",
+        description="Таймаут запроса к changelog-сервису.",
+    )
+
+    # ── Zephyr Scale / Jira ATM (§6.1-6.2 плана миграции) ────────────────────
+
+    zephyr_request_timeout_seconds: float = Field(
+        default=10.0,
+        alias="ZEPHYR_REQUEST_TIMEOUT_SECONDS",
+        description="Таймаут одного исходящего вызова в Jira/Zephyr Scale ATM REST API.",
+    )
+
     # ── Redis creds stash (креды тестового пользователя между callback'ом ────
     # prepare-for-test и claim'ом testing_worker'а) ───────────────────────────
 

@@ -77,6 +77,19 @@ async def list_by_pinned_stand(db: AsyncSession, stand_id: str) -> list[TestDefi
     return list((await db.execute(stmt)).scalars())
 
 
+async def list_by_department_pinned(db: AsyncSession, department_id: str) -> list[TestDefinition]:
+    """Тесты отдела, закреплённые за каким-либо стендом — вход СТП-генерации (§5)."""
+    stmt = (
+        select(TestDefinition)
+        .where(
+            TestDefinition.department_id == department_id,
+            TestDefinition.pinned_stand_id.is_not(None),
+        )
+        .order_by(TestDefinition.code.asc())
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
 async def create(db: AsyncSession, data: dict) -> TestDefinition:
     """INSERT новой строки. commit — на caller'е."""
     obj = TestDefinition(**data)

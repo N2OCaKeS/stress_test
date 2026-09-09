@@ -112,12 +112,22 @@ def _cleanup_created_variables():
             # владении этого домена, чистим безусловно. Каскадом сносит
             # test_log_segments/test_log_blobs (ON DELETE CASCADE).
             conn.execute(text("DELETE FROM test_logs"))
+            # stp_cells/stp_test_runs — целиком в владении этого домена (нет
+            # сида, никогда не сеются миграцией), чистим безусловно, до
+            # queue_items/test_stands (FK stp_cells.queue_item_id SET NULL,
+            # stp_test_runs.stand_id RESTRICT).
+            conn.execute(text("DELETE FROM stp_cells"))
+            conn.execute(text("DELETE FROM stp_test_runs"))
+            conn.execute(text("DELETE FROM stp_test_cases WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM queue_items WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM test_runs WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM test_definitions WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM global_variables WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM test_stands WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM department_test_settings WHERE department_id LIKE 'dep\\_%' ESCAPE '\\'"))
+            conn.execute(text(
+                "DELETE FROM department_integration_settings WHERE department_id LIKE 'dep\\_%' ESCAPE '\\'"
+            ))
     finally:
         engine.dispose()
 

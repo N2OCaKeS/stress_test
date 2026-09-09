@@ -36,6 +36,11 @@ class TestDefinition(Base):
     # Soft-ref на test_stands.id (появится волной 4). Без FK — своей таблицы
     # стендов ещё нет, но привязка тест↔стенд нужна уже в этой волне.
     pinned_stand_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Компонент ОС, чьё изменение в changelog "затрагивает" этот тест (§1/§7
+    # плана миграции — фильтр СТП-прогона по changelog). Используется ТОЛЬКО
+    # этим фильтром, больше нигде. Пусто — тест считается затронутым всегда
+    # (безопасный дефолт: лучше лишний прогон, чем пропущенный).
+    changelog_component: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Soft-FK на auth_service identity (`usr_<hex>`/`bot_<hex>`).
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

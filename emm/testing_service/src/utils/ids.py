@@ -57,3 +57,23 @@ def test_log_segment_id() -> str:
 def test_run_id() -> str:
     """`run_<uuid>` — для test_runs."""
     return _new_id("run_")
+
+
+def stp_test_case_id() -> str:
+    """`stpc_<uuid>` — для stp_test_cases."""
+    return _new_id("stpc_")
+
+
+def stp_test_run_id() -> str:
+    """`stpr_<uuid>` — для stp_test_runs (Zephyr test-run/execution)."""
+    return _new_id("stpr_")
+
+
+def stp_cell_id() -> str:
+    """`cell_<uuid>` — для stp_cells."""
+    return _new_id("cell_")
+
+
+def department_integration_settings_id() -> str:
+    """`dis_<uuid>` — для department_integration_settings."""
+    return _new_id("dis_")

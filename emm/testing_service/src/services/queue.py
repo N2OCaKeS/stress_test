@@ -54,6 +54,7 @@ from src.services import (
     department_test_settings as dts_svc,
     log_rotation,
     server_client,
+    stp_status,
     test_run_status,
 )
 from src.services.test_command_arg import resolve_command, resolve_command_masked
@@ -302,6 +303,7 @@ async def _fail_and_advance(
         failed_step=failed_step, error=error, audit_action=audit_action,
     )
     await db.commit()
+    await stp_status.sync_cell_from_queue_item(db, item)
     if retry_item is None and item.test_run_id:
         # Провал без retry — терминально для этого item'а. Если он часть
         # кампании, статус мог только что перейти в failed/partially_failed.
@@ -504,6 +506,7 @@ async def complete_item(db: AsyncSession, queue_item_id: str, body: QueueComplet
         item.finished_at = datetime.now(timezone.utc)
         item.error = None
         await db.commit()
+        await stp_status.sync_cell_from_queue_item(db, item)
         if item.test_run_id:
             await test_run_status.recompute(db, item.test_run_id)
             await db.commit()

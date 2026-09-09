@@ -54,6 +54,13 @@ class TestDefinitionCreate(BaseModel):
             "появятся отдельным доменом; снимается debug-режимом при запуске."
         ),
     )
+    changelog_component: str | None = Field(
+        default=None, max_length=128,
+        description=(
+            "Компонент ОС, используемый ТОЛЬКО changelog-фильтром СТП-генерации "
+            "(§7). Пусто — тест считается затронутым любым changelog (безопасный дефолт)."
+        ),
+    )
 
     @field_validator("code")
     @classmethod
@@ -71,6 +78,9 @@ class TestDefinitionUpdate(BaseModel):
     readiness: str | None = Field(default=None, max_length=32, description="Сменить статус готовности.")
     department_id: str | None = Field(default=None, description="Сменить отдел-владелец.")
     pinned_stand_id: str | None = Field(default=None, description="Сменить привязанный стенд.")
+    changelog_component: str | None = Field(
+        default=None, max_length=128, description="Сменить компонент changelog-фильтра.",
+    )
 
     @field_validator("code")
     @classmethod
@@ -93,6 +103,7 @@ class TestDefinitionResponse(BaseModel):
     readiness: str | None = Field(default=None, description="Статус готовности.")
     department_id: str | None = Field(default=None, description="Отдел-владелец.")
     pinned_stand_id: str | None = Field(default=None, description="Привязанный стенд.")
+    changelog_component: str | None = Field(default=None, description="Компонент changelog-фильтра СТП.")
     created_at: datetime = Field(description="Когда тест заведён.")
     updated_at: datetime = Field(description="Когда последний раз изменён.")
     created_by: str | None = Field(default=None, description="Кто завёл.")

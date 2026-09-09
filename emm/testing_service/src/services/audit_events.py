@@ -51,6 +51,13 @@ SERVICE_EVENTS = [
     {"action": "test_log.rotated", "description": "A test log was deleted by the rotation policy (duplicate relaunch or monthly retention)", "default_severity": "WARNING"},
     {"action": "test_run.create", "description": "A fleet-wide test run campaign was created", "default_severity": "INFO"},
     {"action": "test_run.status_changed", "description": "A test run campaign's aggregate status changed after a queue item transition", "default_severity": "INFO"},
+    {"action": "stp_test_case.create", "description": "STP test case (Zephyr mirror) created", "default_severity": "INFO"},
+    {"action": "stp_test_case.update", "description": "STP test case updated", "default_severity": "INFO"},
+    {"action": "stp_test_case.delete", "description": "STP test case deleted", "default_severity": "WARNING"},
+    {"action": "stp_test_run.generate", "description": "STP test runs generated in Zephyr for a department/RC/mode/kernel", "default_severity": "INFO"},
+    {"action": "stp_cell.auto_updated", "description": "STP cell status updated automatically from a queue item transition", "default_severity": "INFO"},
+    {"action": "stp_cell.manual_override", "description": "STP cell status overridden manually (not synced to Zephyr)", "default_severity": "WARNING"},
+    {"action": "department_integration_settings.update", "description": "Department Jira/Zephyr/Confluence integration settings upserted", "default_severity": "INFO"},
 ]
 
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
@@ -111,6 +118,21 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("test_run.create", "success"): "INFO",
     ("test_run.create", "denied"): "WARNING",
     ("test_run.status_changed", "success"): "INFO",
+    ("stp_test_case.create", "success"): "INFO",
+    ("stp_test_case.create", "failure"): "WARNING",
+    ("stp_test_case.create", "denied"): "WARNING",
+    ("stp_test_case.update", "success"): "INFO",
+    ("stp_test_case.update", "failure"): "WARNING",
+    ("stp_test_case.update", "denied"): "WARNING",
+    ("stp_test_case.delete", "success"): "WARNING",
+    ("stp_test_case.delete", "denied"): "WARNING",
+    ("stp_test_run.generate", "success"): "INFO",
+    ("stp_test_run.generate", "denied"): "WARNING",
+    ("stp_cell.auto_updated", "success"): "INFO",
+    ("stp_cell.manual_override", "success"): "WARNING",
+    ("stp_cell.manual_override", "denied"): "WARNING",
+    ("department_integration_settings.update", "success"): "INFO",
+    ("department_integration_settings.update", "denied"): "WARNING",
 }
 
 

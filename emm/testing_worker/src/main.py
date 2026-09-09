@@ -1,6 +1,6 @@
 """Точка входа testing_worker'а.
 
-`broker` — singleton taskiq broker'а; `taskiq worker src.worker_main:broker`
+`broker` — singleton taskiq broker'а; `taskiq worker src.main:broker`
 его запускает. Импорт `src.tasks` (в самом низу файла) регистрирует все
 task-handler'ы на broker'е — сейчас пакет пуст, задачи появятся в волне 5
 плана миграции (собственный SSH-worker, исполнение теста под кредами

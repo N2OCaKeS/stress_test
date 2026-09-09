@@ -490,31 +490,20 @@ services:
       retries: 30
     restart: unless-stopped
 
-  # ── testing_worker (taskiq consumer, каркас — задач пока нет) ────────────────
+  # ── testing_worker (taskiq consumer, каркас — задач пока нет, своей БД нет) ──
   testing_worker:
     build:
-      context: ./testing_service
+      context: ./testing_worker
       dockerfile: docker/Dockerfile
     init: true
-    command: ["taskiq", "worker", "src.worker_main:broker"]
+    command: ["taskiq", "worker", "src.main:broker"]
     env_file: [.env.prod]
     environment:
       APP_ENV: production
       WORKER_LOG_LEVEL: INFO
-      DATABASE_URL: postgresql+psycopg://${TESTING_DB_USER}:${TESTING_DB_PASSWORD}@testing-postgres:5432/testing_db
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/3
-      AUTH_SERVICE_URL: http://auth_service:8000
-      LOGGING_SERVICE_URL: http://logging_service:8001
-      SERVER_SERVICE_URL: http://server_service:8002
-      SERVICE_API_KEY: ${SERVICE_API_KEY}
     depends_on:
-      testing-postgres:
-        condition: service_healthy
       redis:
-        condition: service_healthy
-      testing-migrate:
-        condition: service_completed_successfully
-      testing_service:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "grep -aql taskiq /proc/[0-9]*/cmdline 2>/dev/null || exit 1"]

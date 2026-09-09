@@ -38,7 +38,4 @@ EXPOSE 8004
 # slowapi per-IP rate-limit теряют точность.
 ENV FORWARDED_ALLOW_IPS=*
 
-# Дефолтный CMD — API-процесс. testing_worker переопределяет command в
-# docker-compose (`taskiq worker src.worker_main:broker`) на этом же образе —
-# api и worker делят один код/образ, только entrypoint разный.
 CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port 8004 --proxy-headers --forwarded-allow-ips=$FORWARDED_ALLOW_IPS"]

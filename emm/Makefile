@@ -57,6 +57,7 @@ SERVER  = docker compose -f server_service/tests/docker-compose.test.yml
 WORKER  = docker compose -f server_worker/tests/docker-compose.test.yml
 SECRET  = docker compose -f secret_service/tests/docker-compose.test.yml
 TESTING = docker compose -f testing_service/tests/docker-compose.test.yml
+TESTING_WORKER = docker compose -f testing_worker/tests/docker-compose.test.yml
 ROOT    = docker compose -f tests/docker-compose.test.yml
 E2E     = docker compose -f tests/integration/docker-compose.test.yml
 DEV     = docker compose -f docker-compose.dev.yml
@@ -107,11 +108,11 @@ _DEV_WORKER_BOT_TOKEN = dbos_bot_dev_worker_local_token_do_not_use_in_prod
         up up-build seed down down-v logs ps sh-auth sh-logging sh-server sh-worker sh-secret sh-testing logs-secret logs-testing \
         dev dev-stop dev-logs \
         run-auth run-logging run-server run-secret run-testing run-testing-worker \
-        test-dev test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-secret test-dev-testing test-dev-integration test-dev-all \
-        test-local test-local-auth test-local-logging test-local-server test-local-worker test-local-secret test-local-testing test-local-integration test-local-all \
+        test-dev test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-secret test-dev-testing test-dev-testing-worker test-dev-integration test-dev-all \
+        test-local test-local-auth test-local-logging test-local-server test-local-worker test-local-secret test-local-testing test-local-testing-worker test-local-integration test-local-all \
         test-devcont-all install-registry \
         test-integration logs-test-integration up-test-integration down-test-integration \
-        test-auth test-auth-e2e test-logging test-server test-worker test-secret test-testing test-all test-down test-build \
+        test-auth test-auth-e2e test-logging test-server test-worker test-secret test-testing test-testing-worker test-all test-down test-build \
         k8s-install k8s-install-k3s k8s-install-cert-manager k8s-secrets k8s-build \
         k8s-deploy k8s-migrate k8s-smoke k8s-rollout k8s-rollback \
         k8s-logs k8s-status k8s-backup k8s-destroy \
@@ -343,10 +344,9 @@ run-testing: ## Запустить testing_service локально (devcontaine
 		PYTHONPATH=. uvicorn src.main:app --reload --host 0.0.0.0 --port 8004
 
 run-testing-worker: ## Запустить testing_worker локально (devcontainer, foreground). Нужен Redis на localhost:6379 (в devcontainer'е его нет по умолчанию — см. docker-compose.dev.yml `redis`).
-	cd testing_service && \
+	cd testing_worker && \
 		REDIS_URL=redis://localhost:6379/3 \
-		AUTH_SERVICE_URL=http://localhost:8000 \
-		PYTHONPATH=. taskiq worker src.worker_main:broker
+		PYTHONPATH=. taskiq worker src.main:broker
 
 ##@ Тесты: в devcontainer
 # Все команды работают только внутри devcontainer (нет Docker).
@@ -451,10 +451,16 @@ test-dev-testing: ## Unit-тесты testing_service (devcontainer; Redis не �
 		APP_ENV=test \
 		PYTHONPATH=. pytest tests/ -v --tb=short
 
+test-dev-testing-worker: ## Unit-тесты testing_worker (devcontainer; структурная проверка, без реального Redis)
+	cd testing_worker && \
+		REDIS_URL=redis://localhost:6379/3 \
+		APP_ENV=test \
+		PYTHONPATH=. pytest tests/ -v --tb=short
+
 test-dev-integration: ## Кросс-сервисные интеграционные тесты (devcontainer, порты :8010/:8011)
 	pytest tests/ -v --tb=short
 
-test-dev-all: test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-secret test-dev-testing test-dev-integration ## Все тесты в devcontainer
+test-dev-all: test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-secret test-dev-testing test-dev-testing-worker test-dev-integration ## Все тесты в devcontainer
 
 test-devcont-all: ## Полный набор в devcontainer: unit + integration + E2E docker registry
 	python tests/scripts/run_devcont_tests.py
@@ -470,7 +476,8 @@ test-local-server: test-dev-server ## = test-dev-server
 test-local-worker: test-dev-worker ## = test-dev-worker
 test-local-secret: test-dev-secret ## = test-dev-secret
 test-local-testing: test-dev-testing ## = test-dev-testing
-test-local: test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-secret test-dev-testing ## = test-dev-auth + test-dev-logging + test-dev-server + test-dev-worker + test-dev-secret + test-dev-testing
+test-local-testing-worker: test-dev-testing-worker ## = test-dev-testing-worker
+test-local: test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-secret test-dev-testing test-dev-testing-worker ## = test-dev-auth + test-dev-logging + test-dev-server + test-dev-worker + test-dev-secret + test-dev-testing + test-dev-testing-worker
 test-local-integration: test-dev-integration ## = test-dev-integration
 test-local-all: test-dev-all ## = test-dev-all
 
@@ -496,6 +503,9 @@ test-secret: ## Тесты secret_service в Docker
 
 test-testing: ## Тесты testing_service в Docker
 	$(TESTING) run --rm test-runner pytest tests/ -v --tb=short
+
+test-testing-worker: ## Тесты testing_worker в Docker
+	$(TESTING_WORKER) run --rm test-runner pytest tests/ -v --tb=short
 
 test-console: ## Тесты console_proxy (VNC/SPICE-прокси) в одноразовом python-контейнере
 	docker run --rm -v "$(CURDIR)/console_proxy:/app" -w /app python:3.12-slim bash -lc \
@@ -526,7 +536,7 @@ logs-test-integration: ## tail логов всех сервисов E2E-стек
 down-test-integration: ## Остановить E2E-стек и удалить тома (mgmt-keys, bootstrap)
 	$(E2E) down -v --remove-orphans
 
-test-all: test-auth test-logging test-server test-worker test-secret test-testing test-integration ## Все тесты в Docker
+test-all: test-auth test-logging test-server test-worker test-secret test-testing test-testing-worker test-integration ## Все тесты в Docker
 
 test-build: ## Пересобрать все тестовые образы
 	$(AUTH) build
@@ -535,6 +545,7 @@ test-build: ## Пересобрать все тестовые образы
 	$(WORKER) build
 	$(SECRET) build
 	$(TESTING) build
+	$(TESTING_WORKER) build
 	$(ROOT) build
 	$(E2E) build
 
@@ -545,6 +556,7 @@ test-down: ## Удалить тестовые контейнеры и тома
 	$(WORKER) down -v --remove-orphans
 	$(SECRET) down -v --remove-orphans
 	$(TESTING) down -v --remove-orphans
+	$(TESTING_WORKER) down -v --remove-orphans
 	$(ROOT) down -v --remove-orphans
 	$(E2E) down -v --remove-orphans
 

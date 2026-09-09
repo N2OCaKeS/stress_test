@@ -1,6 +1,7 @@
-# testing_service — api (FastAPI, 2 реплики) + worker (taskiq consumer,
-# каркас волна 1, задач пока нет). Симметрично 13-secret-service.yaml
-# (api) + 60-server-worker.yaml (worker, без HTTP-пробы).
+# testing_service — api (FastAPI, 2 реплики). Симметрично 13-secret-service.yaml.
+# Воркер (taskiq consumer) — отдельный top-level сервис/манифест, см.
+# 64-testing-worker.yaml (по образцу server_service/server_worker: 50-server-service.yaml
+# + 60-server-worker.yaml).
 
 apiVersion: v1
 kind: ConfigMap
@@ -160,84 +161,3 @@ spec:
   ports:
     - port: 8004
       targetPort: 8004
-
----
-# ── testing-worker (taskiq consumer, каркас — задач пока нет) ────────────────
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: testing-worker
-  namespace: dbos
-  labels:
-    app: testing-worker
-spec:
-  replicas: 1
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-  selector:
-    matchLabels:
-      app: testing-worker
-  template:
-    metadata:
-      labels:
-        app: testing-worker
-      annotations:
-        # Нет HTTP-probe'ов (taskiq-consumer без FastAPI), симметрично
-        # server-worker.
-        prometheus.io/scrape: "false"
-        dbos.monitoring/source: "taskiq broker db /3"
-    spec:
-      terminationGracePeriodSeconds: 30
-      automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: testing-worker
-          image: dbos/testing-service:latest
-          imagePullPolicy: IfNotPresent
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
-          envFrom:
-            - configMapRef:
-                name: testing-service-config
-          env:
-            - name: TESTING_DB_USER
-              valueFrom:
-                secretKeyRef: { name: dbos-secrets, key: TESTING_DB_USER }
-            - name: TESTING_DB_PASSWORD
-              valueFrom:
-                secretKeyRef: { name: dbos-secrets, key: TESTING_DB_PASSWORD }
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef: { name: dbos-secrets, key: REDIS_PASSWORD }
-            - name: DATABASE_URL
-              value: "postgresql+psycopg://$(TESTING_DB_USER):$(TESTING_DB_PASSWORD)@testing-postgres:5432/testing_db"
-            - name: REDIS_URL
-              value: "redis://:$(REDIS_PASSWORD)@redis:6379/3"
-            - name: SERVICE_API_KEY
-              valueFrom:
-                secretKeyRef: { name: dbos-secrets, key: SERVICE_API_KEY }
-            - name: WORKER_LOG_LEVEL
-              value: INFO
-          command: ["taskiq", "worker", "src.worker_main:broker"]
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-          resources:
-            requests: { cpu: "100m", memory: "128Mi" }
-            limits:   { cpu: "500m", memory: "512Mi" }
-      volumes:
-        - name: tmp
-          emptyDir:
-            sizeLimit: 64Mi

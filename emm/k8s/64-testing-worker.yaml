@@ -1,0 +1,83 @@
+# testing_worker — taskiq consumer, каркас волна 1, задач пока нет. Отдельный
+# top-level сервис/образ (../testing_worker), симметрично 60-server-worker.yaml
+# относительно 50-server-service.yaml. В отличие от server-worker у
+# testing-worker пока нет своей БД — ConfigMap и env ограничены Redis-брокером.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: testing-worker-config
+  namespace: dbos
+data:
+  APP_ENV: production
+  WORKER_LOG_LEVEL: INFO
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: testing-worker
+  namespace: dbos
+  labels:
+    app: testing-worker
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: testing-worker
+  template:
+    metadata:
+      labels:
+        app: testing-worker
+      annotations:
+        # Нет HTTP-probe'ов (taskiq-consumer без FastAPI), симметрично
+        # server-worker.
+        prometheus.io/scrape: "false"
+        dbos.monitoring/source: "taskiq broker db /3"
+    spec:
+      terminationGracePeriodSeconds: 30
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: testing-worker
+          image: dbos/testing-worker:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          envFrom:
+            - configMapRef:
+                name: testing-worker-config
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: REDIS_PASSWORD }
+            # Отдельный db-index на общем redis-контейнере: /0 — server_worker
+            # broker, /1 — auth rate-limit, /2 — secret rate-limit, /3 —
+            # testing_service/testing_worker.
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/3"
+          command: ["taskiq", "worker", "src.main:broker"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

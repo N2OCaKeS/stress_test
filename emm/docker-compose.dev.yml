@@ -10,7 +10,7 @@
 #   server_worker          (taskiq worker, src/ примонтирован)
 #   secret_service  :8003  (uvicorn --reload, src/ примонтирован)
 #   testing_service :8004  (uvicorn --reload, src/ примонтирован)
-#   testing_worker         (taskiq worker, src/ примонтирован, redis :6379/3)
+#   testing_worker         (taskiq worker, отдельный сервис ./testing_worker, src/ примонтирован, redis :6379/3)
 #
 # Использование:
 #   make up           поднять стек (данные сохраняются)
@@ -441,21 +441,18 @@ services:
 
   testing_worker:
     build:
-      context: ./testing_service
+      context: ./testing_worker
       dockerfile: docker/Dockerfile
     init: true
     environment:
       APP_ENV: local
       REDIS_URL: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/3
-      AUTH_SERVICE_URL: http://auth_service:8000
       WORKER_LOG_LEVEL: INFO
-    command: ["taskiq", "worker", "src.worker_main:broker"]
+    command: ["taskiq", "worker", "src.main:broker"]
     volumes:
-      - ./testing_service/src:/app/src
+      - ./testing_worker/src:/app/src
     depends_on:
       redis:
-        condition: service_healthy
-      testing_service:
         condition: service_healthy
 
   web_ui:

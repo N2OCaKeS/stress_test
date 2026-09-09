@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "testing-worker"
+version = "0.1.0"
+description = "DBOS testing_worker — taskiq broker skeleton for the testing_service task queue"
+authors = []
+readme = "README.md"
+packages = [{ include = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+pydantic = "2.11.3"
+pydantic-settings = "2.8.1"
+# taskiq-redis 1.1.0 требует redis>=6,<7 — версия выше, чем 5.2.1 у остальных
+# сервисов (secret_service/server_service). Несовпадение между сервисами не
+# страшно — они не шарят Python-процесс. См. testing_service/pyproject.toml,
+# то же ограничение сохранено при выделении воркера в отдельный пакет.
+redis = "^6.0"
+taskiq = "0.11.18"
+taskiq-redis = "1.1.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "9.0.3"
+pytest-asyncio = "^1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--tb=short -q"
+asyncio_mode = "auto"

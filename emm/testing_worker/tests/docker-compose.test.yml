@@ -1,0 +1,34 @@
+name: testing-worker-tests
+
+# Isolated test stack: test Redis + test runner. No test Postgres — the
+# worker has no database of its own (see README.md).
+#
+# Usage:
+#   docker compose -f tests/docker-compose.test.yml run --rm test-runner
+#   docker compose -f tests/docker-compose.test.yml down -v
+
+services:
+
+  test-redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  test-runner:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile.test
+    environment:
+      REDIS_URL: redis://test-redis:6379/0
+      APP_ENV: test
+      PYTHONPATH: /app
+    depends_on:
+      test-redis:
+        condition: service_healthy
+    volumes:
+      - .:/app/tests
+      - ../src:/app/src
+    command: ["pytest", "tests/", "-v", "--tb=short"]

@@ -9,18 +9,19 @@
 ## Компоненты
 
 - **`api`** (`src/main.py`) — FastAPI-приложение, `/api/testing/v1/health` + `/api/testing/v1/ready`. Слоистая структура `api → services → repositories → models` заводится по мере появления домена.
-- **`worker`** (`src/worker_main.py`) — отдельный процесс, свой taskiq+redis broker (`src/core/broker.py`). Пока без реальных задач — собственный SSH-worker появится в волне 5.
+- **`worker`** — отдельный top-level сервис `../testing_worker` (свой `pyproject.toml`/`Dockerfile`/`Makefile`), по образцу `server_worker` относительно `server_service`. Пока без реальных задач — собственный SSH-worker появится в волне 5. У воркера пока нет своей БД.
 - **`postgres`** — `testing_db`. Миграций пока 0 — модели появятся вместе с доменом (волна 3+).
-- **`redis`** — db-index `/3` на общем redis-контейнере (`/0` — `server_worker` broker, `/1` — `auth_service` rate-limit в prod, `/2` — `secret_service` rate-limit; `/1` занят только в prod-стеке, но нумерация держится единой между dev/prod, чтобы не путаться).
+- **`redis`** — db-index `/3` на общем redis-контейнере (`/0` — `server_worker` broker, `/1` — `auth_service` rate-limit в prod, `/2` — `secret_service` rate-limit; `/1` занят только в prod-стеке, но нумерация держится единой между dev/prod, чтобы не путаться). `testing_service` сам ходит в Redis только best-effort пингом в `/ready` (и опционально как backend rate-limit'а) — брокер задач слушает `testing_worker`.
 - **Auth** — через `auth_service` (introspect). **Audit** — публикация в `loging_service`, инфраструктура готова, доменных событий пока нет.
 
 ## Технологии
 
 - `Python 3.12`
 - `FastAPI` + `SQLAlchemy 2.0 async` + `Alembic`
-- `taskiq` + `taskiq-redis` (worker)
 - `PostgreSQL` (отдельный кластер), `Redis`
 - `Docker`, `Kubernetes`
+
+Воркер (`taskiq` + `taskiq-redis`) — отдельный пакет, см. `../testing_worker/README.md`.
 
 ## Healthcheck
 
@@ -55,8 +56,9 @@
 
 ```bash
 make run-testing          # api на :8004, foreground, авто-перезагрузка
-make run-testing-worker   # taskiq worker, foreground
-make test-testing         # тесты в Docker (tests/docker-compose.test.yml)
+make run-testing-worker   # testing_worker (taskiq worker), foreground
+make test-testing         # тесты api в Docker (tests/docker-compose.test.yml)
+make test-testing-worker  # тесты testing_worker в Docker
 ```
 
 Стандартный dev-стек — `docker-compose.dev.yml` в корне репозитория (`make up`/`make dev`).

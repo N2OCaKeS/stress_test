@@ -465,9 +465,8 @@ services:
     environment:
       APP_ENV: local
       REDIS_URL: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/3
-      # Заведены заранее для очереди (§5.5 плана миграции, POST /internal/
-      # queue/claim и /completed на testing_service) — потребитель появится
-      # вместе с реальным SSH-исполнением, конфиг сейчас их не читает.
+      # Канал очереди (§5.5 плана миграции): POST /internal/queue/claim и
+      # /completed на testing_service. worker поллит это и исполняет тест по SSH.
       TESTING_SERVICE_URL: http://testing_service:8004
       TESTING_SERVICE_INTERNAL_API_KEY: dev-testing-worker-internal-key-do-not-use-in-prod
       WORKER_LOG_LEVEL: INFO

@@ -1,7 +1,8 @@
-# testing_worker — taskiq consumer, каркас волна 1, задач пока нет. Отдельный
-# top-level сервис/образ (../testing_worker), симметрично 60-server-worker.yaml
-# относительно 50-server-service.yaml. В отличие от server-worker у
-# testing-worker пока нет своей БД — ConfigMap и env ограничены Redis-брокером.
+# testing_worker — SSH-исполнитель очереди testing_service (§5.5 плана
+# миграции). Отдельный top-level сервис/образ (../testing_worker), симметрично
+# 60-server-worker.yaml относительно 50-server-service.yaml. В отличие от
+# server-worker у testing-worker пока нет своей БД — ConfigMap и env
+# ограничены Redis-брокером + каналом очереди testing_service.
 
 apiVersion: v1
 kind: ConfigMap
@@ -11,9 +12,8 @@ metadata:
 data:
   APP_ENV: production
   WORKER_LOG_LEVEL: INFO
-  # Заведено заранее для очереди (§5.5 плана миграции, POST /internal/queue/
-  # claim и /completed на testing_service) — потребитель появится вместе с
-  # реальным SSH-исполнением, конфиг воркера сейчас его не читает.
+  # Канал очереди (§5.5 плана миграции): POST /internal/queue/claim и
+  # /completed на testing_service. worker поллит это и исполняет тест по SSH.
   TESTING_SERVICE_URL: http://testing-service:8004
 
 ---
@@ -74,8 +74,8 @@ spec:
             # testing_service/testing_worker.
             - name: REDIS_URL
               value: "redis://:$(REDIS_PASSWORD)@redis:6379/3"
-            # Заведено заранее (см. ConfigMap выше) — TESTING_SERVICE_INTERNAL_API_KEY
-            # для /internal/queue/claim и /completed, потребитель ещё не написан.
+            # Shared-secret для /internal/queue/claim и /completed на
+            # testing_service — см. TESTING_SERVICE_URL в ConfigMap выше.
             - name: TESTING_SERVICE_INTERNAL_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: TESTING_SERVICE_INTERNAL_API_KEY }

@@ -1,10 +1,10 @@
 """Настройки testing_worker'а. Все через env (pydantic-settings).
 
-Трим относительно `testing_service/src/core/config.py`: воркер сейчас —
-broker + пустой task-registry (волна 1, каркас), поэтому ему не нужны
-поля вроде `database_url`/`auth_service_url`/`server_service_url` — тех у
-воркера просто нет потребителя. Появятся вместе с первыми задачами (волна 5
-плана миграции), когда worker начнёт реально ходить в server_service/auth_service.
+Волна 5 плана миграции превращает воркер из пустого broker-каркаса в
+реальный SSH-исполнитель: он поллит `testing_service` за готовыми
+заданиями и подключается к стендам напрямую, поэтому здесь появляются
+`testing_service_url`/`testing_service_internal_api_key` (канал
+`POST /internal/queue/claim` и `/completed`) и таймауты SSH-сессии.
 """
 
 from __future__ import annotations
@@ -42,6 +42,51 @@ class Settings(BaseSettings):
     )
 
     worker_log_level: str = Field(default="INFO", alias="WORKER_LOG_LEVEL")
+
+    testing_service_url: str | None = Field(
+        default=None,
+        alias="TESTING_SERVICE_URL",
+        description=(
+            "Базовый URL `testing_service` (например http://testing_service:8004). "
+            "Используется для POST /internal/queue/claim и /internal/queue/{id}/completed."
+        ),
+    )
+    testing_service_internal_api_key: str | None = Field(
+        default=None,
+        alias="TESTING_SERVICE_INTERNAL_API_KEY",
+        description=(
+            "Shared-secret для канала /internal/queue/*. Должен совпадать с "
+            "SERVICE_API_KEYS['testing_worker'] на стороне testing_service. "
+            "Отправляется как `Authorization: Bearer <ключ>` вместе с "
+            "`X-Service-Identity: testing_worker`."
+        ),
+    )
+
+    queue_poll_interval_seconds: float = Field(
+        default=3.0,
+        alias="QUEUE_POLL_INTERVAL_SECONDS",
+        description=(
+            "Пауза между вызовами claim, когда очередь пуста или сам claim "
+            "недоступен. Если claim только что вернул задание — следующий "
+            "вызов идёт сразу, без сна, чтобы не терять throughput под нагрузкой."
+        ),
+    )
+
+    ssh_connect_timeout_seconds: float = Field(
+        default=30.0,
+        alias="SSH_CONNECT_TIMEOUT_SECONDS",
+        description="Таймаут на TCP-коннект + SSH-handshake + аутентификацию до стенда.",
+    )
+    ssh_command_timeout_seconds: float = Field(
+        default=3600.0,
+        alias="SSH_COMMAND_TIMEOUT_SECONDS",
+        description=(
+            "Грубый общий cap на исполнение команды теста по SSH. Временная "
+            "защита от зависшего процесса на стенде — щедрый дефолт в час, "
+            "не продуманный per-test timeout (тот появится вместе с реальными "
+            "тестами и их конструктором, §8 плана миграции)."
+        ),
+    )
 
 
 @lru_cache

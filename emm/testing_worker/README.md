@@ -7,16 +7,23 @@ Taskiq + Redis воркер для `testing_service` — отдельный top-
 
 ## Статус
 
-Каркасная волна: broker + logging + пустой task-registry (`src/tasks/`),
-чтобы `taskiq worker` реально стартовал и держал соединение с Redis. Никакой
-бизнес-логики пока нет — первые задачи (свой SSH-worker, исполнение теста под
-кредами из `server_service`-`prepare-for-test`) появятся в волне 5 плана
-миграции (`emm/obsidian/ALLTA MIGRATION.md`, §5).
+Реальный SSH-исполнитель (волна 5 плана миграции, `emm/obsidian/ALLTA
+MIGRATION.md`, §5/§5.5). Работа идёт не через taskiq task-handler'ы —
+диспетчер один: очередь `testing_service`. На `WORKER_STARTUP` поднимается
+фоновый asyncio-loop (`src/services/queue_loop.py`), который в цикле:
+
+1. забирает готовое задание (`POST /internal/queue/claim`);
+2. подключается к стенду по SSH под тестовыми кредами и исполняет
+   резолвленную команду (`src/services/ssh_executor.py`, `asyncssh`);
+3. сообщает исход (`POST /internal/queue/{id}/completed`).
+
+`system.ping` остаётся как смоук-задача (не убран — не мешает, оставлен на
+случай если понадобится проверить, что broker вообще слушает очередь).
 
 В отличие от `server_worker`, у `testing_worker` пока **нет собственной БД** —
-задач в реестре ещё нет, писать/читать нечего. Своя PostgreSQL (`db/`,
-`models/`, `alembic.ini`) появится вместе с первыми durable-задачами, если
-понадобится outbox по образцу `server_worker`.
+своя PostgreSQL (`db/`, `models/`, `alembic.ini`) появится вместе с первыми
+durable-задачами, если понадобится outbox по образцу `server_worker`
+(кандидат — sweep зависших `running`-item'ов, см. отчёт волны).
 
 ## Stack
 
@@ -43,13 +50,19 @@ make run-testing-worker
 
 ```
 src/
-  main.py           # taskiq broker + logging setup + entrypoint (`taskiq worker src.main:broker`)
+  main.py           # broker + logging setup + WORKER_STARTUP/SHUTDOWN хуки polling-loop'а
   core/
     broker.py        # taskiq ListQueueBroker + Redis result backend
-    config.py         # Settings: REDIS_URL, TASKIQ_QUEUE_NAME, WORKER_LOG_LEVEL, APP_ENV
+    config.py         # Settings: REDIS_URL, TASKIQ_QUEUE_NAME, TESTING_SERVICE_URL/KEY, таймауты SSH, poll interval
+    constants.py       # SERVICE_NAME = "testing_worker" (X-Service-Identity)
+    http.py             # bearer_header() хелпер
     logging.py        # JSON-структурированное логирование (копия testing_service/src/core/logging.py)
+  services/
+    queue_loop.py      # run_polling_loop() — claim → execute → report_completed, без сна между item'ами
+    testing_client.py  # POST /internal/queue/claim, /internal/queue/{id}/completed
+    ssh_executor.py     # asyncssh-исполнение резолвленной команды (shlex.join, без shell=True)
   tasks/
-    __init__.py       # пустой пакет — задачи появятся в волне 5
+    __init__.py       # пустой пакет — задач-taskiq нет, диспетчер — очередь testing_service
 ```
 
 ## Конфигурация (env-vars)
@@ -60,6 +73,11 @@ src/
 | `REDIS_URL` | `redis://redis:6379/3` | Redis URL для taskiq-брокера, тот же db-index, что у `testing_service` |
 | `TASKIQ_QUEUE_NAME` | `testing_taskiq` | имя очереди taskiq (Redis-список) |
 | `WORKER_LOG_LEVEL` | `INFO` | python log level |
+| `TESTING_SERVICE_URL` | — | базовый URL `testing_service` (например `http://testing_service:8004`) |
+| `TESTING_SERVICE_INTERNAL_API_KEY` | — | shared-secret для `/internal/queue/*`, совпадает с `SERVICE_API_KEYS['testing_worker']` на `testing_service` |
+| `QUEUE_POLL_INTERVAL_SECONDS` | `3.0` | пауза между `claim`, когда очередь пуста/`testing_service` недоступен |
+| `SSH_CONNECT_TIMEOUT_SECONDS` | `30.0` | таймаут TCP-коннекта + SSH-handshake + аутентификации |
+| `SSH_COMMAND_TIMEOUT_SECONDS` | `3600.0` | грубый общий cap на исполнение команды теста |
 
 ## Тесты
 
@@ -67,7 +85,9 @@ src/
 make test        # из testing_worker/, через tests/docker-compose.test.yml
 ```
 
-Смоук-тест (`tests/test_broker.py`) проверяет структуру, а не поведение:
-broker импортируется, `system.ping` зарегистрирована на нём — без реального
-Redis-соединения (по аналогии с тем, как `testing_service/tests/test_health.py`
-проверяет собранность API-скелета).
+Полностью замоканы — без реального SSH-сервера и без `testing_service`:
+`test_broker.py` — структура broker'а; `test_testing_client.py` — claim/
+completed через `httpx.MockTransport`; `test_ssh_executor.py` — `asyncssh`
+подменяется на уровне модуля (успех/провал команды/провал коннекта/таймаут) +
+`shlex.join` roundtrip на инъекционно-опасных аргументах; `test_queue_loop.py`
+— один проход цикла (item есть/очередь пуста/неожиданная ошибка).

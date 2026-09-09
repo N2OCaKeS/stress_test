@@ -13,12 +13,21 @@
  * backend один раз на весь батч перед циклом (403 на весь запрос, если права
  * нет), per-server гейты (decommissioned/vms-hub/busy/prepared/bootstrap-
  * пароль) — в `failed[]`.
+ *
+ * Режим «Восстановить» — список версий ограничен пересечением: тянем
+ * `listAcsSnapshots` по каждому выбранному серверу и оставляем в дропдауне
+ * только те версии, снимок которых реально существует НА ВСЕХ них (иначе
+ * выбор версии, снимка которой на части серверов просто нет, гарантированно
+ * попадает в `failed[]` batch-ответа — лучше не давать выбрать такую версию
+ * вообще). Режим «Создать» этого ограничения не несёт — там версия просто
+ * подписывает новый снимок, существующих снимков не выбирает.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   Camera,
   CheckCircle2,
+  Loader2,
   RotateCcw,
   XCircle,
   X,
@@ -29,6 +38,7 @@ import { listOsVersions } from "@/api/server/osVersions";
 import { Dropdown } from "@/components/ui/Dropdown";
 import {
   createAcsSnapshotsBatch,
+  listAcsSnapshots,
   restoreAcsSnapshotsBatch,
 } from "@/api/server/acsSnapshots";
 import type {
@@ -99,6 +109,67 @@ export function BulkAcsSnapshotModal({
     for (const s of servers) m.set(s.id, s);
     return m;
   }, [servers]);
+
+  // Только для «Восстановить»: по каждому целевому серверу список version_name,
+  // снимок которых у него реально есть в ACS. `null` за сервер — не удалось
+  // проверить (сетевая ошибка/403) — тогда пересечение не строим и молча
+  // fail-open на полный каталог, чтобы не блокировать работу из-за одного
+  // недоступного сервера, но явно предупреждаем об этом в UI.
+  const targetServerIds = targetServers.map((s) => s.id).join(",");
+  const restoreCheckQ = useQuery<Map<string, Set<string> | null>>(
+    async () => {
+      const entries = await Promise.all(
+        targetServers.map(async (s) => {
+          try {
+            const res = await listAcsSnapshots(s.id);
+            return [s.id, new Set(res.snapshots.map((sn) => sn.version_name))] as const;
+          } catch {
+            return [s.id, null] as const;
+          }
+        }),
+      );
+      return new Map(entries);
+    },
+    [action, targetServerIds],
+    { enabled: action === "restore" && targetServers.length > 0 },
+  );
+
+  const restoreCheckFailed = useMemo(
+    () =>
+      action === "restore" &&
+      !!restoreCheckQ.data &&
+      [...restoreCheckQ.data.values()].some((v) => v === null),
+    [action, restoreCheckQ.data],
+  );
+
+  // Пересечение version_name по всем целевым серверам. `null` — рано считать
+  // (ещё грузится/не relevant для «Создать») либо часть проверок не удалась —
+  // в обоих случаях не сужаем каталог, показываем всё.
+  const commonSnapshotVersionNames = useMemo(() => {
+    if (action !== "restore" || restoreCheckFailed) return null;
+    const map = restoreCheckQ.data;
+    if (!map || map.size === 0) return null;
+    const sets = [...map.values()] as Set<string>[];
+    return sets.reduce((acc, s) => new Set([...acc].filter((v) => s.has(v))));
+  }, [action, restoreCheckFailed, restoreCheckQ.data]);
+
+  const eligibleVersions = useMemo(
+    () =>
+      commonSnapshotVersionNames === null
+        ? versions
+        : versions.filter((v) => commonSnapshotVersionNames.has(v.name)),
+    [versions, commonSnapshotVersionNames],
+  );
+
+  // Список серверов сузился/сменился режим — уже выбранная версия могла
+  // выпасть из допустимого набора, сбрасываем, чтобы не отправить заведомо
+  // частично-провальный batch.
+  useEffect(() => {
+    if (osVersionId && !eligibleVersions.some((v) => v.id === osVersionId)) {
+      setOsVersionId("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eligibleVersions]);
 
   const valid = !!osVersionId && targetServers.length > 0;
 
@@ -251,9 +322,24 @@ export function BulkAcsSnapshotModal({
                 )}
 
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-dim text-xs">Версия ОС *</span>
-                  {versionsQ.loading ? (
-                    <div className="text-xs text-dim">Загрузка каталога…</div>
+                  <span className="text-dim text-xs">
+                    {action === "restore"
+                      ? "Версия ОС * (снимок есть на всех выбранных)"
+                      : "Версия ОС *"}
+                  </span>
+                  {versionsQ.loading || (action === "restore" && restoreCheckQ.loading) ? (
+                    <div className="text-xs text-dim flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      {versionsQ.loading
+                        ? "Загрузка каталога…"
+                        : "Проверяем, какие снимки есть на всех выбранных серверах…"}
+                    </div>
+                  ) : action === "restore" && eligibleVersions.length === 0 ? (
+                    <div className="text-xs text-warn">
+                      Нет версии, снимок которой есть сразу на всех {targetServers.length}{" "}
+                      выбранных серверах — выберите меньше серверов или создайте
+                      недостающие снимки.
+                    </div>
                   ) : (
                     <Dropdown
                       mode="single"
@@ -261,11 +347,19 @@ export function BulkAcsSnapshotModal({
                       placeholder="— выберите версию —"
                       options={[
                         { value: "", label: "— выберите версию —" },
-                        ...versions.map((v) => ({ value: v.id, label: v.name })),
+                        ...eligibleVersions.map((v) => ({ value: v.id, label: v.name })),
                       ]}
                       value={osVersionId}
                       onChange={setOsVersionId}
                     />
+                  )}
+                  {action === "restore" && restoreCheckFailed && (
+                    <div className="text-xs text-warn flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      Не удалось проверить снимки на части серверов — показан
+                      полный каталог версий без ограничения, часть выбора может
+                      попасть в «пропущено» после запуска.
+                    </div>
                   )}
                 </label>
 

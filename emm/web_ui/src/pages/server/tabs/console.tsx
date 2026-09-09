@@ -36,6 +36,7 @@ import {
   Minimize2,
   Plug,
   PlugZap,
+  Radio,
   Terminal as TerminalIcon,
   TerminalSquare,
 } from "lucide-react";
@@ -47,6 +48,12 @@ import {
   vmConsoleWsUrl,
   type ConsoleCloseInfo,
 } from "@/api/server/console";
+import {
+  testLogStreamProtocols,
+  testLogStreamUrl,
+} from "@/api/testing/logStream";
+import { findActiveQueueItemForServer } from "@/api/testing/testStands";
+import type { QueueItemSummary } from "@/api/testing/types";
 import { useQuery } from "@/api/auth/useQuery";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -114,6 +121,11 @@ const CONSOLE_HEIGHT_KEY = "dbos-console-height";
 const CONSOLE_MIN_HEIGHT = 240;
 const CONSOLE_MAX_HEIGHT = 2000;
 
+// Как часто спрашиваем testing_service, не идёт ли сейчас на этом сервере
+// тест (§8.6 плана миграции) — обычный REST-polling, WS для самого
+// обнаружения не нужен, он появляется только когда кнопка уже нажата.
+const LIVE_LOG_POLL_INTERVAL_MS = 5000;
+
 export function ConsoleTab({ serverId = "", server, entity }: Props) {
   // Карточка ВМ рендерит ту же вкладку, но с селектором вида консоли сверху.
   // Диспетчер без хуков — ветка фиксируется на монтирование.
@@ -163,6 +175,34 @@ function ServerConsoleTab({ serverId = "", server }: Props) {
     [serverId],
   );
 
+  // Живой лог теста (§8.6 плана миграции): пока идёт исполнение теста на этом
+  // стенде, testing_service отдаёт активный queue_item — сигнал показать
+  // кнопку. Обычный REST-polling, независимый от интерактивной SSH-сессии
+  // ниже: обе панели могут быть открыты одновременно.
+  const [activeQueueItem, setActiveQueueItem] =
+    useState<QueueItemSummary | null>(null);
+  useEffect(() => {
+    if (!serverId) return;
+    let cancelled = false;
+    async function poll() {
+      try {
+        const item = await findActiveQueueItemForServer(serverId);
+        if (!cancelled) setActiveQueueItem(item);
+      } catch {
+        // Сервер может не быть заведён как тестовый стенд вовсе (404) или
+        // testing_service временно недоступен — в обоих случаях просто не
+        // показываем кнопку, это не ошибка страницы консоли.
+        if (!cancelled) setActiveQueueItem(null);
+      }
+    }
+    poll();
+    const timer = setInterval(poll, LIVE_LOG_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [serverId]);
+
   return (
     <div className="p-5 flex flex-col gap-4 w-full h-full min-h-0">
       <div>
@@ -178,6 +218,10 @@ function ServerConsoleTab({ serverId = "", server }: Props) {
           под выбранной сервисной учёткой.
         </div>
       </div>
+
+      {activeQueueItem && (
+        <LiveTestLogSection queueItemId={activeQueueItem.queue_item_id} />
+      )}
 
       <AccountConsolePanel
         target={target}
@@ -643,6 +687,196 @@ function ConsoleSession({
           ariaLabel="Изменить высоту консоли (двойной клик — сброс)"
         />
       )}
+    </div>
+  );
+}
+
+// ── живой лог теста (§8.6 плана миграции) ───────────────────────────────────
+
+/**
+ * Кнопка «Живой лог теста» + read-only терминал под ней. Полностью
+ * независим от интерактивной SSH-сессии выше: свой xterm, свой WebSocket,
+ * своё состояние — оператор может держать открытыми оба сразу, это два
+ * разных представления одного стенда, не конфликт.
+ */
+function LiveTestLogSection({ queueItemId }: { queueItemId: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Button
+        variant={open ? "primary" : "default"}
+        onClick={() => setOpen((v) => !v)}
+        className="self-start flex items-center gap-1"
+        title="Показать вывод исполняющегося сейчас на этом стенде теста в реальном времени"
+      >
+        <Radio className="w-4 h-4" />
+        {open ? "Скрыть живой лог теста" : "Живой лог теста"}
+      </Button>
+      {open && <LiveTestLogTerminal queueItemId={queueItemId} />}
+    </div>
+  );
+}
+
+/**
+ * Read-only терминал живого лога. Открывает `WS /queue-items/{id}/log/stream`
+ * сразу при монтировании — отдельной кнопки «подключить», в отличие от
+ * интерактивной консоли, здесь не нужно: панель уже открыта явным кликом.
+ * Ввод не принимается (`disableStdin`), автопереподключения при закрытии
+ * WS сервером (тест завершился/соединение упало) нет — сообщение об этом
+ * просто дописывается в сам терминал.
+ */
+function LiveTestLogTerminal({ queueItemId }: { queueItemId: string }) {
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  const [state, setState] = useState<ConnState>("idle");
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setFullscreen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    const term = new Terminal({
+      convertEol: true,
+      disableStdin: true,
+      cursorBlink: false,
+      scrollback: 10000,
+      fontFamily:
+        "'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace",
+      fontSize: 13,
+      theme: { background: "#1e1e1e" },
+    });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(mount);
+    try {
+      fit.fit();
+    } catch {
+      // контейнер ещё без размеров — fit'нём на первом ресайзе
+    }
+    termRef.current = term;
+
+    const onResize = () => {
+      try {
+        fit.fit();
+      } catch {
+        // терминал мог быть уже dispose'нут
+      }
+    };
+    window.addEventListener("resize", onResize);
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => onResize())
+        : null;
+    ro?.observe(mount);
+
+    setState("connecting");
+    term.writeln("Подключение к живому логу теста…");
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(testLogStreamUrl(queueItemId), testLogStreamProtocols());
+    } catch {
+      setState("closed");
+      term.writeln(
+        "\r\n\x1b[2m— Не удалось открыть WebSocket-соединение.\x1b[0m",
+      );
+      return () => {
+        window.removeEventListener("resize", onResize);
+        ro?.disconnect();
+        term.dispose();
+        termRef.current = null;
+      };
+    }
+    wsRef.current = ws;
+
+    ws.onopen = () => setState("open");
+
+    ws.onmessage = (ev) => {
+      if (typeof ev.data === "string") termRef.current?.write(ev.data);
+    };
+
+    ws.onclose = (ev) => {
+      if (wsRef.current === ws) wsRef.current = null;
+      setState("closed");
+      const t = termRef.current;
+      if (!t) return;
+      if (ev.reason === "TEST_FINISHED") {
+        t.writeln("\r\n\x1b[2m— Тест завершён.\x1b[0m");
+      } else if (ev.code === 1000) {
+        t.writeln("\r\n\x1b[2m— Соединение закрыто.\x1b[0m");
+      } else {
+        const tail = ev.reason ? `, ${ev.reason}` : "";
+        t.writeln(`\r\n\x1b[2m— Соединение закрыто (код ${ev.code}${tail}).\x1b[0m`);
+      }
+    };
+
+    ws.onerror = () => {
+      // Детали придут в onclose; здесь только не залипнуть в «connecting»,
+      // если соединение упало до open.
+      setState((s) => (s === "connecting" ? "closed" : s));
+    };
+
+    return () => {
+      window.removeEventListener("resize", onResize);
+      ro?.disconnect();
+      wsRef.current?.close(1000, "unmount");
+      wsRef.current = null;
+      term.dispose();
+      termRef.current = null;
+    };
+  }, [queueItemId]);
+
+  return (
+    <div
+      className={
+        fullscreen
+          ? "fixed inset-0 z-[1000] flex flex-col gap-3 p-4 surface"
+          : "flex flex-col gap-2"
+      }
+    >
+      <div className="flex items-center gap-3">
+        <StatusBadge state={state} />
+        <span className="text-xs text-dim">
+          Только чтение — вывод исполняющегося сейчас теста
+        </span>
+        <Button
+          variant="ghost"
+          className="ml-auto"
+          onClick={() => setFullscreen((v) => !v)}
+          title={fullscreen ? "Свернуть (Esc)" : "Развернуть на весь экран"}
+        >
+          {fullscreen ? (
+            <Minimize2 className="w-4 h-4" />
+          ) : (
+            <Maximize2 className="w-4 h-4" />
+          )}
+        </Button>
+      </div>
+      <div
+        ref={wrapRef}
+        className={`border border-token rounded overflow-hidden ${
+          fullscreen ? "flex-1 min-h-0" : ""
+        }`}
+        style={{
+          height: fullscreen ? undefined : 320,
+          background: "#1e1e1e",
+          padding: 8,
+        }}
+      >
+        <div ref={mountRef} style={{ height: "100%", width: "100%" }} />
+      </div>
     </div>
   );
 }

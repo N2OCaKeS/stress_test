@@ -71,12 +71,14 @@ function Harness({
 }
 
 // Dropdown-триггер живёт в той же метке, что и HelpTooltip-кнопка справки —
-// у последней всегда есть aria-label, у триггера Dropdown его нет.
+// у обоих есть aria-label (Dropdown — с собственным именем по значению,
+// HelpTooltip — по тексту подсказки), различаем по `aria-haspopup="listbox"`,
+// которым помечен только триггер Dropdown.
 function dropdownTrigger(labelText: string) {
   const label = screen.getByText(labelText).closest("label")!;
   return within(label)
     .getAllByRole("button")
-    .find((btn) => !btn.hasAttribute("aria-label"))!;
+    .find((btn) => btn.getAttribute("aria-haspopup") === "listbox")!;
 }
 
 function serviceTrigger() {

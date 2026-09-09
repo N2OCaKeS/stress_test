@@ -142,10 +142,10 @@ function renderConsole() {
 }
 
 async function connect() {
-  // Кнопка-триггер дропдауна обёрнута в <label> — доступное имя берётся
-  // из подписи поля, а не из текста на самой кнопке.
+  // Кнопка-триггер дропдауна обёрнута в <label>, но собственный aria-label
+  // кнопки (плейсхолдер/значение) приоритетнее native-label ассоциации.
   const trigger = await screen.findByRole("button", {
-    name: /Аккаунт для подключения/i,
+    name: "— выберите учётку —",
   });
   fireEvent.click(trigger);
   const option = await screen.findByRole("option", { name: /dbos-svc/ });

@@ -15,6 +15,16 @@
  * в `document.body`, то есть формально «снаружи» модалки — без этого маркера
  * клик по опции внутри модалки не выбирал бы значение, а просто закрывал
  * (или ломал) модалку раньше, чем успевал сработать `onClick` опции.
+ *
+ * `aria-label` на кнопке-триггере — обязателен, не косметика: по всему
+ * проекту `Dropdown` почти всегда оборачивают в `<label><span>подпись</span>
+ * <Dropdown/></label>`. `<label>` — native host language text alternative
+ * для «labelable»-элементов (кнопка входит в их число), и per accname spec
+ * это ПРИОРИТЕТНЕЕ, чем «name from content» — без явного `aria-label` на
+ * кнопке скринридер озвучивал бы только текст подписи поля («Версия ОС»),
+ * а не реально выбранное значение, независимо от того, что показано визуально.
+ * `aria-label`/`aria-labelledby` стоят в accname-алгоритме выше native-label
+ * ассоциации, поэтому перебивают её и возвращают кнопке её собственное имя.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -167,6 +177,7 @@ export function Dropdown(props: DropdownProps) {
         disabled={disabled}
         aria-expanded={open}
         aria-haspopup="listbox"
+        aria-label={label ? `${label}: ${triggerText}` : triggerText}
         className={`btn btn-sm inline-flex items-center gap-1.5 ${hasValue ? "btn-primary" : ""}`}
         onClick={() => setOpen((v) => !v)}
       >

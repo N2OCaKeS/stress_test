@@ -161,10 +161,10 @@ describe("ManageTab — обновление ОС Astra", () => {
     ).toBeInTheDocument();
 
     // Дропдаун подтянул версию из каталога. Кнопка-триггер обёрнута в
-    // <label>, поэтому её доступное имя — текст подписи поля, а не
-    // текущее значение на кнопке.
+    // <label>, но собственный aria-label кнопки (плейсхолдер/значение)
+    // приоритетнее native-label ассоциации.
     const trigger = await screen.findByRole("button", {
-      name: /Целевая версия ОС/i,
+      name: "— выберите версию —",
     });
     fireEvent.click(trigger);
     const option = await screen.findByRole("option", {

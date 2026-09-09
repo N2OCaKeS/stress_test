@@ -173,3 +173,112 @@ async def test_bootstrap_worker_bot_idempotent(db, monkeypatch):
     tokens = await BotTokenRepository(db).list_for_bot(bot.id)
     assert len(tokens) == 1
     assert tokens[0].token_hash == hash_opaque_token(token)
+
+
+# ── testing_service-бот ──────────────────────────────────────────────────────
+
+
+async def test_bootstrap_testing_service_bot_grants_server_and_secret_service(
+    db, monkeypatch
+):
+    """Бот заведён с ролью guest на server_service И secret_service."""
+    from src.core import config as config_mod
+    from src.core.constants import (
+        TESTING_SERVICE_BOT_NAME,
+        TESTING_SERVICE_BOT_ROLE,
+        TESTING_SERVICE_BOT_SECRET_SERVICE,
+        TESTING_SERVICE_BOT_SERVICE,
+    )
+    from src.repositories.bot_roles import BotRoleRepository
+    from src.repositories.bots import BotRepository
+    from src.services import authorization_service
+
+    _silence_audit(monkeypatch)
+    token = "dbos_bot_" + "c" * 43
+    monkeypatch.setenv("TESTING_SERVICE_BOT_TOKEN", token)
+    config_mod.get_settings.cache_clear()
+
+    await bootstrap_service.bootstrap_platform_services(db)
+    await bootstrap_service.bootstrap_testing_service_bot(db)
+
+    bot = await BotRepository(db).first_by_name(TESTING_SERVICE_BOT_NAME)
+    assert bot is not None
+    assert set(bot.allowed_services) == {
+        TESTING_SERVICE_BOT_SERVICE,
+        TESTING_SERVICE_BOT_SECRET_SERVICE,
+    }
+
+    role_repo = BotRoleRepository(db)
+    assert TESTING_SERVICE_BOT_ROLE in await role_repo.get_roles_by_service(
+        bot.id, TESTING_SERVICE_BOT_SERVICE
+    )
+    assert TESTING_SERVICE_BOT_ROLE in await role_repo.get_roles_by_service(
+        bot.id, TESTING_SERVICE_BOT_SECRET_SERVICE
+    )
+
+    res = await authorization_service.introspect(db, token)
+    assert res.active is True
+    assert res.service_roles.get(TESTING_SERVICE_BOT_SECRET_SERVICE) == [
+        TESTING_SERVICE_BOT_ROLE
+    ]
+
+
+async def test_bootstrap_testing_service_bot_backfills_secret_grant_on_preexisting_bot(
+    db, monkeypatch
+):
+    """Бот, заведённый прежней версией бутстрапа (только server_service),
+    догоняет secret_service-грант без пересоздания токена."""
+    from src.core import config as config_mod
+    from src.core.constants import (
+        SYSTEM_DEPARTMENT_NAME,
+        TESTING_SERVICE_BOT_NAME,
+        TESTING_SERVICE_BOT_ROLE,
+        TESTING_SERVICE_BOT_SECRET_SERVICE,
+        TESTING_SERVICE_BOT_SERVICE,
+    )
+    from src.core.security import hash_opaque_token
+    from src.repositories.bot_roles import BotRoleRepository
+    from src.repositories.bot_tokens import BotTokenRepository
+    from src.repositories.bots import BotRepository
+    from src.repositories.departments import DepartmentRepository
+
+    emitted = _silence_audit(monkeypatch)
+    token = "dbos_bot_" + "d" * 43
+    monkeypatch.setenv("TESTING_SERVICE_BOT_TOKEN", token)
+    config_mod.get_settings.cache_clear()
+
+    await bootstrap_service.bootstrap_platform_services(db)
+
+    dept_repo = DepartmentRepository(db)
+    dept = await dept_repo.create(SYSTEM_DEPARTMENT_NAME)
+    await dept_repo.grant_access(
+        dept.id, TESTING_SERVICE_BOT_SERVICE, granted_by="bootstrap"
+    )
+    bot = await BotRepository(db).create(
+        name=TESTING_SERVICE_BOT_NAME,
+        department_id=dept.id,
+        allowed_services=[TESTING_SERVICE_BOT_SERVICE],
+        description="legacy bootstrap",
+        created_by="bootstrap",
+    )
+    await BotTokenRepository(db).create(
+        bot_id=bot.id,
+        name="bootstrap",
+        token_hash=hash_opaque_token(token),
+        token_prefix=token[:8],
+        expires_at=None,
+    )
+    await db.commit()
+
+    emitted.clear()
+    await bootstrap_service.bootstrap_testing_service_bot(db)
+
+    refreshed = await BotRepository(db).first_by_name(TESTING_SERVICE_BOT_NAME)
+    assert TESTING_SERVICE_BOT_SECRET_SERVICE in refreshed.allowed_services
+    assert TESTING_SERVICE_BOT_ROLE in await BotRoleRepository(db).get_roles_by_service(
+        refreshed.id, TESTING_SERVICE_BOT_SECRET_SERVICE
+    )
+    tokens = await BotTokenRepository(db).list_for_bot(refreshed.id)
+    assert len(tokens) == 1, "не должен пересоздать токен"
+    assert any(action == "bot.roles_assign" for (action, _) in emitted)
+    assert not any(action == "bot.create" for (action, _) in emitted)

@@ -25,6 +25,7 @@ from src.core.constants import (
     SYSTEM_DEPARTMENT_NAME,
     TESTING_SERVICE_BOT_NAME,
     TESTING_SERVICE_BOT_ROLE,
+    TESTING_SERVICE_BOT_SECRET_SERVICE,
     TESTING_SERVICE_BOT_SERVICE,
     TOKEN_PREFIX_LEN,
     WORKER_BOT_NAME,
@@ -302,18 +303,42 @@ async def bootstrap_worker_bot(db: AsyncSession) -> None:
     )
 
 
+# Гранты бота testing_service: (сервис, роль). Оба — системный `guest`,
+# заводится автоматически ниже (не через `department_service`, мы работаем
+# в обход него — как и `bootstrap_worker_bot`).
+_TESTING_SERVICE_BOT_GRANTS: tuple[tuple[str, str], ...] = (
+    (TESTING_SERVICE_BOT_SERVICE, TESTING_SERVICE_BOT_ROLE),
+    (TESTING_SERVICE_BOT_SECRET_SERVICE, TESTING_SERVICE_BOT_ROLE),
+)
+
+
 async def bootstrap_testing_service_bot(db: AsyncSession) -> None:
     """Завести бота `testing_service` из `TESTING_SERVICE_BOT_TOKEN` (если задан).
 
     Тот же принцип, что `bootstrap_worker_bot`, но роль — системный `guest`,
-    не custom: боту нужен только обычный аутентифицированный доступ к
-    read-каталогам `server_service` (`GET /os-versions` и подобные — открыты
-    любому аутентифицированному актору, отдельного internal-канала для этого
-    у server_service нет), никаких internal-эндпоинтов он не дёргает.
+    не custom, на двух сервисах:
 
-    Идемпотентно и safe к гонке реплик — тот же паттерн (проверка по хэшу
-    токена + откат всей транзакции на IntegrityError). Пустой
-    `TESTING_SERVICE_BOT_TOKEN` — шаг пропускается (dev/test без testing_service).
+    * `guest@server_service` — обычный аутентифицированный доступ к
+      read-каталогам (`GET /os-versions` и подобные — открыты любому
+      аутентифицированному актору, отдельного internal-канала для этого у
+      server_service нет);
+    * `guest@secret_service` — identity-роль под будущий
+      `POST /credentials/{id}/reveal` резолв department_integration_settings-
+      кред (Jira/Zephyr/Confluence). Каждая такая креда принадлежит СВОЕМУ
+      отделу, не системному, а бот — системному; сам механизм, которым
+      secret_service разрешит эту межведомственную видимость, на момент
+      этой волны ещё не спроектирован (см. константу выше) — сеем роль
+      заранее, доступ появится, когда механизм будет готов.
+
+    Идемпотентно и safe к гонке реплик (откат всей транзакции на
+    IntegrityError). Важно: идемпотентность проверяется НЕ только по хэшу
+    токена — тот же токен мог быть выпущен ДО того, как этот бутстрап начал
+    просить secret_service, и тогда ранний return по хэшу токена навсегда
+    оставил бы прод-бота без второго гранта. Поэтому гранты (dept access +
+    role_def + allowed_services + bot_service_role) перепроверяются на
+    каждом старте независимо от того, существует ли уже токен; создаётся
+    заново только то, чего не хватает. Пустой `TESTING_SERVICE_BOT_TOKEN` —
+    шаг пропускается целиком (dev/test без testing_service).
     """
     settings = get_settings()
     token = (settings.testing_service_bot_token or "").strip()
@@ -333,107 +358,148 @@ async def bootstrap_testing_service_bot(db: AsyncSession) -> None:
     token_hash = hash_opaque_token(token)
 
     bot_token_repo = BotTokenRepository(db)
-    if await bot_token_repo.get_active_by_hash(token_hash) is not None:
-        return
+    token_exists = await bot_token_repo.get_active_by_hash(token_hash) is not None
 
     dept_repo = DepartmentRepository(db)
     role_def_repo = ServiceRoleDefinitionRepository(db)
     bot_repo = BotRepository(db)
     bot_role_repo = BotRoleRepository(db)
 
+    bot_created = False
+    newly_granted: list[str] = []
+
     try:
         dept = await dept_repo.get_by_name(SYSTEM_DEPARTMENT_NAME)
         if dept is None:
             dept = await dept_repo.create(SYSTEM_DEPARTMENT_NAME)
-
-        access = await dept_repo.get_access(dept.id, TESTING_SERVICE_BOT_SERVICE)
-        if access is None:
-            await dept_repo.grant_access(
-                dept.id, TESTING_SERVICE_BOT_SERVICE, granted_by="bootstrap",
-            )
-        elif not access.is_active:
-            access.is_active = True
-            access.revoked_at = None
-            access.revoked_by = None
-            await db.flush()
-
-        # Системный `guest` — как и все системные роли, не сеется
-        # автоматически на прямом вызове `grant_access` (это делает
-        # вышестоящий `department_service`, здесь мы работаем в обход него,
-        # как и `bootstrap_worker_bot` выше) — заводим явно, если ещё нет.
-        role_def = await role_def_repo.get(
-            dept.id, TESTING_SERVICE_BOT_SERVICE, TESTING_SERVICE_BOT_ROLE,
-        )
-        if role_def is None:
-            await role_def_repo.create(
-                department_id=dept.id,
-                service_name=TESTING_SERVICE_BOT_SERVICE,
-                role_name=TESTING_SERVICE_BOT_ROLE,
-                description="System guest role (bootstrap seed)",
-                created_by="bootstrap",
-                is_system=True,
-            )
 
         bot = await bot_repo.first_by_name(TESTING_SERVICE_BOT_NAME)
         if bot is None:
             bot = await bot_repo.create(
                 name=TESTING_SERVICE_BOT_NAME,
                 department_id=dept.id,
-                allowed_services=[TESTING_SERVICE_BOT_SERVICE],
-                description="Bootstrap: бот для testing_service (choices_source dynamic-резолверы)",
+                allowed_services=[svc for svc, _ in _TESTING_SERVICE_BOT_GRANTS],
+                description="Bootstrap: бот для testing_service (choices_source dynamic-резолверы + secret reveal)",
                 created_by="bootstrap",
             )
+            bot_created = True
 
-        if TESTING_SERVICE_BOT_ROLE not in await bot_role_repo.get_roles_by_service(
-            bot.id, TESTING_SERVICE_BOT_SERVICE
-        ):
-            db.add(
-                BotServiceRole(
-                    id=bot_service_role_id(),
-                    bot_id=bot.id,
-                    service_name=TESTING_SERVICE_BOT_SERVICE,
-                    role=TESTING_SERVICE_BOT_ROLE,
-                    assigned_by="bootstrap",
+        for service_name, role_name in _TESTING_SERVICE_BOT_GRANTS:
+            access = await dept_repo.get_access(dept.id, service_name)
+            if access is None:
+                await dept_repo.grant_access(dept.id, service_name, granted_by="bootstrap")
+            elif not access.is_active:
+                access.is_active = True
+                access.revoked_at = None
+                access.revoked_by = None
+                await db.flush()
+
+            role_def = await role_def_repo.get(dept.id, service_name, role_name)
+            if role_def is None:
+                await role_def_repo.create(
+                    department_id=dept.id,
+                    service_name=service_name,
+                    role_name=role_name,
+                    description="System guest role (bootstrap seed)",
+                    created_by="bootstrap",
+                    is_system=True,
                 )
-            )
-            await db.flush()
 
-        await bot_token_repo.create(
-            bot_id=bot.id,
-            name="bootstrap",
-            token_hash=token_hash,
-            token_prefix=token[:TOKEN_PREFIX_LEN],
-            expires_at=None,
-        )
+            if service_name not in bot.allowed_services:
+                bot.allowed_services = [*bot.allowed_services, service_name]
+                await db.flush()
+
+            if role_name not in await bot_role_repo.get_roles_by_service(
+                bot.id, service_name
+            ):
+                db.add(
+                    BotServiceRole(
+                        id=bot_service_role_id(),
+                        bot_id=bot.id,
+                        service_name=service_name,
+                        role=role_name,
+                        assigned_by="bootstrap",
+                    )
+                )
+                await db.flush()
+                if not bot_created:
+                    newly_granted.append(f"{role_name}@{service_name}")
+
+        if not token_exists:
+            await bot_token_repo.create(
+                bot_id=bot.id,
+                name="bootstrap",
+                token_hash=token_hash,
+                token_prefix=token[:TOKEN_PREFIX_LEN],
+                expires_at=None,
+            )
         await db.commit()
     except IntegrityError:
         await db.rollback()
         return
 
-    logger.warning(
-        "Bootstrap: provisioned testing_service bot '%s' (dept '%s', role %s@%s) "
-        "from TESTING_SERVICE_BOT_TOKEN",
-        TESTING_SERVICE_BOT_NAME,
-        SYSTEM_DEPARTMENT_NAME,
-        TESTING_SERVICE_BOT_ROLE,
-        TESTING_SERVICE_BOT_SERVICE,
-    )
-    audit_service.emit(
-        "bot.create",
-        actor_id="bootstrap",
-        actor_type="service",
-        target_id=bot.id,
-        target_type="bot",
-        status="success",
-        allowed=True,
-        details={
-            "reason": "bootstrap_seed",
-            "name": TESTING_SERVICE_BOT_NAME,
-            "department_id": bot.department_id,
-            "allowed_services": [TESTING_SERVICE_BOT_SERVICE],
-            "role": f"{TESTING_SERVICE_BOT_ROLE}@{TESTING_SERVICE_BOT_SERVICE}",
-        },
-    )
+    if bot_created:
+        logger.warning(
+            "Bootstrap: provisioned testing_service bot '%s' (dept '%s', roles %s) "
+            "from TESTING_SERVICE_BOT_TOKEN",
+            TESTING_SERVICE_BOT_NAME,
+            SYSTEM_DEPARTMENT_NAME,
+            ", ".join(f"{r}@{s}" for s, r in _TESTING_SERVICE_BOT_GRANTS),
+        )
+        audit_service.emit(
+            "bot.create",
+            actor_id="bootstrap",
+            actor_type="service",
+            target_id=bot.id,
+            target_type="bot",
+            status="success",
+            allowed=True,
+            details={
+                "reason": "bootstrap_seed",
+                "name": TESTING_SERVICE_BOT_NAME,
+                "department_id": bot.department_id,
+                "allowed_services": list(bot.allowed_services),
+                "roles": [f"{r}@{s}" for s, r in _TESTING_SERVICE_BOT_GRANTS],
+            },
+        )
+        audit_service.emit(
+            "bot.token_create",
+            actor_id="bootstrap",
+            actor_type="service",
+            target_id=bot.id,
+            target_type="bot",
+            status="success",
+            allowed=True,
+            details={
+                "reason": "bootstrap_seed",
+                "bot_id": bot.id,
+                "bot_name": TESTING_SERVICE_BOT_NAME,
+                "token_name": "bootstrap",
+                "token_prefix": token[:TOKEN_PREFIX_LEN],
+            },
+        )
+    elif newly_granted:
+        # Уже существующий бот (заведён прошлой версией бутстрапа) —
+        # догнали недостающий грант без пересоздания токена/бота.
+        logger.warning(
+            "Bootstrap: extended testing_service bot '%s' with roles %s",
+            TESTING_SERVICE_BOT_NAME,
+            ", ".join(newly_granted),
+        )
+        audit_service.emit(
+            "bot.roles_assign",
+            actor_id="bootstrap",
+            actor_type="service",
+            target_id=bot.id,
+            target_type="bot",
+            status="success",
+            allowed=True,
+            details={
+                "reason": "bootstrap_seed_extended",
+                "bot_name": TESTING_SERVICE_BOT_NAME,
+                "roles_added": newly_granted,
+            },
+        )
     audit_service.emit(
         "bot.token_create",
         actor_id="bootstrap",

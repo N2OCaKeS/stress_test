@@ -150,6 +150,22 @@ WORKER_BOT_ROLE = "worker_bot"
 # специальной роли не требует, поэтому системного `guest@server_service`
 # достаточно (не заводим отдельную custom-роль, как у worker_bot — там нужен
 # был доступ к internal-эндпоинтам, здесь только обычное чтение каталога).
+#
+# Второй грант — `guest@secret_service`: даёт боту identity-роль в
+# secret_service, нужную для будущего `POST /credentials/{id}/reveal`
+# резолва department_integration_settings-кред (Jira/Zephyr/Confluence),
+# каждая из которых принадлежит СВОЕМУ отделу (owner_dept_id = department_id
+# отдела, который её завёл), не системному. Бот живёт в системном отделе —
+# межведомственный механизм, которым secret_service разрешит ЧУЖОМУ отделу
+# (системному) читать такую креду, на момент этой волны ЕЩЁ НЕ
+# СПРОЕКТИРОВАН (кандидат — существующий `cross_department`/`DeptGrant`,
+# но форма не зафиксирована владельцем); это отдельная будущая задача на
+# secret_service. Роль `guest` сама по себе даёт в тип-wide матрице
+# только `read` (метаданные); `reveal` открывается именно per-credential
+# `RoleACL`. Заводить боту более широкую роль (`admin`) было бы избыточной
+# привилегией — он не должен видеть чужие department секреты за пределами
+# явно выданных грантов.
 TESTING_SERVICE_BOT_NAME = "testing_service"
 TESTING_SERVICE_BOT_SERVICE = "server_service"
 TESTING_SERVICE_BOT_ROLE = "guest"
+TESTING_SERVICE_BOT_SECRET_SERVICE = "secret_service"

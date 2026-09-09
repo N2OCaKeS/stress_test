@@ -84,11 +84,23 @@ describe("ServicesAcsSettings", () => {
     updateAcsSettingsMock.mockResolvedValue(makeSettings());
     renderPage();
 
-    const urlInput = await screen.findByPlaceholderText("https://acs.example.ru/");
+    const urlInput = (await screen.findByPlaceholderText(
+      "https://acs.example.ru/",
+    )) as HTMLInputElement;
     fireEvent.change(urlInput, {
       target: { value: "https://acs.example.ru/" },
     });
-    fireEvent.click(screen.getByLabelText("Снимки ACS включены"));
+    // Ждём, пока React реально осядет с новым значением, прежде чем кликать
+    // дальше — под нагрузкой полного сьюта несколько synchronous fireEvent
+    // подряд без точки синхронизации иногда обгоняли commit предыдущего
+    // изменения, и `handleSave` читал устаревший (пустой) `acsUrl`.
+    await waitFor(() => expect(urlInput.value).toBe("https://acs.example.ru/"));
+
+    const enabledCheckbox = screen.getByLabelText(
+      "Снимки ACS включены",
+    ) as HTMLInputElement;
+    fireEvent.click(enabledCheckbox);
+    await waitFor(() => expect(enabledCheckbox.checked).toBe(true));
 
     const saveButtons = screen.getAllByRole("button", { name: /Сохранить/ });
     fireEvent.click(saveButtons[0]);
@@ -113,8 +125,17 @@ describe("ServicesAcsSettings", () => {
       "input[type=checkbox]",
     ) as HTMLInputElement;
     fireEvent.click(betaCheckbox);
+    await waitFor(() => expect(betaCheckbox.checked).toBe(true));
 
-    const saveButtons = screen.getAllByRole("button", { name: /Сохранить/ });
+    // Настройки (cfgQ) и таблица отделов (deptsQ/accessQ) — независимые
+    // запросы; "Beta" появляется, как только загрузилась таблица, но кнопка
+    // «Сохранить» настроек рендерится отдельно от своего запроса — ждём,
+    // пока обе появятся, прежде чем полагаться на индекс [1].
+    const saveButtons = await waitFor(() => {
+      const buttons = screen.getAllByRole("button", { name: /Сохранить/ });
+      expect(buttons.length).toBe(2);
+      return buttons;
+    });
     fireEvent.click(saveButtons[1]);
 
     await waitFor(() =>

@@ -462,6 +462,10 @@ services:
       AUTH_SERVICE_URL: http://auth_service:8000
       LOGGING_SERVICE_URL: http://logging_service:8001
       SERVER_SERVICE_URL: http://server_service:8002
+      # Бот testing_service (роль guest@server_service, заводит его сам
+      # auth_service на старте из того же TESTING_SERVICE_BOT_TOKEN) — нужен
+      # choices_source dynamic-резолверам (`dynamic:os_versions`/`kernels`).
+      SERVER_SERVICE_API_KEY: ${TESTING_SERVICE_BOT_TOKEN}
       DATABASE_URL: postgresql+psycopg://${TESTING_DB_USER}:${TESTING_DB_PASSWORD}@testing-postgres:5432/testing_db
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/3
       SERVICE_API_KEY: ${SERVICE_API_KEY}

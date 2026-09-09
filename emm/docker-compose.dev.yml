@@ -129,6 +129,10 @@ services:
       # этого значения. Должен совпадать байт-в-байт с WORKER_BOT_TOKEN у
       # server_worker ниже — тот же путь, что и в prod (bootstrap из env).
       WORKER_BOT_TOKEN: dbos_bot_dev_worker_local_token_do_not_use_in_prod
+      # Тот же принцип для бота testing_service (choices_source dynamic-
+      # резолверы читают каталог server_service) — должен совпадать байт-в-байт
+      # с SERVER_SERVICE_API_KEY у testing_service ниже.
+      TESTING_SERVICE_BOT_TOKEN: dbos_bot_dev_testing_service_local_token_do_not_use_in_prod
       APP_LOG_LEVEL: INFO
     command: >
       sh -c "python -m alembic upgrade head &&
@@ -402,6 +406,13 @@ services:
       LOGGING_SERVICE_URL: http://loging_service:8001
       LOGGING_SERVICE_API_KEY: audit_testing_service_dev_key
       SERVICE_API_KEY: dev-introspect-api-key
+      SERVER_SERVICE_URL: http://server_service:8002
+      # Резолверы choices_source читают каталог OS-версий у server_service, а
+      # тот гейтит его introspect'ом — сюда нужен валидный для auth_service
+      # bearer (бот testing_service, роль guest@server_service). Должен
+      # совпадать байт-в-байт с TESTING_SERVICE_BOT_TOKEN у auth_service выше
+      # (тот его засеял в БД на старте — `bootstrap_testing_service_bot`).
+      SERVER_SERVICE_API_KEY: dbos_bot_dev_testing_service_local_token_do_not_use_in_prod
       # Отдельный db-index на общем redis-контейнере: /0 — server_worker
       # broker, /1 — auth_service rate-limit (prod), /2 — secret_service
       # rate-limit, /3 — testing_service.

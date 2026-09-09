@@ -103,6 +103,10 @@ TESTING_INTROSPECT_SERVICE_API_KEY="$(rand "$RAND_S2S_KEY_LEN")"
 TESTING_INBOUND_AUTH_KEY="$(rand "$RAND_S2S_KEY_LEN")"
 TESTING_INBOUND_SERVER_KEY="$(rand "$RAND_S2S_KEY_LEN")"
 TESTING_INBOUND_SERVICE_API_KEYS="{\"auth_service\":\"${TESTING_INBOUND_AUTH_KEY}\",\"server_service\":\"${TESTING_INBOUND_SERVER_KEY}\"}"
+# Бот testing_service (auth_service заводит его на старте, роль
+# guest@server_service) — нужен choices_source dynamic-резолверам, чтобы
+# читать каталог OS-версий у server_service (introspect-based, не whitelist).
+TESTING_SERVICE_BOT_TOKEN="dbos_bot_$(rand "$RAND_S2S_KEY_LEN")"
 
 # ── inbound JSON map'ы ────────────────────────────────────────────────────────
 LOGGING_SERVICE_API_KEYS_JSON="{\"auth_service\":\"${LOGGING_SERVICE_API_KEY_AUTH}\",\"server_service\":\"${LOGGING_SERVICE_API_KEY_SERVER}\",\"config_service\":\"${LOGGING_SERVICE_API_KEY_CONFIG}\",\"server_worker\":\"${LOGGING_SERVICE_API_KEY_WORKER}\",\"secret_service\":\"${LOGGING_SERVICE_API_KEY_SECRET}\",\"testing_service\":\"${LOGGING_SERVICE_API_KEY_TESTING}\"}"
@@ -217,6 +221,7 @@ SECRET_INTERNAL_API_KEY=${SECRET_INTERNAL_API_KEY}
 # ── testing_service ───────────────────────────────────────────────────────────
 TESTING_INTROSPECT_SERVICE_API_KEY=${TESTING_INTROSPECT_SERVICE_API_KEY}
 TESTING_INBOUND_SERVICE_API_KEYS='${TESTING_INBOUND_SERVICE_API_KEYS}'
+TESTING_SERVICE_BOT_TOKEN=${TESTING_SERVICE_BOT_TOKEN}
 
 # ── Общие s2s ─────────────────────────────────────────────────────────────────
 SERVICE_API_KEY=${SERVICE_API_KEY}

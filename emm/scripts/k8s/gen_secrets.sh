@@ -497,6 +497,10 @@ TESTING_INTROSPECT_SERVICE_API_KEY=$(rand "$RAND_INTROSPECT_KEY_LEN")
 TESTING_INBOUND_AUTH_KEY=$(rand "$RAND_S2S_KEY_LEN")
 TESTING_INBOUND_SERVER_KEY=$(rand "$RAND_S2S_KEY_LEN")
 TESTING_INBOUND_SERVICE_API_KEYS_JSON="{\"auth_service\":\"${TESTING_INBOUND_AUTH_KEY}\",\"server_service\":\"${TESTING_INBOUND_SERVER_KEY}\"}"
+# Бот testing_service (auth_service заводит его на старте, роль
+# guest@server_service) — нужен choices_source dynamic-резолверам, чтобы
+# читать каталог OS-версий у server_service (introspect-based, не whitelist).
+TESTING_SERVICE_BOT_TOKEN="${TESTING_SERVICE_BOT_TOKEN:-dbos_bot_$(rand "$RAND_S2S_KEY_LEN")}"
 
 # Redis
 REDIS_PASSWORD=$(rand "$RAND_REDIS_PASS_LEN")
@@ -636,6 +640,13 @@ cat <<EOF
   # server_service → testing_service, §5.1 плана миграции)
   TESTING_INTROSPECT_SERVICE_API_KEY: ${TESTING_INTROSPECT_SERVICE_API_KEY}
   TESTING_INBOUND_SERVICE_API_KEYS: '${TESTING_INBOUND_SERVICE_API_KEYS_JSON}'
+  # Бот testing_service (auth_service заводит на старте, роль
+  # guest@server_service) — choices_source dynamic-резолверам нужен доступ к
+  # каталогу OS-версий server_service. Тот же секрет монтируется и в
+  # auth_service (TESTING_SERVICE_BOT_TOKEN, bootstrap), и в testing_service
+  # (SERVER_SERVICE_API_KEY, исходящий bearer) — см. 40-auth-service.yaml /
+  # 63-testing-service.yaml.
+  TESTING_SERVICE_BOT_TOKEN: ${TESTING_SERVICE_BOT_TOKEN}
 
   # CronJob rotation-scheduler → server/secret /internal/migration_status
   # (Bearer == ключ rotation_runner в inbound-map'ах server и secret сервисов).

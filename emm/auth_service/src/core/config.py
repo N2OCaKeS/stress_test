@@ -575,6 +575,19 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Токен бота testing_service — нужен для choices_source dynamic-резолверов
+    # (`dynamic:os_versions`/`dynamic:kernels`), которые читают каталог у
+    # server_service. Тот же принцип, что WORKER_BOT_TOKEN, роль — guest.
+    testing_service_bot_token: str = Field(
+        default="",
+        alias="TESTING_SERVICE_BOT_TOKEN",
+        description=(
+            "Готовый bot-токен testing_service (`dbos_bot_…`). Auth_service на "
+            "старте идемпотентно заводит под него бота testing_service с ролью "
+            "guest@server_service. Пустой — шаг пропускается."
+        ),
+    )
+
     # ── Production-валидатор ─────────────────────────────────────────────────
     #
     # Запускается только при `APP_ENV=production`. Цель — не дать сервису

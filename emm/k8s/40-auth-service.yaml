@@ -147,6 +147,12 @@ spec:
             - name: WORKER_BOT_TOKEN
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: WORKER_BOT_TOKEN }
+            # Тот же принцип для бота testing_service (роль guest@server_service),
+            # нужен choices_source dynamic-резолверам. Тот же токен монтируется
+            # в testing_service как SERVER_SERVICE_API_KEY.
+            - name: TESTING_SERVICE_BOT_TOKEN
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: TESTING_SERVICE_BOT_TOKEN }
             - name: SECRET_INTERNAL_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SECRET_INTERNAL_API_KEY }

@@ -130,6 +130,7 @@ PLATFORM_SERVICES: tuple[tuple[str, str], ...] = (
     ("server_service", "Инвентаризация и управление серверами"),
     ("server_worker", "Воркер задач IPMI/SSH"),
     ("secret_service", "Хранилище токенов и учётных данных"),
+    ("testing_service", "Каталог тестов, очередь запуска, СТП (allta_app)"),
 )
 
 # Системный отдел под infra-ботов (воркер и т.п.). Заводится на старте, если
@@ -142,3 +143,13 @@ SYSTEM_DEPARTMENT_NAME = "DBOS System"
 WORKER_BOT_NAME = "server_worker"
 WORKER_BOT_SERVICE = "server_service"
 WORKER_BOT_ROLE = "worker_bot"
+
+# Бот testing_service: нужен, чтобы резолверы choices_source (`dynamic:
+# os_versions`/`dynamic:kernels`) могли читать каталог версий ОС у
+# server_service — тот эндпоинт открыт любому аутентифицированному актору,
+# специальной роли не требует, поэтому системного `guest@server_service`
+# достаточно (не заводим отдельную custom-роль, как у worker_bot — там нужен
+# был доступ к internal-эндпоинтам, здесь только обычное чтение каталога).
+TESTING_SERVICE_BOT_NAME = "testing_service"
+TESTING_SERVICE_BOT_SERVICE = "server_service"
+TESTING_SERVICE_BOT_ROLE = "guest"

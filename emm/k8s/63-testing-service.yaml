@@ -100,6 +100,12 @@ spec:
             - name: INTROSPECT_SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: TESTING_INTROSPECT_SERVICE_API_KEY }
+            # Бот testing_service (auth_service заводит его на старте, роль
+            # guest@server_service) — choices_source dynamic-резолверам нужен
+            # доступ к каталогу OS-версий server_service.
+            - name: SERVER_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: TESTING_SERVICE_BOT_TOKEN }
           command: ["uvicorn"]
           args:
             - "src.main:app"

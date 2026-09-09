@@ -12,6 +12,7 @@ resources:
   - 12-redis.yaml            # Redis для taskiq broker + slowapi rate-limit storage
   - 13-postgres-secret.yaml
   - 14-keystore-rbac.yaml    # SA + Role get/patch на keystore-Secret каждого сервиса
+  - 16-postgres-testing.yaml
   - 20-secrets.yaml          # генерируется scripts/k8s/gen_secrets.sh
   # 45-migrations.yaml СПЕЦИАЛЬНО не подключён: Job'ы immutable и ломают
   # повторный `apply -k`. deploy.sh применяет их явным `kubectl apply -f` после
@@ -26,6 +27,7 @@ resources:
   - 50-server-service.yaml
   - 60-server-worker.yaml
   - 13-secret-service.yaml
+  - 63-testing-service.yaml
   - 70-pdb.yaml              # PodDisruptionBudget на все сервисы с replicas=2
   - 80-networkpolicy.yaml    # default-deny ingress + явные allow между подграфами
   - 50-ingress.yaml          # edge-TLS (dbos-ingress-tls) выписывает cert-manager по 51-ingress-cert.yaml (issuer 91-ca-issuer)

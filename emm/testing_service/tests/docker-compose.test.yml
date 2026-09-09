@@ -1,0 +1,59 @@
+name: testing-tests
+
+# Isolated test stack: test DB + test broker + test runner.
+# Usage:
+#   docker compose -f tests/docker-compose.test.yml run --rm test-runner          # all tests
+#   docker compose -f tests/docker-compose.test.yml down -v                       # cleanup
+
+services:
+
+  # ── Isolated test database ────────────────────────────────────────────────
+  test-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: testing_db_test
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d testing_db_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  # ── Isolated test broker (taskiq redis, db-index /1 — симметрично dev/prod) ─
+  test-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  # ── Test runner ───────────────────────────────────────────────────────────
+  test-runner:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile.test
+    environment:
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@test-postgres:5432/testing_db_test
+      TEST_DATABASE_URL: postgresql+psycopg://app_user:app_password@test-postgres:5432/testing_db_test
+      REDIS_URL: redis://test-redis:6379/1
+      AUTH_SERVICE_URL: http://auth-not-used-in-skeleton-tests
+      APP_ENV: test
+      PYTHONPATH: /app
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    # Bind tests/ and src/ for fast iteration (no rebuild on new test files).
+    volumes:
+      - .:/app/tests
+      - ../src:/app/src
+      - ../alembic.ini:/app/alembic.ini:ro
+    # 0 миграций этой волной — `alembic upgrade head` no-op, но команда должна
+    # отработать чисто (проверка §"Проверка" волны 1) перед запуском pytest.
+    command: >
+      sh -c "alembic upgrade head &&
+             pytest tests/ -v --tb=short"

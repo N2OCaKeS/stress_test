@@ -50,6 +50,7 @@ LOGGING_DB_PASSWORD="$(rand "$RAND_DB_PASS_LEN")"
 SERVER_DB_PASSWORD="$(rand "$RAND_DB_PASS_LEN")"
 WORKER_DB_PASSWORD="$(rand "$RAND_DB_PASS_LEN")"
 SECRET_DB_PASSWORD="$(rand "$RAND_DB_PASS_LEN")"
+TESTING_DB_PASSWORD="$(rand "$RAND_DB_PASS_LEN")"
 REDIS_PASSWORD="$(rand "$RAND_REDIS_PASS_LEN")"
 
 # ── auth_service ──────────────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ LOGGING_SERVICE_API_KEY_SERVER="$(rand "$RAND_S2S_KEY_LEN")"
 LOGGING_SERVICE_API_KEY_CONFIG="$(rand "$RAND_S2S_KEY_LEN")"
 LOGGING_SERVICE_API_KEY_WORKER="$(rand "$RAND_S2S_KEY_LEN")"
 LOGGING_SERVICE_API_KEY_SECRET="$(rand "$RAND_S2S_KEY_LEN")"
+LOGGING_SERVICE_API_KEY_TESTING="$(rand "$RAND_S2S_KEY_LEN")"
 LOGGING_INTROSPECT_SERVICE_API_KEY="$(rand "$RAND_S2S_KEY_LEN")"
 
 # ── server_service: envelope + redis-stash ────────────────────────────────────
@@ -96,9 +98,15 @@ SECRET_INBOUND_SERVICE_API_KEYS="{\"worker_bot\":\"${SECRET_INBOUND_WORKER_KEY}\
 # auth_service бьёт в secret_service /internal/* под идентичностью auth_service.
 SECRET_INTERNAL_API_KEY="${SECRET_INBOUND_AUTH_KEY}"
 
+# ── testing_service ───────────────────────────────────────────────────────────
+TESTING_INTROSPECT_SERVICE_API_KEY="$(rand "$RAND_S2S_KEY_LEN")"
+TESTING_INBOUND_AUTH_KEY="$(rand "$RAND_S2S_KEY_LEN")"
+TESTING_INBOUND_SERVER_KEY="$(rand "$RAND_S2S_KEY_LEN")"
+TESTING_INBOUND_SERVICE_API_KEYS="{\"auth_service\":\"${TESTING_INBOUND_AUTH_KEY}\",\"server_service\":\"${TESTING_INBOUND_SERVER_KEY}\"}"
+
 # ── inbound JSON map'ы ────────────────────────────────────────────────────────
-LOGGING_SERVICE_API_KEYS_JSON="{\"auth_service\":\"${LOGGING_SERVICE_API_KEY_AUTH}\",\"server_service\":\"${LOGGING_SERVICE_API_KEY_SERVER}\",\"config_service\":\"${LOGGING_SERVICE_API_KEY_CONFIG}\",\"server_worker\":\"${LOGGING_SERVICE_API_KEY_WORKER}\",\"secret_service\":\"${LOGGING_SERVICE_API_KEY_SECRET}\"}"
-AUTH_INBOUND_SERVICE_API_KEYS_JSON="{\"loging_service\":\"${LOGGING_INTROSPECT_SERVICE_API_KEY}\",\"server_service\":\"${SERVER_SERVICE_API_KEY}\",\"secret_service\":\"${SECRET_INTROSPECT_SERVICE_API_KEY}\"}"
+LOGGING_SERVICE_API_KEYS_JSON="{\"auth_service\":\"${LOGGING_SERVICE_API_KEY_AUTH}\",\"server_service\":\"${LOGGING_SERVICE_API_KEY_SERVER}\",\"config_service\":\"${LOGGING_SERVICE_API_KEY_CONFIG}\",\"server_worker\":\"${LOGGING_SERVICE_API_KEY_WORKER}\",\"secret_service\":\"${LOGGING_SERVICE_API_KEY_SECRET}\",\"testing_service\":\"${LOGGING_SERVICE_API_KEY_TESTING}\"}"
+AUTH_INBOUND_SERVICE_API_KEYS_JSON="{\"loging_service\":\"${LOGGING_INTROSPECT_SERVICE_API_KEY}\",\"server_service\":\"${SERVER_SERVICE_API_KEY}\",\"secret_service\":\"${SECRET_INTROSPECT_SERVICE_API_KEY}\",\"testing_service\":\"${TESTING_INTROSPECT_SERVICE_API_KEY}\"}"
 
 # ── RSA private key для Docker registry token-flow (auth_service, prod-обязателен) ─
 echo "→ Генерирую RSA private key для Docker registry..."
@@ -166,6 +174,8 @@ WORKER_DB_USER=worker_user
 WORKER_DB_PASSWORD=${WORKER_DB_PASSWORD}
 SECRET_DB_USER=secret_user
 SECRET_DB_PASSWORD=${SECRET_DB_PASSWORD}
+TESTING_DB_USER=testing_user
+TESTING_DB_PASSWORD=${TESTING_DB_PASSWORD}
 
 # ── Redis ─────────────────────────────────────────────────────────────────────
 REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -203,6 +213,10 @@ SECRET_ENCRYPTION_KEY_VERSION=${SECRET_ENCRYPTION_KEY_VERSION}
 SECRET_INTROSPECT_SERVICE_API_KEY=${SECRET_INTROSPECT_SERVICE_API_KEY}
 SECRET_INBOUND_SERVICE_API_KEYS='${SECRET_INBOUND_SERVICE_API_KEYS}'
 SECRET_INTERNAL_API_KEY=${SECRET_INTERNAL_API_KEY}
+
+# ── testing_service ───────────────────────────────────────────────────────────
+TESTING_INTROSPECT_SERVICE_API_KEY=${TESTING_INTROSPECT_SERVICE_API_KEY}
+TESTING_INBOUND_SERVICE_API_KEYS='${TESTING_INBOUND_SERVICE_API_KEYS}'
 
 # ── Общие s2s ─────────────────────────────────────────────────────────────────
 SERVICE_API_KEY=${SERVICE_API_KEY}

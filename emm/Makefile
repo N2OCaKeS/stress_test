@@ -56,6 +56,7 @@ LOGGING = docker compose -f loging_service/tests/docker-compose.test.yml
 SERVER  = docker compose -f server_service/tests/docker-compose.test.yml
 WORKER  = docker compose -f server_worker/tests/docker-compose.test.yml
 SECRET  = docker compose -f secret_service/tests/docker-compose.test.yml
+TESTING = docker compose -f testing_service/tests/docker-compose.test.yml
 ROOT    = docker compose -f tests/docker-compose.test.yml
 E2E     = docker compose -f tests/integration/docker-compose.test.yml
 DEV     = docker compose -f docker-compose.dev.yml
@@ -78,10 +79,15 @@ _DEV_AUTH_DB    = $(_DEV_PG)/dev_auth
 _DEV_LOG_DB     = $(_DEV_PG)/dev_logging
 _DEV_SERVER_DB  = $(_DEV_PG)/dev_server
 _DEV_SECRET_DB  = $(_DEV_PG)/dev_secret
+# make dev (devcontainer) — dev_testing БД в общем postgres, симметрично
+# dev_secret выше. make up (docker-стек) использует отдельный контейнер
+# testing_postgres — см. docker-compose.dev.yml.
+_DEV_TESTING_DB = $(_DEV_PG)/dev_testing
 _DEV_AUTH_AUDIT_KEY   = audit_auth_service_dev_key
 _DEV_SERVER_AUDIT_KEY = audit_server_service_dev_key
 _DEV_WORKER_AUDIT_KEY = audit_server_worker_dev_key
 _DEV_SECRET_AUDIT_KEY = audit_secret_service_dev_key
+_DEV_TESTING_AUDIT_KEY = audit_testing_service_dev_key
 _DEV_CONFIG_AUDIT_KEY = audit_config_service_dev_key
 _DEV_INTROSPECT_KEY   = dev-introspect-api-key
 # legacy single-key alias оставлен для обратной совместимости с целями, которые
@@ -98,14 +104,14 @@ _DEV_ADMIN_EMAIL = admin@example.com
 _DEV_WORKER_BOT_TOKEN = dbos_bot_dev_worker_local_token_do_not_use_in_prod
 
 .PHONY: help \
-        up up-build seed down down-v logs ps sh-auth sh-logging sh-server sh-worker sh-secret logs-secret \
+        up up-build seed down down-v logs ps sh-auth sh-logging sh-server sh-worker sh-secret sh-testing logs-secret logs-testing \
         dev dev-stop dev-logs \
-        run-auth run-logging run-server run-secret \
-        test-dev test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-secret test-dev-integration test-dev-all \
-        test-local test-local-auth test-local-logging test-local-server test-local-worker test-local-secret test-local-integration test-local-all \
+        run-auth run-logging run-server run-secret run-testing run-testing-worker \
+        test-dev test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-secret test-dev-testing test-dev-integration test-dev-all \
+        test-local test-local-auth test-local-logging test-local-server test-local-worker test-local-secret test-local-testing test-local-integration test-local-all \
         test-devcont-all install-registry \
         test-integration logs-test-integration up-test-integration down-test-integration \
-        test-auth test-auth-e2e test-logging test-server test-worker test-secret test-all test-down test-build \
+        test-auth test-auth-e2e test-logging test-server test-worker test-secret test-testing test-all test-down test-build \
         k8s-install k8s-install-k3s k8s-install-cert-manager k8s-secrets k8s-build \
         k8s-deploy k8s-migrate k8s-smoke k8s-rollout k8s-rollback \
         k8s-logs k8s-status k8s-backup k8s-destroy \
@@ -125,7 +131,7 @@ up: ## Поднять dev-стек С НУЛЯ: стереть тома + под
 	@echo "→ Очистка томов (полный сброс данных)..."
 	@$(DEV) down -v --remove-orphans 2>/dev/null || true
 	@echo "→ Поднятие стека..."
-	@$(DEV) up -d --wait postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server web_ui
+	@$(DEV) up -d --wait postgres secret_postgres testing_postgres redis loging_service auth_service server_service server_worker secret_service testing_service testing_worker test_server web_ui
 	@echo "→ Наполнение dev-данными (seed)..."
 	@$(MAKE) --no-print-directory seed
 	@echo ""
@@ -133,18 +139,20 @@ up: ## Поднять dev-стек С НУЛЯ: стереть тома + под
 	@echo "  loging_service  →  http://localhost:8001/docs    (loging_admin1 / 1)"
 	@echo "  server_service  →  http://localhost:8002/docs"
 	@echo "  secret_service  →  http://localhost:8003/docs"
+	@echo "  testing_service →  http://localhost:8004/docs"
 	@echo "  server_worker   →  taskiq worker (no HTTP), redis://localhost:6379/0"
+	@echo "  testing_worker  →  taskiq worker (no HTTP), redis://localhost:6379/3"
 	@echo "  web_ui          →  http://localhost:5173            (vite dev, proxy → backend)"
 	@echo ""
 	@echo "  Стек поднят с чистой БД + dev-данными. test-server-01 / tester / tester1234."
 
 up-keep: ## Поднять dev-стек БЕЗ сброса (данные в томах сохраняются; seed вручную при необходимости).
-	@$(DEV) up -d --wait postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server web_ui
+	@$(DEV) up -d --wait postgres secret_postgres testing_postgres redis loging_service auth_service server_service server_worker secret_service testing_service testing_worker test_server web_ui
 	@echo ""
 	@echo "  Стек поднят, данные сохранены. Наполнить/обновить: make seed"
 
 up-build: ## Пересобрать образы и поднять dev-стек
-	$(DEV) up -d --wait --build postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server
+	$(DEV) up -d --wait --build postgres secret_postgres testing_postgres redis loging_service auth_service server_service server_worker secret_service testing_service testing_worker test_server
 
 seed: ## Наполнить уже поднятый dev-стек данными напрямую через SQL (admin/loging_admin1/dep_admin1/loging_reader1/user1, пароль 1)
 	@cd scripts && python3 seed_dev.py
@@ -156,10 +164,13 @@ down-v: ## Остановить и удалить том postgres (полная 
 	$(DEV) down -v
 
 logs: ## tail -f логов всех сервисов (Ctrl+C для выхода)
-	$(DEV) logs -f loging_service auth_service server_service server_worker secret_service
+	$(DEV) logs -f loging_service auth_service server_service server_worker secret_service testing_service testing_worker
 
 logs-secret: ## tail -f логов secret_service
 	$(DEV) logs -f secret_service
+
+logs-testing: ## tail -f логов testing_service + testing_worker
+	$(DEV) logs -f testing_service testing_worker
 
 ps: ## Статус контейнеров dev-стека
 	$(DEV) ps
@@ -179,6 +190,9 @@ sh-worker: ## Shell внутри контейнера server_worker
 sh-secret: ## Shell внутри контейнера secret_service
 	$(DEV) exec secret_service /bin/bash
 
+sh-testing: ## Shell внутри контейнера testing_service
+	$(DEV) exec testing_service /bin/bash
+
 ##@ Dev: внутри devcontainer
 
 dev: ## Применить миграции и запустить auth + logging + server на общей dev-БД (данные сохраняются)
@@ -188,8 +202,8 @@ dev: ## Применить миграции и запустить auth + logging
 	@python3 -c "\
 import psycopg; \
 conn = psycopg.connect(host='postgres', user='app_user', password='app_password', dbname='postgres', autocommit=True); \
-[conn.execute('DROP DATABASE IF EXISTS \"' + db + '\"') for db in ('dev_auth', 'dev_logging', 'dev_server', 'dev_secret')]; \
-[conn.execute('CREATE DATABASE \"' + db + '\"') for db in ('dev_auth', 'dev_logging', 'dev_server', 'dev_secret')]; \
+[conn.execute('DROP DATABASE IF EXISTS \"' + db + '\"') for db in ('dev_auth', 'dev_logging', 'dev_server', 'dev_secret', 'dev_testing')]; \
+[conn.execute('CREATE DATABASE \"' + db + '\"') for db in ('dev_auth', 'dev_logging', 'dev_server', 'dev_secret', 'dev_testing')]; \
 conn.close()"
 	@echo "→ Миграции loging_service..."
 	@cd loging_service && DATABASE_URL=$(_DEV_LOG_DB) PYTHONPATH=. alembic upgrade head
@@ -199,6 +213,8 @@ conn.close()"
 	@cd server_service && DATABASE_URL=$(_DEV_SERVER_DB) SERVER_ENCRYPTION_KEY=$(_DEV_SERVER_KEY) PYTHONPATH=. alembic upgrade head
 	@echo "→ Миграции secret_service..."
 	@cd secret_service && DATABASE_URL=$(_DEV_SECRET_DB) SECRET_ENCRYPTION_KEY=$(_DEV_SECRET_KEY) SECRET_ENCRYPTION_KEY_VERSION=2 AUTH_SERVICE_URL=http://localhost:8000 PYTHONPATH=. alembic upgrade head
+	@echo "→ Миграции testing_service (0 миграций этой волной — no-op)..."
+	@cd testing_service && DATABASE_URL=$(_DEV_TESTING_DB) AUTH_SERVICE_URL=http://localhost:8000 PYTHONPATH=. alembic upgrade head
 	@echo "→ Запуск loging_service :8001..."
 	@cd loging_service && \
 		DATABASE_URL=$(_DEV_LOG_DB) \
@@ -249,6 +265,20 @@ conn.close()"
 	@echo "→ Ожидание готовности secret_service..."
 	@until curl -sf http://localhost:8003/api/secret/v1/health > /dev/null 2>&1; do sleep 1; done
 	@echo "  secret_service готов"
+	@echo "→ Запуск testing_service :8004..."
+	@cd testing_service && \
+		DATABASE_URL=$(_DEV_TESTING_DB) \
+		AUTH_SERVICE_URL=http://localhost:8000 \
+		INTROSPECT_SERVICE_API_KEY=$(_DEV_INTROSPECT_KEY) \
+		LOGGING_SERVICE_URL=http://localhost:8001 \
+		LOGGING_SERVICE_API_KEY=$(_DEV_TESTING_AUDIT_KEY) \
+		APP_ENV=local \
+		PYTHONPATH=. \
+		uvicorn src.main:app --host 0.0.0.0 --port 8004 \
+		> $(CURDIR)/.dev/testing.log 2>&1 & echo $$! > $(CURDIR)/.dev/testing.pid
+	@echo "→ Ожидание готовности testing_service..."
+	@until curl -sf http://localhost:8004/api/testing/v1/health > /dev/null 2>&1; do sleep 1; done
+	@echo "  testing_service готов"
 	@echo "→ Наполнение начальными данными..."
 	@python3 $(CURDIR)/scripts/seed_dev.py
 
@@ -265,14 +295,18 @@ dev-stop: ## Остановить все dev-сервисы (данные в Б�
 	@if test -f $(CURDIR)/.dev/secret.pid; then \
 		kill $$(cat $(CURDIR)/.dev/secret.pid) 2>/dev/null || true; rm -f $(CURDIR)/.dev/secret.pid; \
 	fi
+	@if test -f $(CURDIR)/.dev/testing.pid; then \
+		kill $$(cat $(CURDIR)/.dev/testing.pid) 2>/dev/null || true; rm -f $(CURDIR)/.dev/testing.pid; \
+	fi
 	@fuser -k 8000/tcp 2>/dev/null || true
 	@fuser -k 8001/tcp 2>/dev/null || true
 	@fuser -k 8002/tcp 2>/dev/null || true
 	@fuser -k 8003/tcp 2>/dev/null || true
+	@fuser -k 8004/tcp 2>/dev/null || true
 	@echo "  сервисы остановлены"
 
 dev-logs: ## Следить за логами всех dev-сервисов (Ctrl+C для выхода)
-	@tail -f $(CURDIR)/.dev/auth.log $(CURDIR)/.dev/logging.log $(CURDIR)/.dev/server.log $(CURDIR)/.dev/secret.log
+	@tail -f $(CURDIR)/.dev/auth.log $(CURDIR)/.dev/logging.log $(CURDIR)/.dev/server.log $(CURDIR)/.dev/secret.log $(CURDIR)/.dev/testing.log
 
 run-auth: ## Запустить auth_service локально (devcontainer, порт 8000, авто-перезагрузка)
 	cd auth_service && PYTHONPATH=. uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
@@ -298,6 +332,22 @@ run-secret: ## Запустить secret_service локально (devcontainer,
 		APP_ENV=local \
 		PYTHONPATH=. uvicorn src.main:app --reload --host 0.0.0.0 --port 8003
 
+run-testing: ## Запустить testing_service локально (devcontainer, порт 8004, авто-перезагрузка)
+	cd testing_service && \
+		DATABASE_URL=$(_DEV_TESTING_DB) \
+		AUTH_SERVICE_URL=http://localhost:8000 \
+		INTROSPECT_SERVICE_API_KEY=$(_DEV_INTROSPECT_KEY) \
+		LOGGING_SERVICE_URL=http://localhost:8001 \
+		LOGGING_SERVICE_API_KEY=$(_DEV_TESTING_AUDIT_KEY) \
+		APP_ENV=local \
+		PYTHONPATH=. uvicorn src.main:app --reload --host 0.0.0.0 --port 8004
+
+run-testing-worker: ## Запустить testing_worker локально (devcontainer, foreground). Нужен Redis на localhost:6379 (в devcontainer'е его нет по умолчанию — см. docker-compose.dev.yml `redis`).
+	cd testing_service && \
+		REDIS_URL=redis://localhost:6379/3 \
+		AUTH_SERVICE_URL=http://localhost:8000 \
+		PYTHONPATH=. taskiq worker src.worker_main:broker
+
 ##@ Тесты: в devcontainer
 # Все команды работают только внутри devcontainer (нет Docker).
 #
@@ -316,6 +366,7 @@ _AUTH_TEST_URL    = postgresql+psycopg://app_user:app_password@postgres:5432/tes
 _SERVER_TEST_URL  = postgresql+psycopg://app_user:app_password@postgres:5432/test_server_unit
 _WORKER_TEST_URL  = postgresql+psycopg://app_user:app_password@postgres:5432/test_worker_unit
 _SECRET_TEST_URL  = postgresql+psycopg://app_user:app_password@postgres:5432/test_secret_unit
+_TESTING_TEST_URL = postgresql+psycopg://app_user:app_password@postgres:5432/test_testing_unit
 
 test-dev: ## Запустить конкретный тест. Пример: make test-dev TEST=loging_service/tests/test_rules.py
 	@if [ -z "$(TEST)" ]; then \
@@ -353,6 +404,12 @@ test-dev: ## Запустить конкретный тест. Пример: mak
 			AUTH_SERVICE_URL=http://not-used \
 			APP_ENV=test SWEEP_ENABLED=false \
 			PYTHONPATH=. pytest ../$(TEST) -v --tb=short; \
+	elif echo "$(TEST)" | grep -q "^testing_service/"; then \
+		cd testing_service && DATABASE_URL=$(_TESTING_TEST_URL) TEST_DATABASE_URL=$(_TESTING_TEST_URL) \
+			REDIS_URL=redis://localhost:6379/3 \
+			AUTH_SERVICE_URL=http://not-used \
+			APP_ENV=test \
+			PYTHONPATH=. pytest ../$(TEST) -v --tb=short; \
 	else \
 		pytest $(TEST) -v --tb=short; \
 	fi
@@ -387,10 +444,17 @@ test-dev-secret: ## Unit-тесты secret_service (devcontainer)
 		APP_ENV=test SWEEP_ENABLED=false \
 		PYTHONPATH=. pytest tests/ -v --tb=short
 
+test-dev-testing: ## Unit-тесты testing_service (devcontainer; Redis не поднимается по умолчанию — см. docker-compose.dev.yml `redis`)
+	cd testing_service && DATABASE_URL=$(_TESTING_TEST_URL) TEST_DATABASE_URL=$(_TESTING_TEST_URL) \
+		REDIS_URL=redis://localhost:6379/3 \
+		AUTH_SERVICE_URL=http://not-used \
+		APP_ENV=test \
+		PYTHONPATH=. pytest tests/ -v --tb=short
+
 test-dev-integration: ## Кросс-сервисные интеграционные тесты (devcontainer, порты :8010/:8011)
 	pytest tests/ -v --tb=short
 
-test-dev-all: test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-secret test-dev-integration ## Все тесты в devcontainer
+test-dev-all: test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-secret test-dev-testing test-dev-integration ## Все тесты в devcontainer
 
 test-devcont-all: ## Полный набор в devcontainer: unit + integration + E2E docker registry
 	python tests/scripts/run_devcont_tests.py
@@ -405,7 +469,8 @@ test-local-logging: test-dev-logging ## = test-dev-logging
 test-local-server: test-dev-server ## = test-dev-server
 test-local-worker: test-dev-worker ## = test-dev-worker
 test-local-secret: test-dev-secret ## = test-dev-secret
-test-local: test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-secret ## = test-dev-auth + test-dev-logging + test-dev-server + test-dev-worker + test-dev-secret
+test-local-testing: test-dev-testing ## = test-dev-testing
+test-local: test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-secret test-dev-testing ## = test-dev-auth + test-dev-logging + test-dev-server + test-dev-worker + test-dev-secret + test-dev-testing
 test-local-integration: test-dev-integration ## = test-dev-integration
 test-local-all: test-dev-all ## = test-dev-all
 
@@ -428,6 +493,9 @@ test-worker: ## Тесты server_worker в Docker
 
 test-secret: ## Тесты secret_service в Docker
 	$(SECRET) run --rm test-runner pytest tests/ -v --tb=short
+
+test-testing: ## Тесты testing_service в Docker
+	$(TESTING) run --rm test-runner pytest tests/ -v --tb=short
 
 test-console: ## Тесты console_proxy (VNC/SPICE-прокси) в одноразовом python-контейнере
 	docker run --rm -v "$(CURDIR)/console_proxy:/app" -w /app python:3.12-slim bash -lc \
@@ -458,7 +526,7 @@ logs-test-integration: ## tail логов всех сервисов E2E-стек
 down-test-integration: ## Остановить E2E-стек и удалить тома (mgmt-keys, bootstrap)
 	$(E2E) down -v --remove-orphans
 
-test-all: test-auth test-logging test-server test-worker test-secret test-integration ## Все тесты в Docker
+test-all: test-auth test-logging test-server test-worker test-secret test-testing test-integration ## Все тесты в Docker
 
 test-build: ## Пересобрать все тестовые образы
 	$(AUTH) build
@@ -466,6 +534,7 @@ test-build: ## Пересобрать все тестовые образы
 	$(SERVER) build
 	$(WORKER) build
 	$(SECRET) build
+	$(TESTING) build
 	$(ROOT) build
 	$(E2E) build
 
@@ -475,6 +544,7 @@ test-down: ## Удалить тестовые контейнеры и тома
 	$(SERVER) down -v --remove-orphans
 	$(WORKER) down -v --remove-orphans
 	$(SECRET) down -v --remove-orphans
+	$(TESTING) down -v --remove-orphans
 	$(ROOT) down -v --remove-orphans
 	$(E2E) down -v --remove-orphans
 

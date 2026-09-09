@@ -9,6 +9,8 @@
 #   server_service  :8002  (uvicorn --reload, src/ примонтирован)
 #   server_worker          (taskiq worker, src/ примонтирован)
 #   secret_service  :8003  (uvicorn --reload, src/ примонтирован)
+#   testing_service :8004  (uvicorn --reload, src/ примонтирован)
+#   testing_worker         (taskiq worker, src/ примонтирован, redis :6379/3)
 #
 # Использование:
 #   make up           поднять стек (данные сохраняются)
@@ -366,6 +368,85 @@ services:
       timeout: 5s
       retries: 30
 
+  testing_postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+      POSTGRES_DB: dev_testing
+    ports:
+      - "5436:5432"
+    volumes:
+      - dbos_dev_testing_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  testing_service:
+    build:
+      context: ./testing_service
+      dockerfile: docker/Dockerfile
+    init: true
+    environment:
+      APP_ENV: local
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8004
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@testing_postgres:5432/dev_testing
+      # Self-host Swagger UI: браузер тянет bundle/css с контейнера swagger_ui
+      # (:8088), а не с внешнего CDN jsdelivr (корп-сеть его не видит).
+      SWAGGER_UI_ASSETS_BASE: http://localhost:8088
+      AUTH_SERVICE_URL: http://auth_service:8000
+      INTROSPECT_SERVICE_API_KEY: dev-introspect-api-key
+      LOGGING_SERVICE_URL: http://loging_service:8001
+      LOGGING_SERVICE_API_KEY: audit_testing_service_dev_key
+      SERVICE_API_KEY: dev-introspect-api-key
+      # Отдельный db-index на общем redis-контейнере: /0 — server_worker
+      # broker, /1 — auth_service rate-limit (prod), /2 — secret_service
+      # rate-limit, /3 — testing_service.
+      REDIS_URL: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/3
+      APP_LOG_LEVEL: INFO
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             exec uvicorn src.main:app --host 0.0.0.0 --port 8004 --reload"
+    volumes:
+      - ./testing_service/src:/app/src
+      - ./testing_service/alembic.ini:/app/alembic.ini:ro
+    ports:
+      - "8004:8004"
+    depends_on:
+      testing_postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 --connect-timeout 2 http://localhost:8004/api/testing/v1/health || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  testing_worker:
+    build:
+      context: ./testing_service
+      dockerfile: docker/Dockerfile
+    init: true
+    environment:
+      APP_ENV: local
+      REDIS_URL: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/3
+      AUTH_SERVICE_URL: http://auth_service:8000
+      WORKER_LOG_LEVEL: INFO
+    command: ["taskiq", "worker", "src.worker_main:broker"]
+    volumes:
+      - ./testing_service/src:/app/src
+    depends_on:
+      redis:
+        condition: service_healthy
+      testing_service:
+        condition: service_healthy
+
   web_ui:
     image: node:22-alpine
     init: true
@@ -464,6 +545,7 @@ volumes:
   web_ui_node_modules:
   dbos_dev_redis:
   dbos_dev_secret_pg:
+  dbos_dev_testing_pg:
   dbos_dev_prometheus:
   dbos_dev_grafana:
 

@@ -1,0 +1,49 @@
+"""Inner-most middleware: на 4xx/5xx ответе пишет http.* audit-event.
+
+401/403 → `http.access_denied` (denied / CRITICAL).
+Прочие 4xx (кроме 501) → `http.client_error` (failure / WARNING).
+5xx → `http.server_error` (failure / CRITICAL).
+501 и health-paths пропускаются ранним return'ом.
+"""
+
+from __future__ import annotations
+
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from src.core.constants import HEALTH_PATHS
+from src.services import audit_service
+
+
+class AuditAccessMiddleware(BaseHTTPMiddleware):
+    """Innermost middleware: эмитит http.* событие для 4xx/5xx ответов."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path in HEALTH_PATHS:
+            return response
+
+        status_code = response.status_code
+        if status_code < 400:
+            return response
+
+        if status_code == 501:
+            return response
+
+        details = {"method": request.method, "path": path, "status_code": status_code}
+
+        if status_code in (401, 403):
+            action, emit_status = "http.access_denied", "denied"
+        elif status_code < 500:
+            action, emit_status = "http.client_error", "failure"
+        else:
+            action, emit_status = "http.server_error", "failure"
+
+        audit_service.emit(
+            action,
+            status=emit_status,
+            allowed=False,
+            details=details,
+        )
+        return response

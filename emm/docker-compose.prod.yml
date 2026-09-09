@@ -92,7 +92,23 @@ services:
       retries: 20
     restart: unless-stopped
 
-  # ── Redis: broker (0) + auth rate-limit (1) + secret rate-limit (2) ─────────
+  testing-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${TESTING_DB_USER}
+      POSTGRES_PASSWORD: ${TESTING_DB_PASSWORD}
+      POSTGRES_DB: testing_db
+    volumes:
+      - testing_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d testing_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # ── Redis: broker (0) + auth rate-limit (1) + secret rate-limit (2) + ───────
+  # testing_worker broker (3).
   redis:
     image: redis:7-alpine
     command:
@@ -211,6 +227,27 @@ services:
       INTROSPECT_SERVICE_API_KEY: ${SECRET_INTROSPECT_SERVICE_API_KEY}
     depends_on:
       secret-postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  testing-migrate:
+    build:
+      context: ./testing_service
+      dockerfile: docker/Dockerfile
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    env_file: [.env.prod]
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql+psycopg://${TESTING_DB_USER}:${TESTING_DB_PASSWORD}@testing-postgres:5432/testing_db
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_SERVICE_URL: http://logging_service:8001
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+      SERVICE_API_KEYS: ${TESTING_INBOUND_SERVICE_API_KEYS}
+      LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY_TESTING}
+      INTROSPECT_SERVICE_API_KEY: ${TESTING_INTROSPECT_SERVICE_API_KEY}
+    depends_on:
+      testing-postgres:
         condition: service_healthy
     restart: on-failure
 
@@ -406,6 +443,82 @@ services:
       retries: 30
     restart: unless-stopped
 
+  # ── testing_service ───────────────────────────────────────────────────────────
+  testing_service:
+    build:
+      context: ./testing_service
+      dockerfile: docker/Dockerfile
+    init: true
+    env_file: [.env.prod]
+    environment: &testing_env
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DBOS_HTTPS_GUARD_DISABLED: "true"
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8004"
+      APP_LOG_LEVEL: INFO
+      INTROSPECT_TLS_VERIFY: "false"
+      SLOWAPI_RATE_LIMIT: "500/minute"
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_SERVICE_URL: http://logging_service:8001
+      SERVER_SERVICE_URL: http://server_service:8002
+      DATABASE_URL: postgresql+psycopg://${TESTING_DB_USER}:${TESTING_DB_PASSWORD}@testing-postgres:5432/testing_db
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/3
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+      SERVICE_API_KEYS: ${TESTING_INBOUND_SERVICE_API_KEYS}
+      LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY_TESTING}
+      INTROSPECT_SERVICE_API_KEY: ${TESTING_INTROSPECT_SERVICE_API_KEY}
+    depends_on:
+      testing-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      testing-migrate:
+        condition: service_completed_successfully
+      auth_service:
+        condition: service_healthy
+      logging_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 http://localhost:8004/api/testing/v1/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  # ── testing_worker (taskiq consumer, каркас — задач пока нет) ────────────────
+  testing_worker:
+    build:
+      context: ./testing_service
+      dockerfile: docker/Dockerfile
+    init: true
+    command: ["taskiq", "worker", "src.worker_main:broker"]
+    env_file: [.env.prod]
+    environment:
+      APP_ENV: production
+      WORKER_LOG_LEVEL: INFO
+      DATABASE_URL: postgresql+psycopg://${TESTING_DB_USER}:${TESTING_DB_PASSWORD}@testing-postgres:5432/testing_db
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/3
+      AUTH_SERVICE_URL: http://auth_service:8000
+      LOGGING_SERVICE_URL: http://logging_service:8001
+      SERVER_SERVICE_URL: http://server_service:8002
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+    depends_on:
+      testing-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      testing-migrate:
+        condition: service_completed_successfully
+      testing_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -aql taskiq /proc/[0-9]*/cmdline 2>/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   # ── server_worker (taskiq consumer) ─────────────────────────────────────────
   server_worker:
     build:
@@ -519,6 +632,8 @@ services:
         condition: service_healthy
       secret_service:
         condition: service_healthy
+      testing_service:
+        condition: service_healthy
       web_ui:
         condition: service_healthy
       swagger_ui:
@@ -593,12 +708,26 @@ services:
         condition: service_healthy
     restart: "no"
 
+  openapi-dump-testing:
+    build:
+      context: ./testing_service
+      dockerfile: docker/Dockerfile
+    env_file: [.env.prod]
+    environment: *testing_env
+    command: ["python", "-c", "import json;from src.main import app;open('/specs/testing.json','w').write(json.dumps(app.openapi()))"]
+    volumes:
+      - openapi_specs:/specs
+    depends_on:
+      testing_service:
+        condition: service_healthy
+    restart: "no"
+
   swagger_ui:
     image: swaggerapi/swagger-ui:v5.17.14
     init: true
     environment:
       BASE_URL: /docs
-      URLS: '[{"url":"/docs/specs/auth.json","name":"auth_service"},{"url":"/docs/specs/logging.json","name":"loging_service"},{"url":"/docs/specs/server.json","name":"server_service"},{"url":"/docs/specs/secret.json","name":"secret_service"}]'
+      URLS: '[{"url":"/docs/specs/auth.json","name":"auth_service"},{"url":"/docs/specs/logging.json","name":"loging_service"},{"url":"/docs/specs/server.json","name":"server_service"},{"url":"/docs/specs/secret.json","name":"secret_service"},{"url":"/docs/specs/testing.json","name":"testing_service"}]'
       URLS_PRIMARY_NAME: auth_service
       PERSIST_AUTHORIZATION: "true"
       DEEP_LINKING: "true"
@@ -612,6 +741,8 @@ services:
       openapi-dump-server:
         condition: service_completed_successfully
       openapi-dump-secret:
+        condition: service_completed_successfully
+      openapi-dump-testing:
         condition: service_completed_successfully
     healthcheck:
       # BASE_URL=/docs → корень отдаёт 404; проверяем реальный путь UI.
@@ -627,6 +758,7 @@ volumes:
   server_pg:
   worker_pg:
   secret_pg:
+  testing_pg:
   redis_data:
   server_keystore:
   secret_keystore:

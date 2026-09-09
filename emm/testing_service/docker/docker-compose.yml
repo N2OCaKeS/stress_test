@@ -1,0 +1,67 @@
+version: "3.9"
+
+# Standalone dev-стек одного сервиса (без остального emm) — для точечной
+# отладки testing_service/testing_worker в отрыве от корневого
+# docker-compose.dev.yml. Штатный путь разработки — корневой compose
+# (`make up`/`make dev`); этот файл — по образцу secret_service/docker/docker-compose.yml.
+
+services:
+  testing_service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: testing_service
+    environment:
+      APP_ENV: local
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8004
+      DATABASE_URL: postgresql+psycopg://testing_user:testing_password@testing_postgres:5432/testing_db
+      REDIS_URL: redis://testing_redis:6379/1
+      AUTH_SERVICE_URL: http://auth_service:8000
+    ports:
+      - "8004:8004"
+    volumes:
+      - ../src:/app/src
+      - ../alembic.ini:/app/alembic.ini:ro
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn src.main:app --host 0.0.0.0 --port 8004 --reload"
+    depends_on:
+      - testing_postgres
+      - testing_redis
+
+  testing_worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: testing_worker
+    environment:
+      APP_ENV: local
+      DATABASE_URL: postgresql+psycopg://testing_user:testing_password@testing_postgres:5432/testing_db
+      REDIS_URL: redis://testing_redis:6379/1
+      AUTH_SERVICE_URL: http://auth_service:8000
+    volumes:
+      - ../src:/app/src
+    command: ["taskiq", "worker", "src.worker_main:broker"]
+    depends_on:
+      - testing_postgres
+      - testing_redis
+
+  testing_postgres:
+    image: postgres:16
+    container_name: testing_postgres
+    environment:
+      POSTGRES_DB: testing_db
+      POSTGRES_USER: testing_user
+      POSTGRES_PASSWORD: testing_password
+    ports:
+      - "5436:5432"
+    volumes:
+      - testing_postgres_data:/var/lib/postgresql/data
+
+  testing_redis:
+    image: redis:7-alpine
+    container_name: testing_redis
+
+volumes:
+  testing_postgres_data:

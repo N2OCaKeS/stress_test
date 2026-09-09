@@ -1,0 +1,105 @@
+# Postgres для testing_service — изолирован от остальных баз.
+# Один pod с persistent volume; резервирование через бэкапы (scripts/k8s/backup_pg.sh).
+# Симметрично 13-postgres-secret.yaml.
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: testing-postgres-data
+  namespace: dbos
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: testing-postgres
+  namespace: dbos
+  labels:
+    app: testing-postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate                 # БД не может работать в двух копиях на одном PVC
+  selector:
+    matchLabels:
+      app: testing-postgres
+  template:
+    metadata:
+      labels:
+        app: testing-postgres
+    spec:
+      terminationGracePeriodSeconds: 60
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:16
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: testing_db
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: TESTING_DB_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: TESTING_DB_PASSWORD }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "testing_user", "-d", "testing_db"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: ["pg_isready"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "1000m", memory: "1Gi" }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: testing-postgres-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: testing-postgres
+  namespace: dbos
+spec:
+  type: ClusterIP                  # только внутри namespace, наружу не публикуется
+  selector:
+    app: testing-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

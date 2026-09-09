@@ -423,6 +423,7 @@ LOGGING_DB_PASSWORD="${LOGGING_DB_PASSWORD:-$(rand "$RAND_DB_PASS_LEN")}"
 SERVER_DB_PASSWORD="${SERVER_DB_PASSWORD:-$(rand "$RAND_DB_PASS_LEN")}"
 WORKER_DB_PASSWORD="${WORKER_DB_PASSWORD:-$(rand "$RAND_DB_PASS_LEN")}"
 SECRET_DB_PASSWORD="${SECRET_DB_PASSWORD:-$(rand "$RAND_DB_PASS_LEN")}"
+TESTING_DB_PASSWORD="${TESTING_DB_PASSWORD:-$(rand "$RAND_DB_PASS_LEN")}"
 
 # auth_service. INITIAL_ADMIN_USERNAME/PASSWORD оператор задаёт в deploy.env,
 # чтобы знать креды заранее; пусто → admin + случайный 16-симв. пароль.
@@ -436,6 +437,7 @@ LOGGING_SERVICE_API_KEY_SERVER=$(rand "$RAND_S2S_KEY_LEN")
 LOGGING_SERVICE_API_KEY_CONFIG=$(rand "$RAND_S2S_KEY_LEN")
 LOGGING_SERVICE_API_KEY_WORKER=$(rand "$RAND_S2S_KEY_LEN")
 LOGGING_SERVICE_API_KEY_SECRET=$(rand "$RAND_S2S_KEY_LEN")
+LOGGING_SERVICE_API_KEY_TESTING=$(rand "$RAND_S2S_KEY_LEN")
 # loging_service single outbound для backward-compat (caller'ы пока используют
 # одно поле; map выше — для inbound key-separation в loging_service Settings).
 LOGGING_SERVICE_API_KEY="$LOGGING_SERVICE_API_KEY_AUTH"
@@ -487,6 +489,15 @@ SECRET_INBOUND_SERVICE_API_KEYS_JSON="{\"worker_bot\":\"${SECRET_INBOUND_WORKER_
 # его Bearer == ключу `auth_service` из inbound-map secret_service.
 SECRET_INTERNAL_API_KEY="${SECRET_INBOUND_AUTH_KEY}"
 
+# testing_service: introspect ключ для исходящих /authorization/introspect +
+# inbound s2s map под будущий callback server_service → testing_service
+# (§5.1 плана миграции, prepare-for-test, волна 2/5 — эндпоинт ещё не
+# реализован, но ключ заводим сразу, симметрично secret_service).
+TESTING_INTROSPECT_SERVICE_API_KEY=$(rand "$RAND_INTROSPECT_KEY_LEN")
+TESTING_INBOUND_AUTH_KEY=$(rand "$RAND_S2S_KEY_LEN")
+TESTING_INBOUND_SERVER_KEY=$(rand "$RAND_S2S_KEY_LEN")
+TESTING_INBOUND_SERVICE_API_KEYS_JSON="{\"auth_service\":\"${TESTING_INBOUND_AUTH_KEY}\",\"server_service\":\"${TESTING_INBOUND_SERVER_KEY}\"}"
+
 # Redis
 REDIS_PASSWORD=$(rand "$RAND_REDIS_PASS_LEN")
 
@@ -501,7 +512,7 @@ RSA_PEM=$(openssl genrsa 2048 2>/dev/null)
 
 # ── JSON map для loging_service (inbound) ────────────────────────────────────
 LOGGING_SERVICE_API_KEYS_JSON=$(cat <<EOF
-{"auth_service":"${LOGGING_SERVICE_API_KEY_AUTH}","server_service":"${LOGGING_SERVICE_API_KEY_SERVER}","config_service":"${LOGGING_SERVICE_API_KEY_CONFIG}","server_worker":"${LOGGING_SERVICE_API_KEY_WORKER}","secret_service":"${LOGGING_SERVICE_API_KEY_SECRET}"}
+{"auth_service":"${LOGGING_SERVICE_API_KEY_AUTH}","server_service":"${LOGGING_SERVICE_API_KEY_SERVER}","config_service":"${LOGGING_SERVICE_API_KEY_CONFIG}","server_worker":"${LOGGING_SERVICE_API_KEY_WORKER}","secret_service":"${LOGGING_SERVICE_API_KEY_SECRET}","testing_service":"${LOGGING_SERVICE_API_KEY_TESTING}"}
 EOF
 )
 
@@ -510,10 +521,11 @@ EOF
 #   loging_service  → bearer = LOGGING_INTROSPECT_SERVICE_API_KEY
 #   server_service  → bearer = SERVER_SERVICE_API_KEY (outbound SERVICE_API_KEY pod'а)
 #   secret_service  → bearer = SECRET_INTROSPECT_SERVICE_API_KEY
+#   testing_service → bearer = TESTING_INTROSPECT_SERVICE_API_KEY
 # server_worker introspect не зовёт (только outbound audit-emit), но если в
 # будущем понадобится — добавляется здесь же.
 AUTH_INBOUND_SERVICE_API_KEYS_JSON=$(cat <<EOF
-{"loging_service":"${LOGGING_INTROSPECT_SERVICE_API_KEY}","server_service":"${SERVER_SERVICE_API_KEY}","secret_service":"${SECRET_INTROSPECT_SERVICE_API_KEY}"}
+{"loging_service":"${LOGGING_INTROSPECT_SERVICE_API_KEY}","server_service":"${SERVER_SERVICE_API_KEY}","secret_service":"${SECRET_INTROSPECT_SERVICE_API_KEY}","testing_service":"${TESTING_INTROSPECT_SERVICE_API_KEY}"}
 EOF
 )
 
@@ -542,6 +554,8 @@ stringData:
   WORKER_DB_PASSWORD: "${WORKER_DB_PASSWORD}"
   SECRET_DB_USER: secret_user
   SECRET_DB_PASSWORD: "${SECRET_DB_PASSWORD}"
+  TESTING_DB_USER: testing_user
+  TESTING_DB_PASSWORD: "${TESTING_DB_PASSWORD}"
 
   # auth_service
   AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
@@ -575,6 +589,7 @@ cat <<EOF
   LOGGING_SERVICE_API_KEY_SERVER: ${LOGGING_SERVICE_API_KEY_SERVER}
   LOGGING_SERVICE_API_KEY_WORKER: ${LOGGING_SERVICE_API_KEY_WORKER}
   LOGGING_SERVICE_API_KEY_SECRET: ${LOGGING_SERVICE_API_KEY_SECRET}
+  LOGGING_SERVICE_API_KEY_TESTING: ${LOGGING_SERVICE_API_KEY_TESTING}
   LOGGING_SERVICE_API_KEYS_JSON: |
     ${LOGGING_SERVICE_API_KEYS_JSON}
   LOGGING_INTROSPECT_SERVICE_API_KEY: ${LOGGING_INTROSPECT_SERVICE_API_KEY}
@@ -616,6 +631,11 @@ cat <<EOF
 
   # auth_service → secret_service /internal/* (Bearer == ключ auth_service в inbound-map secret)
   SECRET_INTERNAL_API_KEY: ${SECRET_INTERNAL_API_KEY}
+
+  # testing_service: s2s (introspect + inbound map под будущий callback
+  # server_service → testing_service, §5.1 плана миграции)
+  TESTING_INTROSPECT_SERVICE_API_KEY: ${TESTING_INTROSPECT_SERVICE_API_KEY}
+  TESTING_INBOUND_SERVICE_API_KEYS: '${TESTING_INBOUND_SERVICE_API_KEYS_JSON}'
 
   # CronJob rotation-scheduler → server/secret /internal/migration_status
   # (Bearer == ключ rotation_runner в inbound-map'ах server и secret сервисов).

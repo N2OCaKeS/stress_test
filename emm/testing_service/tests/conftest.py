@@ -106,6 +106,11 @@ def _cleanup_created_variables():
     engine = create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT", pool_pre_ping=True)
     try:
         with engine.connect() as conn:
+            # test_logs не отмечены created_by (не пользовательская сущность,
+            # заводятся лениво internal-эндпоинтами) — таблица целиком в
+            # владении этого домена, чистим безусловно. Каскадом сносит
+            # test_log_segments/test_log_blobs (ON DELETE CASCADE).
+            conn.execute(text("DELETE FROM test_logs"))
             conn.execute(text("DELETE FROM queue_items WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM test_definitions WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM global_variables WHERE created_by IS NOT NULL"))

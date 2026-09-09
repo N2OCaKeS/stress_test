@@ -32,7 +32,7 @@ from src.core.security import SecurityHeadersMiddleware
 from src.dependencies import auth as auth_deps
 from src.middleware.audit_middleware import AuditAccessMiddleware
 from src.middleware.https_guard import HTTPSRequiredMiddleware
-from src.services import audit_context, audit_events, audit_service
+from src.services import audit_context, audit_events, audit_service, log_rotation
 
 logger = logging.getLogger("testing_service.startup")
 
@@ -91,6 +91,37 @@ def _register_self_hosted_docs(app: FastAPI, assets_base: str) -> None:
         return get_swagger_ui_oauth2_redirect_html()
 
 
+async def _log_rotation_loop(interval_seconds: float) -> None:
+    """Фоновая ротация логов (§8.5 плана миграции) — раз в сутки по умолчанию.
+
+    `testing_service` — чистый FastAPI без своего брокера/scheduler'а (в
+    отличие от `testing_worker`), поэтому обычного `asyncio.create_task` в
+    lifespan достаточно вместо полноценного taskiq-периодика: план явно не
+    требует ежеминутной точности для этой политики. Пересчёт `protected` по
+    всем веткам — safety-net поверх пересчёта "на лету" при создании лога
+    (`services/test_log.py::get_or_create_log`); затем удаление устаревших
+    незащищённых логов (`settings.log_retention_days`).
+    """
+    from src.db.session import AsyncSessionLocal
+
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+        except asyncio.CancelledError:
+            return
+        try:
+            settings = get_settings()
+            async with AsyncSessionLocal() as db:
+                await log_rotation.recompute_all_branches(db)
+                deleted = await log_rotation.enforce_monthly_retention(db, settings.log_retention_days)
+                if deleted:
+                    logger.info("log rotation: deleted %d stale unprotected log(s)", deleted)
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:  # noqa: BLE001 — периодическая job не должна ронять процесс
+            logger.warning("log rotation loop failed: %s", exc)
+
+
 async def _drain_pending_audit_tasks() -> None:
     """Дать шанс дойти до сети in-flight audit-emit task'ам перед закрытием пула."""
     pending = [t for t in audit_service._pending_audit_tasks if not t.done()]
@@ -133,9 +164,19 @@ def create_application() -> FastAPI:
         except Exception as exc:  # noqa: BLE001 — startup-best-effort
             logger.warning("audit events registration failed: %s", exc)
 
+        rotation_task = asyncio.create_task(
+            _log_rotation_loop(settings.log_rotation_interval_seconds)
+        )
+
         try:
             yield
         finally:
+            rotation_task.cancel()
+            try:
+                await rotation_task
+            except asyncio.CancelledError:
+                pass
+
             # Shutdown order: introspect-client → drain pending audit-tasks →
             # audit-client. Закрытие introspect'а первым безопасно — uvicorn
             # graceful shutdown уже перестал принимать новые запросы к этому

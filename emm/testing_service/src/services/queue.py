@@ -48,7 +48,13 @@ from src.repositories import queue_item as repo
 from src.repositories import test_definition as test_definition_repo
 from src.repositories import test_stand as stand_repo
 from src.schemas.queue import PrepareForTestCompletedCallback, QueueClaimItem, QueueCompletedRequest
-from src.services import audit_service, creds_stash, department_test_settings as dts_svc, server_client
+from src.services import (
+    audit_service,
+    creds_stash,
+    department_test_settings as dts_svc,
+    log_rotation,
+    server_client,
+)
 from src.services.test_command_arg import resolve_command
 from src.utils.ids import queue_item_id as new_id
 
@@ -119,6 +125,11 @@ async def enqueue(
             message="launch_context must include RC, KERNEL and MODE for prepare-for-test",
             details={"missing": missing},
         )
+
+    # Немедленная ротация (§8.5): старый незащищённый лог того же теста с
+    # тем же RC/KERNEL освобождает место сразу, не дожидаясь ежемесячной
+    # чистки — иначе перезапуски одного и того же прогона копят дубликаты.
+    await log_rotation.rotate_duplicate_if_any(db, test.id, ctx)
 
     was_empty = await repo.count_active_for_stand(db, stand.id) == 0
     position = await repo.next_position_for_stand(db, stand.id)

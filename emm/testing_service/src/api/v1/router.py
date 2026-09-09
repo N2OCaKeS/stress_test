@@ -11,6 +11,7 @@ from src.api.v1.endpoints.global_variables import router as global_variables_rou
 from src.api.v1.endpoints.health import router as health_router
 from src.api.v1.endpoints.test_command_args import router as test_command_args_router
 from src.api.v1.endpoints.test_definitions import router as test_definitions_router
+from src.api.v1.endpoints.test_logs import router as test_logs_router
 from src.api.v1.endpoints.test_stands import router as test_stands_router
 
 router = APIRouter()
@@ -20,3 +21,4 @@ router.include_router(test_definitions_router, tags=["test-definitions"])
 router.include_router(test_command_args_router, tags=["test-definitions"])
 router.include_router(test_stands_router, tags=["test-stands"])
 router.include_router(department_test_settings_router, tags=["department-test-settings"])
+router.include_router(test_logs_router, tags=["test-logs"])

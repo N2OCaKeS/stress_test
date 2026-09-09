@@ -48,6 +48,7 @@ SERVICE_EVENTS = [
     {"action": "queue_item.retry_created", "description": "A retry queue item was created after a failure", "default_severity": "INFO"},
     {"action": "queue_item.claimed", "description": "testing_worker claimed a ready queue item", "default_severity": "INFO"},
     {"action": "queue_item.completed", "description": "testing_worker reported the outcome of an SSH run", "default_severity": "INFO"},
+    {"action": "test_log.rotated", "description": "A test log was deleted by the rotation policy (duplicate relaunch or monthly retention)", "default_severity": "WARNING"},
 ]
 
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
@@ -104,6 +105,7 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("queue_item.claimed", "success"): "INFO",
     ("queue_item.completed", "success"): "INFO",
     ("queue_item.completed", "failure"): "WARNING",
+    ("test_log.rotated", "success"): "WARNING",
 }
 
 

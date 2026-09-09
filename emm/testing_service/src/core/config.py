@@ -248,6 +248,32 @@ class Settings(BaseSettings):
 
     worker_log_level: str = Field(default="INFO", alias="WORKER_LOG_LEVEL")
 
+    # ── Логи прогонов: ротация (§8.5 плана миграции) ─────────────────────────
+
+    log_retention_days: int = Field(
+        default=30,
+        ge=1,
+        alias="LOG_RETENTION_DAYS",
+        description=(
+            "Сколько дней хранить незащищённый (`protected=false`) лог "
+            "прогона, прежде чем фоновая суточная job его удалит. Защищённые "
+            "логи (2 самых свежих RC на своей ветке) этой политике не "
+            "подчиняются, пока не появится следующий RC."
+        ),
+    )
+    log_rotation_interval_seconds: float = Field(
+        default=86400.0,
+        ge=1.0,
+        alias="LOG_ROTATION_INTERVAL_SECONDS",
+        description=(
+            "Период фонового `asyncio`-цикла ротации логов в lifespan "
+            "процесса (см. `main.py`). testing_service — чистый FastAPI без "
+            "своего брокера/scheduler'а, поэтому это обычный "
+            "`asyncio.create_task`, не taskiq-задача; суточной точности "
+            "достаточно (план §8.5 явно не требует ежеминутной)."
+        ),
+    )
+
     # ── Validators ────────────────────────────────────────────────────────────
 
     @field_validator("service_api_keys", mode="before")

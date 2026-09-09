@@ -42,3 +42,13 @@ def queue_item_id() -> str:
     """`qi_<uuid>` — для queue_items. Используется буквально как `correlation_id`
     в вызове `prepare-for-test`, без дополнительной обёртки."""
     return _new_id("qi_")
+
+
+def test_log_id() -> str:
+    """`tlog_<uuid>` — для test_logs."""
+    return _new_id("tlog_")
+
+
+def test_log_segment_id() -> str:
+    """`tseg_<uuid>` — для test_log_segments."""
+    return _new_id("tseg_")

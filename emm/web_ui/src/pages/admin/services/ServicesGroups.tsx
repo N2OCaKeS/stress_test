@@ -972,6 +972,7 @@ function ServicesCard({
         <div className="mt-3 flex gap-2 flex-wrap items-center">
           <Dropdown
             mode="single"
+            searchable
             className="flex-1 mono"
             placeholder="— сервис —"
             options={candidates.map((s): DropdownOption => ({ value: s.service_name, label: s.service_name }))}
@@ -1157,6 +1158,7 @@ function RoleAssigner({
       <div className="flex flex-wrap gap-2 items-center">
         <Dropdown
           mode="single"
+          searchable
           className="mono"
           options={grantedServices.map((s): DropdownOption => ({ value: s, label: s }))}
           value={serviceName}
@@ -1298,6 +1300,7 @@ function GroupCreateForm({
         <FormRow label="department_id">
           <Dropdown
             mode="single"
+            searchable
             options={depts.map((d): DropdownOption => ({ value: d.id, label: d.name }))}
             value={deptId}
             disabled={lockDept}

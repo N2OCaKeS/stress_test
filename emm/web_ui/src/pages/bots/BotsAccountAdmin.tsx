@@ -151,6 +151,7 @@ export function BotsAccountAdmin() {
             <Filter className="w-3 h-3" />
             <Dropdown
               mode="single"
+              searchable
               placeholder="все депы"
               options={(deptsQ.data ?? []).map((d) => ({ value: d.id, label: d.name }))}
               value={deptFilter}

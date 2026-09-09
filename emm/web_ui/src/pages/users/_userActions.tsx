@@ -277,6 +277,7 @@ export function CreateUserForm({
         <div>
           <Dropdown
             mode="single"
+            searchable
             placeholder="— (платформенный)"
             options={depts.map((d) => ({ value: d.id, label: d.name }))}
             value={dept}
@@ -450,6 +451,7 @@ export function EditRolesForm({
       <Field label="dept">
         <Dropdown
           mode="single"
+          searchable
           placeholder="— (платформенный)"
           options={depts.map((d) => ({ value: d.id, label: d.name }))}
           value={dept}
@@ -542,6 +544,7 @@ export function CreateGroupForm({
       <Field label="dept">
         <Dropdown
           mode="single"
+          searchable
           placeholder="— выберите dept —"
           options={depts.map((d) => ({ value: d.id, label: d.name }))}
           value={deptId}
@@ -707,6 +710,7 @@ export function CreateBotForm({
       <Field label="owner_dept">
         <Dropdown
           mode="single"
+          searchable
           placeholder="— выберите dept —"
           options={depts.map((d) => ({ value: d.id, label: d.name }))}
           value={deptId}

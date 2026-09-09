@@ -1699,6 +1699,7 @@ export function AclModal({
           {useRoleSelect ? (
             <Dropdown
               mode="single"
+              searchable
               options={roleOptions.map((r) => ({
                 value: r.role_name,
                 label: r.description ? `${r.role_name} — ${r.description}` : r.role_name,

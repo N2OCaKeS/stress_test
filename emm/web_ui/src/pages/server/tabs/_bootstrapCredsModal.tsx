@@ -119,6 +119,7 @@ export function BootstrapCredsFields({
           <label className="field-label">server_account</label>
           <Dropdown
             mode="single"
+            searchable
             placeholder="— нет доступных аккаунтов —"
             disabled={disabled || accountsLoading || noAccounts}
             options={accounts.map((a) => ({

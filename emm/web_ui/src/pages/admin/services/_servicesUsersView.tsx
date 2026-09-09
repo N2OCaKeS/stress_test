@@ -748,6 +748,7 @@ function AssignRolesModal({
           )}
           <Dropdown
             mode="single"
+            searchable
             className="w-full"
             placeholder="— выбрать сервис —"
             options={serviceOptions.map((name): DropdownOption => ({ value: name, label: name }))}

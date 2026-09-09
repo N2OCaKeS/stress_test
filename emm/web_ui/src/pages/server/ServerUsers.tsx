@@ -1960,6 +1960,7 @@ function ServersSection({
         <span className="text-xs text-dim">Привязать сервер:</span>
         <Dropdown
           mode="single"
+          searchable
           className="flex-1 min-w-[160px]"
           placeholder={bindCandidates.length === 0 ? "— нет доступных серверов —" : "— выберите сервер —"}
           disabled={!canOperate || binding || bindCandidates.length === 0}

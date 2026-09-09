@@ -271,6 +271,7 @@ export function LogEventsLive() {
               />
               <Dropdown
                 mode="single"
+                searchable
                 options={serviceOptions.map((s) => ({ value: s, label: s }))}
                 value={filters.service}
                 onChange={(v) => setFilter("service", v)}

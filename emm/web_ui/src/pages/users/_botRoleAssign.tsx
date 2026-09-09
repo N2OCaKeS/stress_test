@@ -101,6 +101,7 @@ export function BotRoleAssign({
         <label className="text-xs text-dim">service</label>
         <Dropdown
           mode="single"
+          searchable
           options={serviceOptions}
           value={service}
           onChange={setService}

@@ -816,6 +816,7 @@ export function UserDetail() {
               <span className="text-dim">Сервис:</span>
               <Dropdown
                 mode="single"
+                searchable
                 options={services.map((s) => ({ value: s, label: s }))}
                 value={filterSvc}
                 onChange={setFilterSvc}

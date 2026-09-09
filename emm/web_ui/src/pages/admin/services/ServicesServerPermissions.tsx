@@ -667,6 +667,7 @@ function RoleEditor({
           <span className="text-dim">роль отдела</span>
           <Dropdown
             mode="single"
+            searchable
             placeholder="— выберите роль —"
             options={allRoleNames.map((r): DropdownOption => ({
               value: r,
@@ -1120,6 +1121,7 @@ function NewRoleForm({
             <span className="text-dim">на основе (опционально)</span>
             <Dropdown
               mode="single"
+              searchable
               placeholder="— с нуля —"
               options={baseRoles.map((r): DropdownOption => ({ value: r, label: r }))}
               value={base}
@@ -1446,6 +1448,7 @@ function EntityMatrix({
             <span className="mx-1 h-5 w-px bg-token" aria-hidden="true" />
             <Dropdown
               mode="single"
+              searchable
               options={clearableRoles.map((r): DropdownOption => ({ value: r, label: r }))}
               value={activeRole}
               onChange={(v) => setSelectedRole(v as RoleName)}

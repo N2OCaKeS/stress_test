@@ -1148,6 +1148,7 @@ function OsSyncModal({
             ) : (
               <Dropdown
                 mode="single"
+                searchable
                 placeholder="— не задана —"
                 options={[{ value: "", label: "— не задана —" }, ...items.map((v) => ({ value: v.id, label: v.name }))]}
                 value={selected}
@@ -1844,6 +1845,7 @@ function AstraUpdateCard({
               ) : (
                 <Dropdown
                   mode="single"
+                  searchable
                   placeholder="— выберите версию —"
                   disabled={disabled}
                   options={[
@@ -2361,6 +2363,7 @@ function VmNetworkCard({
               <span className="text-dim text-xs">Пул IPAM</span>
               <Dropdown
                 mode="single"
+                searchable
                 placeholder="— авто-выбор пула —"
                 disabled={pending}
                 options={[
@@ -2417,6 +2420,7 @@ function VmNetworkCard({
                 ) : (
                   <Dropdown
                     mode="single"
+                    searchable
                     className="mt-1"
                     placeholder="— выберите адрес —"
                     options={availableIps.map((a) => ({ value: a, label: a }))}

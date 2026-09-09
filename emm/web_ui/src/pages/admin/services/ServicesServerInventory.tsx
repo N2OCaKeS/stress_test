@@ -150,6 +150,7 @@ function ServerForm({
         <FormRow label="dept">
           <Dropdown
             mode="single"
+            searchable
             options={DEPTS.map((d): DropdownOption => ({ value: d.id, label: d.name }))}
             value={dept}
             onChange={setDept}

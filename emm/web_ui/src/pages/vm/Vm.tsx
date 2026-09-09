@@ -1265,6 +1265,7 @@ function VmBlockForm({
             <span className="text-dim text-xs">Бокс (реестр)</span>
             <Dropdown
               mode="single"
+              searchable
               placeholder="— не выбран —"
               options={boxes.map((bx) => ({
                 value: bx.id,
@@ -1473,6 +1474,7 @@ function PoolIpPicker({
         <span className="text-dim text-xs">Пул IPAM</span>
         <Dropdown
           mode="single"
+          searchable
           placeholder="— авто-выбор пула —"
           options={pools.map((p) => ({
             value: p.id,
@@ -1526,6 +1528,7 @@ function PoolIpPicker({
           ) : (
             <Dropdown
               mode="single"
+              searchable
               placeholder="— выберите адрес —"
               options={availableIps.map((a) => ({ value: a, label: a }))}
               value={ip}

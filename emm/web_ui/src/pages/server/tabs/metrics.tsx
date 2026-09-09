@@ -461,6 +461,7 @@ export function MetricsTab({ entity }: MetricsTabProps) {
               <div key={idx} className="flex flex-col gap-1">
                 <Dropdown
                   mode="single"
+                  searchable
                   className="w-44 self-end"
                   options={ALL_PANEL_KINDS.map((kind) => ({ value: kind, label: PANEL_MAP[kind].label }))}
                   value={panel}

@@ -842,6 +842,7 @@ function BotCreateForm({ onDone }: { onDone: () => void }) {
           <FormRow label="department_id">
             <Dropdown
               mode="single"
+              searchable
               placeholder={deptsQ.loading ? "загрузка…" : "нет отделов"}
               options={depts.map((d): DropdownOption => ({ value: d.id, label: d.name }))}
               value={dept}
@@ -1141,6 +1142,7 @@ function MockBotForm({
         <FormRow label="owner_dept">
           <Dropdown
             mode="single"
+            searchable
             options={DEPTS.map((d): DropdownOption => ({ value: d.id, label: d.name }))}
             value={dept}
             onChange={setDept}

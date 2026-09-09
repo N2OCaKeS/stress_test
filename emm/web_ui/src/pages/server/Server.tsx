@@ -653,6 +653,7 @@ function FilterPane({
     <div className="mt-2 grid grid-cols-3 gap-1 text-[11px] text-dim">
       <Dropdown
         mode="single"
+        searchable
         placeholder="все отделы"
         options={[{ value: "", label: "все отделы" }, ...depts.map((d) => ({ value: d.id, label: d.name }))]}
         value={dept}
@@ -1257,6 +1258,7 @@ function VmCreateFlow({
             <span className="text-dim text-xs">VMS-hub *</span>
             <Dropdown
               mode="single"
+              searchable
               options={hubs.map((h) => ({
                 value: h.id,
                 label: `${h.display_name ?? h.hostname} · ${h.ip_address} · ${h.vm_count} ВМ`,
@@ -1377,6 +1379,7 @@ function CreatePane({
             {isAccountAdmin ? (
               <Dropdown
                 mode="single"
+                searchable
                 placeholder="— нет отделов —"
                 options={depts.map((d) => ({ value: d.id, label: d.name }))}
                 value={departmentId}

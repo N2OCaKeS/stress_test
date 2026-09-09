@@ -179,6 +179,7 @@ export function OsUsersDiscoveryModal({
               </span>
               <Dropdown
                 mode="single"
+                searchable
                 className="flex-1 min-w-[180px]"
                 placeholder="— нет серверов —"
                 disabled={polling}

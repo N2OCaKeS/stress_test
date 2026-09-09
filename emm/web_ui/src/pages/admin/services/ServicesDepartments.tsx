@@ -496,6 +496,7 @@ function DeptServicesSection({
           <span className="text-dim text-xs">service_name</span>
           <Dropdown
             mode="single"
+            searchable
             className="mono"
             placeholder="— выбрать сервис —"
             options={available.map((s): DropdownOption => ({ value: s.service_name, label: s.service_name }))}

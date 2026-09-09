@@ -889,6 +889,7 @@ function UserForm({
           ) : (
             <Dropdown
               mode="single"
+              searchable
               placeholder="— (платформенный)"
               options={depts.map((d): DropdownOption => ({ value: d.id, label: d.name }))}
               value={dept ?? ""}

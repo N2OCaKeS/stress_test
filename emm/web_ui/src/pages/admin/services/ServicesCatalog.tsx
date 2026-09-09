@@ -306,6 +306,7 @@ function ServiceRolesByDept({
         <span className="text-dim">dept</span>
         <Dropdown
           mode="single"
+          searchable
           className="flex-1"
           placeholder="— нет отделов —"
           options={(deptsQ.data ?? [])

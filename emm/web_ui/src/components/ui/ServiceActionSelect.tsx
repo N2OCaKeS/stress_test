@@ -94,6 +94,7 @@ export function ServiceActionSelect({
         </span>
         <Dropdown
           mode="single"
+          searchable
           className={selectClassName}
           options={serviceOptions}
           value={service}
@@ -117,6 +118,7 @@ export function ServiceActionSelect({
         </span>
         <Dropdown
           mode="single"
+          searchable
           className={selectClassName}
           options={actionSelectOptions}
           value={action}

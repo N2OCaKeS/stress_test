@@ -258,6 +258,7 @@ function AccountConsolePanel({
           </span>
           <Dropdown
             mode="single"
+            searchable
             placeholder="— выберите учётку —"
             options={[
               { value: "", label: "— выберите учётку —" },

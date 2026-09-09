@@ -833,6 +833,7 @@ function AstraUpdateModal({
             ) : (
               <Dropdown
                 mode="single"
+                searchable
                 placeholder="— выберите версию —"
                 options={[
                   { value: "", label: "— выберите версию —" },

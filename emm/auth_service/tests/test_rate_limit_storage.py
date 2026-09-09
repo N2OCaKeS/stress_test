@@ -109,6 +109,7 @@ class TestLimiterStorageUri:
             uri = main_module.limiter._storage_uri
             assert uri.startswith("memory")
         finally:
+            monkeypatch.undo()
             config_module.get_settings.cache_clear()
             importlib.reload(main_module)
 
@@ -127,6 +128,7 @@ class TestLimiterStorageUri:
         try:
             assert main_module.limiter._storage_uri == "redis://test-redis:6379/0"
         finally:
+            monkeypatch.undo()
             config_module.get_settings.cache_clear()
             importlib.reload(main_module)
 

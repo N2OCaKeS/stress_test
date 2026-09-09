@@ -31,3 +31,14 @@ def test_command_arg_id() -> str:
 def test_stand_id() -> str:
     """`stand_<uuid>` — для test_stands."""
     return _new_id("stand_")
+
+
+def department_test_settings_id() -> str:
+    """`dts_<uuid>` — для department_test_settings."""
+    return _new_id("dts_")
+
+
+def queue_item_id() -> str:
+    """`qi_<uuid>` — для queue_items. Используется буквально как `correlation_id`
+    в вызове `prepare-for-test`, без дополнительной обёртки."""
+    return _new_id("qi_")

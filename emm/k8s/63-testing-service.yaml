@@ -107,6 +107,12 @@ spec:
             - name: SERVER_SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: TESTING_SERVICE_BOT_TOKEN }
+            # Канал брони/подготовки в server_service (acquire-for-service/
+            # release-for-service/service-status/prepare-for-test) — чистый
+            # shared-secret, отдельный от бот-токена выше.
+            - name: SERVER_SERVICE_INTERNAL_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_SERVICE_INTERNAL_API_KEY }
           command: ["uvicorn"]
           args:
             - "src.main:app"

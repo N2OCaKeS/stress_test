@@ -467,9 +467,13 @@ WORKER_BOT_TOKEN="${WORKER_BOT_TOKEN:-dbos_bot_$(rand "$RAND_S2S_KEY_LEN")}"
 # rotation_runner identity — ключ, под которым CronJob rotation-scheduler ходит
 # в /internal/migration_status для гейтинга `--auto-finalize` master-ротаций.
 ROTATION_RUNNER_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
-# Inbound SERVICE_API_KEYS-map для server_service: worker_bot + rotation_runner.
-# Формат kv-list.
-SERVER_INBOUND_SERVICE_API_KEYS="worker_bot:${WORKER_BOT_TOKEN},rotation_runner:${ROTATION_RUNNER_API_KEY}"
+# Бронь стенда от имени testing_service (acquire-for-service/release-for-
+# service/service-status/prepare-for-test, §5.1/§5.2 плана миграции).
+# Bearer == SERVER_SERVICE_INTERNAL_API_KEY у testing_service ниже.
+SERVER_SERVICE_INTERNAL_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
+# Inbound SERVICE_API_KEYS-map для server_service: worker_bot + rotation_runner
+# + testing_service. Формат kv-list.
+SERVER_INBOUND_SERVICE_API_KEYS="worker_bot:${WORKER_BOT_TOKEN},rotation_runner:${ROTATION_RUNNER_API_KEY},testing_service:${SERVER_SERVICE_INTERNAL_API_KEY}"
 
 # secret_service envelope encryption (HKDF_SALT_HEX переиспользуется общий)
 SECRET_ENCRYPTION_KEY="${SECRET_ENCRYPTION_KEY:-$(rand_b64 "$RAND_MASTER_KEY_BYTES")}"
@@ -490,13 +494,22 @@ SECRET_INBOUND_SERVICE_API_KEYS_JSON="{\"worker_bot\":\"${SECRET_INBOUND_WORKER_
 SECRET_INTERNAL_API_KEY="${SECRET_INBOUND_AUTH_KEY}"
 
 # testing_service: introspect ключ для исходящих /authorization/introspect +
-# inbound s2s map под будущий callback server_service → testing_service
-# (§5.1 плана миграции, prepare-for-test, волна 2/5 — эндпоинт ещё не
-# реализован, но ключ заводим сразу, симметрично secret_service).
+# inbound s2s map. `server_service` шлёт сюда callback завершения
+# prepare-for-test (§5.1 плана миграции), `testing_worker` — claim/completed
+# очереди (§5.5).
 TESTING_INTROSPECT_SERVICE_API_KEY=$(rand "$RAND_INTROSPECT_KEY_LEN")
 TESTING_INBOUND_AUTH_KEY=$(rand "$RAND_S2S_KEY_LEN")
 TESTING_INBOUND_SERVER_KEY=$(rand "$RAND_S2S_KEY_LEN")
-TESTING_INBOUND_SERVICE_API_KEYS_JSON="{\"auth_service\":\"${TESTING_INBOUND_AUTH_KEY}\",\"server_service\":\"${TESTING_INBOUND_SERVER_KEY}\"}"
+TESTING_INBOUND_WORKER_KEY=$(rand "$RAND_S2S_KEY_LEN")
+TESTING_INBOUND_SERVICE_API_KEYS_JSON="{\"auth_service\":\"${TESTING_INBOUND_AUTH_KEY}\",\"server_service\":\"${TESTING_INBOUND_SERVER_KEY}\",\"testing_worker\":\"${TESTING_INBOUND_WORKER_KEY}\"}"
+# server_service шлёт callback prepare-for-test с этим bearer'ом (identity
+# server_service в мапе выше) — server_service монтирует его как
+# TESTING_SERVICE_API_KEY.
+TESTING_SERVICE_API_KEY="${TESTING_INBOUND_SERVER_KEY}"
+# testing_worker ходит в /internal/queue/* с этим bearer'ом (identity
+# testing_worker в мапе выше) — сам worker монтирует его как
+# TESTING_SERVICE_INTERNAL_API_KEY.
+TESTING_SERVICE_INTERNAL_API_KEY="${TESTING_INBOUND_WORKER_KEY}"
 # Бот testing_service (auth_service заводит его на старте, роль
 # guest@server_service) — нужен choices_source dynamic-резолверам, чтобы
 # читать каталог OS-версий у server_service (introspect-based, не whitelist).
@@ -620,6 +633,19 @@ cat <<EOF
   # server_service: s2s
   SERVER_SERVICE_API_KEY: ${SERVER_SERVICE_API_KEY}
   SERVER_INBOUND_SERVICE_API_KEYS: '${SERVER_INBOUND_SERVICE_API_KEYS}'
+  # server_service: исходящий callback prepare-for-test → testing_service
+  # (§5.1 плана миграции). Bearer == ключ server_service в inbound-map
+  # testing_service (TESTING_INBOUND_SERVICE_API_KEYS выше).
+  TESTING_SERVICE_API_KEY: ${TESTING_SERVICE_API_KEY}
+  # testing_service: канал брони/подготовки в server_service (acquire-for-
+  # service/release-for-service/service-status/prepare-for-test). Bearer ==
+  # ключ testing_service в inbound-map server_service (SERVER_INBOUND_
+  # SERVICE_API_KEYS выше).
+  SERVER_SERVICE_INTERNAL_API_KEY: ${SERVER_SERVICE_INTERNAL_API_KEY}
+  # testing_worker: канал очереди в testing_service (/internal/queue/claim,
+  # /internal/queue/{id}/completed). Bearer == ключ testing_worker в
+  # inbound-map testing_service (TESTING_INBOUND_SERVICE_API_KEYS выше).
+  TESTING_SERVICE_INTERNAL_API_KEY: ${TESTING_SERVICE_INTERNAL_API_KEY}
 
   # server_worker
   WORKER_BOT_TOKEN: ${WORKER_BOT_TOKEN}

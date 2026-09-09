@@ -28,6 +28,11 @@ class EntityType(StrEnum):
     # Тестовые стенды — надстройка над Server/Vm из server_service.
     TEST_STAND = "test_stand"
 
+    # Настройки тестирования отдела (retry/имя тестового пользователя/
+    # расписание HR-отчёта). Одна строка на department_id, upsert — отдельного
+    # create/delete действия нет.
+    DEPARTMENT_TEST_SETTINGS = "department_test_settings"
+
 
 class Action(StrEnum):
     """Fine-grained actions матрицы entity_permissions.
@@ -39,6 +44,10 @@ class Action(StrEnum):
     CREATE = "create"
     UPDATE = "update"
     DELETE = "delete"
+    # Отдельное действие поверх обычного `view` стенда — раскрытие пароля/
+    # SSH-ключа учётки исполнения теста (§5.3 плана миграции). Держится
+    # отдельно от `view`, потому что это уже секрет, не паспортные данные.
+    VIEW_TEST_CREDENTIALS = "view_test_credentials"
 
 
 # Какие действия вообще осмысленны для каждого типа. Пара вне этой карты —
@@ -52,8 +61,39 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     }),
     EntityType.TEST_STAND: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
+        Action.VIEW_TEST_CREDENTIALS,
+    }),
+    EntityType.DEPARTMENT_TEST_SETTINGS: frozenset({
+        Action.VIEW, Action.UPDATE,
     }),
 }
+
+
+class QueueItemState(StrEnum):
+    """Состояния элемента очереди (§2.4, §5.5 плана миграции).
+
+    `queued` → `preparing` (запрошен prepare-for-test у server_service) →
+    `ready` (callback принёс креды, застэшены) → `running` (забрал
+    testing_worker) → `succeeded`/`failed` — терминальные. Провал на
+    `preparing`/`running` может породить retry-элемент (см.
+    `services/queue.py`), сам провалившийся элемент всё равно уходит в
+    `failed`.
+    """
+
+    QUEUED = "queued"
+    PREPARING = "preparing"
+    READY = "ready"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+# Состояния, которые занимают место в очереди стенда — пока у стенда есть
+# элемент в одном из них, следующий просто ждёт своей позиции.
+ACTIVE_QUEUE_STATES: frozenset[str] = frozenset({
+    QueueItemState.QUEUED, QueueItemState.PREPARING, QueueItemState.RUNNING,
+    QueueItemState.READY,
+})
 
 
 class ServiceRole(StrEnum):

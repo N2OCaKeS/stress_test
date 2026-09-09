@@ -12,6 +12,25 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class TestStandTestCredentialsResponse(BaseModel):
+    """Ответ GET /test-stands/{id}/test-credentials — прокси на server_service (§5.3).
+
+    Зеркалит `server_service.schemas.server.ServerTestCredentialsResponse` —
+    сам секрет остаётся у server_service, здесь только pass-through тела его
+    ответа. Оба поля с `_b64` заполняются только при `?reveal=true` и наличии
+    `view_test_credentials` — тот же гейт, что и на стороне server_service.
+    """
+
+    exists: bool = Field(description="Есть ли выпущенная учётка (пайплайн prepare-for-test хоть раз прошёл).")
+    username: str | None = Field(default=None, description="OS-логин учётки исполнения теста.")
+    ssh_public_key: str | None = Field(default=None, description="Публичный ключ, не секрет.")
+    rotated_at: datetime | None = Field(default=None, description="Когда учётка выписана/перевыпущена последний раз.")
+    password_b64: str | None = Field(default=None, description="base64(plaintext) пароля — только при reveal=true.")
+    ssh_private_key_b64: str | None = Field(
+        default=None, description="base64(plaintext PEM) приватного ключа — только при reveal=true.",
+    )
+
+
 class TestStandCreate(BaseModel):
     """Тело POST /test-stands. `server_id` уникален — один сервер, один стенд."""
 

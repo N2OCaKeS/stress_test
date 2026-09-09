@@ -261,3 +261,48 @@ async def delete_test_stand(
         status="success", allowed=True,
         details={"server_id": server_id},
     )
+
+
+async def get_test_stand_credentials(
+    db: AsyncSession,
+    identity: Identity,
+    bearer_token: str,
+    stand_id: str,
+    *,
+    reveal: bool,
+) -> dict:
+    """Прокси на `server_service`'овский `GET /servers/{id}/test-credentials` (§5.3).
+
+    Единый гейт на метаданные и на секрет — `view_test_credentials`, как и на
+    стороне server_service: без него не отдаём даже `username`/`rotated_at`.
+    Секрет остаётся у server_service, здесь только pass-through его ответа
+    (bearer вызывающего, не сервисный ключ — этот эндпоинт гейтится обычной
+    ролевой матрицей `server_service.admin`, не shared-secret каналом).
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.TEST_STAND, Action.VIEW_TEST_CREDENTIALS,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "test_stand.test_credentials_viewed",
+            target_id=stand_id, target_type="test_stand",
+            status="denied", allowed=False,
+            details={"reveal": reveal},
+        )
+        raise
+
+    obj = await repo.get_by_id(db, stand_id)
+    if obj is None:
+        raise NotFoundError(
+            error_code="TEST_STAND_NOT_FOUND",
+            message="Test stand not found",
+        )
+    data = await server_client.get_test_credentials(bearer_token, obj.server_id, reveal=reveal)
+    audit_service.emit(
+        "test_stand.test_credentials_viewed",
+        target_id=stand_id, target_type="test_stand",
+        status="success", allowed=True,
+        details={"reveal": reveal, "server_id": obj.server_id},
+    )
+    return data

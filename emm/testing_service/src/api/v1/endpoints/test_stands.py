@@ -15,7 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.dependencies.auth import AuthenticatedIdentity, BearerToken, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse, PaginatedResponse
-from src.schemas.test_stand import TestStandCreate, TestStandResponse, TestStandUpdate
+from src.schemas.test_stand import (
+    TestStandCreate,
+    TestStandResponse,
+    TestStandTestCredentialsResponse,
+    TestStandUpdate,
+)
 from src.services import test_stand as svc
 
 router = APIRouter(prefix="/test-stands")
@@ -138,6 +143,37 @@ async def update_test_stand(
     """PATCH стенда. Доступ: `(test_stand, *, update)`."""
     obj = await svc.update_test_stand(db, identity, stand_id, body)
     return TestStandResponse.model_validate(obj)
+
+
+@router.get(
+    "/{stand_id}/test-credentials",
+    response_model=TestStandTestCredentialsResponse,
+    summary="Учётка исполнения теста стенда (живая отладка, §5.3 плана миграции)",
+    description=(
+        "Прокси на `GET /servers/{id}/test-credentials` server_service'а — "
+        "секрет остаётся у него, здесь только pass-through его ответа с "
+        "bearer'ом вызывающего. Без `?reveal=true` — только метаданные "
+        "(`exists`/`username`/`ssh_public_key`/`rotated_at`). С "
+        "`?reveal=true` добавляет `password_b64`/`ssh_private_key_b64` — "
+        "CRITICAL-аудит на стороне server_service, отдельный от просмотра "
+        "метаданных."
+    ),
+    responses={
+        403: {"description": "Нет `view_test_credentials`, либо server_service отказал в доступе."},
+        404: {"description": "Стенд не найден, либо сервер не найден/не виден на стороне server_service."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — reveal-rate-limit server_service'а пробит."},
+    },
+)
+async def get_test_stand_credentials(
+    stand_id: str,
+    identity: CurrentUserIdentity,
+    bearer_token: BearerToken,
+    db: AsyncSession = Depends(get_db),
+    reveal: bool = Query(default=False, description="Раскрыть пароль и приватный ключ."),
+) -> TestStandTestCredentialsResponse:
+    """Get кред тестового пользователя стенда. Доступ: `(test_stand, *, view_test_credentials)`."""
+    data = await svc.get_test_stand_credentials(db, identity, bearer_token, stand_id, reveal=reveal)
+    return TestStandTestCredentialsResponse(**data)
 
 
 @router.delete(

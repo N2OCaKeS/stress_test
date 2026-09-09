@@ -22,6 +22,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.exc import IntegrityError
 
+from src.api.internal_router import internal_router
 from src.api.router import api_router
 from src.core.config import get_settings
 from src.core.exceptions import AppException
@@ -287,6 +288,10 @@ def create_application() -> FastAPI:
         )
 
     app.include_router(api_router, prefix="/api")
+    # Внутренние service-to-service роутеры (callback prepare-for-test,
+    # claim/completed для testing_worker) — вне /api/testing/v1 namespace,
+    # см. `src/api/internal_router.py`.
+    app.include_router(internal_router)
 
     def custom_openapi():
         """Кастомный OpenAPI-генератор — добавляет BearerAuth security-scheme."""

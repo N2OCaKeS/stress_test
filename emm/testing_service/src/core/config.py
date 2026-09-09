@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import re
 from functools import lru_cache
+from typing import Annotated
 from urllib.parse import urlparse
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Матчит DSN `redis://[user]:<password>@host:port/db`. Без password не матчит.
 _REDIS_URL_PASSWORD_RE = re.compile(r"://[^/@]*:[^@/]+@")
@@ -148,6 +149,43 @@ class Settings(BaseSettings):
         alias="SERVER_REQUEST_TIMEOUT_SECONDS",
         description="Таймаут одного исходящего вызова в server_service.",
     )
+    server_service_internal_api_key: str = Field(
+        default="",
+        alias="SERVER_SERVICE_INTERNAL_API_KEY",
+        description=(
+            "Shared s2s-секрет для КАНАЛА БРОНИ/ПОДГОТОВКИ (prepare-for-test, "
+            "acquire-for-service/release-for-service/service-status, "
+            "connection-info) — уходит как 'Authorization: Bearer <key>' + "
+            "'X-Service-Identity: testing_service' на whitelist-эндпоинты "
+            "`SERVER_INBOUND_SERVICE_API_KEYS['testing_service']` server_service. "
+            "НЕ путать с `SERVER_SERVICE_API_KEY` выше: тот — бот-токен "
+            "testing_service, валидный для auth_service introspect (каталоги "
+            "os-versions/kernels и pass-through `GET /servers/{id}`); этот — "
+            "чистый shared-secret без пользовательской identity, годный только "
+            "для explicit-whitelist internal-путей server_service. Два разных "
+            "механизма на два разных набора эндпоинтов, оба нужны одновременно."
+        ),
+    )
+
+    # ── Redis creds stash (креды тестового пользователя между callback'ом ────
+    # prepare-for-test и claim'ом testing_worker'а) ───────────────────────────
+
+    creds_stash_ttl_seconds: int = Field(
+        default=600,
+        ge=1,
+        alias="CREDS_STASH_TTL_SECONDS",
+        description=(
+            "TTL одноразовой Redis-записи с test_username/test_password/"
+            "test_ssh_private_key между успешным callback'ом prepare-for-test "
+            "и тем моментом, когда testing_worker заберёт их через "
+            "`POST /internal/queue/claim`. Очередь по стенду сериализована, "
+            "поэтому воркер должен успеть забрать готовый элемент быстро — "
+            "10 минут щедрый запас. Не шифруется отдельным конвертом (в "
+            "отличие от `REDIS_STASH_ENCRYPTION_KEY` у server_service): это "
+            "уже эфемерные креды с коротким временем жизни и одноразовым "
+            "ключом, чего для этой волны достаточно."
+        ),
+    )
 
     # ── Inbound service-to-service auth ───────────────────────────────────────
 
@@ -160,12 +198,14 @@ class Settings(BaseSettings):
             "миграции существующих caller'ов."
         ),
     )
-    service_api_keys: dict[str, str] = Field(
+    service_api_keys: Annotated[dict[str, str], NoDecode] = Field(
         default_factory=dict,
         alias="SERVICE_API_KEYS",
         description=(
             "Per-service map: имя caller'а → его inbound API-key. Формат "
-            "значения env: JSON-объект или comma-separated 'svc:key,svc:key'."
+            "значения env: JSON-объект или comma-separated 'svc:key,svc:key'. "
+            "`NoDecode` — иначе pydantic-settings пытается JSON.loads() значение "
+            "до вызова валидатора ниже и падает на kv-list формате."
         ),
     )
 

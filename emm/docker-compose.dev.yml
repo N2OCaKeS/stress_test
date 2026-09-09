@@ -178,6 +178,16 @@ services:
       REDIS_STASH_ENCRYPTION_KEY_VERSION: "1"
       SERVER_WORKER_DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server_worker
       SERVER_WORKER_REDIS_URL: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/0
+      # Бронь стенда от имени testing_service (acquire-for-service/
+      # release-for-service/service-status/prepare-for-test) — inbound
+      # whitelist под shared-secret, отдельный канал от SERVICE_API_KEY выше
+      # (тот — только для introspect в auth_service).
+      SERVER_INBOUND_SERVICE_API_KEYS: testing_service=dev-testing-service-internal-key-do-not-use-in-prod
+      # Исходящий callback завершения prepare-for-test в testing_service
+      # (§5.1 плана миграции). Должен совпадать байт-в-байт с
+      # SERVICE_API_KEYS['server_service'] у testing_service ниже.
+      TESTING_SERVICE_URL: http://testing_service:8004
+      TESTING_SERVICE_API_KEY: dev-server-service-callback-key-do-not-use-in-prod
       APP_LOG_LEVEL: INFO
     command: >
       sh -c "python -m alembic upgrade head &&
@@ -413,6 +423,14 @@ services:
       # совпадать байт-в-байт с TESTING_SERVICE_BOT_TOKEN у auth_service выше
       # (тот его засеял в БД на старте — `bootstrap_testing_service_bot`).
       SERVER_SERVICE_API_KEY: dbos_bot_dev_testing_service_local_token_do_not_use_in_prod
+      # Канал брони/подготовки в server_service (acquire-for-service/
+      # release-for-service/service-status/prepare-for-test) — чистый
+      # shared-secret, НЕ бот-токен выше: должен совпадать байт-в-байт с
+      # SERVER_INBOUND_SERVICE_API_KEYS['testing_service'] у server_service.
+      SERVER_SERVICE_INTERNAL_API_KEY: dev-testing-service-internal-key-do-not-use-in-prod
+      # Inbound s2s-map: server_service шлёт сюда callback завершения
+      # prepare-for-test, testing_worker — claim/completed очереди.
+      SERVICE_API_KEYS: server_service=dev-server-service-callback-key-do-not-use-in-prod,testing_worker=dev-testing-worker-internal-key-do-not-use-in-prod
       # Отдельный db-index на общем redis-контейнере: /0 — server_worker
       # broker, /1 — auth_service rate-limit (prod), /2 — secret_service
       # rate-limit, /3 — testing_service.
@@ -447,6 +465,11 @@ services:
     environment:
       APP_ENV: local
       REDIS_URL: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/3
+      # Заведены заранее для очереди (§5.5 плана миграции, POST /internal/
+      # queue/claim и /completed на testing_service) — потребитель появится
+      # вместе с реальным SSH-исполнением, конфиг сейчас их не читает.
+      TESTING_SERVICE_URL: http://testing_service:8004
+      TESTING_SERVICE_INTERNAL_API_KEY: dev-testing-worker-internal-key-do-not-use-in-prod
       WORKER_LOG_LEVEL: INFO
     command: ["taskiq", "worker", "src.main:broker"]
     volumes:

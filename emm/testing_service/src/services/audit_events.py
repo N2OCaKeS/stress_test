@@ -38,6 +38,16 @@ SERVICE_EVENTS = [
     {"action": "test_stand.create", "description": "Test stand registered", "default_severity": "INFO"},
     {"action": "test_stand.update", "description": "Test stand updated", "default_severity": "INFO"},
     {"action": "test_stand.delete", "description": "Test stand deleted", "default_severity": "WARNING"},
+    {"action": "test_stand.test_credentials_viewed", "description": "Test stand's test-user credentials viewed via server_service proxy", "default_severity": "WARNING"},
+    {"action": "department_test_settings.update", "description": "Department test settings upserted", "default_severity": "INFO"},
+    {"action": "queue_item.enqueued", "description": "Test queued on a stand", "default_severity": "INFO"},
+    {"action": "queue_item.prepare_requested", "description": "prepare-for-test requested from server_service", "default_severity": "INFO"},
+    {"action": "queue_item.prepare_start_failed", "description": "Could not start the preparation cycle (acquire/prepare-for-test call failed)", "default_severity": "WARNING"},
+    {"action": "queue_item.ready", "description": "prepare-for-test callback succeeded, credentials stashed", "default_severity": "INFO"},
+    {"action": "queue_item.prepare_failed", "description": "prepare-for-test callback reported failure", "default_severity": "WARNING"},
+    {"action": "queue_item.retry_created", "description": "A retry queue item was created after a failure", "default_severity": "INFO"},
+    {"action": "queue_item.claimed", "description": "testing_worker claimed a ready queue item", "default_severity": "INFO"},
+    {"action": "queue_item.completed", "description": "testing_worker reported the outcome of an SSH run", "default_severity": "INFO"},
 ]
 
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
@@ -81,6 +91,19 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("test_stand.delete", "success"): "WARNING",
     ("test_stand.delete", "failure"): "WARNING",
     ("test_stand.delete", "denied"): "WARNING",
+    ("test_stand.test_credentials_viewed", "success"): "WARNING",
+    ("test_stand.test_credentials_viewed", "denied"): "WARNING",
+    ("department_test_settings.update", "success"): "INFO",
+    ("department_test_settings.update", "denied"): "WARNING",
+    ("queue_item.enqueued", "success"): "INFO",
+    ("queue_item.prepare_requested", "success"): "INFO",
+    ("queue_item.prepare_start_failed", "failure"): "WARNING",
+    ("queue_item.ready", "success"): "INFO",
+    ("queue_item.prepare_failed", "failure"): "WARNING",
+    ("queue_item.retry_created", "success"): "INFO",
+    ("queue_item.claimed", "success"): "INFO",
+    ("queue_item.completed", "success"): "INFO",
+    ("queue_item.completed", "failure"): "WARNING",
 }
 
 

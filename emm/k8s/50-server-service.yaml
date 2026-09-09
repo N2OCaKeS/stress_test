@@ -15,6 +15,8 @@ data:
   # TLS-терминация только на Ingress. Изоляция — NetworkPolicy.
   AUTH_SERVICE_URL: http://auth-service:8000
   LOGGING_SERVICE_URL: http://logging-service:8001
+  # Исходящий callback завершения prepare-for-test (§5.1 плана миграции).
+  TESTING_SERVICE_URL: http://testing-service:8004
   # introspect идёт по plain http — verify не применим.
   INTROSPECT_TLS_VERIFY: "false"
   # Internal endpoints (worker → server_service): требовать
@@ -169,6 +171,11 @@ spec:
             - name: LOGGING_SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY_SERVER }
+            # Исходящий callback prepare-for-test → testing_service. Bearer ==
+            # ключ server_service в inbound-map testing_service.
+            - name: TESTING_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: TESTING_SERVICE_API_KEY }
             # Подпись токена веб-консоли ВМ — общий секрет с console_proxy.
             - name: VM_CONSOLE_TOKEN_SECRET
               valueFrom:

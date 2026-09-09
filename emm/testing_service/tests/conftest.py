@@ -88,22 +88,29 @@ def _create_schema():
 
 @pytest.fixture(autouse=True)
 def _cleanup_created_variables():
-    """Снести переменные, тесты и стенды, созданные тестом.
+    """Снести переменные, тесты, стенды и очередь, созданные тестом.
 
     У сидированных миграцией `created_by` пуст, у заведённых через API — всегда
     заполнен id актора, так что этого признака достаточно, чтобы отличить одни
-    от других. `test_definitions` удаляются первыми — ON DELETE CASCADE сносит
-    их `test_command_args` заодно, тогда `global_variables` со ссылающимися
-    слотами гарантированно уже свободны от FK. `test_stands` ни от кого не
-    зависит — порядок относительно них неважен.
+    от других. `queue_items` удаляются первыми — `stand_id`/`test_id`/
+    `retry_of_id` держат `ON DELETE RESTRICT`/`SET NULL` FK на `test_stands`/
+    `test_definitions`/самих себя, поэтому пока есть хоть одна строка очереди,
+    снести стенд/тест нельзя. `test_definitions` удаляются следующими — ON
+    DELETE CASCADE сносит их `test_command_args` заодно, тогда
+    `global_variables` со ссылающимися слотами гарантированно уже свободны от
+    FK. `test_stands` ни от кого не зависит — порядок относительно них
+    неважен. `department_test_settings` не привязан ни к чему по FK, чистим
+    по department_id, начинающемуся с тестового префикса `dep_`.
     """
     yield
     engine = create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT", pool_pre_ping=True)
     try:
         with engine.connect() as conn:
+            conn.execute(text("DELETE FROM queue_items WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM test_definitions WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM global_variables WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM test_stands WHERE created_by IS NOT NULL"))
+            conn.execute(text("DELETE FROM department_test_settings WHERE department_id LIKE 'dep\\_%' ESCAPE '\\'"))
     finally:
         engine.dispose()
 

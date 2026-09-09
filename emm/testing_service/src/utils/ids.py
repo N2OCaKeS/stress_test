@@ -52,3 +52,8 @@ def test_log_id() -> str:
 def test_log_segment_id() -> str:
     """`tseg_<uuid>` — для test_log_segments."""
     return _new_id("tseg_")
+
+
+def test_run_id() -> str:
+    """`run_<uuid>` — для test_runs."""
+    return _new_id("run_")

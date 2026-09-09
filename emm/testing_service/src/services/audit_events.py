@@ -49,6 +49,8 @@ SERVICE_EVENTS = [
     {"action": "queue_item.claimed", "description": "testing_worker claimed a ready queue item", "default_severity": "INFO"},
     {"action": "queue_item.completed", "description": "testing_worker reported the outcome of an SSH run", "default_severity": "INFO"},
     {"action": "test_log.rotated", "description": "A test log was deleted by the rotation policy (duplicate relaunch or monthly retention)", "default_severity": "WARNING"},
+    {"action": "test_run.create", "description": "A fleet-wide test run campaign was created", "default_severity": "INFO"},
+    {"action": "test_run.status_changed", "description": "A test run campaign's aggregate status changed after a queue item transition", "default_severity": "INFO"},
 ]
 
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
@@ -106,6 +108,9 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("queue_item.completed", "success"): "INFO",
     ("queue_item.completed", "failure"): "WARNING",
     ("test_log.rotated", "success"): "WARNING",
+    ("test_run.create", "success"): "INFO",
+    ("test_run.create", "denied"): "WARNING",
+    ("test_run.status_changed", "success"): "INFO",
 }
 
 

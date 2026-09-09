@@ -95,7 +95,8 @@ def _cleanup_created_variables():
     от других. `queue_items` удаляются первыми — `stand_id`/`test_id`/
     `retry_of_id` держат `ON DELETE RESTRICT`/`SET NULL` FK на `test_stands`/
     `test_definitions`/самих себя, поэтому пока есть хоть одна строка очереди,
-    снести стенд/тест нельзя. `test_definitions` удаляются следующими — ON
+    снести стенд/тест нельзя. `test_runs` — `SET NULL` от `queue_items`, порядок
+    относительно них неважен. `test_definitions` удаляются следующими — ON
     DELETE CASCADE сносит их `test_command_args` заодно, тогда
     `global_variables` со ссылающимися слотами гарантированно уже свободны от
     FK. `test_stands` ни от кого не зависит — порядок относительно них
@@ -112,6 +113,7 @@ def _cleanup_created_variables():
             # test_log_segments/test_log_blobs (ON DELETE CASCADE).
             conn.execute(text("DELETE FROM test_logs"))
             conn.execute(text("DELETE FROM queue_items WHERE created_by IS NOT NULL"))
+            conn.execute(text("DELETE FROM test_runs WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM test_definitions WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM global_variables WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM test_stands WHERE created_by IS NOT NULL"))

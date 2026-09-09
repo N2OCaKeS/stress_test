@@ -18,6 +18,12 @@
 `stand_id`/`test_id` — настоящие FK: `test_stands`/`test_definitions` живут в
 этой же БД (в отличие от `server_id`/`os_version_id`, которые указывают в
 БД `server_service` и остаются сырыми id без FK).
+
+`test_run_id` — NULL для одиночных `enqueue()`-вызовов вне кампании (как это
+работает сегодня), заполнено, когда item порождён `test_run` (§2.4, §6.1).
+`ON DELETE SET NULL`, не `RESTRICT`/`CASCADE`: удаления `test_runs` в сервисе
+пока нет, но если оно появится, история отдельных item'ов очереди не должна
+схлопываться каскадом вместе с кампанией, которая её породила.
 """
 
 from datetime import datetime
@@ -51,6 +57,9 @@ class QueueItem(Base):
         String(64), ForeignKey("queue_items.id", ondelete="SET NULL"), nullable=True,
     )
     debug_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    test_run_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("test_runs.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
     # id запроса на стороне server_service (202-ответ prepare-for-test) —
     # для сшивки входящего callback'а и наблюдаемости.
     prepare_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

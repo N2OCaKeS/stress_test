@@ -33,6 +33,12 @@ class EntityType(StrEnum):
     # create/delete действия нет.
     DEPARTMENT_TEST_SETTINGS = "department_test_settings"
 
+    # Прогон (fleet-wide кампания под один РЦ+ядро+режим на весь выбранный
+    # пул стендов, §2.4/§6.1 плана миграции). Чтение открыто любому
+    # аутентифицированному актору (как test_definition/test_stand) — под
+    # матрицей только создание.
+    TEST_RUN = "test_run"
+
 
 class Action(StrEnum):
     """Fine-grained actions матрицы entity_permissions.
@@ -66,6 +72,9 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     EntityType.DEPARTMENT_TEST_SETTINGS: frozenset({
         Action.VIEW, Action.UPDATE,
     }),
+    EntityType.TEST_RUN: frozenset({
+        Action.CREATE,
+    }),
 }
 
 
@@ -94,6 +103,25 @@ ACTIVE_QUEUE_STATES: frozenset[str] = frozenset({
     QueueItemState.QUEUED, QueueItemState.PREPARING, QueueItemState.RUNNING,
     QueueItemState.READY,
 })
+
+
+class TestRunStatus(StrEnum):
+    """Агрегатный статус кампании (§2.4, §6.1 плана миграции).
+
+    Пересчитывается из состояний дочерних `queue_items` (см.
+    `services/test_run_status.py`), сама кампания своё состояние не ведёт
+    независимо. `queued` — кампания заведена, но ни один item ещё не
+    появился (все выбранные стенды оказались без закреплённых тестов).
+    `running` — есть хоть один нетерминальный item. `succeeded`/`failed` —
+    все item'ы терминальны и все в одном исходе. `partially_failed` — все
+    терминальны, но исходы разные.
+    """
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    PARTIALLY_FAILED = "partially_failed"
 
 
 class ServiceRole(StrEnum):

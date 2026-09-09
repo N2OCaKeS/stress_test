@@ -67,6 +67,16 @@ async def count_all(
     return int((await db.execute(stmt)).scalar_one())
 
 
+async def list_by_pinned_stand(db: AsyncSession, stand_id: str) -> list[TestDefinition]:
+    """Все тесты, закреплённые за этим стендом (`pinned_stand_id`) — вход кампании (§6.1)."""
+    stmt = (
+        select(TestDefinition)
+        .where(TestDefinition.pinned_stand_id == stand_id)
+        .order_by(TestDefinition.code.asc())
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
 async def create(db: AsyncSession, data: dict) -> TestDefinition:
     """INSERT новой строки. commit — на caller'е."""
     obj = TestDefinition(**data)

@@ -54,6 +54,7 @@ from src.services import (
     department_test_settings as dts_svc,
     log_rotation,
     server_client,
+    test_run_status,
 )
 from src.services.test_command_arg import resolve_command, resolve_command_masked
 from src.utils.ids import queue_item_id as new_id
@@ -71,6 +72,7 @@ async def enqueue(
     launch_context: dict[str, str] | None = None,
     debug_mode: bool = False,
     stand_id: str | None = None,
+    test_run_id: str | None = None,
 ) -> QueueItem:
     """Поставить тест в очередь стенда.
 
@@ -81,6 +83,10 @@ async def enqueue(
     `launch_context` сохраняется как есть, без резолва глобальных переменных
     (это отдельная забота за пределами этой волны) — но обязан нести
     `RC`/`KERNEL`/`MODE`, потому что ими параметризуется `prepare-for-test`.
+
+    `test_run_id` — заполняется только вызовом со стороны `services/test_run.py`
+    (кампания породила этот item); одиночные вызовы (UI/CLI постановка одного
+    теста в очередь) оставляют его `None`, как и раньше.
     """
     test = await test_definition_repo.get_by_id(db, test_id)
     if test is None:
@@ -144,6 +150,7 @@ async def enqueue(
         "is_retry": False,
         "retry_of_id": None,
         "debug_mode": debug_mode,
+        "test_run_id": test_run_id,
         "created_by": identity.user_id,
     }
     item = await repo.create(db, data)
@@ -263,6 +270,7 @@ async def _fail_item_and_maybe_retry(
         "is_retry": True,
         "retry_of_id": item.id,
         "debug_mode": item.debug_mode,
+        "test_run_id": item.test_run_id,
         "created_by": item.created_by,
     })
     audit_service.emit(
@@ -294,6 +302,11 @@ async def _fail_and_advance(
         failed_step=failed_step, error=error, audit_action=audit_action,
     )
     await db.commit()
+    if retry_item is None and item.test_run_id:
+        # Провал без retry — терминально для этого item'а. Если он часть
+        # кампании, статус мог только что перейти в failed/partially_failed.
+        await test_run_status.recompute(db, item.test_run_id)
+        await db.commit()
     if retry_item is not None:
         await _start_or_continue_cycle(db, stand, retry_item, is_first_ever=is_first_ever)
     elif not is_first_ever:
@@ -491,6 +504,9 @@ async def complete_item(db: AsyncSession, queue_item_id: str, body: QueueComplet
         item.finished_at = datetime.now(timezone.utc)
         item.error = None
         await db.commit()
+        if item.test_run_id:
+            await test_run_status.recompute(db, item.test_run_id)
+            await db.commit()
         audit_service.emit(
             "queue_item.completed",
             target_id=item.id, target_type="queue_item",

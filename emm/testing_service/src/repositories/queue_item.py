@@ -97,6 +97,16 @@ async def claim_next_ready(db: AsyncSession) -> QueueItem | None:
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def list_by_test_run_id(db: AsyncSession, test_run_id: str) -> list[QueueItem]:
+    """Все item'ы, порождённые этой кампанией — для агрегации статуса и детальной карточки."""
+    stmt = (
+        select(QueueItem)
+        .where(QueueItem.test_run_id == test_run_id)
+        .order_by(QueueItem.created_at.asc())
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
 async def create(db: AsyncSession, data: dict) -> QueueItem:
     """INSERT новой строки. commit — на caller'е."""
     obj = QueueItem(**data)

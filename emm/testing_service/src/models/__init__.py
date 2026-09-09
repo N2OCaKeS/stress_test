@@ -9,6 +9,7 @@ from src.models.test_definition import TestDefinition
 from src.models.test_log import TestLog
 from src.models.test_log_blob import TestLogBlob
 from src.models.test_log_segment import TestLogSegment
+from src.models.test_run import TestRun
 from src.models.test_stand import TestStand
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     "TestLog",
     "TestLogBlob",
     "TestLogSegment",
+    "TestRun",
     "TestStand",
 ]

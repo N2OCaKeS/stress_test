@@ -30,6 +30,7 @@ from src.core.constants import (
 from src.dependencies.auth import require_internal_caller
 from src.dependencies.db import get_db
 from src.schemas.internal import (
+    ServerConnectionInfoResponse,
     ServiceAcquireRequest,
     ServiceBusyStatusRequest,
     ServiceReservationResponse,
@@ -153,3 +154,28 @@ async def set_service_status(
         busy_note=body.busy_note,
     )
     return _to_response(server)
+
+
+@router.get(
+    "/{server_id}/connection-info",
+    response_model=ServerConnectionInfoResponse,
+    responses=_COMMON_RESPONSES,
+)
+async def get_connection_info(
+    server_id: str = Path(description="ID сервера."),
+    db: AsyncSession = Depends(get_db),
+    caller: str = Depends(require_internal_caller(*_ALLOWED_IDENTITIES)),
+) -> ServerConnectionInfoResponse:
+    """Отдать IP стенда сервисному каллеру, у которого нет bearer'а пользователя.
+
+    `testing_worker` получает задание на исполнение через shared-secret канал
+    `testing_service`'а и физически не может пробросить чужой bearer в
+    `GET /servers/{id}` (там видимость гейтится department_id держателя
+    токена). IP в `test_stands` намеренно не дублируется (§4 плана миграции),
+    поэтому вместо этого — узкий эндпоинт, отдающий только хост.
+
+    Не читается как признак владения броней и ничего не проверяет по
+    `busy_*` — просто справочник по id, доступный тому же whitelist'у.
+    """
+    server = await server_svc.get_connection_info_for_service(db, server_id=server_id)
+    return ServerConnectionInfoResponse(server_id=server.id, host=str(server.ip_address))

@@ -418,3 +418,51 @@ class TestServiceReservationBlocksUserOperations:
         assert row.busy_state == BusyState.FREE
         assert row.busy_actor_type == "user"
         assert row.busy_service_name is None
+
+
+class TestConnectionInfo:
+    """`GET /internal/servers/{id}/connection-info` — хост стенда для testing_worker."""
+
+    async def test_returns_host_for_allowed_identity(
+        self, client, make_server, db, configure_service_keys,
+    ):
+        srv = await make_server()
+        await db.flush()
+        resp = await client.get(
+            f"{BASE}/{srv.id}/connection-info", headers=_hdr(TESTING_SECRET),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["server_id"] == srv.id
+        assert body["host"] == str(srv.ip_address)
+
+    async def test_unknown_server_404(self, client, configure_service_keys):
+        resp = await client.get(
+            f"{BASE}/srv_does_not_exist/connection-info", headers=_hdr(TESTING_SECRET),
+        )
+        assert resp.status_code == 404, resp.text
+        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+
+    async def test_unknown_identity_rejected(
+        self, client, make_server, db, configure_service_keys,
+    ):
+        srv = await make_server()
+        await db.flush()
+        resp = await client.get(
+            f"{BASE}/{srv.id}/connection-info",
+            headers=_hdr(TESTING_SECRET, identity="rogue_service"),
+        )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["error_code"] == "SERVICE_IDENTITY_NOT_ALLOWED"
+
+    async def test_does_not_require_a_reservation(
+        self, client, make_server, db, configure_service_keys,
+    ):
+        """Справочник по id — не завязан на busy_state, работает и на свободном сервере."""
+        srv = await make_server()
+        await db.flush()
+        assert (await _row(db, srv.id)).busy_state == BusyState.FREE
+        resp = await client.get(
+            f"{BASE}/{srv.id}/connection-info", headers=_hdr(TESTING_SECRET),
+        )
+        assert resp.status_code == 200, resp.text

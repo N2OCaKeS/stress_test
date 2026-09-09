@@ -1418,6 +1418,24 @@ async def set_service_busy_status(
     return obj
 
 
+async def get_connection_info_for_service(db: AsyncSession, *, server_id: str) -> Server:
+    """Отдать сервер по id для s2s-каллера без пользовательского bearer'а.
+
+    Единственный сегодняшний потребитель — `GET /internal/servers/{id}/
+    connection-info` для `testing_worker` (SSH-подключение к стенду). Никакой
+    проверки видимости/отдела здесь нет — этот канал уже прошёл
+    `require_internal_caller`, department-скоуп у сервисного каллера
+    отсутствует по построению (см. `acquire_server_for_service`).
+    """
+    obj = await repo.get_by_id(db, server_id)
+    if obj is None:
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND",
+            message="Server not found",
+        )
+    return obj
+
+
 async def recover_stuck_updating(db: AsyncSession, *, limit: int = 500) -> dict:
     """Освободить серверы, застрявшие в `busy_state='updating'` дольше TTL.
 

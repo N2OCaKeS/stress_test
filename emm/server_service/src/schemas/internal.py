@@ -722,3 +722,18 @@ class ServiceReservationResponse(BaseModel):
         default=None,
         description="С какого момента держится бронь (UTC). Смена стадии его не двигает.",
     )
+
+
+class ServerConnectionInfoResponse(BaseModel):
+    """Ответ GET /internal/servers/{id}/connection-info.
+
+    Единственный внутренний потребитель — `testing_worker`: у него нет
+    пользовательского bearer'а для pass-through `GET /servers/{id}`
+    (`_ensure_visible` гейтит его по department_id держателя токена), а
+    прошивать IP стенда в `test_stands` намеренно не стали (§4 плана
+    миграции — "надстройка без дублирования"). Отдаёт только то, что нужно
+    для SSH-подключения, не полную карточку сервера.
+    """
+
+    server_id: str = Field(description="ID сервера.")
+    host: str = Field(description="`Server.ip_address` — подключаться по IP, не по hostname.")

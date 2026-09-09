@@ -27,6 +27,7 @@ from src.utils.ids import department_test_settings_id
 from tests.conftest import auth_hdr as _hdr
 
 TESTS_BASE = "/api/testing/v1/test-definitions"
+VARS_BASE = "/api/testing/v1/global-variables"
 STANDS_BASE = "/api/testing/v1/test-stands"
 CALLBACK_BASE = "/internal/prepare-for-test"
 QUEUE_BASE = "/internal/queue"
@@ -141,7 +142,9 @@ async def _create_stand(client, admin_token, department_id="dep_a") -> tuple[str
     return resp.json()["id"], server_id
 
 
-async def _create_test_def(client, admin_token, pinned_stand_id: str | None) -> str:
+async def _create_test_def(
+    client, admin_token, pinned_stand_id: str | None, *, with_sensitive_arg: bool = False,
+) -> str:
     payload = {
         "code": f"queue.test.{uuid.uuid4().hex[:8]}",
         "full_name": "Тест очереди",
@@ -156,6 +159,18 @@ async def _create_test_def(client, admin_token, pinned_stand_id: str | None) -> 
         json={"kind": "literal", "literal_value": "--run"},
     )
     assert arg.status_code == 201, arg.text
+
+    if with_sensitive_arg:
+        var_resp = await client.get(
+            f"{VARS_BASE}/by-code/TEST_PASSWORD", headers=_hdr(admin_token),
+        )
+        assert var_resp.status_code == 200, var_resp.text
+        password_arg = await client.post(
+            f"{TESTS_BASE}/{test_id}/args", headers=_hdr(admin_token),
+            json={"kind": "variable", "variable_id": var_resp.json()["id"], "override_value": "s3cr3t"},
+        )
+        assert password_arg.status_code == 201, password_arg.text
+
     return test_id
 
 
@@ -443,7 +458,7 @@ class TestClaim:
     ):
         mock_server_service(host="10.9.9.9")
         stand_id, server_id = await _create_stand(client, admin_token)
-        test_id = await _create_test_def(client, admin_token, stand_id)
+        test_id = await _create_test_def(client, admin_token, stand_id, with_sensitive_arg=True)
         async with AsyncSessionLocal() as db:
             item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
         await client.post(
@@ -464,7 +479,8 @@ class TestClaim:
         assert payload["host"] == "10.9.9.9"
         assert payload["test_username"] == "u"
         assert payload["test_password"] == "s3cr3t"
-        assert payload["command"] == ["--run"]
+        assert payload["command"] == ["--run", "s3cr3t"]
+        assert payload["command_masked"] == ["--run", "***"]
         assert payload["debug_mode"] is False
         assert payload["is_retry"] is False
 

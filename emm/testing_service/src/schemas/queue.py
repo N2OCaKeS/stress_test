@@ -44,6 +44,14 @@ class QueueClaimItem(BaseModel):
     test_password: str
     test_ssh_private_key: str
     command: list[str] = Field(description="Аргументы команды, уже резолвленные (`resolve_command`).")
+    command_masked: list[str] = Field(
+        description=(
+            "Та же команда, но variable-слоты с `is_sensitive=true` заменены "
+            "на `***` (`resolve_command_masked`). Единственная версия, которую "
+            "воркеру можно класть в лог — сырых кредов в командной строке лога "
+            "быть не должно."
+        ),
+    )
     debug_mode: bool
     is_retry: bool
 

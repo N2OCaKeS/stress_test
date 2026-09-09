@@ -127,3 +127,32 @@ class TestResolveCommand:
             args = await svc.resolve_command(db, test_id, {})
         assert isinstance(args, list)
         assert args == ["a", "b"]
+
+
+class TestResolveCommandMasked:
+    async def test_sensitive_variable_is_masked(self, client, admin_token):
+        test_id = await _create_test(client, admin_token)
+        password_id = await _variable_id(client, admin_token, "TEST_PASSWORD")
+        await _add_literal(client, admin_token, test_id, "--password", position=0)
+        await _add_variable(client, admin_token, test_id, password_id, position=1)
+        async with AsyncSessionLocal() as db:
+            args = await svc.resolve_command(db, test_id, {"TEST_PASSWORD": "hunter2"})
+            masked = await svc.resolve_command_masked(db, test_id, {"TEST_PASSWORD": "hunter2"})
+        assert args == ["--password", "hunter2"]
+        assert masked == ["--password", "***"]
+
+    async def test_sensitive_variable_masked_even_with_override(self, client, admin_token):
+        test_id = await _create_test(client, admin_token)
+        key_id = await _variable_id(client, admin_token, "TEST_SSH_KEY")
+        await _add_variable(client, admin_token, test_id, key_id, override_value="-----KEY-----")
+        async with AsyncSessionLocal() as db:
+            masked = await svc.resolve_command_masked(db, test_id, {})
+        assert masked == ["***"]
+
+    async def test_non_sensitive_variable_not_masked(self, client, admin_token):
+        test_id = await _create_test(client, admin_token)
+        variable_id = await _variable_id(client, admin_token, "TESTENV")
+        await _add_variable(client, admin_token, test_id, variable_id)
+        async with AsyncSessionLocal() as db:
+            masked = await svc.resolve_command_masked(db, test_id, {"TESTENV": "prod"})
+        assert masked == ["prod"]

@@ -55,7 +55,7 @@ from src.services import (
     log_rotation,
     server_client,
 )
-from src.services.test_command_arg import resolve_command
+from src.services.test_command_arg import resolve_command, resolve_command_masked
 from src.utils.ids import queue_item_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -422,6 +422,7 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
 
     try:
         command = await resolve_command(db, item.test_id, ctx)
+        command_masked = await resolve_command_masked(db, item.test_id, ctx)
     except AppException as exc:
         await _fail_and_advance(
             db, item, stand,
@@ -455,6 +456,7 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
         test_password=creds.get("test_password"),
         test_ssh_private_key=creds.get("test_ssh_private_key"),
         command=command,
+        command_masked=command_masked,
         debug_mode=item.debug_mode,
         is_retry=item.is_retry,
     )

@@ -230,6 +230,36 @@ async def delete_command_arg(
     )
 
 
+async def _resolve_variable_slot(db: AsyncSession, slot: TestCommandArg, launch_context: dict[str, str]):
+    """Находит переменную слота и её резолвленное (немаскированное) значение.
+
+    Общая часть `resolve_command`/`resolve_command_masked`: обе идут по одним
+    и тем же слотам и должны согласиться на одном и том же значении для
+    variable-слота, отличаясь только тем, показывают его как есть или прячут
+    за `is_sensitive`.
+    """
+    variable = await global_variable_repo.get_by_id(db, slot.variable_id)
+    if variable is None:
+        raise NotFoundError(
+            error_code="GLOBAL_VARIABLE_NOT_FOUND",
+            message="Global variable not found",
+            details={"variable_id": slot.variable_id, "arg_id": slot.id},
+        )
+
+    if slot.override_value is not None:
+        value = str(slot.override_value)
+    else:
+        if variable.code not in launch_context:
+            raise DomainValidationError(
+                error_code="LAUNCH_CONTEXT_VARIABLE_MISSING",
+                message=f"launch_context is missing a value for '{variable.code}'",
+                details={"code": variable.code, "arg_id": slot.id},
+            )
+        value = str(launch_context[variable.code])
+
+    return variable, value
+
+
 async def resolve_command(
     db: AsyncSession,
     test_id: str,
@@ -253,23 +283,36 @@ async def resolve_command(
             args.append(str(slot.literal_value))
             continue
 
-        if slot.override_value is not None:
-            args.append(str(slot.override_value))
+        _variable, value = await _resolve_variable_slot(db, slot, launch_context)
+        args.append(value)
+
+    return args
+
+
+async def resolve_command_masked(
+    db: AsyncSession,
+    test_id: str,
+    launch_context: dict[str, str],
+) -> list[str]:
+    """Та же логика, что `resolve_command`, но для логов (§8.1 плана миграции).
+
+    Слот variable, чья переменная заведена с `is_sensitive=true`, отдаёт
+    `***` вместо реального значения — даже если значение пришло через
+    `override_value`, маскировка привязана к самой переменной, а не к
+    способу, которым слот её получил. `testing_worker` не видит
+    `is_sensitive` вообще (это метаданные каталога, которых у него нет),
+    поэтому маскированную версию обязан посчитать `testing_service`.
+    """
+    await _require_test(db, test_id)
+    slots = await repo.list_by_test(db, test_id)
+
+    args: list[str] = []
+    for slot in slots:
+        if slot.kind == CommandArgKind.LITERAL:
+            args.append(str(slot.literal_value))
             continue
 
-        variable = await global_variable_repo.get_by_id(db, slot.variable_id)
-        if variable is None:
-            raise NotFoundError(
-                error_code="GLOBAL_VARIABLE_NOT_FOUND",
-                message="Global variable not found",
-                details={"variable_id": slot.variable_id, "arg_id": slot.id},
-            )
-        if variable.code not in launch_context:
-            raise DomainValidationError(
-                error_code="LAUNCH_CONTEXT_VARIABLE_MISSING",
-                message=f"launch_context is missing a value for '{variable.code}'",
-                details={"code": variable.code, "arg_id": slot.id},
-            )
-        args.append(str(launch_context[variable.code]))
+        variable, value = await _resolve_variable_slot(db, slot, launch_context)
+        args.append("***" if variable.is_sensitive else value)
 
     return args

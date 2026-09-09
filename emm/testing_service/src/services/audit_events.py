@@ -1,10 +1,12 @@
 """Каталог audit-событий, которые эмитит testing_service.
 
-Регистрируется в loging_service на startup через `register_events()`. Пока
-пусто по бизнес-событиям — `test.launch`/`test.cancel`/`stp.status_updated`/
-`global_variable.created`/... из §11 плана миграции появятся вместе с
-доменом, который их производит (волны 3+). Инфраструктурные события
-(lifecycle + HTTP middleware) заведены сразу — их эмитит уже этот каркас.
+Регистрируется в loging_service на startup через `register_events()`.
+Инфраструктурные события (lifecycle + HTTP middleware) плюс те бизнес-события,
+чей домен уже реализован. Остальные (`test.launch`/`test.cancel`/
+`stp.status_updated`/...) добавляются вместе с доменом, который их производит.
+
+Имя действия — `<object>.<verb>` (`global_variable.create`), как в остальных
+сервисах emm.
 """
 
 from __future__ import annotations
@@ -24,6 +26,9 @@ SERVICE_EVENTS = [
     {"action": "http.access_denied", "description": "HTTP 401/403 response", "default_severity": "CRITICAL"},
     {"action": "http.client_error", "description": "HTTP 4xx response (except 401/403)", "default_severity": "WARNING"},
     {"action": "http.server_error", "description": "HTTP 5xx response", "default_severity": "CRITICAL"},
+    {"action": "global_variable.create", "description": "Global variable created", "default_severity": "INFO"},
+    {"action": "global_variable.update", "description": "Global variable updated", "default_severity": "INFO"},
+    {"action": "global_variable.delete", "description": "Global variable deleted", "default_severity": "WARNING"},
 ]
 
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
@@ -31,6 +36,15 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("http.access_denied", "failure"): "CRITICAL",
     ("http.client_error", "failure"): "WARNING",
     ("http.server_error", "failure"): "CRITICAL",
+    ("global_variable.create", "success"): "INFO",
+    ("global_variable.create", "failure"): "WARNING",
+    ("global_variable.create", "denied"): "WARNING",
+    ("global_variable.update", "success"): "INFO",
+    ("global_variable.update", "failure"): "WARNING",
+    ("global_variable.update", "denied"): "WARNING",
+    ("global_variable.delete", "success"): "WARNING",
+    ("global_variable.delete", "failure"): "WARNING",
+    ("global_variable.delete", "denied"): "WARNING",
 }
 
 

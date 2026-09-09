@@ -127,10 +127,26 @@ class Settings(BaseSettings):
         default="",
         alias="SERVER_SERVICE_URL",
         description=(
-            "Base URL server_service для internal-вызовов (prepare-for-test, "
-            "acquire-for-service/release-for-service, test-credentials proxy). "
-            "Не используется этой волной — понадобится с волны 2/5."
+            "Base URL server_service. Сейчас используется резолверами "
+            "choices_source (каталог OS-версий и ядер); дальше — "
+            "prepare-for-test, acquire-for-service/release-for-service, "
+            "test-credentials proxy."
         ),
+    )
+    server_service_api_key: str = Field(
+        default="",
+        alias="SERVER_SERVICE_API_KEY",
+        description=(
+            "Bearer для исходящих вызовов в server_service. Каталожные пути "
+            "(`/os-versions`) там гейтятся introspect'ом, а не whitelist'ом "
+            "сервисов, поэтому сюда кладётся токен, валидный для auth_service: "
+            "бот-токен testing_service (`dbos_bot_…`) либо PAT."
+        ),
+    )
+    server_request_timeout_seconds: float = Field(
+        default=5.0,
+        alias="SERVER_REQUEST_TIMEOUT_SECONDS",
+        description="Таймаут одного исходящего вызова в server_service.",
     )
 
     # ── Inbound service-to-service auth ───────────────────────────────────────

@@ -26,8 +26,24 @@
 | `http.access_denied` | denied | CRITICAL | 401 или 403. `details = { method, path, status_code }`. |
 | `http.server_error` | failure | CRITICAL | 5xx ответ. `details = { method, path, status_code }`. |
 
+## Global variables
+
+Каталог платформенный, чтение не аудитится (как у `os_version`/`server_category` в `server_service`) — события пишутся только на запись.
+
+| Action | Status | Severity | Описание / payload |
+|---|---|---|---|
+| `global_variable.create` | success | INFO | `details = { code, source, is_sensitive }`. |
+| `global_variable.create` | denied | WARNING | Нет права `create`. `details = { reason: permission_denied }`. |
+| `global_variable.create` | failure | WARNING | Дубль `code`. `details = { reason: duplicate, code }`. |
+| `global_variable.update` | success | INFO | `details = { fields, code }`. |
+| `global_variable.update` | denied | WARNING | Нет права `update`. |
+| `global_variable.update` | failure | WARNING | `reason` = `not_found` либо `duplicate`. |
+| `global_variable.delete` | success | WARNING | `details = { code }`. |
+| `global_variable.delete` | denied | WARNING | Нет права `delete`. |
+| `global_variable.delete` | failure | WARNING | `details = { reason: not_found }`. |
+
 ## Домен (появится по волнам)
 
-По `ALLTA MIGRATION.md` §11 ожидаются (не реализовано этой волной):
+По `ALLTA MIGRATION.md` §11 ожидаются (пока не реализовано):
 
-`test.launch`, `test.cancel`, `stp.status_updated`, `stp.test_case_created`, `global_variable.created`, `test_definition.updated`, `department_report.generated`, `run_summary_comment.posted` и т.д. — заводятся вместе с сервисом, который их производит.
+`test.launch`, `test.cancel`, `stp.status_updated`, `stp.test_case_created`, `test_definition.updated`, `department_report.generated`, `run_summary_comment.posted` и т.д. — заводятся вместе с сервисом, который их производит. Имена приводятся к конвенции `<object>.<verb>` (§11 плана пишет `global_variable.created` — в коде `global_variable.create`, как в остальных сервисах emm).

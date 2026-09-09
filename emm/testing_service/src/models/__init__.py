@@ -1,1 +1,6 @@
-"""ORM-модели testing_service. Появятся вместе с доменом (волна 3+)."""
+"""ORM-модели testing_service. Импортируются здесь, чтобы Alembic видел metadata."""
+
+from src.models.entity_permission import EntityPermission
+from src.models.global_variable import GlobalVariable
+
+__all__ = ["EntityPermission", "GlobalVariable"]

@@ -40,10 +40,12 @@ from src.services import audit_context
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "AuthenticatedIdentity",
     "CurrentIdentity",
     "CurrentUserIdentity",
     "Identity",
     "SERVICE_NAME",
+    "get_authenticated_identity",
     "get_current_identity",
     "require_internal_caller",
     "require_user_context",
@@ -243,6 +245,53 @@ async def get_current_identity(request: Request) -> Identity:
 
 
 CurrentIdentity = Annotated[Identity, Depends(get_current_identity)]
+
+
+async def get_authenticated_identity(request: Request) -> Identity:
+    """Resolve identity без проверки доступа департамента к testing_service.
+
+    Облегчённый вариант `get_current_identity` под платформенные каталоги
+    (глобальные переменные): читать их может любой аутентифицированный актор,
+    включая платформенные роли, у которых нет ни `department_id`, ни
+    testing_service в `allowed_services`. Поэтому `SERVICE_ACCESS_DENIED`-гейт
+    здесь намеренно не проверяется.
+
+    Проверяется только: bearer есть, introspect вернул `active=true`, актор
+    не забанен. Анонимный запрос отбивается 401 — каталог открыт всем
+    аутентифицированным, но не анонимам. Запись в каталог по-прежнему идёт
+    через `CurrentUserIdentity` + матрицу прав.
+    """
+    token = _extract_bearer(request)
+    if token is None:
+        raise AuthenticationError(
+            error_code="ACCESS_TOKEN_MISSING",
+            message="Missing bearer token",
+        )
+    body = getattr(request.state, "introspect_body", None)
+    if body is None:
+        body = await _introspect(token)
+    if not body.get("active"):
+        raise AuthenticationError(
+            error_code="ACCESS_TOKEN_INVALID",
+            message="Token is invalid, expired or revoked",
+        )
+    identity = _to_identity(body)
+    if identity.is_banned:
+        raise AuthenticationError(
+            error_code="USER_BANNED",
+            message="User is banned",
+        )
+    audit_context.update_context(
+        actor_id=identity.user_id,
+        username=identity.username,
+        department_id=identity.department_id,
+        department_name=identity.department_name,
+        subject_type=identity.actor_type,
+    )
+    return identity
+
+
+AuthenticatedIdentity = Annotated[Identity, Depends(get_authenticated_identity)]
 
 
 def require_user_context(

@@ -1,0 +1,263 @@
+"""Use cases стендов (§2.3, §4 плана миграции).
+
+`test_stands` — надстройка над Server/Vm из server_service, без дублирования
+их данных. Создание резолвит `department_id` живым запросом к server_service
+(`server_client.get_server`, pass-through bearer'а вызывающего — см. модуль
+docstring `server_client.py`) и не принимает его от клиента: иначе стенд
+можно было бы завести в чужом отделе, просто подделав поле в теле запроса.
+
+Список отдаёт только то, что хранится в БД testing_service — без живого
+обогащения (N+1 запросов к server_service на страницу списка того не стоит).
+Карточка одного стенда, наоборот, обогащается живыми данными сервера; если
+live-вызов не удаётся, карточка всё равно возвращается — без server-блока, а
+не 503 на весь запрос.
+
+Чтение (list/get) не проверяет права — открыто любому аутентифицированному
+актору, как и `test_definition`. Запись (create/update/delete) — под
+матрицей прав `(test_stand, *, create|update|delete)`.
+"""
+
+import logging
+
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.core.constants import Action, EntityType
+from src.core.exceptions import (
+    AuthorizationError,
+    ConflictError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
+from src.dependencies.auth import Identity
+from src.models import TestStand
+from src.repositories import test_stand as repo
+from src.schemas.test_stand import TestStandCreate, TestStandUpdate
+from src.services import audit_service, permissions, server_client
+from src.utils.ids import test_stand_id as new_id
+
+logger = logging.getLogger(__name__)
+
+
+async def create_test_stand(
+    db: AsyncSession,
+    identity: Identity,
+    bearer_token: str,
+    payload: TestStandCreate,
+) -> TestStand:
+    """INSERT нового стенда. `department_id` — из живой карточки сервера.
+
+    UNIQUE(server_id) → 409 TEST_STAND_DUPLICATE. Сервер не найден/не виден
+    вызывающему/server_service недоступен → ошибка server_client пробрасывается
+    как есть (её error_code уже описывает конкретную причину).
+    """
+    try:
+        await permissions.require_action(db, identity, EntityType.TEST_STAND, Action.CREATE)
+    except AuthorizationError:
+        audit_service.emit(
+            "test_stand.create",
+            target_type="test_stand",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+
+    try:
+        server = await server_client.get_server(bearer_token, payload.server_id)
+    except NotFoundError:
+        audit_service.emit(
+            "test_stand.create",
+            target_type="test_stand",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found", "server_id": payload.server_id},
+        )
+        raise
+    except (AuthorizationError, ServiceUnavailableError):
+        audit_service.emit(
+            "test_stand.create",
+            target_type="test_stand",
+            status="failure", allowed=True,
+            details={"reason": "server_service_unavailable", "server_id": payload.server_id},
+        )
+        raise
+
+    department_id = server.get("department_id")
+    if not department_id:
+        audit_service.emit(
+            "test_stand.create",
+            target_type="test_stand",
+            status="failure", allowed=True,
+            details={"reason": "server_missing_department", "server_id": payload.server_id},
+        )
+        raise ServiceUnavailableError(
+            error_code="SERVER_SERVICE_ERROR",
+            message="server_service response is missing department_id",
+        )
+
+    data = payload.model_dump(mode="json")
+    data["id"] = new_id()
+    data["department_id"] = department_id
+    data["created_by"] = identity.user_id
+    try:
+        obj = await repo.create(db, data)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        logger.warning(
+            "IntegrityError на создании test_stand: %s", type(exc.orig).__name__
+        )
+        audit_service.emit(
+            "test_stand.create",
+            target_type="test_stand",
+            status="failure", allowed=True,
+            details={"reason": "duplicate", "server_id": payload.server_id},
+        )
+        raise ConflictError(
+            error_code="TEST_STAND_DUPLICATE",
+            message="This server is already registered as a test stand",
+            details={"hint": "уникальное поле — server_id"},
+        ) from exc
+    await db.refresh(obj)
+    audit_service.emit(
+        "test_stand.create",
+        target_id=obj.id, target_type="test_stand",
+        status="success", allowed=True,
+        details={"server_id": obj.server_id, "department_id": obj.department_id},
+    )
+    return obj
+
+
+async def get_test_stand(
+    db: AsyncSession,
+    identity: Identity,
+    bearer_token: str,
+    stand_id: str,
+) -> tuple[TestStand, dict | None, bool]:
+    """SELECT стенда по PK + best-effort обогащение карточкой сервера.
+
+    Возвращает `(stand, server, server_unavailable)`. Read без проверки прав
+    и без аудита — как у `test_definition`.
+    """
+    obj = await repo.get_by_id(db, stand_id)
+    if obj is None:
+        raise NotFoundError(
+            error_code="TEST_STAND_NOT_FOUND",
+            message="Test stand not found",
+        )
+
+    server: dict | None = None
+    server_unavailable = False
+    try:
+        server = await server_client.get_server(bearer_token, obj.server_id)
+    except (NotFoundError, AuthorizationError, ServiceUnavailableError) as exc:
+        logger.info(
+            "test_stand %s: live server lookup failed (%s) — отдаём карточку без server-блока",
+            stand_id, type(exc).__name__,
+        )
+        server_unavailable = True
+
+    return obj, server, server_unavailable
+
+
+async def list_test_stands(
+    db: AsyncSession,
+    limit: int,
+    offset: int,
+    *,
+    department_id: str | None = None,
+    is_active: bool | None = None,
+    queue_enabled: bool | None = None,
+) -> tuple[list[TestStand], int]:
+    """List + count стендов под фильтрами. Только хранимые поля, без live-обогащения."""
+    items = await repo.list_all(
+        db, limit=limit, offset=offset,
+        department_id=department_id, is_active=is_active, queue_enabled=queue_enabled,
+    )
+    total = await repo.count_all(
+        db, department_id=department_id, is_active=is_active, queue_enabled=queue_enabled,
+    )
+    return items, total
+
+
+async def update_test_stand(
+    db: AsyncSession,
+    identity: Identity,
+    stand_id: str,
+    payload: TestStandUpdate,
+) -> TestStand:
+    """PATCH-обновление. Изменяемы только `queue_enabled`/`is_active`."""
+    try:
+        await permissions.require_action(db, identity, EntityType.TEST_STAND, Action.UPDATE)
+    except AuthorizationError:
+        audit_service.emit(
+            "test_stand.update",
+            target_id=stand_id, target_type="test_stand",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+    obj = await repo.get_by_id(db, stand_id)
+    if obj is None:
+        audit_service.emit(
+            "test_stand.update",
+            target_id=stand_id, target_type="test_stand",
+            status="failure", allowed=True,
+            details={"reason": "not_found"},
+        )
+        raise NotFoundError(
+            error_code="TEST_STAND_NOT_FOUND",
+            message="Test stand not found",
+        )
+
+    changes = payload.model_dump(exclude_unset=True, mode="json")
+    if not changes:
+        return obj
+    await repo.update(db, obj, changes)
+    await db.commit()
+    await db.refresh(obj)
+    audit_service.emit(
+        "test_stand.update",
+        target_id=obj.id, target_type="test_stand",
+        status="success", allowed=True,
+        details={"fields": list(changes.keys())},
+    )
+    return obj
+
+
+async def delete_test_stand(
+    db: AsyncSession,
+    identity: Identity,
+    stand_id: str,
+) -> None:
+    """Hard-delete стенда. Сервер в server_service не трогается."""
+    try:
+        await permissions.require_action(db, identity, EntityType.TEST_STAND, Action.DELETE)
+    except AuthorizationError:
+        audit_service.emit(
+            "test_stand.delete",
+            target_id=stand_id, target_type="test_stand",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+    obj = await repo.get_by_id(db, stand_id)
+    if obj is None:
+        audit_service.emit(
+            "test_stand.delete",
+            target_id=stand_id, target_type="test_stand",
+            status="failure", allowed=True,
+            details={"reason": "not_found"},
+        )
+        raise NotFoundError(
+            error_code="TEST_STAND_NOT_FOUND",
+            message="Test stand not found",
+        )
+    server_id = obj.server_id
+    await repo.delete(db, obj)
+    await db.commit()
+    audit_service.emit(
+        "test_stand.delete",
+        target_id=stand_id, target_type="test_stand",
+        status="success", allowed=True,
+        details={"server_id": server_id},
+    )

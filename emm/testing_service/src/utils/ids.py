@@ -26,3 +26,8 @@ def test_definition_id() -> str:
 def test_command_arg_id() -> str:
     """`targ_<uuid>` — для test_command_args."""
     return _new_id("targ_")
+
+
+def test_stand_id() -> str:
+    """`stand_<uuid>` — для test_stands."""
+    return _new_id("stand_")

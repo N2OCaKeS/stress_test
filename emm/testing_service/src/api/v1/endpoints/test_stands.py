@@ -1,0 +1,160 @@
+"""CRUD стендов (§2.3, §4 плана миграции).
+
+Стенды — надстройка над Server/Vm из server_service, без дублирования данных.
+Чтение (список/карточка) доступно любому аутентифицированному актору, запись
+(create/update/delete) — под матрицей прав `(test_stand, *, create|update|delete)`.
+
+`GET /test-stands/{id}` пробрасывает bearer вызывающего в server_service —
+`GET /servers/{id}` там гейтит видимость по department_id caller'а, поэтому
+сервисный бот-токен testing_service не годится (см. `services/server_client.py`).
+"""
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.dependencies.auth import AuthenticatedIdentity, BearerToken, CurrentUserIdentity
+from src.dependencies.db import get_db
+from src.schemas.common import OkResponse, PaginatedResponse
+from src.schemas.test_stand import TestStandCreate, TestStandResponse, TestStandUpdate
+from src.services import test_stand as svc
+
+router = APIRouter(prefix="/test-stands")
+
+
+@router.get(
+    "",
+    response_model=PaginatedResponse[TestStandResponse],
+    summary="Список тестовых стендов",
+    description=(
+        "Стенды с опциональными фильтрами по отделу/активности/участию в "
+        "очереди. Доступен любому аутентифицированному актору. Отдаёт только "
+        "хранимые поля — без живого обогащения карточкой сервера (N+1 к "
+        "server_service на страницу списка не делается, см. `GET /{id}`)."
+    ),
+    responses={401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."}},
+)
+async def list_test_stands(
+    identity: AuthenticatedIdentity,
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    department_id: str | None = Query(default=None, description="Фильтр по отделу-владельцу."),
+    is_active: bool | None = Query(default=None, description="Фильтр по активности."),
+    queue_enabled: bool | None = Query(default=None, description="Фильтр по участию в очереди."),
+) -> PaginatedResponse[TestStandResponse]:
+    """List стендов. Любой аутентифицированный актор."""
+    items, total = await svc.list_test_stands(
+        db, limit=limit, offset=offset,
+        department_id=department_id, is_active=is_active, queue_enabled=queue_enabled,
+    )
+    return PaginatedResponse[TestStandResponse](
+        items=[TestStandResponse.model_validate(i) for i in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post(
+    "",
+    response_model=TestStandResponse,
+    status_code=201,
+    summary="Завести новый стенд",
+    description=(
+        "Регистрирует сервер/ВМ из server_service как тестовый стенд. "
+        "`department_id` не принимается от клиента — резолвится живым "
+        "запросом к server_service (с bearer'ом вызывающего) в момент "
+        "создания. UNIQUE(server_id) — повтор → 409."
+    ),
+    responses={
+        201: {"description": "Стенд создан."},
+        403: {"description": "Нет роли с `create`, либо server_service отказал в доступе к серверу."},
+        404: {"description": "Сервер не найден или не виден вызывающему."},
+        409: {"description": "Этот сервер уже зарегистрирован как стенд."},
+        503: {"description": "server_service недоступен или не настроен."},
+    },
+)
+async def create_test_stand(
+    body: TestStandCreate,
+    identity: CurrentUserIdentity,
+    bearer_token: BearerToken,
+    db: AsyncSession = Depends(get_db),
+) -> TestStandResponse:
+    """Create стенда. Доступ: `(test_stand, *, create)`."""
+    obj = await svc.create_test_stand(db, identity, bearer_token, body)
+    return TestStandResponse.model_validate(obj)
+
+
+@router.get(
+    "/{stand_id}",
+    response_model=TestStandResponse,
+    summary="Получить стенд",
+    description=(
+        "Карточка стенда, обогащённая живой карточкой сервера из "
+        "server_service (запрос идёт с bearer'ом вызывающего — та же "
+        "видимость, что и при прямом обращении к server_service). Если "
+        "live-вызов не удался (сервер удалён, сеть недоступна) — `server: "
+        "null` и `server_unavailable: true`, весь запрос не падает."
+    ),
+    responses={
+        401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        404: {"description": "Стенд не найден."},
+    },
+)
+async def get_test_stand(
+    stand_id: str,
+    identity: AuthenticatedIdentity,
+    bearer_token: BearerToken,
+    db: AsyncSession = Depends(get_db),
+) -> TestStandResponse:
+    """Get стенда по id. Любой аутентифицированный актор."""
+    obj, server, server_unavailable = await svc.get_test_stand(db, identity, bearer_token, stand_id)
+    response = TestStandResponse.model_validate(obj)
+    response.server = server
+    response.server_unavailable = server_unavailable
+    return response
+
+
+@router.patch(
+    "/{stand_id}",
+    response_model=TestStandResponse,
+    summary="Обновить стенд",
+    description=(
+        "Изменяемы только `queue_enabled`/`is_active`. Смена привязанного "
+        "сервера означает создание нового стенда, не редактирование старого "
+        "— `server_id` в теле PATCH игнорируется схемой."
+    ),
+    responses={
+        403: {"description": "Нет `update`."},
+        404: {"description": "Стенд не найден."},
+    },
+)
+async def update_test_stand(
+    stand_id: str,
+    body: TestStandUpdate,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> TestStandResponse:
+    """PATCH стенда. Доступ: `(test_stand, *, update)`."""
+    obj = await svc.update_test_stand(db, identity, stand_id, body)
+    return TestStandResponse.model_validate(obj)
+
+
+@router.delete(
+    "/{stand_id}",
+    response_model=OkResponse,
+    summary="Удалить стенд",
+    description="Hard-delete записи стенда. Сам сервер в server_service не трогается.",
+    responses={
+        403: {"description": "Нет `delete`."},
+        404: {"description": "Стенд не найден."},
+    },
+)
+async def delete_test_stand(
+    stand_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> OkResponse:
+    """Delete стенда. Доступ: `(test_stand, *, delete)`."""
+    await svc.delete_test_stand(db, identity, stand_id)
+    return OkResponse()

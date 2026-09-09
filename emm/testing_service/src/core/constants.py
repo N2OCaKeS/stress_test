@@ -25,6 +25,9 @@ class EntityType(StrEnum):
     # и action=update.
     TEST_DEFINITION = "test_definition"
 
+    # Тестовые стенды — надстройка над Server/Vm из server_service.
+    TEST_STAND = "test_stand"
+
 
 class Action(StrEnum):
     """Fine-grained actions матрицы entity_permissions.
@@ -45,6 +48,9 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
     }),
     EntityType.TEST_DEFINITION: frozenset({
+        Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
+    }),
+    EntityType.TEST_STAND: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
     }),
 }

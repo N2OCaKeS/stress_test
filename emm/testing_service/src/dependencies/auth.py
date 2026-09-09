@@ -41,11 +41,13 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "AuthenticatedIdentity",
+    "BearerToken",
     "CurrentIdentity",
     "CurrentUserIdentity",
     "Identity",
     "SERVICE_NAME",
     "get_authenticated_identity",
+    "get_bearer_token",
     "get_current_identity",
     "require_internal_caller",
     "require_user_context",
@@ -314,6 +316,26 @@ def require_user_context(
 
 
 CurrentUserIdentity = Annotated[Identity, Depends(require_user_context)]
+
+
+def get_bearer_token(request: Request) -> str:
+    """Достаёт сырой bearer из заголовка текущего запроса, без введения через introspect.
+
+    Нужен, когда исходящий вызов должен пробросить ТОТ ЖЕ токен, которым
+    пришёл запрос, а не сервисный секрет — pass-through к server_service
+    (`server_client.get_server`), где видимость зависит от department_id
+    держателя токена, а не от того, что testing_service вообще аутентифицирован.
+    """
+    token = _extract_bearer(request)
+    if token is None:
+        raise AuthenticationError(
+            error_code="ACCESS_TOKEN_MISSING",
+            message="Missing bearer token",
+        )
+    return token
+
+
+BearerToken = Annotated[str, Depends(get_bearer_token)]
 
 
 # ── Service-to-service (internal endpoints) ─────────────────────────────────

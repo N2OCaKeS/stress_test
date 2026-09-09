@@ -35,6 +35,9 @@ SERVICE_EVENTS = [
     {"action": "test_command_arg.create", "description": "Test command arg slot added", "default_severity": "INFO"},
     {"action": "test_command_arg.update", "description": "Test command arg slot updated", "default_severity": "INFO"},
     {"action": "test_command_arg.delete", "description": "Test command arg slot removed", "default_severity": "INFO"},
+    {"action": "test_stand.create", "description": "Test stand registered", "default_severity": "INFO"},
+    {"action": "test_stand.update", "description": "Test stand updated", "default_severity": "INFO"},
+    {"action": "test_stand.delete", "description": "Test stand deleted", "default_severity": "WARNING"},
 ]
 
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
@@ -69,6 +72,15 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("test_command_arg.delete", "success"): "INFO",
     ("test_command_arg.delete", "failure"): "WARNING",
     ("test_command_arg.delete", "denied"): "WARNING",
+    ("test_stand.create", "success"): "INFO",
+    ("test_stand.create", "failure"): "WARNING",
+    ("test_stand.create", "denied"): "WARNING",
+    ("test_stand.update", "success"): "INFO",
+    ("test_stand.update", "failure"): "WARNING",
+    ("test_stand.update", "denied"): "WARNING",
+    ("test_stand.delete", "success"): "WARNING",
+    ("test_stand.delete", "failure"): "WARNING",
+    ("test_stand.delete", "denied"): "WARNING",
 }
 
 

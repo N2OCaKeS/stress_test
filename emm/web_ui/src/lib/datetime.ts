@@ -132,6 +132,21 @@ export function mskDateOffset(days = 0): string {
 }
 
 /**
+ * Прошедшее время как длительность (не дата!) в формате `HH:MM:SS` —
+ * для realtime-таймеров, считающих `Date.now() - startedAt` на клиенте без
+ * дополнительных запросов к бэкенду на каждый тик. Отрицательная длительность
+ * (рассинхрон часов клиента и сервера на пару секунд) клэмпится в ноль.
+ */
+export function formatElapsedHMS(durationMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
+/**
  * Грубое «сколько прошло» относительно сейчас: «только что» / «N мин» /
  * «N ч» / «N дн». Для компактных колонок (последняя активность бота), где
  * точная дата не нужна. Пустой/битый ввод → «—».

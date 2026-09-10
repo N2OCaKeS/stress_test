@@ -1,28 +1,40 @@
 /**
  * Раздел «Отладка» — разовый запуск одного теста на одном стенде вне
- * большого fleet-прогона. В плане переноса allta_app (`ALLTA MIGRATION.md`
- * §5.5) это называется debug-режим (переименовано из legacy «dev mode»):
- * тест не привязан к конкретному стенду (`pinned_stand_id` снимается),
- * поэтому доступны и физические, и виртуальные стенды — в отличие от
- * «Прогонов», где виртуальные стенды не участвуют (см. `stp.tsx`).
+ * большого fleet-прогона (debug-режим, `ALLTA MIGRATION.md` §5.5, переименовано
+ * из legacy «dev mode»): тест не привязан к конкретному стенду
+ * (`pinned_stand_id` снимается), поэтому доступны и физические, и виртуальные
+ * стенды — в отличие от «Прогонов», где виртуальные стенды не участвуют.
  *
- * Средняя панель Shell — список демо-запусков (тот же паттерн, что и
+ * Средняя панель Shell — список запусков (тот же паттерн, что и
  * `RunsMiddlePanel`/`StpMiddlePanel`: поиск+фильтр+сортировка сверху не
- * скроллятся, список скроллится). Рабочая зона — полноразмерный просмотр
- * лога выбранного запуска: сайдбар-навигация по чекпоинтам/командам слева,
- * сам лог справа, с поиском и фильтром «только не-OK».
+ * скроллятся, список скроллится). Список остаётся demo-массивом
+ * (`ADHOC_RUNS`) — backend `testing_service` пока не заводит публичный
+ * эндпоинт ни для постановки debug-запуска в очередь (`services/queue.py::
+ * enqueue(debug_mode=True, ...)` вызывается только из тестов сервиса, ни один
+ * роутер его не вызывает), ни для истории таких запусков (нет `list
+ * queue_items` вне контекста `test_run`/`test_stand`, см. `queueItems.ts`).
+ * Кнопка «Запустить разовый тест» поэтому остаётся демо-заглушкой.
  *
- * Формат блока лога — по образцу `ALLTA MIGRATION.md` §8.1/§8.2 (перенос
- * формата `dev_libs`/`Libvit.py` 1:1): `TASK [label: stand]` / временная
- * метка / `STATUS [OK|CHANGED|FATAL]` / `COMMAND:` (с маскировкой
- * `is_sensitive`-аргументов) / `CONCLUSION:`. Реального `test_log_segments`
- * с офсетами в БД тут нет — сегменты собраны заранее в demo-массив, но
- * структура (чекпоинт/команда + переход по клику) воспроизводит целевой UX.
+ * Реальными стали данные лога выбранного запуска — рабочая зона трактует
+ * `run.id` как `queue_item_id` и подключается к настоящему backend'у:
+ * во время исполнения — `WS /queue-items/{id}/log/stream` (`logStream.ts`,
+ * тот же канал, что и «Живой лог теста» в консоли сервера); после завершения
+ * — `GET /queue-items/{id}/log/segments` + `GET /queue-items/{id}/log` для
+ * навигации по чекпоинтам/командам с реальным текстом (сегменты бэкенд пишет
+ * уже в legacy-формате `dev_libs`/`Libvit.py`: `TASK`/`STATUS`/`COMMAND`/
+ * `CONCLUSION` — это буквальный текст внутри сегмента, реконструировать его
+ * из отдельных полей не нужно).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bug, ChevronDown, ChevronUp, Flag, Play, Search, Terminal } from "lucide-react";
+import { Bug, ChevronDown, ChevronUp, Download, Flag, Play, Radio, Search, Terminal } from "lucide-react";
 import { naturalCompare } from "@/lib/naturalSort";
+import { formatElapsedHMS, formatMsk, formatMskShort } from "@/lib/datetime";
 import { useToast } from "@/contexts/ToastContext";
+import { apiErrMsg } from "@/api/client";
+import { useQuery } from "@/api/auth/useQuery";
+import { downloadTestLog, getTestLogText, listLogSegments } from "@/api/testing/testLogs";
+import { testLogStreamProtocols, testLogStreamUrl } from "@/api/testing/logStream";
+import type { TestLogSegment, TestLogSegmentStatus } from "@/api/testing/types";
 import { TEST_CATALOG } from "./tests";
 import { STANDS, type BadgeKind } from "./_shared";
 import { Badge } from "@/components/ui/Badge";
@@ -70,6 +82,24 @@ const ADHOC_STATUS_META: Record<AdhocStatus, { label: string; badge: BadgeKind }
 };
 
 const STATUS_FILTER_OPTIONS: (AdhocStatus | "all")[] = ["all", "queued", "running", "done", "failed"];
+
+/** Тикающий `Date.now()` раз в секунду — источник для realtime-элапсед-таймера, без опроса бэкенда. */
+function useNow(intervalMs = 1000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
+/** Демо-`startedAt` хранится как `"DD.MM.YYYY HH:MM MSK"` — для elapsed-таймера достаточно локального парсинга, без строгой сверки часовых поясов. */
+function demoStartedAtMs(startedAt: string): number | null {
+  const match = startedAt.match(/(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2})/);
+  if (!match) return null;
+  const [, d, mo, y, h, mi] = match;
+  return new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi)).getTime();
+}
 
 // ── состояние средней панели, общее для AdhocMiddlePanel и AdhocWorkzone ────
 
@@ -180,7 +210,9 @@ export function AdhocMiddlePanel({ state }: { state: AdhocState }) {
           type="button"
           className="w-full flex items-center justify-center gap-2"
           onClick={() =>
-            toast.info("Демо: запуск одиночного теста в debug-режиме — привязка к стенду снята, лог откроется в рабочей зоне сразу после старта")
+            toast.info(
+              "Постановка разового debug-теста в очередь пока не выведена в публичный API testing_service (backend умеет debug_mode внутри, но эндпоинта для UI/CLI ещё нет) — кнопка остаётся демо-заглушкой",
+            )
           }
         >
           <Play className="w-3.5 h-3.5" />
@@ -213,143 +245,7 @@ function AdhocListRow({ run, active, onSelect }: { run: AdhocRun; active: boolea
   );
 }
 
-// ── формат блока лога (ALLTA MIGRATION §8.1/§8.2) ───────────────────────────
-
-export type AdhocLogStatus = "OK" | "CHANGED" | "FATAL";
-type AdhocSegmentKind = "checkpoint" | "command";
-
-interface AdhocLogSegment {
-  idx: number;
-  kind: AdhocSegmentKind;
-  label: string;
-  time: string;
-  status: AdhocLogStatus;
-  command: string;
-  conclusion: string;
-}
-
-const LOG_STATUS_BADGE: Record<AdhocLogStatus, BadgeKind> = { OK: "ok", CHANGED: "warn", FATAL: "danger" };
-
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-interface StartedParts {
-  day: number;
-  month: number;
-  year: number;
-  hour: number;
-  minute: number;
-}
-
-function parseStarted(startedAt: string): StartedParts {
-  const match = startedAt.match(/(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2})/);
-  if (!match) return { day: 1, month: 1, year: 2026, hour: 0, minute: 0 };
-  const [, d, mo, y, h, mi] = match;
-  return { day: Number(d), month: Number(mo), year: Number(y), hour: Number(h), minute: Number(mi) };
-}
-
-/** Время сегмента — смещение в минутах от старта запуска, секунды — по псевдослучайному сиду. */
-function segmentTime(base: StartedParts, offsetMinutes: number, secondsSeed: number): string {
-  const totalMinutes = base.hour * 60 + base.minute + offsetMinutes;
-  const hour = Math.floor(totalMinutes / 60) % 24;
-  const minute = totalMinutes % 60;
-  const second = (secondsSeed * 7) % 60;
-  return `${pad2(hour)}:${pad2(minute)}:${pad2(second)} ${pad2(base.day)}-${pad2(base.month)}-${base.year} MSK`;
-}
-
-function seedOf(run: AdhocRun): number {
-  let sum = 0;
-  for (const ch of run.id) sum += ch.charCodeAt(0);
-  return sum;
-}
-
-/**
- * Демо-сегменты лога для выбранного запуска — по мотивам реального потока
- * `prepare-for-test` (§5.1): подготовка стенда → учётка тестового
- * пользователя → установка теста → сам тест → сбор артефактов. Один из
- * командных сегментов маскирует пароль (`is_sensitive`) в `COMMAND:`, чтобы
- * демонстрировать требуемое поведение, а не просто описывать его.
- */
-function buildAdhocLog(run: AdhocRun): { segments: AdhocLogSegment[]; tailNote: string | null } {
-  const test = TEST_CATALOG.find((t) => t.code === run.testCode);
-  const base = parseStarted(run.startedAt);
-  const seed = seedOf(run);
-  const time = (offsetMinutes: number, secondsSeed: number) => segmentTime(base, offsetMinutes, secondsSeed);
-
-  const prepare: AdhocLogSegment = {
-    idx: 0,
-    kind: "checkpoint",
-    label: "prepare-stand",
-    time: time(0, 3),
-    status: "OK",
-    command: `ssh -o BatchMode=yes u@${run.standName} 'mkdir -p /opt/allta/work'`,
-    conclusion: "рабочий каталог создан, окружение проверено",
-  };
-  const bootstrap: AdhocLogSegment = {
-    idx: 1,
-    kind: "command",
-    label: "bootstrap-account",
-    time: time(1, 5),
-    status: seed % 2 === 0 ? "CHANGED" : "OK",
-    command: `useradd -m u 2>/dev/null; printf 'u:%s' "***" | chpasswd`,
-    conclusion: "тестовый пользователь u готов, пароль установлен (замаскирован в логе, is_sensitive=true)",
-  };
-  const install: AdhocLogSegment = {
-    idx: 2,
-    kind: "command",
-    label: "install-test-package",
-    time: time(2, 7),
-    status: "OK",
-    command: `apt-get install -y ${run.testCode.toLowerCase()}`,
-    conclusion: `пакет установлен, параметры запуска: ${test?.params ?? "по умолчанию"}`,
-  };
-
-  if (run.status === "queued") {
-    return { segments: [], tailNote: "тест поставлен в очередь, ожидает освобождения стенда" };
-  }
-  if (run.status === "running") {
-    return { segments: [prepare, bootstrap, install], tailNote: "тест выполняется, лог обновляется…" };
-  }
-
-  const runTest: AdhocLogSegment = {
-    idx: 3,
-    kind: "checkpoint",
-    label: "run-test",
-    time: time(4, 11),
-    status: run.status === "failed" ? "FATAL" : seed % 3 === 0 ? "CHANGED" : "OK",
-    command: `python3 -m allta.tests.${run.testCode.toLowerCase().replace(/-/g, "_")} --stand ${run.standName} --mode ${run.mode} --user u --password ***`,
-    conclusion:
-      run.status === "failed"
-        ? `${test?.fullName ?? run.testCode} завершился с ошибкой, см. stderr`
-        : `${test?.fullName ?? run.testCode} выполнен успешно`,
-  };
-
-  if (run.status === "failed") {
-    return { segments: [prepare, bootstrap, install, runTest], tailNote: null };
-  }
-
-  const collect: AdhocLogSegment = {
-    idx: 4,
-    kind: "command",
-    label: "collect-artifacts",
-    time: time(5, 13),
-    status: "OK",
-    command: `scp u@${run.standName}:/opt/allta/work/result.json ./artifacts/`,
-    conclusion: "лог и артефакты сохранены",
-  };
-  const finish: AdhocLogSegment = {
-    idx: 5,
-    kind: "checkpoint",
-    label: "finish",
-    time: time(6, 17),
-    status: "OK",
-    command: "-",
-    conclusion: "разовый запуск завершён",
-  };
-
-  return { segments: [prepare, bootstrap, install, runTest, collect, finish], tailNote: null };
-}
+// ── поиск по тексту сегмента (общее для сайдбара-навигации и подсветки) ────
 
 function countMatches(text: string, term: string): number {
   if (!term) return 0;
@@ -375,32 +271,133 @@ function HighlightedLine({ text, term }: { text: string; term: string }) {
   );
 }
 
-function AdhocLogBlock({
+// ── живой лог во время исполнения (WS /queue-items/{id}/log/stream) ────────
+
+type LiveConnState = "connecting" | "open" | "closed";
+
+/**
+ * Read-only живой лог: подключается сразу при монтировании (панель и так
+ * открыта явным выбором running-запуска), без переподключения при закрытии
+ * сервером — сообщение об этом дописывается в сам текст, как и в
+ * `LiveTestLogTerminal` консоли сервера. В отличие от неё здесь нет xterm —
+ * достаточно накапливаемого текста, страница и так рисует структурные логи
+ * как текстовые блоки.
+ */
+function LiveLogPanel({ queueItemId }: { queueItemId: string }) {
+  const [text, setText] = useState("");
+  const [state, setState] = useState<LiveConnState>("connecting");
+  const boxRef = useRef<HTMLPreElement | null>(null);
+
+  useEffect(() => {
+    setText("");
+    setState("connecting");
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(testLogStreamUrl(queueItemId), testLogStreamProtocols());
+    } catch {
+      setState("closed");
+      return;
+    }
+    ws.onopen = () => setState("open");
+    ws.onmessage = (ev) => {
+      if (typeof ev.data === "string") setText((t) => t + ev.data);
+    };
+    ws.onclose = (ev) => {
+      setState("closed");
+      const tail = ev.reason === "TEST_FINISHED" ? "\n— тест завершён." : "\n— соединение закрыто.";
+      setText((t) => t + tail);
+    };
+    ws.onerror = () => setState((s) => (s === "connecting" ? "closed" : s));
+    return () => {
+      ws.close(1000, "unmount");
+    };
+  }, [queueItemId]);
+
+  useEffect(() => {
+    const box = boxRef.current;
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [text]);
+
+  const stateLabel: Record<LiveConnState, string> = {
+    connecting: "Подключение…",
+    open: "Живой лог подключён",
+    closed: "Соединение закрыто",
+  };
+
+  return (
+    <div className="surface border border-token rounded overflow-hidden flex flex-col min-h-[480px]">
+      <div className="border-b border-token px-3 py-2 flex items-center gap-2 text-xs">
+        <Radio className={`w-3.5 h-3.5 ${state === "open" ? "text-accent" : "text-dim"}`} />
+        <span className={state === "open" ? "text-accent" : "text-dim"}>{stateLabel[state]}</span>
+        <span className="text-dim ml-2">Только чтение — вывод исполняющегося сейчас теста</span>
+      </div>
+      <pre ref={boxRef} className="log-tail flex-1 overflow-auto m-0">{text || "Ожидаем вывод…"}</pre>
+    </div>
+  );
+}
+
+// ── завершённый лог: реальные сегменты + реальный текст (§2.6, §8 плана) ───
+
+interface ResolvedLogSegment extends TestLogSegment {
+  text: string;
+}
+
+/**
+ * Тянет метаданные сегментов и полный текст лога отдельными запросами, затем
+ * режет текст по `byte_offset_start/end` каждого сегмента на стороне клиента
+ * — один `GET .../log` вместо N (по одному на сегмент). Офсеты в БД считаются
+ * по байтам UTF-8, поэтому резка идёт по `Uint8Array`, не по JS-строке
+ * (иначе многобайтовые символы в тексте лога сдвинули бы границы сегментов).
+ */
+function useFinishedLog(queueItemId: string) {
+  const segmentsQ = useQuery(() => listLogSegments(queueItemId, { limit: 500 }), [queueItemId]);
+  const textQ = useQuery(() => getTestLogText(queueItemId), [queueItemId]);
+
+  const segments = useMemo<ResolvedLogSegment[]>(() => {
+    const raw = segmentsQ.data?.items ?? [];
+    const bytes = new TextEncoder().encode(textQ.data?.text ?? "");
+    const decoder = new TextDecoder();
+    return raw
+      .slice()
+      .sort((a, b) => a.position - b.position)
+      .map((seg) => {
+        const end = seg.byte_offset_end ?? bytes.length;
+        const text = decoder.decode(bytes.slice(seg.byte_offset_start, end));
+        return { ...seg, text };
+      });
+  }, [segmentsQ.data, textQ.data]);
+
+  return {
+    segments,
+    loading: segmentsQ.loading || textQ.loading,
+    error: segmentsQ.error ?? textQ.error,
+    refetch: () => {
+      segmentsQ.refetch();
+      textQ.refetch();
+    },
+  };
+}
+
+const LOG_STATUS_BADGE: Record<TestLogSegmentStatus, BadgeKind> = { OK: "ok", CHANGED: "warn", FATAL: "danger" };
+
+function logStatusBadge(status: string): BadgeKind {
+  return LOG_STATUS_BADGE[status as TestLogSegmentStatus] ?? "warn";
+}
+
+function ResolvedLogBlock({
   seg,
-  standName,
   term,
   active,
   dimmed,
   refCallback,
 }: {
-  seg: AdhocLogSegment;
-  standName: string;
+  seg: ResolvedLogSegment;
   term: string;
   active: boolean;
   dimmed: boolean;
   refCallback: (el: HTMLDivElement | null) => void;
 }) {
-  const frame = (seg.status === "FATAL" ? "#" : "*").repeat(66);
-  const lines = [
-    frame,
-    `TASK [${seg.label}: ${standName}]`,
-    `[ ${seg.time} ]`,
-    `STATUS [${seg.status}]`,
-    `COMMAND: ${seg.command}`,
-    "",
-    `CONCLUSION: ${seg.conclusion}`,
-    frame,
-  ];
+  const lines = (seg.text || "(пусто)").split("\n");
   return (
     <div
       ref={refCallback}
@@ -411,12 +408,13 @@ function AdhocLogBlock({
       <div className="flex items-center gap-2 mb-2">
         {seg.kind === "checkpoint" ? <Flag className="w-3.5 h-3.5 text-dim" /> : <Terminal className="w-3.5 h-3.5 text-dim" />}
         <span className="text-xs font-medium">{seg.label}</span>
-        <Badge kind={LOG_STATUS_BADGE[seg.status]} className="ml-auto">{seg.status}</Badge>
+        <span className="text-[10px] text-dim mono">{formatMsk(seg.started_at)}</span>
+        <Badge kind={logStatusBadge(seg.status)} className="ml-auto">{seg.status}</Badge>
       </div>
       <div className="mono text-[11px] leading-relaxed">
         {lines.map((line, i) => (
           <div key={i} className="break-all">
-            <HighlightedLine text={line || " "} term={term} />
+            <HighlightedLine text={line || " "} term={term} />
           </div>
         ))}
       </div>
@@ -424,29 +422,28 @@ function AdhocLogBlock({
   );
 }
 
-// ── рабочая зона: полноразмерный просмотр лога с навигацией и поиском ──────
-
-export function AdhocWorkzone({ state }: { state: AdhocState }) {
-  const run = state.selectedRun;
+/** Полноразмерный просмотр завершённого (`done`/`failed`) реального лога — навигация по чекпоинтам слева, поиск и скачивание. */
+function FinishedLogViewer({ queueItemId }: { queueItemId: string }) {
+  const toast = useToast();
+  const { segments, loading, error, refetch } = useFinishedLog(queueItemId);
   const [searchTerm, setSearchTerm] = useState("");
   const [onlyIssues, setOnlyIssues] = useState(false);
-  const [activeIdx, setActiveIdx] = useState<number | null>(null);
-  const blockRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const blockRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   useEffect(() => {
     setSearchTerm("");
     setOnlyIssues(false);
-    setActiveIdx(null);
-  }, [run?.id]);
-
-  const { segments, tailNote } = useMemo(() => (run ? buildAdhocLog(run) : { segments: [], tailNote: null }), [run]);
+    setActiveId(null);
+  }, [queueItemId]);
 
   const term = searchTerm.trim();
 
   const matchesFilter = useCallback(
-    (seg: AdhocLogSegment) => {
+    (seg: ResolvedLogSegment) => {
       if (onlyIssues && seg.status === "OK") return false;
-      if (term && countMatches(`${seg.label} ${seg.command} ${seg.conclusion}`, term) === 0) return false;
+      if (term && countMatches(`${seg.label} ${seg.text}`, term) === 0) return false;
       return true;
     },
     [term, onlyIssues],
@@ -456,13 +453,118 @@ export function AdhocWorkzone({ state }: { state: AdhocState }) {
 
   const totalMatches = useMemo(() => {
     if (!term) return 0;
-    return segments.reduce((sum, seg) => sum + countMatches(`${seg.label} ${seg.command} ${seg.conclusion}`, term), 0);
+    return segments.reduce((sum, seg) => sum + countMatches(`${seg.label} ${seg.text}`, term), 0);
   }, [segments, term]);
 
-  const scrollToSegment = (idx: number) => {
-    setActiveIdx(idx);
-    blockRefs.current.get(idx)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const scrollToSegment = (id: string) => {
+    setActiveId(id);
+    blockRefs.current.get(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      await downloadTestLog(queueItemId);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось скачать лог"));
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  if (loading) {
+    return <div className="surface border border-token rounded p-8 text-center text-dim">Загружаем лог…</div>;
+  }
+  if (error) {
+    return (
+      <div className="surface border border-token rounded p-8 text-center">
+        <div className="text-danger text-xs mb-2">{apiErrMsg(error, "Лог не загрузился")}</div>
+        <Button size="sm" type="button" onClick={refetch}>Повторить</Button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="surface border border-token rounded p-3 flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 surface-2 border border-token rounded px-2 py-1 min-w-[240px]">
+          <Search className="w-4 h-4 text-dim" />
+          <input
+            className="bg-transparent outline-none flex-1 text-sm"
+            placeholder="Поиск по логу…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        {term && <span className="text-xs text-dim">{totalMatches} совпадений</span>}
+        <Checkbox checked={onlyIssues} onChange={(e) => setOnlyIssues(e.target.checked)} label="Только не-OK (CHANGED/FATAL)" />
+        <Button
+          size="sm"
+          type="button"
+          className="ml-auto inline-flex items-center gap-1"
+          onClick={handleDownload}
+          disabled={downloading}
+        >
+          <Download className="w-3.5 h-3.5" />
+          {downloading ? "Скачиваем…" : "Скачать лог"}
+        </Button>
+      </div>
+
+      <div className="surface border border-token rounded overflow-hidden flex min-h-[480px]">
+        <aside className="w-64 shrink-0 border-r border-token overflow-y-auto">
+          {segments.length === 0 && <div className="p-4 text-xs text-dim text-center">Лог пуст</div>}
+          {navSegments.map((seg) => (
+            <button
+              key={seg.id}
+              type="button"
+              onClick={() => scrollToSegment(seg.id)}
+              className={`w-full text-left px-3 py-2 hover-bg flex items-start gap-2 border-l-2 ${
+                activeId === seg.id ? "surface-2 border-accent" : "border-transparent"
+              }`}
+            >
+              {seg.kind === "checkpoint" ? (
+                <Flag className="w-3.5 h-3.5 mt-0.5 text-dim shrink-0" />
+              ) : (
+                <Terminal className="w-3.5 h-3.5 mt-0.5 text-dim shrink-0" />
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs font-medium truncate">{seg.label}</span>
+                <span className="block text-[10px] text-dim mono truncate">{formatMskShort(seg.started_at)}</span>
+              </span>
+              <Badge kind={logStatusBadge(seg.status)} className="shrink-0">{seg.status}</Badge>
+            </button>
+          ))}
+          {segments.length > 0 && navSegments.length === 0 && (
+            <div className="p-4 text-xs text-dim text-center">Нет чекпоинтов по фильтру</div>
+          )}
+        </aside>
+
+        <div className="flex-1 overflow-y-auto p-4 grid gap-3 content-start">
+          {segments.map((seg) => (
+            <ResolvedLogBlock
+              key={seg.id}
+              seg={seg}
+              term={term}
+              active={activeId === seg.id}
+              dimmed={isFilterActive && !matchesFilter(seg)}
+              refCallback={(el) => {
+                if (el) blockRefs.current.set(seg.id, el);
+                else blockRefs.current.delete(seg.id);
+              }}
+            />
+          ))}
+          {segments.length === 0 && <div className="text-xs text-dim italic px-1">Лог пока пуст</div>}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── рабочая зона: заголовок запуска + живой/завершённый лог ────────────────
+
+export function AdhocWorkzone({ state }: { state: AdhocState }) {
+  const run = state.selectedRun;
+  const now = useNow();
 
   if (!run) {
     return <div className="surface border border-token rounded p-8 text-center text-dim">Нет выбранного запуска</div>;
@@ -470,6 +572,7 @@ export function AdhocWorkzone({ state }: { state: AdhocState }) {
 
   const meta = ADHOC_STATUS_META[run.status];
   const stand = standByName(run.standName);
+  const startedMs = demoStartedAtMs(run.startedAt);
 
   return (
     <div className="grid gap-4">
@@ -479,6 +582,9 @@ export function AdhocWorkzone({ state }: { state: AdhocState }) {
             <span className="text-lg font-semibold mono">{run.id}</span>
             <Badge kind={meta.badge}>{meta.label}</Badge>
             {stand?.kind === "virtual" && <Badge kind="info">виртуальный стенд</Badge>}
+            {run.status === "running" && startedMs !== null && (
+              <span className="mono text-xs text-dim">прошло {formatElapsedHMS(now - startedMs)}</span>
+            )}
           </div>
           <div className="text-xs text-dim mt-1">
             {run.testCode} · {testFullName(run.testCode)} · {run.standName} · режим {run.mode} · запущен {run.startedAt}
@@ -494,70 +600,15 @@ export function AdhocWorkzone({ state }: { state: AdhocState }) {
         </span>
       </div>
 
-      <div className="surface border border-token rounded p-3 flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2 surface-2 border border-token rounded px-2 py-1 min-w-[240px]">
-          <Search className="w-4 h-4 text-dim" />
-          <input
-            className="bg-transparent outline-none flex-1 text-sm"
-            placeholder="Поиск по логу…"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      {run.status === "queued" && (
+        <div className="surface border border-token rounded p-8 text-center text-dim text-sm">
+          Тест поставлен в очередь, ожидает освобождения стенда — лога пока нет.
         </div>
-        {term && <span className="text-xs text-dim">{totalMatches} совпадений</span>}
-        <Checkbox checked={onlyIssues} onChange={(e) => setOnlyIssues(e.target.checked)} label="Только не-OK (CHANGED/FATAL)" />
-      </div>
+      )}
 
-      <div className="surface border border-token rounded overflow-hidden flex min-h-[480px]">
-        <aside className="w-64 shrink-0 border-r border-token overflow-y-auto">
-          {segments.length === 0 && (
-            <div className="p-4 text-xs text-dim text-center">{tailNote ?? "Лог пуст"}</div>
-          )}
-          {navSegments.map((seg) => (
-            <button
-              key={seg.idx}
-              type="button"
-              onClick={() => scrollToSegment(seg.idx)}
-              className={`w-full text-left px-3 py-2 hover-bg flex items-start gap-2 border-l-2 ${
-                activeIdx === seg.idx ? "surface-2 border-accent" : "border-transparent"
-              }`}
-            >
-              {seg.kind === "checkpoint" ? (
-                <Flag className="w-3.5 h-3.5 mt-0.5 text-dim shrink-0" />
-              ) : (
-                <Terminal className="w-3.5 h-3.5 mt-0.5 text-dim shrink-0" />
-              )}
-              <span className="min-w-0 flex-1">
-                <span className="block text-xs font-medium truncate">{seg.label}</span>
-                <span className="block text-[10px] text-dim mono truncate">{seg.time}</span>
-              </span>
-              <Badge kind={LOG_STATUS_BADGE[seg.status]} className="shrink-0">{seg.status}</Badge>
-            </button>
-          ))}
-          {segments.length > 0 && navSegments.length === 0 && (
-            <div className="p-4 text-xs text-dim text-center">Нет чекпоинтов по фильтру</div>
-          )}
-        </aside>
+      {run.status === "running" && <LiveLogPanel queueItemId={run.id} />}
 
-        <div className="flex-1 overflow-y-auto p-4 grid gap-3 content-start">
-          {segments.map((seg) => (
-            <AdhocLogBlock
-              key={seg.idx}
-              seg={seg}
-              standName={run.standName}
-              term={term}
-              active={activeIdx === seg.idx}
-              dimmed={isFilterActive && !matchesFilter(seg)}
-              refCallback={(el) => {
-                if (el) blockRefs.current.set(seg.idx, el);
-                else blockRefs.current.delete(seg.idx);
-              }}
-            />
-          ))}
-          {tailNote && <div className="text-xs text-dim italic px-1">{tailNote}</div>}
-          {segments.length === 0 && !tailNote && <div className="text-xs text-dim italic px-1">Лог пока пуст</div>}
-        </div>
-      </div>
+      {(run.status === "done" || run.status === "failed") && <FinishedLogViewer queueItemId={run.id} />}
     </div>
   );
 }

@@ -82,3 +82,8 @@ def department_integration_settings_id() -> str:
 def changelog_cache_id() -> str:
     """`chc_<uuid>` — для changelog_cache."""
     return _new_id("chc_")
+
+
+def run_summary_comment_id() -> str:
+    """`rsc_<uuid>` — для run_summary_comments."""
+    return _new_id("rsc_")

@@ -6,6 +6,7 @@ from src.models.department_test_settings import DepartmentTestSettings
 from src.models.entity_permission import EntityPermission
 from src.models.global_variable import GlobalVariable
 from src.models.queue_item import QueueItem
+from src.models.run_summary_comment import RunSummaryComment
 from src.models.stp_cell import StpCell
 from src.models.stp_test_case import StpTestCase
 from src.models.stp_test_run import StpTestRun
@@ -24,6 +25,7 @@ __all__ = [
     "EntityPermission",
     "GlobalVariable",
     "QueueItem",
+    "RunSummaryComment",
     "StpCell",
     "StpTestCase",
     "StpTestRun",

@@ -58,6 +58,7 @@ SERVICE_EVENTS = [
     {"action": "stp_cell.auto_updated", "description": "STP cell status updated automatically from a queue item transition", "default_severity": "INFO"},
     {"action": "stp_cell.manual_override", "description": "STP cell status overridden manually (not synced to Zephyr)", "default_severity": "WARNING"},
     {"action": "department_integration_settings.update", "description": "Department Jira/Zephyr/Confluence integration settings upserted", "default_severity": "INFO"},
+    {"action": "run_summary_comment.posted", "description": "End-of-run Confluence blog comment posted/updated/skipped/failed for a test run campaign", "default_severity": "INFO"},
 ]
 
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
@@ -133,6 +134,8 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("stp_cell.manual_override", "denied"): "WARNING",
     ("department_integration_settings.update", "success"): "INFO",
     ("department_integration_settings.update", "denied"): "WARNING",
+    ("run_summary_comment.posted", "success"): "INFO",
+    ("run_summary_comment.posted", "failure"): "WARNING",
 }
 
 

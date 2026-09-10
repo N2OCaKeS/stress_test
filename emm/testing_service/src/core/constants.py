@@ -155,6 +155,30 @@ class TestRunStatus(StrEnum):
     PARTIALLY_FAILED = "partially_failed"
 
 
+# Терминальные исходы кампании — триггерят попытку end-of-run комментария в
+# Confluence (§2.7, §9.2, `services/run_summary.py`), вызываемую из
+# `services/queue.py` там же, где пересчитывается агрегатный статус.
+TERMINAL_TEST_RUN_STATUSES: frozenset[str] = frozenset({
+    TestRunStatus.SUCCEEDED, TestRunStatus.FAILED, TestRunStatus.PARTIALLY_FAILED,
+})
+
+
+class RunSummaryCommentStatus(StrEnum):
+    """Исход попытки публикации end-of-run комментария (§2.7, §9.2 плана миграции).
+
+    `posted` — комментарий создан либо обновлён (либо не менялся с прошлого
+    прогона и Confluence не дёргали лишний раз). `skipped_no_stp_page`/
+    `skipped_no_blog` — легаси-поведение (тихий no-op), но видимое здесь, а
+    не потерянное молча. `failed` — интеграция не настроена, reveal не
+    прошёл, либо сетевой сбой Confluence.
+    """
+
+    POSTED = "posted"
+    SKIPPED_NO_BLOG = "skipped_no_blog"
+    SKIPPED_NO_STP_PAGE = "skipped_no_stp_page"
+    FAILED = "failed"
+
+
 class StpCellStatus(StrEnum):
     """Статус ячейки СТП `(stp_test_case × stp_test_run)` (§2.5, §6.2 плана миграции).
 

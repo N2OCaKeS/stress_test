@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.dependencies.auth import AuthenticatedIdentity, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import PaginatedResponse
+from src.schemas.run_summary import RunSummaryCommentResponse
 from src.schemas.test_run import (
     TestRunCreate,
     TestRunCreateResponse,
@@ -21,6 +22,7 @@ from src.schemas.test_run import (
     TestRunQueueItemResponse,
     TestRunResponse,
 )
+from src.services import run_summary as run_summary_svc
 from src.services import test_run as svc
 
 router = APIRouter(prefix="/test-runs")
@@ -122,3 +124,28 @@ async def get_test_run(
         for item in items
     ]
     return response
+
+
+@router.get(
+    "/{run_id}/summary-comment",
+    response_model=RunSummaryCommentResponse,
+    summary="Статус end-of-run комментария в Confluence-блоге",
+    description=(
+        "Отражает попытку публикации/обновления идемпотентного комментария на "
+        "Confluence blog-посте релиза после завершения кампании (§2.7, §9.2). "
+        "Строки может не быть, если кампания ещё не завершилась терминально — "
+        "тогда все поля, кроме `test_run_id`, пустые, это не ошибка."
+    ),
+    responses={
+        401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        404: {"description": "Кампания не найдена."},
+    },
+)
+async def get_run_summary_comment(
+    run_id: str,
+    identity: AuthenticatedIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> RunSummaryCommentResponse:
+    """Get статуса комментария кампании. Любой аутентифицированный актор."""
+    result = await run_summary_svc.get_run_summary(db, run_id)
+    return RunSummaryCommentResponse.model_validate(result)

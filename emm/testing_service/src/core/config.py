@@ -226,6 +226,14 @@ class Settings(BaseSettings):
         description="Таймаут одного исходящего вызова в Jira/Zephyr Scale ATM REST API.",
     )
 
+    # ── Confluence (§2.7, §9.2 плана миграции — end-of-run комментарий) ──────
+
+    confluence_request_timeout_seconds: float = Field(
+        default=10.0,
+        alias="CONFLUENCE_REQUEST_TIMEOUT_SECONDS",
+        description="Таймаут одного исходящего вызова в Confluence REST API.",
+    )
+
     # ── Redis creds stash (креды тестового пользователя между callback'ом ────
     # prepare-for-test и claim'ом testing_worker'а) ───────────────────────────
 

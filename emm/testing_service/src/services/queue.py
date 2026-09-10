@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import QueueItemState
+from src.core.constants import QueueItemState, TERMINAL_TEST_RUN_STATUSES
 from src.core.exceptions import (
     AppException,
     ConflictError,
@@ -53,6 +53,7 @@ from src.services import (
     creds_stash,
     department_test_settings as dts_svc,
     log_rotation,
+    run_summary,
     server_client,
     stp_status,
     test_run_status,
@@ -307,12 +308,31 @@ async def _fail_and_advance(
     if retry_item is None and item.test_run_id:
         # Провал без retry — терминально для этого item'а. Если он часть
         # кампании, статус мог только что перейти в failed/partially_failed.
-        await test_run_status.recompute(db, item.test_run_id)
+        new_status = await test_run_status.recompute(db, item.test_run_id)
         await db.commit()
+        await _maybe_post_run_summary(db, new_status, item.test_run_id)
     if retry_item is not None:
         await _start_or_continue_cycle(db, stand, retry_item, is_first_ever=is_first_ever)
     elif not is_first_ever:
         await _advance_stand_queue(db, stand)
+
+
+async def _maybe_post_run_summary(db: AsyncSession, new_status: str | None, test_run_id: str) -> None:
+    """Best-effort триггер end-of-run комментария (§2.7, §9.2) на переходе в терминал.
+
+    `run_summary.post_run_summary` уже целиком best-effort (сохраняет
+    `status=failed` в свою же таблицу на любой сбой, коммитит сама), но
+    оборачиваем ещё раз здесь — сбой этого вызова не должен как-либо влиять
+    на уже завершённый прогон, который эта функция вызывается финализировать.
+    """
+    if new_status not in TERMINAL_TEST_RUN_STATUSES:
+        return
+    try:
+        await run_summary.post_run_summary(db, test_run_id)
+    except Exception as exc:  # noqa: BLE001 — best-effort, не должно ронять queue.py
+        logger.warning(
+            "run_summary.post_run_summary raised for test_run %s: %s", test_run_id, exc,
+        )
 
 
 async def _advance_stand_queue(db: AsyncSession, stand) -> None:
@@ -508,8 +528,9 @@ async def complete_item(db: AsyncSession, queue_item_id: str, body: QueueComplet
         await db.commit()
         await stp_status.sync_cell_from_queue_item(db, item)
         if item.test_run_id:
-            await test_run_status.recompute(db, item.test_run_id)
+            new_status = await test_run_status.recompute(db, item.test_run_id)
             await db.commit()
+            await _maybe_post_run_summary(db, new_status, item.test_run_id)
         audit_service.emit(
             "queue_item.completed",
             target_id=item.id, target_type="queue_item",

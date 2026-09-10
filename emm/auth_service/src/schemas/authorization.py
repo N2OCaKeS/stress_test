@@ -26,6 +26,15 @@ class IntrospectResponse(BaseModel):
     """
     active: bool = Field(description="True если токен валиден и владелец не забанен.")
     subject_type: str | None = Field(default=None, description='Тип субъекта: "user", "bot", "oauth_client".')
+    is_service_bot: bool = Field(
+        default=False,
+        description=(
+            "True — субъект платформенный сервис-бот (заведён ТОЛЬКО "
+            "bootstrap-кодом, например server_worker/testing_service). "
+            "Всегда False для user/oauth_client и для обычных ботов, "
+            "которых через `POST /bots` заводит себе dep_admin."
+        ),
+    )
     sub: str | None = Field(default=None, description="ID субъекта (user_id / bot_id / client_id).")
     username: str | None = None
     department_id: str | None = None

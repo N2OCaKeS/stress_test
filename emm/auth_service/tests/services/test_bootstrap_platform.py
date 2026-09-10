@@ -149,6 +149,100 @@ async def test_bootstrap_worker_bot_skipped_when_token_empty(db, monkeypatch):
     assert await BotRepository(db).first_by_name(WORKER_BOT_NAME) is None
 
 
+async def test_bootstrap_worker_bot_sets_is_service_bot(db, monkeypatch):
+    """Свежий worker-бот заводится сразу с `is_service_bot=True`."""
+    from src.core import config as config_mod
+    from src.repositories.bots import BotRepository
+
+    _silence_audit(monkeypatch)
+    token = "dbos_bot_" + "e" * 43
+    monkeypatch.setenv("WORKER_BOT_TOKEN", token)
+    config_mod.get_settings.cache_clear()
+
+    await bootstrap_service.bootstrap_platform_services(db)
+    await bootstrap_service.bootstrap_worker_bot(db)
+
+    bot = await BotRepository(db).first_by_name(WORKER_BOT_NAME)
+    assert bot.is_service_bot is True
+
+
+async def test_bootstrap_worker_bot_backfills_flag_on_legacy_bot_slow_path(db, monkeypatch):
+    """Бот и роль заведены прежней версией бутстрапа (флаг ещё не существовал,
+    дефолт False), но токен ЕЩЁ не создан — следующий рестарт с новым токеном
+    должен пройти через основную ветку и проставить флаг."""
+    from src.core import config as config_mod
+    from src.core.constants import SYSTEM_DEPARTMENT_NAME
+    from src.repositories.bots import BotRepository
+    from src.repositories.departments import DepartmentRepository
+
+    _silence_audit(monkeypatch)
+    token = "dbos_bot_" + "f" * 43
+    monkeypatch.setenv("WORKER_BOT_TOKEN", token)
+    config_mod.get_settings.cache_clear()
+
+    await bootstrap_service.bootstrap_platform_services(db)
+
+    dept_repo = DepartmentRepository(db)
+    dept = await dept_repo.create(SYSTEM_DEPARTMENT_NAME)
+    bot = await BotRepository(db).create(
+        name=WORKER_BOT_NAME,
+        department_id=dept.id,
+        allowed_services=[WORKER_BOT_SERVICE],
+        description="legacy bootstrap, no flag yet",
+        created_by="bootstrap",
+    )
+    await db.commit()
+    assert bot.is_service_bot is False
+
+    await bootstrap_service.bootstrap_worker_bot(db)
+
+    refreshed = await BotRepository(db).first_by_name(WORKER_BOT_NAME)
+    assert refreshed.is_service_bot is True
+
+
+async def test_bootstrap_worker_bot_backfills_flag_on_legacy_bot_fast_path(db, monkeypatch):
+    """Тот же legacy-бот, но токен уже заведён (хэш совпадает) — быстрый
+    идемпотентный путь тоже должен донастроить флаг, а не только no-op."""
+    from src.core import config as config_mod
+    from src.core.constants import SYSTEM_DEPARTMENT_NAME
+    from src.core.security import hash_opaque_token
+    from src.repositories.bot_tokens import BotTokenRepository
+    from src.repositories.bots import BotRepository
+    from src.repositories.departments import DepartmentRepository
+
+    emitted = _silence_audit(monkeypatch)
+    token = "dbos_bot_" + "g" * 43
+    monkeypatch.setenv("WORKER_BOT_TOKEN", token)
+    config_mod.get_settings.cache_clear()
+
+    await bootstrap_service.bootstrap_platform_services(db)
+
+    dept_repo = DepartmentRepository(db)
+    dept = await dept_repo.create(SYSTEM_DEPARTMENT_NAME)
+    bot = await BotRepository(db).create(
+        name=WORKER_BOT_NAME,
+        department_id=dept.id,
+        allowed_services=[WORKER_BOT_SERVICE],
+        description="legacy bootstrap, token already issued",
+        created_by="bootstrap",
+    )
+    await BotTokenRepository(db).create(
+        bot_id=bot.id,
+        name="bootstrap",
+        token_hash=hash_opaque_token(token),
+        token_prefix=token[:8],
+        expires_at=None,
+    )
+    await db.commit()
+    assert bot.is_service_bot is False
+
+    emitted.clear()
+    await bootstrap_service.bootstrap_worker_bot(db)
+
+    refreshed = await BotRepository(db).first_by_name(WORKER_BOT_NAME)
+    assert refreshed.is_service_bot is True
+
+
 async def test_bootstrap_worker_bot_idempotent(db, monkeypatch):
     """Повторный вызов — no-op: ровно один токен с хэшем WORKER_BOT_TOKEN."""
     from src.core import config as config_mod
@@ -216,11 +310,14 @@ async def test_bootstrap_testing_service_bot_grants_server_and_secret_service(
         bot.id, TESTING_SERVICE_BOT_SECRET_SERVICE
     )
 
+    assert bot.is_service_bot is True
+
     res = await authorization_service.introspect(db, token)
     assert res.active is True
     assert res.service_roles.get(TESTING_SERVICE_BOT_SECRET_SERVICE) == [
         TESTING_SERVICE_BOT_ROLE
     ]
+    assert res.is_service_bot is True
 
 
 async def test_bootstrap_testing_service_bot_backfills_secret_grant_on_preexisting_bot(
@@ -269,6 +366,7 @@ async def test_bootstrap_testing_service_bot_backfills_secret_grant_on_preexisti
         expires_at=None,
     )
     await db.commit()
+    assert bot.is_service_bot is False
 
     emitted.clear()
     await bootstrap_service.bootstrap_testing_service_bot(db)
@@ -282,3 +380,6 @@ async def test_bootstrap_testing_service_bot_backfills_secret_grant_on_preexisti
     assert len(tokens) == 1, "не должен пересоздать токен"
     assert any(action == "bot.roles_assign" for (action, _) in emitted)
     assert not any(action == "bot.create" for (action, _) in emitted)
+    # Флаг заведён до появления колонки (дефолт False) — этот рестарт
+    # должен его донастроить, даже когда токен уже существовал.
+    assert refreshed.is_service_bot is True

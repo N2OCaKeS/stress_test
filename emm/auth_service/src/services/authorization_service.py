@@ -597,6 +597,7 @@ async def introspect(
             department_name=bot_dept.name if bot_dept else None,
             allowed_services=effective_services,
             service_roles=effective_roles,
+            is_service_bot=bool(bot.is_service_bot),
         )
 
     audit_service.emit(

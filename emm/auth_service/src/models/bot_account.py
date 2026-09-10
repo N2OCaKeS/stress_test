@@ -36,6 +36,13 @@ class BotAccount(Base):
     allowed_services: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     status: Mapped[str] = mapped_column(String(32), default=BotStatus.ACTIVE, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Платформенный сервис-бот (server_worker, testing_service, ...) — заводится
+    # ТОЛЬКО bootstrap-кодом на старте сервиса. Обычный `POST /bots`/`PATCH
+    # /bots/{id}`, которым dep_admin создаёт себе ботов, этот флаг никогда не
+    # трогает (не принимается в теле запроса, insert берёт дефолт). Используется
+    # secret_service для scope="service" credential — универсальный read-доступ
+    # сервис-ботам поверх обычной department-видимости.
+    is_service_bot: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Per-bot brute-force lockout для `/docker/token` — зеркало user-пути.
     failed_token_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

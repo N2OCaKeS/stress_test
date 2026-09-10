@@ -85,6 +85,7 @@ class BotRepository:
         allowed_services: list[str],
         description: str | None = None,
         created_by: str | None = None,
+        is_service_bot: bool = False,
     ) -> BotAccount:
         bot = BotAccount(
             id=bot_id(),
@@ -93,6 +94,7 @@ class BotRepository:
             allowed_services=allowed_services,
             description=description,
             created_by=created_by,
+            is_service_bot=is_service_bot,
         )
         self._db.add(bot)
         await self._db.flush()

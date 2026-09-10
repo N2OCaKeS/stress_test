@@ -184,8 +184,17 @@ async def bootstrap_worker_bot(db: AsyncSession) -> None:
 
     bot_token_repo = BotTokenRepository(db)
     # Идемпотентность по токену: если bot-токен с таким хэшем уже есть — бот и
-    # роль заведены прошлым стартом, выходим без изменений.
-    if await bot_token_repo.get_active_by_hash(token_hash) is not None:
+    # роль заведены прошлым стартом. Единственное, что всё равно донастраиваем
+    # в этом коротком пути — флаг `is_service_bot`: бот мог быть заведён до
+    # появления флага (колонка с дефолтом False) и на прошлых рестартах
+    # остаться незамеченным.
+    existing_token = await bot_token_repo.get_active_by_hash(token_hash)
+    if existing_token is not None:
+        bot_repo = BotRepository(db)
+        bot = await bot_repo.get_by_id(existing_token.bot_id)
+        if bot is not None and not bot.is_service_bot:
+            bot.is_service_bot = True
+            await db.commit()
         return
 
     dept_repo = DepartmentRepository(db)
@@ -230,7 +239,13 @@ async def bootstrap_worker_bot(db: AsyncSession) -> None:
                 allowed_services=[WORKER_BOT_SERVICE],
                 description="Bootstrap: bot для server_worker'а",
                 created_by="bootstrap",
+                is_service_bot=True,
             )
+        elif not bot.is_service_bot:
+            # Бот заведён до появления флага (дефолт False на существующей
+            # колонке) — донастраиваем на этом рестарте.
+            bot.is_service_bot = True
+            await db.flush()
 
         # 5. Привязка роли к боту.
         if WORKER_BOT_ROLE not in await bot_role_repo.get_roles_by_service(
@@ -381,8 +396,14 @@ async def bootstrap_testing_service_bot(db: AsyncSession) -> None:
                 allowed_services=[svc for svc, _ in _TESTING_SERVICE_BOT_GRANTS],
                 description="Bootstrap: бот для testing_service (choices_source dynamic-резолверы + secret reveal)",
                 created_by="bootstrap",
+                is_service_bot=True,
             )
             bot_created = True
+        elif not bot.is_service_bot:
+            # Бот заведён до появления флага (дефолт False на существующей
+            # колонке) — донастраиваем на этом рестарте.
+            bot.is_service_bot = True
+            await db.flush()
 
         for service_name, role_name in _TESTING_SERVICE_BOT_GRANTS:
             access = await dept_repo.get_access(dept.id, service_name)

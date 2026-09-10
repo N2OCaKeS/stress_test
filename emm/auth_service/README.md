@@ -93,11 +93,14 @@ Pydantic-схемы в `src/schemas/` — отдельная плоскость 
     "config_service": ["reader", "operator"],
     "server_service": ["reader"]
   },
-  "is_banned": false
+  "is_banned": false,
+  "is_service_bot": false
 }
 ```
 
 Для всех типов субъектов (user-JWT, PAT, bot) `allowed_services`/`service_roles` собираются единым `collect_user_permissions` — учитывается как прямой dept-access, так и сервисы, доступные через группы. PAT при introspect видит group-derived service access симметрично user-JWT и `/me`; собственный scope PAT (`allowed_services`) при этом только сужается до реально доступного юзеру набора, прав не добавляет.
+
+`is_service_bot` — `true` только для bot-акторов, заведённых bootstrap-кодом (`bootstrap_worker_bot`/`bootstrap_testing_service_bot`, поле `BotAccount.is_service_bot`). Обычный `POST /bots`, которым dep_admin заводит себе бота, это поле выставить не может — всегда `false` для user/oauth_client и для таких ботов. Используется client-сервисами (например `secret_service`, credential scope `service`) как платформенный флаг «этому боту можно доверять cross-department read» без ручной настройки грантов на каждый отдел.
 
 ---
 

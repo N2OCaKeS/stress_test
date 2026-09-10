@@ -40,3 +40,16 @@ SEGMENTATION_FAULT_RAM = 4096
 XFS_MEMORY_LEAK_VM_COUNT = 1
 XFS_MEMORY_LEAK_VCPU = 4
 XFS_MEMORY_LEAK_RAM = 8192
+
+USAGE_OS_RESULTS_DIR = f"{BASE_PATH}/results"
+USAGE_OS_LOAD_CSV = f"{USAGE_OS_RESULTS_DIR}/load_os.csv"
+USAGE_OS_MATH_MODEL_FILE = f"{USAGE_OS_RESULTS_DIR}/math_model_results.json"
+
+# Метрики для матмодели геометрического среднего (load ОС относительно idle-baseline)
+USAGE_OS_MATH_MODEL_METRICS = {
+    "cpu_used_pct": "Загрузка CPU (ОС), %",
+    "mem_used_pct": "Использование RAM (ОС), %",
+    "load_1m": "Load average (1 мин)",
+    "context_switches_per_sec": "Переключения контекста, 1/с",
+    "interrupts_per_sec": "Прерывания, 1/с",
+}

@@ -32,9 +32,15 @@ vi.mock("@/api/testing/testCommandArgs", () => ({
 
 const listGlobalVariablesMock = vi.fn();
 const getGlobalVariableChoicesMock = vi.fn();
+const createGlobalVariableMock = vi.fn();
+const updateGlobalVariableMock = vi.fn();
+const deleteGlobalVariableMock = vi.fn();
 vi.mock("@/api/testing/global_variables", () => ({
   listGlobalVariables: (...args: unknown[]) => listGlobalVariablesMock(...args),
   getGlobalVariableChoices: (...args: unknown[]) => getGlobalVariableChoicesMock(...args),
+  createGlobalVariable: (...args: unknown[]) => createGlobalVariableMock(...args),
+  updateGlobalVariable: (...args: unknown[]) => updateGlobalVariableMock(...args),
+  deleteGlobalVariable: (...args: unknown[]) => deleteGlobalVariableMock(...args),
 }));
 
 const listTestStandsMock = vi.fn();
@@ -156,6 +162,9 @@ beforeEach(() => {
   createTestCommandArgMock.mockResolvedValue(SLOTS[0]);
   updateTestCommandArgMock.mockResolvedValue(SLOTS[0]);
   deleteTestCommandArgMock.mockResolvedValue({ ok: true });
+  createGlobalVariableMock.mockResolvedValue(VARIABLES[0]);
+  updateGlobalVariableMock.mockResolvedValue(VARIABLES[0]);
+  deleteGlobalVariableMock.mockResolvedValue({ ok: true });
 });
 
 describe("TestsWorkzone — каталог тестов из API", () => {
@@ -301,5 +310,125 @@ describe("TestsWorkzone — конструктор команды", () => {
       expect(updateTestCommandArgMock).toHaveBeenCalledWith("td_1", "arg_1", { position: 1 });
       expect(updateTestCommandArgMock).toHaveBeenCalledWith("td_1", "arg_2", { position: 0 });
     });
+  });
+});
+
+describe("TestsWorkzone — глобальные переменные", () => {
+  async function openVariables() {
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+    fireEvent.click(screen.getByRole("button", { name: /Переменные/ }));
+    await screen.findByText("Глобальные переменные");
+  }
+
+  it("показывает каталог переменных с code/label/source/value_type/choices_source/is_sensitive", async () => {
+    await openVariables();
+    expect(screen.getByText("RC")).toBeInTheDocument();
+    expect(screen.getByText("Release candidate")).toBeInTheDocument();
+    expect(screen.getAllByText("launch_context").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("string").length).toBeGreaterThan(0);
+    expect(screen.getByText("TEST_PASSWORD")).toBeInTheDocument();
+    expect(screen.getByText("чувствительно")).toBeInTheDocument();
+    expect(listGlobalVariablesMock).toHaveBeenCalledWith({ limit: 200 });
+  });
+
+  it("создание переменной вызывает createGlobalVariable и обновляет список", async () => {
+    await openVariables();
+
+    fireEvent.click(screen.getByRole("button", { name: /Добавить переменную/ }));
+    fireEvent.change(screen.getByPlaceholderText("код, например RC"), {
+      target: { value: "KERNEL_VERSION" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("метка"), {
+      target: { value: "Версия ядра" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() =>
+      expect(createGlobalVariableMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: "KERNEL_VERSION",
+          label: "Версия ядра",
+          source: "launch_context",
+          value_type: "string",
+        }),
+      ),
+    );
+    await waitFor(() => expect(listGlobalVariablesMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("редактирование переменной вызывает updateGlobalVariable с id переменной", async () => {
+    await openVariables();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Изменить переменную" })[0]);
+    const labelInput = await screen.findByDisplayValue("Release candidate");
+    fireEvent.change(labelInput, { target: { value: "Release candidate v2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() =>
+      expect(updateGlobalVariableMock).toHaveBeenCalledWith(
+        "gv_1",
+        expect.objectContaining({ label: "Release candidate v2" }),
+      ),
+    );
+  });
+
+  it("удаление переменной запрашивает подтверждение и вызывает deleteGlobalVariable", async () => {
+    await openVariables();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Удалить переменную" })[0]);
+
+    await waitFor(() => expect(confirmMock).toHaveBeenCalled());
+    await waitFor(() => expect(deleteGlobalVariableMock).toHaveBeenCalledWith("gv_1"));
+  });
+
+  it("новая переменная доступна конструктору сразу после создания, без перезагрузки страницы", async () => {
+    const newVariable: GlobalVariable = {
+      id: "gv_3",
+      code: "NEW_VAR",
+      label: "Новая переменная",
+      source: "static",
+      value_type: "string",
+      choices_source: null,
+      is_sensitive: false,
+      description: null,
+      created_at: "2026-09-01T00:00:00Z",
+      updated_at: "2026-09-01T00:00:00Z",
+      created_by: null,
+    };
+    listGlobalVariablesMock.mockResolvedValueOnce({ items: VARIABLES, total: VARIABLES.length, limit: 200, offset: 0 });
+    listGlobalVariablesMock.mockResolvedValueOnce({
+      items: [...VARIABLES, newVariable],
+      total: VARIABLES.length + 1,
+      limit: 200,
+      offset: 0,
+    });
+    createGlobalVariableMock.mockResolvedValue(newVariable);
+
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+
+    // создаём переменную через панель управления (без перехода на другую
+    // страницу и без ре-рендера renderWorkzone — тот же смонтированный компонент)
+    fireEvent.click(screen.getByRole("button", { name: /Переменные/ }));
+    await screen.findByText("Глобальные переменные");
+    fireEvent.click(screen.getByRole("button", { name: /Добавить переменную/ }));
+    fireEvent.change(screen.getByPlaceholderText("код, например RC"), { target: { value: "NEW_VAR" } });
+    fireEvent.change(screen.getByPlaceholderText("метка"), { target: { value: "Новая переменная" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() => expect(listGlobalVariablesMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("NEW_VAR")).toBeInTheDocument();
+
+    // закрываем панель переменных и открываем конструктор команды — он
+    // переиспользует тот же useQuery страницы, а не тянет свой собственный
+    // список переменных, поэтому видит NEW_VAR немедленно
+    fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Конструктор/ })[0]);
+    await screen.findByText(/Конструктор команды/);
+
+    fireEvent.click(screen.getByRole("button", { name: /Добавить слот/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Переменная" }));
+    fireEvent.click(screen.getByRole("button", { name: /выберите переменную/ }));
+    expect(await screen.findByRole("option", { name: /NEW_VAR/ })).toBeInTheDocument();
   });
 });

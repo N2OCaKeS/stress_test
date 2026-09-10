@@ -27,11 +27,14 @@ import {
   ExternalLink,
   Gauge,
   HardDrive,
+  KeyRound,
   LayoutGrid,
   ListChecks,
   ListTree,
+  Loader2,
   MemoryStick,
   Play,
+  Plus,
   RefreshCcw,
   Server,
   Square,
@@ -69,12 +72,30 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Modal } from "@/components/ui/Modal";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/contexts/ToastContext";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
-import { getCurrentQueueItem, getTestStand, listTestStands } from "@/api/testing/testStands";
-import type { QueueItemSummary, TestStand } from "@/api/testing/types";
+import { ApiError, apiErrMsg } from "@/api/client";
+import { fromBase64 } from "@/lib/base64";
+import {
+  createTestStand,
+  deleteTestStand,
+  getCurrentQueueItem,
+  getTestStand,
+  getTestStandCredentials,
+  listTestStands,
+  updateTestStand,
+} from "@/api/testing/testStands";
+import type {
+  QueueItemSummary,
+  TestStand,
+  TestStandTestCredentials,
+  TestStandUpdateRequest,
+} from "@/api/testing/types";
 import { listOsVersions } from "@/api/server/osVersions";
 import { getHostDiskUsage } from "@/api/server/misc";
-import type { HostDiskUsageResponse } from "@/api/server/types";
+import { listServers } from "@/api/server/servers";
+import type { HostDiskUsageResponse, Server as InventoryServer } from "@/api/server/types";
 
 type ConceptId = "cards" | "strips" | "queue";
 type LaunchModal = "test" | "run" | null;
@@ -246,11 +267,32 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
   // управляет ими локально (та же модель, что и demo-режим), чтобы не сбивать
   // локальные изменения очереди случайным рефетчем.
   const [liveLoaded, setLiveLoaded] = useState(false);
+  // Сырые данные testing_service (реальный `TestStand.id`/`server_id`) — нужны
+  // панели управления стендами (`StandsAdminPanel`) для create/update/delete,
+  // которых у демо-совместимого `Stand` (синтетический числовой id) нет.
+  const [liveRaw, setLiveRaw] = useState<LiveStandData[]>([]);
+  const [liveRawError, setLiveRawError] = useState<unknown>(null);
   useEffect(() => {
     if (mockMode || liveLoaded || !liveStandsQuery.data) return;
+    setLiveRaw(liveStandsQuery.data);
     setStands(mapLiveStands(liveStandsQuery.data, osNameById));
     setLiveLoaded(true);
   }, [mockMode, liveLoaded, liveStandsQuery.data, osNameById]);
+
+  // Перезагрузка после create/update/delete стенда — в обход кэша
+  // `liveStandsQuery` (тот фетчится один раз и не рефетчится сам), напрямую
+  // тем же `fetchLiveStands`, чтобы и панель управления, и карточки/дашборд
+  // сразу увидели актуальный список.
+  async function reloadStands() {
+    try {
+      const data = await fetchLiveStands();
+      setLiveRaw(data);
+      setStands(mapLiveStands(data, osNameById));
+      setLiveRawError(null);
+    } catch (e) {
+      setLiveRawError(e);
+    }
+  }
 
   const filteredStands = useMemo(() => {
     return stands.filter((stand) => {
@@ -327,6 +369,15 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
         open={dashboardOpen}
         onToggle={() => setDashboardOpen((v) => !v)}
       />
+
+      {!mockMode && (
+        <StandsAdminPanel
+          liveRaw={liveRaw}
+          loading={liveStandsQuery.loading && liveRaw.length === 0}
+          error={liveRawError ?? (liveRaw.length === 0 ? liveStandsQuery.error : null)}
+          onReload={reloadStands}
+        />
+      )}
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
@@ -551,6 +602,419 @@ function FleetDashboard({
         </div>
       )}
     </div>
+  );
+}
+
+// ── управление стендами (test_stands CRUD) ──────────────────────────────────
+
+/**
+ * Панель регистрации/снятия стендов testing_service поверх инвентаря
+ * server_service — без неё раздел «Тестирование» не даёт добавить ни одного
+ * стенда даже при полностью заполненном инвентаре серверов (API-функции
+ * `createTestStand`/`updateTestStand`/`deleteTestStand`/`getTestStandCredentials`
+ * существовали, но нигде не вызывались).
+ *
+ * Работает напрямую с сырыми `TestStand` (реальный `id`/`server_id`), в
+ * отличие от карточек/полосок/очередей дашборда выше, которые оперируют
+ * демо-совместимым `Stand` с синтетическим числовым id — эти два
+ * представления одного и того же списка сознательно не смешиваются.
+ */
+function StandsAdminPanel({
+  liveRaw,
+  loading,
+  error,
+  onReload,
+}: {
+  liveRaw: LiveStandData[];
+  loading: boolean;
+  error: unknown;
+  onReload: () => void | Promise<void>;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const [open, setOpen] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [credentialsStandId, setCredentialsStandId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function toggleField(stand: TestStand, field: "queue_enabled" | "is_active") {
+    setBusyId(stand.id);
+    const body: TestStandUpdateRequest =
+      field === "queue_enabled" ? { queue_enabled: !stand.queue_enabled } : { is_active: !stand.is_active };
+    try {
+      await updateTestStand(stand.id, body);
+      await onReload();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось изменить стенд"));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleDelete(stand: TestStand) {
+    const server = asServerCard(stand.server);
+    const label = server?.display_name || server?.hostname || stand.server_id;
+    const ok = await confirm({
+      title: "Удалить стенд из пула",
+      message: `Удалить стенд «${label}» из testing_service? Сам сервер в инвентаре server_service не пострадает, но история очереди и учётка теста этого стенда будут потеряны.`,
+      confirmLabel: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusyId(stand.id);
+    try {
+      await deleteTestStand(stand.id);
+      toast.success(`Стенд «${label}» удалён из пула`);
+      await onReload();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось удалить стенд"));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="surface border border-token rounded overflow-hidden">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between px-4 py-3 hover-bg">
+        <div className="flex items-center gap-2">
+          <KeyRound className="w-4 h-4 text-accent" />
+          <span className="font-semibold">Управление стендами пула</span>
+          <span className="text-xs text-dim">регистрация серверов инвентаря как тестовых стендов testing_service</span>
+        </div>
+        {open ? <ChevronDown className="w-4 h-4 text-dim" /> : <ChevronRight className="w-4 h-4 text-dim" />}
+      </button>
+      {open && (
+        <div className="border-t border-token p-4 grid gap-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-xs text-dim">{liveRaw.length} стендов зарегистрировано</div>
+            <Button type="button" size="sm" variant="primary" className="inline-flex items-center gap-1.5" onClick={() => setCreateOpen(true)}>
+              <Plus className="w-3.5 h-3.5" />
+              Добавить стенд
+            </Button>
+          </div>
+
+          {loading ? (
+            <div className="text-xs text-dim flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Загрузка…
+            </div>
+          ) : error ? (
+            <div className="alert alert-danger flex items-start gap-2 text-xs">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              <div className="flex-1">{apiErrMsg(error, "Список стендов не загрузился")}</div>
+              <Button size="sm" onClick={() => onReload()}>Повторить</Button>
+            </div>
+          ) : liveRaw.length === 0 ? (
+            <div className="text-xs text-dim">Стендов пока нет — добавьте сервер из инвентаря кнопкой выше.</div>
+          ) : (
+            <div className="surface-2 border border-token rounded overflow-hidden">
+              <table className="mini">
+                <thead>
+                  <tr>
+                    <th>Сервер</th>
+                    <th>IP</th>
+                    <th>Очередь</th>
+                    <th>Активен</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {liveRaw.map(({ stand }) => {
+                    const server = asServerCard(stand.server);
+                    const rowBusy = busyId === stand.id;
+                    return (
+                      <tr key={stand.id}>
+                        <td className="mono">{server?.display_name || server?.hostname || stand.server_id}</td>
+                        <td className="mono text-xs text-dim">{server?.ip_address ?? "—"}</td>
+                        <td>
+                          <Button
+                            size="sm"
+                            variant={stand.queue_enabled ? "primary" : "default"}
+                            disabled={rowBusy}
+                            onClick={() => toggleField(stand, "queue_enabled")}
+                          >
+                            {stand.queue_enabled ? "включена" : "выключена"}
+                          </Button>
+                        </td>
+                        <td>
+                          <Button
+                            size="sm"
+                            variant={stand.is_active ? "primary" : "default"}
+                            disabled={rowBusy}
+                            onClick={() => toggleField(stand, "is_active")}
+                          >
+                            {stand.is_active ? "активен" : "неактивен"}
+                          </Button>
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-1 justify-end flex-wrap">
+                            <Button
+                              size="sm"
+                              disabled={rowBusy}
+                              className="inline-flex items-center gap-1"
+                              onClick={() => setCredentialsStandId(stand.id)}
+                            >
+                              <KeyRound className="w-3.5 h-3.5" />
+                              Учётные данные теста
+                            </Button>
+                            <Button size="sm" variant="danger" disabled={rowBusy} aria-label="Удалить стенд" onClick={() => handleDelete(stand)}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {createOpen && (
+        <CreateStandModal
+          existingServerIds={liveRaw.map(({ stand }) => stand.server_id)}
+          onClose={() => setCreateOpen(false)}
+          onCreated={async () => {
+            setCreateOpen(false);
+            await onReload();
+          }}
+        />
+      )}
+      {credentialsStandId && (
+        <TestStandCredentialsModal standId={credentialsStandId} onClose={() => setCredentialsStandId(null)} />
+      )}
+    </div>
+  );
+}
+
+function CreateStandModal({
+  existingServerIds,
+  onClose,
+  onCreated,
+}: {
+  existingServerIds: string[];
+  onClose: () => void;
+  onCreated: () => void | Promise<void>;
+}) {
+  const toast = useToast();
+  const serversQ = useQuery(async () => (await listServers({ limit: 500 })).items, []);
+  const servers = serversQ.data ?? [];
+  const existing = useMemo(() => new Set(existingServerIds), [existingServerIds]);
+  // Сервер, уже заведённый как стенд, из выбора убираем — backend всё равно
+  // отклонит повтор (server_id уникален на стороне test_stand), но так
+  // очевиднее, что выбирать больше не из чего.
+  const availableServers = useMemo(
+    () => servers.filter((s: InventoryServer) => !existing.has(s.id)),
+    [servers, existing],
+  );
+
+  const [serverId, setServerId] = useState("");
+  const [queueEnabled, setQueueEnabled] = useState(true);
+  const [isActive, setIsActive] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit() {
+    if (!serverId || submitting) return;
+    setSubmitting(true);
+    try {
+      await createTestStand({ server_id: serverId, queue_enabled: queueEnabled, is_active: isActive });
+      toast.success("Стенд добавлен в пул");
+      await onCreated();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось добавить стенд"));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onOpenChange={(next) => !next && onClose()}
+      title="Добавить стенд"
+      subtitle="Зарегистрировать сервер из инвентаря server_service как тестовый стенд"
+      width="md"
+      footer={
+        <>
+          <Button type="button" onClick={onClose}>Отмена</Button>
+          <Button variant="primary" type="button" disabled={!serverId || submitting} onClick={submit}>
+            {submitting ? "Добавление…" : "Добавить"}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-3">
+        {serversQ.loading ? (
+          <div className="text-xs text-dim flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Загрузка серверов…
+          </div>
+        ) : serversQ.error ? (
+          <div className="alert alert-danger text-xs">{apiErrMsg(serversQ.error, "Список серверов не загрузился")}</div>
+        ) : (
+          <label className="grid gap-1">
+            <span className="text-xs text-dim">Сервер</span>
+            <Dropdown
+              mode="single"
+              searchable
+              placeholder={availableServers.length ? "Выберите сервер" : "Нет доступных серверов — все уже стенды"}
+              options={availableServers.map((s: InventoryServer) => ({
+                value: s.id,
+                label: `${s.display_name || s.hostname} · ${s.ip_address}`,
+              }))}
+              value={serverId}
+              onChange={setServerId}
+              disabled={!availableServers.length}
+            />
+          </label>
+        )}
+        <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">
+          <Checkbox checked={queueEnabled} onChange={(e) => setQueueEnabled(e.target.checked)} className="mt-0.5" />
+          <span>
+            <span className="text-sm font-medium block">Автоочередь включена</span>
+            <span className="text-xs text-dim">Стенд участвует в автоматической постановке тестов в очередь</span>
+          </span>
+        </label>
+        <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">
+          <Checkbox checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="mt-0.5" />
+          <span>
+            <span className="text-sm font-medium block">Стенд активен</span>
+            <span className="text-xs text-dim">Неактивные стенды исключаются из планирования прогонов</span>
+          </span>
+        </label>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Раскрытие учётки теста стенда — тот же UX-принцип, что и у карточки
+ * «Учётка теста» в консоли сервера (`pages/server/tabs/manage.tsx`,
+ * `TestCredentialsCard`): метаданные грузятся сразу, пароль/приватный ключ —
+ * только по явному клику «Показать» отдельным запросом с `reveal=true`
+ * (CRITICAL-audit + throttle на стороне backend), значения живут только в
+ * state этой модалки и обнуляются закрытием.
+ */
+function TestStandCredentialsModal({ standId, onClose }: { standId: string; onClose: () => void }) {
+  const toast = useToast();
+  const [meta, setMeta] = useState<TestStandTestCredentials | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [plain, setPlain] = useState<{ password: string | null; privateKey: string | null } | null>(null);
+  const [revealing, setRevealing] = useState(false);
+  const [throttleUntil, setThrottleUntil] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (throttleUntil <= 0) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [throttleUntil]);
+  const throttleLeft = Math.max(0, Math.ceil((throttleUntil - now) / 1000));
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    getTestStandCredentials(standId)
+      .then((c) => {
+        if (!cancelled) setMeta(c);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setErr(apiErrMsg(e, "Не удалось получить учётку теста"));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [standId]);
+
+  async function handleReveal() {
+    if (revealing || throttleLeft > 0) return;
+    setRevealing(true);
+    try {
+      const c = await getTestStandCredentials(standId, true);
+      setMeta(c);
+      setPlain({
+        password: c.password_b64 !== null ? fromBase64(c.password_b64) : null,
+        privateKey: c.ssh_private_key_b64 !== null ? fromBase64(c.ssh_private_key_b64) : null,
+      });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        const secs = e.retryAfter ?? 60;
+        setThrottleUntil(Date.now() + secs * 1000);
+        setNow(Date.now());
+        toast.error(`Reveal-лимит: повторите через ${secs} сек`);
+      } else {
+        toast.error(apiErrMsg(e, "Не удалось раскрыть учётку теста"));
+      }
+    } finally {
+      setRevealing(false);
+    }
+  }
+
+  const revealed = plain !== null;
+
+  return (
+    <Modal open onOpenChange={(next) => !next && onClose()} title="Учётные данные теста" width="md">
+      <div className="grid gap-3">
+        {loading && <div className="text-sm text-dim">загружаем…</div>}
+        {err && (
+          <div className="alert alert-danger flex items-start gap-2 text-xs">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <div>{err}</div>
+          </div>
+        )}
+
+        {meta && !meta.exists && (
+          <div className="text-[11px] text-dim italic">
+            Учётка ещё не выпускалась — пайплайн prepare-for-test ни разу не проходил для этого стенда.
+          </div>
+        )}
+
+        {meta && meta.exists && (
+          <>
+            <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 text-xs">
+              <dt className="text-dim">username</dt>
+              <dd className="mono break-all">{meta.username ?? "—"}</dd>
+              <dt className="text-dim">rotated_at</dt>
+              <dd className="mono">{meta.rotated_at ?? "—"}</dd>
+              <dt className="text-dim">public key</dt>
+              <dd className="mono break-all">{meta.ssh_public_key ?? "—"}</dd>
+            </dl>
+
+            {revealed ? (
+              <div className="grid gap-3">
+                <div className="flex items-center gap-3 flex-wrap text-sm">
+                  <span className="text-dim text-xs w-28 shrink-0">password</span>
+                  <span className="mono flex-1 min-w-[180px] break-all">{plain.password ?? "—"}</span>
+                </div>
+                {plain.privateKey !== null && (
+                  <pre className="mono text-xs whitespace-pre-wrap break-all surface-2 border border-token rounded p-2 max-h-64 overflow-auto">
+                    {plain.privateKey}
+                  </pre>
+                )}
+                <Button size="sm" type="button" className="self-start" onClick={() => setPlain(null)}>
+                  Скрыть
+                </Button>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                type="button"
+                className="self-start"
+                onClick={handleReveal}
+                disabled={revealing || throttleLeft > 0}
+              >
+                {revealing ? "Запрашиваем…" : throttleLeft > 0 ? `Подождите ${throttleLeft}с` : "Показать"}
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }
 

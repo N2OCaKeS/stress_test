@@ -31,6 +31,7 @@ import {
   Settings2,
   ShieldCheck,
   Trash2,
+  Variable,
   type LucideIcon,
 } from "lucide-react";
 import { Stat, TextStatusBadge, type BadgeKind } from "./_shared";
@@ -38,6 +39,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Badge } from "@/components/ui/Badge";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { useToast } from "@/contexts/ToastContext";
@@ -54,11 +56,20 @@ import {
   listTestCommandArgs,
   updateTestCommandArg,
 } from "@/api/testing/testCommandArgs";
-import { getGlobalVariableChoices, listGlobalVariables } from "@/api/testing/global_variables";
+import {
+  createGlobalVariable,
+  deleteGlobalVariable,
+  getGlobalVariableChoices,
+  listGlobalVariables,
+  updateGlobalVariable,
+} from "@/api/testing/global_variables";
 import { listTestStands } from "@/api/testing/testStands";
 import type {
   CommandArgKind,
   GlobalVariable,
+  GlobalVariableCreateRequest,
+  GlobalVariableSource,
+  GlobalVariableValueType,
   TestCommandArg,
   TestDefinition,
   TestDefinitionCreateRequest,
@@ -135,6 +146,19 @@ const READINESS_OPTIONS = [
   { value: "blocked", label: "blocked" },
 ];
 
+const SOURCE_OPTIONS: { value: GlobalVariableSource; label: string }[] = [
+  { value: "launch_context", label: "launch_context — из контекста запуска" },
+  { value: "static", label: "static — статическое значение" },
+  { value: "per_test_override", label: "per_test_override — переопределяется тестом" },
+  { value: "secret_service", label: "secret_service — из secret_service" },
+];
+
+const VALUE_TYPE_OPTIONS: { value: GlobalVariableValueType; label: string }[] = [
+  { value: "string", label: "string" },
+  { value: "integer", label: "integer" },
+  { value: "boolean", label: "boolean" },
+];
+
 export function TestsWorkzone() {
   const toast = useToast();
   const { confirm } = useConfirm();
@@ -143,11 +167,22 @@ export function TestsWorkzone() {
   const [category, setCategory] = useState<string | "all">("all");
   const [formTarget, setFormTarget] = useState<"create" | TestDefinition | null>(null);
   const [commandTest, setCommandTest] = useState<TestDefinition | null>(null);
+  const [variablesModalOpen, setVariablesModalOpen] = useState(false);
 
   const testsQ = useQuery(async () => (await listTestDefinitions({ limit: 500 })).items, []);
   const tests = testsQ.data ?? [];
 
   const standsQ = useQuery(async () => (await listTestStands({ limit: 500 })).items, []);
+
+  // Общий источник каталога переменных — им пользуется и панель управления
+  // (эта переменная), и конструктор команды (`CommandConstructorModal`,
+  // получает `variables`/`variablesLoading` пропсами). Один `useQuery` на
+  // страницу означает, что после создания/правки/удаления переменной в
+  // панели управления достаточно вызвать `variablesQ.refetch()` — и
+  // выпадающий список слотов в уже открытом конструкторе увидит новое
+  // значение без перезагрузки страницы.
+  const variablesQ = useQuery(async () => (await listGlobalVariables({ limit: 200 })).items, []);
+  const variables = variablesQ.data ?? [];
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -270,8 +305,16 @@ export function TestsWorkzone() {
         <Button
           type="button"
           size="sm"
-          variant="primary"
           className="inline-flex items-center gap-1.5 ml-auto"
+          onClick={() => setVariablesModalOpen(true)}
+        >
+          <Variable className="w-3.5 h-3.5" /> Переменные · {variables.length}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="primary"
+          className="inline-flex items-center gap-1.5"
           onClick={() => setFormTarget("create")}
         >
           <Plus className="w-3.5 h-3.5" /> Добавить тест
@@ -371,7 +414,22 @@ export function TestsWorkzone() {
       )}
 
       {commandTest && (
-        <CommandConstructorModal test={commandTest} onClose={() => setCommandTest(null)} />
+        <CommandConstructorModal
+          test={commandTest}
+          variables={variables}
+          variablesLoading={variablesQ.loading}
+          onClose={() => setCommandTest(null)}
+        />
+      )}
+
+      {variablesModalOpen && (
+        <GlobalVariablesModal
+          variables={variables}
+          loading={variablesQ.loading}
+          error={variablesQ.error}
+          onRefetch={variablesQ.refetch}
+          onClose={() => setVariablesModalOpen(false)}
+        />
       )}
     </div>
   );
@@ -493,13 +551,21 @@ function TestFormModal({
 
 // ── конструктор команды (test_command_args) ──────────────────────────────
 
-function CommandConstructorModal({ test, onClose }: { test: TestDefinition; onClose: () => void }) {
+function CommandConstructorModal({
+  test,
+  variables,
+  variablesLoading,
+  onClose,
+}: {
+  test: TestDefinition;
+  variables: GlobalVariable[];
+  variablesLoading: boolean;
+  onClose: () => void;
+}) {
   const toast = useToast();
   const { confirm } = useConfirm();
 
   const slotsQ = useQuery(() => listTestCommandArgs(test.id), [test.id]);
-  const variablesQ = useQuery(async () => (await listGlobalVariables({ limit: 200 })).items, []);
-  const variables = variablesQ.data ?? [];
   const variableById = useMemo(() => new Map(variables.map((v) => [v.id, v])), [variables]);
 
   const [addOpen, setAddOpen] = useState(false);
@@ -596,7 +662,7 @@ function CommandConstructorModal({ test, onClose }: { test: TestDefinition; onCl
           глобальную переменную. Порядок задаётся кнопками ↑/↓.
         </div>
 
-        {slotsQ.loading || variablesQ.loading ? (
+        {slotsQ.loading || variablesLoading ? (
           <div className="text-xs text-dim flex items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" /> Загрузка…
           </div>
@@ -656,7 +722,7 @@ function CommandConstructorModal({ test, onClose }: { test: TestDefinition; onCl
             size="sm"
             className="inline-flex items-center gap-1.5 self-start"
             onClick={() => setAddOpen(true)}
-            disabled={variablesQ.loading}
+            disabled={variablesLoading}
           >
             <Plus className="w-3.5 h-3.5" /> Добавить слот
           </Button>
@@ -856,6 +922,275 @@ function SlotEditorForm({
           )}
         </>
       )}
+      <div className="flex items-center gap-2 justify-end">
+        <Button type="button" size="sm" onClick={onCancel}>Отмена</Button>
+        <Button type="button" size="sm" variant="primary" disabled={!valid || saving} onClick={submit}>
+          {saving ? "Сохранение…" : "Сохранить"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ── управление глобальными переменными (global_variables) ────────────────
+
+function GlobalVariablesModal({
+  variables,
+  loading,
+  error,
+  onRefetch,
+  onClose,
+}: {
+  variables: GlobalVariable[];
+  loading: boolean;
+  error: unknown;
+  onRefetch: () => void;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleCreate(body: GlobalVariableCreateRequest) {
+    setBusy(true);
+    try {
+      await createGlobalVariable(body);
+      toast.success(`Переменная «${body.code}» создана`);
+      setAddOpen(false);
+      onRefetch();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось создать переменную"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUpdate(variable: GlobalVariable, body: GlobalVariableCreateRequest) {
+    setBusy(true);
+    try {
+      await updateGlobalVariable(variable.id, body);
+      toast.success(`Переменная «${variable.code}» обновлена`);
+      setEditId(null);
+      onRefetch();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось сохранить переменную"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete(variable: GlobalVariable) {
+    const ok = await confirm({
+      title: "Удалить глобальную переменную",
+      message: `Удалить «${variable.code} · ${variable.label}»? Если переменную использует хотя бы один слот команды теста, удаление будет отклонено.`,
+      confirmLabel: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await deleteGlobalVariable(variable.id);
+      toast.success(`Переменная «${variable.code}» удалена`);
+      onRefetch();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось удалить переменную"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onOpenChange={(next) => !next && onClose()}
+      title="Глобальные переменные"
+      subtitle="Каталог переменных конструктора команд"
+      icon={<Variable className="w-5 h-5 text-accent" />}
+      width="lg"
+    >
+      <div className="flex flex-col gap-3">
+        <div className="text-xs text-dim">
+          Переменные, доступные слотам команды любого теста каталога — источник значения,
+          тип и (опционально) резолвер вариантов выбора (<span className="mono">choices_source</span>).
+        </div>
+
+        {loading ? (
+          <div className="text-xs text-dim flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Загрузка…
+          </div>
+        ) : error ? (
+          <div className="alert alert-danger flex items-start gap-2 text-xs">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <div className="flex-1">{apiErrMsg(error, "Список переменных не загрузился")}</div>
+            <Button size="sm" onClick={() => onRefetch()}>Повторить</Button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {variables.length === 0 && !addOpen && (
+              <div className="text-xs text-dim">Переменных пока нет — добавьте первую.</div>
+            )}
+            {variables.map((variable) =>
+              editId === variable.id ? (
+                <GlobalVariableEditorForm
+                  key={variable.id}
+                  initial={variable}
+                  saving={busy}
+                  onCancel={() => setEditId(null)}
+                  onSave={(body) => handleUpdate(variable, body)}
+                />
+              ) : (
+                <GlobalVariableRow
+                  key={variable.id}
+                  variable={variable}
+                  disabled={busy}
+                  onEdit={() => setEditId(variable.id)}
+                  onDelete={() => handleDelete(variable)}
+                />
+              ),
+            )}
+          </div>
+        )}
+
+        {addOpen ? (
+          <GlobalVariableEditorForm saving={busy} onCancel={() => setAddOpen(false)} onSave={handleCreate} />
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            className="inline-flex items-center gap-1.5 self-start"
+            onClick={() => setAddOpen(true)}
+            disabled={loading}
+          >
+            <Plus className="w-3.5 h-3.5" /> Добавить переменную
+          </Button>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function GlobalVariableRow({
+  variable,
+  disabled,
+  onEdit,
+  onDelete,
+}: {
+  variable: GlobalVariable;
+  disabled: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="surface-2 border border-token rounded p-2 flex items-center gap-2">
+      <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap text-sm">
+        <span className="mono font-medium">{variable.code}</span>
+        <span className="text-dim text-xs">{variable.label}</span>
+        <Badge kind="accent">{variable.source}</Badge>
+        <Badge kind="ok">{variable.value_type}</Badge>
+        {variable.choices_source && (
+          <span className="mono text-[11px] text-dim">choices: {variable.choices_source}</span>
+        )}
+        {variable.is_sensitive && <Badge kind="warn">чувствительно</Badge>}
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <Button size="sm" onClick={onEdit} disabled={disabled} aria-label="Изменить переменную">
+          <Pencil className="w-3.5 h-3.5" />
+        </Button>
+        <Button size="sm" variant="danger" onClick={onDelete} disabled={disabled} aria-label="Удалить переменную">
+          <Trash2 className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function GlobalVariableEditorForm({
+  initial,
+  saving,
+  onCancel,
+  onSave,
+}: {
+  initial?: GlobalVariable;
+  saving?: boolean;
+  onCancel: () => void;
+  onSave: (body: GlobalVariableCreateRequest) => void | Promise<void>;
+}) {
+  const [code, setCode] = useState(initial?.code ?? "");
+  const [label, setLabel] = useState(initial?.label ?? "");
+  const [source, setSource] = useState<GlobalVariableSource>(
+    (initial?.source as GlobalVariableSource) ?? "launch_context",
+  );
+  const [valueType, setValueType] = useState<GlobalVariableValueType>(
+    (initial?.value_type as GlobalVariableValueType) ?? "string",
+  );
+  const [choicesSource, setChoicesSource] = useState(initial?.choices_source ?? "");
+  const [isSensitive, setIsSensitive] = useState(initial?.is_sensitive ?? false);
+  const [description, setDescription] = useState(initial?.description ?? "");
+
+  const valid = code.trim() !== "" && label.trim() !== "";
+
+  async function submit() {
+    if (!valid) return;
+    await onSave({
+      code: code.trim(),
+      label: label.trim(),
+      source,
+      value_type: valueType,
+      choices_source: choicesSource.trim() || null,
+      is_sensitive: isSensitive,
+      description: description.trim() || null,
+    });
+  }
+
+  return (
+    <div className="surface border border-token rounded p-3 flex flex-col gap-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <input
+          className="surface-2 border border-token rounded px-2 py-1 mono text-sm"
+          placeholder="код, например RC"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+        />
+        <input
+          className="surface-2 border border-token rounded px-2 py-1 text-sm"
+          placeholder="метка"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+        />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <Dropdown
+          mode="single"
+          options={SOURCE_OPTIONS}
+          value={source}
+          onChange={(v) => setSource(v as GlobalVariableSource)}
+        />
+        <Dropdown
+          mode="single"
+          options={VALUE_TYPE_OPTIONS}
+          value={valueType}
+          onChange={(v) => setValueType(v as GlobalVariableValueType)}
+        />
+      </div>
+      <input
+        className="surface-2 border border-token rounded px-2 py-1 mono text-sm"
+        placeholder="choices_source (необязательно, например dynamic:kernels)"
+        value={choicesSource}
+        onChange={(e) => setChoicesSource(e.target.value)}
+      />
+      <input
+        className="surface-2 border border-token rounded px-2 py-1 text-sm"
+        placeholder="описание (необязательно)"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+      />
+      <label className="flex items-center gap-2 text-sm cursor-pointer">
+        <Checkbox checked={isSensitive} onChange={(e) => setIsSensitive(e.target.checked)} />
+        Чувствительное значение (маскируется в логах команды)
+      </label>
       <div className="flex items-center gap-2 justify-end">
         <Button type="button" size="sm" onClick={onCancel}>Отмена</Button>
         <Button type="button" size="sm" variant="primary" disabled={!valid || saving} onClick={submit}>

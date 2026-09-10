@@ -21,9 +21,9 @@
 | `id` | `str` | NO | `cred_<32 hex>` |
 | `name` | `str(64)` | NO | Человекочитаемое имя (`"jira_reports_bot"`) |
 | `service` | `str(64)` | NO | Имя внешнего сервиса (`"jira"`, `"confluence"`, `"git"`) |
-| `scope` | `enum` | NO | `personal` \| `department` \| `cross_department` |
+| `scope` | `enum` | NO | `personal` \| `department` \| `cross_department` \| `service` |
 | `owner_user_id` | `str` | YES | Заполнено когда `scope=personal`. Soft-FK на `auth.users.id`. |
-| `owner_dept_id` | `str` | YES | Заполнено когда `scope ∈ {department, cross_department}`. Soft-FK на `auth.departments.id`. |
+| `owner_dept_id` | `str` | YES | Заполнено когда `scope ∈ {department, cross_department, service}`. Soft-FK на `auth.departments.id`. |
 | `login` | `Text` | YES | Plaintext. Может быть `NULL` если внешний сервис принимает только токен. |
 | `secret_encrypted` | `Text` | NO | `v<ver>$<nonce>$<ct>` envelope (AES-256-GCM + HKDF + master-key). |
 | `status` | `enum` | NO | `active` \| `blocked`. `blocked` → `GET` возвращает `410 GONE`. |
@@ -34,7 +34,7 @@
 
 **CHECK инварианты**:
 - `scope='personal'` ⇒ `owner_user_id IS NOT NULL AND owner_dept_id IS NULL`
-- `scope IN ('department','cross_department')` ⇒ `owner_dept_id IS NOT NULL AND owner_user_id IS NULL`
+- `scope IN ('department','cross_department','service')` ⇒ `owner_dept_id IS NOT NULL AND owner_user_id IS NULL`
 - `length(secret_encrypted) < 8192`
 - `secret_encrypted ~ '^v\d+\$'` (envelope format)
 - `valid_to IS NULL OR valid_from IS NULL OR valid_to > valid_from` (окно валидности; одиночные NULL разрешены)
@@ -103,6 +103,13 @@ Action `read` (метаданные/листинг) проходит при лю
   2. Recipient dep_admin (в своём dep'е) создаёт `RoleACL(cred_id, recipient_dept_id, role, can_read)`.
 - Управление и удаление: dep_admin владеющего dep'а + admin `secret_service` того же dep'а. Recipient dep_admin может только выдавать/отзывать собственные `RoleACL` внутри своего dep'а.
 
+### `service`
+- Владение и управление — **точно как `department`**: `owner_dept_id` обязателен, dep_admin владеющего dep'а + admin `secret_service` того же dep'а создают/редактируют/удаляют, `RoleACL` выдаётся так же.
+- Отличие только в READ/REVEAL: **любой платформенный сервис-бот** (`auth.BotAccount.is_service_bot=True`, заводится ТОЛЬКО bootstrap-кодом auth_service — `server_worker`, `testing_service` и подобные) получает `read`/`reveal` на такую креду **независимо от отдела**, без ручного `DeptGrant`/`RoleACL` на каждую пару отделов. Ничего сверх read/reveal сервис-боту не даётся (write/delete/grant_acl/grant_dept/manage_status — только владеющий dep, как обычно).
+- Обычные (не сервисные) боты, которых dep_admin заводит себе через `POST /bots`, этой универсальной видимости не получают — для них `service`-креда ведёт себя как обычная `department`-креда (видна только через RoleACL/матрицу своего dep'а).
+- Назначение: сервисам вроде `testing_service`, которым нужно публиковать данные (Zephyr/Confluence) от имени департамента-владельца креды, без ручной настройки cross-dept доступа под каждый отдел.
+- Введён вместе с `auth.BotAccount.is_service_bot` и `Identity.is_service_bot` (пробрасывается через `/authorization/introspect`).
+
 ## Модель доступа
 
 ### Базовые проверки (в порядке исполнения)
@@ -113,6 +120,7 @@ Action `read` (метаданные/листинг) проходит при лю
    - `personal`: `actor.user_id == cred.owner_user_id` ИЛИ существует `RoleACL(cred_id, actor.department_id, actor_role)` с нужным правом.
    - `department`: `actor.department_id == cred.owner_dept_id` AND существует `RoleACL(cred_id, actor.department_id, actor_role)` с нужным правом.
    - `cross_department`: существует `DeptGrant(cred_id, actor.department_id)` AND `RoleACL(cred_id, actor.department_id, actor_role)` с нужным правом. Если `actor.department_id == owner_dept_id` — `DeptGrant` не требуется (свой dep).
+   - `service`: `identity.is_service_bot == True` ⇒ `read`/`reveal` разрешены независимо от отдела (см. `access_service._check_service`). Иначе — та же проверка, что и `department`.
 
 ### Bot и PAT
 

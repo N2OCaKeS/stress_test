@@ -35,7 +35,7 @@ from src.db.base import Base
 
 # Имена БД-enum'ов держим короткие и без префикса сервиса — таблицы и так
 # живут в своей БД. Migration ссылается ровно на эти `name=...`.
-CREDENTIAL_SCOPE_VALUES = ("personal", "department", "cross_department")
+CREDENTIAL_SCOPE_VALUES = ("personal", "department", "cross_department", "service")
 CREDENTIAL_STATUS_VALUES = ("active", "blocked")
 
 
@@ -114,9 +114,9 @@ class Credential(Base):
             "(owner_user_id IS NOT NULL AND owner_dept_id IS NULL)",
             name="ck_credentials_personal_owner",
         ),
-        # department/cross_department ⇒ только dept-owner.
+        # department/cross_department/service ⇒ только dept-owner.
         CheckConstraint(
-            "(scope NOT IN ('department', 'cross_department')) OR "
+            "(scope NOT IN ('department', 'cross_department', 'service')) OR "
             "(owner_dept_id IS NOT NULL AND owner_user_id IS NULL)",
             name="ck_credentials_dept_owner",
         ),

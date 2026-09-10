@@ -234,15 +234,18 @@ _is_service_admin_for = _identity_roles.is_service_admin_for
 _is_account_admin = _identity_roles.is_account_admin
 
 
-# Роли, которым разрешено заводить department/cross_department-креды.
+# Роли, которым разрешено заводить department/cross_department/service-креды.
 # Из сервисных ролей это только `admin`; guest и кастомные роли без admin
-# создавать общие cred'ы не вправе — им остаётся чтение.
+# создавать общие cred'ы не вправе — им остаётся чтение. `service` — тот же
+# круг лиц, что и `department`: создание/управление ничем не отличается,
+# только READ/REVEAL получает дополнительную ветку для сервис-ботов
+# (см. access_service._check_service).
 _CREATE_DEPT_ROLES: frozenset[str] = frozenset({"admin"})
 
 
 def _can_create_dept_cred(identity: Identity) -> bool:
-    """Завести department/cross_department-креду может admin своего dep'а,
-    dep_admin или account_admin. guest и кастомные роли без admin — нет."""
+    """Завести department/cross_department/service-креду может admin своего
+    dep'а, dep_admin или account_admin. guest и кастомные роли без admin — нет."""
     if _is_account_admin(identity):
         return True
     if identity.platform_role == "department_admin":

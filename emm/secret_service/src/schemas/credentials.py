@@ -46,13 +46,15 @@ class CredentialCreate(BaseModel):
     """Тело POST /credentials.
 
     Если `scope == personal`, owner — текущий identity (берётся в сервисе);
-    `owner_dept_id` НЕ передаётся. Для department/cross_department `owner_dept_id`
-    обязателен.
+    `owner_dept_id` НЕ передаётся. Для department/cross_department/service
+    `owner_dept_id` обязателен — `service` физически принадлежит отделу
+    точно так же, как `department` (см. `access_service._check_service` для
+    read/reveal-исключения в пользу платформенных сервис-ботов).
     """
 
     name: str = Field(min_length=1, max_length=64)
     service: str = Field(min_length=1, max_length=64)
-    scope: Literal["personal", "department", "cross_department"]
+    scope: Literal["personal", "department", "cross_department", "service"]
     login: str | None = Field(default=None, max_length=4096)
     secret_b64: str = Field(
         min_length=1,
@@ -81,7 +83,7 @@ class CredentialCreate(BaseModel):
 
     @model_validator(mode="after")
     def _check_owner_dept_for_dept_scope(self) -> "CredentialCreate":
-        if self.scope in {"department", "cross_department"} and not self.owner_dept_id:
+        if self.scope in {"department", "cross_department", "service"} and not self.owner_dept_id:
             raise ValueError(
                 f"owner_dept_id is required for scope={self.scope!r}"
             )
@@ -150,7 +152,7 @@ class CredentialRead(BaseModel):
     id: str
     name: str
     service: str
-    scope: Literal["personal", "department", "cross_department"]
+    scope: Literal["personal", "department", "cross_department", "service"]
     owner_user_id: str | None
     owner_dept_id: str | None
     login: str | None
@@ -176,7 +178,7 @@ class CredentialGuestRead(BaseModel):
     id: str
     name: str
     service: str
-    scope: Literal["personal", "department", "cross_department"]
+    scope: Literal["personal", "department", "cross_department", "service"]
     login: str | None = None
     visible_to_dept: bool
 

@@ -113,6 +113,38 @@ async def test_introspect_propagates_department_name_to_audit_context():
     assert audit_context.get_context().department_name == "Dept One"
 
 
+async def test_introspect_defaults_is_service_bot_to_false():
+    """Introspect-тело без `is_service_bot` (старый auth_service / non-bot
+    актор) — Identity получает безопасный дефолт False."""
+    body = _introspect_body()
+    body.pop("is_service_bot", None)
+    mock_client = MagicMock()
+    mock_response = MagicMock(status_code=200)
+    mock_response.json.return_value = body
+    mock_client.post = AsyncMock(return_value=mock_response)
+
+    with patch.object(auth_dep, "_introspect_client", mock_client):
+        identity = await auth_dep.get_identity(_mk_request("dbos_pat_abcdefghij1234567890"))
+
+    assert identity.is_service_bot is False
+
+
+async def test_introspect_propagates_is_service_bot_true():
+    body = _introspect_body(
+        subject_type="bot", sub="bot_worker000000000000001", is_service_bot=True
+    )
+    mock_client = MagicMock()
+    mock_response = MagicMock(status_code=200)
+    mock_response.json.return_value = body
+    mock_client.post = AsyncMock(return_value=mock_response)
+
+    with patch.object(auth_dep, "_introspect_client", mock_client):
+        identity = await auth_dep.get_identity(_mk_request("dbos_bot_abcdefghij1234567890"))
+
+    assert identity.actor_type == "bot"
+    assert identity.is_service_bot is True
+
+
 async def test_introspect_without_department_name_yields_none():
     """Актор без отдела (platform-admin) → department_name=None, без падений."""
     body = _introspect_body(department_id=None, platform_role="account_admin")

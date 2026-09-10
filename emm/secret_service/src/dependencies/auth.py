@@ -90,6 +90,7 @@ class Identity:
         "service_roles",
         "is_banned",
         "platform_role",
+        "is_service_bot",
     )
 
     def __init__(
@@ -104,6 +105,7 @@ class Identity:
         service_roles: dict[str, list[str]],
         is_banned: bool,
         platform_role: str | None,
+        is_service_bot: bool = False,
     ) -> None:
         self.user_id = user_id
         self.username = username
@@ -114,6 +116,12 @@ class Identity:
         self.service_roles = service_roles
         self.is_banned = is_banned
         self.platform_role = platform_role
+        # Платформенный сервис-бот (server_worker/testing_service/...) —
+        # заводится ТОЛЬКО bootstrap-кодом auth_service. Даёт универсальный
+        # read/reveal на credential scope="service" независимо от отдела
+        # (см. `access_service._check_service`). Всегда False для
+        # user/oauth_client и для обычных ботов dep_admin'а.
+        self.is_service_bot = is_service_bot
 
     def roles_for(self, service: str) -> list[str]:
         """Удобный shortcut на service_roles.get(name, [])."""
@@ -278,6 +286,7 @@ def _to_identity(body: dict) -> Identity:
         service_roles=body.get("service_roles", {}),
         is_banned=body.get("is_banned", False),
         platform_role=body.get("platform_role"),
+        is_service_bot=bool(body.get("is_service_bot", False)),
     )
 
 

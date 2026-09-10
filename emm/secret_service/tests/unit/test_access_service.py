@@ -33,6 +33,7 @@ def _identity(
     department_id: str | None = "dep_actor00000000000000000001",
     roles: list[str] | None = None,
     platform_role: str | None = None,
+    is_service_bot: bool = False,
 ) -> Identity:
     return Identity(
         user_id=user_id,
@@ -43,6 +44,7 @@ def _identity(
         service_roles={"secret_service": roles or []},
         is_banned=False,
         platform_role=platform_role,
+        is_service_bot=is_service_bot,
     )
 
 
@@ -534,6 +536,164 @@ async def test_account_admin_cannot_write_department_scope(adb) -> None:
     allowed, reason = await access_service.check_access(adb, aa, cred, "write")
     assert not allowed
     assert reason == "scope_mismatch"
+
+
+# ── service scope: универсальный read/reveal сервис-бота ────────────────────
+
+
+@pytest.mark.asyncio
+async def test_service_scope_bot_with_flag_reveals_foreign_dept(adb) -> None:
+    """Сервис-бот (`is_service_bot=True`) читает/reveal'ит service-креду ЛЮБОГО
+    отдела — без DeptGrant, без ACL. Роль `guest` (как у реального
+    testing_service-бота) не должна экранировать этот путь guest-only
+    коротким замыканием в `check_access`."""
+    cred = await _create_dept(
+        adb, scope="service", owner_dept_id="dep_owner000000000000000001"
+    )
+    bot = _identity(
+        actor_type="bot",
+        user_id="bot_testing_svc00000000000001",
+        department_id="dep_system00000000000000000001",
+        roles=["guest"],
+        is_service_bot=True,
+    )
+    for action in ["read", "reveal"]:
+        allowed, reason = await access_service.check_access(adb, bot, cred, action)
+        assert allowed, f"{action} denied: {reason}"
+        assert reason == "service_bot"
+
+
+@pytest.mark.asyncio
+async def test_service_scope_bot_with_flag_cannot_write(adb) -> None:
+    """Сервис-бот получает только read/reveal — write остаётся закрыт,
+    даже в чужом отделе (делегируется в `_check_department`, ровно как у
+    обычного department-actor'а без ACL/роли admin). Роль ``reader`` (не
+    ``guest``) взята нарочно — не guest-only, чтобы проверить именно
+    `_check_department`-делегацию, а не guest-ветку (та отдельно покрыта
+    ниже, `test_service_scope_guest_only_bot_denied_reason`)."""
+    cred = await _create_dept(
+        adb, scope="service", owner_dept_id="dep_owner000000000000000001"
+    )
+    bot = _identity(
+        actor_type="bot",
+        user_id="bot_testing_svc00000000000002",
+        department_id="dep_system00000000000000000001",
+        roles=["reader"],
+        is_service_bot=True,
+    )
+    allowed, reason = await access_service.check_access(adb, bot, cred, "write")
+    assert not allowed
+    assert reason == "scope_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_service_scope_regular_bot_without_flag_denied_cross_dept(adb) -> None:
+    """Обычный (не сервисный) бот другого отдела с той же ролью НЕ получает
+    read на чужую service-креду — флаг `is_service_bot` обязателен, роли
+    самой по себе недостаточно."""
+    cred = await _create_dept(
+        adb, scope="service", owner_dept_id="dep_owner000000000000000001"
+    )
+    bot = _identity(
+        actor_type="bot",
+        user_id="bot_ordinary000000000000000001",
+        department_id="dep_other00000000000000000001",
+        roles=["reader"],
+        is_service_bot=False,
+    )
+    allowed, reason = await access_service.check_access(adb, bot, cred, "reveal")
+    assert not allowed
+    assert reason == "scope_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_service_scope_blocked_denies_service_bot(adb) -> None:
+    """Blocked service-креда закрыта даже для сервис-бота — платформенный
+    override не отменяет lifecycle-блокировку."""
+    cred = await _create_dept(
+        adb,
+        scope="service",
+        owner_dept_id="dep_owner000000000000000001",
+        status="blocked",
+    )
+    bot = _identity(
+        actor_type="bot",
+        user_id="bot_testing_svc00000000000003",
+        department_id="dep_system00000000000000000001",
+        roles=["reader"],
+        is_service_bot=True,
+    )
+    allowed, reason = await access_service.check_access(adb, bot, cred, "reveal")
+    assert not allowed
+    assert reason == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_service_scope_guest_only_bot_denied_reason(adb) -> None:
+    """Реальный testing_service-бот держит ТОЛЬКО системную роль `guest` в
+    secret_service — `_is_guest_only` считает его чистым guest'ом. Для
+    read/reveal это не важно (шаг `-1` в `check_access` перехватывает раньше,
+    см. `test_service_scope_bot_with_flag_reveals_foreign_dept`), но write и
+    blocked-доступ для такого бота падают в guest-ветку и получают её reason
+    (`guest_role_no_access`), а не `scope_mismatch`/`blocked` — функционально
+    тот же деny (маскируется под 404 в `credential_service`), просто другой
+    диагностический код."""
+    cred = await _create_dept(
+        adb, scope="service", owner_dept_id="dep_owner000000000000000001"
+    )
+    bot = _identity(
+        actor_type="bot",
+        user_id="bot_testing_svc00000000000004",
+        department_id="dep_system00000000000000000001",
+        roles=["guest"],
+        is_service_bot=True,
+    )
+    allowed, reason = await access_service.check_access(adb, bot, cred, "write")
+    assert not allowed
+    assert reason == "guest_role_no_access"
+
+
+@pytest.mark.asyncio
+async def test_service_scope_owner_dept_admin_full_access(adb) -> None:
+    """service-креда управляется owner-dep'ом ровно как department-креда:
+    dep_admin своего dep'а имеет полный доступ."""
+    cred = await _create_dept(adb, scope="service")
+    actor = _identity(platform_role="department_admin")
+    for action in ["read", "reveal", "write", "delete", "grant_acl", "manage_status"]:
+        allowed, reason = await access_service.check_access(adb, actor, cred, action)
+        assert allowed, f"{action} denied: {reason}"
+        assert reason == "dept_admin"
+
+
+@pytest.mark.asyncio
+async def test_service_scope_service_admin_full_access_own_dept(adb) -> None:
+    """admin secret_service своего dep'а — тот же объём, что на department."""
+    cred = await _create_dept(adb, scope="service")
+    admin = _identity(roles=["admin"])
+    for action in ["read", "reveal", "write", "delete", "grant_acl", "manage_status"]:
+        allowed, reason = await access_service.check_access(adb, admin, cred, action)
+        assert allowed, f"{action} denied: {reason}"
+        assert reason == "service_admin"
+
+
+@pytest.mark.asyncio
+async def test_service_scope_owner_can_reveal_without_bot_flag(adb) -> None:
+    """Обычный reader своего отдела с ACL на service-креду видит её точно так
+    же, как department-креду — новый scope не отбирает существующий путь."""
+    cred = await _create_dept(adb, scope="service")
+    await acls_repo.create(
+        adb,
+        id="acl_svc1",
+        cred_id=cred.id,
+        dept_id="dep_actor00000000000000000001",
+        role_name="reader",
+        can_read=True,
+        can_write=False,
+        granted_by_user_id="usr_admin0000000000000000000001",
+    )
+    actor = _identity(roles=["reader"])
+    allowed, reason = await access_service.check_access(adb, actor, cred, "reveal")
+    assert allowed and reason == "acl_read"
 
 
 # ── bot identity на personal ───────────────────────────────────────────────

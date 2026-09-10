@@ -50,11 +50,20 @@ can_write, write-actions — только при can_write.
 Все ветки возвращают конкретный reason: `owner_match`, `acl_view`,
 `acl_read`, `acl_write`, `matrix_role`, `user_acl_view`, `user_acl_read`,
 `user_acl_write`,
-`dept_admin`, `service_admin`, `blocked`, `dept_grant_missing`,
+`dept_admin`, `service_admin`, `service_bot`, `blocked`, `dept_grant_missing`,
 `role_not_in_acl`, `acl_missing_can_view`, `acl_missing_can_read`,
 `acl_missing_can_write`, `scope_mismatch`, `not_owner_dept`,
 `guest_visible_to_dept`, `guest_not_visible`, `guest_no_value_access`,
 `guest_role_no_access`. Любой другой текст в reason — это баг, имейте в виду.
+
+`service` — новый scope (владение как у `department`: `owner_dept_id`
+обязателен, `owner_user_id` пуст). Отличие только в READ/REVEAL:
+`_check_service` пускает ЛЮБОГО платформенного сервис-бота
+(`identity.is_service_bot=True`, заводится только bootstrap-кодом
+auth_service) на `read`/`reveal` независимо от отдела — без ручного
+`DeptGrant` на каждую пару отделов. Всё остальное (создание/write/delete/
+grant_acl/grant_dept/manage_status, обычная видимость своим отделом) —
+без изменений, делегируется в `_check_department`.
 
 Тип-wide матрица прав (`entity_permissions`, сущность `secret`) — базовый слой
 поверх ACL для НЕличных секретов: роль вызывающего → action на все
@@ -397,6 +406,38 @@ async def _check_cross_department(
     return _has_acl_permission(acls, action, identity.roles_for(SERVICE_NAME))
 
 
+async def _check_service(
+    db: AsyncSession,
+    identity: Identity,
+    cred: Credential,
+    action: Action,
+) -> tuple[bool, str]:
+    """service: платформенный сервис-бот видит read/reveal ЛЮБОГО отдела.
+
+    Единственная разница с `department`: любой актор с
+    `identity.is_service_bot=True` получает `read`/`reveal` независимо от
+    `identity.department_id` — без per-pair `DeptGrant`. Ничего сверх этого
+    (write/delete/grant_acl/grant_dept/manage_status) сервис-боту не даётся —
+    для этих actions, и для любого actor'а без флага, поведение ровно то же,
+    что у обычной department-кред'ы (владеющий отдел управляет ей как обычно).
+
+    Bot-ветка ниже на практике недостижима через `check_access` (тот же
+    предикат уже отработал раньше, шагом `-1`, — иначе `_is_guest_only`
+    перехватил бы typичного сервис-бота, у которого единственная роль в
+    secret_service — системный `guest`, до того как дело дойдёт до scope-
+    диспетчера). Держим её здесь как defense-in-depth и для прямых unit-тестов
+    самой функции — если порядок проверок в `check_access` когда-нибудь
+    поменяется, семантика `_check_service` не должна тихо потеряться.
+    """
+    if (
+        identity.actor_type == "bot"
+        and identity.is_service_bot
+        and action in ("read", "reveal")
+    ):
+        return True, "service_bot"
+    return await _check_department(db, identity, cred, action)
+
+
 async def check_access(
     db: AsyncSession,
     identity: Identity,
@@ -413,6 +454,23 @@ async def check_access(
     «410 vs 404» на blocked-кред'ах.
     """
     effective_status = status_override if status_override is not None else cred.status
+
+    # -1. Универсальный read/reveal сервис-бота на scope="service"-кредах.
+    # Проверяется ДО guest-only короткого замыкания ниже: у сегодняшних
+    # платформенных ботов (например testing_service) единственная роль в
+    # secret_service — системный `guest`, и без этого шага `_is_guest_only`
+    # перехватил бы запрос раньше, чем дело дойдёт до scope-диспетчера и
+    # `_check_service`. Blocked-кред'ы сюда не попадают (effective_status
+    # проверен) — падают в общий blocked-блок ниже, как и для всех остальных.
+    if (
+        cred.scope == "service"
+        and effective_status != "blocked"
+        and identity.actor_type == "bot"
+        and identity.is_service_bot
+        and action in ("read", "reveal")
+    ):
+        return True, "service_bot"
+
     # 0. Guest-роль — это уровень `view` на общие кред'ы отдела, помеченные
     # `visible_to_dept=True`: видит их метаданные (листинг и карточку), но не
     # значение и ничего не меняет. Personal чужих, cred'ы других отделов,
@@ -478,6 +536,8 @@ async def check_access(
         return await _check_department(db, identity, cred, action)
     if cred.scope == "cross_department":
         return await _check_cross_department(db, identity, cred, action)
+    if cred.scope == "service":
+        return await _check_service(db, identity, cred, action)
 
     # Невозможный scope — модель не допускает, но возвращаем False, не
     # AssertionError, чтоб не уронить процесс на повреждённой строке.

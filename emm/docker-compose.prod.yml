@@ -476,6 +476,13 @@ services:
       # shared-secret, отдельный от бот-токена выше. Bearer == ключ
       # testing_service в inbound-map server_service (её SERVICE_API_KEYS).
       SERVER_SERVICE_INTERNAL_API_KEY: ${SERVER_SERVICE_INTERNAL_API_KEY}
+      SECRET_SERVICE_URL: http://secret_service:8003
+      # Тот же бот testing_service, что и SERVER_SERVICE_API_KEY выше — он
+      # несёт вторую роль guest@secret_service и is_service_bot=True
+      # (bootstrap_testing_service_bot), поэтому reveal чужих
+      # scope=service credential (department_integration_settings) проходит
+      # без per-department DeptGrant.
+      SECRET_SERVICE_API_KEY: ${TESTING_SERVICE_BOT_TOKEN}
       DATABASE_URL: postgresql+psycopg://${TESTING_DB_USER}:${TESTING_DB_PASSWORD}@testing-postgres:5432/testing_db
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/3
       SERVICE_API_KEY: ${SERVICE_API_KEY}

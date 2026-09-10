@@ -6,18 +6,22 @@
 bearer'а), не shared s2s-секретом — значит нужен bearer, валидный для
 auth_service introspect, а не internal-ключ.
 
-**Важно, ещё не решено:** сам механизм, которым secret_service разрешит боту
-`testing_service` (живёт в системном отделе) увидеть чужую, department-owned
-credential (§2.4 — `department_integration_settings.credential_id` указывает
-на креду ОТДЕЛА, не системного отдела), на момент этой волны НЕ
-СПРОЕКТИРОВАН. Кандидат — существующий `scope=cross_department` + `DeptGrant`
-secret_service, но владелец ещё не зафиксировал форму. Эта функция уже
-реализует корректный HTTP-вызов и разбор ответа — когда механизм появится, её
-менять не придётся, изменится только то, что стоит НАД ней (кто и как заранее
-настраивает доступ). До тех пор реальный вызов будет закономерно получать
-403/404 для любой чужой credential — вызывающий код (`services/stp.py`,
-`services/stp_status.py`) обязан трактовать это как частичный, не фатальный
-провал (см. их docstring'и).
+Механизм, которым secret_service разрешает боту `testing_service` (живёт в
+системном отделе) видеть чужую, department-owned credential
+(`department_integration_settings.credential_id` указывает на креду ОТДЕЛА,
+не системного отдела), реализован: credential заводится с scope `"service"`
+(`secret_service/src/services/access_service.py::_check_service`) — владеет
+ей по-прежнему конкретный отдел (обычный CRUD — только через его
+dep_admin/admin), но read/reveal получает ЛЮБОЙ бот с флагом
+`BotAccount.is_service_bot=True` независимо от отдела бота. Флаг заводится
+только bootstrap-кодом auth_service (`bootstrap_service.py`) — у бота
+`testing_service` он выставлен. Настройка доступа — дело department_admin'а
+отдела-владельца credential'а (завести её со scope=service), не код-уровневый
+grant. 403 от secret_service здесь означает конкретно «в этом отделе
+`department_integration_settings` ещё не настроен на credential со
+scope=service» — не «фичи не существует»; вызывающий код (`services/stp.py`,
+`services/stp_status.py`) трактует такой исход как частичный, не фатальный
+провал конкретного отдела/стенда (см. их docstring'и).
 """
 
 from __future__ import annotations
@@ -62,8 +66,8 @@ async def reveal_credential(cred_id: str) -> tuple[str, str]:
       не существует, либо намеренно замаскирована под 404 для caller'а без
       доступа);
     * `AuthorizationError` (`CREDENTIAL_ACCESS_DENIED`) — 403, доступ не
-      настроен (см. module docstring — ожидаемо, пока межведомственный
-      механизм не готов);
+      настроен (см. module docstring — credential этого отдела ещё не
+      заведена со scope=service, либо бот утратил `is_service_bot`);
     * `ServiceUnavailableError` (`SECRET_SERVICE_ERROR`/`*_TIMEOUT`/
       `*_UNREACHABLE`) — сетевой сбой или неожиданный код ответа.
 

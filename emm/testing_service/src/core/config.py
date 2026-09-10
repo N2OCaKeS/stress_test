@@ -206,6 +206,17 @@ class Settings(BaseSettings):
         alias="CHANGELOG_REQUEST_TIMEOUT_SECONDS",
         description="Таймаут запроса к changelog-сервису.",
     )
+    changelog_cache_ttl_seconds: float = Field(
+        default=7776000.0,  # 90 дней — build_version не переиздаётся задним числом.
+        ge=1.0,
+        alias="CHANGELOG_CACHE_TTL_SECONDS",
+        description=(
+            "TTL строки `changelog_cache` по build_version (§2.7/§7 плана "
+            "миграции). Практически бессрочный: changelog собранного RC не "
+            "меняется, дефолт — 90 дней. Устаревшая или отсутствующая запись "
+            "триггерит повторный запрос к changelog-сервису."
+        ),
+    )
 
     # ── Zephyr Scale / Jira ATM (§6.1-6.2 плана миграции) ────────────────────
 

@@ -19,6 +19,7 @@ data:
   AUTH_SERVICE_URL: http://auth-service:8000
   LOGGING_SERVICE_URL: http://logging-service:8001
   SERVER_SERVICE_URL: http://server-service:8002
+  SECRET_SERVICE_URL: http://secret-service:8003
   INTROSPECT_TLS_VERIFY: "false"
   SLOWAPI_RATE_LIMIT: 500/minute
   DB_POOL_SIZE: "5"
@@ -105,6 +106,14 @@ spec:
             # guest@server_service) — choices_source dynamic-резолверам нужен
             # доступ к каталогу OS-версий server_service.
             - name: SERVER_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: TESTING_SERVICE_BOT_TOKEN }
+            # Тот же бот testing_service — теперь несёт вторую роль
+            # guest@secret_service и is_service_bot=True
+            # (bootstrap_testing_service_bot), поэтому reveal чужой
+            # scope=service credential (department_integration_settings)
+            # проходит без per-department DeptGrant.
+            - name: SECRET_SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: TESTING_SERVICE_BOT_TOKEN }
             # Канал брони/подготовки в server_service (acquire-for-service/

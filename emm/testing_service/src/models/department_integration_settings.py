@@ -5,9 +5,11 @@
 обязаны сидеть на одном инстансе). `credential_id` — id credential в
 `secret_service`, БЕЗ FK (другая БД); `jira_base_url`/`confluence_base_url` —
 обычные строки, не секреты, поэтому хранятся прямо здесь, а не в
-secret_service. Механизм, которым бот `testing_service` получает доступ к
-чужой (department-owned) кред'е secret_service по `credential_id`, на момент
-этой волны ещё не спроектирован — см. `services/secret_client.py`.
+secret_service. `credential_id` должен указывать на credential со
+scope=service — так бот `testing_service` (платформенный сервис-бот,
+`is_service_bot=True`) получает read/reveal независимо от отдела-владельца;
+завести такую credential — задача department_admin'а этого отдела (см.
+`services/secret_client.py`).
 """
 
 from datetime import datetime

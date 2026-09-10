@@ -77,3 +77,8 @@ def stp_cell_id() -> str:
 def department_integration_settings_id() -> str:
     """`dis_<uuid>` — для department_integration_settings."""
     return _new_id("dis_")
+
+
+def changelog_cache_id() -> str:
+    """`chc_<uuid>` — для changelog_cache."""
+    return _new_id("chc_")

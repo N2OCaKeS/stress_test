@@ -337,13 +337,16 @@ async def bootstrap_testing_service_bot(db: AsyncSession) -> None:
       read-каталогам (`GET /os-versions` и подобные — открыты любому
       аутентифицированному актору, отдельного internal-канала для этого у
       server_service нет);
-    * `guest@secret_service` — identity-роль под будущий
+    * `guest@secret_service` — identity-роль под
       `POST /credentials/{id}/reveal` резолв department_integration_settings-
       кред (Jira/Zephyr/Confluence). Каждая такая креда принадлежит СВОЕМУ
-      отделу, не системному, а бот — системному; сам механизм, которым
-      secret_service разрешит эту межведомственную видимость, на момент
-      этой волны ещё не спроектирован (см. константу выше) — сеем роль
-      заранее, доступ появится, когда механизм будет готов.
+      отделу, не системному, а бот — системному; межведомственная видимость
+      обеспечена credential-scope `"service"` в secret_service
+      (`access_service.py::_check_service`) — read/reveal получает любой бот
+      с флагом `is_service_bot=True` (этот бот его несёт), независимо от
+      отдела. Роль здесь — только базовый допуск в secret_service, сама
+      видимость конкретной credential определяется её scope на стороне
+      secret_service, не этой ролью.
 
     Идемпотентно и safe к гонке реплик (откат всей транзакции на
     IntegrityError). Важно: идемпотентность проверяется НЕ только по хэшу

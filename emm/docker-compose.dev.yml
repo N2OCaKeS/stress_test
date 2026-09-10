@@ -428,6 +428,13 @@ services:
       # shared-secret, НЕ бот-токен выше: должен совпадать байт-в-байт с
       # SERVER_INBOUND_SERVICE_API_KEYS['testing_service'] у server_service.
       SERVER_SERVICE_INTERNAL_API_KEY: dev-testing-service-internal-key-do-not-use-in-prod
+      SECRET_SERVICE_URL: http://secret_service:8003
+      # Тот же бот testing_service, что и SERVER_SERVICE_API_KEY выше — он
+      # теперь несёт вторую роль guest@secret_service и is_service_bot=True
+      # (bootstrap_testing_service_bot), поэтому reveal чужих
+      # scope=service credential (department_integration_settings) проходит
+      # без per-department DeptGrant.
+      SECRET_SERVICE_API_KEY: dbos_bot_dev_testing_service_local_token_do_not_use_in_prod
       # Inbound s2s-map: server_service шлёт сюда callback завершения
       # prepare-for-test, testing_worker — claim/completed очереди.
       SERVICE_API_KEYS: server_service=dev-server-service-callback-key-do-not-use-in-prod,testing_worker=dev-testing-worker-internal-key-do-not-use-in-prod

@@ -56,11 +56,11 @@ def _is_full_scope(rc: str, final: bool) -> bool:
 
 
 async def _filter_by_changelog(
-    tests: list[TestDefinition], rc: str, final: bool,
+    db: AsyncSession, tests: list[TestDefinition], rc: str, final: bool,
 ) -> list[TestDefinition]:
     if _is_full_scope(rc, final):
         return tests
-    changed = await changelog_service.fetch_changed_components(rc)
+    changed = await changelog_service.fetch_changed_components(db, rc)
     if changed is None:
         # changelog-сервис недоступен/не настроен — безопасный дефолт: полный набор.
         return tests
@@ -84,8 +84,11 @@ async def _resolve_jira_bearer(db: AsyncSession, department_id: str) -> tuple[st
     """`(jira_base_url, bearer_token)` для отдела, либо `None` — не настроено/недоступно.
 
     `None` — вызывающий код обязан трактовать это как частичный провал этого
-    стенда/отдела, не как исключение, рушащее весь `/stp/generate` (см.
-    module docstring и `secret_client.reveal_credential`).
+    стенда/отдела, не как исключение, рушащее весь `/stp/generate`. Помимо
+    отсутствующих `department_integration_settings`, сюда же попадает и 403 от
+    `secret_client.reveal_credential` — легитимный исход, если department_admin
+    отдела ещё не завёл интеграционную credential со scope=service (см. её
+    docstring).
     """
     settings = await dis_repo.get_by_department(db, department_id)
     if settings is None or not settings.credential_id or not settings.jira_base_url:
@@ -132,7 +135,7 @@ async def generate_stp_runs(
         raise
 
     tests = await test_definition_repo.list_by_department_pinned(db, department_id)
-    filtered = await _filter_by_changelog(tests, os_version_id, final)
+    filtered = await _filter_by_changelog(db, tests, os_version_id, final)
 
     by_stand: dict[str, list[TestDefinition]] = defaultdict(list)
     for test in filtered:

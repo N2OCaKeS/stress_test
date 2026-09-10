@@ -92,7 +92,8 @@ class TestChangelogFilter:
         from src.models import TestDefinition
 
         t = TestDefinition(id="t1", code="a", full_name="A", changelog_component=None)
-        result = await stp_svc._filter_by_changelog([t], "1.8.5.46", final=False)
+        async with AsyncSessionLocal() as db:
+            result = await stp_svc._filter_by_changelog(db, [t], "1.8.5.46-nocache1", final=False)
         # changelog service not configured in tests → fetch_changed_components
         # returns None → safe default is "keep everything" regardless of component.
         assert result == [t]
@@ -104,16 +105,20 @@ class TestChangelogFilter:
         dropped = TestDefinition(id="t2", code="b", full_name="B", changelog_component="postgresql")
         no_component = TestDefinition(id="t3", code="c", full_name="C", changelog_component=None)
 
-        async def fake_fetch(rc: str):
+        async def fake_fetch(db, rc: str):
             return ["kernel"]
 
         monkeypatch.setattr(changelog_service, "fetch_changed_components", fake_fetch)
-        result = await stp_svc._filter_by_changelog([kept, dropped, no_component], "1.8.5.46", final=False)
+        async with AsyncSessionLocal() as db:
+            result = await stp_svc._filter_by_changelog(
+                db, [kept, dropped, no_component], "1.8.5.46", final=False,
+            )
         assert result == [kept, no_component]
 
     async def test_changelog_service_non_success_status_yields_empty_result(self, monkeypatch):
         settings_stub = type("S", (), {
             "changelog_service_url": "http://changelog", "changelog_request_timeout_seconds": 2.0,
+            "changelog_cache_ttl_seconds": 7776000.0,
         })()
         monkeypatch.setattr(changelog_service, "get_settings", lambda: settings_stub)
 
@@ -124,12 +129,14 @@ class TestChangelogFilter:
             changelog_service, "build_client",
             lambda timeout: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         )
-        result = await changelog_service.fetch_changed_components("1.8.5.46")
+        async with AsyncSessionLocal() as db:
+            result = await changelog_service.fetch_changed_components(db, "1.8.5.46-error")
         assert result == []
 
     async def test_changelog_service_success_extracts_components(self, monkeypatch):
         settings_stub = type("S", (), {
             "changelog_service_url": "http://changelog", "changelog_request_timeout_seconds": 2.0,
+            "changelog_cache_ttl_seconds": 7776000.0,
         })()
         monkeypatch.setattr(changelog_service, "get_settings", lambda: settings_stub)
 
@@ -143,8 +150,67 @@ class TestChangelogFilter:
             changelog_service, "build_client",
             lambda timeout: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         )
-        result = await changelog_service.fetch_changed_components("1.8.5.46")
+        async with AsyncSessionLocal() as db:
+            result = await changelog_service.fetch_changed_components(db, "1.8.5.46-success")
         assert result == ["kernel", "postgresql", "openssl"]
+
+    async def test_changelog_service_caches_response_and_skips_second_call(self, monkeypatch):
+        settings_stub = type("S", (), {
+            "changelog_service_url": "http://changelog", "changelog_request_timeout_seconds": 2.0,
+            "changelog_cache_ttl_seconds": 7776000.0,
+        })()
+        monkeypatch.setattr(changelog_service, "get_settings", lambda: settings_stub)
+
+        call_count = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(200, json={"status": "success", "result": ["kernel"]})
+
+        monkeypatch.setattr(
+            changelog_service, "build_client",
+            lambda timeout: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        rc = f"1.8.5.46-cache-{uuid.uuid4().hex[:8]}"
+        async with AsyncSessionLocal() as db:
+            first = await changelog_service.fetch_changed_components(db, rc)
+        async with AsyncSessionLocal() as db:
+            second = await changelog_service.fetch_changed_components(db, rc)
+        assert first == ["kernel"]
+        assert second == ["kernel"]
+        assert call_count == 1
+
+    async def test_changelog_service_falls_back_to_stale_cache_on_network_error(self, monkeypatch):
+        settings_stub = type("S", (), {
+            "changelog_service_url": "http://changelog", "changelog_request_timeout_seconds": 2.0,
+            "changelog_cache_ttl_seconds": 7776000.0,
+        })()
+        monkeypatch.setattr(changelog_service, "get_settings", lambda: settings_stub)
+
+        rc = f"1.8.5.46-stale-{uuid.uuid4().hex[:8]}"
+
+        def ok_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"status": "success", "result": ["kernel"]})
+
+        monkeypatch.setattr(
+            changelog_service, "build_client",
+            lambda timeout: httpx.AsyncClient(transport=httpx.MockTransport(ok_handler)),
+        )
+        async with AsyncSessionLocal() as db:
+            await changelog_service.fetch_changed_components(db, rc)
+
+        def failing_handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("boom", request=request)
+
+        monkeypatch.setattr(
+            changelog_service, "build_client",
+            lambda timeout: httpx.AsyncClient(transport=httpx.MockTransport(failing_handler)),
+        )
+        monkeypatch.setattr(changelog_service, "_is_fresh", lambda fetched_at, ttl: False)
+        async with AsyncSessionLocal() as db:
+            result = await changelog_service.fetch_changed_components(db, rc)
+        assert result == ["kernel"]
 
     def test_not_configured_returns_none_shape(self):
         assert changelog_service.is_configured() is False

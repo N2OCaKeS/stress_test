@@ -4,8 +4,18 @@
  * же списка стендов (карточки/полоски/очереди) сохранены как есть — это
  * материал для согласования с руководителем, какой вид удобнее для
  * повседневной работы; окончательный выбор владелец сделает позже.
+ *
+ * Источник стендов — `testing_service` (`listTestStands`/`getTestStand`,
+ * живая карточка сервера приходит вложенной в ответ `getTestStand`). Пул
+ * ещё не отдаёт отдельную телеметрию загрузки (CPU/RAM/температура) и
+ * полную историю очереди на стенд — это будущие волны; до появления
+ * реального эндпоинта нагрузка на дашборде — детерминированная заглушка
+ * (см. `placeholderMetrics`), а очередь строится из единственного активного
+ * элемента (`getCurrentQueueItem`), а не полной истории. В mock-режиме
+ * (`VITE_USE_MOCK_AUTH=true`) страница по-прежнему работает на demo-данных
+ * `_shared.tsx`, как и раньше.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -28,7 +38,7 @@ import {
   Thermometer,
   Trash2,
 } from "lucide-react";
-import { LaunchRunModal, RUNS } from "./runs";
+import { LaunchRunModal, type RunsState } from "./runs";
 import { Dropdown } from "@/components/ui/Dropdown";
 import {
   Counter,
@@ -50,12 +60,21 @@ import {
   queueBadge,
   queueStats,
   type QueueItem,
+  type QueueState,
   type Stand,
+  type StandMetrics,
+  type StandStatus,
 } from "./_shared";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Modal } from "@/components/ui/Modal";
+import { useMockMode, useQuery } from "@/api/auth/useQuery";
+import { getCurrentQueueItem, getTestStand, listTestStands } from "@/api/testing/testStands";
+import type { QueueItemSummary, TestStand } from "@/api/testing/types";
+import { listOsVersions } from "@/api/server/osVersions";
+import { getHostDiskUsage } from "@/api/server/misc";
+import type { HostDiskUsageResponse } from "@/api/server/types";
 
 type ConceptId = "cards" | "strips" | "queue";
 type LaunchModal = "test" | "run" | null;
@@ -66,14 +85,172 @@ interface LogTarget {
   item?: QueueItem;
 }
 
-export function TestingOverview() {
+// ── живые данные testing_service ────────────────────────────────────────────
+
+/** Поля живой карточки сервера (`TestStand.server`), нужные этой странице. */
+interface LiveServerCard {
+  hostname?: string | null;
+  display_name?: string | null;
+  ip_address?: string | null;
+  os_version_id?: string | null;
+  busy_state?: string | null;
+  busy_note?: string | null;
+}
+
+function asServerCard(server: Record<string, unknown> | null): LiveServerCard | null {
+  return server as LiveServerCard | null;
+}
+
+function hashSeed(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return hash;
+}
+
+function clampPct(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+/**
+ * `testing_service`/`server_service` пока не отдают отдельную live-метрику
+ * загрузки стенда (CPU/RAM/температура) — только идентичность и `busy_state`.
+ * Значения ниже — детерминированная (по id стенда) заглушка, чтобы дашборд
+ * не пустовал визуально до появления реального телеметрического эндпоинта.
+ */
+function placeholderMetrics(seed: number, status: StandStatus): StandMetrics {
+  if (status === "offline") {
+    return { cpuUser: 0, cpuSystem: 0, cpuTemp: 0, ram: 0, diskNvme: 0, diskSda: 0, history: Array(12).fill(0) };
+  }
+  const base = status === "idle" ? 6 + (seed % 12) : status === "manual" ? 18 + (seed % 30) : 28 + (seed % 60);
+  const cpuUser = clampPct(base * 0.65);
+  const cpuSystem = clampPct(Math.max(base - cpuUser, 2));
+  const ram = status === "idle" ? 20 + (seed % 20) : status === "manual" ? 30 + (seed % 35) : 38 + (seed % 50);
+  const cpuTemp = 38 + (seed % 30);
+  const diskNvme = 20 + (seed % 55);
+  const diskSda = 10 + (seed % 40);
+  const history = Array.from({ length: 12 }, (_, i) => clampPct(base + Math.sin(i * 1.3 + seed) * 12));
+  return { cpuUser, cpuSystem, cpuTemp, ram, diskNvme, diskSda, history };
+}
+
+function mapQueueItemState(state: string): QueueState {
+  if (state === "succeeded") return "done";
+  if (state === "failed") return "failed";
+  if (state === "queued") return "pending";
+  return "running"; // preparing | ready | running
+}
+
+interface LiveStandData {
+  stand: TestStand;
+  current: QueueItemSummary | null;
+}
+
+/** Загружает список стендов + живую карточку сервера + текущий элемент очереди на каждый. */
+async function fetchLiveStands(): Promise<LiveStandData[]> {
+  const list = await listTestStands({ limit: 500 });
+  const detailed = await Promise.all(list.items.map((item) => getTestStand(item.id)));
+  const current = await Promise.all(
+    detailed.map((stand) => getCurrentQueueItem(stand.id).catch(() => null)),
+  );
+  return detailed.map((stand, index) => ({ stand, current: current[index] }));
+}
+
+/** Строит `Stand[]` (совместимый с demo-типом из `_shared.tsx`) из живых данных testing_service. */
+function mapLiveStands(data: LiveStandData[], osNameById: Map<string, string>): Stand[] {
+  return data.map(({ stand, current }, index) => {
+    const server = asServerCard(stand.server);
+    const unavailable = stand.server_unavailable || !server;
+    const busy = server?.busy_state ?? null;
+    const status: StandStatus = unavailable
+      ? "offline"
+      : busy === "testing"
+        ? "testing"
+        : busy === "free" || busy == null
+          ? "idle"
+          : "manual";
+    const name = server?.display_name || server?.hostname || stand.server_id;
+    const ip = server?.ip_address || "—";
+    const os = server?.os_version_id ? osNameById.get(server.os_version_id) ?? "—" : "—";
+    const currentTitle = current
+      ? `тест ${current.test_id.slice(0, 8)}`
+      : status === "manual"
+        ? server?.busy_note || "ручная работа"
+        : "Нет активной работы";
+    const currentMeta = current
+      ? `${current.state} · занято testing_service`
+      : status === "offline"
+        ? "стенд недоступен"
+        : status === "manual"
+          ? "занят вне testing_service"
+          : "стенд свободен";
+    const queue: QueueItem[] = current
+      ? [{ title: currentTitle, state: mapQueueItemState(current.state), meta: currentMeta }]
+      : [];
+    return {
+      id: index + 1,
+      name,
+      ip,
+      status,
+      os,
+      kernel: "—",
+      currentTitle,
+      currentMeta,
+      metrics: placeholderMetrics(hashSeed(stand.id), status),
+      queue,
+    };
+  });
+}
+
+const STORAGE_LABELS: Record<string, string> = {
+  "/": "Системный диск",
+  "/srv/ftp": "FTP-хранилище",
+  "/home/partimag": "Partimag (снимки ACS)",
+};
+
+/** Хранилище хоста платформы (`getHostDiskUsage`) в форме, ожидаемой виджетом «Хранилище пула». */
+function storageStatsFromDisk(data: HostDiskUsageResponse | null): { label: string; usedGb: number; totalGb: number }[] {
+  return (data?.paths ?? [])
+    .filter((path) => path.available && path.used_gb != null && path.total_gb != null)
+    .map((path) => ({
+      label: STORAGE_LABELS[path.path] ?? path.path,
+      usedGb: Math.round(path.used_gb as number),
+      totalGb: Math.round(path.total_gb as number),
+    }));
+}
+
+export function TestingOverview({ runsState }: { runsState: RunsState }) {
+  const mockMode = useMockMode();
   const [concept, setConcept] = useState<ConceptId>("cards");
   const [filter, setFilter] = useState<StandFilter>("all");
-  const [stands, setStands] = useState(STANDS);
+  const [stands, setStands] = useState<Stand[]>(() => (mockMode ? STANDS : []));
   const [queueStandId, setQueueStandId] = useState<number | null>(null);
   const [launchModal, setLaunchModal] = useState<LaunchModal>(null);
   const [logTarget, setLogTarget] = useState<LogTarget | null>(null);
   const [dashboardOpen, setDashboardOpen] = useState(true);
+
+  const liveStandsQuery = useQuery(fetchLiveStands, [], { enabled: !mockMode });
+  const osVersionsQuery = useQuery(() => listOsVersions({ limit: 200 }), [], { enabled: !mockMode });
+  const hostDiskQuery = useQuery(() => getHostDiskUsage(), [], { enabled: !mockMode });
+
+  const osNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const version of osVersionsQuery.data?.items ?? []) map.set(version.id, version.name);
+    return map;
+  }, [osVersionsQuery.data]);
+  const rcOptions = mockMode ? RC_IDS : (osVersionsQuery.data?.items.map((v) => v.name) ?? []);
+  // Число прогонов — общее состояние с вкладкой «Прогоны» (`useRunsState`,
+  // всегда живое, без mock-ветки — см. её докстринг), переиспользуем как есть.
+  const totalRuns = runsState.total;
+  const storageStats = mockMode ? STORAGE_STATS : storageStatsFromDisk(hostDiskQuery.data ?? null);
+
+  // Живые стенды подгружаются один раз при первом ответе — дальше страница
+  // управляет ими локально (та же модель, что и demo-режим), чтобы не сбивать
+  // локальные изменения очереди случайным рефетчем.
+  const [liveLoaded, setLiveLoaded] = useState(false);
+  useEffect(() => {
+    if (mockMode || liveLoaded || !liveStandsQuery.data) return;
+    setStands(mapLiveStands(liveStandsQuery.data, osNameById));
+    setLiveLoaded(true);
+  }, [mockMode, liveLoaded, liveStandsQuery.data, osNameById]);
 
   const filteredStands = useMemo(() => {
     return stands.filter((stand) => {
@@ -117,7 +294,7 @@ export function TestingOverview() {
       ),
     );
   };
-  const addTestsToQueue = (standId: number, tests: string[], prepareEnv: boolean, devMode: boolean) => {
+  const addTestsToQueue = (standId: number, tests: string[], prepareEnv: boolean, debugMode: boolean) => {
     setStands((current) =>
       current.map((stand) => {
         if (stand.id !== standId) return stand;
@@ -127,7 +304,7 @@ export function TestingOverview() {
         const testItems = tests.map<QueueItem>((title) => ({
           title,
           state: "pending",
-          meta: devMode ? "запустить тест · dev mode" : "запустить тест",
+          meta: debugMode ? "запустить тест · debug mode" : "запустить тест",
         }));
         const added = [...prepItem, ...testItems];
         return {
@@ -145,7 +322,8 @@ export function TestingOverview() {
     <div className="grid gap-4">
       <FleetDashboard
         stands={stands}
-        totalRuns={RUNS.length}
+        totalRuns={totalRuns}
+        storageStats={storageStats}
         open={dashboardOpen}
         onToggle={() => setDashboardOpen((v) => !v)}
       />
@@ -240,14 +418,15 @@ export function TestingOverview() {
       {launchModal === "test" && (
         <LaunchTestModal
           stands={stands}
+          rcOptions={rcOptions}
           onClose={() => setLaunchModal(null)}
-          onSubmit={(standId, tests, prepareEnv, devMode) => {
-            addTestsToQueue(standId, tests, prepareEnv, devMode);
+          onSubmit={(standId, tests, prepareEnv, debugMode) => {
+            addTestsToQueue(standId, tests, prepareEnv, debugMode);
             setLaunchModal(null);
           }}
         />
       )}
-      {launchModal === "run" && <LaunchRunModal onClose={() => setLaunchModal(null)} />}
+      {launchModal === "run" && <LaunchRunModal state={runsState} onClose={() => setLaunchModal(null)} />}
       {logTarget && (
         <LogViewerModal stand={logTarget.stand} item={logTarget.item} onClose={() => setLogTarget(null)} />
       )}
@@ -266,11 +445,13 @@ const STORAGE_STATS = [
 function FleetDashboard({
   stands,
   totalRuns,
+  storageStats,
   open,
   onToggle,
 }: {
   stands: Stand[];
   totalRuns: number;
+  storageStats: { label: string; usedGb: number; totalGb: number }[];
   open: boolean;
   onToggle: () => void;
 }) {
@@ -309,7 +490,7 @@ function FleetDashboard({
               <HardDrive className="w-3.5 h-3.5" /> Хранилище пула
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {STORAGE_STATS.map((s) => (
+              {storageStats.map((s) => (
                 <div key={s.label} className="surface-2 border border-token rounded p-3">
                   <div className="text-xs text-dim mb-1.5">{s.label}</div>
                   <div className="progress-wide mb-1.5">
@@ -549,32 +730,34 @@ function StandMetricsGrid({ stand }: { stand: Stand }) {
 
 function LaunchTestModal({
   stands,
+  rcOptions,
   onClose,
   onSubmit,
 }: {
   stands: Stand[];
+  rcOptions: string[];
   onClose: () => void;
-  onSubmit: (standId: number, tests: string[], prepareEnv: boolean, devMode: boolean) => void;
+  onSubmit: (standId: number, tests: string[], prepareEnv: boolean, debugMode: boolean) => void;
 }) {
-  const [devMode, setDevMode] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
   // Штатно доступны только физические стенды — виртуальные существуют
-  // исключительно как цель для dev-режима (отладочный запуск теста на ВМ).
-  const pickableStands = devMode ? stands : stands.filter((item) => item.kind !== "virtual");
+  // исключительно как цель для debug-режима (отладочный запуск теста на ВМ).
+  const pickableStands = debugMode ? stands : stands.filter((item) => item.kind !== "virtual");
   const [standId, setStandId] = useState(pickableStands[0]?.id ?? 0);
   const stand = pickableStands.find((item) => item.id === standId) ?? pickableStands[0];
-  const tests = stand ? testsForStand(stand, devMode) : [];
+  const tests = stand ? testsForStand(stand, debugMode) : [];
   const [selectedTests, setSelectedTests] = useState<string[]>(tests.slice(0, 2));
   const [prepareEnv, setPrepareEnv] = useState(true);
-  const [rcId, setRcId] = useState(RC_IDS[0] ?? "");
+  const [rcId, setRcId] = useState(rcOptions[0] ?? "");
 
   const switchStand = (nextStandId: number) => {
     const nextStand = pickableStands.find((item) => item.id === nextStandId) ?? pickableStands[0];
     setStandId(nextStandId);
-    setSelectedTests(testsForStand(nextStand, devMode).slice(0, 2));
+    setSelectedTests(testsForStand(nextStand, debugMode).slice(0, 2));
   };
-  const toggleDevMode = (enabled: boolean) => {
-    setDevMode(enabled);
-    // выключение dev-режима могло сделать выбранный (виртуальный) стенд
+  const toggleDebugMode = (enabled: boolean) => {
+    setDebugMode(enabled);
+    // выключение debug-режима могло сделать выбранный (виртуальный) стенд
     // недоступным — падаем на первый штатный стенд
     const nextStands = enabled ? stands : stands.filter((item) => item.kind !== "virtual");
     const nextStand = nextStands.find((item) => item.id === standId) ?? nextStands[0];
@@ -607,7 +790,7 @@ function LaunchTestModal({
             variant="primary"
             type="button"
             disabled={!selectedTests.length || !stand}
-            onClick={() => stand && onSubmit(stand.id, selectedTests, prepareEnv, devMode)}
+            onClick={() => stand && onSubmit(stand.id, selectedTests, prepareEnv, debugMode)}
             title={!selectedTests.length ? "Выберите хотя бы один тест" : undefined}
           >
             Добавить в очередь
@@ -633,7 +816,7 @@ function LaunchTestModal({
               <span className="text-xs text-dim">RC</span>
               <Dropdown
                 mode="single"
-                options={RC_IDS.map((rc) => ({ value: rc, label: rc }))}
+                options={rcOptions.map((rc) => ({ value: rc, label: rc }))}
                 value={rcId}
                 onChange={setRcId}
               />
@@ -666,12 +849,12 @@ function LaunchTestModal({
 
           <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">
             <Checkbox
-              checked={devMode}
-              onChange={(event) => toggleDevMode(event.target.checked)}
+              checked={debugMode}
+              onChange={(event) => toggleDebugMode(event.target.checked)}
               className="mt-0.5"
             />
             <span>
-              <span className="text-sm font-medium block">Dev режим</span>
+              <span className="text-sm font-medium block">Debug режим</span>
               <span className="text-xs text-dim">
                 Снимает привязку теста к своему стенду — можно запустить любой тест на любом стенде,
                 включая виртуальные (ВМ). Только для разового отладочного запуска — в прогоне привязка
@@ -682,7 +865,7 @@ function LaunchTestModal({
 
           <div className="surface-2 border border-token rounded p-3">
             <div className="text-xs text-dim mb-2">
-              {devMode ? "Все тесты (dev режим)" : "Тесты, закреплённые за стендом"}
+              {debugMode ? "Все тесты (debug режим)" : "Тесты, закреплённые за стендом"}
             </div>
             {tests.length ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -695,7 +878,7 @@ function LaunchTestModal({
               </div>
             ) : (
               <div className="text-xs text-dim">
-                За этим стендом не закреплён ни один тест. Включите dev режим, чтобы выбрать тест из общего каталога.
+                За этим стендом не закреплён ни один тест. Включите debug режим, чтобы выбрать тест из общего каталога.
               </div>
             )}
           </div>
@@ -719,11 +902,11 @@ function QueueModal({
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [extraTest, setExtraTest] = useState("");
-  // Очередь стенда несёт признак dev-режима в meta уже поставленных задач
+  // Очередь стенда несёт признак debug-режима в meta уже поставленных задач
   // (см. addTestsToQueue) — отдельное поле на Stand заводить не стали,
   // это дешевле и не расходится с тем, что реально видно в очереди.
-  const standDevMode = stand.queue.some((item) => item.meta.includes("dev mode"));
-  const candidateTests = standDevMode
+  const standDebugMode = stand.queue.some((item) => item.meta.includes("debug mode"));
+  const candidateTests = standDebugMode
     ? TEST_CATALOG.map((entry) => entry.name)
     : testsForStand(stand, false);
   const availableExtraTests = candidateTests.filter(
@@ -761,7 +944,7 @@ function QueueModal({
       {
         title: extraTest,
         state: "pending",
-        meta: standDevMode ? "доп. тест · dev mode" : "доп. тест только для этого стенда",
+        meta: standDebugMode ? "доп. тест · debug mode" : "доп. тест только для этого стенда",
       },
     ]);
     setExtraTest("");
@@ -1086,9 +1269,14 @@ function QueueList({ queue }: { queue: QueueItem[] }) {
 
 /**
  * Каждый тест закреплён за одним конкретным стендом (`homeStandId`) — в
- * штатном режиме запустить его можно только там. Dev режим (см.
+ * штатном режиме запустить его можно только там. Debug режим (см.
  * `LaunchTestModal`) снимает это ограничение для разового отладочного
  * запуска, но никогда не используется в прогоне (см. `runs.tsx`).
+ *
+ * `homeStandId` — демо-каталог, привязка тест→стенд по числовому id; в
+ * живом режиме реальный каталог тестов (`testDefinitions.ts`) не несёт
+ * такой привязки к конкретному стенду вообще — эта модель разъезжается с
+ * реальным бэкендом и подлежит пересмотру в волне, вайрящей `tests.tsx`.
  */
 interface TestCatalogEntry {
   name: string;
@@ -1112,11 +1300,11 @@ const TEST_CATALOG: TestCatalogEntry[] = [
 /**
  * Список тестов, доступных для запуска на стенде. В штатном режиме —
  * только тесты, привязанные к этому стенду (`homeStandId === stand.id`).
- * В dev режиме ограничение по стенду снимается целиком — доступен весь
+ * В debug режиме ограничение по стенду снимается целиком — доступен весь
  * каталог, независимо от того, чей это тест и какой стенд выбран
  * (включая виртуальные стенды, см. `LaunchTestModal`).
  */
-function testsForStand(stand: Stand, devMode = false): string[] {
-  if (devMode) return TEST_CATALOG.map((entry) => entry.name);
+function testsForStand(stand: Stand, debugMode = false): string[] {
+  if (debugMode) return TEST_CATALOG.map((entry) => entry.name);
   return TEST_CATALOG.filter((entry) => entry.homeStandId === stand.id).map((entry) => entry.name);
 }

@@ -1,7 +1,9 @@
 /**
- * Раздел "Тестирование" — фронтенд-мокап для согласования с руководителем.
- * Реального `testing_service` в репозитории ещё нет (breadcrumb размечен
- * заранее); весь контент — hardcoded demo-данные, без backend-вызовов.
+ * Раздел "Тестирование" — `testing_service` реализован и закоммичен
+ * (каталог тестов, стенды, очередь, прогоны, СТП, отчёты по отделу, план —
+ * `ALLTA MIGRATION.md`); страницы этого раздела вызывают его API напрямую,
+ * demo-данные из `_shared.tsx` остаются только для mock-режима разработки
+ * (`VITE_USE_MOCK_AUTH=true`).
  *
  * Файл — тонкий роутер+shell по подразделам; сама функциональность разбита
  * по файлам того же каталога (по образцу `pages/server/tabs/*`):
@@ -12,8 +14,11 @@
  * (по образцу `pages/server/Server.tsx` `aside`), поэтому их состояние
  * держим здесь через `useRunsState`/`useAdhocState`/`useStpVersionState` и
  * пробрасываем в панель и в рабочую зону — обе стороны должны видеть один и
- * тот же выбор. Отдельная вкладка «РЦ» не нужна, эту роль закрывает панель
- * СТП. Общие типы/данные/мелкие компоненты — в `_shared.tsx`.
+ * тот же выбор. `overview.tsx` тоже переиспользует `runsState` (число
+ * прогонов на дашборде пула + модалка запуска прогона), поэтому получает
+ * его тем же способом, что и панель/рабочая зона «Прогонов». Отдельная
+ * вкладка «РЦ» не нужна, эту роль закрывает панель СТП. Общие
+ * типы/данные/мелкие компоненты — в `_shared.tsx`.
  */
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -99,7 +104,7 @@ export function Testing() {
         </div>
 
         <div className="p-5">
-          {activeId === "overview" && <TestingOverview />}
+          {activeId === "overview" && <TestingOverview runsState={runsState} />}
           {activeId === "tests" && <TestsWorkzone />}
           {activeId === "runs" && <RunsWorkzone state={runsState} />}
           {activeId === "debug" && <AdhocWorkzone state={adhocState} />}

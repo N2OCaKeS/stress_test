@@ -1,6 +1,7 @@
 import {
   useEffect,
   useRef,
+  useState,
 } from "react";
 import {
   UserPlus,
@@ -9,6 +10,7 @@ import {
   Activity,
   AlertTriangle,
   AlertCircle,
+  FileBarChart,
   HardDrive,
   ShieldAlert,
   Clock,
@@ -29,6 +31,8 @@ import { SERVERS } from "@/mocks/server";
 import { CREDENTIALS } from "@/mocks/secret";
 import { TASKS } from "@/mocks/worker";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { AUDIT_EVENTS } from "@/mocks/log";
 import { listUsers, listUsersByDepartment } from "@/api/auth/users";
 import { listGroups } from "@/api/auth/groups";
@@ -36,6 +40,14 @@ import { listBots } from "@/api/auth/bots";
 import { getHostDiskUsage } from "@/api/server/misc";
 import type { HostDiskPathUsage, HostDiskUsageResponse } from "@/api/server/types";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
+import { apiErrMsg } from "@/api/client";
+import { formatMsk } from "@/lib/datetime";
+import {
+  generateDepartmentActivityReport,
+  listDepartmentActivityReports,
+} from "@/api/testing/departmentActivityReports";
+import { getDepartmentIntegrationSettings } from "@/api/testing/departmentIntegrationSettings";
+import type { DepartmentActivityReport } from "@/api/testing/types";
 import { RecentAuditEvents } from "./widgets/RecentAuditEvents";
 import { AllTasksWidget } from "./widgets/AllTasksWidget";
 
@@ -169,6 +181,12 @@ export function HomeDepAdmin() {
               <EmmDiskUsageCard data={hostDiskQ.data ?? null} loading={hostDiskQ.loading} />
             )}
             {canAudit && <RecentAuditEvents />}
+          </section>
+        )}
+
+        {canManageGroups && myDeptId && (
+          <section className="mt-4">
+            <HrReportCard departmentId={myDeptId} />
           </section>
         )}
 
@@ -499,6 +517,171 @@ function DiskUsageRow({ path }: { path: HostDiskPathUsage }) {
           {ERROR_LABELS[path.error ?? ""] ?? "нет данных"}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── HR-отчёт по активности (testing_service, ALLTA MIGRATION.md §9.1) ──────
+
+const REPORT_STATUS_LABELS: Record<string, { label: string; className: string }> = {
+  generating: { label: "генерируется", className: "text-warn" },
+  done: { label: "готов", className: "text-ok" },
+  failed: { label: "ошибка", className: "text-danger" },
+};
+
+/** `'YYYY-MM'` текущего месяца по МСК — дефолт формы и первая опция дропдауна. */
+function currentPeriod(): string {
+  const now = new Date();
+  const msk = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
+  return `${msk.getFullYear()}-${String(msk.getMonth() + 1).padStart(2, "0")}`;
+}
+
+const PERIOD_MONTH_LABELS = [
+  "января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря",
+];
+
+function periodLabel(period: string): string {
+  const [year, month] = period.split("-");
+  const idx = Number(month) - 1;
+  if (!year || Number.isNaN(idx) || idx < 0 || idx > 11) return period;
+  return `${PERIOD_MONTH_LABELS[idx]} ${year}`;
+}
+
+/** Последние `count` месяцев (включая текущий), самый свежий первым. */
+function recentPeriods(count: number): { value: string; label: string }[] {
+  const now = new Date();
+  const msk = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
+  const options: { value: string; label: string }[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const d = new Date(msk.getFullYear(), msk.getMonth() - i, 1);
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    options.push({ value, label: periodLabel(value) });
+  }
+  return options;
+}
+
+/**
+ * Замена legacy-паттерна «поправить MONTH в коде и перезапустить скрипт»
+ * (`libreport.py`/`monthly_report.py`) — ручная генерация HR-отчёта отдела
+ * прямо с Home. Расписание периодической генерации — отдельная настройка в
+ * администрировании отдела (`department_test_settings.activity_report_schedule`),
+ * здесь только разовый запуск + история.
+ */
+function HrReportCard({ departmentId }: { departmentId: string }) {
+  const periodOptions = recentPeriods(12);
+  const [period, setPeriod] = useState(() => currentPeriod());
+  const [generating, setGenerating] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const historyQ = useQuery(
+    () => listDepartmentActivityReports(departmentId, { limit: 10 }),
+    [departmentId],
+  );
+  const integrationQ = useQuery(
+    () => getDepartmentIntegrationSettings(departmentId),
+    [departmentId],
+  );
+  const confluenceBaseUrl = integrationQ.data?.confluence_base_url ?? null;
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setErrorMsg(null);
+    try {
+      await generateDepartmentActivityReport(departmentId, { period });
+      historyQ.refetch();
+    } catch (err) {
+      setErrorMsg(apiErrMsg(err));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const reports = historyQ.data?.items ?? [];
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h3 className="font-semibold flex items-center gap-2">
+          <FileBarChart className="w-4 h-4 text-accent" />
+          HR-отчёт по активности
+        </h3>
+        <span className="text-xs text-dim">testing_service</span>
+      </div>
+      <div className="text-xs text-dim mb-3">
+        Коммиты, комментарии в Jira по спринтам и часы Tempo по отделу за выбранный месяц — публикуется на Confluence.
+      </div>
+      <div className="flex items-end gap-2 flex-wrap mb-3">
+        <label className="grid gap-1">
+          <span className="text-xs text-dim">Период</span>
+          <Dropdown
+            mode="single"
+            options={periodOptions}
+            value={period}
+            onChange={setPeriod}
+          />
+        </label>
+        <Button
+          variant="primary"
+          size="sm"
+          type="button"
+          onClick={handleGenerate}
+          disabled={generating}
+        >
+          {generating ? "Генерация…" : "Сгенерировать HR-отчёт"}
+        </Button>
+      </div>
+      {errorMsg && <div className="text-xs text-danger mb-3">{errorMsg}</div>}
+
+      <div className="text-xs text-dim mb-2">История генераций</div>
+      {historyQ.loading && reports.length === 0 ? (
+        <div className="text-xs text-dim">Загрузка…</div>
+      ) : reports.length === 0 ? (
+        <div className="text-xs text-dim">Отчётов ещё не было.</div>
+      ) : (
+        <div className="grid gap-2">
+          {reports.map((report) => (
+            <HrReportRow key={report.id} report={report} confluenceBaseUrl={confluenceBaseUrl} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HrReportRow({
+  report,
+  confluenceBaseUrl,
+}: {
+  report: DepartmentActivityReport;
+  confluenceBaseUrl: string | null;
+}) {
+  const status = REPORT_STATUS_LABELS[report.status] ?? { label: report.status, className: "text-dim" };
+  // Ссылка собирается только при известном `confluence_base_url` отдела
+  // (`department_integration_settings`) — без него показываем голый id
+  // страницы, а не гадаем публичный домен Confluence.
+  const confluenceUrl = report.confluence_page_id && confluenceBaseUrl
+    ? `${confluenceBaseUrl.replace(/\/$/, "")}/pages/viewpage.action?pageId=${report.confluence_page_id}`
+    : null;
+  return (
+    <div className="surface-2 border border-token rounded p-2 flex items-center justify-between gap-3 text-sm">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-medium">{periodLabel(report.period)}</span>
+          <span className={`text-xs ${status.className}`}>{status.label}</span>
+        </div>
+        <div className="text-xs text-dim mt-0.5">
+          {formatMsk(report.generated_at)}
+          {report.error ? ` · ${report.error}` : ""}
+        </div>
+      </div>
+      {confluenceUrl ? (
+        <a href={confluenceUrl} target="_blank" rel="noreferrer" className="text-xs text-accent shrink-0">
+          Открыть в Confluence →
+        </a>
+      ) : report.confluence_page_id ? (
+        <span className="text-xs text-dim mono shrink-0">page {report.confluence_page_id}</span>
+      ) : null}
     </div>
   );
 }

@@ -1,0 +1,160 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { ThemeProvider } from "@/contexts/ThemeContext";
+
+vi.mock("@/contexts/PersonaContext", () => ({
+  usePersona: () => ({
+    persona: {
+      id: "u1",
+      username: "alice",
+      dept_id: "dep_1",
+      platform_role: "dep_admin",
+      service_roles: {},
+      accessible_services: [],
+    },
+  }),
+}));
+
+const listUsersByDepartmentMock = vi.fn();
+vi.mock("@/api/auth/users", () => ({
+  listUsers: vi.fn(),
+  listUsersByDepartment: (...a: unknown[]) => listUsersByDepartmentMock(...a),
+}));
+
+const listGroupsMock = vi.fn();
+vi.mock("@/api/auth/groups", () => ({
+  listGroups: (...a: unknown[]) => listGroupsMock(...a),
+}));
+
+const listBotsMock = vi.fn();
+vi.mock("@/api/auth/bots", () => ({
+  listBots: (...a: unknown[]) => listBotsMock(...a),
+}));
+
+const getHostDiskUsageMock = vi.fn();
+const listTasksMock = vi.fn();
+vi.mock("@/api/server/misc", () => ({
+  getHostDiskUsage: (...a: unknown[]) => getHostDiskUsageMock(...a),
+  listTasks: (...a: unknown[]) => listTasksMock(...a),
+}));
+
+const generateDepartmentActivityReportMock = vi.fn();
+const listDepartmentActivityReportsMock = vi.fn();
+vi.mock("@/api/testing/departmentActivityReports", () => ({
+  generateDepartmentActivityReport: (...a: unknown[]) => generateDepartmentActivityReportMock(...a),
+  listDepartmentActivityReports: (...a: unknown[]) => listDepartmentActivityReportsMock(...a),
+}));
+
+const getDepartmentIntegrationSettingsMock = vi.fn();
+vi.mock("@/api/testing/departmentIntegrationSettings", () => ({
+  getDepartmentIntegrationSettings: (...a: unknown[]) => getDepartmentIntegrationSettingsMock(...a),
+}));
+
+import { HomeDepAdmin } from "@/pages/home/HomeDepAdmin";
+
+function renderHome() {
+  return render(
+    <MemoryRouter>
+      <ThemeProvider>
+        <HomeDepAdmin />
+      </ThemeProvider>
+    </MemoryRouter>,
+  );
+}
+
+describe("HomeDepAdmin — HR-отчёт по активности", () => {
+  beforeEach(() => {
+    import.meta.env.VITE_USE_MOCK_AUTH = "false";
+    listUsersByDepartmentMock.mockReset().mockResolvedValue({ items: [], total: 0 });
+    listGroupsMock.mockReset().mockResolvedValue([]);
+    listBotsMock.mockReset().mockResolvedValue([]);
+    getHostDiskUsageMock.mockReset().mockResolvedValue({ paths: [] });
+    listTasksMock.mockReset().mockResolvedValue({ items: [], total: 0, limit: 5, offset: 0 });
+    generateDepartmentActivityReportMock.mockReset();
+    listDepartmentActivityReportsMock.mockReset().mockResolvedValue({
+      items: [
+        {
+          id: "rep_1",
+          department_id: "dep_1",
+          period: "2026-08",
+          generated_at: "2026-08-05T10:00:00Z",
+          generated_by: "usr_1",
+          confluence_page_id: "12345",
+          status: "done",
+          error: null,
+        },
+      ],
+      total: 1,
+      limit: 10,
+      offset: 0,
+    });
+    getDepartmentIntegrationSettingsMock.mockReset().mockResolvedValue({
+      id: "int_1",
+      department_id: "dep_1",
+      credential_id: null,
+      jira_base_url: null,
+      confluence_base_url: "https://confluence.astralinux.ru",
+      bitbucket_base_url: null,
+      bitbucket_project_key: null,
+      bitbucket_repo_slug: null,
+      bitbucket_credential_id: null,
+      jira_board_id: null,
+      tempo_team_id: null,
+      confluence_report_page_space: null,
+      confluence_report_parent_page_title: null,
+      created_at: null,
+      updated_at: null,
+    });
+  });
+
+  afterEach(() => {
+    import.meta.env.VITE_USE_MOCK_AUTH = "true";
+  });
+
+  it("показывает блок «HR-отчёт по активности» с кнопкой генерации и историей", async () => {
+    renderHome();
+    expect(await screen.findByText("HR-отчёт по активности")).toBeInTheDocument();
+    expect(await screen.findByText(/августа 2026/)).toBeInTheDocument();
+    expect(screen.getByText("готов")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Открыть в Confluence/ })).toHaveAttribute(
+      "href",
+      "https://confluence.astralinux.ru/pages/viewpage.action?pageId=12345",
+    );
+  });
+
+  it("клик по «Сгенерировать HR-отчёт» зовёт generateDepartmentActivityReport с department_id и периодом", async () => {
+    generateDepartmentActivityReportMock.mockResolvedValue({
+      id: "rep_2",
+      department_id: "dep_1",
+      period: "2026-09",
+      generated_at: "2026-09-07T10:00:00Z",
+      generated_by: "u1",
+      confluence_page_id: null,
+      status: "generating",
+      error: null,
+    });
+    renderHome();
+    await screen.findByText("HR-отчёт по активности");
+
+    fireEvent.click(screen.getByRole("button", { name: /Сгенерировать HR-отчёт/ }));
+
+    await waitFor(() => expect(generateDepartmentActivityReportMock).toHaveBeenCalledTimes(1));
+    expect(generateDepartmentActivityReportMock).toHaveBeenCalledWith(
+      "dep_1",
+      expect.objectContaining({ period: expect.stringMatching(/^\d{4}-\d{2}$/) }),
+    );
+    // Успешная генерация перезапрашивает историю.
+    await waitFor(() => expect(listDepartmentActivityReportsMock.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it("показывает сообщение об ошибке, если генерация упала", async () => {
+    generateDepartmentActivityReportMock.mockRejectedValue(new Error("boom"));
+    renderHome();
+    await screen.findByText("HR-отчёт по активности");
+
+    fireEvent.click(screen.getByRole("button", { name: /Сгенерировать HR-отчёт/ }));
+
+    expect(await screen.findByText("boom")).toBeInTheDocument();
+  });
+});

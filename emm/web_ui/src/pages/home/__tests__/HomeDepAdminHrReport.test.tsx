@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { ToastProvider } from "@/contexts/ToastContext";
+import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 
 vi.mock("@/contexts/PersonaContext", () => ({
   usePersona: () => ({
@@ -47,8 +49,25 @@ vi.mock("@/api/testing/departmentActivityReports", () => ({
 }));
 
 const getDepartmentIntegrationSettingsMock = vi.fn();
+const upsertDepartmentIntegrationSettingsMock = vi.fn();
 vi.mock("@/api/testing/departmentIntegrationSettings", () => ({
   getDepartmentIntegrationSettings: (...a: unknown[]) => getDepartmentIntegrationSettingsMock(...a),
+  upsertDepartmentIntegrationSettings: (...a: unknown[]) => upsertDepartmentIntegrationSettingsMock(...a),
+}));
+
+const getDepartmentTestSettingsMock = vi.fn();
+const upsertDepartmentTestSettingsMock = vi.fn();
+vi.mock("@/api/testing/departmentTestSettings", () => ({
+  getDepartmentTestSettings: (...a: unknown[]) => getDepartmentTestSettingsMock(...a),
+  upsertDepartmentTestSettings: (...a: unknown[]) => upsertDepartmentTestSettingsMock(...a),
+}));
+
+const listDepartmentReportMembersMock = vi.fn();
+vi.mock("@/api/testing/departmentReportMembers", () => ({
+  listDepartmentReportMembers: (...a: unknown[]) => listDepartmentReportMembersMock(...a),
+  createDepartmentReportMember: vi.fn(),
+  updateDepartmentReportMember: vi.fn(),
+  deleteDepartmentReportMember: vi.fn(),
 }));
 
 import { HomeDepAdmin } from "@/pages/home/HomeDepAdmin";
@@ -57,7 +76,11 @@ function renderHome() {
   return render(
     <MemoryRouter>
       <ThemeProvider>
-        <HomeDepAdmin />
+        <ToastProvider>
+          <ConfirmProvider>
+            <HomeDepAdmin />
+          </ConfirmProvider>
+        </ToastProvider>
       </ThemeProvider>
     </MemoryRouter>,
   );
@@ -105,6 +128,23 @@ describe("HomeDepAdmin — HR-отчёт по активности", () => {
       confluence_report_parent_page_title: null,
       created_at: null,
       updated_at: null,
+    });
+    upsertDepartmentIntegrationSettingsMock.mockReset();
+    getDepartmentTestSettingsMock.mockReset().mockResolvedValue({
+      id: null,
+      department_id: "dep_1",
+      retry_enabled: true,
+      test_username: "u",
+      activity_report_schedule: null,
+      created_at: null,
+      updated_at: null,
+    });
+    upsertDepartmentTestSettingsMock.mockReset();
+    listDepartmentReportMembersMock.mockReset().mockResolvedValue({
+      items: [],
+      total: 0,
+      limit: 200,
+      offset: 0,
     });
   });
 

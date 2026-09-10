@@ -1,21 +1,98 @@
 /**
- * Тонкие обёртки над `testing_service` `/test-stands/*`, нужные консоли
- * сервера, чтобы обнаружить активный прогон теста на этом стенде (§8.6 плана
- * миграции — кнопка «Живой лог теста»). Источник истины (backend) —
- * `testing_service/src/api/v1/endpoints/test_stands.py`.
+ * Тонкие обёртки над `testing_service` `/test-stands/*` (§2.3, §4 плана
+ * миграции). Изначально файл нёс только то, что нужно консоли сервера, чтобы
+ * обнаружить активный прогон теста на этом стенде (§8.6 — кнопка «Живой лог
+ * теста»); с волны 11 расширен полным CRUD стендов. Источник истины (backend)
+ * — `testing_service/src/api/v1/endpoints/test_stands.py`.
  *
- * Каталог тестов/очередь/СТП (`src/pages/testing/*`) сюда не входит — та
- * интеграция отложена отдельным этапом плана.
+ * Чтение (список/карточка) доступно любому аутентифицированному актору,
+ * запись — под матрицей `(test_stand, *, create|update|delete)`.
  */
 
-import { apiGet } from "@/api/client";
+import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
 import type {
   QueueItemSummary,
+  TestingOkResponse,
   TestingPaginatedResponse,
+  TestStand,
+  TestStandCreateRequest,
   TestStandSummary,
+  TestStandTestCredentials,
+  TestStandUpdateRequest,
 } from "@/api/testing/types";
 
 const BASE = "/testing/v1";
+
+/** Параметры списка стендов — пагинация + фильтры. */
+export interface ListTestStandsQuery {
+  limit?: number;
+  offset?: number;
+  department_id?: string;
+  is_active?: boolean;
+  queue_enabled?: boolean;
+  server_id?: string;
+}
+
+/** `GET /test-stands` — страница списка стендов. Любой аутентифицированный актор. */
+export function listTestStands(
+  query: ListTestStandsQuery = {},
+): Promise<TestingPaginatedResponse<TestStand>> {
+  return apiGet<TestingPaginatedResponse<TestStand>>(`${BASE}/test-stands`, {
+    query: { ...query },
+  });
+}
+
+/**
+ * `GET /test-stands/{id}` — карточка стенда, обогащённая живой карточкой
+ * сервера из server_service (`server`/`server_unavailable`).
+ */
+export function getTestStand(standId: string): Promise<TestStand> {
+  return apiGet<TestStand>(`${BASE}/test-stands/${standId}`);
+}
+
+/**
+ * `POST /test-stands` — зарегистрировать сервер/ВМ из server_service как
+ * тестовый стенд. `department_id` резолвится сервером, клиент его не задаёт.
+ * Доступ: `(test_stand, *, create)`.
+ */
+export function createTestStand(
+  body: TestStandCreateRequest,
+): Promise<TestStand> {
+  return apiPost<TestStand>(`${BASE}/test-stands`, body);
+}
+
+/**
+ * `PATCH /test-stands/{id}` — изменяемы только `queue_enabled`/`is_active`.
+ * Доступ: `(test_stand, *, update)`.
+ */
+export function updateTestStand(
+  standId: string,
+  body: TestStandUpdateRequest,
+): Promise<TestStand> {
+  return apiPatch<TestStand>(`${BASE}/test-stands/${standId}`, body);
+}
+
+/** `DELETE /test-stands/{id}` — hard-delete записи стенда. Доступ: `(test_stand, *, delete)`. */
+export function deleteTestStand(standId: string): Promise<TestingOkResponse> {
+  return apiDelete<TestingOkResponse>(`${BASE}/test-stands/${standId}`);
+}
+
+/**
+ * `GET /test-stands/{id}/test-credentials` — прокси на
+ * `GET /servers/{id}/test-credentials` server_service'а (§5.3 плана
+ * миграции). Без `reveal` — только метаданные; `reveal: true` добавляет
+ * `password_b64`/`ssh_private_key_b64` (CRITICAL-аудит на стороне
+ * server_service). Доступ: `(test_stand, *, view_test_credentials)`.
+ */
+export function getTestStandCredentials(
+  standId: string,
+  reveal = false,
+): Promise<TestStandTestCredentials> {
+  return apiGet<TestStandTestCredentials>(
+    `${BASE}/test-stands/${standId}/test-credentials`,
+    { query: { reveal } },
+  );
+}
 
 /**
  * Стенд, привязанный к этому Server/Vm.id, если он заведён — `server_id`

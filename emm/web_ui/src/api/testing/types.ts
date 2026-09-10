@@ -1,9 +1,16 @@
 /**
- * Типы request/response для `testing_service` API, используемые в этой части
- * фронтенда (§8.6 плана миграции — только то, что нужно кнопке «Живой лог
- * теста» в консоли сервера). Каталог тестов/прогонов/СТП (`src/pages/testing/*`)
- * несёт собственные типы отдельно — они сюда не сводятся.
+ * Типы request/response для `testing_service` API (`/api/testing/v1/*`).
+ *
+ * Изначально файл нёс только минимум для кнопки «Живой лог теста» в консоли
+ * сервера (§8.6 плана миграции) — с волны 11 расширен под полный клиент
+ * backend'а. Источник истины — Pydantic-схемы в `testing_service/src/schemas/`
+ * и роутеры в `testing_service/src/api/v1/endpoints/`, сверено построчно, не
+ * выдумано. UI-страницы (`src/pages/testing/*`) строятся поверх этих типов в
+ * следующей волне.
  */
+
+/** ISO-8601 UTC timestamp. */
+export type Iso8601 = string;
 
 /** Offset-envelope list-эндпоинтов testing_service (`{items,total,limit,offset}`). */
 export interface TestingPaginatedResponse<T> {
@@ -11,6 +18,11 @@ export interface TestingPaginatedResponse<T> {
   total: number;
   limit: number;
   offset: number;
+}
+
+/** Тривиальный `{ok: true}` — ответ delete-эндпоинтов сервиса. */
+export interface TestingOkResponse {
+  ok: boolean;
 }
 
 /**
@@ -25,13 +37,509 @@ export interface TestStandSummary {
   is_active: boolean;
 }
 
+/** Состояние элемента очереди (`src/core/constants.py::QueueItemState`). */
+export type QueueItemState =
+  | "queued"
+  | "preparing"
+  | "ready"
+  | "running"
+  | "succeeded"
+  | "failed";
+
 /**
  * Ответ `GET /test-stands/{id}/current-queue-item` — активный (не терминальный)
  * элемент очереди стенда, если он сейчас есть.
  */
 export interface QueueItemSummary {
   queue_item_id: string;
-  state: string;
+  state: QueueItemState | string;
   test_id: string;
-  started_at: string | null;
+  started_at: Iso8601 | null;
+}
+
+// ── global-variables ──────────────────────────────────────────────────────
+
+/** Откуда берётся значение переменной в момент резолва (`GlobalVariableSource`). */
+export type GlobalVariableSource =
+  | "launch_context"
+  | "static"
+  | "per_test_override"
+  | "secret_service";
+
+/** Тип значения переменной (`GlobalVariableValueType`). */
+export type GlobalVariableValueType = "string" | "integer" | "boolean";
+
+/** Карточка глобальной переменной конструктора команд. */
+export interface GlobalVariable {
+  id: string;
+  code: string;
+  label: string;
+  source: GlobalVariableSource | string;
+  value_type: GlobalVariableValueType | string;
+  choices_source: string | null;
+  is_sensitive: boolean;
+  description: string | null;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+  created_by: string | null;
+}
+
+/** Тело `POST /global-variables`. */
+export interface GlobalVariableCreateRequest {
+  code: string;
+  label: string;
+  source: GlobalVariableSource;
+  value_type?: GlobalVariableValueType;
+  choices_source?: string | null;
+  is_sensitive?: boolean;
+  description?: string | null;
+}
+
+/** Тело `PATCH /global-variables/{id}` — все поля опциональны. */
+export interface GlobalVariableUpdateRequest {
+  code?: string;
+  label?: string;
+  source?: GlobalVariableSource;
+  value_type?: GlobalVariableValueType;
+  choices_source?: string | null;
+  is_sensitive?: boolean;
+  description?: string | null;
+}
+
+/** Один вариант значения переменной в резолве `choices`. */
+export interface ChoiceItem {
+  value: string;
+  label: string;
+}
+
+/** Ответ `GET /global-variables/{id}/choices`. */
+export interface ChoicesResponse {
+  items: ChoiceItem[];
+  choices_source: string;
+}
+
+// ── test-definitions ──────────────────────────────────────────────────────
+
+/** Карточка теста каталога. */
+export interface TestDefinition {
+  id: string;
+  code: string;
+  full_name: string;
+  category: string | null;
+  owner: string | null;
+  readiness: string | null;
+  department_id: string | null;
+  pinned_stand_id: string | null;
+  changelog_component: string | null;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+  created_by: string | null;
+}
+
+/** Тело `POST /test-definitions`. */
+export interface TestDefinitionCreateRequest {
+  code: string;
+  full_name: string;
+  category?: string | null;
+  owner?: string | null;
+  readiness?: string | null;
+  department_id?: string | null;
+  pinned_stand_id?: string | null;
+  changelog_component?: string | null;
+}
+
+/** Тело `PATCH /test-definitions/{id}` — все поля опциональны. */
+export interface TestDefinitionUpdateRequest {
+  code?: string;
+  full_name?: string;
+  category?: string | null;
+  owner?: string | null;
+  readiness?: string | null;
+  department_id?: string | null;
+  pinned_stand_id?: string | null;
+  changelog_component?: string | null;
+}
+
+// ── test-command-args ─────────────────────────────────────────────────────
+
+/** Тип слота конструктора команд (`CommandArgKind`). */
+export type CommandArgKind = "literal" | "variable";
+
+/** Один слот команды теста. */
+export interface TestCommandArg {
+  id: string;
+  test_id: string;
+  position: number;
+  kind: CommandArgKind | string;
+  literal_value: string | null;
+  variable_id: string | null;
+  override_value: string | null;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+}
+
+/** Тело `POST /test-definitions/{test_id}/args`. */
+export interface TestCommandArgCreateRequest {
+  position?: number | null;
+  kind: CommandArgKind;
+  literal_value?: string | null;
+  variable_id?: string | null;
+  override_value?: string | null;
+}
+
+/** Тело `PATCH /test-definitions/{test_id}/args/{arg_id}` — все поля опциональны. */
+export interface TestCommandArgUpdateRequest {
+  position?: number;
+  kind?: CommandArgKind;
+  literal_value?: string | null;
+  variable_id?: string | null;
+  override_value?: string | null;
+}
+
+// ── test-stands (полная карточка) ─────────────────────────────────────────
+
+/**
+ * Полная карточка стенда — в отличие от `TestStandSummary` несёт все поля
+ * ответа `test_stand.py`, включая живое обогащение сервером (только в
+ * `GET /test-stands/{id}`).
+ */
+export interface TestStand {
+  id: string;
+  server_id: string;
+  department_id: string;
+  queue_enabled: boolean;
+  is_active: boolean;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+  created_by: string | null;
+  /** Живая карточка сервера/ВМ из server_service — только в GET одного стенда. */
+  server: Record<string, unknown> | null;
+  /** `true`, если live-вызов к server_service не удался. */
+  server_unavailable: boolean;
+}
+
+/** Тело `POST /test-stands`. */
+export interface TestStandCreateRequest {
+  server_id: string;
+  queue_enabled?: boolean;
+  is_active?: boolean;
+}
+
+/** Тело `PATCH /test-stands/{id}` — изменяемы только эти два поля. */
+export interface TestStandUpdateRequest {
+  queue_enabled?: boolean;
+  is_active?: boolean;
+}
+
+/** Ответ `GET /test-stands/{id}/test-credentials` — прокси на server_service. */
+export interface TestStandTestCredentials {
+  exists: boolean;
+  username: string | null;
+  ssh_public_key: string | null;
+  rotated_at: Iso8601 | null;
+  /** Только при `?reveal=true`. */
+  password_b64: string | null;
+  /** Только при `?reveal=true`. */
+  ssh_private_key_b64: string | null;
+}
+
+// ── department-test-settings ──────────────────────────────────────────────
+
+/** Настройки тестирования отдела (`GET` никогда не 404 — дефолты при `id: null`). */
+export interface DepartmentTestSettings {
+  id: string | null;
+  department_id: string;
+  retry_enabled: boolean;
+  test_username: string;
+  activity_report_schedule: string | null;
+  created_at: Iso8601 | null;
+  updated_at: Iso8601 | null;
+}
+
+/** Тело `PUT /department-test-settings/{department_id}` — upsert, все поля опциональны. */
+export interface DepartmentTestSettingsUpdateRequest {
+  retry_enabled?: boolean;
+  test_username?: string;
+  activity_report_schedule?: string | null;
+}
+
+// ── department-integration-settings ───────────────────────────────────────
+
+/** Настройки интеграции отдела с Jira/Zephyr/Confluence/Bitbucket. */
+export interface DepartmentIntegrationSettings {
+  id: string | null;
+  department_id: string;
+  credential_id: string | null;
+  jira_base_url: string | null;
+  confluence_base_url: string | null;
+  bitbucket_base_url: string | null;
+  bitbucket_project_key: string | null;
+  bitbucket_repo_slug: string | null;
+  bitbucket_credential_id: string | null;
+  jira_board_id: string | null;
+  tempo_team_id: string | null;
+  confluence_report_page_space: string | null;
+  confluence_report_parent_page_title: string | null;
+  created_at: Iso8601 | null;
+  updated_at: Iso8601 | null;
+}
+
+/** Тело `PUT /department-integration-settings/{department_id}` — upsert, все поля опциональны. */
+export interface DepartmentIntegrationSettingsUpdateRequest {
+  credential_id?: string | null;
+  jira_base_url?: string | null;
+  confluence_base_url?: string | null;
+  bitbucket_base_url?: string | null;
+  bitbucket_project_key?: string | null;
+  bitbucket_repo_slug?: string | null;
+  bitbucket_credential_id?: string | null;
+  jira_board_id?: string | null;
+  tempo_team_id?: string | null;
+  confluence_report_page_space?: string | null;
+  confluence_report_parent_page_title?: string | null;
+}
+
+// ── department-report-members ─────────────────────────────────────────────
+
+/** Сотрудник отдела, учитываемый HR-отчётом по активности. */
+export interface DepartmentReportMember {
+  id: string;
+  department_id: string;
+  display_name: string;
+  bitbucket_username: string | null;
+  jira_author_name: string | null;
+  jira_tempo_worker_key: string | null;
+  is_active: boolean;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+  created_by: string | null;
+}
+
+/** Тело `POST /departments/{department_id}/report-members`. */
+export interface DepartmentReportMemberCreateRequest {
+  display_name: string;
+  bitbucket_username?: string | null;
+  jira_author_name?: string | null;
+  jira_tempo_worker_key?: string | null;
+  is_active?: boolean;
+}
+
+/** Тело `PATCH /departments/{department_id}/report-members/{member_id}` — все поля опциональны. */
+export interface DepartmentReportMemberUpdateRequest {
+  display_name?: string;
+  bitbucket_username?: string | null;
+  jira_author_name?: string | null;
+  jira_tempo_worker_key?: string | null;
+  is_active?: boolean;
+}
+
+// ── department-activity-reports ───────────────────────────────────────────
+
+/** Исход попытки генерации HR-отчёта (`DepartmentActivityReportStatus`). */
+export type DepartmentActivityReportStatus = "generating" | "done" | "failed";
+
+/** Одна попытка генерации HR-отчёта в истории/сразу после запуска. */
+export interface DepartmentActivityReport {
+  id: string;
+  department_id: string;
+  period: string;
+  generated_at: Iso8601;
+  generated_by: string | null;
+  confluence_page_id: string | null;
+  status: DepartmentActivityReportStatus | string;
+  error: string | null;
+}
+
+/** Тело `POST /departments/{department_id}/activity-reports/generate`. */
+export interface DepartmentActivityReportGenerateRequest {
+  /** Период отчёта, `'YYYY-MM'`. */
+  period: string;
+}
+
+// ── test-runs ──────────────────────────────────────────────────────────────
+
+/** Агрегатный статус кампании (`TestRunStatus`). */
+export type TestRunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "partially_failed";
+
+/** Тело `POST /test-runs`. */
+export interface TestRunCreateRequest {
+  os_version_id: string;
+  mode: string;
+  kernel: string;
+  test_run_stands: string[];
+  final?: boolean;
+}
+
+/** Один частичный провал постановки в очередь одного теста одного стенда кампании. */
+export interface TestRunPartialError {
+  stand_id: string;
+  test_id: string;
+  error_code: string;
+  message: string;
+}
+
+/** Карточка кампании. */
+export interface TestRun {
+  id: string;
+  os_version_id: string;
+  mode: string;
+  kernel: string;
+  department_id: string;
+  test_run_stands: string[];
+  status: TestRunStatus | string;
+  final: boolean;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+  created_by: string | null;
+}
+
+/** Ответ `POST /test-runs` — карточка + отчёт о частичных провалах постановки. */
+export interface TestRunCreateResponse extends TestRun {
+  stands_without_tests: string[];
+  enqueue_errors: TestRunPartialError[];
+}
+
+/** Один дочерний queue_item в детальной карточке кампании. */
+export interface TestRunQueueItem {
+  queue_item_id: string;
+  stand_id: string;
+  test_id: string;
+  state: QueueItemState | string;
+  is_retry: boolean;
+  started_at: Iso8601 | null;
+  finished_at: Iso8601 | null;
+  error: string | null;
+}
+
+/** Ответ `GET /test-runs/{id}` — карточка + все дочерние queue_items. */
+export interface TestRunDetail extends TestRun {
+  queue_items: TestRunQueueItem[];
+}
+
+/** Исход попытки публикации end-of-run комментария (`RunSummaryCommentStatus`). */
+export type RunSummaryCommentStatus =
+  | "posted"
+  | "skipped_no_blog"
+  | "skipped_no_stp_page"
+  | "failed";
+
+/** Ответ `GET /test-runs/{id}/summary-comment`. Пустые поля — попытки ещё не было. */
+export interface RunSummaryComment {
+  id: string | null;
+  test_run_id: string;
+  status: RunSummaryCommentStatus | string | null;
+  confluence_blog_id: string | null;
+  confluence_comment_id: string | null;
+  stp_page_id: string | null;
+  posted_at: Iso8601 | null;
+  updated_at: Iso8601 | null;
+}
+
+// ── test-logs ──────────────────────────────────────────────────────────────
+
+/** Статус сегмента лога (легаси-паттерн `dev_libs`: OK/CHANGED/FATAL). */
+export type TestLogSegmentStatus = "OK" | "CHANGED" | "FATAL";
+
+/** Один сегмент (чекпоинт/команда) лога прогона, без самого текста. */
+export interface TestLogSegment {
+  id: string;
+  log_id: string;
+  position: number;
+  kind: "checkpoint" | "command" | string;
+  label: string;
+  command_text_masked: string | null;
+  status: TestLogSegmentStatus | string;
+  started_at: Iso8601;
+  finished_at: Iso8601 | null;
+  byte_offset_start: number;
+  byte_offset_end: number | null;
+}
+
+// ── stp ────────────────────────────────────────────────────────────────────
+
+/** Тест-кейс СТП — зеркало Zephyr Scale test-case. */
+export interface StpTestCase {
+  id: string;
+  code: string;
+  title: string;
+  zephyr_id: string | null;
+  department_id: string | null;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+  created_by: string | null;
+}
+
+/** Тело `POST /stp/test-cases`. */
+export interface StpTestCaseCreateRequest {
+  code: string;
+  title: string;
+  zephyr_id?: string | null;
+  department_id?: string | null;
+}
+
+/** Тело `PATCH /stp/test-cases/{id}` — все поля опциональны. */
+export interface StpTestCaseUpdateRequest {
+  title?: string;
+  zephyr_id?: string | null;
+  department_id?: string | null;
+}
+
+/** Тело `POST /stp/generate`. */
+export interface StpGenerateRequest {
+  os_version_id: string;
+  mode: string;
+  kernel: string;
+  final?: boolean;
+  department_id: string;
+}
+
+/** Один частичный провал генерации СТП для одного стенда. */
+export interface StpGeneratePartialError {
+  stand_id: string;
+  error_code: string;
+  message: string;
+}
+
+/** СТП-прогон (Zephyr test-run), заведённый на конкретном стенде. */
+export interface StpTestRun {
+  id: string;
+  os_version_id: string;
+  mode: string;
+  kernel: string;
+  stand_id: string;
+  zephyr_test_run_key: string | null;
+  zephyr_folder_path: string | null;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+}
+
+/** Ответ `POST /stp/generate` — заведённые прогоны + частичные ошибки по стендам. */
+export interface StpGenerateResponse {
+  test_runs: StpTestRun[];
+  errors: StpGeneratePartialError[];
+}
+
+/** Статус ячейки СТП `(stp_test_case × stp_test_run)` (`StpCellStatus`). */
+export type StpCellStatus = "not_run" | "in_progress" | "pass" | "fail";
+
+/** Одна ячейка СТП-прогона. */
+export interface StpCell {
+  id: string;
+  stp_test_case_id: string;
+  stp_test_run_id: string;
+  status: StpCellStatus | string;
+  queue_item_id: string | null;
+  updated_by: string | null;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+}
+
+/** Тело `PATCH /stp/cells/{id}` — ручной override статуса. Не трогает Zephyr. */
+export interface StpCellManualUpdateRequest {
+  status: StpCellStatus | string;
 }

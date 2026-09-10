@@ -1,317 +1,222 @@
 /**
- * Раздел «СТП» — Состав Тестового Прогона, сводная таблица результатов из
- * внешней системы Jira Zephyr Scale. На настоящей Confluence-странице это
- * транспонированная матрица: строки — тест-кейсы, колонки — комбинации
- * ядро×режим×стенд, плюс отдельная таблица тайминга прохождения.
+ * Раздел «СТП» — Состав Тестового Прогона, зеркало Jira Zephyr Scale
+ * (`ALLTA MIGRATION.md` §2.5, §6). Источник правды — `testing_service`
+ * `/stp/*`: каталог тест-кейсов (`stp_test_cases`), сгенерированные Zephyr
+ * test-run'ы (`stp_test_runs`, один на комбинацию РЦ×режим×ядро×стенд) и
+ * ячейки матрицы `stp_test_case × stp_test_run` (`stp_cells`) со статусом,
+ * который приходит событийно при завершении очереди (§6.2) либо
+ * выставляется вручную оператором/QA — ручной override поверх
+ * автоматического статуса разрешён планом явно.
  *
- * Средняя панель — список всех версий/РЦ, сгруппированный по минорной ветке
- * (1.7.x/1.8.x), со сворачиваемыми группами; используется как `middle` в
- * `Shell` по тому же паттерну, что и `pages/server/Server.tsx` (поиск+сорт
- * сверху не скроллятся, список версий скроллится, кнопка снизу закреплена).
- * Состояние этой панели общее с рабочей зоной — обе стороны получают его из
- * `useStpVersionState`, вызываемого один раз в `Testing.tsx`.
+ * РЦ (версии ОС) — общий каталог `server_service` (`GET /server/v1/os-versions`),
+ * не своя сущность `testing_service`: `stp_test_runs.os_version_id` ссылается
+ * на тот же id. Средняя панель (`StpMiddlePanel`) — список этих версий,
+ * используется как `middle` в `Shell` по тому же паттерну, что и
+ * `pages/server/Server.tsx`. Состояние панели общее с рабочей зоной — обе
+ * стороны получают его из `useStpVersionState`, вызываемого один раз в
+ * `Testing.tsx`.
  *
- * emm здесь не источник истины: сегодня legacy публикует таблицу на
- * Confluence (`life.astralinux.ru`) вручную по кнопке, без крона. Редактировать
- * статусы тест-кейсов отсюда нельзя, только смотреть и переходить в лог/Confluence.
+ * Zephyr/Confluence — независимые системы (§6.3): emm обновляет статус
+ * событийно и создаёт новый тест-кейс сразу в Zephyr одним потоком, но
+ * ссылку на страницу конкретного РЦ на Confluence отсюда не строим — base
+ * URL живёт per-department в `department_integration_settings`, вне
+ * зоны этой волны (см. отчёт).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   ChevronDown,
-  ChevronRight,
   ChevronUp,
-  ExternalLink,
   FilterX,
   ListChecks,
+  Loader2,
+  Pencil,
+  Plus,
   RefreshCcw,
   Search,
+  Trash2,
 } from "lucide-react";
 import { naturalCompare } from "@/lib/naturalSort";
+import { formatMskShort } from "@/lib/datetime";
 import { useToast } from "@/contexts/ToastContext";
-import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+import { usePersona } from "@/contexts/PersonaContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { useMockMode, useQuery } from "@/api/auth/useQuery";
+import { apiErrMsg } from "@/api/client";
+import { listDepartments } from "@/api/auth/departments";
+import type { Department } from "@/api/auth/types";
+import { listOsVersions } from "@/api/server/osVersions";
+import type { OffsetPaginatedResponse, OsVersion } from "@/api/server/types";
+import { listTestStands } from "@/api/testing/testStands";
+import type { TestStand } from "@/api/testing/types";
 import {
-  LogViewerModal,
-  OS_VERSIONS,
-  STANDS,
-  type BadgeKind,
-  type OsVersion,
-  type OsVersionStatus,
-  type QueueItem,
-  type Stand,
-} from "./_shared";
+  createStpTestCase,
+  deleteStpTestCase,
+  generateStp,
+  getStpTestCase,
+  getStpTestRun,
+  listStpTestCases,
+  listStpTestRunCells,
+  listStpTestRuns,
+  overrideStpCell,
+  updateStpTestCase,
+} from "@/api/testing/stp";
+import type {
+  StpCell,
+  StpCellStatus,
+  StpGeneratePartialError,
+  StpGenerateRequest,
+  StpTestCase,
+  StpTestCaseCreateRequest,
+  StpTestCaseUpdateRequest,
+  StpTestRun,
+} from "@/api/testing/types";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Modal } from "@/components/ui/Modal";
 
-export type StpStatus = "not_run" | "in_progress" | "done" | "failed";
-export type StpMode = "orel" | "smolensk";
+// Режим безопасности Astra — доменная константа (§2.1: `MODE` глобальная
+// переменная со `static:["orel","smolensk"]`), не демо-данные.
+const STP_MODES = ["orel", "smolensk"] as const;
 
-interface StpCombo {
-  idx: number;
-  kernel: string;
-  mode: StpMode;
-  standName: string;
-  standId: number;
-}
-
-interface StpCell {
-  status: StpStatus;
-  /** false — лог существует, но ротирован (старая РЦ), показываем текст вместо ссылки */
-  logAvailable: boolean;
-  /** время выполнения в секундах, только для завершённых (done/failed) */
-  seconds: number | null;
-}
-
-interface StpTestCase {
-  code: string;
-  title: string;
-}
-
-interface StpDataset {
-  testCases: StpTestCase[];
-  combos: StpCombo[];
-  cells: Map<string, StpCell>;
-}
-
-const STATUS_META: Record<StpStatus, { label: string }> = {
-  not_run: { label: "Не запускался" },
-  in_progress: { label: "Выполняется" },
-  done: { label: "Выполнено" },
-  failed: { label: "Провалено" },
+const CELL_STATUS_META: Record<string, { label: string; badge: "ok" | "danger" | "accent" | "warn" }> = {
+  pass: { label: "Пройден", badge: "ok" },
+  fail: { label: "Провален", badge: "danger" },
+  in_progress: { label: "Выполняется", badge: "accent" },
+  not_run: { label: "Не запускался", badge: "warn" },
 };
 
-const STATUS_ORDER: StpStatus[] = ["done", "in_progress", "failed", "not_run"];
+function cellStatusMeta(status: string) {
+  return CELL_STATUS_META[status] ?? { label: status, badge: "warn" as const };
+}
 
-const OS_STATUS_META: Record<OsVersionStatus, { label: string; badge?: BadgeKind }> = {
-  active: { label: "Активна", badge: "accent" },
-  testing: { label: "На тестировании", badge: "warn" },
-  released: { label: "Выпущена", badge: "ok" },
-  archived: { label: "Архив" },
-};
-
-const STP_TEST_CASES: StpTestCase[] = [
-  { code: "ASTRA-T101", title: "Установка с загрузочного носителя" },
-  { code: "ASTRA-T102", title: "Настройка режима Смоленск (МРД+МКЦ)" },
-  { code: "ASTRA-T103", title: "Присоединение к домену FreeIPA" },
-  { code: "ASTRA-T104", title: "PostgreSQL: базовое резервное копирование" },
-  { code: "ASTRA-T105", title: "Сетевой стек: iptables + nftables совместимость" },
-  { code: "ASTRA-T106", title: "Аудит: пересылка событий в syslog" },
+// Mock-режим (`VITE_USE_MOCK_AUTH=true`) — минимальный набор, чтобы страница
+// не была пустой без backend; по образцу `ServicesOsVersions`.
+const MOCK_OS_VERSIONS: OsVersion[] = [
+  {
+    id: "osv_mock_astra187",
+    name: "1.8.7.46",
+    description: "Astra Linux SE 1.8.7 rc46",
+    repositories: [],
+    kernels: ["6.12.24-1.el11", "6.12.18-std-def"],
+    is_urgent_update: false,
+    discovered_at: "2026-09-03T00:00:00Z",
+    updated_at: "2026-09-03T00:00:00Z",
+  },
 ];
 
-const STP_TEST_CASES_HOTFIX: StpTestCase[] = [
-  { code: "ASTRA-T301", title: "Хотфикс: регресс сетевого драйвера" },
-  { code: "ASTRA-T302", title: "Хотфикс: проверка совместимости с предыдущим ядром" },
+const MOCK_TEST_CASES: StpTestCase[] = [
+  {
+    id: "stpcase_mock_1",
+    code: "ASTRA-T101",
+    title: "Установка с загрузочного носителя",
+    zephyr_id: "BT-T101",
+    department_id: null,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    created_by: "usr_admin",
+  },
 ];
 
-/** Полный каталог тестов — для гипотетической «полной таблицы» тайминга включает и то, что для этой версии не запускалось. */
-const FULL_TEST_CATALOG: StpTestCase[] = [
-  ...STP_TEST_CASES,
-  ...STP_TEST_CASES_HOTFIX,
-  { code: "ASTRA-T401", title: "Отказоустойчивость программного RAID" },
-  { code: "ASTRA-T402", title: "UEFI Secure Boot: проверка цепочки доверия" },
+const MOCK_TEST_RUNS: StpTestRun[] = [
+  {
+    id: "stprun_mock_1",
+    os_version_id: "osv_mock_astra187",
+    mode: "orel",
+    kernel: "6.12.24-1.el11",
+    stand_id: "stand_mock_1",
+    zephyr_test_run_key: "BT-R1",
+    zephyr_folder_path: "/1.8.7.46/orel",
+    created_at: "2026-09-03T00:00:00Z",
+    updated_at: "2026-09-03T00:00:00Z",
+  },
 ];
 
-const STP_MODES: StpMode[] = ["orel", "smolensk"];
-
-const CONFLUENCE_URL = "https://life.astralinux.ru/display/DEVQA/";
-
-type StpPattern = "mostly_done" | "in_progress" | "hotfix";
-
-function durationSeconds(seed: number): number {
-  return 200 + ((seed * 4111) % 130000);
-}
-
-function formatDuration(totalSeconds: number): string {
-  const days = Math.floor(totalSeconds / 86400);
-  const rest = totalSeconds % 86400;
-  const hours = Math.floor(rest / 3600);
-  const minutes = Math.floor((rest % 3600) / 60);
-  const seconds = rest % 60;
-  const hms = `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  return days > 0 ? `${days} day ${hms}` : hms;
-}
-
-/**
- * Демо-матрица результатов для одной версии — тест-кейс × комбинация
- * ядро×режим×стенд, с распределением статусов по паттерну, зависящему от
- * статуса версии (свежая ветка ещё тестируется, старая почти вся зелёная).
- * Часть завершённых ячеек намеренно помечена без лога (`logAvailable:
- * false`, около 20% через детерминированный seed) — демонстрирует состояние
- * «слишком старая РЦ, лог ротирован».
- */
-function buildStpDataset(version: OsVersion, versionIndex: number): StpDataset {
-  const pattern: StpPattern =
-    version.kind === "urgent" ? "hotfix" : version.status === "testing" ? "in_progress" : "mostly_done";
-  const testCases = version.kind === "urgent" ? STP_TEST_CASES_HOTFIX : STP_TEST_CASES;
-  // Виртуальные стенды — только для dev-режима запуска отдельных тестов
-  // (testing/overview.tsx); СТП отражает реальный прогон на физическом парке.
-  const online = STANDS.filter((s) => s.status !== "offline" && s.kind !== "virtual");
-  const offset = (versionIndex * 2) % online.length;
-  const stands = Array.from({ length: 3 }, (_, k) => online[(offset + k) % online.length]);
-  const kernels = version.kernels.length ? version.kernels : ["6.12.24-1.el11"];
-
-  const combos: StpCombo[] = [];
-  let idx = 0;
-  for (const mode of STP_MODES) {
-    for (const kernel of kernels) {
-      for (const stand of stands) {
-        combos.push({ idx, kernel, mode, standName: stand.name, standId: stand.id });
-        idx += 1;
-      }
-    }
-  }
-
-  // Каждый тест-кейс закреплён ровно за ОДНИМ стендом (как в реальном
-  // allta_app — тест привязан к конкретному топику/окружению), а не гоняется
-  // сразу на всех: на «чужих» стендах для него всегда not_run.
-  const cells = new Map<string, StpCell>();
-  let i = 0;
-  testCases.forEach((test, testIndex) => {
-    const assignedStandId = stands[testIndex % stands.length].id;
-    for (const combo of combos) {
-      i += 1;
-      if (combo.standId !== assignedStandId) {
-        cells.set(`${test.code}|${combo.idx}`, { status: "not_run", logAvailable: false, seconds: null });
-        continue;
-      }
-      const seed = i % 10;
-      let status: StpStatus;
-      if (pattern === "mostly_done") status = seed === 0 ? "failed" : seed === 1 ? "in_progress" : "done";
-      else if (pattern === "in_progress")
-        status = seed < 3 ? "done" : seed < 5 ? "in_progress" : seed === 5 ? "failed" : "not_run";
-      else status = seed < 8 ? "done" : "failed";
-      const finished = status === "done" || status === "failed";
-      cells.set(`${test.code}|${combo.idx}`, {
-        status,
-        logAvailable: status !== "not_run" && seed % 5 !== 3,
-        seconds: finished ? durationSeconds(i * 7 + versionIndex * 13) : null,
-      });
-    }
-  });
-  return { testCases, combos, cells };
-}
-
-const STP_DATASETS: Record<string, StpDataset> = Object.fromEntries(
-  OS_VERSIONS.map((version, index) => [version.id, buildStpDataset(version, index)]),
-);
-
-function countByStatus(dataset: StpDataset, status: StpStatus): number {
-  let count = 0;
-  for (const cell of dataset.cells.values()) if (cell.status === status) count += 1;
-  return count;
-}
-
-const STP_FAILED_COUNTS: Record<string, number> = Object.fromEntries(
-  Object.entries(STP_DATASETS).map(([id, dataset]) => [id, countByStatus(dataset, "failed")]),
-);
-
-const UPDATED_AGO_DEMO = [
-  "4 мин назад",
-  "1 день назад",
-  "3 дня назад",
-  "5 дней назад",
-  "2 дня назад",
-  "6 дней назад",
-  "12 дней назад",
-  "19 дней назад",
-  "1 мес назад",
+const MOCK_CELLS: StpCell[] = [
+  {
+    id: "stpcell_mock_1",
+    stp_test_case_id: "stpcase_mock_1",
+    stp_test_run_id: "stprun_mock_1",
+    status: "pass",
+    queue_item_id: "qi_mock_1",
+    updated_by: null,
+    created_at: "2026-09-03T00:00:00Z",
+    updated_at: "2026-09-03T00:00:00Z",
+  },
 ];
-const STP_UPDATED_AGO: Record<string, string> = Object.fromEntries(
-  OS_VERSIONS.map((v, i) => [v.id, UPDATED_AGO_DEMO[i % UPDATED_AGO_DEMO.length]]),
-);
-
-// ── группировка версий по минорной ветке (1.7.x / 1.8.x) ───────────────────
-
-function branchKey(build: string): string {
-  const match = build.match(/^(\d+)\.(\d+)/);
-  return match ? `${match[1]}.${match[2]}` : build;
-}
-
-interface VersionBranch {
-  key: string;
-  label: string;
-  items: OsVersion[];
-}
-
-function groupByBranch(list: OsVersion[]): VersionBranch[] {
-  const order: string[] = [];
-  const map = new Map<string, OsVersion[]>();
-  for (const version of list) {
-    const key = branchKey(version.build);
-    if (!map.has(key)) {
-      map.set(key, []);
-      order.push(key);
-    }
-    map.get(key)!.push(version);
-  }
-  return order.map((key) => ({ key, label: `${key}.x`, items: map.get(key)! }));
-}
 
 // ── состояние средней панели, общее для StpMiddlePanel и StpWorkzone ───────
 
+export type SortDir = "asc" | "desc";
+
 export interface StpVersionState {
-  groups: VersionBranch[];
-  openBranches: Set<string>;
-  toggleBranch: (key: string) => void;
+  mockMode: boolean;
+  osVersions: OsVersion[];
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
   search: string;
   setSearch: (v: string) => void;
-  sortDir: "asc" | "desc";
+  sortDir: SortDir;
   toggleSort: () => void;
-  selectedId: string;
-  setSelectedId: (id: string) => void;
-  version: OsVersion;
-  total: number;
+  filtered: OsVersion[];
+  selectedId: string | null;
+  setSelectedId: (id: string | null) => void;
+  version: OsVersion | null;
 }
 
 export function useStpVersionState(): StpVersionState {
-  const allBranches = useMemo(() => groupByBranch(OS_VERSIONS), []);
+  const mockMode = useMockMode();
   const [search, setSearch] = useState("");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [openBranches, setOpenBranches] = useState<Set<string>>(() => new Set(allBranches.map((b) => b.key)));
-  const [selectedId, setSelectedId] = useState<string>(OS_VERSIONS[0].id);
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const groups = useMemo(() => {
+  const versionsQ = useQuery<OffsetPaginatedResponse<OsVersion>>(
+    () => listOsVersions({ limit: 500 }),
+    [],
+    { enabled: !mockMode, keepPreviousDataOnError: true },
+  );
+
+  const osVersions = mockMode ? MOCK_OS_VERSIONS : (versionsQ.data?.items ?? []);
+
+  const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const filtered = term ? OS_VERSIONS.filter((v) => v.id.toLowerCase().includes(term)) : OS_VERSIONS;
-    return groupByBranch(filtered).map((group) => ({
-      ...group,
-      items: [...group.items].sort((a, b) =>
-        sortDir === "asc" ? naturalCompare(a.id, b.id) : naturalCompare(b.id, a.id),
-      ),
-    }));
-  }, [search, sortDir]);
+    const list = term ? osVersions.filter((v) => v.name.toLowerCase().includes(term)) : osVersions;
+    return [...list].sort((a, b) =>
+      sortDir === "asc" ? naturalCompare(a.name, b.name) : naturalCompare(b.name, a.name),
+    );
+  }, [osVersions, search, sortDir]);
 
-  const toggleBranch = (key: string) => {
-    setOpenBranches((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
+  // Автовыбор первой версии после первой успешной загрузки, чтобы рабочая
+  // зона не оставалась пустой без явного клика.
+  useEffect(() => {
+    if (selectedId === null && filtered.length > 0) setSelectedId(filtered[0].id);
+  }, [filtered, selectedId]);
 
-  const version = OS_VERSIONS.find((v) => v.id === selectedId) ?? OS_VERSIONS[0];
+  const version = osVersions.find((v) => v.id === selectedId) ?? null;
 
   return {
-    groups,
-    openBranches,
-    toggleBranch,
+    mockMode,
+    osVersions,
+    loading: !mockMode && versionsQ.loading,
+    error: !mockMode && versionsQ.error ? apiErrMsg(versionsQ.error) : null,
+    refetch: versionsQ.refetch,
     search,
     setSearch,
     sortDir,
     toggleSort: () => setSortDir((d) => (d === "asc" ? "desc" : "asc")),
+    filtered,
     selectedId,
     setSelectedId,
     version,
-    total: OS_VERSIONS.length,
   };
 }
 
-// ── средняя панель Shell: список версий, сгруппированный по веткам ─────────
+// ── средняя панель Shell: список версий ОС ──────────────────────────────────
 
 export function StpMiddlePanel({ state }: { state: StpVersionState }) {
-  const toast = useToast();
   return (
     <aside className="border-r border-token surface flex flex-col min-h-0">
       <div className="border-b border-token px-3 py-2 shrink-0">
@@ -319,12 +224,13 @@ export function StpMiddlePanel({ state }: { state: StpVersionState }) {
           <Search className="w-4 h-4 text-dim" />
           <input
             className="bg-transparent outline-none flex-1 text-sm"
-            placeholder={`Поиск по ${state.total} версиям…`}
+            placeholder={`Поиск по ${state.osVersions.length} версиям…`}
             value={state.search}
             onChange={(e) => state.setSearch(e.target.value)}
           />
         </div>
-        <Button size="sm"
+        <Button
+          size="sm"
           type="button"
           className="w-full mt-2 flex items-center justify-center gap-2"
           onClick={state.toggleSort}
@@ -335,49 +241,39 @@ export function StpMiddlePanel({ state }: { state: StpVersionState }) {
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">
-        {state.groups.length === 0 && <div className="px-3 py-6 text-xs text-dim text-center">Нет версий по фильтру</div>}
-        {state.groups.map((group) => {
-          const open = state.openBranches.has(group.key);
-          return (
-            <div key={group.key}>
-              <button
-                type="button"
-                onClick={() => state.toggleBranch(group.key)}
-                className="w-full flex items-center gap-2 px-3 py-1.5 hover-bg"
-              >
-                {open ? <ChevronDown className="w-3.5 h-3.5 text-dim" /> : <ChevronRight className="w-3.5 h-3.5 text-dim" />}
-                <span className="font-semibold mono text-xs uppercase tracking-wide text-dim">Ветка {group.label}</span>
-                <span className="text-[11px] text-dim ml-auto">{group.items.length}</span>
-              </button>
-              {open && (
-                <div>
-                  {group.items.map((v) => (
-                    <VersionRow
-                      key={v.id}
-                      version={v}
-                      active={v.id === state.selectedId}
-                      onSelect={() => state.setSelectedId(v.id)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {state.loading && (
+          <div className="px-3 py-6 text-xs text-dim text-center flex items-center justify-center gap-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Загрузка…
+          </div>
+        )}
+        {state.error && (
+          <div className="px-3 py-3 text-xs">
+            <div className="alert-danger">{state.error}</div>
+            <Button size="sm" type="button" className="w-full mt-2" onClick={state.refetch}>
+              Повторить
+            </Button>
+          </div>
+        )}
+        {!state.loading && !state.error && state.filtered.length === 0 && (
+          <div className="px-3 py-6 text-xs text-dim text-center">Нет версий по фильтру</div>
+        )}
+        {!state.loading &&
+          !state.error &&
+          state.filtered.map((v) => (
+            <VersionRow key={v.id} version={v} active={v.id === state.selectedId} onSelect={() => state.setSelectedId(v.id)} />
+          ))}
       </div>
 
       <div className="border-t border-token p-3 shrink-0">
-        <Button size="sm"
+        <Button
+          size="sm"
           type="button"
           className="w-full flex items-center justify-center gap-2"
-          onClick={() =>
-            toast.info(
-              "Демо: запущено бы обновление СТП для всех РЦ разом (в отличие от legacy allta_app, где обновление всегда только по одному РЦ)",
-            )
-          }
+          disabled={state.loading}
+          onClick={state.refetch}
         >
           <RefreshCcw className="w-3.5 h-3.5" />
-          Обновить СТП всех РЦ
+          Обновить список версий
         </Button>
       </div>
     </aside>
@@ -385,554 +281,462 @@ export function StpMiddlePanel({ state }: { state: StpVersionState }) {
 }
 
 function VersionRow({ version, active, onSelect }: { version: OsVersion; active: boolean; onSelect: () => void }) {
-  const meta = OS_STATUS_META[version.status];
-  const failed = STP_FAILED_COUNTS[version.id] ?? 0;
   return (
     <button
       type="button"
       onClick={onSelect}
-      className={`w-full text-left pl-8 pr-3 py-2 hover-bg flex items-center gap-2 border-l-2 ${
+      className={`w-full text-left pl-4 pr-3 py-2 hover-bg flex items-center gap-2 border-l-2 ${
         active ? "surface-2 border-accent" : "border-transparent"
       }`}
     >
-      <span className="font-semibold mono text-sm truncate">{version.id}</span>
-      {version.kind === "urgent" && <Badge kind="warn" className="shrink-0">хотфикс</Badge>}
-      <span className={`text-[11px] mono ml-auto shrink-0 ${failed > 0 ? "text-danger" : "text-dim"}`}>
-        {failed > 0 ? `${failed} ✕` : "—"}
-      </span>
-      <Badge kind={meta.badge ?? "neutral"} className="shrink-0">{meta.label}</Badge>
+      <span className="font-semibold mono text-sm truncate">{version.name}</span>
+      {version.is_urgent_update && <Badge kind="warn" className="shrink-0">UU</Badge>}
+      <span className="text-[11px] text-dim ml-auto shrink-0">{formatMskShort(version.discovered_at)}</span>
     </button>
   );
 }
 
-// ── рабочая зона: карточка версии + две таблицы ─────────────────────────────
+// ── рабочая зона: генерация + матрица статусов + каталог тест-кейсов ───────
+
+interface StpFilters {
+  mode: Set<string>;
+  kernel: Set<string>;
+  stand: Set<string>;
+  test: Set<string>;
+}
+
+function emptyFilters(): StpFilters {
+  return { mode: new Set(), kernel: new Set(), stand: new Set(), test: new Set() };
+}
 
 export function StpWorkzone({ state }: { state: StpVersionState }) {
-  const { version } = state;
-  const dataset = STP_DATASETS[version.id];
-  const [refreshedIds, setRefreshedIds] = useState<Set<string>>(new Set());
-  const updatedLabel = refreshedIds.has(version.id) ? "обновлено только что" : STP_UPDATED_AGO[version.id];
+  const { version, mockMode } = state;
+  const toast = useToast();
+  const { persona } = usePersona();
 
-  const [filters, setFilters] = useState<StpSharedFilters>(emptySharedFilters);
-  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
-  // Группировка столбцов — предпочтение отображения, не завязанное на
-  // конкретную версию, поэтому при смене РЦ не сбрасывается.
-  const [columnGrouping, setColumnGrouping] = useState<StpColumnGrouping>(DEFAULT_COLUMN_GROUPING);
-  // Смена РЦ в средней панели даёт другой набор стендов/ядер — старый выбор
-  // фильтров может не иметь смысла для новой версии, поэтому сбрасываем.
+  const [deptFilter, setDeptFilter] = useState<string>(persona.dept_id ?? "");
+  const [filters, setFilters] = useState<StpFilters>(emptyFilters());
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const [caseFormOpen, setCaseFormOpen] = useState<"create" | StpTestCase | null>(null);
+  const [cellTarget, setCellTarget] = useState<{ test: StpTestCase; run: StpTestRun; cell: StpCell } | null>(null);
+  const [runTarget, setRunTarget] = useState<StpTestRun | null>(null);
+
+  // Смена РЦ в средней панели — старый выбор фильтров может не иметь смысла
+  // для новой версии (другие ядра/стенды), поэтому сбрасываем.
   useEffect(() => {
-    setFilters(emptySharedFilters());
-    setStatusFilter(new Set());
-  }, [version.id]);
+    setFilters(emptyFilters());
+  }, [version?.id]);
 
-  const fullStands = useMemo(
-    () => STANDS.filter((s) => s.status !== "offline" && s.kind !== "virtual").slice(0, 5),
-    [],
+  const departmentsQ = useQuery<Department[]>(() => listDepartments(), [], { enabled: !mockMode });
+  const departments = mockMode ? [] : (departmentsQ.data ?? []);
+
+  const standsQ = useQuery(
+    () => listTestStands({ department_id: deptFilter || undefined, limit: 500 }),
+    [deptFilter],
+    { enabled: !mockMode },
   );
-  const fullKernels = useMemo(() => (version.kernels.length ? version.kernels : ["6.12.24-1.el11"]), [version.kernels]);
-  const fullCombos: StpCombo[] = useMemo(() => {
-    const combos: StpCombo[] = [];
-    let idx = 0;
-    for (const mode of STP_MODES) {
-      for (const kernel of fullKernels) {
-        for (const stand of fullStands) {
-          combos.push({ idx, kernel, mode, standName: stand.name, standId: stand.id });
-          idx += 1;
-        }
-      }
-    }
-    return combos;
-  }, [fullStands, fullKernels]);
+  const stands: TestStand[] = mockMode ? [] : (standsQ.data?.items ?? []);
+  const standIds = useMemo(() => new Set(stands.map((s) => s.id)), [stands]);
 
-  // Опции фильтра — объединение реальных комбинаций этого РЦ и гипотетической
-  // полной таблицы тайминга, чтобы панель покрывала то, что может показать
-  // любая из двух таблиц.
-  const standOptions: DropdownOption[] = useMemo(() => {
-    const names = new Set([...dataset.combos.map((c) => c.standName), ...fullCombos.map((c) => c.standName)]);
-    return Array.from(names).map((v) => ({ value: v, label: v }));
-  }, [dataset, fullCombos]);
+  const testCasesQ = useQuery(
+    () => listStpTestCases({ department_id: deptFilter || undefined, limit: 500 }),
+    [deptFilter],
+    { enabled: !mockMode },
+  );
+  const testCases: StpTestCase[] = mockMode ? MOCK_TEST_CASES : (testCasesQ.data?.items ?? []);
+
+  const testRunsQ = useQuery(
+    () => listStpTestRuns({ os_version_id: version?.id, limit: 500 }),
+    [version?.id],
+    { enabled: !mockMode && !!version },
+  );
+  const runsForVersion: StpTestRun[] = mockMode
+    ? MOCK_TEST_RUNS
+    : version
+      ? (testRunsQ.data?.items ?? [])
+      : [];
+
+  // Фильтр по отделу режется через принадлежность стенда отделу — у самого
+  // прогона `department_id` нет (только `stand_id`), см. `StpTestRun` схему.
+  const visibleRuns = useMemo(() => {
+    return runsForVersion.filter((r) => {
+      if (deptFilter && stands.length > 0 && !standIds.has(r.stand_id)) return false;
+      if (filters.mode.size > 0 && !filters.mode.has(r.mode)) return false;
+      if (filters.kernel.size > 0 && !filters.kernel.has(r.kernel)) return false;
+      if (filters.stand.size > 0 && !filters.stand.has(r.stand_id)) return false;
+      return true;
+    });
+  }, [runsForVersion, deptFilter, stands, standIds, filters]);
+
+  const visibleTestCases = useMemo(
+    () => (filters.test.size === 0 ? testCases : testCases.filter((t) => filters.test.has(t.code))),
+    [testCases, filters.test],
+  );
+
+  // ── ячейки матрицы: одна выборка на каждый видимый прогон ────────────────
+  const [cellsByRun, setCellsByRun] = useState<Record<string, StpCell[]>>({});
+  const [cellsLoading, setCellsLoading] = useState(false);
+  const [cellsError, setCellsError] = useState<string | null>(null);
+  const runIdsKey = visibleRuns.map((r) => r.id).sort().join(",");
+
+  async function loadCells(runIds: string[]) {
+    if (mockMode) {
+      setCellsByRun({ [MOCK_TEST_RUNS[0].id]: MOCK_CELLS });
+      return;
+    }
+    if (runIds.length === 0) {
+      setCellsByRun({});
+      return;
+    }
+    setCellsLoading(true);
+    setCellsError(null);
+    try {
+      const pairs = await Promise.all(runIds.map(async (id) => [id, await listStpTestRunCells(id)] as const));
+      setCellsByRun(Object.fromEntries(pairs));
+    } catch (e) {
+      setCellsError(apiErrMsg(e));
+    } finally {
+      setCellsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadCells(runIdsKey ? runIdsKey.split(",") : []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runIdsKey, mockMode]);
+
+  async function refetchRunCells(runId: string) {
+    if (mockMode) return;
+    try {
+      const cells = await listStpTestRunCells(runId);
+      setCellsByRun((current) => ({ ...current, [runId]: cells }));
+    } catch (e) {
+      toast.error(apiErrMsg(e));
+    }
+  }
+
+  function findCell(testCaseId: string, runId: string): StpCell | undefined {
+    return cellsByRun[runId]?.find((c) => c.stp_test_case_id === testCaseId);
+  }
+
+  const modeOptions: DropdownOption[] = STP_MODES.map((m) => ({ value: m, label: m }));
   const kernelOptions: DropdownOption[] = useMemo(() => {
-    const kernels = new Set([...dataset.combos.map((c) => c.kernel), ...fullCombos.map((c) => c.kernel)]);
-    return Array.from(kernels).map((v) => ({ value: v, label: v }));
-  }, [dataset, fullCombos]);
+    const kernels = new Set(runsForVersion.map((r) => r.kernel));
+    return Array.from(kernels).map((k) => ({ value: k, label: k }));
+  }, [runsForVersion]);
+  const standOptions: DropdownOption[] = useMemo(
+    () => Array.from(new Set(runsForVersion.map((r) => r.stand_id))).map((id) => ({ value: id, label: id })),
+    [runsForVersion],
+  );
+  const testOptions: DropdownOption[] = testCases.map((t) => ({ value: t.code, label: `${t.code} · ${t.title}` }));
+  const departmentOptions: DropdownOption[] = departments.map((d) => ({ value: d.id, label: d.name }));
+
+  const hasFilters = filters.mode.size > 0 || filters.kernel.size > 0 || filters.stand.size > 0 || filters.test.size > 0;
 
   return (
     <div className="grid gap-4 min-w-0">
       <div className="alert-warn text-xs">
-        <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
         <span>
-          СТП — зеркало внешней системы Jira Zephyr Scale, сегодня публикуется на Confluence вручную по кнопке.
-          emm не редактирует статусы тест-кейсов отсюда, только показывает и даёт переход в лог/Confluence.
+          СТП — зеркало Jira Zephyr Scale. Статус ячейки обновляется автоматически при завершении задачи в очереди,
+          но оператор/QA может выставить его вручную (override) — это не откатывается автоматикой.
         </span>
       </div>
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-lg font-semibold mono">{version.id}</span>
-            <span className="text-xs text-dim">
-              РЦ · Astra Linux SE {branchKey(version.build)} · {dataset.combos.length} комбинаций ядро×режим×стенд
-            </span>
+            <span className="text-lg font-semibold mono">{version ? version.name : "Версия не выбрана"}</span>
+            {version?.is_urgent_update && <Badge kind="warn">хотфикс</Badge>}
           </div>
-          <div className="text-xs text-dim mt-1">
-            build {version.build} · rc {version.rc} · создана {version.createdAt} · ядра: {version.kernels.join(", ")}
-          </div>
+          {version && (
+            <div className="text-xs text-dim mt-1">
+              обнаружена {formatMskShort(version.discovered_at)} · ядра: {version.kernels.join(", ") || "—"}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs text-dim">{updatedLabel}</span>
-          <Button size="sm"
+          <label className="flex items-center gap-1.5 text-xs text-dim">
+            <span>Отдел:</span>
+            <Dropdown
+              mode="single"
+              options={departmentOptions}
+              value={deptFilter}
+              onChange={setDeptFilter}
+              placeholder="Все"
+              searchable
+            />
+          </label>
+          <Button
             type="button"
+            variant="primary"
             className="inline-flex items-center gap-2"
-            onClick={() => setRefreshedIds((current) => new Set(current).add(version.id))}
+            disabled={!version}
+            onClick={() => setGenerateOpen(true)}
           >
-            <RefreshCcw className="w-3.5 h-3.5" />
-            Обновить СТП
+            <Plus className="w-3.5 h-3.5" />
+            Сгенерировать СТП
           </Button>
         </div>
       </div>
 
-      <StpFilterBar
-        filters={filters}
-        onFiltersChange={setFilters}
-        statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
-        standOptions={standOptions}
-        kernelOptions={kernelOptions}
-        columnGrouping={columnGrouping}
-        onColumnGroupingChange={setColumnGrouping}
+      <div className="surface border border-token rounded p-3 flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-dim font-medium">Фильтры:</span>
+        <Dropdown mode="multi" label="Режим" options={modeOptions} value={filters.mode} onChange={(v) => setFilters({ ...filters, mode: v })} />
+        <Dropdown mode="multi" label="Ядро" searchable options={kernelOptions} value={filters.kernel} onChange={(v) => setFilters({ ...filters, kernel: v })} />
+        <Dropdown mode="multi" label="Стенд" searchable options={standOptions} value={filters.stand} onChange={(v) => setFilters({ ...filters, stand: v })} />
+        <Dropdown mode="multi" label="Тест" searchable options={testOptions} value={filters.test} onChange={(v) => setFilters({ ...filters, test: v })} />
+        <Button
+          size="sm"
+          type="button"
+          className="ml-auto inline-flex items-center gap-1.5"
+          disabled={!hasFilters}
+          onClick={() => setFilters(emptyFilters())}
+        >
+          <FilterX className="w-3.5 h-3.5" />
+          Сбросить фильтры
+        </Button>
+      </div>
+
+      <StpMatrix
+        testCases={visibleTestCases}
+        runs={visibleRuns}
+        findCell={findCell}
+        loading={!mockMode && (testCasesQ.loading || (!!version && testRunsQ.loading) || cellsLoading)}
+        error={
+          (!mockMode && testCasesQ.error && apiErrMsg(testCasesQ.error)) ||
+          (!mockMode && testRunsQ.error && apiErrMsg(testRunsQ.error)) ||
+          cellsError ||
+          null
+        }
+        onOpenCell={(test, run, cell) => setCellTarget({ test, run, cell })}
+        onOpenRun={(run) => setRunTarget(run)}
       />
 
-      <StpStatusTable
-        version={version}
-        dataset={dataset}
-        filters={filters}
-        statusFilter={statusFilter}
-        columnGrouping={columnGrouping}
+      <StpTestCaseCatalog
+        mockMode={mockMode}
+        testCases={testCases}
+        loading={!mockMode && testCasesQ.loading}
+        error={!mockMode && testCasesQ.error ? apiErrMsg(testCasesQ.error) : null}
+        onRetry={testCasesQ.refetch}
+        onCreate={() => setCaseFormOpen("create")}
+        onEdit={(tc) => setCaseFormOpen(tc)}
+        onChanged={testCasesQ.refetch}
       />
-      <StpTimingTable
-        version={version}
-        dataset={dataset}
-        filters={filters}
-        fullCombos={fullCombos}
-        columnGrouping={columnGrouping}
-      />
-    </div>
-  );
-}
 
-// ── фильтры, общие для обеих таблиц ─────────────────────────────────────────
-
-/**
- * Измерения, по которым фильтруются одновременно и статус, и тайминг —
- * стенд/режим/ядро/тест. Статус результата актуален только для таблицы
- * статуса (в тайминге такой колонки нет), поэтому живёт отдельным набором
- * рядом, а не внутри этого типа.
- */
-export interface StpSharedFilters {
-  stand: Set<string>;
-  mode: Set<string>;
-  kernel: Set<string>;
-  test: Set<string>;
-}
-
-function emptySharedFilters(): StpSharedFilters {
-  return { stand: new Set(), mode: new Set(), kernel: new Set(), test: new Set() };
-}
-
-function matchesCombo(filters: StpSharedFilters, c: StpCombo): boolean {
-  return (
-    (filters.stand.size === 0 || filters.stand.has(c.standName)) &&
-    (filters.mode.size === 0 || filters.mode.has(c.mode)) &&
-    (filters.kernel.size === 0 || filters.kernel.has(c.kernel))
-  );
-}
-
-export type StpDimension = "stand" | "kernel" | "mode";
-/** Какие измерения участвуют в группировке столбцов — включаются чекбоксом,
- * без ручного управления порядком: приоритет между ними всегда фиксирован
- * (`COLUMN_GROUPING_PRIORITY`), включённые просто идут в этом порядке. */
-export type StpColumnGrouping = Set<StpDimension>;
-
-const DIMENSION_LABEL: Record<StpDimension, string> = { stand: "Стенд", kernel: "Ядро", mode: "Режим" };
-
-// Порядок приоритета фиксирован — как в реальной таблице СТП на
-// life.astralinux.ru: сначала режим защищённости, потом стенд, потом ядро.
-const COLUMN_GROUPING_PRIORITY: StpDimension[] = ["mode", "stand", "kernel"];
-
-// По умолчанию включены все три — таблица открывается уже сгруппированной,
-// как в реальном отчёте.
-const DEFAULT_COLUMN_GROUPING: StpColumnGrouping = new Set(COLUMN_GROUPING_PRIORITY);
-
-/** Переупорядочивает столбцы так, чтобы включённые измерения шли сплошными
- * блоками в фиксированном порядке приоритета (сначала все значения первого
- * по приоритету измерения, внутри них — следующего и т.д.), сохраняя
- * стабильный порядок внутри самого мелкого блока. */
-function sortCombosForGrouping(combos: StpCombo[], grouping: StpColumnGrouping): StpCombo[] {
-  const active = COLUMN_GROUPING_PRIORITY.filter((d) => grouping.has(d));
-  if (active.length === 0) return combos;
-  const keyOf = (c: StpCombo, dim: StpDimension) => (dim === "stand" ? c.standName : dim === "kernel" ? c.kernel : c.mode);
-  return [...combos].sort((a, b) => {
-    for (const dim of active) {
-      const cmp = naturalCompare(keyOf(a, dim), keyOf(b, dim));
-      if (cmp !== 0) return cmp;
-    }
-    return a.idx - b.idx;
-  });
-}
-
-function StpFilterBar({
-  filters,
-  onFiltersChange,
-  statusFilter,
-  onStatusFilterChange,
-  standOptions,
-  kernelOptions,
-  columnGrouping,
-  onColumnGroupingChange,
-}: {
-  filters: StpSharedFilters;
-  onFiltersChange: (next: StpSharedFilters) => void;
-  statusFilter: Set<string>;
-  onStatusFilterChange: (next: Set<string>) => void;
-  standOptions: DropdownOption[];
-  kernelOptions: DropdownOption[];
-  columnGrouping: StpColumnGrouping;
-  onColumnGroupingChange: (next: StpColumnGrouping) => void;
-}) {
-  const modeOptions: DropdownOption[] = STP_MODES.map((m) => ({ value: m, label: m }));
-  const testOptions: DropdownOption[] = FULL_TEST_CATALOG.map((t) => ({ value: t.code, label: `${t.code} · ${t.title}` }));
-  const statusOptions: DropdownOption[] = STATUS_ORDER.map((s) => ({ value: s, label: STATUS_META[s].label }));
-
-  const hasAny =
-    filters.stand.size > 0 || filters.mode.size > 0 || filters.kernel.size > 0 || filters.test.size > 0 || statusFilter.size > 0;
-
-  const reset = () => {
-    onFiltersChange(emptySharedFilters());
-    onStatusFilterChange(new Set());
-  };
-
-  return (
-    <div className="surface border border-token rounded p-3 flex items-center gap-2 flex-wrap">
-      <span className="text-xs text-dim font-medium">Фильтры (общие для обеих таблиц):</span>
-      <Dropdown
-        mode="multi"
-        label="Стенд"
-        searchable
-        options={standOptions}
-        value={filters.stand}
-        onChange={(v) => onFiltersChange({ ...filters, stand: v })}
-      />
-      <Dropdown
-        mode="multi"
-        label="Режим"
-        options={modeOptions}
-        value={filters.mode}
-        onChange={(v) => onFiltersChange({ ...filters, mode: v })}
-      />
-      <Dropdown
-        mode="multi"
-        label="Ядро"
-        searchable
-        options={kernelOptions}
-        value={filters.kernel}
-        onChange={(v) => onFiltersChange({ ...filters, kernel: v })}
-      />
-      <Dropdown
-        mode="multi"
-        label="Тест"
-        searchable
-        options={testOptions}
-        value={filters.test}
-        onChange={(v) => onFiltersChange({ ...filters, test: v })}
-      />
-      <Dropdown
-        mode="multi"
-        label="Статус"
-        options={statusOptions}
-        value={statusFilter}
-        onChange={onStatusFilterChange}
-      />
-      <span className="self-stretch border-l border-token" />
-      <span className="text-xs text-dim font-medium">Группировка столбцов:</span>
-      {COLUMN_GROUPING_PRIORITY.map((dim) => (
-        <Checkbox
-          key={dim}
-          checked={columnGrouping.has(dim)}
-          label={DIMENSION_LABEL[dim]}
-          onChange={(e) => {
-            const next = new Set(columnGrouping);
-            if (e.target.checked) next.add(dim);
-            else next.delete(dim);
-            onColumnGroupingChange(next);
+      {generateOpen && version && (
+        <StpGenerateModal
+          mockMode={mockMode}
+          version={version}
+          defaultDepartmentId={deptFilter || persona.dept_id || ""}
+          departmentOptions={departmentOptions}
+          onClose={() => setGenerateOpen(false)}
+          onDone={() => {
+            testRunsQ.refetch();
           }}
         />
-      ))}
-      <Button size="sm"
-        type="button"
-        className="ml-auto inline-flex items-center gap-1.5"
-        disabled={!hasAny}
-        onClick={reset}
-      >
-        <FilterX className="w-3.5 h-3.5" />
-        Сбросить фильтры
-      </Button>
+      )}
+
+      {caseFormOpen && (
+        <StpTestCaseFormModal
+          mockMode={mockMode}
+          existing={caseFormOpen === "create" ? null : caseFormOpen}
+          defaultDepartmentId={deptFilter}
+          departmentOptions={departmentOptions}
+          onClose={() => setCaseFormOpen(null)}
+          onDone={() => {
+            setCaseFormOpen(null);
+            testCasesQ.refetch();
+          }}
+        />
+      )}
+
+      {cellTarget && (
+        <StpCellModal
+          mockMode={mockMode}
+          target={cellTarget}
+          onClose={() => setCellTarget(null)}
+          onOverridden={() => {
+            refetchRunCells(cellTarget.run.id);
+          }}
+        />
+      )}
+
+      {runTarget && <StpRunDetailModal mockMode={mockMode} run={runTarget} onClose={() => setRunTarget(null)} />}
     </div>
   );
 }
 
-// ── таблица 1: статус тестирования (транспонированная матрица) ─────────────
+// ── таблица: матрица статусов тест-кейс × прогон ────────────────────────────
 
-interface CellTarget {
-  test: StpTestCase;
-  combo: StpCombo;
-  cell: StpCell;
-}
-
-function StpStatusTable({
-  version,
-  dataset,
-  filters,
-  statusFilter,
-  columnGrouping,
+function StpMatrix({
+  testCases,
+  runs,
+  findCell,
+  loading,
+  error,
+  onOpenCell,
+  onOpenRun,
 }: {
-  version: OsVersion;
-  dataset: StpDataset;
-  filters: StpSharedFilters;
-  statusFilter: Set<string>;
-  columnGrouping: StpColumnGrouping;
+  testCases: StpTestCase[];
+  runs: StpTestRun[];
+  findCell: (testCaseId: string, runId: string) => StpCell | undefined;
+  loading: boolean;
+  error: string | null;
+  onOpenCell: (test: StpTestCase, run: StpTestRun, cell: StpCell) => void;
+  onOpenRun: (run: StpTestRun) => void;
 }) {
-  const [sort, setSort] = useState<{ column: "name" | "failcount" | null; dir: 1 | -1 }>({ column: null, dir: 1 });
-  const [cellTarget, setCellTarget] = useState<CellTarget | null>(null);
-  const [logTarget, setLogTarget] = useState<{ stand: Stand; item: QueueItem } | null>(null);
-
-  // Комбинации, прошедшие фильтры измерений (стенд/режим/ядро) — но ещё без
-  // учёта статуса: сначала по ним считаем видимые строки, а уже видимые
-  // строки определяют, какие из этих комбинаций реально остаются столбцами.
-  const baseCombos = useMemo(
-    () => sortCombosForGrouping(dataset.combos.filter((c) => matchesCombo(filters, c)), columnGrouping),
-    [dataset, filters, columnGrouping],
-  );
-
-  const rows = useMemo(() => {
-    let list = dataset.testCases.filter((test) => {
-      if (filters.test.size > 0 && !filters.test.has(test.code)) return false;
-      if (statusFilter.size === 0) return true;
-      return baseCombos.some((c) => statusFilter.has(dataset.cells.get(`${test.code}|${c.idx}`)!.status));
-    });
-    if (sort.column === "name") {
-      list = [...list].sort((a, b) => naturalCompare(a.code, b.code) * sort.dir);
-    } else if (sort.column === "failcount") {
-      list = [...list].sort((a, b) => {
-        const fa = baseCombos.filter((c) => dataset.cells.get(`${a.code}|${c.idx}`)?.status === "failed").length;
-        const fb = baseCombos.filter((c) => dataset.cells.get(`${b.code}|${c.idx}`)?.status === "failed").length;
-        return (fa - fb) * sort.dir;
-      });
-    }
-    return list;
-  }, [dataset, baseCombos, filters.test, statusFilter, sort]);
-
-  // Столбец без единого совпадения статуса среди уже отфильтрованных строк
-  // тоже скрывается — симметрично тому, как скрываются строки.
-  const visibleCombos = useMemo(() => {
-    if (statusFilter.size === 0) return baseCombos;
-    return baseCombos.filter((c) =>
-      rows.some((test) => statusFilter.has(dataset.cells.get(`${test.code}|${c.idx}`)!.status)),
-    );
-  }, [baseCombos, rows, statusFilter, dataset]);
-
-  const setSortColumn = (column: "name" | "failcount") => {
-    setSort((current) => (current.column === column ? { column, dir: current.dir === 1 ? -1 : 1 } : { column, dir: 1 }));
-  };
-
-  const findStand = (standId: number) => STANDS.find((s) => s.id === standId);
-
-  const openLog = (test: StpTestCase, combo: StpCombo) => {
-    const stand = findStand(combo.standId);
-    if (!stand) return;
-    setLogTarget({
-      stand,
-      item: {
-        title: `${test.code} · ${test.title}`,
-        state: "done",
-        meta: `${combo.mode} · ${combo.kernel} · СТП ${version.id}`,
-        log: `/logs/${stand.name}/${test.code.toLowerCase()}.txt`,
-      },
-    });
-  };
-
   return (
     <div className="surface border border-token rounded overflow-hidden">
       <div className="border-b border-token p-3 flex items-center justify-between gap-3 flex-wrap">
         <div className="text-sm font-medium flex items-center gap-2">
           <ListChecks className="w-4 h-4 text-accent" />
-          Статус тестирования · {version.id}
+          Матрица статусов
         </div>
-        <div className="flex items-center gap-3">
-          <a
-            href={`${CONFLUENCE_URL}${encodeURIComponent(version.id)}`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs text-accent inline-flex items-center gap-1 hover:underline"
-          >
-            <ExternalLink className="w-3 h-3" />
-            Результаты в Confluence
-          </a>
-          <a
-            href={`${CONFLUENCE_URL}${encodeURIComponent(version.id)}`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs text-accent inline-flex items-center gap-1 hover:underline"
-          >
-            <ExternalLink className="w-3 h-3" />
-            Открыть СТП в Life
-          </a>
-        </div>
+        {loading && (
+          <span className="text-xs text-dim inline-flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> загрузка…
+          </span>
+        )}
       </div>
+
+      {error && <div className="alert-danger m-3 text-xs">{error}</div>}
 
       <div className="px-3 py-1.5 surface-2 border-b border-token text-[11px] text-dim">
-        {visibleCombos.length} из {dataset.combos.length} комбинаций · {rows.length} из {dataset.testCases.length} тестов
+        {runs.length} прогонов · {testCases.length} тест-кейсов
       </div>
 
-      <div className="overflow-auto max-h-[440px]">
-        <table className="text-xs border-collapse w-max min-w-full">
-          <thead className="sticky top-0 z-20">
-            <tr>
-              <th className="sticky left-0 z-30 surface-2 border-r border-b border-token px-2 py-1 text-left text-dim font-medium whitespace-nowrap">
-                Версия
-              </th>
-              {visibleCombos.map((c) => (
-                <td key={c.idx} className="surface-2 border-b border-token px-2 py-1 mono text-dim whitespace-nowrap">
-                  {version.id}
-                </td>
-              ))}
-            </tr>
-            <tr>
-              <th className="sticky left-0 z-30 surface-2 border-r border-b border-token px-2 py-1 text-left text-dim font-medium whitespace-nowrap">
-                Ядро
-              </th>
-              {visibleCombos.map((c) => (
-                <td key={c.idx} className="surface-2 border-b border-token px-2 py-1 mono text-dim whitespace-nowrap">
-                  {c.kernel}
-                </td>
-              ))}
-            </tr>
-            <tr>
-              <th className="sticky left-0 z-30 surface-2 border-r border-b border-token px-2 py-1 text-left text-dim font-medium whitespace-nowrap">
-                Режим
-              </th>
-              {visibleCombos.map((c) => (
-                <td key={c.idx} className={`stp-mode-${c.mode} border-b border-token px-2 py-1 whitespace-nowrap`}>
-                  {c.mode}
-                </td>
-              ))}
-            </tr>
-            <tr>
-              <th
-                className="sticky left-0 z-30 surface-2 border-r border-b border-token px-2 py-1 text-left font-medium whitespace-nowrap cursor-pointer hover-bg"
-                onClick={() => setSortColumn("name")}
-              >
-                <span className="inline-flex items-center gap-1">
-                  № стенда / Тест
-                  {sort.column === "name" && (sort.dir === 1 ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                </span>
-              </th>
-              {visibleCombos.map((c) => (
-                <td key={c.idx} className="surface-2 border-b border-token px-2 py-1 mono font-semibold whitespace-nowrap">
-                  {c.standName}
-                </td>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((test) => (
-              <tr key={test.code} className="hover-bg">
-                <th
-                  className="sticky left-0 z-10 surface border-r border-token px-2 py-1 text-left font-medium mono whitespace-nowrap cursor-pointer hover-bg"
-                  onClick={() => setSortColumn("failcount")}
-                  title={test.title}
-                >
-                  {test.code}
-                  {sort.column === "failcount" && (sort.dir === 1 ? <ChevronUp className="w-3 h-3 inline ml-1" /> : <ChevronDown className="w-3 h-3 inline ml-1" />)}
+      {runs.length === 0 || testCases.length === 0 ? (
+        <div className="p-8 text-center text-dim text-sm">
+          {runs.length === 0
+            ? "Для этой РЦ ещё нет прогонов — сгенерируйте СТП кнопкой выше."
+            : "Нет тест-кейсов по выбранному отделу/фильтру."}
+        </div>
+      ) : (
+        <div className="overflow-auto max-h-[440px]">
+          <table className="text-xs border-collapse w-max min-w-full">
+            <thead className="sticky top-0 z-20">
+              <tr>
+                <th className="sticky left-0 z-30 surface-2 border-r border-b border-token px-2 py-1 text-left text-dim font-medium whitespace-nowrap">
+                  Ядро
                 </th>
-                {visibleCombos.map((combo) => {
-                  const cell = dataset.cells.get(`${test.code}|${combo.idx}`)!;
-                  if (cell.status === "not_run") {
-                    return <td key={combo.idx} className="stp-cell-not_run border-b border-token px-2 py-1 text-center">—</td>;
-                  }
-                  if (statusFilter.size > 0 && !statusFilter.has(cell.status)) {
+                {runs.map((r) => (
+                  <td key={r.id} className="surface-2 border-b border-token px-2 py-1 mono text-dim whitespace-nowrap">
+                    {r.kernel}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <th className="sticky left-0 z-30 surface-2 border-r border-b border-token px-2 py-1 text-left text-dim font-medium whitespace-nowrap">
+                  Режим
+                </th>
+                {runs.map((r) => (
+                  <td key={r.id} className={`stp-mode-${r.mode} border-b border-token px-2 py-1 whitespace-nowrap`}>
+                    {r.mode}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <th className="sticky left-0 z-30 surface-2 border-r border-b border-token px-2 py-1 text-left font-medium whitespace-nowrap">
+                  Стенд / Прогон
+                </th>
+                {runs.map((r) => (
+                  <td key={r.id} className="surface-2 border-b border-token px-2 py-1">
+                    <button
+                      type="button"
+                      className="mono font-semibold whitespace-nowrap hover:underline"
+                      title="Карточка прогона"
+                      onClick={() => onOpenRun(r)}
+                    >
+                      {r.stand_id}
+                    </button>
+                  </td>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {testCases.map((test) => (
+                <tr key={test.id} className="hover-bg">
+                  <th className="sticky left-0 z-10 surface border-r border-token px-2 py-1 text-left font-medium mono whitespace-nowrap" title={test.title}>
+                    {test.code}
+                  </th>
+                  {runs.map((run) => {
+                    const cell = findCell(test.id, run.id);
+                    if (!cell) {
+                      return (
+                        <td key={run.id} className="stp-cell-not_run border-b border-token px-2 py-1 text-center" title="Ячейка ещё не создана">
+                          —
+                        </td>
+                      );
+                    }
+                    const meta = cellStatusMeta(cell.status);
                     return (
                       <td
-                        key={combo.idx}
-                        className="stp-cell-not_run border-b border-token px-2 py-1 text-center"
-                        title="Скрыто фильтром по статусу"
+                        key={run.id}
+                        className={`stp-cell-${cell.status} border-b border-token px-2 py-1 cursor-pointer whitespace-nowrap`}
+                        onClick={() => onOpenCell(test, run, cell)}
                       >
-                        —
-                      </td>
-                    );
-                  }
-                  return (
-                    <td
-                      key={combo.idx}
-                      className={`stp-cell-${cell.status} ${cell.logAvailable ? "" : "stp-cell-log-rotated"} border-b border-token px-2 py-1 cursor-pointer whitespace-nowrap`}
-                      onClick={() => setCellTarget({ test, combo, cell })}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span>{STATUS_META[cell.status].label}</span>
-                        {cell.logAvailable ? (
-                          <button
-                            type="button"
-                            className="shrink-0 rounded hover:bg-black/10 p-0.5"
-                            title="Открыть лог"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openLog(test, combo);
-                            }}
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                          </button>
-                        ) : (
-                          <span className="text-[10px] italic shrink-0" title="Слишком старая РЦ, лог ротирован">
-                            лог ротирован
+                        <Badge kind={meta.badge}>{meta.label}</Badge>
+                        {cell.updated_by && (
+                          <span className="ml-1 text-[10px] italic" title="Ручной override">
+                            override
                           </span>
                         )}
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {logTarget && <LogViewerModal stand={logTarget.stand} item={logTarget.item} onClose={() => setLogTarget(null)} />}
-      {cellTarget && (
-        <StpCellActionModal
-          version={version}
-          target={cellTarget}
-          onClose={() => setCellTarget(null)}
-          onOpenLog={() => openLog(cellTarget.test, cellTarget.combo)}
-        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
 }
 
-function StpCellActionModal({
-  version,
+// ── модалка: ячейка матрицы + ручной override ───────────────────────────────
+
+const CELL_STATUS_OPTIONS: StpCellStatus[] = ["not_run", "in_progress", "pass", "fail"];
+
+function StpCellModal({
+  mockMode,
   target,
   onClose,
-  onOpenLog,
+  onOverridden,
 }: {
-  version: OsVersion;
-  target: CellTarget;
+  mockMode: boolean;
+  target: { test: StpTestCase; run: StpTestRun; cell: StpCell };
   onClose: () => void;
-  onOpenLog: () => void;
+  onOverridden: () => void;
 }) {
   const toast = useToast();
-  const { test, combo, cell } = target;
-  const reportUrl = `${CONFLUENCE_URL}${encodeURIComponent(version.id)}#${test.code}`;
-  const comboLabel = `${combo.standName} / ${combo.mode} / ${combo.kernel}`;
+  const { test, run, cell } = target;
+  const [status, setStatus] = useState<string>(cell.status);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    if (mockMode) {
+      toast.warn("Mock-режим — override не отправляется на backend.");
+      onClose();
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await overrideStpCell(cell.id, { status });
+      toast.success(`Статус ${test.code} переопределён на «${cellStatusMeta(status).label}»`);
+      onOverridden();
+      onClose();
+    } catch (e) {
+      const msg = apiErrMsg(e);
+      setErr(msg);
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <Modal
@@ -940,199 +744,492 @@ function StpCellActionModal({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={`${test.code} · ${STATUS_META[cell.status].label}`}
-      subtitle={comboLabel}
+      title={`${test.code} · ${cellStatusMeta(cell.status).label}`}
+      subtitle={`${run.mode} / ${run.kernel} / ${run.stand_id}`}
     >
-        <div className="grid gap-3">
-          <div className="text-sm">{test.title}</div>
-
-          <div className="grid gap-2">
-            {cell.logAvailable ? (
-              <Button
-                type="button"
-                className="w-full flex items-center justify-center gap-2"
-                onClick={() => {
-                  onClose();
-                  onOpenLog();
-                }}
-              >
-                <ExternalLink className="w-4 h-4" />
-                Лог
-              </Button>
-            ) : (
-              <div className="text-xs text-dim italic text-center py-2 surface-2 border border-token rounded">
-                Слишком старая РЦ, лог ротирован
-              </div>
-            )}
-
-            <Button
-              className="w-full flex items-center justify-center gap-2"
-              onClick={() => {
-                onClose();
-                window.open(reportUrl, "_blank", "noreferrer");
-              }}
-            >
-              <ExternalLink className="w-4 h-4" />
-              Отчёт в Confluence
-            </Button>
-
-            <Button
-              type="button"
-              className="w-full flex items-center justify-center gap-2"
-              onClick={() => {
-                toast.info(`Тест ${test.code} для ${comboLabel} поставлен в очередь на перезапуск`);
-                onClose();
-              }}
-            >
-              <RefreshCcw className="w-4 h-4" />
-              Перезапустить
-            </Button>
-          </div>
+      <div className="grid gap-3">
+        <div className="text-sm">{test.title}</div>
+        <div className="text-xs text-dim grid gap-1">
+          <div>queue_item_id: <span className="mono">{cell.queue_item_id ?? "—"}</span></div>
+          <div>обновлено: <span className="mono">{formatMskShort(cell.updated_at)}</span>{cell.updated_by ? ` · вручную (${cell.updated_by})` : " · автоматически"}</div>
         </div>
+
+        <label className="grid gap-1 text-xs text-dim">
+          <span>Ручной override статуса</span>
+          <Dropdown
+            mode="single"
+            options={CELL_STATUS_OPTIONS.map((s) => ({ value: s, label: cellStatusMeta(s).label }))}
+            value={status}
+            onChange={setStatus}
+          />
+        </label>
+
+        {err && <div className="alert-danger text-xs">{err}</div>}
+
+        <div className="flex gap-2 justify-end">
+          <Button type="button" onClick={onClose} disabled={busy}>
+            Отмена
+          </Button>
+          <Button type="button" variant="primary" onClick={submit} disabled={busy || status === cell.status}>
+            {busy ? "..." : "Сохранить override"}
+          </Button>
+        </div>
+      </div>
     </Modal>
   );
 }
 
-// ── таблица 2: тайминг ──────────────────────────────────────────────────────
+// ── модалка: карточка прогона (Zephyr) ──────────────────────────────────────
 
-type TimingScope = "run" | "full";
+function StpRunDetailModal({ mockMode, run, onClose }: { mockMode: boolean; run: StpTestRun; onClose: () => void }) {
+  const [detail, setDetail] = useState<StpTestRun>(run);
+  const [loading, setLoading] = useState(!mockMode);
+  const [err, setErr] = useState<string | null>(null);
 
-function StpTimingTable({
+  useEffect(() => {
+    if (mockMode) return;
+    let cancelled = false;
+    setLoading(true);
+    getStpTestRun(run.id)
+      .then((r) => {
+        if (!cancelled) setDetail(r);
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(apiErrMsg(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mockMode, run.id]);
+
+  return (
+    <Modal
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title="Карточка СТП-прогона"
+      subtitle={`${detail.mode} / ${detail.kernel} / ${detail.stand_id}`}
+    >
+      <div className="grid gap-2 text-xs">
+        {loading && (
+          <div className="text-dim inline-flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> загрузка…
+          </div>
+        )}
+        {err && <div className="alert-danger">{err}</div>}
+        <div>id: <span className="mono">{detail.id}</span></div>
+        <div>os_version_id: <span className="mono">{detail.os_version_id}</span></div>
+        <div>zephyr_test_run_key: <span className="mono">{detail.zephyr_test_run_key ?? "— (генерация ещё не дошла до Zephyr)"}</span></div>
+        <div>zephyr_folder_path: <span className="mono">{detail.zephyr_folder_path ?? "—"}</span></div>
+        <div>создан: <span className="mono">{formatMskShort(detail.created_at)}</span></div>
+        <div>обновлён: <span className="mono">{formatMskShort(detail.updated_at)}</span></div>
+      </div>
+      <div className="flex justify-end mt-3">
+        <Button type="button" onClick={onClose}>Закрыть</Button>
+      </div>
+    </Modal>
+  );
+}
+
+// ── генерация СТП ────────────────────────────────────────────────────────────
+
+function StpGenerateModal({
+  mockMode,
   version,
-  dataset,
-  filters,
-  fullCombos,
-  columnGrouping,
+  defaultDepartmentId,
+  departmentOptions,
+  onClose,
+  onDone,
 }: {
+  mockMode: boolean;
   version: OsVersion;
-  dataset: StpDataset;
-  filters: StpSharedFilters;
-  fullCombos: StpCombo[];
-  columnGrouping: StpColumnGrouping;
+  defaultDepartmentId: string;
+  departmentOptions: DropdownOption[];
+  onClose: () => void;
+  onDone: () => void;
 }) {
-  const [scope, setScope] = useState<TimingScope>("run");
+  const toast = useToast();
+  const [departmentId, setDepartmentId] = useState(defaultDepartmentId);
+  const [mode, setMode] = useState<string>(STP_MODES[0]);
+  const [kernel, setKernel] = useState(version.kernels[0] ?? "");
+  const [final, setFinal] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [result, setResult] = useState<{ createdCount: number; errors: StpGeneratePartialError[] } | null>(null);
 
-  const combos = scope === "run" ? dataset.combos : fullCombos;
-  const allTests = scope === "run" ? dataset.testCases : FULL_TEST_CATALOG;
-  const tests = useMemo(
-    () => (filters.test.size === 0 ? allTests : allTests.filter((t) => filters.test.has(t.code))),
-    [allTests, filters.test],
-  );
-
-  const visibleCombos = useMemo(
-    () => sortCombosForGrouping(combos.filter((c) => matchesCombo(filters, c)), columnGrouping),
-    [combos, filters, columnGrouping],
-  );
-
-  const lookupSeconds = useCallback(
-    (test: StpTestCase, combo: StpCombo): number | null => {
-      if (scope === "run") return dataset.cells.get(`${test.code}|${combo.idx}`)?.seconds ?? null;
-      const realCombo = dataset.combos.find(
-        (c) => c.kernel === combo.kernel && c.mode === combo.mode && c.standName === combo.standName,
-      );
-      if (!realCombo) return null;
-      return dataset.cells.get(`${test.code}|${realCombo.idx}`)?.seconds ?? null;
-    },
-    [scope, dataset],
-  );
-
-  const { emptyCount, totalCount } = useMemo(() => {
-    let empty = 0;
-    let total = 0;
-    for (const test of tests) {
-      for (const combo of visibleCombos) {
-        total += 1;
-        if (lookupSeconds(test, combo) == null) empty += 1;
-      }
+  async function submit() {
+    if (!departmentId) {
+      toast.warn("Выберите отдел");
+      return;
     }
-    return { emptyCount: empty, totalCount: total };
-  }, [tests, visibleCombos, lookupSeconds]);
+    if (!kernel.trim()) {
+      toast.warn("Укажите версию ядра");
+      return;
+    }
+    if (mockMode) {
+      toast.warn("Mock-режим — генерация не отправляется на backend.");
+      onClose();
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const body: StpGenerateRequest = {
+        os_version_id: version.id,
+        mode,
+        kernel: kernel.trim(),
+        final,
+        department_id: departmentId,
+      };
+      const res = await generateStp(body);
+      setResult({ createdCount: res.test_runs.length, errors: res.errors });
+      if (res.errors.length === 0) {
+        toast.success(`Создано прогонов: ${res.test_runs.length}`);
+      } else {
+        toast.warn(`Создано ${res.test_runs.length} из ${res.test_runs.length + res.errors.length} — часть стендов провалилась`);
+      }
+      onDone();
+    } catch (e) {
+      const msg = apiErrMsg(e);
+      setErr(msg);
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title="Сгенерировать СТП"
+      subtitle={version.name}
+    >
+      <div className="grid gap-3">
+        {!result && (
+          <>
+            <label className="grid gap-1 text-xs text-dim">
+              <span>Отдел (чей каталог тестов генерируется)</span>
+              <Dropdown mode="single" options={departmentOptions} value={departmentId} onChange={setDepartmentId} searchable placeholder="Выберите отдел" />
+            </label>
+            <label className="grid gap-1 text-xs text-dim">
+              <span>Режим безопасности</span>
+              <Dropdown mode="single" options={STP_MODES.map((m) => ({ value: m, label: m }))} value={mode} onChange={setMode} />
+            </label>
+            <label className="grid gap-1 text-xs text-dim">
+              <span>Ядро</span>
+              <input className="input mono" value={kernel} onChange={(e) => setKernel(e.target.value)} placeholder={version.kernels[0] ?? "6.12.24-1.el11"} />
+            </label>
+            <Checkbox
+              checked={final}
+              onChange={(e) => setFinal(e.target.checked)}
+              label="Официальный/финальный прогон (снимает changelog-фильтр)"
+            />
+            {err && <div className="alert-danger text-xs">{err}</div>}
+            <div className="flex gap-2 justify-end">
+              <Button type="button" onClick={onClose} disabled={busy}>
+                Отмена
+              </Button>
+              <Button type="button" variant="primary" onClick={submit} disabled={busy}>
+                {busy ? "..." : "Сгенерировать"}
+              </Button>
+            </div>
+          </>
+        )}
+
+        {result && (
+          <>
+            <div className="text-sm">
+              Создано прогонов: <span className="font-semibold">{result.createdCount}</span>
+            </div>
+            {result.errors.length > 0 && (
+              <div className="alert-warn text-xs grid gap-2">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  Часть стендов провалилась ({result.errors.length}) — остальные прогоны созданы успешно:
+                </div>
+                <ul className="grid gap-1">
+                  {result.errors.map((e, i) => (
+                    <li key={`${e.stand_id}-${i}`} className="mono text-[11px]">
+                      {e.stand_id} · {e.error_code}: {e.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <Button type="button" variant="primary" onClick={onClose}>
+                Готово
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ── каталог тест-кейсов СТП: CRUD ────────────────────────────────────────────
+
+function StpTestCaseCatalog({
+  mockMode,
+  testCases,
+  loading,
+  error,
+  onRetry,
+  onCreate,
+  onEdit,
+  onChanged,
+}: {
+  mockMode: boolean;
+  testCases: StpTestCase[];
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+  onCreate: () => void;
+  onEdit: (tc: StpTestCase) => void;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function onDelete(tc: StpTestCase) {
+    if (mockMode) {
+      toast.warn("Mock-режим — удаление не отправляется на backend.");
+      return;
+    }
+    if (!(await confirm.confirm({ message: `Удалить тест-кейс «${tc.code}»?`, danger: true, confirmLabel: "Удалить" }))) return;
+    setBusyId(tc.id);
+    try {
+      await deleteStpTestCase(tc.id);
+      toast.success("Тест-кейс удалён");
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <div className="surface border border-token rounded overflow-hidden">
       <div className="border-b border-token p-3 flex items-center justify-between gap-3 flex-wrap">
-        <div className="text-sm font-medium">Тайминг выполнения · {version.id}</div>
-        <div className="surface-2 border border-token rounded p-1 flex items-center gap-1">
-          <Button type="button" size="sm" variant={scope === "run" ? "primary" : "default"} onClick={() => setScope("run")}>
-            Только тесты этого РЦ
-          </Button>
-          <Button type="button" size="sm" variant={scope === "full" ? "primary" : "default"} onClick={() => setScope("full")}>
-            Полная таблица
+        <div className="text-sm font-medium">Каталог тест-кейсов СТП</div>
+        <Button type="button" size="sm" className="inline-flex items-center gap-1.5" onClick={onCreate}>
+          <Plus className="w-3.5 h-3.5" />
+          Добавить тест-кейс
+        </Button>
+      </div>
+
+      {loading && (
+        <div className="p-4 text-xs text-dim inline-flex items-center gap-1.5">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> загрузка…
+        </div>
+      )}
+      {error && (
+        <div className="p-3">
+          <div className="alert-danger text-xs">{error}</div>
+          <Button size="sm" type="button" className="mt-2" onClick={onRetry}>
+            Повторить
           </Button>
         </div>
-      </div>
-
-      <div className="px-3 py-1.5 surface-2 border-b border-token text-[11px] text-dim" id="timingNote">
-        {scope === "run"
-          ? `${visibleCombos.length} комбинаций · ${tests.length} тестов · только реально запущенные тесты этого РЦ`
-          : `${visibleCombos.length} комбинаций · ${tests.length} тестов · гипотетическая полная матрица — считается ниже`}
-      </div>
-
-      <div className="overflow-auto max-h-[440px]">
-        <table className="text-xs border-collapse w-max min-w-full">
-          <thead className="sticky top-0 z-20">
-            <tr>
-              <th className="sticky left-0 z-30 surface-2 border-r border-b border-token px-2 py-1 text-left text-dim font-medium whitespace-nowrap">
-                Ядро
-              </th>
-              {visibleCombos.map((c) => (
-                <td key={c.idx} className="surface-2 border-b border-token px-2 py-1 mono text-dim whitespace-nowrap">
-                  {c.kernel}
-                </td>
-              ))}
-            </tr>
-            <tr>
-              <th className="sticky left-0 z-30 surface-2 border-r border-b border-token px-2 py-1 text-left text-dim font-medium whitespace-nowrap">
-                Режим
-              </th>
-              {visibleCombos.map((c) => (
-                <td key={c.idx} className={`stp-mode-${c.mode} border-b border-token px-2 py-1 whitespace-nowrap`}>
-                  {c.mode}
-                </td>
-              ))}
-            </tr>
-            <tr>
-              <th className="sticky left-0 z-30 surface-2 border-r border-b border-token px-2 py-1 text-left text-dim font-medium whitespace-nowrap">
-                № стенда / Тест
-              </th>
-              {visibleCombos.map((c) => (
-                <td key={c.idx} className="surface-2 border-b border-token px-2 py-1 mono font-semibold whitespace-nowrap">
-                  {c.standName}
-                </td>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {tests.map((test) => (
-              <tr key={test.code} className="hover-bg">
-                <th className="sticky left-0 z-10 surface border-r border-token px-2 py-1 text-left font-medium mono whitespace-nowrap" title={test.title}>
-                  {test.code}
-                </th>
-                {visibleCombos.map((combo) => {
-                  const seconds = lookupSeconds(test, combo);
-                  if (seconds == null) {
-                    return (
-                      <td key={combo.idx} className="border-b border-token px-2 py-1 text-dim text-center mono whitespace-nowrap">
-                        —
-                      </td>
-                    );
-                  }
-                  return (
-                    <td key={combo.idx} className="border-b border-token px-2 py-1 mono whitespace-nowrap">
-                      {formatDuration(seconds)}
-                    </td>
-                  );
-                })}
+      )}
+      {!loading && !error && testCases.length === 0 && (
+        <div className="p-6 text-center text-dim text-sm">Тест-кейсов пока нет.</div>
+      )}
+      {!loading && !error && testCases.length > 0 && (
+        <div className="overflow-auto max-h-[320px]">
+          <table className="mini w-full">
+            <thead>
+              <tr>
+                <th>Код</th>
+                <th>Название</th>
+                <th>Zephyr ID</th>
+                <th>Отдел</th>
+                <th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {scope === "full" && (
-        <div className="px-3 py-2 text-[11px] text-dim border-t border-token">
-          гипотетическое покрытие всеми тестами на всех стендах: {emptyCount} из {totalCount} ячеек пустые (не запускалось)
+            </thead>
+            <tbody>
+              {testCases.map((tc) => (
+                <tr key={tc.id}>
+                  <td className="mono">{tc.code}</td>
+                  <td>{tc.title}</td>
+                  <td className="mono">{tc.zephyr_id ?? "—"}</td>
+                  <td className="mono">{tc.department_id ?? "—"}</td>
+                  <td>
+                    <div className="flex items-center gap-1 justify-end">
+                      <Button size="sm" type="button" aria-label="Изменить" onClick={() => onEdit(tc)}>
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        type="button"
+                        variant="danger"
+                        aria-label="Удалить"
+                        disabled={busyId === tc.id}
+                        onClick={() => onDelete(tc)}
+                      >
+                        {busyId === tc.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
+  );
+}
+
+function StpTestCaseFormModal({
+  mockMode,
+  existing,
+  defaultDepartmentId,
+  departmentOptions,
+  onClose,
+  onDone,
+}: {
+  mockMode: boolean;
+  existing: StpTestCase | null;
+  defaultDepartmentId: string;
+  departmentOptions: DropdownOption[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const toast = useToast();
+  const isEdit = !!existing;
+  const [loaded, setLoaded] = useState<StpTestCase | null>(existing);
+  const [loading, setLoading] = useState(false);
+  const [code, setCode] = useState(existing?.code ?? "");
+  const [title, setTitle] = useState(existing?.title ?? "");
+  const [zephyrId, setZephyrId] = useState(existing?.zephyr_id ?? "");
+  const [departmentId, setDepartmentId] = useState(existing?.department_id ?? defaultDepartmentId ?? "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // При открытии карточки на редактирование — подтягиваем свежие данные
+  // (не доверяем кэшу списка), см. `getStpTestCase`.
+  useEffect(() => {
+    if (!existing || mockMode) return;
+    let cancelled = false;
+    setLoading(true);
+    getStpTestCase(existing.id)
+      .then((tc) => {
+        if (cancelled) return;
+        setLoaded(tc);
+        setCode(tc.code);
+        setTitle(tc.title);
+        setZephyrId(tc.zephyr_id ?? "");
+        setDepartmentId(tc.department_id ?? "");
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(apiErrMsg(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existing?.id, mockMode]);
+
+  async function submit() {
+    if (!code.trim() || !title.trim()) {
+      toast.warn("code и title обязательны");
+      return;
+    }
+    if (mockMode) {
+      toast.warn("Mock-режим — изменения не отправляются на backend.");
+      onDone();
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      if (isEdit && loaded) {
+        const body: StpTestCaseUpdateRequest = {
+          title: title.trim(),
+          zephyr_id: zephyrId.trim() || null,
+          department_id: departmentId || null,
+        };
+        await updateStpTestCase(loaded.id, body);
+        toast.success("Тест-кейс обновлён");
+      } else {
+        const body: StpTestCaseCreateRequest = {
+          code: code.trim(),
+          title: title.trim(),
+          zephyr_id: zephyrId.trim() || undefined,
+          department_id: departmentId || undefined,
+        };
+        await createStpTestCase(body);
+        toast.success("Тест-кейс создан");
+      }
+      onDone();
+    } catch (e) {
+      const msg = apiErrMsg(e);
+      setErr(msg);
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={isEdit ? `Изменить тест-кейс ${existing?.code}` : "Новый тест-кейс СТП"}
+    >
+      <div className="grid gap-3">
+        {loading && (
+          <div className="text-xs text-dim inline-flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> загрузка…
+          </div>
+        )}
+        <label className="grid gap-1 text-xs text-dim">
+          <span>code (join-ключ с test_definitions.code)</span>
+          <input
+            className="input mono"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="ASTRA-T101"
+            disabled={isEdit}
+          />
+        </label>
+        <label className="grid gap-1 text-xs text-dim">
+          <span>title</span>
+          <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Установка с загрузочного носителя" />
+        </label>
+        <label className="grid gap-1 text-xs text-dim">
+          <span>zephyr_id</span>
+          <input className="input mono" value={zephyrId} onChange={(e) => setZephyrId(e.target.value)} placeholder="BT-T101 (необязательно)" />
+        </label>
+        <label className="grid gap-1 text-xs text-dim">
+          <span>department_id</span>
+          <Dropdown mode="single" options={departmentOptions} value={departmentId} onChange={setDepartmentId} searchable placeholder="Без отдела" />
+        </label>
+        {err && <div className="alert-danger text-xs">{err}</div>}
+        <div className="flex gap-2 justify-end">
+          <Button type="button" onClick={onClose} disabled={busy}>
+            Отмена
+          </Button>
+          <Button type="button" variant="primary" onClick={submit} disabled={busy || !code.trim() || !title.trim()}>
+            {busy ? "..." : isEdit ? "Сохранить" : "Создать"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }

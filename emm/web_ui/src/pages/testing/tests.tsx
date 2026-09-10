@@ -42,8 +42,6 @@ import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { listDepartments } from "@/api/auth/departments";
-import type { Department } from "@/api/auth/types";
 import {
   createTestDefinition,
   deleteTestDefinition,
@@ -149,7 +147,6 @@ export function TestsWorkzone() {
   const testsQ = useQuery(async () => (await listTestDefinitions({ limit: 500 })).items, []);
   const tests = testsQ.data ?? [];
 
-  const departmentsQ = useQuery(() => listDepartments(), []);
   const standsQ = useQuery(async () => (await listTestStands({ limit: 500 })).items, []);
 
   const filtered = useMemo(() => {
@@ -185,10 +182,14 @@ export function TestsWorkzone() {
 
   async function handleCreate(body: TestDefinitionCreateRequest) {
     try {
-      await createTestDefinition(body);
+      const created = await createTestDefinition(body);
       toast.success(`Тест «${body.code}» создан`);
       setFormTarget(null);
       testsQ.refetch();
+      // Сразу открываем конструктор команды — иначе созданный тест без единого
+      // слота команды выглядит как "потерянный", а кнопку "Конструктор" в
+      // таблице ещё нужно найти среди остальных тестов.
+      setCommandTest(created);
     } catch (e) {
       toast.error(apiErrMsg(e, "Не удалось создать тест"));
     }
@@ -361,7 +362,6 @@ export function TestsWorkzone() {
         <TestFormModal
           mode={formTarget === "create" ? "create" : "edit"}
           initial={formTarget === "create" ? undefined : formTarget}
-          departments={departmentsQ.data ?? []}
           stands={standsQ.data ?? []}
           onClose={() => setFormTarget(null)}
           onSubmit={(body) =>
@@ -382,14 +382,12 @@ export function TestsWorkzone() {
 function TestFormModal({
   mode,
   initial,
-  departments,
   stands,
   onClose,
   onSubmit,
 }: {
   mode: "create" | "edit";
   initial?: TestDefinition;
-  departments: Department[];
   stands: TestStand[];
   onClose: () => void;
   onSubmit: (body: TestDefinitionCreateRequest) => void | Promise<void>;
@@ -397,9 +395,7 @@ function TestFormModal({
   const [code, setCode] = useState(initial?.code ?? "");
   const [fullName, setFullName] = useState(initial?.full_name ?? "");
   const [category, setCategory] = useState(initial?.category ?? "");
-  const [owner, setOwner] = useState(initial?.owner ?? "");
   const [readiness, setReadiness] = useState(initial?.readiness ?? "draft");
-  const [departmentId, setDepartmentId] = useState(initial?.department_id ?? "");
   const [pinnedStandId, setPinnedStandId] = useState(initial?.pinned_stand_id ?? "");
   const [submitting, setSubmitting] = useState(false);
 
@@ -414,9 +410,7 @@ function TestFormModal({
         code: code.trim(),
         full_name: fullName.trim(),
         category: category.trim() || null,
-        owner: owner.trim() || null,
         readiness: readiness || null,
-        department_id: departmentId || null,
         pinned_stand_id: pinnedStandId || null,
       });
     } finally {
@@ -453,27 +447,16 @@ function TestFormModal({
             required
           />
         </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Категория</span>
-            <input
-              className="surface-2 border border-token rounded px-2 py-1 text-sm"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              placeholder="filesystem"
-              list="tests-category-suggestions"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">Владелец-контур</span>
-            <input
-              className="surface-2 border border-token rounded px-2 py-1 text-sm"
-              value={owner}
-              onChange={(e) => setOwner(e.target.value)}
-              placeholder="QA Infra"
-            />
-          </label>
-        </div>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">Категория</span>
+          <input
+            className="surface-2 border border-token rounded px-2 py-1 text-sm"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder="filesystem"
+            list="tests-category-suggestions"
+          />
+        </label>
         <datalist id="tests-category-suggestions">
           {Object.keys(CATEGORY_VISUAL).map((c) => (
             <option key={c} value={c} />
@@ -482,17 +465,6 @@ function TestFormModal({
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">Готовность</span>
           <Dropdown mode="single" options={READINESS_OPTIONS} value={readiness ?? ""} onChange={setReadiness} />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-dim text-xs">Отдел</span>
-          <Dropdown
-            mode="single"
-            searchable
-            placeholder="— без отдела —"
-            options={[{ value: "", label: "— без отдела —" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
-            value={departmentId ?? ""}
-            onChange={setDepartmentId}
-          />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">Привязанный стенд</span>

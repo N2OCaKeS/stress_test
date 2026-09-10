@@ -7,6 +7,7 @@ const AUTH_TARGET = process.env.VITE_AUTH_PROXY_TARGET ?? "http://localhost:8000
 const LOGGING_TARGET = process.env.VITE_LOGGING_PROXY_TARGET ?? "http://localhost:8001";
 const SERVER_TARGET = process.env.VITE_SERVER_PROXY_TARGET ?? "http://localhost:8002";
 const SECRET_TARGET = process.env.VITE_SECRET_PROXY_TARGET ?? "http://localhost:8003";
+const TESTING_TARGET = process.env.VITE_TESTING_PROXY_TARGET ?? "http://localhost:8004";
 // Агрегированный Swagger UI (BASE_URL=/docs в самом контейнере, как в проде/k8s
 // — см. docker-compose.dev.yml) — тот же путь /docs, что и в проде, чтобы
 // ссылки на конкретный сервис (WikiExamples.tsx) работали одинаково везде.
@@ -37,6 +38,7 @@ export default defineConfig({
       "/api/loging": { target: LOGGING_TARGET, changeOrigin: true },
       "/api/server": { target: SERVER_TARGET, changeOrigin: true, ws: true },
       "/api/secret": { target: SECRET_TARGET, changeOrigin: true },
+      "/api/testing": { target: TESTING_TARGET, changeOrigin: true, ws: true },
       "/docs": { target: SWAGGER_TARGET, changeOrigin: true },
       "/grafana-proxy": {
         target: GRAFANA_TARGET,

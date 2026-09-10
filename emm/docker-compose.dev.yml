@@ -495,6 +495,7 @@ services:
       VITE_LOGGING_PROXY_TARGET: http://loging_service:8001
       VITE_SERVER_PROXY_TARGET: http://server_service:8002
       VITE_SECRET_PROXY_TARGET: http://secret_service:8003
+      VITE_TESTING_PROXY_TARGET: http://testing_service:8004
       VITE_SWAGGER_PROXY_TARGET: http://swagger_ui:8080
     command: >
       sh -c "npm ci && exec npm run dev -- --host 0.0.0.0 --port 5173"

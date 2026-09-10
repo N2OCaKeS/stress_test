@@ -80,6 +80,7 @@ PLATFORM_SERVICES = [
     ("server_service", "Инвентаризация и управление серверами"),
     ("loging_service", "Аудит и журналирование событий"),
     ("secret_service", "Хранилище токенов и учётных данных"),
+    ("testing_service", "Каталог тестов, очередь запуска, СТП (allta_app)"),
 ]
 
 WIDTH = 64

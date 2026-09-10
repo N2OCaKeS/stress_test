@@ -51,6 +51,7 @@ services:
     volumes:
       - .:/app/tests
       - ../src:/app/src
+      - ../scripts:/app/scripts
       - ../alembic.ini:/app/alembic.ini:ro
     # 0 миграций этой волной — `alembic upgrade head` no-op, но команда должна
     # отработать чисто (проверка §"Проверка" волны 1) перед запуском pytest.

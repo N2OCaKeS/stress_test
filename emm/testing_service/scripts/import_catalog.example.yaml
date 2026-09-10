@@ -1,0 +1,66 @@
+# Пример входного файла для scripts/import_catalog.py.
+#
+# Это ДЕМОНСТРАЦИЯ ФОРМАТА — 2-3 записи каждого раздела, не настоящий каталог.
+# Реальные 20+2 стенда и реальный каталог тестов (~30 легаси-флагов
+# backup_image.py) этой волной сознательно НЕ импортированы — см. README.md,
+# раздел «Импорт каталога тестов и стендов».
+#
+# Откуда брать реальные данные:
+#   - stands[].server_id  — Server/Vm.id из живого server_service
+#     (GET /api/server/v1/servers, инвентарь конкретной инфраструктуры).
+#   - tests[]              — ручной разбор allta_app/backup_image.py и
+#     allta_image_conf.py (ветка dev_allta_app, `git show dev_allta_app:<path>`)
+#     — какой CLI-флаг (-psql_aud/-ipa/-vpn/-mail/-network/-astraevents/-olap
+#     и т.д.) какую реальную команду строит и какие у неё аргументы.
+#
+# variable_code ниже — коды уже засеянных global_variables (миграция
+# b1e7c4a9d203): RC, STAND, KERNEL, MODE, TESTENV, HOME_DIR, TEST_USER,
+# TEST_PASSWORD, TEST_SSH_KEY.
+
+stands:
+  - server_id: srv_example_0001      # реальный Server.id из server_service
+    queue_enabled: true
+    is_active: true
+    # department_id НЕ указывается — create_test_stand резолвит его сам
+    # живым запросом к server_service (см. TestStandCreate), подделать
+    # значение из этого файла нельзя и не нужно.
+
+  - server_id: vm_example_0002       # виртуальный стенд — тот же формат,
+    queue_enabled: true              # server_service не различает Server/Vm
+    is_active: true                  # на уровне test_stands.server_id.
+
+tests:
+  # Тест на литеральных аргументах — простейший случай, без переменных.
+  - code: example.smoke
+    full_name: "Пример: smoke-проверка (демо-формат, не настоящий тест)"
+    category: smoke
+    owner: "example-team"
+    readiness: draft
+    department_id: null              # null — платформенный тест, без владельца
+    pinned_stand_id: null            # null — не привязан, только для демонстрации
+    command:
+      - kind: literal
+        literal_value: "/home/u/bin/example_test.sh"
+      - kind: literal
+        literal_value: "--dry-run"
+
+  # Тест, использующий глобальные переменные + per-test override.
+  - code: example.with_variables
+    full_name: "Пример: конструктор со слотами-переменными"
+    category: demo
+    owner: "example-team"
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "/home/u/bin/example_run.py"
+      - kind: variable
+        variable_code: RC
+      - kind: variable
+        variable_code: KERNEL
+      - kind: variable
+        variable_code: TEST_USER
+        override_value: "custom_user"   # переопределяет резолв из launch_context
+      - kind: variable
+        variable_code: TEST_PASSWORD    # is_sensitive=true — в логах уйдёт как ***

@@ -26,6 +26,7 @@ RUN poetry install --no-root
 
 COPY src ./src
 COPY tests ./tests
+COPY scripts ./scripts
 COPY alembic.ini ./
 
 CMD ["pytest", "tests/", "-v", "--tb=short"]

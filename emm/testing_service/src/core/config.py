@@ -234,6 +234,22 @@ class Settings(BaseSettings):
         description="Таймаут одного исходящего вызова в Confluence REST API.",
     )
 
+    # ── Bitbucket / Tempo (§9.1 плана миграции — HR-отчёт по активности) ─────
+
+    bitbucket_request_timeout_seconds: float = Field(
+        default=10.0,
+        alias="BITBUCKET_REQUEST_TIMEOUT_SECONDS",
+        description="Таймаут одного исходящего вызова в Bitbucket Server REST API.",
+    )
+    tempo_request_timeout_seconds: float = Field(
+        default=15.0,
+        alias="TEMPO_REQUEST_TIMEOUT_SECONDS",
+        description=(
+            "Таймаут вызова Tempo worklogs/search — за месяц может вернуться "
+            "много записей, дефолт выше, чем у остальных интеграций."
+        ),
+    )
+
     # ── Redis creds stash (креды тестового пользователя между callback'ом ────
     # prepare-for-test и claim'ом testing_worker'а) ───────────────────────────
 

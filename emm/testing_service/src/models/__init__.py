@@ -1,7 +1,9 @@
 """ORM-модели testing_service. Импортируются здесь, чтобы Alembic видел metadata."""
 
 from src.models.changelog_cache import ChangelogCache
+from src.models.department_activity_report import DepartmentActivityReport
 from src.models.department_integration_settings import DepartmentIntegrationSettings
+from src.models.department_report_member import DepartmentReportMember
 from src.models.department_test_settings import DepartmentTestSettings
 from src.models.entity_permission import EntityPermission
 from src.models.global_variable import GlobalVariable
@@ -20,7 +22,9 @@ from src.models.test_stand import TestStand
 
 __all__ = [
     "ChangelogCache",
+    "DepartmentActivityReport",
     "DepartmentIntegrationSettings",
+    "DepartmentReportMember",
     "DepartmentTestSettings",
     "EntityPermission",
     "GlobalVariable",

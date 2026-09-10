@@ -18,6 +18,33 @@ class DepartmentIntegrationSettingsUpdate(BaseModel):
     confluence_base_url: str | None = Field(
         default=None, max_length=256, description="Base URL Confluence этого отдела.",
     )
+    bitbucket_base_url: str | None = Field(
+        default=None, max_length=256, description="Base URL Bitbucket Server этого отдела.",
+    )
+    bitbucket_project_key: str | None = Field(
+        default=None, max_length=64, description="Project key репозитория с коммитами отдела.",
+    )
+    bitbucket_repo_slug: str | None = Field(
+        default=None, max_length=128, description="Slug репозитория с коммитами отдела.",
+    )
+    bitbucket_credential_id: str | None = Field(
+        default=None, max_length=64,
+        description="Id credential в secret_service для Bitbucket basic auth (может отличаться от Jira/Confluence).",
+    )
+    jira_board_id: str | None = Field(
+        default=None, max_length=32, description="Id доски Jira (Scrum board) для подсчёта спринтов отдела.",
+    )
+    tempo_team_id: str | None = Field(
+        default=None, max_length=32, description="Id команды Tempo отдела.",
+    )
+    confluence_report_page_space: str | None = Field(
+        default=None, max_length=64,
+        description="Confluence space для публикации HR-отчёта. Пусто — отчёт для отдела недоступен.",
+    )
+    confluence_report_parent_page_title: str | None = Field(
+        default=None, max_length=256,
+        description="Заголовок родительской страницы, под которой заводится месячная страница отчёта.",
+    )
 
 
 class DepartmentIntegrationSettingsResponse(BaseModel):
@@ -30,5 +57,13 @@ class DepartmentIntegrationSettingsResponse(BaseModel):
     credential_id: str | None = Field(default=None)
     jira_base_url: str | None = Field(default=None)
     confluence_base_url: str | None = Field(default=None)
+    bitbucket_base_url: str | None = Field(default=None)
+    bitbucket_project_key: str | None = Field(default=None)
+    bitbucket_repo_slug: str | None = Field(default=None)
+    bitbucket_credential_id: str | None = Field(default=None)
+    jira_board_id: str | None = Field(default=None)
+    tempo_team_id: str | None = Field(default=None)
+    confluence_report_page_space: str | None = Field(default=None)
+    confluence_report_parent_page_title: str | None = Field(default=None)
     created_at: datetime | None = Field(default=None)
     updated_at: datetime | None = Field(default=None)

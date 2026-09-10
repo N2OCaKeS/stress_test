@@ -58,6 +58,19 @@ class EntityType(StrEnum):
     # `department_test_settings` — чтение открыто, запись под матрицей.
     DEPARTMENT_INTEGRATION_SETTINGS = "department_integration_settings"
 
+    # Сотрудник отдела, учитываемый в HR-отчёте по активности (§9.1 плана
+    # миграции). Чтение открыто любому аутентифицированному актору, под
+    # матрицей — запись, тот же паттерн, что `test_definition`/`test_stand`.
+    DEPARTMENT_REPORT_MEMBER = "department_report_member"
+
+    # Попытка генерации HR-отчёта отдела (§2.7/§9.1). В отличие от остальных
+    # каталогов здесь и чтение (история генераций), и создание (ручной
+    # запуск) — department-scoped операции над бизнес-данными конкретного
+    # отдела, поэтому гейтятся `permissions.require_department_action`
+    # (department_admin-bypass + матрица), не открытым чтением как у
+    # платформенных каталогов.
+    DEPARTMENT_ACTIVITY_REPORT = "department_activity_report"
+
 
 class Action(StrEnum):
     """Fine-grained actions матрицы entity_permissions.
@@ -105,6 +118,12 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     }),
     EntityType.DEPARTMENT_INTEGRATION_SETTINGS: frozenset({
         Action.VIEW, Action.UPDATE,
+    }),
+    EntityType.DEPARTMENT_REPORT_MEMBER: frozenset({
+        Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
+    }),
+    EntityType.DEPARTMENT_ACTIVITY_REPORT: frozenset({
+        Action.VIEW, Action.CREATE,
     }),
 }
 
@@ -179,6 +198,23 @@ class RunSummaryCommentStatus(StrEnum):
     FAILED = "failed"
 
 
+class DepartmentActivityReportStatus(StrEnum):
+    """Исход попытки генерации HR-отчёта по активности (§2.7, §9.1 плана миграции).
+
+    `generating` — строка заведена, запрос источникам ещё в процессе (видно
+    только если кто-то читает список ровно в этот момент — генерация
+    синхронна в рамках одного HTTP-запроса). `done` — HTML-таблица собрана и
+    опубликована на Confluence (частичный провал ОДНОГО источника данных не
+    мешает `done`, см. `services/activity_report.py`). `failed` — интеграция
+    отдела не настроена вовсе (`confluence_report_page_space` пуст) либо сбой
+    самой публикации на Confluence.
+    """
+
+    GENERATING = "generating"
+    DONE = "done"
+    FAILED = "failed"
+
+
 class StpCellStatus(StrEnum):
     """Статус ячейки СТП `(stp_test_case × stp_test_run)` (§2.5, §6.2 плана миграции).
 
@@ -192,6 +228,21 @@ class StpCellStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     PASSED = "pass"
     FAIL = "fail"
+
+
+class PlatformRole(StrEnum):
+    """Платформенные роли, которые видит testing_service (`Identity.platform_role`).
+
+    Единственное значение, которое здесь имеет собственную семантику —
+    `DEPARTMENT_ADMIN`: `permissions.require_department_action` даёт ему
+    bypass матрицы прав на бизнес-данных СВОЕГО отдела (тот же приём, что
+    `server_service.permissions.require_host_service_action`). Остальные
+    платформенные роли (`account_admin`/`loging_admin`/`loging_reader`) не
+    несут `department_id` вообще и просто не проходят department-scoped
+    проверки — отдельно перечислять их здесь не нужно.
+    """
+
+    DEPARTMENT_ADMIN = "department_admin"
 
 
 class ServiceRole(StrEnum):

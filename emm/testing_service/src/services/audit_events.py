@@ -59,6 +59,10 @@ SERVICE_EVENTS = [
     {"action": "stp_cell.manual_override", "description": "STP cell status overridden manually (not synced to Zephyr)", "default_severity": "WARNING"},
     {"action": "department_integration_settings.update", "description": "Department Jira/Zephyr/Confluence integration settings upserted", "default_severity": "INFO"},
     {"action": "run_summary_comment.posted", "description": "End-of-run Confluence blog comment posted/updated/skipped/failed for a test run campaign", "default_severity": "INFO"},
+    {"action": "department_report_member.create", "description": "Department report member added", "default_severity": "INFO"},
+    {"action": "department_report_member.update", "description": "Department report member updated", "default_severity": "INFO"},
+    {"action": "department_report_member.delete", "description": "Department report member removed", "default_severity": "WARNING"},
+    {"action": "department_activity_report.generate", "description": "Department activity report generation attempted (manual trigger)", "default_severity": "INFO"},
 ]
 
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
@@ -136,6 +140,15 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("department_integration_settings.update", "denied"): "WARNING",
     ("run_summary_comment.posted", "success"): "INFO",
     ("run_summary_comment.posted", "failure"): "WARNING",
+    ("department_report_member.create", "success"): "INFO",
+    ("department_report_member.create", "denied"): "WARNING",
+    ("department_report_member.update", "success"): "INFO",
+    ("department_report_member.update", "denied"): "WARNING",
+    ("department_report_member.delete", "success"): "WARNING",
+    ("department_report_member.delete", "denied"): "WARNING",
+    ("department_activity_report.generate", "success"): "INFO",
+    ("department_activity_report.generate", "failure"): "WARNING",
+    ("department_activity_report.generate", "denied"): "WARNING",
 }
 
 

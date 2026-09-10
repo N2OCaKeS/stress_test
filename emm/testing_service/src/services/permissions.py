@@ -13,7 +13,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import SERVICE_NAME
+from src.core.constants import SERVICE_NAME, PlatformRole
 from src.core.exceptions import AuthorizationError
 from src.dependencies.auth import Identity
 from src.repositories import entity_permission as repo
@@ -51,6 +51,49 @@ async def require_action(
         error_code="PERMISSION_DENIED",
         message=f"Role does not grant '{action}' on '{entity_type}'",
         details={"entity_type": entity_type, "action": action},
+    )
+
+
+async def require_department_action(
+    db: AsyncSession,
+    identity: Identity,
+    department_id: str,
+    entity_type: str,
+    action: str,
+) -> None:
+    """Бросает AuthorizationError, если caller не может `action` над бизнес-данными `department_id`.
+
+    В отличие от `require_action`, здесь `department_id` — параметр запроса
+    (обычно из URL), а не только `identity.department_id`: это гейт для
+    операций над данными КОНКРЕТНОГО отдела (HR-отчёт по активности, §9.1),
+    где cross-department вызов должен быть структурно невозможен, а не просто
+    не даваться по роли.
+
+    Два способа пройти:
+
+    1. Caller — `department_admin` СВОЕГО отдела (bypass матрицы, тот же
+       приём, что `server_service.permissions.require_host_service_action`);
+    2. обычная проверка матрицы (`has_action`) — пропускает носителя
+       `admin`/кастомной роли `testing_service` в своём отделе.
+
+    Оба пути требуют `identity.department_id == department_id` — роль,
+    выданная в одном отделе, не даёт доступа к данным другого, даже если имя
+    роли совпадает.
+    """
+    if identity.department_id != department_id:
+        raise AuthorizationError(
+            error_code="PERMISSION_DENIED",
+            message="Caller's department does not match the target department",
+            details={"entity_type": entity_type, "action": action, "department_id": department_id},
+        )
+    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
+        return
+    if await has_action(db, identity, entity_type, action):
+        return
+    raise AuthorizationError(
+        error_code="PERMISSION_DENIED",
+        message=f"Role does not grant '{action}' on '{entity_type}' for this department",
+        details={"entity_type": entity_type, "action": action, "department_id": department_id},
     )
 
 

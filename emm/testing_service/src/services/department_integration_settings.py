@@ -17,6 +17,21 @@ from src.services import audit_service, permissions
 from src.utils.ids import department_integration_settings_id as new_id
 
 
+_NULLABLE_FIELDS = (
+    "credential_id",
+    "jira_base_url",
+    "confluence_base_url",
+    "bitbucket_base_url",
+    "bitbucket_project_key",
+    "bitbucket_repo_slug",
+    "bitbucket_credential_id",
+    "jira_board_id",
+    "tempo_team_id",
+    "confluence_report_page_space",
+    "confluence_report_parent_page_title",
+)
+
+
 async def get_effective(db: AsyncSession, department_id: str) -> dict:
     """Эффективные настройки отдела — пустые поля, если строки ещё нет."""
     row = await repo.get_by_department(db, department_id)
@@ -24,20 +39,16 @@ async def get_effective(db: AsyncSession, department_id: str) -> dict:
         return {
             "id": None,
             "department_id": department_id,
-            "credential_id": None,
-            "jira_base_url": None,
-            "confluence_base_url": None,
             "created_at": None,
             "updated_at": None,
+            **{field: None for field in _NULLABLE_FIELDS},
         }
     return {
         "id": row.id,
         "department_id": row.department_id,
-        "credential_id": row.credential_id,
-        "jira_base_url": row.jira_base_url,
-        "confluence_base_url": row.confluence_base_url,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
+        **{field: getattr(row, field) for field in _NULLABLE_FIELDS},
     }
 
 
@@ -67,9 +78,7 @@ async def upsert(
         data = {
             "id": new_id(),
             "department_id": department_id,
-            "credential_id": changes.pop("credential_id", None),
-            "jira_base_url": changes.pop("jira_base_url", None),
-            "confluence_base_url": changes.pop("confluence_base_url", None),
+            **{field: changes.pop(field, None) for field in _NULLABLE_FIELDS},
         }
         row = await repo.create(db, data)
     elif changes:

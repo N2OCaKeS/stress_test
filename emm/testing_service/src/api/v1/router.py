@@ -6,9 +6,11 @@
 
 from fastapi import APIRouter
 
+from src.api.v1.endpoints.department_activity_reports import router as department_activity_reports_router
 from src.api.v1.endpoints.department_integration_settings import (
     router as department_integration_settings_router,
 )
+from src.api.v1.endpoints.department_report_members import router as department_report_members_router
 from src.api.v1.endpoints.department_test_settings import router as department_test_settings_router
 from src.api.v1.endpoints.global_variables import router as global_variables_router
 from src.api.v1.endpoints.health import router as health_router
@@ -30,3 +32,5 @@ router.include_router(test_logs_router, tags=["test-logs"])
 router.include_router(test_runs_router, tags=["test-runs"])
 router.include_router(stp_router, tags=["stp"])
 router.include_router(department_integration_settings_router, tags=["department-integration-settings"])
+router.include_router(department_report_members_router, tags=["department-report-members"])
+router.include_router(department_activity_reports_router, tags=["department-activity-reports"])

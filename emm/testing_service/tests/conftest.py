@@ -128,6 +128,11 @@ def _cleanup_created_variables():
             conn.execute(text(
                 "DELETE FROM department_integration_settings WHERE department_id LIKE 'dep\\_%' ESCAPE '\\'"
             ))
+            # department_report_members/department_activity_reports — целиком в
+            # владении этого домена (нет сида, никогда не сеются миграцией),
+            # чистим безусловно.
+            conn.execute(text("DELETE FROM department_activity_reports"))
+            conn.execute(text("DELETE FROM department_report_members"))
     finally:
         engine.dispose()
 

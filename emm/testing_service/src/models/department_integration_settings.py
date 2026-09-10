@@ -1,4 +1,4 @@
-"""Настройки интеграции отдела с Jira/Zephyr/Confluence (§2.4, §3.5, §6 плана миграции).
+"""Настройки интеграции отдела с Jira/Zephyr/Confluence/Bitbucket/Tempo (§2.4, §3.5, §6, §9 плана миграции).
 
 Одна строка на `department_id`. Per-department, потому что у каждого отдела —
 своя учётка Jira/Zephyr/Confluence и, возможно, свой URL Jira (не все отделы
@@ -10,6 +10,23 @@ scope=service — так бот `testing_service` (платформенный с
 `is_service_bot=True`) получает read/reveal независимо от отдела-владельца;
 завести такую credential — задача department_admin'а этого отдела (см.
 `services/secret_client.py`).
+
+Поля волны 10 (HR-отчёт по активности, §9.1, `services/activity_report.py`):
+
+* `bitbucket_base_url`/`bitbucket_project_key`/`bitbucket_repo_slug` — куда и
+  какой репозиторий опрашивать за коммитами. `bitbucket_credential_id` —
+  ОТДЕЛЬНЫЙ credential (basic auth login/password), потому что у Bitbucket и
+  Jira/Confluence этого же инстанса могут быть разные сервисные учётки; тот
+  же credential_id, что уже есть выше, сюда не годится по умолчанию.
+* `jira_board_id`/`tempo_team_id` — легаси-хардкоды (`340`/`["7"]`), теперь
+  per-department (Tempo сам API поддерживает список teamId, но здесь одна
+  отдельская команда — строка, не список; API-клиент оборачивает её в список
+  сам, см. `services/tempo_client.py`).
+* `confluence_report_page_space`/`confluence_report_parent_page_title` — куда
+  публиковать HR-отчёт. `confluence_report_page_space` без дефолта — если не
+  задан, `services/activity_report.py` отвечает явной ошибкой "не настроено",
+  не тем же `space="AL"`, что у end-of-run комментария (§9.2) — разные
+  Confluence-пространства, разные механизмы.
 """
 
 from datetime import datetime
@@ -21,7 +38,7 @@ from src.db.base import Base
 
 
 class DepartmentIntegrationSettings(Base):
-    """Per-department credential_id + base URL'ы для Jira/Zephyr/Confluence."""
+    """Per-department credential_id + base URL'ы для Jira/Zephyr/Confluence/Bitbucket/Tempo."""
 
     __tablename__ = "department_integration_settings"
 
@@ -32,6 +49,19 @@ class DepartmentIntegrationSettings(Base):
     credential_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     jira_base_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
     confluence_base_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+    # ── HR-отчёт по активности (§9.1, волна 10) ──────────────────────────────
+    bitbucket_base_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    bitbucket_project_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    bitbucket_repo_slug: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Отдельный credential от `credential_id` выше — у Bitbucket этого же
+    # инстанса может быть своя сервисная учётка, отличная от Jira/Confluence.
+    bitbucket_credential_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    jira_board_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    tempo_team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    confluence_report_page_space: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    confluence_report_parent_page_title: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

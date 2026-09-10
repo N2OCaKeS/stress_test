@@ -87,3 +87,13 @@ def changelog_cache_id() -> str:
 def run_summary_comment_id() -> str:
     """`rsc_<uuid>` — для run_summary_comments."""
     return _new_id("rsc_")
+
+
+def department_report_member_id() -> str:
+    """`drm_<uuid>` — для department_report_members."""
+    return _new_id("drm_")
+
+
+def department_activity_report_id() -> str:
+    """`dar_<uuid>` — для department_activity_reports."""
+    return _new_id("dar_")

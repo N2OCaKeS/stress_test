@@ -287,15 +287,15 @@ export function TestsWorkzone() {
   }
 
   return (
-    <div className="grid gap-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+    <div className="flex flex-1 min-h-0 flex-col gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 shrink-0">
         <Stat title="Всего наборов" value={String(totals.total)} icon={FileText} />
         <Stat title="Готовы к запуску" value={String(totals.ready)} icon={CheckCircle2} kind="ok" />
         <Stat title="Требуют параметров" value={String(totals.draft)} icon={Cog} kind="warn" />
         <Stat title="Заблокированы" value={String(totals.blocked)} icon={ShieldCheck} kind="danger" />
       </div>
 
-      <div className="surface border border-token rounded p-3 flex items-center gap-3 flex-wrap">
+      <div className="surface border border-token rounded p-3 flex items-center gap-3 flex-wrap shrink-0">
         <div className="flex items-center gap-2 surface-2 border border-token rounded px-2 py-1 min-w-[220px]">
           <Search className="w-4 h-4 text-dim" />
           <input
@@ -352,8 +352,8 @@ export function TestsWorkzone() {
         </Button>
       </div>
 
-      <div className="surface border border-token rounded overflow-hidden">
-        <div className="border-b border-token p-3 flex items-center gap-2">
+      <div className="surface border border-token rounded overflow-hidden flex flex-1 min-h-0 flex-col">
+        <div className="border-b border-token p-3 flex items-center gap-2 shrink-0">
           <FileText className="w-4 h-4 text-accent" />
           <div className="text-sm font-medium">Каталог тестов · {filtered.length}</div>
         </div>
@@ -374,7 +374,7 @@ export function TestsWorkzone() {
             </div>
           </div>
         ) : (
-          <div className="overflow-auto max-h-[560px]">
+          <div className="overflow-auto flex-1 min-h-0">
             <table className="mini">
               <thead>
                 <tr>

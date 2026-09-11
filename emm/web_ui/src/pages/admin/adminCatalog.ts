@@ -55,6 +55,7 @@ import { ServicesNavLink } from "./services/ServicesNavLink";
 import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
 import { ServicesSecretPermissions } from "./services/ServicesSecretPermissions";
 import { ServicesTestingPermissions } from "./services/ServicesTestingPermissions";
+import { ServicesTestingStands } from "./services/ServicesTestingStands";
 import { ServicesLogingRules } from "./services/ServicesLogingRules";
 import { ServicesLogingRetention } from "./services/ServicesLogingRetention";
 import { ServicesEncryptionRotation } from "./services/ServicesEncryptionRotation";
@@ -375,6 +376,17 @@ const STATIC_ITEMS: AdminItem[] = [
     // secret_service dept-scoped: department_admin своего отдела или
     // secret.admin. Платформенные роли без отдела backend режет 403.
     visibleFor: (p) => isDepAdmin(p) || hasSecretServiceAdmin(p),
+  },
+
+  {
+    id: "services.testing.stands",
+    label: "Стенды пула",
+    hint: "Регистрация и настройки тестовых стендов",
+    icon: ServerIcon,
+    block: "services",
+    group: "testing",
+    content: ServicesTestingStands,
+    visibleFor: (p) => isDepAdmin(p) || hasTestingServiceAdmin(p),
   },
 
   // Services block — testing. testing_service не блокирует account_admin

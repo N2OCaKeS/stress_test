@@ -71,8 +71,8 @@ export function Testing() {
 
   return (
     <Shell breadcrumb={`testing_service / ${active.label}`} middle={middle}>
-      <main className="flex-1 min-w-0 overflow-auto">
-        <div className="border-b border-token px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+      <main className={activeId === "tests" ? "flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden" : "flex-1 min-w-0 overflow-auto"}>
+        <div className="border-b border-token px-5 py-4 flex items-center justify-between gap-4 flex-wrap shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="h-10 w-10 rounded surface-2 border border-token flex items-center justify-center shrink-0">
               <ActiveIcon className="w-5 h-5 text-accent" />
@@ -103,7 +103,7 @@ export function Testing() {
           </div>
         </div>
 
-        <div className="p-5">
+        <div className={activeId === "tests" ? "p-5 flex flex-1 min-h-0 flex-col" : "p-5"}>
           {activeId === "overview" && <TestingOverview runsState={runsState} />}
           {activeId === "tests" && <TestsWorkzone />}
           {activeId === "runs" && <RunsWorkzone state={runsState} />}
